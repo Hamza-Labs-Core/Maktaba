@@ -7,9 +7,10 @@ Phase 11 scaffolds the platform wrappers that re-use the shared
 |---|---|---|
 | [`apps/mobile/`](mobile/) | Capacitor 6 (iOS + Android) | Epic 12 |
 | [`apps/desktop/`](desktop/) | Tauri 2 (macOS / Win / Linux) | Epic 13 |
-| [`apps/apple/`](apple/) | SwiftUI: Player and Remote (iPhone, iPad, Mac) | Epic 42 |
+| [`apps/apple/`](apple/) | SwiftUI: Player (iPhone, iPad, Mac) and Remote (iPhone, iPad); also builds the Apple TV app | Epic 42 |
 | [`apps/android/`](android/) | Jetpack Compose: Player and Remote (phone, foldable, tablet), on a portable `client` | Epic 42 |
 | [`apps/desktop-player/`](desktop-player/) | Compose for Desktop: Player for Windows and Linux, on the Android apps' `client` | Epic 42 |
+| [`apps/tv/`](tv/) | Maktaba TV: SwiftUI + AVKit (Apple TV), Compose for TV + Media3 (Android TV and Google TV) | Epic 14 |
 
 Both wrappers expect `web/dist/` to exist; their build scripts call
 `pnpm --filter maktaba-web build` to produce it before bundling.

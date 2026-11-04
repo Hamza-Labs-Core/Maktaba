@@ -18,7 +18,8 @@ main repository, pinned to the same commit as the code.
 - [Issues](https://github.com/Hamza-Labs-Core/Maktaba/issues)
 - [Per-epic pages](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/docs/wiki/epics)
 - [Contributing](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/CONTRIBUTING.md)
-- [Get the apps](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/README.md#get-the-apps) (TestFlight, Google Play internal testing)
+- [Apps by platform](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/README.md#apps-by-platform) (iPhone, iPad, Mac, Apple TV, Android, Android TV, Windows, Linux, web)
+- [Get the apps](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/README.md#get-the-apps) (TestFlight, Google Play internal testing, the release files)
 - [Roadmap](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/README.md#roadmap) (epics 50–54)
 - User guide: in the Maktaba web app at `/help`, in English and Arabic
 

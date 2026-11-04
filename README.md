@@ -7,14 +7,34 @@
 Maktaba (مكتبة, "library") is a self-hosted media platform that turns a folder
 tree of video files into a fully streamable, intelligently-organized library
 where **every word in every video is searchable**. It is positioned as a full
-Plex alternative — library + transcoding origin + first-party apps for web,
-mobile, desktop, and TV — with content intelligence layered on top: transcription,
+Plex alternative — library + transcoding origin + first-party apps for every
+platform ([below](#apps-by-platform)) — with content intelligence layered on top: transcription,
 diarization, semantic indexing, and second-precise navigation.
 
 The target deployment is a single household with 30 TB+ of content on a NAS or
 workstation. Arabic is a first-class language throughout (Unicode, bidi, RTL),
 but the STT and indexing layers are language-agnostic and ship with English
 support out of the box.
+
+## Apps by platform
+
+Maktaba has apps for phones, tablets, computers, TVs and the browser. What each platform has
+today:
+
+| Platform | Maktaba Player (watch) | Maktaba Remote (run the home; admins only) | Maktaba TV | Maktaba (the server and the web app) |
+|---|---|---|---|---|
+| **iPhone** | Yes (TestFlight) | Yes (TestFlight) | — | — |
+| **iPad** | Yes (TestFlight, *Maktaba Player for iPad*) | In the code, not on TestFlight yet | — | — |
+| **Mac** | Yes (TestFlight, *Maktaba Player for Mac*) | — | — | Yes (Maktaba.app, Apple silicon) |
+| **Apple TV** | — | — | Yes (TestFlight) | — |
+| **Android phone and tablet** | Yes (Google Play testing) | Yes (Google Play testing) | — | — |
+| **Android TV and Google TV** | — | — | Yes (Google Play testing, or the APK) | — |
+| **Windows** | Yes (`.msi`, x64) | — | — | Yes (`-setup.exe`, x64) |
+| **Linux** | Yes (`.deb`, `.rpm`) | — | — | Yes (AppImage, `.deb`, `.rpm`, or without a desktop) |
+| **Web** | — | — | — | Yes (any browser) |
+
+The web app does what the Player and the Remote do, in any browser. How to install each one,
+and the file each release attaches: [Get the apps](#get-the-apps).
 
 ---
 
@@ -29,7 +49,7 @@ media volume for bytes; the apps and the optional cloud talk to them:
 | **Streaming** | Go 1.25 | HLS / DASH origin. FFmpeg-driven transcode/remux, range serving, subtitle muxing, sprites, and the live TV channels. |
 | **Pipeline** | Python 3.12 | Scanner, audio extractor, Whisper STT (MLX / faster-whisper / OpenAI), embedding, pgvector indexer (Postgres), diarization. Drains the durable job queue. |
 | **Web** | React 18 + TS + Vite | The web app (PWA), with the user guide at `/help`. The Mac, Windows and Linux apps (Tauri) show it and carry the server. |
-| **Native apps** | Swift / Kotlin | Maktaba Player and Maktaba Remote (iPhone, iPad, Mac, Android), Maktaba TV (Apple TV, Android TV), Maktaba Player for Windows and Linux. See [Get the apps](#get-the-apps). |
+| **Native apps** | Swift / Kotlin | Maktaba Player (iPhone, iPad, Mac, Android, Windows, Linux), Maktaba Remote (iPhone, iPad, Android), Maktaba TV (Apple TV, Android TV). See [Apps by platform](#apps-by-platform). |
 | **Cloud Relay** *(optional)* | Go 1.26 | Hosted SaaS layer for remote access: identity, server linking, WSS-tunneled HTTP relay, push fanout, billing (no payment provider yet). Lives in `cloud/`. |
 
 See [`specs/architecture.md`](specs/architecture.md) for the canonical design,
@@ -260,18 +280,27 @@ The apps are in testing. Testers get them from TestFlight and Google Play's inte
 not from the public stores yet. The owner adds each tester: their Apple ID to a TestFlight
 testers group in App Store Connect ([docs/testflight.md](docs/testflight.md)), their Google
 account to the testers list in Play Console ([docs/google-play.md](docs/google-play.md)).
-Every release tag uploads a new build to both, which reaches testers as an update.
+Every release tag (`git tag vX.Y.Z && git push --tags`) uploads a new build to both, which
+reaches testers as an update, and attaches the installable files to the
+[GitHub Release](https://github.com/Hamza-Labs-Core/Maktaba/releases) for that tag.
 
-| App | Platform | How to get it |
-|---|---|---|
-| **Maktaba Player** (watch) | iPhone · iPad (*Maktaba Player for iPad*) · Mac (*Maktaba Player for Mac*) | TestFlight |
-| **Maktaba Remote** (run the home; admins only) | iPhone | TestFlight |
-| **Maktaba TV** | Apple TV | TestFlight on the Apple TV |
-| **Maktaba Player** and **Maktaba Remote** | Android phones, foldables and tablets | Google Play internal testing |
-| **Maktaba TV** | Android TV and Google TV | Google Play internal testing; or sideload `maktaba-tv-<version>.apk` when a release carries it (only signed builds are attached) |
-| **Maktaba Player** | Windows, Linux | `Maktaba-Player_<v>_x64.msi`, `.deb`, `.rpm` from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest); it updates itself (Help → Check for updates) |
-| **Maktaba** (the server and the web app) | Mac, Windows, Linux | the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest) (see [above](#install-the-home-server)); it updates itself |
-| **Web app** | any browser | the home's address, port `8088`; or through Maktaba Cloud |
+| App | Platform | How to get it | Built by |
+|---|---|---|---|
+| **Maktaba Player** (watch) | iPhone · iPad (*Maktaba Player for iPad*) · Mac, macOS 15+ (*Maktaba Player for Mac*) | TestFlight | [`testflight.yml`](.github/workflows/testflight.yml) |
+| **Maktaba Remote** (run the home; admins only) | iPhone | TestFlight | [`testflight.yml`](.github/workflows/testflight.yml) |
+| **Maktaba Remote** for iPad | iPad | not on TestFlight yet: the `Maktaba Remote iPad` scheme (`com.hamzalabs.maktaba.remote.tablet`) builds from source, but no release uploads it | — |
+| **Maktaba TV** | Apple TV (tvOS 26) | TestFlight on the Apple TV | [`testflight.yml`](.github/workflows/testflight.yml) |
+| **Maktaba Player** and **Maktaba Remote** | Android phones, foldables and tablets | Google Play internal testing (`maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, signed with the Play upload key) | [`play-bundles.yml`](.github/workflows/play-bundles.yml) |
+| **Maktaba TV** | Android TV and Google TV | Google Play internal testing (`maktaba-tv-<version>.aab`); or sideload `maktaba-tv-<version>.apk` when a release carries it (only signed builds are attached) | [`play-bundles.yml`](.github/workflows/play-bundles.yml), [`tv-release.yml`](.github/workflows/tv-release.yml) |
+| **Maktaba Player** | Windows (x64), Linux (x86_64, aarch64) | `Maktaba-Player_<v>_x64.msi`, `maktaba-player_<v>_<amd64\|arm64>.deb`, `maktaba-player-<v>.<x86_64\|aarch64>.rpm` (each with a `.sig`) from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest); it updates itself from `latest-player.json` (Help → Check for updates) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Maktaba** (the server and the web app) | Mac, Apple silicon only (no Intel build since v0.3.15) | one `.dmg`, the whole server inside | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Maktaba** (the server and the web app) | Windows (x64) | NSIS `-setup.exe` with the server inside (current user, `%LOCALAPPDATA%\Maktaba`), plus a portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Maktaba** (the server and the web app) | Linux with a desktop (x86_64, aarch64) | `.AppImage`, `.deb`, `.rpm`, the whole server inside (ffmpeg is the distribution's) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Maktaba** (the server) | Linux without a desktop (x86_64, aarch64) | `maktaba-linux-payload-<version>-<x86_64\|aarch64>.tar.gz`, through `install.sh --app` ([above](#install-the-home-server)) | [`release.yml`](.github/workflows/release.yml) |
+| **Web app** | any browser | the home's address, port `8088`; or through Maktaba Cloud. The bundle alone, to self-host: `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (each tag) · [`web-release.yml`](.github/workflows/web-release.yml) (rebuild on demand) |
+
+The server apps update themselves ([above](#install-the-home-server)). The server binaries and
+container images come from [`release.yml`](.github/workflows/release.yml) too.
 
 **Signing in a TV or a device by code.** A TV (or a phone or computer that chooses *With a
 code*) shows a code like `ABCD-1234` and a QR code. Approve it from an app that is already
@@ -282,11 +311,62 @@ the Remote (and the Android Player) shows a banner with **Enter code**, and the 
 notification when notifications are allowed. Older apps call it **Approve a sign-in**, under the
 person icon. The device is signed in as you, with your role.
 
-The older Capacitor web-app wrapper (`apps/mobile`, `maktaba-<version>.apk`) is not one of
-these apps. Installed by hand, it shows a *New version available* banner with *Get update*
-when a newer release exists ([docs/auto-update.md](docs/auto-update.md)).
+**The older web-app wrapper** (`apps/mobile`, Capacitor: `maktaba-<version>.apk` and `.aab`,
+and an unsigned `maktaba-<version>.ipa`, from
+[`mobile-release.yml`](.github/workflows/mobile-release.yml)) is not one of these apps.
+Installed by hand, it shows a *New version available* banner with *Get update* when a newer
+release exists ([docs/auto-update.md](docs/auto-update.md)).
 
 The user guide for every app is in the web app at `/help` (Help → Apps), in English and Arabic.
+
+**Signing status.** The TestFlight builds are signed by Xcode's cloud signing, and the
+Play bundles with the upload key. The desktop installers are signed and notarized only when
+the Apple Developer ID and Windows Authenticode secrets are set; until then they are
+**unsigned**. The desktop apps' **updates are signed** with the Tauri
+updater key: the release workflow signs them with the repository's secret and
+stamps the public key (the `TAURI_UPDATER_PUBKEY` variable) into
+`tauri.conf.json` at build time, so the apps take only updates signed with it
+([auto-update](docs/auto-update.md)). Android signs
+automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
+`ANDROID_KEY_PASSWORD` secrets are set. Without them the APKs are built
+unsigned, kept as workflow artifacts and not attached to the Release.
+
+### Build the apps from source
+
+The Player, Remote and TV apps are native and talk to the home's API
+([Epic 42](specs/epics/42-apps-player-remote-server/README.md),
+[Epic 48](specs/epics/48-native-players/README.md)). The desktop apps that carry the
+server wrap the `web/` bundle. All shells live under [`apps/`](apps/):
+
+| Target | Stack | Build |
+|---|---|---|
+| Player (iPhone, iPad, Mac) and Remote (iPhone, iPad) | **SwiftUI** + the shared `MaktabaKit` ([`apps/apple/`](apps/apple/)) | `xcodebuild` (see its README) |
+| Android: Player and Remote | **Jetpack Compose** on the shared `client` ([`apps/android/`](apps/android/)) | `./gradlew` (see its README) |
+| Windows, Linux: Player | **Compose for Desktop** ([`apps/desktop-player/`](apps/desktop-player/)) | `./gradlew packageMsi` / `packageDeb packageRpm` |
+| Apple TV | **SwiftUI + AVKit** ([`apps/tv/tvos/`](apps/tv/tvos/), scheme `Maktaba TV`) — native 10-foot UI | `make tv-build-ios` |
+| Android TV | **Compose-for-TV + Media3** ([`apps/tv/android/`](apps/tv/android/)) — native 10-foot UI | `make tv-build-android` |
+| macOS / Windows / Linux: the server app | **Tauri 2** ([`apps/desktop/`](apps/desktop/)) — wraps `web/dist`, carries the server | `make desktop-build` |
+| iOS + Android (older web-app wrapper) | **Capacitor 6** ([`apps/mobile/`](apps/mobile/)) — wraps `web/dist` | `make mobile-build` |
+
+```sh
+make mobile-build      # web build + cap sync (needs Xcode/CocoaPods, Android SDK+JDK)
+make desktop-build     # Tauri build for the host OS (needs the Rust toolchain)
+make native-sync       # rebuild web/dist and cap sync it into the native platforms
+make tv-build-ios      # tvOS core (swift build); device builds via xcodebuild
+make tv-build-android  # Android TV debug APK (needs the Android SDK)
+```
+
+To build any client package locally, mirror CI with the `make package-*`
+targets (`package-desktop`, `package-mobile-android`,
+`package-mobile-ios`, `package-tv-android`, or `package-all`).
+
+The native apps use `com.hamzalabs.maktaba.player` (`.player.tablet` on iPad,
+`.player.mac` on the Mac), `com.hamzalabs.maktaba.remote` (`.remote.tablet` on iPad) and
+`com.hamzalabs.maktaba.tv`; the Capacitor and Tauri wrappers share `com.hamzalabs.maktaba`.
+All take `maktaba://connect` links. Generated native projects
+(`apps/mobile/{ios,android}`, `apps/desktop/src-tauri/{target,gen}`, the
+TV build outputs) and signing material are not checked in — see each
+shell's README for the toolchain prerequisites and signing setup.
 
 ---
 
@@ -316,81 +396,6 @@ provisioning, and operations — is in
 
 ---
 
-## Native apps
-
-The Player, Remote and TV apps are native and talk to the home's API
-([Epic 42](specs/epics/42-apps-player-remote-server/README.md),
-[Epic 48](specs/epics/48-native-players/README.md)). The desktop apps that carry the
-server wrap the `web/` bundle. All shells live under [`apps/`](apps/):
-
-| Target | Stack | Build |
-|---|---|---|
-| iPhone, iPad, Mac: Player and Remote | **SwiftUI** + the shared `MaktabaKit` ([`apps/apple/`](apps/apple/)) | `xcodebuild` (see its README) |
-| Android: Player and Remote | **Jetpack Compose** on the shared `client` ([`apps/android/`](apps/android/)) | `./gradlew` (see its README) |
-| Windows, Linux: Player | **Compose for Desktop** ([`apps/desktop-player/`](apps/desktop-player/)) | `./gradlew packageMsi` / `packageDeb packageRpm` |
-| Apple TV | **SwiftUI + AVKit** ([`apps/tv/tvos/`](apps/tv/tvos/), scheme `Maktaba TV`) — native 10-foot UI | `make tv-build-ios` |
-| Android TV | **Compose-for-TV + Media3** ([`apps/tv/android/`](apps/tv/android/)) — native 10-foot UI | `make tv-build-android` |
-| macOS / Windows / Linux: the server app | **Tauri 2** ([`apps/desktop/`](apps/desktop/)) — wraps `web/dist`, carries the server | `make desktop-build` |
-| iOS + Android (older web-app wrapper) | **Capacitor 6** ([`apps/mobile/`](apps/mobile/)) — wraps `web/dist` | `make mobile-build` |
-
-```sh
-make mobile-build      # web build + cap sync (needs Xcode/CocoaPods, Android SDK+JDK)
-make desktop-build     # Tauri build for the host OS (needs the Rust toolchain)
-make native-sync       # rebuild web/dist and cap sync it into the native platforms
-make tv-build-ios      # tvOS core (swift build); device builds via xcodebuild
-make tv-build-android  # Android TV debug APK (needs the Android SDK)
-```
-
-The native apps use `com.hamzalabs.maktaba.player` (`.player.tablet` on iPad,
-`.player.mac` on the Mac), `com.hamzalabs.maktaba.remote` and `com.hamzalabs.maktaba.tv`;
-the Capacitor and Tauri wrappers share `com.hamzalabs.maktaba`. All take `maktaba://connect`
-links. Generated native projects
-(`apps/mobile/{ios,android}`, `apps/desktop/src-tauri/{target,gen}`, the
-TV build outputs) and signing material are not checked in — see each
-shell's README for the toolchain prerequisites and signing setup.
-
----
-
-## Downloads
-
-Every `git tag vX.Y.Z && git push --tags` fans out to per-client
-packaging workflows that attach installable artifacts to the
-[GitHub Release](https://github.com/Hamza-Labs-Core/Maktaba/releases) for
-that tag. Server binaries, container images, and the web bundle come from
-[`release.yml`](.github/workflows/release.yml); the client apps come from
-the workflows below.
-
-| Platform | Artifact(s) | Workflow |
-|---|---|---|
-| **Web** (self-host the SPA) | `maktaba-web-<version>.tar.gz` | [`release.yml`](.github/workflows/release.yml) (auto) · [`web-release.yml`](.github/workflows/web-release.yml) (on-demand rebuild) |
-| **Desktop — macOS** | two `.dmg`s (built on macos-15): Apple Silicon with the whole server inside, Intel the client only | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Windows** | NSIS `-setup.exe` with the server inside (current user, `%LOCALAPPDATA%\Maktaba`) + portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Desktop — Linux** | `.AppImage` + `.deb` + `.rpm` (x86_64, aarch64), the whole server inside (ffmpeg is the distribution's) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Server — Linux without a desktop** | `maktaba-linux-payload-<version>-<x86_64\|aarch64>.tar.gz` (`install.sh --app`) | [`release.yml`](.github/workflows/release.yml) |
-| **Player — Windows, Linux** | `Maktaba-Player_<v>_x64.msi`, `maktaba-player_<v>_<amd64\|arm64>.deb`, `maktaba-player-<v>.<x86_64\|aarch64>.rpm` (each with a `.sig`) + `latest-player.json` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
-| **Apple — TestFlight** | Maktaba Player (iPhone, iPad, Mac), Maktaba Remote (iPhone), Maktaba TV (Apple TV), uploaded to App Store Connect ([docs/testflight.md](docs/testflight.md)) | [`testflight.yml`](.github/workflows/testflight.yml) |
-| **Google Play — native Android** | `maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, `maktaba-tv-<version>.aab` (signed with the Play upload key), uploaded to each app's internal testing track ([docs/google-play.md](docs/google-play.md)) | [`play-bundles.yml`](.github/workflows/play-bundles.yml) |
-| **TV — Android TV (sideload)** | `maktaba-tv-<version>.apk`, attached only when signed | [`tv-release.yml`](.github/workflows/tv-release.yml) |
-| **Older web-app wrapper** | `maktaba-<version>.apk` + `.aab`, `maktaba-<version>.ipa` (unsigned) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
-
-**Signing status.** The TestFlight builds are signed by Xcode's cloud signing, and the
-Play bundles with the upload key. The desktop installers are signed and notarized only when
-the Apple Developer ID and Windows Authenticode secrets are set; until then they are
-**unsigned**. The desktop apps' **updates are signed** with the Tauri
-updater key: the release workflow signs them with the repository's secret and
-stamps the public key (the `TAURI_UPDATER_PUBKEY` variable) into
-`tauri.conf.json` at build time, so the apps take only updates signed with it
-([auto-update](docs/auto-update.md)). Android signs
-automatically when the `ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` /
-`ANDROID_KEY_PASSWORD` secrets are set. Without them the APKs are built
-unsigned, kept as workflow artifacts and not attached to the Release.
-
-To build any client package locally, mirror CI with the `make package-*`
-targets (`package-desktop`, `package-mobile-android`,
-`package-mobile-ios`, `package-tv-android`, or `package-all`).
-
----
-
 ## Project structure
 
 ```
@@ -401,7 +406,7 @@ maktaba/
 ├── cloud/                # Go cloud relay service (Epic 25) — hosted SaaS
 ├── web/                  # React PWA, the in-app help (src/help), design system, wiki app (Epics 11, 17, 41)
 ├── apps/
-│   ├── apple/            # SwiftUI Player + Remote (iPhone, iPad, Mac), MaktabaKit (Epics 42, 48)
+│   ├── apple/            # SwiftUI Player (iPhone, iPad, Mac) + Remote (iPhone, iPad), MaktabaKit (Epics 42, 48)
 │   ├── android/          # Compose Player + Remote (phone, foldable, tablet) (Epics 42, 48)
 │   ├── desktop-player/   # Compose for Desktop Player for Windows / Linux (Epic 42)
 │   ├── desktop/          # Tauri app for mac/Win/Linux that carries the server (Epics 13, 36–39)

@@ -15,7 +15,7 @@ media volume for the video files. Apps and the optional cloud talk to them.
 | Streaming | Go | HLS and DASH origin. FFmpeg transcode and remux, range serving, subtitles, sprites, and the live TV channels. |
 | Pipeline | Python | Scanner, probe, audio extraction, Whisper transcription (MLX, faster-whisper or OpenAI), embeddings, indexing, diarization. Drains the job queue. |
 | Web | React, TypeScript, Vite | The web app (a PWA) and the in-app user guide at `/help`. The desktop server apps show it. |
-| Native apps | Swift, Kotlin | Maktaba Player and Maktaba Remote (iPhone, iPad, Mac, Android), Maktaba TV (Apple TV, Android TV), and the Player for Windows and Linux. |
+| Native apps | Swift, Kotlin | Maktaba Player (iPhone, iPad, Mac, Android, Windows, Linux), Maktaba Remote (iPhone, iPad, Android) and Maktaba TV (Apple TV, Android TV). |
 | Cloud relay (optional) | Go | Hosted layer for remote access: identity, server linking, a WSS-tunnelled HTTP relay and push fan-out. Lives in `cloud/`. |
 
 `maktaba-server` bundles the API, streaming and the web UI into one binary for

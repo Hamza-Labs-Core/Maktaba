@@ -19,7 +19,7 @@ the top-level folders. Browse them on
 | Folder | What lives there |
 |---|---|
 | `web/` | The React web app (`web/src/`, with the user guide in `web/src/help/` and strings in `web/src/i18n/`), the design system and tokens (`web/design-system/`), the cloud web app, the wiki app, and packages under `web/packages/` (including `devportal`, which builds maktaba.dev). Managed with `pnpm`. |
-| `apps/apple/` | SwiftUI apps: Maktaba Player and Maktaba Remote for iPhone, iPad and Mac, and the shared `MaktabaKit` Swift package. |
+| `apps/apple/` | SwiftUI apps: Maktaba Player for iPhone, iPad and Mac, Maktaba Remote for iPhone and iPad, and the shared `MaktabaKit` Swift package. |
 | `apps/android/` | Jetpack Compose apps: Player and Remote, on a portable `client` module and a shared `core`. |
 | `apps/tv/` | Maktaba TV for tvOS (Swift) and Android TV (Kotlin). |
 | `apps/desktop-player/` | Compose for Desktop Player for Windows and Linux. |
