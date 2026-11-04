@@ -454,6 +454,13 @@ func TestAnOffComponentReadsOffWhateverItsStalePartsSay(t *testing.T) {
 	if roll, _, _, _ := statusOn(draining, g, true); roll.Phase != components.PhaseDraining {
 		t.Fatalf("draining part: %s", roll.Phase)
 	}
+	// and so is one still at the old generation: it is stopping, not stale (the API's
+	// loops drain before they report off; components-live T14)
+	oldDrain := slices.Clone(in)
+	oldDrain[2].Phase, oldDrain[2].Conditions = components.PhaseDraining, nil
+	if roll, _, _, _ := statusOn(oldDrain, g, true); roll.Phase != components.PhaseDraining {
+		t.Fatalf("draining part at the old generation: %s", roll.Phase)
+	}
 	// held: the stale part reads stopped, held
 	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled,
 		Hold: &store.Hold{By: "admin:test"}, Generation: 5}

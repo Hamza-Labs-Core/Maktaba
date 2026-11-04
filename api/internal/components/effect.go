@@ -284,10 +284,12 @@ func settle(rows []store.Status, g gate) []store.Status {
 
 // quiet is rows with each one that observed a generation older than g's read as g's
 // phase (Ready false, with g's reason): g is closed, and the part has not reported since.
+// A part that drains is acting on the change (the API's loops stop, then report off at
+// the new generation): it keeps its word, so the component never reads off first.
 func quiet(rows []store.Status, g gate) []store.Status {
 	out, copied := rows, false
 	for i, r := range rows {
-		if r.ObservedGeneration >= g.gen || r.Phase == g.phase {
+		if r.ObservedGeneration >= g.gen || r.Phase == g.phase || r.Phase == components.PhaseDraining {
 			continue
 		}
 		if !copied {
