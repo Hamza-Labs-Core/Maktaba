@@ -524,3 +524,27 @@ func TestBound(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// A desired row whose id this release's catalog does not know (story 51.02: a newer
+// release wrote it before a rollback) is ignored and logged component_unknown once, not
+// on every pass.
+func TestUnknownComponentLoggedOnce(t *testing.T) {
+	var mu sync.Mutex
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(lockedWriter{&mu, &buf}, nil))
+	r := newRunner(t, newClock(), func(o *Options) { o.Logger = logger })
+	desired := map[string]store.Desired{"livetv": enabled("livetv"), "from.the.future": enabled("from.the.future")}
+	for i := 0; i < 3; i++ {
+		r.Apply(desired)
+	}
+	r.Apply(map[string]store.Desired{"from.the.future": installed("from.the.future"), "also.new": enabled("also.new")})
+	mu.Lock()
+	defer mu.Unlock()
+	out := buf.String()
+	if n := strings.Count(out, "component=from.the.future event=component_unknown"); n != 1 {
+		t.Fatalf("from.the.future logged %d times:\n%s", n, out)
+	}
+	if !strings.Contains(out, "also.new") || strings.Contains(out, "component=livetv event=component_unknown") {
+		t.Fatalf("log:\n%s", out)
+	}
+}

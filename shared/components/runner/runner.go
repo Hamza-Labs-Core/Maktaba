@@ -191,6 +191,10 @@ type Runner struct {
 	// licWake is when a published licence next ends (zero: none): the gates are computed
 	// again then, so a component stops on time whether or not the API answers.
 	licWake time.Time
+	// unknown are the desired rows' ids this release's catalog does not know (a newer
+	// release wrote them before a rollback), each logged once: they are ignored, and the
+	// desired state is read again on every change and every poll.
+	unknown map[string]bool
 }
 
 // New is a runner for o.Host. Its gates start on (the database is not read yet): a loop
@@ -357,6 +361,17 @@ func (r *Runner) Apply(desired map[string]store.Desired) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for id := range desired {
+		if _, ok := r.cat.Get(id); ok || r.unknown[id] {
+			continue
+		}
+		if r.unknown == nil {
+			r.unknown = map[string]bool{}
+		}
+		r.unknown[id] = true
+		r.log.Warn("components: a desired row names a component this release does not know; it is ignored",
+			"host", r.host, "component", id, "event", "component_unknown")
+	}
 	r.desired = desired
 	r.computeGates()
 	r.apply()
