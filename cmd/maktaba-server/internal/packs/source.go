@@ -81,6 +81,33 @@ func NewNet(repo string, c *http.Client) *Net {
 	return &Net{HTTP: c, Releases: "https://github.com/" + repo + "/releases/download", HF: "https://huggingface.co"}
 }
 
+// The environment that points the network source elsewhere (a test stack, a mirror on
+// a network with no GitHub), as MAKTABA_UPDATE_REPO points the updates: the release
+// download base (its files at <base>/v<version>/<name>), Hugging Face's endpoint (the
+// variable huggingface_hub reads, so the pipeline and the packs agree) and Ollama's
+// registry. What is fetched is verified against the signed index all the same.
+const (
+	EnvReleasesURL    = "MAKTABA_PACKS_URL"
+	EnvHFEndpoint     = "HF_ENDPOINT"
+	EnvOllamaRegistry = "MAKTABA_OLLAMA_REGISTRY"
+)
+
+// WithEnv is n with each base getenv names (EnvReleasesURL, EnvHFEndpoint,
+// EnvOllamaRegistry) in place of its default; a value that is not an http(s) URL is
+// ignored.
+func (n *Net) WithEnv(getenv func(string) string) *Net {
+	for _, o := range []struct {
+		env string
+		to  *string
+	}{{EnvReleasesURL, &n.Releases}, {EnvHFEndpoint, &n.HF}, {EnvOllamaRegistry, &n.OllamaRegistry}} {
+		v := strings.TrimRight(strings.TrimSpace(getenv(o.env)), "/")
+		if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+			*o.to = v
+		}
+	}
+	return n
+}
+
 func (n *Net) Kind() string { return "network" }
 
 func (n *Net) releaseURL(version, name string) string {

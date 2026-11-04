@@ -138,7 +138,7 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 	}
 	trust := &rv.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore")}
 	home := hfHome(cfg)
-	net := packs.NewNet(id.Repo(), nil)
+	net := packs.NewNet(id.Repo(), nil).WithEnv(os.Getenv)
 	net.Token = func() string {
 		if t := strings.TrimSpace(os.Getenv("HF_TOKEN")); t != "" {
 			return t

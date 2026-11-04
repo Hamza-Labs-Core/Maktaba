@@ -50,7 +50,7 @@ func (p *Packs) source(j *Journal) packs.Source {
 		n.URLs[k] = v
 	}
 	if base, ok := p.M.Net.(*packs.Net); ok && base != nil {
-		n.HF, n.Token = base.HF, base.Token
+		n.HF, n.OllamaRegistry, n.Token = base.HF, base.OllamaRegistry, base.Token
 	}
 	return n
 }

@@ -191,3 +191,37 @@ func TestOllamaSources(t *testing.T) {
 		}
 	}
 }
+
+// The environment points the network source elsewhere, as MAKTABA_UPDATE_REPO points the
+// updates: the release files, Hugging Face and Ollama's registry are fetched from the
+// bases it names; a value that is not an http(s) URL leaves the default.
+func TestTheNetworkSourceFollowsTheEnvironment(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	env := map[string]string{
+		EnvReleasesURL:    srv.URL + "/mirror/",
+		EnvHFEndpoint:     srv.URL + "/hf",
+		EnvOllamaRegistry: srv.URL + "/ollama",
+	}
+	n := NewNet("acme/fork", srv.Client()).WithEnv(func(k string) string { return env[k] })
+	_, _ = n.Signed(context.Background(), "0.4.2")
+	if len(got) == 0 || got[0] != "/mirror/v0.4.2/"+rv.ChecksumsFile {
+		t.Fatalf("the release files were asked at %v, want under /mirror/v0.4.2/", got)
+	}
+	if u := n.ollamaURL(ModelFile{Repo: "library/qwen2.5", Rev: "7b", Path: "manifest"}); u != srv.URL+"/ollama/v2/library/qwen2.5/manifests/7b" {
+		t.Errorf("ollama manifest URL %s", u)
+	}
+	if n.HF != srv.URL+"/hf" {
+		t.Errorf("HF %s", n.HF)
+	}
+	d := NewNet("acme/fork", nil).WithEnv(func(k string) string {
+		return map[string]string{EnvReleasesURL: "file:///x", EnvHFEndpoint: " "}[k]
+	})
+	if d.Releases != "https://github.com/acme/fork/releases/download" || d.HF != "https://huggingface.co" {
+		t.Errorf("a value that is no URL changed the defaults: %s %s", d.Releases, d.HF)
+	}
+}

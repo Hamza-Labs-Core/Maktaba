@@ -186,6 +186,21 @@ func TestPacksManagerPutsOllamaWhereTheServerLooks(t *testing.T) {
 	}
 }
 
+// This machine's Manager downloads from the bases the environment names
+// (MAKTABA_PACKS_URL, HF_ENDPOINT, MAKTABA_OLLAMA_REGISTRY).
+func TestPacksManagerDownloadsFromTheEnvironmentsSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(home, "server.toml"))
+	t.Setenv(packs.EnvReleasesURL, "http://127.0.0.1:9/releases")
+	t.Setenv(packs.EnvHFEndpoint, "http://127.0.0.1:9/hf")
+	t.Setenv(packs.EnvOllamaRegistry, "http://127.0.0.1:9/ollama")
+	n, ok := newPacksManager(config.Defaults(), "", io.Discard).Net.(*packs.Net)
+	if !ok || n.Releases != "http://127.0.0.1:9/releases" || n.HF != "http://127.0.0.1:9/hf" || n.OllamaRegistry != "http://127.0.0.1:9/ollama" {
+		t.Fatalf("the Manager's network source %+v", n)
+	}
+}
+
 func TestPackVenvSpec(t *testing.T) {
 	payload := t.TempDir()
 	t.Setenv("MAKTABA_APP_BUNDLE", payload)
