@@ -565,9 +565,20 @@ class PlayerUITestCase: XCTestCase {
     /// 2026: four runs, iPhone and iPad), while the same tests passed on the same commits on
     /// other runners. A drag that moves for half a second and stops before it lifts is
     /// followed however its touches are paced.
+    ///
+    /// It holds still for 3 s before it moves. A scroll view takes no pan while the system
+    /// may still claim the touch (SpringBoard's own gestures have to fail first), and on a
+    /// saturated runner that decision came late: in an iPad run of #608 the simulator's log
+    /// has SpringBoard silent from the touch-down until "UIKit magic hysteresis reached with
+    /// no gestures still recognizing", 1.34 s later and after the lift, while the app logged
+    /// "ignoring pan gesture … because system gestures are possible" for every move, so a
+    /// 300-pt drag mid-screen moved nothing. Every other drag of that run was decided within
+    /// 0.3 s. The hold lets the decision land before the finger moves; 3 s is the margin over
+    /// the 1.34 s seen, so it is not to be shortened. The guide's cells have no long-press
+    /// action, so the hold itself does nothing.
     func drag(_ element: XCUIElement, by offset: CGVector, from point: CGVector = CGVector(dx: 0.5, dy: 0.5)) {
         let start = element.coordinate(withNormalizedOffset: point)
-        start.press(forDuration: 0.05, thenDragTo: start.withOffset(offset),
+        start.press(forDuration: 3, thenDragTo: start.withOffset(offset),
                     withVelocity: XCUIGestureVelocity(rawValue: 400), thenHoldForDuration: 0.3)
     }
 
