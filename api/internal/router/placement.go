@@ -132,6 +132,8 @@ func buildPlacement() placement.Table {
 		"/api/queues/offline-summary",
 		"/api/queues/offline-items",
 		"/api/queues/youtube-downloads",
+		// slot 0175: the last Tartube import and the file beside the library folders
+		"/api/queues/youtube-tartube",
 		"/api/queues/file-actions",
 		"/api/queues/duplicates",
 		"/api/workers",

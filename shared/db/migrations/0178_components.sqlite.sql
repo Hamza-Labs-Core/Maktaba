@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0175 (Epic 51, story 51.02): the four component tables,
+-- SQLite parity sibling for slot 0178 (Epic 51, story 51.02): the four component tables,
 -- the triggers that move generation and component_meta.revision, and the
 -- component_catchup stage row. SQLite has no NOTIFY (runners poll the revision every
 -- 30 s), no roles and no SECURITY DEFINER functions: a single-process SQLite rig is the

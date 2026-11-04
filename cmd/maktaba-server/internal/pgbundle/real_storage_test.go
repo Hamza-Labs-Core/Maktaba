@@ -5,12 +5,12 @@ package pgbundle
 import (
 	"context"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/storage"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // TestRealStorageMove moves a real cluster (a scratch one in a temp dir) to
@@ -21,12 +21,7 @@ func TestRealStorageMove(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("postgres refuses to run as root")
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	port := testport.Free(t)
 	base, err := os.MkdirTemp("", "mkmv") // short: the unix socket path is limited
 	if err != nil {
 		t.Fatal(err)

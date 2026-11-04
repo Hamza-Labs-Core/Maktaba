@@ -1,4 +1,4 @@
-"""Slot 0175 (story 51.02) on both dialects: the component tables, the change signal
+"""Slot 0178 (story 51.02) on both dialects: the component tables, the change signal
 (revision and generation), the catch-up stage row, and the pipeline's store over them.
 On Postgres also the guarded writes: a machine's login reports its own status and no
 other machine's, and writes no component table directly."""

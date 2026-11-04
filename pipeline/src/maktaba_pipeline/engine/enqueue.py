@@ -76,7 +76,7 @@ def prepend_reason(old: list[Any], entry: dict[str, Any]) -> list[Any]:
 
 def merge_payload(old: dict[str, Any] | None, new: dict[str, Any] | None) -> dict[str, Any] | None:
     """Keep the original payload; the merged keys are ``seasons`` (set union) and
-    ``components`` (the catch-up's entries, a union too: slot 0177)."""
+    ``components`` (the catch-up's entries, a union too: slot 0180)."""
     if old is None:
         return new
     if not new or not isinstance(old, dict):
@@ -197,7 +197,7 @@ async def _enqueue_sqlite(
         )
         if s is None:
             return EnqueueResult(None, "unknown_stage")
-        # Epic 51 (slot 0177): a stage its component switched off makes no job; one its
+        # Epic 51 (slot 0180): a stage its component switched off makes no job; one its
         # component holds (stopped until started) queues as usual, and the job waits
         if not s["enabled"] and s["disabled_reason"] != "component_held":
             if s["disabled_reason"] == "component_off":

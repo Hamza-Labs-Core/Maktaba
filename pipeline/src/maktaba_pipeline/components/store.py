@@ -1,4 +1,4 @@
-"""What should run and what does (Epic 51, slot 0175): the pipeline's side of the
+"""What should run and what does (Epic 51, slot 0178): the pipeline's side of the
 component tables, the twin of ``shared/components/store`` in Go.
 
 The API alone writes desired state (``components``, ``component_overrides``). The

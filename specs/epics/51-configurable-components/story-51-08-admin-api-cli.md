@@ -100,7 +100,7 @@ with 51.02's shape: `category = 'components'`, `action = component.<verb>` with 
 `actor_user_id`, `actor_source` (`web`, `cli`, `remote`), `target_kind = 'component'`,
 `target_id = <id>`, and `payload = {before, after, batch_id}`. `restart` changes no
 desired row but is audited the same way. The `components` category must be in
-`audit_log_category_check`; 51.02's migration `0175_components` adds it (the pattern of
+`audit_log_category_check`; 51.02's migration `0178_components` adds it (the pattern of
 `0157_feature_flags.sql` and `0160_audit_server.sql`). The Audit log page shows the rows with
 no change.
 

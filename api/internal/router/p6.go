@@ -46,6 +46,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
@@ -369,6 +370,7 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	queuesHandler.Secrets = d.Secrets
 	queuesHandler.Sources = ytdlp
+	queuesHandler.LocalPath = libpaths.ToLocal
 	if d.OnQueues != nil {
 		d.OnQueues(queuesHandler)
 	}

@@ -2116,6 +2116,90 @@
     "/tags/16/description": {
       "en": "Turn each part of Maktaba on or off, stop and start it, and see what runs on each machine. The capabilities route is open to every signed-in client; the rest are admin only.",
       "ar": "تشغيل كل جزء من مكتبة أو إيقافه، وإيقافه مؤقتًا واستئنافه، ومعرفة ما يعمل على كل جهاز. مسار القدرات متاح لكل عميل مسجَّل الدخول، وبقية المسارات للمشرفين وحدهم."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}/patch/summary": {
+      "en": "Switch a source on or off, or change its mode, folder or options",
+      "ar": "تشغيل مصدر أو إيقافه، أو تغيير وضعه أو مجلده أو خياراته"
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}/patch/description": {
+      "en": "`on: false` turns the source off; `on: true` turns it on in the mode it had when it was last on (`last_on_mode`), else `new_and_backfill`, and queues the library's refresh. `on` and `mode` cannot be sent together. Home admins only (403 otherwise); audited.",
+      "ar": "يوقف `on: false` المصدر؛ ويشغّله `on: true` على الوضع الذي كان عليه آخر مرة شُغّل فيها (`last_on_mode`)، وإلا فعلى `new_and_backfill`، ويضع تحديث المكتبة في الطابور. ولا يُرسل `on` و`mode` معًا. لمديري المنزل فقط (وإلا 403)؛ ويُسجَّل في سجل التدقيق."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}/patch/requestBody/content/application~1json/schema/properties/on/description": {
+      "en": "The switch: false is off, true restores the last mode it had on.",
+      "ar": "المفتاح: false إيقاف، وtrue يعيد آخر وضع كان عليه وهو مشغّل."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}/patch/responses/200/description": {
+      "en": "The source as written, and the refresh it queued (null when none).",
+      "ar": "المصدر كما كُتب، والتحديث الذي وضعه في الطابور (null إن لم يضع شيئًا)."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}/patch/responses/200/content/application~1json/schema/properties/source/properties/last_on_mode/description": {
+      "en": "The mode the source had when it was last on: what `on: true` restores.",
+      "ar": "الوضع الذي كان عليه المصدر آخر مرة شُغّل فيها: ما يعيده `on: true`."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}/patch/responses/422/description": {
+      "en": "`on` with `mode`, an unknown mode, or bad options.",
+      "ar": "`on` مع `mode`، أو وضع غير معروف، أو خيارات غير صالحة."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1guess/post/summary": {
+      "en": "Look for the channel a library's files come from",
+      "ar": "البحث عن القناة التي جاءت منها ملفات المكتبة"
+    },
+    "/paths/~1libraries~1{id}~1youtube~1guess/post/description": {
+      "en": "Reads the YouTube ids in the library's file names (`#<id>`, `[<id>]`) and up to 40 of its `.info.json` files, and resolves them through what Maktaba already knows of YouTube, with no network. The answer is kept and shown on the library's card; nothing is added or turned on. Home admins only (403 otherwise); audited.",
+      "ar": "يقرأ معرّفات يوتيوب في أسماء ملفات المكتبة (`#<id>`، `[<id>]`) وحتى 40 من ملفات `.info.json` فيها، ويطابقها بما يعرفه Maktaba عن يوتيوب، دون اتصال بالشبكة. ويُحفظ الجواب ويظهر في بطاقة المكتبة؛ ولا يُضاف شيء ولا يُشغَّل. لمديري المنزل فقط (وإلا 403)؛ ويُسجَّل في سجل التدقيق."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1guess/post/responses/200/description": {
+      "en": "What it found: `kind`, `external_id` and `url` are null when it found nothing.",
+      "ar": "ما وجده: تكون `kind` و`external_id` و`url` بقيمة null إن لم يجد شيئًا."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1guess/post/responses/200/content/application~1json/schema/properties/followed_by/description": {
+      "en": "The libraries that already follow it.",
+      "ar": "المكتبات التي تتابعه أصلًا."
+    },
+    "/paths/~1libraries~1{id}~1youtube~1guess/post/responses/404/description": {
+      "en": "No such library.",
+      "ar": "لا توجد مكتبة كهذه."
+    },
+    "/paths/~1queues~1youtube-tartube/get/summary": {
+      "en": "The last Tartube import of every library's sources, and the file to offer",
+      "ar": "آخر استيراد من Tartube لمصادر كل المكتبات، والملف المقترح"
+    },
+    "/paths/~1queues~1youtube-tartube/get/description": {
+      "en": "The newest `youtube_tartube` job with its state and report, and `suggested_path`: a `tartube.db` or `tartube_db_export.json` in the folder that holds the most library folders, when one is found within 3 seconds. Home admins only (403 otherwise).",
+      "ar": "أحدث مهمة `youtube_tartube` بحالتها وتقريرها، و`suggested_path`: ملف `tartube.db` أو `tartube_db_export.json` في المجلد الذي يضم أكثر مجلدات المكتبات، إن وُجد خلال 3 ثوانٍ. لمديري المنزل فقط (وإلا 403)."
+    },
+    "/paths/~1queues~1youtube-tartube/get/responses/200/description": {
+      "en": "The last import (its fields null when there was none) and the suggested path.",
+      "ar": "آخر استيراد (حقوله null إن لم يكن هناك استيراد) والمسار المقترح."
+    },
+    "/paths/~1queues~1youtube-tartube/get/responses/200/content/application~1json/schema/properties/report/description": {
+      "en": "The import's report: `created`, `existing`, `skipped` (each with its `reason`: no_url, not_youtube, search, unrecognised, unresolved) and `not_in_maktaba` (Tartube entries no library's folder matches), each list at most 500 rows, and `counts`.",
+      "ar": "تقرير الاستيراد: `created` و`existing` و`skipped` (لكل منها `reason`: no_url أو not_youtube أو search أو unrecognised أو unresolved) و`not_in_maktaba` (مدخلات Tartube التي لا يطابقها مجلد أي مكتبة)، وفي كل قائمة 500 صف على الأكثر، ثم `counts`."
+    },
+    "/paths/~1queues~1youtube-tartube/post/summary": {
+      "en": "Make every library's YouTube sources from Tartube's records, off",
+      "ar": "إنشاء مصادر يوتيوب لكل المكتبات من سجلات Tartube، متوقفة"
+    },
+    "/paths/~1queues~1youtube-tartube/post/description": {
+      "en": "Queues the `youtube_tartube` job. Each channel or playlist Tartube downloads into a folder that is a library's folder becomes a source of that library with mode `off`, and what Tartube downloaded is counted as downloaded. It is idempotent: a source a library already has keeps its mode. No library is made; x.com and YouTube search pages are skipped and reported. Home admins only (403 otherwise); audited.",
+      "ar": "يضع مهمة `youtube_tartube` في الطابور. كل قناة أو قائمة تشغيل ينزّلها Tartube في مجلد هو مجلد مكتبة تصبح مصدرًا لتلك المكتبة بالوضع `off`، وما نزّله Tartube يُحسب منزَّلًا. وتكراره لا يغيّر النتيجة: المصدر الموجود في المكتبة أصلًا يبقى على وضعه. ولا تُنشأ أي مكتبة؛ وتُتخطّى روابط x.com وصفحات البحث في يوتيوب ويُذكر ذلك في التقرير. لمديري المنزل فقط (وإلا 403)؛ ويُسجَّل في سجل التدقيق."
+    },
+    "/paths/~1queues~1youtube-tartube/post/requestBody/content/application~1json/schema/properties/path/description": {
+      "en": "Tartube's database (`tartube.db`) or its JSON export, on the home.",
+      "ar": "قاعدة بيانات Tartube (`tartube.db`) أو تصديرها بصيغة JSON، على المنزل."
+    },
+    "/paths/~1queues~1youtube-tartube/post/requestBody/content/application~1json/schema/properties/database/description": {
+      "en": "The `tartube.db` to read beside a JSON export that lacks the download records.",
+      "ar": "ملف `tartube.db` الذي يُقرأ بجانب تصدير JSON تنقصه سجلات التنزيل."
+    },
+    "/paths/~1queues~1youtube-tartube/post/responses/202/description": {
+      "en": "Queued.",
+      "ar": "وُضع في الطابور."
+    },
+    "/paths/~1queues~1youtube-tartube/post/responses/422/description": {
+      "en": "A path that is not an absolute path to Tartube's .json export or its .db.",
+      "ar": "مسار ليس مسارًا مطلقًا إلى تصدير Tartube بصيغة .json أو إلى ملف .db."
     }
   }
 }

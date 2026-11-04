@@ -260,7 +260,7 @@ components_chaos:
   - 'pipeline/src/maktaba_pipeline/engine/sync.py'
   - 'pipeline/src/maktaba_pipeline/engine/enqueue.py'
   - 'pipeline/src/maktaba_pipeline/engine/stages/component_catchup.py'
-  - 'shared/db/migrations/0177_component_stage_gate.sql'
+  - 'shared/db/migrations/0180_component_stage_gate.sql'
   - 'tests/components/**'
   - '.github/workflows/_components.yml'
 

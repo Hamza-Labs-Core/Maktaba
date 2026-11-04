@@ -55,7 +55,7 @@ func upStatements(sqlText string) []string {
 	return out
 }
 
-// sqliteDB is a fresh SQLite file with slot 0175's twin.
+// sqliteDB is a fresh SQLite file with slot 0178's twin.
 func sqliteDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "c.db"))
@@ -72,13 +72,13 @@ func sqliteDB(t *testing.T) *sql.DB {
 			t.Fatalf("%v\n%s", err, s)
 		}
 	}
-	twin, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0175_components.sqlite.sql"))
+	twin, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0178_components.sqlite.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range upStatements(string(twin)) {
 		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("0175: %v\n%s", err, s)
+			t.Fatalf("0178: %v\n%s", err, s)
 		}
 	}
 	return db

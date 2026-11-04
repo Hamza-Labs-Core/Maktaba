@@ -19,6 +19,8 @@ import { ApiError } from "../../lib/api";
 import { AdminLibraries } from "./Libraries";
 import { crumbs } from "./libraries/FolderPicker";
 import { cleanRoots } from "./libraries/LibraryForm";
+import { likeNameKey } from "./libraries/YouTubeState";
+import { axeViolations } from "../../test/axe";
 import { renderPage, memberUser, adminUser } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import type { User } from "../../lib/auth";
@@ -461,15 +463,22 @@ describe("AdminLibraries", () => {
       if (locale === "ar") localStorage.setItem("mkt:locale", "ar");
       try {
         const user = userEvent.setup();
-        open(DATA, adminUser, { "/api/libraries/small/youtube/sources": { items: [] } });
+        const withSource = {
+          ...BIG,
+          youtube: { sources: 2, on: 1, source: null, guess: null },
+        };
+        open({ ...DATA, items: [withSource, SMALL] }, adminUser, {
+          "/api/libraries/small/youtube/sources": { items: [] },
+        });
         await screen.findByRole("heading", { level: 2, name: "Othman (dup)" });
+        // a library with sources has YouTube sources…; one with none, Add YouTube source
         expect(
           within(card("Dr. Othman Alkamees")).getByRole("button", {
             name: cat["queue.offline.sources"],
           })
         ).toBeInTheDocument();
         await user.click(
-          within(card("Othman (dup)")).getByRole("button", { name: cat["queue.offline.sources"] })
+          within(card("Othman (dup)")).getByRole("button", { name: cat["libraryAdmin.yt.add"] })
         );
         const title = cat["queue.yt.title"]!.replace("{name}", "");
         const dialog = await screen.findByRole("dialog", { name: new RegExp(title) });
@@ -489,12 +498,252 @@ describe("AdminLibraries", () => {
   });
 });
 
+// slot 0175: each library's YouTube on its card, from the one manage read
+const SRC = "5a000000-0000-4000-8000-0000000000c1";
+const CHAN = "UC" + "q".repeat(22);
+function lib(id: string, name: string, youtube: unknown) {
+  return {
+    ...SMALL,
+    id,
+    name,
+    roots: [{ path: `/media/${id}`, local_path: `/media/${id}`, reachable: true, problem: null }],
+    conflicts: [],
+    youtube,
+  };
+}
+const NONE = { sources: 0, on: 0, source: null, guess: null };
+const ONE_OFF = {
+  sources: 1,
+  on: 0,
+  source: {
+    id: SRC,
+    kind: "channel",
+    external_id: CHAN,
+    url: `https://www.youtube.com/channel/${CHAN}`,
+    mode: "off",
+    last_on_mode: "new_only",
+  },
+  guess: null,
+};
+const GUESS = {
+  kind: "channel",
+  external_id: CHAN,
+  url: `https://www.youtube.com/channel/${CHAN}`,
+  title: "Weekly Lessons",
+  evidence: "filename",
+  sample_youtube_id: "vvvvvvvvvv1",
+  ids_found: 8,
+  ids_matched: 8,
+  looked_at: "2026-11-01T10:00:00Z",
+  followed_by: [] as { id: string; name: string }[],
+};
+
+describe("a library's YouTube on its card", () => {
+  beforeEach(() => {
+    for (const f of [get, post, put, patch, del]) f.mockReset();
+  });
+  afterEach(() => vi.restoreAllMocks());
+  const manage = (...items: unknown[]) => ({ items, conflict_groups: [] });
+
+  it("one source: its state and a switch; on sends {on: true} and reloads", async () => {
+    const user = userEvent.setup();
+    open(manage(lib("l1", "Garden talks", ONE_OFF)));
+    patch.mockResolvedValue({
+      source: { ...ONE_OFF.source, mode: "new_only" },
+      refresh: { outcome: "inserted" },
+    });
+    await screen.findByRole("heading", { level: 2, name: "Garden talks" });
+    const c = card("Garden talks");
+    expect(within(c).getByText("YouTube: 1 source · off")).toBeInTheDocument();
+    const sw = within(c).getByRole("switch", { name: `Downloads ${CHAN}` });
+    expect(sw).not.toBeChecked();
+    expect(sw).toHaveAttribute("aria-checked", "false");
+    expect(within(c).getByRole("button", { name: "YouTube sources…" })).toBeInTheDocument();
+    const reads = get.mock.calls.filter((x) => x[0] === "/api/libraries/manage").length;
+    await user.click(sw);
+    expect(patch).toHaveBeenCalledWith(`/api/libraries/l1/youtube/sources/${SRC}`, { on: true });
+    expect(await within(c).findByRole("status")).toHaveTextContent("Turned on");
+    await waitFor(() =>
+      expect(get.mock.calls.filter((x) => x[0] === "/api/libraries/manage").length).toBe(reads + 1)
+    );
+  });
+
+  it("several sources: a summary and the Sources button, no switch", async () => {
+    open(manage(lib("l2", "Evening circle", { sources: 3, on: 1, source: null, guess: null })));
+    await screen.findByRole("heading", { level: 2, name: "Evening circle" });
+    const c = card("Evening circle");
+    expect(within(c).getByText("YouTube: 3 sources · 1 on")).toBeInTheDocument();
+    expect(within(c).queryByRole("switch")).toBeNull();
+    expect(within(c).getByRole("button", { name: "YouTube sources…" })).toBeInTheDocument();
+  });
+
+  it("none: Add YouTube source, and Look for its channel asks the API", async () => {
+    const user = userEvent.setup();
+    open(manage(lib("l3", "Morning notes", NONE)));
+    post.mockResolvedValue({ ...GUESS, library_id: "l3" });
+    await screen.findByRole("heading", { level: 2, name: "Morning notes" });
+    const c = card("Morning notes");
+    expect(within(c).getByText("YouTube: no source")).toBeInTheDocument();
+    expect(within(c).getByRole("button", { name: "Add YouTube source" })).toBeInTheDocument();
+    expect(within(c).queryByRole("button", { name: "YouTube sources…" })).toBeNull();
+    // the page load asked nothing of YouTube
+    expect(post).not.toHaveBeenCalled();
+    await user.click(within(c).getByRole("button", { name: "Look for its channel" }));
+    expect(post).toHaveBeenCalledWith("/api/libraries/l3/youtube/guess");
+    expect(await within(c).findByRole("status")).toHaveTextContent("Found the channel");
+  });
+
+  it("a guess: Add as source adds it off; a library that follows it offers the merge", async () => {
+    const user = userEvent.setup();
+    const linked = lib("l5", "Weekly Lessons", ONE_OFF);
+    const guessed = lib("l4", "Lessons copy", {
+      ...NONE,
+      guess: { ...GUESS, followed_by: [{ id: "l5", name: "Weekly Lessons" }] },
+    });
+    open(manage(guessed, linked));
+    post.mockResolvedValue({ source: { id: "new" }, refresh: null });
+    await screen.findByRole("heading", { level: 2, name: "Lessons copy" });
+    const c = card("Lessons copy");
+    expect(within(c).getByText(/Looks like channel .*Weekly Lessons/)).toBeInTheDocument();
+    expect(within(c).getByText("(8 of 8 videos, from their file names)")).toBeInTheDocument();
+    await user.click(within(c).getByRole("button", { name: "Add as source" }));
+    expect(post).toHaveBeenCalledWith("/api/libraries/l4/youtube/sources", {
+      url: `https://www.youtube.com/channel/${CHAN}`,
+      mode: "off",
+    });
+    expect(await within(c).findByRole("status")).toHaveTextContent("Added as a source, off.");
+
+    expect(within(c).getByText(/already follows this channel/)).toBeInTheDocument();
+    await user.click(within(c).getByRole("button", { name: /Merge into .*Weekly Lessons/ }));
+    const dialog = await screen.findByRole("dialog", { name: /Merge/ });
+    expect(within(dialog).getByLabelText("Merge into")).toHaveValue("l5");
+  });
+
+  it("a guess that found nothing says so and offers to look again", async () => {
+    open(
+      manage(
+        lib("l6", "Old tapes", {
+          ...NONE,
+          guess: {
+            ...GUESS,
+            kind: null,
+            external_id: null,
+            url: null,
+            title: null,
+            ids_matched: 0,
+          },
+        })
+      )
+    );
+    await screen.findByRole("heading", { level: 2, name: "Old tapes" });
+    const c = card("Old tapes");
+    expect(within(c).getByText("No channel found from its files.")).toBeInTheDocument();
+    expect(within(c).getByRole("button", { name: "Look again" })).toBeInTheDocument();
+    expect(within(c).queryByRole("button", { name: "Add as source" })).toBeNull();
+  });
+
+  it("a like-named library with a source is flagged as maybe the same; no axe violations", async () => {
+    open(manage(lib("l7", "Weekly Lessons archive", NONE), lib("l8", "weekly lessons", ONE_OFF)));
+    await screen.findByRole("heading", { level: 2, name: "Weekly Lessons archive" });
+    const c = card("Weekly Lessons archive");
+    expect(within(c).getByText(/May be the same as .*weekly lessons/)).toBeInTheDocument();
+    expect(
+      within(c).getByRole("button", { name: /Merge into .*weekly lessons/ })
+    ).toBeInTheDocument();
+    // the one with the source is not flagged back
+    expect(within(card("weekly lessons")).queryByText(/May be the same/)).toBeNull();
+    expect(await axeViolations(document.body)).toEqual([]);
+  });
+
+  it("Import from Tartube: the path is offered, editable, and the report lists every kind", async () => {
+    const user = userEvent.setup();
+    let state: unknown = {
+      job_id: null,
+      state: null,
+      error: null,
+      created_at: null,
+      finished_at: null,
+      path: null,
+      report: null,
+      suggested_path: "/media/Youtube/tartube.db",
+    };
+    open(manage(lib("l9", "Garden talks", NONE)), adminUser, {
+      "/api/queues/youtube-tartube": () => state,
+    });
+    post.mockImplementation(() => {
+      state = {
+        job_id: "77",
+        state: "done",
+        error: null,
+        created_at: "2026-11-02T10:00:00Z",
+        finished_at: "2026-11-02T10:01:00Z",
+        path: "/media/Youtube/tartube_db_export.json",
+        suggested_path: "/media/Youtube/tartube.db",
+        report: {
+          entries: 5,
+          created: [
+            { name: "Garden talks", library: "Garden talks", library_id: "l9", kind: "channel" },
+          ],
+          existing: [],
+          skipped: [
+            {
+              name: "A search",
+              url: "https://www.youtube.com/results?search_query=x",
+              reason: "search",
+            },
+          ],
+          not_in_maktaba: [
+            { name: "Elsewhere", kind: "channel", url: "https://www.youtube.com/@elsewhere" },
+          ],
+          counts: {
+            created: 1,
+            existing: 0,
+            skipped: 1,
+            not_in_maktaba: 1,
+            seeded: 4,
+            downloaded: 4,
+          },
+        },
+      };
+      return Promise.resolve({ job_id: 77, outcome: "inserted" });
+    });
+    await screen.findByRole("heading", { level: 2, name: "Garden talks" });
+    await user.click(screen.getByRole("button", { name: "Import from Tartube…" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Import YouTube sources from Tartube",
+    });
+    const field = within(dialog).getByLabelText("Tartube database or export on the home");
+    await waitFor(() => expect(field).toHaveValue("/media/Youtube/tartube.db"));
+    await user.clear(field);
+    await user.type(field, "/media/Youtube/tartube_db_export.json");
+    await user.click(within(dialog).getByRole("button", { name: "Import" }));
+    expect(post).toHaveBeenCalledWith("/api/queues/youtube-tartube", {
+      path: "/media/Youtube/tartube_db_export.json",
+    });
+    expect(
+      await within(dialog).findByText(
+        /1 added \(off\) · 0 already there · 1 skipped · 1 not in Maktaba yet/
+      )
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Not in Maktaba yet (1)")).toBeInTheDocument();
+    expect(within(dialog).getByText("Elsewhere")).toBeInTheDocument();
+    expect(within(dialog).getByText(/a YouTube search, not a channel/)).toBeInTheDocument();
+    // no library was made: the page has the one it had
+    expect(screen.getAllByRole("heading", { level: 2 })).toHaveLength(1);
+  });
+});
+
 describe("helpers", () => {
   it("crumbs splits an absolute path, and keeps another form whole", () => {
     expect(crumbs("/Volumes/A").map((c) => c.path)).toEqual(["/", "/Volumes", "/Volumes/A"]);
     expect(crumbs("smb://nas/share")).toEqual([
       { name: "smb://nas/share", path: "smb://nas/share" },
     ]);
+  });
+
+  it("likeNameKey drops case, Arabic marks, tatweel and punctuation", () => {
+    expect(likeNameKey("Weekly  Lessons!")).toBe("weekly lessons");
+    expect(likeNameKey("الدُّروسُ الأسبوعيـة")).toBe(likeNameKey("الدروس الاسبوعية"));
   });
 
   it("cleanRoots drops blanks and repeats and keeps each one's row", () => {

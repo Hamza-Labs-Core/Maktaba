@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 139,
+    "endpoint": 142,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -6988,7 +6988,7 @@
       "id": "ep-patch-libraries-id-youtube-sources-sid",
       "type": "endpoint",
       "title": "PATCH /libraries/{id}/youtube/sources/{sid}",
-      "content": "Change a source's mode, folder or options; turning it on queues a refresh",
+      "content": "Switch a source on or off, or change its mode, folder or options; turning it on queues a refresh",
       "tags": [
         "api",
         "Queue",
@@ -7024,6 +7024,69 @@
         "path": "/libraries/{id}/youtube/sources/{sid}",
         "tag": "Queue",
         "operationId": "deleteYouTubeSource"
+      }
+    },
+    {
+      "id": "ep-post-libraries-id-youtube-guess",
+      "type": "endpoint",
+      "title": "POST /libraries/{id}/youtube/guess",
+      "content": "Look for the channel a library's files come from (file-name ids and .info.json; no network)",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/libraries/{id}/youtube/guess",
+        "tag": "Queue",
+        "operationId": "guessYouTubeSource"
+      }
+    },
+    {
+      "id": "ep-get-queues-youtube-tartube",
+      "type": "endpoint",
+      "title": "GET /queues/youtube-tartube",
+      "content": "The last Tartube import of every library's sources, and the file to offer",
+      "tags": [
+        "api",
+        "Queue",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/queues/youtube-tartube",
+        "tag": "Queue",
+        "operationId": "getYouTubeTartubeImport"
+      }
+    },
+    {
+      "id": "ep-post-queues-youtube-tartube",
+      "type": "endpoint",
+      "title": "POST /queues/youtube-tartube",
+      "content": "Make every library's YouTube sources from Tartube's records, off (youtube_tartube)",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/youtube-tartube",
+        "tag": "Queue",
+        "operationId": "importYouTubeTartubeSources"
       }
     },
     {

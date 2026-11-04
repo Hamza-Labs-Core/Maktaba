@@ -6,7 +6,7 @@ index 62f3e30..4050672 100644
  		t.Fatalf("a group that exists: %v", err)
  	}
  	want, got := groupRights(t, db, WorkerGroup), groupRights(t, db, group)
-+	// Epic 51's tables (slots 0175 to 0181) are newer than this release: its group code
++	// Epic 51's tables (slots 0178 to 0181) are newer than this release: its group code
 +	// cannot know their revokes, and a home runs it only when its group is missing.
 +	for k := range want {
 +		if strings.HasPrefix(k, "table component") {

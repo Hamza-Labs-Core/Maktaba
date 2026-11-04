@@ -111,14 +111,14 @@ REVOKE ALL ON cluster_replica_beat FROM maktaba_worker;
 REVOKE ALL ON search_runs FROM maktaba_worker;
 -- slot 0150
 REVOKE ALL ON cluster_certs FROM maktaba_worker;
--- slot 0175
+-- slot 0178
 GRANT EXECUTE ON FUNCTION component_status_report(uuid, text, jsonb),
     component_desired_for(uuid) TO maktaba_worker;
 REVOKE ALL ON components, component_overrides, component_status, component_meta
     FROM maktaba_worker;
 GRANT SELECT ON components, component_overrides, component_status, component_meta
     TO maktaba_worker;
--- slot 0176
+-- slot 0179
 GRANT EXECUTE ON FUNCTION component_override_seed(uuid, jsonb) TO maktaba_worker;
 `
 
