@@ -875,8 +875,42 @@ func TestSnapshotComponent(t *testing.T) {
 		got[RoleOllama].Component != "llm" {
 		t.Fatalf("%+v", got)
 	}
-	if !got[RoleOllama].Blocked || got[RoleOllama].State != StateStopped || got[RoleAPI].Blocked {
+	if !got[RoleOllama].Blocked || got[RoleOllama].State != StateHeld || got[RoleAPI].Blocked {
 		t.Fatalf("a dormant process starts blocked: %+v", got)
+	}
+}
+
+// A process whose component is turned off between two restarts reads held, not backoff:
+// no next restart, no crash loop (its component is off, nothing loops), until the gate
+// opens again.
+func TestSnapshotHeldNotBackoff(t *testing.T) {
+	s := New([]Process{{Role: RoleRelay}, {Role: RoleAPI}}, testPolicy(), WithLog(io.Discard))
+	next := time.Now().Add(8 * time.Second)
+	s.mu.Lock()
+	for _, c := range s.children {
+		if c.proc.Role == RoleRelay {
+			c.status.State, c.status.NextRestartAt, c.failed = StateBackoff, &next, true
+		}
+	}
+	s.mu.Unlock()
+	if st := proc(s.Snapshot(), RoleRelay); st.State != StateBackoff || st.NextRestartAt == nil || !st.CrashLoop {
+		t.Fatalf("allowed: %+v", st)
+	}
+	if err := s.Allow(RoleRelay, "", false); err != nil {
+		t.Fatal(err)
+	}
+	st := proc(s.Snapshot(), RoleRelay)
+	if st.State != StateHeld || st.NextRestartAt != nil || st.CrashLoop || !st.Blocked {
+		t.Fatalf("held off: %+v", st)
+	}
+	if api := proc(s.Snapshot(), RoleAPI); api.State == StateHeld {
+		t.Fatalf("an allowed process reads held: %+v", api)
+	}
+	if err := s.Allow(RoleRelay, "", true); err != nil {
+		t.Fatal(err)
+	}
+	if st := proc(s.Snapshot(), RoleRelay); st.State != StateBackoff {
+		t.Fatalf("allowed again: %+v", st)
 	}
 }
 

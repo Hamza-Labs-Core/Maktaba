@@ -104,6 +104,8 @@ class SayTest {
         assertEquals("levitating", en.processState("levitating"))
         assertEquals("Standing by", en.processState(ProcessStatus(role = "tv-slot", instance = "amber", wanted = false, state = "stopped")))
         assertEquals("Stopped", en.processState(ProcessStatus(role = "api", state = "stopped")))
+        // its component is off: the home's snapshot says held, never backoff
+        assertEquals("Held: its component is off", en.processState(ProcessStatus(role = "relay", state = "held")))
         assertEquals(
             "Installing the transcription tools (40%).",
             en.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),
@@ -199,6 +201,7 @@ class SayTest {
         assertEquals("الإبقاء: فشل", ar.code("commit_failed"))
         assertEquals("gremlins", ar.code("gremlins"))
         assertEquals("لا يستجيب", ar.processState("unhealthy"))
+        assertEquals("موقوف: مكوّنه متوقف عن العمل", ar.processState("held"))
         assertEquals("منفذ البث التلفزيوني · blue: يُعاد تشغيله", ar.event(ProcessEvent(role = "tv-slot", instance = "blue", kind = "restarting")))
         assertEquals("بانتظار عامل يخدم Transcribe", ar.queueWaiting("no_worker", null, "Transcribe"))
         assertEquals("توقف برمز الخروج ١", ar.exit("crash", 1, null))

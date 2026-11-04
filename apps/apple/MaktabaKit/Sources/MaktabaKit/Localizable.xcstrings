@@ -1779,6 +1779,23 @@
         }
       }
     },
+    "health.processes.state.held" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Held: its component is off"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "موقوف: مكوّنه متوقف عن العمل"
+          }
+        }
+      }
+    },
     "health.processes.state.running" : {
       "extractionState" : "manual",
       "localizations" : {

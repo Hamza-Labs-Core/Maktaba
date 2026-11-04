@@ -33,6 +33,10 @@ const (
 	StateExited State = "exited"
 	// StateStopped: stopped by a supervisor shutdown.
 	StateStopped State = "stopped"
+	// StateHeld: its component's gate is closed (Allow) and it does not run: a Snapshot
+	// reports it so, whatever the loop was at when the gate closed (a wait between two
+	// restarts reads held, not backoff, and has no next restart).
+	StateHeld State = "held"
 )
 
 // Exit reasons recorded in ExitInfo.Reason and Event.Reason.
@@ -213,6 +217,10 @@ func (s *Supervisor) snapshot(llm *llmserver.Status, ff *ffmpeg.Report) Snapshot
 		st.CrashLoop = c.failed && !(st.PID > 0 && st.UptimeSec >= s.policy.HealthyAfter.Seconds())
 		st.LastExit = copyPtr(st.LastExit)
 		st.LastProbe = copyPtr(st.LastProbe)
+		if st.Blocked && st.PID == 0 {
+			// its component is off: nothing restarts or loops until the gate opens
+			st.State, st.NextRestartAt, st.CrashLoop = StateHeld, nil, false
+		}
 		out.Processes = append(out.Processes, st)
 	}
 	from := 0

@@ -278,6 +278,14 @@ import Testing
         #expect(d.processes[4].restarts == 0 && d.processes[4].stateText == "Stopped")
     }
 
+    /// A process whose component is off reads held (the home's snapshot says "held"), never raw.
+    @Test func aProcessWhoseComponentIsOffReadsHeld() {
+        #expect(words(StatusWords.processStates, "health.processes.state.", "held", Locale(identifier: "en"))
+            == "Held: its component is off")
+        #expect(words(StatusWords.processStates, "health.processes.state.", "held", Locale(identifier: "ar"))
+            == "موقوف: مكوّنه متوقف عن العمل")
+    }
+
     @Test func listsTheRecentEventsNewestFirst() throws {
         let d = try JSONDecoder.home.decode(ProcessesDoc.self, from: Data(Self.doc.utf8))
         let recent = d.recentEvents(3)
