@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "منصة ذكاء وسائط تستضيفها بنفسك: بديل كامل لـ Plex، ونصوص مفرّغة يمكن البحث في كل كلمة منها. انظر specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (55 epics, 01 to 55: READMEs, stories, plans)",
+    "specs/epics/** (56 epics, 01 to 56: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -15,13 +15,13 @@
     "diagram": 14,
     "endpoint": 143,
     "entity": 42,
-    "epic": 55,
+    "epic": 56,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 650
+    "story": 664
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -30,7 +30,7 @@
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
     "wiki-epics-46-54.json",
-    "wiki-epics-55-55.json"
+    "wiki-epics-55-56.json"
   ],
   "entries": [
     {
@@ -3275,6 +3275,51 @@
       }
     },
     {
+      "id": "epic-56-tv-library-view",
+      "type": "epic",
+      "title": "عرض المكتبة على التلفاز",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "engine": null,
+      "content": "عرض المكتبة على التلفاز: تشغيل الكل، والتشغيل العشوائي، والسلاسل، والمجموعات، وقوائم التشغيل.\n\nالمتطلب: في تطبيقات التلفاز (Android TV وApple TV)، يجب أن تتيح المكتبة **تشغيل الكل** و**التشغيل العشوائي**، وأن يمكن تصفّحها **حسب السلسلة وحسب المجموعة وحسب قائمة التشغيل**، كما في تطبيقات Plex للتلفاز. أما اليوم فالمكتبة على التلفاز شبكة واحدة من المقاطع، الأحدث أولًا، بلا ترتيب ولا تصفية ولا طريقة لتشغيل أكثر من مقطع واحد.",
+      "tags": [
+        "epic",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "story-56.1",
+        "story-56.2",
+        "story-56.3",
+        "story-56.4",
+        "story-56.5",
+        "story-56.6",
+        "story-56.7",
+        "story-56.8",
+        "story-56.9",
+        "story-56.10",
+        "story-56.11",
+        "story-56.12",
+        "story-56.13",
+        "story-56.14"
+      ],
+      "files": {
+        "readme": "specs/epics/56-tv-library-view/README.md"
+      },
+      "metadata": {
+        "story_count": 14,
+        "plan_count": 0,
+        "mockup_count": 0
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "a4fff4959b3f0100",
+          "content": "591d55b8608be645"
+        }
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "قصص الواجهة البرمجية والبث",
@@ -5772,7 +5817,15 @@
         "story-54.32",
         "story-54.33",
         "story-55.5",
-        "story-55.6"
+        "story-55.6",
+        "story-56.3",
+        "story-56.4",
+        "story-56.5",
+        "story-56.6",
+        "story-56.7",
+        "story-56.8",
+        "story-56.12",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5826,7 +5879,15 @@
         "story-54.32",
         "story-54.33",
         "story-55.5",
-        "story-55.6"
+        "story-55.6",
+        "story-56.3",
+        "story-56.4",
+        "story-56.5",
+        "story-56.6",
+        "story-56.7",
+        "story-56.8",
+        "story-56.12",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5868,7 +5929,13 @@
         "story-52.14",
         "story-54.25",
         "story-54.32",
-        "story-54.33"
+        "story-54.33",
+        "story-56.3",
+        "story-56.4",
+        "story-56.5",
+        "story-56.6",
+        "story-56.8",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5910,7 +5977,13 @@
         "story-52.14",
         "story-54.25",
         "story-54.32",
-        "story-54.33"
+        "story-54.33",
+        "story-56.3",
+        "story-56.4",
+        "story-56.5",
+        "story-56.6",
+        "story-56.8",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5952,7 +6025,13 @@
         "story-52.14",
         "story-54.25",
         "story-54.32",
-        "story-54.33"
+        "story-54.33",
+        "story-56.3",
+        "story-56.4",
+        "story-56.5",
+        "story-56.6",
+        "story-56.8",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6069,7 +6148,14 @@
         "story-45.4",
         "story-48.5",
         "story-52.9",
-        "story-52.12"
+        "story-52.12",
+        "story-56.1",
+        "story-56.3",
+        "story-56.4",
+        "story-56.5",
+        "story-56.8",
+        "story-56.9",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6996,7 +7082,14 @@
         "story-9.14",
         "story-26.4",
         "story-27.8",
-        "story-31.relay-service-door"
+        "story-31.relay-service-door",
+        "story-56.1",
+        "story-56.3",
+        "story-56.6",
+        "story-56.7",
+        "story-56.8",
+        "story-56.9",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7028,7 +7121,14 @@
         "story-9.14",
         "story-26.4",
         "story-27.8",
-        "story-31.relay-service-door"
+        "story-31.relay-service-door",
+        "story-56.1",
+        "story-56.3",
+        "story-56.6",
+        "story-56.7",
+        "story-56.8",
+        "story-56.9",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7057,7 +7157,9 @@
         "get"
       ],
       "related": [
-        "story-9.14"
+        "story-9.14",
+        "story-56.8",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7086,7 +7188,9 @@
         "patch"
       ],
       "related": [
-        "story-9.14"
+        "story-9.14",
+        "story-56.8",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7115,7 +7219,9 @@
         "delete"
       ],
       "related": [
-        "story-9.14"
+        "story-9.14",
+        "story-56.8",
+        "story-56.14"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7143,7 +7249,9 @@
         "Collections",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-56.14"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -7170,7 +7278,9 @@
         "Collections",
         "post"
       ],
-      "related": [],
+      "related": [
+        "story-56.14"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -7720,7 +7830,8 @@
       "related": [
         "story-7.21",
         "story-14.6",
-        "story-14.7"
+        "story-14.7",
+        "story-56.3"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9257,7 +9368,8 @@
       "related": [
         "story-51.7",
         "story-54.6",
-        "story-54.35"
+        "story-54.35",
+        "story-56.7"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9562,7 +9674,8 @@
         "story-54.36",
         "story-54.37",
         "story-54.38",
-        "story-55.2"
+        "story-55.2",
+        "story-56.13"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10323,7 +10436,8 @@
         "story-9.13",
         "story-9.14",
         "story-9.15",
-        "story-26.4"
+        "story-26.4",
+        "story-56.6"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",
@@ -10450,7 +10564,8 @@
         "story-7.3",
         "story-29.3",
         "story-51.17",
-        "story-54.8"
+        "story-54.8",
+        "story-56.10"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

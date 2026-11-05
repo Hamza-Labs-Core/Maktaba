@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 55,
-    "stories": 650,
+    "epics": 56,
+    "stories": 664,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -393,6 +393,13 @@
       "title": "مشغّل سطح المكتب يلحق بمشغّلَي الهاتف والماك",
       "description": "مشغّل سطح المكتب يلحق بمشغّلَي الهاتف والماك.\n\nيُشحن مشغّل سطح المكتب لويندوز ولينكس في كل إصدار (`latest-player.json`، وحزم msi وdeb وrpm التي يبنيها `.github/workflows/desktop-release.yml`)، لكن ميزاته توقفت عند القصة 42.4 (2026-10-27). ومنذ ذلك الحين اكتسب مشغّلا أندرويد وآبل صفوف الصفحة الرئيسية، والبث المباشر، والبحث، وصفحات المسلسلات والمقاطع، وملفًا شخصيًا بسجل المشاهدة، ومسارات الصوت والترجمة، والجودة، والتالي، والموافقة على تلفاز، وبوابة القدرات. أما مشغّل سطح المكتب فما زال يعرض قائمة مكتبات بجانب شبكة مقاطع، وبحثًا في العناوين، ومشغّلًا مجردًا. ومن يشاهد على هاتف وعلى حاسوب بويندوز يرى منتجين مختلفين.",
       "readme": "specs/epics/55-desktop-player-parity/README.md"
+    },
+    {
+      "id": "56",
+      "slug": "tv-library-view",
+      "title": "عرض المكتبة على التلفاز",
+      "description": "عرض المكتبة على التلفاز: تشغيل الكل، والتشغيل العشوائي، والسلاسل، والمجموعات، وقوائم التشغيل.\n\nالمتطلب: في تطبيقات التلفاز (Android TV وApple TV)، يجب أن تتيح المكتبة **تشغيل الكل** و**التشغيل العشوائي**، وأن يمكن تصفّحها **حسب السلسلة وحسب المجموعة وحسب قائمة التشغيل**، كما في تطبيقات Plex للتلفاز. أما اليوم فالمكتبة على التلفاز شبكة واحدة من المقاطع، الأحدث أولًا، بلا ترتيب ولا تصفية ولا طريقة لتشغيل أكثر من مقطع واحد.",
+      "readme": "specs/epics/56-tv-library-view/README.md"
     }
   ],
   "stories": [
@@ -6982,6 +6989,132 @@
       "slug": "help-and-release",
       "title": "المساعدة، وملف README، وفحص الإصدار",
       "story_file": "specs/epics/55-desktop-player-parity/story-55-10-help-and-release.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.01",
+      "epic": 56,
+      "num": "01",
+      "slug": "play-queue",
+      "title": "قائمة انتظار تشغيل على الخادم",
+      "story_file": "specs/epics/56-tv-library-view/story-56-01-play-queue.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.02",
+      "epic": 56,
+      "num": "02",
+      "slug": "tv-play-shuffle",
+      "title": "التشغيل والتشغيل العشوائي على التلفاز",
+      "story_file": "specs/epics/56-tv-library-view/story-56-02-tv-play-shuffle.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.03",
+      "epic": 56,
+      "num": "03",
+      "slug": "tv-library-tabs",
+      "title": "تبويبات المكتبة والتنقّل بجهاز التحكم على التلفاز",
+      "story_file": "specs/epics/56-tv-library-view/story-56-03-tv-library-tabs.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.04",
+      "epic": 56,
+      "num": "04",
+      "slug": "series-grouping",
+      "title": "تجميع السلاسل، وصفحات السلسلة والموسم على التلفاز",
+      "story_file": "specs/epics/56-tv-library-view/story-56-04-series-grouping.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.05",
+      "epic": 56,
+      "num": "05",
+      "slug": "sort-filter-categories",
+      "title": "الترتيب والتصفية والقفز بالحرف والفئات على التلفاز",
+      "story_file": "specs/epics/56-tv-library-view/story-56-05-sort-filter-categories.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.06",
+      "epic": 56,
+      "num": "06",
+      "slug": "youtube-collections",
+      "title": "مجموعات تلقائية من قوائم تشغيل يوتيوب وقنواته",
+      "story_file": "specs/epics/56-tv-library-view/story-56-06-youtube-collections.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.07",
+      "epic": 56,
+      "num": "07",
+      "slug": "plex-collections",
+      "title": "مجموعات Plex، مقروءة إلى مكتبة",
+      "story_file": "specs/epics/56-tv-library-view/story-56-07-plex-collections.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.08",
+      "epic": 56,
+      "num": "08",
+      "slug": "tv-collections",
+      "title": "المجموعات على التلفاز، ووضع المجموعات، وصفوف المقترحات",
+      "story_file": "specs/epics/56-tv-library-view/story-56-08-tv-collections.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.09",
+      "epic": 56,
+      "num": "09",
+      "slug": "smart-playlists",
+      "title": "قوائم التشغيل الذكية",
+      "story_file": "specs/epics/56-tv-library-view/story-56-09-smart-playlists.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.10",
+      "epic": 56,
+      "num": "10",
+      "slug": "tv-playlists",
+      "title": "قوائم التشغيل على التلفاز",
+      "story_file": "specs/epics/56-tv-library-view/story-56-10-tv-playlists.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.11",
+      "epic": 56,
+      "num": "11",
+      "slug": "tv-continue-up-next",
+      "title": "المتابعة والتالي على التلفاز",
+      "story_file": "specs/epics/56-tv-library-view/story-56-11-tv-continue-up-next.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.12",
+      "epic": 56,
+      "num": "12",
+      "slug": "players-parity",
+      "title": "تطبيقات المشغّل على الهاتف واللوحي تلحق بالركب",
+      "story_file": "specs/epics/56-tv-library-view/story-56-12-players-parity.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.13",
+      "epic": 56,
+      "num": "13",
+      "slug": "web-parity",
+      "title": "الويب على قائمة انتظار الخادم، مع قوائم التشغيل الذكية",
+      "story_file": "specs/epics/56-tv-library-view/story-56-13-web-parity.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.14",
+      "epic": 56,
+      "num": "14",
+      "slug": "openapi-roles",
+      "title": "OpenAPI واختبارات الأدوار لمسارات المكتبة",
+      "story_file": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
       "plan_files": []
     }
   ],
