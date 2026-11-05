@@ -1,0 +1,618 @@
+{
+  "version": "2.0",
+  "part": "wiki-epics-55-56.json",
+  "lang": "ar",
+  "entries": [
+    {
+      "id": "story-56.1",
+      "type": "story",
+      "title": "قائمة انتظار تشغيل على الخادم",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.01 — قائمة انتظار تشغيل على الخادم\n\n> الملحمة 56 · المرحلة 1 · تعتمد على: — · تحتاجها: 56.02، 56.10، 56.11، 56.12، 56.13، الملحمة 55\n\n## لماذا\n\nيحتاج تشغيل الكل والتشغيل العشوائي إلى قائمة انتظار تتّسع لمكتبة كاملة، وتبقى بعد إغلاق التطبيق، وتنتقل بين الأجهزة. أما اليوم فقائمة الانتظار الوحيدة هي قائمة الويب، في `sessionStorage` لتبويب واحد، والتشغيل العشوائي صفحة عشوائية واحدة من `GET /api/videos` (لا مؤشّر لـ `sort=random`)، فلا يستطيع التلفاز خلط مكتبة من آلاف المقاطع. يحفظ Plex قوائم انتظار التشغيل على الخادم، وكذلك ستفعل مكتبة.\n\n## الوصف\n\n### 1. المصادر والترتيب\n\nيأخذ `POST /api/me/play-queues` `{s",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-01-play-queue.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /collections",
+        "POST /collections"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "play-queue"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "6e5efb3454227c30",
+          "content": "5b43fcf04b9dd4b5"
+        }
+      }
+    },
+    {
+      "id": "story-56.2",
+      "type": "story",
+      "title": "التشغيل والتشغيل العشوائي على التلفاز",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.02 — التشغيل والتشغيل العشوائي على التلفاز\n\n> الملحمة 56 · المرحلة 3 · تعتمد على: 56.01، 56.03 · تحتاجها: 56.11\n\n## لماذا\n\nلا يمكن على التلفاز تشغيل مكتبة أو سلسلة أو موسم أو مجموعة أو قائمة تشغيل إلا مقطعًا واحدًا في كل مرة. يضع Plex زرَّي التشغيل والتشغيل العشوائي على كل منها، ويتوقّع الناس أن يبدؤوا مكتبة بتشغيل عشوائي من الأريكة ويتركوها.\n\n## الوصف\n\n### 1. أين تكون الأزرار\n\n| الموضع | الأزرار | المصدر المُرسَل إلى 56.01 |\n|---|---|---|\n| مكتبة (الترويسة، في المقترحات والمكتبة) | **تشغيل**، **تشغيل عشوائي** | `library` + التصفيات والترتيب الحاليان في تبويب المكتبة |\n| صفحة سلسلة | ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-02-tv-play-shuffle.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-play-shuffle"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "a40e40cd6e04761f",
+          "content": "4a1c793e82d9197d"
+        }
+      }
+    },
+    {
+      "id": "story-56.3",
+      "type": "story",
+      "title": "تبويبات المكتبة والتنقّل بجهاز التحكم على التلفاز",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.03 — تبويبات المكتبة والتنقّل بجهاز التحكم على التلفاز\n\n> الملحمة 56 · المرحلة 3 · تعتمد على: — (تملأ 56.04 و56.05 و56.08 و56.10 التبويبات) · تحتاجها: 56.02، 56.04، 56.05، 56.08، 56.10\n\n## لماذا\n\nتعرض تطبيقات Plex للتلفاز المكتبة في خمسة تبويبات: المقترحات، والمكتبة، والمجموعات، وقوائم التشغيل، والفئات. وتعرض تطبيقات مكتبة للتلفاز شبكة واحدة. التبويبات هي الإطار الذي تملؤه كل قصة أخرى للتلفاز، ويجب أن تعمل بجهاز التحكم وحده، وباللغتين.\n\n## الوصف\n\n### 1. التبويبات\n\n| التبويب | المحتوى | يقرأ |\n|---|---|---|\n| **المقترحات** (يُفتح هنا) | صفوف: التالي للمشاهدة، وتابع المشاهدة، وأُضيف حديثًا",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-recommendations"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-03-tv-library-tabs.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /recommendations"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-library-tabs"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "afffffc80e97ad1b",
+          "content": "742c4be0f1a3a1a2"
+        }
+      }
+    },
+    {
+      "id": "story-56.4",
+      "type": "story",
+      "title": "تجميع السلاسل، وصفحات السلسلة والموسم على التلفاز",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.04 — تجميع السلاسل، وصفحات السلسلة والموسم على التلفاز\n\n> الملحمة 56 · المرحلتان 1 و3 · تعتمد على: 56.03 · تحتاجها: 56.11\n\n## لماذا\n\nمعظم مكتبة في مكتبة دروسٌ في سلاسل ومواسم. تجمعها تطبيقات المشغّل على الهاتف والويب وعرض `/big` في الويب، أما التلفاز فيعرض مقاطع متفرّقة فقط. في تبويب المكتبة في Plex منتقٍ للنوع (عروض، مواسم، حلقات)، وفي مكتبة **العرض: المقاطع | السلاسل**.\n\n## الوصف\n\n### 1. الخادم: الشبكة حسب السلسلة\n\nيكتسب `GET /api/videos` المعامل `group=series`: التصفيات نفسها، وبطاقة لكل سلسلة فيها مقطع مطابق (وتظهر المقاطع التي لا تنتمي إلى سلسلة كما هي",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-04-series-grouping.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "series-grouping"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "56fd3fd4272a3fea",
+          "content": "55dde6c20642dd67"
+        }
+      }
+    },
+    {
+      "id": "story-56.5",
+      "type": "story",
+      "title": "الترتيب والتصفية والقفز بالحرف والفئات على التلفاز",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.05 — الترتيب والتصفية والقفز بالحرف والفئات على التلفاز\n\n> الملحمة 56 · المرحلتان 1 و3 · تعتمد على: 56.03 · تحتاجها: 56.02 (العرض الذي يتبعه التشغيل)\n\n## لماذا\n\nالمكتبة على التلفاز اليوم الأحدث أولًا، بلا طريقة لتضييقها. في تبويب المكتبة في Plex ترتيب وتصفيات وشريط للقفز بالحرف، وتبويب الفئات فيه يتصفّح حسب البيانات الوصفية. وشبكة مكتبة لديها هذه التصفيات أصلًا على الويب وفي المشغّلات (`GET /api/videos`، `GET /api/videos/facets`).\n\n## الوصف\n\n### 1. الترتيب\n\nيفتح زر **ترتيب** قائمة: الأحدث إضافةً، والأقدم إضافةً، والأحدث نشرًا، وأ–ي، وي–أ، والأطول، والأقصر، والأكثر تشغيلًا",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-05-sort-filter-categories.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "sort-filter-categories"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "362a91f6163c7d6d",
+          "content": "c05a15383bc6ab67"
+        }
+      }
+    },
+    {
+      "id": "story-56.6",
+      "type": "story",
+      "title": "مجموعات تلقائية من قوائم تشغيل يوتيوب وقنواته",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.06 — مجموعات تلقائية من قوائم تشغيل يوتيوب وقنواته\n\n> الملحمة 56 · المرحلة 2 · تعتمد على: — (الخانة 0186 مشتركة مع 56.07 و56.08) · تحتاجها: 56.08\n\n## لماذا\n\nجاء معظم مكتبة في مكتبة من يوتيوب، حيث جمعها صانعوها في قوائم تشغيل وقنوات. اليوم يحوّل خط المعالجة قائمة التشغيل إلى **موسم** حين تطابق موسمًا، وإلى **مجموعة موضوع** (`topic_collections`، الخانة 0094) فقط حين تتقاطع مع عدة عروض (`find_topics` في `classify/series_detector.py`). وكل قائمة تشغيل أخرى، وكل قناة، تضيع من التصفّح. يبني Plex المجموعات تلقائيًا",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "entity-collection_items",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-collections",
+        "ep-post-collections"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-06-youtube-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /collections",
+        "POST /collections"
+      ],
+      "db_tables": [
+        "collection_items"
+      ],
+      "metadata": {
+        "slug": "youtube-collections"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "102a4acab9f3052e",
+          "content": "958c55c579ef39a7"
+        }
+      }
+    },
+    {
+      "id": "story-56.7",
+      "type": "story",
+      "title": "مجموعات Plex، مقروءة إلى مكتبة",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.07 — مجموعات Plex، مقروءة إلى مكتبة\n\n> الملحمة 56 · المرحلة 2 · تعتمد على: 56.06 (الخانة 0186) · تحتاجها: 56.08\n\n## لماذا\n\nالبيت الذي استخدم Plex قبل مكتبة فيه مجموعات صنعها الناس بأيديهم على مدى سنوات. تفهرس مكتبة Plex أصلًا (يملأ `plex_index` الجدول `plex_items`، مفتاح التقييم ↔ المقطع) وتكتب مجموعات مواسمها ومواضيعها في Plex (`plex_collection`، `plex_groups`)، لكنها لا تقرأ مجموعات Plex أبدًا. يجب ألّا يضيّعها الانتقال من Plex.\n\n## الوصف\n\n### 1. المرحلة\n\n`plex_collections_import`، في `pipeline/src/maktaba_pipeline/extensions/plex/`،",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-extensions"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-07-plex-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /collections",
+        "POST /collections",
+        "GET /extensions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "plex-collections"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "02e07923d626563a",
+          "content": "c5153c5253309bf2"
+        }
+      }
+    },
+    {
+      "id": "story-56.8",
+      "type": "story",
+      "title": "المجموعات على التلفاز، ووضع المجموعات، وصفوف المقترحات",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.08 — المجموعات على التلفاز، ووضع المجموعات، وصفوف المقترحات\n\n> الملحمة 56 · المرحلتان 2 و3 · تعتمد على: 56.03، 56.06 (الخانة 0186) · تحتاجها: —\n\n## لماذا\n\nالمجموعات موجودة على الخادم (اليدوية والذكية التي يصنعها المسؤول، ومجموعات المواضيع والمقاطع، والآن مجموعات يوتيوب وPlex) وعلى الويب، لكنها ليست على التلفاز. يعرضها Plex في تبويب للمجموعات، ويترك للمسؤول أن يختار هل تظهر أيضًا في شبكة المكتبة (وضع المجموعات)، ويتيح له ترقية إحداها إلى صف في المقترحات وفي الرئيسية.\n\n## الوصف\n\n### 1. تبويب المجموعات (التلفاز)\n\nشبكة من بطاقات المجموعات من `GET",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-08-tv-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-collections"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "51cac72236fa3c6d",
+          "content": "38e4aac696f6e989"
+        }
+      }
+    },
+    {
+      "id": "story-56.9",
+      "type": "story",
+      "title": "قوائم التشغيل الذكية",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.09 — قوائم التشغيل الذكية\n\n> الملحمة 56 · المرحلة 1 · تعتمد على: — (الخانة 0185) · تحتاجها: 56.10، 56.12، 56.13\n\n## لماذا\n\nقوائم التشغيل اليوم قوائم يدوية (`user_playlists`، الخانة 0162). ولدى Plex أيضًا قوائم تشغيل ذكية: تصفية محفوظة بترتيب وحدّ، تبقى محدَّثة من تلقاء نفسها، لكل مستخدم. لا يستطيع المشاهدون صنع مجموعات (للمسؤول فقط، القرار 3 في §11 من README)، فقوائم التشغيل الذكية هي طريقة المشاهد ليُبقي «دروس المتحدث س غير المُشاهَدة، الأحدث أولًا» على بُعد نقرة، على كل جهاز.\n\n## الوصف\n\n### 1. النموذج (الخانة 0185، مخطَّطة)\n\nيكتسب `user_playlists` العمودين `kind` (`manual` | `smart`) و`sma",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-09-smart-playlists.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /collections",
+        "POST /collections"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "smart-playlists"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "0acc0e734d103545",
+          "content": "53cda2c3f1ed2172"
+        }
+      }
+    },
+    {
+      "id": "story-56.10",
+      "type": "story",
+      "title": "قوائم التشغيل على التلفاز",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.10 — قوائم التشغيل على التلفاز\n\n> الملحمة 56 · المرحلة 3 · تعتمد على: 56.01، 56.03، 56.09 · تحتاجها: —\n\n## لماذا\n\nقوائم تشغيل المستخدم (اليدوية والذكية) موجودة على الخادم والويب، وتحت الملف الشخصي في تطبيقات المشغّل على الهاتف، لكن لا يمكن رؤيتها ولا تشغيلها على التلفاز. تعرض تطبيقات Plex للتلفاز، في تبويب قوائم التشغيل للمكتبة، قوائم المستخدم التي فيها عناصر من تلك المكتبة، وكل قوائمه في مكان علوي لقوائم التشغيل.\n\n## الوصف\n\n### 1. أين\n\n- **تبويب قوائم التشغيل للمكتبة**: `GET /api/me/playlists?library={id}` (تصفية جديدة: القوائم اليدوية التي فيها عنصر واحد على الأقل من المكتبة؛ والقوائم الذكية ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "entity-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-10-tv-playlists.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "libraries"
+      ],
+      "metadata": {
+        "slug": "tv-playlists"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "ac2caa05f3f3f08c",
+          "content": "b9af39af28626035"
+        }
+      }
+    },
+    {
+      "id": "story-56.11",
+      "type": "story",
+      "title": "المتابعة والتالي على التلفاز",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.11 — المتابعة والتالي على التلفاز\n\n> الملحمة 56 · المرحلة 3 · تعتمد على: 56.01، 56.02، 56.04 · تحتاجها: —\n\n## لماذا\n\nحين ينتهي مقطع على التلفاز يتوقّف المشغّل. تعدّ تطبيقات المشغّل على الهاتف تنازليًا إلى الحلقة التالية (`UpNext.swift`، `UpNext.kt`) ويشغّل الويب المقطع التالي في قائمة انتظاره. ويشغّل Plex الحلقة التالية تلقائيًا بعدّ تنازلي، ويُبقي «التالي للمشاهدة» و«تابع المشاهدة» في المقترحات والرئيسية.\n\n## الوصف\n\n### 1. التالي\n\nحين يبقى أقل من 30 ث (أو يبدأ فصل الختام، إن كان للمقطع فصول)، تظهر بطاقة **التالي** في الركن السفلي من جهة النهاية: عنصر قائمة الانتظار التالي",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-11-tv-continue-up-next.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-continue-up-next"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "20f09df0b2a41015",
+          "content": "ac010bd602c2a254"
+        }
+      }
+    },
+    {
+      "id": "story-56.12",
+      "type": "story",
+      "title": "تطبيقات المشغّل على الهاتف واللوحي تلحق بالركب",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.12 — تطبيقات المشغّل على الهاتف واللوحي تلحق بالركب\n\n> الملحمة 56 · المرحلة 4 · تعتمد على: 56.01، 56.08، 56.09 · تحتاجها: —\n\n## لماذا\n\nفي تطبيقَي المشغّل على Android وApple (هاتف، لوحي، Mac Catalyst / Mac) تبويبا المقاطع والسلاسل للمكتبة، وصفحات السلاسل، والتالي للحلقات، لكن لا تشغيل للكل، ولا تشغيل عشوائي، ولا مجموعات، وقوائم التشغيل تحت الملف الشخصي فقط. ما يكسبه التلفاز يجب ألّا يغيب عن الهاتف.\n\n## الوصف\n\n### 1. التشغيل والتشغيل العشوائي\n\nعلى مكتبة (فوق شبكتها، متّبعًا ترتيبها وتصفياتها)، وسلسلة، وموسم، ومجموعة، وقائمة تشغيل: زرّا **تشغيل** و**تشغيل عشوائي**، ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-12-players-parity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "players-parity"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "1a12084927c8c51c",
+          "content": "3c5b8e9c430fe680"
+        }
+      }
+    },
+    {
+      "id": "story-56.13",
+      "type": "story",
+      "title": "الويب على قائمة انتظار الخادم، مع قوائم التشغيل الذكية",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.13 — الويب على قائمة انتظار الخادم، مع قوائم التشغيل الذكية\n\n> الملحمة 56 · المرحلة 4 · تعتمد على: 56.01، 56.08، 56.09 · تحتاجها: —\n\n## لماذا\n\nفي الويب أصلًا تشغيل الكل والتشغيل العشوائي (شبكة المكتبة، والمجموعات، وقوائم التشغيل) والتالي، لكن قائمة انتظاره تعيش في `sessionStorage` لتبويب واحد (`web/src/lib/playQueue.ts`) والتشغيل العشوائي صفحة عشوائية واحدة. وعرضه للشاشة الكبيرة (`/big`، الملحمة 46) بلا تشغيل ولا تشغيل عشوائي أصلًا. يجب أن يستعمل الويب قائمة الانتظار نفسها التي تستعملها التطبيقات، فتنتقل قائمة الانتظار بين المتصفّح والهاتف والتلفاز.\n\n## الوصف\n\n### 1. قائمة انتظار الخادم\n\nيحتفظ `web/src/lib/playQueue.ts` ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-13-web-parity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web-parity"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "ab2ce450757ec054",
+          "content": "172db57aa8dbae46"
+        }
+      }
+    },
+    {
+      "id": "story-56.14",
+      "type": "story",
+      "title": "OpenAPI واختبارات الأدوار لمسارات المكتبة",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# القصة 56.14 — OpenAPI واختبارات الأدوار لمسارات المكتبة\n\n> الملحمة 56 · المرحلة 1 (الأخيرة) · تعتمد على: 56.01، 56.04، 56.05، 56.08، 56.09 · تحتاجها: —\n\n## لماذا\n\nيصف `shared/api/openapi.json` المسارين `/libraries` و`/collections` فقط، ويسمّي مسار عناصر المجموعة `/collections/{id}/videos` بينما يخدم الكود `/items`، ويُغفل السلاسل والمواسم وقوائم التشغيل والمحاور والرئيسية والأوجه و`/me/*`، التي يقرؤها كل تلفاز ومشغّل. ويجب أيضًا أن تُثبت الواجهة البرمجية كل قاعدة أدوار في هذه الملحمة باختبار (لا قواعد بإخفاء الواجهة).\n\n## الوصف\n\n### 1. OpenAPI\n\nصِف، مع مخططات الطلب والاستجابة",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id",
+        "ep-get-collections-id-videos",
+        "ep-post-collections-id-videos"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}",
+        "GET /collections/{id}/videos",
+        "POST /collections/{id}/videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "openapi-roles"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "ba7365f190294d90",
+          "content": "a0be8c205451994b"
+        }
+      }
+    }
+  ]
+}

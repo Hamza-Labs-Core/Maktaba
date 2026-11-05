@@ -1,0 +1,519 @@
+{
+  "version": "2.0",
+  "part": "wiki-epics-55-56.json",
+  "entries": [
+    {
+      "id": "story-56.1",
+      "type": "story",
+      "title": "A play queue on the server",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.01 — A play queue on the server\n\n> Epic 56 · Phase 1 · Depends on: — · Needed by: 56.02, 56.10, 56.11, 56.12, 56.13, Epic 55\n\n## Why\n\nPlay all and Shuffle need a queue that can hold a whole library, survive the app closing and\nmove between devices. Today the only queue is the web's, in one tab's `sessionStorage`, and\nShuffle is one random page of `GET /api/videos` (`sort=random` has no cursor), so a TV cannot\nshuffle a library of thousands of videos. Plex keeps play queues on the server; so will Maktaba.\n\n## Description\n\n### 1. Sources and order\n\n`POST /api/me/play-queues` takes `{s",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-01-play-queue.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /collections",
+        "POST /collections"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "play-queue"
+      }
+    },
+    {
+      "id": "story-56.2",
+      "type": "story",
+      "title": "Play and Shuffle on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.02 — Play and Shuffle on the TVs\n\n> Epic 56 · Phase 3 · Depends on: 56.01, 56.03 · Needed by: 56.11\n\n## Why\n\nA library, a series, a season, a collection and a playlist on a TV can only be played one video\nat a time. Plex puts Play and Shuffle on each of them; people expect to start a library on\nshuffle from the couch and leave it.\n\n## Description\n\n### 1. Where the buttons are\n\n| Surface | Buttons | Source sent to 56.01 |\n|---|---|---|\n| A library (header, on Recommended and Library) | **Play**, **Shuffle** | `library` + the Library tab's current filters and sort |\n| A series page | ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-02-tv-play-shuffle.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-play-shuffle"
+      }
+    },
+    {
+      "id": "story-56.3",
+      "type": "story",
+      "title": "Library tabs and remote navigation on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.03 — Library tabs and remote navigation on the TVs\n\n> Epic 56 · Phase 3 · Depends on: — (56.04, 56.05, 56.08, 56.10 fill the tabs) · Needed by: 56.02, 56.04, 56.05, 56.08, 56.10\n\n## Why\n\nPlex's TV apps show a library as five tabs: Recommended, Library, Collections, Playlists and\nCategories. Maktaba's TV apps show one grid. The tabs are the frame every other TV story fills,\nand they must work with the remote alone, in both languages.\n\n## Description\n\n### 1. The tabs\n\n| Tab | Content | Reads |\n|---|---|---|\n| **Recommended** (opens here) | rows: On Deck, Continue Watching, Recently Ad",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-recommendations"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-03-tv-library-tabs.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /recommendations"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-library-tabs"
+      }
+    },
+    {
+      "id": "story-56.4",
+      "type": "story",
+      "title": "Series grouping, series and season pages on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.04 — Series grouping, series and season pages on the TVs\n\n> Epic 56 · Phases 1 and 3 · Depends on: 56.03 · Needed by: 56.11\n\n## Why\n\nMost of a Maktaba library is lessons in series and seasons. The phone Players, the web and the\nweb's `/big` view group them; the TVs show loose videos only. Plex's Library tab has a type\npicker (shows, seasons, episodes); Maktaba's has **Show: Videos | Series**.\n\n## Description\n\n### 1. Server: the grid by series\n\n`GET /api/videos` gains `group=series`: the same filters, and one card per series that has a\nmatching video (videos in no series appear as th",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-04-series-grouping.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "series-grouping"
+      }
+    },
+    {
+      "id": "story-56.5",
+      "type": "story",
+      "title": "Sort, filter, letter jump and Categories on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.05 — Sort, filter, letter jump and Categories on the TVs\n\n> Epic 56 · Phases 1 and 3 · Depends on: 56.03 · Needed by: 56.02 (the view Play follows)\n\n## Why\n\nA TV library today is newest first, with no way to narrow it. Plex's Library tab has sort,\nfilters and a letter jump bar, and its Categories tab browses by metadata. Maktaba's grid\nalready has these filters on the web and the Players (`GET /api/videos`, `GET /api/videos/facets`).\n\n## Description\n\n### 1. Sort\n\nA **Sort** button opens a list: Newest added, Oldest added, Newest published, A–Z, Z–A,\nLongest, Shortest, Most played: t",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-05-sort-filter-categories.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "sort-filter-categories"
+      }
+    },
+    {
+      "id": "story-56.6",
+      "type": "story",
+      "title": "Automatic collections from YouTube playlists and channels",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.06 — Automatic collections from YouTube playlists and channels\n\n> Epic 56 · Phase 2 · Depends on: — (slot 0186 shared with 56.07, 56.08) · Needed by: 56.08\n\n## Why\n\nMost of a Maktaba library came from YouTube, where its creators already grouped it into\nplaylists and channels. Today the pipeline turns a playlist into a **season** when it matches\none, and into a **topic collection** (`topic_collections`, slot 0094) only when it cuts across\nshows (`find_topics` in `classify/series_detector.py`). Every other playlist, and every channel,\nis lost to browsing. Plex builds collections autom",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "entity-collection_items",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-collections",
+        "ep-post-collections"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-06-youtube-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /collections",
+        "POST /collections"
+      ],
+      "db_tables": [
+        "collection_items"
+      ],
+      "metadata": {
+        "slug": "youtube-collections"
+      }
+    },
+    {
+      "id": "story-56.7",
+      "type": "story",
+      "title": "Plex collections, read into Maktaba",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.07 — Plex collections, read into Maktaba\n\n> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0186) · Needed by: 56.08\n\n## Why\n\nA home that used Plex before Maktaba has collections there that people made by hand over\nyears. Maktaba already indexes Plex (`plex_index` fills `plex_items`, rating key ↔ video) and\nwrites its own season and topic collections into Plex (`plex_collection`, `plex_groups`), but\nnever reads Plex's collections back. Moving from Plex should not lose them.\n\n## Description\n\n### 1. The stage\n\n`plex_collections_import`, in `pipeline/src/maktaba_pipeline/extensions/plex/`,",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-extensions"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-07-plex-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /collections",
+        "POST /collections",
+        "GET /extensions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "plex-collections"
+      }
+    },
+    {
+      "id": "story-56.8",
+      "type": "story",
+      "title": "Collections on the TVs, collection mode and Recommended rows",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.08 — Collections on the TVs, collection mode and Recommended rows\n\n> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0186) · Needed by: —\n\n## Why\n\nCollections exist on the server (admin-made manual and smart ones, topic and clip groups, and now\nYouTube and Plex ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,\nlets an admin choose whether they also show in the library grid (collection mode), and lets an\nadmin promote one to a row on Recommended and on Home.\n\n## Description\n\n### 1. The Collections tab (TVs)\n\nA grid of collection cards from `GET",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-08-tv-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-collections"
+      }
+    },
+    {
+      "id": "story-56.9",
+      "type": "story",
+      "title": "Smart playlists",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.09 — Smart playlists\n\n> Epic 56 · Phase 1 · Depends on: — (slot 0185) · Needed by: 56.10, 56.12, 56.13\n\n## Why\n\nPlaylists today are manual lists (`user_playlists`, slot 0162). Plex also has smart playlists: a\nsaved filter with a sort and a limit, that keeps itself up to date, per user. Viewers cannot make\ncollections (admin-only, README §11 decision 3), so smart playlists are how a viewer keeps\n\"unwatched lessons of speaker X, newest first\" one click away, on every device.\n\n## Description\n\n### 1. Model (slot 0185, planned)\n\n`user_playlists` gains `kind` (`manual` | `smart`) and `sma",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-09-smart-playlists.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /collections",
+        "POST /collections"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "smart-playlists"
+      }
+    },
+    {
+      "id": "story-56.10",
+      "type": "story",
+      "title": "Playlists on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.10 — Playlists on the TVs\n\n> Epic 56 · Phase 3 · Depends on: 56.01, 56.03, 56.09 · Needed by: —\n\n## Why\n\nA user's playlists (manual and smart) exist on the server and the web, and under Profile on the\nphone Players, but cannot be seen or played on a TV. Plex's TV apps show, in a library's\nPlaylists tab, the user's playlists with items from that library, and every playlist in a\ntop-level Playlists place.\n\n## Description\n\n### 1. Where\n\n- **A library's Playlists tab**: `GET /api/me/playlists?library={id}` (new filter: manual lists\n  with at least one item from the library; smart lists ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "entity-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-10-tv-playlists.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "libraries"
+      ],
+      "metadata": {
+        "slug": "tv-playlists"
+      }
+    },
+    {
+      "id": "story-56.11",
+      "type": "story",
+      "title": "Continue and Up next on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.11 — Continue and Up next on the TVs\n\n> Epic 56 · Phase 3 · Depends on: 56.01, 56.02, 56.04 · Needed by: —\n\n## Why\n\nWhen a video ends on a TV, the player stops. The phone Players count down to the next episode\n(`UpNext.swift`, `UpNext.kt`) and the web plays its queue's next video. Plex auto-plays the next\nepisode with a countdown and keeps On Deck and Continue Watching on Recommended and Home.\n\n## Description\n\n### 1. Up next\n\nWhen fewer than 30 s remain (or the end credits chapter starts, when the video has chapters), an\n**Up next** card appears at the bottom end corner: the next qu",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-11-tv-continue-up-next.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-continue-up-next"
+      }
+    },
+    {
+      "id": "story-56.12",
+      "type": "story",
+      "title": "The phone and tablet Players catch up",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.12 — The phone and tablet Players catch up\n\n> Epic 56 · Phase 4 · Depends on: 56.01, 56.08, 56.09 · Needed by: —\n\n## Why\n\nThe Android and Apple Players (phone, tablet, Mac Catalyst / Mac) have a library's Videos and\nSeries tabs, series pages and Up next for episodes, but no Play all, no Shuffle, no collections,\nand playlists only under Profile. What the TV gains should not be missing on the phone.\n\n## Description\n\n### 1. Play and Shuffle\n\nOn a library (above its grid, following its sort and filters), a series, a season, a collection\nand a playlist: **Play** and **Shuffle** buttons, ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-12-players-parity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "players-parity"
+      }
+    },
+    {
+      "id": "story-56.13",
+      "type": "story",
+      "title": "The web on the server queue, with smart playlists",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.13 — The web on the server queue, with smart playlists\n\n> Epic 56 · Phase 4 · Depends on: 56.01, 56.08, 56.09 · Needed by: —\n\n## Why\n\nThe web already has Play all and Shuffle (library grid, collections, playlists) and an Up next,\nbut its queue lives in one tab's `sessionStorage` (`web/src/lib/playQueue.ts`) and Shuffle is one\nrandom page. Its 10-foot view (`/big`, Epic 46) has no Play or Shuffle at all. The web should\nuse the same queue as the apps, so a queue moves between the browser, the phone and the TV.\n\n## Description\n\n### 1. The server queue\n\n`web/src/lib/playQueue.ts` keeps ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-13-web-parity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web-parity"
+      }
+    },
+    {
+      "id": "story-56.14",
+      "type": "story",
+      "title": "OpenAPI and role tests for the library routes",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.14 — OpenAPI and role tests for the library routes\n\n> Epic 56 · Phase 1 (last) · Depends on: 56.01, 56.04, 56.05, 56.08, 56.09 · Needed by: —\n\n## Why\n\n`shared/api/openapi.json` describes `/libraries` and `/collections` only, names the collection\nitems path `/collections/{id}/videos` while the code serves `/items`, and leaves out series,\nseasons, playlists, hubs, home, facets and `/me/*`, which every TV and Player reads. The API must\nalso prove every role rule of this epic with a test (no hidden-UI rules).\n\n## Description\n\n### 1. OpenAPI\n\nDescribe, with request and response schemas a",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id",
+        "ep-get-collections-id-videos",
+        "ep-post-collections-id-videos"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}",
+        "GET /collections/{id}/videos",
+        "POST /collections/{id}/videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "openapi-roles"
+      }
+    }
+  ]
+}
