@@ -75,6 +75,7 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 ### Plugins and the store (epic 54)
 
 - [Epic 54 — Plugins: new functions from the queue, with no internet, from a Maktaba store](epics/epic-54-plugins.md)
+- [Epic 55 — The desktop Player catches up with the phone and Mac Players](epics/epic-55-desktop-player-parity.md)
 
 ## Cross-cutting wiki pages
 

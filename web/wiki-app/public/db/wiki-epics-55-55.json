@@ -1,0 +1,302 @@
+{
+  "version": "2.0",
+  "part": "wiki-epics-55-55.json",
+  "entries": [
+    {
+      "id": "story-55.1",
+      "type": "story",
+      "title": "The shell: five sections, a stack per section, shared state",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.01 — The shell: five sections, a stack per section, shared state\n\n> Epic 55 · Phase 1 · Depends on: — · Needed by: every other story\n\n## Why\n\nThe desktop Player has one screen after sign-in: `LibraryBrowser`. Every feature in this epic\nneeds somewhere to live: the five sections the Android and Apple Players have (Home, Libraries,\nLive TV, Search, Profile), pages pushed on a section (a video, a series, a library, a channel),\nand one object every screen reads (the client, the user, the navigation, the player). This\nstory builds that shell, moves `ReadOrder` into `:client`, and splits ",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-01-shell-and-sharing.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "shell-and-sharing"
+      }
+    },
+    {
+      "id": "story-55.2",
+      "type": "story",
+      "title": "The capabilities gate and its build switch (#638)",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.02 — The capabilities gate and its build switch (#638)\n\n> Epic 55 · Phase 1 · Depends on: 55.01 · Needed by: 55.03, 55.04, 55.06, 55.07, 55.08\n\n## Why\n\nStory 51.11 made every app read `GET /api/capabilities`: a feature that is off is hidden from a\nviewer and explained to an admin with a way to turn it on. The Android Player can switch the\ngate off with a build property (`-Pmaktaba.capabilitiesGate=off`, kept in\n`BuildConfig.CAPABILITIES_GATE`). The desktop Player makes its `AppSession` with the gate on,\nnever follows capabilities and has no switch: issue #638. This story gives it th",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-get-settings",
+        "ep-put-settings",
+        "ep-get-capabilities",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-02-capabilities-gate.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /settings",
+        "PUT /settings",
+        "GET /capabilities",
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "capabilities-gate"
+      }
+    },
+    {
+      "id": "story-55.3",
+      "type": "story",
+      "title": "Home: hero, rows, recommendations",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.03 — Home: hero, rows, recommendations\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.10\n\n## Why\n\nThe Android and Apple Players open on Home: a featured hero, then rows (Continue Watching, On\nDeck, What's On Now, Favorites, Recently Added, Recently Watched, pinned libraries, For You).\nThe desktop Player opens on a grid of every video. This story gives the desktop the same Home,\nbuilt from the same row builder.\n\n## Description\n\n### 1. Rows from `:client`\n\n`homeRows(rails, recs, now, known)` and its row types move from\n`apps/android/player/.../home/HomeRows.kt` into `",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-03-home.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "home"
+      }
+    },
+    {
+      "id": "story-55.4",
+      "type": "story",
+      "title": "Search: titles, transcripts, recent searches",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.04 — Search: titles, transcripts, recent searches\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.10\n\n## Why\n\nThe desktop Player's search filters titles in the current library. The Android and Apple\nPlayers search titles and words said in videos (Epic 49), suggest as the person types, keep\nrecent searches, and play a transcript hit at its moment. This story brings that search to the\ndesktop, with a keyboard-first field.\n\n## Description\n\n### 1. `SearchModel` on the desktop (`desktop/search/SearchModel.kt`)\n\nAs the Android `SearchModel`: `searchSuggestions(q)` as the p",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "entity-transcripts",
+        "ep-get-search",
+        "ep-post-search"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-04-search.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /search",
+        "POST /search"
+      ],
+      "db_tables": [
+        "transcripts"
+      ],
+      "metadata": {
+        "slug": "search"
+      }
+    },
+    {
+      "id": "story-55.5",
+      "type": "story",
+      "title": "Libraries and the library page",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.05 — Libraries and the library page\n\n> Epic 55 · Phase 2 · Depends on: 55.01 · Needed by: 55.06, 55.10\n\n## Why\n\nThe desktop Player lists libraries beside one grid of videos. The Android and Apple Players\n(Epic 45, story 48.27) have a Libraries section with pinning, and a library page with its hub\nrows, a videos tab with sort and filters, and a series tab. This story replaces the desktop's\n`LibraryBrowser` with the same pages.\n\n## Description\n\n### 1. Libraries section (`desktop/libraries/LibrariesScreen.kt`)\n\n- `librarySummaries()` as cards (name, videos and length), pinned ones firs",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-05-libraries.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "libraries"
+      }
+    },
+    {
+      "id": "story-55.6",
+      "type": "story",
+      "title": "The series page and the video page",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.06 — The series page and the video page\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02, 55.05 · Needed by: 55.08, 55.10\n\n## Why\n\nOn the desktop, choosing a video plays it at once: there is no page to see what it is, resume\nit, start it over, mark it watched or add it to favorites, and series have no page at all. The\nAndroid and Apple Players have both pages (stories 48.27 and 48.28). This story brings them.\n\n## Description\n\n### 1. Series page (`desktop/libraries/SeriesPage.kt`)\n\nAs the Android `SeriesPage`: `series(id)` and `seriesEpisodes(id, sort)`.\n- Header: the series' poster, ",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "entity-chapters",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-06-series-and-video.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [
+        "chapters"
+      ],
+      "metadata": {
+        "slug": "series-and-video"
+      }
+    },
+    {
+      "id": "story-55.7",
+      "type": "story",
+      "title": "Live TV: Now, Guide, the channel player",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.07 — Live TV: Now, Guide, the channel player\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.10\n\n## Why\n\nLive TV (Epic 27, story 48.30) is a section on the Android and Apple Players: what is on now on\nevery channel, a guide by time, and a channel player that works at home and away from home. The\ndesktop Player has none of it. This story adds it, playing the channel with JavaFX through\n`StreamProxy`.\n\n## Description\n\n### 1. Guide maths into `:client`\n\nThe guide's time logic in the Android `GuideTab.kt` (the window shown, blocks cut to it, the\nnow line, Earlier and Lat",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-07-live-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "live-tv"
+      }
+    },
+    {
+      "id": "story-55.8",
+      "type": "story",
+      "title": "Watching: resume, tracks, subtitles, quality, Up Next, keys",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.08 — Watching: resume, tracks, subtitles, quality, Up Next, keys\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.09, 55.10\n\n## Why\n\nThe desktop player starts every video at 0, has no audio or subtitle choice, no quality, no Up\nNext and few keys. The Android and Apple players (story 48.32) resume where the person left,\nchoose audio and subtitles (remembered), cap quality, offer the next episode, and the Mac\nPlayer has a full Playback menu. JavaFX draws no subtitles and plays only an HLS stream's\ndefault audio, so this story also says how the desktop does both (README ",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "entity-chapters"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-08-watch.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "chapters"
+      ],
+      "metadata": {
+        "slug": "watch"
+      }
+    },
+    {
+      "id": "story-55.9",
+      "type": "story",
+      "title": "Profile: history, favorites, playlists, sessions, settings",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.09 — Profile: history, favorites, playlists, sessions, settings\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.08 · Needed by: 55.10\n\n## Why\n\nThe desktop Player has an Account menu (sign out, switch home, approve a sign-in) and a Language\nmenu. The Android and Apple Players have a Profile section: watch history with Forget,\nfavorites, playlists, sign-in sessions, approving a TV or device, playback settings, language,\nand help and about. This story adds the Profile section; the menus stay as shortcuts.\n\n## Description\n\n### 1. `ProfileState` (`desktop/profile/ProfileState.kt`)\n\nAs the A",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-09-profile.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "profile"
+      }
+    },
+    {
+      "id": "story-55.10",
+      "type": "story",
+      "title": "Help, README and the release check",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.10 — Help, README and the release check\n\n> Epic 55 · Phase 3 · Depends on: 55.03, 55.04, 55.05, 55.06, 55.07, 55.08, 55.09 · Needed by: —\n\n## Why\n\nThe desktop Player's help page (`web/src/help/content/{en,ar}/desktop-player.md`) and its\nREADME describe story 42.4: libraries on the left, a title search and a bare player. Once the\nother stories land, both are wrong. This story rewrites them and checks the installers still\nbuild and update as before.\n\n## Description\n\n### 1. Help page, English and Arabic\n\n`web/src/help/content/en/desktop-player.md` and `ar/desktop-player.md`, in the hel",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-10-help-and-release.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "help-and-release"
+      }
+    }
+  ]
+}

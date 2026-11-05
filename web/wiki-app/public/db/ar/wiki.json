@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "منصة ذكاء وسائط تستضيفها بنفسك: بديل كامل لـ Plex، ونصوص مفرّغة يمكن البحث في كل كلمة منها. انظر specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (54 epics, 01 to 54: READMEs, stories, plans)",
+    "specs/epics/** (55 epics, 01 to 55: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -15,13 +15,13 @@
     "diagram": 14,
     "endpoint": 143,
     "entity": 42,
-    "epic": 54,
+    "epic": 55,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 640
+    "story": 650
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -29,7 +29,8 @@
     "wiki-epics-19-27.json",
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
-    "wiki-epics-46-54.json"
+    "wiki-epics-46-54.json",
+    "wiki-epics-55-55.json"
   ],
   "entries": [
     {
@@ -3233,6 +3234,47 @@
       }
     },
     {
+      "id": "epic-55-desktop-player-parity",
+      "type": "epic",
+      "title": "مشغّل سطح المكتب يلحق بمشغّلَي الهاتف والماك",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "engine": null,
+      "content": "مشغّل سطح المكتب يلحق بمشغّلَي الهاتف والماك.\n\nيُشحن مشغّل سطح المكتب لويندوز ولينكس في كل إصدار (`latest-player.json`، وحزم msi وdeb وrpm التي يبنيها `.github/workflows/desktop-release.yml`)، لكن ميزاته توقفت عند القصة 42.4 (2026-10-27). ومنذ ذلك الحين اكتسب مشغّلا أندرويد وآبل صفوف الصفحة الرئيسية، والبث المباشر، والبحث، وصفحات المسلسلات والمقاطع، وملفًا شخصيًا بسجل المشاهدة، ومسارات الصوت والترجمة، والجودة، والتالي، والموافقة على تلفاز، وبوابة القدرات. أما مشغّل سطح المكتب فما زال يعرض قائمة مكتبات بجانب شبكة مقاطع، وبحثًا في العناوين، ومشغّلًا مجردًا. ومن يشاهد على هاتف وعلى حاسوب بويندوز يرى منتجين مختلفين.",
+      "tags": [
+        "epic",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "story-55.1",
+        "story-55.2",
+        "story-55.3",
+        "story-55.4",
+        "story-55.5",
+        "story-55.6",
+        "story-55.7",
+        "story-55.8",
+        "story-55.9",
+        "story-55.10"
+      ],
+      "files": {
+        "readme": "specs/epics/55-desktop-player-parity/README.md"
+      },
+      "metadata": {
+        "story_count": 10,
+        "plan_count": 0,
+        "mockup_count": 0
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "9ff3183a25b0d8e1",
+          "content": "d0ab7823bc670ce6"
+        }
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "قصص الواجهة البرمجية والبث",
@@ -5728,7 +5770,9 @@
         "story-52.14",
         "story-54.25",
         "story-54.32",
-        "story-54.33"
+        "story-54.33",
+        "story-55.5",
+        "story-55.6"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5780,7 +5824,9 @@
         "story-52.14",
         "story-54.25",
         "story-54.32",
-        "story-54.33"
+        "story-54.33",
+        "story-55.5",
+        "story-55.6"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6523,7 +6569,8 @@
         "story-26.6",
         "story-26.8",
         "story-51.9",
-        "story-53.9"
+        "story-53.9",
+        "story-55.4"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6565,7 +6612,8 @@
         "story-26.6",
         "story-26.8",
         "story-51.9",
-        "story-53.9"
+        "story-53.9",
+        "story-55.4"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7251,7 +7299,8 @@
         "story-11.14",
         "story-12.3",
         "story-26.4",
-        "story-54.15"
+        "story-54.15",
+        "story-55.9"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7430,7 +7479,8 @@
         "story-54.7",
         "story-54.8",
         "story-54.11",
-        "story-54.13"
+        "story-54.13",
+        "story-55.2"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7482,7 +7532,8 @@
         "story-54.7",
         "story-54.8",
         "story-54.11",
-        "story-54.13"
+        "story-54.13",
+        "story-55.2"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9412,7 +9463,8 @@
         "story-53.6",
         "story-54.1",
         "story-54.20",
-        "story-54.21"
+        "story-54.21",
+        "story-55.2"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9509,7 +9561,8 @@
         "story-54.35",
         "story-54.36",
         "story-54.37",
-        "story-54.38"
+        "story-54.38",
+        "story-55.2"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -10236,7 +10289,9 @@
         "story-9.18",
         "story-51.1",
         "story-51.9",
-        "story-51.11"
+        "story-51.11",
+        "story-55.6",
+        "story-55.8"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",
@@ -11003,7 +11058,8 @@
         "story-51.11",
         "story-52.8",
         "story-53.3",
-        "story-53.6"
+        "story-53.6",
+        "story-55.4"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",
