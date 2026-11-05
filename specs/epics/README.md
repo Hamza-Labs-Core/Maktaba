@@ -59,3 +59,4 @@ older epics, a story file and a plan file per story. The number is the order the
 | 52 | [Word review: suspect words go to a person, in every language](52-transcript-word-review/README.md) |
 | 53 | [Logs, errors and problem reports from every part, and a UI that never goes dark](53-logs-errors-reports/README.md) |
 | 54 | [Plugins: new functions from the queue, with no internet, from a Maktaba store](54-plugins/README.md) |
+| 56 | [The TV library view: Play all, Shuffle, series, collections and playlists](56-tv-library-view/README.md) |

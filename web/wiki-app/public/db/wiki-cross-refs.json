@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 54,
-    "stories": 640,
+    "epics": 55,
+    "stories": 654,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -386,6 +386,13 @@
       "title": "Plugins",
       "description": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nRequirement: a plugin system for third-party queue extenders that never call the internet and add new functions by working with the queues and the Maktaba API, and a store for those plugins.",
       "readme": "specs/epics/54-plugins/README.md"
+    },
+    {
+      "id": "56",
+      "slug": "tv-library-view",
+      "title": "The TV library view",
+      "description": "The TV library view: Play all, Shuffle, series, collections and playlists.\n\nRequirement: on the TV apps (Android TV and Apple TV), a library must offer **Play all** and **Shuffle**, and must be browsable **by series, by collection and by playlist**, as Plex's TV apps are. Today a library on a TV is one grid of videos, newest first, with no sort, no filter and no way to play more than one video.",
+      "readme": "specs/epics/56-tv-library-view/README.md"
     }
   ],
   "stories": [
@@ -6885,6 +6892,132 @@
       "slug": "plugin-files",
       "title": "Plugin files on disk, on Epic 51's packs code",
       "story_file": "specs/epics/54-plugins/story-54-38-plugin-files.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.01",
+      "epic": 56,
+      "num": "01",
+      "slug": "play-queue",
+      "title": "A play queue on the server",
+      "story_file": "specs/epics/56-tv-library-view/story-56-01-play-queue.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.02",
+      "epic": 56,
+      "num": "02",
+      "slug": "tv-play-shuffle",
+      "title": "Play and Shuffle on the TVs",
+      "story_file": "specs/epics/56-tv-library-view/story-56-02-tv-play-shuffle.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.03",
+      "epic": 56,
+      "num": "03",
+      "slug": "tv-library-tabs",
+      "title": "Library tabs and remote navigation on the TVs",
+      "story_file": "specs/epics/56-tv-library-view/story-56-03-tv-library-tabs.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.04",
+      "epic": 56,
+      "num": "04",
+      "slug": "series-grouping",
+      "title": "Series grouping, series and season pages on the TVs",
+      "story_file": "specs/epics/56-tv-library-view/story-56-04-series-grouping.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.05",
+      "epic": 56,
+      "num": "05",
+      "slug": "sort-filter-categories",
+      "title": "Sort, filter, letter jump and Categories on the TVs",
+      "story_file": "specs/epics/56-tv-library-view/story-56-05-sort-filter-categories.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.06",
+      "epic": 56,
+      "num": "06",
+      "slug": "youtube-collections",
+      "title": "Automatic collections from YouTube playlists and channels",
+      "story_file": "specs/epics/56-tv-library-view/story-56-06-youtube-collections.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.07",
+      "epic": 56,
+      "num": "07",
+      "slug": "plex-collections",
+      "title": "Plex collections, read into Maktaba",
+      "story_file": "specs/epics/56-tv-library-view/story-56-07-plex-collections.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.08",
+      "epic": 56,
+      "num": "08",
+      "slug": "tv-collections",
+      "title": "Collections on the TVs, collection mode and Recommended rows",
+      "story_file": "specs/epics/56-tv-library-view/story-56-08-tv-collections.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.09",
+      "epic": 56,
+      "num": "09",
+      "slug": "smart-playlists",
+      "title": "Smart playlists",
+      "story_file": "specs/epics/56-tv-library-view/story-56-09-smart-playlists.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.10",
+      "epic": 56,
+      "num": "10",
+      "slug": "tv-playlists",
+      "title": "Playlists on the TVs",
+      "story_file": "specs/epics/56-tv-library-view/story-56-10-tv-playlists.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.11",
+      "epic": 56,
+      "num": "11",
+      "slug": "tv-continue-up-next",
+      "title": "Continue and Up next on the TVs",
+      "story_file": "specs/epics/56-tv-library-view/story-56-11-tv-continue-up-next.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.12",
+      "epic": 56,
+      "num": "12",
+      "slug": "players-parity",
+      "title": "The phone and tablet Players catch up",
+      "story_file": "specs/epics/56-tv-library-view/story-56-12-players-parity.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.13",
+      "epic": 56,
+      "num": "13",
+      "slug": "web-parity",
+      "title": "The web on the server queue, with smart playlists",
+      "story_file": "specs/epics/56-tv-library-view/story-56-13-web-parity.md",
+      "plan_files": []
+    },
+    {
+      "id": "56.14",
+      "epic": 56,
+      "num": "14",
+      "slug": "openapi-roles",
+      "title": "OpenAPI and role tests for the library routes",
+      "story_file": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
       "plan_files": []
     }
   ],
