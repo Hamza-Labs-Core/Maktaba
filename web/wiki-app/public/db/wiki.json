@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "Self-hosted media intelligence platform: full Plex alternative + every-word-searchable transcripts. See specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (55 epics, 01 to 56: READMEs, stories, plans)",
+    "specs/epics/** (56 epics, 01 to 56: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -15,13 +15,13 @@
     "diagram": 14,
     "endpoint": 143,
     "entity": 42,
-    "epic": 55,
+    "epic": 56,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 654
+    "story": 664
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -2832,6 +2832,40 @@
       }
     },
     {
+      "id": "epic-55-desktop-player-parity",
+      "type": "epic",
+      "title": "The desktop Player catches up with the phone and Mac Players",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "engine": null,
+      "content": "The desktop Player catches up with the phone and Mac Players.\n\nThe desktop Player for Windows and Linux ships in every release (`latest-player.json`, the msi, deb and rpm built by `.github/workflows/desktop-release.yml`), but its features stopped at story 42.4 (2026-10-27). Since then the Android and Apple Players gained Home rows, Live TV, search, series and video pages, a profile with history, audio and subtitle tracks, quality, Up Next, approving a TV and the capabilities gate. The desktop Player still shows a list of libraries beside a grid of videos, a title search, and a bare player. A person who watches on a phone and on a Windows computer sees two different products.",
+      "tags": [
+        "epic",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "story-55.1",
+        "story-55.2",
+        "story-55.3",
+        "story-55.4",
+        "story-55.5",
+        "story-55.6",
+        "story-55.7",
+        "story-55.8",
+        "story-55.9",
+        "story-55.10"
+      ],
+      "files": {
+        "readme": "specs/epics/55-desktop-player-parity/README.md"
+      },
+      "metadata": {
+        "story_count": 10,
+        "plan_count": 0,
+        "mockup_count": 0
+      }
+    },
+    {
       "id": "epic-56-tv-library-view",
       "type": "epic",
       "title": "The TV library view",
@@ -4705,6 +4739,8 @@
         "story-54.25",
         "story-54.32",
         "story-54.33",
+        "story-55.5",
+        "story-55.6",
         "story-56.3",
         "story-56.4",
         "story-56.5",
@@ -4759,6 +4795,8 @@
         "story-54.25",
         "story-54.32",
         "story-54.33",
+        "story-55.5",
+        "story-55.6",
         "story-56.3",
         "story-56.4",
         "story-56.5",
@@ -5408,7 +5446,8 @@
         "story-26.6",
         "story-26.8",
         "story-51.9",
-        "story-53.9"
+        "story-53.9",
+        "story-55.4"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5444,7 +5483,8 @@
         "story-26.6",
         "story-26.8",
         "story-51.9",
-        "story-53.9"
+        "story-53.9",
+        "story-55.4"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6022,7 +6062,8 @@
         "story-11.14",
         "story-12.3",
         "story-26.4",
-        "story-54.15"
+        "story-54.15",
+        "story-55.9"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6171,7 +6212,8 @@
         "story-54.7",
         "story-54.8",
         "story-54.11",
-        "story-54.13"
+        "story-54.13",
+        "story-55.2"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6217,7 +6259,8 @@
         "story-54.7",
         "story-54.8",
         "story-54.11",
-        "story-54.13"
+        "story-54.13",
+        "story-55.2"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7747,7 +7790,8 @@
         "story-53.6",
         "story-54.1",
         "story-54.20",
-        "story-54.21"
+        "story-54.21",
+        "story-55.2"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7839,6 +7883,7 @@
         "story-54.36",
         "story-54.37",
         "story-54.38",
+        "story-55.2",
         "story-56.13"
       ],
       "files": {
@@ -8434,7 +8479,9 @@
         "story-9.18",
         "story-51.1",
         "story-51.9",
-        "story-51.11"
+        "story-51.11",
+        "story-55.6",
+        "story-55.8"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",
@@ -9059,7 +9106,8 @@
         "story-51.11",
         "story-52.8",
         "story-53.3",
-        "story-53.6"
+        "story-53.6",
+        "story-55.4"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

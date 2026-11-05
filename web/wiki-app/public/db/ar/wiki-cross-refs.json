@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 55,
-    "stories": 654,
+    "epics": 56,
+    "stories": 664,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -386,6 +386,13 @@
       "title": "الإضافات",
       "description": "الإضافات: وظائف جديدة من الطابور، بلا إنترنت، من متجر مكتبة.\n\nالمتطلب: نظام إضافات لموسّعي الطابور من الأطراف الثالثة، لا يتصلون بالإنترنت أبدًا، ويضيفون وظائف جديدة بالعمل مع الطوابير ومع الواجهة البرمجية لمكتبة، ومتجر لهذه الإضافات.",
       "readme": "specs/epics/54-plugins/README.md"
+    },
+    {
+      "id": "55",
+      "slug": "desktop-player-parity",
+      "title": "مشغّل سطح المكتب يلحق بمشغّلَي الهاتف والماك",
+      "description": "مشغّل سطح المكتب يلحق بمشغّلَي الهاتف والماك.\n\nيُشحن مشغّل سطح المكتب لويندوز ولينكس في كل إصدار (`latest-player.json`، وحزم msi وdeb وrpm التي يبنيها `.github/workflows/desktop-release.yml`)، لكن ميزاته توقفت عند القصة 42.4 (2026-10-27). ومنذ ذلك الحين اكتسب مشغّلا أندرويد وآبل صفوف الصفحة الرئيسية، والبث المباشر، والبحث، وصفحات المسلسلات والمقاطع، وملفًا شخصيًا بسجل المشاهدة، ومسارات الصوت والترجمة، والجودة، والتالي، والموافقة على تلفاز، وبوابة القدرات. أما مشغّل سطح المكتب فما زال يعرض قائمة مكتبات بجانب شبكة مقاطع، وبحثًا في العناوين، ومشغّلًا مجردًا. ومن يشاهد على هاتف وعلى حاسوب بويندوز يرى منتجين مختلفين.",
+      "readme": "specs/epics/55-desktop-player-parity/README.md"
     },
     {
       "id": "56",
@@ -6892,6 +6899,96 @@
       "slug": "plugin-files",
       "title": "ملفات الإضافات على القرص، على شيفرة الحزم في الملحمة 51",
       "story_file": "specs/epics/54-plugins/story-54-38-plugin-files.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.01",
+      "epic": 55,
+      "num": "01",
+      "slug": "shell-and-sharing",
+      "title": "الهيكل: خمسة أقسام، ومكدّس صفحات لكل قسم، وحالة مشتركة",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-01-shell-and-sharing.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.02",
+      "epic": 55,
+      "num": "02",
+      "slug": "capabilities-gate",
+      "title": "بوابة القدرات ومفتاحها في البناء (#638)",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-02-capabilities-gate.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.03",
+      "epic": 55,
+      "num": "03",
+      "slug": "home",
+      "title": "الرئيسية: الواجهة المميزة، والصفوف، والاقتراحات",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-03-home.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.04",
+      "epic": 55,
+      "num": "04",
+      "slug": "search",
+      "title": "البحث: العناوين، والتفريغات، وعمليات البحث الأخيرة",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-04-search.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.05",
+      "epic": 55,
+      "num": "05",
+      "slug": "libraries",
+      "title": "المكتبات وصفحة المكتبة",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-05-libraries.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.06",
+      "epic": 55,
+      "num": "06",
+      "slug": "series-and-video",
+      "title": "صفحة المسلسل وصفحة المقطع",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-06-series-and-video.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.07",
+      "epic": 55,
+      "num": "07",
+      "slug": "live-tv",
+      "title": "البث المباشر: الآن، والدليل، ومشغّل القناة",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-07-live-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.08",
+      "epic": 55,
+      "num": "08",
+      "slug": "watch",
+      "title": "المشاهدة: الاستئناف، والمسارات، والترجمة، والجودة، والتالي، والمفاتيح",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-08-watch.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.09",
+      "epic": 55,
+      "num": "09",
+      "slug": "profile",
+      "title": "الملف الشخصي: السجل، والمفضلة، وقوائم التشغيل، والجلسات، والإعدادات",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-09-profile.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.10",
+      "epic": 55,
+      "num": "10",
+      "slug": "help-and-release",
+      "title": "المساعدة، وملف README، وفحص الإصدار",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-10-help-and-release.md",
       "plan_files": []
     },
     {

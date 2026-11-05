@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 55,
-    "stories": 654,
+    "epics": 56,
+    "stories": 664,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -386,6 +386,13 @@
       "title": "Plugins",
       "description": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nRequirement: a plugin system for third-party queue extenders that never call the internet and add new functions by working with the queues and the Maktaba API, and a store for those plugins.",
       "readme": "specs/epics/54-plugins/README.md"
+    },
+    {
+      "id": "55",
+      "slug": "desktop-player-parity",
+      "title": "The desktop Player catches up with the phone and Mac Players",
+      "description": "The desktop Player catches up with the phone and Mac Players.\n\nThe desktop Player for Windows and Linux ships in every release (`latest-player.json`, the msi, deb and rpm built by `.github/workflows/desktop-release.yml`), but its features stopped at story 42.4 (2026-10-27). Since then the Android and Apple Players gained Home rows, Live TV, search, series and video pages, a profile with history, audio and subtitle tracks, quality, Up Next, approving a TV and the capabilities gate. The desktop Player still shows a list of libraries beside a grid of videos, a title search, and a bare player. A person who watches on a phone and on a Windows computer sees two different products.",
+      "readme": "specs/epics/55-desktop-player-parity/README.md"
     },
     {
       "id": "56",
@@ -6892,6 +6899,96 @@
       "slug": "plugin-files",
       "title": "Plugin files on disk, on Epic 51's packs code",
       "story_file": "specs/epics/54-plugins/story-54-38-plugin-files.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.01",
+      "epic": 55,
+      "num": "01",
+      "slug": "shell-and-sharing",
+      "title": "The shell: five sections, a stack per section, shared state",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-01-shell-and-sharing.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.02",
+      "epic": 55,
+      "num": "02",
+      "slug": "capabilities-gate",
+      "title": "The capabilities gate and its build switch (#638)",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-02-capabilities-gate.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.03",
+      "epic": 55,
+      "num": "03",
+      "slug": "home",
+      "title": "Home: hero, rows, recommendations",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-03-home.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.04",
+      "epic": 55,
+      "num": "04",
+      "slug": "search",
+      "title": "Search: titles, transcripts, recent searches",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-04-search.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.05",
+      "epic": 55,
+      "num": "05",
+      "slug": "libraries",
+      "title": "Libraries and the library page",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-05-libraries.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.06",
+      "epic": 55,
+      "num": "06",
+      "slug": "series-and-video",
+      "title": "The series page and the video page",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-06-series-and-video.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.07",
+      "epic": 55,
+      "num": "07",
+      "slug": "live-tv",
+      "title": "Live TV: Now, Guide, the channel player",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-07-live-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.08",
+      "epic": 55,
+      "num": "08",
+      "slug": "watch",
+      "title": "Watching: resume, tracks, subtitles, quality, Up Next, keys",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-08-watch.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.09",
+      "epic": 55,
+      "num": "09",
+      "slug": "profile",
+      "title": "Profile: history, favorites, playlists, sessions, settings",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-09-profile.md",
+      "plan_files": []
+    },
+    {
+      "id": "55.10",
+      "epic": 55,
+      "num": "10",
+      "slug": "help-and-release",
+      "title": "Help, README and the release check",
+      "story_file": "specs/epics/55-desktop-player-parity/story-55-10-help-and-release.md",
       "plan_files": []
     },
     {
