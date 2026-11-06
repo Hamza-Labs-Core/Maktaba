@@ -18,6 +18,8 @@ prs: [701]
 - 1,000 homes drained at 100/s with a fixed 5 s reconnect window take 10 s + 5 s: the 15 s budget is the arithmetic itself. The window must shrink as the drain proceeds.
 - The shared logger redacts IP addresses in log lines (`10.50.0.11:8444` logged as `10.50.0.0:8444`): not a config bug when reading container logs.
 
+- CodeQL's go/reflected-xss flags a request header's value that reaches a page even when only two values can match: return constants, not the matched text.
+
 ## Keep doing
 - Run the containerised rehearsal before opening the story's pull request: the unit and in-process tests all passed while each of these bugs was live.
 
