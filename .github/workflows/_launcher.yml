@@ -215,6 +215,7 @@ jobs:
             # the api/streaming roles are not exercised here
             printf '#!/bin/sh\necho maktaba-api %s\n' "$v" > pkgroot/maktaba-api
             printf '#!/bin/sh\necho maktaba-streaming %s\n' "$v" > pkgroot/maktaba-streaming
+            printf '#!/bin/sh\necho maktaba-plugind %s\n' "$v" > pkgroot/maktaba-plugind
             chmod 0755 pkgroot/*
             ARCH=amd64 VERSION="$v" nfpm package -f deploy/packaging/nfpm.yaml -p deb -t out/
           }
@@ -284,7 +285,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf pkgroot out-pre && mkdir -p pkgroot out-pre
-          for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming; do
+          for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming maktaba-plugind; do
             printf '#!/bin/sh\n' > "pkgroot/$b"
           done
           chmod 0755 pkgroot/*

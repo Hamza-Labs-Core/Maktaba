@@ -25,8 +25,9 @@ const (
 	IdentityPackage  = "package"               // installed by a .deb/.rpm postinstall
 )
 
-// Binaries copied into a release directory (the launcher also goes to the root).
-var Binaries = []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher"}
+// Binaries copied into a release directory (the launcher also goes to the root). The plugin
+// host (Epic 54) is in the macOS and Linux packages only; one missing is noted, not refused.
+var Binaries = []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher", "maktaba-plugind"}
 
 // Options for Convert.
 type Options struct {
