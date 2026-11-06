@@ -30,6 +30,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // parityDB is a fresh database on the server MAKTABA_TEST_PG_URL (else
@@ -38,7 +39,7 @@ import (
 // packages' integration tests use.
 func parityDB(t *testing.T) *sql.DB {
 	t.Helper()
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		base = os.Getenv("DATABASE_URL")
 	}

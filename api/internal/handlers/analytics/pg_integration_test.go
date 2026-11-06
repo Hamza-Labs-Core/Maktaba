@@ -25,11 +25,13 @@ import (
 
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 func pgDB(t *testing.T) *sql.DB {
 	t.Helper()
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		base = os.Getenv("DATABASE_URL")
 	}
