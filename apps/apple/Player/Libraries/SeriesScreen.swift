@@ -89,6 +89,8 @@ struct SeriesScreen: View {
                     .accessibilityIdentifier("series.continue")
                     .padding(.top, MaktabaTokens.Spacing.s2)
                 }
+                // Epic 56 story 56.12: Shuffle the series (a server queue)
+                PlayShuffleButtons(context: context, source: QueueSource(kind: "series", id: id), onlyShuffle: true)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
