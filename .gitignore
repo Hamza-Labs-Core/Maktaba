@@ -173,7 +173,7 @@ web/dist/
 web/node_modules/
 
 # Claude Code runtime metadata (worktrees, locks, local settings); the project's shared
-# settings (the trail hooks), its skills and launch.json are tracked
+# settings (the trail plugin), its skills and launch.json are tracked
 .claude/*
 !.claude/settings.json
 !.claude/skills/

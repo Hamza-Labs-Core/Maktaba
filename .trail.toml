@@ -1,0 +1,32 @@
+# The Claude trail's settings: https://github.com/Hamza-Labs-Core/claude-trail
+# (the `trail` plugin, CLI and Action). The format is in docs/trail/README.md.
+
+[paths]
+events = "docs/trail/events"
+snapshots = "docs/trail/snapshots"
+current = "docs/trail/current.md"
+legacy = "docs/claude-trail.md"   # the frozen trail before 2026-11-05
+
+[git]
+remote = "origin"
+main_branch = "main"
+
+[events]
+pr_digits = 4
+issue_prefix = "i"
+day_prefix = "d"
+# pull requests up to #653 are covered by the frozen docs/claude-trail.md (and the migrated
+# events); from #654 on, a merged pull request with no event is Missing
+missing_after = 653
+
+[snapshots]
+tag_prefix = "v"
+
+[checks]
+default_secrets = true
+owner_quotes = true   # CLAUDE.md rule 5: never quote or attribute the owner's words
+
+[trail_only]
+# A change of only these is trail-only: never Missing, never tagged, and a push of only these
+# starts no CI run (tools/ci/ci_paths.py PUSH_IGNORE is kept equal to this list by its tests).
+paths = ["docs/claude-trail.md", "docs/trail/**"]

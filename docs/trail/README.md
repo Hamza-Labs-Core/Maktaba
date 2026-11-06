@@ -11,8 +11,13 @@ guesses, the rule that was corrected mid-task, the gotcha that cost an hour.
 - **`../claude-trail.md`**: the trail before 2026-11-05, frozen. Read-only history; its entries
   are also migrated into `events/` (`source: claude-trail.md`).
 
-How to write each part: the `trail` skill (`.claude/skills/trail/SKILL.md`). The checker:
-`python3 tools/trail/trail.py check` (the lint job runs it on every pull request).
+The tools live in their own repository,
+[claude-trail](https://github.com/Hamza-Labs-Core/claude-trail): a Claude Code plugin (`trail`,
+enabled in `.claude/settings.json`) with the `trail` skill (how to write each part), the
+`/trail:event`, `/trail:snapshot` and `/trail:read` commands and the session hook; the `trail`
+CLI; and the GitHub Action the lint job runs on every pull request (`trail check`). This
+repository's settings are in [`/.trail.toml`](../../.trail.toml). Without the plugin:
+`uvx --from git+https://github.com/Hamza-Labs-Core/claude-trail@v0.1.0 trail check`.
 
 ## Events
 
@@ -83,7 +88,7 @@ built_from: v0.3.81         # the previous snapshot, or full for a rebuild from 
   (`- The cache key is still per path (issue #649). (#634)`). Any other `#N` is a pull request.
 - `snapshots/` holds only `vX.Y.Z.md` files; the checker refuses anything else there.
 - `Missing events` and `Index` are computed, never written by hand
-  (`trail.py skeleton --tag vX.Y.Z` prints them). Missing lists each pull request merged after
+  (`trail skeleton --tag vX.Y.Z` prints them). Missing lists each pull request merged after
   #653 that has no event, so a session that forgot to write one shows up.
 - Each snapshot carries the last one forward, so a lesson keeps its citation and is dropped
   only on purpose. A rebuild from every event (`built_from: full`) at each minor version keeps
