@@ -91,7 +91,8 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			logger.Warn("relay: the change listener did not start; the cache refreshes each minute", "err", err)
 		}
 	}
-	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg), relayReadiness(cfg, cache)...)
+	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
+		append(relayReadiness(cfg, cache), server.WithDraining(registry.Closing))...)
 
 	// Story 50.03: resume tickets (the key derived from the token secret every
 	// node shares) and DRAIN on shutdown, each with its switch.

@@ -44,11 +44,14 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 	r.Use(middleware.CORS(allowedOrigins))
 
 	r.Get("/healthz", healthzHandler(build))
+	ready := readyzHandler(pool, mig)
 	if o.lenient != nil {
-		r.Get("/readyz", o.lenient.handler(pool, mig))
-	} else {
-		r.Get("/readyz", readyzHandler(pool, mig))
+		ready = o.lenient.handler(pool, mig)
 	}
+	if o.draining != nil {
+		ready = drainingReadyz(o.draining, ready)
+	}
+	r.Get("/readyz", ready)
 	r.Get("/.well-known/maktaba-cloud-version", versionHandler(build))
 	return r
 }
@@ -69,7 +72,30 @@ func healthzHandler(build BuildInfo) http.HandlerFunc {
 // RouterOption configures NewRouter.
 type RouterOption func(*routerOptions)
 
-type routerOptions struct{ lenient *LenientReadiness }
+type routerOptions struct {
+	lenient  *LenientReadiness
+	draining func() bool
+}
+
+// WithDraining makes /readyz answer 503 "draining" while draining() is true:
+// a relay moving its homes away (story 50.03) is taken out of the edge's
+// rotation at once, so new tunnels and requests go to the other process
+// (the rehearsal's edge and 50.08's blue/green deploy rely on it).
+func WithDraining(draining func() bool) RouterOption {
+	return func(o *routerOptions) { o.draining = draining }
+}
+
+func drainingReadyz(draining func() bool, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if draining() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "down", "reason": "draining"})
+			return
+		}
+		next(w, r)
+	}
+}
 
 // WithLenientReadiness gives /readyz the relay's rule (story 50.05): a
 // database that is away for less than MaxOutage while the relay can still
