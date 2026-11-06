@@ -26,8 +26,10 @@ pub struct Paths {
     pub cache_dir: PathBuf,
     /// read and write: the host's own run folder (its dispatch socket)
     pub run_dir: PathBuf,
-    /// the plugin API's socket: the one connection out
+    /// the plugin API's socket: the one connection out (named in macOS's profile)
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub api_socket: PathBuf,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub dispatch_socket: PathBuf,
     /// the jobs the pool runs at once (sizes RLIMIT_AS on Linux)
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
