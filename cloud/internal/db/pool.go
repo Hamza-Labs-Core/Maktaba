@@ -11,6 +11,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,7 +33,7 @@ func Open(url string, maxOpen, maxIdle int, lifetime time.Duration) (*Pool, erro
 	if url == "" {
 		return nil, errors.New("db: empty url")
 	}
-	d, err := sql.Open("postgres", url)
+	d, err := sql.Open("postgres", WithConnectTimeout(url, 2))
 	if err != nil {
 		return nil, fmt.Errorf("db: open: %w", err)
 	}
@@ -39,6 +41,25 @@ func Open(url string, maxOpen, maxIdle int, lifetime time.Duration) (*Pool, erro
 	d.SetMaxIdleConns(maxIdle)
 	d.SetConnMaxLifetime(lifetime)
 	return &Pool{DB: d}, nil
+}
+
+// WithConnectTimeout adds connect_timeout=secs to a postgres:// URL that
+// has none. lib/pq does not stop a connection's startup when a context ends,
+// so without it a request waits on a database that vanished (a failover's
+// old address: connects hang) until the kernel gives up, minutes later. The
+// rehearsal's db-blip found it. A key=value DSN is left as it is.
+func WithConnectTimeout(url string, secs int) string {
+	if !strings.HasPrefix(url, "postgres://") && !strings.HasPrefix(url, "postgresql://") {
+		return url
+	}
+	if strings.Contains(url, "connect_timeout=") {
+		return url
+	}
+	sep := "?"
+	if strings.Contains(url, "?") {
+		sep = "&"
+	}
+	return url + sep + "connect_timeout=" + strconv.Itoa(secs)
 }
 
 // Ping verifies that the configured database is reachable. Used by the

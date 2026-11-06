@@ -31,6 +31,10 @@ type HomeCache struct {
 	mu      sync.Mutex
 	entries map[string]*list.Element
 	lru     *list.List
+	// downUntil: a lookup failed; until then a home with an entry is served
+	// from it without asking the database (a request must not wait on one
+	// that is away)
+	downUntil time.Time
 }
 
 type homeEntry struct {
@@ -123,9 +127,24 @@ func (c *HomeCache) BySlug(ctx context.Context, slug string) (stores.Server, err
 			return sv, nil
 		}
 	}
+	if e != nil && now.Before(c.downUntil) && now.Sub(e.served) < orDefault(c.StaleFor, time.Hour) {
+		e.served = now
+		sv := e.sv
+		c.mu.Unlock()
+		countCache(CacheStale)
+		return sv, nil
+	}
 	c.mu.Unlock()
 
-	sv, err := c.Lookup.BySlug(ctx, slug)
+	// bounded: with an old entry to fall back on, a request does not wait for
+	// a database that is away (found by the rehearsal's db-blip)
+	lctx := ctx
+	if e != nil {
+		var cancel context.CancelFunc
+		lctx, cancel = context.WithTimeout(ctx, time.Second)
+		defer cancel()
+	}
+	sv, err := c.Lookup.BySlug(lctx, slug)
 	if err == nil {
 		c.put(slug, sv, now)
 		countCache(CacheMiss)
@@ -138,6 +157,7 @@ func (c *HomeCache) BySlug(ctx context.Context, slug string) (stores.Server, err
 	// the database is away: a home served in the last hour keeps working
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.downUntil = now.Add(5 * time.Second)
 	if el, ok := c.entries[slug]; ok {
 		e := el.Value.(*homeEntry)
 		if now.Sub(e.served) < orDefault(c.StaleFor, time.Hour) {
