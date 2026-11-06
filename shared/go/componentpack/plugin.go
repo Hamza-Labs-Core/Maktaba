@@ -258,12 +258,14 @@ func UnpackPlugin(r io.Reader, dest string, want PluginExpect) (pkg *PluginPacka
 			if err != nil {
 				return nil, pluginErr(CodePackageBadHead, "%s: %v", name, err)
 			}
+			// written under the constant name, never the entry's own
+			sigPath := PluginStoreSig
 			if name == PluginDeveloperSig {
-				pkg.DeveloperSig = b
+				pkg.DeveloperSig, sigPath = b, PluginDeveloperSig
 			} else {
 				pkg.StoreSig = b
 			}
-			if err := writeFile(dest, Entry{Kind: 'f', Mode: 0o644, Size: int64(len(b)), SHA256: sha256Hex(b), Path: name}, bytes.NewReader(b)); err != nil {
+			if err := writeFile(dest, Entry{Kind: 'f', Mode: 0o644, Size: int64(len(b)), SHA256: sha256Hex(b), Path: sigPath}, bytes.NewReader(b)); err != nil {
 				return nil, err
 			}
 			continue
