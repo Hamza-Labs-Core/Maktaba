@@ -186,6 +186,10 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **A MediaIntel import's dry run no longer holds up the queue.** The dry run (the default)
+  locked the jobs' summary for its whole run, so every job that finished meanwhile waited for
+  it; it now locks nothing. An applied import queues its library scans after it commits, so a
+  scan that finishes during the import can no longer deadlock with it.
 - **`serve --offline` also stops the pipeline's own outbound calls.** With `MAKTABA_OFFLINE=1`
   the YouTube listings, downloads, exact dates and repairs wait (no scheduled refresh is
   queued), the books stage looks nothing up on Wikipedia (a book not looked up yet is looked up
