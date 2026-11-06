@@ -424,3 +424,36 @@ func TestJanitorLeavesAnHourBeingCompressed(t *testing.T) {
 		t.Fatalf("then it goes: %v", fs)
 	}
 }
+
+// A stop waits for the hours still being compressed: none is left half written.
+func TestCloseWaitsForCompression(t *testing.T) {
+	k, c, _ := newKeeper(t, -1)
+	// in the background, as in production, on a slow disk
+	k.segs.compress = func(p string) {
+		k.segs.zipping[p] = true
+		k.segs.zips.Add(1)
+		go func() {
+			defer k.segs.zips.Done()
+			time.Sleep(50 * time.Millisecond)
+			compressFile(p)
+			k.segs.mu.Lock()
+			delete(k.segs.zipping, p)
+			k.segs.mu.Unlock()
+		}()
+	}
+	f, _ := k.Spool("api", "")
+	fmt.Fprintln(f, `{"level":"info","msg":"first_hour"}`)
+	k.Flush()
+	c.add(time.Hour)
+	fmt.Fprintln(f, `{"level":"info","msg":"next_hour"}`)
+	_ = f.Close()
+	k.Flush()
+	k.Close()
+	dir := filepath.Join(k.Root(), "segments", "api")
+	if _, err := os.Stat(filepath.Join(dir, "20261106-10.ndjson"+Zst)); err != nil {
+		t.Fatalf("the closed hour is compressed before Close returns: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "20261106-10.ndjson")); err == nil {
+		t.Fatal("its uncompressed file is gone before Close returns")
+	}
+}

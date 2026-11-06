@@ -551,6 +551,9 @@ func runServe() error {
 			// one notification hub for every producer (story 33.13): the bell
 			// reads its table; e-mail / push subscribe to it later
 			notifyHub := notify.NewHub(appDB, logger)
+			// Epic 53 story 53.10: new and returning error groups reach the admins (a loop
+			// of logs.index: off with the log index)
+			loops.Declare("errors_notifier", runner.Func(logs.NewErrorNotifier(notifyHub, logger).Run))
 			var mountRemote func(r chi.Router)
 			var remoteCtl *tvremote.Controller
 			// BusDSN: the event bus's pq.Listener takes a connection string (lib/pq

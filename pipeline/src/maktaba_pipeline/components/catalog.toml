@@ -433,7 +433,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "logs.index"
-kind      = "process"
+kind      = "process+loop"
 group     = "system"
 title_key = "components.logs.index.title"
 desc_key  = "components.logs.index.desc"
@@ -441,6 +441,8 @@ desc_key  = "components.logs.index.desc"
 # rollups join it in 53.10 and 53.12); the segments themselves are written by the
 # supervisor, which is not a component, so turning this off loses no line
 processes = ["logs/"]
+# the API's notifier of new and returning error groups (story 53.10)
+loops     = ["api:errors_notifier"]
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 resources = { ram_mb = 120, disk_mb = 350, gpu = "none" }
 # not in Core, which runs no switchable process (N9: four processes); a Core home keeps its

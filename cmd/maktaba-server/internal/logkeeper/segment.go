@@ -54,15 +54,19 @@ type segments struct {
 
 	mu      sync.Mutex
 	streams map[string]*stream // by dir
-	// zipping are the closed hours being compressed (the janitor leaves them)
+	// zipping are the closed hours being compressed (the janitor leaves them); zips waits
+	// for them at close, so a stop never cuts a compression short
 	zipping map[string]bool
+	zips    sync.WaitGroup
 }
 
 func newSegments(root string, now func() time.Time) *segments {
 	s := &segments{root: root, maxSize: MaxSegment, now: now, streams: map[string]*stream{}, zipping: map[string]bool{}}
 	s.compress = func(p string) {
 		s.zipping[p] = true // s.mu is held: closeStream runs under it
+		s.zips.Add(1)
 		go func() {
+			defer s.zips.Done()
 			compressFile(p)
 			s.mu.Lock()
 			delete(s.zipping, p)
@@ -236,10 +240,12 @@ func (s *segments) isOpen(path string) bool {
 
 func (s *segments) close() {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, st := range s.streams {
 		s.closeStream(st, false)
 	}
+	s.mu.Unlock()
+	// the hours being compressed finish first (outside s.mu: each takes it when done)
+	s.zips.Wait()
 }
 
 func idxPath(segment string) string {
