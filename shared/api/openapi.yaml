@@ -4661,10 +4661,10 @@ paths:
       tags:
       - Components
       summary: Restart a component
-      description: 'Restarts a running component: its processes through this machine''s supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.'
+      description: 'Restarts a running component: its processes and the supervisor''s own loops through this machine''s supervisor, its loops in the API cancelled and started again, and its loops in streaming or the pipeline through a restart request their runner acts on within seconds. The desired state does not change; the restart is recorded as `component.restart`.'
       responses:
         '200':
-          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again.'
+          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again, or were asked to (its loops in streaming or the pipeline).'
           content:
             application/json:
               schema:
@@ -4686,7 +4686,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: 'Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.'
+          description: 'Refused (`code`): `not_restartable` (stages, an extension or an asset), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.'
           content:
             application/problem+json:
               schema:

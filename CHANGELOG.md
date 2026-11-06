@@ -36,6 +36,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A component turned back on catches up even when another worker turns it on.** On a home
+  with several pipeline workers, the one that turned a component's stages off was not always
+  the one that turned them on again, and then the catch-up job for what the stages missed
+  while off was not queued until the next change. The worker that opens the stages again now
+  queues it, with the time the component went off, and the other one does not queue it a
+  second time. The components tests now keep each local run's logs in a folder of its own,
+  with the failed test's report and the database's component state, locally as in CI.
+
 - **A new Arabic dictionary or ffmpeg pack is used without restarting the pipeline.** A
   pipeline that was already running kept the dictionary and ffmpeg of the packs it started
   with until it restarted. It now follows each pack's current version at its next use: the
@@ -416,6 +424,13 @@ build fails when the two differ.
   id under a key that stays on each machine (`log.key` beside `secrets.key`), never by the raw
   id. The Apple and Android apps keep their recent lines on the device (under 1 MB), the web
   app the last 2,000 in memory, for problem reports later in Epic 53.
+
+- **Every component with loops can be restarted, wherever its loops run.** Restart on the
+  Components page and `maktaba-server components restart` refused a component whose loops
+  run in streaming, the pipeline or the supervisor itself (Live TV in the server, HDHomeRun,
+  the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
+  streaming and the pipeline restart theirs within seconds of the request: each loop stops
+  within its grace and starts again, as a process does.
 
 ### Fixed
 

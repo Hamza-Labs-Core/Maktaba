@@ -97,9 +97,9 @@ jobs:
       - name: components-live
         working-directory: pipeline
         run: >-
-          uv run --extra dev pytest ../tests/components/test_live.py
-          ../tests/components/test_api_live.py ../tests/components/test_server_live.py
-          -q -p no:cacheprovider -rsx
+          uv run --extra dev pytest ../tests/components/test_rig_logs.py
+          ../tests/components/test_live.py ../tests/components/test_api_live.py
+          ../tests/components/test_server_live.py -q -p no:cacheprovider -rsx
       - name: Keep the logs
         if: always()
         uses: actions/upload-artifact@v7.0.1
