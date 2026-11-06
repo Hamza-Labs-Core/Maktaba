@@ -17,6 +17,7 @@ import { useTranscriptionSummary } from "../../lib/useTranscriptionSummary";
 import { useFmt } from "../../components/queue/format";
 import { TitleRow } from "../../help/HelpLink";
 import { HelpLink } from "../../help/HelpLink";
+import { WordFlags } from "./WordFlags";
 import { causeHelp } from "../../help/registry";
 import "../../styles/queue.css";
 import "../../styles/transcription.css";
@@ -133,6 +134,7 @@ export function Transcription() {
       <Stages s={summary} />
       <Libraries rows={summary.libraries} />
       <Failures s={summary} />
+      <WordFlags />
     </section>
   );
 }

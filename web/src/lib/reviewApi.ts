@@ -201,7 +201,12 @@ export interface PackRow {
 export interface LanguagePacksView {
   packs: PackRow[];
   heard: Record<string, number>;
-  components: Array<{ id: string; phase?: string; reason?: string; install_size_mb?: number }> | null;
+  components: Array<{
+    id: string;
+    phase?: string;
+    reason?: string;
+    install_size_mb?: number;
+  }> | null;
 }
 
 export interface Vocab {
@@ -220,32 +225,42 @@ export interface Vocab {
 
 function qs(params: Record<string, string | number | boolean | undefined | null>): string {
   const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
+  for (const [k, v] of Object.entries(params))
+    if (v !== undefined && v !== null && v !== "") q.set(k, String(v));
   const s = q.toString();
   return s ? `?${s}` : "";
 }
 
 export const reviewApi = {
-  flags: (f: {
-    library?: string;
-    status?: Status;
-    language?: string;
-    reason?: string;
-    video?: string;
-    show_locked?: boolean;
-    cursor?: string | null;
-    limit?: number;
-  } = {}) => api.get<FlagPage>(`/api/review/flags${qs(f)}`),
+  flags: (
+    f: {
+      library?: string;
+      status?: Status;
+      language?: string;
+      reason?: string;
+      video?: string;
+      show_locked?: boolean;
+      cursor?: string | null;
+      limit?: number;
+    } = {}
+  ) => api.get<FlagPage>(`/api/review/flags${qs(f)}`),
   flag: (id: string) => api.get<FlagDetail>(`/api/review/flags/${id}`),
   clip: (id: string) => api.get<Clip>(`/api/review/flags/${id}/clip`),
   resolve: (
     id: string,
-    body: { action: Action; text?: string; apply_to_same_key?: boolean; force?: boolean; scope?: "library" | "home" }
+    body: {
+      action: Action;
+      text?: string;
+      apply_to_same_key?: boolean;
+      force?: boolean;
+      scope?: "library" | "home";
+    }
   ) => api.post<ResolveResult>(`/api/review/flags/${id}/resolve`, body),
   undoEdit: (id: string) => api.post<{ undone: number }>(`/api/review/edits/${id}/undo`),
   undoBatch: (id: string) => api.post<{ undone: number }>(`/api/review/batches/${id}/undo`),
   summary: () => api.get<Summary>("/api/review/summary"),
-  history: (videoId: string) => api.get<{ items: EditRow[] }>(`/api/videos/${videoId}/transcript/edits`),
+  history: (videoId: string) =>
+    api.get<{ items: EditRow[] }>(`/api/videos/${videoId}/transcript/edits`),
   fixWord: (
     videoId: string,
     body: {
@@ -262,12 +277,14 @@ export const reviewApi = {
       `/api/videos/${videoId}/transcript/words`,
       body
     ),
-  settings: (libraryId: string) => api.get<WordReviewView>(`/api/libraries/${libraryId}/word-review`),
+  settings: (libraryId: string) =>
+    api.get<WordReviewView>(`/api/libraries/${libraryId}/word-review`),
   saveSettings: (libraryId: string, s: WordReviewSettings) =>
     api.put<{ settings: WordReviewSettings }>(`/api/libraries/${libraryId}/word-review`, s),
   languagePacks: () => api.get<LanguagePacksView>("/api/language-packs"),
-  vocabulary: (f: { q?: string; kind?: string; language?: string; library?: string; scope?: string } = {}) =>
-    api.get<{ items: Vocab[] }>(`/api/vocabulary${qs(f)}`),
+  vocabulary: (
+    f: { q?: string; kind?: string; language?: string; library?: string; scope?: string } = {}
+  ) => api.get<{ items: Vocab[] }>(`/api/vocabulary${qs(f)}`),
   addVocab: (v: {
     scope: "home" | "library";
     library_id?: string;
@@ -280,7 +297,8 @@ export const reviewApi = {
     api.put<{ id: string }>(`/api/vocabulary/${id}`, v),
   deleteVocab: (id: string) => api.delete<{ deleted: string }>(`/api/vocabulary/${id}`),
   vocabExportUrl: () => apiUrl("/api/vocabulary/export"),
-  correctionsExportUrl: (library?: string) => apiUrl(`/api/review/corrections/export${qs({ library })}`),
+  correctionsExportUrl: (library?: string) =>
+    apiUrl(`/api/review/corrections/export${qs({ library })}`),
 };
 
 /** A code the server sent that this build does not know reads as unknown, never a crash. */
