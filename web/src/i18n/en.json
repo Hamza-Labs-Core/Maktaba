@@ -7099,5 +7099,20 @@
   "queue.issues.cause.plugin_scope": "The plugin reached outside its job or its libraries",
   "queue.issues.cause.plugin_quota": "The plugin used up its quota",
   "queue.issues.cause.plugin_failed": "The plugin reported an error",
-  "queue.issues.cause.plugin_held": "The plugin is stopped"
+  "queue.issues.cause.plugin_held": "The plugin is stopped",
+  "components.group.plugins": "Plugins",
+  "components.plugins.host.title": "Plugin host",
+  "components.plugins.host.desc": "Runs plugins in a sandbox with no internet, only while a plugin is on.",
+  "components.reason.incompatible": "This plugin does not run on this version of Maktaba.",
+  "components.reason.grants_needed": "Waiting for an admin to approve new permissions.",
+  "components.reason.revoked": "Maktaba switched this plugin off for everyone.",
+  "components.reason.unreviewed_disallowed": "Unreviewed plugins are not allowed on this server.",
+  "components.reason.entitlement_missing": "This plugin needs a purchase.",
+  "components.reason.plugin_crash_loop": "Stopped itself after repeated errors.",
+  "components.reason.sandbox_partial": "Runs with part of its sandbox: this system lacks some of it.",
+  "components.reason.sandbox_unavailable": "Could not start its sandbox, so no plugin runs.",
+  "components.reason.runner_crash_loop": "Its runner keeps crashing.",
+  "components.reason.plugin_trusted_unsigned": "Claims Maktaba's own rights without Maktaba's signature.",
+  "components.reason.plugin_trusted_version": "A Maktaba plugin from another version of the server.",
+  "components.reason.kept_off": "You turned this plugin off. It stays off until you turn it on."
 }
