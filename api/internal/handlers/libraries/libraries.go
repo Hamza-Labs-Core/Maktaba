@@ -176,6 +176,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/libraries/manage", h.Manage)
 	r.Get("/api/libraries/folders", h.Folders)
 	r.Get("/api/libraries/{id}/impact", h.Impact)
+	r.Get("/api/libraries/{id}/plex-missing", h.PlexMissing)
 	r.Post("/api/libraries/{id}/merge", h.Merge)
 	r.Post("/api/libraries/{id}/empty-trash", h.EmptyTrash)
 }

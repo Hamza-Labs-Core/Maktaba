@@ -75,7 +75,8 @@
         "api:jwt_key_reaper",
         "api:queues_snapshots",
         "api:sharepath_reload",
-        "api:browse_rowcache_listen"
+        "api:browse_rowcache_listen",
+        "api:play_queue_sweep"
       ],
       "placement": "any",
       "platforms": [
@@ -819,6 +820,57 @@
     },
     {
       "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.collections.youtube.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "youtube"
+      ],
+      "gated": false,
+      "group": "processing",
+      "id": "collections.youtube",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "classify"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "youtube_collections"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.collections.youtube.title",
+      "wants": []
+    },
+    {
+      "bundles": [
         "full"
       ],
       "conflicts": [],
@@ -1018,7 +1070,8 @@
         "plex_index",
         "plex_collection",
         "plex_groups",
-        "plex_livetv"
+        "plex_livetv",
+        "plex_collections_import"
       ],
       "stop_grace_s": 0,
       "switchable": true,
@@ -2303,6 +2356,7 @@
     "model.embedder",
     "search.semantic",
     "classify",
+    "collections.youtube",
     "enrich",
     "runtime.ollama",
     "model.llm.qwen2_5-7b",

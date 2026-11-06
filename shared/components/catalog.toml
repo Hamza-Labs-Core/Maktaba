@@ -275,6 +275,21 @@ platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full", "worker"]
 since     = "0.3.66"
 
+# Epic 56 story 56.06: collections from YouTube playlists and channels (the Plex import,
+# story 56.07, is a stage of ext.plex: an extension's stages are its own)
+[[component]]
+id        = "collections.youtube"
+kind      = "stages"
+group     = "processing"
+title_key = "components.collections.youtube.title"
+desc_key  = "components.collections.youtube.desc"
+stages    = ["youtube_collections"]
+requires  = ["classify"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "worker"]
+features  = ["youtube"]
+since     = "0.3.82"
+
 [[component]]
 id        = "enrich"
 kind      = "stages+loop"
@@ -326,7 +341,8 @@ kind      = "extension"
 group     = "integrations"
 title_key = "components.ext.plex.title"
 desc_key  = "components.ext.plex.desc"
-stages    = ["plex_index", "plex_collection", "plex_groups", "plex_livetv"]
+stages    = ["plex_index", "plex_collection", "plex_groups", "plex_livetv",
+             "plex_collections_import"]
 settings  = ["rules.plexlive"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]

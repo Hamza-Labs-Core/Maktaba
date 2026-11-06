@@ -43,6 +43,7 @@ func manageDB(t *testing.T) *sql.DB {
 		`CREATE TABLE libraries (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, roots TEXT NOT NULL,
 			settings TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMP, updated_at TIMESTAMP,
 			collection_mode TEXT NOT NULL DEFAULT 'tab_only')`,
+		`CREATE TABLE plex_items (server TEXT, rating_key TEXT, file TEXT, detail TEXT, PRIMARY KEY (server, rating_key))`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, content_hash TEXT NOT NULL,
 			path TEXT NOT NULL, state TEXT NOT NULL, UNIQUE (library_id, content_hash))`,
 		`CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, subject_kind TEXT NOT NULL DEFAULT 'video',
@@ -52,7 +53,7 @@ func manageDB(t *testing.T) *sql.DB {
 		`CREATE TABLE library_stats_cache (library_id TEXT PRIMARY KEY)`,
 		`CREATE TABLE series (id TEXT PRIMARY KEY, library_id TEXT)`,
 		`CREATE TABLE collections (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, name TEXT NOT NULL,
-			UNIQUE (library_id, name))`,
+			source_kind TEXT, source_ref TEXT, auto_rule TEXT, UNIQUE (library_id, name))`,
 		`CREATE TABLE playback_state (video_id TEXT, user_id TEXT)`,
 		`CREATE TABLE topic_collections (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, playlist_id TEXT NOT NULL,
 			name TEXT NOT NULL, UNIQUE (library_id, playlist_id))`,
@@ -232,7 +233,7 @@ func TestMerge(t *testing.T) {
 	addVideo(t, db, "s3", libSmall, "h3", "missing")
 	mustExec(t, db, `INSERT INTO library_stats_cache VALUES ($1), ($2)`, libBig, libSmall)
 	mustExec(t, db, `INSERT INTO series VALUES ('ser', $1)`, libSmall)
-	mustExec(t, db, `INSERT INTO collections VALUES ('c1', $1, 'Fav'), ('c2', $2, 'Fav'), ('c3', $2, 'Tafsir')`, libBig, libSmall)
+	mustExec(t, db, `INSERT INTO collections (id, library_id, name) VALUES ('c1', $1, 'Fav'), ('c2', $2, 'Fav'), ('c3', $2, 'Tafsir')`, libBig, libSmall)
 	mustExec(t, db, `INSERT INTO topic_collections VALUES ('t1', $1, 'PL1', 'Fiqh'), ('t2', $2, 'PL1', 'Fiqh'), ('t3', $2, 'PL2', 'Seerah')`, libBig, libSmall)
 	mustExec(t, db, `INSERT INTO channels VALUES ('ch1', $1, 1, 'Quran', 'quran'), ('ch2', $1, 2, 'Kids', 'kids'),
 		('ch3', $2, 1, 'Talks', 'talks'), ('ch4', $2, 5, 'Quran', 'quran'), ('ch5', $2, 7, 'Misc', 'misc')`, libBig, libSmall)
@@ -729,5 +730,39 @@ func TestManageShowsDerivedSourcesAndClashes(t *testing.T) {
 		if l.Name == "Nested" && (l.YouTube.Guess == nil || l.YouTube.Guess.Derived) {
 			t.Errorf("Nested after a look = %+v", l.YouTube)
 		}
+	}
+}
+
+// Epic 56 story 56.07 T07: Manage libraries says how many Plex collections the import
+// read into a library and how many of their items are not Maktaba videos; the missing
+// ones are listed (admin only) with Plex's title and file.
+func TestManageCountsThePlexImport(t *testing.T) {
+	db := manageDB(t)
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	addLibrary(t, db, libBig, "Big", t0, "/m/big")
+	mustExec(t, db, `INSERT INTO collections (id, library_id, name, source_kind, source_ref, auto_rule) VALUES
+		('c1', $1, 'Favourites', 'plex', 'machine-1:9001', '{"source":"plex","missing":1,"missing_keys":["199"]}'),
+		('c2', $1, 'Kids', 'plex', 'machine-1:9002', '{"source":"plex","missing":0,"missing_keys":[]}'),
+		('c3', $1, 'Mine', NULL, NULL, NULL)`, libBig)
+	mustExec(t, db, `INSERT INTO plex_items (server, rating_key, file, detail) VALUES ('machine-1', '199', '/x/not.mp4', '{"title":"Not here"}')`)
+	h := &Handler{DB: db, PathChecker: fakeChecker{}}
+	rec := call(t, h, "GET", "/api/libraries/manage", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp ManageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if pc := resp.Items[0].PlexCollections; pc == nil || pc.Imported != 2 || pc.MissingVideos != 1 {
+		t.Fatalf("plex collections %+v", resp.Items[0].PlexCollections)
+	}
+	rec = call(t, h, "GET", "/api/libraries/"+libBig+"/plex-missing", "")
+	var missing struct{ Items []PlexMissingItem }
+	if err := json.Unmarshal(rec.Body.Bytes(), &missing); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("missing %d %s", rec.Code, rec.Body.String())
+	}
+	if len(missing.Items) != 1 || missing.Items[0] != (PlexMissingItem{Collection: "Favourites", RatingKey: "199", Title: "Not here", File: "/x/not.mp4"}) {
+		t.Errorf("missing %+v", missing.Items)
 	}
 }
