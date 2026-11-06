@@ -36,7 +36,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -71,6 +70,66 @@ object ResumePosition {
 /** An audio track the Audio menu offers: an HLS rendition (by its NAME) or a direct file's track (by its index). */
 data class AudioOption(val name: String?, val language: String?, val rendition: String? = null, val index: Int = 0)
 
+/** The player a video plays in: JavaFX's ([FxVideo]), or a test's. Each call returns at once. */
+interface Video {
+    fun toggle()
+    fun pause()
+    fun seek(ms: Long)
+    fun sound(volume: Float, muted: Boolean)
+    fun dispose()
+}
+
+/** What a [Video] tells its [Playback], from any thread. */
+interface VideoEvents {
+    val volume: Float
+    val muted: Boolean
+    /** Ready: its length (null: not known) and, for a file, its audio tracks in order. */
+    fun ready(durationMs: Long?, audio: List<AudioOption>)
+    fun position(ms: Long)
+    fun playing(on: Boolean)
+    fun failed(why: String)
+    fun ended()
+}
+
+/** Makes the [Video] for a stream the proxy serves at [url], from [fromMs] (playing at once when [autoplay]). */
+fun interface Players {
+    suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video
+}
+
+/** A JavaFX player, driven on its own thread. */
+class FxVideo(val media: MediaPlayer) : Video {
+    override fun toggle() = Playback.fx { if (media.status == MediaPlayer.Status.PLAYING) media.pause() else media.play() }
+    override fun pause() = Playback.fx { media.pause() }
+    override fun seek(ms: Long) = Playback.fx { media.seek(Duration.millis(ms.coerceAtLeast(0).toDouble())) }
+    override fun sound(volume: Float, muted: Boolean) = Playback.fx {
+        media.volume = volume.toDouble()
+        media.isMute = muted
+    }
+    override fun dispose() = Playback.fx { media.dispose() }
+}
+
+/** JavaFX's players. */
+object FxPlayers : Players {
+    override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video = Playback.onFx {
+        val media = Media(url)
+        val p = MediaPlayer(media)
+        p.setOnReady {
+            if (fromMs > 0) p.seek(Duration.millis(fromMs.toDouble()))
+            p.volume = events.volume.toDouble()
+            p.isMute = events.muted
+            if (autoplay) p.play()
+            val tracks = media.tracks.filterIsInstance<AudioTrack>()
+                .mapIndexed { i, t -> AudioOption(t.name?.takeIf { it.isNotBlank() }, t.language?.takeIf { it.isNotBlank() }, index = i) }
+            events.ready(p.totalDuration.toMillis().takeIf { it.isFinite() }?.toLong(), tracks)
+        }
+        p.currentTimeProperty().addListener { _, _, t -> events.position(t.toMillis().toLong()) }
+        p.statusProperty().addListener { _, _, st -> events.playing(st == MediaPlayer.Status.PLAYING) }
+        p.setOnError { events.failed(p.error?.message ?: "The video stopped playing.") }
+        p.setOnEndOfMedia { events.ended() }
+        FxVideo(p)
+    }
+}
+
 /**
  * What is playing. As the Android player's: opens a stream session, plays it, reports the
  * position every 10 s (so "continue watching" resumes there), reopens before the signed URL
@@ -81,6 +140,10 @@ data class AudioOption(val name: String?, val language: String?, val rendition: 
  * Story 55.08: it resumes where the person left the video; offers the stream's audio and
  * subtitle tracks (the subtitles drawn by the Player, [caption]) and the session's qualities;
  * keeps the person's track choice for the next video; and offers Up next ([upNext]).
+ *
+ * A track or quality change runs under the video's job, and every wait in [open] and [reload]
+ * is checked against the video's generation ([stop] and [play] move it on): a change that
+ * ends after its video was closed or replaced disposes what it made and closes its session.
  */
 class Playback(
     val client: ApiClient,
@@ -92,10 +155,12 @@ class Playback(
     private val settings: () -> PlaybackValues = { PlaybackValues() },
     /** What the home has on now (chapters are read only when they are on). */
     private val features: () -> Capabilities = { Capabilities.AllOn },
+    private val players: Players = FxPlayers,
+    private val proxyFor: (ApiClient) -> StreamProxy = ::StreamProxy,
 ) {
     var request by mutableStateOf<PlayRequest?>(null)
         private set
-    var player by mutableStateOf<MediaPlayer?>(null)
+    var player by mutableStateOf<Video?>(null)
         private set
     var problem by mutableStateOf<String?>(null)
         private set
@@ -151,7 +216,7 @@ class Playback(
     /** The quality chosen while this home is signed in (null: the playback settings' default). */
     private var chosenQuality: QualityOption? = null
 
-    private val proxy by lazy { StreamProxy(client) }
+    private val proxy by lazy { proxyFor(client) }
     private var session: String? = null
     private var hls = false
     private var renewAt = Long.MAX_VALUE
@@ -159,6 +224,11 @@ class Playback(
     @Volatile private var failed: String? = null
     @Volatile private var cues: List<Cue> = emptyList()
     private var running: Job? = null
+    /** The running video's scope: its changes are its children, so another video or Close stops them. */
+    private var video: CoroutineScope? = null
+    /** Moves on with each [stop]: work begun for an earlier video sees it and drops what it made. */
+    private var generation = 0
+    private var currentLocal: String? = null
     /** The session's options: a direct file's other audio track asks for it as HLS. */
     private var audioTrack: Int? = null
 
@@ -170,8 +240,10 @@ class Playback(
     }
 
     fun stop() {
+        generation++
         running?.cancel()
         running = null
+        video = null
         val s = session
         if (s != null) {
             val at = (positionMs / 1000).toInt()
@@ -199,6 +271,8 @@ class Playback(
         chapters = emptyList()
         ladder = emptyList()
         audioTrack = null
+        currentLocal = null
+        hls = false
         upNext.reset(null)
         proxy.forget()
     }
@@ -209,9 +283,13 @@ class Playback(
         proxy.close()
     }
 
-    fun toggle() = fx { player?.let { if (it.status == MediaPlayer.Status.PLAYING) it.pause() else it.play() } }
+    fun toggle() {
+        player?.toggle()
+    }
 
-    fun seekTo(ms: Long) = fx { player?.seek(Duration.millis(ms.coerceAtLeast(0).toDouble())) }
+    fun seekTo(ms: Long) {
+        player?.seek(ms.coerceAtLeast(0))
+    }
 
     fun skip(deltaMs: Long) = seekTo(positionMs + deltaMs)
 
@@ -244,21 +322,21 @@ class Playback(
         cues = emptyList()
         caption = null
         choice = if (r == null) choice.copy(textOff = true, textLanguage = null) else choice.copy(textOff = false, textLanguage = r.language)
-        if (r != null) scope.launch { loadCues(r) }
+        if (r != null) video?.launch { loadCues(r) }
     }
 
     /** Plays [o]'s audio from the same moment; kept for the next video. */
     fun chooseAudio(o: AudioOption) {
         if (o == audio) return
         choice = choice.copy(audioLanguage = o.language)
-        scope.launch { switchAudio(o) }
+        video?.launch { switchAudio(o) }
     }
 
     /** Reopens the stream capped at [q] from the same moment; kept while this home is signed in. */
     fun chooseQuality(q: QualityOption) {
-        if (q == quality) return
+        if (q.height == quality.height) return
         chosenQuality = q
-        scope.launch {
+        video?.launch {
             val was = quality
             quality = q
             if (!reopen(kbps = q.maxBitrateKbps)) quality = was
@@ -267,6 +345,7 @@ class Playback(
 
     /** The video's work: its side reads are children of its job, so another video or Close stops them. */
     private suspend fun run(r: PlayRequest) = coroutineScope {
+        video = this
         val start = r.startSec ?: resumeAt(r)
         quality = chosenQuality ?: settings().qualityWifi.let { s -> if (s.maxBitrateKbps == null) QualityOption.Auto else QualityOption(s.height, s.maxBitrateKbps) }
         launch { findNext(r) }
@@ -293,7 +372,7 @@ class Playback(
         upNext.reset(next)
     }
 
-    /** The stream's tracks once known: the person's choice (or the settings) applied. */
+    /** The stream's tracks once known: the person's choice (or the settings) applied (a direct file's audio in [ready]). */
     private suspend fun followTracks() {
         val plan = choice.plan(settings())
         if (hls) {
@@ -344,11 +423,16 @@ class Playback(
     /** The same session in a new JavaFX player from the current moment (the master is read again). */
     private suspend fun reload(): Boolean {
         val url = currentLocal ?: return false
+        val g = generation
         reopening = true
         return try {
             val at = positionMs
             val wasPlaying = playing
-            val next = onFx { newPlayer(url, at, autoplay = wasPlaying) }
+            val next = withContext(NonCancellable) { players.open(url, at, wasPlaying, events) }
+            if (g != generation || !currentCoroutineContext().isActive) {
+                next.dispose()
+                throw CancellationException("The video was closed or replaced.")
+            }
             release(player)
             player = next
             note = null
@@ -376,14 +460,15 @@ class Playback(
         }
     }
 
-    private var currentLocal: String? = null
-
     /**
      * Opens (or reopens) the stream at [fromMs]. The session in use is closed only once the
      * new one plays; a reopen that fails leaves the old stream playing, with a [note] of why.
      */
     private suspend fun open(fromMs: Long, kbps: Int? = quality.maxBitrateKbps) {
         val r = request ?: return
+        val g = generation
+        /** The video this open is for was closed or replaced (or its job is). */
+        suspend fun stale() = g != generation || !currentCoroutineContext().isActive
         val old = session
         try {
             val s = withContext(NonCancellable) {
@@ -393,12 +478,16 @@ class Playback(
                 )
             }
             try {
-                currentCoroutineContext().ensureActive()
+                if (stale()) throw CancellationException("The video was closed or replaced.")
                 val url = s.playbackUrl(client.home) ?: throw IllegalStateException("The home gave no address to play.")
                 client.waitUntilPlayable(url)
-                currentCoroutineContext().ensureActive()
+                if (stale()) throw CancellationException("The video was closed or replaced.")
                 val local = proxy.local(url) ?: throw IllegalStateException("Not this home's stream.")
-                val next = onFx { newPlayer(local, fromMs, autoplay = true) }
+                val next = withContext(NonCancellable) { players.open(local, fromMs, true, events) }
+                if (stale()) {
+                    next.dispose()
+                    throw CancellationException("The video was closed or replaced.")
+                }
                 release(player)
                 player = next
                 currentLocal = local
@@ -409,6 +498,8 @@ class Playback(
             session = s.sessionId
             hls = s.isHls
             ladder = QualityOption.of(s.ladder.ifEmpty { emptyList<Rung>() })
+            // a default from the settings (720p at its own cap) is the ladder's rung of that height
+            if (quality.height != null) ladder.firstOrNull { it.height == quality.height }?.let { quality = it }
             ended = false
             failed = null
             note = null
@@ -432,40 +523,49 @@ class Playback(
         }
     }
 
-    /** A JavaFX player for [url], playing from [fromMs] once it is ready. Runs on the FX thread. */
-    private fun newPlayer(url: String, fromMs: Long, autoplay: Boolean): MediaPlayer {
-        val media = Media(url)
-        val p = MediaPlayer(media)
-        p.setOnReady {
-            durationMs = p.totalDuration.toMillis().takeIf { it.isFinite() }?.toLong() ?: request?.durationSec?.let { (it * 1000).toLong() } ?: 0
-            if (fromMs > 0) p.seek(Duration.millis(fromMs.toDouble()))
-            p.volume = volume.toDouble()
-            p.isMute = muted
-            if (autoplay) p.play()
-            if (!hls) {
-                val tracks = media.tracks.filterIsInstance<AudioTrack>()
-                if (tracks.size > 1 && audioOptions.isEmpty()) {
-                    audioOptions = tracks.mapIndexed { i, t -> AudioOption(t.name?.takeIf { it.isNotBlank() }, t.language?.takeIf { it.isNotBlank() }, index = i) }
-                    audio = audioOptions.getOrNull(audioTrack ?: 0)
-                }
-            }
-        }
-        p.currentTimeProperty().addListener { _, _, t ->
-            val ms = t.toMillis().toLong()
+    /** What this video's players tell it. */
+    private val events = object : VideoEvents {
+        override val volume: Float get() = this@Playback.volume
+        override val muted: Boolean get() = this@Playback.muted
+
+        override fun ready(durationMs: Long?, audio: List<AudioOption>) = onReady(durationMs, audio)
+
+        override fun position(ms: Long) {
             positionMs = ms
             if (subtitle != null) caption = cues.at(ms)
         }
-        p.statusProperty().addListener { _, _, st -> playing = st == MediaPlayer.Status.PLAYING }
-        p.setOnError { failed = p.error?.message ?: "The video stopped playing." }
-        p.setOnEndOfMedia { ended = true }
-        return p
+
+        override fun playing(on: Boolean) {
+            playing = on
+        }
+
+        override fun failed(why: String) {
+            failed = why
+        }
+
+        override fun ended() {
+            ended = true
+        }
     }
 
-    private fun applySound() = fx {
-        player?.let {
-            it.volume = volume.toDouble()
-            it.isMute = muted
-        }
+    /**
+     * A player is ready. A direct file's audio tracks are offered once known, and the kept
+     * language (or the settings') is switched to when it is not the first track (story 55.08).
+     */
+    private fun onReady(length: Long?, tracks: List<AudioOption>) {
+        durationMs = length ?: request?.durationSec?.let { (it * 1000).toLong() } ?: 0
+        if (hls || tracks.size <= 1 || audioOptions.isNotEmpty()) return
+        audioOptions = tracks
+        audio = tracks.getOrNull(audioTrack ?: 0)
+        val lang = choice.plan(settings()).audioLanguage ?: return
+        if (audioTrack != null) return
+        val at = pickTrack(tracks.map { it.language }, lang) ?: return
+        val want = tracks[at]
+        if (at > 0 && want.language?.let { sameLanguage(it, lang) } == true) video?.launch { switchAudio(want) }
+    }
+
+    private fun applySound() {
+        player?.sound(volume, muted)
     }
 
     /**
@@ -503,16 +603,16 @@ class Playback(
                 // a renewal keeps the track and quality in force (the proxy keeps the audio)
                 val wasPlaying = playing || why != null
                 open(fromMs = at)
-                if (!wasPlaying) fx { player?.pause() }
+                if (!wasPlaying) player?.pause()
             }
         }
     }
 
-    private fun release(p: MediaPlayer?) {
-        if (p != null) fx { p.dispose() }
+    private fun release(p: Video?) {
+        p?.dispose()
     }
 
-    internal companion object {
+    companion object {
         fun fx(block: () -> Unit) = Platform.runLater(block)
 
         /** Runs [block] on the FX thread and waits for its result. */

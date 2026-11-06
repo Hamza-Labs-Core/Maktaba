@@ -93,7 +93,7 @@ fun ChannelScreen(id: String) {
             local = { s ->
                 when (s) {
                     is LiveStream.Lan -> proxy.local(s.url)
-                    is LiveStream.Relay -> proxy.relayLocal(s.url)
+                    is LiveStream.Relay -> proxy.relaySession(s.url)
                 }
             },
             show = { url ->
