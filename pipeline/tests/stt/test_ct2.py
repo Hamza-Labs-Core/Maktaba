@@ -478,7 +478,10 @@ async def test_files_share_each_pass_and_come_out_as_the_mac_s() -> None:
     # bounded by their words, which are on the file's timeline (window start + offset)
     s = r1.sentences[1]
     assert (s.start, s.end, s.text) == (30.5, 31.2, "w101 w101")
-    assert s.words == [(30.5, 30.8, " w101"), (30.9, 31.2, " w101")]
+    assert s.words is not None
+    assert [w.as_tuple() for w in s.words] == [(30.5, 30.8, " w101"), (30.9, 31.2, " w101")]
+    # Epic 52 (story 52.1): faster-whisper's word probability is kept
+    assert all(w.prob is not None for w in s.words)
     assert all(x.words for r in (r1, r2) for x in r.sentences)
     assert r1.backend == "ct2-batched" and r1.backend_version == _loaded(model).version
     assert r1.detected_language == "ar" and r1.language == "ar"

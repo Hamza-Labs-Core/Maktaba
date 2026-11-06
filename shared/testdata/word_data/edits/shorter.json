@@ -1,0 +1,51 @@
+{
+ "text": "the colour of teh sky",
+ "word_data": "AQUAAAADAAAKAOYABAAGCgAoAOYACwACMgAKAOYADgADPAAUADMAEgADUAAoAOYA",
+ "char_start": 14,
+ "char_len": 3,
+ "after": "th",
+ "want_text": "the colour of th sky",
+ "want_word_data": "AQUAAAADAAAKAOYABAAGCgAoAOYACwACMgAKAOYADgACPAAUAP8AEQADUAAoAOYA",
+ "want_slots": [
+  {
+   "char_start": 0,
+   "char_len": 3,
+   "start_cs": 0,
+   "dur_cs": 10,
+   "prob": 230,
+   "flags": 0
+  },
+  {
+   "char_start": 4,
+   "char_len": 6,
+   "start_cs": 10,
+   "dur_cs": 40,
+   "prob": 230,
+   "flags": 0
+  },
+  {
+   "char_start": 11,
+   "char_len": 2,
+   "start_cs": 50,
+   "dur_cs": 10,
+   "prob": 230,
+   "flags": 0
+  },
+  {
+   "char_start": 14,
+   "char_len": 2,
+   "start_cs": 60,
+   "dur_cs": 20,
+   "prob": 255,
+   "flags": 0
+  },
+  {
+   "char_start": 17,
+   "char_len": 3,
+   "start_cs": 80,
+   "dur_cs": 40,
+   "prob": 230,
+   "flags": 0
+  }
+ ]
+}

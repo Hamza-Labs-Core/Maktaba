@@ -33,9 +33,10 @@ from typing import Any, Protocol
 
 from ..classify.quran import verse_runs
 from ..text.arabic import fold
-from .settings import SAMPLE_RATE, Sentence, Transcript
+from .settings import HEARD_DIFFERENTLY, INSERTED, QURAN, SAMPLE_RATE, Sentence, Transcript, Word
 
 __all__ = [
+    "Alt",
     "CHUNK_SEC",
     "MIN_AGREEMENT",
     "Dictionary",
@@ -53,8 +54,19 @@ CHUNK_SEC = 28.0
 #: recitation and music, or Whisper hallucinated over silence: either way, keep the timed one)
 MIN_AGREEMENT = 0.5
 
-#: a word as (start, end, text): :attr:`Sentence.words`
-TimedWord = tuple[float, float, str]
+#: a word as heard: :attr:`Sentence.words` (indexes as ``(start, end, text)``)
+TimedWord = Word
+
+
+@dataclass(frozen=True, slots=True)
+class Alt:
+    """Where the second listen replaced words (Epic 52, story 52.1): ``n`` words from
+    index ``i`` of the merged output, what Whisper heard there and what Cohere heard."""
+
+    i: int
+    n: int
+    whisper: str
+    cohere: str
 
 _EDGE = re.compile(r"^([^\w]*)(.*?)([^\w]*)$", re.S)
 
@@ -71,11 +83,24 @@ class Dictionary(Protocol):
 
 
 class Speller:
-    """Spells a word Cohere heard: as Whisper spelt it in this file, else as the
-    dictionary does, else as heard. Only hamza / «ة» / «ى» forms ever change: a candidate
-    must fold to the same letters."""
+    """Spells a word Cohere heard: as the library's vocabulary spells it (Epic 52, story
+    52.10), else as Whisper spelt it in this file, else as the dictionary does, else as
+    heard. Only hamza / «ة» / «ى» forms ever change: a candidate must fold to the same
+    letters."""
 
-    def __init__(self, whisper_words: Sequence[str], dictionary: Dictionary | None) -> None:
+    def __init__(
+        self,
+        whisper_words: Sequence[str],
+        dictionary: Dictionary | None,
+        vocabulary: Sequence[str] = (),
+    ) -> None:
+        self._vocab: dict[str, str] = {}
+        for term in vocabulary:
+            for part in term.split():
+                core = _EDGE.match(part)
+                word = core.group(2) if core else part
+                if word:
+                    self._vocab.setdefault(_key(word), word)
         self._known: dict[str, Counter[str]] = {}
         for token in whisper_words:
             core = _EDGE.match(token)
@@ -90,6 +115,9 @@ class Speller:
             return token
         lead, word, trail = m.groups()
         key = _key(word)
+        meant = self._vocab.get(key)
+        if meant:
+            return lead + meant + trail
         seen = self._known.get(key)
         if seen:
             return lead + seen.most_common(1)[0][0] + trail
@@ -100,13 +128,26 @@ class Speller:
         return token
 
 
-def _spread(start: float, end: float, words: list[str]) -> list[TimedWord]:
-    """Words sharing ``start``..``end`` evenly (Cohere gives no timings)."""
+def _spread(
+    start: float,
+    end: float,
+    words: list[str],
+    probs: Sequence[float | None] = (),
+    flags: int = 0,
+) -> list[TimedWord]:
+    """Words sharing ``start``..``end`` evenly (Cohere gives no timings). ``probs``: the
+    probability each keeps (the Whisper word it replaced), ``flags`` their bits."""
     if not words:
         return []
     step = max(0.0, end - start) / len(words)
     return [
-        (round(start + i * step, 3), round(start + (i + 1) * step, 3), w)
+        Word(
+            round(start + i * step, 3),
+            round(start + (i + 1) * step, 3),
+            w,
+            probs[min(i, len(probs) - 1)] if probs else None,
+            flags,
+        )
         for i, w in enumerate(words)
     ]
 
@@ -116,10 +157,14 @@ def merge_words(
     cohere_text: str,
     locked: Sequence[bool],
     speller: Speller,
+    alts: list[Alt] | None = None,
 ) -> tuple[list[TimedWord], int]:
     """Whisper's words with Cohere's where they disagree, and how many words changed.
 
-    ``locked[i]`` keeps Whisper's word ``i`` whatever Cohere heard (a verse)."""
+    ``locked[i]`` keeps Whisper's word ``i`` whatever Cohere heard (a verse; marked
+    :data:`QURAN`). A replaced word keeps the probability of the Whisper word it replaced
+    and is marked :data:`HEARD_DIFFERENTLY`; a word Whisper missed is :data:`INSERTED`,
+    with no probability. ``alts`` collects each replaced span (Epic 52, story 52.1)."""
     heard = cohere_text.split()
     a = [_key(w[2]) for w in whisper]
     b = [_key(w) for w in heard]
@@ -127,7 +172,10 @@ def merge_words(
     changed = 0
     sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
     for op, i1, i2, j1, j2 in sm.get_opcodes():
-        if op == "equal" or any(locked[i1:i2]):
+        if any(locked[i1:i2]):
+            out.extend(_mark(whisper[i1:i2], locked[i1:i2]))
+            continue
+        if op == "equal":
             out.extend(whisper[i1:i2])
             continue
         new = [speller.spell(w) for w in heard[j1:j2] if _key(w)]
@@ -136,12 +184,37 @@ def merge_words(
             continue
         if i2 > i1:
             start, end = whisper[i1][0], whisper[i2 - 1][1]
+            probs = [_prob(w) for w in whisper[i1:i2]]
+            bits = HEARD_DIFFERENTLY
         else:  # Whisper missed words here: they go in the gap between its neighbours
             start = whisper[i1 - 1][1] if i1 > 0 else (whisper[0][0] if whisper else 0.0)
             end = whisper[i1][0] if i1 < len(whisper) else start
-        out.extend(_spread(start, end, new))
+            probs, bits = [], INSERTED
+        if alts is not None:
+            alts.append(
+                Alt(
+                    len(out),
+                    len(new),
+                    " ".join(w[2].strip() for w in whisper[i1:i2]),
+                    " ".join(new),
+                )
+            )
+        out.extend(_spread(start, end, new, probs, bits))
         changed += max(i2 - i1, len(new))
     return out, changed
+
+
+def _prob(w: Any) -> float | None:
+    return w.prob if isinstance(w, Word) else None
+
+
+def _mark(words: Sequence[Any], locked: Sequence[bool]) -> list[TimedWord]:
+    """``words`` as they are, the verse's ones marked :data:`QURAN`."""
+    out: list[TimedWord] = []
+    for w, lock in zip(words, locked, strict=True):
+        word = w if isinstance(w, Word) else Word(w[0], w[1], w[2])
+        out.append(word._replace(flags=word.flags | QURAN) if lock else word)
+    return out
 
 
 def chunks(sentences: Sequence[Sentence], limit: float = CHUNK_SEC) -> list[list[int]]:
@@ -219,6 +292,7 @@ def refine(
     recognise: Callable[[list[Any]], list[str]],
     dictionary: Dictionary | None,
     model: str,
+    vocabulary: Sequence[str] = (),
 ) -> RefineStats:
     """Correct ``result``'s words in place with what ``recognise`` hears in each
     stretch of ``audio`` (16 kHz mono, on the transcript's own timeline). ``recognise``
@@ -226,8 +300,14 @@ def refine(
     stats = RefineStats(model=model)
     sentences = result.sentences
     all_words = [w for s in sentences for w in (s.words or [])]
-    speller = Speller([w[2] for w in all_words], dictionary)
+    speller = Speller([w[2] for w in all_words], dictionary, vocabulary)
     locked_all = verse_runs([_key(w[2]) for w in all_words])
+    # the verse's words are marked whether or not their stretch is heard again
+    k = 0
+    for s in sentences:
+        if s.words:
+            s.words = _mark(s.words, locked_all[k : k + len(s.words)])
+            k += len(s.words)
     first: dict[int, int] = {}  # sentence -> index of its first word in all_words
     n = 0
     for i, s in enumerate(sentences):
@@ -257,27 +337,43 @@ def refine(
             if _agreement(st.whisper, text) < MIN_AGREEMENT:
                 stats.kept += 1
                 continue
-            merged, changed = merge_words(st.whisper, text, st.locked, speller)
+            alts: list[Alt] = []
+            merged, changed = merge_words(st.whisper, text, st.locked, speller, alts)
             if changed:
                 stats.changed += changed
-                _redistribute(sentences, st.group, merged)
+                _redistribute(sentences, st.group, merged, alts)
+
     # no word is ever dropped, but a replacement's time can move a short sentence's only
     # word into its neighbour: the emptied sentence goes
     result.sentences = [s for s in sentences if s.text]
     return stats
 
 
-def _redistribute(sentences: list[Sentence], group: list[int], merged: list[TimedWord]) -> None:
-    """Give each sentence of the stretch back its words (by time), and its text."""
+def _redistribute(
+    sentences: list[Sentence],
+    group: list[int],
+    merged: list[TimedWord],
+    alts: Sequence[Alt] = (),
+) -> None:
+    """Give each sentence of the stretch back its words (by time), its text and where
+    the second listen replaced words (:attr:`Sentence.alt`, index in the sentence)."""
     bounds = [(sentences[i].start, sentences[i].end) for i in group]
     per: list[list[TimedWord]] = [[] for _ in group]
+    where: list[tuple[int, int]] = []  # merged index -> (sentence of the group, index in it)
     k = 0
     for w in merged:
         mid = (w[0] + w[1]) / 2
         while k + 1 < len(group) and mid >= bounds[k + 1][0]:
             k += 1
+        where.append((k, len(per[k])))
         per[k].append(w)
-    for idx, words in zip(group, per, strict=True):
+    found: list[list[dict[str, Any]]] = [[] for _ in group]
+    for a in alts:
+        if a.i < len(where):
+            g, i = where[a.i]
+            found[g].append({"i": i, "n": a.n, "whisper": a.whisper, "cohere": a.cohere})
+    for g, (idx, words) in enumerate(zip(group, per, strict=True)):
         s = sentences[idx]
         s.words = words
         s.text = _sentence_text(words)
+        s.alt = found[g] or None

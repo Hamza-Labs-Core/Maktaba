@@ -21,6 +21,7 @@ from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import gpu_turns, model_share
 from maktaba_pipeline.stt.batched import Sentence, Transcript
+from maktaba_pipeline.stt.settings import Word
 from maktaba_pipeline.stt.placement import TranscriptionConfig
 from tests.stages.test_transcribe import LINES, FakeTranscriber, _one_video
 from tests.stages.world import core_runtime, drain_core
@@ -35,7 +36,7 @@ class _WithWords(FakeTranscriber):
         t = await super().transcribe(audio, **kw)
         t.sentences = [
             Sentence(s.start, s.end, s.text, s.avg_logprob, s.no_speech_prob,
-                     words=[(s.start, s.end, s.text)])
+                     words=[Word(s.start, s.end, s.text)])
             for s in t.sentences
         ]  # fmt: skip
         return t
@@ -103,8 +104,10 @@ async def _texts(db: Database, tid: Any) -> list[str]:
 
 
 async def _words_left(db: Database, tid: Any) -> int:
-    rows = await db.fetch("SELECT metadata FROM transcript_segments WHERE transcript_id = $1", tid)
-    return sum(1 for r in rows if "words" in _meta(r))
+    rows = await db.fetch(
+        "SELECT metadata, word_data FROM transcript_segments WHERE transcript_id = $1", tid
+    )
+    return sum(1 for r in rows if "words" in _meta(r) or r["word_data"])
 
 
 def test_the_stages_that_read_a_transcript_follow_the_second_listen() -> None:
@@ -134,7 +137,8 @@ async def test_it_corrects_whisper_s_transcript_and_the_subtitles_follow(
     meta = _meta(row)
     whisper = meta["refine"]["whisper"]
     assert meta["refine"]["source"] == "hf" and whisper != str(row["id"])
-    assert "words" not in meta  # MAKTABA_STT_STORE_WORDS off: the words served the listen
+    # Epic 52 (story 52.1): the corrected transcript keeps its words, packed
+    assert meta["words"] is True and await _words_left(db, row["id"]) == len(LINES)
     assert await _texts(db, row["id"]) == ["قال " + t for _a, _b, t in LINES]
     # Whisper's transcript is kept, superseded, without its words now
     old = await db.fetchrow("SELECT is_active FROM transcripts WHERE id = $1", whisper)
@@ -167,7 +171,8 @@ async def test_with_the_second_listen_off_it_passes_the_transcript_on(
     row = await _active(db, vid)
     assert heard == [] and "refine" not in _meta(row) and row["id"] != before
     assert fake.decoded == [str(tmp_path / "درس السيرة 01.mp4")]  # type: ignore[attr-defined]
-    assert await _words_left(db, row["id"]) == 0  # no words kept for a listen that is off
+    # Epic 52 (story 52.1): every transcript keeps its words, listen or not
+    assert await _words_left(db, row["id"]) == len(LINES)
 
 
 @pytest.mark.asyncio
@@ -218,7 +223,10 @@ async def test_a_transcript_from_before_the_split_has_no_words_to_align_on(
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
     await drain_core(db, rt, only={"transcribe"})
     tid = (await _active(db, vid))["id"]
-    await db.execute("UPDATE transcript_segments SET metadata = '{}' WHERE transcript_id = $1", tid)
+    await db.execute(
+        "UPDATE transcript_segments SET metadata = '{}', word_data = NULL WHERE transcript_id = $1",
+        tid,
+    )
     await drain_core(db, rt, only={"second_listen"})
     refine = _meta(await _active(db, vid))["refine"]
     assert heard == [] and refine["source"] == "skipped" and "no word timings" in refine["skipped"]

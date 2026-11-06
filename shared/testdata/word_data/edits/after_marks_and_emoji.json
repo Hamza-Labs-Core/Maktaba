@@ -1,0 +1,43 @@
+{
+ "text": "بِسْمِ 😀 word end",
+ "word_data": "AQQAAAAGAAAyAOYEBwABMgAKAIAACQAEPAAeAGYADgADWgAUAOYA",
+ "char_start": 9,
+ "char_len": 4,
+ "after": "world",
+ "want_text": "بِسْمِ 😀 world end",
+ "want_word_data": "AQQAAAAGAAAyAOYEBwABMgAKAIAACQAFPAAeAP8ADwADWgAUAOYA",
+ "want_slots": [
+  {
+   "char_start": 0,
+   "char_len": 6,
+   "start_cs": 0,
+   "dur_cs": 50,
+   "prob": 230,
+   "flags": 4
+  },
+  {
+   "char_start": 7,
+   "char_len": 1,
+   "start_cs": 50,
+   "dur_cs": 10,
+   "prob": 128,
+   "flags": 0
+  },
+  {
+   "char_start": 9,
+   "char_len": 5,
+   "start_cs": 60,
+   "dur_cs": 30,
+   "prob": 255,
+   "flags": 0
+  },
+  {
+   "char_start": 15,
+   "char_len": 3,
+   "start_cs": 90,
+   "dur_cs": 20,
+   "prob": 230,
+   "flags": 0
+  }
+ ]
+}
