@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,6 +59,12 @@ func runLogIndex(ctx context.Context, root, addr string, logs config.LogsSection
 	defer ix.Close()
 	r := logs.Resolved()
 	ix.Retention, ix.ErrorRetention = r.Retention, r.ErrorRetention
+	// story 53.12: this machine's metrics (the API's admin port merges the supervisor's)
+	if u := strings.TrimSpace(os.Getenv("MAKTABA_METRICS_URLS")); u != "" {
+		ix.MetricsURLs = strings.Split(u, ",")
+	} else {
+		ix.MetricsURLs = []string{"http://" + ports.APIAdmin.Local() + "/metrics"}
+	}
 	ix.MaxBytes = r.MaxTotal * 35 / 100
 	ix.Log = func(msg string, kv ...any) { logLine("info", msg, kv...) }
 	if why := ix.Rebuilt(); why != "" {

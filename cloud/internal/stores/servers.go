@@ -61,8 +61,12 @@ func (s *Servers) MintClaim(ctx context.Context, userID string) (code string, er
 	return code, err
 }
 
-// ErrSlugTaken: the slug is reserved or another server has it.
-var ErrSlugTaken = errors.New("servers: slug reserved or taken")
+// ErrSlugTaken: another server has the slug.
+var ErrSlugTaken = errors.New("servers: slug taken")
+
+// ErrSlugReserved: the slug is on the reserved list (operator and infrastructure names such
+// as api, canary, r1…r99: docs/cloud-dns.md, story 50.01), so no home can take it.
+var ErrSlugReserved = errors.New("servers: slug reserved")
 
 // RedeemClaim consumes an 8-char claim code and registers the server it
 // links, in one transaction: the code is spent only when the server is
@@ -92,7 +96,7 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 		return Server{}, err
 	}
 	if reserved > 0 {
-		return Server{}, ErrSlugTaken
+		return Server{}, ErrSlugReserved
 	}
 	var sv Server
 	err = tx.QueryRowContext(ctx, `
