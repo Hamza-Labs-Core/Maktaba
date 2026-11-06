@@ -103,3 +103,65 @@ def plugin_gate(g: GateInput) -> tuple[str, dict[str, Any]]:
     if missing:
         return "grants_needed", {"capabilities": ",".join(missing)}
     return "", {}
+
+
+#: the home's plugin policy's app_settings key (the API's ``plugins.PolicyKey``)
+POLICY_KEY = "plugins.policy"
+
+
+def _json(v: Any) -> Any:
+    import json
+
+    if isinstance(v, str | bytes):
+        try:
+            return json.loads(v)
+        except ValueError:
+            return None
+    return v
+
+
+async def read(db: Any, version: str) -> dict[str, tuple[str, dict[str, Any]]]:
+    """Each installed plugin entry's gate reason ("" none), from the tables the API keeps
+    (plugin_installs, plugin_grants, the policy, plugin_keep_off, plugin_health): the same
+    inputs the supervisor's runner reads. A schema without them answers nothing."""
+    out: dict[str, tuple[str, dict[str, Any]]] = {}
+    try:
+        rows = await db.fetch("SELECT plugin_id, manifest, review_level FROM plugin_installs")
+        grants = {
+            str(r["plugin_id"]): list(_json(r["capabilities"]) or [])
+            if isinstance(r["capabilities"], str)
+            else list(r["capabilities"] or [])
+            for r in await db.fetch("SELECT plugin_id, capabilities FROM plugin_grants")
+        }
+        kept = {
+            str(r["plugin_id"]) for r in await db.fetch("SELECT plugin_id FROM plugin_keep_off")
+        }
+        tripped = {
+            str(r["plugin_id"])
+            for r in await db.fetch("SELECT plugin_id FROM plugin_health WHERE tripped")
+        }
+        pol = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", POLICY_KEY)
+    except Exception:  # noqa: BLE001 - an older schema: no plugins
+        return out
+    allow = bool((_json(pol["value"]) or {}).get("allow_unreviewed")) if pol is not None else False
+    for r in rows:
+        pid = str(r["plugin_id"])
+        m = _json(r["manifest"]) or {}
+        caps = m.get("capabilities") or {}
+        reason, params = plugin_gate(
+            GateInput(
+                server_version=version,
+                range=str(m.get("maktaba", "")),
+                plugin_api=str(m.get("plugin_api", "")),
+                required=tuple(caps.get("required") or ()),
+                granted=tuple(grants.get(pid, ())),
+                review_level=str(r["review_level"]),
+                allow_unreviewed=allow,
+            )
+        )
+        if not reason and pid in tripped:
+            reason = "plugin_crash_loop"
+        if pid in kept:
+            params = {**params, "kept_off": True}
+        out["plugin." + pid] = (reason, params)
+    return out

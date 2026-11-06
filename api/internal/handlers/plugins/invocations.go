@@ -113,5 +113,6 @@ func (h *Invocations) end(w http.ResponseWriter, r *http.Request) {
 	if !machineOnly(w, r) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]bool{"ended": h.Tokens.End(r.Context(), chi.URLParam(r, "id"))})
+	ended, refused := h.Tokens.EndCounting(r.Context(), chi.URLParam(r, "id"))
+	writeJSON(w, http.StatusOK, map[string]any{"ended": ended, "refusals": refused})
 }
