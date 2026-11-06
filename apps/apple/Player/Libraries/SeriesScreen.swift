@@ -10,6 +10,7 @@ struct SeriesScreen: View {
     let id: String
 
     @State private var model: SeriesModel
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(context: PlayerContext, id: String) {
         self.context = context
@@ -55,8 +56,16 @@ struct SeriesScreen: View {
         return n
     }
 
+    /// Beside the poster; at the accessibility sizes below it, so the text and the buttons
+    /// (Continue, Shuffle) have the screen's width and the episodes stay near the top.
+    private var headerLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: MaktabaTokens.Spacing.s3))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: MaktabaTokens.Spacing.s4))
+    }
+
     private var header: some View {
-        HStack(alignment: .top, spacing: MaktabaTokens.Spacing.s4) {
+        headerLayout {
             PosterArt(url: LibraryArt.poster(client, video: model.series?.posterVideoID ?? model.episodes.first?.videoID),
                       title: name)
                 .aspectRatio(2 / 3, contentMode: .fit)
