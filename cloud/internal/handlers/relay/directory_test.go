@@ -320,7 +320,7 @@ func TestADeadPeerIsNotForwardedTo(t *testing.T) {
 // T09: the relay's pages pick Arabic from Accept-Language, right to left.
 func TestRelayPageLanguage(t *testing.T) {
 	for _, c := range []struct{ accept, lang string }{
-		{"ar", "ar"}, {"ar-EG,en;q=0.8", "ar"}, {"en-US,ar;q=0.9", "en"}, {"fr", "en"}, {"", "en"}, {"en;q=0.3, ar;q=0.7", "ar"},
+		{"ar", "ar"}, {"ar-EG,en;q=0.8", "ar"}, {"en-US,ar;q=0.9", "en"}, {"fr", "en"}, {"", "en"}, {"en;q=0.3, ar;q=0.7", "ar"}, {"ar, en", "ar"}, {"en, ar", "en"},
 	} {
 		r := httptest.NewRequest("GET", "/", nil)
 		r.Header.Set("Accept-Language", c.accept)

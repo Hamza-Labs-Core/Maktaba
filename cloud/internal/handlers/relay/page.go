@@ -94,7 +94,8 @@ func pageText(kind, lang string) (heading, message string, retry int) {
 // pageLang is the page language for the request's Accept-Language: "ar"
 // when Arabic is preferred over English, else "en".
 func pageLang(r *http.Request) string {
-	best, bestQ := "en", -1.0
+	arQ, enQ := -1.0, -1.0
+	arFirst := false // on equal weights the one listed first wins
 	for _, part := range strings.Split(r.Header.Get("Accept-Language"), ",") {
 		tag, params, _ := strings.Cut(strings.TrimSpace(part), ";")
 		tag = strings.ToLower(strings.TrimSpace(tag))
@@ -104,12 +105,21 @@ func pageLang(r *http.Request) string {
 				q = f
 			}
 		}
-		lang, _, _ := strings.Cut(tag, "-")
-		if (lang == "ar" || lang == "en") && q > bestQ {
-			best, bestQ = lang, q
+		switch lang, _, _ := strings.Cut(tag, "-"); lang {
+		case "ar":
+			if arQ < 0 && enQ < 0 {
+				arFirst = true
+			}
+			arQ = max(arQ, q)
+		case "en":
+			enQ = max(enQ, q)
 		}
 	}
-	return best
+	// one of two constants, never the header's own text (it goes in the page)
+	if arQ > enQ || arQ == enQ && arQ >= 0 && arFirst {
+		return "ar"
+	}
+	return "en"
 }
 
 func writePage(w http.ResponseWriter, r *http.Request, code int, kind, msg string) {
