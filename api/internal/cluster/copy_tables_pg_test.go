@@ -66,6 +66,10 @@ var copyReviewed = []string{
 	// copied processing_jobs (ids and times only); copied so a replica's library rows
 	// read the same as the home's
 	"processing_done_subjects",
+	// slots 0186-0188 (Epic 52): suspect words, the packs' report, word fixes and the
+	// vocabulary hold transcript words, ids and times, no secret; a promoted copy keeps
+	// the review queue
+	"language_packs", "transcript_edits", "vocab_pairs", "vocabulary", "word_flags",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

@@ -60,6 +60,29 @@ class ProfileStateTest {
     }
 
     @Test
+    fun aStaleLoadMoreNeverSkipsAPage() = TestHome().use { f ->
+        f.answer("GET /api/me/videos") { r -> TestHome.json(if (r.url.queryParameter("cursor") == null) """{"items":[{"id":"a"},{"id":"b"}],"next":"c2"}""" else """{"items":[{"id":"c"}],"next":"c3"}""") }
+        f.answer("POST /api/me/favorites", """{"updated":1}""")
+        runBlocking {
+            val s = ProfileState(f.client)
+            s.loadFavorites()
+            val gate = CountDownLatch(1)
+            f.held("GET /api/me/videos", { """{"items":[{"id":"c"}],"next":"c3"}""" }, gate)
+            val read = async { s.moreFavorites() }
+            while (f.asked("GET /api/me/videos").size < 2) delay(10)
+            // a removal while page 2 is read: that answer is stale and dropped
+            s.unfavorite(s.favorites.items.first())
+            gate.countDown()
+            read.await()
+            assertEquals(listOf("b"), s.favorites.items.map { it.id })
+            // the cursor did not move past the dropped page: Load more asks for it again
+            assertTrue(s.favorites.more)
+            s.moreFavorites()
+            assertEquals("c2", f.asked("GET /api/me/videos").last().url.queryParameter("cursor"))
+        }
+    }
+
+    @Test
     fun aForgottenVideoStaysGone() = TestHome().use { f ->
         val body = """{"items":[{"video_id":"a","title":"A"},{"video_id":"b","title":"B"}]}"""
         f.answer("GET /api/me/history", body)

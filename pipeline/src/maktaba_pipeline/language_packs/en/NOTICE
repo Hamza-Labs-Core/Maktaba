@@ -1,0 +1,9 @@
+English language pack (Maktaba, Epic 52, story 52.5)
+
+The pack's code, acronyms.txt and transliterations.txt are Maktaba's.
+
+Its dictionary data (the lang.en asset: en_US.aff/.dic and en_GB.aff/.dic) comes from
+LibreOffice's dictionaries repository, built from SCOWL (Spell Checker Oriented Word
+Lists, Kevin Atkinson and contributors). SCOWL's licence is permissive (an MIT-like
+licence that asks to keep the copyright notice); the full text ships in the asset next
+to the files as README_en_US.txt / README_en_GB.txt.

@@ -101,7 +101,7 @@ set_env() {
 
 # Capture the currently-deployed tag so we can roll back. Default to
 # `latest` if the key was never pinned.
-PREV_TAG="$(grep '^MAKTABA_CLOUD_TAG=' .env | head -1 | cut -d= -f2-)"
+PREV_TAG="$(grep '^MAKTABA_CLOUD_TAG=' .env | sed -n 1p | cut -d= -f2-)"
 PREV_TAG="${PREV_TAG:-latest}"
 rlog "current tag: ${PREV_TAG}  ->  new tag: ${NEW_TAG}"
 

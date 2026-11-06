@@ -9,6 +9,8 @@ struct AttentionView: View {
     var body: some View {
         List {
             ProblemSection()
+            // Epic 52: a home admin's word review
+            ReviewEntry()
             Section {
                 if model.loaded, model.problem == nil, model.attention.isEmpty {
                     Label("Nothing needs attention", systemImage: "checkmark.seal")

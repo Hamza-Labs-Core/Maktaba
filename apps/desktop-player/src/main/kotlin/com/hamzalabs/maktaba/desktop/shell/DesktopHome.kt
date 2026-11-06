@@ -15,6 +15,9 @@ import com.hamzalabs.maktaba.desktop.Lang
 import com.hamzalabs.maktaba.desktop.PlayRequest
 import com.hamzalabs.maktaba.desktop.Posters
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -73,6 +76,13 @@ class DesktopHome(
 ) {
     /** The home's web address (under its base path): help and the admin's Components link go there. */
     val webUrl: String get() = client.home.toString().trimEnd('/')
+
+    /**
+     * A change the person made on a page (Not interested, a pin, a favorite, watched): run in
+     * [background]'s job on the window's thread, so leaving the page (or the row going away)
+     * never cancels it halfway and flips it back.
+     */
+    fun change(block: suspend CoroutineScope.() -> Unit): Job = background.launch(Dispatchers.Main, block = block)
 
     private val kept = mutableMapOf<String, Any>()
 

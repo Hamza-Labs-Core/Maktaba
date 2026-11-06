@@ -36,6 +36,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
+  A quality or audio change that finished after the video was closed, or after another video
+  started, no longer leaves an unseen player playing or replaces the new video (its stream
+  session is closed instead). "Not interested" on a row's last card, and a pin, favorite or
+  watched mark made just before leaving a page, no longer undo themselves. A direct-play file
+  starts in the kept audio language. Up next stops counting after a seek back. The Quality
+  menu marks the right height when the default comes from the playback settings. A Continue
+  Watching card past 95% starts from the beginning. A removal during Load more on Favorites
+  no longer skips a page for good. A channel opened from Home's What's On Now closes when Live
+  TV is turned off, and the Live TV relay fetches only the session's own Cloudflare host.
+
 - **A component turned back on catches up even when another worker turns it on.** On a home
   with several pipeline workers, the one that turned a component's stages off was not always
   the one that turned them on again, and then the catch-up job for what the stages missed
@@ -175,6 +186,18 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **`serve --offline` also stops the pipeline's own outbound calls.** With `MAKTABA_OFFLINE=1`
+  the YouTube listings, downloads, exact dates and repairs wait (no scheduled refresh is
+  queued), the books stage looks nothing up on Wikipedia (a book not looked up yet is looked up
+  at its next run once online), enrichment makes no web search, and the spelling dictionary is
+  never downloaded. The test that lists every outbound call now reads the pipeline's code too.
+- **A spelling dictionary that fails to load after a pack update no longer stops the
+  corrections.** The second listen keeps the dictionary it was using and tries the new one again
+  later, and never downloads into a pack's folder.
+- **Turning a component back on queues its catch-up once.** A worker that started while the
+  component was off could queue a second catch-up after another worker's had finished, running
+  the whole time off again (or all history). A worker that loses the lead also stops reporting
+  the component as off once it is on again, so Admin > Components no longer shows it off.
 
 ### Security
 
@@ -184,6 +207,28 @@ build fails when the two differ.
 
 ### Added
 
+- **Word review: the transcript words that may be wrong go to a home admin, in every language
+  (Epic 52).** Every new transcript keeps each word's time, Whisper's confidence and what the
+  second listen heard (packed in `transcript_segments.word_data`, 9 bytes a word). A new CPU
+  stage, `word_check` (the `review.words` component), saves each suspect word with its reasons
+  (low confidence, not in the dictionary, heard differently, close to the vocabulary, a name)
+  and suggested spellings, within a budget per hour of audio; Quran verses recited or quoted
+  are compared with the bundled Tanzil text, and only a word that differs from the verse is
+  asked about. Languages are packs: Arabic (CAMeL Tools morphology and Ayaspell), English
+  (SCOWL), eleven LibreOffice Hunspell dictionaries installed on demand (`lang.hunspell.*`),
+  and a fallback for any other language; every check is deterministic, no language model
+  judges a word. Existing transcripts are checked from their text in the background, at the
+  lowest priority and only while nothing waits to be transcribed. The web's **Word review**
+  page (home admins only) shows one word at a time with its clip and sentence, keyboard-first
+  (physical keys, so an Arabic layout works); a fix edits the transcript, its subtitle files
+  and search without transcribing again, can be undone, is carried over when the video is
+  transcribed again, and teaches a vocabulary that new transcriptions and the second listen
+  use (never queuing the library again). Words can also be fixed from a video's Transcript
+  tab, each library has its word review settings, the Transcription page shows the open
+  counts and the share accepted as is, and the Remote apps on iPhone, iPad, Mac and Android
+  review words too. A component a later release adds now starts as the home's bundle says
+  (off on a Core home), never on by default. Slots 0186-0188 add `word_flags`,
+  `language_packs`, `transcript_edits`, `transcripts.revision`, `vocabulary` and `vocab_pairs`.
 - **The Player for Windows and Linux has the phone and Mac Players' sections (Epic 55).**
   After sign-in, a rail (on the right in Arabic) holds Home, Libraries, Live TV, Search and
   Profile, each with its own pages and Back (also Alt+Left and the mouse's back button). Home
