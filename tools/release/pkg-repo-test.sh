@@ -189,7 +189,7 @@ if grep -qx "Acquire-By-Hash: yes" "${dist}/Release" && ! grep -q "^MD5Sum:" "${
 else
     fail "by-hash: $(grep -c . "${dist}/Release") lines; $(find "${dist}" -path '*by-hash*' -type f | wc -l) copies"
 fi
-if grep -q "BEGIN PGP PRIVATE" "${repo}/maktaba.asc" || gpg --batch --list-packets "${repo}/maktaba.gpg" 2>/dev/null | grep -q "secret key packet"; then
+if grep -q "BEGIN PGP PRIVATE" "${repo}/maktaba.asc" || grep -q "secret key packet" < <(gpg --batch --list-packets "${repo}/maktaba.gpg" 2>/dev/null); then
     fail "the published key holds the secret key"
 else
     ok "only the public key is published"
@@ -224,7 +224,7 @@ if [ "${rpms}" = true ]; then
     rpmkeys --dbpath "${work}/rpmdb" --import "${repo}/maktaba.asc"
     bad=""
     for f in "${repo}"/rpm/packages/*.rpm; do
-        rpmkeys --dbpath "${work}/rpmdb" --checksig "${f}" 2>&1 | grep -qi "signatures OK\|pgp.*OK" || bad="${bad} ${f##*/}"
+        grep -qi "signatures OK\|pgp.*OK" < <(rpmkeys --dbpath "${work}/rpmdb" --checksig "${f}" 2>&1) || bad="${bad} ${f##*/}"
     done
     if [ -z "${bad}" ]; then ok "every .rpm checks against the published key"; else fail "unsigned:${bad}"; fi
 fi
@@ -308,14 +308,14 @@ if [ "${rpms}" = true ] && has docker && docker info >/dev/null 2>&1 && has pyth
             set -u
             dnf_=(dnf -y --disablerepo="*" --enablerepo=maktaba)
             dnf4=false
-            dnf --version 2>/dev/null | sed -n 1p | grep -q "^4\." && dnf4=true
+            grep -q "^4\." < <(dnf --version 2>/dev/null | sed -n 1p) && dnf4=true
             echo "== $(dnf --version 2>/dev/null | sed -n 1p)"
             cp /repos/good.repo /etc/yum.repos.d/maktaba.repo
             "${dnf_[@]}" --refresh makecache || { echo "makecache of the repository failed"; exit 1; }
             n="$("${dnf_[@]}" -q list --showduplicates --available maktaba-server 2>/dev/null | grep -c "^maktaba-server\.$(uname -m) ")"
             [ "$n" = 3 ] || { echo "dnf sees $n versions for $(uname -m)"; exit 1; }
             "${dnf_[@]}" install maktaba-server || { echo "install failed"; exit 1; }
-            rpm -q maktaba-server | grep -q "0.3.10-1" || { echo "installed $(rpm -q maktaba-server)"; exit 1; }
+            grep -q "0.3.10-1" < <(rpm -q maktaba-server) || { echo "installed $(rpm -q maktaba-server)"; exit 1; }
             grep -q release /usr/share/doc/maktaba-server/marker || { echo "not the release package"; exit 1; }
             "${dnf_[@]}" -q remove maktaba-server >/dev/null
             echo "== the tampered repository"
