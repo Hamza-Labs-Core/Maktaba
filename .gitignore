@@ -172,9 +172,12 @@ streaming/tmp/
 web/dist/
 web/node_modules/
 
-# Claude Code runtime metadata
-.claude/scheduled_tasks.lock
-.claude/
+# Claude Code runtime metadata (worktrees, locks, local settings); the project's shared
+# settings (the trail hooks), its skills and launch.json are tracked
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/launch.json
 
 # components-live / components-chaos logs of a local run (tests/components/rig.py)
 components-logs/
