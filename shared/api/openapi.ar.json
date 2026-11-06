@@ -645,30 +645,6 @@
       "en": "Deleted.",
       "ar": "تم الحذف."
     },
-    "/paths/~1collections~1{id}~1videos/get/summary": {
-      "en": "List videos in a collection",
-      "ar": "سرد الفيديوهات في مجموعة"
-    },
-    "/paths/~1collections~1{id}~1videos/get/responses/200/description": {
-      "en": "Page of videos.",
-      "ar": "صفحة من الفيديوهات."
-    },
-    "/paths/~1collections~1{id}~1videos/post/summary": {
-      "en": "Add a video to a collection",
-      "ar": "إضافة فيديو إلى مجموعة"
-    },
-    "/paths/~1collections~1{id}~1videos/post/responses/201/description": {
-      "en": "Video added.",
-      "ar": "أُضيف الفيديو."
-    },
-    "/paths/~1collections~1{id}~1videos~1{videoId}/delete/summary": {
-      "en": "Remove a video from a collection",
-      "ar": "إزالة فيديو من مجموعة"
-    },
-    "/paths/~1collections~1{id}~1videos~1{videoId}/delete/responses/204/description": {
-      "en": "Removed.",
-      "ar": "تمّت الإزالة."
-    },
     "/paths/~1tags/get/summary": {
       "en": "List tags",
       "ar": "سرد الوسوم"
@@ -2236,6 +2212,438 @@
     "/components/schemas/QueueJobRef/properties/components/description": {
       "en": "A `component_catchup` job: the components it catches up, from its payload. Absent on every other job.",
       "ar": "في مهمة `component_catchup`: المكوّنات التي تلحق بها، من حمولة المهمة. ولا تظهر في أي مهمة أخرى."
+    },
+    "/paths/~1collections~1{id}~1items/get/summary": {
+      "en": "List videos in a collection",
+      "ar": "سرد الفيديوهات في مجموعة"
+    },
+    "/paths/~1collections~1{id}~1items/get/responses/200/description": {
+      "en": "Page of videos.",
+      "ar": "صفحة من الفيديوهات."
+    },
+    "/paths/~1collections~1{id}~1items/post/summary": {
+      "en": "Add a video to a collection",
+      "ar": "إضافة فيديو إلى مجموعة"
+    },
+    "/paths/~1collections~1{id}~1items/post/responses/201/description": {
+      "en": "Video added.",
+      "ar": "أُضيف الفيديو."
+    },
+    "/paths/~1collections~1{id}~1items~1{video_id}/delete/summary": {
+      "en": "Remove a video from a collection",
+      "ar": "إزالة فيديو من مجموعة"
+    },
+    "/paths/~1collections~1{id}~1items~1{video_id}/delete/responses/204/description": {
+      "en": "Removed.",
+      "ar": "تمّت الإزالة."
+    },
+    "/components/schemas/PlayQueueSource/description": {
+      "en": "Where a play queue's videos come from.",
+      "ar": "مصدر مقاطع قائمة انتظار التشغيل."
+    },
+    "/components/schemas/PlayQueueSource/properties/id/description": {
+      "en": "The source's id: a library, series, season (series_seasons), collection (or topic:<id> / clip:<id>), playlist or video id.",
+      "ar": "معرّف المصدر: مكتبة أو سلسلة أو موسم (series_seasons) أو مجموعة (أو topic:<id> / clip:<id>) أو قائمة تشغيل أو مقطع."
+    },
+    "/components/schemas/PlayQueueSource/properties/filters/description": {
+      "en": "A library's grid filters, sort and order (the keys of GET /videos).",
+      "ar": "تصفيات شبكة المكتبة وترتيبها واتجاهه (مفاتيح GET /videos)."
+    },
+    "/components/schemas/PlayQueueItem/description": {
+      "en": "One item of a play queue's window, with the video's card fields and the caller's playback.",
+      "ar": "عنصر واحد من نافذة قائمة انتظار التشغيل، مع حقول بطاقة المقطع وتقدّم مشاهدة المستخدم."
+    },
+    "/components/schemas/PlayQueue/description": {
+      "en": "A play queue with a window of items around a position.",
+      "ar": "قائمة انتظار تشغيل مع نافذة من العناصر حول موضع."
+    },
+    "/components/schemas/PlayQueue/properties/version/description": {
+      "en": "Bumped by every change; a move with an older version is 409 stale_queue.",
+      "ar": "يزيد مع كل تغيير؛ النقل بإصدار أقدم يُرفض بـ 409 stale_queue."
+    },
+    "/components/schemas/Card/description": {
+      "en": "A video card of a row or a list, with the caller's playback where the row reads it.",
+      "ar": "بطاقة مقطع في صف أو قائمة، مع تقدّم مشاهدة المستخدم حيث يقرؤه الصف."
+    },
+    "/components/schemas/SmartQuery/description": {
+      "en": "A smart playlist's rules: a saved grid filter with a sort and a limit, evaluated when read.",
+      "ar": "قواعد قائمة التشغيل الذكية: تصفية محفوظة للشبكة مع ترتيب وحدّ، تُقيَّم عند القراءة."
+    },
+    "/components/schemas/SmartQuery/properties/libraries/description": {
+      "en": "null: every library the owner can read.",
+      "ar": "null: كل مكتبة يستطيع المالك قراءتها."
+    },
+    "/components/schemas/Playlist/description": {
+      "en": "A user's playlist, manual or smart, with its visible videos' count, length and first posters.",
+      "ar": "قائمة تشغيل للمستخدم، يدوية أو ذكية، مع عدد مقاطعها الظاهرة ومدتها وأولى صورها."
+    },
+    "/components/schemas/Category/description": {
+      "en": "A tile of a library's Categories tab: value is what the grid filters by.",
+      "ar": "مربّع في تبويب الفئات للمكتبة: value هو ما تُصفّى به الشبكة."
+    },
+    "/components/schemas/LibraryCollection/description": {
+      "en": "A card of a library's Collections tab.",
+      "ar": "بطاقة في تبويب المجموعات للمكتبة."
+    },
+    "/tags/17/description": {
+      "en": "A library's rows, tabs and categories; Home; the caller's marks.",
+      "ar": "صفوف المكتبة وتبويباتها وفئاتها؛ الرئيسية؛ علامات المستخدم."
+    },
+    "/tags/18/description": {
+      "en": "Series, their seasons and episodes.",
+      "ar": "السلاسل ومواسمها وحلقاتها."
+    },
+    "/tags/19/description": {
+      "en": "Each user's playlists, manual and smart.",
+      "ar": "قوائم تشغيل كل مستخدم، اليدوية والذكية."
+    },
+    "/tags/20/description": {
+      "en": "One play queue on the server for every Play and Shuffle.",
+      "ar": "قائمة انتظار تشغيل واحدة على الخادم لكل تشغيل وتشغيل عشوائي."
+    },
+    "/paths/~1me~1play-queues/post/responses/201/description": {
+      "en": "The queue with its window.",
+      "ar": "قائمة الانتظار مع نافذتها."
+    },
+    "/paths/~1me~1play-queues/post/summary": {
+      "en": "Create a play queue from a library, series, season, collection or playlist",
+      "ar": "إنشاء قائمة انتظار تشغيل من مكتبة أو سلسلة أو موسم أو مجموعة أو قائمة تشغيل"
+    },
+    "/paths/~1me~1play-queues~1current/get/responses/200/description": {
+      "en": "The queue with its window.",
+      "ar": "قائمة الانتظار مع نافذتها."
+    },
+    "/paths/~1me~1play-queues~1current/get/responses/204/description": {
+      "en": "No queue.",
+      "ar": "لا توجد قائمة انتظار."
+    },
+    "/paths/~1me~1play-queues~1current/get/summary": {
+      "en": "The caller's most recently used play queue, from any device",
+      "ar": "آخر قائمة انتظار تشغيل استخدمها المستخدم، من أي جهاز"
+    },
+    "/paths/~1me~1play-queues~1{id}/get/responses/200/description": {
+      "en": "The queue with its window.",
+      "ar": "قائمة الانتظار مع نافذتها."
+    },
+    "/paths/~1me~1play-queues~1{id}/get/summary": {
+      "en": "A window of a play queue",
+      "ar": "نافذة من قائمة انتظار تشغيل"
+    },
+    "/paths/~1me~1play-queues~1{id}/delete/responses/204/description": {
+      "en": "Deleted.",
+      "ar": "حُذفت."
+    },
+    "/paths/~1me~1play-queues~1{id}/delete/summary": {
+      "en": "Delete a play queue",
+      "ar": "حذف قائمة انتظار تشغيل"
+    },
+    "/paths/~1me~1play-queues~1{id}~1current/put/responses/200/description": {
+      "en": "The queue with its window.",
+      "ar": "قائمة الانتظار مع نافذتها."
+    },
+    "/paths/~1me~1play-queues~1{id}~1current/put/responses/409/description": {
+      "en": "stale_queue: the queue changed on another device; the body's queue is its current state.",
+      "ar": "stale_queue: تغيّرت قائمة الانتظار على جهاز آخر؛ وقائمة الانتظار في الرد هي حالتها الحالية."
+    },
+    "/paths/~1me~1play-queues~1{id}~1current/put/summary": {
+      "en": "Set the current item of a play queue",
+      "ar": "تعيين العنصر الحالي في قائمة انتظار التشغيل"
+    },
+    "/paths/~1me~1play-queues~1{id}~1items/post/responses/200/description": {
+      "en": "The queue with its window.",
+      "ar": "قائمة الانتظار مع نافذتها."
+    },
+    "/paths/~1me~1play-queues~1{id}~1items/post/summary": {
+      "en": "Play next or add to a play queue",
+      "ar": "التشغيل تاليًا أو الإضافة إلى قائمة انتظار التشغيل"
+    },
+    "/paths/~1me~1play-queues~1{id}~1reshuffle/post/responses/200/description": {
+      "en": "The queue with its window.",
+      "ar": "قائمة الانتظار مع نافذتها."
+    },
+    "/paths/~1me~1play-queues~1{id}~1reshuffle/post/summary": {
+      "en": "Shuffle a play queue again after its current item",
+      "ar": "خلط قائمة انتظار التشغيل من جديد بعد عنصرها الحالي"
+    },
+    "/paths/~1me~1playlists/get/responses/200/description": {
+      "en": "The playlists; with library, those with videos of it.",
+      "ar": "قوائم التشغيل؛ ومع library، تلك التي فيها مقاطع منها."
+    },
+    "/paths/~1me~1playlists/get/summary": {
+      "en": "The caller's playlists",
+      "ar": "قوائم تشغيل المستخدم"
+    },
+    "/paths/~1me~1playlists/post/responses/201/description": {
+      "en": "The playlist.",
+      "ar": "قائمة التشغيل."
+    },
+    "/paths/~1me~1playlists/post/summary": {
+      "en": "Make a playlist, manual or smart",
+      "ar": "إنشاء قائمة تشغيل، يدوية أو ذكية"
+    },
+    "/paths/~1me~1playlists~1{id}/get/responses/200/description": {
+      "en": "The playlist and its items (a smart one evaluated).",
+      "ar": "قائمة التشغيل وعناصرها (الذكية تُقيَّم)."
+    },
+    "/paths/~1me~1playlists~1{id}/get/summary": {
+      "en": "A playlist and its videos",
+      "ar": "قائمة تشغيل ومقاطعها"
+    },
+    "/paths/~1me~1playlists~1{id}/patch/responses/200/description": {
+      "en": "The playlist.",
+      "ar": "قائمة التشغيل."
+    },
+    "/paths/~1me~1playlists~1{id}/patch/responses/409/description": {
+      "en": "A kind change, or rules on a manual playlist.",
+      "ar": "تغيير النوع، أو قواعد لقائمة يدوية."
+    },
+    "/paths/~1me~1playlists~1{id}/patch/summary": {
+      "en": "Rename a playlist or change its rules",
+      "ar": "إعادة تسمية قائمة تشغيل أو تغيير قواعدها"
+    },
+    "/paths/~1me~1playlists~1{id}/delete/responses/204/description": {
+      "en": "Deleted.",
+      "ar": "حُذفت."
+    },
+    "/paths/~1me~1playlists~1{id}/delete/summary": {
+      "en": "Delete a playlist",
+      "ar": "حذف قائمة تشغيل"
+    },
+    "/paths/~1me~1playlists~1{id}~1items/get/responses/200/description": {
+      "en": "The items (a smart one evaluated).",
+      "ar": "العناصر (الذكية تُقيَّم)."
+    },
+    "/paths/~1me~1playlists~1{id}~1items/get/summary": {
+      "en": "A playlist's videos",
+      "ar": "مقاطع قائمة تشغيل"
+    },
+    "/paths/~1me~1playlists~1{id}~1items/post/responses/200/description": {
+      "en": "How many were added.",
+      "ar": "عدد ما أُضيف."
+    },
+    "/paths/~1me~1playlists~1{id}~1items/post/responses/409/description": {
+      "en": "smart_playlist: a smart playlist changes by its rules.",
+      "ar": "smart_playlist: تتغيّر قائمة التشغيل الذكية بحسب قواعدها."
+    },
+    "/paths/~1me~1playlists~1{id}~1items/post/summary": {
+      "en": "Add videos to a playlist",
+      "ar": "إضافة مقاطع إلى قائمة تشغيل"
+    },
+    "/paths/~1me~1playlists~1{id}~1items~1{video_id}/delete/responses/204/description": {
+      "en": "Removed.",
+      "ar": "أُزيل."
+    },
+    "/paths/~1me~1playlists~1{id}~1items~1{video_id}/delete/responses/409/description": {
+      "en": "smart_playlist: a smart playlist changes by its rules.",
+      "ar": "smart_playlist: تتغيّر قائمة التشغيل الذكية بحسب قواعدها."
+    },
+    "/paths/~1me~1playlists~1{id}~1items~1{video_id}/delete/summary": {
+      "en": "Remove a video from a playlist",
+      "ar": "إزالة مقطع من قائمة تشغيل"
+    },
+    "/paths/~1me~1playlists~1{id}~1order/put/responses/200/description": {
+      "en": "The playlist and its items.",
+      "ar": "قائمة التشغيل وعناصرها."
+    },
+    "/paths/~1me~1playlists~1{id}~1order/put/responses/409/description": {
+      "en": "smart_playlist: a smart playlist changes by its rules.",
+      "ar": "smart_playlist: تتغيّر قائمة التشغيل الذكية بحسب قواعدها."
+    },
+    "/paths/~1me~1playlists~1{id}~1order/put/summary": {
+      "en": "Reorder a playlist",
+      "ar": "إعادة ترتيب قائمة تشغيل"
+    },
+    "/paths/~1home/get/responses/200/description": {
+      "en": "Continue Watching, On Deck, Recently Added, Recently Watched, favorites, pinned libraries, featured and promoted collection rows.",
+      "ar": "تابع المشاهدة، والتالي للمشاهدة، وأُضيف حديثًا، وشوهد حديثًا، والمفضلة، والمكتبات المثبّتة، والمميّز، وصفوف المجموعات المعروضة."
+    },
+    "/paths/~1home/get/summary": {
+      "en": "Home's rows for the caller",
+      "ar": "صفوف الرئيسية للمستخدم"
+    },
+    "/paths/~1home~1featured/get/responses/200/description": {
+      "en": "The featured setting.",
+      "ar": "إعداد المميّز."
+    },
+    "/paths/~1home~1featured/get/summary": {
+      "en": "Home's featured video",
+      "ar": "المقطع المميّز في الرئيسية"
+    },
+    "/paths/~1home~1featured/put/responses/200/description": {
+      "en": "The featured setting.",
+      "ar": "إعداد المميّز."
+    },
+    "/paths/~1home~1featured/put/summary": {
+      "en": "Set Home's featured video (admin)",
+      "ar": "تعيين المقطع المميّز في الرئيسية (للمشرف)"
+    },
+    "/paths/~1libraries~1summary/get/responses/200/description": {
+      "en": "The libraries.",
+      "ar": "المكتبات."
+    },
+    "/paths/~1libraries~1summary/get/summary": {
+      "en": "The caller's libraries with their counts",
+      "ar": "مكتبات المستخدم مع أعدادها"
+    },
+    "/paths/~1libraries~1{id}~1hub/get/responses/200/description": {
+      "en": "The library and its rows, with the collections promoted to it.",
+      "ar": "المكتبة وصفوفها، مع المجموعات المعروضة فيها."
+    },
+    "/paths/~1libraries~1{id}~1hub/get/summary": {
+      "en": "The rows of a library's Recommended tab",
+      "ar": "صفوف المكتبة: تبويب المقترحات"
+    },
+    "/paths/~1libraries~1{id}~1series/get/responses/200/description": {
+      "en": "Series cards.",
+      "ar": "بطاقات السلاسل."
+    },
+    "/paths/~1libraries~1{id}~1series/get/summary": {
+      "en": "A library's Series tab",
+      "ar": "تبويب السلاسل في المكتبة"
+    },
+    "/paths/~1libraries~1{id}~1collections/get/responses/200/description": {
+      "en": "Collection cards and every kind's count.",
+      "ar": "بطاقات المجموعات وعدد كل نوع."
+    },
+    "/paths/~1libraries~1{id}~1collections/get/summary": {
+      "en": "A library's Collections tab",
+      "ar": "تبويب المجموعات في المكتبة"
+    },
+    "/paths/~1libraries~1{id}~1collections~1{kind}~1{gid}/get/responses/200/description": {
+      "en": "The group and a page of its videos.",
+      "ar": "المجموعة وصفحة من مقاطعها."
+    },
+    "/paths/~1libraries~1{id}~1collections~1{kind}~1{gid}/get/summary": {
+      "en": "A topic collection's or clip group's videos",
+      "ar": "مقاطع مجموعة موضوع أو مجموعة مقاطع"
+    },
+    "/paths/~1libraries~1{id}~1categories/get/responses/200/description": {
+      "en": "At most 50 of each, the most videos first.",
+      "ar": "50 على الأكثر من كل نوع، الأكثر مقاطع أولًا."
+    },
+    "/paths/~1libraries~1{id}~1categories/get/summary": {
+      "en": "A library's speakers, topics, languages and years",
+      "ar": "متحدثو المكتبة ومواضيعها ولغاتها وسنواتها"
+    },
+    "/paths/~1libraries~1{id}~1plex-missing/get/responses/200/description": {
+      "en": "The missing items.",
+      "ar": "العناصر الغائبة."
+    },
+    "/paths/~1libraries~1{id}~1plex-missing/get/summary": {
+      "en": "The items of a library's Plex collections that are not in Maktaba (admin)",
+      "ar": "عناصر مجموعات Plex للمكتبة غير الموجودة في مكتبة (للمشرف)"
+    },
+    "/paths/~1videos~1facets/get/responses/200/description": {
+      "en": "Languages, tags, speakers, letters and bands with counts.",
+      "ar": "اللغات والوسوم والمتحدثون والحروف والفئات مع أعدادها."
+    },
+    "/paths/~1videos~1facets/get/summary": {
+      "en": "What the grid's filters offer",
+      "ar": "ما تعرضه تصفيات الشبكة"
+    },
+    "/paths/~1me~1videos~1{id}/get/responses/200/description": {
+      "en": "Its playback and favorite.",
+      "ar": "تقدّم مشاهدته وتفضيله."
+    },
+    "/paths/~1me~1videos~1{id}/get/summary": {
+      "en": "The caller's state of one video",
+      "ar": "حالة مقطع واحد عند المستخدم"
+    },
+    "/paths/~1me~1watched/post/responses/200/description": {
+      "en": "Marked.",
+      "ar": "عُلّمت."
+    },
+    "/paths/~1me~1watched/post/summary": {
+      "en": "Mark videos watched or unwatched",
+      "ar": "تعليم مقاطع كمُشاهَدة أو غير مُشاهَدة"
+    },
+    "/paths/~1me~1favorites/post/responses/200/description": {
+      "en": "Marked.",
+      "ar": "عُلّمت."
+    },
+    "/paths/~1me~1favorites/post/summary": {
+      "en": "Add videos to or remove them from the favorites",
+      "ar": "إضافة مقاطع إلى المفضلة أو إزالتها منها"
+    },
+    "/paths/~1me~1pinned-libraries/get/responses/200/description": {
+      "en": "The pins in order.",
+      "ar": "المثبّتات بترتيبها."
+    },
+    "/paths/~1me~1pinned-libraries/get/summary": {
+      "en": "The caller's pinned libraries",
+      "ar": "مكتبات المستخدم المثبّتة"
+    },
+    "/paths/~1me~1pinned-libraries/put/responses/200/description": {
+      "en": "The pins in order.",
+      "ar": "المثبّتات بترتيبها."
+    },
+    "/paths/~1me~1pinned-libraries/put/summary": {
+      "en": "Pin libraries to Home, in order",
+      "ar": "تثبيت مكتبات في الرئيسية بترتيب"
+    },
+    "/paths/~1series/get/responses/200/description": {
+      "en": "Series.",
+      "ar": "السلاسل."
+    },
+    "/paths/~1series/get/summary": {
+      "en": "The series the caller can see",
+      "ar": "السلاسل التي يراها المستخدم"
+    },
+    "/paths/~1series~1{id}/get/responses/200/description": {
+      "en": "The series.",
+      "ar": "السلسلة."
+    },
+    "/paths/~1series~1{id}/get/summary": {
+      "en": "A series",
+      "ar": "سلسلة"
+    },
+    "/paths/~1series~1{id}/patch/responses/200/description": {
+      "en": "The series.",
+      "ar": "السلسلة."
+    },
+    "/paths/~1series~1{id}/patch/summary": {
+      "en": "Change a series (admin)",
+      "ar": "تعديل سلسلة (للمشرف)"
+    },
+    "/paths/~1series~1{id}~1episodes/get/responses/200/description": {
+      "en": "Seasons, episodes and next_episode.",
+      "ar": "المواسم والحلقات وnext_episode."
+    },
+    "/paths/~1series~1{id}~1episodes/get/summary": {
+      "en": "A series' seasons and episodes, with the next episode to watch",
+      "ar": "مواسم السلسلة وحلقاتها، مع الحلقة التالية للمشاهدة"
+    },
+    "/paths/~1series~1{id}~1missing/get/responses/200/description": {
+      "en": "The gaps.",
+      "ar": "الفجوات."
+    },
+    "/paths/~1series~1{id}~1missing/get/summary": {
+      "en": "The episodes missing from a series",
+      "ar": "الحلقات الناقصة من سلسلة"
+    },
+    "/paths/~1collections~1{id}~1duplicate/post/responses/201/description": {
+      "en": "The new collection.",
+      "ar": "المجموعة الجديدة."
+    },
+    "/paths/~1collections~1{id}~1duplicate/post/summary": {
+      "en": "Duplicate a collection as a curated one (admin)",
+      "ar": "نسخ مجموعة كمجموعة مختارة (للمشرف)"
+    },
+    "/tags/17/name": {
+      "en": "Browse",
+      "ar": "التصفّح"
+    },
+    "/tags/18/name": {
+      "en": "Series",
+      "ar": "السلاسل"
+    },
+    "/tags/19/name": {
+      "en": "Playlists",
+      "ar": "قوائم التشغيل"
+    },
+    "/tags/20/name": {
+      "en": "Play queues",
+      "ar": "قوائم انتظار التشغيل"
     }
   }
 }

@@ -409,6 +409,8 @@ public actor APIClient {
         r.httpMethod = method
         r.setValue("application/json", forHTTPHeaderField: "Accept")
         r.setValue(ClientHeader.value, forHTTPHeaderField: ClientHeader.name)
+        // the home follows the call under this id (Epic 53 story 53.08)
+        r.setValue(RequestID.next(), forHTTPHeaderField: RequestID.header)
         if let body {
             do {
                 r.httpBody = try JSONSerialization.data(withJSONObject: body)

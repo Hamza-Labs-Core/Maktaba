@@ -13,6 +13,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/jsoncodec"
 	pipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 )
 
 // ErrNotImplemented is retained for parity with the pipeline client;
@@ -48,6 +49,8 @@ func NewRealClient(cfg Config) Client {
 		addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.ForceCodec(jsoncodec.Codec{})),
+		// the request's id, for the other side's lines (Epic 53 story 53.08)
+		grpc.WithUnaryInterceptor(reqid.UnaryClientInterceptor()),
 	)
 	if err != nil {
 		return &realClient{

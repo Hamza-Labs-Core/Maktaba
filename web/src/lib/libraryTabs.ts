@@ -30,10 +30,18 @@ export interface LibrarySeries {
 }
 
 /** The Collections tab's kinds, in their order (the filter's chips). */
-export type CollectionFilter = "topic" | "filler" | "standalone" | "curated";
-export const COLLECTION_FILTERS: CollectionFilter[] = ["topic", "filler", "standalone", "curated"];
+export type CollectionFilter = "topic" | "filler" | "standalone" | "curated" | "youtube" | "plex";
+export const COLLECTION_FILTERS: CollectionFilter[] = [
+  "topic",
+  "filler",
+  "standalone",
+  "curated",
+  "youtube",
+  "plex",
+];
 
-export type CollectionKind = "topic" | "clip" | "curated" | "smart";
+/** youtube and plex: collections a source keeps in step (Epic 56 stories 56.06, 56.07) */
+export type CollectionKind = "topic" | "clip" | "curated" | "smart" | "youtube" | "plex";
 
 export interface LibraryCollection {
   kind: CollectionKind;
@@ -44,8 +52,10 @@ export interface LibraryCollection {
   /** its visible videos; null for a saved filter */
   videos: number | null;
   poster_video_ids: string[];
-  /** made by the pipeline (a topic or clip group): read-only */
+  /** made by the pipeline (a topic or clip group, a YouTube or Plex one): read-only */
   automatic: boolean;
+  /** youtube_playlist, youtube_channel or plex: what keeps it in step */
+  source_kind?: "youtube_playlist" | "youtube_channel" | "plex";
 }
 
 export interface Paged<T> {
@@ -117,7 +127,8 @@ export async function fetchLibrarySeries(
   return paged(obj(await api.get<unknown>(`${libPath(libraryId)}/series?${qs}`)), readSeries);
 }
 
-const KINDS: CollectionKind[] = ["topic", "clip", "curated", "smart"];
+const KINDS: CollectionKind[] = ["topic", "clip", "curated", "smart", "youtube", "plex"];
+const SOURCES = ["youtube_playlist", "youtube_channel", "plex"] as const;
 
 function readCollection(raw: unknown): LibraryCollection | null {
   const c = obj(raw);
@@ -132,7 +143,8 @@ function readCollection(raw: unknown): LibraryCollection | null {
     poster_video_ids: arr(c.poster_video_ids)
       .filter((x): x is string => typeof x === "string")
       .slice(0, 4),
-    automatic: kind === "topic" || kind === "clip",
+    automatic: kind === "topic" || kind === "clip" || kind === "youtube" || kind === "plex",
+    source_kind: SOURCES.find((x) => x === c.source_kind),
   };
 }
 
@@ -140,6 +152,7 @@ function readCollection(raw: unknown): LibraryCollection | null {
 export function filterOf(c: Pick<LibraryCollection, "kind" | "subkind">): CollectionFilter {
   if (c.kind === "clip") return c.subkind === "standalone" ? "standalone" : "filler";
   if (c.kind === "smart") return "curated";
+  if (c.kind === "youtube" || c.kind === "plex") return c.kind;
   return c.kind;
 }
 
@@ -162,6 +175,8 @@ export async function fetchLibraryCollections(
       filler: num(c.filler),
       standalone: num(c.standalone),
       curated: num(c.curated),
+      youtube: num(c.youtube),
+      plex: num(c.plex),
     },
   };
 }
@@ -210,7 +225,8 @@ export async function fetchAutoCollection(
 
 /** Where a collection of the tab opens. */
 export function libraryCollectionPath(libraryId: string, c: LibraryCollection): string {
-  if (c.automatic)
+  // a YouTube or Plex collection is a collection's own page (its row of collections)
+  if (c.kind === "topic" || c.kind === "clip")
     return `/library/${encodeURIComponent(libraryId)}/collections/${c.kind}/${encodeURIComponent(c.id)}`;
   return `/collections/${encodeURIComponent(c.id)}`;
 }
@@ -218,7 +234,7 @@ export function libraryCollectionPath(libraryId: string, c: LibraryCollection): 
 /** A library's tab: `/library/:id?tab=…` (Overview has none). */
 export function libraryTabPath(
   libraryId: string,
-  tab: "series" | "collections" | "browse"
+  tab: "series" | "collections" | "browse" | "playlists"
 ): string {
   return `/library/${encodeURIComponent(libraryId)}?tab=${tab}`;
 }

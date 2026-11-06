@@ -161,6 +161,8 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// older passes without Postgres. And the console's actions, which the api copies into
 	// audit_log when it starts.
 	if role == RoleAPI {
+		// the log index's search and live tail (story 53.09), which the api proxies to admins
+		add("MAKTABA_LOGS_ADDR", LogsAddr(cfg))
 		add(EnvRecoveryRevoked, RecoveryRevokedPath(cfg.StateDir()))
 		add(EnvRecoveryActions, RecoveryActionsPath(cfg.StateDir()))
 	}

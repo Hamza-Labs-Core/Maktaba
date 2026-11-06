@@ -217,6 +217,22 @@ build fails when the two differ.
 
 ### Added
 
+- **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
+  play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
+  its grid's sort and filters, a series or a season (from the next unwatched episode), a
+  collection, a playlist or one video. Shuffle is a seeded order of the whole source (not one
+  random page), paged 500 at a time, with Play next, Add to queue and Shuffle again; a queue
+  started on one device is offered as Continue your queue on another. Smart playlists keep a
+  saved filter with a sort and a limit, per user. Collections come by themselves from YouTube
+  playlists and channels and from Plex's own collections, kept in step with their source, and an
+  admin can show one as a row on a library's Recommended tab or on Home, hide it, rename it,
+  duplicate it, and choose per library whether the grid shows collections in place of their
+  videos. `GET /api/videos` groups by series (`group=series`), `GET /api/libraries/{id}/categories`
+  lists speakers, topics, languages and years, and the jump bar lists Arabic letters first. The
+  web uses the server queue, adds a library's Playlists tab, Shuffle on a series and a season,
+  and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
+  route (a test fails on an undescribed one). Migrations 0191-0193. Every new word in English
+  and Arabic.
 - **Plugins, part 2: the plugin API and plugin stages in the queue (Epic 54, stories
   54.04–54.06).** Still dark until a plugin is installed (part 3). The API serves the plugin
   API on a unix socket only, never on a network port. Each plugin job gets a token minted
@@ -568,6 +584,29 @@ build fails when the two differ.
   down. The update rehearsal now also kills streaming, the API and Postgres on a home of the
   commit, and starts safe mode from the recovery console, checking the web keeps serving,
   `/status.json` says so in time and the part comes back (`docs/fault-rehearsal.md`).
+
+- **Log search and live tail on the home, and one request id from the app to the last process
+  (Epic 53, stories 53.08 and 53.09).** A new supervised role, the log index (`maktaba-server
+  logs`, the catalog's `logs.index`, in the Full and Worker bundles), keeps a SQLite index of
+  the log keeper's files (`<data>/logs/index/logs.db`) that works with Postgres down. Admins
+  get `/api/admin/logs/search` (words, "phrases", `prefix*` and `-word`, by service, component,
+  level, time, request, job or user), a live tail (`/api/admin/logs/tail`, a line within 2
+  seconds of being written) and `/api/admin/logs/around` (every service's lines around one).
+  Arabic is found with or without its marks. The index holds where each line is, not the
+  line, stays within 35 % of the diagnostics cap, and is rebuilt from the files when it is
+  damaged. The web, Apple and Android apps now send `X-Request-Id` (a UUIDv7, shared by one
+  action's calls); the API passes it to the pipeline and streaming, whose lines carry it, and
+  the web's error screens show "Reference: xxxxxxxx" with "Copy details".
+
+- **Error groups on the home (Epic 53, story 53.10).** The log index now groups every error
+  and fatal line by a fingerprint (the cloud's: the message with ids, numbers and paths
+  folded, and the first own stack frame), with its count, first and last seen, hourly counts,
+  the users it hit and its 20 most recent lines. Admins list them at `/api/admin/errors`, open
+  one at `/api/admin/errors/{fp}` and mark it seen, resolved in a version or muted
+  (`POST /api/admin/errors/{fp}/status`, each change in the audit log). A group resolved in one
+  version that happens again on a later one is new again, marked "came back". Admins get a
+  notification for a new group with 3 lines in 10 minutes or one that came back: once a group
+  a day, at most 10 a day. Groups go 30 days after they were last seen.
 
 ### Fixed
 

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // RequestID is the first middleware after RealIP. It either accepts a
@@ -24,13 +25,18 @@ import (
 func RequestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var id uuid.UUID
-		if got := r.Header.Get(reqid.Header); got != "" {
+		got := r.Header.Get(reqid.Header)
+		if got != "" {
 			if parsed, err := uuid.Parse(got); err == nil && parsed.Version() == 7 {
 				id = parsed
 			}
 		}
 		if id == uuid.Nil {
 			id = uuid.Must(uuid.NewV7())
+			if got != "" {
+				// a client's id that is not a UUIDv7 (Epic 53 story 53.08): said once, with the new one
+				mlog.From(r.Context()).Info("request_id_replaced", "request_id", id.String(), "path", r.URL.Path)
+			}
 		}
 		ctx := reqid.WithID(r.Context(), id)
 		w.Header().Set(reqid.Header, id.String())

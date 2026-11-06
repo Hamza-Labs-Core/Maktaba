@@ -82,6 +82,8 @@ CONTENT_HASH_VERSION = 1
 REVIEW_VERSION = 1
 #: topic_collections / promo_links / clip_groups (plan 06-11 section 17)
 TOPIC_VERSION = 1
+#: youtube_collections (Epic 56 story 56.06)
+YOUTUBE_COLLECTIONS_VERSION = 1
 PROMO_VERSION = 1
 CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
@@ -629,7 +631,25 @@ GRAPH: tuple[StageDef, ...] = (
         lane="seasons",
         lane_order=2,
         version=TOPIC_VERSION,
-        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
+        edges=(
+            Edge("clip_groups", "same"),
+            Edge("plan_channels", "catalog"),
+            Edge("youtube_collections", "same"),
+        ),
+        entry_for=("library",),
+        debounce_sec=30,
+        debounce_max_sec=300,
+    ),
+    # Epic 56 story 56.06: a collection from each YouTube playlist and channel that is
+    # neither a season nor a topic (stages/youtube_collections.py)
+    StageDef(
+        name="youtube_collections",
+        label="Collections from YouTube",
+        subject_kinds=("library",),
+        pool="cpu",
+        lane="seasons",
+        lane_order=3,
+        version=YOUTUBE_COLLECTIONS_VERSION,
         entry_for=("library",),
         debounce_sec=30,
         debounce_max_sec=300,

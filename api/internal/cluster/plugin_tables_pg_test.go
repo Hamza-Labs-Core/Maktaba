@@ -8,7 +8,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// Epic 54 (slot 0191): a joined machine (maktaba_worker) keeps the default grants on the
+// Epic 54 (slot 0194): a joined machine (maktaba_worker) keeps the default grants on the
 // plugin tables (the previous release's worker-group check reads a revoke as a change)
 // and may read them, but cannot write a row: only the home's API writes them.
 func TestPluginTablesAreTheHomes(t *testing.T) {

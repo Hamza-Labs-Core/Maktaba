@@ -25,10 +25,14 @@ import com.hamzalabs.maktaba.tv.ui.components.MaktabaButton
 import com.hamzalabs.maktaba.tv.ui.components.ReadingPanel
 import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.hamzalabs.maktaba.tv.ui.screens.library.PlaybackPrefs
 
 /** Who is signed in where; switch home, sign out; the app's language (Android 13 and later). */
 @Composable
-fun AccountScreen(app: MaktabaTVApp, user: User) {
+fun AccountScreen(app: MaktabaTVApp, user: User, onPlaylists: () -> Unit = {}) {
     val home by app.session.current.collectAsState()
     val context = LocalContext.current
     Column(Modifier.fillMaxSize().padding(horizontal = Gutter, vertical = 32.dp)) {
@@ -47,6 +51,18 @@ fun AccountScreen(app: MaktabaTVApp, user: User) {
                     MaktabaButton(onClick = { locales.applicationLocales = LocaleList.forLanguageTags("en") }) { Text("English") }
                     MaktabaButton(onClick = { locales.applicationLocales = LocaleList.forLanguageTags("ar") }) { Text("العربية") }
                 }
+            }
+            // Epic 56: every playlist of the user, and the Playback setting (story 56.11)
+            Row(Modifier.padding(top = 24.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                MaktabaButton(onClick = onPlaylists) { Text(stringResource(R.string.playlists_title)) }
+            }
+            Text(stringResource(R.string.settings_playback), style = MaterialTheme.typography.titleLarge, color = MaktabaPalette.Text, modifier = Modifier.padding(top = 32.dp))
+            var autoplay by remember { mutableStateOf(PlaybackPrefs.autoplay(context)) }
+            MaktabaButton(
+                onClick = { autoplay = !autoplay; PlaybackPrefs.setAutoplay(context, autoplay) },
+                modifier = Modifier.padding(top = 12.dp),
+            ) {
+                Text(stringResource(R.string.settings_autoplay_next) + ": " + stringResource(if (autoplay) R.string.on else R.string.off))
             }
             Text(stringResource(R.string.licences), style = MaterialTheme.typography.labelMedium, color = MaktabaPalette.Faint, modifier = Modifier.padding(top = 32.dp))
         }

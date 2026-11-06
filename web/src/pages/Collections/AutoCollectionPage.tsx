@@ -17,7 +17,7 @@ import {
   libraryTabPath,
   type AutoCollectionPage as Page,
 } from "../../lib/libraryTabs";
-import { shuffled, startQueue, watchPath } from "../../lib/playQueue";
+import { playSource, watchPath } from "../../lib/playQueue";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
 import { LoadError } from "../../components/LoadError";
@@ -92,9 +92,17 @@ function AutoCollectionOf({
     `collections.kind.${col.kind === "clip" ? (col.subkind ?? "filler") : "topic"}`
   );
 
-  function play(index: number, shuffle = false) {
-    const first = startQueue(shuffle ? shuffled(ids) : ids, shuffle ? 0 : index);
-    if (first) navigate(watchPath(first), { state: { autoplay: true } });
+  // the pipeline's groups are collection sources topic:<id> and clip:<id> (story 56.13)
+  async function play(index: number, shuffle = false) {
+    try {
+      const first = await playSource(
+        { kind: "collection", id: `${col.kind === "clip" ? "clip" : "topic"}:${col.id}` },
+        { shuffle, startVideoId: shuffle ? undefined : ids[index] }
+      );
+      if (first) navigate(watchPath(first), { state: { autoplay: true } });
+    } catch {
+      /* the page stays; the button can be pressed again */
+    }
   }
 
   async function loadMore() {

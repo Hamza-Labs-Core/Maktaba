@@ -44,6 +44,7 @@ import (
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/playqueue"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/processes"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/telemetry"
@@ -551,6 +552,9 @@ func runServe() error {
 			// one notification hub for every producer (story 33.13): the bell
 			// reads its table; e-mail / push subscribe to it later
 			notifyHub := notify.NewHub(appDB, logger)
+			// Epic 53 story 53.10: new and returning error groups reach the admins (a loop
+			// of logs.index: off with the log index)
+			loops.Declare("errors_notifier", runner.Func(logs.NewErrorNotifier(notifyHub, logger).Run))
 			var mountRemote func(r chi.Router)
 			var remoteCtl *tvremote.Controller
 			// BusDSN: the event bus's pq.Listener takes a connection string (lib/pq
@@ -728,6 +732,8 @@ func runServe() error {
 				Logger:        logger,
 			}
 			loops.Declare("watch_reaper", runner.Func(reaper.Run))
+			// Epic 56 story 56.01: queues not used for 7 days go, checked every hour
+			loops.Declare("play_queue_sweep", runner.Func(func(ctx context.Context) { playqueue.Sweep(ctx, appDB, time.Hour, logger) }))
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",

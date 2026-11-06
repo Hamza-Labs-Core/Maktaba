@@ -36,6 +36,10 @@ var (
 		Purpose: "the web pages over HTTPS while the machine keeps a web certificate (tls_web_https)"})
 	Supervisor = add(Entry{Name: "supervisor", Owner: "serve", Host: Loopback, Port: 9103,
 		Purpose: "the supervisor's /processes and its local endpoints ([supervisor] admin_addr)"})
+	// LogsIndex is the log index role (maktaba-server logs, Epic 53 story 53.09): search and
+	// live tail, which the api proxies to admins.
+	LogsIndex = add(Entry{Name: "logs index", Owner: "logs", Host: Loopback, Port: 9105,
+		Purpose: "the log index's search and live tail (maktaba-server logs)"})
 	// PortFallback is where setup and serve move the web, streaming and API ports
 	// when another program holds 8088, 8081 or 8080 (config/ports.go): web tries
 	// the first, streaming the second, the API the third, then the rest in order.

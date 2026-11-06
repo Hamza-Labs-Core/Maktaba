@@ -75,7 +75,8 @@
         "api:jwt_key_reaper",
         "api:queues_snapshots",
         "api:sharepath_reload",
-        "api:browse_rowcache_listen"
+        "api:browse_rowcache_listen",
+        "api:play_queue_sweep"
       ],
       "placement": "any",
       "platforms": [
@@ -874,6 +875,57 @@
     },
     {
       "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.collections.youtube.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "youtube"
+      ],
+      "gated": false,
+      "group": "processing",
+      "id": "collections.youtube",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "classify"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "youtube_collections"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.collections.youtube.title",
+      "wants": []
+    },
+    {
+      "bundles": [
         "full"
       ],
       "conflicts": [],
@@ -1073,7 +1125,8 @@
         "plex_index",
         "plex_collection",
         "plex_groups",
-        "plex_livetv"
+        "plex_livetv",
+        "plex_collections_import"
       ],
       "stop_grace_s": 0,
       "switchable": true,
@@ -1400,6 +1453,53 @@
       "stop_grace_s": 5,
       "switchable": true,
       "title_key": "components.livetv.hdhomerun.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.logs.index.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "logs.index",
+      "in_payload": false,
+      "kind": "process+loop",
+      "licence": "",
+      "loops": [
+        "api:errors_notifier"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "logs/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 350,
+        "gpu": "none",
+        "ram_mb": 120
+      },
+      "settings": [],
+      "since": "0.3.83",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.logs.index.title",
       "wants": []
     },
     {
@@ -2981,6 +3081,7 @@
     "model.embedder",
     "search.semantic",
     "classify",
+    "collections.youtube",
     "enrich",
     "runtime.ollama",
     "model.llm.qwen2_5-7b",
@@ -2994,6 +3095,7 @@
     "livetv.slots",
     "livetv.inprocess",
     "livetv.hdhomerun",
+    "logs.index",
     "cloud.link",
     "cloud.relay",
     "cluster",

@@ -7,7 +7,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route, useLocation } from "react-router-dom";
 import { renderPage, memberUser } from "../test/pageHarness";
-import { readQueue } from "../lib/playQueue";
+import { readServerQueue } from "../lib/playQueue";
 import ar from "../i18n/ar.json";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -163,26 +163,82 @@ describe("LibraryBrowser, Phase 2", () => {
     expect(within(second).queryByRole("img", { name: "Watched" })).toBeNull();
   });
 
-  it("Play all queues the grid's list with its cursor and opens the player", async () => {
+  // Epic 56 story 56.13: the library's Play all and Shuffle make one server queue
+  // of the grid's view (its filters and sort), not pages read in the browser
+  const queueOf = (shuffle: boolean) => ({
+    id: "Q",
+    source: { kind: "library", id: LIB },
+    shuffle,
+    current_pos: 0,
+    version: 1,
+    source_done: false,
+    total_estimate: 3,
+    items: ["v1", "v2", "v3"].map((id, pos) => ({ pos, origin: "source", id })),
+  });
+
+  it("Play all makes a library queue of the grid's view and opens the player", async () => {
     serve();
+    post.mockResolvedValue(queueOf(false));
     renderGrid(`/library/${LIB}?sort=title&order=asc`);
     await screen.findByText("الدرس الأول");
     await userEvent.setup().click(screen.getByRole("button", { name: /Play all/ }));
     expect(await screen.findByText("player")).toBeInTheDocument();
-    const q = lastQuery();
-    expect(q.get("limit")).toBe("200");
-    expect(q.get("sort")).toBe("title");
-    expect(readQueue()).toMatchObject({ ids: ["v1", "v2", "v3"], index: 0 });
-    expect(readQueue()?.source?.cursor).toBe("CUR");
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({
+        source: { kind: "library", id: LIB, filters: { sort: "title", order: "asc" } },
+        shuffle: false,
+      })
+    );
+    expect(readServerQueue()?.id).toBe("Q");
   });
 
-  it("Shuffle asks for a random page", async () => {
+  it("Shuffle makes a shuffled queue of the whole view", async () => {
     serve();
+    post.mockResolvedValue(queueOf(true));
     renderGrid();
     await screen.findByText("الدرس الأول");
     await userEvent.setup().click(screen.getByRole("button", { name: /Shuffle/ }));
     expect(await screen.findByText("player")).toBeInTheDocument();
-    expect(lastQuery().get("sort")).toBe("random");
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({
+        source: expect.objectContaining({ kind: "library", id: LIB }),
+        shuffle: true,
+      })
+    );
+  });
+
+  // Epic 56 story 56.09 T07: Save as smart playlist takes the grid's filters and sort
+  it("Save as smart playlist posts the grid's filters, sort and the limit", async () => {
+    serve();
+    post.mockResolvedValue({
+      id: "sp1",
+      name: "X unwatched",
+      kind: "smart",
+      videos: 0,
+      poster_video_ids: [],
+    });
+    renderGrid(`/library/${LIB}?watched=unwatched&speaker=X&sort=title&order=asc`);
+    await screen.findByText("الدرس الأول");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Save as smart playlist" }));
+    await user.type(screen.getByLabelText("Smart playlist name"), "X unwatched");
+    const limit = screen.getByLabelText("How many videos at most");
+    await user.clear(limit);
+    await user.type(limit, "50");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(post).toHaveBeenCalledWith("/api/me/playlists", {
+      name: "X unwatched",
+      kind: "smart",
+      smart_query: {
+        libraries: [LIB],
+        filters: { watched: "unwatched", speaker: "X" },
+        sort: "title",
+        order: "asc",
+        limit: 50,
+      },
+    });
   });
 
   it("Select: check cards, mark them watched, favorite them, add them to a playlist", async () => {

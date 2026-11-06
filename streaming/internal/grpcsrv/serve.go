@@ -11,6 +11,9 @@ import (
 	"net"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // StreamingServiceName is the gRPC service path. The api streaming
@@ -57,7 +60,7 @@ func serviceDesc(s *Server) *grpc.ServiceDesc {
 // in-band as {"error": "..."} so the wire stays gRPC-OK, matching the
 // pipeline server's convention; the api client scans for that key.
 func NewGRPCServer(s *Server) *grpc.Server {
-	srv := grpc.NewServer(grpc.ForceServerCodec(jsonCodec{}))
+	srv := grpc.NewServer(grpc.ForceServerCodec(jsonCodec{}), grpc.UnaryInterceptor(RequestIDInterceptor))
 	desc := serviceDesc(s)
 	var impl any = struct{}{}
 	srv.RegisterService(desc, impl)
@@ -178,4 +181,18 @@ func jsonInt(v any) int {
 	default:
 		return 0
 	}
+}
+
+// RequestIDMetadata is the api's request id in a call's metadata (Epic 53 story 53.08).
+const RequestIDMetadata = "maktaba-request-id"
+
+// RequestIDInterceptor puts the api's request id on the call's context: every line the
+// call logs with it (a session opened, a transcode started) names the request.
+func RequestIDInterceptor(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if v := md.Get(RequestIDMetadata); len(v) > 0 && v[0] != "" && len(v[0]) <= 64 {
+			ctx = mlog.WithRequestID(ctx, v[0])
+		}
+	}
+	return handler(ctx, req)
 }

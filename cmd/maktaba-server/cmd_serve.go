@@ -308,6 +308,15 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if llmProc != nil {
 		procs = append(procs, *llmProc)
 	}
+	// Epic 53 story 53.09: the log index, on every whole machine (logs.index; its catalog
+	// component turns it off)
+	if wholeMachine {
+		if p, err := supervisor.BuildLogs(cfg, LogsRoot(cfg)); err != nil {
+			fmt.Fprintf(os.Stderr, "[serve] level=warn the log index does not run: %v\n", err)
+		} else {
+			procs = append(procs, p)
+		}
+	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
 	// the cloud relay agent runs on the home (its credentials moved with it, Epic 37)
 	if wholeMachine && supervisor.RelayWanted(cfg) {

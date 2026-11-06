@@ -421,4 +421,12 @@ class ApiClientTest {
         route = { json(404, """{"title":"not found"}""") }
         assertNull(client(MemoryTokens()).homeStatus())
     }
+
+    /** Epic 53 story 53.08: every call carries an X-Request-Id, a UUIDv7. */
+    @Test
+    fun everyCallCarriesARequestId() = runBlocking {
+        client(MemoryTokens()).homeStatus()
+        val id = seen.last().headers["X-Request-Id"]
+        assertTrue("a v7 uuid: $id", id != null && Regex("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$").matches(id))
+    }
 }

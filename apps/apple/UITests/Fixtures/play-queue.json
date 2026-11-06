@@ -1,0 +1,34 @@
+{
+ "id": "q-ui",
+ "source": {
+  "kind": "library",
+  "id": "lib-docs"
+ },
+ "shuffle": true,
+ "current_pos": 0,
+ "version": 1,
+ "source_done": true,
+ "total_estimate": 2,
+ "used_at": "{{now-600}}",
+ "device_id": "phone-ui",
+ "items": [
+  {
+   "pos": 0,
+   "origin": "source",
+   "id": "v1",
+   "title": "Lesson one",
+   "filename": "v1.mp4",
+   "library_id": "lib-docs",
+   "duration_sec": 20
+  },
+  {
+   "pos": 1,
+   "origin": "source",
+   "id": "v2",
+   "title": "Lesson two",
+   "filename": "v2.mp4",
+   "library_id": "lib-docs",
+   "duration_sec": 20
+  }
+ ]
+}

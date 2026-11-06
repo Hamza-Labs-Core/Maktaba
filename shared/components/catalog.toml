@@ -80,7 +80,7 @@ processes  = ["api/"]
 loops      = ["api:process_recorder", "api:license_refresher", "api:license_reload",
               "api:eventbus_run", "api:eventbus_pruner", "api:idempotency_sweep",
               "api:jwt_key_reaper", "api:queues_snapshots", "api:sharepath_reload",
-              "api:browse_rowcache_listen"]
+              "api:browse_rowcache_listen", "api:play_queue_sweep"]
 settings   = ["rules.audit", "rules.storage", "rules.system_health", "rules.search"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
@@ -292,6 +292,21 @@ platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full", "worker"]
 since     = "0.3.66"
 
+# Epic 56 story 56.06: collections from YouTube playlists and channels (the Plex import,
+# story 56.07, is a stage of ext.plex: an extension's stages are its own)
+[[component]]
+id        = "collections.youtube"
+kind      = "stages"
+group     = "processing"
+title_key = "components.collections.youtube.title"
+desc_key  = "components.collections.youtube.desc"
+stages    = ["youtube_collections"]
+requires  = ["classify"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "worker"]
+features  = ["youtube"]
+since     = "0.3.82"
+
 [[component]]
 id        = "enrich"
 kind      = "stages+loop"
@@ -343,7 +358,8 @@ kind      = "extension"
 group     = "integrations"
 title_key = "components.ext.plex.title"
 desc_key  = "components.ext.plex.desc"
-stages    = ["plex_index", "plex_collection", "plex_groups", "plex_livetv"]
+stages    = ["plex_index", "plex_collection", "plex_groups", "plex_livetv",
+             "plex_collections_import"]
 settings  = ["rules.plexlive"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
@@ -447,6 +463,25 @@ bundles   = ["full"]
 since     = "0.3.66"
 
 # ---- remote access and the cluster ---------------------------------------------------
+
+[[component]]
+id        = "logs.index"
+kind      = "process+loop"
+group     = "system"
+title_key = "components.logs.index.title"
+desc_key  = "components.logs.index.desc"
+# the log index, search and live tail (Epic 53 story 53.09; error groups and metric
+# rollups join it in 53.10 and 53.12); the segments themselves are written by the
+# supervisor, which is not a component, so turning this off loses no line
+processes = ["logs/"]
+# the API's notifier of new and returning error groups (story 53.10)
+loops     = ["api:errors_notifier"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+resources = { ram_mb = 120, disk_mb = 350, gpu = "none" }
+# not in Core, which runs no switchable process (N9: four processes); a Core home keeps its
+# segments and reads them on the recovery page, and an admin can turn this on
+bundles   = ["full", "worker"]
+since     = "0.3.83"
 
 [[component]]
 id        = "cloud.link"

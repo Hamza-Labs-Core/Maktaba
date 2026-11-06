@@ -12,5 +12,10 @@ val LocalOpenVideo = staticCompositionLocalOf<(String) -> Unit> { {} }
 /** Gives [content] a way to open a video: its page (48.28), pushed on this section's stack. */
 @Composable
 internal fun VideoHost(nav: PlayerNavigator, content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalOpenVideo provides { id -> nav.open(Route.Video(id)) }, content = content)
+    CompositionLocalProvider(
+        LocalOpenVideo provides { id -> nav.open(Route.Video(id)) },
+        // Epic 56: a queue's first item opens the player
+        LocalPlayVideo provides { id -> nav.open(Route.Watch(id)) },
+        content = content,
+    )
 }

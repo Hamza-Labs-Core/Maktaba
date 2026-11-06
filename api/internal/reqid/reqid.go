@@ -35,3 +35,7 @@ func FromContext(ctx context.Context) uuid.UUID {
 	}
 	return uuid.Nil
 }
+
+// MetadataKey is the request id's gRPC metadata key: the api's calls into the pipeline and
+// streaming carry it, and their lines log it as request_id (Epic 53 story 53.08).
+const MetadataKey = "maktaba-request-id"

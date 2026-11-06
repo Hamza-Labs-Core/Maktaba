@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/jsoncodec"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 )
 
 // ErrNotImplemented is retained for parity with the interface's
@@ -61,6 +62,8 @@ func NewRealClient(cfg Config) Client {
 		addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithDefaultCallOptions(grpc.ForceCodec(jsoncodec.Codec{})),
+		// the request's id, for the other side's lines (Epic 53 story 53.08)
+		grpc.WithUnaryInterceptor(reqid.UnaryClientInterceptor()),
 	)
 	if err != nil {
 		return &realClient{

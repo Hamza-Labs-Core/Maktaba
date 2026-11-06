@@ -170,7 +170,18 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
     expect(pilot.querySelector(".mkt-episode__thumb")?.textContent).toContain("▤");
   });
 
-  it("SED-02: Continue watching links to the next episode's player", async () => {
+  const seriesQueue = (first: string) => ({
+    id: "Q",
+    source: { kind: "series", id: "s1" },
+    shuffle: false,
+    current_pos: 0,
+    version: 1,
+    source_done: true,
+    total_estimate: 1,
+    items: [{ pos: 0, origin: "source", id: first }],
+  });
+
+  it("SED-02: Continue watching plays on through the series (a series queue)", async () => {
     serve({
       episodes: {
         ...EPISODES,
@@ -182,11 +193,54 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
         },
       },
     });
+    post.mockResolvedValue(seriesQueue("e2"));
     renderDetail();
     const link = await screen.findByRole("link", { name: "▶ Continue watching" });
     expect(link).toHaveAttribute("href", "/videos/e2/watch");
     await userEvent.setup().click(link);
-    expect(screen.getByText("player page")).toBeInTheDocument();
+    expect(await screen.findByText("player page")).toBeInTheDocument();
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "series", id: "s1" }, shuffle: false })
+    );
+  });
+
+  // Epic 56 story 56.13 T03: Shuffle the series, and a season's Play and Shuffle
+  it("Shuffle the series, and Play / Shuffle a season with its row", async () => {
+    serve({
+      episodes: {
+        ...EPISODES,
+        seasons: [{ ...EPISODES.seasons[0]!, id: "ss1" }, ...EPISODES.seasons.slice(1)],
+      },
+    });
+    post.mockResolvedValue(seriesQueue("e1"));
+    renderDetail();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "⤮ Shuffle the series" }));
+    expect(await screen.findByText("player page")).toBeInTheDocument();
+    expect(post).toHaveBeenLastCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "series", id: "s1" }, shuffle: true })
+    );
+  });
+
+  it("a season with its row has Play and Shuffle; one without has none", async () => {
+    serve({
+      episodes: {
+        ...EPISODES,
+        seasons: [{ ...EPISODES.seasons[0]!, id: "ss1" }, ...EPISODES.seasons.slice(1)],
+      },
+    });
+    post.mockResolvedValue(seriesQueue("e1"));
+    renderDetail();
+    const plays = await screen.findAllByRole("button", { name: "▶ Play the season" });
+    expect(plays).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "⤮ Shuffle the season" })).toHaveLength(1);
+    await userEvent.setup().click(plays[0]!);
+    expect(post).toHaveBeenLastCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "season", id: "ss1" }, shuffle: false })
+    );
   });
 
   it.todo("SED-02: Continue watching resumes at the saved position (needs VPL-09)");

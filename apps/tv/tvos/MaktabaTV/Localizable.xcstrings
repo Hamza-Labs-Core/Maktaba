@@ -1,6 +1,28 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%lld" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld"
+          }
+        }
+      }
+    },
+    "%lld videos" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld مقطع"
+          }
+        }
+      }
+    },
     "Account" : {
       "localizations" : {
         "ar" : {
@@ -17,6 +39,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "العنوان"
+          }
+        }
+      }
+    },
+    "All" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الكل"
           }
         }
       }
@@ -42,6 +75,28 @@
         }
       }
     },
+    "Cancel" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء"
+          }
+        }
+      }
+    },
+    "Categories" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفئات"
+          }
+        }
+      }
+    },
     "Channels appear here once this home shares one with you." : {
       "localizations" : {
         "ar" : {
@@ -62,12 +117,67 @@
         }
       }
     },
+    "Clear filters" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مسح التصفيات"
+          }
+        }
+      }
+    },
+    "Clips" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المقاطع القصيرة"
+          }
+        }
+      }
+    },
     "Close" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إغلاق"
+          }
+        }
+      }
+    },
+    "Collections" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المجموعات"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متابعة"
+          }
+        }
+      }
+    },
+    "Continue Watching" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تابع المشاهدة"
           }
         }
       }
@@ -92,12 +202,45 @@
         }
       }
     },
+    "Curated" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مختارة"
+          }
+        }
+      }
+    },
     "Favorites" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "المفضلة"
+          }
+        }
+      }
+    },
+    "Filter" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تصفية"
+          }
+        }
+      }
+    },
+    "Filter (%lld)" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تصفية (%lld)"
           }
         }
       }
@@ -112,12 +255,45 @@
         }
       }
     },
+    "From Plex" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من Plex"
+          }
+        }
+      }
+    },
+    "From YouTube" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من يوتيوب"
+          }
+        }
+      }
+    },
     "From your libraries" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "من مكتباتك"
+          }
+        }
+      }
+    },
+    "Go to series" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الانتقال إلى السلسلة"
           }
         }
       }
@@ -142,6 +318,28 @@
         }
       }
     },
+    "In progress" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد المشاهدة"
+          }
+        }
+      }
+    },
+    "Kind" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "النوع"
+          }
+        }
+      }
+    },
     "LIVE" : {
       "localizations" : {
         "ar" : {
@@ -152,12 +350,34 @@
         }
       }
     },
+    "Languages" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اللغات"
+          }
+        }
+      }
+    },
     "Libraries" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "المكتبات"
+          }
+        }
+      }
+    },
+    "Library" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبة"
           }
         }
       }
@@ -182,12 +402,45 @@
         }
       }
     },
+    "Mark season watched" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم الموسم كمُشاهَد"
+          }
+        }
+      }
+    },
+    "Mark watched" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم كمُشاهَد"
+          }
+        }
+      }
+    },
     "Mini guide" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الدليل المصغّر"
+          }
+        }
+      }
+    },
+    "Next" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي"
           }
         }
       }
@@ -212,12 +465,34 @@
         }
       }
     },
+    "No collections in this library yet." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا مجموعات في هذه المكتبة بعد."
+          }
+        }
+      }
+    },
     "No libraries" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "لا توجد مكتبات"
+          }
+        }
+      }
+    },
+    "No playlists yet" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد قوائم تشغيل بعد"
           }
         }
       }
@@ -232,12 +507,56 @@
         }
       }
     },
+    "None of your playlists has videos from this library." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تحتوي أيٌّ من قوائم تشغيلك على مقاطع من هذه المكتبة."
+          }
+        }
+      }
+    },
+    "Nothing matches these filters." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء يطابق هذه التصفيات."
+          }
+        }
+      }
+    },
     "Nothing scheduled" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "لا شيء في الجدول"
+          }
+        }
+      }
+    },
+    "Nothing to play here." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يوجد ما يُشغَّل هنا."
+          }
+        }
+      }
+    },
+    "Nothing to recommend yet. Browse the Library tab." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا مقترحات بعد. تصفّح تبويب المكتبة."
           }
         }
       }
@@ -258,6 +577,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الآن"
+          }
+        }
+      }
+    },
+    "On Deck" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي للمشاهدة"
           }
         }
       }
@@ -292,6 +622,94 @@
         }
       }
     },
+    "Play now" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل الآن"
+          }
+        }
+      }
+    },
+    "Play the next video automatically" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل المقطع التالي تلقائيًا"
+          }
+        }
+      }
+    },
+    "Playback" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل"
+          }
+        }
+      }
+    },
+    "Playlists" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قوائم التشغيل"
+          }
+        }
+      }
+    },
+    "Plex collection" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مجموعة Plex"
+          }
+        }
+      }
+    },
+    "Previous" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السابق"
+          }
+        }
+      }
+    },
+    "Recently Added" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُضيف حديثًا"
+          }
+        }
+      }
+    },
+    "Recently Watched" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شوهد حديثًا"
+          }
+        }
+      }
+    },
     "Recently added" : {
       "localizations" : {
         "ar" : {
@@ -312,12 +730,45 @@
         }
       }
     },
+    "Recommended" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المقترحات"
+          }
+        }
+      }
+    },
+    "Remove from playlist" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة من قائمة التشغيل"
+          }
+        }
+      }
+    },
     "Resume from %@" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "استئناف من %@"
+          }
+        }
+      }
+    },
+    "Rules" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القواعد"
           }
         }
       }
@@ -338,6 +789,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ابحث في مكتباتك"
+          }
+        }
+      }
+    },
+    "Season %lld" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الموسم %lld"
           }
         }
       }
@@ -382,6 +844,50 @@
         }
       }
     },
+    "Show: Series" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العرض: السلاسل"
+          }
+        }
+      }
+    },
+    "Show: Videos" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العرض: المقاطع"
+          }
+        }
+      }
+    },
+    "Shuffle" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل عشوائي"
+          }
+        }
+      }
+    },
+    "Shuffle again" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خلط من جديد"
+          }
+        }
+      }
+    },
     "Sign out" : {
       "localizations" : {
         "ar" : {
@@ -398,6 +904,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تسجيل الدخول باسم"
+          }
+        }
+      }
+    },
+    "Smart" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ذكية"
+          }
+        }
+      }
+    },
+    "Sort" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ترتيب"
+          }
+        }
+      }
+    },
+    "Speakers" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المتحدثون"
+          }
+        }
+      }
+    },
+    "Specials" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حلقات خاصة"
           }
         }
       }
@@ -442,6 +992,28 @@
         }
       }
     },
+    "The queue changed on another device. Showing the latest." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّرت قائمة الانتظار على جهاز آخر. يُعرض أحدث إصدار."
+          }
+        }
+      }
+    },
+    "The queue could not be loaded." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحميل قائمة الانتظار."
+          }
+        }
+      }
+    },
     "The video stopped playing." : {
       "localizations" : {
         "ar" : {
@@ -482,6 +1054,17 @@
         }
       }
     },
+    "Topics" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المواضيع"
+          }
+        }
+      }
+    },
     "Tuning…" : {
       "localizations" : {
         "ar" : {
@@ -492,12 +1075,45 @@
         }
       }
     },
+    "Untitled series" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سلسلة بلا عنوان"
+          }
+        }
+      }
+    },
+    "Unwatched" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير مُشاهَد"
+          }
+        }
+      }
+    },
     "Up next" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الدرس التالي"
+          }
+        }
+      }
+    },
+    "Up next in %lld s" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي خلال %lld ث"
           }
         }
       }
@@ -522,6 +1138,50 @@
         }
       }
     },
+    "Watched" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مُشاهَد"
+          }
+        }
+      }
+    },
+    "Years" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السنوات"
+          }
+        }
+      }
+    },
+    "YouTube channel" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قناة يوتيوب"
+          }
+        }
+      }
+    },
+    "YouTube playlist" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قائمة تشغيل يوتيوب"
+          }
+        }
+      }
+    },
     "Your library" : {
       "localizations" : {
         "ar" : {
@@ -535,16 +1195,16 @@
     "settings.home" : {
       "extractionState" : "manual",
       "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Home"
-          }
-        },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الجهاز الرئيسي"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Home"
           }
         }
       }

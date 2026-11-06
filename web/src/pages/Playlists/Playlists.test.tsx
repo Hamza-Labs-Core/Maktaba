@@ -8,7 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { renderPage, memberUser } from "../../test/pageHarness";
-import { readQueue } from "../../lib/playQueue";
+import { readServerQueue } from "../../lib/playQueue";
 import ar from "../../i18n/ar.json";
 
 const { get, post, put, patch, del } = vi.hoisted(() => ({
@@ -153,23 +153,48 @@ describe("PlaylistPage", () => {
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
   });
 
-  it("Play from here fills the queue from that video and opens the player", async () => {
+  // Epic 56 story 56.13: one server queue from the playlist
+  const queue = (cur: number, ids: string[], shuffle = false) => ({
+    id: "Q",
+    source: { kind: "playlist", id: "p1" },
+    shuffle,
+    current_pos: cur,
+    version: 1,
+    source_done: true,
+    total_estimate: ids.length,
+    items: ids.map((id, pos) => ({ pos, origin: "source", id })),
+  });
+
+  it("Play from here makes a playlist queue from that video and opens the player", async () => {
     get.mockResolvedValue(DETAIL);
+    post.mockResolvedValue(queue(1, ["a", "b", "c"]));
     open();
     await screen.findByRole("heading", { name: "رمضان" });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Play from Lesson b" }));
     expect(await screen.findByText("player")).toBeInTheDocument();
-    expect(readQueue()).toMatchObject({ ids: ["a", "b", "c"], index: 1 });
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({
+        source: { kind: "playlist", id: "p1" },
+        shuffle: false,
+        start_video_id: "b",
+      })
+    );
+    expect(readServerQueue()?.current_pos).toBe(1);
   });
 
-  it("Shuffle queues every video", async () => {
+  it("Shuffle makes a shuffled playlist queue", async () => {
     get.mockResolvedValue(DETAIL);
+    post.mockResolvedValue(queue(0, ["c", "a", "b"], true));
     open();
     await screen.findByRole("heading", { name: "رمضان" });
     await userEvent.setup().click(screen.getByRole("button", { name: /Shuffle/ }));
     expect(await screen.findByText("player")).toBeInTheDocument();
-    expect([...(readQueue()?.ids ?? [])].sort()).toEqual(["a", "b", "c"]);
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "playlist", id: "p1" }, shuffle: true })
+    );
   });
 
   it("renames and deletes after confirming", async () => {
@@ -213,6 +238,53 @@ describe("PlaylistPage", () => {
       await screen.findByRole("button", { name: new RegExp(ar["browse.playAll"]) })
     ).toBeInTheDocument();
     expect(document.documentElement).toHaveAttribute("dir", "rtl");
+    localStorage.clear();
+  });
+
+  // Epic 56 story 56.09 T08: a smart playlist's rules in words, Edit rules, no item edits
+  it("a smart playlist shows its rules in words and has no reorder or remove", async () => {
+    get.mockResolvedValue({
+      playlist: {
+        ...P1,
+        kind: "smart",
+        smart_query: {
+          libraries: ["L1"],
+          filters: { watched: "unwatched", speaker: "X" },
+          sort: "created_at",
+          order: "desc",
+          limit: 50,
+        },
+      },
+      items: DETAIL.items,
+    });
+    open();
+    await screen.findByRole("heading", { name: "رمضان" });
+    expect(screen.getByLabelText("Rules")).toHaveTextContent(
+      "Smart Unwatched · Speaker: X · Newest first · Up to 50 videos"
+    );
+    expect(screen.getByRole("link", { name: "Edit rules" })).toHaveAttribute(
+      "href",
+      "/library/L1?tab=browse&watched=unwatched&speaker=X&sort=created_at&order=desc&smartPlaylist=p1"
+    );
+    expect(screen.queryByRole("button", { name: "Remove Lesson b from the playlist" })).toBeNull();
+  });
+
+  it("the rules read in Arabic", async () => {
+    get.mockResolvedValue({
+      playlist: {
+        ...P1,
+        kind: "smart",
+        smart_query: { libraries: null, filters: { watched: "unwatched" }, limit: 50 },
+      },
+      items: [],
+    });
+    localStorage.setItem("mkt:locale", "ar");
+    open();
+    await screen.findByRole("heading", { name: "رمضان" });
+    expect(screen.getByLabelText(ar["playlists.smart.rules"])).toHaveTextContent(
+      ar["playlists.smart.rule.unwatched"]
+    );
+    expect(screen.getByText(ar["playlists.smart.empty"])).toBeInTheDocument();
     localStorage.clear();
   });
 });

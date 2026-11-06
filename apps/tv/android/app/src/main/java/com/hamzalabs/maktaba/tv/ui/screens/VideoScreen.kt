@@ -34,9 +34,17 @@ import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
  * where this person stopped (and Start over), or Play.
  */
 @Composable
-fun VideoScreen(api: TvApi, id: String, onPlay: (title: String, startMs: Long) -> Unit, signedOut: () -> Unit, onBack: (() -> Unit)? = null) {
-    val (state, retry) = rememberLoad(id, signedOut, where = "tv video") { api.video(id) }
-    LoadState(state, retry, onBack) { v ->
+fun VideoScreen(
+    api: TvApi,
+    id: String,
+    onPlay: (title: String, startMs: Long) -> Unit,
+    signedOut: () -> Unit,
+    onBack: (() -> Unit)? = null,
+    /** Epic 56: Go to series, when the video is an episode. */
+    onSeries: ((String) -> Unit)? = null,
+) {
+    val (state, retry) = rememberLoad(id, signedOut, where = "tv video") { api.video(id) to api.seriesOf(id) }
+    LoadState(state, retry, onBack) { (v, series) ->
         val focus = remember { FocusRequester() }
         LaunchedEffect(v.id) { runCatching { focus.requestFocus() } }
         Row(
@@ -65,6 +73,11 @@ fun VideoScreen(api: TvApi, id: String, onPlay: (title: String, startMs: Long) -
                             Text(stringResource(R.string.play))
                         }
                     }
+                    if (series != null && onSeries != null) {
+                        MaktabaButton(onClick = { onSeries(series.id) }) { Text(stringResource(R.string.series_go_to)) }
+                    }
+                    val nav = com.hamzalabs.maktaba.tv.ui.screens.library.LocalTvNav.current
+                    MaktabaButton(onClick = { nav.cardMenu(v.id, series?.id) }) { Text("⋯") }
                 }
                 v.description?.takeIf { it.isNotBlank() }?.let {
                     Box(Modifier.fillMaxWidth()) {

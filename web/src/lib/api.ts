@@ -15,8 +15,13 @@
 import { CLIENT_HEADER, clientHeaderValue } from "./clientHeader";
 import { logApiFailure } from "./errorLog";
 import { noteRequestFailed } from "./homeStatus";
+import { actionRequestId, noteRequest } from "./requestIds";
+import { routePattern } from "./errorLog";
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
+
+/** The header every call carries its action's id in (Epic 53 story 53.08). */
+export const REQUEST_ID_HEADER = "X-Request-Id";
 
 /** The URL of an API path for something the browser loads itself (an iframe, a link). */
 export const apiUrl = (path: string): string => `${BASE}${path}`;
@@ -46,6 +51,8 @@ export class ApiError extends Error {
   problem: Problem;
   /** The answer's Retry-After in seconds (a 429 / 503), when it sent one. */
   retryAfter?: number;
+  /** The request's id (X-Request-Id, Epic 53 story 53.08): error screens quote its start. */
+  requestId?: string;
   constructor(problem: Problem, retryAfter?: number) {
     super(problem.title + (problem.detail ? `: ${problem.detail}` : ""));
     this.name = "ApiError";
@@ -74,11 +81,17 @@ export function retryAfterSeconds(value: string | null | undefined): number | un
 // in a captured console log.
 // The path is logged without its query: a search's words, a pairing code or a
 // token in a link stay out of the console (and any log it is copied into).
-function logApiError(method: string, path: string, status: number, detail: string): void {
+function logApiError(
+  method: string,
+  path: string,
+  status: number,
+  detail: string,
+  requestId?: string
+): void {
   const where = path.split("?")[0];
   console.error(`[api] ${method} ${where} failed (${status}): ${detail}`);
   // the log ring (Epic 53 story 53.01): the route's pattern and the status only
-  logApiFailure(method, where, status);
+  logApiFailure(method, where, status, requestId);
   // a server error or no answer: the home's status is read now (Epic 53 story 53.06)
   noteRequestFailed(status);
 }
@@ -221,6 +234,9 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     headers.set("Accept", "application/json");
   }
   headers.set(CLIENT_HEADER, clientHeaderValue());
+  // one id per user action (Epic 53 story 53.08)
+  if (!headers.has(REQUEST_ID_HEADER)) headers.set(REQUEST_ID_HEADER, actionRequestId());
+  const requestId = headers.get(REQUEST_ID_HEADER) ?? undefined;
 
   let body: BodyInit | null = null;
   if (opts.body !== undefined && opts.body !== null) {
@@ -253,11 +269,20 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
   } catch (e) {
     // Network-level failure (offline, DNS, CORS) never reaches the
     // status-based branch below — log it so it isn't swallowed.
-    logApiError(method, path, 0, e instanceof Error ? e.message : "network error");
+    logApiError(method, path, 0, e instanceof Error ? e.message : "network error", requestId);
     throw e;
   }
 
   noteHomeState(res.headers);
+  if (requestId) {
+    noteRequest({
+      id: requestId,
+      method,
+      route: routePattern(path),
+      status: res.status,
+      at: new Date().toISOString(),
+    });
+  }
 
   if (res.status === 204) {
     return undefined as T;
@@ -274,7 +299,8 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
         noteUnavailable(res.status, parsed);
         noteSignInRequired(res.status, parsed);
         const err = new ApiError({ ...parsed, status: parsed.status || res.status }, retryAfter);
-        logApiError(method, path, err.status, err.message);
+        err.requestId = requestId;
+        logApiError(method, path, err.status, err.message, requestId);
         throw err;
       } catch (e) {
         if (e instanceof ApiError) throw e;
@@ -294,7 +320,8 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
       },
       retryAfter
     );
-    logApiError(method, path, err.status, html ? text.slice(0, 256) : err.message);
+    err.requestId = requestId;
+    logApiError(method, path, err.status, html ? text.slice(0, 256) : err.message, requestId);
     throw err;
   }
 

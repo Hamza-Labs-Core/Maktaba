@@ -228,6 +228,7 @@ private fun HomeRows(
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val cardWidth = cardWidthFor(maxWidth)
+        val queueDoc = com.hamzalabs.maktaba.player.libraries.rememberContinueQueue(client)
         LazyColumn(
             modifier.fillMaxSize(),
             state = list,
@@ -244,6 +245,15 @@ private fun HomeRows(
                         Modifier.fillMaxWidth().padding(horizontal = MaktabaTokens.Spacing.s4).testTag("home-stale"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            // Epic 56: the queue last used on any device (a row only when there is one)
+            queueDoc?.let { d ->
+                item(key = "continue-queue") {
+                    com.hamzalabs.maktaba.player.libraries.ContinueQueue(
+                        client, d, open = { nav.open(com.hamzalabs.maktaba.player.shell.Route.Watch(it)) },
+                        Modifier.padding(horizontal = MaktabaTokens.Spacing.s4),
                     )
                 }
             }

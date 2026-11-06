@@ -35,11 +35,7 @@ var copyReviewed = []string{
 	"media_metadata_enrichment", "media_parsed_titles", "notification_cursors",
 	"notification_reads", "notifications", "personal_access_tokens", "playback_state",
 	"plex_items",
-	// Epic 54 (slot 0191): plugins' installs, grants, data, attributed writes, suggestions
-	// and job tokens (only a token's sha256, which opens nothing): no secret, the home's
-	// own writes, read by a full node like the rest of the library
-	"plugin_data", "plugin_grants", "plugin_installs", "plugin_invocations", "plugin_suggestions",
-	"plugin_writes", "plex_livetv_state", "processing_jobs", "promo_links", "purge_log",
+	"plex_livetv_state", "processing_jobs", "promo_links", "purge_log",
 	"queue_control", "recommendation_dismissals", "release_catalog", "relisten_attempts", "relisten_seen", "search_runs",
 	"saved_searches",
 	"search_history", "season_style", "season_tags", "segment_speakers", "series", "series_books",

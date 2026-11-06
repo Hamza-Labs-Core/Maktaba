@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -182,8 +184,8 @@ func (h *Handler) speakerFacets(ctx context.Context, s scope, lib string) ([]Spe
 }
 
 // letterFacets is the titles' first characters, a letter in either case
-// counted once (under its capital), every other character under "#" (first),
-// the letters in the title sort's order.
+// counted once (under its capital), every other character under "#" (last),
+// Arabic letters before Latin ones, each script in code point order.
 func (h *Handler) letterFacets(ctx context.Context, s scope, lib string) ([]LetterFacet, error) {
 	var args []any
 	cond := libFilter(s, lib, &args)
@@ -217,14 +219,34 @@ func (h *Handler) letterFacets(ctx context.Context, s scope, lib string) ([]Lett
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Letter < out[j].Letter })
+	// Arabic letters first (ا…ي), then Latin (A…Z), then any other script,
+	// then "#" (Epic 56 story 56.05: the TVs' letter rail)
+	sort.SliceStable(out, func(i, j int) bool {
+		si, sj := letterScript(out[i].Letter), letterScript(out[j].Letter)
+		if si != sj {
+			return si < sj
+		}
+		return out[i].Letter < out[j].Letter
+	})
 	if other.Videos > 0 {
-		out = append([]LetterFacet{other}, out...)
+		out = append(out, other)
 	}
 	if out == nil {
 		out = []LetterFacet{}
 	}
 	return out, nil
+}
+
+// letterScript ranks a letter's script for the jump bar: Arabic, Latin, the rest.
+func letterScript(l string) int {
+	r, _ := utf8.DecodeRuneInString(l)
+	switch {
+	case unicode.Is(unicode.Arabic, r):
+		return 0
+	case unicode.Is(unicode.Latin, r):
+		return 1
+	}
+	return 2
 }
 
 // bandFacets counts the videos of every length, added-date and resolution
