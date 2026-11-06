@@ -422,6 +422,12 @@ jobs:
           - { id: '12', name: no behaviour change (an update of a seeded home), test: TestUpdateRehearsal12NoBehaviourChange, profile: small }
           - { id: '13', name: an update carries the packs and a rollback finds the kept one, test: TestUpdateRehearsal13UpdateWithPacks, profile: small }
           - { id: '14', name: a pack that fails its verification stops the update, test: TestUpdateRehearsal14PackFailsVerification, profile: small }
+          # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
+          # killed at a time on a home of this commit; the tag guard requires these too
+          - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }
+          - { id: 'F04', name: Postgres killed (the recovery console opens without it), test: TestFaultRehearsalF04PostgresKilled, profile: small }
+          - { id: 'F06', name: API crash (the shell serves; it comes back), test: TestFaultRehearsalF06APICrash, profile: small }
+          - { id: 'F10', name: safe mode from the recovery console, test: TestFaultRehearsalF10SafeMode, profile: small }
     steps:
       - uses: actions/checkout@v6.0.2
 

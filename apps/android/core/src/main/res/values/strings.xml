@@ -251,4 +251,18 @@
     <string name="components_licence_waiting">Paused until the plan includes it again. Your choice is kept.</string>
     <string name="components_licence_locked">Needs a plan</string>
     <string name="components_licence_open_subscription">Open Subscription</string>
+    <!-- Epic 53 story 53.06: the status strip (the web's status.*) -->
+    <string name="status_offline">You\'re offline</string>
+    <string name="status_restarting">Maktaba is restarting. Some things won\'t work for a moment.</string>
+    <string name="status_database">Maktaba is having trouble with its database. Playback and browsing may not work.</string>
+    <string name="status_safe">Maktaba is in safe mode. Playback, processing and Live TV are off until it restarts.</string>
+    <string name="status_streaming">Playback and Live TV are unavailable right now.</string>
+    <string name="status_streaming_no_tv">Playback is unavailable right now.</string>
+    <string name="status_search">Search is unavailable right now.</string>
+    <string name="status_processing">Processing is paused: new videos won\'t be added for now.</string>
+    <string name="status_logs">Log search is restarting. Recent logs can still be read from the recovery page.</string>
+    <string name="status_details">Details</string>
+    <string name="status_more">%1$d more</string>
+    <string name="status_close">Close</string>
+    <string name="status_player">Playback is unavailable right now. Try again in a few minutes.</string>
 </resources>

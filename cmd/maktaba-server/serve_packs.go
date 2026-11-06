@@ -171,10 +171,17 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 		Log:          log,
 	}
 	v := &packVenv{cfg: cfg, m: m, log: log}
-	m.Prepare = map[string]packs.PrepareFunc{"runtime.ml": v.prepare, "tool.yt-dlp": v.prepare}
-	m.Cleanup = map[string]packs.CleanupFunc{"runtime.ml": v.cleanup, "tool.yt-dlp": v.cleanup}
+	m.Prepare = map[string]packs.PrepareFunc{}
+	m.Cleanup = map[string]packs.CleanupFunc{}
+	for _, id := range venvPacks {
+		m.Prepare[id], m.Cleanup[id] = v.prepare, v.cleanup
+	}
 	return m
 }
+
+// venvPacks are the wheel packs the venv is rebuilt with when one comes or goes
+// (runtime.lang: Epic 52's word review, story 52.16).
+var venvPacks = []string{"runtime.ml", "tool.yt-dlp", "runtime.lang"}
 
 // packVenv rebuilds the app's pipeline venv (<state>/venv, through the venv gate's
 // appvenv) when runtime.ml or tool.yt-dlp comes or goes: the extras are those of what is
@@ -210,7 +217,9 @@ func (v *packVenv) spec(adding, addingDir, removing string) (appvenv.Spec, error
 	for _, a := range []struct {
 		id     string
 		extras []string
-	}{{"runtime.ml", []string{"stt", "search"}}, {"tool.yt-dlp", []string{"mediaintel"}}} {
+	}{{"runtime.ml", []string{"stt", "search"}}, {"tool.yt-dlp", []string{"mediaintel"}},
+		// Epic 52 (story 52.16): word review's language tools
+		{"runtime.lang", []string{"lang"}}} {
 		dir := ""
 		if a.id == adding {
 			dir = addingDir
@@ -285,6 +294,9 @@ func (v *packVenv) cleanup(ctx context.Context, id string) error {
 // packsAdmin serves the routes of this file for m (nil: a machine with no reconciler,
 // every route 503).
 type packsAdmin struct {
+	// rec is this machine's component reconciler (nil without one): /status.json reads
+	// its phases (Epic 53 story 53.03)
+	rec   *supervisor.Reconciler
 	ctx   context.Context
 	m     *packs.Manager
 	r     *packs.Runner

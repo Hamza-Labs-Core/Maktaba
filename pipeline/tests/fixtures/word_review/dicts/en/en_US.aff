@@ -1,0 +1,16 @@
+SET UTF-8
+TRY esianrtolcdugmphbyfvkwzESIANRTOLCDUGMPHBYFVKWZ'
+REP 2
+REP teh the
+REP recieve receive
+
+SFX S Y 2
+SFX S 0 s [^sxzhy]
+SFX S y ies [^aeiou]y
+
+SFX G Y 2
+SFX G 0 ning [^e]n
+SFX G e ing e
+
+SFX D Y 1
+SFX D 0 ed [^ey]

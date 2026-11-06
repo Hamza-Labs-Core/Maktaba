@@ -698,6 +698,61 @@
         "worker"
       ],
       "conflicts": [],
+      "desc_key": "components.review.words.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "processing",
+      "id": "review.words",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.word_review"
+      ],
+      "since": "0.3.82",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "word_check"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.review.words.title",
+      "wants": [
+        "lang.ar",
+        "lang.en",
+        "model.refine"
+      ]
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
       "desc_key": "components.search.semantic.desc",
       "drain": {
         "checkpoint": false,
@@ -1821,6 +1876,49 @@
     },
     {
       "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.runtime.lang.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "runtimes",
+      "id": "runtime.lang",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:runtime.lang",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.runtime.lang.title",
+      "wants": []
+    },
+    {
+      "bundles": [
         "full"
       ],
       "conflicts": [],
@@ -2269,6 +2367,584 @@
       "switchable": true,
       "title_key": "components.tool.ffmpeg.title",
       "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.lang.ar.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.ar",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.ar",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.ar.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.lang.en.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.en",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.en",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.en.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.fr.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.fr",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.fr",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.fr.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.de.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.de",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.de",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.de.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.es.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.es",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.es",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.es.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.it.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.it",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.it",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.it.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.pt.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.pt",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.pt",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.pt.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.nl.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.nl",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.nl",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.nl.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.tr.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.tr",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.tr",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.tr.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.ru.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.ru",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.ru",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.ru.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.id.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.id",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.id",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.id.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.sv.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.sv",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.sv",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.sv.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.lang.hunspell.pl.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "languages",
+      "id": "lang.hunspell.pl",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.lang"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.82",
+      "source": "pack:lang.hunspell.pl",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.lang.hunspell.pl.title",
+      "wants": []
     }
   ],
   "features": [
@@ -2300,6 +2976,8 @@
     "model.whisper-medium",
     "transcription",
     "subtitles",
+    "runtime.lang",
+    "review.words",
     "model.embedder",
     "search.semantic",
     "classify",
@@ -2327,7 +3005,20 @@
     "updates.auto",
     "model.cohere-arabic",
     "model.refine",
-    "tool.ffmpeg"
+    "tool.ffmpeg",
+    "lang.ar",
+    "lang.en",
+    "lang.hunspell.fr",
+    "lang.hunspell.de",
+    "lang.hunspell.es",
+    "lang.hunspell.it",
+    "lang.hunspell.pt",
+    "lang.hunspell.nl",
+    "lang.hunspell.tr",
+    "lang.hunspell.ru",
+    "lang.hunspell.id",
+    "lang.hunspell.sv",
+    "lang.hunspell.pl"
   ],
   "phases": [
     "not_installed",

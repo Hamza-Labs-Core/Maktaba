@@ -47,7 +47,8 @@ import java.util.concurrent.Executors
  *   with the chosen audio ([audio]) as the only one, and no subtitles (the Player draws them,
  *   [cues]). Story 55.08.
  * - Away from home a channel plays from Cloudflare ([relayLocal]): `…/<secret>/relay/<host>/…`
- *   goes on to that Cloudflare host only, with no header, and its token path segment replaced
+ *   goes on to that Cloudflare host only (the remote session's own, pinned by [relaySession]:
+ *   no other `*.cloudflarestream.com` host is fetched), with no header, and its token path segment replaced
  *   by the remote session's newest ([relayToken]), so a new token never reopens the player.
  *   Story 55.07.
  */
@@ -103,9 +104,19 @@ class StreamProxy(
         return origin + path + (url.encodedQuery?.let { "?$it" } ?: "")
     }
 
-    /** The proxy's address for a Cloudflare playback URL (a remote session's), or null for any other host. */
-    fun relayLocal(url: HttpUrl): String? {
+    /** The remote session's Cloudflare host: the only one the relay fetches (null: none yet). */
+    @Volatile private var relayHost: String? = null
+
+    /** A remote session's Cloudflare playback URL: pins its host for the relay and returns the proxy's address for it. */
+    fun relaySession(url: HttpUrl): String? {
         if (!url.isHttps || !url.host.endsWith(CF_HOST_SUFFIX)) return null
+        relayHost = url.host
+        return relayLocal(url)
+    }
+
+    /** The proxy's address for a URL on the pinned Cloudflare host ([relaySession]), or null for any other. */
+    fun relayLocal(url: HttpUrl): String? {
+        if (!url.isHttps || !url.host.endsWith(CF_HOST_SUFFIX) || url.host != relayHost) return null
         return "$origin/relay/${url.host}${url.encodedPath}" + (url.encodedQuery?.let { "?$it" } ?: "")
     }
 
@@ -125,7 +136,7 @@ class StreamProxy(
         if (!rawPath.startsWith(prefix)) return null
         val rest = rawPath.substring(prefix.length)
         val host = rest.substringBefore('/')
-        if (!host.endsWith(CF_HOST_SUFFIX) || host.any { it == ':' || it == '@' }) return null
+        if (!host.endsWith(CF_HOST_SUFFIX) || host.any { it == ':' || it == '@' } || host != relayHost) return null
         val url = "https://$host/${rest.substringAfter('/', "")}${rawQuery?.let { "?$it" } ?: ""}".toHttpUrlOrNull() ?: return null
         if (url.host != host) return null
         return relayToken()?.let { rewriteToken(url, it) } ?: url

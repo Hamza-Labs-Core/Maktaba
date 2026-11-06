@@ -113,6 +113,8 @@ const LIVE_TV_PATH = "/admin/live-tv";
 const ADMIN = [
   { to: "/queue", key: "nav.queue", icon: "⚙" },
   { to: "/transcription", key: "nav.transcription", icon: "✎" },
+  // Epic 52: word review, the home admins' (the API refuses anyone else)
+  { to: "/review", key: "nav.review", icon: "✓" },
   { to: "/settings", key: "nav.settings", icon: "☰" },
   { to: "/admin/libraries", key: "nav.admin.libraries", icon: "▣" },
   { to: "/queue/libraries", key: "nav.libraryDashboard", icon: "▧" },

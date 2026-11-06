@@ -12,5 +12,9 @@ surahs.json
     Metadata (ver 1.0), Copyright (C) 2008-2009 Tanzil.info, licensed under Creative
     Commons Attribution 3.0. Source: https://tanzil.net
 
-Maktaba uses the text only to find which verse a video title quotes (display titles,
-Story 27.11); it never displays or alters the text itself.
+Maktaba uses the text to find which verse a video title quotes (display titles,
+Story 27.11), and to compare the verses recited or quoted in a transcript with it (word
+review, Epic 52, story 52.15): a transcript word that differs from the verse is shown to a
+home admin with the verse's word, unchanged, as a suggestion, credited "Quran text:
+Tanzil Project (tanzil.net)". Maktaba never alters the text: all normalisation is done in
+memory.

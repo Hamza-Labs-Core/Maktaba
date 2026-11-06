@@ -122,6 +122,10 @@ type Options struct {
 // licence does not grant (story 51.19): it waits, and its want is kept.
 const ReasonLicenceMissing = "licence_missing"
 
+// ReasonBootFlag is a component kept off for this boot by a flag: safe mode (Epic 53
+// story 53.05, components.EnvSafeMode).
+const ReasonBootFlag = "boot_flag"
+
 // gate is one component's switch as the desired state decides it.
 type gate struct {
 	on         bool
@@ -635,6 +639,9 @@ func GatesAt(cat *components.Catalog, desired map[string]store.Desired, noReconc
 			}
 		}
 		switch {
+		case components.SafeModeOn() && !components.SafeModeAllows(id):
+			// safe mode (Epic 53 story 53.05): off for this boot, the desired state kept
+			g.On, g.Phase, g.Reason = false, components.PhaseOff, ReasonBootFlag
 		case !c.Switchable || noReconcile || !has:
 		case c.Kind == components.KindAsset:
 			// an asset has no run: on disk (installed or enabled) it is met, absent it is off
@@ -722,8 +729,17 @@ func (r *Runner) start(l *loop) {
 	go r.run(l, ctx)
 }
 
+// LoopContext, when set, decorates each loop's context with its component's
+// catalog id, so the loop's lines carry it (`component`, Epic 53 story 53.01).
+// The api and streaming set it to their logger's WithComponent; this module does
+// not depend on the logger.
+var LoopContext func(ctx context.Context, component string) context.Context
+
 func (r *Runner) run(l *loop, ctx context.Context) {
 	defer r.wg.Done()
+	if LoopContext != nil {
+		ctx = LoopContext(ctx, l.comp)
+	}
 	var err error
 	func() {
 		defer func() {

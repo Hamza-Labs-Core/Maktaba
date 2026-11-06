@@ -9,7 +9,15 @@ import pytest
 from maktaba_pipeline.classify.quran import verse_runs
 from maktaba_pipeline.engine.stages import transcribe as stage
 from maktaba_pipeline.stt import refine as rf
-from maktaba_pipeline.stt.settings import SAMPLE_RATE, Sentence, Transcript
+from maktaba_pipeline.stt.settings import (
+    HEARD_DIFFERENTLY,
+    INSERTED,
+    QURAN,
+    SAMPLE_RATE,
+    Sentence,
+    Transcript,
+    Word,
+)
 from maktaba_pipeline.text.arabic import fold
 
 
@@ -21,8 +29,10 @@ class FakeDictionary:
         return self.spellings.get(word)
 
 
-def timed(text: str, start: float = 0.0, step: float = 0.5) -> list[tuple[float, float, str]]:
-    return [(start + i * step, start + (i + 1) * step, w) for i, w in enumerate(text.split())]
+def timed(text: str, start: float = 0.0, step: float = 0.5, prob: float = 0.9) -> list[Word]:
+    return [
+        Word(start + i * step, start + (i + 1) * step, w, prob) for i, w in enumerate(text.split())
+    ]
 
 
 def sentence(text: str, start: float = 0.0, step: float = 0.5) -> Sentence:
@@ -94,7 +104,7 @@ def test_merge_spreads_several_words_over_the_replaced_ones() -> None:
 
 
 def test_merge_puts_missed_words_in_the_gap() -> None:
-    w = [(0.0, 0.5, "قال"), (2.0, 2.5, "خليفة")]
+    w = [Word(0.0, 0.5, "قال"), Word(2.0, 2.5, "خليفة")]
     merged, changed = rf.merge_words(w, "قال رسول الله خليفة", [False] * 2, no_speller())
     assert [x[2] for x in merged] == ["قال", "رسول", "الله", "خليفة"]
     assert merged[1][0] == 0.5 and merged[2][1] == 2.0 and changed == 2
@@ -103,7 +113,8 @@ def test_merge_puts_missed_words_in_the_gap() -> None:
 def test_merge_never_touches_a_verse() -> None:
     w = timed("والسماء ذات البروج")
     merged, changed = rf.merge_words(w, "والسماء ذات البروز", [True] * 3, no_speller())
-    assert merged == w and changed == 0
+    assert [x.as_tuple() for x in merged] == [x.as_tuple() for x in w] and changed == 0
+    assert all(x.flags & QURAN for x in merged)  # Epic 52: marked as a verse run
 
 
 def test_merge_ignores_punctuation_only_differences() -> None:
@@ -270,3 +281,49 @@ def test_the_camel_data_folder_is_made_before_camel_tools_needs_it(tmp_path: Any
     model_dirs.ensure_camel_data(env)
     assert (tmp_path / "models" / "camel_tools").is_dir()
     model_dirs.ensure_camel_data({})  # unset: CAMeL Tools' own default, nothing made
+
+
+# ------------------------------------------------------------------ Epic 52, story 52.1
+
+
+def test_a_replaced_word_keeps_whisper_s_probability_and_is_marked() -> None:
+    w = timed("وقيل لأي بك خليفة", prob=0.4)
+    alts: list[rf.Alt] = []
+    merged, changed = rf.merge_words(w, "وقيل لأبي بكر خليفة", [False] * 4, no_speller(), alts)
+    assert changed == 2
+    assert [x.flags for x in merged] == [0, HEARD_DIFFERENTLY, HEARD_DIFFERENTLY, 0]
+    assert merged[1].prob == 0.4 and merged[2].prob == 0.4
+    assert alts == [rf.Alt(1, 2, "لأي بك", "لأبي بكر")]
+
+
+def test_an_inserted_word_has_no_probability() -> None:
+    w = [Word(0.0, 0.5, "قال", 0.9), Word(2.0, 2.5, "خليفة", 0.9)]
+    alts: list[rf.Alt] = []
+    merged, _ = rf.merge_words(w, "قال رسول خليفة", [False] * 2, no_speller(), alts)
+    assert merged[1].flags == INSERTED and merged[1].prob is None
+    assert alts == [rf.Alt(1, 1, "", "رسول")]
+
+
+def test_a_low_agreement_stretch_marks_nothing() -> None:
+    s = sentence("ذهب الولد الى المدرسة مبكرا اليوم")
+    result = Transcript([s], 3.0, "ar", "m", 0.0)
+    rf.refine(result, [0.0] * (SAMPLE_RATE * 4), lambda xs: ["كلام مختلف تماما هنا"] * len(xs),
+              None, "m")  # fmt: skip
+    assert result.sentences[0].alt is None
+    assert all(w.flags == 0 for w in result.sentences[0].words or [])
+
+
+def test_refine_records_what_each_listener_heard_per_sentence() -> None:
+    s = sentence("ذهب الولد الى المدرسه مبكرن")
+    result = Transcript([s], 3.0, "ar", "m", 0.0)
+    heard = "ذهب الولد الى المدرسة مبكرا"
+    rf.refine(result, [0.0] * (SAMPLE_RATE * 4), lambda xs: [heard] * len(xs), None, "m")
+    out = result.sentences[0]
+    assert out.alt == [{"i": 4, "n": 1, "whisper": "مبكرن", "cohere": "مبكرا"}]
+    assert out.words is not None and out.words[4].flags == HEARD_DIFFERENTLY
+
+
+def test_a_vocabulary_spelling_wins_within_the_same_letters() -> None:
+    sp = rf.Speller(["تيميه"], FakeDictionary({}), vocabulary=["ابن تيمية"])
+    assert sp.spell("تيميه") == "تيمية"
+    assert sp.spell("تيمور") == "تيمور"  # other letters: never respelt

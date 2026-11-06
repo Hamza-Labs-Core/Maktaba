@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
@@ -46,6 +47,8 @@ func SLogLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := reqid.FromContext(r.Context()).String()
 		ctx := mlog.WithRequestID(r.Context(), id)
+		// the sign-in below fills the slot: the line names the user by user_h
+		ctx, slot := principal.WithSlot(ctx)
 		r = r.WithContext(ctx)
 
 		sw := &statusCapture{ResponseWriter: w}
@@ -54,7 +57,7 @@ func SLogLogger(next http.Handler) http.Handler {
 		// answers 500: the request is still logged, as that.
 		defer func() {
 			if v := recover(); v != nil {
-				logRequest(r, http.StatusInternalServerError, time.Since(t0))
+				logRequest(r, slot, http.StatusInternalServerError, time.Since(t0))
 				panic(v)
 			}
 		}()
@@ -64,22 +67,27 @@ func SLogLogger(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		logRequest(r, status, time.Since(t0))
+		logRequest(r, slot, status, time.Since(t0))
 	})
 }
 
 // logRequest writes the request's line: Info, Warn for a 5xx (whose reason
 // httperror.Write logs as `http_error`).
-func logRequest(r *http.Request, status int, dur time.Duration) {
+func logRequest(r *http.Request, slot *principal.Slot, status int, dur time.Duration) {
 	level := slog.LevelInfo
 	if status >= http.StatusInternalServerError {
 		level = slog.LevelWarn
 	}
-	mlog.From(r.Context()).Log(r.Context(), level, "http_request",
+	args := []any{
 		"method", r.Method,
 		"path", r.URL.Path,
 		"status", status,
 		"duration_ms", dur.Milliseconds(),
 		"event", "http_request",
-	)
+	}
+	// written as user_h, the hash under the home's log key (Epic 53 story 53.01)
+	if p := slot.Principal(); p != nil && p.UserID != "" {
+		args = append(args, "user_id", p.UserID)
+	}
+	mlog.From(r.Context()).Log(r.Context(), level, "http_request", args...)
 }

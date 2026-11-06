@@ -30,6 +30,9 @@ type Supervisor struct {
 	policy Policy
 	sink   EventSink
 	log    io.Writer
+	// spool is the file a child writes its output to (the log keeper's, Epic 53 story
+	// 53.02); nil: the output the template was given (serve's stderr)
+	spool  func(role Role, instance string) (*os.File, error)
 	now    func() time.Time
 	client *http.Client
 	host   string
@@ -82,6 +85,7 @@ type child struct {
 	restartAt  []time.Time  // its restarts of the last 24 h (the health's restarts_24h)
 	killReason string       // set before the supervisor kills the child
 	failed     bool         // in a crash loop (state failed or retrying from it)
+	slowFails  int          // slow retries of the crash loop that failed (the cut-off, story 53.05)
 	onceFails  int          // a job's (Process.Once) failed runs in a row
 	wanted     bool         // run it (an on-demand process is not until asked for)
 	allowed    bool         // its component's gate is open (Allow, story 51.04); it runs only when allowed and wanted
@@ -116,6 +120,13 @@ func WithLog(w io.Writer) Option { return func(s *Supervisor) { s.log = w } }
 // WithExitHook calls f after every child exit (Epic 33: the front door hears a
 // TV slot's end at once).
 func WithExitHook(f func(Process, ExitInfo)) Option { return func(s *Supervisor) { s.onExit = f } }
+
+// WithSpool sends each child's stdout and stderr to the file spool opens for it (the log
+// keeper's spool: logkeeper.Keeper.Spool). A child whose spool cannot be opened writes
+// where its template says, as before.
+func WithSpool(spool func(role Role, instance string) (*os.File, error)) Option {
+	return func(s *Supervisor) { s.spool = spool }
+}
 
 // maxEvents is the in-memory event ring size.
 const maxEvents = 200
@@ -419,6 +430,8 @@ func (s *Supervisor) cannotAsk(p Process, err error) {
 func (s *Supervisor) loop(ctx context.Context, c *child) {
 	backoff := s.policy.BackoffInitial
 	tpl := c.proc.Cmd
+	// the output the template was wired to: where a child writes when its spool fails
+	tplOut, tplErr := tpl.Stdout, tpl.Stderr
 	first := true
 	s.mu.Lock()
 	a := c.adopt
@@ -506,6 +519,15 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			// a source checkout's): the held TV's binary too, never the new software
 			applyHeldPath(cmd, held.path)
 		}
+		var spool *os.File
+		if startErr == nil && s.spool != nil {
+			if f, err := s.spool(c.proc.Role, c.proc.Instance); err == nil {
+				spool = f
+				cmd.Stdout, cmd.Stderr = f, f
+			} else {
+				cmd.Stdout, cmd.Stderr = tplOut, tplErr
+			}
+		}
 		if startErr == nil {
 			prepareTree(cmd)
 			orig := cmd.SysProcAttr
@@ -529,6 +551,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 				survive = surviveNot
 				startErr = cmd.Start()
 			}
+		}
+		if spool != nil {
+			_ = spool.Close() // the child holds its own copy
 		}
 		if err := startErr; err != nil {
 			info = ExitInfo{At: startedAt, Code: -1, Reason: ReasonStartFailed, Error: err.Error()}
@@ -674,6 +699,7 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		*backoff = s.policy.BackoffInitial
 		c.exits = nil
 		c.failed = false
+		c.slowFails = 0
 	}
 	c.exits = append(c.recentExits(now, s.policy.Window), now)
 	delay, state := *backoff, StateBackoff
@@ -687,11 +713,25 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		c.failed = false
 		*backoff = nextBackoff(*backoff, s.policy.BackoffMax)
 	}
+	// a slow retry that failed too (Epic 53 story 53.05): after FailedRetries of them
+	// the child is cut off, down until a person restarts it
+	if state == StateFailed && wasFailed {
+		c.slowFails++
+	}
+	cut := state == StateFailed && s.policy.FailedRetries > 0 && c.slowFails >= s.policy.FailedRetries
 	next := now.Add(delay)
 	c.status.State = state
 	c.status.NextRestartAt = &next
+	c.status.CutOff = cut
+	if cut {
+		c.status.NextRestartAt = nil
+	}
 	var failedEv *Event
-	if state == StateFailed && !wasFailed {
+	if cut {
+		e := s.recordLocked(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventCutOff, Reason: info.Reason,
+			Message: fmt.Sprintf("%d slow retries failed: down until restarted", c.slowFails)})
+		failedEv = &e
+	} else if state == StateFailed && !wasFailed {
 		// recorded with the state: a snapshot never shows "failed" without its event
 		e := s.recordLocked(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason,
 			DelaySec: delay.Seconds(), Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
@@ -699,6 +739,24 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	}
 	s.mu.Unlock()
 
+	if cut {
+		s.publish(*failedEv)
+		s.errorf("%s exited (pid %d, %s); crash loop: %d slow retries failed, it stays down until it is restarted",
+			c.proc.Name(), info.PID, describeExit(info), c.slowFails)
+		select {
+		case <-ctx.Done():
+			s.setState(c, StateStopped)
+			return true
+		case <-c.wake:
+		}
+		s.mu.Lock()
+		c.exits, c.failed, c.slowFails = nil, false, 0
+		c.status.CutOff = false
+		*backoff = s.policy.BackoffInitial
+		s.mu.Unlock()
+		s.logf("%s: restarted by request after its cut-off", c.proc.Name())
+		return false
+	}
 	if state == StateFailed {
 		if failedEv != nil {
 			s.publish(*failedEv)
@@ -926,6 +984,10 @@ func (s *Supervisor) exitInfo(c *child, cmd *exec.Cmd, waitErr error, startedAt 
 	return info
 }
 
+// Note records an event of the supervisor's own (a recovery console action, Epic 53 story
+// 53.04) in its event log, as its own events are.
+func (s *Supervisor) Note(e Event) { s.emit(e) }
+
 func (s *Supervisor) emit(e Event) {
 	s.mu.Lock()
 	e = s.recordLocked(e)
@@ -1028,6 +1090,15 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 		return fmt.Errorf("no %s process %q", role, instance)
 	}
 	cmd, tree := c.cmd, c.tree
+	if c.status.CutOff && !s.stopping {
+		// cut off after its crash loop (Epic 53 story 53.05): a person's restart starts it
+		s.mu.Unlock()
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+		return nil
+	}
 	if cmd == nil || cmd.Process == nil || s.stopping {
 		s.mu.Unlock()
 		return nil

@@ -15,6 +15,7 @@ import androidx.compose.runtime.setValue
 import com.hamzalabs.maktaba.core.permissions.PermissionsGate
 import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
 import com.hamzalabs.maktaba.core.ui.ApproveRequests
+import com.hamzalabs.maktaba.core.ui.HomeStatusHost
 import com.hamzalabs.maktaba.core.ui.PendingSignInsHost
 import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
@@ -62,7 +63,10 @@ class MainActivity : ComponentActivity() {
                             CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
                                 // a TV waiting to sign in: a banner on top (not over a playing video), and a notification
                                 PendingSignInsHost(app.session, user, client, enabled = !playing) {
-                                    PlayerShell(sections = rememberShownSections(home), immersive = playing, link = link.value, onLinkOpened = { link.value = null })
+                                    // what is down on the home, on top (Epic 53 story 53.06; not over a playing video)
+                                    HomeStatusHost(client, admin = user.isAdmin, enabled = !playing) {
+                                        PlayerShell(sections = rememberShownSections(home), immersive = playing, link = link.value, onLinkOpened = { link.value = null })
+                                    }
                                 }
                             }
                         }

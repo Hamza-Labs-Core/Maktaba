@@ -22,6 +22,7 @@ group:
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -46,6 +47,20 @@ __all__ = [
 ON = "on"
 OFF = "off"
 HELD = "held"
+
+#: Safe mode (Epic 53 story 53.05): one start with only these components; every other one
+#: is off for this boot, reason ``boot_flag``, the desired state kept. The same set as
+#: ``shared/components/safemode.go``'s ``SafeModeComponents``.
+SAFE_MODE_COMPONENTS: tuple[str, ...] = ("core.postgres", "core.api", "core.updates", "logs.index")
+ENV_SAFE_MODE = "MAKTABA_COMPONENTS_SAFE_MODE"
+BOOT_FLAG = "boot_flag"
+
+
+def safe_mode_on() -> bool:
+    """Whether this process runs in safe mode (the supervisor sets ``ENV_SAFE_MODE``)."""
+    return os.environ.get(ENV_SAFE_MODE, "").strip().lower() in ("1", "on", "true", "yes")
+
+
 #: the reason of a component whose settings section could not be moved (story 51.13)
 SETTINGS_INVALID = "settings_invalid"
 
@@ -112,11 +127,22 @@ def gates(
     runs on the defaults (story 51.13), and what requires it waits (``dependency_off``)."""
     cat = cat or default()
     out: dict[str, Gate] = {}
+    safe = safe_mode_on()
     for cid in cat.order():
         c = cat.get(cid)
         if c is None:
             continue
         g = _own(c, desired.get(cid))
+        if safe and cid not in SAFE_MODE_COMPONENTS:
+            out[cid] = Gate(
+                cid,
+                OFF,
+                want=g.want,
+                generation=g.generation,
+                reason=BOOT_FLAG,
+                params={"flag": "--safe-mode"},
+            )
+            continue
         failed = (blocked or {}).get(cid)
         if g.open and c.switchable and failed:
             section, error = failed[0]

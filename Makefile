@@ -231,8 +231,18 @@ plugind-guests:  ## Epic 54: build the plugin host's test guests (wasm32-wasip2;
 plugind-test: plugind-guests  ## Epic 54 (stories 54.01-54.03): the plugin host's format, lint and tests.
 	cd plugind && cargo fmt --all --check && cargo clippy --locked --workspace --all-targets --features maktaba-plugind/escape-probes -- -D warnings && cargo test --locked --workspace
 
+.PHONY: log-schema-check
+log-schema-check:  ## Epic 53 (story 53.01): the log line schema's examples pass (bad ones fail); every copy of shared/redact/rules.json is current.
+	python3 tools/log-schema/check.py
+	uv run --no-project --python 3.12 --with pytest==8.4.2 pytest tools/log-schema/tests -q -p no:cacheprovider
+
+.PHONY: log-schema-sync
+log-schema-sync:  ## Epic 53 (story 53.01): copy shared/redact/rules.json into every logger that embeds it.
+	python3 tools/log-schema/sync.py
+
 .PHONY: catalog-sync
 catalog-sync:  ## Epic 51: copy the component catalog into the pipeline and rewrite the loaders' shared dump.
+	python3 tools/ci/hunspell_catalog.py
 	cp shared/components/catalog.toml $(PIPELINE_DIR)/src/maktaba_pipeline/components/catalog.toml
 	cd shared/components && go run ./cmd/catalog-dump > testdata/catalog.dump.json.tmp
 	mv shared/components/testdata/catalog.dump.json.tmp shared/components/testdata/catalog.dump.json
@@ -276,6 +286,8 @@ lint-py:  ## ruff + mypy --strict over the pipeline package.
 	cd $(PIPELINE_DIR) && uv run ruff check .
 	cd $(PIPELINE_DIR) && uv run ruff format --check .
 	cd $(PIPELINE_DIR) && uv run mypy
+	@echo "==> lint-log (Python: no runtime data in a log event name, Epic 53 story 53.01)"
+	cd $(PIPELINE_DIR) && uv run python tools/lint_log.py
 
 .PHONY: lint-web
 lint-web:  ## eslint + tsc --noEmit + prettier --check.

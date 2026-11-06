@@ -66,6 +66,8 @@ ENV CGO_ENABLED=0 \
 # module; healthcheck is a tiny standalone module.
 COPY cloud/go.mod cloud/go.sum ./cloud/
 COPY tools/healthcheck/go.mod ./tools/healthcheck/
+# the shared logger cloud/go.mod replaces from ../shared/log/go (Epic 53 story 53.01)
+COPY shared/log/go ./shared/log/go
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go mod download

@@ -54,6 +54,7 @@ import { HelpIndex, HelpTopic } from "./help/Help";
 import { IS_REMOTE, SERVER_PAGES } from "./lib/edition";
 import { serverRoutes } from "./serverRoutes";
 import { RemoteHome } from "./pages/RemoteHome";
+import { logRouteChanged, routePattern } from "./lib/errorLog";
 
 // Epic 46: big-screen mode, its own full-screen frame and chunk
 const BigScreen = lazy(() => import("./bigscreen/BigScreen"));
@@ -67,6 +68,16 @@ function ThemeSync({ children }: { children: ReactNode }) {
     return watchSystemTheme(() => force((n) => n + 1));
   }, []);
   return <>{children}</>;
+}
+
+// Each route change is a line in the log ring (Epic 53 story 53.01), by the
+// route's pattern (/videos/:id), never the URL.
+function RouteLog() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    logRouteChanged(routePattern(pathname));
+  }, [pathname]);
+  return null;
 }
 
 // The sign-in pages sit outside AppShell, so they get their own error
@@ -98,6 +109,7 @@ export function App() {
                     <CapabilitiesProvider>
                       <BrowserRouter basename={ROUTER_BASENAME}>
                         <DesktopBridge />
+                        <RouteLog />
                         <ShortcutProvider>
                           <Routes>
                             <Route element={<PublicPages />}>

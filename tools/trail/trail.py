@@ -49,7 +49,8 @@ FILE_RE = re.compile(
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
-CITE_RE = re.compile(r"(?<![\w/])(?:#(\d+)|\b(i\d+)\b|\b(d\d{8}-[a-z0-9-]+)\b)")
+# `#634` cites a pull request's events; `issue #649` names an issue and cites nothing
+CITE_RE = re.compile(r"(?<![\w/])(?:(?<![Ii]ssue )#(\d+)|\b(i\d+)\b|\b(d\d{8}-[a-z0-9-]+)\b)")
 MERGE_RE = re.compile(r"^Merge pull request #(\d+) ")
 
 # Patterns that must never appear in trail text (it is read by every session, and leaves
@@ -57,13 +58,20 @@ MERGE_RE = re.compile(r"^Merge pull request #(\d+) ")
 # mattered here.
 SECRET_RES = [
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{30,}"), "a GitHub token"),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"), "a GitHub token"),
     (re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}"), "an Anthropic API key"),
-    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "an AWS access key id"),
+    (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), "an AWS access key id"),
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"), "a private key"),
     (re.compile(r"X-Plex-Token=[A-Za-z0-9_-]{8,}"), "a Plex token"),
-    (re.compile(r"(?i)\b(?:password|passwd|secret|api[_-]?key)\s*[:=]\s*['\"]?[^\s'\"`]{8,}"), "a credential value"),
-    (re.compile(r"postgres(?:ql)?://[^:/\s]+:[^@/\s]+@"), "a database URL with a password"),
+    (re.compile(r"\bBearer\s+[A-Za-z0-9._~+/-]{20,}"), "a bearer token"),
+    (re.compile(r"\b[a-z][a-z0-9+.-]*://[^:/@\s]*:[^@/\s]+@"), "a URL with a password"),
 ]
+# `password=…`, `"secret": "…"`, `MAKTABA_PG_PASSWORD=…`: the key, then a value of 8 or more
+# characters. The key may end a longer name (POSTGRES_PASSWORD, client_secret), so it is not
+# preceded by a letter rather than by a word boundary.
+CREDENTIAL_RE = re.compile(
+    r"(?i)(?:^|[^a-z])(?:password|passwd|secret|token|api[_-]?key)[\"']?\s*[:=]\s*(?P<q>[\"']?)(?P<v>[^\s\"'`]{8,})"
+)
 # CLAUDE.md rule: never quote or attribute the owner's words in repo text.
 OWNER_RE = re.compile(r"\((?:the )?owner,\s*\d{4}-\d{2}-\d{2}\)|\bthe owner (?:said|wrote|asked)\s*[:,]?\s*[\"“]")
 
@@ -160,11 +168,26 @@ def parse(path: str, text: str) -> Doc:
     return Doc(path, meta, sections, order, body)
 
 
+def _credential(m: re.Match[str]) -> bool:
+    """A credential's value, not prose about one (`password: regenerated`, `token=$TOKEN`).
+
+    A quoted value is a value. An unquoted one is a value unless it reads as a word: letters
+    only, maybe ending in punctuation, or a reference (`$X`, `<x>`, `${x}`, `%x%`)."""
+    v = m.group("v")
+    if v[0] in "$<{%":
+        return False
+    if m.group("q"):
+        return True
+    return not re.fullmatch(r"[A-Za-z][a-z]*(?:-[a-z]+)*[.,;:!?)]*", v)
+
+
 def scan_text(path: str, text: str) -> list[str]:
     errs = []
     for rx, what in SECRET_RES:
         if rx.search(text):
             errs.append(f"{path}: looks like it holds {what}; never write secrets in the trail")
+    if any(_credential(m) for m in CREDENTIAL_RE.finditer(text)):
+        errs.append(f"{path}: looks like it holds a credential value; never write secrets in the trail")
     if OWNER_RE.search(text):
         errs.append(f"{path}: quotes or attributes the owner's words (CLAUDE.md rule 5); state it neutrally")
     return errs
@@ -400,14 +423,31 @@ def check_snapshot(path: str, text: str, cwd: Path = ROOT, verify_git: bool = Tr
     return errs
 
 
+def _version(tag: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in tag[1:].split("."))
+
+
+def snapshots_at(cwd: Path = ROOT) -> tuple[dict[str, str], list[str]]:
+    """The snapshots ({path: text}, named vX.Y.Z.md) and an error for each other file there."""
+    snaps: dict[str, str] = {}
+    errs: list[str] = []
+    for path, text in files_at(None, SNAPSHOTS, cwd).items():
+        if TAG_RE.match(Path(path).stem) and Path(path).parent.as_posix().endswith(SNAPSHOTS):
+            snaps[path] = text
+        else:
+            errs.append(f"{path}: {SNAPSHOTS}/ holds only snapshots, named vX.Y.Z.md")
+    return snaps, errs
+
+
 def check(cwd: Path = ROOT, verify_git: bool = True) -> list[str]:
     events, errs = load_events(None, cwd)
-    snaps = files_at(None, SNAPSHOTS, cwd)
+    snaps, e = snapshots_at(cwd)
+    errs += e
     for path, text in snaps.items():
         errs += check_snapshot(path, text, cwd, verify_git)
     cur = cwd / CURRENT
     if snaps:
-        newest = max(snaps, key=lambda p: tuple(int(x) for x in Path(p).stem[1:].split(".")))
+        newest = max(snaps, key=lambda p: _version(Path(p).stem))
         if not cur.is_file():
             errs.append(f"{CURRENT}: missing; it is a copy of {newest}")
         elif cur.read_text(encoding="utf-8") != snaps[newest]:
@@ -418,10 +458,15 @@ def check(cwd: Path = ROOT, verify_git: bool = True) -> list[str]:
 def skeleton(tag: str, cwd: Path = ROOT) -> str:
     """A new snapshot to finish by hand: carried-forward lessons plus the events to fold in."""
     sha = git("rev-parse", f"{tag}^{{commit}}", cwd=cwd).strip()
-    snaps = files_at(None, SNAPSHOTS, cwd)
+    if not TAG_RE.match(tag):
+        raise TrailError(f"--tag {tag}: a tag is vX.Y.Z")
+    snaps, _ = snapshots_at(cwd)
+    # the newest snapshot older than this tag: a snapshot for a skipped or older tag builds on
+    # the one before it, not on a newer one
+    older = [p for p in snaps if _version(Path(p).stem) < _version(tag)]
     prev = None
-    if snaps:
-        prev_path = max(snaps, key=lambda p: tuple(int(x) for x in Path(p).stem[1:].split(".")))
+    if older:
+        prev_path = max(older, key=lambda p: _version(Path(p).stem))
         prev = parse(prev_path, snaps[prev_path])
     events, _ = load_events(sha, cwd)
     since: list[Event] = events

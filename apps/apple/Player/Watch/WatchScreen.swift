@@ -12,6 +12,8 @@ struct WatchScreen: View {
 
     @State private var playback: Playback?
     @State private var failure: HomeFailure?
+    /// The home's status as the shell's strip read it (Epic 53 story 53.06)
+    @Environment(\.homeStatus) private var homeStatus
     @Environment(\.dismiss) private var dismiss
     /// The Mac's window-wide player: there the sidebar is beside the stack, so the picture is
     /// shown over the whole window by the shell and this screen keeps only its black.
@@ -28,6 +30,13 @@ struct WatchScreen: View {
                     Color.clear.focusedSceneValue(\.playback, playback)
                 }
             } else if let failure {
+                // streaming is down on the home: that, not a generic error (story 53.06)
+                if StatusStripRules.playbackDown(homeStatus) {
+                    Text(verbatim: StripWords.localized(StripWords.player))
+                        .foregroundStyle(.white)
+                        .padding()
+                        .accessibilityIdentifier("player.unavailable")
+                }
                 HomeErrorView(failure) { action in
                     switch action {
                     case .tryAgain: Task { await load() }

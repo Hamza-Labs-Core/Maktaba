@@ -341,7 +341,7 @@ whisper_gpu_mib() {
     fi
     command -v nvidia-smi >/dev/null 2>&1 || return 0
     nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null \
-        | head -n 1 | tr -dc '0-9'
+        | sed -n 1p | tr -dc '0-9'
 }
 
 # default_extras OS ARCH: the extras an install takes when none were given or remembered:

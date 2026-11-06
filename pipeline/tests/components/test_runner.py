@@ -118,6 +118,81 @@ async def test_the_catchup_is_queued_when_another_worker_turns_the_stages_back_o
 
 
 @pytest.mark.asyncio
+async def test_a_worker_that_read_the_off_time_at_start_queues_no_second_catchup(
+    db: Database,
+) -> None:
+    """#659 review, three home workers: b turns transcription off; c starts meanwhile and
+    reads its off time from b's status row; b leads the on and queues the catch-up, which
+    finishes; c leads next. c must see the stages already open and queue nothing: a
+    second catch-up would run the whole time off again (all history when the time is
+    unknown)."""
+    await sync_graph(db, GRAPH, gates={})
+    a, _ = _runner(db)
+    b, _ = _runner(db)
+    for r in (a, b):
+        await r.prime()
+        await _pass(r)
+
+    await set_want(db, "transcription", "installed")
+    await _pass(b)  # b leads the off
+    c, _ = _runner(db)  # c starts while it is off
+    await c.prime()
+    await _pass(c)  # c leads once: it reads the off time b reported
+    assert "transcription" in c._off_since
+
+    await set_want(db, "transcription", "enabled")
+    await _pass(b)  # b leads the on and queues the catch-up
+    await db.execute("UPDATE processing_jobs SET state = 'done' WHERE stage = 'component_catchup'")
+    await _pass(c)  # c leads next
+    n = await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'component_catchup'")
+    assert n == 1
+    assert "transcription" not in c._off_since
+    for r in (a, b, c):
+        await r.close()
+
+
+@pytest.mark.asyncio
+async def test_a_worker_that_does_not_lead_forgets_an_off_time_once_it_is_on_again(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#659 review: a worker that turned a component off and then lost the leader lock kept
+    reporting its off time while the component was on (the Components page showed it off
+    since then) and a later catch-up started from it. A pass that does not lead drops the
+    times the database says are over."""
+    if not is_pg(db):
+        pytest.skip("SQLite has one process: it always leads")
+    import contextlib
+
+    from maktaba_pipeline.engine import leader as leader_mod
+
+    await sync_graph(db, GRAPH, gates={})
+    a, _ = _runner(db)
+    b, _ = _runner(db)
+    for r in (a, b):
+        await r.prime()
+        await _pass(r)
+    await set_want(db, "transcription", "installed")
+    await _pass(a)  # a leads the off
+    await set_want(db, "transcription", "enabled")
+    await _pass(b)  # b leads the on
+
+    real = leader_mod.leader
+
+    @contextlib.asynccontextmanager
+    async def lost(*_a: Any, **_k: Any) -> Any:
+        yield False
+
+    monkeypatch.setattr(leader_mod, "leader", lost)
+    await _pass(a)  # a does not lead
+    assert "transcription" not in a._off_since
+    rows = [s for s in await store.statuses(db) if s.id == "transcription"]
+    assert rows and all("off_since" not in s.detail for s in rows), [s.detail for s in rows]
+    monkeypatch.setattr(leader_mod, "leader", real)
+    for r in (a, b):
+        await r.close()
+
+
+@pytest.mark.asyncio
 async def test_held_stops_claiming_but_no_catchup_follows(db: Database) -> None:
     await sync_graph(db, GRAPH, gates={})
     r, sel = _runner(db)
@@ -491,3 +566,28 @@ async def test_the_listener_is_up_before_the_first_pass(db: Database) -> None:
     r._pass = a_pass  # type: ignore[method-assign]
     await r.run(stop)
     assert order[:2] == ["listen", "pass"], order
+
+
+@pytest.mark.asyncio
+async def test_a_loops_lines_carry_its_component(db: Database) -> None:
+    """Epic 53 story 53.01 T07: a declared loop logs with its catalog component."""
+    import structlog
+
+    await sync_graph(db, GRAPH, gates={})
+    r, _ = _runner(db)
+    seen: list[Any] = []
+
+    async def topup(stop: asyncio.Event) -> None:
+        seen.append(structlog.contextvars.get_contextvars().get("component"))
+        await stop.wait()
+
+    r.declare("channel-topup", topup)
+    await _pass(r)
+    for _ in range(50):
+        if seen:
+            break
+        await asyncio.sleep(0.01)
+    await r.close()
+    comp = default_catalog().by_loop("pipeline", "channel-topup")
+    assert comp is not None and seen == [comp.id]
+    assert structlog.contextvars.get_contextvars().get("component") is None

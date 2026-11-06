@@ -30,6 +30,7 @@ use crate::autoinstall;
 use crate::flavour;
 use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
+use crate::recovery;
 use crate::setup::{self, Progress, StepError};
 use crate::status::{self, Probe, Quiet, ServerStatus, StatusView};
 use crate::tray::{self, Entry};
@@ -488,6 +489,30 @@ fn open_components(app: &AppHandle) -> Result<(), String> {
         return Err("this app does not run a server here".into());
     };
     agent::open_path(std::ffi::OsStr::new(&components_url(&web_url)))
+}
+
+/// "Open recovery page" (Epic 53 story 53.04): a one-time link from this Mac's supervisor
+/// opens the console signed in; with no supervisor answering, the page itself (the
+/// launcher's can't-start page answers there when it cut the server off).
+fn open_recovery(app: &AppHandle) -> Result<(), String> {
+    let Some(AppMode::Server {
+        web_url,
+        supervisor_url,
+        ..
+    }) = shell(app).mode()
+    else {
+        return Err("this app does not run a server here".into());
+    };
+    let addr =
+        status::addr_of(&supervisor_url).unwrap_or_else(|| status::DEFAULT_SUPERVISOR_ADDR.into());
+    let url = recovery::link(&addr).unwrap_or_else(|| recovery::page_url(&web_url));
+    agent::open_path(std::ffi::OsStr::new(&url))
+}
+
+/// A choice for the launcher that cut the server off (story 53.05).
+fn start_choice(choice: &str) -> Result<(), String> {
+    let root = agent::state_root().ok_or("no state folder")?;
+    recovery::choose(&root, choice)
 }
 
 /// What the local server shows (attempts::wait_for_server): the release its api answers
@@ -1013,6 +1038,13 @@ fn refresh(app: &AppHandle) {
         model.as_deref(),
         detail,
     );
+    // the recovery page, and the launcher's can't-start choices (Epic 53, 53.04/53.05)
+    let cant = if server {
+        agent::state_root().and_then(|r| recovery::cant_start(&r))
+    } else {
+        None
+    };
+    let entries = tray::with_recovery(entries, lang, server, cant.as_ref());
     // the last update attempt, when it failed: its reason until the next attempt
     let last = attempts_path().and_then(|p| attempts::newest(&p));
     let entries = tray::with_failed_update(
@@ -1187,6 +1219,10 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
         }
         "open-logs" | "update-log-folder" => agent::open_logs(),
         "open-components" => open_components(app),
+        "open-recovery" => open_recovery(app),
+        "start-retry" => start_choice("retry"),
+        "start-safe" => start_choice("safe"),
+        "start-rollback" => start_choice("rollback"),
         "update-logs" => see_logs(app),
         "change-server" => sh.clear_mode().and_then(|()| {
             focus_main(app);
@@ -2284,6 +2320,16 @@ mod tests {
         assert_eq!(
             components_url("http://127.0.0.1:8088/"),
             "http://127.0.0.1:8088/settings/components"
+        );
+    }
+
+    // Epic 53 story 53.04: without a one-time link the tray opens the page itself, on the
+    // same web address as the Components page
+    #[test]
+    fn the_recovery_page_is_on_the_servers_web_address() {
+        assert_eq!(
+            crate::recovery::page_url("http://127.0.0.1:8088"),
+            components_url("http://127.0.0.1:8088").replace("/settings/components", "/recovery")
         );
     }
 }

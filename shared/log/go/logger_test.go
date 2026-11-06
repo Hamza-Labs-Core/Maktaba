@@ -57,6 +57,9 @@ func TestContextFieldsInjected(t *testing.T) {
 	Default = NewLogger(Options{Service: "api", Env: "prod", Version: "v0", Output: &buf})
 	t.Cleanup(func() { Default = saved })
 
+	SetUserHashKey([]byte("0123456789abcdef0123456789abcdef"))
+	t.Cleanup(func() { SetUserHashKey(nil) })
+
 	ctx := context.Background()
 	ctx = WithRequestID(ctx, "req-1")
 	ctx = WithSessionID(ctx, "sess-2")
@@ -71,7 +74,7 @@ func TestContextFieldsInjected(t *testing.T) {
 		"session_id": "sess-2",
 		"job_id":     "job-3",
 		"video_id":   "vid-4",
-		"user_id":    "user-5",
+		"user_h":     UserHash([]byte("0123456789abcdef0123456789abcdef"), "user-5"),
 	} {
 		if got[k] != want {
 			t.Errorf("%s = %v, want %v", k, got[k], want)

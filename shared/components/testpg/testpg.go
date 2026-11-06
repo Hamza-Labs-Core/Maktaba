@@ -7,7 +7,9 @@
 // the supervisor) treats a missing sslmode as require and fails with "pq: SSL is not
 // enabled on the server" (#644). For a server on this machine (localhost, a loopback
 // address or a socket directory), Get adds sslmode=disable when the URL sets none. A
-// remote server's URL is left as it is: a missing sslmode there is never weakened.
+// remote server's URL is left as it is: a missing sslmode there is never weakened. A URL
+// with no host is local only when PGHOST is (the drivers read it), and PGSSLMODE, when
+// set, is the drivers' choice: nothing is added.
 package testpg
 
 import (
@@ -24,9 +26,10 @@ const Env = "MAKTABA_TEST_PG_URL"
 func Get() string { return Normalize(os.Getenv(Env)) }
 
 // Normalize adds sslmode=disable to a URL or key=value dsn of a server on this machine
-// that sets no sslmode; any other dsn comes back unchanged.
+// that sets no sslmode; any other dsn comes back unchanged, and so does every dsn when
+// PGSSLMODE is set.
 func Normalize(dsn string) string {
-	if strings.TrimSpace(dsn) == "" {
+	if strings.TrimSpace(dsn) == "" || os.Getenv("PGSSLMODE") != "" {
 		return dsn
 	}
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
@@ -68,9 +71,12 @@ func Normalize(dsn string) string {
 	return dsn + " sslmode=disable"
 }
 
-// local says whether host is this machine: none (the default socket), a socket
-// directory, localhost, or a loopback address.
+// local says whether host is this machine: a socket directory, localhost, or a loopback
+// address. An empty host is PGHOST's, and none at all is the default socket.
 func local(host string) bool {
+	if host == "" {
+		host = os.Getenv("PGHOST")
+	}
 	if host == "" || strings.HasPrefix(host, "/") || strings.EqualFold(host, "localhost") {
 		return true
 	}

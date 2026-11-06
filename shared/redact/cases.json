@@ -1,0 +1,213 @@
+{
+  "about": "Epic 53 story 53.01 T01: every logger's redaction passes each case. \"scrub\" cases feed text to the value rules; \"keys\" cases ask whether a field name is masked whole (string says whether its value is a string).",
+  "scrub": [
+    {
+      "in": "GET /library/sections?X-Plex-Token=abc123&type=1",
+      "out": "GET /library/sections?X-Plex-Token=[REDACTED]&type=1"
+    },
+    {
+      "in": "/v/1.m3u8?sig=deadbeef&exp=2",
+      "out": "/v/1.m3u8?sig=[REDACTED]&exp=2"
+    },
+    {
+      "in": "https://home.lan/api?token=abc",
+      "out": "https://home.lan/api?token=[REDACTED]"
+    },
+    {
+      "in": "/a?b=1&api_key=zz#frag",
+      "out": "/a?b=1&api_key=[REDACTED]#frag"
+    },
+    {
+      "in": "token=abc at the start",
+      "out": "token=[REDACTED] at the start"
+    },
+    {
+      "in": "keyframe=3 is not a credential",
+      "out": "keyframe=3 is not a credential"
+    },
+    {
+      "in": "monkey=1&donkey=2",
+      "out": "monkey=1&donkey=2"
+    },
+    {
+      "in": "Authorization: Bearer abcdef.ghijkl",
+      "out": "Authorization: Bearer [REDACTED]"
+    },
+    {
+      "in": "jwt eyJhbGciOiJFUzI1NiJ9.eyJzdWIiOiI0MiJ9.c2lnbmF0dXJl here",
+      "out": "jwt [JWT] here"
+    },
+    {
+      "in": "postgres://maktaba:s3cret@127.0.0.1:5432/maktaba",
+      "out": "postgres://[REDACTED]@127.0.0.1:5432/maktaba"
+    },
+    {
+      "in": "postgresql://maktaba@localhost/maktaba",
+      "out": "postgresql://[REDACTED]@localhost/maktaba"
+    },
+    {
+      "in": "smb://user:pw@nas.local/share",
+      "out": "smb://[REDACTED]@nas.local/share"
+    },
+    {
+      "in": "sign-in failed for someone@example.com",
+      "out": "sign-in failed for [EMAIL]"
+    },
+    {
+      "in": "open /Users/mahmoud/Movies/a.mkv: denied",
+      "out": "open ~/Movies/a.mkv: denied"
+    },
+    {
+      "in": "open /home/sara/media/a.mkv",
+      "out": "open ~/media/a.mkv"
+    },
+    {
+      "in": "open C:\\Users\\Sara\\Videos\\a.mkv",
+      "out": "open ~/Videos\\a.mkv"
+    },
+    {
+      "in": "/Volumes/Media/Movies/a.mkv",
+      "out": "/Volumes/Media/Movies/a.mkv"
+    },
+    {
+      "in": "dial tcp 192.168.1.23:8088: refused",
+      "out": "dial tcp 192.168.1.0:8088: refused"
+    },
+    {
+      "in": "listening on 127.0.0.1:8088",
+      "out": "listening on 127.0.0.1:8088"
+    },
+    {
+      "in": "peer 10.0.0.300 is not an address",
+      "out": "peer 10.0.0.300 is not an address"
+    },
+    {
+      "in": "version 1.2.3.4.5 and 11234.5.6.7",
+      "out": "version 1.2.3.0.5 and 11234.5.6.7"
+    },
+    {
+      "in": "peer fd00:1:2:3:4:5:6:7 left",
+      "out": "peer fd00:1:2:: left"
+    },
+    {
+      "in": "peer fe80::1c2b:3d4e:5f60:7a8b left",
+      "out": "peer fe80:0:0:: left"
+    },
+    {
+      "in": "at 12:30:45 and aa:bb:cc:dd:ee:ff",
+      "out": "at 12:30:45 and aa:bb:cc:dd:ee:ff"
+    },
+    {
+      "in": "loopback 0:0:0:0:0:0:0:1 kept",
+      "out": "loopback 0:0:0:0:0:0:0:1 kept"
+    },
+    {
+      "in": "card 4111 1111 1111 1111 declined",
+      "out": "card [CARD] declined"
+    },
+    {
+      "in": "card 4111-1111-1111-1112 is not a valid number",
+      "out": "card 4111-1111-1111-1112 is not a valid number"
+    },
+    {
+      "in": "ts 1730000000000123 and 1730000000000",
+      "out": "ts 1730000000000123 and 1730000000000"
+    },
+    {
+      "in": "a video titled Token of love",
+      "out": "a video titled Token of love"
+    },
+    {
+      "in": "مرحبا token=سر",
+      "out": "مرحبا token=[REDACTED]"
+    },
+    {
+      "in": "",
+      "out": ""
+    }
+  ],
+  "keys": [
+    {
+      "key": "password",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "Authorization",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "cf_api_token",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "JWT_Private_Key",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "smtp_password",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "plex_token",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "database_url",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "dsn",
+      "string": true,
+      "masked": true
+    },
+    {
+      "key": "token_ttl_minutes",
+      "string": false,
+      "masked": false
+    },
+    {
+      "key": "max_tokens",
+      "string": false,
+      "masked": false
+    },
+    {
+      "key": "signing_key_id",
+      "string": true,
+      "masked": false
+    },
+    {
+      "key": "author",
+      "string": true,
+      "masked": false
+    },
+    {
+      "key": "video_id",
+      "string": true,
+      "masked": false
+    },
+    {
+      "key": "title",
+      "string": true,
+      "masked": false
+    }
+  ],
+  "user_hash": [
+    {
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "id": "42",
+      "user_h": "7df989924b2ebf88"
+    },
+    {
+      "key_hex": "1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100",
+      "id": "42",
+      "user_h": "71ea42a451d8a4f8"
+    }
+  ]
+}
