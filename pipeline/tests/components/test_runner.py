@@ -81,6 +81,43 @@ async def test_off_then_on_flips_the_selection_the_rows_and_queues_a_catchup(
 
 
 @pytest.mark.asyncio
+async def test_the_catchup_is_queued_when_another_worker_turns_the_stages_back_on(
+    db: Database,
+) -> None:
+    """#646: two home workers race for the leader lock on every pass. When one turned
+    the stages off and the other turns them on, the catch-up is still queued (once), with
+    the time the first one reported."""
+    await sync_graph(db, GRAPH, gates={})
+    a, _ = _runner(db)
+    b, _ = _runner(db)
+    for r in (a, b):
+        await r.prime()
+        await _pass(r)
+
+    await set_want(db, "transcription", "installed")
+    await _pass(a)  # a leads the off; b's pass lost the lock
+    assert await stage_row(db, "transcribe") == (False, "component_off")
+    reported = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    off_since = reported["transcription"].detail["off_since"]
+
+    await set_want(db, "transcription", "enabled")
+    await _pass(b)  # b leads the on
+    assert await stage_row(db, "transcribe") == (True, None)
+    jobs = await db.fetch("SELECT payload FROM processing_jobs WHERE stage = 'component_catchup'")
+    assert len(jobs) == 1
+    entries = {e["component"]: e["off_since"] for e in loads(jobs[0]["payload"])["components"]}
+    assert entries["transcription"] == off_since
+
+    await db.execute("UPDATE processing_jobs SET state = 'done' WHERE stage = 'component_catchup'")
+    await _pass(a)  # a leads next: b queued the catch-up, a does not queue another
+    n = await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'component_catchup'")
+    assert n == 1
+    assert "transcription" not in a._off_since
+    await a.close()
+    await b.close()
+
+
+@pytest.mark.asyncio
 async def test_held_stops_claiming_but_no_catchup_follows(db: Database) -> None:
     await sync_graph(db, GRAPH, gates={})
     r, sel = _runner(db)

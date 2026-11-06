@@ -84,7 +84,7 @@ jobs:
       - name: components-live
         working-directory: pipeline
         run: >-
-          uv run --extra dev pytest ../tests/components/test_live.py
+          uv run --extra dev pytest ../tests/components/test_rig_logs.py ../tests/components/test_live.py
           ../tests/components/test_api_live.py -q -p no:cacheprovider -rsx
       - name: Keep the logs
         if: always()

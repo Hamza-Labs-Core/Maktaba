@@ -36,6 +36,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A component turned back on catches up even when another worker turns it on.** On a home
+  with several pipeline workers, the one that turned a component's stages off was not always
+  the one that turned them on again, and then the catch-up job for what the stages missed
+  while off was not queued until the next change. The worker that opens the stages again now
+  queues it, with the time the component went off, and the other one does not queue it a
+  second time. The components tests now keep each local run's logs in a folder of its own,
+  with the failed test's report and the database's component state, locally as in CI.
+
 - **The library dashboard and the queue page load at once on a large home.** On a home with
   3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out

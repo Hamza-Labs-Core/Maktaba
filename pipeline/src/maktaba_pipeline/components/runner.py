@@ -197,6 +197,9 @@ class ComponentRunner:
         #: component -> when the leader turned its stages off (None: unknown)
         self._off_since: dict[str, datetime | None] = {}
         self._off_loaded = False
+        #: the components of _off_since this runner turned off itself (not read back from
+        #: the status rows at start)
+        self._off_mine: set[str] = set()
         #: the built-in extensions' rows (name -> ExtensionState), read at each pass that
         #: acts (story 51.07: an enabled extension without its settings is Waiting)
         self.ext_states: Mapping[str, Any] = {}
@@ -492,15 +495,42 @@ class ComponentRunner:
             if comp is not None and why == COMPONENT_OFF and st in self._graph_names:
                 closed.add(comp.id)
         for cid in closed:
-            self._off_since.setdefault(cid, t)
+            if cid not in self._off_since:
+                self._off_since[cid] = t
+                self._off_mine.add(cid)
         back = {cid: at for cid, at in self._off_since.items() if cid not in closed}
         async with self.db.transaction():
+            # one this runner turned off whose stages another leader has opened again
+            # since: that leader queued the catch-up (below), so this one does not again
+            if mine := back.keys() & self._off_mine:
+                still_off = await self._components_off(managed)
+                for cid in mine - still_off:
+                    back.pop(cid)
+                    self._off_since.pop(cid, None)
+                    self._off_mine.discard(cid)
             changes = await apply_gates(self.db, self.graph, reasons, exts, stages=managed)
             if changes:
                 _log.info(
                     "component_stage_gates_written",
                     stages={st: why for st, _a, _b, _c, why in changes},
                 )
+            # the components whose stages this write opened again after they had them off.
+            # The leader that turned them off may not be the one that turns them on (each
+            # pass takes the lock anew and the home's workers race for it), so its memory
+            # alone would miss the catch-up (#646): the rows say what came back
+            reopened = {
+                comp.id
+                for st, _on, old_why, _now_on, why in changes
+                if old_why == COMPONENT_OFF
+                and why != COMPONENT_OFF
+                and (comp := self.catalog.by_stage(st)) is not None
+            }
+            if reopened - back.keys():
+                since = await self._reported_off_since()
+                for cid in reopened - back.keys():
+                    # when the leader that turned it off said so (its status row); unknown
+                    # (all history) when no row says
+                    back[cid] = since.get(cid)
             if back:
                 entries = [
                     {"component": cid, "off_since": None if at is None else at.isoformat()}
@@ -517,6 +547,31 @@ class ComponentRunner:
                 _log.info("component_catchup_queued", components=entries, job_id=res.job_id)
         for cid in back:
             self._off_since.pop(cid, None)
+            self._off_mine.discard(cid)
+
+    async def _components_off(self, stages: Sequence[str]) -> set[str]:
+        """The components with one of ``stages`` off in ``job_stages`` (component_off)."""
+        rows = await self.db.fetch(
+            "SELECT stage FROM job_stages WHERE disabled_reason = $1", COMPONENT_OFF
+        )
+        want = set(stages)
+        return {
+            comp.id
+            for r in rows
+            if r["stage"] in want and (comp := self.catalog.by_stage(r["stage"])) is not None
+        }
+
+    async def _reported_off_since(self) -> dict[str, datetime | None]:
+        """component -> the earliest ``off_since`` the home's status rows carry."""
+        out: dict[str, datetime | None] = {}
+        for s in await store.statuses(self.db):
+            if s.machine != HOME or not s.detail.get("off_since"):
+                continue
+            at = parse_ts(s.detail["off_since"])
+            prev = out.get(s.id)
+            if at is not None and (prev is None or at < prev):
+                out[s.id] = at
+        return out
 
     # -- loops ---------------------------------------------------------------
 
