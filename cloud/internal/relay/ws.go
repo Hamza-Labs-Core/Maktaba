@@ -229,6 +229,9 @@ type TunnelServer struct {
 	Drain bool
 	// TicketEvery is how often a fresh ticket is sent (default TicketRefresh).
 	TicketEvery time.Duration
+	// Directory records which process holds each tunnel (story 50.04); nil:
+	// none (one process, no forwarding).
+	Directory Directory
 }
 
 // ServeHTTP upgrades and authenticates one home's tunnel. The agent must
@@ -325,7 +328,10 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	t := NewTunnel(sv.ID, sv.Slug, &wsConn{c: c}, opts...)
 	// online first, then routable: whatever finds the tunnel finds the server online
-	if !reg.Up(sv.Slug, t, func() { markOnline(logger, store, sv.ID, true) }) {
+	if !reg.Up(sv.Slug, t, func() {
+		markOnline(logger, store, sv.ID, true)
+		ts.directory(logger, func(ctx context.Context, d Directory) error { return d.Up(ctx, sv.Slug, sv.ID, t.Seq()) })
+	}) {
 		// gone while it waited its turn, or a newer connection is in: nothing to record
 		t.Close()
 		logger.Info("relay: a stale tunnel attempt dropped", "server_id", sv.ID, "slug", sv.Slug, "event", "tunnel_stale")
@@ -338,10 +344,26 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		<-t.Done()
 		// a tunnel a reconnect replaced is not the server going offline
+		// the directory row goes whether or not t was the live tunnel here:
+		// Down deletes it only when it is still this tunnel's
+		ts.directory(logger, func(ctx context.Context, d Directory) error { return d.Down(ctx, sv.Slug, t.Seq()) })
 		if reg.Down(sv.Slug, t, func() { markOnline(logger, store, sv.ID, false) }) {
 			logger.Info("relay: tunnel down", "server_id", sv.ID, "slug", sv.Slug, "event", "tunnel_down")
 		}
 	}()
+}
+
+// directory writes to the tunnel directory, best-effort: a failed write is
+// logged (the row is fixed by the home's next tunnel, or swept with its node).
+func (ts *TunnelServer) directory(logger *slog.Logger, write func(context.Context, Directory) error) {
+	if ts.Directory == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := write(ctx, ts.Directory); err != nil {
+		logger.Warn("relay: writing the tunnel directory failed", "err", err, "event", "relay_directory_write_failed")
+	}
 }
 
 // resume authenticates a home by its resume ticket: the HMAC and expiry

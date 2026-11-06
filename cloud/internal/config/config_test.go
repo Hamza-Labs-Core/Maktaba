@@ -182,3 +182,23 @@ enabled = false
 		t.Errorf("from the file: %+v", r)
 	}
 }
+
+// Story 50.04: the directory's keys, the env names the blue/green units set,
+// and a peer address that is never public.
+func TestRelayDirectoryConfig(t *testing.T) {
+	t.Setenv("MAKTABA_CLOUD_RELAY_ID", "a-green")
+	t.Setenv("MAKTABA_CLOUD_RELAY_PEER_ADDR", "127.0.0.1:8445")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Relay.ID != "a-green" || c.Relay.PeerAddr != "127.0.0.1:8445" || c.Relay.HoldMax.Seconds() != 15 || c.Relay.HoldRecent.Minutes() != 2 {
+		t.Errorf("relay: %+v", c.Relay)
+	}
+	for addr, ok := range map[string]bool{"": true, "127.0.0.1:8444": true, "10.0.1.3:8443": true, "[::1]:9": true,
+		"0.0.0.0:8444": false, ":8444": false, "203.0.113.5:8444": false, "relay.example:1": false, "nonsense": false} {
+		if err := ValidatePeerAddr(addr); (err == nil) != ok {
+			t.Errorf("ValidatePeerAddr(%q) = %v", addr, err)
+		}
+	}
+}

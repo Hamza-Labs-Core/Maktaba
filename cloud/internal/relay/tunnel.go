@@ -48,8 +48,18 @@ type Tunnel struct {
 	tracked atomic.Bool
 }
 
-// tunnelSeq numbers the tunnels as they are made.
-var tunnelSeq atomic.Uint64
+// tunnelSeq numbers the tunnels as they are made. It starts at the process's
+// start time in nanoseconds, so seqs also order tunnels across relay
+// processes (the tunnel directory, story 50.04): a process started later, or
+// a tunnel made later, has the higher seq.
+var tunnelSeq = func() *atomic.Uint64 {
+	var s atomic.Uint64
+	s.Store(uint64(time.Now().UnixNano()))
+	return &s
+}()
+
+// Seq is the tunnel's order among all tunnels (tunnelSeq).
+func (t *Tunnel) Seq() uint64 { return t.seq }
 
 // FrameConn abstracts the websocket. A test fake injects a pipe.
 type FrameConn interface {

@@ -227,6 +227,17 @@ build fails when the two differ.
   before. The relay's stop grace is 150 s (the container's 160 s), with switches
   `relay.drain.enabled` and `relay.ticket.enabled`, and `/metrics` counts drains, forced
   closes and handshakes by method.
+
+- **Any relay process answers for any home, and a home that is reconnecting is waited for
+  (Epic 50, story 50.04).** A tunnel directory in the cloud database (`relay_tunnels`,
+  `relay_nodes`) records which relay process holds each home's tunnel; a process without it
+  forwards the request to the one with it over its peer port (loopback or the private
+  network only, signed, one hop at most), so a deploy or a second relay never answers
+  "offline" for a home that is fine, and the bytes are metered once. A request for a home
+  seen in the last 2 minutes now waits up to 15 s for it to come back, then answers
+  `503 home_reconnecting` with `Retry-After: 5`; a home offline longer answers
+  `503 server_offline` at once (it was a 502). The relay's error pages are in Arabic too,
+  right to left, by the browser's language.
 ### Added
 
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One

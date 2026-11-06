@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -64,6 +65,42 @@ type Deps struct {
 	// header carrying the request's country ("" ⇒ CF-IPCountry).
 	Collector     *metricspkg.Collector
 	CountryHeader string
+
+	// Story 50.04: forwarding between relay processes and holding.
+	// RelayID names this process in the directory; Directory finds a
+	// home's tunnel elsewhere (nil: no forwarding); PeerAuth signs and
+	// checks forwarded requests; PeerTransport carries them (nil: a
+	// default with a 1 s connect timeout).
+	RelayID       string
+	Directory     relaypkg.Directory
+	PeerAuth      *relaypkg.PeerAuth
+	PeerTransport http.RoundTripper
+	// PeerMode: this handler is the peer listener: every request must
+	// carry a good peer signature (403 otherwise) and is never forwarded.
+	PeerMode bool
+	// Holds bounds held requests; nil: DefaultHolds.
+	Holds *Holds
+	// HoldMax is how long a request waits for a reconnecting home (0:
+	// DefaultHoldMax; negative: no hold); HoldRecent how recently the home
+	// must have been seen to be waited for (0: DefaultHoldRecent).
+	HoldMax    time.Duration
+	HoldRecent time.Duration
+	Logger     *slog.Logger
+	now        func() time.Time
+}
+
+func (d *Deps) logger() *slog.Logger {
+	if d.Logger != nil {
+		return d.Logger
+	}
+	return slog.Default()
+}
+
+func (d *Deps) clock() time.Time {
+	if d.now != nil {
+		return d.now()
+	}
+	return time.Now()
 }
 
 func (d *Deps) lookup() ServerLookup {
@@ -77,6 +114,10 @@ func (d *Deps) lookup() ServerLookup {
 // It extracts the slug from the request Host header, looks up the
 // tunnel, and proxies through it. Cross-cutting (bandwidth metering,
 // plan gating) hooks in around the call.
+//
+// Story 50.04: a home whose tunnel is on another relay process is
+// forwarded there (Directory, one hop at most), and a request for a home
+// seen in the last HoldRecent is held up to HoldMax while it reconnects.
 func (d *Deps) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slug := slugFromHost(r.Host, d.PublicHost)
@@ -84,6 +125,24 @@ func (d *Deps) Handler() http.Handler {
 			writeErr(w, r, http.StatusNotFound, "no_slug", "unknown subdomain")
 			return
 		}
+		// one hop at most: a request a peer forwarded is served from this
+		// process's own tunnels only. On the public listener the peer
+		// headers are a client's and mean nothing.
+		hopped := false
+		if d.PeerMode {
+			from, err := d.PeerAuth.Verify(r.Header.Get(relaypkg.HeaderPeerAuth), slug)
+			if err != nil {
+				peerStats.authFailed.Add(1)
+				d.logger().Warn("relay: a peer request refused", "err", err, "event", "relay_peer_auth_failed")
+				writeErr(w, r, http.StatusForbidden, "peer_auth", "")
+				return
+			}
+			_ = from
+			hopped = true
+		}
+		r.Header.Del(relaypkg.HeaderHop)
+		r.Header.Del(relaypkg.HeaderPeerAuth)
+
 		sv, err := d.lookup().BySlug(r.Context(), slug)
 		if err != nil {
 			writeErr(w, r, http.StatusNotFound, "no_server", "")
@@ -96,11 +155,41 @@ func (d *Deps) Handler() http.Handler {
 			d.Editions.ServeHTTP(w, r)
 			return
 		}
-		t, err := d.Registry.Lookup(slug)
-		if err != nil {
-			writeErr(w, r, http.StatusBadGateway, "server_offline", "")
+		t, _ := d.Registry.Lookup(slug)
+		if t != nil && !t.Draining() {
+			d.serve(w, r, sv, t)
 			return
 		}
+		// not here, or only a draining tunnel: a newer one on a peer wins
+		if !hopped && d.forwardIfElsewhere(w, r, slug, t) {
+			return
+		}
+		if t != nil {
+			d.serve(w, r, sv, t)
+			return
+		}
+		if !d.recentlySeen(sv) {
+			writeErr(w, r, http.StatusServiceUnavailable, "server_offline", "")
+			return
+		}
+		// the home was here a moment ago: hold the request while it reconnects
+		t, served := d.hold(w, r, slug, hopped)
+		switch {
+		case served:
+		case t != nil:
+			d.serve(w, r, sv, t)
+		default:
+			w.Header().Set("Retry-After", "5")
+			writeErr(w, r, http.StatusServiceUnavailable, "home_reconnecting", "")
+		}
+	})
+}
+
+// serve proxies r through the home's tunnel t: the plan gate, the exchange,
+// metering. Only the relay that owns the tunnel does this, so a forwarded
+// request is metered once.
+func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t *relaypkg.Tunnel) {
+	{
 		// Tier gate: the plan's monthly relay allowance.
 		if d.Meter != nil {
 			if err := d.Meter.Allow(r.Context(), sv); err != nil {
@@ -108,7 +197,6 @@ func (d *Deps) Handler() http.Handler {
 				return
 			}
 		}
-
 		// No deadline on the exchange: a video plays as long as its client
 		// reads. Only the home's answer (the head) is bounded.
 		ctx := middleware.WithServerID(r.Context(), sv.ID)
@@ -199,7 +287,7 @@ func (d *Deps) Handler() http.Handler {
 			// (Story 30.2)
 			d.Collector.RecordRequest(privacy.CountryFromRequest(r, d.CountryHeader))
 		}
-	})
+	}
 }
 
 // SlugFromHost is the exported view of slug extraction. The relay role
@@ -354,7 +442,7 @@ func stripHopByHop(h http.Header) {
 
 func writeErr(w http.ResponseWriter, r *http.Request, code int, kind, msg string) {
 	if wantsHTML(r) {
-		writePage(w, code, kind, msg)
+		writePage(w, r, code, kind, msg)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
