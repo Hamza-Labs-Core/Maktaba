@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -19,7 +21,6 @@ var (
 
 const (
 	procThreadAttributeSecurityCapabilities = 0x00020009
-	procThreadAttributeHandleList           = 0x00020002
 	hresultAlreadyExists                    = 0x800700B7
 	jobObjectLimitActiveProcess             = 0x00000008
 )
@@ -88,6 +89,9 @@ func envBlock(env []string) *uint16 {
 	if env == nil {
 		env = []string{"SystemRoot=" + os.Getenv("SystemRoot")}
 	}
+	// a block sorted by name, as Windows keeps its own
+	env = append([]string(nil), env...)
+	sort.Slice(env, func(i, j int) bool { return strings.ToUpper(env[i]) < strings.ToUpper(env[j]) })
 	var b []uint16
 	for _, kv := range env {
 		u, err := windows.UTF16FromString(kv)
@@ -131,7 +135,7 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 	for _, h := range []windows.Handle{stdout, stderr} {
 		_ = windows.SetHandleInformation(h, windows.HANDLE_FLAG_INHERIT, windows.HANDLE_FLAG_INHERIT)
 	}
-	attrs, err := windows.NewProcThreadAttributeList(2)
+	attrs, err := windows.NewProcThreadAttributeList(1)
 	if err != nil {
 		return 0, err
 	}
@@ -139,13 +143,6 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 	caps := securityCapabilities{AppContainerSid: sid}
 	if err := attrs.Update(procThreadAttributeSecurityCapabilities, unsafe.Pointer(&caps), unsafe.Sizeof(caps)); err != nil {
 		return 0, fmt.Errorf("appcontainer: security capabilities: %w", err)
-	}
-	handles := []windows.Handle{stdout, stderr}
-	if stdout == stderr {
-		handles = handles[:1]
-	}
-	if err := attrs.Update(procThreadAttributeHandleList, unsafe.Pointer(&handles[0]), uintptr(len(handles))*unsafe.Sizeof(handles[0])); err != nil {
-		return 0, fmt.Errorf("appcontainer: handle list: %w", err)
 	}
 	si := windows.StartupInfoEx{ProcThreadAttributeList: attrs.List()}
 	si.Cb = uint32(unsafe.Sizeof(si))
