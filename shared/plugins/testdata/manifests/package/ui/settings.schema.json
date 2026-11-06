@@ -1,0 +1,9 @@
+{
+  "type": "object",
+  "properties": {
+    "threshold": { "type": "integer", "minimum": 1, "maximum": 100, "default": 30, "x-maktaba-title": "settings.threshold" },
+    "report_interval": { "type": "integer", "minimum": 15, "maximum": 10080, "default": 1440, "x-maktaba-title": "settings.threshold" },
+    "short_interval": { "type": "integer", "minimum": 5, "maximum": 60, "default": 10, "x-maktaba-title": "settings.threshold" },
+    "label": { "type": "string", "maxLength": 40, "default": "x", "x-maktaba-title": "settings.threshold" }
+  }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "hostile"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = { workspace = true }
+dlmalloc = { workspace = true }
+
+# the std_feature of wit-bindgen gates `impl Error` on it; these guests never turn it on
+[features]
+std = []

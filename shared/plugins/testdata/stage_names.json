@@ -1,0 +1,4 @@
+[
+  {"id": "dev.example.silence-chapters", "stage": "x", "name": "p_e8dd3c9e_x"},
+  {"id": "dev.example.silence-chapters", "stage": "find_silences", "name": "p_e8dd3c9e_find_silences"}
+]

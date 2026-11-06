@@ -1155,7 +1155,8 @@ def edge_targets(stage: StageDef, *, include_legacy: bool = False) -> tuple[Edge
 def validate(graph: tuple[StageDef, ...] = GRAPH, pools: tuple[PoolDef, ...] = POOLS) -> None:
     """Raise :class:`GraphError` if the graph is inconsistent.
 
-    Checks: unique names, edge and request targets exist, pools exist, the
+    Checks: unique names, no core stage named ``p_*`` (plugin stages' prefix), edge
+    and request targets exist, pools exist, the
     non-legacy edge relation is acyclic, and request cycles only pass through
     stages with monotone input fingerprints.
     """
@@ -1165,6 +1166,10 @@ def validate(graph: tuple[StageDef, ...] = GRAPH, pools: tuple[PoolDef, ...] = P
     known = set(names)
     pool_names = {p.pool for p in pools}
     for s in graph:
+        # "p_" names belong to third-party plugin stages (Epic 54, story 54.01 §4): a core
+        # or built-in extension stage never takes one, so the two can never collide
+        if s.name.startswith("p_") and not (s.extension or "").startswith("plugin:"):
+            raise GraphError(f"{s.name}: names starting p_ are kept for plugin stages")
         if s.pool not in pool_names:
             raise GraphError(f"{s.name}: unknown pool {s.pool!r}")
         for e in s.edges:

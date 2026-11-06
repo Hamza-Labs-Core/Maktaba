@@ -1,0 +1,216 @@
+/// The plugin API (Epic 54, README §4.4, story 54.02 §3).
+///
+/// A plugin is one WebAssembly component of the world `plugin`. The host
+/// (maktaba-plugind) links these interfaces and a small WASI subset, nothing
+/// else: no sockets, no HTTP, no filesystem, no stdin, no processes.
+///
+/// Every import is a thin forwarder in the host: it checks argument sizes, adds
+/// the job's token (which the guest never sees) and sends the call to the
+/// plugin API on the home's unix socket, which makes every decision. An
+/// interface whose capability was not granted is still linked, so a plugin can
+/// degrade, but each call answers `call-error.capability` without leaving the
+/// host.
+///
+/// Versioning: a minor version only adds functions; a plugin built for 1.N runs
+/// on any 1.M host with M >= N. Reads answer JSON text so a minor version can
+/// add fields without a new WIT type.
+package maktaba:plugin@1.0.0;
+
+interface types {
+  /// Why a call was refused. The plugin API's refusal codes, one to one.
+  variant call-error {
+    /// the capability was not granted (plugin_capability)
+    capability,
+    /// the subject or library is outside the job (plugin_scope)
+    scope,
+    /// a quota or budget is used up (plugin_quota)
+    quota,
+    /// too many calls (plugin_rate)
+    rate,
+    /// the value is over its size limit (plugin_too_large)
+    too-large,
+    /// set-field on a field outside the allow-list (plugin_field)
+    field,
+    /// the media file changed during the job (media_changed)
+    changed,
+    /// the media is not reachable now, e.g. the NAS is offline (media_unavailable)
+    unavailable,
+    /// no such item
+    not-found,
+    /// the arguments are not valid; the text says why (not the plugin's words)
+    invalid(string),
+    /// the job's token ended (job over, grants changed, plugin stopped)
+    ended,
+  }
+
+  enum subject-kind { video, series, season, library, catalog }
+
+  record subject {
+    kind: subject-kind,
+    id: string,
+  }
+
+  enum level { debug, info, warn, error }
+}
+
+/// The job being run. No capability needed.
+interface job {
+  use types.{subject, call-error};
+
+  /// what this job is about
+  job-subject: func() -> subject;
+  /// the payload the job was queued with (JSON text, "{}" when none)
+  payload: func() -> string;
+  /// the plugin's settings (JSON text), validated against its schema (story 54.11)
+  settings: func() -> string;
+  /// the capabilities the admin granted (required ones and the optional ones ticked)
+  grants: func() -> list<string>;
+  /// progress shown on the Queues page, 0..=100
+  progress: func(pct: u8);
+  /// saved state, handed back on the next attempt or after a drain (<= 64 KB)
+  checkpoint: func(state: list<u8>) -> result<_, call-error>;
+  /// the state saved by an earlier attempt of this job, if any
+  last-checkpoint: func() -> option<list<u8>>;
+  /// per-job scratch bytes kept in the host's memory, never on disk (resources.scratch_mb)
+  scratch-put: func(key: string, value: list<u8>) -> result<_, call-error>;
+  scratch-get: func(key: string) -> option<list<u8>>;
+}
+
+/// Log lines, rate-limited by the host (100/s, 10 MB a day, 8 KB a line).
+interface log {
+  use types.{level};
+
+  /// `code` is a stable word ("chapters_found"); `fields` is a JSON object.
+  write: func(level: level, code: string, fields: string);
+}
+
+/// The plugin's own key-value data, in its own namespace (quota resources.data_mb).
+interface data {
+  use types.{subject, call-error};
+
+  get: func(subject: subject, key: string) -> result<option<string>, call-error>;
+  /// `value` is JSON text <= 64 KB; `exported` lets plugins granted
+  /// plugin-data.read:<this id> read it
+  put: func(subject: subject, key: string, value: string, exported: bool) -> result<_, call-error>;
+  delete: func(subject: subject, key: string) -> result<_, call-error>;
+  %list: func(subject: subject, prefix: string) -> result<list<string>, call-error>;
+}
+
+/// Capability library.read: titles, descriptions and grouping in granted libraries.
+interface library {
+  use types.{call-error};
+
+  video: func(id: string) -> result<string, call-error>;
+  series: func(id: string) -> result<string, call-error>;
+  /// `filter` is JSON text; pages of up to 100 items
+  %list: func(library: string, filter: string, page: u32) -> result<string, call-error>;
+}
+
+/// Capability transcript.read.
+interface transcript {
+  use types.{call-error};
+
+  segments: func(video: string) -> result<string, call-error>;
+  words: func(video: string) -> result<string, call-error>;
+}
+
+/// Capabilities media.read, media.frames and media.audio (story 54.05). Only the
+/// job's subject (or items in granted libraries for library and catalog jobs),
+/// only while the job runs. No paths, ever.
+interface media {
+  use types.{call-error};
+
+  /// media.read: a handle on the video's bytes
+  open: func(video: string) -> result<u64, call-error>;
+  /// media.read: <= 8 MB per read
+  read: func(handle: u64, offset: u64, len: u32) -> result<list<u8>, call-error>;
+  size: func(handle: u64) -> result<u64, call-error>;
+  close: func(handle: u64);
+  /// media.frames: one PNG frame, longest edge <= max-edge (<= 1280)
+  frame: func(video: string, t-ms: u64, max-edge: u32) -> result<list<u8>, call-error>;
+  /// media.audio: mono 16-bit PCM at 8000, 16000 or 22050 Hz, <= 10 minutes per call
+  audio: func(video: string, t0-ms: u64, t1-ms: u64, rate: u32) -> result<list<u8>, call-error>;
+  /// library.read: duration, streams and codecs (JSON text)
+  info: func(video: string) -> result<string, call-error>;
+}
+
+/// Writes, each gated by its own capability and attributed to the plugin.
+interface write {
+  use types.{subject, call-error};
+
+  record chapter {
+    start-ms: u64,
+    title: string,
+  }
+
+  /// metadata.write: description, sort_title, year, content_rating,
+  /// original_language, local_ids.<plugin short id>; never an admin's title
+  set-field: func(video: string, field: string, value: string) -> result<_, call-error>;
+  /// tags.write
+  add-tags: func(video: string, tags: list<string>) -> result<_, call-error>;
+  /// chapters.write
+  set-chapters: func(video: string, chapters: list<chapter>) -> result<_, call-error>;
+  /// subtitles.write: WebVTT or SRT text <= 4 MB, parsed and written again by Maktaba
+  add-subtitle: func(video: string, lang: string, text: string) -> result<_, call-error>;
+  /// artwork.write: a PNG or JPEG <= 4 MB
+  set-artwork: func(subject: subject, kind: string, image: list<u8>) -> result<_, call-error>;
+}
+
+/// Capability suggest: a change for an admin to accept or decline.
+interface suggest {
+  use types.{subject, call-error};
+
+  add: func(subject: subject, field: string, value: string, reason: string) -> result<_, call-error>;
+}
+
+/// Capability jobs.enqueue: more of the plugin's own work (its stage's may_request).
+interface queue {
+  use types.{subject, call-error};
+
+  request: func(stage: string, subject: subject, payload: string) -> result<_, call-error>;
+}
+
+/// Capability notify.admin: an in-app notice from the plugin's own strings.
+interface notify {
+  use types.{call-error};
+
+  admin: func(code: string, params: string) -> result<_, call-error>;
+}
+
+/// Capability plugin-data.read:<id>: data another plugin marked exported.
+interface exports {
+  use types.{subject, call-error};
+
+  read: func(plugin: string, subject: subject, key: string) -> result<option<string>, call-error>;
+}
+
+world plugin {
+  import job;
+  import log;
+  import data;
+  import library;
+  import transcript;
+  import media;
+  import write;
+  import suggest;
+  import queue;
+  import notify;
+  import exports;
+
+  record run-output {
+    /// what the stage produced; equal hashes mean nothing changed
+    output-hash: string,
+    /// a JSON object shown on the job (<= 64 KB)
+    summary: string,
+  }
+
+  record run-error {
+    /// a stable word from the plugin ("bad_input")
+    code: string,
+    message: string,
+  }
+
+  /// One export for every stage: the SDK turns the manifest's per-stage exports
+  /// into a dispatch on `stage`, so every language needs only this one.
+  export run: func(stage: string) -> result<run-output, run-error>;
+}
