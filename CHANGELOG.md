@@ -461,6 +461,26 @@ build fails when the two differ.
   never `down`; a crash shows at once, a failing check after two checks. The document names
   no host, path or version (`docs/api/status.md`).
 
+- **A recovery page and safe mode, so an admin can fix Maktaba with the database or the API down
+  (Epic 53, stories 53.04 and 53.05).** `/recovery` on the web port is served by the supervisor
+  itself, in English or Arabic. An admin gets in with a 7-day recovery pass the web app keeps
+  for them while the API is up (a cookie only `/recovery` reads, refused after a demotion,
+  deletion or sign-out everywhere), a Remote app's admin token, or the Mac's new **Open
+  recovery page** menu item (a one-time link). Five failed tries in a minute lock it for five
+  minutes. The page shows each part and component with its restarts, last exit and last
+  error, the last 15 minutes of warnings and errors from the log files, and free disk space.
+  Its buttons restart a component or everything, start or leave safe mode, roll back a
+  committed update, restore a backup (asked twice) and download diagnostics. Every action is
+  recorded and copied to the audit log when the API is back. Safe mode runs one start with
+  only the database, the API, updates and log search (desired state untouched; everything
+  else reads off with reason `boot_flag`, and `/status.json` says `mode: "safe"`). A role
+  whose crash loop survives 3 slow retries now stays down until it is restarted. When
+  Maktaba itself stops 3 times in 2 minutes before it is ready, the launcher stops starting
+  it, keeps its last lines in `start-failed.json` and serves a "Maktaba can't start" page
+  with Try again, Start in safe mode and Go back; the Mac's menu offers the same choices.
+  The "Maktaba is restarting" page now says what is down and, after a minute, links to the
+  recovery page.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

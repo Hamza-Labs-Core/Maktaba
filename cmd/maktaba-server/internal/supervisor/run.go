@@ -85,6 +85,7 @@ type child struct {
 	restartAt  []time.Time  // its restarts of the last 24 h (the health's restarts_24h)
 	killReason string       // set before the supervisor kills the child
 	failed     bool         // in a crash loop (state failed or retrying from it)
+	slowFails  int          // slow retries of the crash loop that failed (the cut-off, story 53.05)
 	onceFails  int          // a job's (Process.Once) failed runs in a row
 	wanted     bool         // run it (an on-demand process is not until asked for)
 	allowed    bool         // its component's gate is open (Allow, story 51.04); it runs only when allowed and wanted
@@ -698,6 +699,7 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		*backoff = s.policy.BackoffInitial
 		c.exits = nil
 		c.failed = false
+		c.slowFails = 0
 	}
 	c.exits = append(c.recentExits(now, s.policy.Window), now)
 	delay, state := *backoff, StateBackoff
@@ -711,11 +713,25 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		c.failed = false
 		*backoff = nextBackoff(*backoff, s.policy.BackoffMax)
 	}
+	// a slow retry that failed too (Epic 53 story 53.05): after FailedRetries of them
+	// the child is cut off, down until a person restarts it
+	if state == StateFailed && wasFailed {
+		c.slowFails++
+	}
+	cut := state == StateFailed && s.policy.FailedRetries > 0 && c.slowFails >= s.policy.FailedRetries
 	next := now.Add(delay)
 	c.status.State = state
 	c.status.NextRestartAt = &next
+	c.status.CutOff = cut
+	if cut {
+		c.status.NextRestartAt = nil
+	}
 	var failedEv *Event
-	if state == StateFailed && !wasFailed {
+	if cut {
+		e := s.recordLocked(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventCutOff, Reason: info.Reason,
+			Message: fmt.Sprintf("%d slow retries failed: down until restarted", c.slowFails)})
+		failedEv = &e
+	} else if state == StateFailed && !wasFailed {
 		// recorded with the state: a snapshot never shows "failed" without its event
 		e := s.recordLocked(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason,
 			DelaySec: delay.Seconds(), Message: fmt.Sprintf("%d exits in %s", s.policy.MaxRestarts, s.policy.Window)})
@@ -723,6 +739,24 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	}
 	s.mu.Unlock()
 
+	if cut {
+		s.publish(*failedEv)
+		s.errorf("%s exited (pid %d, %s); crash loop: %d slow retries failed, it stays down until it is restarted",
+			c.proc.Name(), info.PID, describeExit(info), c.slowFails)
+		select {
+		case <-ctx.Done():
+			s.setState(c, StateStopped)
+			return true
+		case <-c.wake:
+		}
+		s.mu.Lock()
+		c.exits, c.failed, c.slowFails = nil, false, 0
+		c.status.CutOff = false
+		*backoff = s.policy.BackoffInitial
+		s.mu.Unlock()
+		s.logf("%s: restarted by request after its cut-off", c.proc.Name())
+		return false
+	}
 	if state == StateFailed {
 		if failedEv != nil {
 			s.publish(*failedEv)
@@ -950,6 +984,10 @@ func (s *Supervisor) exitInfo(c *child, cmd *exec.Cmd, waitErr error, startedAt 
 	return info
 }
 
+// Note records an event of the supervisor's own (a recovery console action, Epic 53 story
+// 53.04) in its event log, as its own events are.
+func (s *Supervisor) Note(e Event) { s.emit(e) }
+
 func (s *Supervisor) emit(e Event) {
 	s.mu.Lock()
 	e = s.recordLocked(e)
@@ -1052,6 +1090,15 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 		return fmt.Errorf("no %s process %q", role, instance)
 	}
 	cmd, tree := c.cmd, c.tree
+	if c.status.CutOff && !s.stopping {
+		// cut off after its crash loop (Epic 53 story 53.05): a person's restart starts it
+		s.mu.Unlock()
+		select {
+		case c.wake <- struct{}{}:
+		default:
+		}
+		return nil
+	}
 	if cmd == nil || cmd.Process == nil || s.stopping {
 		s.mu.Unlock()
 		return nil
