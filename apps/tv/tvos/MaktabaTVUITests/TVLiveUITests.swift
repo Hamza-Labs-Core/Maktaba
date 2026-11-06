@@ -287,6 +287,50 @@ final class TVLiveUITests: XCTestCase {
         shot("tv-libraries-en")
     }
 
+    /// Epic 56 stories 56.02 and 56.03 (T05, T07): a library opens on Recommended with its five
+    /// tabs; Up reaches Shuffle, which makes one shuffled library queue on the home, and the
+    /// queue's player opens.
+    func testALibraryHasFiveTabsAndShufflesTheWholeLibrary() throws {
+        signIn("en")
+        openFirstLibrary()
+        for t in ["recommended", "library", "collections", "playlists", "categories"] {
+            XCTAssertTrue(element("library.tab.\(t)").waitForExistence(timeout: 20), "the \(t) tab")
+        }
+        XCTAssertTrue(app.buttons["Recommended"].exists && app.buttons["Categories"].exists, "Plex's tab names")
+        shot("tv-library-tabs-en")
+        let shuffle = app.buttons["play.shuffle"]
+        XCTAssertTrue(shuffle.waitForExistence(timeout: 10), "Shuffle in the library's header")
+        let play = app.buttons["play.play"]
+        for _ in 0..<8 where !(play.hasFocus || shuffle.hasFocus) {
+            remote.press(.up)
+            usleep(400_000)
+        }
+        moveFocus(to: shuffle, with: .right)
+        remote.press(.select)
+        XCTAssertTrue(wait { self.home.requests.contains { $0.method == "POST" && $0.path == "/api/me/play-queues" } },
+                      "Shuffle makes a queue; the home saw \(home.seen)")
+        let made = home.requests.first { $0.method == "POST" && $0.path == "/api/me/play-queues" }!
+        let body = try JSONSerialization.jsonObject(with: made.body) as? [String: Any]
+        XCTAssertEqual(body?["shuffle"] as? Bool, true)
+        XCTAssertEqual((body?["source"] as? [String: Any])?["kind"] as? String, "library")
+        XCTAssertTrue(element("queue.player").waitForExistence(timeout: 20), "the queue's player")
+        shot("tv-library-shuffle-en")
+    }
+
+    /// The Collections tab (story 56.08 T08, T09): the cards with their badges, in Arabic.
+    func testTheCollectionsTabInArabic() throws {
+        signIn("ar")
+        openFirstLibrary()
+        let tab = element("library.tab.collections")
+        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["المقترحات"].exists && app.buttons["الفئات"].exists, "the tabs in Arabic")
+        moveFocus(to: tab, with: .left)
+        XCTAssertTrue(element("collection.col-yt").waitForExistence(timeout: 20), "the collections")
+        XCTAssertTrue(app.staticTexts["قائمة تشغيل يوتيوب"].exists, "the YouTube badge in Arabic")
+        XCTAssertTrue(app.staticTexts["مجموعة Plex"].exists, "the Plex badge in Arabic")
+        shot("tv-library-collections-ar")
+    }
+
     /// The bug: a buffering stall did not change the playback phase, so the banner
     /// did not come back. Segment 6 is held (a latch): the picture plays twelve seconds, the
     /// banner goes, then the picture waits for data. The buffering state and the banner show;
@@ -380,6 +424,23 @@ final class TVLiveUITests: XCTestCase {
     }
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
+
+    /// The Libraries tab, then Select on its first library.
+    private func openFirstLibrary() {
+        let tab = app.tabBars.buttons[language == "ar" ? "المكتبات" : "Libraries"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20), "the Libraries tab")
+        for _ in 0..<4 where !app.tabBars.buttons.allElementsBoundByIndex.contains(where: \.hasFocus) {
+            remote.press(.up)
+            usleep(400_000)
+        }
+        moveFocus(to: tab, with: language == "ar" ? .left : .right)
+        remote.press(.select)
+        XCTAssertTrue(wait { self.home.seen.contains("GET /api/libraries/summary") }, "the libraries")
+        sleep(2)
+        remote.press(.down)
+        usleep(500_000)
+        remote.press(.select)
+    }
 
     /// The player's banner names a channel (number · name), within a few seconds.
     private func channelLabel(contains name: String) -> Bool {
