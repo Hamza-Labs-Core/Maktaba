@@ -452,7 +452,10 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     expect(within(sidebar()).getByText(en["nav.admin"])).toBeInTheDocument();
     expect(linkList(sidebar())).toEqual([...named(USER_LINKS), ...named(ADMIN_LINKS)]);
     // Processing, Transcription and Settings open the group, before the other admin links
-    const admin = linkList(sidebar()).slice(USER_LINKS.length, USER_LINKS.length + SERVER_LINKS.length);
+    const admin = linkList(sidebar()).slice(
+      USER_LINKS.length,
+      USER_LINKS.length + SERVER_LINKS.length
+    );
     expect(admin).toEqual(named(SERVER_LINKS));
     // the tab bar stays the same five for an admin
     expect(within(tabbar()).getAllByRole("link")).toHaveLength(5);
