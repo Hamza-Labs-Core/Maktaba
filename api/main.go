@@ -723,6 +723,9 @@ func runServe() error {
 			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
 				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
+			// Epic 54 (stories 54.04-54.05): the plugin API's invocation routes, and the
+			// plugin API on its unix socket when the supervisor names one
+			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

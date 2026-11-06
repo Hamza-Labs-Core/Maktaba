@@ -47,6 +47,7 @@ COPY shared/go/releaseverify/go.mod ./shared/go/releaseverify/
 COPY shared/health/go/go.mod  ./shared/health/go/
 COPY shared/log/go/go.mod     ./shared/log/go/
 COPY shared/metrics/go/go.mod ./shared/metrics/go/
+COPY shared/plugins/go.mod   ./shared/plugins/
 COPY shared/tracing/go/go.mod ./shared/tracing/go/
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \

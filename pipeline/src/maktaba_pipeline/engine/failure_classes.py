@@ -56,6 +56,16 @@ YT_RATE_LIMIT = "resource:youtube_rate_limit"
 
 #: (signature prefix, class), first match wins
 DEFAULT_TABLE: tuple[tuple[str, str], ...] = (
+    # Epic 54 (story 54.06 §3): a plugin's trap or deadline gets one retry; a memory cap
+    # or a refusal would happen again; a held or revoked plugin's jobs wait for it
+    ("plugin_trap", TRANSIENT),
+    ("plugin_timeout", TRANSIENT),
+    ("plugin_memory", ITEM_PERMANENT),
+    ("plugin_capability", ITEM_PERMANENT),
+    ("plugin_scope", ITEM_PERMANENT),
+    ("plugin_quota", ITEM_PERMANENT),
+    ("plugin_failed", ITEM_PERMANENT),
+    ("plugin_held", "dependency:plugin"),
     ("model_unavailable", MODEL),
     # refined to dependency:share:<root> when the item's library root does not answer
     ("file_missing", ITEM_PERMANENT),
