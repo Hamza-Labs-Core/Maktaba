@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -36,7 +38,11 @@ func (h *Handler) proxyIndex(path string, stream bool) http.HandlerFunc {
 			h.indexDown(w, r)
 			return
 		}
-		u := url.URL{Scheme: "http", Host: base, Path: path, RawQuery: r.URL.RawQuery}
+		p := path
+		if fp := chi.URLParam(r, "fp"); fp != "" {
+			p = strings.ReplaceAll(p, "{fp}", url.PathEscape(fp))
+		}
+		u := url.URL{Scheme: "http", Host: base, Path: p, RawQuery: r.URL.RawQuery}
 		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
 		if err != nil {
 			httperror.Write(w, r, err)

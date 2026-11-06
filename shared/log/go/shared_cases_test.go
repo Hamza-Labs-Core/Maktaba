@@ -163,3 +163,20 @@ func TestFormatFromTheEnvironment(t *testing.T) {
 	NewLogger(Options{Service: "api", Env: "dev", Output: &buf}).Info("hello")
 	decodeOne(t, buf.Bytes())
 }
+
+// Epic 53 story 53.10 T01: messages that differ in numbers, ids, paths and hosts are one
+// group; another frame or service is another.
+func TestFingerprintFoldsWhatVaries(t *testing.T) {
+	a := Fingerprint("server", "api", GroupScrub("open /Users/sara/Movies/a.mkv: no such file (video 17)"), "handlers/videos.go")
+	b := Fingerprint("server", "api", GroupScrub("open /home/omar/Films/b.mkv: no such file (video 9182)"), "handlers/videos.go")
+	if a != b || len(a) != 32 {
+		t.Fatalf("one failure, two groups: %s %s", a, b)
+	}
+	if Fingerprint("server", "streaming", GroupScrub("open /x/a.mkv: no such file"), "handlers/videos.go") == a {
+		t.Error("another service is another group")
+	}
+	if Fingerprint("server", "api", GroupScrub("dial tcp 10.0.0.5:5432: refused"), "db.go") !=
+		Fingerprint("server", "api", GroupScrub("dial tcp 192.168.1.9:5432: refused"), "db.go") {
+		t.Error("addresses fold")
+	}
+}

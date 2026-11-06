@@ -2,15 +2,12 @@ package telemetry
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strings"
 	"time"
 
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	"github.com/lib/pq"
 )
 
@@ -155,13 +152,10 @@ func putApp(ctx context.Context, tx execer, installID string, a *AppBatch, now t
 	return nil
 }
 
-var reDigits = regexp.MustCompile(`[0-9]+`)
-
-// Fingerprint groups errors: the source, the app, the scrubbed message
-// with its numbers folded, and the first stack frame.
+// Fingerprint groups errors: the shared one (shared/log/go, Epic 53 story 53.10), so a home's
+// error group and its anonymous twin here have the same fingerprint.
 func Fingerprint(source, app, message, frame string) string {
-	h := sha256.Sum256([]byte(strings.Join([]string{source, app, reDigits.ReplaceAllString(message, "0"), frame}, "\x00")))
-	return hex.EncodeToString(h[:16])
+	return mlog.Fingerprint(source, app, message, frame)
 }
 
 func putError(ctx context.Context, tx execer, source, app, message, frame, installID string, day time.Time,

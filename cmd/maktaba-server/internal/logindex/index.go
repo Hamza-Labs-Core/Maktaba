@@ -76,9 +76,11 @@ type Index struct {
 	mu      sync.Mutex
 	waiters []chan struct{} // tails waiting for new lines
 	// Retention keeps rows as long as the segments are kept (7 days); MaxBytes is
-	// logs.db's share of the diagnostics cap (350 MB).
-	Retention time.Duration
-	MaxBytes  int64
+	// logs.db's share of the diagnostics cap (350 MB); ErrorRetention keeps error groups
+	// (30 days after they were last seen).
+	Retention      time.Duration
+	ErrorRetention time.Duration
+	MaxBytes       int64
 	// Log gets the index's own events (log_index_rebuilt, ...).
 	Log func(msg string, kv ...any)
 	// rebuilt: why the file was made again at Open ("" when it was not)
@@ -98,7 +100,7 @@ func Open(root string, now func() time.Time) (*Index, error) {
 	if now == nil {
 		now = time.Now
 	}
-	ix := &Index{root: root, now: now, Retention: 7 * 24 * time.Hour, MaxBytes: 350 << 20,
+	ix := &Index{root: root, now: now, Retention: 7 * 24 * time.Hour, ErrorRetention: 30 * 24 * time.Hour, MaxBytes: 350 << 20,
 		Log: func(string, ...any) {}}
 	p := Path(root)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
@@ -129,7 +131,7 @@ func openDB(p string) (*sql.DB, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(4)
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.Exec(schema + errorsSchema); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

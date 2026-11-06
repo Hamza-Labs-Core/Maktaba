@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
@@ -20,5 +21,14 @@ func TestInitLoggerTagsComponentLoops(t *testing.T) {
 	ctx := runner.LoopContext(context.Background(), "core.updates")
 	if got := mlog.ComponentFrom(ctx); got != "core.updates" {
 		t.Fatalf("component = %q, want core.updates", got)
+	}
+}
+
+// Epic 53 story 53.10: the errors notifier main declares is a loop of the log index, so it
+// stops when logs.index is turned off.
+func TestErrorsNotifierIsALoopOfTheLogIndex(t *testing.T) {
+	c, ok := components.Default().ByLoop("api", "errors_notifier")
+	if !ok || c.ID != "logs.index" {
+		t.Fatalf("api:errors_notifier belongs to %v (%v), want logs.index", c, ok)
 	}
 }

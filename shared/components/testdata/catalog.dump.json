@@ -1418,9 +1418,11 @@
       "group": "system",
       "id": "logs.index",
       "in_payload": false,
-      "kind": "process",
+      "kind": "process+loop",
       "licence": "",
-      "loops": [],
+      "loops": [
+        "api:errors_notifier"
+      ],
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1442,7 +1444,7 @@
       "source": "",
       "sources": {},
       "stages": [],
-      "stop_grace_s": 0,
+      "stop_grace_s": 5,
       "switchable": true,
       "title_key": "components.logs.index.title",
       "wants": []

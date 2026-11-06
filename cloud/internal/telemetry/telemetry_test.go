@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 var testNow = time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)
@@ -483,5 +484,17 @@ func TestIngestRecordsNoAddress(t *testing.T) {
 	other.RemoteAddr = "203.0.113.78:5000"
 	if senderKey(req) == senderKey(other) {
 		t.Error("two addresses share a limiter key")
+	}
+}
+
+// Epic 53 story 53.10: the cloud and the home group alike: their scrub and fingerprint are
+// the shared ones.
+func TestFingerprintIsTheHomes(t *testing.T) {
+	msg := "query 12 took 5003ms on /data/a/1.mkv"
+	if Scrub(msg) != mlog.GroupScrub(msg) {
+		t.Errorf("scrub: %q vs %q", Scrub(msg), mlog.GroupScrub(msg))
+	}
+	if Fingerprint("server", "api", "x", "f") != mlog.Fingerprint("server", "api", "x", "f") {
+		t.Error("the fingerprints differ")
 	}
 }

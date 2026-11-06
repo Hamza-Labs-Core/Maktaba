@@ -209,8 +209,18 @@ func (ix *Index) insert(tx *sql.Tx, key string, off int64, raw []byte) error {
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO lines_fts(rowid, msg, text, err) VALUES(?, ?, ?, ?)`, id, p.msg, p.text, p.errText)
-	return err
+	if _, err = tx.Exec(`INSERT INTO lines_fts(rowid, msg, text, err) VALUES(?, ?, ?, ?)`, id, p.msg, p.text, p.errText); err != nil {
+		return err
+	}
+	if p.level >= levelNum["error"] {
+		fp, err := ix.group(tx, p, id)
+		if err != nil {
+			return err
+		}
+		_, err = tx.Exec(`UPDATE lines SET error_fp = ? WHERE id = ?`, fp, id)
+		return err
+	}
+	return nil
 }
 
 func nullable(s string) any {
@@ -227,6 +237,9 @@ type parsed struct {
 	service, component, node, msg               string
 	requestID, jobID, sessionID, videoID, userH string
 	text, errText                               string
+	// for error groups (53.10): the message before folding, the error's own message and
+	// code, its first own frame (fn) and the line's version
+	rawMsg, errMsg, errCode, frame, version string
 }
 
 // parseLine reads a shared-schema line (story 53.01). A user id on an old line is hashed
@@ -262,10 +275,23 @@ func parseLine(raw []byte) (parsed, bool) {
 	if p.service == "" {
 		p.service = "unknown"
 	}
+	p.rawMsg, p.version = p.msg, str("version")
 	switch e := m["err"].(type) {
 	case string:
-		p.errText = e
+		p.errText, p.errMsg = e, e
 	case map[string]any:
+		p.errMsg, _ = e["msg"].(string)
+		p.errCode, _ = e["code"].(string)
+		if st, ok := e["stack"].([]any); ok {
+			for _, f := range st {
+				if fr, ok := f.(map[string]any); ok {
+					if own, _ := fr["own"].(bool); own {
+						p.frame, _ = fr["fn"].(string)
+						break
+					}
+				}
+			}
+		}
 		for _, k := range []string{"msg", "code", "kind"} {
 			if s, ok := e[k].(string); ok && s != "" {
 				p.errText += s + " "

@@ -565,6 +565,16 @@ build fails when the two differ.
   action's calls); the API passes it to the pipeline and streaming, whose lines carry it, and
   the web's error screens show "Reference: xxxxxxxx" with "Copy details".
 
+- **Error groups on the home (Epic 53, story 53.10).** The log index now groups every error
+  and fatal line by a fingerprint (the cloud's: the message with ids, numbers and paths
+  folded, and the first own stack frame), with its count, first and last seen, hourly counts,
+  the users it hit and its 20 most recent lines. Admins list them at `/api/admin/errors`, open
+  one at `/api/admin/errors/{fp}` and mark it seen, resolved in a version or muted
+  (`POST /api/admin/errors/{fp}/status`, each change in the audit log). A group resolved in one
+  version that happens again on a later one is new again, marked "came back". Admins get a
+  notification for a new group with 3 lines in 10 minutes or one that came back: once a group
+  a day, at most 10 a day. Groups go 30 days after they were last seen.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

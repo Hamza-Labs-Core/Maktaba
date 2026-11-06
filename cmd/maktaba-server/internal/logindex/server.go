@@ -94,6 +94,9 @@ func (ix *Index) Sweep(ctx context.Context) (int, error) {
 			_, _ = ix.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
 		}
 	}
+	if err := ix.sweepErrors(ctx, ix.ErrorRetention); err != nil {
+		return total, err
+	}
 	if total > 0 {
 		_, _ = ix.db.ExecContext(ctx, `PRAGMA incremental_vacuum(2000)`)
 	}
@@ -207,6 +210,7 @@ func (ix *Index) Handler(ready *atomic.Bool) http.Handler {
 		defer tails.Add(-1)
 		ix.tail(w, r, q)
 	})
+	ix.errorRoutes(mux)
 	return mux
 }
 

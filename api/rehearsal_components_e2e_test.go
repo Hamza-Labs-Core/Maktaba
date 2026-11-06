@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -180,6 +181,32 @@ func keptProcesses(t *testing.T, before, after []string, bundle string) []string
 		}
 	}
 	return out
+}
+
+// releaseAfter reports whether release a (0.3.83) is later than b (v0.3.82); an
+// unreadable one is not.
+func releaseAfter(a, b string) bool {
+	parse := func(v string) []int {
+		var out []int
+		for _, p := range strings.Split(strings.TrimPrefix(strings.SplitN(v, "-", 2)[0], "v"), ".") {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return nil
+			}
+			out = append(out, n)
+		}
+		return out
+	}
+	x, y := parse(a), parse(b)
+	if x == nil || y == nil {
+		return false
+	}
+	for i := 0; i < len(x) && i < len(y); i++ {
+		if x[i] != y[i] {
+			return x[i] > y[i]
+		}
+	}
+	return len(x) > len(y)
 }
 
 // keptStages is after's rows for the stages before had. A stage new with this release (a
@@ -352,7 +379,10 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 		for _, l := range c.Loops {
 			host, _, _ := strings.Cut(l, ":")
 			k := host + " " + c.ID
-			if (host == "api" || host == "streaming") && running[k] && !expected[k] {
+			// a component this release adds may run when the home's bundle has it (story
+			// 52.17's rule; the log index's notifier, 53.10, is on in Full)
+			added := releaseAfter(c.Since, r.kit.prev) && slices.Contains(c.Bundles, "full")
+			if (host == "api" || host == "streaming") && running[k] && !expected[k] && !added {
 				t.Errorf("%s runs on %s after the update; the previous release did not run it here", c.ID, host)
 			}
 		}

@@ -95,6 +95,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/search", h.proxyIndex("/search", false))
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/tail", h.proxyIndex("/tail", true))
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/around", h.proxyIndex("/around", false))
+	// error groups (story 53.10)
+	r.With(authmw.RequireAdmin).Get("/api/admin/errors", h.proxyIndex("/errors", false))
+	r.With(authmw.RequireAdmin).Get("/api/admin/errors/{fp}", h.proxyIndex("/errors/{fp}", false))
+	r.With(authmw.RequireAdmin).Post("/api/admin/errors/{fp}/status", h.errorStatus)
 	r.With(authmw.RequireAuth).Get("/api/diagnostics/export", h.UserExport)
 }
 
