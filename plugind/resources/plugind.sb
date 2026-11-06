@@ -1,0 +1,32 @@
+;; The macOS Seatbelt profile of maktaba-plugind (Epic 54, story 54.03 §2).
+;;
+;; Applied by the host to itself with sandbox_init_with_parameters, after it has bound its
+;; dispatch socket and before it reads any plugin. Parameters: PLUGINS_DIR (read), CACHE_DIR
+;; and RUN_DIR (read and write), API_SOCKET (the plugin API's unix socket, the one
+;; connection out) and DISPATCH_SOCKET (its own listener).
+;;
+;; tools/ci/tests/test_plugind_profile.py fails on any network allow other than these two
+;; unix-socket literals (T08). Nothing here may name TCP, UDP, a host or a port.
+(version 1)
+(deny default)
+
+;; the process itself: threads, its own signals and state, clocks, randomness
+(allow process-info* (target self))
+(allow signal (target self))
+(allow sysctl-read)
+(allow file-read* (literal "/dev/urandom") (literal "/dev/random") (literal "/dev/null"))
+(allow file-write-data (literal "/dev/null"))
+
+;; no new processes, ever
+(deny process-fork)
+(deny process-exec*)
+
+;; files: the plugins (read), the compile cache and the run folder (read and write)
+(allow file-read* (subpath (param "PLUGINS_DIR")))
+(allow file-read* file-write* (subpath (param "CACHE_DIR")))
+(allow file-read* file-write* (subpath (param "RUN_DIR")))
+
+;; the network: nothing, except the two unix sockets
+(deny network*)
+(allow network-outbound (remote unix-socket (path-literal (param "API_SOCKET"))))
+(allow network-inbound (local unix-socket (path-literal (param "DISPATCH_SOCKET"))))

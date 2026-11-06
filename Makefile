@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming cmd/maktaba-server cmd/maktaba-launcher shared/components shared/go/layout shared/go/pagetheme shared/go/ports shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/go/releaseverify shared/go/componentpack shared/testtier/go tools/release tools/test-budget tools/log-lint tools/affected-tests
+GO_MODULES := api streaming cmd/maktaba-server cmd/maktaba-launcher shared/components shared/plugins shared/go/layout shared/go/pagetheme shared/go/ports shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/go/releaseverify shared/go/componentpack shared/testtier/go tools/release tools/test-budget tools/log-lint tools/affected-tests
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
@@ -212,6 +212,24 @@ lint-log:  ## Story 21.1 AC-4: no runtime data concatenated into log msg.
 	@echo "==> log-lint (api/streaming/shared log sites)"
 	cd $(LOG_LINT_DIR) && go run . \
 		--dirs "$(CURDIR)/api,$(CURDIR)/streaming,$(CURDIR)/shared/log/go,$(CURDIR)/shared/health/go,$(CURDIR)/shared/metrics/go,$(CURDIR)/shared/tracing/go,$(CURDIR)/shared/errrpt/go"
+
+.PHONY: plugins-sync
+plugins-sync:  ## Epic 54: copy shared/plugins into the pipeline and regenerate the TypeScript SDK's data.
+	cp shared/plugins/manifest.schema.json shared/plugins/capabilities.toml shared/plugins/events.toml $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data/
+	cd tools/plugin-sdk/js && node scripts/gen-data.mjs
+
+.PHONY: plugins-check
+plugins-check:  ## Epic 54 (story 54.01): the copies of shared/plugins are current.
+	$(MAKE) --no-print-directory plugins-sync
+	git diff --exit-code -- $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data tools/plugin-sdk/js/src/data.generated.ts
+
+.PHONY: plugind-guests
+plugind-guests:  ## Epic 54: build the plugin host's test guests (wasm32-wasip2; rustup target add wasm32-wasip2).
+	cd plugind/guests && cargo build --locked --release --target wasm32-wasip2
+
+.PHONY: plugind-test
+plugind-test: plugind-guests  ## Epic 54 (stories 54.01-54.03): the plugin host's format, lint and tests.
+	cd plugind && cargo fmt --all --check && cargo clippy --locked --workspace --all-targets --features maktaba-plugind/escape-probes -- -D warnings && cargo test --locked --workspace
 
 .PHONY: catalog-sync
 catalog-sync:  ## Epic 51: copy the component catalog into the pipeline and rewrite the loaders' shared dump.

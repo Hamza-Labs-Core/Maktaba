@@ -184,6 +184,23 @@ build fails when the two differ.
 
 ### Added
 
+- **Plugins, part 1: the manifest, the package and a sandboxed plugin host (Epic 54, stories
+  54.01–54.03).** Nothing runs yet: no plugin can be installed until the next parts. A plugin
+  is one `.mkplugin` file (a zstd tar) holding a WebAssembly component, a `manifest.toml` and
+  English and Arabic strings. One schema (`shared/plugins/manifest.schema.json`) with one list
+  of capabilities and one list of events is read by four validators (Go, Rust, Python and the
+  JavaScript SDK) that refuse the same 49 broken manifests with the same codes and normalise
+  good ones to the same bytes. The package reader refuses paths outside the folder, links,
+  devices, unlisted files, wrong checksums and packages over 50 MB. The new
+  `maktaba-plugind` runs each plugin job in its own Wasmtime store with no network, no files
+  and no processes linked, a memory cap, fuel and a deadline (a runaway job ends within 200
+  ms of it; a crash ends its job, not the host), and forwards every plugin call, with a token
+  the plugin never sees, to the plugin API on a unix socket. The host puts itself in the
+  operating system's sandbox before it reads any plugin (a Seatbelt profile on macOS;
+  seccomp, Landlock and empty network namespaces on Linux; a capability-less AppContainer on
+  Windows) or refuses to run, and CI proves on each system that native code inside it cannot
+  open a connection, read a planted secret or start a process.
+
 - **The Player for Windows and Linux has the phone and Mac Players' sections (Epic 55).**
   After sign-in, a rail (on the right in Arabic) holds Home, Libraries, Live TV, Search and
   Profile, each with its own pages and Back (also Alt+Left and the mouse's back button). Home

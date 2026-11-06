@@ -1,0 +1,20 @@
+schema = 1
+id = "dev.example.long-summary"
+version = "0.1.0"
+plugin_api = "1.0"
+maktaba = ">0.5.0"
+licence = "proprietary"
+price = "dev.example.pro"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary_long"
+
+[[stage]]
+name = "find_silences"
+subject = "video"
+export = "run-find-silences"
+version = 3
+
+  [[stage.trigger]]
+  event = "transcript.ready"

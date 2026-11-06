@@ -1,0 +1,67 @@
+schema       = 1
+id           = "tv.maktaba.community.chapters"
+version      = "2.0.0-beta.1"
+plugin_api   = "1.0"
+maktaba      = " >= 0.6.0 ,<0.9.0 "
+platforms    = ["darwin-arm64", "linux-amd64"]
+languages    = ["ar", "en", "ar-EG"]
+licence      = "Apache-2.0 OR MIT"
+price        = "free"
+data_version = 2
+
+[strings]
+name    = "plugin.name"
+summary = "plugin.summary"
+
+[capabilities]
+required = ["library.read", "media.audio", "chapters.write"]
+optional = ["notify.admin", "plugin-data.read:dev.example.other-plugin"]
+
+[resources]
+memory_mb   = 512
+timeout_s   = 600
+fuel        = 4000000000
+scratch_mb  = 16
+concurrency = 1
+
+[[stage]]
+name        = "find_silences"
+subject     = "video"
+export      = "run-find-silences"
+version     = 3
+may_request = ["write_chapters"]
+  [[stage.trigger]]
+  event = "audio.ready"
+  [[stage.trigger]]
+  event = "video.changed"
+
+[[stage]]
+name    = "write_chapters"
+subject = "video"
+export  = "run-write-chapters"
+version = 1
+
+[[stage]]
+name    = "weekly_report"
+subject = "catalog"
+export  = "run-weekly-report"
+version = 1
+
+[[stage]]
+name    = "season_pass"
+subject = "season"
+export  = "run-season-pass"
+version = 1
+  [[stage.trigger]]
+  event = "series.changed"
+
+[[schedule]]
+stage                 = "weekly_report"
+every_minutes_setting = "report_interval"
+
+[settings]
+schema = "ui/settings.schema.json"
+
+[[panel]]
+on     = "video"
+schema = "ui/panel.json"

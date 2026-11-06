@@ -1,0 +1,37 @@
+# maktaba-plugind: the plugin host (Epic 54, stories 54.02 and 54.03).
+#
+#   crates/manifest  the manifest validator (story 54.01), the Rust reader of shared/plugins
+#   crates/core      plugind-core: the Wasmtime engine, the WIT host, limits, the import
+#                    audit, the compile cache and the dispatch protocol (a library, so the
+#                    SDK's harness runs the same code, story 54.12)
+#   crates/plugind   the maktaba-plugind binary: flags, the OS sandbox, the dispatch socket
+#
+# Wasmtime is pinned; a Wasmtime security advisory is patched within 14 days through the
+# normal release path (README §5.2). Caches recompile when the version changes (54.02 §6).
+[workspace]
+resolver = "2"
+members = ["crates/manifest", "crates/core", "crates/plugind"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+publish = false
+rust-version = "1.97"
+
+[workspace.dependencies]
+wasmtime = { version = "=50.0.1", default-features = false, features = ["cranelift", "component-model", "runtime", "std", "parallel-compilation", "wat", "addr2line", "demangle"] }
+wasmtime-wasi = { version = "=50.0.1", default-features = false, features = ["p2"] }
+wasmtime-wasi-io = { version = "=50.0.1", default-features = false, features = ["std"] }
+base64 = "0.22"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+regex = "1"
+sha2 = "0.10"
+hex = "0.4"
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = "debuginfo"
