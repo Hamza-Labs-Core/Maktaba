@@ -12,6 +12,7 @@ import (
 	subh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // defaultLicenseServer is Maktaba Cloud's API, the license server a home
@@ -43,7 +44,8 @@ func licenseRefresher(store *subscriptions.Store, v *subscriptions.Verifier, db 
 	if manage != "" {
 		manage = strings.TrimRight(manage, "/") + "/billing"
 	}
-	if v == nil {
+	if v == nil || ports.Offline() {
+		// offline (#640): no refresh from Maktaba Cloud; the licence on file stands
 		return nil, cloud, manage
 	}
 	r := &subscriptions.Refresher{
