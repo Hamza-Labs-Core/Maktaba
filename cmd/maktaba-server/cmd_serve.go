@@ -40,12 +40,13 @@ var allRoles = []supervisor.Role{
 
 func newServeCmd() *cobra.Command {
 	var (
-		role   string
-		slot   string
-		noMDNS bool
-		noWeb  bool
-		binDir string
-		graceS int
+		role    string
+		slot    string
+		noMDNS  bool
+		noWeb   bool
+		offline bool
+		binDir  string
+		graceS  int
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -65,6 +66,8 @@ In container/orchestrated deployments, start one role per container:
 				if err != nil {
 					return err
 				}
+				// #640: --offline (or MAKTABA_OFFLINE=1) stops every outbound call
+				applyOffline(&cfg, offline, os.Stderr)
 				// Epic 36 story 36.15: the move the web asked for, and the wait for a
 				// data folder whose disk is not connected yet (serve_storage.go)
 				if cfg, err = storageGate(cfg, strings.TrimSpace(strings.ToLower(role)), os.Stderr); err != nil {
@@ -93,6 +96,7 @@ In container/orchestrated deployments, start one role per container:
 	cmd.Flags().StringVar(&slot, "slot", "", "with --role tv-slot: the instance, blue|green|amber")
 	cmd.Flags().BoolVar(&noMDNS, "no-mdns", false, "disable mDNS LAN advertisement (as [server] mdns = \"off\")")
 	cmd.Flags().BoolVar(&noWeb, "no-web", false, "do not serve the embedded web UI in-process")
+	cmd.Flags().BoolVar(&offline, "offline", false, "make no outbound call: no updates, packs, model pulls, telemetry or cloud link (as MAKTABA_OFFLINE=1)")
 	cmd.Flags().StringVar(&binDir, "bin-dir", "", "directory to find sibling maktaba-api/maktaba-streaming binaries")
 	cmd.Flags().IntVar(&graceS, "shutdown-grace", 30, "seconds to let children drain on shutdown")
 	return cmd

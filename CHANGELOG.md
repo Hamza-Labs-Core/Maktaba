@@ -176,6 +176,13 @@ build fails when the two differ.
 
 ### Added
 
+- **One switch keeps a test or offline server from reaching the internet.** `maktaba-server
+  serve --offline` (or `MAKTABA_OFFLINE=1`) turns off every call the server and its parts
+  make by themselves: the update check, pack and model downloads, the language model's
+  downloads, usage data, the licence refresh and the link to Maktaba Cloud. A branch's
+  scratch stack no longer contacts GitHub. A list of every outbound call, with the setting
+  that stops it, is checked by a test, so a new one cannot be added unnoticed.
+
 - **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
   (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
   as a component, with what it needs and what it conflicts with. Admin > Components shows each
