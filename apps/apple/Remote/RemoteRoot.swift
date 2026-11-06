@@ -48,6 +48,8 @@ struct RemoteRoot: View {
                                     dismiss: { pending.dismiss() })
             }
         }
+        // what is down on the home, at the top (Epic 53 story 53.06)
+        .homeStatusStrip(client: model.client, home: model.client.home, admin: user.isAdmin)
         .environment(model)
         .task { await model.poll() }
         // asked every 12 s while the app is in front only

@@ -14,6 +14,7 @@
 
 import { CLIENT_HEADER, clientHeaderValue } from "./clientHeader";
 import { logApiFailure } from "./errorLog";
+import { noteRequestFailed } from "./homeStatus";
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
@@ -78,6 +79,8 @@ function logApiError(method: string, path: string, status: number, detail: strin
   console.error(`[api] ${method} ${where} failed (${status}): ${detail}`);
   // the log ring (Epic 53 story 53.01): the route's pattern and the status only
   logApiFailure(method, where, status);
+  // a server error or no answer: the home's status is read now (Epic 53 story 53.06)
+  noteRequestFailed(status);
 }
 
 // Epic 35 (story 35.10): a node answers 503 {code: "paused"} when its code

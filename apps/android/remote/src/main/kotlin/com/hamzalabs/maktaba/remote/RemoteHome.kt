@@ -66,6 +66,7 @@ import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.ui.AccountMenu
 import com.hamzalabs.maktaba.core.ui.ApproveTvButton
+import com.hamzalabs.maktaba.core.ui.HomeStatusHost
 import com.hamzalabs.maktaba.core.ui.PendingSignInsHost
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.widthIn
@@ -194,7 +195,10 @@ fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: Theme
     val remote = remember(client) { Remote(client, session) }
     // a TV waiting to sign in: a banner above every place, and a notification
     PendingSignInsHost(session, user, client) {
-        RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client) })
+        // what is down on the home, on top (Epic 53 story 53.06)
+        HomeStatusHost(client, admin = user.isAdmin) {
+            RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client) })
+        }
     }
 }
 
