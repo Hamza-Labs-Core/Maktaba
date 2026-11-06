@@ -126,6 +126,9 @@ type procView struct {
 	// Restarts24h: its restarts of the last 24 h; PID its running process (0: none)
 	Restarts24h int
 	PID         int
+	// FailReason: it exited with one of its FatalExits and waits, not restarted
+	// (maktaba-plugind's 78: sandbox_unavailable)
+	FailReason string
 }
 
 // restartWindow is the health's restart window (restarts_24h).
@@ -237,7 +240,8 @@ func (s *Supervisor) procViews() []procView {
 		out = append(out, procView{Role: c.proc.Role, Instance: c.proc.Instance, Component: c.proc.Component,
 			Dormant: c.proc.Dormant, Allowed: c.allowed, Wanted: c.wanted, Draining: c.draining, Once: c.proc.Once,
 			State: c.status.State, Running: c.cmd != nil && c.cmd.Process != nil, Restarts: c.status.Restarts,
-			CrashLoop: c.failed, Missing: missing, Restarts24h: len(recentRestarts(c.restartAt, s.now())), PID: c.status.PID})
+			CrashLoop: c.failed, Missing: missing, Restarts24h: len(recentRestarts(c.restartAt, s.now())), PID: c.status.PID,
+			FailReason: c.fatal})
 	}
 	return out
 }
@@ -262,6 +266,9 @@ func procPhase(p procView) (phase, reason string, ok bool) {
 	case StateStarting, StateBackoff:
 		return components.PhaseStarting, "", true
 	case StateFailed:
+		if p.FailReason != "" {
+			return components.PhaseFailed, p.FailReason, true
+		}
 		return components.PhaseFailed, reasonCrashLoop, true
 	case StateExited:
 		if p.Once {

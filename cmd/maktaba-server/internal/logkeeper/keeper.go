@@ -172,6 +172,20 @@ func (k *Keeper) keep(o Origin, raw []byte, echo []byte, mayEcho bool) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return
 	}
+	// Epic 54 (story 54.09 §3): the plugin host writes each plugin's lines as service
+	// plugin.<id>; they get segments of their own and the plugin's component, so
+	// retention and search work per plugin as for any component
+	seg := o.Service + instanceSuffix(o.Instance)
+	if o.Service == "plugins" {
+		var head struct {
+			Service string `json:"service"`
+		}
+		if json.Unmarshal(raw, &head) == nil {
+			if id, ok := pluginService(o.Service, head.Service); ok {
+				seg, o.Component = id, id
+			}
+		}
+	}
 	l := Normalize(raw, o, k.cfg.Node, k.cfg.Now())
 	switch {
 	case !mayEcho:
@@ -190,10 +204,11 @@ func (k *Keeper) keep(o Origin, raw []byte, echo []byte, mayEcho bool) {
 	var probe struct {
 		Component string `json:"component"`
 	}
-	if json.Unmarshal(l.JSON, &probe) == nil && probe.Component != "" {
+	_ = json.Unmarshal(l.JSON, &probe)
+	if probe.Component != "" {
 		comp = probe.Component
 	}
-	if err := k.segs.write(o.Service+instanceSuffix(o.Instance), l, comp); err != nil {
+	if err := k.segs.write(seg, l, comp); err != nil {
 		k.mu.Lock()
 		k.dropped[l.Level]++
 		k.mu.Unlock()
@@ -570,3 +585,21 @@ func (k *Keeper) remove(f segmentFile) {
 
 // String is for logs and tests.
 func (k *Keeper) String() string { return fmt.Sprintf("logkeeper(%s)", k.cfg.Root) }
+
+// pluginService is a plugin's segment directory: a line of the plugin host (role plugins)
+// whose service is plugin.<id> with an id of plugin id characters.
+func pluginService(role, service string) (string, bool) {
+	id, ok := strings.CutPrefix(service, "plugin.")
+	if role != "plugins" || !ok || id == "" || len(id) > 100 {
+		return "", false
+	}
+	for _, c := range id {
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '-') {
+			return "", false
+		}
+	}
+	if strings.Contains(id, "..") || strings.HasPrefix(id, ".") {
+		return "", false
+	}
+	return service, true
+}

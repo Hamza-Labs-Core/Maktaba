@@ -127,6 +127,10 @@ type Process struct {
 	// process whose binary comes with a pack installed after the boot: runtime.ollama's
 	// ollama); "" keeps Cmd's.
 	Path func() string
+	// FatalExits are exit codes that are not a crash to restart from, each with the reason
+	// the process then reads failed with (maktaba-plugind: 78, sandbox_unavailable). It
+	// is started again only when woken (its gate opens again, or a restart is asked).
+	FatalExits map[int]string
 	// Present, when set, says whether the program is on this machine now: the reconciler
 	// keeps a component whose processes all lack theirs off with not_in_payload (story
 	// 51.04 §5). nil: it is there.
