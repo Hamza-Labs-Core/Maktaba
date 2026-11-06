@@ -16,7 +16,7 @@ from maktaba_pipeline.integrations.plex import UrllibTransport
 
 pytestmark = pytest.mark.unit
 
-PLEX = {"plex_index", "plex_collection", "plex_groups"}
+PLEX = {"plex_index", "plex_collection", "plex_groups", "plex_collections_import"}
 
 
 class _Db:

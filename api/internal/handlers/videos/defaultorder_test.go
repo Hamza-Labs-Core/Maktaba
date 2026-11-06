@@ -136,8 +136,8 @@ func TestListSearchIsByRelevanceThenNewestAdded(t *testing.T) {
 
 	for name, qs := range map[string]url.Values{
 		"relevance without q": {"sort": {"relevance"}},
-		"a created_at cursor": {"q": {"go"}, "cursor": {encodeListCursor("created_at", "desc", Video{ID: orderID(1)})}},
-		"a rank out of range": {"q": {"go"}, "cursor": {encodeListCursor(sortRelevance, "desc", Video{ID: orderID(1), rank: 7})}},
+		"a created_at cursor": {"q": {"go"}, "cursor": {encodeListCursor("created_at", "desc", Video{ID: orderID(1)}, 0)}},
+		"a rank out of range": {"q": {"go"}, "cursor": {encodeListCursor(sortRelevance, "desc", Video{ID: orderID(1), rank: 7}, 0)}},
 	} {
 		if _, _, code := listPage(t, h, qs); code != http.StatusBadRequest {
 			t.Errorf("%s: status %d, want 400", name, code)

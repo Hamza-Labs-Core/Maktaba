@@ -195,16 +195,20 @@ extension PlayerScreen {
     }
 }
 
-private struct SystemPlayer: UIViewControllerRepresentable {
+struct SystemPlayer: UIViewControllerRepresentable {
     let player: AVPlayer
+    /// Epic 56: the queue's Previous, Next and Shuffle again, in the transport bar's menu.
+    var menu: [UIAction] = []
 
     func makeUIViewController(context: Context) -> AVPlayerViewController {
         let c = AVPlayerViewController()
         c.player = player
+        c.transportBarCustomMenuItems = menu
         return c
     }
 
     func updateUIViewController(_ c: AVPlayerViewController, context: Context) {
         if c.player !== player { c.player = player }
+        if c.transportBarCustomMenuItems.count != menu.count { c.transportBarCustomMenuItems = menu }
     }
 }

@@ -232,6 +232,25 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	qstr := strings.TrimSpace(q.Get("q"))
 	sort := q.Get("sort")
+	// group=series (Epic 56 story 56.04): one card per series with a
+	// matching video, the loose videos as themselves, in the series sorts
+	group := q.Get("group")
+	groupSort := ""
+	if group != "" {
+		if group != groupSeries {
+			httperror.Write(w, r, httperror.InvalidQuery("group must be series"))
+			return
+		}
+		groupSort = sort
+		if groupSort == "" {
+			groupSort = groupNewest
+		}
+		if !groupSorts[groupSort] {
+			httperror.Write(w, r, httperror.InvalidQuery("with group=series, sort must be name, newest or recent"))
+			return
+		}
+		sort = DefaultSort
+	}
 	if sort == "" {
 		// Every app's lists open newest-added first unless the person
 		// picked a sort (DefaultSort); a search, best match first.
@@ -251,7 +270,18 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.InvalidQuery("sort=random has no cursor"))
 		return
 	}
-	if _, ok := listSorts[sort]; !ok && !random && sort != sortRelevance {
+	// sort=shuffle (Epic 56 story 56.01): the seeded order a play queue
+	// pages through (shuffle.go)
+	var seed int64
+	if sort == sortShuffle {
+		n, err := strconv.ParseInt(q.Get("seed"), 10, 64)
+		if err != nil {
+			httperror.Write(w, r, httperror.InvalidQuery("sort=shuffle needs seed, a whole number"))
+			return
+		}
+		seed = n
+	}
+	if _, ok := listSorts[sort]; !ok && !random && sort != sortRelevance && sort != sortShuffle {
 		httperror.Write(w, r, &httperror.Error{
 			Type:   "https://maktaba.tv/problems/invalid-sort",
 			Title:  "invalid sort",
@@ -426,6 +456,36 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	// the filters and the scope, without the cursor: sort=plays counts the
 	// plays of these videos only
 	scope := append([]string(nil), conds...)
+	if group != "" {
+		h.listGrouped(w, r, p, scope, args, groupSort, q.Get("cursor"), limit)
+		return
+	}
+	// a library's collection mode (Epic 56 story 56.08): with no filter
+	// but the sort, hide_items shows a collection's card in place of its
+	// videos and show_both shows the cards as well; the cards come with the
+	// first page
+	var modeCards []CollectionCard
+	if lib := q.Get("library"); lib != "" && !hasGridFilter(q) {
+		mode, err := h.collectionMode(r.Context(), lib)
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("collection mode").Wrap(err))
+			return
+		}
+		if mode == "hide_items" || mode == "show_both" {
+			if q.Get("cursor") == "" {
+				if modeCards, err = h.modeCollections(r.Context(), p, lib); err != nil {
+					httperror.Write(w, r, httperror.Internal("collection cards").Wrap(err))
+					return
+				}
+			}
+			if mode == "hide_items" {
+				conds = append(conds, "id NOT IN (SELECT ci.video_id FROM collection_items ci JOIN collections c ON c.id = ci.collection_id WHERE "+
+					modeCollectionCond+" AND c.library_id = "+pidx(len(args)+1)+")")
+				args = append(args, lib)
+				scope = append(scope, conds[len(conds)-1])
+			}
+		}
+	}
 
 	// sort=relevance's rank (relevanceRank); its prefix argument comes after
 	// the filters' so the statements that read only the filters (the letters,
@@ -439,14 +499,14 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	var cur *listCursor
 	if !random {
 		var cerr *httperror.Error
-		cur, cerr = decodeListCursor(q.Get("cursor"), sort, order)
+		cur, cerr = decodeListCursor(q.Get("cursor"), sort, order, seed)
 		if cerr != nil {
 			httperror.Write(w, r, cerr)
 			return
 		}
 	}
 	if cur != nil {
-		frag, cargs, werr := cur.where(sort, order, rank, len(args)+1)
+		frag, cargs, werr := cur.where(sort, order, rank, len(args)+1, seed)
 		if werr != nil {
 			httperror.Write(w, r, werr)
 			return
@@ -485,7 +545,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	args = append(args, limit+1) // SELECT limit+1 to detect another page.
 	ob := "random()"
 	if !random {
-		ob = orderBy(sort, order, rank)
+		ob = orderBy(sort, order, rank, seed)
 	}
 	query := "SELECT " + cols + from + where + " ORDER BY " + ob + " LIMIT " + pidx(len(args))
 
@@ -514,11 +574,15 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		items = items[:limit]
 		// Pass it back as ?cursor= (with the same sort and order) for the next page.
 		if !random {
-			s := encodeListCursor(sort, order, items[len(items)-1])
+			s := encodeListCursor(sort, order, items[len(items)-1], seed)
 			next = &s
 		}
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": items, "next": next})
+	out := map[string]any{"items": items, "next": next}
+	if modeCards != nil {
+		out["collections"] = modeCards
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
 // Detail implements AC-2.

@@ -1,0 +1,8 @@
+{
+  "plugin.name": "Silence chapters",
+  "plugin.summary": "Adds chapters where a video goes quiet.",
+  "plugin.only_en": "Only in English",
+  "plugin.long_name": "Short",
+  "settings.threshold": "Threshold",
+  "plugin.summary_long": "A summary in English."
+}

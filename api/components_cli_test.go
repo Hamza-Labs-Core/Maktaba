@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	componentsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/components"
 	catalog "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
@@ -214,12 +215,12 @@ func TestComponentsCLIServerNotRunning(t *testing.T) {
 func TestComponentsCLIRestart(t *testing.T) {
 	var asked []string
 	var actors []components.Actor
-	restart := func(_ context.Context, id string, a components.Actor) (int, error) {
+	restart := func(_ context.Context, id string, a components.Actor) (componentsh.Restarted, error) {
 		if id == "youtube" {
-			return 0, &components.Refusal{Code: components.CodeNotRestartable, Detail: "youtube is a stages"}
+			return componentsh.Restarted{}, &components.Refusal{Code: components.CodeNotRestartable, Detail: "youtube is a stages"}
 		}
 		asked, actors = append(asked, id), append(actors, a)
-		return 2, nil
+		return componentsh.Restarted{Restarted: 2, Requested: []string{"streaming"}}, nil
 	}
 	c, _, errOut := cli(nil, false, "")
 	c.restart = restart
@@ -229,7 +230,8 @@ func TestComponentsCLIRestart(t *testing.T) {
 	c, out, _ := cli(nil, false, "")
 	c.restart = restart
 	if code := runCLI(c, "restart", "transcription", "--yes"); code != 0 || len(asked) != 1 ||
-		actors[0] != (components.Actor{By: "maya", Source: "cli"}) || !strings.Contains(out.String(), "restarted 2") {
+		actors[0] != (components.Actor{By: "maya", Source: "cli"}) || !strings.Contains(out.String(), "restarted 2") ||
+		!strings.Contains(out.String(), "asked streaming to restart its loops") {
 		t.Fatalf("exit %d, %v as %v: %s", code, asked, actors, out)
 	}
 	c, _, errOut = cli(nil, true, "y\n")

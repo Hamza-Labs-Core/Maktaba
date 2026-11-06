@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 143,
+    "endpoint": 181,
     "entity": 42,
     "epic": 56,
     "feature": 3,
@@ -7240,91 +7240,6 @@
       }
     },
     {
-      "id": "ep-get-collections-id-videos",
-      "type": "endpoint",
-      "title": "GET /collections/{id}/videos",
-      "content": "سرد الفيديوهات في مجموعة",
-      "tags": [
-        "api",
-        "Collections",
-        "get"
-      ],
-      "related": [
-        "story-56.14"
-      ],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "GET",
-        "path": "/collections/{id}/videos",
-        "tag": "Collections",
-        "operationId": "listCollectionVideos"
-      },
-      "i18n": {
-        "lang": "ar",
-        "source": {
-          "content": "8012c7ab3fc9cca3"
-        }
-      }
-    },
-    {
-      "id": "ep-post-collections-id-videos",
-      "type": "endpoint",
-      "title": "POST /collections/{id}/videos",
-      "content": "إضافة فيديو إلى مجموعة",
-      "tags": [
-        "api",
-        "Collections",
-        "post"
-      ],
-      "related": [
-        "story-56.14"
-      ],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "POST",
-        "path": "/collections/{id}/videos",
-        "tag": "Collections",
-        "operationId": "addCollectionVideo"
-      },
-      "i18n": {
-        "lang": "ar",
-        "source": {
-          "content": "ed11a28373ab9047"
-        }
-      }
-    },
-    {
-      "id": "ep-delete-collections-id-videos-videoId",
-      "type": "endpoint",
-      "title": "DELETE /collections/{id}/videos/{videoId}",
-      "content": "إزالة فيديو من مجموعة",
-      "tags": [
-        "api",
-        "Collections",
-        "delete"
-      ],
-      "related": [],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "DELETE",
-        "path": "/collections/{id}/videos/{videoId}",
-        "tag": "Collections",
-        "operationId": "removeCollectionVideo"
-      },
-      "i18n": {
-        "lang": "ar",
-        "source": {
-          "content": "658442b957bcb6b5"
-        }
-      }
-    },
-    {
       "id": "ep-get-tags",
       "type": "endpoint",
       "title": "GET /tags",
@@ -10262,6 +10177,1248 @@
         "lang": "ar",
         "source": {
           "content": "9962fb2d100450f3"
+        }
+      }
+    },
+    {
+      "id": "ep-get-collections-id-items",
+      "type": "endpoint",
+      "title": "GET /collections/{id}/items",
+      "content": "سرد الفيديوهات في مجموعة",
+      "tags": [
+        "api",
+        "Collections",
+        "get"
+      ],
+      "related": [
+        "story-9.14",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/collections/{id}/items",
+        "tag": "Collections",
+        "operationId": "listCollectionVideos"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "8012c7ab3fc9cca3"
+        }
+      }
+    },
+    {
+      "id": "ep-post-collections-id-items",
+      "type": "endpoint",
+      "title": "POST /collections/{id}/items",
+      "content": "إضافة فيديو إلى مجموعة",
+      "tags": [
+        "api",
+        "Collections",
+        "post"
+      ],
+      "related": [
+        "story-9.14",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/collections/{id}/items",
+        "tag": "Collections",
+        "operationId": "addCollectionVideo"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ed11a28373ab9047"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-collections-id-items-video-id",
+      "type": "endpoint",
+      "title": "DELETE /collections/{id}/items/{video_id}",
+      "content": "إزالة فيديو من مجموعة",
+      "tags": [
+        "api",
+        "Collections",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/collections/{id}/items/{video_id}",
+        "tag": "Collections",
+        "operationId": "removeCollectionVideo"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "658442b957bcb6b5"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-play-queues",
+      "type": "endpoint",
+      "title": "POST /me/play-queues",
+      "content": "إنشاء قائمة انتظار تشغيل من مكتبة أو سلسلة أو موسم أو مجموعة أو قائمة تشغيل",
+      "tags": [
+        "api",
+        "Play queues",
+        "post"
+      ],
+      "related": [
+        "story-56.1",
+        "story-56.2",
+        "story-56.11",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/play-queues",
+        "tag": "Play queues",
+        "operationId": "createPlayQueue"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "2f930803dcc53ece"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-play-queues-current",
+      "type": "endpoint",
+      "title": "GET /me/play-queues/current",
+      "content": "آخر قائمة انتظار تشغيل استخدمها المستخدم، من أي جهاز",
+      "tags": [
+        "api",
+        "Play queues",
+        "get"
+      ],
+      "related": [
+        "story-56.1",
+        "story-56.11"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/play-queues/current",
+        "tag": "Play queues",
+        "operationId": "getCurrentPlayQueue"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f8a430ac440c14ba"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-play-queues-id",
+      "type": "endpoint",
+      "title": "GET /me/play-queues/{id}",
+      "content": "نافذة من قائمة انتظار تشغيل",
+      "tags": [
+        "api",
+        "Play queues",
+        "get"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/play-queues/{id}",
+        "tag": "Play queues",
+        "operationId": "getPlayQueue"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "a6bb0ba39740b05a"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-me-play-queues-id",
+      "type": "endpoint",
+      "title": "DELETE /me/play-queues/{id}",
+      "content": "حذف قائمة انتظار تشغيل",
+      "tags": [
+        "api",
+        "Play queues",
+        "delete"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/play-queues/{id}",
+        "tag": "Play queues",
+        "operationId": "deletePlayQueue"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "68d8bb626dc6d1d5"
+        }
+      }
+    },
+    {
+      "id": "ep-put-me-play-queues-id-current",
+      "type": "endpoint",
+      "title": "PUT /me/play-queues/{id}/current",
+      "content": "تعيين العنصر الحالي في قائمة انتظار التشغيل",
+      "tags": [
+        "api",
+        "Play queues",
+        "put"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/play-queues/{id}/current",
+        "tag": "Play queues",
+        "operationId": "movePlayQueue"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "711c01810ea2d9f6"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-play-queues-id-items",
+      "type": "endpoint",
+      "title": "POST /me/play-queues/{id}/items",
+      "content": "التشغيل تاليًا أو الإضافة إلى قائمة انتظار التشغيل",
+      "tags": [
+        "api",
+        "Play queues",
+        "post"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/play-queues/{id}/items",
+        "tag": "Play queues",
+        "operationId": "addPlayQueueItems"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0fe03fd858fb7b50"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-play-queues-id-reshuffle",
+      "type": "endpoint",
+      "title": "POST /me/play-queues/{id}/reshuffle",
+      "content": "خلط قائمة انتظار التشغيل من جديد بعد عنصرها الحالي",
+      "tags": [
+        "api",
+        "Play queues",
+        "post"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/play-queues/{id}/reshuffle",
+        "tag": "Play queues",
+        "operationId": "reshufflePlayQueue"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "c144356568764533"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-playlists",
+      "type": "endpoint",
+      "title": "GET /me/playlists",
+      "content": "قوائم تشغيل المستخدم",
+      "tags": [
+        "api",
+        "Playlists",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.9",
+        "story-56.10",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/playlists",
+        "tag": "Playlists",
+        "operationId": "listPlaylists"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "64e6f0ba49fa1460"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-playlists",
+      "type": "endpoint",
+      "title": "POST /me/playlists",
+      "content": "إنشاء قائمة تشغيل، يدوية أو ذكية",
+      "tags": [
+        "api",
+        "Playlists",
+        "post"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.9",
+        "story-56.10",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/playlists",
+        "tag": "Playlists",
+        "operationId": "createPlaylist"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "b61764e024bd288b"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-playlists-id",
+      "type": "endpoint",
+      "title": "GET /me/playlists/{id}",
+      "content": "قائمة تشغيل ومقاطعها",
+      "tags": [
+        "api",
+        "Playlists",
+        "get"
+      ],
+      "related": [
+        "story-56.9",
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/playlists/{id}",
+        "tag": "Playlists",
+        "operationId": "getPlaylist"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d9bd1944936cb42d"
+        }
+      }
+    },
+    {
+      "id": "ep-patch-me-playlists-id",
+      "type": "endpoint",
+      "title": "PATCH /me/playlists/{id}",
+      "content": "إعادة تسمية قائمة تشغيل أو تغيير قواعدها",
+      "tags": [
+        "api",
+        "Playlists",
+        "patch"
+      ],
+      "related": [
+        "story-56.9",
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PATCH",
+        "path": "/me/playlists/{id}",
+        "tag": "Playlists",
+        "operationId": "updatePlaylist"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "b45723cccbd24d3b"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-me-playlists-id",
+      "type": "endpoint",
+      "title": "DELETE /me/playlists/{id}",
+      "content": "حذف قائمة تشغيل",
+      "tags": [
+        "api",
+        "Playlists",
+        "delete"
+      ],
+      "related": [
+        "story-56.9",
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/playlists/{id}",
+        "tag": "Playlists",
+        "operationId": "deletePlaylist"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "4d16163362d42d6c"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-playlists-id-items",
+      "type": "endpoint",
+      "title": "GET /me/playlists/{id}/items",
+      "content": "مقاطع قائمة تشغيل",
+      "tags": [
+        "api",
+        "Playlists",
+        "get"
+      ],
+      "related": [
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/playlists/{id}/items",
+        "tag": "Playlists",
+        "operationId": "listPlaylistItems"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "04405dadf8f38762"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-playlists-id-items",
+      "type": "endpoint",
+      "title": "POST /me/playlists/{id}/items",
+      "content": "إضافة مقاطع إلى قائمة تشغيل",
+      "tags": [
+        "api",
+        "Playlists",
+        "post"
+      ],
+      "related": [
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/playlists/{id}/items",
+        "tag": "Playlists",
+        "operationId": "addPlaylistItems"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "b6530a3deea38958"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-me-playlists-id-items-video-id",
+      "type": "endpoint",
+      "title": "DELETE /me/playlists/{id}/items/{video_id}",
+      "content": "إزالة مقطع من قائمة تشغيل",
+      "tags": [
+        "api",
+        "Playlists",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/playlists/{id}/items/{video_id}",
+        "tag": "Playlists",
+        "operationId": "removePlaylistItem"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "78c671f91bf512e8"
+        }
+      }
+    },
+    {
+      "id": "ep-put-me-playlists-id-order",
+      "type": "endpoint",
+      "title": "PUT /me/playlists/{id}/order",
+      "content": "إعادة ترتيب قائمة تشغيل",
+      "tags": [
+        "api",
+        "Playlists",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/playlists/{id}/order",
+        "tag": "Playlists",
+        "operationId": "orderPlaylist"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "bc56d4ec526cdbf7"
+        }
+      }
+    },
+    {
+      "id": "ep-get-home",
+      "type": "endpoint",
+      "title": "GET /home",
+      "content": "صفوف الرئيسية للمستخدم",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-16.2",
+        "story-25.27",
+        "story-31.3",
+        "story-42.2",
+        "story-42.5",
+        "story-42.7",
+        "story-42.10",
+        "story-50.13",
+        "story-50.15",
+        "story-50.16",
+        "story-50.19",
+        "story-50.21",
+        "story-50.35",
+        "story-51.9",
+        "story-51.11",
+        "story-51.16",
+        "story-51.18",
+        "story-52.17",
+        "story-53.1",
+        "story-53.6",
+        "story-53.16",
+        "story-54.15",
+        "story-54.19",
+        "story-54.20",
+        "story-55.1",
+        "story-55.3",
+        "story-56.3",
+        "story-56.8",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/home",
+        "tag": "Browse",
+        "operationId": "getHome"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "28444895d965a997"
+        }
+      }
+    },
+    {
+      "id": "ep-get-home-featured",
+      "type": "endpoint",
+      "title": "GET /home/featured",
+      "content": "المقطع المميّز في الرئيسية",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/home/featured",
+        "tag": "Browse",
+        "operationId": "getFeatured"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "df4a3edefeb20fac"
+        }
+      }
+    },
+    {
+      "id": "ep-put-home-featured",
+      "type": "endpoint",
+      "title": "PUT /home/featured",
+      "content": "تعيين المقطع المميّز في الرئيسية (للمشرف)",
+      "tags": [
+        "api",
+        "Browse",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/home/featured",
+        "tag": "Browse",
+        "operationId": "setFeatured"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "dcd480ccdbdb60c6"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-summary",
+      "type": "endpoint",
+      "title": "GET /libraries/summary",
+      "content": "مكتبات المستخدم مع أعدادها",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/summary",
+        "tag": "Browse",
+        "operationId": "getLibrariesSummary"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "2ed3efddcc2d4636"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-hub",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/hub",
+      "content": "صفوف المكتبة: تبويب المقترحات",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.8",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/hub",
+        "tag": "Browse",
+        "operationId": "getLibraryHub"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "09c6d2cd176646a3"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-series",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/series",
+      "content": "تبويب السلاسل في المكتبة",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.4",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/series",
+        "tag": "Browse",
+        "operationId": "listLibrarySeries"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e54236873bbee55f"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-collections",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/collections",
+      "content": "تبويب المجموعات في المكتبة",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.6",
+        "story-56.8",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/collections",
+        "tag": "Browse",
+        "operationId": "listLibraryCollections"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "37183189c021e450"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-collections-kind-gid",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/collections/{kind}/{gid}",
+      "content": "مقاطع مجموعة موضوع أو مجموعة مقاطع",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/collections/{kind}/{gid}",
+        "tag": "Browse",
+        "operationId": "getAutoCollection"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "b153e041b61aecb2"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-categories",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/categories",
+      "content": "متحدثو المكتبة ومواضيعها ولغاتها وسنواتها",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.5"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/categories",
+        "tag": "Browse",
+        "operationId": "getLibraryCategories"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "de3b8f844b2877bd"
+        }
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-plex-missing",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/plex-missing",
+      "content": "عناصر مجموعات Plex للمكتبة غير الموجودة في مكتبة (للمشرف)",
+      "tags": [
+        "api",
+        "Libraries",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/plex-missing",
+        "tag": "Libraries",
+        "operationId": "listPlexMissing"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "20b85d615924c469"
+        }
+      }
+    },
+    {
+      "id": "ep-get-videos-facets",
+      "type": "endpoint",
+      "title": "GET /videos/facets",
+      "content": "ما تعرضه تصفيات الشبكة",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.5",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/videos/facets",
+        "tag": "Browse",
+        "operationId": "getVideoFacets"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e9d1c2043a9368a9"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-videos-id",
+      "type": "endpoint",
+      "title": "GET /me/videos/{id}",
+      "content": "حالة مقطع واحد عند المستخدم",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/videos/{id}",
+        "tag": "Browse",
+        "operationId": "getMyVideo"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "46f18e49963ed44d"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-watched",
+      "type": "endpoint",
+      "title": "POST /me/watched",
+      "content": "تعليم مقاطع كمُشاهَدة أو غير مُشاهَدة",
+      "tags": [
+        "api",
+        "Browse",
+        "post"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/watched",
+        "tag": "Browse",
+        "operationId": "markWatched"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "47ecd02db85b24eb"
+        }
+      }
+    },
+    {
+      "id": "ep-post-me-favorites",
+      "type": "endpoint",
+      "title": "POST /me/favorites",
+      "content": "إضافة مقاطع إلى المفضلة أو إزالتها منها",
+      "tags": [
+        "api",
+        "Browse",
+        "post"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/favorites",
+        "tag": "Browse",
+        "operationId": "markFavorites"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "b7d9926f665104ad"
+        }
+      }
+    },
+    {
+      "id": "ep-get-me-pinned-libraries",
+      "type": "endpoint",
+      "title": "GET /me/pinned-libraries",
+      "content": "مكتبات المستخدم المثبّتة",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/pinned-libraries",
+        "tag": "Browse",
+        "operationId": "getPinnedLibraries"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d906bf3391658626"
+        }
+      }
+    },
+    {
+      "id": "ep-put-me-pinned-libraries",
+      "type": "endpoint",
+      "title": "PUT /me/pinned-libraries",
+      "content": "تثبيت مكتبات في الرئيسية بترتيب",
+      "tags": [
+        "api",
+        "Browse",
+        "put"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/pinned-libraries",
+        "tag": "Browse",
+        "operationId": "setPinnedLibraries"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ecd5a5378873d04b"
+        }
+      }
+    },
+    {
+      "id": "ep-get-series",
+      "type": "endpoint",
+      "title": "GET /series",
+      "content": "السلاسل التي يراها المستخدم",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.3",
+        "story-26.6",
+        "story-26.10",
+        "story-56.1",
+        "story-56.4",
+        "story-56.6",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series",
+        "tag": "Series",
+        "operationId": "listSeries"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "13d7f8f5a0fb8ef9"
+        }
+      }
+    },
+    {
+      "id": "ep-get-series-id",
+      "type": "endpoint",
+      "title": "GET /series/{id}",
+      "content": "سلسلة",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.3",
+        "story-26.6",
+        "story-26.10",
+        "story-56.1",
+        "story-56.4",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series/{id}",
+        "tag": "Series",
+        "operationId": "getSeries"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "bc90390f9fbba7b5"
+        }
+      }
+    },
+    {
+      "id": "ep-patch-series-id",
+      "type": "endpoint",
+      "title": "PATCH /series/{id}",
+      "content": "تعديل سلسلة (للمشرف)",
+      "tags": [
+        "api",
+        "Series",
+        "patch"
+      ],
+      "related": [
+        "story-26.3",
+        "story-26.6",
+        "story-26.10",
+        "story-56.1",
+        "story-56.4",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PATCH",
+        "path": "/series/{id}",
+        "tag": "Series",
+        "operationId": "updateSeries"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d7df1d6618e8bee7"
+        }
+      }
+    },
+    {
+      "id": "ep-get-series-id-episodes",
+      "type": "endpoint",
+      "title": "GET /series/{id}/episodes",
+      "content": "مواسم السلسلة وحلقاتها، مع الحلقة التالية للمشاهدة",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.10",
+        "story-56.1",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series/{id}/episodes",
+        "tag": "Series",
+        "operationId": "listSeriesEpisodes"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "35940f0ddad8a164"
+        }
+      }
+    },
+    {
+      "id": "ep-get-series-id-missing",
+      "type": "endpoint",
+      "title": "GET /series/{id}/missing",
+      "content": "الحلقات الناقصة من سلسلة",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series/{id}/missing",
+        "tag": "Series",
+        "operationId": "listSeriesGaps"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "f729a04b91d78fad"
+        }
+      }
+    },
+    {
+      "id": "ep-post-collections-id-duplicate",
+      "type": "endpoint",
+      "title": "POST /collections/{id}/duplicate",
+      "content": "نسخ مجموعة كمجموعة مختارة (للمشرف)",
+      "tags": [
+        "api",
+        "Collections",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/collections/{id}/duplicate",
+        "tag": "Collections",
+        "operationId": "duplicateCollection"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "2d09f7dbbeb4b8f0"
         }
       }
     },

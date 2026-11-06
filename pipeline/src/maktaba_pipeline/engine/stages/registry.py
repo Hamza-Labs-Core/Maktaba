@@ -56,6 +56,7 @@ CORE_MODULES: dict[str, str] = {
     "thumb_small": "maktaba_pipeline.engine.stages.thumb_small",
     "review_pages": "maktaba_pipeline.engine.stages.review_pages",
     "topic_collections": "maktaba_pipeline.engine.stages.topic_collections",
+    "youtube_collections": "maktaba_pipeline.engine.stages.youtube_collections",
     "promo_links": "maktaba_pipeline.engine.stages.promo_links",
     "clip_groups": "maktaba_pipeline.engine.stages.clip_groups",
     "link": "maktaba_pipeline.engine.stages.link",

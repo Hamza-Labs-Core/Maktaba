@@ -59,7 +59,17 @@ type Library struct {
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	Warnings  []string        `json:"warnings,omitempty"`
+	// CollectionMode is how the library grid shows collections (Epic 56
+	// story 56.08, slot 0193): tab_only, hide_items or show_both.
+	CollectionMode string `json:"collection_mode,omitempty"`
 }
+
+// Collection modes of a library.
+const (
+	CollectionModeTabOnly   = "tab_only"
+	CollectionModeHideItems = "hide_items"
+	CollectionModeShowBoth  = "show_both"
+)
 
 // CreateRequest is the POST body — name + roots are required.
 type CreateRequest struct {
@@ -70,9 +80,10 @@ type CreateRequest struct {
 
 // PatchRequest is the PATCH body; all fields optional.
 type PatchRequest struct {
-	Name     *string         `json:"name,omitempty"`
-	Roots    *[]string       `json:"roots,omitempty"`
-	Settings json.RawMessage `json:"settings,omitempty"`
+	Name           *string         `json:"name,omitempty"`
+	Roots          *[]string       `json:"roots,omitempty"`
+	Settings       json.RawMessage `json:"settings,omitempty"`
+	CollectionMode *string         `json:"collection_mode,omitempty"`
 }
 
 // Handler bundles handler dependencies. DB is mandatory; PathChecker
@@ -165,6 +176,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/libraries/manage", h.Manage)
 	r.Get("/api/libraries/folders", h.Folders)
 	r.Get("/api/libraries/{id}/impact", h.Impact)
+	r.Get("/api/libraries/{id}/plex-missing", h.PlexMissing)
 	r.Post("/api/libraries/{id}/merge", h.Merge)
 	r.Post("/api/libraries/{id}/empty-trash", h.EmptyTrash)
 }
@@ -358,8 +370,8 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	var rootsArr stringArray
 	var settingsRaw []byte
 	err = tx.QueryRowContext(r.Context(), `
-		SELECT id, name, roots, settings, created_at, updated_at FROM libraries WHERE id=$1
-	`, id).Scan(&cur.ID, &cur.Name, &rootsArr, &settingsRaw, &cur.CreatedAt, &cur.UpdatedAt)
+		SELECT id, name, roots, settings, created_at, updated_at, collection_mode FROM libraries WHERE id=$1
+	`, id).Scan(&cur.ID, &cur.Name, &rootsArr, &settingsRaw, &cur.CreatedAt, &cur.UpdatedAt, &cur.CollectionMode)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			httperror.Write(w, r, httperror.NotFound("library "+id))
@@ -370,6 +382,16 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	cur.Roots = rootsArr
 
+	if req.CollectionMode != nil {
+		switch *req.CollectionMode {
+		case CollectionModeTabOnly, CollectionModeHideItems, CollectionModeShowBoth:
+			cur.CollectionMode = *req.CollectionMode
+		default:
+			httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "collection_mode",
+				Message: "tab_only, hide_items or show_both"}}))
+			return
+		}
+	}
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
@@ -430,8 +452,8 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 
 	now := h.now()
 	_, err = tx.ExecContext(r.Context(), `
-		UPDATE libraries SET name=$1, roots=$2, settings=$3, updated_at=$4 WHERE id=$5
-	`, cur.Name, stringArray(cur.Roots), string(merged), now, id)
+		UPDATE libraries SET name=$1, roots=$2, settings=$3, updated_at=$4, collection_mode=$6 WHERE id=$5
+	`, cur.Name, stringArray(cur.Roots), string(merged), now, id, cur.CollectionMode)
 	if err != nil {
 		if isUniqueViolation(err, "name") {
 			httperror.Write(w, r, &httperror.Error{
@@ -458,6 +480,9 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Settings) > 0 {
 		changed = append(changed, "settings")
+	}
+	if req.CollectionMode != nil {
+		changed = append(changed, "collection_mode")
 	}
 	WriteAudit(r.Context(), h.DB, EventSettingsChanged, ActorOf(p), id, map[string]any{
 		"fields": changed, "name": cur.Name, "roots": cur.Roots,
@@ -678,8 +703,8 @@ func (h *Handler) loadLibrary(ctx context.Context, id string) (Library, error) {
 	var rootsArr stringArray
 	var settings []byte
 	err := h.DB.QueryRowContext(ctx, `
-		SELECT id, name, roots, settings, created_at, updated_at FROM libraries WHERE id=$1
-	`, id).Scan(&lib.ID, &lib.Name, &rootsArr, &settings, &lib.CreatedAt, &lib.UpdatedAt)
+		SELECT id, name, roots, settings, created_at, updated_at, collection_mode FROM libraries WHERE id=$1
+	`, id).Scan(&lib.ID, &lib.Name, &rootsArr, &settings, &lib.CreatedAt, &lib.UpdatedAt, &lib.CollectionMode)
 	if err != nil {
 		return Library{}, err
 	}

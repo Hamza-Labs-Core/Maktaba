@@ -27,7 +27,7 @@ enum LibrariesTab: String, CaseIterable, Identifiable {
 
 /// A library's tabs.
 enum LibraryTab: String, CaseIterable, Identifiable {
-    case videos, series
+    case videos, series, collections, playlists
     var id: String { rawValue }
 }
 
@@ -56,6 +56,13 @@ final class LibraryModel {
     private(set) var series: [LibrarySeries] = []
     private var seriesNext: Int? = 0
     private(set) var seriesLoaded = false
+
+    /// The grid's view as a library queue's filters (Epic 56: Play and Shuffle play it).
+    var queueFilters: [String: String] {
+        var q = VideoQuery(library: id, sort: sort, language: language, speaker: speaker)
+        q.limit = 60
+        return q.queueFilters
+    }
 
     init(client: APIClient, id: String, signedOut: @escaping () -> Void) {
         self.client = client

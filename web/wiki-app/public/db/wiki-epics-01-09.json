@@ -3599,6 +3599,8 @@
         "ep-get-collections-id",
         "ep-patch-collections-id",
         "ep-delete-collections-id",
+        "ep-get-collections-id-items",
+        "ep-post-collections-id-items",
         "story-7.9",
         "story-9.13"
       ],
@@ -3612,7 +3614,9 @@
         "POST /collections",
         "GET /collections/{id}",
         "PATCH /collections/{id}",
-        "DELETE /collections/{id}"
+        "DELETE /collections/{id}",
+        "GET /collections/{id}/items",
+        "POST /collections/{id}/items"
       ],
       "db_tables": [
         "collection_items"

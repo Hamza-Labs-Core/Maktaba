@@ -30,6 +30,20 @@ import com.hamzalabs.maktaba.tv.R
 import com.hamzalabs.maktaba.tv.playback.TvPlayback
 import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
+import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.unit.dp
+import androidx.media3.common.Player
+import com.hamzalabs.maktaba.core.queue.PlayQueueModel
+import com.hamzalabs.maktaba.core.queue.QueueItem
+import com.hamzalabs.maktaba.tv.ui.screens.library.PlaybackPrefs
+import com.hamzalabs.maktaba.tv.ui.screens.library.QueueBar
+import com.hamzalabs.maktaba.tv.ui.screens.library.UpNextCard
+import com.hamzalabs.maktaba.tv.ui.screens.library.upNextState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Full screen playback. Media3's [PlayerView] is the transport (play/pause, seek with the
@@ -46,6 +60,9 @@ fun PlayerScreen(
     startMs: Long,
     onBack: () -> Unit,
     signedOut: () -> Unit,
+    /** The server queue this video plays in (Epic 56), and how to play another of its items. */
+    queue: PlayQueueModel? = null,
+    onQueueItem: (QueueItem) -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -64,6 +81,38 @@ fun PlayerScreen(
         onDispose { lifecycle.removeObserver(observer) }
     }
 
+    // Epic 56 stories 56.02 and 56.11: the queue's Previous / Next / Shuffle again, and Up next
+    var barOpen by remember(video) { mutableStateOf(false) }
+    var next by remember(video) { mutableStateOf<QueueItem?>(null) }
+    var cancelled by remember(video) { mutableStateOf(false) }
+    var upNext by remember(video) { mutableStateOf<Int?>(null) }
+    val autoplay = remember { PlaybackPrefs.autoplay(context) }
+    fun go(move: suspend PlayQueueModel.() -> QueueItem?) {
+        val q = queue ?: return
+        scope.launch { runCatching { q.move() }.getOrNull()?.let(onQueueItem) }
+    }
+    LaunchedEffect(video, queue) {
+        if (queue == null) return@LaunchedEffect
+        var endedAt: Long? = null
+        while (true) {
+            delay(500)
+            val p = playback.player ?: continue
+            val dur = p.duration
+            if (dur <= 0) continue
+            val ended = p.playbackState == Player.STATE_ENDED
+            if (ended && endedAt == null) endedAt = System.currentTimeMillis()
+            val remaining = (dur - p.currentPosition) / 1000.0
+            val state = upNextState(remaining, endedAt?.let { (System.currentTimeMillis() - it) / 1000.0 }, autoplay)
+            if (state != null && next == null && !cancelled) next = runCatching { queue.peekNext() }.getOrNull()
+            upNext = if (cancelled || next == null) null else state
+            if (state == 0 && next != null && !cancelled) {
+                go { next() }
+                return@LaunchedEffect
+            }
+            if (ended && next == null && cancelled) return@LaunchedEffect
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val player = playback.player
         if (player != null) {
@@ -80,6 +129,13 @@ fun PlayerScreen(
                         // the remote's keys go to the transport; Back leaves (Compose's BackHandler)
                         setOnKeyListener { _, code, event ->
                             if (code == KeyEvent.KEYCODE_BACK) return@setOnKeyListener false
+                            if (queue != null && event.action == KeyEvent.ACTION_DOWN) {
+                                when (code) {
+                                    KeyEvent.KEYCODE_MEDIA_NEXT -> { go { next() }; return@setOnKeyListener true }
+                                    KeyEvent.KEYCODE_MEDIA_PREVIOUS -> { go { previous() }; return@setOnKeyListener true }
+                                    KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_INFO -> { barOpen = !barOpen; return@setOnKeyListener true }
+                                }
+                            }
                             if (event.action == KeyEvent.ACTION_DOWN && !isControllerFullyVisible) showController()
                             dispatchMediaKeyEvent(event)
                         }
@@ -87,8 +143,28 @@ fun PlayerScreen(
                 },
                 update = { view ->
                     if (view.player !== player) view.player = player
-                    if (!view.hasFocus()) view.requestFocus()
+                    // the queue bar and the Up next card take focus while shown
+                    if (!view.hasFocus() && !barOpen && upNext == null) view.requestFocus()
                 },
+            )
+        }
+        val nextItem = next
+        val left = upNext
+        if (nextItem != null && left != null) {
+            UpNextCard(
+                nextItem, left,
+                onPlayNow = { go { next() } },
+                onCancel = { cancelled = true; upNext = null },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(48.dp),
+            )
+        }
+        if (barOpen && queue != null) {
+            QueueBar(
+                shuffled = queue.doc?.shuffle == true,
+                onPrevious = { barOpen = false; go { previous() } },
+                onNext = { barOpen = false; go { next() } },
+                onReshuffle = { barOpen = false; scope.launch { runCatching { queue.reshuffle() } } },
+                modifier = Modifier.align(Alignment.TopCenter).padding(32.dp),
             )
         }
         val problem = playback.problem
