@@ -91,6 +91,15 @@ on:
   push:
     tags:
       - 'v*'
+  # auto-tag.yml starts it on each tag it makes (a tag pushed with GITHUB_TOKEN starts no
+  # push run): `gh workflow run <this> --ref vX.Y.Z -f tag=vX.Y.Z`. The tag guard refuses a
+  # dispatched run whose ref is not that tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The v* tag to release (dispatch with --ref set to it)"
+        required: true
+        type: string
 
 permissions:
   contents: read

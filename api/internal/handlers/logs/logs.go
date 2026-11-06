@@ -107,6 +107,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.With(authmw.RequireAdmin).Put("/api/admin/logs/retention", h.proxyConfig("/config/logs", EventRetentionChanged))
 	r.With(authmw.RequireAdmin).Post("/api/admin/logs/level", h.proxyConfig("/config/logs/level", EventDetailedLogs))
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/users", h.users)
+	// the dashboards (story 53.12)
+	r.With(authmw.RequireAdmin).Get("/api/admin/dashboards/{board}", h.dashboard)
 	r.With(authmw.RequireAuth).Get("/api/diagnostics/export", h.UserExport)
 }
 

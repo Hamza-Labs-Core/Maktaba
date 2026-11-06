@@ -4401,3 +4401,58 @@ button.mkt-video__hero {
     display: none;
   }
 }
+
+/* Epic 53 story 53.12: dashboards */
+.mkt-dash__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-block: 0.5rem;
+}
+.mkt-dash__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: 1rem;
+}
+.mkt-dash__ptitle {
+  font-size: 1rem;
+  margin: 0 0 0.5rem;
+}
+.mkt-chart {
+  margin: 0;
+  position: relative;
+}
+.mkt-chart__svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.mkt-chart__axis {
+  stroke: var(--color-border, #8884);
+}
+.mkt-chart__cursor {
+  stroke: var(--color-border, #8884);
+  stroke-dasharray: 2 2;
+}
+.mkt-chart__tip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+.mkt-chart__legend {
+  list-style: none;
+  padding: 0;
+  margin: 0.25rem 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 0.8rem;
+}
+.mkt-chart__swatch {
+  display: inline-block;
+  width: 0.75rem;
+  height: 0.2rem;
+  margin-inline-end: 0.25rem;
+  vertical-align: middle;
+}
