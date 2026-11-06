@@ -272,6 +272,10 @@ async def claim_for_pool(
                 await db.execute(
                     "SELECT pg_advisory_xact_lock(hashtext($1))", f"maktaba.pool:{pool}"
                 )
+                if pool == PLUGINS_POOL:
+                    names = await _under_plugin_caps(db, names)
+                    if not names:
+                        return None
                 claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names, URGENT_PRIORITY)
         else:
             claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names, URGENT_PRIORITY)
@@ -292,6 +296,29 @@ async def claim_for_pool(
             if not cand["urgent"]:
                 await db.execute(_CLAIM_SQLITE_SHARE, f"pool:{pool}", due)
     return row_to_job(claimed) if claimed is not None else None
+
+
+#: Epic 54: the third-party plugins' pool, where each plugin's own concurrency caps its share
+PLUGINS_POOL = "plugins"
+
+_PLUGIN_BUSY_PG = """
+SELECT s.stage
+FROM job_stages s
+JOIN plugin_installs i ON s.extension = 'plugin:' || i.plugin_id
+WHERE s.stage = ANY($1::text[])
+  AND (SELECT COUNT(*) FROM processing_jobs j JOIN job_stages s2 ON s2.stage = j.stage
+       WHERE s2.extension = s.extension AND j.state IN ('claimed', 'running'))
+      >= COALESCE((i.manifest->'resources'->>'concurrency')::int, 2)
+"""
+
+
+async def _under_plugin_caps(db: DBConn, names: list[str]) -> list[str]:
+    """The stages among ``names`` whose plugin runs fewer jobs than its
+    ``resources.concurrency`` (story 54.06 §2): read under the pool's lock, so two
+    claimers cannot both take the last slot."""
+    rows = await db.fetch(_PLUGIN_BUSY_PG, names)
+    full = {str(r["stage"]) for r in rows}
+    return [n for n in names if n not in full]
 
 
 # --------------------------------------------------------------------------- rows

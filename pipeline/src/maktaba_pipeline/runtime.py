@@ -64,12 +64,13 @@ from .engine.workers import (
     stable_hostname,
 )
 from .extensions import discover
-from .extensions.store import ensure_rows, load_state
+from .extensions.store import ExtensionState, ensure_rows, load_state
 from .log import get_logger
 from .log.tasks import watch as watch_task
 from .pipeline.heartbeat import DEFAULT_HEARTBEAT_SEC, heartbeat_for
 from .pipeline.reaper import Reaper
 from .pipeline.runner import ClaimLoop, WorkerConfig, default_worker_id, install_signal_handlers
+from .plugins.loader import load_installed as load_plugins
 
 __all__ = [
     "Database",
@@ -632,12 +633,23 @@ async def _start_engine(
     if not is_node:
         await ensure_rows(database, extensions)
     states = {e.manifest.name: await load_state(database, e) for e in extensions}
+    # Epic 54 (story 54.06): installed plugins' stages, from their manifests only (no
+    # plugin code is ever imported here); on and off is the components runner's gate
+    plugin_exts: list[Any] = [] if is_node else list(await load_plugins(database))
+    for p in plugin_exts:
+        states[p.manifest.name] = ExtensionState(p.manifest.name, True, {}, True)
+    extensions = [*extensions, *plugin_exts]
     graph = build_full_graph(extensions)
     register_extension_impls(extensions, states)
 
     async def extension_states() -> dict[str, Any]:
         # read again at each pass of the components' leader (an extension switched since)
-        return {e.manifest.name: await load_state(database, e) for e in extensions}
+        return {
+            e.manifest.name: states[e.manifest.name]
+            if e in plugin_exts
+            else await load_state(database, e)
+            for e in extensions
+        }
 
     # Epic 51: the components' gates, read before the sync and the first selection, so a
     # restarted worker never claims (nor the sync turns back on) a stage that is off

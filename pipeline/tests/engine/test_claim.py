@@ -237,3 +237,50 @@ async def test_resuming_a_paused_job_is_not_a_new_attempt(db: Database) -> None:
     )
     job = await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"])
     assert job is not None and job.attempts == job.max_attempts + 1  # unchanged, no error
+
+
+@pytest.mark.asyncio
+async def test_a_plugin_runs_at_most_its_concurrency(db: Database) -> None:
+    """Epic 54 story 54.06 T05: a plugin with concurrency 1 never runs two jobs at once,
+    whatever the plugins pool's size; another plugin is not held back by it."""
+    import json
+
+    await db.execute(
+        "INSERT INTO worker_pools (pool, label, scope, size, default_size)"
+        " VALUES ('plugins', 'Plugins', 'global', 8, 8)"
+        " ON CONFLICT (pool) DO UPDATE SET size = 8"
+    )
+    for pid, stage, conc in (
+        ("dev.example.one", "p_00000001_work", 1),
+        ("dev.example.two", "p_00000002_work", 2),
+    ):
+        await db.execute(
+            "INSERT INTO job_stages (stage, label, subject_kinds, pool, lane, extension)"
+            " VALUES ($1, $1, '{video}', 'plugins', 'media', $2)",
+            stage,
+            f"plugin:{pid}",
+        )
+        await db.execute(
+            "INSERT INTO plugin_installs (plugin_id, version, digest, path, manifest)"
+            " VALUES ($1, '1.0.0', 'd', '/x', $2::jsonb)",
+            pid,
+            json.dumps({"resources": {"concurrency": conc}}),
+        )
+    await _videos(db, 5, stage="p_00000001_work")
+    await _videos(db, 5, stage="p_00000002_work")
+    got = await asyncio.gather(
+        *[
+            claim_for_pool(
+                db, worker_id=f"w{i}", pool="plugins", stages=["p_00000001_work"], scope="global"
+            )
+            for i in range(4)
+        ]
+    )
+    assert len([g for g in got if g is not None]) == 1
+    two = [
+        await claim_for_pool(
+            db, worker_id=f"x{i}", pool="plugins", stages=["p_00000001_work", "p_00000002_work"]
+        )
+        for i in range(4)
+    ]
+    assert sorted(j.stage for j in two if j is not None) == ["p_00000002_work", "p_00000002_work"]

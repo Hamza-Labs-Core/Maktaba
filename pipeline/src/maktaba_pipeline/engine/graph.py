@@ -11,6 +11,7 @@ HTTP clients.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Literal
@@ -219,6 +220,9 @@ class PoolDef:
     default_size: int | None
 
 
+#: the plugins pool's default size: a quarter of the home's cores, at least one
+PLUGINS_POOL_SIZE = max(1, (os.cpu_count() or 1) // 4)
+
 POOLS: tuple[PoolDef, ...] = (
     PoolDef("nas_read", "NAS reads", "global", 2, 2),
     PoolDef("cpu", "CPU", "per_worker", None, None),
@@ -245,6 +249,9 @@ POOLS: tuple[PoolDef, ...] = (
     PoolDef("repairs", "Repairs", "global", 1, 1),
     # Epic 47: a library's conversion to MP4 (ffmpeg plus a full decode), one at a time
     PoolDef("convert", "Convert to MP4", "global", 1, 1),
+    # Epic 54 (story 54.06 §2): third-party plugin stages, run in maktaba-plugind; each
+    # plugin's resources.concurrency caps its share (claim.py)
+    PoolDef("plugins", "Plugins", "global", PLUGINS_POOL_SIZE, PLUGINS_POOL_SIZE),
 )
 
 
