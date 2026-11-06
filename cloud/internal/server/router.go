@@ -105,13 +105,23 @@ func WithLenientReadiness(l *LenientReadiness) RouterOption {
 	return func(o *routerOptions) { o.lenient = l }
 }
 
-// LenientReadiness is the relay role's readiness.
+// LenientReadiness is the relay role's readiness. Its database checks run in
+// the background (every second) and /readyz answers from the last one at
+// once: a probe never waits on a database that is away (lib/pq's connect does
+// not stop with its context, so a ping of a vanished database takes its whole
+// connect timeout, longer than the edge's health check: found by the
+// rehearsal's db-blip, where both relay processes left the edge's rotation).
 type LenientReadiness struct {
 	Warm      func() bool   // the relay knows homes it can serve without the database
 	MaxOutage time.Duration // default 5 min
+	Every     time.Duration // the background check's period (default 1 s)
 	now       func() time.Time
 
+	once      sync.Once
 	mu        sync.Mutex
+	up        bool
+	atHead    bool
+	lastErr   string
 	downSince time.Time
 }
 
@@ -132,21 +142,57 @@ func (l *LenientReadiness) clock() time.Time {
 	return time.Now()
 }
 
-func (l *LenientReadiness) handler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// fast, so the edge's health check (1–2 s) gets the answer during an
-		// outage instead of timing out and taking the relay out of rotation
-		// (the rehearsal's db-blip)
-		ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
-		defer cancel()
-		w.Header().Set("Content-Type", "application/json")
-		if err := pool.Ping(ctx); err != nil {
-			l.mu.Lock()
-			if l.downSince.IsZero() {
-				l.downSince = l.clock()
+// check pings the database and, when it answers, checks the migrations.
+func (l *LenientReadiness) check(pool *db.Pool, mig *db.Migrator) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	err := pool.Ping(ctx)
+	atHead := false
+	if err == nil {
+		atHead, _ = mig.AtHead(ctx)
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.up, l.atHead = err == nil, atHead
+	if err != nil {
+		l.lastErr = err.Error()
+		if l.downSince.IsZero() {
+			l.downSince = l.clock()
+		}
+	} else {
+		l.lastErr, l.downSince = "", time.Time{}
+	}
+}
+
+func (l *LenientReadiness) start(pool *db.Pool, mig *db.Migrator) {
+	l.once.Do(func() {
+		l.check(pool, mig)
+		go func() {
+			every := l.Every
+			if every <= 0 {
+				every = time.Second
 			}
-			down := l.clock().Sub(l.downSince)
-			l.mu.Unlock()
+			tk := time.NewTicker(every)
+			defer tk.Stop()
+			for range tk.C {
+				l.check(pool, mig)
+			}
+		}()
+	})
+}
+
+func (l *LenientReadiness) handler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		l.start(pool, mig)
+		w.Header().Set("Content-Type", "application/json")
+		l.mu.Lock()
+		up, atHead, lastErr := l.up, l.atHead, l.lastErr
+		var down time.Duration
+		if !l.downSince.IsZero() {
+			down = l.clock().Sub(l.downSince)
+		}
+		l.mu.Unlock()
+		if !up {
 			maxOutage := l.MaxOutage
 			if maxOutage <= 0 {
 				maxOutage = 5 * time.Minute
@@ -156,14 +202,10 @@ func (l *LenientReadiness) handler(pool *db.Pool, mig *db.Migrator) http.Handler
 				return
 			}
 			w.WriteHeader(http.StatusServiceUnavailable)
-			_ = json.NewEncoder(w).Encode(map[string]any{"status": "down", "reason": "db_unreachable", "error": err.Error()})
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "down", "reason": "db_unreachable", "error": lastErr})
 			return
 		}
-		l.mu.Lock()
-		l.downSince = time.Time{}
-		l.mu.Unlock()
-		atHead, err := mig.AtHead(ctx)
-		if err != nil || !atHead {
+		if !atHead {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "down", "reason": "migrations_behind"})
 			return
@@ -171,6 +213,9 @@ func (l *LenientReadiness) handler(pool *db.Pool, mig *db.Migrator) http.Handler
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	}
 }
+
+// Recheck runs the background check now (tests).
+func (l *LenientReadiness) Recheck(pool *db.Pool, mig *db.Migrator) { l.check(pool, mig) }
 
 func readyzHandler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

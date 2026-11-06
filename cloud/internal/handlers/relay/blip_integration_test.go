@@ -237,7 +237,9 @@ func TestRelayReadinessDegrades(t *testing.T) {
 	server.SetReadinessClock(rd, func() time.Time { return clock })
 	mig := db.NewMigrator(w.pool, migrations.FS, ".")
 	r := server.NewRouter(slog.New(slog.DiscardHandler), w.pool, mig, server.BuildInfo{}, nil, server.WithLenientReadiness(rd))
+	rd.Every = time.Hour // the test runs each check itself
 	probe := func() (int, map[string]any) {
+		rd.Recheck(w.pool, mig)
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 		var out map[string]any
