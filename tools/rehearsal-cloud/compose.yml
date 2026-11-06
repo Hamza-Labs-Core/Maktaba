@@ -34,7 +34,7 @@ x-relay: &relay
 
 x-relay-env: &relay-env
   MAKTABA_ENV: rehearsal
-  MAKTABA_CLOUD_LISTEN_ADDR: 0.0.0.0:8443
+  MAKTABA_CLOUD_LISTEN_ADDR: "0.0.0.0:8443"
   MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@10.50.0.10:5432/maktaba?sslmode=disable
   MAKTABA_CLOUD_PUBLIC_URL: http://relay.test
   MAKTABA_CLOUD_RELAY_PUBLIC_HOST: relay.test
@@ -66,7 +66,7 @@ services:
       <<: *relay-env
       MAKTABA_NODE_ID: a-blue
       MAKTABA_CLOUD_RELAY_ID: a-blue
-      MAKTABA_CLOUD_RELAY_PEER_ADDR: 10.50.0.11:8444
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: "10.50.0.11:8444"
     networks:
       private:
         ipv4_address: 10.50.0.11
@@ -77,7 +77,7 @@ services:
       <<: *relay-env
       MAKTABA_NODE_ID: a-green
       MAKTABA_CLOUD_RELAY_ID: a-green
-      MAKTABA_CLOUD_RELAY_PEER_ADDR: 10.50.0.12:8444
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: "10.50.0.12:8444"
     networks:
       private:
         ipv4_address: 10.50.0.12
