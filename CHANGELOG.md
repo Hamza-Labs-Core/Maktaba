@@ -255,6 +255,14 @@ build fails when the two differ.
   and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
   `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
   Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
+- **The cloud rehearsal: Maktaba Cloud's failover and deploy paths are proven in CI before
+  they reach a server (Epic 50, story 50.06).** A new workflow runs the cloud's cluster in
+  Docker (two relay processes behind Caddy, Postgres, 1,000 simulated homes and a stream
+  generator) and breaks it on purpose: a relay process stopped mid-stream (every home moved
+  in 12 s, no request failed) and the database killed for 15 s (no request failed, metering
+  within 1 %). The later failover, deploy and restore scenarios have their places and join as
+  their stories land. A cloud deploy is refused unless the rehearsal passed on its commit.
+  `docs/cloud-rehearsal.md` says how to run one scenario locally.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

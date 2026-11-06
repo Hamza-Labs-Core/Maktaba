@@ -7,9 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"net/http"
+	"net/http/httptest"
+	"strings"
+
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 )
 
 // idleConn is a tunnel connection that carries nothing until it is closed.
@@ -110,5 +115,20 @@ func TestRelayReadiness(t *testing.T) {
 	cfg.Relay.ReadyzStrict = true
 	if relayReadiness(cfg, cache) != nil {
 		t.Error("relay.readyz_strict")
+	}
+}
+
+// Story 50.06: a relay whose registry is shutting down answers /readyz 503
+// draining, so the edge sends new tunnels and requests to the other process.
+func TestRelayReadyzWhileDraining(t *testing.T) {
+	reg := relaypkg.NewRegistry()
+	r := server.NewRouter(slog.New(slog.DiscardHandler), nil, nil, server.BuildInfo{}, nil, relayRouterOptions(config.Config{}, nil, reg)...)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	reg.Shutdown(ctx, relaypkg.DrainOptions{}, 1, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "draining") {
+		t.Errorf("draining relay: %d %s", rec.Code, rec.Body.String())
 	}
 }

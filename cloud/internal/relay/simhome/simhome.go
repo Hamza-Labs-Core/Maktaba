@@ -189,7 +189,7 @@ func Start(i int, endpoint, api string, o Options) *Home {
 		cloudlink.LegacyAgent(sup)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &Home{ID: id, Slug: slug, Sup: sup, cancel: cancel, done: make(chan struct{})}
+	h := &Home{ID: id, Slug: slug, Sup: sup, cancel: cancel, done: make(chan struct{})} // ID: what it dials as
 	go func() {
 		defer close(h.done)
 		_ = sup.Run(ctx)
