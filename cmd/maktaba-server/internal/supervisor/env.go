@@ -149,6 +149,16 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
 	}
 
+	// The log key (Epic 53 story 53.01): every role names a user in its lines by
+	// user_h, the id's hash under it. Made here on the first start that needs it; a
+	// key that cannot be made leaves the variable out, and the roles then write no
+	// user at all. An operator's own MAKTABA_LOG_KEY is kept.
+	if os.Getenv("MAKTABA_LOG_KEY") == "" {
+		if err := ensureLogKey(LogKeyPath()); err == nil {
+			add("MAKTABA_LOG_KEY", LogKeyPath())
+		}
+	}
+
 	// Linked accounts (Epic 42 story 42.7): on the home that runs the relay
 	// agent, the api reads the agent's identity file (the cloud's pinned
 	// assertion key) and reports its linked cloud accounts through the agent.

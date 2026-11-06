@@ -68,6 +68,8 @@ services:
       MAKTABA_CLOUD_PUBLIC_URL: ${MAKTABA_CLOUD_PUBLIC_URL}
       MAKTABA_CLOUD_RELAY_PUBLIC_HOST: ${RELAY_DOMAIN}
       MAKTABA_CLOUD_TOKEN_SECRET: ${MAKTABA_CLOUD_TOKEN_SECRET}
+      # the shared logger hashes account ids with it (Epic 53 story 53.01; setup.sh makes it)
+      MAKTABA_LOG_KEY: /etc/maktaba/cloud/secrets/log.key
       # --- api-role secrets that have env overrides (ignored by relay,
       #     wired here so the same stack can run --role api unchanged) ---
       MAKTABA_CLOUD_BILLING_PROVIDER: ${BILLING_PROVIDER:-none}

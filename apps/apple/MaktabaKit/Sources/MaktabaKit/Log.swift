@@ -29,6 +29,13 @@ public enum Log {
         let lines = launchLines(subsystem: subsystem, info: bundle.infoDictionary ?? [:], arguments: CommandLine.arguments)
         session.info("\(lines.info, privacy: .public)")
         session.debug("\(lines.debug, privacy: .public)")
+        event("info", "app_launched")
+    }
+
+    /// Appends one shared-schema line to the app's on-device ring (Epic 53 story 53.01,
+    /// `LogRing`): `msg` a snake_case event name, `attrs` scrubbed with the shared list.
+    public static func event(_ level: String, _ msg: String, _ attrs: [String: Any] = [:]) {
+        LogRing.shared?.write(level: level, msg: msg, attrs: attrs)
     }
 
     /// `launched`'s two lines: "launched <bundle id> <version> (<build>)" (info) and "launch
@@ -57,6 +64,7 @@ public enum Log {
         let w = "\(what)"
         let kind = "\(f.kind)"
         logger.error("\(w, privacy: .public) failed: \(kind, privacy: .public) status=\(f.status ?? 0, privacy: .public) type=\(f.slug ?? "-", privacy: .public)")
+        event("error", "screen_failed", ["where": w, "kind": kind, "status": f.status ?? 0, "type": f.slug ?? "-"])
     }
 
     /// The request was cancelled because the screen that asked moved on (a search typed

@@ -50,6 +50,13 @@ func TestMain(m *testing.M) {
 	nvidiaSMI = func() ([]byte, error) { return nil, errors.New("no nvidia-smi in the tests") }
 	// ...nor its pipeline's Python (TestSTTProbe asks the test binary)
 	sttInstalled = func(string) bool { return true }
+	// ...nor its keys directory: a log key is made only under a test's own MAKTABA_CONFIG
+	ensureLogKey = func(p string) error {
+		if os.Getenv("MAKTABA_CONFIG") == "" {
+			return errors.New("no log key outside a test's own config directory")
+		}
+		return EnsureLogKey(p)
+	}
 	// ...nor for the children the tests start (they inherit the environment)
 	dir, err := os.MkdirTemp("", "maktaba-nodecfg-")
 	if err != nil {

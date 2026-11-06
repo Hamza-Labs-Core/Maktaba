@@ -160,6 +160,15 @@ catalog:
   # Epic 52 (story 52.16): the Hunspell languages' block and words, from their list
   - 'tools/ci/hunspell_catalog.py'
   - 'tools/release/packs/hunspell-languages.toml'
+  # Epic 53 (story 53.01): the log line schema, the shared redaction list and its copies
+  - 'shared/log/schema/**'
+  - 'shared/redact/**'
+  - 'tools/log-schema/**'
+  - 'shared/log/go/redact_rules.json'
+  - 'pipeline/src/maktaba_pipeline/log/redact_rules.json'
+  - 'web/src/lib/redactRules.json'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/RedactRules.swift'
+  - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/diagnostics/RedactRules.kt'
 
 # ---- unit (_unit.yml) -----------------------------------------------------------------
 

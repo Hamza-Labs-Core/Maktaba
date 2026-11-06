@@ -20,6 +20,9 @@ import (
 // seedRing builds a ring buffer with a few representative lines.
 func seedRing(t *testing.T) *mlog.RingBuffer {
 	t.Helper()
+	// lines name a user by user_h, their hash under the log key (Epic 53 story 53.01)
+	mlog.SetUserHashKey([]byte("0123456789abcdef0123456789abcdef"))
+	t.Cleanup(func() { mlog.SetUserHashKey(nil) })
 	rb := mlog.NewRingBuffer(100)
 	lg := mlog.NewLoggerWithRing(mlog.Options{Service: "api", Env: "prod", Version: "v0"}, rb)
 	lg.Info("startup")
@@ -151,10 +154,10 @@ func TestUserExportScopesToOwnLogs(t *testing.T) {
 	if err := json.Unmarshal(bundle["api-logs.jsonl"], &apiLogs); err != nil {
 		t.Fatalf("api-logs: %v", err)
 	}
-	if strings.Contains(apiLogs, "u-bob") {
+	if strings.Contains(apiLogs, "bob hit") || strings.Contains(apiLogs, mlog.HashUser("u-bob")) {
 		t.Errorf("alice's scoped export leaked bob's lines:\n%s", apiLogs)
 	}
-	if !strings.Contains(apiLogs, "u-alice") {
+	if !strings.Contains(apiLogs, "alice did a thing") || strings.Contains(apiLogs, "u-alice") {
 		t.Errorf("alice's own line missing from scoped export:\n%s", apiLogs)
 	}
 	// The server's own lines (no user_id) are an admin's: they name other users'
@@ -246,4 +249,24 @@ func keys(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// Epic 53 story 53.01: a line is the user's when it names them by user_h (or by user_id,
+// on a line from before); one that does not parse is no one's.
+func TestOwnedByHashOrOldID(t *testing.T) {
+	h := mlog.UserHash([]byte("0123456789abcdef0123456789abcdef"), "u-alice")
+	for line, want := range map[string]bool{
+		`{"msg":"x","user_h":"` + h + `"}`:        true,
+		`{"msg":"x","user_id":"u-alice"}`:         true,
+		`{"msg":"x","user_h":"0000000000000000"}`: false,
+		`{"msg":"x"}`:      false,
+		`not json u-alice`: false,
+	} {
+		if got := ownedBy([]byte(line), "u-alice", h); got != want {
+			t.Errorf("ownedBy(%s) = %v, want %v", line, got, want)
+		}
+	}
+	if ownedBy([]byte(`{"user_h":""}`), "u-alice", "") {
+		t.Error("no key: an empty user_h is no one's")
+	}
 }

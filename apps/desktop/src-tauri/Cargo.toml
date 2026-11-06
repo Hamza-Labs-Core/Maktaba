@@ -36,6 +36,9 @@ tauri-plugin-deep-link = "2"
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Epic 53 story 53.01: the shared redaction list's patterns (redact.rs); the version the
+# lock already holds
+regex = "1"
 # The server agent installs the home's update orders itself on Windows (agent_orders.rs):
 # it checks the installer as tauri's updater does (minisign, the key and signature
 # base64-wrapped), with the versions tauri-plugin-updater already pulls in.
