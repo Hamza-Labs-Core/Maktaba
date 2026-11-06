@@ -273,3 +273,100 @@ def test_the_hook_never_fails_the_session(monkeypatch: pytest.MonkeyPatch, capsy
     monkeypatch.setattr(sys, "stdin", __import__("io").StringIO("not json"))
     assert hook.main() == 0
     assert capsys.readouterr().out == ""
+
+
+# ---- review fixes: secret shapes, snapshot edges, the hook's coverage and fetch -------
+
+SECRETS = [
+    "POSTGRES_PASSWORD=hunter2hunter2",
+    'export MAKTABA_PG_PASSWORD="s3cr3tpass"',
+    '{"password": "hunter2hunter2"}',
+    "client_secret: 9f8e7d6c5b4a3f2e",
+    "github_pat_11ABCDEFG0123456789_abcdefghijklmnopqrstuvwxyz",
+    "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+    "token=0a1b2c3d4e5f6a7b",
+    "ASIAQWERTYUIOPASDFGH",
+    "https://user:pass@example.com/x",
+    "redis://:pw@cache:6379/0",
+    "password: hunter2hunter2",
+]
+
+PROSE = [
+    "password: regenerated",
+    "The password: rotated, then the token: refreshed.",
+    "secret: `MAKTABA_PLEX_TOKEN` in the keychain",
+    "MAKTABA_PG_PASSWORD=$MAKTABA_PG_PASSWORD from the env",
+    "token=<the token> in the URL",
+    "https://example.com/x and postgres://localhost/db",
+]
+
+
+@pytest.mark.parametrize("line", SECRETS)
+def test_common_secret_shapes_are_refused(line: str) -> None:
+    assert trail.scan_text("x.md", line), line
+
+
+@pytest.mark.parametrize("line", PROSE)
+def test_prose_about_secrets_is_not_a_secret(line: str) -> None:
+    assert trail.scan_text("x.md", line) == [], line
+
+
+def test_a_stray_file_in_snapshots_is_refused_cleanly(repo: Path) -> None:
+    write(repo, "docs/trail/snapshots/README.md", "# notes\n")
+    errs = trail.check(repo)
+    assert any("snapshots/README.md" in e and "vX.Y.Z.md" in e for e in errs), errs
+
+
+def test_a_snapshot_may_name_an_issue_without_citing_it(repo: Path) -> None:
+    merge_pr(repo, 700, {"a.txt": "a", "docs/trail/events/0700-a.md": GOOD})
+    g(repo, "tag", "v0.4.0")
+    text = snapshot(repo, "v0.4.0", {"Open": "- The cache key (issue #4242). (#700)\n- Only an issue: issue #4243."})
+    errs = trail.check_snapshot("docs/trail/snapshots/v0.4.0.md", text, repo)
+    assert not any("cites #4242" in e or "cites #4243" in e for e in errs), errs
+    assert any("cites no event" in e and "#4243" in e for e in errs), errs
+
+
+def test_the_skeleton_for_an_older_tag_builds_on_the_snapshot_before_it(repo: Path) -> None:
+    merge_pr(repo, 700, {"a.txt": "a", "docs/trail/events/0700-a.md": GOOD})
+    g(repo, "tag", "v0.4.0")
+    merge_pr(repo, 701, {"b.txt": "b", "docs/trail/events/0701-b.md": GOOD.replace("700", "701")})
+    g(repo, "tag", "v0.4.1")
+    merge_pr(repo, 702, {"c.txt": "c", "docs/trail/events/0702-c.md": GOOD.replace("700", "702")})
+    g(repo, "tag", "v0.4.2")
+    write(repo, "docs/trail/snapshots/v0.4.0.md", snapshot(repo, "v0.4.0", {}))
+    write(repo, "docs/trail/snapshots/v0.4.2.md", snapshot(repo, "v0.4.2", {}, built="v0.4.0"))
+    sk = trail.skeleton("v0.4.1", repo)
+    assert "built_from: v0.4.0" in sk
+    assert "new: docs/trail/events/0701-b.md" in sk and "0702-c" not in sk.split("-->")[0]
+
+
+def test_the_hook_reads_prs_lists_from_events_only_in_git_history(repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(hook, "STATE_DIR", tmp_path / "state")
+    merge_pr(repo, 700, {"a.txt": "a"})
+    hook_repo(repo)
+    g(repo, "checkout", "-q", "-b", "trail-701")
+    write(repo, "docs/trail/events/0701-b.md", GOOD.replace("pr: 700", "pr: 701\nprs: [700]"))
+    g(repo, "add", "-A")
+    g(repo, "commit", "-qm", "event")
+    g(repo, "checkout", "-q", "main")  # the event is on a branch, not checked out
+    assert 700 in hook.covered(repo)
+    t = transcript(tmp_path / "s.jsonl", ["gh pr merge 700 --merge"])
+    assert hook.handle({"hook_event_name": "Stop", "transcript_path": str(t)}, repo) is None
+
+
+def test_a_hung_fetch_still_stamps_so_the_next_stop_skips_it(repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(hook, "STATE_DIR", tmp_path / "state")
+    calls: list[list[str]] = []
+    real = subprocess.run
+
+    def run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+        if "fetch" in cmd:
+            calls.append(cmd)
+            raise subprocess.TimeoutExpired(cmd, 15)
+        return real(cmd, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(hook.subprocess, "run", run)
+    hook.fetch_main(repo)  # does not raise
+    hook.fetch_main(repo)  # stamped: no second fetch
+    assert len(calls) == 1
+    assert (tmp_path / "state" / "last-fetch").exists()
