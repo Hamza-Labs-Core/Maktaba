@@ -1,8 +1,7 @@
--- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0192 (Epic 56, stories 56.06, 56.07, 56.08) - collections kept in step by a source,
+-- SQLite parity sibling for slot 0193 (Epic 56, stories 56.06, 56.07, 56.08) - collections kept in step by a source,
 -- and how a library shows its collections.
 --
 -- collections:
@@ -40,15 +39,15 @@ ALTER TABLE collections ADD COLUMN IF NOT EXISTS name_override TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE collections ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
+ALTER TABLE collections ADD COLUMN IF NOT EXISTS hidden_at TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE collections ADD COLUMN IF NOT EXISTS show_on_library BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE collections ADD COLUMN IF NOT EXISTS show_on_library INTEGER NOT NULL DEFAULT 0;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-ALTER TABLE collections ADD COLUMN IF NOT EXISTS show_on_home BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE collections ADD COLUMN IF NOT EXISTS show_on_home INTEGER NOT NULL DEFAULT 0;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -56,7 +55,7 @@ ALTER TABLE collections ADD COLUMN IF NOT EXISTS sort_title TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS collections_source_uidx
+CREATE UNIQUE INDEX IF NOT EXISTS collections_source_uidx
     ON collections (library_id, source_kind, source_ref) WHERE source_kind IS NOT NULL;
 -- +goose StatementEnd
 
@@ -72,7 +71,7 @@ INSERT INTO job_stages
      debounce_max_sec, max_attempts, edges, may_request, entry_for, legacy, hidden,
      external_write, write_mode, placement, enabled, disabled_reason)
 VALUES
-    ('youtube_collections', 'Collections from YouTube', ARRAY['library']::text[], 'cpu', 'seasons', 3, 1, 30, 300, 3, '[]'::jsonb, '{}'::text[], '{}'::text[], false, false, false, 'auto', 'any', true, NULL)
+    ('youtube_collections', 'Collections from YouTube', '["library"]', 'cpu', 'seasons', 3, 1, 30, 300, 3, '[]', '[]', '[]', 0, 0, 0, 'auto', 'any', 1, NULL)
 ON CONFLICT (stage) DO NOTHING;
 -- +goose StatementEnd
 
@@ -81,19 +80,32 @@ ON CONFLICT (stage) DO NOTHING;
 DELETE FROM job_stages WHERE stage = 'youtube_collections';
 -- +goose StatementEnd
 -- +goose StatementBegin
-ALTER TABLE libraries DROP COLUMN IF EXISTS collection_mode;
+ALTER TABLE libraries DROP COLUMN collection_mode;
 -- +goose StatementEnd
 -- +goose StatementBegin
 DROP INDEX IF EXISTS collections_source_uidx;
 -- +goose StatementEnd
 -- +goose StatementBegin
-ALTER TABLE collections
-    DROP COLUMN IF EXISTS sort_title,
-    DROP COLUMN IF EXISTS show_on_home,
-    DROP COLUMN IF EXISTS show_on_library,
-    DROP COLUMN IF EXISTS hidden_at,
-    DROP COLUMN IF EXISTS name_override,
-    DROP COLUMN IF EXISTS membership_hash,
-    DROP COLUMN IF EXISTS source_ref,
-    DROP COLUMN IF EXISTS source_kind;
+ALTER TABLE collections DROP COLUMN sort_title;
+-- +goose StatementEnd
+-- +goose StatementBegin
+ALTER TABLE collections DROP COLUMN show_on_home;
+-- +goose StatementEnd
+-- +goose StatementBegin
+ALTER TABLE collections DROP COLUMN show_on_library;
+-- +goose StatementEnd
+-- +goose StatementBegin
+ALTER TABLE collections DROP COLUMN hidden_at;
+-- +goose StatementEnd
+-- +goose StatementBegin
+ALTER TABLE collections DROP COLUMN name_override;
+-- +goose StatementEnd
+-- +goose StatementBegin
+ALTER TABLE collections DROP COLUMN membership_hash;
+-- +goose StatementEnd
+-- +goose StatementBegin
+ALTER TABLE collections DROP COLUMN source_ref;
+-- +goose StatementEnd
+-- +goose StatementBegin
+ALTER TABLE collections DROP COLUMN source_kind;
 -- +goose StatementEnd

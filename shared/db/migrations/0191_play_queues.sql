@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0190 (Epic 56, story 56.01) - a play queue on the server.
+-- Slot 0191 (Epic 56, story 56.01) - a play queue on the server.
 --
 --   play_queues       one queue per Play or Shuffle: its source (a library with the grid's
 --                     filters, a series, a season, a collection, a playlist or one video),
@@ -93,7 +93,7 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- the channel a library with no YouTube source looks like (slot 0175): the home's
         -- API alone writes and reads it
         'youtube_source_guesses',
-        -- play queues (slot 0190): a user's own, moved on every Next; their routes run on
+        -- play queues (slot 0191): a user's own, moved on every Next; their routes run on
         -- the home (/api/me)
         'play_queues', 'play_queue_items'
     ]::text[]

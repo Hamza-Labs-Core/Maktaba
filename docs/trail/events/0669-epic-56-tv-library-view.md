@@ -8,9 +8,9 @@ session: local_74545651-2fc4-4693-ac62-08aec457c516
 ---
 
 ## What happened
-One server play queue (`/api/me/play-queues`, slot 0190) behind every Play and Shuffle on
-the web, both TV apps and both phone Players; smart playlists (0191); collections kept in
-step from YouTube playlists and channels and from Plex (0192, two pipeline stages); a
+One server play queue (`/api/me/play-queues`, slot 0191) behind every Play and Shuffle on
+the web, both TV apps and both phone Players; smart playlists (0192); collections kept in
+step from YouTube playlists and channels and from Plex (0193, two pipeline stages); a
 library's collection mode and promoted rows; `group=series`, categories; OpenAPI for every
 library route with a coverage test. Closes #654.
 
@@ -19,9 +19,10 @@ library route with a coverage test. Closes #654.
   (`playqueue/sources.go`): the order and the access rules can never drift from the grid's.
   Shuffle over a whole library is `GET /api/videos?sort=shuffle&seed=N` (md5 of id and seed,
   paged with the list's cursor); SQLite gets `md5()` registered with the modernc driver.
-- Main took slots 0184-0189 while this was in flight (the queue engine's lock order, the
-  component restarts, Epic 52's word review in #672 and the import dry run in #678): the
-  three migrations moved twice, to 0190-0192 at the end, with SCHEMA_REV / SchemaRev at 192
+- Main took slots 0184-0190 while this was in flight (the queue engine's lock order, the
+  component restarts, Epic 52's word review in #672, the import dry run in #678 and the
+  restart table's fix in #692): the three migrations moved three times, to 0191-0193 at the
+  end, with SCHEMA_REV / SchemaRev at 193
   in the pipeline, the API and the streaming node, and the epic's spec table updated. A
   branch that adds migrations waits for the PRs holding the slots below its own: the gaps
   lint fails on an empty slot under the highest.

@@ -56,7 +56,7 @@ type Collection struct {
 	// of them (its poster mosaic). A smart one's are its query's.
 	Videos         *int64   `json:"videos,omitempty"`
 	PosterVideoIDs []string `json:"poster_video_ids,omitempty"`
-	// Epic 56 (slot 0192): a collection a pipeline stage keeps in step with
+	// Epic 56 (slot 0193): a collection a pipeline stage keeps in step with
 	// its source (youtube_playlist, youtube_channel, plex) and an admin's
 	// choices on any collection, kept across the stage's runs.
 	SourceKind    *string `json:"source_kind,omitempty"`

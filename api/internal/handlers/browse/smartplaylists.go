@@ -1,7 +1,7 @@
 package browse
 
 // Epic 56 story 56.09: smart playlists. A smart playlist (user_playlists.kind
-// 'smart', slot 0191) is a saved grid filter with a sort and a limit, kept per
+// 'smart', slot 0192) is a saved grid filter with a sort and a limit, kept per
 // user and evaluated whenever it is read: GET /api/videos run in process as its
 // owner, so its watched filter is the owner's own and it never lists a video of
 // a library the owner cannot read.

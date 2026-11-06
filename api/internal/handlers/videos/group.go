@@ -9,7 +9,7 @@ package videos
 // series card carries its episode counts, how many match, how many the caller
 // has not finished and the next one to watch in the lesson order.
 //
-// A library's collection mode (libraries.collection_mode, slot 0192) shapes
+// A library's collection mode (libraries.collection_mode, slot 0193) shapes
 // the grid when only the sort is set: hide_items shows a collection's card in
 // place of its videos, show_both shows the cards beside them. An admin's
 // collections and Plex's take part; YouTube's never replace videos (a channel

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0191 (Epic 56, story 56.09) - smart playlists.
+-- Slot 0192 (Epic 56, story 56.09) - smart playlists.
 --
 -- user_playlists.kind: 'manual' (its items are user_playlist_items) or 'smart' (a saved
 -- filter, evaluated when read: smart_query holds {libraries, filters, sort, order, limit},

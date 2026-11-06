@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0190 (Epic 56, story 56.01): play_queues and
+-- SQLite parity sibling for slot 0191 (Epic 56, story 56.01): play_queues and
 -- play_queue_items. The shuffle order md5(video id || seed) is the API's: the store
 -- registers md5() with the driver.
 --

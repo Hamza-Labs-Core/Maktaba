@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0191 (Epic 56, story 56.09): user_playlists.kind
+-- SQLite parity sibling for slot 0192 (Epic 56, story 56.09): user_playlists.kind
 -- ('manual' or 'smart') and smart_query (JSON text). SQLite cannot add a table check to
 -- an existing table, so the column checks below hold the same rules: kind is one of the
 -- two, and smart_query is set exactly when kind is 'smart'.

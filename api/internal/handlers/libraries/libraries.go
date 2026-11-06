@@ -60,7 +60,7 @@ type Library struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 	Warnings  []string        `json:"warnings,omitempty"`
 	// CollectionMode is how the library grid shows collections (Epic 56
-	// story 56.08, slot 0192): tab_only, hide_items or show_both.
+	// story 56.08, slot 0193): tab_only, hide_items or show_both.
 	CollectionMode string `json:"collection_mode,omitempty"`
 }
 
