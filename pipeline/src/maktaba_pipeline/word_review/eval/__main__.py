@@ -131,7 +131,8 @@ def main(argv: list[str] | None = None) -> int:
     _say(f"{'language':10} {'words':>6} {'wrong':>6} {'flagged':>8} {'precision':>9} {'recall':>7}")
     for lang, c in report["languages"].items():
         _say(
-            f"{lang:10} {c['words']:6} {c['wrong']:6} {c['flagged']:8} {c['precision']:9.3f} {c['recall']:7.3f}"
+            f"{lang:10} {c['words']:6} {c['wrong']:6} {c['flagged']:8}"
+            f" {c['precision']:9.3f} {c['recall']:7.3f}"
         )
     for reason, c in report["reasons"].items():
         _say(f"  {reason:24} flagged {c['flagged']:4}  precision {c['precision']:.3f}")
