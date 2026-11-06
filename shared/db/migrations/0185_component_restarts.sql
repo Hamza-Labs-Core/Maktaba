@@ -15,10 +15,12 @@
 --                       starts restarts nothing).
 --
 -- Every write moves component_meta.revision and sends NOTIFY components_changed (the same
--- trigger function as the desired rows), so a runner hears it at once. maktaba_worker may
--- read it (a joined machine's runners) and not write it.
+-- trigger function as the desired rows), so a runner hears it at once. maktaba_worker
+-- keeps the default grants of a new table (a joined machine's runners read it; tightening
+-- them would fail the previous release's worker-group check on rollback): a request only
+-- restarts loops that are on.
 --
--- Additive: one table, two triggers.
+-- Additive: one table, one trigger.
 --
 CREATE TABLE IF NOT EXISTS component_restarts (
     machine      text        NOT NULL,
@@ -35,17 +37,6 @@ CREATE TABLE IF NOT EXISTS component_restarts (
 CREATE OR REPLACE TRIGGER component_restarts_changed_trg
     AFTER INSERT OR UPDATE ON component_restarts
     FOR EACH ROW EXECUTE FUNCTION components_changed();
--- +goose StatementEnd
-
--- +goose StatementBegin
-DO $$
-BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
-        REVOKE ALL ON component_restarts FROM maktaba_worker;
-        GRANT SELECT ON component_restarts TO maktaba_worker;
-    END IF;
-END
-$$;
 -- +goose StatementEnd
 
 -- +goose Down

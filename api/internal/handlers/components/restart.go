@@ -67,7 +67,7 @@ func (x Restarter) Restart(ctx context.Context, id string, actor svc.Actor) (int
 	supLoops := slices.Contains(hosts, hostSupervisor)
 	var asked []string // the hosts asked through a restart request
 	for _, h := range hosts {
-		if h != hostSupervisor && !(local && h == x.Loops.Host()) {
+		if h != hostSupervisor && (!local || h != x.Loops.Host()) {
 			asked = append(asked, h)
 		}
 	}
