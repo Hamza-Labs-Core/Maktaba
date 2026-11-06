@@ -257,7 +257,14 @@ func (ix *Index) readAt(seg string, offs []int64) []json.RawMessage {
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return out
+		// the keeper compressed the hour between the look and the open (its .ndjson goes
+		// once the .zst is whole): the same lines are in the .zst, at the same offsets
+		if path, compressed = ix.segFile(seg); path == "" {
+			return out
+		}
+		if f, err = os.Open(path); err != nil {
+			return out
+		}
 	}
 	defer f.Close()
 	if !compressed {
