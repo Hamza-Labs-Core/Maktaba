@@ -90,6 +90,14 @@ func TestOutboundHostsAreListed(t *testing.T) {
 }
 
 func TestOffline(t *testing.T) {
+	t.Setenv(EnvOffline, "1")
+	if !Offline() {
+		t.Fatal("MAKTABA_OFFLINE=1: not offline")
+	}
+	t.Setenv(EnvOffline, "")
+	if Offline() {
+		t.Fatal("MAKTABA_OFFLINE unset: offline")
+	}
 	for v, want := range map[string]bool{"": false, "0": false, "off": false, "1": true, "true": true, "ON": true, " yes ": true} {
 		if got := OfflineFrom(func(string) string { return v }); got != want {
 			t.Errorf("%q: %v", v, got)
