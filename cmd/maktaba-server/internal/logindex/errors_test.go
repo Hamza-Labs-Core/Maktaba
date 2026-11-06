@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -195,5 +197,35 @@ func TestErrorSweepAndRoutes(t *testing.T) {
 	_ = ix.db.QueryRow(`SELECT (SELECT COUNT(*) FROM error_groups) + (SELECT COUNT(*) FROM error_hours) + (SELECT COUNT(*) FROM error_users)`).Scan(&n)
 	if n != 0 {
 		t.Errorf("30 days after it was last seen the group goes: %d rows", n)
+	}
+}
+
+// Stories 53.14 and 53.15: problem reports go after ReportRetention, crash reports' days
+// after ErrorRetention; newer ones stay.
+func TestSweepReportsAndCrashes(t *testing.T) {
+	root, now := t.TempDir(), t0
+	ix := open(t, root, &now)
+	mk := func(p string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.WriteFile(p, []byte("{}"), 0o600)
+	}
+	mk(filepath.Join(root, "reports", "1", "report.json"))
+	mk(filepath.Join(root, "reports", "2", "report.json"))
+	old := now.Add(-100 * 24 * time.Hour)
+	_ = os.Chtimes(filepath.Join(root, "reports", "1", "report.json"), old, old)
+	mk(filepath.Join(root, "crashes", now.Add(-40*24*time.Hour).Format("20060102"), "a.json"))
+	mk(filepath.Join(root, "crashes", now.Add(-time.Hour).Format("20060102"), "b.json"))
+	ix.sweepReports()
+	for p, keep := range map[string]bool{
+		filepath.Join(root, "reports", "1"): false, filepath.Join(root, "reports", "2"): true,
+		filepath.Join(root, "crashes", now.Add(-40*24*time.Hour).Format("20060102")): false,
+		filepath.Join(root, "crashes", now.Add(-time.Hour).Format("20060102")):       true,
+	} {
+		if _, err := os.Stat(p); (err == nil) != keep {
+			t.Errorf("%s kept %v, want %v", p, err == nil, keep)
+		}
 	}
 }

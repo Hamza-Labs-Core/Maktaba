@@ -39,6 +39,8 @@ import { ConnectedDevices } from "./pages/Profile/ConnectedDevices";
 import { Sessions } from "./pages/Profile/Sessions";
 import { APITokens } from "./pages/Profile/APITokens";
 import { WatchHistory } from "./pages/Profile/WatchHistory";
+import { ReportProblem } from "./pages/Profile/ReportProblem";
+import { MyReports } from "./pages/Profile/MyReports";
 import { Account } from "./pages/Profile/Account";
 import { ConnectApp } from "./pages/Profile/ConnectApp";
 import { Preferences } from "./pages/Profile/Preferences";
@@ -185,6 +187,8 @@ export function App() {
                               <Route path="/account/sessions" element={<Sessions />} />
                               <Route path="/account/tokens" element={<APITokens />} />
                               <Route path="/account/history" element={<WatchHistory />} />
+                              <Route path="/account/report" element={<ReportProblem />} />
+                              <Route path="/account/reports" element={<MyReports />} />
                               <Route path="/account/preferences/*" element={<Preferences />} />
                               <Route path="/pair" element={<Pair />} />
                               {SERVER_PAGES && serverRoutes()}

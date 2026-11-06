@@ -28,6 +28,7 @@ import { NotificationsBell } from "./NotificationsBell";
 import { updateAvailable, useUpdateStatus } from "../lib/updates";
 import { useSystemStatus } from "../lib/systemStatus";
 import { useNewErrors } from "../lib/newErrors";
+import { CrashReportsQuestion } from "./CrashReportsSetting";
 import { UpdateBanner } from "./UpdateBanner";
 import { MacPermissionsReminder } from "./MacPermissions/MacPermissionsReminder";
 import { TelemetryPrompt } from "./TelemetryPrompt";
@@ -131,6 +132,7 @@ const ADMIN = [
   { to: "/admin/updates", key: "nav.admin.updates", icon: "⟳" },
   { to: "/admin/logs", key: "nav.admin.logs", icon: "≣" },
   { to: "/admin/errors", key: "nav.admin.errors", icon: "⚠" },
+  { to: "/admin/reports", key: "nav.admin.reports", icon: "✉" },
   { to: "/admin/dashboards", key: "nav.admin.dashboards", icon: "◔" },
   { to: "/admin/devices", key: "nav.admin.devices", icon: "▤" },
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },
@@ -392,6 +394,8 @@ export function AppShell() {
           <TelemetryPrompt />
           {/* this device has no network: say so (pages that failed retry once it is back) */}
           <OfflineBanner />
+          {/* story 53.14: crash reports to the home, asked once */}
+          <CrashReportsQuestion />
           <RouteErrorBoundary resetKey={pathname}>
             {/* the server pages load on first visit (serverRoutes.tsx) */}
             <Suspense fallback={null}>
