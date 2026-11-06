@@ -208,8 +208,10 @@ async def _youtube_refresh(
     one is old enough: the library's ``settings.youtube.refresh_every_hours`` (0: only by
     hand), else every :data:`DEFAULT_SOURCE_REFRESH_HOURS` for a library with a source
     turned on (Epic 47), else the old listing-only interval."""
-    if "youtube_sync" not in graph:
-        return 0
+    from .. import offline
+
+    if "youtube_sync" not in graph or offline.offline():
+        return 0  # offline (#640): nothing to fetch a listing with
     if hours is None:
         hours = float(os.environ.get("MAKTABA_YT_REFRESH_HOURS", DEFAULT_YT_REFRESH_HOURS))
     rows = await db.fetch(

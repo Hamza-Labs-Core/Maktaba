@@ -186,6 +186,14 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **`serve --offline` also stops the pipeline's own outbound calls.** With `MAKTABA_OFFLINE=1`
+  the YouTube listings, downloads, exact dates and repairs wait (no scheduled refresh is
+  queued), the books stage looks nothing up on Wikipedia (a book not looked up yet is looked up
+  at its next run once online), enrichment makes no web search, and the spelling dictionary is
+  never downloaded. The test that lists every outbound call now reads the pipeline's code too.
+- **A spelling dictionary that fails to load after a pack update no longer stops the
+  corrections.** The second listen keeps the dictionary it was using and tries the new one again
+  later, and never downloads into a pack's folder.
 - **Turning a component back on queues its catch-up once.** A worker that started while the
   component was off could queue a second catch-up after another worker's had finished, running
   the whole time off again (or all history). A worker that loses the lead also stops reporting
