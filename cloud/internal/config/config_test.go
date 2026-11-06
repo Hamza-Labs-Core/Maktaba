@@ -202,3 +202,19 @@ func TestRelayDirectoryConfig(t *testing.T) {
 		}
 	}
 }
+
+// Story 50.05: the cache and the lenient readiness, on by default.
+func TestRelayBlipConfig(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Relay.CacheEnabled || c.Relay.ReadyzStrict {
+		t.Errorf("defaults: cache %v strict %v", c.Relay.CacheEnabled, c.Relay.ReadyzStrict)
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	_ = os.WriteFile(p, []byte("[relay]\nreadyz_strict = true\n\n[relay.cache]\nenabled = false\n"), 0644)
+	if c, err = Load(p); err != nil || c.Relay.CacheEnabled || !c.Relay.ReadyzStrict {
+		t.Errorf("from the file: %+v %v", c.Relay, err)
+	}
+}

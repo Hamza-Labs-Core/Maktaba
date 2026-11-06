@@ -147,6 +147,13 @@ type RelayConfig struct {
 	// recently it must have been seen (relay.hold_recent, default 2m).
 	HoldMax    time.Duration
 	HoldRecent time.Duration
+
+	// Riding out a database blip (story 50.05). CacheEnabled: home lookups
+	// come from a cache that outlives a failover (relay.cache.enabled,
+	// default true). ReadyzStrict: /readyz fails as soon as the database
+	// does, as the api role's (relay.readyz_strict, default false).
+	CacheEnabled bool
+	ReadyzStrict bool
 }
 
 // Default values per the bootstrap plan; the loader fills these for any
@@ -181,6 +188,7 @@ func defaultConfig() Config {
 			DrainRate:      100,
 			ShutdownGrace:  150 * time.Second,
 			HoldMax:        15 * time.Second,
+			CacheEnabled:   true,
 			HoldRecent:     2 * time.Minute,
 		},
 	}
@@ -368,6 +376,10 @@ func assign(c *Config, section, key, val string) error {
 		c.Relay.ID = val
 	case "relay.peer_addr":
 		c.Relay.PeerAddr = val
+	case "relay.cache.enabled":
+		return setBool(&c.Relay.CacheEnabled, val)
+	case "relay.readyz_strict":
+		return setBool(&c.Relay.ReadyzStrict, val)
 	case "relay.hold_max":
 		return setDur(&c.Relay.HoldMax, val)
 	case "relay.hold_recent":

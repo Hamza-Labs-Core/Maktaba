@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,7 +32,11 @@ type BuildInfo struct {
 // NewRouter returns a chi router with the standard middleware stack
 // applied and the platform health endpoints registered. Callers (the
 // api/relay role wiring) mount their own routes on top.
-func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build BuildInfo, allowedOrigins []string) *chi.Mux {
+func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build BuildInfo, allowedOrigins []string, opts ...RouterOption) *chi.Mux {
+	var o routerOptions
+	for _, f := range opts {
+		f(&o)
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.Recover(logger))
 	r.Use(middleware.RequestID)
@@ -39,7 +44,11 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 	r.Use(middleware.CORS(allowedOrigins))
 
 	r.Get("/healthz", healthzHandler(build))
-	r.Get("/readyz", readyzHandler(pool, mig))
+	if o.lenient != nil {
+		r.Get("/readyz", o.lenient.handler(pool, mig))
+	} else {
+		r.Get("/readyz", readyzHandler(pool, mig))
+	}
 	r.Get("/.well-known/maktaba-cloud-version", versionHandler(build))
 	return r
 }
@@ -54,6 +63,83 @@ func healthzHandler(build BuildInfo) http.HandlerFunc {
 			"role":     build.Role,
 			"built_at": build.BuiltAt,
 		})
+	}
+}
+
+// RouterOption configures NewRouter.
+type RouterOption func(*routerOptions)
+
+type routerOptions struct{ lenient *LenientReadiness }
+
+// WithLenientReadiness gives /readyz the relay's rule (story 50.05): a
+// database that is away for less than MaxOutage while the relay can still
+// serve (Warm) answers 200 degraded, not 503, so the edge keeps sending it
+// the homes it knows.
+func WithLenientReadiness(l *LenientReadiness) RouterOption {
+	return func(o *routerOptions) { o.lenient = l }
+}
+
+// LenientReadiness is the relay role's readiness.
+type LenientReadiness struct {
+	Warm      func() bool   // the relay knows homes it can serve without the database
+	MaxOutage time.Duration // default 5 min
+	now       func() time.Time
+
+	mu        sync.Mutex
+	downSince time.Time
+}
+
+// DownFor is how long the database has been unreachable (0: it is up).
+func (l *LenientReadiness) DownFor() time.Duration {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.downSince.IsZero() {
+		return 0
+	}
+	return l.clock().Sub(l.downSince)
+}
+
+func (l *LenientReadiness) clock() time.Time {
+	if l.now != nil {
+		return l.now()
+	}
+	return time.Now()
+}
+
+func (l *LenientReadiness) handler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		w.Header().Set("Content-Type", "application/json")
+		if err := pool.Ping(ctx); err != nil {
+			l.mu.Lock()
+			if l.downSince.IsZero() {
+				l.downSince = l.clock()
+			}
+			down := l.clock().Sub(l.downSince)
+			l.mu.Unlock()
+			maxOutage := l.MaxOutage
+			if maxOutage <= 0 {
+				maxOutage = 5 * time.Minute
+			}
+			if down < maxOutage && l.Warm != nil && l.Warm() {
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "degraded", "db": "unreachable", "down_seconds": int(down.Seconds())})
+				return
+			}
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "down", "reason": "db_unreachable", "error": err.Error()})
+			return
+		}
+		l.mu.Lock()
+		l.downSince = time.Time{}
+		l.mu.Unlock()
+		atHead, err := mig.AtHead(ctx)
+		if err != nil || !atHead {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "down", "reason": "migrations_behind"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 	}
 }
 
@@ -99,3 +185,6 @@ func DefaultOrigins(_ config.Config) []string {
 		"https://maktaba.tv",
 	}
 }
+
+// SetReadinessClock replaces l's clock (tests).
+func SetReadinessClock(l *LenientReadiness, now func() time.Time) { l.now = now }

@@ -238,6 +238,16 @@ build fails when the two differ.
   `503 home_reconnecting` with `Retry-After: 5`; a home offline longer answers
   `503 server_offline` at once (it was a 502). The relay's error pages are in Arabic too,
   right to left, by the browser's language.
+
+- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
+  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
+  each minute, and dropped at once when a plan, an address or an owner changes, through
+  database notifications sent by triggers), so a request needs no database call, and a home
+  it served in the last hour keeps playing however long the database is away. Metering is
+  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
+  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
+  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
+  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
 ### Added
 
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
