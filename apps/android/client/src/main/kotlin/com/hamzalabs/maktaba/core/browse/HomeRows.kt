@@ -60,6 +60,8 @@ data class HomeCard(
     val recommended: Boolean = false,
     val newLessons: Int? = null,
     val seriesName: String? = null,
+    /** The video's length, when known: a resume past 95% of it starts again from the start. */
+    val durationSec: Double? = null,
 ) {
     /** The list key: a series group and its first lesson's video card never collide. */
     val key: String get() = if (newLessons != null) "series:${(open as? CardOpen.Series)?.id}" else videoId
@@ -138,6 +140,7 @@ fun VideoCard.card(resume: Boolean = false): HomeCard = HomeCard(
     progress = watchedFraction?.toFloat(),
     watched = completed == true,
     resumeAtSec = if (resume) (positionSec ?: 0.0).toInt() else null,
+    durationSec = durationSec,
 )
 
 /** A Recently Added entry: a series with its new lessons (opens the series), or a video. */

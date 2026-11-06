@@ -70,33 +70,27 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
 
     suspend fun loadHistory() = first(history) {
         val page = client.watchHistory(0, HISTORY_PAGE)
-        history.more = page.size >= HISTORY_PAGE
-        page
+        Page(page, more = page.size >= HISTORY_PAGE)
     }
 
     suspend fun moreHistory() = more(history) {
         val page = client.watchHistory(history.items.size, HISTORY_PAGE)
-        history.more = page.size >= HISTORY_PAGE
-        page
+        Page(page, more = page.size >= HISTORY_PAGE)
     }
 
     suspend fun loadFavorites() = first(favorites) {
         val p = client.favorites()
-        favorites.next = p.next
-        favorites.more = p.next != null
-        p.items
+        Page(p.items, more = p.next != null, next = p.next)
     }
 
     suspend fun moreFavorites() = more(favorites) {
         val p = client.favorites(favorites.next)
-        favorites.next = p.next
-        favorites.more = p.next != null
-        p.items
+        Page(p.items, more = p.next != null, next = p.next)
     }
 
-    suspend fun loadPlaylists() = first(playlists) { client.playlists() }
+    suspend fun loadPlaylists() = first(playlists) { Page(client.playlists()) }
 
-    suspend fun loadSessions() = first(sessions) { client.signInSessions() }
+    suspend fun loadSessions() = first(sessions) { Page(client.signInSessions()) }
 
     suspend fun loadAbout() {
         homeVersion = runCatching { client.homeVersion() }.getOrNull()
@@ -112,25 +106,39 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
 
     suspend fun endSession(s: SignInSession) = remove(sessions, s) { client.endSignInSession(s.id) }
 
-    private suspend fun <T> first(list: ProfileList<T>, read: suspend () -> List<T>) {
+    /**
+     * A page read: its rows, whether more come after, and the cursor to them. The list takes
+     * the cursor only with the rows, when the answer is still fresh: a stale answer never moves
+     * it past a page the list does not have.
+     */
+    private class Page<T>(val items: List<T>, val more: Boolean = false, val next: String? = null)
+
+    private fun <T> ProfileList<T>.cursor(p: Page<T>) {
+        more = p.more
+        next = p.next
+    }
+
+    private suspend fun <T> first(list: ProfileList<T>, read: suspend () -> Page<T>) {
         val ticket = list.order.begin()
         guard(list) {
             val r = read()
             if (!list.order.fresh(ticket)) return@guard
-            list.items = r
+            list.cursor(r)
+            list.items = r.items
             list.loaded = true
             list.problem = null
         }
     }
 
-    private suspend fun <T> more(list: ProfileList<T>, read: suspend () -> List<T>) {
+    private suspend fun <T> more(list: ProfileList<T>, read: suspend () -> Page<T>) {
         if (!list.more) return
         val ticket = list.order.begin()
         guard(list) {
             val r = read()
             if (!list.order.fresh(ticket)) return@guard
+            list.cursor(r)
             val have = list.items.map(list::id).toSet()
-            list.items = list.items + r.filter { list.id(it) !in have }
+            list.items = list.items + r.items.filter { list.id(it) !in have }
         }
     }
 
