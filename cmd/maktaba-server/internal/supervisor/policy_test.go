@@ -19,6 +19,7 @@ func TestPolicyDefaults(t *testing.T) {
 		HealthyAfter: 5 * time.Minute, MaxRestarts: 5, Window: 10 * time.Minute,
 		FailedRetry: 5 * time.Minute, ProbeInterval: 10 * time.Second, ProbeTimeout: 3 * time.Second,
 		ProbeFailures: 3, StartupGrace: time.Minute, AdminAddr: "127.0.0.1:9103",
+		FailedRetries: DefaultFailedRetries, // Epic 53 story 53.05: the cut-off after 3 slow retries
 	}
 	if p != want {
 		t.Fatalf("defaults = %+v\nwant       %+v", p, want)
@@ -97,5 +98,16 @@ func TestProbeURLsAndStateURL(t *testing.T) {
 	cfg.Supervisor.AdminAddr = "off"
 	if hasKey(childEnvOK(RoleAPI, cfg), "MAKTABA_SUPERVISOR_URL") {
 		t.Error("MAKTABA_SUPERVISOR_URL set with admin_addr = off")
+	}
+}
+
+// Epic 53 story 53.05: failed_retries sets the cut-off; a negative value never cuts off.
+func TestPolicyFailedRetries(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[int]int{0: DefaultFailedRetries, 5: 5, -1: 0} {
+		p, err := PolicyFromConfig(config.SupervisorSection{FailedRetries: in})
+		if err != nil || p.FailedRetries != want {
+			t.Errorf("failed_retries = %d: %d (%v), want %d", in, p.FailedRetries, err, want)
+		}
 	}
 }

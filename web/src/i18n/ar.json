@@ -4685,6 +4685,8 @@
   "help.topic.system-health.summary": "اعرف ما يعمل وما توقف: الخدمات والعمليات والقرص والقائمة والتلفزيون والإصدار",
   "help.topic.logs.title": "السجلات",
   "help.topic.logs.summary": "اقرأ السجلات المباشرة، وصفِّ الأخطاء، وصدّر حزمة تشخيص لبلاغ عن مشكلة",
+  "help.topic.recovery.title": "الاستعادة",
+  "help.topic.recovery.summary": "اعرف ما الخطأ وأصلحه حين تكون قاعدة البيانات أو خدمة مكتبة متوقفة",
   "help.topic.audit-log.title": "سجل التدقيق",
   "help.topic.audit-log.summary": "اعرف من سجّل الدخول ومن غيّر ماذا، وصفِّ الأحداث وصدّرها",
   "help.topic.analytics.title": "التحليلات",

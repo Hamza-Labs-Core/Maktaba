@@ -55,7 +55,16 @@ type Config struct {
 	Poll           time.Duration // pending-timeout check interval (5 s)
 
 	Stdout, Stderr io.Writer
-	Now            func() time.Time
+	// LogPath is the server log the launcher appends to (--log-file), whose last lines
+	// the can't-start record keeps (Epic 53 story 53.05); "": Stderr's file, if it is one.
+	LogPath string
+	// CantStartMax early exits of the running version within CantStartWindow stop the
+	// launcher (cantstart.go): 0 is the default 3, negative never.
+	CantStartMax int
+	// PageAddr is where the can't-start page listens ("": 127.0.0.1:8088, the web port
+	// on this machine only).
+	PageAddr string
+	Now      func() time.Time
 	// Sleep waits d, or until ctx ends (false): the backoff between starts (nil: a timer;
 	// the tests record what the launcher asks for instead of timing it)
 	Sleep func(ctx context.Context, d time.Duration) bool
@@ -114,6 +123,10 @@ type launcher struct {
 	// job is what every server runs in (Windows: a kill-on-close job held for the
 	// launcher's life, kept across a server's TV handover)
 	job *runJob
+	// early are the running version's recent exits before it was up StableAfter (the
+	// can't-start cut-off, cantstart.go); safeNext starts the next serve in safe mode
+	early    []StartExit
+	safeNext bool
 }
 
 // Run starts the current release and keeps it running until ctx ends or
@@ -211,6 +224,21 @@ func (ln *launcher) loop(ctx context.Context) error {
 					continue
 				}
 			}
+		}
+		// Epic 53 story 53.05: the version that runs keeps failing before it is up
+		if !ln.isPending(ver) && ln.earlyExit(res) {
+			choice, ok := ln.cantStart(ctx, ver)
+			if !ok {
+				return nil
+			}
+			switch choice {
+			case "safe":
+				ln.safeNext = true
+			case "rollback":
+				ln.rollback(ver, "cant_start")
+			}
+			backoff = ln.cfg.BackoffInitial
+			continue
 		}
 		if res.ran >= ln.cfg.StableAfter {
 			backoff = ln.cfg.BackoffInitial
@@ -521,7 +549,13 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 			layout.EnvLauncherHandover + "=1",
 		}, updateEnv(ln.cfg.RuntimeRoot)...)
 	}
-	cmd := exec.Command(server, append([]string{"serve"}, ln.cfg.Args...)...)
+	args := append([]string{"serve"}, ln.cfg.Args...)
+	if ln.safeNext {
+		// one start in safe mode (the can't-start page's choice)
+		args = append(args, "--safe-mode")
+		ln.safeNext = false
+	}
+	cmd := exec.Command(server, args...)
 	cmd.Dir = ln.l.Root
 	cmd.Env = append(os.Environ(), env...)
 	cmd.Stdout, cmd.Stderr = ln.cfg.Stdout, ln.cfg.Stderr

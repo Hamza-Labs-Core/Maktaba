@@ -21,6 +21,10 @@ type SupervisorSection struct {
 	MaxRestarts       int    `toml:"max_restarts"`
 	MaxRestartsWindow string `toml:"max_restarts_window"`
 	FailedRetry       string `toml:"failed_retry"`
+	// FailedRetries slow retries that fail cut a child off (Epic 53 story 53.05): it
+	// stays down until someone restarts it (the recovery console) or the machine
+	// restarts. 0: the default, 3; negative: never cut off.
+	FailedRetries int `toml:"failed_retries,omitempty"`
 	// Liveness probes: every ProbeInterval, each with ProbeTimeout;
 	// ProbeFailures failures in a row kill and restart the child. No
 	// failure counts before StartupGrace unless a probe has succeeded.

@@ -36,6 +36,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
+  A quality or audio change that finished after the video was closed, or after another video
+  started, no longer leaves an unseen player playing or replaces the new video (its stream
+  session is closed instead). "Not interested" on a row's last card, and a pin, favorite or
+  watched mark made just before leaving a page, no longer undo themselves. A direct-play file
+  starts in the kept audio language. Up next stops counting after a seek back. The Quality
+  menu marks the right height when the default comes from the playback settings. A Continue
+  Watching card past 95% starts from the beginning. A removal during Load more on Favorites
+  no longer skips a page for good. A channel opened from Home's What's On Now closes when Live
+  TV is turned off, and the Live TV relay fetches only the session's own Cloudflare host.
+
 - **A component turned back on catches up even when another worker turns it on.** On a home
   with several pipeline workers, the one that turned a component's stages off was not always
   the one that turned them on again, and then the catch-up job for what the stages missed
@@ -175,6 +186,10 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **Turning a component back on queues its catch-up once.** A worker that started while the
+  component was off could queue a second catch-up after another worker's had finished, running
+  the whole time off again (or all history). A worker that loses the lead also stops reporting
+  the component as off once it is on again, so Admin > Components no longer shows it off.
 
 ### Security
 
@@ -453,6 +468,40 @@ build fails when the two differ.
   the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
   streaming and the pipeline restart theirs within seconds of the request: each loop stops
   within its grace and starts again, as a process does.
+
+- **Every part's log is kept on disk, and the home says what is down without the API or the
+  database (Epic 53, stories 53.02 and 53.03).** The supervisor now keeps each process's
+  output in its own hourly files under the data folder (`logs/segments/<service>/`, closed
+  hours compressed), filling in the service, machine and Epic 51 component of each line and
+  scrubbing it once more. Lines are kept 7 days (debug 24 hours) within 550 MB of a 1 GB
+  diagnostics cap, settable under `[logs]` in `server.toml`. When the disk runs low, debug
+  lines go first, and each part's newest warnings and errors go last. A child never waits on
+  its log, and nothing is lost when the API, Postgres or the supervisor itself restarts.
+  `server.log` keeps every line for now. The web port answers `GET /status.json` itself, with
+  no sign-in: the state of the database, the API, streaming, processing, search and log
+  search, which features are down, and a banner key. Something turned off reads `off`,
+  never `down`; a crash shows at once, a failing check after two checks. The document names
+  no host, path or version (`docs/api/status.md`).
+
+- **A recovery page and safe mode, so an admin can fix Maktaba with the database or the API down
+  (Epic 53, stories 53.04 and 53.05).** `/recovery` on the web port is served by the supervisor
+  itself, in English or Arabic. An admin gets in with a 7-day recovery pass the web app keeps
+  for them while the API is up (a cookie only `/recovery` reads, refused after a demotion,
+  deletion or sign-out everywhere), a Remote app's admin token, or the Mac's new **Open
+  recovery page** menu item (a one-time link). Five failed tries in a minute lock it for five
+  minutes. The page shows each part and component with its restarts, last exit and last
+  error, the last 15 minutes of warnings and errors from the log files, and free disk space.
+  Its buttons restart a component or everything, start or leave safe mode, roll back a
+  committed update, restore a backup (asked twice) and download diagnostics. Every action is
+  recorded and copied to the audit log when the API is back. Safe mode runs one start with
+  only the database, the API, updates and log search (desired state untouched; everything
+  else reads off with reason `boot_flag`, and `/status.json` says `mode: "safe"`). A role
+  whose crash loop survives 3 slow retries now stays down until it is restarted. When
+  Maktaba itself stops 3 times in 2 minutes before it is ready, the launcher stops starting
+  it, keeps its last lines in `start-failed.json` and serves a "Maktaba can't start" page
+  with Try again, Start in safe mode and Go back; the Mac's menu offers the same choices.
+  The "Maktaba is restarting" page now says what is down and, after a minute, links to the
+  recovery page.
 
 ### Fixed
 

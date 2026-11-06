@@ -4672,6 +4672,8 @@
   "help.topic.system-health.summary": "See what is up or down: services, processes, disk, queue, TV and version",
   "help.topic.logs.title": "Logs",
   "help.topic.logs.summary": "Read live logs, filter errors, and export a diagnostics bundle for a bug report",
+  "help.topic.recovery.title": "Recovery",
+  "help.topic.recovery.summary": "See what went wrong and fix it when the database or the Maktaba service is down",
   "help.topic.audit-log.title": "Audit log",
   "help.topic.audit-log.summary": "See who signed in and who changed what, and filter and export the events",
   "help.topic.analytics.title": "Analytics",

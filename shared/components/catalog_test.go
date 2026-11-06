@@ -303,3 +303,27 @@ func TestWordReviewComponents(t *testing.T) {
 		}
 	}
 }
+
+// Epic 53 story 53.05: safe mode's set is catalog ids, and the env turns it on.
+func TestSafeModeComponentsAreInTheCatalog(t *testing.T) {
+	cat := Default()
+	for _, id := range SafeModeComponents {
+		if id == "logs.index" {
+			continue // joins the catalog with the log index role (story 53.18, with 53.09)
+		}
+		if _, ok := cat.Get(id); !ok {
+			t.Errorf("safe mode names %s, which the catalog does not have", id)
+		}
+	}
+	if !SafeModeAllows("core.api") || SafeModeAllows("core.pipeline") {
+		t.Error("safe mode runs the api, not the pipeline")
+	}
+	t.Setenv(EnvSafeMode, "1")
+	if !SafeModeOn() {
+		t.Error("MAKTABA_COMPONENTS_SAFE_MODE=1 is safe mode")
+	}
+	t.Setenv(EnvSafeMode, "")
+	if SafeModeOn() {
+		t.Error("unset is no safe mode")
+	}
+}

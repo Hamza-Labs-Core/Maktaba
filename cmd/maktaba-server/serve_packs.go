@@ -294,6 +294,9 @@ func (v *packVenv) cleanup(ctx context.Context, id string) error {
 // packsAdmin serves the routes of this file for m (nil: a machine with no reconciler,
 // every route 503).
 type packsAdmin struct {
+	// rec is this machine's component reconciler (nil without one): /status.json reads
+	// its phases (Epic 53 story 53.03)
+	rec   *supervisor.Reconciler
 	ctx   context.Context
 	m     *packs.Manager
 	r     *packs.Runner

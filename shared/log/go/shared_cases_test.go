@@ -154,3 +154,12 @@ func BenchmarkScrub(b *testing.B) {
 		_ = Scrub(s)
 	}
 }
+
+// Epic 53 story 53.02: MAKTABA_LOG_FORMAT=json (the supervisor's) makes a dev logger
+// write JSON lines.
+func TestFormatFromTheEnvironment(t *testing.T) {
+	t.Setenv("MAKTABA_LOG_FORMAT", "json")
+	var buf bytes.Buffer
+	NewLogger(Options{Service: "api", Env: "dev", Output: &buf}).Info("hello")
+	decodeOne(t, buf.Bytes())
+}

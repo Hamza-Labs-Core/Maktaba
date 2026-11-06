@@ -31,6 +31,7 @@ export const HELP_CATEGORIES = [
       "machines",
       "system-health",
       "logs",
+      "recovery",
       "audit-log",
       "analytics",
       "cloud",

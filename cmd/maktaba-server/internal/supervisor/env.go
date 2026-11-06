@@ -14,6 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
@@ -147,6 +148,28 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// server.toml. An operator's own MAKTABA_SECRETS_KEY is kept.
 	if os.Getenv("MAKTABA_SECRETS_KEY") == "" {
 		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
+	}
+
+	// Safe mode (Epic 53 story 53.05): the roles' own runners keep their loops and stage
+	// groups off too
+	if SafeModeBoot {
+		add(components.EnvSafeMode, "1")
+	}
+
+	// The recovery console's revocation file (Epic 53 story 53.04): the api writes a
+	// demoted, deleted or signed-out-everywhere admin there; the supervisor refuses their
+	// older passes without Postgres. And the console's actions, which the api copies into
+	// audit_log when it starts.
+	if role == RoleAPI {
+		add(EnvRecoveryRevoked, RecoveryRevokedPath(cfg.StateDir()))
+		add(EnvRecoveryActions, RecoveryActionsPath(cfg.StateDir()))
+	}
+
+	// One JSON line per record (Epic 53 story 53.02): the log keeper keeps each role's
+	// fields (level, component, request ids) instead of wrapping its text. An operator's
+	// own MAKTABA_LOG_FORMAT is kept.
+	if os.Getenv("MAKTABA_LOG_FORMAT") == "" {
+		add("MAKTABA_LOG_FORMAT", "json")
 	}
 
 	// The log key (Epic 53 story 53.01): every role names a user in its lines by
