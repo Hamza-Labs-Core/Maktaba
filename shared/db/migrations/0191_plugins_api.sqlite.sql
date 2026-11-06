@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0190 (plugins: the plugin API's tables). Arrays are JSON
+-- SQLite parity sibling for slot 0191 (plugins: the plugin API's tables). Arrays are JSON
 -- text and there is no NOTIFY. SQLite cannot widen job_stages' inline length check or
 -- chapters' source check without rebuilding the tables: plugins run on a Postgres home
 -- (the API serves the plugin socket only there), so this sibling keeps the schema in
