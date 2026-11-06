@@ -112,3 +112,24 @@ func TestExtensionSecretsMovedToHomeSecretsPG(t *testing.T) {
 		t.Errorf("worker reads the moved token: %v", err)
 	}
 }
+
+// A system writer's name is not a user id: the secret is stored, with no user (the
+// cluster CA passed "cluster-ca" and its sealed copy never reached home_secrets).
+func TestPutBySystemWriterStoresNoUser(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	ctx := context.Background()
+	s := &secrets.DBStore{DB: db, Key: pgKey(t)}
+	if err := s.Put(ctx, "cluster_ca", []byte("ca"), "cluster-ca"); err != nil {
+		t.Fatalf("put by a system writer: %v", err)
+	}
+	var by *string
+	if err := db.QueryRowContext(ctx, `SELECT updated_by::text FROM home_secrets WHERE name = 'cluster_ca'`).Scan(&by); err != nil {
+		t.Fatal(err)
+	}
+	if by != nil {
+		t.Errorf("updated_by = %q, want no user", *by)
+	}
+	if got, err := s.Get(ctx, "cluster_ca"); err != nil || string(got) != "ca" {
+		t.Errorf("get = %q, %v", got, err)
+	}
+}

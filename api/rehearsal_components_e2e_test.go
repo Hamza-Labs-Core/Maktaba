@@ -2,14 +2,16 @@
 
 package main
 
-// Update-rehearsal scenario 12 (Epic 51 story 51.03; docs/update-rehearsal.md): the first
-// release with the component model changes nothing a home runs. The small seed's home on
-// the previous release, with the TV slots on, the relay off, one extension on, one stage
-// turned off by an operator and the HDHomeRun device off: the supervisor's processes,
-// job_stages, extensions and hdhr_device are the same before and after the update; the
-// seed ran once (bundle full) with the wants story 51.03 §2 gives this home; the loops
-// the previous release ran are running in component_status and no other switchable loop
-// is; a restart seeds nothing again.
+// Update-rehearsal scenario 12 (Epic 51 story 51.03; docs/update-rehearsal.md): an update
+// changes nothing a home runs. The small seed's home on the previous release, with the TV
+// slots on, the relay off, one extension on, one stage turned off by an operator and the
+// HDHomeRun device off: the supervisor's processes, job_stages, extensions and hdhr_device
+// are the same before and after the update; the components the previous release seeded
+// (v0.3.81 on: the seed ran when the seeded home was made) keep their want, generation and
+// writer, with the wants story 51.03 §2 gives this home; the loops the previous release ran
+// are running in component_status and no other switchable loop is; a restart seeds nothing
+// again. (The first seed, from a release before the component model, was rehearsed from
+// v0.3.80 when v0.3.81 was tagged; componentseed's tests keep it.)
 
 import (
 	"bufio"
@@ -204,9 +206,7 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 			"this machine, and the rehearsal's TV would meet it")
 	}
 	home, _ := r.seeded("home", profile("small"))
-	home.tvSlots = "on"
-	home.start()
-	home.waitServing(k.prev, 8*time.Minute)
+	home.startWithTV(k.prev, 8*time.Minute)
 	db := home.superDB("maktaba")
 	// the home's own choices, made on the previous release: Plex on, one stage turned off
 	// on the Queues page, the HDHomeRun device off (the relay is off: no [cloud])
@@ -224,6 +224,16 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	r.logf("before the update: %d processes, %d stages, extensions %v, hdhr %s", len(before.Processes),
 		len(before.Stages), before.Extensions, before.HDHR)
 
+	var seeded string
+	var seededBefore time.Time
+	_ = db.QueryRow(`SELECT COALESCE(seeded_release, ''), seeded_at FROM component_meta`).Scan(&seeded, &seededBefore)
+	compBefore := map[string]string{}
+	for _, row := range stringsOf(t, db, `SELECT id || ' ' || want || ' ' || generation || ' ' || COALESCE(updated_by, '') FROM components`) {
+		id, rest, _ := strings.Cut(row, " ")
+		compBefore[id] = rest
+	}
+	logFrom := len(home.log.String())
+
 	run, mon, _ := r.update(home, k.curSpec(), 20*time.Minute)
 	if run.State != "done" {
 		t.Fatalf("the update to %s ended %s: %s (steps %+v)", k.cur, run.State, run.Error, run.Steps)
@@ -240,11 +250,18 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 		t.Errorf("hdhr_device.enabled %s -> %s", before.HDHR, after.HDHR)
 	}
 
-	// the seed: once, bundle full, the wants of §2 for this home
+	// the components as the previous release left them: the seed (once, bundle full) and
+	// the owner's changes since (the TV slots on, Plex on). The update writes none of them.
+	if seeded == "" {
+		t.Fatalf("component_meta: the previous release %s did not seed the components", k.prev)
+	}
 	var seededAt time.Time
-	var bundle, release sql.NullString
-	if err := db.QueryRow(`SELECT seeded_at, bundle, seeded_release FROM component_meta`).Scan(&seededAt, &bundle, &release); err != nil {
-		t.Fatalf("component_meta: %v (not seeded?)", err)
+	var bundle sql.NullString
+	if err := db.QueryRow(`SELECT seeded_at, bundle FROM component_meta`).Scan(&seededAt, &bundle); err != nil {
+		t.Fatalf("component_meta: %v", err)
+	}
+	if !seededAt.Equal(seededBefore) {
+		t.Errorf("seeded_at moved in the update: %s -> %s", seededBefore, seededAt)
 	}
 	if bundle.String != "full" {
 		t.Errorf("bundle %q, want full", bundle.String)
@@ -262,49 +279,17 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 			t.Fatal(err)
 		}
 		wants[id], gens[id] = want, g
-		if by != "seed" {
-			t.Errorf("%s was written by %q, not the seed", id, by)
+		if was, ok := compBefore[id]; ok && was != fmt.Sprintf("%s %d %s", want, g, by) {
+			t.Errorf("%s changed in the update: %s -> %s %d %s", id, was, want, g, by)
 		}
 	}
 	rows.Close()
+	for id := range compBefore {
+		if _, ok := wants[id]; !ok {
+			t.Errorf("%s's row went in the update (it was %s)", id, compBefore[id])
+		}
+	}
 	cat := components.Default()
-	// an asset an enabled component needs and that is not on disk has no row (the seed
-	// records only what is there; with no row it reads as wanted and the packs runner
-	// installs it): this install's pipeline is the e2e's stand-in wheel, with no ML
-	// runtime, so runtime.ml is one
-	neededMissing := map[string]bool{}
-	for _, c := range cat.Components() {
-		if wants[c.ID] != "enabled" {
-			continue
-		}
-		for _, r := range cat.Requires(c.ID) {
-			for _, id := range r.AnyOf {
-				if d, ok := cat.Get(id); ok && d.Kind == components.KindAsset {
-					if _, has := wants[id]; !has {
-						neededMissing[id] = true
-					}
-				}
-			}
-		}
-	}
-	if _, has := wants["runtime.ml"]; has {
-		t.Errorf("runtime.ml seeded %s: this install has no ML runtime on disk", wants["runtime.ml"])
-	}
-	for _, c := range cat.Components() {
-		w, ok := wants[c.ID]
-		switch {
-		case !ok && neededMissing[c.ID]:
-			// left to the catalog default on purpose
-		case !ok:
-			t.Errorf("%s has no desired row", c.ID)
-		case !c.Switchable && w != "enabled":
-			t.Errorf("%s = %s, want enabled", c.ID, w)
-		case c.Kind == components.KindAsset && w == "enabled":
-			t.Errorf("asset %s enabled", c.ID)
-		case c.Kind != components.KindAsset && w == "absent":
-			t.Errorf("%s seeded absent", c.ID)
-		}
-	}
 	for id, want := range map[string]string{
 		"livetv.slots": "enabled", "livetv.inprocess": "installed", "livetv.hdhomerun": "installed",
 		"ext.plex": "enabled", "ext.dizquetv": "installed", "ext.cloudflare_stream": "installed",
@@ -376,8 +361,10 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	if n := queryInt(t, db, `SELECT count(*) FROM audit_log WHERE action = 'component.seed'`); n != 1 {
 		t.Errorf("%d seeds in the audit log, want 1", n)
 	}
-	if strings.Contains(home.log.String(), "toml_key_superseded") {
-		t.Errorf("the rehearsal's server.toml was found superseded:\n%s", grepLines(home.log.String(), "toml_key_superseded"))
+	// (the first start on the previous release found it superseded: the seeded home was
+	// made with the TV slots off, and startWithTV turned them on in the components)
+	if since := home.log.String()[logFrom:]; strings.Contains(since, "toml_key_superseded") {
+		t.Errorf("the rehearsal's server.toml was found superseded after the update:\n%s", grepLines(since, "toml_key_superseded"))
 	}
 }
 

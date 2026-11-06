@@ -32,6 +32,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // KeySize is the AES-256 key length.
@@ -218,7 +220,8 @@ func gcm(k *Key) (cipher.AEAD, error) {
 type Store interface {
 	// Get opens a secret: ErrNotFound, ErrWrongKey or ErrNoKey on failure.
 	Get(ctx context.Context, name string) ([]byte, error)
-	// Put seals and stores a secret (insert or replace).
+	// Put seals and stores a secret (insert or replace). by is the user who set it
+	// (a users.id); a system writer passes "" (any other value is stored as no user).
 	Put(ctx context.Context, name string, value []byte, by string) error
 	// Delete removes a secret; a missing one is not an error.
 	Delete(ctx context.Context, name string) error
@@ -279,8 +282,10 @@ func (s *DBStore) put(ctx context.Context, q execer, name string, value []byte, 
 	if err != nil {
 		return err
 	}
+	// updated_by is a users.id (uuid): a system writer's name ("cluster-ca") would fail
+	// the insert, so anything that is not a user id is stored as no user
 	var updatedBy any
-	if by != "" {
+	if _, err := uuid.Parse(by); err == nil {
 		updatedBy = by
 	}
 	_, err = q.ExecContext(ctx, `
