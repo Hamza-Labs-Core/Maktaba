@@ -329,7 +329,9 @@ export function pluginFindings(src) {
 
 // ---- the page ----------------------------------------------------------------------------
 
-const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
+// a table cell: backslashes first, so an escaped pipe can't be undone by a value's own "\"
+const cell = (s) =>
+  String(s).replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ");
 const code = (s) => "`" + s + "`";
 const table = (head, rows) =>
   [
