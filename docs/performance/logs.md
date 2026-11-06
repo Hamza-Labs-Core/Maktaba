@@ -9,7 +9,7 @@ Logging must not slow playback or fill the disk. Epic 53 story 53.13 sets the nu
 
 | Bench | What | Target | CI load (`LOGBENCH_SCALE=1`) |
 |---|---|---|---|
-| capture | the keeper's cost per line | ≤ 20 µs a line (500 lines/s within 1 % of a core); no line lost; every warn and error kept | 50,000 lines from 4 children (10 s of 5,000 lines/s) |
+| capture | the keeper's CPU per line | ≤ 20 µs a line (500 lines/s within 1 % of a core); no line lost; every warn and error kept | 50,000 lines from 4 children (10 s of 5,000 lines/s) |
 | index catch-up | the index's cost per line | ≤ 400 µs a line (a 5,000/s minute caught up within 2 minutes) | 300,000 lines over 7 days |
 | index lag | a line written to searchable | ≤ 2 s at p95 | 500 lines and one pass |
 | search, filters | 24 h, one service, warn and above | ≤ 300 ms at p95 | the same corpus |
@@ -19,10 +19,14 @@ Logging must not slow playback or fill the disk. Epic 53 story 53.13 sets the nu
 | Go logger | one log call | ≤ 20 µs at p99 | 200,000 calls |
 | disk | the segments under their cap through a day | at most the cap and the hour still open; the newest warn lines kept | a 4 MB cap, 30 hours |
 
-A budget is multiplied by the runner's speed against the reference (`logbench.Calibrate`:
-a fixed hashing loop, the factor at least 1 and at most 4), as `test-budget` does. A
-runner half as fast is not failed for being slow. A change that doubles a cost still fails
-on any runner.
+A budget is multiplied by the runner's speed against the reference (`logbench.Calibrate`).
+The factor is the larger of two loops: a fixed hashing loop, and the keeper's own kind of
+work, decoding, scrubbing and encoding 5,000 log lines. A runner's SHA instructions can make
+hashing as fast as the reference while the keeper's work is slower. The factor is clamped to
+1–4, as `test-budget` does. A runner half as fast is not failed for being slow, and a change
+that doubles a cost still fails on any runner. Capture is budgeted by the process's CPU time
+per line (user and system), since its target is a share of a core. The wall clock is
+stretched by a busy runner.
 
 The story's full loads (a 60 s burst, a 15 M-line corpus) are `LOGBENCH_SCALE=6` and up.
 They take tens of minutes and are meant for a Mac by hand, not for CI.

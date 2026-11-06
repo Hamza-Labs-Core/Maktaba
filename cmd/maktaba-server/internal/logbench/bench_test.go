@@ -138,7 +138,7 @@ func TestCaptureBurst(t *testing.T) {
 		_ = json.Unmarshal(l, &m)
 		written[m.Level]++
 	}
-	start := time.Now()
+	start, cpu0 := time.Now(), cpuTime()
 	var wg sync.WaitGroup
 	for c := 0; c < 4; c++ {
 		f, err := k.Spool("api", fmt.Sprintf("c%d", c))
@@ -161,10 +161,12 @@ func TestCaptureBurst(t *testing.T) {
 	k.Flush()
 	k.Flush()
 	elapsed := time.Since(start)
-	perLine := elapsed / time.Duration(n)
+	// "1 % of a core at 500 lines/s": the process's CPU per line (the four writers' share is
+	// a buffered write each, small beside the keeper's parse, scrub and segment write)
+	perLine := (cpuTime() - cpu0) / time.Duration(n)
 	got := countLevels(t, root)
 	warnPlus := func(m map[string]int) int { return m["warn"] + m["error"] + m["fatal"] }
-	record("capture_burst", map[string]any{"lines": n, "elapsed_ms": elapsed.Milliseconds(), "ns_per_line": perLine.Nanoseconds(),
+	record("capture_burst", map[string]any{"lines": n, "elapsed_ms": elapsed.Milliseconds(), "cpu_ns_per_line": perLine.Nanoseconds(),
 		"kept": got, "written": written})
 	if warnPlus(got) != warnPlus(written) {
 		t.Errorf("warn and above: kept %d of %d", warnPlus(got), warnPlus(written))
@@ -172,7 +174,7 @@ func TestCaptureBurst(t *testing.T) {
 	if total := got["info"] + got["debug"] + warnPlus(got); total != n {
 		t.Errorf("lines kept: %d of %d (no disk pressure here: none may go)", total, n)
 	}
-	budget(t, "capture per line", perLine, 20*time.Microsecond)
+	budget(t, "capture CPU per line", perLine, 20*time.Microsecond)
 }
 
 // index_lag, index_catchup, search_* (scaled): a corpus over 7 days goes through the keeper
