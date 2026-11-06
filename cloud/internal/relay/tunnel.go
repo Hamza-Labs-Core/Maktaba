@@ -36,6 +36,16 @@ type Tunnel struct {
 	// seq orders the tunnels as they were made (tunnelSeq): the later of two attempts
 	// for one slug is the newer connection (Registry.Up)
 	seq uint64
+	// features the home announced at AUTH (FeatureDrain, FeatureTicket)
+	canDrain, canTicket bool
+	// draining: DRAIN was sent; the tunnel serves its streams until the home
+	// closes it or the deadline (drain.go)
+	draining  atomic.Bool
+	drainOnce sync.Once
+	// inflight counts proxied requests not yet finished (a stream registered)
+	inflight atomic.Int64
+	// tracked: in its registry's open set (Registry.track)
+	tracked atomic.Bool
 }
 
 // tunnelSeq numbers the tunnels as they are made.
@@ -66,19 +76,20 @@ func NewTunnel(serverID, slug string, conn FrameConn, opts ...TunnelOption) *Tun
 	return t
 }
 
+// WithFeatures records what the home announced at AUTH.
+func WithFeatures(drain, ticket bool) TunnelOption {
+	return func(t *Tunnel) { t.canDrain, t.canTicket = drain, ticket }
+}
+
 // FlowControl reports whether the tunnel is windowed.
 func (t *Tunnel) FlowControl() bool { return t.flow }
 
 // Busy reports whether the tunnel is carrying at least one proxied
 // request (a stream registered and not yet released).
-func (t *Tunnel) Busy() bool {
-	busy := false
-	t.streams.Range(func(_, _ any) bool {
-		busy = true
-		return false
-	})
-	return busy
-}
+func (t *Tunnel) Busy() bool { return t.inflight.Load() > 0 }
+
+// Streams is how many proxied requests the tunnel carries right now.
+func (t *Tunnel) Streams() int64 { return t.inflight.Load() }
 
 // Close shuts down the tunnel and unblocks all pending streams.
 func (t *Tunnel) Close() {
@@ -174,6 +185,7 @@ func (t *Tunnel) ProxyWithin(ctx context.Context, r *http.Request, headTimeout t
 	streamID := atomic.AddUint32(&t.nextID, 1)
 	s := newStream()
 	t.streams.Store(streamID, s)
+	t.inflight.Add(1)
 	// The stream must stay registered until the response BODY is fully
 	// consumed, not merely until Proxy returns: Proxy returns as soon as
 	// RESPONSE_HEAD arrives, and RESPONSE_BODY frames that dispatch sees
@@ -184,6 +196,7 @@ func (t *Tunnel) ProxyWithin(ctx context.Context, r *http.Request, headTimeout t
 	release := func(early bool) {
 		once.Do(func() {
 			t.streams.Delete(streamID)
+			t.inflight.Add(-1)
 			s.abandon()
 			if early {
 				// the client left (or the body was closed) before the home

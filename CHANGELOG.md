@@ -215,6 +215,18 @@ build fails when the two differ.
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
+
+- **A relay that restarts no longer drops the homes' tunnels (Epic 50, story 50.03).** On
+  shutdown the relay refuses new tunnels and asks each home, 100 a second, to move (a new
+  `DRAIN` frame): the home opens a new tunnel within a few seconds, new requests go there,
+  and the old tunnel finishes the streams it carries before it closes, so a playing video
+  keeps playing; at the deadline (120 s) the relay closes it anyway. Homes reconnect with a
+  10-minute resume ticket (a new `TICKET` frame, valid on every node) instead of their
+  secret, so a thousand reconnects cost no password hashing, and their retries are spread
+  by full jitter. A home from before this release is closed when idle and reconnects as
+  before. The relay's stop grace is 150 s (the container's 160 s), with switches
+  `relay.drain.enabled` and `relay.ticket.enabled`, and `/metrics` counts drains, forced
+  closes and handshakes by method.
 ### Added
 
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One

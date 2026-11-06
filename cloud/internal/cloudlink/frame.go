@@ -43,6 +43,18 @@ const (
 	KindAuthFail     = relay.KindAuthFail
 	KindHeartbeat    = relay.KindHeartbeat
 	KindWindowUpdate = relay.KindWindowUpdate
+	KindDrain        = relay.KindDrain
+	KindTicket       = relay.KindTicket
+)
+
+// Tunnel features this agent announces at AUTH (story 50.03): it moves on
+// DRAIN, and it keeps and presents resume tickets.
+var agentFeatures = []string{relay.FeatureDrain, relay.FeatureTicket}
+
+// DrainPayload and TicketPayload are the relay's (protocol.go).
+type (
+	DrainPayload  = relay.DrainPayload
+	TicketPayload = relay.TicketPayload
 )
 
 // InitialWindow and FlowVersion are the relay's flow-control constants

@@ -146,3 +146,39 @@ func TestValidate_RoleWorkerLooser(t *testing.T) {
 		t.Errorf("Validate(worker) only needs DB: %v", err)
 	}
 }
+
+// Story 50.03: the relay's handover switches and timings, with their defaults.
+func TestLoad_RelayDrain(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := c.Relay
+	if !r.DrainEnabled || !r.TicketsEnabled || r.DrainWithin.Seconds() != 5 || r.DrainDeadline.Seconds() != 120 || r.DrainRate != 100 || r.ShutdownGrace.Seconds() != 150 {
+		t.Errorf("defaults: %+v", r)
+	}
+	p := filepath.Join(t.TempDir(), "cloud.toml")
+	if err := os.WriteFile(p, []byte(`
+[relay]
+shutdown_grace = "30s"
+
+[relay.drain]
+enabled = false
+within = "2s"
+deadline = "10s"
+rate = 50
+
+[relay.ticket]
+enabled = false
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = c.Relay
+	if r.DrainEnabled || r.TicketsEnabled || r.DrainWithin.Seconds() != 2 || r.DrainDeadline.Seconds() != 10 || r.DrainRate != 50 || r.ShutdownGrace.Seconds() != 30 {
+		t.Errorf("from the file: %+v", r)
+	}
+}

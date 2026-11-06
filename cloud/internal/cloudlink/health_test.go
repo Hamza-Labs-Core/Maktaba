@@ -3,6 +3,7 @@ package cloudlink
 import (
 	"context"
 	"encoding/json"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -116,5 +117,53 @@ func TestAdminHandler_RejectsNonGET(t *testing.T) {
 	AdminHandler(sup).ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/admin/cloud-link", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("code = %d, want 405", rec.Code)
+	}
+}
+
+// T01 (story 50.03): full jitter, uniform in [0, min(cap, base·2^(n-1))].
+func TestJitterIsUniformUpToTheCap(t *testing.T) {
+	r := rand.New(rand.NewPCG(1, 2))
+	for attempt := 1; attempt <= 7; attempt++ {
+		ceil := Backoff(attempt, time.Second, 30*time.Second)
+		const draws = 10000
+		var buckets [10]int
+		for range draws {
+			d := Jitter(attempt, time.Second, 30*time.Second, r.Float64)
+			if d < 0 || d > ceil {
+				t.Fatalf("attempt %d: %s outside [0, %s]", attempt, d, ceil)
+			}
+			b := int(float64(d) / float64(ceil+1) * 10)
+			buckets[b]++
+		}
+		for i, c := range buckets {
+			// each tenth of the range holds ~1000; a uniform draw stays well within ±20 %
+			if c < 800 || c > 1200 {
+				t.Errorf("attempt %d: bucket %d holds %d of %d, not uniform", attempt, i, c, draws)
+			}
+		}
+	}
+	if got := Backoff(9, time.Second, 30*time.Second); got != 30*time.Second {
+		t.Errorf("cap: %s", got)
+	}
+}
+
+// Story 50.03: 1,000 homes whose tunnel dropped at the same instant spread
+// their first retry over [0, 2 s) (the Supervisor's first wait after a stable
+// tunnel drops): no 100 ms slot holds more than 7.5 % of them, where without
+// jitter every home retried in the same instant. (The epic's "15 % in one
+// second" would need a first wait of about 7 s, which §3 of the story does
+// not choose: it would slow every failover's recovery.)
+func TestReconnectsAreSpread(t *testing.T) {
+	r := rand.New(rand.NewPCG(7, 9))
+	sup := &Supervisor{rnd: r.Float64}
+	var slots [20]int
+	for range 1000 {
+		at := time.Duration(sup.rand01() * float64(2*time.Second))
+		slots[int(at/(100*time.Millisecond))]++
+	}
+	for i, c := range slots {
+		if c > 75 {
+			t.Errorf("slot %d00 ms holds %d of 1000", i, c)
+		}
 	}
 }

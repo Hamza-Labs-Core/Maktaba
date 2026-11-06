@@ -57,11 +57,19 @@ func RenderPrometheus(w io.Writer, s PromSnapshot) error {
 	return nil
 }
 
-// PrometheusHandler serves GET /metrics from the live collector. No auth:
-// it is scraped on the internal network (Story 30.4).
-func PrometheusHandler(c *Collector) http.HandlerFunc {
+// PrometheusHandler serves GET /metrics from the live collector, then each
+// extra writer's series (the relay's tunnel handover counters, story 50.03).
+// No auth: it is scraped on the internal network (Story 30.4).
+func PrometheusHandler(c *Collector, extra ...func(io.Writer) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-		_ = RenderPrometheus(w, c.PromSnapshot())
+		if err := RenderPrometheus(w, c.PromSnapshot()); err != nil {
+			return
+		}
+		for _, x := range extra {
+			if err := x(w); err != nil {
+				return
+			}
+		}
 	}
 }
