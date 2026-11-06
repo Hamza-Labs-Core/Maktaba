@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -244,6 +245,16 @@ func TestPackVenvSpec(t *testing.T) {
 	spec, _ = v.spec("tool.yt-dlp", ytStaging, "")
 	if spec.Extras != "stt,search,mediaintel" || spec.Offline {
 		t.Fatalf("adding yt-dlp beside a PyPI venv: %+v", spec)
+	}
+	// Epic 52 (story 52.16): runtime.lang feeds the lang extra, beside the others
+	langStaging := filepath.Join(t.TempDir(), "lang")
+	_ = os.MkdirAll(filepath.Join(langStaging, "wheels"), 0o755)
+	spec, _ = v.spec("runtime.lang", langStaging, "")
+	if spec.Extras != "stt,search,lang" {
+		t.Fatalf("adding runtime.lang beside a PyPI venv: %+v", spec)
+	}
+	if !slices.Contains(venvPacks, "runtime.lang") {
+		t.Fatal("runtime.lang does not rebuild the venv")
 	}
 	// removing the only one: no extras
 	m.OnDisk = nil
