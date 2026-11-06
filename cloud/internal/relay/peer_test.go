@@ -2,8 +2,10 @@ package relay
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -107,4 +109,52 @@ func (c *nopConn) Close() error {
 		close(c.done)
 	}
 	return nil
+}
+
+// capConn records the DRAIN frames sent to it, and closes when asked.
+type capConn struct {
+	nopConn
+	mu     sync.Mutex
+	drains []DrainPayload
+}
+
+func (c *capConn) WriteFrame(f Frame) error {
+	if f.Kind == KindDrain {
+		var p DrainPayload
+		_ = json.Unmarshal(f.Payload, &p)
+		c.mu.Lock()
+		c.drains = append(c.drains, p)
+		c.mu.Unlock()
+	}
+	return nil
+}
+
+// Shutdown shrinks each home's reconnect window as the drain goes on (never
+// below 1 s), so the last home sent DRAIN moves about as soon as the first.
+func TestShutdownShrinksTheWindow(t *testing.T) {
+	reg := NewRegistry()
+	var conns []*capConn
+	for i := range 6 {
+		c := &capConn{nopConn: nopConn{done: make(chan struct{})}}
+		conns = append(conns, c)
+		tn := NewTunnel("s", "h"+string(rune('a'+i)), c, WithFeatures(true, false))
+		reg.Register(tn.Slug, tn)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	reg.Shutdown(ctx, DrainOptions{Reason: DrainShutdown, Within: 2 * time.Second, Deadline: time.Minute}, 5, nil)
+	var windows []int64
+	for _, c := range conns {
+		c.mu.Lock()
+		if len(c.drains) == 1 {
+			windows = append(windows, c.drains[0].WithinMS)
+		}
+		c.mu.Unlock()
+	}
+	if len(windows) != 6 {
+		t.Fatalf("DRAIN sent to %d of 6", len(windows))
+	}
+	if windows[0] < 1900 || windows[5] > 1100 || windows[5] < 1000 {
+		t.Errorf("windows %v: want ~2000 first, 1000 (the floor) last", windows)
+	}
 }
