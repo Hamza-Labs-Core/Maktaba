@@ -239,7 +239,8 @@ func TestDataQuota(t *testing.T) {
 		t.Fatalf("get %s", body)
 	}
 	big := `"` + strings.Repeat("x", 60<<10) + `"`
-	for i := 0; i < 16; i++ {
+	// 17 values of 60 KB fill all but the last 60 KB of the 1 MB quota
+	for i := 0; i < 17; i++ {
 		f.call(t, tok, "data/put", map[string]any{"subject": sub, "key": fmt.Sprint("big", i), "value": big})
 	}
 	if code, c, _ := f.call(t, tok, "data/put", map[string]any{"subject": sub, "key": "last", "value": big}); code != 403 || c != CodeQuota {
