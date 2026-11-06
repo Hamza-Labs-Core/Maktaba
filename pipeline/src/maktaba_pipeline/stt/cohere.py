@@ -370,42 +370,81 @@ def camel_data() -> str:
 
 #: the process's dictionary and the data folder it was read from
 _DICT: list[tuple[str, CamelDictionary | None]] = []
+#: a data folder the dictionary failed to load from, and when (monotonic): while a
+#: working dictionary is kept, it is tried again after :data:`DICT_RETRY_S`
+_DICT_FAILED: list[tuple[str, float]] = []
+DICT_RETRY_S = 300.0
 
 
 def dictionary() -> CamelDictionary | None:
     """The process's dictionary, or None when CAMeL Tools or its data is missing (the
-    data is fetched once, on first use). Read again when its data folder moved (a newer
-    model.refine pack became current)."""
+    data is fetched once, on first use, outside the packs and never while offline). Read
+    again when its data folder moved (a newer model.refine pack became current); a new
+    folder that fails to load keeps the dictionary in use and is tried again later."""
     want = camel_data()
     if _DICT and _DICT[0][0] == want:
         return _DICT[0][1]
+    if (
+        _DICT
+        and _DICT[0][1] is not None
+        and _DICT_FAILED
+        and _DICT_FAILED[0][0] == want
+        and time.monotonic() - _DICT_FAILED[0][1] < DICT_RETRY_S
+    ):
+        return _DICT[0][1]  # the new folder failed a moment ago: keep the one in use
     with _REC_LOCK:
         if _DICT and _DICT[0][0] == want:
             return _DICT[0][1]
-        before = _DICT[0][0] if _DICT else None
-        if want:
-            os.environ["CAMELTOOLS_DATA"] = want
+        before = _DICT[0] if _DICT else None
         d: CamelDictionary | None = None
         if importlib.util.find_spec("camel_tools") is not None:
-            from ..model_dirs import ensure_camel_data
-
-            ensure_camel_data()
-            try:
-                d = _new_dictionary(want)
-            except Exception:  # noqa: BLE001 - the data may be missing: fetch it once
-                try:
-                    from camel_tools.data import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
-                        CATALOGUE,
-                    )
-
-                    CATALOGUE.download_package("morphology-db-msa-r13")
-                    d = _new_dictionary(want)
-                except Exception:  # noqa: BLE001 - spell as heard
-                    _log.warning("stt.dictionary_unavailable", exc_info=True)
+            d = _load_dictionary(want)
+        if d is None and before is not None and before[1] is not None:
+            # the new pack's folder did not load (it may be half placed, or the folder
+            # named is gone): keep the one that works, try again later (#637)
+            _DICT_FAILED[:] = [(want, time.monotonic())]
+            if before[0]:
+                os.environ["CAMELTOOLS_DATA"] = before[0]
+            _log.warning("stt.dictionary_reload_failed", data=want, kept=before[0])
+            return before[1]
         if before is not None:
-            _log.info("stt.dictionary_reloaded", data=want, was=before, loaded=d is not None)
+            _log.info("stt.dictionary_reloaded", data=want, was=before[0], loaded=d is not None)
         _DICT[:] = [(want, d)]
+        _DICT_FAILED.clear()
         return d
+
+
+def _load_dictionary(want: str) -> CamelDictionary | None:
+    """The dictionary of ``want``, or None. A folder outside the packs that lacks the data
+    gets it downloaded once (CAMeL Tools' catalogue), unless offline (#640). A folder
+    inside a pack is never created or written: the pack's install places it, and an old
+    version's folder may already be deleted."""
+    from .. import offline, pack_paths
+
+    if want:
+        os.environ["CAMELTOOLS_DATA"] = want
+    in_pack = pack_paths.inside(want)
+    if not in_pack:
+        from ..model_dirs import ensure_camel_data
+
+        ensure_camel_data()
+    try:
+        return _new_dictionary(want)
+    except Exception:  # noqa: BLE001 - the data may be missing: fetch it once
+        if in_pack or offline.offline():
+            _log.warning("stt.dictionary_unavailable", data=want, offline=offline.offline(),
+                         in_pack=in_pack, exc_info=True)  # fmt: skip
+            return None
+    try:
+        from camel_tools.data import (  # type: ignore[import-untyped,import-not-found,unused-ignore]
+            CATALOGUE,
+        )
+
+        CATALOGUE.download_package("morphology-db-msa-r13")
+        return _new_dictionary(want)
+    except Exception:  # noqa: BLE001 - spell as heard
+        _log.warning("stt.dictionary_unavailable", exc_info=True)
+        return None
 
 
 def _new_dictionary(data_dir: str) -> CamelDictionary:
