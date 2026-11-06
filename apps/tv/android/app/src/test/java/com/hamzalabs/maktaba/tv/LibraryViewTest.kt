@@ -142,8 +142,9 @@ class LibraryViewTest {
         assertTrue("youtube badge", shows("YouTube playlist"))
         assertTrue("plex badge", shows("Plex collection"))
         compose.onNodeWithTag("collections-kind").performSemanticsAction(SemanticsActions.OnClick)
-        compose.waitUntil(5_000) { compose.waitForIdle(); !shows("Plex picks") }
-        assertTrue(urls.any { it.contains("kind=youtube") })
+        // the kind's own read, then its cards
+        compose.waitUntil(5_000) { compose.waitForIdle(); urls.any { it.contains("kind=youtube") } }
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("PL Lessons") && !shows("Plex picks") }
     }
 
     @Test
