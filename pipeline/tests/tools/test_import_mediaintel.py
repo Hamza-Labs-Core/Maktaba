@@ -197,7 +197,8 @@ async def test_the_summary_lock_is_taken_on_apply_only_and_never_held_by_an_enqu
     await _library(db)
     cache = _cache(tmp_path / "cache.db")
     seen: dict[str, list[bool]] = {"flush": [], "enqueue": [], "summary": []}
-    flush, enqueue = mi._flush_jobs, mi.enqueue_job
+    flush = mi._flush_jobs
+    from maktaba_pipeline.engine.enqueue import enqueue_job as enqueue
 
     async def watch_flush(d: object, report: object) -> None:
         await flush(d, report)  # type: ignore[arg-type]
@@ -211,7 +212,7 @@ async def test_the_summary_lock_is_taken_on_apply_only_and_never_held_by_an_enqu
         return await enqueue(d, **kw)  # type: ignore[arg-type]
 
     monkeypatch.setattr(mi, "_flush_jobs", watch_flush)
-    monkeypatch.setattr(mi, "enqueue_job", watch_enqueue)
+    monkeypatch.setattr("maktaba_pipeline.tools.import_mediaintel.enqueue_job", watch_enqueue)
     report = await run_import(db, cache, ["Cached"], apply=apply)
     assert report.jobs_imported > 0 and seen["flush"] and seen["enqueue"]
     assert set(seen["flush"]) == {apply}  # the table is held while done jobs go in on apply only
