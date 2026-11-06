@@ -80,7 +80,9 @@ def test_graph_reads_collections_after_each_index() -> None:
 async def test_a_plex_collection_is_imported_in_plex_order(db: Database) -> None:
     w = await make_world(db)
     # 8 children, 7 of them Maktaba videos, in a custom order
-    rk = w.fake.add_collection("Favourites", ["107", "101", "199", "103", "102", "104", "105", "106"])
+    rk = w.fake.add_collection(
+        "Favourites", ["107", "101", "199", "103", "102", "104", "105", "106"]
+    )
     row = await _index_then_import(db, w)
     assert row["state"] == "done", error_of(row)
     (col,) = await _collections(db, w.library)
@@ -137,7 +139,9 @@ async def test_plex_down_parks_with_no_writes_and_no_token_anywhere(
     caplog.set_level(logging.DEBUG)
     row = await run_stage(db, rt, "plex_collections_import", "library", w.library, force=True)
     assert row["state"] != "done"
-    assert error_of(row).get("kind") == "plex_unreachable" or "plex_unreachable" in str(row["error"])
+    assert error_of(row).get("kind") == "plex_unreachable" or "plex_unreachable" in str(
+        row["error"]
+    )
     assert await _collections(db, w.library) == []
     assert TOKEN not in str(row["error"])
     assert TOKEN not in caplog.text

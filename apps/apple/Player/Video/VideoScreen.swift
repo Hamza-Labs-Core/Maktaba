@@ -304,7 +304,7 @@ private struct TimedLine: View {
 }
 
 /// Favorite or Mark watched: a chip, filled when on; VoiceOver hears it as a selected button.
-private struct MarkButton<Label: View>: View {
+struct MarkButton<Label: View>: View {
     let on: Bool
     let symbol: String
     let id: String
@@ -336,7 +336,7 @@ private struct MarkButton<Label: View>: View {
 }
 
 /// A brass outline on the page, at least 44 pt tall: the second play button.
-private struct OutlineButtonStyle: ButtonStyle {
+struct OutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.maktabaBody(16, weight: .semibold, relativeTo: .body))

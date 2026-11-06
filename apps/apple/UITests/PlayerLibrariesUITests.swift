@@ -251,7 +251,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         shot("series-ax3")
         for v in ["v3", "v2", "v1"] {
             let row = element("episode.\(v)")
-            for _ in 0 ..< 8 where !(row.exists && window.contains(row.frame)) { app.swipeUp() }
+            for _ in 0 ..< 14 where !(row.exists && window.contains(row.frame)) { app.swipeUp() }
             XCTAssertTrue(row.exists && window.contains(row.frame), "\(v) shows in full at AX3")
             XCTAssertTrue(row.label.contains("السيرة النبوية"), "\(v): its title, not cut: \(row.label)")
             XCTAssertTrue(element("episode.mark.\(v)").isHittable, "\(v): its mark can be tapped")

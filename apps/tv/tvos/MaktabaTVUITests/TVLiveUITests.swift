@@ -300,8 +300,16 @@ final class TVLiveUITests: XCTestCase {
         shot("tv-library-tabs-en")
         let shuffle = app.buttons["play.shuffle"]
         XCTAssertTrue(shuffle.waitForExistence(timeout: 10), "Shuffle in the library's header")
+        // the tab row chooses on focus: along it to Recommended (whose header has Play and
+        // Shuffle), then up to the header
+        let recommended = element("library.tab.recommended")
+        for _ in 0..<6 where !app.buttons.allElementsBoundByIndex.contains(where: { $0.hasFocus && $0.identifier.hasPrefix("library.tab.") }) {
+            remote.press(.up)
+            usleep(400_000)
+        }
+        moveFocus(to: recommended, with: .left)
         let play = app.buttons["play.play"]
-        for _ in 0..<8 where !(play.hasFocus || shuffle.hasFocus) {
+        for _ in 0..<4 where !(play.exists && play.hasFocus) && !(shuffle.exists && shuffle.hasFocus) {
             remote.press(.up)
             usleep(400_000)
         }

@@ -50,14 +50,14 @@ struct PlayShuffleButtons: View {
                     Button { start(false) } label: {
                         Label { Text("Play", tableName: "Libraries", comment: "Plays a library, series, collection or playlist in order") } icon: { Image(systemName: "play.fill") }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(BrassButtonStyle())
                     .accessibilityIdentifier("queue.play")
                 }
                 if shuffle {
                     Button { start(true) } label: {
                         Label { Text("Shuffle", tableName: "Libraries", comment: "Plays it at random, the whole of it") } icon: { Image(systemName: "shuffle") }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(OutlineButtonStyle())
                     .accessibilityIdentifier("queue.shuffle")
                 }
             }
@@ -168,19 +168,12 @@ struct QueueMarks: View {
     @State private var added = false
 
     var body: some View {
-        Button { add("next") } label: {
-            Label { Text("Play next", tableName: "Libraries", comment: "Puts the video right after the one playing") } icon: { Image(systemName: "text.line.first.and.arrowtriangle.forward") }
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("video.playNext")
-        Button { add("end") } label: {
-            Label { Text("Add to queue", tableName: "Libraries", comment: "Puts the video at the end of the play queue") } icon: { Image(systemName: "text.append") }
-        }
-        .buttonStyle(.bordered)
-        .accessibilityIdentifier("video.addToQueue")
-        if added {
-            Text("Added to the queue", tableName: "Libraries", comment: "Play next or Add to queue worked").font(.caption).foregroundStyle(.secondary)
-        }
+        MarkButton(on: false, symbol: "text.line.first.and.arrowtriangle.forward", id: "video.playNext") {
+            Text("Play next", tableName: "Libraries", comment: "Puts the video right after the one playing")
+        } action: { add("next") }
+        MarkButton(on: added, symbol: "text.append", id: "video.addToQueue") {
+            Text("Add to queue", tableName: "Libraries", comment: "Puts the video at the end of the play queue")
+        } action: { add("end") }
     }
 
     private func add(_ place: String) {
@@ -207,7 +200,7 @@ struct ContinueQueueRow: View {
                 Button { target = PlayerQueues.of(context.client).resume(doc)?.videoID } label: {
                     Text(verbatim: item.name)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(OutlineButtonStyle())
                 .accessibilityIdentifier("home.continueQueue")
             }
             .navigationDestination(item: $target) { id in PlayerDestination(context: context, route: .watch(videoID: id, at: nil)) }
