@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // TestPGJoinApproveRevoke drives the whole join through the handlers on a
@@ -25,7 +25,7 @@ import (
 // role, and cannot once revoked. Runs only with MAKTABA_TEST_PG_URL.
 func TestPGJoinApproveRevoke(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
-	base, _ := url.Parse(os.Getenv("MAKTABA_TEST_PG_URL"))
+	base, _ := url.Parse(testpg.Get())
 	port, _ := strconv.Atoi(base.Port())
 	if port == 0 {
 		port = 5432

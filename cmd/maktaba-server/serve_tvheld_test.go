@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgtest"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -98,7 +99,7 @@ func runFakeSlot() (int, bool) {
 // scratchHome is a migrated database of its own on MAKTABA_TEST_PG_URL.
 func scratchHome(t *testing.T) string {
 	t.Helper()
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset: a scratch Postgres whose user may create databases")
 	}

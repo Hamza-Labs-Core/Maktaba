@@ -6,10 +6,11 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"os"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // hangingProxy forwards to a Postgres until hang: then what it is sent is never
@@ -55,7 +56,7 @@ func (p *hangingProxy) hang() {
 // #157: on a connection whose server stops answering, a statement ends with its
 // context: lib/pq alone waits for as long as the socket lives.
 func TestABoundedConnectionGivesUpWithItsContext(t *testing.T) {
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset")
 	}

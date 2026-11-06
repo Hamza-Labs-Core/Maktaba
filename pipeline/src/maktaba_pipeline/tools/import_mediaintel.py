@@ -308,6 +308,18 @@ async def _resolve_libraries(db: Any, names: list[str]) -> list[tuple[UUID, str]
 
 # --------------------------------------------------------------------------- batching
 
+
+async def _hold_done_subjects(db: Any) -> None:
+    """Hold the done-subjects summary for the whole import (slot 0184, #642). The import
+    writes done jobs in many statements of one transaction, stage after stage, so it
+    takes the summary's rows in no single key order; a retention batch or a finishing job
+    that took them in key order could wait on it in a circle. Holding the table first,
+    no other writer of the summary runs beside it: jobs that finish meanwhile wait for
+    the import to commit."""
+    if is_pg(db):
+        await db.execute("LOCK TABLE processing_done_subjects IN SHARE ROW EXCLUSIVE MODE")
+
+
 _BATCH = 2000
 
 
@@ -478,6 +490,7 @@ async def run_import(
         before = {t: int(await db.fetchval(f"SELECT count(*) FROM {t}")) for t in TABLES}
         try:
             async with db.transaction():
+                await _hold_done_subjects(db)
                 if create:
                     libs = await _create_libraries(db, conn, libraries, maps, report)
                     await _analyze(db)

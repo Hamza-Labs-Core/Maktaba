@@ -281,7 +281,7 @@ sys.exit(0 if want <= running else 1)' "$roles"; then
 
 wait_running 600
 log "running: $roles"
-curl -fsS --max-time 10 http://127.0.0.1:8088/ | grep -qi '<html' || die "the web app does not answer on 127.0.0.1:8088"
+grep -qi '<html' < <(curl -fsS --max-time 10 http://127.0.0.1:8088/) || die "the web app does not answer on 127.0.0.1:8088"
 curl -fsS --max-time 10 http://127.0.0.1:8080/healthz >/dev/null || die "the API does not answer on 127.0.0.1:8080/healthz"
 log "the web app and the API answer"
 st="$(cli service status --json)"
@@ -388,7 +388,7 @@ if [ "$same_constraints" -eq 1 ]; then
     if [ ! -f "$record" ] || [ "$(stat -c %y "$record")" != "$record_before" ]; then
         die "the venv's packages were installed again although the constraints did not change (${record#"$DATA"/})"
     fi
-    if tail -c +"$((venv_log_size + 1))" "$LOGS/venv.log" 2>/dev/null | grep -q 'pinned packages'; then
+    if grep -q 'pinned packages' < <(tail -c +"$((venv_log_size + 1))" "$LOGS/venv.log" 2>/dev/null); then
         die "the venv was rebuilt although the constraints did not change (venv.log)"
     fi
     log "the venv was kept (the same constraints): repointed, its packages untouched"
