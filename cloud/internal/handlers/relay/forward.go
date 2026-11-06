@@ -80,7 +80,9 @@ func (d *Deps) forward(w http.ResponseWriter, r *http.Request, slug string, p re
 			if errors.Is(err, context.Canceled) {
 				return
 			}
-			writeErr(w, r, http.StatusBadGateway, "tunnel_error", err.Error())
+			// the error (it carries the request's URL) goes to the log, not the page
+			d.logger().Warn("relay: forwarding to the peer failed", "peer", p.RelayID, "slug", slug, "err", err, "event", "relay_forward_failed")
+			writeErr(w, r, http.StatusBadGateway, "tunnel_error", "")
 		},
 	}
 	rp.ServeHTTP(cw, r)
