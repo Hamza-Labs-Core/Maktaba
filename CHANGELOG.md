@@ -223,7 +223,7 @@ build fails when the two differ.
   `r1`…`r99` as its address; a reserved address is refused with `409 subdomain_reserved`,
   and the claim code stays usable. A lint fails a pull request that adds a host name under
   `maktaba.app`, which is not ours (app identifiers like `com.maktaba.app` pass), and the
-  stale `relay.maktaba.app` example and the log schema's `$id` now say `maktaba.tv`.
+  stale relay example in a migration comment and the log schema's `$id` now say `maktaba.tv`.
 ### Added
 
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
