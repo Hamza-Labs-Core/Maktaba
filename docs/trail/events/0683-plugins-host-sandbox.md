@@ -18,5 +18,11 @@ session: e67d03b4-bb59-41b3-8c8f-ee3aad4592fc
 - Debug builds of the host overshoot an epoch deadline by up to ~0.6 s when tests share the machine; N7 (deadline + 200 ms) holds in release.
 - On Windows, bind and UDP send can succeed inside an AppContainer while WFP drops the traffic: the probes count ALLOWED only on two-way traffic (an echo, a reachable port).
 
+- The repo's root `.gitignore` has `MANIFEST`; on the Mac's case-insensitive checkout it silently ignored a folder named `manifest/` (the Rust crate never reached CI). Check `git check-ignore -v` when a new folder's files do not show in `git status`.
+- Windows AppContainer: `CreateProcess` fails with ERROR_ENVVAR_NOT_FOUND (203) unless the given environment holds `TEMP`, `TMP`, `LOCALAPPDATA` and the profile folders (Windows rewrites them for the container). Port 47001 is WinRM's on Windows runners (bind gives 10013). Inside the container a process can bind loopback and reach its own listener; nothing outside reaches it.
+- `cargo test -p maktaba-plugind` rebuilds the binary without `--features escape-probes` into the same path: build the probe binary after the tests.
+- CodeQL's zip-slip query does not see a path check in another function or an equality check as a sanitizer; check `..` where the name meets the disk.
+- The pipeline's unit tier forbids sockets, and an asyncio event loop opens a socket pair: async tests without a service go in the integration tier.
+
 ## Open
 - PR 2 (54.04-54.06), PR 3 (54.07-54.09, 54.37, 54.38, the supervisor role and payload), PR 4 (54.10-54.13).
