@@ -6434,6 +6434,7 @@
   "components.done.install": "سيُثبَّت {name}.",
   "components.done.retry": "{name}: تجري محاولة التثبيت من جديد.",
   "components.done.restart": "تجري إعادة تشغيل {name}.",
+  "components.done.restartAsked": "{name}: طُلبت إعادة التشغيل من الخدمة التي تشغّله.",
   "components.drawer.home": "الجهاز الرئيسي",
   "components.drawer.heldBy": "أوقفه {who} في {when}، حتى يشغّله أحد من جديد.",
   "components.drawer.requires": "يحتاج",

@@ -7,9 +7,11 @@ import "testing"
 func TestRestartRequests(t *testing.T) {
 	db := sqliteDB(t)
 	for range 2 { // the twin applies twice
-		for _, s := range upStatements(t, migration(t, "0185_component_restarts.sqlite.sql")) {
-			if _, err := db.Exec(s); err != nil {
-				t.Fatalf("0185: %v\n%s", err, s)
+		for _, f := range []string{"0185_component_restarts.sqlite.sql", "0190_component_restarts_guard.sqlite.sql"} {
+			for _, s := range upStatements(t, migration(t, f)) {
+				if _, err := db.Exec(s); err != nil {
+					t.Fatalf("%s: %v\n%s", f, err, s)
+				}
 			}
 		}
 	}
@@ -39,6 +41,10 @@ func TestRestartRequests(t *testing.T) {
 	}
 	if got, _ := st.Restarts(ctx, "11111111-1111-4111-8111-111111111111", "streaming"); len(got) != 0 {
 		t.Fatalf("another machine's: %v", got)
+	}
+	// slot 0190: a seq never goes down (the runners would ignore every later request)
+	if _, err := db.Exec(`UPDATE component_restarts SET seq = 1 WHERE id = 'livetv.inprocess'`); err == nil {
+		t.Fatal("a seq moved down")
 	}
 	if _, err := st.RequestRestart(ctx, Home, "x", "elsewhere", "admin"); err == nil {
 		t.Fatal("a host the table does not know was taken")

@@ -4539,14 +4539,14 @@ paths:
       description: 'Restarts a running component: its processes and the supervisor''s own loops through this machine''s supervisor, its loops in the API cancelled and started again, and its loops in streaming or the pipeline through a restart request their runner acts on within seconds. The desired state does not change; the restart is recorded as `component.restart`.'
       responses:
         '200':
-          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again, or were asked to (its loops in streaming or the pipeline).'
+          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again here, and `requested`: the hosts (`streaming`, `pipeline`, `api`) asked to restart their loops, whose runners act on the request within seconds (not counted in `restarted`: the API cannot confirm them).'
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
         '202':
-          description: 'None of its processes runs now: the supervisor starts them (`restarted` is 0).'
+          description: 'Nothing restarted here (`restarted` is 0): none of its processes runs now and the supervisor starts them, or its loops run in another process, which was asked (`requested`).'
           content:
             application/json:
               schema:
