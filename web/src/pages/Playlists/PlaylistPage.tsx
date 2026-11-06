@@ -23,7 +23,7 @@ import {
   updatePlaylist,
   type PlaylistDetail,
 } from "../../lib/me";
-import { shuffled, startQueue, watchPath } from "../../lib/playQueue";
+import { playSource, watchPath } from "../../lib/playQueue";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
 import { LoadError } from "../../components/LoadError";
@@ -95,10 +95,17 @@ function PlaylistOf({ id }: { id: string }) {
   const { playlist, items } = doc;
   const ids = items.map((v) => v.id);
 
-  function playFrom(index: number, shuffle = false) {
-    const list = shuffle ? shuffled(ids) : ids;
-    const first = startQueue(list, shuffle ? 0 : index);
-    if (first) navigate(watchPath(first), { state: { autoplay: true } });
+  // one server queue (Epic 56 story 56.13): it moves to the TV and the phone too
+  async function playFrom(index: number, shuffle = false) {
+    try {
+      const first = await playSource(
+        { kind: "playlist", id: playlist.id },
+        { shuffle, startVideoId: shuffle ? undefined : ids[index] }
+      );
+      if (first) navigate(watchPath(first), { state: { autoplay: true } });
+    } catch {
+      /* the page stays; the button can be pressed again */
+    }
   }
 
   async function move(index: number, delta: number) {

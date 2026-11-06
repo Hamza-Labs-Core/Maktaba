@@ -8,7 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { ApiError } from "../../lib/api";
 import { renderPage, memberUser } from "../../test/pageHarness";
-import { readQueue } from "../../lib/playQueue";
+import { readServerQueue } from "../../lib/playQueue";
 import ar from "../../i18n/ar.json";
 
 const { get, post, put, patch, del } = vi.hoisted(() => ({
@@ -153,23 +153,44 @@ describe("PlaylistPage", () => {
     await waitFor(() => expect(screen.getAllByRole("listitem")).toHaveLength(2));
   });
 
-  it("Play from here fills the queue from that video and opens the player", async () => {
+  // Epic 56 story 56.13: one server queue from the playlist
+  const queue = (cur: number, ids: string[], shuffle = false) => ({
+    id: "Q",
+    source: { kind: "playlist", id: "p1" },
+    shuffle,
+    current_pos: cur,
+    version: 1,
+    source_done: true,
+    total_estimate: ids.length,
+    items: ids.map((id, pos) => ({ pos, origin: "source", id })),
+  });
+
+  it("Play from here makes a playlist queue from that video and opens the player", async () => {
     get.mockResolvedValue(DETAIL);
+    post.mockResolvedValue(queue(1, ["a", "b", "c"]));
     open();
     await screen.findByRole("heading", { name: "رمضان" });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Play from Lesson b" }));
     expect(await screen.findByText("player")).toBeInTheDocument();
-    expect(readQueue()).toMatchObject({ ids: ["a", "b", "c"], index: 1 });
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "playlist", id: "p1" }, shuffle: false, start_video_id: "b" })
+    );
+    expect(readServerQueue()?.current_pos).toBe(1);
   });
 
-  it("Shuffle queues every video", async () => {
+  it("Shuffle makes a shuffled playlist queue", async () => {
     get.mockResolvedValue(DETAIL);
+    post.mockResolvedValue(queue(0, ["c", "a", "b"], true));
     open();
     await screen.findByRole("heading", { name: "رمضان" });
     await userEvent.setup().click(screen.getByRole("button", { name: /Shuffle/ }));
     expect(await screen.findByText("player")).toBeInTheDocument();
-    expect([...(readQueue()?.ids ?? [])].sort()).toEqual(["a", "b", "c"]);
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "playlist", id: "p1" }, shuffle: true })
+    );
   });
 
   it("renames and deletes after confirming", async () => {

@@ -93,6 +93,34 @@ export interface PlaylistSummary {
   poster_video_ids: string[];
   created_at?: string;
   updated_at?: string;
+  /** manual, or smart: a saved filter evaluated when read (Epic 56 story 56.09) */
+  kind: "manual" | "smart";
+  smart_query?: SmartQuery;
+}
+
+/** A smart playlist's rules: the grid's filters, a sort and a limit (1–5,000). */
+export interface SmartQuery {
+  /** null: every library the owner can read */
+  libraries: string[] | null;
+  filters: Record<string, string>;
+  sort?: string;
+  order?: string;
+  limit: number;
+}
+
+function toSmartQuery(v: unknown): SmartQuery | undefined {
+  const r = obj(v);
+  if (!r || typeof r !== "object" || Object.keys(r).length === 0) return undefined;
+  const f = obj(r.filters);
+  const filters: Record<string, string> = {};
+  for (const [k, x] of Object.entries(f)) if (typeof x === "string") filters[k] = x;
+  return {
+    libraries: Array.isArray(r.libraries) ? r.libraries.filter((x): x is string => typeof x === "string") : null,
+    filters,
+    sort: typeof r.sort === "string" ? r.sort : undefined,
+    order: typeof r.order === "string" ? r.order : undefined,
+    limit: num(r.limit, 200),
+  };
 }
 
 export interface PlaylistDetail {
@@ -113,6 +141,8 @@ function toSummary(v: unknown): PlaylistSummary {
       .slice(0, 4),
     created_at: typeof r.created_at === "string" ? r.created_at : undefined,
     updated_at: typeof r.updated_at === "string" ? r.updated_at : undefined,
+    kind: r.kind === "smart" ? "smart" : "manual",
+    smart_query: r.kind === "smart" ? toSmartQuery(r.smart_query) : undefined,
   };
 }
 
@@ -126,8 +156,13 @@ function toDetail(v: unknown): PlaylistDetail {
 
 const plPath = (id: string) => `/api/me/playlists/${encodeURIComponent(id)}`;
 
-export async function fetchPlaylists(): Promise<PlaylistSummary[]> {
-  const r = obj(await api.get<unknown>("/api/me/playlists"));
+/** The caller's playlists; with libraryId, those with videos of it (story 56.10). */
+export async function fetchPlaylists(libraryId?: string): Promise<PlaylistSummary[]> {
+  const r = obj(
+    await api.get<unknown>(
+      libraryId ? `/api/me/playlists?library=${encodeURIComponent(libraryId)}` : "/api/me/playlists"
+    )
+  );
   return list<unknown>(r.items)
     .map(toSummary)
     .filter((p) => p.id);
@@ -150,6 +185,22 @@ export async function createPlaylist(
   for (const part of rest) await addToPlaylist(created.id, part);
   forgetAnswers("playlists", "video:");
   return created;
+}
+
+/** Saves the grid's filters and sort as a smart playlist (story 56.09). */
+export async function createSmartPlaylist(name: string, query: SmartQuery): Promise<PlaylistSummary> {
+  const created = toSummary(
+    await api.post<unknown>("/api/me/playlists", { name, kind: "smart", smart_query: query })
+  );
+  forgetAnswers("playlists");
+  return created;
+}
+
+/** A smart playlist's new rules. */
+export async function updateSmartRules(id: string, query: SmartQuery): Promise<PlaylistSummary> {
+  const p = toSummary(await api.patch<unknown>(plPath(id), { smart_query: query }));
+  forgetAnswers("playlists", `playlist:${id}`);
+  return p;
 }
 
 export async function fetchPlaylist(id: string): Promise<PlaylistDetail> {

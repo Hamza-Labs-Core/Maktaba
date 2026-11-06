@@ -124,6 +124,7 @@ describe("Library page tabs", () => {
       en["libraryPage.tab.browse"],
       en["libraryPage.tab.series"],
       en["libraryPage.tab.collections"],
+      en["libraryPage.tab.playlists"],
     ]);
     await user.click(within(tabs).getByRole("tab", { name: en["libraryPage.tab.series"] }));
     expect(loc()).toHaveTextContent(`/library/${ID}?tab=series`);
@@ -319,5 +320,55 @@ describe("AutoCollectionPage", () => {
     renderAuto("promo", memberUser);
     expect(await screen.findByText(en["collections.notFound"])).toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+// Epic 56 story 56.13: the Playlists tab (GET /api/me/playlists?library=), and the
+// collections a source keeps in step with their badges and chips
+describe("Library page: Playlists and sourced collections", () => {
+  beforeEach(() => {
+    get.mockReset();
+  });
+
+  it("Playlists: the caller's lists with videos here, a smart one badged", async () => {
+    serve({
+      [`/api/me/playlists?library=${encodeURIComponent(ID)}`]: {
+        items: [
+          { id: "p1", name: "دروس", videos: 3, poster_video_ids: [], kind: "manual" },
+          { id: "p2", name: "Unwatched", videos: 50, poster_video_ids: [], kind: "smart", smart_query: { filters: {}, limit: 50 } },
+        ],
+      },
+    });
+    renderLib(`/library/${ID}?tab=playlists`);
+    const link = await screen.findByText("دروس");
+    expect(link.closest("a")).toHaveAttribute("href", "/playlists/p1");
+    const smart = screen.getByText("Unwatched").closest("a")!;
+    expect(within(smart).getByText(en["playlists.smart.badge"])).toBeInTheDocument();
+    expect(within(smart).getByText("50 videos")).toBeInTheDocument();
+  });
+
+  it("Playlists: none with videos here says so", async () => {
+    serve({ [`/api/me/playlists?library=${encodeURIComponent(ID)}`]: { items: [] } });
+    renderLib(`/library/${ID}?tab=playlists`);
+    expect(await screen.findByText(en["playlists.empty.library"])).toBeInTheDocument();
+  });
+
+  it("a YouTube playlist collection has its badge, its chip and its own page", async () => {
+    const yt = col("youtube", "y1", "دروس الفقه", { subkind: "playlist", source_kind: "youtube_playlist", automatic: true });
+    serve({
+      [`/api/libraries/${ID}/collections`]: {
+        ...ALL,
+        items: [...ALL.items, yt],
+        counts: { ...COUNTS, all: 5, youtube: 1, plex: 0 },
+        total: 5,
+      },
+    });
+    renderLib(`/library/${ID}?tab=collections`);
+    const card = (await screen.findByText("دروس الفقه")).closest("a")!;
+    expect(card).toHaveAttribute("href", "/collections/y1");
+    expect(within(card).getByText(en["collections.badge.youtubePlaylist"])).toBeInTheDocument();
+    const filter = screen.getByRole("group", { name: en["collections.kindFilter"] });
+    expect(within(filter).getByRole("button", { name: /From YouTube/ })).toBeInTheDocument();
+    expect(within(filter).queryByRole("button", { name: /From Plex/ })).toBeNull();
   });
 });

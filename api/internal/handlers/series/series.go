@@ -268,6 +268,11 @@ type Episode struct {
 type Season struct {
 	Season   int       `json:"season"`
 	Episodes []Episode `json:"episodes"`
+	// ID is the season's series_seasons row (Epic 56: a play queue's season
+	// source), its Name and Kind that row's; absent for a season with none.
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	Kind string `json:"kind,omitempty"`
 }
 
 // Episodes returns seasons→episodes with the caller's watch state plus
@@ -340,8 +345,22 @@ func (h *Handler) Episodes(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, s)
 	}
 	sort.Ints(keys)
+	rows2, err := h.DB.QueryContext(r.Context(), `SELECT CAST(id AS TEXT), season, name, kind FROM series_seasons
+		WHERE series_id = $1 AND retired_at IS NULL`, id)
+	ids := map[int][3]string{}
+	if err == nil {
+		for rows2.Next() {
+			var sid, name, kind string
+			var n int
+			if rows2.Scan(&sid, &n, &name, &kind) == nil {
+				ids[n] = [3]string{sid, name, kind}
+			}
+		}
+		rows2.Close()
+	}
 	for _, s := range keys {
-		seasons = append(seasons, Season{Season: s, Episodes: bySeason[s]})
+		row := ids[s]
+		seasons = append(seasons, Season{Season: s, Episodes: bySeason[s], ID: row[0], Name: row[1], Kind: row[2]})
 	}
 	resp["seasons"] = seasons
 	resp["numbering"] = numbering

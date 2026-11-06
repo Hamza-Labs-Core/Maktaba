@@ -36,7 +36,7 @@ import {
   type Collection,
 } from "../../lib/collections";
 import { libraryTabPath } from "../../lib/libraryTabs";
-import { shuffled, startQueue, startQueueFromQuery, watchPath } from "../../lib/playQueue";
+import { playSource, watchPath } from "../../lib/playQueue";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
 import { LoadError } from "../../components/LoadError";
@@ -138,27 +138,23 @@ function CollectionOf({ id }: { id: string }) {
   }
 
   const ids = items.map((v) => v.id);
-  // a saved filter plays what the grid lists: its filters over its library
-  const filterQuery = () =>
-    new URLSearchParams({ ...(col.filters ?? {}), library: col.library_id }).toString();
+  const current = col;
 
+  // one server queue from the collection, a saved filter evaluated there too (story 56.13)
   async function play(index: number, shuffle = false) {
-    if (col?.is_smart) {
-      setBusy(true);
-      try {
-        const first = await startQueueFromQuery(filterQuery(), shuffle);
-        if (first) navigate(watchPath(first), { state: { autoplay: true } });
-        else toast.show({ tone: "info", message: t("browse.play.nothing") });
-      } catch (e) {
-        fail(e);
-      } finally {
-        setBusy(false);
-      }
-      return;
+    setBusy(true);
+    try {
+      const first = await playSource(
+        { kind: "collection", id: current.id },
+        { shuffle, startVideoId: shuffle || current.is_smart ? undefined : ids[index] }
+      );
+      if (first) navigate(watchPath(first), { state: { autoplay: true } });
+      else toast.show({ tone: "info", message: t("browse.play.nothing") });
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
     }
-    const list = shuffle ? shuffled(ids) : ids;
-    const first = startQueue(list, shuffle ? 0 : index);
-    if (first) navigate(watchPath(first), { state: { autoplay: true } });
   }
 
   async function move(index: number, delta: number) {

@@ -205,6 +205,11 @@ func TestPGPlayQueue(t *testing.T) {
 	seasonID := uuid.NewString()
 	exec(`INSERT INTO series_seasons (id, series_id, library_id, season, kind, name, membership_hash, detector_version)
 		VALUES ($1,$2,$3,1,'episodic','Season 1','x',1)`, seasonID, seriesID, acLibA)
+	// the episodes route names the season's row, which a season queue takes
+	epsDoc := e.want(http.StatusOK, "member", "GET", "/api/series/"+seriesID+"/episodes?sort=episode", nil)
+	if ss := epsDoc["seasons"].([]any); len(ss) != 1 || ss[0].(map[string]any)["id"] != seasonID || ss[0].(map[string]any)["kind"] != "episodic" {
+		t.Errorf("episodes' seasons %v", epsDoc["seasons"])
+	}
 	sea := e.want(http.StatusCreated, "member", "POST", "/api/me/play-queues", map[string]any{"source": map[string]any{"kind": "season", "id": seasonID}})
 	if cur := pqCurrent(t, sea); cur.id != eps[3] {
 		t.Errorf("season starts at %s", cur.id)

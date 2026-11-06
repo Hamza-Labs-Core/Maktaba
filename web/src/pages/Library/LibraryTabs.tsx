@@ -41,6 +41,7 @@ import { CardGridPlaceholder, Loading } from "../../components/Placeholders";
 import { PosterMosaic } from "./Libraries";
 import { SeriesPoster } from "./SeriesBrowser";
 import { NewCollectionForm } from "../Collections/Collections";
+import { fetchPlaylists, type PlaylistSummary } from "../../lib/me";
 
 /** The cache key of a library's collections of a kind: the Overview row reads "all". */
 export const collectionsKey = (libraryId: string, kind: CollectionFilter | "all") =>
@@ -240,10 +241,22 @@ export function LibraryCollectionCard({
           ) : (
             <span>{t("libraries.videos", { n: n(c.videos ?? 0) })}</span>
           )}
-          {c.automatic && (
-            <Badge tone="neutral" title={t("collections.automatic.hint")}>
-              {t("collections.automatic")}
+          {c.source_kind ? (
+            <Badge tone="neutral">
+              {t(
+                c.source_kind === "plex"
+                  ? "collections.badge.plex"
+                  : c.source_kind === "youtube_channel"
+                    ? "collections.badge.youtubeChannel"
+                    : "collections.badge.youtubePlaylist"
+              )}
             </Badge>
+          ) : (
+            c.automatic && (
+              <Badge tone="neutral" title={t("collections.automatic.hint")}>
+                {t("collections.automatic")}
+              </Badge>
+            )
           )}
         </span>
       </Link>
@@ -292,7 +305,10 @@ export function CollectionsTab({ libraryId }: { libraryId: string }) {
 
       {counts && counts.all > 0 && (
         <div className="mkt-chips" role="group" aria-label={t("collections.kindFilter")}>
-          {(["all", ...COLLECTION_FILTERS] as const).map((k) => (
+          {(["all", ...COLLECTION_FILTERS] as const)
+            // YouTube's and Plex's chips only where the library has some
+            .filter((k) => (k !== "youtube" && k !== "plex") || counts[k] > 0 || kind === k)
+            .map((k) => (
             <button
               key={k}
               type="button"
@@ -304,7 +320,7 @@ export function CollectionsTab({ libraryId }: { libraryId: string }) {
                 {t(`collections.kind.${k}`)} <span className="mkt-chip-count">{n(counts[k])}</span>
               </Chip>
             </button>
-          ))}
+            ))}
         </div>
       )}
 
@@ -360,6 +376,51 @@ export function CollectionsTab({ libraryId }: { libraryId: string }) {
           onMore={() => void more.more()}
         />
       )}
+    </div>
+  );
+}
+
+// ---- Playlists (Epic 56 story 56.13) ----
+
+/** The caller's playlists with videos of this library: manual ones holding one,
+ * smart ones whose rules cover it (GET /api/me/playlists?library=). */
+export function PlaylistsTab({ libraryId }: { libraryId: string }) {
+  const { t, n } = useI18n();
+  const { data, err, loading, reload } = usePageData<PlaylistSummary[]>(
+    `library-playlists:${libraryId}`,
+    () => fetchPlaylists(libraryId)
+  );
+  if (err != null) return <LoadError error={err} onRetry={reload} />;
+  if (!data) {
+    return (
+      <Loading loading={loading}>
+        <CardGridPlaceholder cards={4} heading="mkt-library-collections__heading" />
+      </Loading>
+    );
+  }
+  if (data.length === 0) {
+    return (
+      <div className="mkt-library-tab mkt-library-playlists">
+        <EmptyState title={t("playlists.empty.library")} />
+      </div>
+    );
+  }
+  return (
+    <div className="mkt-library-tab mkt-library-playlists">
+      <ul className="mkt-libgrid">
+        {data.map((p) => (
+          <li key={p.id} className="mkt-libcard">
+            <Link to={`/playlists/${encodeURIComponent(p.id)}`} className="mkt-libcard__link">
+              <PosterMosaic ids={p.poster_video_ids} />
+              <bdi className="mkt-libcard__name">{p.name}</bdi>
+              <span className="mkt-libcard__meta">
+                <span>{t("playlists.count", { n: n(p.videos) })}</span>
+                {p.kind === "smart" && <Badge tone="accent">{t("playlists.smart.badge")}</Badge>}
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
