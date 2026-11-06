@@ -239,7 +239,7 @@ if [ -n "$SETUP" ]; then
         fi
         want="$*"
         if [ "$(printf '%s' "$got" | sed 's/[^ ][^ ]*/x/g')" != "$(printf '%s' "$want" | sed 's/[^ ][^ ]*/x/g')" ] ||
-            ! printf '%s\n' "$got" | grep -qxE "$(printf '%s' "$want" | sed 's/[^ ][^ ]*/(&|[?])/g')"; then
+            ! grep -qxE "$(printf '%s' "$want" | sed 's/[^ ][^ ]*/(&|[?])/g')" <<<"$got"; then
             fail "$what: the hooks ran Maktaba.exe with '${got}', want '${want}'"
         elif [ "$ended" = 0 ]; then
             ok "$what: the hooks ran Maktaba.exe ${got// / then }, each exited by itself"
@@ -412,7 +412,7 @@ if "$pg/initdb.exe" -D "$(win "$PGDATA_DIR")" -U maktaba --auth=trust -E UTF8 --
             -c "DROP TABLE vec_check;" 2>&1)" || rc=$?
         got="${got//$'\r'/}"
         case "$rc:$got" in
-            0:*"vector $pgv, nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(printf '%s\n' "$got" | grep -m1 '^vector ')" ;;
+            0:*"vector $pgv, nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(grep -m1 '^vector ' <<<"$got")" ;;
             *) fail "pgvector $pgv (exit $rc): $(printf '%s\n' "$got" | tail -4)" ;;
         esac
     elif [ -e "$PAYLOAD/postgres/lib/vector.dll" ] || [ -e "$PAYLOAD/postgres/share/extension/vector.control" ]; then
@@ -493,7 +493,7 @@ else
     fail "constraints-cuda.txt missing, without hashes or without torch's CUDA build"
 fi
 for heavy in torch nvidia ctranslate2 mlx; do
-    if find "$PAYLOAD" -iname "${heavy}*" -print -quit | grep -q .; then fail "$heavy is in the payload (it downloads on first run)"; fi
+    if [ -n "$(find "$PAYLOAD" -iname "${heavy}*" -print -quit)" ]; then fail "$heavy is in the payload (it downloads on first run)"; fi
 done
 run "payload.json" "$PY" -I - "$(win "$PAYLOAD")" "$("$pg/postgres.exe" --version 2>&1 | tr -d '\r')" <<'PY'
 import hashlib, json, sys

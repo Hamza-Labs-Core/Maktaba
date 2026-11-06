@@ -204,7 +204,7 @@ jobs:
           shopt -s nullglob
           for f in dl/maktaba-server_*.deb dl/maktaba-server-*.rpm; do
             base="${f##*/}"
-            awk '{sub(/^\.\//, "", $2); print $2}' dl/checksums.txt | grep -qxF "${base}" ||
+            grep -qxF "${base}" < <(awk '{sub(/^\.\//, "", $2); print $2}' dl/checksums.txt) ||
               { echo "::error::${base} is not in the release's signed checksums.txt"; exit 1; }
             cp "${f}" take/
           done
@@ -347,7 +347,7 @@ jobs:
           cosign verify-blob --bundle dl/checksums.txt.sigstore.json \
             --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com dl/checksums.txt
-          awk '{sub(/^\.\//, "", $2); print $2}' dl/checksums.txt | grep -qxF maktaba.rb ||
+          grep -qxF maktaba.rb < <(awk '{sub(/^\.\//, "", $2); print $2}' dl/checksums.txt) ||
             { echo "::error::maktaba.rb is not in the release's signed checksums.txt"; exit 1; }
           (cd dl && sha256sum --check --ignore-missing --strict checksums.txt)
           bundle="Maktaba_${ver}_aarch64.app.tar.gz"

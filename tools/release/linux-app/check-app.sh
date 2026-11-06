@@ -70,15 +70,15 @@ for bundle in "$@"; do
             else
                 reqs="$(rpm -qp --requires "$abs" 2>/dev/null)"
                 for want in 'libwebkit2gtk-4.1.so.0()(64bit)' 'libgtk-3.so.0()(64bit)' 'libayatana-appindicator3.so.1()(64bit)' ffmpeg; do
-                    if printf '%s\n' "$reqs" | grep -qxF "$want"; then ok "Requires: $want"; else fail "Requires lacks $want ($(printf '%s' "$reqs" | tr '\n' ' '))"; fi
+                    if grep -qxF "$want" <<<"$reqs"; then ok "Requires: $want"; else fail "Requires lacks $want ($(printf '%s' "$reqs" | tr '\n' ' '))"; fi
                 done
                 # rpm prints the scriptlet's body after its header line: it must hold the
                 # script's disable line (a literal, $ and all)
                 scripts="$(rpm -qp --scripts "$abs" 2>/dev/null)"
                 # shellcheck disable=SC2016
-                if printf '%s\n' "$scripts" | grep -q '^preuninstall scriptlet' &&
-                    printf '%s\n' "$scripts" | sed -n '/^preuninstall scriptlet/,/^[a-z]* scriptlet/p' |
-                    grep -qF 'systemctl --user --machine="$user@" disable --now "$unit"'; then
+                if grep -q '^preuninstall scriptlet' <<<"$scripts" &&
+                    grep -qF 'systemctl --user --machine="$user@" disable --now "$unit"' < <(
+                        sed -n '/^preuninstall scriptlet/,/^[a-z]* scriptlet/p' <<<"$scripts"); then
                     ok "%preun: package-remove.sh"
                 else
                     fail "the .rpm's %preun is not package-remove.sh"
@@ -103,7 +103,7 @@ for bundle in "$@"; do
         fail "no server payload in usr/share/maktaba/server"
         continue
     fi
-    if find "$root/usr/lib" -path '*/server/payload.json' 2>/dev/null | grep -q .; then
+    if [ -n "$(find "$root/usr/lib" -path '*/server/payload.json' -print -quit 2>/dev/null)" ]; then
         fail "a payload among the resources in usr/lib (linuxdeploy rewrites ELF files there)"
     fi
     # pgvector beside the other extensions (semantic search, Epic 43); check.sh creates it

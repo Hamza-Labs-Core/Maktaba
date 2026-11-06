@@ -101,7 +101,7 @@ if command -v rpm >/dev/null 2>&1; then
         *"maktaba >= 0.3.0"*"maktaba-full-data1 = 0.3.0-0.1.rc.1"*) ok ".rpm Requires" ;;
         *) bad ".rpm Requires: $reqs" ;;
     esac
-    rpm -qlp "$rfull" 2>/dev/null | grep -q "^/$DIR/offline.json$" && ok ".rpm holds offline.json" || bad ".rpm files: $(rpm -qlp "$rfull" 2>/dev/null)"
+    grep -q "^/$DIR/offline.json$" < <(rpm -qlp "$rfull" 2>/dev/null) && ok ".rpm holds offline.json" || bad ".rpm files: $(rpm -qlp "$rfull" 2>/dev/null)"
 else
     echo "  skip  .rpm checks (no rpm)"
 fi

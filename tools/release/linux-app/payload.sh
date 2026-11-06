@@ -219,7 +219,7 @@ tool() { "$PY" -I "$SCRIPT_DIR/payload_tool.py" "$@"; }
 # archive's own modules carry the build machine's /opt/postgresql/lib).
 log "Postgres's libraries from this machine"
 mapfile -t elves < <(find "$OUT/postgres/bin" "$OUT/postgres/lib" -type f -exec sh -c \
-    'for f; do head -c 4 "$f" | grep -q ELF && printf "%s\n" "$f"; done' sh {} +)
+    'for f; do case "$(head -c 4 "$f" | LC_ALL=C tr -d "\\000")" in *ELF) printf "%s\n" "$f" ;; esac; done' sh {} +)
 needs="$(tool closure "$OUT/postgres" "${elves[@]}")" || die "Postgres needs a library this machine does not have"
 closure=()
 while read -r soname path; do
@@ -230,7 +230,7 @@ while read -r soname path; do
 done <<<"$needs"
 for f in "$OUT"/postgres/lib/*.so*; do
     [ -L "$f" ] && continue
-    head -c 4 "$f" | grep -q ELF || continue
+    grep -q ELF < <(head -c 4 "$f") || continue
     # shellcheck disable=SC2016 # $ORIGIN is the dynamic loader's, not the shell's
     patchelf --set-rpath '$ORIGIN' "$f"
 done

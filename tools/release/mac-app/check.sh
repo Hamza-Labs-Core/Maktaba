@@ -86,8 +86,8 @@ while IFS= read -r f; do
     archs="$(lipo -archs "$f" 2>/dev/null || true)"
     case " $archs " in *" arm64 "*) ;; *) fail "${f#"$PAYLOAD"/}: not arm64 ($archs)"; bad=$((bad + 1)) ;; esac
     # nothing from Homebrew, /usr/local or a build machine: only the system and the payload
-    if otool -L "$f" | tail -n +2 | awk '{print $1}' |
-        grep -vE '^(/usr/lib/|/System/Library/|@loader_path/|@rpath/|@executable_path/)' | grep -q .; then
+    if grep -q . < <(otool -L "$f" | tail -n +2 | awk '{print $1}' |
+        grep -vE '^(/usr/lib/|/System/Library/|@loader_path/|@rpath/|@executable_path/)'); then
         fail "${f#"$PAYLOAD"/}: links outside the payload: $(otool -L "$f" | tail -n +2 | awk '{print $1}' |
             grep -vE '^(/usr/lib/|/System/Library/|@loader_path/|@rpath/|@executable_path/)' | sed -n 1,2p | tr '\n' ' ')"
         bad=$((bad + 1))
@@ -101,7 +101,7 @@ echo "build IDs"
 # to host" with the switch on). Go writes it from its build ID, so a build must not clear that.
 bad=0
 for f in "$PAYLOAD"/bin/*; do
-    otool -l "$f" | grep -q LC_UUID || { fail "bin/${f##*/}: no LC_UUID (built with -buildid=?)"; bad=$((bad + 1)); }
+    grep -q LC_UUID < <(otool -l "$f") || { fail "bin/${f##*/}: no LC_UUID (built with -buildid=?)"; bad=$((bad + 1)); }
 done
 [ "$bad" -eq 0 ] && ok "every program in bin/ has an LC_UUID"
 
@@ -133,7 +133,7 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 >"$SCRATCH/
         -c "EXPLAIN (COSTS OFF) SELECT id FROM vec_check ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3;" \
         -c "DROP TABLE vec_check;" 2>&1)" || rc=$?
     case "$rc:$out" in
-        0:*"nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(printf '%s\n' "$out" | grep -m1 '^vector ')" ;;
+        0:*"nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(grep -m1 '^vector ' <<<"$out")" ;;
         *) fail "pgvector (exit $rc): $(printf '%s\n' "$out" | tail -4)" ;;
     esac
     run "pg_dump" "$pg/pg_dump" -h 127.0.0.1 -p "$port" -U maktaba -Fc -f "$SCRATCH/dump" postgres
@@ -157,7 +157,7 @@ for _ in $(seq 1 100); do
     sleep 0.2
 done
 if [ -n "$up" ]; then ok "ollama serve answers: $up"; else fail "ollama serve did not answer: $(tail -3 "$SCRATCH/ollama.log")"; fi
-if [ -n "$up" ] && curl -fsS "http://127.0.0.1:$oport/api/tags" | grep -q '"models"'; then ok "ollama /api/tags"; else fail "ollama /api/tags"; fi
+if [ -n "$up" ] && grep -q '"models"' < <(curl -fsS "http://127.0.0.1:$oport/api/tags"); then ok "ollama /api/tags"; else fail "ollama /api/tags"; fi
 kill "$opid" 2>/dev/null || true
 wait "$opid" 2>/dev/null || true
 fi
@@ -182,7 +182,7 @@ else
     fail "constraints.txt missing or without hashes"
 fi
 for heavy in mlx torch; do
-    if find "$PAYLOAD" -iname "${heavy}*" -print -quit | grep -q .; then fail "$heavy is in the payload (it downloads on first run)"; fi
+    if [ -n "$(find "$PAYLOAD" -iname "${heavy}*" -print -quit)" ]; then fail "$heavy is in the payload (it downloads on first run)"; fi
 done
 echo "database migrations"
 # maktaba-api migrates from <payload>/migrations (the app runs from the user's data, never a checkout)
