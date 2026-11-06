@@ -13,9 +13,9 @@ import (
 // with it instead of answering 503. Written where the registry records a
 // server online or offline (TunnelServer's Up / Down callbacks).
 //
-// Tunnel seqs order tunnels across processes: they start at the process's
-// start time in nanoseconds (tunnelSeq), so a reconnect to another process
-// on the same node (or a chrony-synced peer) has the higher seq. Up writes a
+// Tunnel seqs order tunnels across processes: a seq is the time the tunnel
+// was made in nanoseconds (tunnelSeq), so a reconnect to another process on
+// the same node (or a chrony-synced peer) has the higher seq. Up writes a
 // row only when its seq is higher; Down deletes one only when the relay and
 // the seq still match, so a newer tunnel elsewhere is never erased.
 

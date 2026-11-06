@@ -73,13 +73,25 @@ func TestMemDirectorySeqs(t *testing.T) {
 	}
 }
 
-// Tunnel seqs start at the process's start time, so they order tunnels
-// across processes.
-func TestTunnelSeqStartsAtTheClock(t *testing.T) {
-	tn := NewTunnel("s", "acme", &nopConn{done: make(chan struct{})})
-	defer tn.Close()
-	if tn.Seq() < uint64(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).UnixNano()) {
-		t.Errorf("seq %d is not a nanosecond time", tn.Seq())
+// A tunnel's seq is the time it was made, strictly increasing: a tunnel made
+// later on another process (whose counter would have started earlier) still
+// has the higher seq. Found by the rehearsal's drain-1k: green started first,
+// so its newer tunnels lost to blue's older ones in the directory.
+func TestTunnelSeqIsTheTimeItWasMade(t *testing.T) {
+	before := uint64(time.Now().UnixNano())
+	a := NewTunnel("s", "acme", &nopConn{done: make(chan struct{})})
+	b := NewTunnel("s", "acme", &nopConn{done: make(chan struct{})})
+	defer a.Close()
+	defer b.Close()
+	if a.Seq() < before || b.Seq() <= a.Seq() {
+		t.Errorf("seqs %d, %d (made after %d)", a.Seq(), b.Seq(), before)
+	}
+	// another process's counter that started long ago: its next tunnel is still newer
+	tunnelSeq.Store(before - uint64(time.Hour))
+	c := NewTunnel("s", "acme", &nopConn{done: make(chan struct{})})
+	defer c.Close()
+	if c.Seq() <= b.Seq() {
+		t.Errorf("a tunnel made later has seq %d, below %d", c.Seq(), b.Seq())
 	}
 }
 

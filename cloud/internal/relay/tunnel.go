@@ -48,15 +48,24 @@ type Tunnel struct {
 	tracked atomic.Bool
 }
 
-// tunnelSeq numbers the tunnels as they are made. It starts at the process's
-// start time in nanoseconds, so seqs also order tunnels across relay
-// processes (the tunnel directory, story 50.04): a process started later, or
-// a tunnel made later, has the higher seq.
-var tunnelSeq = func() *atomic.Uint64 {
-	var s atomic.Uint64
-	s.Store(uint64(time.Now().UnixNano()))
-	return &s
-}()
+// tunnelSeq numbers the tunnels as they are made: the wall clock in
+// nanoseconds when the tunnel was made, kept strictly increasing within the
+// process. So seqs also order tunnels across relay processes (the tunnel
+// directory, story 50.04): a home's tunnel made later, on whichever process,
+// has the higher seq. (A counter from the process's start would not: a
+// process started earlier hands out lower seqs to its newer tunnels.)
+var tunnelSeq atomic.Uint64
+
+func nextSeq() uint64 {
+	now := uint64(time.Now().UnixNano())
+	for {
+		last := tunnelSeq.Load()
+		next := max(now, last+1)
+		if tunnelSeq.CompareAndSwap(last, next) {
+			return next
+		}
+	}
+}
 
 // Seq is the tunnel's order among all tunnels (tunnelSeq).
 func (t *Tunnel) Seq() uint64 { return t.seq }
@@ -78,7 +87,7 @@ func WithFlowControl() TunnelOption { return func(t *Tunnel) { t.flow = true } }
 // NewTunnel wires the read loop and returns immediately. Callers must
 // then call Register on the *Registry so the proxy can find it.
 func NewTunnel(serverID, slug string, conn FrameConn, opts ...TunnelOption) *Tunnel {
-	t := &Tunnel{ServerID: serverID, Slug: slug, conn: conn, done: make(chan struct{}), seq: tunnelSeq.Add(1)}
+	t := &Tunnel{ServerID: serverID, Slug: slug, conn: conn, done: make(chan struct{}), seq: nextSeq()}
 	for _, o := range opts {
 		o(t)
 	}
