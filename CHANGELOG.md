@@ -175,6 +175,10 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **Turning a component back on queues its catch-up once.** A worker that started while the
+  component was off could queue a second catch-up after another worker's had finished, running
+  the whole time off again (or all history). A worker that loses the lead also stops reporting
+  the component as off once it is on again, so Admin > Components no longer shows it off.
 
 ### Security
 
