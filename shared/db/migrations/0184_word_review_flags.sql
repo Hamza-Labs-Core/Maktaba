@@ -17,7 +17,9 @@
 --    transcript that may be poor (kind 'transcript', segment_seq -1). The soft lock
 --    (locked_by, locked_until) is 52.8's.
 --
--- Additive: one column, two tables, three indexes (CONCURRENTLY: NO TRANSACTION, every
+-- 4. job_stages: the word_check stage.
+--
+-- Additive: one column, two tables, three indexes, one stage row (CONCURRENTLY: NO TRANSACTION, every
 -- statement harmless twice).
 --
 ALTER TABLE transcript_segments ADD COLUMN IF NOT EXISTS word_data BYTEA;
@@ -89,6 +91,18 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS word_flags_key_idx ON word_flags (key, l
 
 -- +goose StatementBegin
 CREATE INDEX CONCURRENTLY IF NOT EXISTS word_flags_transcript_idx ON word_flags (transcript_id);
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- the word_check stage (Epic 52, story 52.6): video and library subjects, the cpu pool,
+-- speech lane 4; its edges are the pipeline's to write (its graph sync)
+INSERT INTO job_stages
+    (stage, label, subject_kinds, pool, lane, lane_order, version, debounce_sec,
+     debounce_max_sec, max_attempts, edges, may_request, entry_for, legacy, hidden,
+     external_write, write_mode, placement, enabled, disabled_reason)
+VALUES
+    ('word_check', 'Word review', ARRAY['video', 'library']::text[], 'cpu', 'speech', 4, 1, 0, 0, 3, '[]'::jsonb, '{}'::text[], '{}'::text[], false, false, false, 'auto', 'any', true, NULL)
+ON CONFLICT (stage) DO NOTHING;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

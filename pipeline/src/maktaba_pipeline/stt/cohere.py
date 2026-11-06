@@ -319,9 +319,17 @@ class CamelDictionary:
             dediac_ar,
         )
 
-        self._an = Analyzer(MorphologyDB.builtin_db("calima-msa-r13"), backoff="NONE")
+        from ..language_packs.ar import morphology
+
+        # one analyser per process: the Arabic language pack's (Epic 52, story 52.4)
+        shared = morphology.analyser()
+        self._an = (
+            shared
+            if shared is not None
+            else Analyzer(MorphologyDB.builtin_db("calima-msa-r13"), backoff="NONE")
+        )
         self._dediac = dediac_ar
-        self._lock = threading.Lock()
+        self._lock = morphology.LOCK if shared is not None else threading.Lock()
 
     @lru_cache(maxsize=65_536)  # noqa: B019 - one instance per process, never freed
     def spell(self, word: str) -> str | None:

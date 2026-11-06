@@ -72,6 +72,16 @@ CREATE INDEX IF NOT EXISTS word_flags_key_idx ON word_flags (key, language, stat
 CREATE INDEX IF NOT EXISTS word_flags_transcript_idx ON word_flags (transcript_id);
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+INSERT INTO job_stages
+    (stage, label, subject_kinds, pool, lane, lane_order, version, debounce_sec,
+     debounce_max_sec, max_attempts, edges, may_request, entry_for, legacy, hidden,
+     external_write, write_mode, placement, enabled, disabled_reason)
+VALUES
+    ('word_check', 'Word review', '["video","library"]', 'cpu', 'speech', 4, 1, 0, 0, 3, '[]', '[]', '[]', 0, 0, 0, 'auto', 'any', 1, NULL)
+ON CONFLICT (stage) DO NOTHING;
+-- +goose StatementEnd
+
 -- +goose Down
 -- +goose StatementBegin
 DROP TABLE IF EXISTS word_flags;

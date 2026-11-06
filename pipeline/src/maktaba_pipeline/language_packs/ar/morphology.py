@@ -13,9 +13,11 @@ import importlib.util
 import threading
 from typing import Any
 
-__all__ = ["Analysis", "analyse", "analyser", "available"]
+__all__ = ["LOCK", "Analysis", "analyse", "analyser", "available"]
 
 _LOCK = threading.Lock()
+#: held around every call into the shared analyser (it is not thread-safe)
+LOCK = threading.Lock()
 _ONE: list[Any] = []
 
 #: (lemma, part of speech, the analysis's spelling with its diacritics, its log probability)
@@ -54,7 +56,7 @@ def analyse(word: str) -> list[Analysis]:
     an = analyser()
     if an is None:
         return []
-    with _LOCK:
+    with LOCK:
         got = an.analyze(word)
     return [
         (
