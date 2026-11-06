@@ -182,7 +182,7 @@ slots = "off"
 	waitFor(t, "the node following the home's moved database", 3*time.Minute, loggedIn)
 	t.Logf("the node followed the home's moved database in %s", time.Since(moved).Round(time.Second))
 	// re-made because the database moved (the node's address refuses), not by luck
-	if !strings.Contains(home.log.String(), "why=refused_moved") {
+	if !logField(home.log.String(), "why", "refused_moved") {
 		t.Errorf("the home did not re-make the access for the moved database:\n%s", tail(home.log.String(), 3000))
 	}
 
@@ -197,7 +197,7 @@ slots = "off"
 	dropped := time.Now()
 	waitFor(t, "the node logging in with its role made again", 3*time.Minute, loggedIn)
 	t.Logf("the node logged in with its role made again in %s", time.Since(dropped).Round(time.Second))
-	if !strings.Contains(home.log.String(), "why=auth_failed") {
+	if !logField(home.log.String(), "why", "auth_failed") {
 		t.Errorf("the home did not re-make the access for the refused password:\n%s", tail(home.log.String(), 3000))
 	}
 	if !strings.Contains(node.log.String(), "following it at") {
