@@ -79,7 +79,10 @@ func NewMigrator(p *Pool, dir embed.FS, root string) *Migrator {
 	return &Migrator{pool: p, dir: dir, root: root}
 }
 
-// Up applies all pending migrations.
+// Up applies all pending migrations, including one numbered below the
+// database's version: files are numbered by epic slot (README), so an
+// epic's migration can land after a later slot's (Epic 50's 0050 after
+// Epic 51's 0051) and must still be applied.
 func (m *Migrator) Up(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -87,7 +90,7 @@ func (m *Migrator) Up(ctx context.Context) error {
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrator: dialect: %w", err)
 	}
-	return goose.UpContext(ctx, m.pool.DB, m.root)
+	return goose.UpContext(ctx, m.pool.DB, m.root, goose.WithAllowMissing())
 }
 
 // Down rolls back the most recent N migrations. Mainly used in dev /

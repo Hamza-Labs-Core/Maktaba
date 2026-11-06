@@ -215,6 +215,15 @@ build fails when the two differ.
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
+
+- **Maktaba Cloud's names, written down once, and the cloud's own names kept from homes
+  (Epic 50, story 50.01).** `docs/cloud-dns.md` lists every public name, what it points at,
+  its TTL and whether Cloudflare proxies it (relay names are DNS only, on the Floating IP).
+  A home can no longer take `canary`, `direct`, `staging`, `plugins`, `plugins-cdn` or
+  `r1`…`r99` as its address; a reserved address is refused with `409 subdomain_reserved`,
+  and the claim code stays usable. A lint fails a pull request that adds a host name under
+  `maktaba.app`, which is not ours (app identifiers like `com.maktaba.app` pass), and the
+  stale `relay.maktaba.app` example and the log schema's `$id` now say `maktaba.tv`.
 ### Added
 
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
