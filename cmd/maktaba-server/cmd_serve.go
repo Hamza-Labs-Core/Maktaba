@@ -505,7 +505,10 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		admin = u.adminHandler(admin, token)
 	}
 	// the web's Storage & discovery settings (serve_config.go)
-	admin = newConfigAdmin(cfg, token, releaseDir).adminHandler(admin)
+	cadm := newConfigAdmin(cfg, token, releaseDir)
+	// Epic 53 story 53.11: the Retention page and detailed logs (serve_logs_config.go)
+	cadm.logs = &logsAdmin{keeper: keeper, restart: sup.RestartComponent}
+	admin = cadm.adminHandler(admin)
 	// Epic 51 story 51.16: install, remove and offline files of asset components (serve_packs.go)
 	packsRoutes.token = token
 	admin = packsRoutes.adminHandler(admin)

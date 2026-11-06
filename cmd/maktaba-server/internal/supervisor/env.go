@@ -169,6 +169,10 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		add("MAKTABA_LOG_FORMAT", "json")
 	}
 
+	// The level file (Epic 53 story 53.11): "Detailed logs for one hour" reaches each role
+	// through it (LevelFile, SetLevelFor).
+	add("MAKTABA_LOG_LEVEL_FILE", LevelFile(cfg, role))
+
 	// The log key (Epic 53 story 53.01): every role names a user in its lines by
 	// user_h, the id's hash under it. Made here on the first start that needs it; a
 	// key that cannot be made leaves the variable out, and the roles then write no

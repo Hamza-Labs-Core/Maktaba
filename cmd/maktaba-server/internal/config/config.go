@@ -212,6 +212,11 @@ type LogsSection struct {
 	Retention string `toml:"retention,omitempty"`
 	// DebugRetention is how long debug lines are kept ("24h").
 	DebugRetention string `toml:"debug_retention,omitempty"`
+	// ErrorRetention is how long an error group is kept after it was last seen ("30d"; 1
+	// to 365 days: story 53.10), ReportRetention a problem report ("90d"; 1 to 365 days:
+	// story 53.15).
+	ErrorRetention  string `toml:"error_retention,omitempty"`
+	ReportRetention string `toml:"report_retention,omitempty"`
 	// MaxTotalSize is the room every diagnostic on disk may take in all ("1GB"; 256 MB to
 	// 20 GB): the segments get 55 % of it, logs.db 35 %, problem reports 10 %.
 	MaxTotalSize string `toml:"max_total_size,omitempty"`
@@ -230,28 +235,38 @@ type LogsSection struct {
 
 // ResolvedLogs is the [logs] table with its defaults filled in and its limits applied.
 type ResolvedLogs struct {
-	Retention      time.Duration
-	DebugRetention time.Duration
-	MaxTotal       int64
-	MaxSegments    int64
-	MinFree        int64
-	ServerLogAll   bool
+	Retention       time.Duration
+	DebugRetention  time.Duration
+	ErrorRetention  time.Duration
+	ReportRetention time.Duration
+	MaxTotal        int64
+	MaxSegments     int64
+	MinFree         int64
+	ServerLogAll    bool
 }
 
 // Resolved reads the table: an unreadable or out-of-range value takes its default.
 func (l LogsSection) Resolved() ResolvedLogs {
 	r := ResolvedLogs{
-		Retention:      7 * 24 * time.Hour,
-		DebugRetention: 24 * time.Hour,
-		MaxTotal:       1 << 30,
-		MinFree:        5 << 30,
-		ServerLogAll:   !strings.EqualFold(strings.TrimSpace(l.ServerLog), "warn"),
+		Retention:       7 * 24 * time.Hour,
+		DebugRetention:  24 * time.Hour,
+		ErrorRetention:  30 * 24 * time.Hour,
+		ReportRetention: 90 * 24 * time.Hour,
+		MaxTotal:        1 << 30,
+		MinFree:         5 << 30,
+		ServerLogAll:    !strings.EqualFold(strings.TrimSpace(l.ServerLog), "warn"),
 	}
 	if d, ok := parseDays(l.Retention); ok && d >= 24*time.Hour && d <= 90*24*time.Hour {
 		r.Retention = d
 	}
 	if d, ok := parseDays(l.DebugRetention); ok && d >= time.Hour && d <= r.Retention {
 		r.DebugRetention = d
+	}
+	if d, ok := parseDays(l.ErrorRetention); ok && d >= 24*time.Hour && d <= 365*24*time.Hour {
+		r.ErrorRetention = d
+	}
+	if d, ok := parseDays(l.ReportRetention); ok && d >= 24*time.Hour && d <= 365*24*time.Hour {
+		r.ReportRetention = d
 	}
 	if n, ok := parseSize(l.MaxTotalSize); ok && n >= 256<<20 && n <= 20<<30 {
 		r.MaxTotal = n

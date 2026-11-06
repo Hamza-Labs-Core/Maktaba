@@ -85,6 +85,9 @@ func Init(opts Options) *slog.Logger {
 		Default = build(opts, globalRing)
 		slog.SetDefault(Default)
 		installSIGUSR1()
+		if p := os.Getenv(EnvLevelFile); p != "" {
+			watchLevelFile(p, levelVar.Level())
+		}
 	})
 	return Default
 }

@@ -457,3 +457,24 @@ func TestCloseWaitsForCompression(t *testing.T) {
 		t.Fatal("its uncompressed file is gone before Close returns")
 	}
 }
+
+// Story 53.11: a retention the admin shortens applies at the next janitor pass, with no
+// restart.
+func TestSetLimitsAppliesAtTheNextPass(t *testing.T) {
+	k, c, _ := newKeeper(t, -1)
+	f, _ := k.Spool("api", "")
+	fmt.Fprintln(f, `{"level":"info","msg":"old"}`)
+	_ = f.Close()
+	k.Flush()
+	c.add(3 * 24 * time.Hour)
+	k.Flush()
+	k.Janitor()
+	if len(k.files()) == 0 {
+		t.Fatal("within 7 days the hour stays")
+	}
+	k.SetLimits(48*time.Hour, 0, 0)
+	k.Janitor()
+	if fs := k.files(); len(fs) != 0 {
+		t.Fatalf("over the new 2 days it goes: %v", fs)
+	}
+}

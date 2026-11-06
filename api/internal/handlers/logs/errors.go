@@ -58,7 +58,7 @@ func (h *Handler) errorStatus(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode == http.StatusNoContent {
 		var change map[string]any
 		_ = json.Unmarshal(body, &change)
-		h.audit(r.Context(), principal.FromContext(r.Context()), fp, change)
+		h.auditAs(r.Context(), principal.FromContext(r.Context()), EventErrorStatus, fp, change)
 	}
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		w.Header().Set("Content-Type", ct)
@@ -67,8 +67,8 @@ func (h *Handler) errorStatus(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, resp.Body)
 }
 
-// audit writes the change to audit_log (best effort: the change is made either way).
-func (h *Handler) audit(ctx context.Context, p *principal.Principal, fp string, change map[string]any) {
+// auditAs writes an admin's change to audit_log (best effort: the change is made either way).
+func (h *Handler) auditAs(ctx context.Context, p *principal.Principal, event, target string, change map[string]any) {
 	if h.DB == nil {
 		return
 	}
@@ -79,8 +79,12 @@ func (h *Handler) audit(ctx context.Context, p *principal.Principal, fp string, 
 			actor = p.UserID
 		}
 	}
+	var tgt any
+	if target != "" {
+		tgt = target
+	}
 	_, _ = h.DB.ExecContext(ctx, `INSERT INTO audit_log (category, action, actor_user_id, target_id, payload)
-		VALUES ($1, $2, $3, $4, $5)`, AuditCategory, EventErrorStatus, actor, fp, string(b))
+		VALUES ($1, $2, $3, $4, $5)`, AuditCategory, event, actor, tgt, string(b))
 }
 
 // NotifyKind is the notification kind of an error group (the web app's

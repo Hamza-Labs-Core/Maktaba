@@ -35,6 +35,8 @@ type configAdmin struct {
 	reload func()
 	// runningBackups is [backups] as serve started with it (nil: as saved)
 	runningBackups *config.BackupSettings
+	// logs: the keeper and the log index's restart, for /config/logs (nil: no keeper)
+	logs *logsAdmin
 
 	mu sync.Mutex // one write at a time
 }
@@ -70,7 +72,7 @@ func (c *configAdmin) adminHandler(base http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		if c.storageRoutes(w, r) || c.backupsRoutes(w, r) {
+		if c.storageRoutes(w, r) || c.backupsRoutes(w, r) || c.logsRoutes(w, r) {
 			return
 		}
 		switch {
