@@ -292,16 +292,27 @@ func (h *Handler) scopedEntries(f mlog.Filter, scopeUserID string) []mlog.Entry 
 		return entries
 	}
 	out := entries[:0:0]
+	hash := mlog.HashUser(scopeUserID)
 	for _, e := range entries {
-		var rec struct {
-			UserID string `json:"user_id"`
-		}
-		_ = json.Unmarshal(e.Raw, &rec)
-		if rec.UserID == scopeUserID {
+		if ownedBy(e.Raw, scopeUserID, hash) {
 			out = append(out, e)
 		}
 	}
 	return out
+}
+
+// ownedBy reports whether a log line belongs to the user: it names them by user_h (their
+// hash under this machine's log key, Epic 53 story 53.01) or, on a line from before, by
+// user_id. A line that does not parse belongs to no one (fail-closed).
+func ownedBy(raw []byte, userID, hash string) bool {
+	var rec struct {
+		UserID string `json:"user_id"`
+		UserH  string `json:"user_h"`
+	}
+	if json.Unmarshal(raw, &rec) != nil {
+		return false
+	}
+	return (rec.UserID != "" && rec.UserID == userID) || (hash != "" && rec.UserH == hash)
 }
 
 // fetchPeerLogs proxies a downstream service's /logs/recent. On any

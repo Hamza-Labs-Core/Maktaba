@@ -56,7 +56,7 @@ func TestSLogLogger_NamesTheUserByHash(t *testing.T) {
 	mlog.SetUserHashKey(key)
 	t.Cleanup(func() { mlog.Default = prev; mlog.SetUserHashKey(nil) })
 
-	h := SLogLogger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := SLogLogger(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		// the sign-in middleware, below the logger
 		ctx := principal.WithPrincipal(r.Context(), &principal.Principal{UserID: "42"})
 		mlog.From(ctx).Info("handler_line")
