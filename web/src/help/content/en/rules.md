@@ -192,6 +192,7 @@ Decides when the [System health](/help/system-health) page turns a part yellow o
 ### Word review {#word-review}
 
 The home's defaults for [word review](/help/word-review); each library may set its own in Manage libraries.
+
 - **Check new transcripts** (on) and **Check existing transcripts** (on): older transcripts are checked from their text alone, at the lowest priority, only while nothing waits to be transcribed.
 - **Sensitivity** (normal): low asks about fewer, surer words; high about more.
 - **Most words per hour of audio** (40, from 10 to 200): the rest are kept, skipped.
