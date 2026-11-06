@@ -485,6 +485,14 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: go run . gate -C ../.. --range "$BASE...$HEAD"
+      # maktaba.dev follows what ships (CLAUDE.md): a warning, never a failure, when the
+      # pull request adds a screen, an API path or a plugin-contract change and leaves the
+      # portal alone. A `No-Portal-Change: <reason>` trailer turns it into a notice.
+      - name: maktaba.dev follows user-facing work
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/ci/devportal_follows.py --range "$BASE...$HEAD"
 
   fork-rerun-comment:
     # EC2: bot comment on fork PRs telling maintainers how to rerun
