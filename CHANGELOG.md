@@ -175,6 +175,12 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **A restart of a component running in another service is no longer lost or overstated.** A
+  joined machine can no longer change or lower a restart request (which hid every later
+  restart), a request whose read failed once is read again within seconds instead of waiting
+  for the next change, and the restart's answer lists the services it asked (`requested`)
+  apart from what it restarted itself. Admin > Components says when a restart was only asked
+  of another service.
 
 ### Security
 

@@ -201,6 +201,11 @@ type Runner struct {
 	// restartSeen are the restart requests of this host read last (#636): component id ->
 	// seq; nil until the first read, which is only remembered.
 	restartSeen map[string]int64
+	// restartRead is held across one read of the restart requests and its TakeRestarts,
+	// so a retry and a change never take them out of order; restartRetry is set while a
+	// failed read is being retried.
+	restartRead  sync.Mutex
+	restartRetry atomic.Bool
 }
 
 // New is a runner for o.Host. Its gates start on (the database is not read yet): a loop
@@ -326,22 +331,60 @@ type restartSource interface {
 	Restarts(ctx context.Context, machine, host string) (map[string]int64, error)
 }
 
-// readRestarts reads this host's restart requests and acts on them (TakeRestarts). A
-// read that fails (a schema before slot 0185, a busy database) changes nothing: the next
-// change reads them again.
-func (r *Runner) readRestarts(ctx context.Context, st Store) {
+// readRestarts reads this host's restart requests and acts on them (TakeRestarts). It
+// answers false when the read failed and should be tried again (a busy database): a
+// schema before slot 0185 has no requests, which is no failure.
+func (r *Runner) readRestarts(ctx context.Context, st Store) bool {
 	rs, ok := st.(restartSource)
 	if !ok {
-		return
+		return true
 	}
+	r.restartRead.Lock()
+	defer r.restartRead.Unlock()
 	seqs, err := rs.Restarts(ctx, r.machine, r.host)
 	if err != nil {
-		if ctx.Err() == nil {
-			r.log.Debug("components: the restart requests cannot be read", "host", r.host, "err", err.Error())
+		if ctx.Err() != nil {
+			return true
 		}
-		return
+		if noRestartsTable(err) {
+			r.log.Debug("components: the restart requests cannot be read", "host", r.host, "err", err.Error())
+			return true
+		}
+		r.log.Warn("components: reading the restart requests failed; trying again", "host", r.host,
+			"err", err.Error(), "event", "components_restarts_read_failed")
+		return false
 	}
 	r.TakeRestarts(seqs)
+	return true
+}
+
+// retryRestarts reads the restart requests again every poll until a read succeeds (or
+// ctx ends), so a request is not left waiting for an unrelated change of the desired
+// state (#663 review). One retry runs at a time.
+func (r *Runner) retryRestarts(ctx context.Context, st Store) {
+	if !r.restartRetry.CompareAndSwap(false, true) {
+		return
+	}
+	go func() {
+		defer r.restartRetry.Store(false)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.clock.After(r.poll):
+			}
+			if r.readRestarts(ctx, st) {
+				return
+			}
+		}
+	}()
+}
+
+// noRestartsTable: err says the database has no component_restarts (before slot 0185).
+func noRestartsTable(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "component_restarts") &&
+		(strings.Contains(msg, "does not exist") || strings.Contains(msg, "no such table"))
 }
 
 // TakeRestarts takes this host's restart requests (component id -> seq, slot 0185): each
@@ -481,7 +524,9 @@ func (r *Runner) Run(ctx context.Context, src Source) {
 			defer close(done)
 			_ = w.Run(wctx, func(d map[string]store.Desired, _ int64) {
 				r.Apply(d)
-				r.readRestarts(wctx, src.Store)
+				if !r.readRestarts(wctx, src.Store) {
+					r.retryRestarts(wctx, src.Store)
+				}
 			})
 		}()
 	}

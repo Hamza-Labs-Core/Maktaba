@@ -616,7 +616,8 @@ func TestParentEndedStartsNothing(t *testing.T) {
 // restartStore is a countingStore with restart requests (slot 0185).
 type restartStore struct {
 	countingStore
-	seqs map[string]int64
+	seqs  map[string]int64
+	fails int // reads that fail before one succeeds
 }
 
 func (s *restartStore) Restarts(_ context.Context, machine, host string) (map[string]int64, error) {
@@ -624,6 +625,10 @@ func (s *restartStore) Restarts(_ context.Context, machine, host string) (map[st
 	defer s.mu.Unlock()
 	if machine != store.Home || host != "streaming" {
 		return nil, errors.New("asked for another machine or host")
+	}
+	if s.fails > 0 {
+		s.fails--
+		return nil, errors.New("the database is busy")
 	}
 	out := map[string]int64{}
 	for k, v := range s.seqs {
@@ -671,4 +676,32 @@ func TestRestartRequestsOfAnotherProcess(t *testing.T) {
 	if got := r.TakeRestarts(map[string]int64{"livetv.inprocess": 5, "youtube": 1}); len(got) != 1 || got[0] != "youtube" {
 		t.Fatalf("restarted %v", got)
 	}
+}
+
+// #663 review: a read of the restart requests that fails is tried again at the next poll;
+// before, the request waited for an unrelated change of the desired state.
+func TestAFailedRestartReadIsTriedAgain(t *testing.T) {
+	clk := newClock()
+	r := newRunner(t, clk, func(o *Options) { o.Host = "streaming" })
+	var p polite
+	r.Declare("channel_engine", p.fn)
+	want := map[string]store.Desired{"livetv": enabled("livetv"), "livetv.inprocess": enabled("livetv.inprocess")}
+	st := &restartStore{countingStore: countingStore{rev: 1, want: want}, seqs: map[string]int64{"livetv.inprocess": 4}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { r.Run(ctx, Source{Store: st}); close(done) }()
+	defer func() { cancel(); <-done }()
+	eventually(t, "the loop to start", func() bool { return p.starts.Load() == 1 })
+	eventually(t, "the first read", func() bool { _, d, _ := st.counts(); return d >= 1 && clk.pending() == 1 })
+
+	st.mu.Lock()
+	st.seqs["livetv.inprocess"], st.rev, st.fails = 5, 2, 1 // the request; its read fails
+	st.mu.Unlock()
+	clk.Advance(30 * time.Second)
+	eventually(t, "the failed read and its retry", func() bool { return clk.pending() == 2 })
+	if p.stops.Load() != 0 {
+		t.Fatal("restarted on a failed read")
+	}
+	clk.Advance(30 * time.Second) // the revision did not move again: the retry reads it
+	eventually(t, "the loop to start again", func() bool { return p.stops.Load() == 1 && p.starts.Load() == 2 })
 }

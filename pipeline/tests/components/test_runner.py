@@ -230,6 +230,38 @@ async def test_a_restart_request_restarts_the_pipelines_loops(db: Database) -> N
     await r.close()
 
 
+@pytest.mark.asyncio
+async def test_a_failed_restart_read_is_read_again_at_the_next_poll(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#663 review: a read of the restart requests that failed once left the request
+    unread until an unrelated change moved the revision. Now the next poll reads it."""
+    await sync_graph(db, GRAPH, gates={})
+    r, _ = _runner(db)
+    restarted: list[str] = []
+    monkeypatch.setattr(r, "restart", lambda cid: restarted.append(cid) or 1)
+    await r._pass(force=True)  # the first read: remembered
+    await db.execute(
+        "INSERT INTO component_restarts (machine, id, host, seq)"
+        " VALUES ('home', 'livetv', 'pipeline', 1)"
+    )
+    real = store.restarts
+    fail = {"n": 1}
+
+    async def flaky(*a: Any) -> dict[str, int]:
+        if fail["n"]:
+            fail["n"] -= 1
+            raise ConnectionError("the database is busy")
+        return await real(*a)
+
+    monkeypatch.setattr(store, "restarts", flaky)
+    await r._pass(force=False)  # the revision moved: read, and the read fails
+    assert restarted == []
+    await r._pass(force=False)  # the revision did not move again: the poll reads it
+    assert restarted == ["livetv"]
+    await r.close()
+
+
 def test_a_loop_not_in_the_catalog_is_refused(db: Any = None) -> None:
     r = ComponentRunner(None, reconcile=True)
 
