@@ -113,6 +113,10 @@ def source_stages(root: Path = _PACKAGE) -> tuple[dict[str, str], list[str]]:
         src = path.read_text(encoding="utf-8")
         if "StageDef(" not in src:
             continue
+        # Epic 54: a plugin's stages are named at run time from its manifest (p_<hash>_*)
+        # and belong to its run-time catalog entry (story 54.37), never to catalog.toml
+        if path.relative_to(root).parts[:1] == ("plugins",):
+            continue
         tree = ast.parse(src, filename=str(path))
         factories = _stage_factories(tree)
         inside = {

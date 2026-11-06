@@ -7129,5 +7129,13 @@
   "plugins.capability.notify_admin.title": "Notify admins",
   "plugins.capability.notify_admin.detail": "Send notices to admins.",
   "plugins.capability.plugin_data_read.title": "Read another plugin's data",
-  "plugins.capability.plugin_data_read.detail": "Read what another plugin shares."
+  "plugins.capability.plugin_data_read.detail": "Read what another plugin shares.",
+  "queue.issues.cause.plugin_trap": "The plugin crashed",
+  "queue.issues.cause.plugin_timeout": "The plugin ran out of time",
+  "queue.issues.cause.plugin_memory": "The plugin used more memory than it may",
+  "queue.issues.cause.plugin_capability": "The plugin asked for something it was not allowed",
+  "queue.issues.cause.plugin_scope": "The plugin reached outside its job or its libraries",
+  "queue.issues.cause.plugin_quota": "The plugin used up its quota",
+  "queue.issues.cause.plugin_failed": "The plugin reported an error",
+  "queue.issues.cause.plugin_held": "The plugin is stopped"
 }

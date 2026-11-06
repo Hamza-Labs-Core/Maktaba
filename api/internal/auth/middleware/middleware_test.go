@@ -377,6 +377,7 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/api/cluster/sso/authorize", "/api/cluster/sso/start", "/api/cluster/sso/callback",
 		"/api/cluster/sso/exchange", "/api/cluster/delegate/introspect", "/api/cluster/delegate/signout",
 		"/internal/updates/restored",
+		"/internal/plugins/invocations", "/internal/plugins/invocations/*",
 	}
 	got := DefaultPublicAllowlist()
 	if len(got) != len(want) {
