@@ -44,6 +44,13 @@ build fails when the two differ.
   second time. The components tests now keep each local run's logs in a folder of its own,
   with the failed test's report and the database's component state, locally as in CI.
 
+- **A new way of finishing jobs can no longer bring back a deadlock with the queue's
+  clean-up unnoticed.** The done-subjects summary of the queue locks its rows in one order
+  within a statement; a transaction that finished jobs over several statements out of that
+  order could deadlock with the retention. The database now notices it: the tests fail on
+  it, and a home logs a warning naming the jobs' subjects. It found one: the MediaIntel import,
+  which now holds the summary for its whole run (jobs that finish meanwhile wait for it).
+
 - **The library dashboard and the queue page load at once on a large home.** On a home with
   3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out

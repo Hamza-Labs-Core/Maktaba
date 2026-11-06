@@ -33,7 +33,7 @@ fill() {
         args+=(-e "/^[[:space:]]*#/!s/${kv%%=*}/${kv#*=}/g")
     done
     out="$(sed "${args[@]}" "${template}")"
-    if grep -v '^[[:space:]]*#' <<<"${out}" | grep -q '__[A-Z0-9_]*__'; then
+    if grep -q '__[A-Z0-9_]*__' < <(grep -v '^[[:space:]]*#' <<<"${out}"); then
         die "${template##*/}: a placeholder is left: $(grep -v '^[[:space:]]*#' <<<"${out}" | grep -o '__[A-Z0-9_]*__' | sort -u | tr '\n' ' ')"
     fi
     printf '%s\n' "${out}"

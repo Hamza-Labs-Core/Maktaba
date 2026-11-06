@@ -166,7 +166,7 @@ jobs:
         run: |
           set -euo pipefail
           [ -n "$TEAM" ] || { echo "::error::APPLE_TEAM_ID is not set"; exit 1; }
-          app=$(find "$RUNNER_TEMP/app.xcarchive/Products/Applications" -maxdepth 1 -name '*.app' | head -n1)
+          app=$(find "$RUNNER_TEMP/app.xcarchive/Products/Applications" -maxdepth 1 -name '*.app' | sed -n 1p)
           sed "s/\$(AppIdentifierPrefix)/${TEAM}./g" "$ENTITLEMENTS" >"$RUNNER_TEMP/app.entitlements"
           plutil -lint "$RUNNER_TEMP/app.entitlements"
           codesign --force --sign - --options runtime --entitlements "$RUNNER_TEMP/app.entitlements" "$app"

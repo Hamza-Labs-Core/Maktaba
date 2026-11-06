@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"io"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store/pqlisten"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // Story 51.04 AC1 and AC2 against the home's real Postgres: the migrated schema, the
@@ -30,7 +30,7 @@ import (
 // scratchComponentsDB is a migrated database of its own on MAKTABA_TEST_PG_URL.
 func scratchComponentsDB(t *testing.T) string {
 	t.Helper()
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset: a scratch Postgres whose user may create databases")
 	}

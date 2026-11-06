@@ -103,7 +103,7 @@ done
 for dir in ${fixes[@]+"${fixes[@]}"}; do
   for p in "$dir"/*.patch; do
     [ -e "$p" ] || continue
-    if git -C "$PREV_DIR" apply --numstat "$p" | awk '{print $3}' | grep -vq '_test\.go$'; then
+    if grep -vq '_test\.go$' < <(git -C "$PREV_DIR" apply --numstat "$p" | awk '{print $3}'); then
       echo "compat-prev: $p touches more than tests: refused (the release's code runs as it shipped)" >&2
       exit 2
     fi
@@ -121,7 +121,7 @@ echo "compat-prev: $PREV (schema $PREV_TOP) against this build (schema $HEAD_TOP
 breaking=""
 while IFS= read -r line; do
   slot=$(printf '%s\n' "$line" | sed -E 's/^\| *`([0-9]{4})`.*/\1/')
-  if [ $((10#$slot)) -gt "$PREV_TOP" ] && printf '%s\n' "$line" | grep -q "Breaking for the previous release"; then
+  if [ $((10#$slot)) -gt "$PREV_TOP" ] && grep -q "Breaking for the previous release" <<<"$line"; then
     breaking="$breaking $slot"
   fi
 done < <(grep -E '^\| *`[0-9]{4}`' "$ROOT/shared/db/migrations/MANIFEST.md")

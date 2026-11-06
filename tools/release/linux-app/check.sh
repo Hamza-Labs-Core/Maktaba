@@ -125,7 +125,7 @@ if "$pg/initdb" -D "$SCRATCH/pgdata" -U maktaba --auth=trust -E UTF8 --locale=C 
         -c "EXPLAIN (COSTS OFF) SELECT id FROM vec_check ORDER BY e <=> (SELECT e FROM vec_check WHERE id = 42) LIMIT 3;" \
         -c "DROP TABLE vec_check;" 2>&1)" || rc=$?
     case "$rc:$out" in
-        0:*"nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(printf '%s\n' "$out" | grep -m1 '^vector ')" ;;
+        0:*"nearest: 42,"*"Index Scan using vec_check_hnsw"*) ok "pgvector: $(grep -m1 '^vector ' <<<"$out")" ;;
         *) fail "pgvector (exit $rc): $(printf '%s\n' "$out" | tail -4)" ;;
     esac
     run "TLS (OpenSSL in the server)" "$pg/psql" -h 127.0.0.1 -p "$port" -U maktaba -d postgres -Atq \
@@ -152,7 +152,7 @@ out="$(MAKTABA_CONFIG="$SCRATCH/server.toml" timeout 60 "$PAYLOAD/bin/maktaba-se
 case "$FFMPEG_WANT:$rc" in
     ok:0) ok "maktaba-server ffmpeg: $(printf '%s\n' "$out" | sed -n 1p)" ;;
     lacks:1 | missing:1)
-        if printf '%s\n' "$out" | grep -q "^problem ffmpeg_$FFMPEG_WANT\b" && printf '%s\n' "$out" | grep -q '^install '; then
+        if grep -q "^problem ffmpeg_$FFMPEG_WANT\b" <<<"$out" && grep -q '^install ' <<<"$out"; then
             ok "maktaba-server ffmpeg says $FFMPEG_WANT, with the command: $(printf '%s\n' "$out" | sed -n 's/^install //p' | sed -n 1p)"
         else
             fail "maktaba-server ffmpeg (exit $rc) does not say ffmpeg_$FFMPEG_WANT with an install command: $(printf '%s\n' "$out" | tail -4)"
@@ -190,13 +190,13 @@ else
     fail "constraints.txt missing or without hashes"
 fi
 for heavy in torch nvidia mlx; do
-    if find "$PAYLOAD" -iname "${heavy}*" -print -quit | grep -q .; then fail "$heavy is in the payload (it downloads on first run)"; fi
+    if [ -n "$(find "$PAYLOAD" -iname "${heavy}*" -print -quit)" ]; then fail "$heavy is in the payload (it downloads on first run)"; fi
 done
 # the bootstrap plans a build (exit 10: a run would change the venv) without touching anything
 rc=0
 out="$(PYTHONPATH="${whl[0]}" timeout 60 "$PY" -m maktaba_pipeline.venv_bootstrap --payload "$PAYLOAD/pipeline" \
     --venv "$SCRATCH/pipeline-venv" --check 2>&1)" || rc=$?
-if [ "$rc" -eq 10 ] && printf '%s' "$out" | grep -q '"action": *"build"'; then
+if [ "$rc" -eq 10 ] && grep -q '"action": *"build"' <<<"$out"; then
     ok "venv bootstrap plans: $(printf '%s\n' "$out" | tail -1)"
 else
     fail "venv bootstrap --check (exit $rc): $(printf '%s\n' "$out" | tail -2)"
