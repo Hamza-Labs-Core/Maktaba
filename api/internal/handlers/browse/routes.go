@@ -374,7 +374,84 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) {
 		cont = cont[:RowSize]
 	}
 	doc["continue_watching"], doc["recently_added"], doc["recently_watched"], doc["pinned"] = cont, added, watched, rows
+	promoted, err := h.promotedRows(ctx, uid, s, "")
+	if err != nil {
+		internal(w, r, "collection rows", err)
+		return
+	}
+	doc["collection_rows"] = promoted
 	writeJSON(w, r, doc)
+}
+
+// CollectionRow is a collection an admin promoted to a row (Epic 56 story
+// 56.08): on its library's Recommended tab (show_on_library) or on Home
+// (show_on_home), with its first visible videos in its order.
+type CollectionRow struct {
+	Collection CollectionRowRef `json:"collection"`
+	Items      []Card           `json:"items"`
+}
+
+// CollectionRowRef is the head of a promoted row.
+type CollectionRowRef struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	Library    LibraryRef `json:"library"`
+	SourceKind string     `json:"source_kind,omitempty"`
+}
+
+// promotedRows is the promoted collections of lib (its Recommended tab), or
+// with lib "" those shown on Home of every library in s, by sort title; a
+// smart collection and one with no visible video the caller may see make no row.
+func (h *Handler) promotedRows(ctx context.Context, uid string, s scope, lib string) ([]CollectionRow, error) {
+	args := []any{}
+	where := "c.show_on_home"
+	if lib != "" {
+		args = append(args, lib)
+		where = "c.show_on_library AND c.library_id = " + pidx(len(args))
+	}
+	where = and(where, s.cond("c.library_id", &args))
+	rows, err := h.DB.QueryContext(ctx, `SELECT c.id, COALESCE(c.name_override, c.name), c.library_id, l.name, COALESCE(c.source_kind, '')
+		FROM collections c JOIN libraries l ON l.id = c.library_id
+		WHERE `+where+` AND c.hidden_at IS NULL AND c.dismissed_at IS NULL AND c.is_smart = `+falseLit(h.DB)+`
+		ORDER BY COALESCE(c.sort_title, c.name_override, c.name), c.id LIMIT 20`, args...)
+	if err != nil {
+		return nil, err
+	}
+	var heads []CollectionRowRef
+	for rows.Next() {
+		var c CollectionRowRef
+		if err := rows.Scan(&c.ID, &c.Name, &c.Library.ID, &c.Library.Name, &c.SourceKind); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		heads = append(heads, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := []CollectionRow{}
+	var u any
+	if uid != "" {
+		u = uid
+	}
+	for _, head := range heads {
+		iargs := []any{u, head.ID}
+		vis := and(visible, s.cond("v.library_id", &iargs))
+		iargs = append(iargs, RowSize)
+		cards, err := h.playbackCards(ctx, `SELECT `+cardColumns+`, ps.position_sec, ps.completed
+			FROM collection_items ci JOIN collections c ON c.id = ci.collection_id JOIN videos v ON v.id = ci.video_id
+			LEFT JOIN playback_state ps ON ps.user_id = $1 AND ps.video_id = v.id
+			WHERE ci.collection_id = $2 AND `+vis+`
+			ORDER BY CASE WHEN c.hand_ordered THEN ci.position END, v.created_at DESC, v.id DESC LIMIT `+pidx(len(iargs)), iargs)
+		if err != nil {
+			return nil, err
+		}
+		if len(cards) > 0 {
+			out = append(out, CollectionRow{Collection: head, Items: cards})
+		}
+	}
+	return out, nil
 }
 
 // SeriesRef is one series on a library's hub, with its visible episodes
@@ -464,8 +541,14 @@ func (h *Handler) Hub(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "recently added by series", err)
 		return
 	}
+	promoted, err := h.promotedRows(ctx, uid, s, id)
+	if err != nil {
+		internal(w, r, "collection rows", err)
+		return
+	}
 	writeJSON(w, r, map[string]any{
-		"library": lib,
+		"library":         lib,
+		"collection_rows": promoted,
 		"rows": map[string]any{
 			"continue_watching": cont, "recently_added": added, "recently_watched": watched,
 			"most_watched": most, "series": series, "years": years, "on_deck": deck,

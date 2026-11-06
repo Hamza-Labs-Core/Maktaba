@@ -2219,14 +2219,17 @@
       ],
       "related": [
         "epic-25-cloud-relay",
-        "plan-25.27-macos-installer"
+        "plan-25.27-macos-installer",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/25-cloud-relay/story-25-27-macos-installer.md",
         "plan": "specs/epics/25-cloud-relay/plan-25-27-macos-installer.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "macos-installer"
@@ -2549,14 +2552,21 @@
       ],
       "related": [
         "epic-26-content-intelligence",
-        "plan-26.03-series-detection"
+        "plan-26.03-series-detection",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id"
       ],
       "files": {
         "story": "specs/epics/26-content-intelligence/story-26-03-series-detection.md",
         "plan": "specs/epics/26-content-intelligence/plan-26-03-series-detection.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "series-detection"
@@ -2649,7 +2659,10 @@
         "ep-patch-videos-id",
         "ep-delete-videos-id",
         "ep-get-search",
-        "ep-post-search"
+        "ep-post-search",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id"
       ],
       "files": {
         "story": "specs/epics/26-content-intelligence/story-26-06-enrichment-ui.md",
@@ -2662,7 +2675,10 @@
         "PATCH /videos/{id}",
         "DELETE /videos/{id}",
         "GET /search",
-        "POST /search"
+        "POST /search",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}"
       ],
       "db_tables": [
         "videos"
@@ -2797,14 +2813,25 @@
       ],
       "related": [
         "epic-26-content-intelligence",
-        "plan-26.10-series-view"
+        "plan-26.10-series-view",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id",
+        "ep-get-series-id-episodes",
+        "ep-get-series-id-missing"
       ],
       "files": {
         "story": "specs/epics/26-content-intelligence/story-26-10-series-view.md",
         "plan": "specs/epics/26-content-intelligence/plan-26-10-series-view.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}",
+        "GET /series/{id}/episodes",
+        "GET /series/{id}/missing"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "series-view"

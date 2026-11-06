@@ -77,6 +77,10 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 - [Epic 54 — Plugins: new functions from the queue, with no internet, from a Maktaba store](epics/epic-54-plugins.md)
 - [Epic 55 — The desktop Player catches up with the phone and Mac Players](epics/epic-55-desktop-player-parity.md)
 
+### The TV library view (epic 56)
+
+- [Epic 56 — The TV library view: Play all, Shuffle, series, collections and playlists](epics/epic-56-tv-library-view.md)
+
 ## Cross-cutting wiki pages
 
 - [Security architecture summary](security.md) — auth flow, JWT lifecycle, signed URLs, rate limits, input validation, TLS, secrets management. Cross-references Epic 10 + Epic 23.

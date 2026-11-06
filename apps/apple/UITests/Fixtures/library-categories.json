@@ -1,0 +1,24 @@
+{
+ "speakers": [
+  {
+   "value": "Sheikh A",
+   "label": "Sheikh A",
+   "count": 4
+  }
+ ],
+ "topics": [],
+ "languages": [
+  {
+   "value": "ar",
+   "label": "ar",
+   "count": 5
+  }
+ ],
+ "years": [
+  {
+   "value": "2024",
+   "label": "2024",
+   "count": 5
+  }
+ ]
+}

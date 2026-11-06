@@ -361,7 +361,8 @@ func TestFacets(t *testing.T) {
 	if len(f.Speakers) != 1 || f.Speakers[0] != (SpeakerFacet{"Sheikh A", 1}) {
 		t.Errorf("speakers %+v: the named one only", f.Speakers)
 	}
-	want := []LetterFacet{{"#", 1}, {"A", 1}, {"ت", 1}}
+	// Arabic letters, then Latin, then "#" (Epic 56 story 56.05, T03)
+	want := []LetterFacet{{"ت", 1}, {"A", 1}, {"#", 1}}
 	if !slices.Equal(f.Letters, want) {
 		t.Errorf("letters %+v, want %+v", f.Letters, want)
 	}

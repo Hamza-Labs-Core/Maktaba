@@ -15,14 +15,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-55-desktop-player-parity"
+        "epic-55-desktop-player-parity",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/55-desktop-player-parity/story-55-01-shell-and-sharing.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "shell-and-sharing"
@@ -76,14 +79,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-55-desktop-player-parity"
+        "epic-55-desktop-player-parity",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/55-desktop-player-parity/story-55-03-home.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "home"
@@ -314,7 +320,18 @@
         "epic-56-tv-library-view",
         "ep-get-videos",
         "ep-get-collections",
-        "ep-post-collections"
+        "ep-post-collections",
+        "ep-post-me-play-queues",
+        "ep-get-me-play-queues-current",
+        "ep-get-me-play-queues-id",
+        "ep-delete-me-play-queues-id",
+        "ep-put-me-play-queues-id-current",
+        "ep-post-me-play-queues-id-items",
+        "ep-post-me-play-queues-id-reshuffle",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id",
+        "ep-get-series-id-episodes"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-01-play-queue.md",
@@ -324,7 +341,18 @@
       "api_endpoints": [
         "GET /videos",
         "GET /collections",
-        "POST /collections"
+        "POST /collections",
+        "POST /me/play-queues",
+        "GET /me/play-queues/current",
+        "GET /me/play-queues/{id}",
+        "DELETE /me/play-queues/{id}",
+        "PUT /me/play-queues/{id}/current",
+        "POST /me/play-queues/{id}/items",
+        "POST /me/play-queues/{id}/reshuffle",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}",
+        "GET /series/{id}/episodes"
       ],
       "db_tables": [],
       "metadata": {
@@ -344,14 +372,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-56-tv-library-view"
+        "epic-56-tv-library-view",
+        "ep-post-me-play-queues"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-02-tv-play-shuffle.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /me/play-queues"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "tv-play-shuffle"
@@ -379,7 +410,13 @@
         "ep-get-videos",
         "ep-get-collections",
         "ep-post-collections",
-        "ep-get-recommendations"
+        "ep-get-recommendations",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-home",
+        "ep-get-libraries-id-hub",
+        "ep-get-libraries-id-collections",
+        "ep-get-libraries-id-categories"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-03-tv-library-tabs.md",
@@ -395,7 +432,13 @@
         "GET /videos",
         "GET /collections",
         "POST /collections",
-        "GET /recommendations"
+        "GET /recommendations",
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /home",
+        "GET /libraries/{id}/hub",
+        "GET /libraries/{id}/collections",
+        "GET /libraries/{id}/categories"
       ],
       "db_tables": [],
       "metadata": {
@@ -421,7 +464,11 @@
         "ep-get-libraries-id",
         "ep-patch-libraries-id",
         "ep-delete-libraries-id",
-        "ep-get-videos"
+        "ep-get-videos",
+        "ep-get-libraries-id-series",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-04-series-grouping.md",
@@ -434,7 +481,11 @@
         "GET /libraries/{id}",
         "PATCH /libraries/{id}",
         "DELETE /libraries/{id}",
-        "GET /videos"
+        "GET /videos",
+        "GET /libraries/{id}/series",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}"
       ],
       "db_tables": [],
       "metadata": {
@@ -460,7 +511,9 @@
         "ep-get-libraries-id",
         "ep-patch-libraries-id",
         "ep-delete-libraries-id",
-        "ep-get-videos"
+        "ep-get-videos",
+        "ep-get-libraries-id-categories",
+        "ep-get-videos-facets"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-05-sort-filter-categories.md",
@@ -473,7 +526,9 @@
         "GET /libraries/{id}",
         "PATCH /libraries/{id}",
         "DELETE /libraries/{id}",
-        "GET /videos"
+        "GET /videos",
+        "GET /libraries/{id}/categories",
+        "GET /videos/facets"
       ],
       "db_tables": [],
       "metadata": {
@@ -486,7 +541,7 @@
       "title": "Automatic collections from YouTube playlists and channels",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.06 — Automatic collections from YouTube playlists and channels\n\n> Epic 56 · Phase 2 · Depends on: — (slot 0186 shared with 56.07, 56.08) · Needed by: 56.08\n\n## Why\n\nMost of a Maktaba library came from YouTube, where its creators already grouped it into\nplaylists and channels. Today the pipeline turns a playlist into a **season** when it matches\none, and into a **topic collection** (`topic_collections`, slot 0094) only when it cuts across\nshows (`find_topics` in `classify/series_detector.py`). Every other playlist, and every channel,\nis lost to browsing. Plex builds collections autom",
+      "content": "# Story 56.06 — Automatic collections from YouTube playlists and channels\n\n> Epic 56 · Phase 2 · Depends on: — (slot 0193 shared with 56.07, 56.08) · Needed by: 56.08\n\n## Why\n\nMost of a Maktaba library came from YouTube, where its creators already grouped it into\nplaylists and channels. Today the pipeline turns a playlist into a **season** when it matches\none, and into a **topic collection** (`topic_collections`, slot 0094) only when it cuts across\nshows (`find_topics` in `classify/series_detector.py`). Every other playlist, and every channel,\nis lost to browsing. Plex builds collections autom",
       "tags": [
         "story",
         "56-tv-library-view",
@@ -501,7 +556,9 @@
         "ep-patch-libraries-id",
         "ep-delete-libraries-id",
         "ep-get-collections",
-        "ep-post-collections"
+        "ep-post-collections",
+        "ep-get-libraries-id-collections",
+        "ep-get-series"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-06-youtube-collections.md",
@@ -515,7 +572,9 @@
         "PATCH /libraries/{id}",
         "DELETE /libraries/{id}",
         "GET /collections",
-        "POST /collections"
+        "POST /collections",
+        "GET /libraries/{id}/collections",
+        "GET /series"
       ],
       "db_tables": [
         "collection_items"
@@ -530,7 +589,7 @@
       "title": "Plex collections, read into Maktaba",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.07 — Plex collections, read into Maktaba\n\n> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0186) · Needed by: 56.08\n\n## Why\n\nA home that used Plex before Maktaba has collections there that people made by hand over\nyears. Maktaba already indexes Plex (`plex_index` fills `plex_items`, rating key ↔ video) and\nwrites its own season and topic collections into Plex (`plex_collection`, `plex_groups`), but\nnever reads Plex's collections back. Moving from Plex should not lose them.\n\n## Description\n\n### 1. The stage\n\n`plex_collections_import`, in `pipeline/src/maktaba_pipeline/extensions/plex/`,",
+      "content": "# Story 56.07 — Plex collections, read into Maktaba\n\n> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0193) · Needed by: 56.08\n\n## Why\n\nA home that used Plex before Maktaba has collections there that people made by hand over\nyears. Maktaba already indexes Plex (`plex_index` fills `plex_items`, rating key ↔ video) and\nwrites its own season and topic collections into Plex (`plex_collection`, `plex_groups`), but\nnever reads Plex's collections back. Moving from Plex should not lose them.\n\n## Description\n\n### 1. The stage\n\n`plex_collections_import`, in `pipeline/src/maktaba_pipeline/extensions/plex/`,",
       "tags": [
         "story",
         "56-tv-library-view",
@@ -567,7 +626,7 @@
       "title": "Collections on the TVs, collection mode and Recommended rows",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.08 — Collections on the TVs, collection mode and Recommended rows\n\n> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0186) · Needed by: —\n\n## Why\n\nCollections exist on the server (admin-made manual and smart ones, topic and clip groups, and now\nYouTube and Plex ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,\nlets an admin choose whether they also show in the library grid (collection mode), and lets an\nadmin promote one to a row on Recommended and on Home.\n\n## Description\n\n### 1. The Collections tab (TVs)\n\nA grid of collection cards from `GET",
+      "content": "# Story 56.08 — Collections on the TVs, collection mode and Recommended rows\n\n> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0193) · Needed by: —\n\n## Why\n\nCollections exist on the server (admin-made manual and smart ones, topic and clip groups, and now\nYouTube and Plex ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,\nlets an admin choose whether they also show in the library grid (collection mode), and lets an\nadmin promote one to a row on Recommended and on Home.\n\n## Description\n\n### 1. The Collections tab (TVs)\n\nA grid of collection cards from `GET",
       "tags": [
         "story",
         "56-tv-library-view",
@@ -585,7 +644,10 @@
         "ep-post-collections",
         "ep-get-collections-id",
         "ep-patch-collections-id",
-        "ep-delete-collections-id"
+        "ep-delete-collections-id",
+        "ep-get-home",
+        "ep-get-libraries-id-hub",
+        "ep-get-libraries-id-collections"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-08-tv-collections.md",
@@ -603,7 +665,10 @@
         "POST /collections",
         "GET /collections/{id}",
         "PATCH /collections/{id}",
-        "DELETE /collections/{id}"
+        "DELETE /collections/{id}",
+        "GET /home",
+        "GET /libraries/{id}/hub",
+        "GET /libraries/{id}/collections"
       ],
       "db_tables": [],
       "metadata": {
@@ -616,7 +681,7 @@
       "title": "Smart playlists",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.09 — Smart playlists\n\n> Epic 56 · Phase 1 · Depends on: — (slot 0185) · Needed by: 56.10, 56.12, 56.13\n\n## Why\n\nPlaylists today are manual lists (`user_playlists`, slot 0162). Plex also has smart playlists: a\nsaved filter with a sort and a limit, that keeps itself up to date, per user. Viewers cannot make\ncollections (admin-only, README §11 decision 3), so smart playlists are how a viewer keeps\n\"unwatched lessons of speaker X, newest first\" one click away, on every device.\n\n## Description\n\n### 1. Model (slot 0185, planned)\n\n`user_playlists` gains `kind` (`manual` | `smart`) and `sma",
+      "content": "# Story 56.09 — Smart playlists\n\n> Epic 56 · Phase 1 · Depends on: — (slot 0192) · Needed by: 56.10, 56.12, 56.13\n\n## Why\n\nPlaylists today are manual lists (`user_playlists`, slot 0162). Plex also has smart playlists: a\nsaved filter with a sort and a limit, that keeps itself up to date, per user. Viewers cannot make\ncollections (admin-only, README §11 decision 3), so smart playlists are how a viewer keeps\n\"unwatched lessons of speaker X, newest first\" one click away, on every device.\n\n## Description\n\n### 1. Model (slot 0192, planned)\n\n`user_playlists` gains `kind` (`manual` | `smart`) and `sma",
       "tags": [
         "story",
         "56-tv-library-view",
@@ -626,7 +691,12 @@
         "epic-56-tv-library-view",
         "ep-get-videos",
         "ep-get-collections",
-        "ep-post-collections"
+        "ep-post-collections",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-me-playlists-id",
+        "ep-patch-me-playlists-id",
+        "ep-delete-me-playlists-id"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-09-smart-playlists.md",
@@ -636,7 +706,12 @@
       "api_endpoints": [
         "GET /videos",
         "GET /collections",
-        "POST /collections"
+        "POST /collections",
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /me/playlists/{id}",
+        "PATCH /me/playlists/{id}",
+        "DELETE /me/playlists/{id}"
       ],
       "db_tables": [],
       "metadata": {
@@ -657,14 +732,29 @@
       ],
       "related": [
         "epic-56-tv-library-view",
-        "entity-libraries"
+        "entity-libraries",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-me-playlists-id",
+        "ep-patch-me-playlists-id",
+        "ep-delete-me-playlists-id",
+        "ep-get-me-playlists-id-items",
+        "ep-post-me-playlists-id-items"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-10-tv-playlists.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /me/playlists/{id}",
+        "PATCH /me/playlists/{id}",
+        "DELETE /me/playlists/{id}",
+        "GET /me/playlists/{id}/items",
+        "POST /me/playlists/{id}/items"
+      ],
       "db_tables": [
         "libraries"
       ],
@@ -685,14 +775,19 @@
         "phase-5"
       ],
       "related": [
-        "epic-56-tv-library-view"
+        "epic-56-tv-library-view",
+        "ep-post-me-play-queues",
+        "ep-get-me-play-queues-current"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-11-tv-continue-up-next.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /me/play-queues",
+        "GET /me/play-queues/current"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "tv-continue-up-next"
@@ -783,8 +878,26 @@
         "ep-get-collections-id",
         "ep-patch-collections-id",
         "ep-delete-collections-id",
-        "ep-get-collections-id-videos",
-        "ep-post-collections-id-videos"
+        "ep-get-collections-id-items",
+        "ep-post-collections-id-items",
+        "ep-post-me-play-queues",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-home",
+        "ep-get-libraries-summary",
+        "ep-get-libraries-id-hub",
+        "ep-get-libraries-id-series",
+        "ep-get-libraries-id-collections",
+        "ep-get-libraries-id-collections-kind-gid",
+        "ep-get-videos-facets",
+        "ep-post-me-watched",
+        "ep-post-me-favorites",
+        "ep-get-me-pinned-libraries",
+        "ep-put-me-pinned-libraries",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id",
+        "ep-get-series-id-episodes"
       ],
       "files": {
         "story": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
@@ -803,8 +916,26 @@
         "GET /collections/{id}",
         "PATCH /collections/{id}",
         "DELETE /collections/{id}",
-        "GET /collections/{id}/videos",
-        "POST /collections/{id}/videos"
+        "GET /collections/{id}/items",
+        "POST /collections/{id}/items",
+        "POST /me/play-queues",
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /home",
+        "GET /libraries/summary",
+        "GET /libraries/{id}/hub",
+        "GET /libraries/{id}/series",
+        "GET /libraries/{id}/collections",
+        "GET /libraries/{id}/collections/{kind}/{gid}",
+        "GET /videos/facets",
+        "POST /me/watched",
+        "POST /me/favorites",
+        "GET /me/pinned-libraries",
+        "PUT /me/pinned-libraries",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}",
+        "GET /series/{id}/episodes"
       ],
       "db_tables": [],
       "metadata": {

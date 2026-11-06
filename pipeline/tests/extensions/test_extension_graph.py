@@ -20,6 +20,7 @@ EXT_STAGES = {
     "plex_collection",
     "plex_groups",
     "plex_livetv",
+    "plex_collections_import",
     "dizquetv_show",
     "dizquetv_channels",
     "dizquetv_audit",
@@ -157,6 +158,7 @@ def test_plex_stages_are_home_only_unless_the_relay_carries_them() -> None:
         "plex_index": ("home", "plex"),
         "plex_collection": ("home", "plex"),
         "plex_groups": ("home", "plex"),
+        "plex_collections_import": ("home", "plex"),
         "plex_livetv": ("home", None),
     }, plex
     assert not any(s.relay for s in graph if s.extension in ("dizquetv", "cloudflare_stream"))

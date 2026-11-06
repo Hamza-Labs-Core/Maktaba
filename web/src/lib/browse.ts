@@ -82,7 +82,30 @@ export interface HomeResponse {
   pinned: PinnedRows[];
   /** the hero (Phase 3); null when there is nothing to feature */
   featured: Featured | null;
+  /** collections an admin shows on Home (Epic 56 story 56.08) */
+  collection_rows: CollectionRow[];
 }
+
+/** A collection promoted to a row, with its first videos. */
+export interface CollectionRow {
+  collection: {
+    id: string;
+    name: string;
+    library: { id: string; name: string };
+    source_kind?: string;
+  };
+  items: VideoCard[];
+}
+
+const collectionRows = (v: unknown): CollectionRow[] =>
+  (Array.isArray(v) ? v : [])
+    .filter(
+      (r) => r && typeof r === "object" && typeof (r as CollectionRow).collection?.id === "string"
+    )
+    .map((r) => ({
+      collection: (r as CollectionRow).collection,
+      items: cards((r as CollectionRow).items),
+    }));
 
 export interface LibrarySummary {
   id: string;
@@ -110,6 +133,8 @@ export interface HubYear {
 
 export interface LibraryHub {
   library: { id: string; name: string; videos: number };
+  /** collections an admin shows on the library's Recommended tab (story 56.08) */
+  collection_rows: CollectionRow[];
   rows: {
     on_deck: VideoCard[];
     continue_watching: VideoCard[];
@@ -174,6 +199,7 @@ export async function fetchHome(): Promise<HomeResponse> {
     recently_added_grouped: grouped(r.recently_added_grouped),
     featured: featuredOf(r.featured),
     recently_watched: cards(r.recently_watched),
+    collection_rows: collectionRows(r.collection_rows),
     pinned: list<PinnedRows>(r.pinned)
       .filter((p) => p && p.library && typeof p.library.id === "string")
       .map((p) => ({
@@ -202,6 +228,7 @@ export async function fetchHub(id: string): Promise<LibraryHub> {
       name: typeof lib.name === "string" ? lib.name : "",
       videos: typeof lib.videos === "number" ? lib.videos : 0,
     },
+    collection_rows: collectionRows(r.collection_rows),
     rows: {
       on_deck: cards(rows.on_deck),
       continue_watching: cards(rows.continue_watching),

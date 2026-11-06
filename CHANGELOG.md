@@ -217,6 +217,22 @@ build fails when the two differ.
 
 ### Added
 
+- **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
+  play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
+  its grid's sort and filters, a series or a season (from the next unwatched episode), a
+  collection, a playlist or one video. Shuffle is a seeded order of the whole source (not one
+  random page), paged 500 at a time, with Play next, Add to queue and Shuffle again; a queue
+  started on one device is offered as Continue your queue on another. Smart playlists keep a
+  saved filter with a sort and a limit, per user. Collections come by themselves from YouTube
+  playlists and channels and from Plex's own collections, kept in step with their source, and an
+  admin can show one as a row on a library's Recommended tab or on Home, hide it, rename it,
+  duplicate it, and choose per library whether the grid shows collections in place of their
+  videos. `GET /api/videos` groups by series (`group=series`), `GET /api/libraries/{id}/categories`
+  lists speakers, topics, languages and years, and the jump bar lists Arabic letters first. The
+  web uses the server queue, adds a library's Playlists tab, Shuffle on a series and a season,
+  and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
+  route (a test fails on an undescribed one). Migrations 0191-0193. Every new word in English
+  and Arabic.
 - **Plugins, part 1: the manifest, the package and a sandboxed plugin host (Epic 54, stories
   54.01–54.03).** Nothing runs yet: no plugin can be installed until the next parts. A plugin
   is one `.mkplugin` file (a zstd tar) holding a WebAssembly component, a `manifest.toml` and

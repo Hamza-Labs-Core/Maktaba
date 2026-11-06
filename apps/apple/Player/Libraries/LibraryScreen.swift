@@ -26,6 +26,9 @@ struct LibraryScreen: View {
                     ProblemView(problem: .notAvailable) {}
                 } else {
                     rows
+                    // Epic 56 story 56.12: Play and Shuffle the grid's view (one server queue)
+                    PlayShuffleButtons(context: context, source: QueueSource(kind: "library", id: id, filters: model.queueFilters))
+                        .padding(.horizontal, MaktabaTokens.Spacing.s4)
                     tabs
                 }
             }
@@ -74,6 +77,8 @@ struct LibraryScreen: View {
             Picker(selection: $model.tab) {
                 Text("Videos", tableName: "Libraries", comment: "A library's tab of every video").tag(LibraryTab.videos)
                 Text("Series", tableName: "Libraries", comment: "The Libraries root's tab of every series").tag(LibraryTab.series)
+                Text("Collections", tableName: "Libraries", comment: "A library's tab of its collections").tag(LibraryTab.collections)
+                Text("Playlists", tableName: "Libraries", comment: "A library's tab of the user's playlists with its videos").tag(LibraryTab.playlists)
             } label: {
                 Text("Show", tableName: "Libraries", comment: "The Libraries root's tabs, spoken")
             }
@@ -85,6 +90,10 @@ struct LibraryScreen: View {
                 grid
             case .series:
                 seriesGrid
+            case .collections:
+                CollectionsTab(context: context, library: id)
+            case .playlists:
+                PlaylistsTab(context: context, library: id)
             }
         }
         .padding(.horizontal, MaktabaTokens.Spacing.s4)

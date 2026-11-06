@@ -6,6 +6,7 @@ struct SettingsView: View {
     let session: AppSession
     let user: User
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.dark
+    @AppStorage("autoplayNext") private var autoplay = true
 
     var body: some View {
         NavigationStack {
@@ -16,6 +17,13 @@ struct SettingsView: View {
                         LabeledContent(String(localized: "settings.home", defaultValue: "Home"), value: home.name)
                         LabeledContent("Address", value: home.url.absoluteString)
                     }
+                }
+                // Epic 56: every playlist of the user, and the Playback setting (story 56.11)
+                Section("Playlists") {
+                    NavigationLink("Playlists") { PlaylistsGrid(library: nil).padding(80) }
+                }
+                Section("Playback") {
+                    Toggle("Play the next video automatically", isOn: $autoplay)
                 }
                 Section("Appearance") {
                     Picker("Theme", selection: $theme) {

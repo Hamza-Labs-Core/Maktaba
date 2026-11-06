@@ -2,10 +2,11 @@ package browse
 
 // Epic 45 Phase 2, story 45.10: each user's playlists.
 //
-//	GET    /api/me/playlists                         the caller's playlists
-//	POST   /api/me/playlists                         {name, description?, video_ids?}
+//	GET    /api/me/playlists                         the caller's playlists (?library=: those with videos of it)
+//	POST   /api/me/playlists                         {name, description?, video_ids?} or {name, kind: smart, smart_query}
 //	GET    /api/me/playlists/{id}                    {playlist, items}
-//	PATCH  /api/me/playlists/{id}                    {name?, description?}
+//	GET    /api/me/playlists/{id}/items              {items} (a smart one evaluated)
+//	PATCH  /api/me/playlists/{id}                    {name?, description?, smart_query?}
 //	DELETE /api/me/playlists/{id}
 //	POST   /api/me/playlists/{id}/items              {video_ids}: appended
 //	DELETE /api/me/playlists/{id}/items/{video_id}
@@ -23,6 +24,7 @@ package browse
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -33,6 +35,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -52,6 +55,7 @@ func (h *Handler) mountPlaylists(r chi.Router) {
 	r.Get("/api/me/playlists", h.ListPlaylists)
 	r.Post("/api/me/playlists", h.CreatePlaylist)
 	r.Get("/api/me/playlists/{id}", h.GetPlaylist)
+	r.Get("/api/me/playlists/{id}/items", h.GetPlaylistItems)
 	r.Patch("/api/me/playlists/{id}", h.PatchPlaylist)
 	r.Delete("/api/me/playlists/{id}", h.DeletePlaylist)
 	r.Post("/api/me/playlists/{id}/items", h.AddPlaylistItems)
@@ -73,6 +77,10 @@ type PlaylistSummary struct {
 	// HandOrdered: the owner reordered it, and its items keep that order;
 	// otherwise they are newest-added first.
 	HandOrdered bool `json:"hand_ordered"`
+	// Kind is manual or smart (Epic 56 story 56.09); a smart one's rules are
+	// SmartQuery, and its count, length and posters are its evaluation's.
+	Kind       string      `json:"kind"`
+	SmartQuery *SmartQuery `json:"smart_query,omitempty"`
 }
 
 // playlistOrder is the ORDER BY of a playlist's items i (videos v, playlist
@@ -90,12 +98,12 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 	}
 	vis := and(visible, s.cond("v.library_id", &args))
 	rows, err := h.DB.QueryContext(ctx, `SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.hand_ordered,
-			COUNT(v.id), COALESCE(SUM(v.duration_sec), 0)
+			p.kind, CAST(p.smart_query AS TEXT), COUNT(v.id), COALESCE(SUM(v.duration_sec), 0)
 		FROM user_playlists p
 		LEFT JOIN user_playlist_items i ON i.playlist_id = p.id
 		LEFT JOIN videos v ON v.id = i.video_id AND `+vis+`
 		WHERE p.user_id = $1`+one+`
-		GROUP BY p.id, p.name, p.description, p.created_at, p.updated_at, p.hand_ordered
+		GROUP BY p.id, p.name, p.description, p.created_at, p.updated_at, p.hand_ordered, p.kind, CAST(p.smart_query AS TEXT)
 		ORDER BY p.updated_at DESC, p.id`, args...)
 	if err != nil {
 		return nil, err
@@ -105,9 +113,16 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 	for rows.Next() {
 		var ps PlaylistSummary
 		var created, updated nullTime
-		if err := rows.Scan(&ps.ID, &ps.Name, &ps.Description, &created, &updated, &ps.HandOrdered, &ps.Videos, &ps.DurationSec); err != nil {
+		var smart sql.NullString
+		if err := rows.Scan(&ps.ID, &ps.Name, &ps.Description, &created, &updated, &ps.HandOrdered, &ps.Kind, &smart, &ps.Videos, &ps.DurationSec); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if smart.Valid && smart.String != "" {
+			var q SmartQuery
+			if err := json.Unmarshal([]byte(smart.String), &q); err == nil {
+				ps.SmartQuery = &q
+			}
 		}
 		ps.CreatedAt, ps.UpdatedAt, ps.PosterVideoIDs = created.T, updated.T, []string{}
 		idx[ps.ID] = len(out)
@@ -119,6 +134,15 @@ func (h *Handler) summaries(ctx context.Context, uid string, s scope, only strin
 	}
 	if len(out) == 0 {
 		return out, nil
+	}
+	if p := principal.FromContext(ctx); p != nil {
+		for i := range out {
+			if out[i].Kind == PlaylistSmart {
+				if err := h.fillSmart(ctx, p, &out[i]); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	// the first visible items of each, in the playlist's order
 	args = []any{uid}
@@ -165,7 +189,58 @@ func (h *Handler) ListPlaylists(w http.ResponseWriter, r *http.Request) {
 		internal(w, r, "playlists", err)
 		return
 	}
+	if lib := r.URL.Query().Get("library"); lib != "" {
+		// Epic 56 story 56.10: a library's Playlists tab
+		if items, err = h.playlistsOfLibrary(r.Context(), p, uid, lib, items); err != nil {
+			if he, ok := err.(*httperror.Error); ok {
+				httperror.Write(w, r, he)
+				return
+			}
+			internal(w, r, "playlists of the library", err)
+			return
+		}
+	}
 	writeJSON(w, r, map[string]any{"items": items})
+}
+
+// playlistsOfLibrary keeps the manual lists with a visible video of lib and
+// the smart lists whose libraries hold it (or are all); 404 for a library
+// the caller cannot read.
+func (h *Handler) playlistsOfLibrary(ctx context.Context, p *principal.Principal, uid, lib string, items []PlaylistSummary) ([]PlaylistSummary, error) {
+	if _, err := uuid.Parse(lib); err != nil || (!p.AccessAllLibraries && !p.HasLibrary(lib)) {
+		return nil, httperror.NotFound("library " + lib)
+	}
+	rows, err := h.DB.QueryContext(ctx, `SELECT DISTINCT i.playlist_id FROM user_playlist_items i
+		JOIN user_playlists p ON p.id = i.playlist_id JOIN videos v ON v.id = i.video_id
+		WHERE p.user_id = $1 AND v.library_id = $2 AND `+visible, uid, lib)
+	if err != nil {
+		return nil, err
+	}
+	has := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		has[id] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := []PlaylistSummary{}
+	for _, ps := range items {
+		switch {
+		case ps.Kind == PlaylistSmart && ps.SmartQuery != nil:
+			if ps.SmartQuery.Libraries == nil || contains(ps.SmartQuery.Libraries, lib) {
+				out = append(out, ps)
+			}
+		case has[ps.ID]:
+			out = append(out, ps)
+		}
+	}
+	return out, nil
 }
 
 // PlaylistRequest is the body of POST and PATCH /api/me/playlists.
@@ -173,6 +248,9 @@ type PlaylistRequest struct {
 	Name        *string  `json:"name,omitempty"`
 	Description *string  `json:"description,omitempty"`
 	VideoIDs    []string `json:"video_ids,omitempty"`
+	// Kind is manual (the default) or smart, which takes SmartQuery (story 56.09).
+	Kind       *string     `json:"kind,omitempty"`
+	SmartQuery *SmartQuery `json:"smart_query,omitempty"`
 }
 
 // checkText trims and checks the name and description a request sets.
@@ -209,6 +287,35 @@ func (h *Handler) CreatePlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fe := req.checkText(true)
+	kind := PlaylistManual
+	if req.Kind != nil {
+		kind = *req.Kind
+	}
+	var smartJSON any
+	switch kind {
+	case PlaylistManual:
+		if req.SmartQuery != nil {
+			fe = append(fe, httperror.FieldError{Field: "smart_query", Message: "only a smart playlist has rules"})
+		}
+	case PlaylistSmart:
+		if p.CloudScope == principal.CloudScopePlay {
+			// a cloud-linked sign-in plays, it does not make (as manual lists)
+			httperror.Write(w, r, httperror.Forbidden("", "this sign-in can play playlists, not make them"))
+			return
+		}
+		if req.SmartQuery == nil {
+			fe = append(fe, httperror.FieldError{Field: "smart_query", Message: "required for a smart playlist"})
+		} else {
+			fe = append(fe, checkSmartQuery(req.SmartQuery)...)
+			raw, _ := json.Marshal(req.SmartQuery)
+			smartJSON = string(raw)
+		}
+		if len(req.VideoIDs) > 0 {
+			fe = append(fe, httperror.FieldError{Field: "video_ids", Message: "a smart playlist holds no items"})
+		}
+	default:
+		fe = append(fe, httperror.FieldError{Field: "kind", Message: "manual or smart"})
+	}
 	if len(req.VideoIDs) > MaxPlaylistItems {
 		fe = append(fe, httperror.FieldError{Field: "video_ids", Message: "at most " + strconv.Itoa(MaxPlaylistItems) + " videos"})
 	}
@@ -255,8 +362,8 @@ func (h *Handler) CreatePlaylist(w http.ResponseWriter, r *http.Request) {
 		desc = *req.Description
 	}
 	now := h.ts(h.now())
-	if _, err := tx.ExecContext(ctx, `INSERT INTO user_playlists (id, user_id, name, description, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $5)`, id, uid, *req.Name, desc, now); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO user_playlists (id, user_id, name, description, created_at, updated_at, kind, smart_query)
+		VALUES ($1, $2, $3, $4, $5, $5, $6, $7)`, id, uid, *req.Name, desc, now, kind, smartJSON); err != nil {
 		internal(w, r, "create playlist", err)
 		return
 	}
@@ -338,12 +445,75 @@ func (h *Handler) playlistDoc(w http.ResponseWriter, r *http.Request, uid string
 		httperror.Write(w, r, httperror.NotFound("playlist "+id))
 		return
 	}
-	items, err := h.playlistCards(ctx, uid, s, id)
+	items, err := h.itemsOf(ctx, uid, s, sums[0])
 	if err != nil {
 		internal(w, r, "playlist items", err)
 		return
 	}
 	writeJSON(w, r, map[string]any{"playlist": sums[0], "items": items})
+}
+
+// itemsOf is a playlist's visible items: a manual one's in its order, a smart
+// one evaluated for the caller.
+func (h *Handler) itemsOf(ctx context.Context, uid string, s scope, ps PlaylistSummary) ([]Card, error) {
+	if ps.Kind == PlaylistSmart && ps.SmartQuery != nil {
+		p := principal.FromContext(ctx)
+		if p == nil {
+			return []Card{}, nil
+		}
+		return h.evaluateSmart(ctx, p, *ps.SmartQuery)
+	}
+	return h.playlistCards(ctx, uid, s, ps.ID)
+}
+
+// GetPlaylistItems implements GET /api/me/playlists/{id}/items: {items}.
+func (h *Handler) GetPlaylistItems(w http.ResponseWriter, r *http.Request) {
+	p := caller(w, r)
+	if p == nil {
+		return
+	}
+	id, uid := chi.URLParam(r, "id"), userID(p)
+	ctx := r.Context()
+	if e, err := h.ownPlaylist(ctx, h.DB, uid, id); err != nil {
+		internal(w, r, "load playlist", err)
+		return
+	} else if e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	s := scopeOf(p)
+	sums, err := h.summaries(ctx, uid, s, id)
+	if err != nil || len(sums) != 1 {
+		internal(w, r, "read playlist", err)
+		return
+	}
+	items, err := h.itemsOf(ctx, uid, s, sums[0])
+	if err != nil {
+		internal(w, r, "playlist items", err)
+		return
+	}
+	writeJSON(w, r, map[string]any{"items": items})
+}
+
+// playlistKind is a playlist's kind (it exists: ownPlaylist answered).
+func (h *Handler) playlistKind(ctx context.Context, id string) (string, error) {
+	var k string
+	err := h.DB.QueryRowContext(ctx, `SELECT kind FROM user_playlists WHERE id = $1`, id).Scan(&k)
+	return k, err
+}
+
+// refuseSmart writes 409 smart_playlist when id is a smart playlist.
+func (h *Handler) refuseSmart(w http.ResponseWriter, r *http.Request, id string) bool {
+	k, err := h.playlistKind(r.Context(), id)
+	if err != nil {
+		internal(w, r, "playlist kind", err)
+		return true
+	}
+	if k == PlaylistSmart {
+		httperror.Write(w, r, smartRefused())
+		return true
+	}
+	return false
 }
 
 // GetPlaylist implements GET /api/me/playlists/{id}.
@@ -384,11 +554,39 @@ func (h *Handler) PatchPlaylist(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
-	if fe := req.checkText(false); len(fe) > 0 {
+	fe := req.checkText(false)
+	kind, err := h.playlistKind(ctx, id)
+	if err != nil {
+		internal(w, r, "playlist kind", err)
+		return
+	}
+	if req.Kind != nil && *req.Kind != kind {
+		httperror.Write(w, r, httperror.Conflict("", "a playlist's kind never changes; make a new one"))
+		return
+	}
+	var smartJSON *string
+	if req.SmartQuery != nil {
+		if kind != PlaylistSmart {
+			httperror.Write(w, r, httperror.Conflict("", "only a smart playlist has rules"))
+			return
+		}
+		fe = append(fe, checkSmartQuery(req.SmartQuery)...)
+		raw, _ := json.Marshal(req.SmartQuery)
+		s := string(raw)
+		smartJSON = &s
+	}
+	if len(fe) > 0 {
 		httperror.Write(w, r, httperror.Unprocessable(fe))
 		return
 	}
 	now := h.ts(h.now())
+	if smartJSON != nil {
+		if _, err := h.DB.ExecContext(ctx, `UPDATE user_playlists SET smart_query = $1, updated_at = $2 WHERE id = $3 AND user_id = $4`,
+			*smartJSON, now, id, uid); err != nil {
+			internal(w, r, "playlist rules", err)
+			return
+		}
+	}
 	if req.Name != nil {
 		if _, err := h.DB.ExecContext(ctx, `UPDATE user_playlists SET name = $1, updated_at = $2 WHERE id = $3 AND user_id = $4`,
 			*req.Name, now, id, uid); err != nil {
@@ -456,6 +654,9 @@ func (h *Handler) AddPlaylistItems(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if e != nil {
 		httperror.Write(w, r, e)
+		return
+	}
+	if h.refuseSmart(w, r, id) {
 		return
 	}
 	var req ItemsRequest
@@ -563,6 +764,9 @@ func (h *Handler) RemovePlaylistItem(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
+	if h.refuseSmart(w, r, id) {
+		return
+	}
 	if _, err := uuid.Parse(vid); err != nil {
 		httperror.Write(w, r, httperror.NotFound("video "+vid))
 		return
@@ -606,6 +810,9 @@ func (h *Handler) OrderPlaylist(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if e != nil {
 		httperror.Write(w, r, e)
+		return
+	}
+	if h.refuseSmart(w, r, id) {
 		return
 	}
 	var req ItemsRequest

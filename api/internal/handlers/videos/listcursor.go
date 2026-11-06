@@ -25,6 +25,7 @@ type listCursor struct {
 	Key   string `json:"k"`           // RFC3339Nano for the time sorts, a number or the title otherwise
 	Null  bool   `json:"n,omitempty"` // the last row's key was NULL (nullable sorts only)
 	Rank  int    `json:"r,omitempty"` // sort=relevance: the last row's rank (its key is created_at)
+	Seed  int64  `json:"d,omitempty"` // sort=shuffle: the seed the cursor was minted for
 	ID    string `json:"i"`
 }
 
@@ -79,16 +80,16 @@ func relevanceRank(pfx, contains string) string {
 }
 
 // listSortNames is the order the 400 names the sorts in.
-const listSortNames = "updated_at, created_at, title, published_at, duration_sec, plays, relevance (with q)"
+const listSortNames = "updated_at, created_at, title, published_at, duration_sec, plays, shuffle (with seed), relevance (with q)"
 
 // orderBy is the ORDER BY list for a sort and direction: NULL keys last,
 // then the key, then the id as the tie-break. rank is relevanceRank's
 // expression under sort=relevance.
-func orderBy(sort, order, rank string) string {
+func orderBy(sort, order, rank string, seed int64) string {
 	if sort == sortRelevance {
 		return rank + " ASC, created_at DESC, id DESC"
 	}
-	s := listSorts[sort]
+	s := sortOf(sort, seed)
 	dir := " DESC"
 	if order == "asc" {
 		dir = " ASC"
@@ -101,9 +102,12 @@ func orderBy(sort, order, rank string) string {
 	return out
 }
 
-func encodeListCursor(sort, order string, v Video) string {
+func encodeListCursor(sort, order string, v Video, seed int64) string {
 	c := listCursor{Sort: sort, Order: order, ID: v.ID}
 	switch sort {
+	case sortShuffle:
+		c.Seed = seed
+		c.Key = ShuffleKey(v.ID, seed)
 	case sortRelevance:
 		c.Rank = v.rank
 		c.Key = v.CreatedAt.UTC().Format(time.RFC3339Nano)
@@ -149,7 +153,7 @@ func invalidCursor(detail string) *httperror.Error {
 
 // decodeListCursor parses a cursor for the given sort and order. An empty
 // string is the first page (nil cursor, no error).
-func decodeListCursor(raw, sort, order string) (*listCursor, *httperror.Error) {
+func decodeListCursor(raw, sort, order string, seed int64) (*listCursor, *httperror.Error) {
 	if raw == "" {
 		return nil, nil
 	}
@@ -175,7 +179,10 @@ func decodeListCursor(raw, sort, order string) (*listCursor, *httperror.Error) {
 	if c.Order != order {
 		return nil, invalidCursor("cursor was made for a different order")
 	}
-	if c.Null && !listSorts[sort].nullable {
+	if sort == sortShuffle && c.Seed != seed {
+		return nil, invalidCursor("cursor was made for a different seed")
+	}
+	if c.Null && !sortOf(sort, seed).nullable {
 		return nil, invalidCursor("malformed cursor")
 	}
 	return &c, nil
@@ -198,7 +205,7 @@ func (c *listCursor) parseKey(kind keyKind) (any, error) {
 // where returns the predicate that resumes after the cursor, using $n and
 // $n+1 ($n+2 under sort=relevance, whose rank expression it is given), and
 // its arguments.
-func (c *listCursor) where(sort, order, rank string, n int) (string, []any, *httperror.Error) {
+func (c *listCursor) where(sort, order, rank string, n int, seed int64) (string, []any, *httperror.Error) {
 	if sort == sortRelevance {
 		at, err := time.Parse(time.RFC3339Nano, c.Key)
 		if err != nil || c.Rank < 0 || c.Rank > 2 {
@@ -208,7 +215,7 @@ func (c *listCursor) where(sort, order, rank string, n int) (string, []any, *htt
 				" AND (created_at < " + pidx(n+1) + " OR (created_at = " + pidx(n+1) + " AND id < " + pidx(n+2) + "))))",
 			[]any{c.Rank, at, c.ID}, nil
 	}
-	s := listSorts[sort]
+	s := sortOf(sort, seed)
 	op := " < "
 	if order == "asc" {
 		op = " > "
