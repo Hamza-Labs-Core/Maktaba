@@ -110,3 +110,16 @@ suspend fun ApiClient.favorites(cursor: String? = null, limit: Int = 60): Page<V
 /** The home's version (`GET /api/system/version`), or null when it does not say. */
 suspend fun ApiClient.homeVersion(): String? =
     profile { get<HomeVersionDoc>("/api/system/version").version?.trim()?.takeIf { it.isNotEmpty() } }
+
+/** `GET /api/me/cloud-link`: whether this home is in Maktaba Cloud, and the person's link (as the Apple Player reads it). */
+data class CloudLinkState(val available: Boolean = false, val linked: Boolean = false, val linkedLabel: String? = null)
+
+/** The person's Maktaba Cloud link on this home; [NotAvailable] on a home without the route. */
+suspend fun ApiClient.cloudLink(): CloudLinkState = profile {
+    val o = ApiClient.json.parseToJsonElement(String(send(request("GET", "/api/me/cloud-link")))) as? kotlinx.serialization.json.JsonObject
+        ?: throw ApiException.Decoding("not a cloud link answer")
+    val available = (o["available"] as? kotlinx.serialization.json.JsonPrimitive)?.content == "true"
+    val link = o["link"] as? kotlinx.serialization.json.JsonObject
+    val label = (link?.get("cloud_label") as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { it.isNotEmpty() && it != "null" }
+    CloudLinkState(available, linked = !link.isNullOrEmpty(), linkedLabel = label)
+}

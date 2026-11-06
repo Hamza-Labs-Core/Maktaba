@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.core
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.NotAvailable
+import com.hamzalabs.maktaba.core.api.cloudLink
 import com.hamzalabs.maktaba.core.api.endSignInSession
 import com.hamzalabs.maktaba.core.api.favorites
 import com.hamzalabs.maktaba.core.api.forgetHistory
@@ -205,6 +206,26 @@ class ProfileApiTest {
             fail("expected SignedOut")
         } catch (e: ApiException.SignedOut) {
             // the app goes back to signing in
+        }
+    }
+
+    @Test
+    fun theCloudLinkSaysWhoIsLinkedOrThatNoOneIs() = runBlocking {
+        answer = { r -> if (r.url.encodedPath == "/api/me/cloud-link") json(200, """{"available":true,"link":{"cloud_label":"me@example.com","linked_at":"2026-11-01T08:00:00Z"}}""") else null }
+        val linked = client().cloudLink()
+        assertTrue(linked.available)
+        assertTrue(linked.linked)
+        assertEquals("me@example.com", linked.linkedLabel)
+        answer = { r -> if (r.url.encodedPath == "/api/me/cloud-link") json(200, """{"available":true,"link":null}""") else null }
+        val none = client().cloudLink()
+        assertFalse(none.linked)
+        assertNull(none.linkedLabel)
+        // an older home without the route
+        answer = null
+        try {
+            client().cloudLink()
+            fail("a 404 is not available")
+        } catch (_: NotAvailable) {
         }
     }
 }
