@@ -212,7 +212,7 @@ func heldSource(ctx context.Context, q querier, queueID string) (map[string]bool
 // move sets the current item to pos for a caller holding version: stale when
 // the version is old. It writes the source's next chunk when the new current
 // item is near the end, and drops the oldest played items past MaxHeld.
-func (h *Handler) move(ctx context.Context, p *principal.Principal, id, uid string, pos, version int) (bool, *httperror.Error, error) {
+func (h *Handler) move(ctx context.Context, _ *principal.Principal, id, uid string, pos, version int) (bool, *httperror.Error, error) {
 	q, err := h.loadQueue(ctx, h.DB, uid, id, false)
 	if err != nil || q == nil {
 		return false, nil, err
@@ -387,7 +387,7 @@ func (h *Handler) add(ctx context.Context, id, uid string, ids []string, where s
 
 // reshuffle gives the queue a new seed and replaces what follows the current
 // item with the source in the new order, without the videos played so far.
-func (h *Handler) reshuffle(ctx context.Context, p *principal.Principal, q Queue) (*httperror.Error, error) {
+func (h *Handler) reshuffle(ctx context.Context, _ *principal.Principal, q Queue) (*httperror.Error, error) {
 	seed := h.seed()
 	res, e, err := h.resolve(ctx, q.Source, true, seed)
 	if e != nil || err != nil {

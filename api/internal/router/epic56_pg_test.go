@@ -143,10 +143,8 @@ func TestPGEpic56Library(t *testing.T) {
 
 	// ---- 56.04 the grid by series ----
 	// 3 series over v0001..v0009, the rest (and A1) loose
-	var series []string
 	for s := 0; s < 3; s++ {
 		id := uuid.NewString()
-		series = append(series, id)
 		exec(`INSERT INTO series (id, library_id, name) VALUES ($1, $2, $3)`, id, acLibA, "S"+string(rune('a'+s)))
 		for ep := 1; ep <= 3; ep++ {
 			exec(`INSERT INTO series_episodes (series_id, video_id, season, episode) VALUES ($1, $2, 1, $3)`, id, ids[vt(s*3+ep)], ep)

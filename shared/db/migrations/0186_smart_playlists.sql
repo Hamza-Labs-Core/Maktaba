@@ -17,8 +17,16 @@ ALTER TABLE user_playlists ADD COLUMN IF NOT EXISTS smart_query JSONB;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
+ALTER TABLE user_playlists DROP CONSTRAINT IF EXISTS user_playlists_kind_check;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
 ALTER TABLE user_playlists ADD CONSTRAINT user_playlists_kind_check
     CHECK (kind IN ('manual', 'smart'));
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+ALTER TABLE user_playlists DROP CONSTRAINT IF EXISTS user_playlists_smart_query_check;
 -- +goose StatementEnd
 
 -- +goose StatementBegin

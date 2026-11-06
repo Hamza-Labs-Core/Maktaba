@@ -207,7 +207,7 @@ func (h *Handler) ListPlaylists(w http.ResponseWriter, r *http.Request) {
 // the smart lists whose libraries hold it (or are all); 404 for a library
 // the caller cannot read.
 func (h *Handler) playlistsOfLibrary(ctx context.Context, p *principal.Principal, uid, lib string, items []PlaylistSummary) ([]PlaylistSummary, error) {
-	if _, err := uuid.Parse(lib); err != nil || !(p.AccessAllLibraries || p.HasLibrary(lib)) {
+	if _, err := uuid.Parse(lib); err != nil || (!p.AccessAllLibraries && !p.HasLibrary(lib)) {
 		return nil, httperror.NotFound("library " + lib)
 	}
 	rows, err := h.DB.QueryContext(ctx, `SELECT DISTINCT i.playlist_id FROM user_playlist_items i

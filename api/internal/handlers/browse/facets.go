@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -238,14 +239,12 @@ func (h *Handler) letterFacets(ctx context.Context, s scope, lib string) ([]Lett
 
 // letterScript ranks a letter's script for the jump bar: Arabic, Latin, the rest.
 func letterScript(l string) int {
-	for _, r := range l {
-		switch {
-		case unicode.Is(unicode.Arabic, r):
-			return 0
-		case unicode.Is(unicode.Latin, r):
-			return 1
-		}
-		return 2
+	r, _ := utf8.DecodeRuneInString(l)
+	switch {
+	case unicode.Is(unicode.Arabic, r):
+		return 0
+	case unicode.Is(unicode.Latin, r):
+		return 1
 	}
 	return 2
 }
