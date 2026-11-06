@@ -31,8 +31,7 @@ class FakeDictionary:
 
 def timed(text: str, start: float = 0.0, step: float = 0.5, prob: float = 0.9) -> list[Word]:
     return [
-        Word(start + i * step, start + (i + 1) * step, w, prob)
-        for i, w in enumerate(text.split())
+        Word(start + i * step, start + (i + 1) * step, w, prob) for i, w in enumerate(text.split())
     ]
 
 
@@ -317,8 +316,8 @@ def test_a_low_agreement_stretch_marks_nothing() -> None:
 def test_refine_records_what_each_listener_heard_per_sentence() -> None:
     s = sentence("ذهب الولد الى المدرسه مبكرن")
     result = Transcript([s], 3.0, "ar", "m", 0.0)
-    rf.refine(result, [0.0] * (SAMPLE_RATE * 4), lambda xs: ["ذهب الولد الى المدرسة مبكرا"] * len(xs),
-              None, "m")  # fmt: skip
+    heard = "ذهب الولد الى المدرسة مبكرا"
+    rf.refine(result, [0.0] * (SAMPLE_RATE * 4), lambda xs: [heard] * len(xs), None, "m")
     out = result.sentences[0]
     assert out.alt == [{"i": 4, "n": 1, "whisper": "مبكرن", "cohere": "مبكرا"}]
     assert out.words is not None and out.words[4].flags == HEARD_DIFFERENTLY

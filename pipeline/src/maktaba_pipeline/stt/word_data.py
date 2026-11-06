@@ -1,6 +1,7 @@
 """A sentence's words, packed (Epic 52, story 52.1): ``transcript_segments.word_data``.
 
-Each word is 9 bytes (the fields below; the spec rounded to 10), after a 3-byte header, little-endian::
+Each word is 9 bytes (the fields below; the spec rounded to 10), after a 3-byte header,
+little-endian::
 
     version:u8 (=1) | n:u16
     n x { char_start:u16, char_len:u8, start_cs:u16, dur_cs:u16, prob:u8, flags:u8 }
@@ -73,9 +74,7 @@ def decode(data: bytes) -> list[Slot]:
         raise ValueError(f"word_data: version {version}")
     if len(data) != _HEAD.size + n * _WORD.size:
         raise ValueError("word_data: length does not match its count")
-    return [
-        Slot(*_WORD.unpack_from(data, _HEAD.size + i * _WORD.size)) for i in range(n)
-    ]
+    return [Slot(*_WORD.unpack_from(data, _HEAD.size + i * _WORD.size)) for i in range(n)]
 
 
 def _cs(seconds: float) -> int:

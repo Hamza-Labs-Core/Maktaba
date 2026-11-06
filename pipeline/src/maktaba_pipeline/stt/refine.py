@@ -68,6 +68,7 @@ class Alt:
     whisper: str
     cohere: str
 
+
 _EDGE = re.compile(r"^([^\w]*)(.*?)([^\w]*)$", re.S)
 
 

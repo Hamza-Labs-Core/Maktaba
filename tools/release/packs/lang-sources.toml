@@ -1,0 +1,113 @@
+# The files of the language data packs (Epic 52, story 52.16), each pinned by sha256: the
+# recipes (recipes/lang.*.sh) download them from LibreOffice's dictionaries repository at
+# `commit` and check every file before it goes in a pack. Dictionary data only: nothing in
+# a pack runs. Regenerate a pin by downloading the file at the new commit.
+
+commit = "4f1df64b2e8e14751aa7c2205d170ca016071315"
+base = "https://raw.githubusercontent.com/LibreOffice/dictionaries/4f1df64b2e8e14751aa7c2205d170ca016071315"
+
+[pack."lang.ar"]
+files = [
+  { path = "ar/ar.aff", name = "ar.aff", sha256 = "cec30b8621001e49618feb05aec1984c5fcfbf7d2ec309901d5cbf66585217a3", size = 86949 },
+  { path = "ar/ar.dic", name = "ar.dic", sha256 = "2a3e5367f61c1583734db9d66734f5603e6be5c2d227cf5c5cd7e4ca586e34fe", size = 7217161 },
+  { path = "ar/COPYING.txt", name = "COPYING.txt", sha256 = "73480d918cd78d655508e80aa88c022cbd53634524a0f714b5f2519f2cf19124", size = 532 },
+  { path = "ar/README_ar.txt", name = "README_ar.txt", sha256 = "5ead684ae5211ccf615686959e24bd21ef6eebbb6195997529fda08b993f615e", size = 420 },
+]
+
+[pack."lang.en"]
+files = [
+  { path = "en/en_US.aff", name = "en_US.aff", sha256 = "e746c882dd6f303c2c46e7452804b9201115a6942cfeb15f18f8edf774d2e24e", size = 3205 },
+  { path = "en/en_US.dic", name = "en_US.dic", sha256 = "f0b1a234bd178bdd01875b2a392a9647f888b8fe879f79c52aae62c2759b3647", size = 551762 },
+  { path = "en/en_GB.aff", name = "en_GB.aff", sha256 = "0fd6ed120ef28957847d98ba5149b117e27116cf81b5aa36208453f6755a36fd", size = 44158 },
+  { path = "en/en_GB.dic", name = "en_GB.dic", sha256 = "04e90f34f5263bf26780e9c4a442e9ad16584e227af49ddd1b3b21b01df5b29c", size = 1230571 },
+  { path = "en/README_en_US.txt", name = "README_en_US.txt", sha256 = "168b4c01cb841f766a72f310b065c04d09cff46376c37a81d799593ce751c371", size = 15732 },
+  { path = "en/README_en_GB.txt", name = "README_en_GB.txt", sha256 = "18b5833de60a52ffcb6e5b6b5048bb5a5d910acfecd5b096985b77058223880c", size = 10644 },
+  { path = "en/license.txt", name = "license.txt", sha256 = "df84246204e3c54cd24aebbc23714235f5fc41d754d53b65444a2afbf070130f", size = 15122 },
+]
+
+[pack."lang.hunspell.fr"]
+files = [
+  { path = "fr_FR/dictionaries/fr.aff", name = "fr.aff", sha256 = "c176610cd5dc4846806a65ddd029f422d87978bf58f224aa44222662a16a2de5", size = 199870 },
+  { path = "fr_FR/dictionaries/fr.dic", name = "fr.dic", sha256 = "b78a868e31dd6e373b6c3217969afb898a9acde828a5e7ef97308da42218c88c", size = 1236490 },
+  { path = "fr_FR/dictionaries/README_dict_fr.txt", name = "README_dict_fr.txt", sha256 = "4a25abf740ad6ba5e8d0cfc0d2ffadc3c13c303f8fe389f323b061a389350f83", size = 2758 },
+]
+
+[pack."lang.hunspell.de"]
+files = [
+  { path = "de/de_DE_frami.aff", name = "de_DE_frami.aff", sha256 = "646bf3333ac69c23e9d794533ee5241d6f755c359e8fe10a648f87613743d594", size = 19067 },
+  { path = "de/de_DE_frami.dic", name = "de_DE_frami.dic", sha256 = "4ca3c958b0e5545910999bc246f668840bf8ede3df8e5e6790d05edd5a586c38", size = 4356903 },
+  { path = "de/README_de_DE_frami.txt", name = "README_de_DE_frami.txt", sha256 = "c141f4f79c428b7348b5012836f4ad3db4d124f288f15effc22696dc876512ae", size = 752 },
+  { path = "de/COPYING_GPLv2", name = "COPYING_GPLv2", sha256 = "e7431ac20e815b6797369e802f9e4bb1b0082485060d8b096235f035d741bd89", size = 17992 },
+  { path = "de/COPYING_GPLv3", name = "COPYING_GPLv3", sha256 = "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903", size = 35147 },
+]
+
+[pack."lang.hunspell.es"]
+files = [
+  { path = "es/es_ES.aff", name = "es_ES.aff", sha256 = "e73a9bf8e1383f4986a5dc9e2fbed49371c0c61f511c626d15586bd433c1cad9", size = 169202 },
+  { path = "es/es_ES.dic", name = "es_ES.dic", sha256 = "6975dddec3d5d2c676069537bc67b4b5f786c65c5d4cf6703a82acf779ac9ec1", size = 715989 },
+  { path = "es/LICENSE.md", name = "LICENSE.md", sha256 = "2b70fd5cb8d3b34cc6ae322c969557a2270b99017594addb2531ef5ffd9e1b17", size = 991 },
+  { path = "es/README_hunspell_es.txt", name = "README_hunspell_es.txt", sha256 = "0b5c39a863ecb61f5c5631ec1cd977667ef9bda6da6f90e80e9fc0edcbfadd97", size = 2615 },
+]
+
+[pack."lang.hunspell.it"]
+files = [
+  { path = "it_IT/it_IT.aff", name = "it_IT.aff", sha256 = "951afaa19272f13555b8823e8bcf9ccf78f8fe1a07835bdfb912ab3e4d537c2b", size = 70054 },
+  { path = "it_IT/it_IT.dic", name = "it_IT.dic", sha256 = "bae1e3501dcd2a923669592493b3fde6c02aae7c7aab83bf5e5b49077e73dd64", size = 1295083 },
+  { path = "it_IT/README_it_IT.txt", name = "README_it_IT.txt", sha256 = "34c3e93595cf3cf5f3afc9bc0d98eea12593750383f1e82ed1d3ca29f9681283", size = 38902 },
+]
+
+[pack."lang.hunspell.pt"]
+files = [
+  { path = "pt_PT/pt_PT.aff", name = "pt_PT.aff", sha256 = "975a209fcc892cb382fa5f34a28c391a39668661ce373ae071287809c5fcae24", size = 95089 },
+  { path = "pt_PT/pt_PT.dic", name = "pt_PT.dic", sha256 = "e29ba2d7aa8a2ad43e9cb46ac6473064b661545c87002aea90e18899d98d3cc9", size = 1485977 },
+  { path = "pt_PT/LICENSES.txt", name = "LICENSES.txt", sha256 = "d2c1cfe2e2dd81c651aec3fda5d1b4b4e7679b9e04f8cdc37586e521837384d1", size = 1830 },
+  { path = "pt_PT/README_pt_PT.txt", name = "README_pt_PT.txt", sha256 = "36de7d88a406a4947bf646a64145f00827566808988632e3df969aa95776060c", size = 1106 },
+]
+
+[pack."lang.hunspell.nl"]
+files = [
+  { path = "nl_NL/nl_NL.aff", name = "nl_NL.aff", sha256 = "f0233d4f721f4661cf5f4d05ed2739549322bf3b6b66764b55a38257e1e16e6f", size = 46557 },
+  { path = "nl_NL/nl_NL.dic", name = "nl_NL.dic", sha256 = "bc28af45307700a9927ad5719184da44dfd7eed4f707b8c1477f6d8a21b586a6", size = 2488246 },
+  { path = "nl_NL/LICENSE.txt", name = "LICENSE.txt", sha256 = "2189c248cbc054445aeac6cd65b87eebd0a115efeb55ed498b0f2a73441805dd", size = 25820 },
+  { path = "nl_NL/README.md", name = "README.md", sha256 = "aa4685a78f32d0d24a67dd5043ef4e39acc8720c3e416fe5d201985980dbc004", size = 7824 },
+]
+
+[pack."lang.hunspell.tr"]
+files = [
+  { path = "tr_TR/tr_TR.aff", name = "tr_TR.aff", sha256 = "a04a227b2ee45574000b876a1afa982e3436d49ebb97a7a796ddc5ec0cc8191b", size = 2283891 },
+  { path = "tr_TR/tr_TR.dic", name = "tr_TR.dic", sha256 = "48e5352c5770956b24f355265aef7649b25bcb4d933c0b254ea8b419c241f4bd", size = 36136702 },
+  { path = "tr_TR/LICENSE", name = "LICENSE", sha256 = "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04", size = 16726 },
+  { path = "tr_TR/README.txt", name = "README.txt", sha256 = "18750c09a1e666a6d34854b92dfdc0353c3bfe39008b412d539f52821ecdbdec", size = 367 },
+]
+
+[pack."lang.hunspell.ru"]
+files = [
+  { path = "ru_RU/ru_RU.aff", name = "ru_RU.aff", sha256 = "38ce7d4af78e211e9bafe4bf7e3d6a2c420591136cb738ec6648f8fdf6524cd7", size = 71236 },
+  { path = "ru_RU/ru_RU.dic", name = "ru_RU.dic", sha256 = "f6047416a0204adbecf3a451b874ec8a97ee37e2cbc714466ef04d8dbcc0d6fc", size = 3473191 },
+  { path = "ru_RU/README_ru_RU.txt", name = "README_ru_RU.txt", sha256 = "262af2f6ad70a61e5ee1332ff44fa8ee50edca819cf33207d8ad6ba6a0c9be52", size = 1886 },
+]
+
+[pack."lang.hunspell.id"]
+files = [
+  { path = "id/id_ID.aff", name = "id_ID.aff", sha256 = "c625d5b237a489c452cf1f9c666600103e8093667dff89e7030a24217995dc79", size = 15274 },
+  { path = "id/id_ID.dic", name = "id_ID.dic", sha256 = "775ff17a52801f3d2ee80120952fb44cc9bac6c3cf61740de775e439851a5803", size = 453700 },
+  { path = "id/LICENSE-dict", name = "LICENSE-dict", sha256 = "97628afebc60f026f5c2b25d7491c46a5c4ee61f693e7cfa07fbd2c03605979b", size = 7652 },
+  { path = "id/README-dict.adoc", name = "README-dict.adoc", sha256 = "7c18fabf4169a4b7f0f7effac5309c26294d8cb354d9ed5cbc8ea2868abcf942", size = 4065 },
+]
+
+[pack."lang.hunspell.sv"]
+files = [
+  { path = "sv_SE/dictionaries/sv_SE.aff", name = "sv_SE.aff", sha256 = "97fc1a3cd998f62ba48366ac13398b919a17e991cb69115fa60bb861093406b9", size = 18582 },
+  { path = "sv_SE/dictionaries/sv_SE.dic", name = "sv_SE.dic", sha256 = "bd44b19cd8c061fb1d2504dc676adc3a68d41a866c99d10c8163fc396049fcad", size = 3938932 },
+  { path = "sv_SE/LICENSE_sv_SE.txt", name = "LICENSE_sv_SE.txt", sha256 = "841736f210169ce2c9c6907c0d88495e6d41ff7d067a3033c56ae1179ce62127", size = 353 },
+  { path = "sv_SE/LICENSE_en_US.txt", name = "LICENSE_en_US.txt", sha256 = "1314b6004bff32053ca25aca5fc419e905d75a6d49f9f9825baf4f02298af6d9", size = 378 },
+]
+
+[pack."lang.hunspell.pl"]
+files = [
+  { path = "pl_PL/pl_PL.aff", name = "pl_PL.aff", sha256 = "82973651651aa930335c865b339b98db376ca3dbf3a661b70b9eeb71fdf41dca", size = 257542 },
+  { path = "pl_PL/pl_PL.dic", name = "pl_PL.dic", sha256 = "c0848440599eb88e5aca500418d5f389e562ec2c157b63dbe39d354658ffba49", size = 5252096 },
+  { path = "pl_PL/README_pl_PL.txt", name = "README_pl_PL.txt", sha256 = "e691ed1e79934293b0cd6996a14af1520ff893c02f920c09ed0c90aa5f0a8abc", size = 593 },
+  { path = "pl_PL/README_en.txt", name = "README_en.txt", sha256 = "fb5f9b4a0643821cf88775c0932810c1cd05f236136c913e3eaf1e24806f3f44", size = 2282 },
+]
+

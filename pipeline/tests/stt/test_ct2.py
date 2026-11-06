@@ -21,7 +21,7 @@ import pytest
 
 from maktaba_pipeline.engine.stages import transcribe as stage
 from maktaba_pipeline.stt import batched, ct2, engine
-from maktaba_pipeline.stt.settings import SAMPLE_RATE, FileProgress, WhisperSettings
+from maktaba_pipeline.stt.settings import SAMPLE_RATE, FileProgress, WhisperSettings, Word
 
 TS = 1000  # timestamp_begin of the fake tokenizer
 EOT = 999
@@ -672,7 +672,7 @@ async def test_the_legacy_faster_whisper_backend_runs_on_the_engine(
 
         async def transcribe(self, audio: Any, *, prompt: str | None = None) -> Transcript:
             asked.append((self.s, prompt))
-            words = [(0.5, 0.9, " قال"), (1.0, 1.6, " الشيخ")]
+            words = [Word(0.5, 0.9, " قال"), Word(1.0, 1.6, " الشيخ")]
             return Transcript(
                 [Sentence(0.5, 1.6, "قال الشيخ", -0.2, 0.0, words)], 2.0, "ar", self.s.model,
                 1.0, backend="ct2-batched", backend_version="faster-whisper 1.2.1",

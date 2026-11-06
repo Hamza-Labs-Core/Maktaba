@@ -1,0 +1,122 @@
+# The Hunspell dictionaries word review installs per language (Epic 52, stories 52.3 and
+# 52.16): one Epic 51 asset each, lang.hunspell.<code>, never in a bundle (an admin
+# installs it). `make catalog-sync` writes their catalog block and their en/ar words from
+# this list, and copies it into the pipeline (language_packs/hunspell-languages.toml);
+# `make catalog-check` fails when they differ. The list grows by PR, a release at a time;
+# a dictionary whose licence does not allow redistribution is left out (the fallback
+# pack covers its language).
+#
+# code     BCP 47 (the language Whisper names)
+# folder   the LibreOffice dictionaries repository folder
+# files    the .aff/.dic stem in that folder
+# script   ISO 15924
+# en, ar   the language's name for the Components page
+# licence  the dictionary's, recorded in the pack's NOTICE
+
+[[language]]
+code = "fr"
+folder = "fr_FR"
+files = "fr"
+script = "Latn"
+en = "French"
+ar = "الفرنسية"
+licence = "MPL-2.0"
+
+[[language]]
+code = "de"
+folder = "de"
+files = "de_DE_frami"
+script = "Latn"
+en = "German"
+ar = "الألمانية"
+licence = "GPL-2.0-or-later OR GPL-3.0-or-later"
+
+[[language]]
+code = "es"
+folder = "es"
+files = "es_ES"
+script = "Latn"
+en = "Spanish"
+ar = "الإسبانية"
+licence = "GPL-3.0-or-later OR LGPL-3.0-or-later OR MPL-1.1"
+
+[[language]]
+code = "it"
+folder = "it_IT"
+files = "it_IT"
+script = "Latn"
+en = "Italian"
+ar = "الإيطالية"
+licence = "GPL-3.0-or-later"
+
+[[language]]
+code = "pt"
+folder = "pt_PT"
+files = "pt_PT"
+script = "Latn"
+en = "Portuguese"
+ar = "البرتغالية"
+licence = "GPL-2.0-or-later OR LGPL-2.1-or-later OR MPL-1.1"
+
+[[language]]
+code = "nl"
+folder = "nl_NL"
+files = "nl_NL"
+script = "Latn"
+en = "Dutch"
+ar = "الهولندية"
+licence = "BSD-3-Clause OR CC-BY-3.0"
+
+[[language]]
+code = "tr"
+folder = "tr_TR"
+files = "tr_TR"
+script = "Latn"
+en = "Turkish"
+ar = "التركية"
+licence = "MPL-2.0"
+
+[[language]]
+code = "ru"
+folder = "ru_RU"
+files = "ru_RU"
+script = "Cyrl"
+en = "Russian"
+ar = "الروسية"
+licence = "BSD-3-Clause"
+
+[[language]]
+code = "id"
+folder = "id"
+files = "id_ID"
+script = "Latn"
+en = "Indonesian"
+ar = "الإندونيسية"
+licence = "LGPL-3.0-or-later"
+
+[[language]]
+code = "ms"
+folder = "ms"
+files = "ms_MY"
+script = "Latn"
+en = "Malay"
+ar = "الملايوية"
+licence = "GPL-2.0-or-later"
+
+[[language]]
+code = "sv"
+folder = "sv_SE"
+files = "sv_SE"
+script = "Latn"
+en = "Swedish"
+ar = "السويدية"
+licence = "LGPL-3.0-or-later"
+
+[[language]]
+code = "pl"
+folder = "pl_PL"
+files = "pl_PL"
+script = "Latn"
+en = "Polish"
+ar = "البولندية"
+licence = "GPL-3.0-or-later OR LGPL-3.0-or-later OR MPL-2.0"

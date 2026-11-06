@@ -215,6 +215,7 @@ lint-log:  ## Story 21.1 AC-4: no runtime data concatenated into log msg.
 
 .PHONY: catalog-sync
 catalog-sync:  ## Epic 51: copy the component catalog into the pipeline and rewrite the loaders' shared dump.
+	python3 tools/ci/hunspell_catalog.py
 	cp shared/components/catalog.toml $(PIPELINE_DIR)/src/maktaba_pipeline/components/catalog.toml
 	cd shared/components && go run ./cmd/catalog-dump > testdata/catalog.dump.json.tmp
 	mv shared/components/testdata/catalog.dump.json.tmp shared/components/testdata/catalog.dump.json

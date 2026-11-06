@@ -60,6 +60,7 @@ from .stt.placement import TranscriptionConfig
 from .system_health_settings import SystemHealthConfig
 from .tvrelease.config import MaktabaTvStagingConfig
 from .updates_settings import UpdatesConfig
+from .word_review.settings import WordReviewConfig
 
 __all__ = [
     "KEY_PREFIX",
@@ -215,6 +216,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "system_health": (SystemHealthConfig, "System health", "when the System health page "
                       "calls a worker late or gone, the database slow, a dependency check "
                       "stale, and how long one check may take"),
+    "word_review": (WordReviewConfig, "Word review", "suspect transcript words saved for a "
+                    "home admin: which transcripts are checked, how many words an hour of "
+                    "audio may ask about, which reasons count"),
     "search": (SearchConfig, "Search", "how search results are grouped per video, how many "
                "show on a page, how long a search's results are kept and how many recent "
                "searches each user keeps"),

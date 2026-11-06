@@ -105,3 +105,36 @@ pins "0000000000000000000000000000000000000000000000000000000000000000"
 if recipe c darwin-arm64 >"$ol/c.log" 2>&1; then fail "runtime.ollama took an archive that is not the pinned one"; fi
 grep -q "pinned 0000" "$ol/c.log" || { cat "$ol/c.log"; fail "runtime.ollama's sha256 refusal"; }
 echo "ok: runtime.ollama's recipe gathers the pinned Ollama, and refuses another"
+
+# Epic 52 (story 52.16): a language pack's recipe gathers the pinned dictionary files and the
+# pack's NOTICE, and refuses a file whose sha256 is not the pin
+lg="$tmp/lang"
+mkdir -p "$lg/src/fr_FR" "$lg/root/pipeline/src/maktaba_pipeline/language_packs/fr"
+printf 'SET UTF-8\n' >"$lg/src/fr_FR/fr.aff"
+printf '1\nbonjour\n' >"$lg/src/fr_FR/fr.dic"
+sum() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi; }
+langsrc() {
+    cat >"$lg/sources.toml" <<TOML
+commit = "fixture"
+base = "file://$lg/src"
+[pack."lang.hunspell.fr"]
+files = [
+  { path = "fr_FR/fr.aff", name = "fr.aff", sha256 = "$1", size = 10 },
+  { path = "fr_FR/fr.dic", name = "fr.dic", sha256 = "$(sum "$lg/src/fr_FR/fr.dic")", size = 10 },
+]
+TOML
+}
+lrecipe() {
+    mkdir -p "$lg/work-$1"
+    LANG_SOURCES="$lg/sources.toml" PACK_ID=lang.hunspell.fr WORK="$lg/work-$1" REPO_ROOT="$REPO_ROOT" \
+        bash "$here/recipes/lang.hunspell.sh" "$lg/stage-$1" linux-amd64 0.4.2
+}
+langsrc "$(sum "$lg/src/fr_FR/fr.aff")"
+lrecipe a >"$lg/a.log" 2>&1 || { cat "$lg/a.log"; fail "lang.hunspell.fr's recipe"; }
+for f in fr.aff fr.dic NOTICE; do [ -f "$lg/stage-a/$f" ] || fail "lang.hunspell.fr's pack has no $f"; done
+cmp "$lg/src/fr_FR/fr.dic" "$lg/stage-a/fr.dic" || fail "lang.hunspell.fr's fr.dic is not the pinned one"
+grep -q "MPL-2.0" "$lg/stage-a/NOTICE" || fail "lang.hunspell.fr's NOTICE has no licence"
+langsrc "0000000000000000000000000000000000000000000000000000000000000000"
+if lrecipe b >"$lg/b.log" 2>&1; then fail "lang.hunspell.fr took a file that is not the pinned one"; fi
+grep -q "pinned 0000" "$lg/b.log" || { cat "$lg/b.log"; fail "lang.hunspell.fr's sha256 refusal"; }
+echo "ok: a language pack's recipe gathers the pinned files, and refuses another"

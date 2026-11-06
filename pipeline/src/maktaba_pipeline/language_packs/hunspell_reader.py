@@ -19,7 +19,6 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 
 __all__ = ["Affix", "Dictionary", "load"]
@@ -47,6 +46,18 @@ class Dictionary:
     needaffix: str | None = None
     forbidden: str | None = None
     keepcase: str | None = None
+    #: lookups answered so far (cleared whole past 200 k entries)
+    memo: dict[str, bool] = field(default_factory=dict)
+    #: the affixes by the last (suffix) or first (prefix) letter they add ("" for none)
+    by_end: dict[str, list[Affix]] = field(default_factory=dict)
+    by_start: dict[str, list[Affix]] = field(default_factory=dict)
+
+    def index(self) -> None:
+        self.by_end, self.by_start = {}, {}
+        for s in self.suffixes:
+            self.by_end.setdefault(s.add[-1:] if s.add else "", []).append(s)
+        for p in self.prefixes:
+            self.by_start.setdefault(p.add[:1] if p.add else "", []).append(p)
 
     def convert(self, word: str) -> str:
         for a, b in self.iconv:
@@ -63,13 +74,11 @@ class Dictionary:
             return False
         if extra is not None and extra not in flags:
             return False
-        if need is None and extra is None and self.needaffix and self.needaffix in flags:
-            return False
-        return True
+        return not (need is None and extra is None and self.needaffix and self.needaffix in flags)
 
     def _suffixed(self, word: str, need_cross: bool = False) -> list[tuple[str, Affix]]:
         out: list[tuple[str, Affix]] = []
-        for s in self.suffixes:
+        for s in [*self.by_end.get("", ()), *self.by_end.get(word[-1:], ())]:
             if need_cross and not s.cross:
                 continue
             if s.add and not word.endswith(s.add):
@@ -84,7 +93,7 @@ class Dictionary:
 
     def _prefixed(self, word: str) -> list[tuple[str, Affix]]:
         out: list[tuple[str, Affix]] = []
-        for p in self.prefixes:
+        for p in [*self.by_start.get("", ()), *self.by_start.get(word[:1], ())]:
             if p.add and not word.startswith(p.add):
                 continue
             stem = p.strip + (word[len(p.add) :] if p.add else word)
@@ -132,25 +141,12 @@ class Dictionary:
 
 
 def _lookup(d: Dictionary, word: str) -> bool:
-    return _cached(id(d), d, word)
-
-
-@lru_cache(maxsize=200_000)
-def _cached_key(did: int, word: str) -> bool:  # pragma: no cover - replaced below
-    raise NotImplementedError
-
-
-_CACHE: dict[tuple[int, str], bool] = {}
-
-
-def _cached(did: int, d: Dictionary, word: str) -> bool:
-    k = (did, word)
-    got = _CACHE.get(k)
+    got = d.memo.get(word)
     if got is None:
         got = _uncached(d, word)
-        if len(_CACHE) > 200_000:
-            _CACHE.clear()
-        _CACHE[k] = got
+        if len(d.memo) > 200_000:
+            d.memo.clear()
+        d.memo[word] = got
     return got
 
 
@@ -260,4 +256,5 @@ def load(aff: Path, dic: Path) -> Dictionary:
         raw = raw.split(" ", 1)[0]
         flags = frozenset(_split_flags(raw, mode))
         d.words[word] = d.words.get(word, frozenset()) | flags
+    d.index()
     return d

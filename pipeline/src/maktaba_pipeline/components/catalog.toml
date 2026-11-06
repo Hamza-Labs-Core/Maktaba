@@ -246,6 +246,23 @@ features  = ["subtitles"]
 since     = "0.3.66"
 
 [[component]]
+id        = "review.words"
+kind      = "stages"
+group     = "processing"
+title_key = "components.review.words.title"
+desc_key  = "components.review.words.desc"
+# Epic 52: each transcript's suspect words saved for a home admin to review, with the
+# Quran check; CPU only. The languages' data are the lang.* assets below
+stages    = ["word_check"]
+requires  = ["runtime.lang"]
+wants     = ["lang.ar", "lang.en", "model.refine"]
+settings  = ["rules.word_review"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+drain     = { grace_s = 30, checkpoint = false }
+bundles   = ["full", "worker"]
+since     = "0.3.82"
+
+[[component]]
 id        = "search.semantic"
 kind      = "stages+process"
 group     = "processing"
@@ -569,6 +586,20 @@ bundles    = ["full", "worker"]
 since      = "0.3.66"
 
 [[component]]
+id         = "runtime.lang"
+kind       = "asset"
+group      = "runtimes"
+title_key  = "components.runtime.lang.title"
+desc_key   = "components.runtime.lang.desc"
+# Epic 52: the wheels of the pipeline's lang extra (wordfreq, PyICU where it has a wheel),
+# fed to the venv builder: the generic Hunspell pack and the fallback pack run on them
+source     = "pack:runtime.lang"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.82"
+
+[[component]]
 id         = "runtime.ollama"
 kind       = "asset"
 group      = "runtimes"
@@ -780,3 +811,206 @@ in_payload = false
 platforms  = ["linux-amd64", "linux-arm64"]
 bundles    = []
 since      = "0.3.66"
+
+# ---- languages (Epic 52: word review's dictionaries, data only) ----------------------
+
+[[component]]
+id         = "lang.ar"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.ar.title"
+desc_key   = "components.lang.ar.desc"
+requires   = ["runtime.lang"]
+# Ayaspell's Hunspell ar (tools/release/packs/lang-sources.toml); CAMeL's morphology
+# database stays model.refine
+source     = "pack:lang.ar"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.en"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.en.title"
+desc_key   = "components.lang.en.desc"
+requires   = ["runtime.lang"]
+# SCOWL's en_US and en_GB Hunspell dictionaries (tools/release/packs/lang-sources.toml)
+source     = "pack:lang.en"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.82"
+
+# ---- BEGIN lang.hunspell: written by `make catalog-sync` from tools/release/packs/hunspell-languages.toml
+
+[[component]]
+id         = "lang.hunspell.fr"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.fr.title"
+desc_key   = "components.lang.hunspell.fr.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's fr_FR dictionary (MPL-2.0)
+source     = "pack:lang.hunspell.fr"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.de"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.de.title"
+desc_key   = "components.lang.hunspell.de.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's de dictionary (GPL-2.0-or-later OR GPL-3.0-or-later)
+source     = "pack:lang.hunspell.de"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.es"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.es.title"
+desc_key   = "components.lang.hunspell.es.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's es dictionary (GPL-3.0-or-later OR LGPL-3.0-or-later OR MPL-1.1)
+source     = "pack:lang.hunspell.es"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.it"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.it.title"
+desc_key   = "components.lang.hunspell.it.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's it_IT dictionary (GPL-3.0-or-later)
+source     = "pack:lang.hunspell.it"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.pt"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.pt.title"
+desc_key   = "components.lang.hunspell.pt.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's pt_PT dictionary (GPL-2.0-or-later OR LGPL-2.1-or-later OR MPL-1.1)
+source     = "pack:lang.hunspell.pt"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.nl"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.nl.title"
+desc_key   = "components.lang.hunspell.nl.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's nl_NL dictionary (BSD-3-Clause OR CC-BY-3.0)
+source     = "pack:lang.hunspell.nl"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.tr"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.tr.title"
+desc_key   = "components.lang.hunspell.tr.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's tr_TR dictionary (MPL-2.0)
+source     = "pack:lang.hunspell.tr"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.ru"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.ru.title"
+desc_key   = "components.lang.hunspell.ru.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's ru_RU dictionary (BSD-3-Clause)
+source     = "pack:lang.hunspell.ru"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.id"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.id.title"
+desc_key   = "components.lang.hunspell.id.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's id dictionary (LGPL-3.0-or-later)
+source     = "pack:lang.hunspell.id"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.ms"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.ms.title"
+desc_key   = "components.lang.hunspell.ms.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's ms dictionary (GPL-2.0-or-later)
+source     = "pack:lang.hunspell.ms"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.sv"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.sv.title"
+desc_key   = "components.lang.hunspell.sv.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's sv_SE dictionary (LGPL-3.0-or-later)
+source     = "pack:lang.hunspell.sv"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+[[component]]
+id         = "lang.hunspell.pl"
+kind       = "asset"
+group      = "languages"
+title_key  = "components.lang.hunspell.pl.title"
+desc_key   = "components.lang.hunspell.pl.desc"
+requires   = ["runtime.lang"]
+# LibreOffice's pl_PL dictionary (GPL-3.0-or-later OR LGPL-3.0-or-later OR MPL-2.0)
+source     = "pack:lang.hunspell.pl"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.82"
+
+# ---- END lang.hunspell

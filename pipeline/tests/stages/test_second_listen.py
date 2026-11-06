@@ -21,8 +21,8 @@ from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import gpu_turns, model_share
 from maktaba_pipeline.stt.batched import Sentence, Transcript
-from maktaba_pipeline.stt.settings import Word
 from maktaba_pipeline.stt.placement import TranscriptionConfig
+from maktaba_pipeline.stt.settings import Word
 from tests.stages.test_transcribe import LINES, FakeTranscriber, _one_video
 from tests.stages.world import core_runtime, drain_core
 
