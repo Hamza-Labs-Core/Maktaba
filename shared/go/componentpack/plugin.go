@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -267,7 +268,9 @@ func UnpackPlugin(r io.Reader, dest string, want PluginExpect) (pkg *PluginPacka
 			}
 			continue
 		}
-		if !SafePluginPath(name) {
+		// SafePluginPath already refuses these; checked again where the name meets the
+		// disk, so no entry can ever be written outside dest
+		if !SafePluginPath(name) || strings.Contains(name, "..") || filepath.IsAbs(name) {
 			return nil, pluginErr(CodePackageBadPath, "bad path %q", name)
 		}
 		if h.Typeflag != tar.TypeReg {

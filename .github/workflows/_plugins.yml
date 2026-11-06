@@ -104,11 +104,8 @@ jobs:
         with:
           modules: cmd/maktaba-server
 
-      - name: Build the guests and the probe build
-        run: |
-          (cd plugind/guests && cargo build --locked --release --target wasm32-wasip2)
-          cd plugind
-          cargo build --locked --release -p maktaba-plugind --features escape-probes
+      - name: Build the guests
+        run: cd plugind/guests && cargo build --locked --release --target wasm32-wasip2
 
       # GitHub's 24.04 image may block unprivileged user namespaces; the first run expects
       # the full sandbox, the last step blocks them on purpose
@@ -126,6 +123,11 @@ jobs:
         if: runner.os != 'Windows'
         working-directory: plugind
         run: cargo test --locked --release -p plugind-core --test host
+
+      # after the tests: they build the same binary without the probes
+      - name: Build the probe build
+        working-directory: plugind
+        run: cargo build --locked --release -p maktaba-plugind --features escape-probes
 
       - name: Plant the files the probes reach for
         id: plant

@@ -253,6 +253,11 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 35 story 35.5 — this machine's supervisor records a restore the command
 		// line asked for: the handler refuses any request without its per-boot local token.
 		"/internal/updates/restored": {},
+		// Epic 54 story 54.04 — a plugin job's token, minted for this machine's own
+		// pipeline: the handler refuses any request without the per-boot local token
+		// (403 to a signed-in user, 401 to no one).
+		"/internal/plugins/invocations":   {},
+		"/internal/plugins/invocations/*": {},
 	}
 }
 
