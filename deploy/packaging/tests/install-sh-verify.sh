@@ -181,7 +181,12 @@ latest_tag() {
 }
 expect ok "latest resolves from a large API answer" latest_tag
 latest="$(latest_tag 2>&1)"
-[ "${latest}" = "v9.8.7" ] && echo "ok   the latest tag is read" || { echo "FAIL latest tag: ${latest:0:200}"; fails=$((fails + 1)); }
+if [ "${latest}" = "v9.8.7" ]; then
+    echo "ok   the latest tag is read"
+else
+    echo "FAIL latest tag: ${latest:0:200}"
+    fails=$((fails + 1))
+fi
 
 if [ "${fails}" -ne 0 ]; then
     echo "${fails} case(s) failed" >&2
