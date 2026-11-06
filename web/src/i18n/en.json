@@ -6421,6 +6421,7 @@
   "components.done.install": "{name} will be installed.",
   "components.done.retry": "{name}: the install is being tried again.",
   "components.done.restart": "{name} is restarting.",
+  "components.done.restartAsked": "{name}: a restart was asked of the service that runs it.",
   "components.drawer.home": "This home",
   "components.drawer.heldBy": "Stopped by {who} on {when}, until someone starts it again.",
   "components.drawer.requires": "Needs",

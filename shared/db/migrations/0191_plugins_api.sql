@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0190 - plugins: the plugin API's tables (Epic 54, stories 54.04-54.06, 54.08).
+-- Slot 0191 - plugins: the plugin API's tables (Epic 54, stories 54.04-54.06, 54.08).
 --
 --   plugin_installs     one row per installed plugin (54.07): its version, digest, folder
 --                       and validated manifest. The pipeline's plugin loader reads it; the

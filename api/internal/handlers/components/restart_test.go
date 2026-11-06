@@ -148,11 +148,13 @@ func TestRestartRefused(t *testing.T) {
 func TestRestartLoopsOfAnotherProcess(t *testing.T) {
 	f, sup, starts := restartFixture(t)
 	var v struct {
-		Restarted int `json:"restarted"`
+		Restarted int      `json:"restarted"`
+		Requested []string `json:"requested"`
 	}
 	for want := int64(1); want <= 2; want++ {
-		decode(t, f.do("POST", "/api/components/livetv.hdhomerun/restart", "", admin()), 200, &v)
-		if v.Restarted != 1 {
+		// #663 review: asked, not counted as restarted (the API cannot confirm it): 202
+		decode(t, f.do("POST", "/api/components/livetv.hdhomerun/restart", "", admin()), 202, &v)
+		if v.Restarted != 0 || !slices.Equal(v.Requested, []string{"streaming"}) {
 			t.Fatalf("%+v", v)
 		}
 		got, err := f.st.Restarts(context.Background(), "home", "streaming")
@@ -180,9 +182,9 @@ func TestRestartLoopsOfAnotherProcess(t *testing.T) {
 // too, which the API's runner reads.
 func TestRestartAPILoopsFromAnotherProcess(t *testing.T) {
 	f := newFixture(t)
-	n, err := Restarter{Service: &svc.Service{Store: f.st, Catalog: components.Default()}}.Restart(context.Background(), "enrich", svc.Actor{By: "maya", Source: "cli"})
-	if err != nil || n != 1 {
-		t.Fatalf("%d %v", n, err)
+	res, err := Restarter{Service: &svc.Service{Store: f.st, Catalog: components.Default()}}.Restart(context.Background(), "enrich", svc.Actor{By: "maya", Source: "cli"})
+	if err != nil || res.Restarted != 0 || !slices.Equal(res.Requested, []string{"api"}) {
+		t.Fatalf("%+v %v", res, err)
 	}
 	got, err := f.st.Restarts(context.Background(), "home", "api")
 	if err != nil || got["enrich"] != 1 {

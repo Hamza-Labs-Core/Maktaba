@@ -377,22 +377,25 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Hold: &held}}})
 }
 
-// restarted is a restart's answer: the component, and how many of its processes and
-// loops were restarted or started (0, with 202: none runs now, the supervisor starts them).
+// restarted is a restart's answer: the component, how many of its processes and loops
+// were restarted or started here, and the hosts asked to restart their loops (whose
+// runners act on the request; not counted, since the API cannot confirm them).
 type restarted struct {
 	svc.Detail
-	Restarted int `json:"restarted"`
+	Restarted int      `json:"restarted"`
+	Requested []string `json:"requested"`
 }
 
 // restart restarts a running component (story 51.08 §2; Restarter): 200 with how many
-// processes and loops it restarted, 202 when none runs now (the supervisor starts
-// them); 409 not_switchable, not_restartable or not_running; 503 with no supervisor.
+// processes and loops it restarted, 202 when none restarted here (none runs now and the
+// supervisor starts them, or its loops run in another process, asked in requested); 409
+// not_switchable, not_restartable or not_running; 503 with no supervisor.
 func (h *Handler) restart(w http.ResponseWriter, r *http.Request) {
 	id, ok := h.known(w, r)
 	if !ok {
 		return
 	}
-	n, err := Restarter{Service: h.Service, Packs: h.Packs, Loops: h.Loops}.Restart(r.Context(), id, h.actor(r))
+	res, err := Restarter{Service: h.Service, Packs: h.Packs, Loops: h.Loops}.Restart(r.Context(), id, h.actor(r))
 	var sup *supCallError
 	switch {
 	case errors.Is(err, ErrNoSupervisor):
@@ -412,10 +415,10 @@ func (h *Handler) restart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	status := http.StatusOK
-	if n == 0 {
+	if res.Restarted == 0 {
 		status = http.StatusAccepted
 	}
-	common.WriteJSON(w, r, status, restarted{Detail: d, Restarted: n})
+	common.WriteJSON(w, r, status, restarted{Detail: d, Restarted: res.Restarted, Requested: res.Requested})
 }
 
 func (h *Handler) readRequest(w http.ResponseWriter, r *http.Request) (svc.Request, bool) {

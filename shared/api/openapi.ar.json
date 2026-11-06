@@ -2018,12 +2018,12 @@
       "ar": "يعيد تشغيل مكوّن يعمل: عملياته وحلقات المشرف الخاصة به عبر المشرف على هذا الجهاز، وحلقاته في الواجهة البرمجية تُلغى ثم تبدأ من جديد، وحلقاته في خدمة البث أو خط المعالجة عبر طلب إعادة تشغيل ينفّذه المشغّل فيها خلال ثوانٍ. ولا تتغير الحالة المطلوبة، وتُسجَّل إعادة التشغيل باسم `component.restart`."
     },
     "/paths/~1components~1{id}~1restart/post/responses/200/description": {
-      "en": "The component after the restart, with `restarted`: how many of its processes and loops started again, or were asked to (its loops in streaming or the pipeline).",
-      "ar": "المكوّن بعد إعادة التشغيل، ومعه `restarted`: عدد عملياته وحلقاته التي بدأت من جديد أو طُلب منها ذلك (حلقاته في خدمة البث أو خط المعالجة)."
+      "en": "The component after the restart, with `restarted`: how many of its processes and loops started again here, and `requested`: the hosts (`streaming`, `pipeline`, `api`) asked to restart their loops, whose runners act on the request within seconds (not counted in `restarted`: the API cannot confirm them).",
+      "ar": "المكوّن بعد إعادة التشغيل، ومعه `restarted`: عدد عملياته وحلقاته التي بدأت من جديد هنا، و`requested`: الخدمات (`streaming` و`pipeline` و`api`) التي طُلب منها إعادة تشغيل حلقاتها، وينفّذ المشغّل فيها الطلب خلال ثوانٍ (ولا تُحسب في `restarted`: لا تستطيع الواجهة البرمجية التأكد منها)."
     },
     "/paths/~1components~1{id}~1restart/post/responses/202/description": {
-      "en": "None of its processes runs now: the supervisor starts them (`restarted` is 0).",
-      "ar": "لا تعمل أي من عملياته الآن، والمشرف يشغّلها (`restarted` قيمته 0)."
+      "en": "Nothing restarted here (`restarted` is 0): none of its processes runs now and the supervisor starts them, or its loops run in another process, which was asked (`requested`).",
+      "ar": "لم يُعَد تشغيل شيء هنا (`restarted` قيمتها 0): لا تعمل أي من عملياته الآن ويشغّلها المشرف، أو تعمل حلقاته في عملية أخرى طُلب منها ذلك (`requested`)."
     },
     "/paths/~1components~1{id}~1restart/post/responses/403/description": {
       "en": "Admin only.",
