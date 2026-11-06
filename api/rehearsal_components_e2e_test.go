@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -151,11 +152,13 @@ func diffLists(t *testing.T, what string, before, after []string) {
 }
 
 // keptProcesses is after's rows for the processes before had. A process new with this
-// release (the language model server built dormant for an llm that is off, story 51.04) is
-// no change to what runs today, but it must be held and not wanted: it runs nothing and
-// nothing waits on it.
-func keptProcesses(t *testing.T, before, after []string) []string {
+// release is no change to what runs today when it stays held and not wanted (the language
+// model server built dormant for an llm that is off, story 51.04), or when its component is
+// one the home's bundle has (story 52.17: a new component starts as the bundle says; the
+// log index, 53.09, is on in Full).
+func keptProcesses(t *testing.T, before, after []string, bundle string) []string {
 	t.Helper()
+	cat := components.Default()
 	had := map[string]bool{}
 	for _, row := range before {
 		had[strings.Fields(row)[0]] = true
@@ -163,11 +166,17 @@ func keptProcesses(t *testing.T, before, after []string) []string {
 	var out []string
 	for _, row := range after {
 		f := strings.Fields(row)
+		role, instance, _ := strings.Cut(f[0], "/")
+		inBundle := false
+		if c, ok := cat.ByProcess(role, instance); ok {
+			inBundle = slices.Contains(c.Bundles, bundle)
+		}
 		switch {
 		case had[f[0]]:
 			out = append(out, row)
+		case inBundle && strings.HasPrefix(strings.TrimPrefix(row, f[0]+" "), "wanted=true"):
 		case !strings.HasSuffix(row, " wanted=false running=false held"):
-			t.Errorf("a process new with this release must be held and not wanted: %s", row)
+			t.Errorf("a process new with this release must be held and not wanted, unless the home's bundle has it: %s", row)
 		}
 	}
 	return out
@@ -250,7 +259,8 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	home.assertServing(k.cur)
 
 	after := home.componentsHome(db)
-	diffLists(t, "the supervisor's processes", before.Processes, keptProcesses(t, before.Processes, after.Processes))
+	// the seeded home is a Full one (checked below)
+	diffLists(t, "the supervisor's processes", before.Processes, keptProcesses(t, before.Processes, after.Processes, "full"))
 	diffLists(t, "job_stages", before.Stages, keptStages(t, before.Stages, after.Stages))
 	diffLists(t, "extensions", before.Extensions, after.Extensions)
 	if before.HDHR != after.HDHR {
