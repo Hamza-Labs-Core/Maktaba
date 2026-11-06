@@ -1,0 +1,189 @@
+/* Epic 52: word review. Both themes take the design tokens; the marked word is a box and
+   an underline, never colour alone. */
+.mkt-review {
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+.mkt-review-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.mkt-review-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.mkt-review-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+.mkt-review-filters label {
+  display: grid;
+  gap: 0.25rem;
+}
+.mkt-review-body {
+  display: grid;
+  grid-template-columns: minmax(14rem, 20rem) 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 48rem) {
+  .mkt-review-body {
+    grid-template-columns: 1fr;
+  }
+}
+.mkt-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+  max-height: 70vh;
+  overflow: auto;
+}
+.mkt-review-list button {
+  width: 100%;
+  text-align: start;
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--mkt-border, #8884);
+  background: transparent;
+  color: inherit;
+}
+.mkt-review-list button[aria-current="true"] {
+  outline: 2px solid var(--mkt-accent, #4a8);
+}
+.mkt-review-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  font-size: 0.8em;
+}
+.mkt-review-reason {
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 0 0.4rem;
+}
+.mkt-review-video,
+.mkt-review-lang {
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+.mkt-review-main {
+  display: grid;
+  gap: 0.75rem;
+}
+.mkt-review-sentence {
+  font-size: 1.4rem;
+  line-height: 2.2;
+  font-family: var(--mkt-font-arabic, "Amiri"), var(--mkt-font, "IBM Plex Sans"), serif;
+}
+.mkt-review-ctx {
+  opacity: 0.7;
+}
+.mkt-review-mark {
+  background: transparent;
+  color: inherit;
+  border: 2px solid currentColor;
+  border-radius: 0.3rem;
+  text-decoration: underline;
+  text-underline-offset: 0.3em;
+  padding: 0 0.2rem;
+}
+.mkt-review-why {
+  margin: 0;
+  padding-inline-start: 1.2rem;
+}
+.mkt-review-verse {
+  border-inline-start: 3px solid currentColor;
+  padding-inline-start: 0.75rem;
+}
+.mkt-review-credit {
+  font-size: 0.8em;
+  opacity: 0.8;
+}
+.mkt-review-candidates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.mkt-review-edit {
+  display: grid;
+  gap: 0.25rem;
+}
+.mkt-review-edit input {
+  font-size: 1.2rem;
+}
+.mkt-review-actions,
+.mkt-review-player {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.mkt-review-actions button,
+.mkt-review-player button,
+.mkt-review-candidates button {
+  min-height: 2.5rem;
+}
+.mkt-review-keys {
+  position: fixed;
+  inset: 10% 10% auto;
+  max-width: 32rem;
+  margin: auto;
+  padding: 1rem;
+  background: var(--mkt-surface, Canvas);
+  color: inherit;
+  border: 1px solid currentColor;
+  border-radius: 0.75rem;
+  z-index: 50;
+}
+.mkt-review-keys dl > div {
+  display: flex;
+  gap: 1rem;
+}
+.mkt-review-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mkt-review-table th,
+.mkt-review-table td {
+  text-align: start;
+  padding: 0.35rem;
+  border-bottom: 1px solid var(--mkt-border, #8884);
+}
+.mkt-review-toast {
+  display: inline-flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+.mkt-wordreview-settings {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 40rem;
+}
+.mkt-transcript-word {
+  cursor: pointer;
+  border-radius: 0.2rem;
+}
+.mkt-transcript-word[aria-selected="true"] {
+  outline: 2px solid currentColor;
+}
+.mkt-transcript-pop {
+  display: grid;
+  gap: 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 0.5rem;
+  padding: 0.5rem;
+  margin-block: 0.5rem;
+}

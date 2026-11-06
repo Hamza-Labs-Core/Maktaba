@@ -110,6 +110,9 @@ lint_pipeline:
   # story 51.13: the rules schema's versions against the last release tag
   - 'api/internal/handlers/rules/schema.json'
   - 'tools/ci/rules_schema_versions.py'
+  # Epic 52: word review names no language outside its packs; its evaluation gate
+  - 'tools/ci/word_review_languages.py'
+  - 'tools/eval-gate/**'
 
 lint_web:
   - *ci
@@ -154,6 +157,18 @@ catalog:
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Localizable.xcstrings'
   - 'tools/ci/catalog_words.mjs'
   - 'tools/ci/catalog_words.test.mjs'
+  # Epic 52 (story 52.16): the Hunspell languages' block and words, from their list
+  - 'tools/ci/hunspell_catalog.py'
+  - 'tools/release/packs/hunspell-languages.toml'
+  # Epic 53 (story 53.01): the log line schema, the shared redaction list and its copies
+  - 'shared/log/schema/**'
+  - 'shared/redact/**'
+  - 'tools/log-schema/**'
+  - 'shared/log/go/redact_rules.json'
+  - 'pipeline/src/maktaba_pipeline/log/redact_rules.json'
+  - 'web/src/lib/redactRules.json'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/RedactRules.swift'
+  - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/diagnostics/RedactRules.kt'
 
 # ---- unit (_unit.yml) -----------------------------------------------------------------
 
@@ -216,6 +231,8 @@ plugins:
   - 'shared/plugins/**'
   - 'tools/plugin-sdk/**'
   - 'tools/ci/plugins/**'
+  # the Epic 53 line the host's log lines follow (a test reads its plugind example)
+  - 'shared/log/schema/**'
   - 'cmd/maktaba-server/internal/appcontainer/**'
   - 'cmd/maktaba-server/go.mod'
   - 'web/src/i18n/**'

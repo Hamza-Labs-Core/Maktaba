@@ -28,12 +28,14 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
 from ...db.jobs import Job
 from ...log import get_logger
-from ...stt.settings import SAMPLE_RATE, Sentence, Transcript
+from ...stt.settings import SAMPLE_RATE, Sentence, Transcript, Word
+from ...stt.word_data import unpack
 from ..context import JobDeferred, StageContext, StageFailure
 from ..graph import SECOND_LISTEN_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
@@ -94,7 +96,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 async def _segments(db: Any, transcript_id: Any) -> list[Any]:
     return list(
         await db.fetch(
-            "SELECT seq, start_sec, end_sec, text, confidence, metadata"
+            "SELECT seq, start_sec, end_sec, text, confidence, metadata, word_data"
             " FROM transcript_segments WHERE transcript_id = $1 ORDER BY seq",
             uid(transcript_id),
         )
@@ -107,9 +109,8 @@ def _sentences(rows: list[Any]) -> tuple[list[Sentence], bool]:
     words_all = True
     for r in rows:
         meta = loads(r["metadata"]) or {}
-        words = meta.get("words") if isinstance(meta, dict) else None
+        timed = stored_words(r, meta)
         conf = float(r["confidence"] or 0.0)
-        timed = [(float(a), float(b), str(w)) for a, b, w in words] if words else None
         if timed is None and str(r["text"] or "").strip():
             words_all = False
         out.append(
@@ -123,6 +124,21 @@ def _sentences(rows: list[Any]) -> tuple[list[Sentence], bool]:
             )
         )
     return out, words_all
+
+
+def stored_words(row: Any, meta: Any) -> list[Word] | None:
+    """A stored sentence's words: its ``word_data`` (Epic 52, story 52.1), else the
+    ``metadata.words`` of a transcript stored before it, else None."""
+    data = row["word_data"]
+    if data:
+        try:
+            return unpack(str(row["text"] or ""), bytes(data), float(row["start_sec"])) or None
+        except ValueError:
+            return None
+    words = meta.get("words") if isinstance(meta, dict) else None
+    if not words:
+        return None
+    return [Word(float(a), float(b), str(w)) for a, b, w in words]
 
 
 def _texts_hash(sentences: list[Sentence]) -> str:
@@ -197,7 +213,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             backend=str(row["backend"] or ""),
             backend_version=row["backend_version"],
         )
-        refined = await listen(db, result, audio, model)
+        refined = await listen(db, result, audio, model, await speller_terms(db, v.library_id))
         del audio
     finally:
         await budget.release(held)
@@ -224,7 +240,17 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     )
 
 
-async def listen(db: Any, result: Transcript, audio: Any, model: str) -> dict[str, Any]:
+async def speller_terms(db: Any, library_id: Any) -> list[str]:
+    """The vocabulary's spellings the speller prefers (Epic 52, story 52.10)."""
+    from ...word_review.vocabulary import load
+
+    v = await load(db, library_id)
+    return sorted({t for terms in v.terms.values() for t in terms.values()})
+
+
+async def listen(
+    db: Any, result: Transcript, audio: Any, model: str, vocabulary: Sequence[str] = ()
+) -> dict[str, Any]:
     """The second listen on ``result`` (in place), in its turn on the GPU where Whisper and
     it take turns (:mod:`maktaba_pipeline.stt.gpu_turns`). Where they were to share it but
     the GPU has no room beside Whisper after all, they take turns from then on, and this
@@ -243,8 +269,9 @@ async def listen(db: Any, result: Transcript, audio: Any, model: str) -> dict[st
         async with gpu_turns.use(gpu_turns.COHERE, model, settings):
             t0 = asyncio.get_running_loop().time()
             refined = await asyncio.to_thread(
-                tr._refine, result, audio, model, share, settings, beside
-            )
+                tr._refine, result, audio, model, share, settings, beside,
+                **({"vocabulary": list(vocabulary)} if vocabulary else {}),
+            )  # fmt: skip
             seconds = asyncio.get_running_loop().time() - t0
         if refined.get("no_room") and mode == gpu_turns.TOGETHER:
             from ...stt import cohere
@@ -301,12 +328,13 @@ async def _store(
     refined: dict[str, Any],
 ) -> str:
     """The corrected transcript replaces Whisper's as the video's active one, atomically
-    (a new ``transcripts`` row, Whisper's kept as superseded, without its words unless
-    ``MAKTABA_STT_STORE_WORDS`` keeps them). The video's relisten tries go."""
-    keep = tr.keeps_words()
+    (a new ``transcripts`` row, Whisper's kept as superseded, without its words: the
+    corrected one keeps them, with the second listen's marks, in ``word_data``). The
+    video's relisten tries go; a reviewer's fixes are carried over (story 52.9)."""
+    seg_rows, any_words = tr.segment_rows(result.sentences)
     new_meta = {k: v for k, v in meta.items() if k != "words"}
     new_meta["refine"] = {**refined, "whisper": str(row["id"])}
-    if keep:
+    if any_words:
         new_meta["words"] = True
     tid = uid(uuid4())
     async with db.transaction():
@@ -329,20 +357,8 @@ async def _store(
             row["diarized"],
             dumps(new_meta),
         )
-        rows = []
-        for seq, s in enumerate(result.sentences):
-            seg: dict[str, Any] = {"no_speech": round(s.no_speech_prob, 3)}
-            if keep and s.words:
-                seg["words"] = [[a, b, w] for a, b, w in s.words]
-            rows.append(
-                (tid, seq, s.start, s.end, s.text, round(math.exp(s.avg_logprob), 4), dumps(seg))
-            )
-        if rows:
-            await db.executemany(
-                "INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text,"
-                " confidence, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                rows,
-            )
+        await tr.insert_segments(db, tid, seg_rows)
+        await tr.carry_over_edits(db, video_id, tid)
         await db.execute(
             "UPDATE transcripts SET is_active = false, superseded_at = $3"
             " WHERE video_id = $1 AND is_active AND id <> $2",
@@ -351,8 +367,12 @@ async def _store(
             to_ts(db, now()),
         )
         await db.execute("UPDATE transcripts SET is_active = true WHERE id = $1", tid)
-        if not keep:
-            await db.execute(_DROP_WORDS_PG if is_pg(db) else _DROP_WORDS_SQLITE, row["id"])
+        await db.execute(_DROP_WORDS_PG if is_pg(db) else _DROP_WORDS_SQLITE, row["id"])
+        await db.execute(
+            "UPDATE transcript_segments SET word_data = NULL"
+            " WHERE transcript_id = $1 AND word_data IS NOT NULL",
+            row["id"],
+        )
         await db.execute("DELETE FROM relisten_attempts WHERE video_id = $1", uid(video_id))
     return str(tid)
 

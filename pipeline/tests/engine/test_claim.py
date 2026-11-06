@@ -239,6 +239,28 @@ async def test_resuming_a_paused_job_is_not_a_new_attempt(db: Database) -> None:
     assert job is not None and job.attempts == job.max_attempts + 1  # unchanged, no error
 
 
+@pytest.mark.unit
+def test_a_stage_jobs_lines_carry_its_component() -> None:
+    """Epic 53 story 53.01 T07: a stage's job logs with its ByStage component."""
+    from types import SimpleNamespace
+
+    import structlog
+
+    from maktaba_pipeline.components.catalog import default
+    from maktaba_pipeline.pipeline.runner import _job_log_context
+
+    job = SimpleNamespace(
+        id=7, stage="transcribe", video_id=None, subject_id=None, subject_kind=None
+    )
+    with _job_log_context(job):  # type: ignore[arg-type]
+        got = structlog.contextvars.get_contextvars().get("component")
+    comp = default().by_stage("transcribe")
+    assert comp is not None and got == comp.id
+    job.stage = "no-such-stage"
+    with _job_log_context(job):  # type: ignore[arg-type]
+        assert "component" not in structlog.contextvars.get_contextvars()
+
+
 @pytest.mark.asyncio
 async def test_a_plugin_runs_at_most_its_concurrency(db: Database) -> None:
     """Epic 54 story 54.06 T05: a plugin with concurrency 1 never runs two jobs at once,

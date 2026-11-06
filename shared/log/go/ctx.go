@@ -16,7 +16,25 @@ const (
 	keyJobID     fieldKey = "job_id"
 	keyVideoID   fieldKey = "video_id"
 	keyUserID    fieldKey = "user_id"
+	// the Epic 51 catalog id the line comes from (story 53.01): a loop's
+	// ByLoop, a stage's ByStage, a process's ByProcess
+	keyComponent fieldKey = "component"
 )
+
+// WithComponent attaches the catalog id of the component the work belongs to;
+// subsequent lines logged with ctx carry it as `component`.
+func WithComponent(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, keyComponent, id)
+}
+
+// ComponentFrom is the component ctx carries ("" when none).
+func ComponentFrom(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	v, _ := ctx.Value(keyComponent).(string)
+	return v
+}
 
 // WithRequestID attaches a request id to ctx; subsequent log.From(ctx)
 // calls emit it as `request_id`.
@@ -71,11 +89,14 @@ func From(ctx context.Context) *slog.Logger {
 	if v, ok := ctx.Value(keyUserID).(string); ok && v != "" {
 		l = l.With("user_id", v)
 	}
+	if v, ok := ctx.Value(keyComponent).(string); ok && v != "" {
+		l = l.With("component", v)
+	}
 	return l
 }
 
 // ctxFields are the context's ids in the order they are written.
-var ctxFields = []fieldKey{keyRequestID, keySessionID, keyJobID, keyVideoID, keyUserID}
+var ctxFields = []fieldKey{keyRequestID, keySessionID, keyJobID, keyVideoID, keyUserID, keyComponent}
 
 // ctxHandler adds the context's ids (request_id, session_id, ...) to a record
 // logged with a context (logger.WarnContext(ctx, ...)), so a line written by a

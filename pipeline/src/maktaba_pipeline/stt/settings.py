@@ -9,9 +9,21 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NamedTuple
 
-__all__ = ["SAMPLE_RATE", "Checkpoint", "FileProgress", "Sentence", "Transcript", "WhisperSettings"]
+__all__ = [
+    "SAMPLE_RATE",
+    "Checkpoint",
+    "FileProgress",
+    "Sentence",
+    "Transcript",
+    "WhisperSettings",
+    "Word",
+    "HEARD_DIFFERENTLY",
+    "INSERTED",
+    "QURAN",
+    "NO_PROB",
+]
 
 SAMPLE_RATE = 16_000
 
@@ -43,6 +55,30 @@ class WhisperSettings:
     cpu_threads: int = 0
 
 
+#: :attr:`Word.flags` bits (Epic 52, story 52.1): the second listen's word replaced
+#: Whisper's here; it heard a word Whisper missed; a run of the Quran (never replaced);
+#: the engine gave no probability (packed ``word_data`` only)
+HEARD_DIFFERENTLY = 1
+INSERTED = 2
+QURAN = 4
+NO_PROB = 8
+
+
+class Word(NamedTuple):
+    """A word as heard: its time, its text, Whisper's probability (0-1, None when the engine
+    gave none or the second listen inserted it) and :data:`HEARD_DIFFERENTLY` /
+    :data:`INSERTED` / :data:`QURAN` bits. Indexes as the old ``(start, end, text)``."""
+
+    start: float
+    end: float
+    text: str
+    prob: float | None = None
+    flags: int = 0
+
+    def as_tuple(self) -> tuple[float, float, str]:
+        return (self.start, self.end, self.text)
+
+
 @dataclass(slots=True)
 class Sentence:
     start: float
@@ -50,7 +86,10 @@ class Sentence:
     text: str
     avg_logprob: float
     no_speech_prob: float
-    words: list[tuple[float, float, str]] | None = None
+    words: list[Word] | None = None
+    #: where the second listen replaced words: ``[{i, n, whisper, cohere}]`` (Epic 52,
+    #: story 52.1; ``transcript_segments.metadata.alt``)
+    alt: list[dict[str, Any]] | None = None
 
 
 @dataclass(slots=True)
@@ -133,7 +172,17 @@ def _plain(seg: dict[str, Any]) -> dict[str, Any]:
         "avg_logprob": float(seg["avg_logprob"]),
         "no_speech_prob": float(seg["no_speech_prob"]),
         "words": [
-            {"start": float(w["start"]), "end": float(w["end"]), "word": str(w["word"])}
+            {
+                "start": float(w["start"]),
+                "end": float(w["end"]),
+                "word": str(w["word"]),
+                # Epic 52 (story 52.1): a resumed job keeps the same evidence
+                **(
+                    {"probability": float(w["probability"])}
+                    if w.get("probability") is not None
+                    else {}
+                ),
+            }
             for w in seg.get("words") or []
         ],
     }

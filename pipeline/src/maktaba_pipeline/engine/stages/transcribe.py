@@ -16,8 +16,9 @@ whisper-large-v3-turbo in the engine's format: ``mlx-community/whisper-large-v3-
 ``dropbox-dash/faster-whisper-large-v3-turbo``; CTranslate2 loads the CTranslate2
 conversion of an MLX model it is given), ``MAKTABA_STT_LANGUAGE`` (``ar``),
 ``MAKTABA_STT_WORDS`` (``1``: sentence bounds from word timings),
-``MAKTABA_STT_STORE_WORDS`` (``0``: keep each sentence's words in its metadata; they are
-kept anyway until the second listen has run, which needs them),
+every sentence keeps its words packed in ``transcript_segments.word_data`` (time, Whisper's
+probability, the second listen's marks: Epic 52, story 52.1; ``MAKTABA_STT_STORE_WORDS`` is
+retired),
 ``MAKTABA_STT_REFINE`` (``1``: a second listen corrects Whisper's words: the stage
 ``second_listen`` after this one, :mod:`.second_listen`; ``0`` keeps Whisper's as they are)
 with ``MAKTABA_STT_REFINE_MODEL`` (default ``CohereLabs/cohere-transcribe-arabic-07-2026``),
@@ -58,6 +59,7 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from datetime import UTC, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -140,7 +142,7 @@ def _remap(result: Transcript, tmap: Any, audio_sec: float) -> Transcript:
     for s in result.sentences:
         s.start, s.end = tmap(s.start), tmap(s.end, end=True)
         if s.words:
-            s.words = [(tmap(a), tmap(b, end=True), w) for a, b, w in s.words]
+            s.words = [w._replace(start=tmap(w[0]), end=tmap(w[1], end=True)) for w in s.words]
     result.audio_sec = audio_sec
     return result
 
@@ -797,6 +799,7 @@ def _refine(
     share: Path | None = None,
     settings: WhisperSettings | None = None,
     beside_whisper: bool = True,
+    vocabulary: Sequence[str] = (),
 ) -> dict[str, Any]:
     """The second listen (in a thread: it decodes on the GPU). The model comes from
     Hugging Face or, on a machine without the licence, from the home's copy on the share
@@ -824,7 +827,7 @@ def _refine(
     extra = {"source": source, **({"runtime": str(runtime)} if runtime else {})}
     try:
         spelling = dictionary()
-        stats = refine(result, audio, rec, spelling, model).as_dict()
+        stats = refine(result, audio, rec, spelling, model, vocabulary).as_dict()
     except Exception as exc:  # noqa: BLE001 - each stretch is merged whole: what is done stands
         _log.warning("transcribe.refine_failed", model=model, exc_info=True)
         return {"model": model, **extra, "failed": f"{type(exc).__name__}: {exc}"[:300]}
@@ -883,6 +886,16 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": TRANSCRIBE_VERSION,
         }
     )
+
+
+async def decode_prompt(db: Any, library_id: Any) -> str | None:
+    """What Whisper is given at decode time (Epic 52, story 52.10): the library's own
+    prompt first, never cut, then the vocabulary's most used names and terms within
+    Whisper's 224-token limit. Only :func:`library_prompt` is in the input fingerprint:
+    learning a word never queues the library for transcription again."""
+    from ...word_review.vocabulary import derived_prompt, prompt_terms
+
+    return derived_prompt(await library_prompt(db, library_id), await prompt_terms(db, library_id))
 
 
 async def library_prompt(db: Any, library_id: Any) -> str | None:
@@ -1228,7 +1241,7 @@ async def _transcribe_file(
             async with gpu_turns.use(gpu_turns.WHISPER, refine_model(), settings):
                 result = await _run_saving(
                     db, v, ctx, fingerprint, audio, settings, round(total_sec), scale,
-                    prompt=await library_prompt(db, v.library_id),
+                    prompt=await decode_prompt(db, v.library_id),
                 )  # fmt: skip
     except Exception as exc:  # the model or the GPU: retryable (a restart may fix it)
         raise StageFailure("stt_failed", f"{type(exc).__name__}: {exc}") from exc
@@ -1274,10 +1287,12 @@ async def _store(
     tries (``relisten_attempts``) go with the old one, unless ``keep_tries``: a relisten
     job that again went without the second listen. ``audio_track_id``: the track the
     audio came from (extract's WAV, or the chosen stream off the share), else the first
-    audio stream, recorded as track 0. Each sentence keeps its words while the second
-    listen is on (it needs them: ``metadata.words`` says so) or ``MAKTABA_STT_STORE_WORDS``
-    asks for them."""
-    store_words = keeps_words() or bool(refine_model() and settings.word_timestamps)
+    audio stream, recorded as track 0. Each sentence keeps its words, packed in
+    ``word_data`` (Epic 52, story 52.1; ``metadata.words`` says the transcript has them:
+    the second listen needs them). Edits a reviewer made to the old transcript are
+    carried over (story 52.9) in the same transaction."""
+    rows, any_words = segment_rows(result.sentences)
+    store_words = any_words or bool(refine_model() and settings.word_timestamps)
     async with db.transaction():
         if audio_track_id is None:
             audio_track_id = await _first_audio_track(db, video_id)
@@ -1308,28 +1323,8 @@ async def _store(
             result.backend,  # the engine that made it: mlx-batched, ct2-batched
         )
         tid = row["id"]
-        rows = []
-        for seq, s in enumerate(result.sentences):
-            meta: dict[str, Any] = {"no_speech": round(s.no_speech_prob, 3)}
-            if store_words and s.words:
-                meta["words"] = [[a, b, w] for a, b, w in s.words]
-            rows.append(
-                (
-                    tid,
-                    seq,
-                    s.start,
-                    s.end,
-                    s.text,
-                    round(math.exp(s.avg_logprob), 4),
-                    dumps(meta),
-                )
-            )
-        if rows:
-            await db.executemany(
-                "INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text,"
-                " confidence, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                rows,
-            )
+        await insert_segments(db, tid, rows)
+        await carry_over_edits(db, video_id, tid)
         await db.execute(
             "UPDATE transcripts SET is_active = false, superseded_at = $3"
             " WHERE video_id = $1 AND is_active AND id <> $2",
@@ -1351,9 +1346,57 @@ async def _store(
     return str(tid)
 
 
-def keeps_words() -> bool:
-    """``MAKTABA_STT_STORE_WORDS=1``: every transcript keeps its sentences' words."""
-    return os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
+SegmentRow = tuple[int, float, float, str, float, str, "bytes | None"]
+
+
+def segment_rows(sentences: list[Any]) -> tuple[list[SegmentRow], bool]:
+    """``transcript_segments`` rows for ``sentences`` (without the transcript id): each
+    sentence's words packed in ``word_data`` (Epic 52, story 52.1), what the second listen
+    replaced in ``metadata.alt``, words not found in the text in ``metadata.word_misses``.
+    And whether any sentence kept its words."""
+    from ...stt.word_data import pack
+
+    rows: list[SegmentRow] = []
+    any_words = False
+    for seq, s in enumerate(sentences):
+        meta: dict[str, Any] = {"no_speech": round(s.no_speech_prob, 3)}
+        data: bytes | None = None
+        if s.words:
+            packed = pack(s.text, s.words, s.start)
+            data = packed.data
+            any_words = any_words or data is not None
+            if packed.misses:
+                meta["word_misses"] = packed.misses
+        if s.alt:
+            meta["alt"] = s.alt
+        rows.append(
+            (seq, s.start, s.end, s.text, round(math.exp(s.avg_logprob), 4), dumps(meta), data)
+        )
+    return rows, any_words
+
+
+async def insert_segments(db: Any, tid: Any, rows: list[SegmentRow]) -> None:
+    if rows:
+        await db.executemany(
+            "INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text,"
+            " confidence, metadata, word_data) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+            [(tid, *r) for r in rows],
+        )
+
+
+async def carry_over_edits(db: Any, video_id: Any, new_tid: Any) -> None:
+    """A reviewer's fixes to the video's active transcript, applied again to ``new_tid``
+    (Epic 52, story 52.9): inside the caller's transaction, so the new transcript is never
+    active without them."""
+    from ...transcript.edits import carry_over
+
+    old = await db.fetchrow(
+        "SELECT id FROM transcripts WHERE video_id = $1 AND is_active AND id <> $2",
+        uid(video_id),
+        new_tid,
+    )
+    if old is not None:
+        await carry_over(db, old["id"], new_tid)
 
 
 async def _first_audio_track(db: Any, video_id: Any) -> int:

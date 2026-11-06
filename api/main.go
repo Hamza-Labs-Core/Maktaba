@@ -157,6 +157,8 @@ func main() {
 }
 
 func initLogger() *slog.Logger {
+	// a component loop's lines carry its catalog id (Epic 53 story 53.01)
+	runner.LoopContext = mlog.WithComponent
 	return mlog.Init(mlog.Options{
 		Service: "api",
 		Env:     env(),

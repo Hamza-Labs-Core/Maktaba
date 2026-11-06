@@ -106,7 +106,15 @@ class FasterWhisperBackend:
 
         result = await self._on_engine(path, language, hints)
         for i, s in enumerate(result.sentences):
-            words = [{"word": w, "start": a, "end": b} for a, b, w in s.words or []]
+            words = [
+                {
+                    "word": w.text,
+                    "start": w.start,
+                    "end": w.end,
+                    **({"probability": w.prob} if w.prob is not None else {}),
+                }
+                for w in s.words or []
+            ]
             yield Segment(
                 seq=i,
                 start_sec=s.start,

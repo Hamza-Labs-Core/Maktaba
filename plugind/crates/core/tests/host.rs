@@ -184,7 +184,7 @@ fn hello_runs() {
     let line: Value = serde_json::from_str(lines.iter().find(|l| l.contains("\"hello\"")).unwrap()).unwrap();
     assert_eq!(line["service"], format!("plugin.{ID}"));
     assert_eq!(line["job_id"], "job-1");
-    assert_eq!(line["fields"]["stage"], "work");
+    assert_eq!(line["attrs"]["stage"], "work");
 }
 
 /// T02: components importing sockets, filesystem, stdin or http are refused at preload.

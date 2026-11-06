@@ -222,3 +222,17 @@ func TestReadLeadingLevelOnPlainLines(t *testing.T) {
 		t.Fatalf("entries:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
+
+// Epic 53 story 53.02: the log keeper wraps a plain line with the time and level it says.
+func TestGuessReadsAPlainLine(t *testing.T) {
+	ts, lv := Guess("2026-11-06T10:00:00Z [serve] level=warn the api exited")
+	if lv != "warn" || !ts.Equal(time.Date(2026, 11, 6, 10, 0, 0, 0, time.UTC)) {
+		t.Errorf("serve line: %v %q", ts, lv)
+	}
+	if _, lv := Guess("panic: runtime error: index out of range"); lv != "error" {
+		t.Errorf("a panic is an error: %q", lv)
+	}
+	if ts, lv := Guess("plain words"); !ts.IsZero() || lv != "" {
+		t.Errorf("plain words: %v %q", ts, lv)
+	}
+}

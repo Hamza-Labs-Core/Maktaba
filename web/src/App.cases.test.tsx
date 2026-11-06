@@ -165,3 +165,18 @@ describe("Public page crash (login / register test cases)", () => {
     expect(screen.queryByText("Reset your password")).not.toBeInTheDocument();
   });
 });
+
+describe("the log ring (Epic 53 story 53.01)", () => {
+  it("keeps each route change by its pattern, never the URL", async () => {
+    const { clearLogLines, logLines } = await import("./lib/errorLog");
+    clearLogLines();
+    open("/videos/01J9ZK2ABC/watch?t=secret");
+    await screen.findAllByText(/./);
+    const routes = logLines()
+      .filter((l) => l.msg === "route_changed")
+      .map((l) => l.attrs?.route);
+    expect(routes).toContain("/videos/:id/watch");
+    expect(JSON.stringify(logLines())).not.toContain("01J9ZK2ABC");
+    expect(JSON.stringify(logLines())).not.toContain("secret");
+  });
+});

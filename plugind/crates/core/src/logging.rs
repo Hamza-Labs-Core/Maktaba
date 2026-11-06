@@ -1,8 +1,10 @@
 //! Plugin log lines (story 54.09 §3).
 //!
-//! Each plugin's lines are written as one JSON object per line with `service =
-//! "plugin.<id>"`, the plugin's version, the job id and stage, `level`, `event` (the
-//! plugin's code), `fields` and `origin = "plugin"`: the Epic 53 line (53.01). Limits per
+//! Each plugin's lines are Epic 53 lines (53.01, `shared/log/schema/line.schema.json`):
+//! `ts`, `level`, `service = "plugin.<id>"`, `msg` (the plugin's code), the plugin's
+//! `version`, `job_id` and `stage`, and `attrs` holding the plugin's fields and
+//! `origin = "plugin"` (plugin text is data, never a message of Maktaba's; the shared
+//! example is `shared/log/schema/examples/plugind.ndjson`). Limits per
 //! plugin: 100 lines a second (burst 100), 10 MB a day, 8 KB a line; dropped lines are
 //! counted and one `log_dropped` line a minute says how many.
 //!
@@ -106,7 +108,7 @@ impl Logs {
     /// The host's own line (`service = plugins.host`).
     pub fn host(&self, level: &str, event: &str, fields: Value) {
         let line =
-            json!({"ts": now_rfc3339(), "level": level, "service": "plugins.host", "event": event, "fields": fields});
+            json!({"ts": now_rfc3339(), "level": level, "service": "plugins.host", "msg": event, "attrs": fields});
         self.sink.write_line(&line.to_string());
     }
 
@@ -123,6 +125,15 @@ impl Logs {
         if code.is_empty() {
             code = "line".into();
         }
+        let mut attrs = match fields {
+            Value::Object(m) => m,
+            other => {
+                let mut m = Map::new();
+                m.insert("text".into(), other);
+                m
+            }
+        };
+        attrs.insert("origin".into(), Value::String("plugin".into()));
         let mut line = json!({
             "ts": now_rfc3339(),
             "level": level,
@@ -130,18 +141,18 @@ impl Logs {
             "version": o.version,
             "job_id": o.job_id,
             "stage": o.stage,
-            "event": code,
-            "fields": fields,
-            "origin": "plugin",
+            "msg": code,
+            "attrs": Value::Object(attrs),
         })
         .to_string();
         if line.len() > MAX_LINE {
             let mut m = Map::new();
             m.insert("truncated".into(), Value::Bool(true));
+            m.insert("origin".into(), Value::String("plugin".into()));
             line = json!({
                 "ts": now_rfc3339(), "level": level, "service": format!("plugin.{}", o.plugin_id),
-                "version": o.version, "job_id": o.job_id, "stage": o.stage, "event": code,
-                "fields": Value::Object(m), "origin": "plugin",
+                "version": o.version, "job_id": o.job_id, "stage": o.stage, "msg": code,
+                "attrs": Value::Object(m),
             })
             .to_string();
         }
@@ -149,8 +160,8 @@ impl Logs {
         if let Some(n) = report {
             let r = json!({
                 "ts": now_rfc3339(), "level": "warn", "service": format!("plugin.{}", o.plugin_id),
-                "version": o.version, "job_id": o.job_id, "stage": o.stage, "event": "log_dropped",
-                "fields": {"dropped": n}, "origin": "host",
+                "version": o.version, "job_id": o.job_id, "stage": o.stage, "msg": "log_dropped",
+                "attrs": {"dropped": n, "origin": "host"},
             });
             self.sink.write_line(&r.to_string());
         }
@@ -217,8 +228,8 @@ impl Logs {
         };
         let r = json!({
             "ts": now_rfc3339(), "level": "warn", "service": format!("plugin.{}", o.plugin_id),
-            "version": o.version, "job_id": o.job_id, "stage": o.stage, "event": "log_dropped",
-            "fields": {"dropped": n}, "origin": "host",
+            "version": o.version, "job_id": o.job_id, "stage": o.stage, "msg": "log_dropped",
+            "attrs": {"dropped": n, "origin": "host"},
         });
         self.sink.write_line(&r.to_string());
     }
@@ -256,7 +267,7 @@ mod tests {
         let last: Value =
             serde_json::from_str(lines.iter().rev().find(|l| l.contains("log_dropped")).unwrap()).unwrap();
         assert_eq!(last["service"], "plugin.dev.example.x");
-        assert!(last["fields"]["dropped"].as_u64().unwrap() >= 9_000);
+        assert!(last["attrs"]["dropped"].as_u64().unwrap() >= 9_000);
     }
 
     #[test]
@@ -269,13 +280,20 @@ mod tests {
         let lines = sink.0.lock().unwrap();
         let first: Value = serde_json::from_str(&lines[0]).unwrap();
         assert_eq!(first["service"], "plugin.dev.example.x");
-        assert_eq!(first["event"], "chaptersfound");
-        assert_eq!(first["origin"], "plugin");
+        assert_eq!(first["msg"], "chaptersfound");
+        assert_eq!(first["attrs"]["origin"], "plugin");
         assert_eq!(first["job_id"], "j1");
-        assert_eq!(first["fields"]["n"], 3);
+        assert_eq!(first["attrs"]["n"], 3);
         assert!(lines[1].len() <= MAX_LINE);
         let third: Value = serde_json::from_str(&lines[2]).unwrap();
-        assert_eq!(third["fields"]["text"], "not json <script>");
+        assert_eq!(third["attrs"]["text"], "not json <script>");
+        // the shape of shared/log/schema/examples/plugind.ndjson, which check.py validates
+        let example: Value = serde_json::from_str(
+            include_str!("../../../../shared/log/schema/examples/plugind.ndjson").lines().next().unwrap(),
+        )
+        .unwrap();
+        let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(keys(&first), keys(&example));
     }
 
     #[test]

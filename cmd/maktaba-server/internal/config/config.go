@@ -21,7 +21,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -45,6 +47,7 @@ type Config struct {
 	Telemetry     TelemetrySection     `toml:"telemetry"`
 	Backups       BackupsSection       `toml:"backups"`
 	Components    ComponentsSection    `toml:"components,omitempty"`
+	Logs          LogsSection          `toml:"logs,omitempty"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -199,6 +202,102 @@ func (t TelemetrySection) On() bool {
 		return false
 	}
 	return true
+}
+
+// LogsSection is the [logs] table (Epic 53 story 53.02): how long the log keeper keeps
+// each component's lines on disk and how much room they may take. Empty values take the
+// defaults (LogsSection.Resolved).
+type LogsSection struct {
+	// Retention is how long info and above are kept ("7d", "168h"; 1 to 90 days).
+	Retention string `toml:"retention,omitempty"`
+	// DebugRetention is how long debug lines are kept ("24h").
+	DebugRetention string `toml:"debug_retention,omitempty"`
+	// MaxTotalSize is the room every diagnostic on disk may take in all ("1GB"; 256 MB to
+	// 20 GB): the segments get 55 % of it, logs.db 35 %, problem reports 10 %.
+	MaxTotalSize string `toml:"max_total_size,omitempty"`
+	// MaxSegmentsSize overrides the segments' share ("550MB").
+	MaxSegmentsSize string `toml:"max_segments_size,omitempty"`
+	// MinFree is the data volume's free space under which debug lines stop and the
+	// oldest hours go ("5GB").
+	MinFree string `toml:"min_free,omitempty"`
+	// ServerLog is what server.log still gets: "all" (every line, as before; the
+	// default for now) or "warn" (warnings and errors only).
+	ServerLog string `toml:"server_log,omitempty"`
+}
+
+// ResolvedLogs is the [logs] table with its defaults filled in and its limits applied.
+type ResolvedLogs struct {
+	Retention      time.Duration
+	DebugRetention time.Duration
+	MaxTotal       int64
+	MaxSegments    int64
+	MinFree        int64
+	ServerLogAll   bool
+}
+
+// Resolved reads the table: an unreadable or out-of-range value takes its default.
+func (l LogsSection) Resolved() ResolvedLogs {
+	r := ResolvedLogs{
+		Retention:      7 * 24 * time.Hour,
+		DebugRetention: 24 * time.Hour,
+		MaxTotal:       1 << 30,
+		MinFree:        5 << 30,
+		ServerLogAll:   !strings.EqualFold(strings.TrimSpace(l.ServerLog), "warn"),
+	}
+	if d, ok := parseDays(l.Retention); ok && d >= 24*time.Hour && d <= 90*24*time.Hour {
+		r.Retention = d
+	}
+	if d, ok := parseDays(l.DebugRetention); ok && d >= time.Hour && d <= r.Retention {
+		r.DebugRetention = d
+	}
+	if n, ok := parseSize(l.MaxTotalSize); ok && n >= 256<<20 && n <= 20<<30 {
+		r.MaxTotal = n
+	}
+	r.MaxSegments = r.MaxTotal * 55 / 100
+	if n, ok := parseSize(l.MaxSegmentsSize); ok && n >= 16<<20 && n <= r.MaxTotal {
+		r.MaxSegments = n
+	}
+	if n, ok := parseSize(l.MinFree); ok && n >= 0 {
+		r.MinFree = n
+	}
+	return r
+}
+
+// parseDays reads "7d" as well as Go durations ("168h").
+func parseDays(s string) (time.Duration, bool) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return 0, false
+	}
+	if n, ok := strings.CutSuffix(s, "d"); ok {
+		d, err := strconv.Atoi(n)
+		return time.Duration(d) * 24 * time.Hour, err == nil && d > 0
+	}
+	d, err := time.ParseDuration(s)
+	return d, err == nil && d > 0
+}
+
+// parseSize reads "550MB", "1GB", "1.5GiB", "800 KB" (powers of 1024).
+func parseSize(s string) (int64, bool) {
+	s = strings.TrimSpace(strings.ToUpper(s))
+	if s == "" {
+		return 0, false
+	}
+	mult := int64(1)
+	for _, u := range []struct {
+		suffix string
+		mult   int64
+	}{{"GIB", 1 << 30}, {"MIB", 1 << 20}, {"KIB", 1 << 10}, {"GB", 1 << 30}, {"MB", 1 << 20}, {"KB", 1 << 10}, {"B", 1}} {
+		if n, ok := strings.CutSuffix(s, u.suffix); ok {
+			s, mult = strings.TrimSpace(n), u.mult
+			break
+		}
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || f < 0 {
+		return 0, false
+	}
+	return int64(f * float64(mult)), true
 }
 
 // ComponentsSection is the [components] table (Epic 51 story 51.04).

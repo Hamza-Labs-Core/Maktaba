@@ -8,7 +8,10 @@ godebug multipathtcp=0
 
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/layout v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
 	golang.org/x/sys v0.45.0
 )
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/layout => ../../shared/go/layout
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/log/go => ../../shared/log/go

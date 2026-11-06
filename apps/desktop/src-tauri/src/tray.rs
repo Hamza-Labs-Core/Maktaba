@@ -398,6 +398,56 @@ pub const WINDOW_MENU_ID: &str = "window-server";
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub const WINDOW_STATUS_ID: &str = "window-status";
 
+/// The tray with the recovery console's item after Open Components (a machine that runs
+/// the server, Epic 53 story 53.04) and, when the launcher cut the server off (story
+/// 53.05), what it says and its choices at the top.
+pub fn with_recovery(
+    mut entries: Vec<Entry>,
+    lang: Lang,
+    server: bool,
+    cant: Option<&crate::recovery::CantStart>,
+) -> Vec<Entry> {
+    if !server {
+        return entries;
+    }
+    let w = lang.words();
+    let after = |want: &str| {
+        entries
+            .iter()
+            .position(|e| matches!(e, Entry::Item { id, .. } if *id == want))
+    };
+    let at = after("open-components")
+        .or_else(|| after("open-logs"))
+        .map(|i| i + 1)
+        .unwrap_or(entries.len());
+    entries.insert(
+        at.min(entries.len()),
+        item("open-recovery", w.open_recovery),
+    );
+    if let Some(c) = cant {
+        let mut top = vec![
+            Entry::Item {
+                id: "cant-start",
+                label: fill(w.cant_start, &[("count", &c.exits.len().to_string())]),
+                enabled: false,
+            },
+            item("start-retry", w.cant_start_retry),
+            item("start-safe", w.cant_start_safe),
+        ];
+        if let Some(v) = c.rollback.as_deref().filter(|v| !v.is_empty()) {
+            top.push(item(
+                "start-rollback",
+                fill(w.cant_start_rollback, &[("version", v)]),
+            ));
+        }
+        top.push(Entry::Separator);
+        let rest = std::mem::take(&mut entries);
+        entries = top;
+        entries.extend(rest);
+    }
+    entries
+}
+
 /// The submenu's items, in order: a tray item's id (its label is
 /// window_label's), or None for a separator.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -1270,6 +1320,42 @@ mod tests {
         // the window's ids never collide with the tray's (both handlers see every event)
         for id in &window_ids {
             assert!(!ids(&running).contains(&format!("{WINDOW_PREFIX}{id}").as_str()));
+        }
+    }
+
+    // Epic 53 (53.04, 53.05): a server's tray offers the recovery page after Open
+    // Components; a cut-off server's tray says so first, with the launcher's choices.
+    #[test]
+    fn the_recovery_page_and_the_cant_start_choices() {
+        let base = entries(Lang::En, true, &ServerStatus::Running, false);
+        let e = with_recovery(base.clone(), Lang::En, true, None);
+        let i = ids(&e);
+        let at = i.iter().position(|x| *x == "open-components").unwrap();
+        assert_eq!(i[at + 1], "open-recovery");
+        assert_eq!(
+            ids(&with_recovery(base.clone(), Lang::En, false, None)),
+            ids(&base)
+        );
+        let cant = crate::recovery::CantStart {
+            version: "0.3.50".into(),
+            exits: vec![serde_json::json!({}); 3],
+            last_lines: vec![],
+            rollback: Some("0.3.49".into()),
+        };
+        let e = with_recovery(base, Lang::Ar, true, Some(&cant));
+        assert_eq!(
+            &ids(&e)[..4],
+            ["cant-start", "start-retry", "start-safe", "start-rollback"]
+        );
+        match &e[0] {
+            Entry::Item { label, enabled, .. } => {
+                assert!(label.contains("تعذّر تشغيل مكتبة") && label.contains('3') && !enabled)
+            }
+            _ => panic!("the first entry says it"),
+        }
+        match &e[3] {
+            Entry::Item { label, .. } => assert!(label.contains("0.3.49")),
+            _ => panic!("the rollback names its version"),
         }
     }
 }

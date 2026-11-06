@@ -26,10 +26,13 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/client"
 
@@ -154,6 +157,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/auth/refresh", h.Refresh)
 	r.Post("/api/auth/logout", h.Logout)
 	r.Post("/api/auth/logout-all", h.LogoutAll)
+	// Epic 53 story 53.04: an admin's pass to the supervisor's recovery console
+	r.Post("/api/auth/recovery-pass", h.RecoveryPass)
 	// web-pages-batch2 — public self-service auth endpoints. These are
 	// also added to DefaultPublicAllowlist so the global gate lets
 	// anonymous callers through.
@@ -524,6 +529,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		clearCookie(w, CookieSession, h.SecureCookies)
 		clearCookie(w, CookieCSRF, h.SecureCookies)
 	}
+	h.clearRecoveryCookie(w)
 
 	common.WriteNoContent(w)
 }
@@ -554,6 +560,9 @@ func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = h.Sessions.RevokeAllForUser(r.Context(), userID)
 	_, _ = h.RefreshTokens.RevokeAllForUser(r.Context(), userID)
+	// and their recovery passes, which the supervisor checks without Postgres
+	_ = RevokeRecoveryPasses(userID, h.now())
+	h.clearRecoveryCookie(w)
 
 	h.audit(r.Context(), securityaudit.Entry{
 		Event:       securityaudit.EventLogoutAll,
@@ -1012,6 +1021,15 @@ type Deps struct {
 // router's MountP9 (api/internal/router/p9.go).
 func NewHandler(d Deps) *Handler {
 	us := users.New(d.DB)
+	// Epic 53 story 53.04: what the recovery console did while the API was down goes
+	// into audit_log now that it is up
+	if path := os.Getenv(EnvRecoveryActions); path != "" && d.DB != nil {
+		go func() {
+			if _, err := ImportRecoveryActions(context.Background(), securityaudit.NewWriter(d.DB), path); err != nil {
+				mlog.From(context.Background()).Warn("recovery_actions_import_failed", "err", err)
+			}
+		}()
+	}
 	return &Handler{
 		Users:         us,
 		Sessions:      sessions.New(d.DB),

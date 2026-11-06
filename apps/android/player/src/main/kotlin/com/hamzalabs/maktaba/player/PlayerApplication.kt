@@ -20,6 +20,7 @@ class PlayerApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this) // an uncaught exception is kept on the device, without anything personal
+        AppLog.install(this) // its log lines too, in the shared shape (Epic 53 story 53.01)
         ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
     }
 

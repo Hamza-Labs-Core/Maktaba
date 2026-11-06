@@ -29,6 +29,7 @@ import {
   type Activity,
 } from "../../components/libdash/useLibraryBoard";
 import { YouTubeSourcesPanel } from "../../components/queue/YouTubeSourcesDialog";
+import { WordReviewSettings } from "../review/WordReviewSettings";
 import {
   OfflineActionDialog,
   type OfflineActionTarget,
@@ -278,6 +279,8 @@ function LibraryAdminInner() {
       <Section id="youtube" title={t("libpage.youtube.title")} desc={t("libpage.youtube.desc")}>
         <YouTubeSourcesPanel library={{ id: lib.id, name: lib.name }} onChanged={loadQueues} />
       </Section>
+      {/* Epic 52: the library's word review settings */}
+      <WordReviewSettings libraryId={lib.id} />
       <ConvertSection
         lib={lib}
         summary={summary}

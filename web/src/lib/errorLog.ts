@@ -6,7 +6,103 @@
 // The line holds the error's kind, a short message and the first frames,
 // never the value it was thrown with: an ApiError (already logged by lib/api
 // with its method and path) is named by its status only.
+// Each such line, an API failure and a route change are also kept as Epic 53 log
+// lines (story 53.01, shared/log/schema/line.schema.json) in a 2,000-line ring in
+// memory, scrubbed with the shared redaction list: what a problem report attaches.
 import { ApiError } from "./api";
+import { redactAttrs, scrub } from "./redact";
+
+export type LogLevel = "debug" | "info" | "warn" | "error" | "fatal";
+
+/** One 53.01 log line, as the web keeps it. */
+export interface LogLine {
+  ts: string;
+  level: LogLevel;
+  service: "web";
+  msg: string;
+  app_version?: string;
+  platform: "web";
+  request_id?: string;
+  attrs?: Record<string, unknown>;
+}
+
+/** How many lines the ring keeps (the newest). */
+export const RING_LINES = 2000;
+const MAX_ATTRS = 50;
+const ring: LogLine[] = [];
+let appVersion: string | undefined;
+
+/** The version every line carries (the server's, once known). */
+export function setLogAppVersion(v: string | undefined): void {
+  appVersion = v || undefined;
+}
+
+/** Adds a line to the ring. `msg` is a snake_case event name, never runtime data. */
+export function appLog(
+  level: LogLevel,
+  msg: string,
+  attrs?: Record<string, unknown>,
+  requestId?: string
+): void {
+  const line: LogLine = {
+    ts: new Date().toISOString(),
+    level,
+    service: "web",
+    msg,
+    platform: "web",
+  };
+  if (appVersion) line.app_version = appVersion;
+  if (requestId) line.request_id = requestId;
+  if (attrs && Object.keys(attrs).length) {
+    line.attrs = redactAttrs(Object.fromEntries(Object.entries(attrs).slice(0, MAX_ATTRS)));
+  }
+  ring.push(line);
+  if (ring.length > RING_LINES) ring.splice(0, ring.length - RING_LINES);
+}
+
+/** The ring's lines, oldest first (a copy). */
+export function logLines(): LogLine[] {
+  return ring.slice();
+}
+
+/** The ring as NDJSON, one line per entry. */
+export function logNDJSON(): string {
+  return ring.map((l) => JSON.stringify(l)).join("\n");
+}
+
+/** Empties the ring (tests). */
+export function clearLogLines(): void {
+  ring.length = 0;
+}
+
+/** A route change, by its pattern (`/videos/:id`), never the URL. */
+export function logRouteChanged(pattern: string): void {
+  appLog("info", "route_changed", { route: pattern });
+}
+
+/** A failed API call (lib/api): method, the path without its query, the status. */
+export function logApiFailure(
+  method: string,
+  path: string,
+  status: number,
+  requestId?: string
+): void {
+  appLog(
+    status >= 500 || status === 0 ? "error" : "warn",
+    "api_failed",
+    { method, path: routePattern(path), status },
+    requestId
+  );
+}
+
+/** A path with the segments that may name something (ids, codes) taken out. */
+export function routePattern(path: string): string {
+  return path
+    .split("?")[0]
+    .split("/")
+    .map((seg) => (/^[A-Za-z_.-]{1,32}$/.test(seg) || seg === "" ? seg : ":id"))
+    .join("/");
+}
 
 const MAX_MESSAGE = 200;
 const MAX_FRAMES = 3;
@@ -34,10 +130,14 @@ let installed: (() => void) | null = null;
 export function installErrorLog(): () => void {
   if (installed) return installed;
   const onError = (ev: ErrorEvent) => {
-    console.error("[uncaught] error", describeThrown(ev.error ?? ev.message));
+    const what = describeThrown(ev.error ?? ev.message);
+    console.error("[uncaught] error", what);
+    appLog("error", "uncaught_error", { what: scrub(what) });
   };
   const onRejection = (ev: PromiseRejectionEvent) => {
-    console.error("[uncaught] promise rejection", describeThrown(ev.reason));
+    const what = describeThrown(ev.reason);
+    console.error("[uncaught] promise rejection", what);
+    appLog("error", "unhandled_rejection", { what: scrub(what) });
   };
   window.addEventListener("error", onError);
   window.addEventListener("unhandledrejection", onRejection);

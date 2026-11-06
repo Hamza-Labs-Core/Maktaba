@@ -651,6 +651,23 @@ async def test_refresh_schedule_reads_the_library_setting(db: Database, tmp_path
     assert again.yt_refresh == 0
 
 
+@pytest.mark.asyncio
+async def test_no_refresh_is_queued_while_offline(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#640: MAKTABA_OFFLINE stops the scheduled listing a linked library gets by itself."""
+    graph = {s.name: s for s in GRAPH}
+    await setup_runtime(db, [])
+    daily = await make_lib(db, tmp_path, {"youtube": {"refresh_every_hours": 24}})
+    await add_source(db, daily)
+    monkeypatch.setenv("MAKTABA_OFFLINE", "1")
+    assert (await reconcile_once(db, graph)).yt_refresh == 0
+    assert await live_job(db, "youtube_sync") is None
+    assert ytd.unavailable() is not None  # nor is a download claimed
+    monkeypatch.setenv("MAKTABA_OFFLINE", "")
+    assert (await reconcile_once(db, graph)).yt_refresh == 1
+
+
 # ------------------------------------------------------------------ real media / real yt-dlp
 
 

@@ -112,6 +112,10 @@ struct PlayerShell: View {
                     }
             }
         }
+        // what is down on the home, at the top (Epic 53 story 53.06): its /status.json, read
+        // every 10 s while in front; nothing when all is well or the home has none
+        .homeStatusStrip(client: context.client, home: context.client.home, admin: context.user.isAdmin,
+                         liveTVOff: liveTVHidden)
         // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
         .playerMenuTarget(sections: shown, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token

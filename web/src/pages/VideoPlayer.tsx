@@ -33,6 +33,7 @@
 // message itself.
 // Epic 45 Phase 2: at the end, Up next (components/UpNext) offers the play
 // queue's next video or the series' next lesson, and starts it after 10 s.
+import { useHomeStatus } from "../lib/homeStatus";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -598,6 +599,11 @@ export function VideoPlayer({
   const backButton =
     hideBack || bare ? null : <BackButton fallback={videoId ? `/videos/${videoId}` : "/library"} />;
 
+  const homeStatus = useHomeStatus(false);
+  const streamingDown = ["down", "restarting", "degraded"].includes(
+    homeStatus?.components.streaming ?? "ok"
+  );
+
   // The error state: the kind's sentence and actions; the server's own words
   // only under Details.
   const failedView = ({ error: e, sentence }: Failure) => {
@@ -615,7 +621,16 @@ export function VideoPlayer({
           kind={errorStateKind(e.kind)}
           icon={<ErrorIcon />}
           title={t("player.error.title")}
-          description={t(sentence ?? `player.error.${e.kind}`)}
+          description={t(
+            // Epic 53 story 53.06: streaming is down on the home (its /status.json says
+            // so): that, instead of a generic error
+            streamingDown &&
+              e.kind !== "notFound" &&
+              e.kind !== "noAccess" &&
+              e.kind !== "signedOut"
+              ? "status.player"
+              : (sentence ?? `player.error.${e.kind}`)
+          )}
           action={
             <>
               {e.kind === "signedOut" && (

@@ -56,7 +56,10 @@ const (
 	EventExited     = "exited"
 	EventRestarting = "restarting"
 	EventFailed     = "failed"
-	EventHung       = "hung"
+	// EventCutOff: a crash loop's slow retries failed too; the process stays down until
+	// it is restarted (Epic 53 story 53.05). The repair item.
+	EventCutOff = "cut_off"
+	EventHung   = "hung"
 )
 
 // ExitInfo describes how a child's last run ended.
@@ -112,6 +115,9 @@ type ChildStatus struct {
 	Component string `json:"component,omitempty"`
 	// Blocked: its component's gate is closed (Allow): it does not run, wanted or not.
 	Blocked bool `json:"blocked,omitempty"`
+	// CutOff: its crash loop's slow retries failed too (Epic 53 story 53.05); it stays
+	// down until it is restarted (the recovery console) or the machine restarts.
+	CutOff bool `json:"cut_off,omitempty"`
 }
 
 // Event is one entry of the supervisor's event log (start, exit,

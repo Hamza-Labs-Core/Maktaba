@@ -165,12 +165,42 @@
         }
       }
     },
+    "A word of the verse may be missing: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قد تكون كلمة من الآية ناقصة: %@"
+          }
+        }
+      }
+    },
+    "Accept as is" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قبول كما هي"
+          }
+        }
+      }
+    },
     "Account" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الحساب"
+          }
+        }
+      }
+    },
+    "Add to dictionary" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة إلى القاموس"
           }
         }
       }
@@ -185,6 +215,16 @@
         }
       }
     },
+    "An earlier fix" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تصحيح سابق"
+          }
+        }
+      }
+    },
     "And %lld more; the oldest are shown first." : {
       "localizations" : {
         "ar" : {
@@ -195,12 +235,86 @@
         }
       }
     },
+    "Another reason" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سبب آخر"
+          }
+        }
+      }
+    },
     "Apply on the web" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "طبّقه من صفحات الويب"
+          }
+        }
+      }
+    },
+    "Apply to all %lld places" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Apply to this place"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Apply to all %lld places"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تطبيق على كل المواضع"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تطبيق على هذا الموضع"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تطبيق على الموضعين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تطبيق على المواضع الـ%lld كلها"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تطبيق على المواضع الـ%lld كلها"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "تطبيق على المواضع الـ%lld كلها"
+                }
+              }
+            }
           }
         }
       }
@@ -255,6 +369,16 @@
         }
       }
     },
+    "Audio not available" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصوت غير متاح"
+          }
+        }
+      }
+    },
     "Automatic updates" : {
       "localizations" : {
         "ar" : {
@@ -295,12 +419,42 @@
         }
       }
     },
+    "Close to a known word" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قريبة من كلمة معروفة"
+          }
+        }
+      }
+    },
+    "Correct" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تصحيح"
+          }
+        }
+      }
+    },
     "Crash loop: it keeps exiting soon after it starts. The other processes keep running, and this one is retried slowly." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "تعطّل متكرر: تتوقف العملية بعد وقت قصير من تشغيلها. تستمر العمليات الأخرى في العمل، وتُعاد محاولة تشغيل هذه العملية ببطء."
+          }
+        }
+      }
+    },
+    "Differs from the Quran text" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يختلف عن نص القرآن"
           }
         }
       }
@@ -365,6 +519,16 @@
         }
       }
     },
+    "Fixed «%@» → «%@»" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صُحّحت «%1$@» ← «%2$@»"
+          }
+        }
+      }
+    },
     "For the home's admins" : {
       "localizations" : {
         "ar" : {
@@ -381,6 +545,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "فحص السلامة يفشل (%lld مرات متتالية)"
+          }
+        }
+      }
+    },
+    "Heard differently" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سُمعت بشكل مختلف"
           }
         }
       }
@@ -411,6 +585,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يتوقف عن العمل للجهاز الرئيسي فورًا، وتعود مهامه إلى الطابور. ولاستخدامه مجددًا عليه أن يطلب الانضمام من جديد."
+          }
+        }
+      }
+    },
+    "Kept «%@» as it is" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُبقيت «%@» كما هي"
           }
         }
       }
@@ -485,6 +669,16 @@
         }
       }
     },
+    "Looks like a name" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تبدو اسمًا"
+          }
+        }
+      }
+    },
     "Machines" : {
       "localizations" : {
         "ar" : {
@@ -511,6 +705,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يمكن للأجهزة طلب الانضمام"
+          }
+        }
+      }
+    },
+    "Mark as a name" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم كاسم"
           }
         }
       }
@@ -575,6 +779,16 @@
         }
       }
     },
+    "Next word" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الكلمة التالية"
+          }
+        }
+      }
+    },
     "No events recorded." : {
       "localizations" : {
         "ar" : {
@@ -625,12 +839,42 @@
         }
       }
     },
+    "No words to review" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا كلمات للمراجعة"
+          }
+        }
+      }
+    },
     "Not available" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "غير متاح"
+          }
+        }
+      }
+    },
+    "Not in the dictionary" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ليست في القاموس"
+          }
+        }
+      }
+    },
+    "Not in the verse" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ليست في الآية"
           }
         }
       }
@@ -685,6 +929,16 @@
         }
       }
     },
+    "Only home admins can review words" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مراجعة الكلمات للمشرفين فقط"
+          }
+        }
+      }
+    },
     "Open Subscription" : {
       "localizations" : {
         "ar" : {
@@ -701,6 +955,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مفتوح حتى %@. يعرض كل جهاز رمزًا من ستة أرقام للموافقة عليه."
+          }
+        }
+      }
+    },
+    "Over the file's limit" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تجاوزت حدّ الملف"
           }
         }
       }
@@ -765,6 +1029,46 @@
         }
       }
     },
+    "Picked by a reviewer" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختارها مراجع"
+          }
+        }
+      }
+    },
+    "Play / pause" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل / إيقاف"
+          }
+        }
+      }
+    },
+    "Play at 0.75×" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل بسرعة 0.75×"
+          }
+        }
+      }
+    },
+    "Previous word" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الكلمة السابقة"
+          }
+        }
+      }
+    },
     "Processes" : {
       "localizations" : {
         "ar" : {
@@ -795,6 +1099,16 @@
         }
       }
     },
+    "Quran text: Tanzil Project (tanzil.net)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نص القرآن: مشروع تنزيل (tanzil.net)"
+          }
+        }
+      }
+    },
     "Rate" : {
       "localizations" : {
         "ar" : {
@@ -821,6 +1135,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الإصدار"
+          }
+        }
+      }
+    },
+    "Replay" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل"
           }
         }
       }
@@ -945,6 +1269,36 @@
         }
       }
     },
+    "Skip" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تخطٍّ"
+          }
+        }
+      }
+    },
+    "Skipped «%@»" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُخطّيت «%@»"
+          }
+        }
+      }
+    },
+    "Spelling" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإملاء"
+          }
+        }
+      }
+    },
     "Started" : {
       "localizations" : {
         "ar" : {
@@ -1035,6 +1389,16 @@
         }
       }
     },
+    "That did not work. Try again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينجح ذلك. حاول مرة أخرى."
+          }
+        }
+      }
+    },
     "The code %@ shows" : {
       "localizations" : {
         "ar" : {
@@ -1071,6 +1435,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تُحدَّث الأجهزة بعد أن يعتمد الجهاز الرئيسي %@: إنها تنتظر أن ينتهي."
+          }
+        }
+      }
+    },
+    "The sentence changed since this word was found: it is shown again as it is now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّرت الجملة منذ العثور على هذه الكلمة: تُعرض من جديد كما هي الآن."
+          }
+        }
+      }
+    },
+    "The verse has: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الآية: %@"
           }
         }
       }
@@ -1165,6 +1549,16 @@
         }
       }
     },
+    "Undo" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تراجع"
+          }
+        }
+      }
+    },
     "Up to date" : {
       "localizations" : {
         "ar" : {
@@ -1231,6 +1625,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "بانتظار أن ينتهي الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "Whisper was unsure" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يكن Whisper متأكدًا"
+          }
+        }
+      }
+    },
+    "Word review" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مراجعة الكلمات"
           }
         }
       }
@@ -1482,6 +1896,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مطلوب"
+          }
+        }
+      }
+    },
+    "«%@» is a name now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صارت «%@» اسمًا"
+          }
+        }
+      }
+    },
+    "«%@» is in the dictionary now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُضيفت «%@» إلى القاموس"
           }
         }
       }
