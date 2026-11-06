@@ -1403,6 +1403,51 @@
       "wants": []
     },
     {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.logs.index.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "logs.index",
+      "in_payload": false,
+      "kind": "process",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "logs/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 350,
+        "gpu": "none",
+        "ram_mb": 120
+      },
+      "settings": [],
+      "since": "0.3.83",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.logs.index.title",
+      "wants": []
+    },
+    {
       "bundles": [],
       "conflicts": [],
       "desc_key": "components.cloud.link.desc",
@@ -2994,6 +3039,7 @@
     "livetv.slots",
     "livetv.inprocess",
     "livetv.hdhomerun",
+    "logs.index",
     "cloud.link",
     "cloud.relay",
     "cluster",

@@ -7,6 +7,8 @@
 //   - Back, when the thing is gone or not this person's to see;
 //   - and, when the network was the problem, it tries again by itself once
 //     the browser is back online.
+import { ApiError } from "../lib/api";
+import { shortRef } from "../lib/requestIds";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
@@ -34,6 +36,8 @@ export function LoadError({ error, onRetry, backTo, backLabel, title, className 
   const navigate = useNavigate();
   const location = useLocation();
   const kind = userErrorKind(error);
+  const requestId = error instanceof ApiError ? error.requestId : undefined;
+  const ref = shortRef(requestId);
 
   // a load that failed for want of a network loads again once it is back
   const retry = useRef(onRetry);
@@ -91,7 +95,28 @@ export function LoadError({ error, onRetry, backTo, backLabel, title, className 
         // reason does not say whether the thing exists)
         kind === "notFound" || kind === "noAccess" ? t(`error.kind.${kind}`) : errorText(error, t)
       }
-      action={actions.length > 0 ? <div className="mkt-load-error__actions">{actions}</div> : null}
+      action={
+        actions.length > 0 || ref ? (
+          <>
+            {actions.length > 0 && <div className="mkt-load-error__actions">{actions}</div>}
+            {ref && (
+              // Epic 53 story 53.08: what the admin (or support) finds this failure by
+              <p className="mkt-load-error__ref">
+                <span data-testid="error-reference">{t("error.reference", { ref })}</span>{" "}
+                <button
+                  type="button"
+                  className="mkt-link-button"
+                  onClick={() =>
+                    void navigator.clipboard?.writeText(`${requestId} ${new Date().toISOString()}`)
+                  }
+                >
+                  {t("error.copyDetails")}
+                </button>
+              </p>
+            )}
+          </>
+        ) : null
+      }
     />
   );
 }

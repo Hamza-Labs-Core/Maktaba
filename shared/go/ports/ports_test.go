@@ -135,3 +135,10 @@ func TestMirrorsMatch(t *testing.T) {
 		}
 	}
 }
+
+// Epic 53 story 53.09: the log index answers on loopback, owned by its role.
+func TestLogsIndexIsLoopback(t *testing.T) {
+	if LogsIndex.Port != 9105 || LogsIndex.Owner != "logs" || LogsIndex.Host != Loopback {
+		t.Fatalf("logs index: %+v", LogsIndex)
+	}
+}

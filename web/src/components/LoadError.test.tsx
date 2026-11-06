@@ -95,3 +95,23 @@ describe("LoadError", () => {
     expect(retry).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("LoadError's reference (Epic 53 story 53.08)", () => {
+  it("quotes the request's short reference", async () => {
+    const { render: r, screen: s } = await import("@testing-library/react");
+    const { MemoryRouter } = await import("react-router-dom");
+    const { I18nProvider } = await import("../lib/i18n");
+    const { ApiError } = await import("../lib/api");
+    const { LoadError } = await import("./LoadError");
+    const e = new ApiError({ type: "about:blank", title: "boom", status: 500 });
+    e.requestId = "0193f2a1-7c1a-7b2e-9a51-2f5c3d4e5f60";
+    r(
+      <I18nProvider>
+        <MemoryRouter>
+          <LoadError error={e} />
+        </MemoryRouter>
+      </I18nProvider>
+    );
+    expect(s.getByTestId("error-reference").textContent).toBe("Reference: 0193f2a1");
+  });
+});

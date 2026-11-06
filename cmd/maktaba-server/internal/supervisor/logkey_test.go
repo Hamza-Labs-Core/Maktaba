@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -59,5 +60,24 @@ func TestChildEnvAsksForJSONLines(t *testing.T) {
 		if !hasKV(childEnvOK(role, cfg), "MAKTABA_LOG_FORMAT", "json") {
 			t.Errorf("role %s: MAKTABA_LOG_FORMAT not json", role)
 		}
+	}
+}
+
+// Epic 53 story 53.09: the api finds the log index ([logs] addr, else the registry's port),
+// and the role is this maktaba-server's `logs`.
+func TestTheLogIndexRole(t *testing.T) {
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(t.TempDir(), "server.toml"))
+	cfg := config.Defaults()
+	if !hasKV(childEnvOK(RoleAPI, cfg), "MAKTABA_LOGS_ADDR", "127.0.0.1:9105") {
+		t.Error("the api's MAKTABA_LOGS_ADDR")
+	}
+	cfg.Logs.Addr = "127.0.0.1:19105"
+	p, err := BuildLogs(cfg, "/data/logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(p.Cmd.Args[1:], " ")
+	if p.Role != RoleLogs || args != "logs --root /data/logs --addr 127.0.0.1:19105" || p.Probe != "http://127.0.0.1:19105/healthz" {
+		t.Errorf("the role: %s %q %s", p.Role, args, p.Probe)
 	}
 }

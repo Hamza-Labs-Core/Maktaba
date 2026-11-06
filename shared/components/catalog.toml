@@ -449,6 +449,23 @@ since     = "0.3.66"
 # ---- remote access and the cluster ---------------------------------------------------
 
 [[component]]
+id        = "logs.index"
+kind      = "process"
+group     = "system"
+title_key = "components.logs.index.title"
+desc_key  = "components.logs.index.desc"
+# the log index, search and live tail (Epic 53 story 53.09; error groups and metric
+# rollups join it in 53.10 and 53.12); the segments themselves are written by the
+# supervisor, which is not a component, so turning this off loses no line
+processes = ["logs/"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+resources = { ram_mb = 120, disk_mb = 350, gpu = "none" }
+# not in Core, which runs no switchable process (N9: four processes); a Core home keeps its
+# segments and reads them on the recovery page, and an admin can turn this on
+bundles   = ["full", "worker"]
+since     = "0.3.83"
+
+[[component]]
 id        = "cloud.link"
 kind      = "process"
 group     = "system"

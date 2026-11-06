@@ -41,7 +41,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from .engine.paths import to_local
-from .log import get_logger
+from .log import bind_request_id, get_logger
 from .models.service import ModelService
 from .stt.protocol import Segment, TranscriptionHints
 from .stt.registry import BackendRegistry
@@ -379,47 +379,47 @@ def _build_generic_handler(service: PipelineService) -> Any:
 
     import grpc  # type: ignore[import-untyped]  # noqa: PLC0415
 
-    async def _embed(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.embed)
+    async def _embed(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.embed, ctx)
 
-    async def _semantic_search(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.semantic_search)
+    async def _semantic_search(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.semantic_search, ctx)
 
-    async def _list_backends(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.list_backends)
+    async def _list_backends(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.list_backends, ctx)
 
-    async def _extract(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.extract_embedded_subtitle)
+    async def _extract(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.extract_embedded_subtitle, ctx)
 
-    async def _transcribe(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.transcribe)
+    async def _transcribe(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.transcribe, ctx)
 
-    async def _stt_test(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.stt_test)
+    async def _stt_test(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.stt_test, ctx)
 
-    async def _list_models(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.list_models)
+    async def _list_models(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.list_models, ctx)
 
-    async def _download_model(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.download_model)
+    async def _download_model(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.download_model, ctx)
 
-    async def _download_progress(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.download_progress)
+    async def _download_progress(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.download_progress, ctx)
 
-    async def _delete_model(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.delete_model)
+    async def _delete_model(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.delete_model, ctx)
 
-    async def _activate_model(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.activate_model)
+    async def _activate_model(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.activate_model, ctx)
 
-    async def _test_model(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.test_model)
+    async def _test_model(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.test_model, ctx)
 
-    async def _plan_preview_start(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.plan_preview_start)
+    async def _plan_preview_start(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.plan_preview_start, ctx)
 
-    async def _plan_preview_status(request: bytes, _ctx: Any) -> bytes:
-        return await _dispatch(request, service.plan_preview_status)
+    async def _plan_preview_status(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.plan_preview_status, ctx)
 
     def _h(fn: Callable[[bytes, Any], Awaitable[bytes]]) -> Any:
         return grpc.unary_unary_rpc_method_handler(
@@ -447,7 +447,37 @@ def _build_generic_handler(service: PipelineService) -> Any:
     return grpc.method_handlers_generic_handler(PIPELINE_SERVICE_NAME, handlers)
 
 
+def request_id_of(ctx: Any) -> str:
+    """The request id the API's call carries (``maktaba-request-id`` metadata, Epic 53
+    story 53.08); "" when it carries none."""
+    try:
+        md = ctx.invocation_metadata() if ctx is not None else None
+    except Exception:  # noqa: BLE001 - a context without metadata is no failure
+        return ""
+    for item in md or ():
+        key = getattr(item, "key", None)
+        value = getattr(item, "value", None)
+        if key is None and isinstance(item, tuple) and len(item) == 2:
+            key, value = item
+        if key == "maktaba-request-id" and isinstance(value, str):
+            return value
+    return ""
+
+
 async def _dispatch(
+    request: bytes,
+    handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+    ctx: Any = None,
+) -> bytes:
+    rid = request_id_of(ctx)
+    if rid:
+        # every line of the call names the request it serves
+        with bind_request_id(rid):
+            return await _dispatch_bound(request, handler)
+    return await _dispatch_bound(request, handler)
+
+
+async def _dispatch_bound(
     request: bytes,
     handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
 ) -> bytes:

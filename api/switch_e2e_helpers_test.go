@@ -181,6 +181,8 @@ slots = "off"
 		freePort(c.t), cloud)
 	_ = os.MkdirAll(m.dir, 0o700)
 	path := filepath.Join(m.dir, "server.toml")
+	// each machine's log index on a port of its own: two machines share this host (53.09)
+	body += fmt.Sprintf("\n[logs]\naddr = \"127.0.0.1:%d\"\n", freePort(c.t))
 	_ = os.WriteFile(path, []byte(body), 0o600)
 	return path
 }

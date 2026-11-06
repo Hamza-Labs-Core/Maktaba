@@ -552,6 +552,19 @@ build fails when the two differ.
   commit, and starts safe mode from the recovery console, checking the web keeps serving,
   `/status.json` says so in time and the part comes back (`docs/fault-rehearsal.md`).
 
+- **Log search and live tail on the home, and one request id from the app to the last process
+  (Epic 53, stories 53.08 and 53.09).** A new supervised role, the log index (`maktaba-server
+  logs`, the catalog's `logs.index`, in the Full and Worker bundles), keeps a SQLite index of
+  the log keeper's files (`<data>/logs/index/logs.db`) that works with Postgres down. Admins
+  get `/api/admin/logs/search` (words, "phrases", `prefix*` and `-word`, by service, component,
+  level, time, request, job or user), a live tail (`/api/admin/logs/tail`, a line within 2
+  seconds of being written) and `/api/admin/logs/around` (every service's lines around one).
+  Arabic is found with or without its marks. The index holds where each line is, not the
+  line, stays within 35 % of the diagnostics cap, and is rebuilt from the files when it is
+  damaged. The web, Apple and Android apps now send `X-Request-Id` (a UUIDv7, shared by one
+  action's calls); the API passes it to the pipeline and streaming, whose lines carry it, and
+  the web's error screens show "Reference: xxxxxxxx" with "Copy details".
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

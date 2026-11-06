@@ -1,13 +1,16 @@
 package middleware
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 func TestMintsWhenAbsent(t *testing.T) {
@@ -84,5 +87,21 @@ func TestRejectsV4(t *testing.T) {
 	}
 	if seen.Version() != 7 {
 		t.Fatalf("minted UUID is v%d, want v7", seen.Version())
+	}
+}
+
+// Epic 53 story 53.08: a malformed client id is replaced, and the replacement is said once.
+func TestRequestIDReplacedIsLogged(t *testing.T) {
+	var buf bytes.Buffer
+	prev := mlog.Default
+	mlog.Default = mlog.NewLogger(mlog.Options{Service: "api", Env: "prod", Output: &buf})
+	t.Cleanup(func() { mlog.Default = prev })
+	h := RequestID(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	req := httptest.NewRequest(http.MethodGet, "/api/x", nil)
+	req.Header.Set(reqid.Header, "not-a-uuid")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if !strings.Contains(buf.String(), `"msg":"request_id_replaced"`) || !strings.Contains(buf.String(), rec.Header().Get(reqid.Header)) {
+		t.Fatalf("log: %s", buf.String())
 	}
 }

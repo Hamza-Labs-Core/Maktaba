@@ -550,10 +550,13 @@ listen = "loopback"
 [supervisor]
 admin_addr = "127.0.0.1:%d"
 
+[logs]
+addr = "127.0.0.1:%d"
+
 [tv]
 slots = "%s"
 %s
-`, m.api, m.root, m.web, m.webURL(), m.admin, p(), p(), p(), p(), p(), p(), p(), m.serverExtra, m.pg, m.pgExtra, m.sup, orStr(m.tvSlots, "off"), m.tomlTail)
+`, m.api, m.root, m.web, m.webURL(), m.admin, p(), p(), p(), p(), p(), p(), p(), m.serverExtra, m.pg, m.pgExtra, m.sup, p(), orStr(m.tvSlots, "off"), m.tomlTail)
 	path := filepath.Join(m.root, "server.toml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
