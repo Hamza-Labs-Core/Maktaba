@@ -75,6 +75,15 @@ const SystemHealth = /* @__PURE__ */ page(
 const Machines = /* @__PURE__ */ page(() => import("./pages/Admin/Machines"), "Machines");
 const AdminUpdates = /* @__PURE__ */ page(() => import("./pages/Admin/Updates"), "AdminUpdates");
 const AdminLogs = /* @__PURE__ */ page(() => import("./pages/Admin/Logs"), "AdminLogs");
+const AdminLogSettings = /* @__PURE__ */ page(
+  () => import("./pages/Admin/LogSettings"),
+  "AdminLogSettings"
+);
+const AdminErrors = /* @__PURE__ */ page(() => import("./pages/Admin/Errors"), "AdminErrors");
+const AdminErrorGroup = /* @__PURE__ */ page(
+  () => import("./pages/Admin/Errors"),
+  "AdminErrorGroup"
+);
 const CloudDevices = /* @__PURE__ */ page(() => import("./pages/Cloud/Devices"), "CloudDevices");
 
 /** The server routes, children of the signed-in shell (AppShell suspends them). */
@@ -110,6 +119,9 @@ export function serverRoutes() {
       <Route path="/admin/machines" element={<Machines />} />
       <Route path="/admin/updates" element={<AdminUpdates />} />
       <Route path="/admin/logs" element={<AdminLogs />} />
+      <Route path="/admin/logs/settings" element={<AdminLogSettings />} />
+      <Route path="/admin/errors" element={<AdminErrors />} />
+      <Route path="/admin/errors/:fp" element={<AdminErrorGroup />} />
       <Route path="/admin/devices" element={<CloudDevices />} />
     </>
   );

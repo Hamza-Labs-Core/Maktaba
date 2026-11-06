@@ -10,6 +10,8 @@
 // server.toml keys it owns are listed; a key the database overrides says so on the config
 // part's condition. Reset settings (51.13) opens the page's confirm dialog.
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { logsPageLink } from "../../lib/logIndex";
 import { Button } from "@ds/components/Button/Button";
 import { Drawer } from "@ds/components/Drawer/Drawer";
 import {
@@ -99,6 +101,14 @@ export function ComponentDrawer({
       closeLabel={t("common.close")}
     >
       <p className="mkt-comp-drawer__desc">{t(view.desc_key)}</p>
+      {/* Epic 53 story 53.11: this component's lines and errors */}
+      <p className="mkt-comp-drawer__links">
+        <Link to={logsPageLink({ components: view.id })}>{t("nav.admin.logs")}</Link>
+        {" · "}
+        <Link to={`/admin/errors?component=${encodeURIComponent(view.id)}`}>
+          {t("nav.admin.errors")}
+        </Link>
+      </p>
       {view.hold && (
         <p>
           {t("components.drawer.heldBy", {

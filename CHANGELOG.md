@@ -503,6 +503,20 @@ build fails when the two differ.
   notification for a new group with 3 lines in 10 minutes or one that came back: once a group
   a day, at most 10 a day. Groups go 30 days after they were last seen.
 
+- **Logs, Errors and diagnostics settings pages for admins (Epic 53, story 53.11).** The Logs
+  page searches the log index: words, "phrases" and `-word`, by level, service, component and
+  time, all kept in the address. Typing the 8-character reference from an app's error screen
+  opens Follow a request: every line of that action from every part, in time order, with
+  gaps over a second marked. **Live** follows new lines within two seconds and holds still
+  while you read further down ("N new lines"). Each line shows its request, job, video,
+  session and user (by name) and "Lines around this". With log search restarting, the page
+  shows the recent lines from the files and says so. A new Errors page lists the error
+  groups with their counts, a 14-day chart and users, and a group's page marks it seen,
+  resolves it or mutes it; the menu shows how many are new. Diagnostics settings sets how
+  long logs (7 days), errors (30) and problem reports (90) are kept and the disk they may use
+  (1 GB), shows what each uses, and turns on detailed logs for one service for an hour, which
+  ends by itself. A component's drawer links to its logs and errors.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
