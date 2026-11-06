@@ -618,3 +618,13 @@ func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+// Story 54.37 §5, T07 (the install route): packs carry first-party assets only, so the
+// install route refuses a plugin entry, naming the plugin route; a viewer still gets 403.
+func TestPluginInstallRouteIsRefused(t *testing.T) {
+	f := newFixture(t)
+	code(t, f.do("POST", "/api/components/plugin.dev.example.x/install", "", admin()), http.StatusConflict, CodePluginInstallRoute)
+	if rec := f.do("POST", "/api/components/plugin.dev.example.x/install", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("a viewer: %d", rec.Code)
+	}
+}

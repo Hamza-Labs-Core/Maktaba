@@ -9,7 +9,8 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// 54.04 T10: the plugin API is never on the TCP router; only the invocation routes are.
+// 54.04 T10: the plugin API is never on the TCP router; only the invocation and breaker
+// routes are (and, with the components service, /api/plugins/*).
 func TestP54HasNoPluginAPIOnTCP(t *testing.T) {
 	r := chi.NewRouter()
 	db, _ := sql.Open("postgres", "postgres://invalid/none")
@@ -19,11 +20,11 @@ func TestP54HasNoPluginAPIOnTCP(t *testing.T) {
 		routes = append(routes, method+" "+route)
 		return nil
 	})
-	if len(routes) != 2 {
+	if len(routes) != 3 {
 		t.Fatalf("routes %v", routes)
 	}
 	for _, rt := range routes {
-		if strings.Contains(rt, "/plugin-api") || !strings.Contains(rt, "/internal/plugins/invocations") {
+		if strings.Contains(rt, "/plugin-api") || !strings.Contains(rt, "/internal/plugins/") {
 			t.Fatalf("route %s on TCP", rt)
 		}
 	}
