@@ -613,14 +613,17 @@
       ],
       "related": [
         "epic-31-multi-instance",
-        "plan-31.03-canonical-share-paths"
+        "plan-31.03-canonical-share-paths",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/31-multi-instance/story-31-03-canonical-share-paths.md",
         "plan": "specs/epics/31-multi-instance/plan-31-03-canonical-share-paths.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "canonical-share-paths"

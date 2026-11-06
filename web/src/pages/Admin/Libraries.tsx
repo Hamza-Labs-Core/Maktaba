@@ -23,12 +23,18 @@ import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import {
+  COLLECTION_MODES,
+  fetchPlexMissing,
   libraryAdminApi,
   problemMessage,
+  setCollectionMode,
+  type CollectionMode,
   type ConflictGroup,
   type ManageResponse,
   type ManagedLibrary,
+  type PlexMissingItem,
 } from "../../lib/libraryAdminApi";
+import { useToast } from "@ds/components/Toast/Toast";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
@@ -387,6 +393,8 @@ function LibraryCard({
         onChanged={onReload}
       />
 
+      <LibraryCollectionsAdmin library={lib} onChanged={onReload} />
+
       <div className="mkt-libadmin__actions">
         <ScanNow libraryId={lib.id} jobId={lib.scanning ? scan?.job_id : null} onDone={onReload} />
         <Button type="button" variant="secondary" onClick={() => onAction("edit")}>
@@ -413,5 +421,88 @@ function LibraryCard({
         </Button>
       </div>
     </li>
+  );
+}
+
+/** A library's collection mode and what the Plex import read (Epic 56 stories 56.07, 56.08). */
+function LibraryCollectionsAdmin({
+  library: lib,
+  onChanged,
+}: {
+  library: ManagedLibrary;
+  onChanged: () => void;
+}) {
+  const { t, n } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [missing, setMissing] = useState<PlexMissingItem[] | null>(null);
+  const mode = lib.collection_mode ?? "tab_only";
+  async function change(m: CollectionMode) {
+    setBusy(true);
+    try {
+      await setCollectionMode(lib.id, m);
+      onChanged();
+    } catch {
+      toast.show({ tone: "error", message: t("collections.settingsError") });
+    } finally {
+      setBusy(false);
+    }
+  }
+  const plex = lib.plex_collections;
+  return (
+    <div className="mkt-libadmin__collections">
+      <label className="mkt-field">
+        <span className="mkt-field__label">{t("libraryAdmin.collectionMode")}</span>
+        <select
+          value={mode}
+          disabled={busy}
+          onChange={(e) => void change(e.target.value as CollectionMode)}
+        >
+          {COLLECTION_MODES.map((m) => (
+            <option key={m} value={m}>
+              {t(
+                m === "tab_only"
+                  ? "libraryAdmin.collectionMode.tabOnly"
+                  : m === "hide_items"
+                    ? "libraryAdmin.collectionMode.hideItems"
+                    : "libraryAdmin.collectionMode.showBoth"
+              )}
+            </option>
+          ))}
+        </select>
+      </label>
+      {plex && (
+        <p className="mkt-muted mkt-libadmin__small">
+          {t("libraryAdmin.plex.collections", { n: n(plex.imported), m: n(plex.missing_videos) })}{" "}
+          {plex.missing_videos > 0 && missing == null && (
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              onClick={() => void fetchPlexMissing(lib.id).then(setMissing, () => setMissing([]))}
+            >
+              {t("libraryAdmin.plex.skipped")}
+            </Button>
+          )}
+        </p>
+      )}
+      {missing && missing.length > 0 && (
+        <ul className="mkt-libadmin__plex-missing">
+          {missing.map((m) => (
+            <li key={`${m.collection}:${m.rating_key}`}>
+              <bdi>{m.collection}</bdi> — <bdi>{m.title || m.rating_key}</bdi>
+              {m.file ? (
+                <>
+                  {" "}
+                  <bdi dir="ltr" className="mkt-libadmin__path">
+                    {m.file}
+                  </bdi>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

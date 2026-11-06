@@ -1,0 +1,91 @@
+# The stable events a plugin stage can follow (Epic 54, README §4.2, story 54.06 §6).
+#
+# A plugin never names a core stage: it names an event, and this file maps the event to
+# the core stage whose output means it. When a core stage is renamed or split, only this
+# file changes. tools/ci/tests/test_plugin_events.py fails when an event names a stage
+# that is not in the pipeline's GRAPH, and when an event is removed without a new plugin
+# API major.
+#
+# Fields:
+#   name      the event a manifest's [[stage.trigger]] names
+#   subject   the subject kind of the jobs it starts (a trigger's stage must match it)
+#   stage     the core stage whose changed output fires it ("" for schedule)
+#   map       the Edge map from that stage's subject to this subject (engine/graph.py)
+#   trigger   false: not a [[stage.trigger]] event ([[schedule]] only)
+#   since     the plugin API minor (1.x) that added it
+#
+# series.changed starts a season job: the engine forms series as seasons (detect), and
+# seasons_changed is the map that names the seasons a detect pass changed.
+
+schema = 1
+
+[[event]]
+name    = "video.added"
+subject = "video"
+stage   = "probe"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "video.changed"
+subject = "video"
+stage   = "content_hash"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "audio.ready"
+subject = "video"
+stage   = "extract"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "transcript.ready"
+subject = "video"
+stage   = "transcribe"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "subtitles.ready"
+subject = "video"
+stage   = "subtitle_gen"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "thumbnails.ready"
+subject = "video"
+stage   = "thumbnail"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "metadata.changed"
+subject = "video"
+stage   = "enrich"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "series.changed"
+subject = "season"
+stage   = "detect"
+map     = "seasons_changed"
+since   = "1.0"
+
+[[event]]
+name    = "library.scanned"
+subject = "library"
+stage   = "scan"
+map     = "same"
+since   = "1.0"
+
+[[event]]
+name    = "schedule"
+subject = "catalog"
+stage   = ""
+map     = "catalog"
+trigger = false
+since   = "1.0"

@@ -2,6 +2,9 @@ package com.hamzalabs.maktaba.player.watch
 
 import com.hamzalabs.maktaba.core.playback.nextVideo
 import androidx.activity.compose.BackHandler
+import com.hamzalabs.maktaba.core.queue.QueueItem
+import com.hamzalabs.maktaba.player.libraries.PlayerQueues
+import kotlinx.coroutines.launch
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -89,9 +92,18 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
         playback.play(detail?.asVideo() ?: Video(videoId), startSec ?: resumeSec(detail))
     }
     // the video after the one playing (it changes when Up next or Next plays the next)
+    // Epic 56 story 56.12: the queue's next first (when this video is its current one), then the series
+    val queue = remember(client) { PlayerQueues.of(client) }
+    var queued by remember { mutableStateOf<QueueItem?>(null) }
     LaunchedEffect(playback.video?.id) {
         next = null
-        next = playback.video?.id?.let { client.nextVideo(it) }
+        queued = null
+        val id = playback.video?.id ?: return@LaunchedEffect
+        if (queue.doc?.current?.id == id) {
+            queued = queue.peekNext()
+            queued?.let { q -> next = Video(q.id, title = q.title, durationSec = q.durationSec) }
+        }
+        if (next == null) next = client.nextVideo(id)
     }
 
     val close = { playback.stop(); nav.back(); Unit }
@@ -104,7 +116,11 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
         onClose = close,
         next = next,
         autoplayNext = settings.autoplayNext,
-        onPlayNext = { playback.play(it) },
+        onPlayNext = { v ->
+            val q = queued
+            if (q != null && q.id == v.id) scope.launch { runCatching { queue.moveTo(q.pos) } }
+            playback.play(v)
+        },
         subtitleScale = settings.subtitleSize.scale,
     )
 }

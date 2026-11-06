@@ -51,6 +51,22 @@ export interface Collection {
   /** a manual collection's visible videos */
   videos: number | null;
   poster_video_ids: string[];
+  /** Epic 56: what keeps it in step (youtube_playlist, youtube_channel, plex), and an admin's choices */
+  source_kind?: "youtube_playlist" | "youtube_channel" | "plex";
+  name_override?: string | null;
+  hidden?: boolean;
+  show_on_library?: boolean;
+  show_on_home?: boolean;
+  sort_title?: string | null;
+}
+
+/** An admin's display choices on a collection (any kind; the only ones a sourced one takes). */
+export interface CollectionSettings {
+  name_override?: string;
+  hidden?: boolean;
+  show_on_library?: boolean;
+  show_on_home?: boolean;
+  sort_title?: string;
 }
 
 const obj = (v: unknown): Record<string, unknown> =>
@@ -79,7 +95,36 @@ function readCollection(raw: unknown): Collection | null {
           .filter((x): x is string => typeof x === "string")
           .slice(0, 4)
       : [],
+    source_kind:
+      c.source_kind === "youtube_playlist" ||
+      c.source_kind === "youtube_channel" ||
+      c.source_kind === "plex"
+        ? c.source_kind
+        : undefined,
+    name_override: typeof c.name_override === "string" ? c.name_override : null,
+    hidden: c.hidden === true,
+    show_on_library: c.show_on_library === true,
+    show_on_home: c.show_on_home === true,
+    sort_title: typeof c.sort_title === "string" ? c.sort_title : null,
   };
+}
+
+/** Changes an admin's display choices (PATCH /api/collections/{id}). */
+export async function updateCollectionSettings(id: string, s: CollectionSettings): Promise<void> {
+  await api.patch(`/api/collections/${encodeURIComponent(id)}`, s);
+  forgetCollections();
+}
+
+/** A curated copy of a collection with its current videos; the new one's id. */
+export async function duplicateCollection(id: string, name?: string): Promise<string> {
+  const r = obj(
+    await api.post<unknown>(
+      `/api/collections/${encodeURIComponent(id)}/duplicate`,
+      name ? { name } : {}
+    )
+  );
+  forgetCollections();
+  return typeof r.id === "string" ? r.id : "";
 }
 
 export async function fetchCollections(libraryId: string): Promise<Collection[]> {

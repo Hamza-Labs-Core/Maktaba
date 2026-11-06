@@ -11,6 +11,8 @@ struct VideoPage: View {
     @State private var playing: TVPlayback?
     /// What played last: stopped when the player closes.
     @State private var played: TVPlayback?
+    @State private var seriesID: String?
+    @Environment(\.queuePlayer) private var queue
 
     var body: some View {
         Group {
@@ -33,6 +35,9 @@ struct VideoPage: View {
                                 Button("Play from the start", systemImage: "arrow.counterclockwise") { play(video, from: 0) }
                             } else {
                                 Button("Play", systemImage: "play.fill") { play(video, from: 0) }
+                            }
+                            if let seriesID {
+                                NavigationLink { SeriesView(id: seriesID) } label: { Label("Go to series", systemImage: "list.bullet") }
                             }
                         }
                         .buttonStyle(.gold)
@@ -60,6 +65,11 @@ struct VideoPage: View {
     }
 
     private func play(_ v: Video, from at: Double) {
+        // Epic 56: a video on its own plays in a queue, so an episode goes on through its series
+        if let queue {
+            queue.play(QueueSource(kind: "video", id: v.id), shuffle: false)
+            return
+        }
         guard let client else { return }
         let p = TVPlayback(client: client, video: v)
         p.start(at: at)
@@ -81,6 +91,7 @@ struct VideoPage: View {
         guard let client else { return }
         do {
             video = try await client.video(id)
+            seriesID = try? await client.myVideo(id).series?.id
             problem = nil
         } catch {
             problem = HomeFailure.shown("load video", error) ?? problem

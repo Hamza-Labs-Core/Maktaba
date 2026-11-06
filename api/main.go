@@ -44,6 +44,7 @@ import (
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/playqueue"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/processes"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/telemetry"
@@ -728,6 +729,8 @@ func runServe() error {
 				Logger:        logger,
 			}
 			loops.Declare("watch_reaper", runner.Func(reaper.Run))
+			// Epic 56 story 56.01: queues not used for 7 days go, checked every hour
+			loops.Declare("play_queue_sweep", runner.Func(func(ctx context.Context) { playqueue.Sweep(ctx, appDB, time.Hour, logger) }))
 			usageCounter.Attach(appDB)
 			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",

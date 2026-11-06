@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Epic 56: the library view on the phone and tablet Player -->
+<resources>
+    <string name="library_play">تشغيل</string>
+    <string name="library_shuffle">تشغيل عشوائي</string>
+    <string name="library_tab_collections">المجموعات</string>
+    <string name="library_tab_playlists">قوائم التشغيل</string>
+    <string name="queue_empty">لا يوجد ما يُشغَّل هنا.</string>
+    <string name="queue_error_load">تعذّر تحميل قائمة الانتظار.</string>
+    <string name="queue_play_next">شغّل تاليًا</string>
+    <string name="queue_add">أضف إلى قائمة الانتظار</string>
+    <string name="queue_added">أُضيف إلى قائمة الانتظار</string>
+    <string name="collections_empty">لا مجموعات في هذه المكتبة بعد.</string>
+    <string name="collections_badge_youtube_playlist">قائمة تشغيل يوتيوب</string>
+    <string name="collections_badge_youtube_channel">قناة يوتيوب</string>
+    <string name="collections_badge_plex">مجموعة Plex</string>
+    <string name="collections_badge_smart">ذكية</string>
+    <string name="playlists_empty_library">لا تحتوي أيٌّ من قوائم تشغيلك على مقاطع من هذه المكتبة.</string>
+    <string name="playlists_smart_badge">ذكية</string>
+    <string name="playlists_smart_save">احفظ كقائمة تشغيل ذكية</string>
+    <string name="playlists_smart_name">اسم قائمة التشغيل الذكية</string>
+    <string name="playlists_smart_saved">حُفظت %1$s.</string>
+    <string name="playlists_smart_save_error">تعذّر حفظ قائمة التشغيل الذكية</string>
+    <string name="home_continue_queue">تابع قائمة الانتظار</string>
+    <string name="home_continue_queue_from">%1$s · من %2$s</string>
+    <string name="device_tv">التلفاز</string>
+    <string name="device_web">متصفّح</string>
+    <string name="device_phone">هاتف</string>
+    <string name="series_shuffle">شغّل السلسلة عشوائيًا</string>
+    <string name="common_save">حفظ</string>
+    <string name="common_cancel">إلغاء</string>
+</resources>

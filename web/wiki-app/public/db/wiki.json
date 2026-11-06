@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 143,
+    "endpoint": 181,
     "entity": 42,
     "epic": 56,
     "feature": 3,
@@ -5923,73 +5923,6 @@
       }
     },
     {
-      "id": "ep-get-collections-id-videos",
-      "type": "endpoint",
-      "title": "GET /collections/{id}/videos",
-      "content": "List videos in a collection",
-      "tags": [
-        "api",
-        "Collections",
-        "get"
-      ],
-      "related": [
-        "story-56.14"
-      ],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "GET",
-        "path": "/collections/{id}/videos",
-        "tag": "Collections",
-        "operationId": "listCollectionVideos"
-      }
-    },
-    {
-      "id": "ep-post-collections-id-videos",
-      "type": "endpoint",
-      "title": "POST /collections/{id}/videos",
-      "content": "Add a video to a collection",
-      "tags": [
-        "api",
-        "Collections",
-        "post"
-      ],
-      "related": [
-        "story-56.14"
-      ],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "POST",
-        "path": "/collections/{id}/videos",
-        "tag": "Collections",
-        "operationId": "addCollectionVideo"
-      }
-    },
-    {
-      "id": "ep-delete-collections-id-videos-videoId",
-      "type": "endpoint",
-      "title": "DELETE /collections/{id}/videos/{videoId}",
-      "content": "Remove a video from a collection",
-      "tags": [
-        "api",
-        "Collections",
-        "delete"
-      ],
-      "related": [],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "DELETE",
-        "path": "/collections/{id}/videos/{videoId}",
-        "tag": "Collections",
-        "operationId": "removeCollectionVideo"
-      }
-    },
-    {
       "id": "ep-get-tags",
       "type": "endpoint",
       "title": "GET /tags",
@@ -8358,6 +8291,1002 @@
         "path": "/components/{id}/machines/{node}/start",
         "tag": "Components",
         "operationId": "startComponentOnMachine"
+      }
+    },
+    {
+      "id": "ep-get-collections-id-items",
+      "type": "endpoint",
+      "title": "GET /collections/{id}/items",
+      "content": "List videos in a collection",
+      "tags": [
+        "api",
+        "Collections",
+        "get"
+      ],
+      "related": [
+        "story-9.14",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/collections/{id}/items",
+        "tag": "Collections",
+        "operationId": "listCollectionVideos"
+      }
+    },
+    {
+      "id": "ep-post-collections-id-items",
+      "type": "endpoint",
+      "title": "POST /collections/{id}/items",
+      "content": "Add a video to a collection",
+      "tags": [
+        "api",
+        "Collections",
+        "post"
+      ],
+      "related": [
+        "story-9.14",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/collections/{id}/items",
+        "tag": "Collections",
+        "operationId": "addCollectionVideo"
+      }
+    },
+    {
+      "id": "ep-delete-collections-id-items-video-id",
+      "type": "endpoint",
+      "title": "DELETE /collections/{id}/items/{video_id}",
+      "content": "Remove a video from a collection",
+      "tags": [
+        "api",
+        "Collections",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/collections/{id}/items/{video_id}",
+        "tag": "Collections",
+        "operationId": "removeCollectionVideo"
+      }
+    },
+    {
+      "id": "ep-post-me-play-queues",
+      "type": "endpoint",
+      "title": "POST /me/play-queues",
+      "content": "Create a play queue from a library, series, season, collection or playlist",
+      "tags": [
+        "api",
+        "Play queues",
+        "post"
+      ],
+      "related": [
+        "story-56.1",
+        "story-56.2",
+        "story-56.11",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/play-queues",
+        "tag": "Play queues",
+        "operationId": "createPlayQueue"
+      }
+    },
+    {
+      "id": "ep-get-me-play-queues-current",
+      "type": "endpoint",
+      "title": "GET /me/play-queues/current",
+      "content": "The caller's most recently used play queue, from any device",
+      "tags": [
+        "api",
+        "Play queues",
+        "get"
+      ],
+      "related": [
+        "story-56.1",
+        "story-56.11"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/play-queues/current",
+        "tag": "Play queues",
+        "operationId": "getCurrentPlayQueue"
+      }
+    },
+    {
+      "id": "ep-get-me-play-queues-id",
+      "type": "endpoint",
+      "title": "GET /me/play-queues/{id}",
+      "content": "A window of a play queue",
+      "tags": [
+        "api",
+        "Play queues",
+        "get"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/play-queues/{id}",
+        "tag": "Play queues",
+        "operationId": "getPlayQueue"
+      }
+    },
+    {
+      "id": "ep-delete-me-play-queues-id",
+      "type": "endpoint",
+      "title": "DELETE /me/play-queues/{id}",
+      "content": "Delete a play queue",
+      "tags": [
+        "api",
+        "Play queues",
+        "delete"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/play-queues/{id}",
+        "tag": "Play queues",
+        "operationId": "deletePlayQueue"
+      }
+    },
+    {
+      "id": "ep-put-me-play-queues-id-current",
+      "type": "endpoint",
+      "title": "PUT /me/play-queues/{id}/current",
+      "content": "Set the current item of a play queue",
+      "tags": [
+        "api",
+        "Play queues",
+        "put"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/play-queues/{id}/current",
+        "tag": "Play queues",
+        "operationId": "movePlayQueue"
+      }
+    },
+    {
+      "id": "ep-post-me-play-queues-id-items",
+      "type": "endpoint",
+      "title": "POST /me/play-queues/{id}/items",
+      "content": "Play next or add to a play queue",
+      "tags": [
+        "api",
+        "Play queues",
+        "post"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/play-queues/{id}/items",
+        "tag": "Play queues",
+        "operationId": "addPlayQueueItems"
+      }
+    },
+    {
+      "id": "ep-post-me-play-queues-id-reshuffle",
+      "type": "endpoint",
+      "title": "POST /me/play-queues/{id}/reshuffle",
+      "content": "Shuffle a play queue again after its current item",
+      "tags": [
+        "api",
+        "Play queues",
+        "post"
+      ],
+      "related": [
+        "story-56.1"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/play-queues/{id}/reshuffle",
+        "tag": "Play queues",
+        "operationId": "reshufflePlayQueue"
+      }
+    },
+    {
+      "id": "ep-get-me-playlists",
+      "type": "endpoint",
+      "title": "GET /me/playlists",
+      "content": "The caller's playlists",
+      "tags": [
+        "api",
+        "Playlists",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.9",
+        "story-56.10",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/playlists",
+        "tag": "Playlists",
+        "operationId": "listPlaylists"
+      }
+    },
+    {
+      "id": "ep-post-me-playlists",
+      "type": "endpoint",
+      "title": "POST /me/playlists",
+      "content": "Make a playlist, manual or smart",
+      "tags": [
+        "api",
+        "Playlists",
+        "post"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.9",
+        "story-56.10",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/playlists",
+        "tag": "Playlists",
+        "operationId": "createPlaylist"
+      }
+    },
+    {
+      "id": "ep-get-me-playlists-id",
+      "type": "endpoint",
+      "title": "GET /me/playlists/{id}",
+      "content": "A playlist and its videos",
+      "tags": [
+        "api",
+        "Playlists",
+        "get"
+      ],
+      "related": [
+        "story-56.9",
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/playlists/{id}",
+        "tag": "Playlists",
+        "operationId": "getPlaylist"
+      }
+    },
+    {
+      "id": "ep-patch-me-playlists-id",
+      "type": "endpoint",
+      "title": "PATCH /me/playlists/{id}",
+      "content": "Rename a playlist or change its rules",
+      "tags": [
+        "api",
+        "Playlists",
+        "patch"
+      ],
+      "related": [
+        "story-56.9",
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PATCH",
+        "path": "/me/playlists/{id}",
+        "tag": "Playlists",
+        "operationId": "updatePlaylist"
+      }
+    },
+    {
+      "id": "ep-delete-me-playlists-id",
+      "type": "endpoint",
+      "title": "DELETE /me/playlists/{id}",
+      "content": "Delete a playlist",
+      "tags": [
+        "api",
+        "Playlists",
+        "delete"
+      ],
+      "related": [
+        "story-56.9",
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/playlists/{id}",
+        "tag": "Playlists",
+        "operationId": "deletePlaylist"
+      }
+    },
+    {
+      "id": "ep-get-me-playlists-id-items",
+      "type": "endpoint",
+      "title": "GET /me/playlists/{id}/items",
+      "content": "A playlist's videos",
+      "tags": [
+        "api",
+        "Playlists",
+        "get"
+      ],
+      "related": [
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/playlists/{id}/items",
+        "tag": "Playlists",
+        "operationId": "listPlaylistItems"
+      }
+    },
+    {
+      "id": "ep-post-me-playlists-id-items",
+      "type": "endpoint",
+      "title": "POST /me/playlists/{id}/items",
+      "content": "Add videos to a playlist",
+      "tags": [
+        "api",
+        "Playlists",
+        "post"
+      ],
+      "related": [
+        "story-56.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/playlists/{id}/items",
+        "tag": "Playlists",
+        "operationId": "addPlaylistItems"
+      }
+    },
+    {
+      "id": "ep-delete-me-playlists-id-items-video-id",
+      "type": "endpoint",
+      "title": "DELETE /me/playlists/{id}/items/{video_id}",
+      "content": "Remove a video from a playlist",
+      "tags": [
+        "api",
+        "Playlists",
+        "delete"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/me/playlists/{id}/items/{video_id}",
+        "tag": "Playlists",
+        "operationId": "removePlaylistItem"
+      }
+    },
+    {
+      "id": "ep-put-me-playlists-id-order",
+      "type": "endpoint",
+      "title": "PUT /me/playlists/{id}/order",
+      "content": "Reorder a playlist",
+      "tags": [
+        "api",
+        "Playlists",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/playlists/{id}/order",
+        "tag": "Playlists",
+        "operationId": "orderPlaylist"
+      }
+    },
+    {
+      "id": "ep-get-home",
+      "type": "endpoint",
+      "title": "GET /home",
+      "content": "Home's rows for the caller",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-16.2",
+        "story-25.27",
+        "story-31.3",
+        "story-42.2",
+        "story-42.5",
+        "story-42.7",
+        "story-42.10",
+        "story-50.13",
+        "story-50.15",
+        "story-50.16",
+        "story-50.19",
+        "story-50.21",
+        "story-50.35",
+        "story-51.9",
+        "story-51.11",
+        "story-51.16",
+        "story-51.18",
+        "story-52.17",
+        "story-53.1",
+        "story-53.6",
+        "story-53.16",
+        "story-54.15",
+        "story-54.19",
+        "story-54.20",
+        "story-55.1",
+        "story-55.3",
+        "story-56.3",
+        "story-56.8",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/home",
+        "tag": "Browse",
+        "operationId": "getHome"
+      }
+    },
+    {
+      "id": "ep-get-home-featured",
+      "type": "endpoint",
+      "title": "GET /home/featured",
+      "content": "Home's featured video",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/home/featured",
+        "tag": "Browse",
+        "operationId": "getFeatured"
+      }
+    },
+    {
+      "id": "ep-put-home-featured",
+      "type": "endpoint",
+      "title": "PUT /home/featured",
+      "content": "Set Home's featured video (admin)",
+      "tags": [
+        "api",
+        "Browse",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/home/featured",
+        "tag": "Browse",
+        "operationId": "setFeatured"
+      }
+    },
+    {
+      "id": "ep-get-libraries-summary",
+      "type": "endpoint",
+      "title": "GET /libraries/summary",
+      "content": "The caller's libraries with their counts",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/summary",
+        "tag": "Browse",
+        "operationId": "getLibrariesSummary"
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-hub",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/hub",
+      "content": "The rows of a library's Recommended tab",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.8",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/hub",
+        "tag": "Browse",
+        "operationId": "getLibraryHub"
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-series",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/series",
+      "content": "A library's Series tab",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.4",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/series",
+        "tag": "Browse",
+        "operationId": "listLibrarySeries"
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-collections",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/collections",
+      "content": "A library's Collections tab",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.6",
+        "story-56.8",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/collections",
+        "tag": "Browse",
+        "operationId": "listLibraryCollections"
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-collections-kind-gid",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/collections/{kind}/{gid}",
+      "content": "A topic collection's or clip group's videos",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/collections/{kind}/{gid}",
+        "tag": "Browse",
+        "operationId": "getAutoCollection"
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-categories",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/categories",
+      "content": "A library's speakers, topics, languages and years",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.3",
+        "story-56.5"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/categories",
+        "tag": "Browse",
+        "operationId": "getLibraryCategories"
+      }
+    },
+    {
+      "id": "ep-get-libraries-id-plex-missing",
+      "type": "endpoint",
+      "title": "GET /libraries/{id}/plex-missing",
+      "content": "The items of a library's Plex collections that are not in Maktaba (admin)",
+      "tags": [
+        "api",
+        "Libraries",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/libraries/{id}/plex-missing",
+        "tag": "Libraries",
+        "operationId": "listPlexMissing"
+      }
+    },
+    {
+      "id": "ep-get-videos-facets",
+      "type": "endpoint",
+      "title": "GET /videos/facets",
+      "content": "What the grid's filters offer",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.5",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/videos/facets",
+        "tag": "Browse",
+        "operationId": "getVideoFacets"
+      }
+    },
+    {
+      "id": "ep-get-me-videos-id",
+      "type": "endpoint",
+      "title": "GET /me/videos/{id}",
+      "content": "The caller's state of one video",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/videos/{id}",
+        "tag": "Browse",
+        "operationId": "getMyVideo"
+      }
+    },
+    {
+      "id": "ep-post-me-watched",
+      "type": "endpoint",
+      "title": "POST /me/watched",
+      "content": "Mark videos watched or unwatched",
+      "tags": [
+        "api",
+        "Browse",
+        "post"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/watched",
+        "tag": "Browse",
+        "operationId": "markWatched"
+      }
+    },
+    {
+      "id": "ep-post-me-favorites",
+      "type": "endpoint",
+      "title": "POST /me/favorites",
+      "content": "Add videos to or remove them from the favorites",
+      "tags": [
+        "api",
+        "Browse",
+        "post"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/me/favorites",
+        "tag": "Browse",
+        "operationId": "markFavorites"
+      }
+    },
+    {
+      "id": "ep-get-me-pinned-libraries",
+      "type": "endpoint",
+      "title": "GET /me/pinned-libraries",
+      "content": "The caller's pinned libraries",
+      "tags": [
+        "api",
+        "Browse",
+        "get"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/me/pinned-libraries",
+        "tag": "Browse",
+        "operationId": "getPinnedLibraries"
+      }
+    },
+    {
+      "id": "ep-put-me-pinned-libraries",
+      "type": "endpoint",
+      "title": "PUT /me/pinned-libraries",
+      "content": "Pin libraries to Home, in order",
+      "tags": [
+        "api",
+        "Browse",
+        "put"
+      ],
+      "related": [
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/me/pinned-libraries",
+        "tag": "Browse",
+        "operationId": "setPinnedLibraries"
+      }
+    },
+    {
+      "id": "ep-get-series",
+      "type": "endpoint",
+      "title": "GET /series",
+      "content": "The series the caller can see",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.3",
+        "story-26.6",
+        "story-26.10",
+        "story-56.1",
+        "story-56.4",
+        "story-56.6",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series",
+        "tag": "Series",
+        "operationId": "listSeries"
+      }
+    },
+    {
+      "id": "ep-get-series-id",
+      "type": "endpoint",
+      "title": "GET /series/{id}",
+      "content": "A series",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.3",
+        "story-26.6",
+        "story-26.10",
+        "story-56.1",
+        "story-56.4",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series/{id}",
+        "tag": "Series",
+        "operationId": "getSeries"
+      }
+    },
+    {
+      "id": "ep-patch-series-id",
+      "type": "endpoint",
+      "title": "PATCH /series/{id}",
+      "content": "Change a series (admin)",
+      "tags": [
+        "api",
+        "Series",
+        "patch"
+      ],
+      "related": [
+        "story-26.3",
+        "story-26.6",
+        "story-26.10",
+        "story-56.1",
+        "story-56.4",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PATCH",
+        "path": "/series/{id}",
+        "tag": "Series",
+        "operationId": "updateSeries"
+      }
+    },
+    {
+      "id": "ep-get-series-id-episodes",
+      "type": "endpoint",
+      "title": "GET /series/{id}/episodes",
+      "content": "A series' seasons and episodes, with the next episode to watch",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.10",
+        "story-56.1",
+        "story-56.14"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series/{id}/episodes",
+        "tag": "Series",
+        "operationId": "listSeriesEpisodes"
+      }
+    },
+    {
+      "id": "ep-get-series-id-missing",
+      "type": "endpoint",
+      "title": "GET /series/{id}/missing",
+      "content": "The episodes missing from a series",
+      "tags": [
+        "api",
+        "Series",
+        "get"
+      ],
+      "related": [
+        "story-26.10"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/series/{id}/missing",
+        "tag": "Series",
+        "operationId": "listSeriesGaps"
+      }
+    },
+    {
+      "id": "ep-post-collections-id-duplicate",
+      "type": "endpoint",
+      "title": "POST /collections/{id}/duplicate",
+      "content": "Duplicate a collection as a curated one (admin)",
+      "tags": [
+        "api",
+        "Collections",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/collections/{id}/duplicate",
+        "tag": "Collections",
+        "operationId": "duplicateCollection"
       }
     },
     {

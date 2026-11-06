@@ -674,11 +674,18 @@ public struct SeriesSeason: Decodable, Identifiable, Hashable, Sendable {
     /// 0: the episodes with no season.
     public let season: Int
     public let episodes: [Episode]
+    /// Epic 56: the season's row (a season queue's source), its name and kind, when it has one.
+    public let seasonID: String?
+    public let name: String?
+    public let kind: String?
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         season = c.lenient(AnyKey(stringValue: "season")) ?? 0
         episodes = c.lenientList(AnyKey(stringValue: "episodes"))
+        seasonID = c.lenient(AnyKey(stringValue: "id"))
+        name = c.lenient(AnyKey(stringValue: "name"))
+        kind = c.lenient(AnyKey(stringValue: "kind"))
     }
 }
 

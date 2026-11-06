@@ -11,6 +11,7 @@ import { seriesPictureUrl } from "../../pages/Library/SeriesBrowser";
 import { bigPath, useBigNav } from "../nav";
 import { Empty, Failed, Grid, Loading, Picture, Progress, Screen, clock } from "../ui";
 import { errorText } from "../../lib/errorText";
+import { playSource, type QueueSourceRef } from "../../lib/playQueue";
 
 interface SeriesItem {
   id: string;
@@ -93,6 +94,8 @@ interface Episode {
 interface Season {
   season: number;
   episodes: Episode[];
+  /** its series_seasons row: a season queue's source (Epic 56) */
+  id?: string;
 }
 interface Episodes {
   seasons: Season[];
@@ -192,6 +195,15 @@ export function BigSeries() {
     );
   if (!data) return <Loading />;
   const play = (ep: Episode) => go(bigPath.watch(ep.video_id, { t: resumeAt(ep), series: id }));
+  const seasonId = data.seasons.find((s) => s.season === season)?.id;
+  async function queue(source: QueueSourceRef, shuffle: boolean) {
+    try {
+      const first = await playSource(source, { shuffle });
+      if (first) go(bigPath.watch(first, { series: id }));
+    } catch {
+      /* the screen stays; the button can be pressed again */
+    }
+  }
   const next = data.next_episode;
   const all = lessonsInOrder(data.seasons);
   const watched = all.filter((e) => e.watched).length;
@@ -209,8 +221,8 @@ export function BigSeries() {
           <p className="bs-hero__meta">
             {t("big.lessonsWatched", { done: n(watched), total: n(all.length) })}
           </p>
-          {next && (
-            <div className="bs-hero__actions" data-bs-group="series-actions">
+          <div className="bs-hero__actions" data-bs-group="series-actions">
+            {next && (
               <button
                 type="button"
                 className="bs-btn bs-btn--primary"
@@ -221,8 +233,38 @@ export function BigSeries() {
                 ▶ {next.progress_pct > 0 ? t("big.resume") : t("big.series.start")}:{" "}
                 <bdi>{next.title}</bdi>
               </button>
-            </div>
-          )}
+            )}
+            {/* Epic 56 story 56.13: a shuffled series queue, then the selected season's */}
+            <button
+              type="button"
+              className="bs-btn"
+              data-bs-focus="series:shuffle"
+              data-bs-autofocus={!next || undefined}
+              onClick={() => void queue({ kind: "series", id }, true)}
+            >
+              ⤮ {t("big.shuffle")}
+            </button>
+            {seasonId && (
+              <>
+                <button
+                  type="button"
+                  className="bs-btn"
+                  data-bs-focus="season:play"
+                  onClick={() => void queue({ kind: "season", id: seasonId }, false)}
+                >
+                  ▶ {t("series.season.play")}
+                </button>
+                <button
+                  type="button"
+                  className="bs-btn"
+                  data-bs-focus="season:shuffle"
+                  onClick={() => void queue({ kind: "season", id: seasonId }, true)}
+                >
+                  ⤮ {t("series.season.shuffle")}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </section>
       {data.seasons.length > 1 && (

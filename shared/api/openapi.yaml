@@ -3,28 +3,9 @@ info:
   title: Maktaba API
   version: 0.1.0
   summary: Self-hosted video library with automatic transcription, semantic search, and adaptive streaming.
-  description: "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts,\
-    \ search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.**\
-    \ HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`.\
-    \ Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.**\
-    \ Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.**\
-    \ All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.**\
-    \ Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page\
-    \ envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate\
-    \ when the schema version changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n\
-    \  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response\
-    \ for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their\
-    \ own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6\
-    \ 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`,\
-    \ `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\
-    \n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token`\
-    \ header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min)\
-    \ with a long-lived\n  opaque refresh token. Public keys are exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs\
-    \ may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/sessions` endpoints mint short-lived\
-    \ signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the\
-    \ API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }`\
-    \ envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }`\
-    \ on connect.\n"
+  description: "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts, search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.** HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`. Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.** Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.** All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.** Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate when the schema version\
+    \ changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token` header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min) with a long-lived\n  opaque refresh token. Public keys are\
+    \ exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n"
   contact:
     name: Maktaba
     url: https://github.com/maktaba/maktaba
@@ -78,6 +59,14 @@ tags:
   description: Real-time event channel (documented; protocol is WS).
 - name: Components
   description: Turn each part of Maktaba on or off, stop and start it, and see what runs on each machine. The capabilities route is open to every signed-in client; the rest are admin only.
+- name: Browse
+  description: A library's rows, tabs and categories; Home; the caller's marks.
+- name: Series
+  description: Series, their seasons and episodes.
+- name: Playlists
+  description: Each user's playlists, manual and smart.
+- name: Play queues
+  description: One play queue on the server for every Play and Shuffle.
 security:
 - bearerAuth: []
 - cookieAuth: []
@@ -247,9 +236,7 @@ paths:
                   properties:
                     home_name:
                       type: string
-                      description: The home's name for people (an admin renames
-                        it with PATCH /settings home.name; unset, the computer's
-                        name).
+                      description: The home's name for people (an admin renames it with PATCH /settings home.name; unset, the computer's name).
         '401':
           $ref: '#/components/responses/Unauthorized'
         default:
@@ -547,9 +534,7 @@ paths:
           - duration_sec
           - relevance
           default: created_at
-        description: Without one, the most recently added first (`created_at`); with `q`, `relevance`
-          (titles that start with `q`, then titles that hold it, then descriptions only, each newest-added
-          first). A sort the caller names always wins; `relevance` needs `q`.
+        description: Without one, the most recently added first (`created_at`); with `q`, `relevance` (titles that start with `q`, then titles that hold it, then descriptions only, each newest-added first). A sort the caller names always wins; `relevance` needs `q`.
       responses:
         '200':
           description: Page of videos.
@@ -1642,107 +1627,6 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: deleteCollection
-  /collections/{id}/videos:
-    parameters:
-    - in: path
-      name: id
-      required: true
-      schema:
-        type: string
-        format: uuid
-    get:
-      tags:
-      - Collections
-      summary: List videos in a collection
-      parameters:
-      - $ref: '#/components/parameters/Limit'
-      - $ref: '#/components/parameters/Cursor'
-      responses:
-        '200':
-          description: Page of videos.
-          content:
-            application/json:
-              schema:
-                allOf:
-                - $ref: '#/components/schemas/Page'
-                - type: object
-                  properties:
-                    items:
-                      type: array
-                      items:
-                        $ref: '#/components/schemas/VideoSummary'
-        default:
-          $ref: '#/components/responses/InternalError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-      operationId: listCollectionVideos
-    post:
-      tags:
-      - Collections
-      summary: Add a video to a collection
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-              - video_id
-              properties:
-                video_id:
-                  type: string
-                  format: uuid
-                position:
-                  type: integer
-                  minimum: 0
-      responses:
-        '201':
-          description: Video added.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CollectionItem'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/InternalError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-      operationId: addCollectionVideo
-  /collections/{id}/videos/{videoId}:
-    parameters:
-    - in: path
-      name: id
-      required: true
-      schema:
-        type: string
-        format: uuid
-    - in: path
-      name: videoId
-      required: true
-      schema:
-        type: string
-        format: uuid
-    delete:
-      tags:
-      - Collections
-      summary: Remove a video from a collection
-      responses:
-        '204':
-          description: Removed.
-        '404':
-          $ref: '#/components/responses/NotFound'
-        default:
-          $ref: '#/components/responses/InternalError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-      operationId: removeCollectionVideo
   /tags:
     get:
       tags:
@@ -1854,8 +1738,7 @@ paths:
         '503':
           $ref: '#/components/responses/Unavailable'
         '507':
-          description: Too little free on the streaming service's disk to prepare (transcode)
-            the video (code `insufficient_storage`).
+          description: Too little free on the streaming service's disk to prepare (transcode) the video (code `insufficient_storage`).
           content:
             application/problem+json:
               schema:
@@ -2222,13 +2105,7 @@ paths:
       tags:
       - WebSocket
       summary: Upgrade to the realtime event stream
-      description: "HTTP/1.1 upgrade to a WebSocket. Documented here for client-generation\ntools that want to know the protocol\
-        \ exists; the message envelope is in\nthe schemas section as `WsMessage`.\n\n### Channels\n- `jobs` — job state and\
-        \ progress.\n- `playback` — `playback.progress`, `playback.completed` events.\n- `library` — `library.updated`, `videos.state_changed`\
-        \ events.\n- `system` — `profiles_changed`, `health_changed`.\n\n### Subscribe\n```json\n{ \"type\": \"subscribe\"\
-        , \"channels\": [\"jobs\", \"playback\"] }\n```\n\n### Sample event\n```json\n{\n  \"type\": \"jobs.progress\",\n\
-        \  \"data\": { \"job_id\": 42, \"stage\": \"transcribe\", \"pct\": 0.18, \"eta_sec\": 612 },\n  \"at\": \"2026-05-05T13:21:04Z\"\
-        \n}\n```\n"
+      description: "HTTP/1.1 upgrade to a WebSocket. Documented here for client-generation\ntools that want to know the protocol exists; the message envelope is in\nthe schemas section as `WsMessage`.\n\n### Channels\n- `jobs` — job state and progress.\n- `playback` — `playback.progress`, `playback.completed` events.\n- `library` — `library.updated`, `videos.state_changed` events.\n- `system` — `profiles_changed`, `health_changed`.\n\n### Subscribe\n```json\n{ \"type\": \"subscribe\", \"channels\": [\"jobs\", \"playback\"] }\n```\n\n### Sample event\n```json\n{\n  \"type\": \"jobs.progress\",\n  \"data\": { \"job_id\": 42, \"stage\": \"transcribe\", \"pct\": 0.18, \"eta_sec\": 612 },\n  \"at\": \"2026-05-05T13:21:04Z\"\n}\n```\n"
       responses:
         '101':
           description: Switching protocols (WebSocket).
@@ -2510,9 +2387,7 @@ paths:
       tags:
       - Queue
       summary: Each library's finished jobs per day (cached 1 min)
-      description: The jobs of each library that finished done or failed on each UTC day of
-        the window, oldest first. `done` and `failed` are aligned with `days`; a library with
-        no finished job in the window is left out. Home admins only.
+      description: The jobs of each library that finished done or failed on each UTC day of the window, oldest first. `done` and `failed` are aligned with `days`; a library with no finished job in the window is left out. Home admins only.
       parameters:
       - name: days
         in: query
@@ -2529,7 +2404,9 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [days, items]
+                required:
+                - days
+                - items
                 properties:
                   days:
                     type: array
@@ -2540,7 +2417,10 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [library_id, done, failed]
+                      required:
+                      - library_id
+                      - done
+                      - failed
                       properties:
                         library_id:
                           type: string
@@ -2916,7 +2796,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Queue Convert to MP4 for a library (or every library: all)"
+      summary: 'Queue Convert to MP4 for a library (or every library: all)'
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -2931,7 +2811,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{dry_run?: boolean, all?: boolean}"
+              description: '{dry_run?: boolean, all?: boolean}'
       responses:
         '200':
           description: OK
@@ -2947,7 +2827,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Queue Find duplicates for a library (or every library: all)"
+      summary: 'Queue Find duplicates for a library (or every library: all)'
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -2962,7 +2842,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{dry_run?: boolean, all?: boolean}"
+              description: '{dry_run?: boolean, all?: boolean}'
       responses:
         '200':
           description: OK
@@ -2978,7 +2858,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Queue a forced YouTube refresh (youtube_sync)"
+      summary: Queue a forced YouTube refresh (youtube_sync)
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -2993,7 +2873,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{all?: boolean, full_listing?: boolean, refresh?: boolean}"
+              description: '{all?: boolean, full_listing?: boolean, refresh?: boolean}'
       responses:
         '200':
           description: OK
@@ -3009,7 +2889,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Resume the YouTube back catalogue (youtube_backfill)"
+      summary: Resume the YouTube back catalogue (youtube_backfill)
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3033,7 +2913,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Want gone, skipped or failed downloads again and queue them"
+      summary: Want gone, skipped or failed downloads again and queue them
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3048,7 +2928,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{states?: [gone|skipped|failed], source_id?: uuid}"
+              description: '{states?: [gone|skipped|failed], source_id?: uuid}'
       responses:
         '200':
           description: OK
@@ -3064,7 +2944,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Seed the library from a Tartube database on the home (youtube_sync)"
+      summary: Seed the library from a Tartube database on the home (youtube_sync)
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3079,7 +2959,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{path: string, database?: string, channels?: string[]}"
+              description: '{path: string, database?: string, channels?: string[]}'
       responses:
         '200':
           description: OK
@@ -3095,7 +2975,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "A library's YouTube channels and playlists, with their downloads"
+      summary: A library's YouTube channels and playlists, with their downloads
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3118,7 +2998,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Follow a channel or playlist (resolved with yt-dlp); queues a refresh when on"
+      summary: Follow a channel or playlist (resolved with yt-dlp); queues a refresh when on
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3133,7 +3013,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{url: string, mode?: off|new_and_backfill|new_only, folder?: string, options?: object}"
+              description: '{url: string, mode?: off|new_and_backfill|new_only, folder?: string, options?: object}'
       responses:
         '201':
           description: Created
@@ -3149,7 +3029,7 @@ paths:
     patch:
       tags:
       - Queue
-      summary: "Switch a source on or off, or change its mode, folder or options; turning it on queues a refresh"
+      summary: Switch a source on or off, or change its mode, folder or options; turning it on queues a refresh
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3170,8 +3050,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{on?: boolean, mode?, folder?, options?}: on false turns it off; on true restores
-                its last_on_mode, else new_and_backfill; not with mode"
+              description: '{on?: boolean, mode?, folder?, options?}: on false turns it off; on true restores its last_on_mode, else new_and_backfill; not with mode'
       responses:
         '200':
           description: OK
@@ -3186,7 +3065,7 @@ paths:
     delete:
       tags:
       - Queue
-      summary: "Stop following a source (its downloads keep their rows)"
+      summary: Stop following a source (its downloads keep their rows)
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3212,10 +3091,8 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Look for the channel a library's files come from (its linked videos first, then file-name ids and .info.json; no network)"
-      description: Admin only (403 otherwise); audited. The library's linked videos come first, so the answer
-        agrees with the sources the pipeline derives from them (slot 0182); only a library with no link has
-        its files read. The answer is kept for the library's card; nothing is added or turned on. Slot 0175.
+      summary: Look for the channel a library's files come from (its linked videos first, then file-name ids and .info.json; no network)
+      description: Admin only (403 otherwise); audited. The library's linked videos come first, so the answer agrees with the sources the pipeline derives from them (slot 0182); only a library with no link has its files read. The answer is kept for the library's card; nothing is added or turned on. Slot 0175.
       parameters:
       - name: id
         in: path
@@ -3238,7 +3115,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "The last Tartube import of every library's sources, and the file to offer"
+      summary: The last Tartube import of every library's sources, and the file to offer
       description: Admin only (403 otherwise). Slot 0175.
       responses:
         '200':
@@ -3254,16 +3131,15 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Make every library's YouTube sources from Tartube's records, off (youtube_tartube)"
-      description: Admin only (403 otherwise); audited. Idempotent; a source a library has keeps its mode;
-        no library is made. Slot 0175.
+      summary: Make every library's YouTube sources from Tartube's records, off (youtube_tartube)
+      description: Admin only (403 otherwise); audited. Idempotent; a source a library has keeps its mode; no library is made. Slot 0175.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              description: "{path: string, database?: string}"
+              description: '{path: string, database?: string}'
       responses:
         '202':
           description: Accepted
@@ -3279,7 +3155,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "A library's YouTube, Not MP4, Duplicates and trash columns"
+      summary: A library's YouTube, Not MP4, Duplicates and trash columns
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3303,7 +3179,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "Every library's offline columns, plus open cross-library duplicate groups"
+      summary: Every library's offline columns, plus open cross-library duplicate groups
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       responses:
         '200':
@@ -3320,7 +3196,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "Where each item is: download, convert, dedup check (latest live or failed job)"
+      summary: 'Where each item is: download, convert, dedup check (latest live or failed job)'
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       responses:
         '200':
@@ -3337,7 +3213,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "YouTube downloads by state (keyset paged)"
+      summary: YouTube downloads by state (keyset paged)
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       responses:
         '200':
@@ -3354,7 +3230,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "The file-action ledger (filters, keyset paged) and each library's trash"
+      summary: The file-action ledger (filters, keyset paged) and each library's trash
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       responses:
         '200':
@@ -3371,7 +3247,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Queue a ledger row's undo (file_restore)"
+      summary: Queue a ledger row's undo (file_restore)
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3395,7 +3271,7 @@ paths:
     get:
       tags:
       - Queue
-      summary: "Duplicate groups with their members (filters, keyset paged)"
+      summary: Duplicate groups with their members (filters, keyset paged)
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       responses:
         '200':
@@ -3412,7 +3288,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Merge a group (dedup_apply), optionally with the keeper chosen"
+      summary: Merge a group (dedup_apply), optionally with the keeper chosen
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: gid
@@ -3427,7 +3303,7 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{keeper_video_id?: uuid}"
+              description: '{keeper_video_id?: uuid}'
       responses:
         '200':
           description: OK
@@ -3443,7 +3319,7 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Dismiss a group: the scan never makes it again"
+      summary: 'Dismiss a group: the scan never makes it again'
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: gid
@@ -3789,7 +3665,7 @@ paths:
       tags:
       - Queue
       summary: Test an extension connection (a list of checks)
-      description: "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner, dizquetv_tuner, path_map. dizqueTV: reachable, channels, plex_servers. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test)."
+      description: 'Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner, dizquetv_tuner, path_map. dizqueTV: reachable, channels, plex_servers. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).'
       responses:
         '200':
           description: OK
@@ -3941,8 +3817,7 @@ paths:
       tags:
       - WebSocket
       summary: Queue snapshot stream (Server-Sent Events)
-      description: 'SSE. Sends one `queues.snapshot` immediately, then every 2 s while subscribed. Ephemeral: no `id:` lines,
-        no replay.'
+      description: 'SSE. Sends one `queues.snapshot` immediately, then every 2 s while subscribed. Ephemeral: no `id:` lines, no replay.'
       responses:
         '200':
           description: text/event-stream
@@ -4656,7 +4531,7 @@ paths:
       required: true
       schema:
         type: string
-      description: 'The component''s id in the catalog.'
+      description: The component's id in the catalog.
     post:
       tags:
       - Components
@@ -4664,14 +4539,14 @@ paths:
       description: 'Restarts a running component: its processes and the supervisor''s own loops through this machine''s supervisor, its loops in the API cancelled and started again, and its loops in streaming or the pipeline through a restart request their runner acts on within seconds. The desired state does not change; the restart is recorded as `component.restart`.'
       responses:
         '200':
-          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again, or were asked to (its loops in streaming or the pipeline).'
+          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again here, and `requested`: the hosts (`streaming`, `pipeline`, `api`) asked to restart their loops, whose runners act on the request within seconds (not counted in `restarted`: the API cannot confirm them).'
           content:
             application/json:
               schema:
                 type: object
                 additionalProperties: true
         '202':
-          description: 'None of its processes runs now: the supervisor starts them (`restarted` is 0).'
+          description: 'Nothing restarted here (`restarted` is 0): none of its processes runs now and the supervisor starts them, or its loops run in another process, which was asked (`requested`).'
           content:
             application/json:
               schema:
@@ -4692,7 +4567,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '503':
-          description: 'This server runs under no supervisor, or the supervisor does not answer.'
+          description: This server runs under no supervisor, or the supervisor does not answer.
           content:
             application/problem+json:
               schema:
@@ -4914,6 +4789,1172 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: startComponentOnMachine
+  /collections/{id}/items:
+    parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Collections
+      summary: List videos in a collection
+      parameters:
+      - $ref: '#/components/parameters/Limit'
+      - $ref: '#/components/parameters/Cursor'
+      responses:
+        '200':
+          description: Page of videos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                - $ref: '#/components/schemas/Page'
+                - type: object
+                  properties:
+                    items:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/VideoSummary'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: listCollectionVideos
+    post:
+      tags:
+      - Collections
+      summary: Add a video to a collection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - video_id
+              properties:
+                video_id:
+                  type: string
+                  format: uuid
+                position:
+                  type: integer
+                  minimum: 0
+      responses:
+        '201':
+          description: Video added.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CollectionItem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: addCollectionVideo
+  /collections/{id}/items/{video_id}:
+    parameters:
+    - in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - in: path
+      name: video_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+    delete:
+      tags:
+      - Collections
+      summary: Remove a video from a collection
+      responses:
+        '204':
+          description: Removed.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: removeCollectionVideo
+  /me/play-queues:
+    post:
+      tags:
+      - Play queues
+      summary: Create a play queue from a library, series, season, collection or playlist
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - source
+              properties:
+                source:
+                  $ref: '#/components/schemas/PlayQueueSource'
+                shuffle:
+                  type: boolean
+                start_video_id:
+                  type: string
+                  format: uuid
+                device_id:
+                  type: string
+      responses:
+        '201':
+          description: The queue with its window.
+          content:
+            application/json:
+              schema: &id009
+                $ref: '#/components/schemas/PlayQueue'
+        '404': &id012
+          $ref: '#/components/responses/NotFound'
+        '422': &id013
+          $ref: '#/components/responses/ValidationError'
+        '401': &id010
+          $ref: '#/components/responses/Unauthorized'
+        default: &id011
+          $ref: '#/components/responses/InternalError'
+      operationId: createPlayQueue
+  /me/play-queues/current:
+    get:
+      tags:
+      - Play queues
+      summary: The caller's most recently used play queue, from any device
+      responses:
+        '200':
+          description: The queue with its window.
+          content:
+            application/json:
+              schema: *id009
+        '204':
+          description: No queue.
+        '401': *id010
+        default: *id011
+      operationId: getCurrentPlayQueue
+  /me/play-queues/{id}:
+    get:
+      tags:
+      - Play queues
+      summary: A window of a play queue
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: around
+        required: false
+        schema:
+          type: integer
+      - in: query
+        name: before
+        required: false
+        schema:
+          type: integer
+      - in: query
+        name: after
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: The queue with its window.
+          content:
+            application/json:
+              schema: *id009
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getPlayQueue
+    delete:
+      tags:
+      - Play queues
+      summary: Delete a play queue
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Deleted.
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: deletePlayQueue
+  /me/play-queues/{id}/current:
+    put:
+      tags:
+      - Play queues
+      summary: Set the current item of a play queue
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - pos
+              - version
+              properties:
+                pos:
+                  type: integer
+                version:
+                  type: integer
+      responses:
+        '200':
+          description: The queue with its window.
+          content:
+            application/json:
+              schema: *id009
+        '409':
+          description: 'stale_queue: the queue changed on another device; the body''s queue is its current state.'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: movePlayQueue
+  /me/play-queues/{id}/items:
+    post:
+      tags:
+      - Play queues
+      summary: Play next or add to a play queue
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - video_ids
+              - where
+              properties:
+                video_ids:
+                  type: array
+                  maxItems: 200
+                  items:
+                    type: string
+                    format: uuid
+                where:
+                  type: string
+                  enum:
+                  - next
+                  - end
+      responses:
+        '200':
+          description: The queue with its window.
+          content:
+            application/json:
+              schema: *id009
+        '404': *id012
+        '422': *id013
+        '401': *id010
+        default: *id011
+      operationId: addPlayQueueItems
+  /me/play-queues/{id}/reshuffle:
+    post:
+      tags:
+      - Play queues
+      summary: Shuffle a play queue again after its current item
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The queue with its window.
+          content:
+            application/json:
+              schema: *id009
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: reshufflePlayQueue
+  /me/playlists:
+    get:
+      tags:
+      - Playlists
+      summary: The caller's playlists
+      parameters:
+      - in: query
+        name: library
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The playlists; with library, those with videos of it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: &id014
+                      $ref: '#/components/schemas/Playlist'
+        '401': *id010
+        default: *id011
+      operationId: listPlaylists
+    post:
+      tags:
+      - Playlists
+      summary: Make a playlist, manual or smart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                video_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                kind:
+                  type: string
+                  enum:
+                  - manual
+                  - smart
+                smart_query:
+                  $ref: '#/components/schemas/SmartQuery'
+      responses:
+        '201':
+          description: The playlist.
+          content:
+            application/json:
+              schema: *id014
+        '422': *id013
+        '401': *id010
+        default: *id011
+      operationId: createPlaylist
+  /me/playlists/{id}:
+    get:
+      tags:
+      - Playlists
+      summary: A playlist and its videos
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The playlist and its items (a smart one evaluated).
+          content:
+            application/json:
+              schema: &id015
+                type: object
+                properties:
+                  playlist: *id014
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Card'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getPlaylist
+    patch:
+      tags:
+      - Playlists
+      summary: Rename a playlist or change its rules
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                smart_query:
+                  $ref: '#/components/schemas/SmartQuery'
+      responses:
+        '200':
+          description: The playlist.
+          content:
+            application/json:
+              schema: *id014
+        '409':
+          description: A kind change, or rules on a manual playlist.
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: updatePlaylist
+    delete:
+      tags:
+      - Playlists
+      summary: Delete a playlist
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Deleted.
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: deletePlaylist
+  /me/playlists/{id}/items:
+    get:
+      tags:
+      - Playlists
+      summary: A playlist's videos
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The items (a smart one evaluated).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Card'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: listPlaylistItems
+    post:
+      tags:
+      - Playlists
+      summary: Add videos to a playlist
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - video_ids
+              properties:
+                video_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: How many were added.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  added:
+                    type: integer
+        '409':
+          description: 'smart_playlist: a smart playlist changes by its rules.'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: addPlaylistItems
+  /me/playlists/{id}/items/{video_id}:
+    delete:
+      tags:
+      - Playlists
+      summary: Remove a video from a playlist
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: video_id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Removed.
+        '409':
+          description: 'smart_playlist: a smart playlist changes by its rules.'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: removePlaylistItem
+  /me/playlists/{id}/order:
+    put:
+      tags:
+      - Playlists
+      summary: Reorder a playlist
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - video_ids
+              properties:
+                video_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: The playlist and its items.
+          content:
+            application/json:
+              schema: *id015
+        '409':
+          description: 'smart_playlist: a smart playlist changes by its rules.'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: orderPlaylist
+  /home:
+    get:
+      tags:
+      - Browse
+      summary: Home's rows for the caller
+      responses:
+        '200':
+          description: Continue Watching, On Deck, Recently Added, Recently Watched, favorites, pinned libraries, featured and promoted collection rows.
+          content:
+            application/json:
+              schema: &id016
+                type: object
+                additionalProperties: true
+        '401': *id010
+        default: *id011
+      operationId: getHome
+  /home/featured:
+    get:
+      tags:
+      - Browse
+      summary: Home's featured video
+      responses:
+        '200':
+          description: The featured setting.
+          content:
+            application/json:
+              schema: *id016
+        '401': *id010
+        default: *id011
+      operationId: getFeatured
+    put:
+      tags:
+      - Browse
+      summary: Set Home's featured video (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id016
+      responses:
+        '200':
+          description: The featured setting.
+          content:
+            application/json:
+              schema: *id016
+        '422': *id013
+        '401': *id010
+        default: *id011
+      operationId: setFeatured
+  /libraries/summary:
+    get:
+      tags:
+      - Browse
+      summary: The caller's libraries with their counts
+      responses:
+        '200':
+          description: The libraries.
+          content:
+            application/json:
+              schema: *id016
+        '401': *id010
+        default: *id011
+      operationId: getLibrariesSummary
+  /libraries/{id}/hub:
+    get:
+      tags:
+      - Browse
+      summary: The rows of a library's Recommended tab
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The library and its rows, with the collections promoted to it.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getLibraryHub
+  /libraries/{id}/series:
+    get:
+      tags:
+      - Browse
+      summary: A library's Series tab
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Series cards.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: listLibrarySeries
+  /libraries/{id}/collections:
+    get:
+      tags:
+      - Browse
+      summary: A library's Collections tab
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: kind
+        required: false
+        schema:
+          type: string
+          enum:
+          - all
+          - topic
+          - filler
+          - standalone
+          - curated
+          - youtube
+          - plex
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        required: false
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Collection cards and every kind's count.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LibraryCollection'
+                  counts:
+                    type: object
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: listLibraryCollections
+  /libraries/{id}/collections/{kind}/{gid}:
+    get:
+      tags:
+      - Browse
+      summary: A topic collection's or clip group's videos
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: kind
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: gid
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The group and a page of its videos.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getAutoCollection
+  /libraries/{id}/categories:
+    get:
+      tags:
+      - Browse
+      summary: A library's speakers, topics, languages and years
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: At most 50 of each, the most videos first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  speakers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  topics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  languages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+                  years:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getLibraryCategories
+  /libraries/{id}/plex-missing:
+    get:
+      tags:
+      - Libraries
+      summary: The items of a library's Plex collections that are not in Maktaba (admin)
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The missing items.
+          content:
+            application/json:
+              schema: *id016
+        '401': *id010
+        default: *id011
+      operationId: listPlexMissing
+  /videos/facets:
+    get:
+      tags:
+      - Browse
+      summary: What the grid's filters offer
+      parameters:
+      - in: query
+        name: library
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Languages, tags, speakers, letters and bands with counts.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getVideoFacets
+  /me/videos/{id}:
+    get:
+      tags:
+      - Browse
+      summary: The caller's state of one video
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Its playback and favorite.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getMyVideo
+  /me/watched:
+    post:
+      tags:
+      - Browse
+      summary: Mark videos watched or unwatched
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - video_ids
+              - watched
+              properties:
+                video_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                watched:
+                  type: boolean
+      responses:
+        '200':
+          description: Marked.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: markWatched
+  /me/favorites:
+    post:
+      tags:
+      - Browse
+      summary: Add videos to or remove them from the favorites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - video_ids
+              - favorite
+              properties:
+                video_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                favorite:
+                  type: boolean
+      responses:
+        '200':
+          description: Marked.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: markFavorites
+  /me/pinned-libraries:
+    get:
+      tags:
+      - Browse
+      summary: The caller's pinned libraries
+      responses:
+        '200':
+          description: The pins in order.
+          content:
+            application/json:
+              schema: *id016
+        '401': *id010
+        default: *id011
+      operationId: getPinnedLibraries
+    put:
+      tags:
+      - Browse
+      summary: Pin libraries to Home, in order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id016
+      responses:
+        '200':
+          description: The pins in order.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: setPinnedLibraries
+  /series:
+    get:
+      tags:
+      - Series
+      summary: The series the caller can see
+      parameters:
+      - in: query
+        name: library
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Series.
+          content:
+            application/json:
+              schema: *id016
+        '401': *id010
+        default: *id011
+      operationId: listSeries
+  /series/{id}:
+    get:
+      tags:
+      - Series
+      summary: A series
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The series.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: getSeries
+    patch:
+      tags:
+      - Series
+      summary: Change a series (admin)
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id016
+      responses:
+        '200':
+          description: The series.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: updateSeries
+  /series/{id}/episodes:
+    get:
+      tags:
+      - Series
+      summary: A series' seasons and episodes, with the next episode to watch
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: sort
+        required: false
+        schema:
+          type: string
+          enum:
+          - added
+          - episode
+      responses:
+        '200':
+          description: Seasons, episodes and next_episode.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: listSeriesEpisodes
+  /series/{id}/missing:
+    get:
+      tags:
+      - Series
+      summary: The episodes missing from a series
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: The gaps.
+          content:
+            application/json:
+              schema: *id016
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: listSeriesGaps
+  /collections/{id}/duplicate:
+    post:
+      tags:
+      - Collections
+      summary: Duplicate a collection as a curated one (admin)
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '201':
+          description: The new collection.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Collection'
+        '404': *id012
+        '401': *id010
+        default: *id011
+      operationId: duplicateCollection
 components:
   securitySchemes:
     bearerAuth:
@@ -5237,6 +6278,12 @@ components:
         updated_at:
           type: string
           format: date-time
+        collection_mode:
+          type: string
+          enum:
+          - tab_only
+          - hide_items
+          - show_both
     LibraryCreate:
       type: object
       required:
@@ -5269,6 +6316,12 @@ components:
         settings:
           type: object
           additionalProperties: true
+        collection_mode:
+          type: string
+          enum:
+          - tab_only
+          - hide_items
+          - show_both
     LibraryStats:
       type: object
       required:
@@ -5961,6 +7014,24 @@ components:
         updated_at:
           type: string
           format: date-time
+        source_kind:
+          type: string
+          enum:
+          - youtube_playlist
+          - youtube_channel
+          - plex
+        source_ref:
+          type: string
+        name_override:
+          type: string
+        hidden:
+          type: boolean
+        show_on_library:
+          type: boolean
+        show_on_home:
+          type: boolean
+        sort_title:
+          type: string
     CollectionCreate:
       type: object
       required:
@@ -5990,6 +7061,16 @@ components:
           maxLength: 1024
         smart_query:
           $ref: '#/components/schemas/SearchRequest'
+        name_override:
+          type: string
+        hidden:
+          type: boolean
+        show_on_library:
+          type: boolean
+        show_on_home:
+          type: boolean
+        sort_title:
+          type: string
     CollectionItem:
       type: object
       required:
@@ -6130,8 +7211,7 @@ components:
           description: The video's length in the catalogue (absent when unknown).
         start_sec:
           type: number
-          description: Where in the video the stream starts, in seconds (a transcode opened
-            at `start_sec` starts there; its times are the video's). Absent at 0.
+          description: Where in the video the stream starts, in seconds (a transcode opened at `start_sec` starts there; its times are the video's). Absent at 0.
         warnings:
           type: array
           items:
@@ -7297,6 +8377,245 @@ components:
           type: array
           items:
             type: string
+    PlayQueueSource:
+      type: object
+      required:
+      - kind
+      - id
+      description: Where a play queue's videos come from.
+      properties:
+        kind:
+          type: string
+          enum:
+          - library
+          - series
+          - season
+          - collection
+          - playlist
+          - video
+        id:
+          type: string
+          description: 'The source''s id: a library, series, season (series_seasons), collection (or topic:<id> / clip:<id>), playlist or video id.'
+        filters:
+          type: object
+          additionalProperties:
+            type: string
+          description: A library's grid filters, sort and order (the keys of GET /videos).
+    PlayQueueItem:
+      type: object
+      description: One item of a play queue's window, with the video's card fields and the caller's playback.
+      properties:
+        pos:
+          type: integer
+        origin:
+          type: string
+          enum:
+          - source
+          - next
+          - added
+        id:
+          type: string
+          format: uuid
+        title:
+          type:
+          - string
+          - 'null'
+        filename:
+          type: string
+        library_id:
+          type: string
+          format: uuid
+        duration_sec:
+          type:
+          - number
+          - 'null'
+        poster:
+          type: string
+        position_sec:
+          type: number
+        completed:
+          type: boolean
+        series_id:
+          type: string
+        series_name:
+          type: string
+    PlayQueue:
+      type: object
+      description: A play queue with a window of items around a position.
+      properties:
+        id:
+          type: string
+          format: uuid
+        source:
+          $ref: '#/components/schemas/PlayQueueSource'
+        shuffle:
+          type: boolean
+        current_pos:
+          type: integer
+        version:
+          type: integer
+          description: Bumped by every change; a move with an older version is 409 stale_queue.
+        device_id:
+          type: string
+        source_done:
+          type: boolean
+        total_estimate:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        used_at:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayQueueItem'
+    Card:
+      type: object
+      description: A video card of a row or a list, with the caller's playback where the row reads it.
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type:
+          - string
+          - 'null'
+        filename:
+          type: string
+        library_id:
+          type: string
+          format: uuid
+        duration_sec:
+          type:
+          - number
+          - 'null'
+        state:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        published_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        position_sec:
+          type: number
+        completed:
+          type: boolean
+    SmartQuery:
+      type: object
+      description: 'A smart playlist''s rules: a saved grid filter with a sort and a limit, evaluated when read.'
+      properties:
+        libraries:
+          type:
+          - array
+          - 'null'
+          items:
+            type: string
+            format: uuid
+          description: 'null: every library the owner can read.'
+        filters:
+          type: object
+          additionalProperties:
+            type: string
+        sort:
+          type: string
+        order:
+          type: string
+          enum:
+          - asc
+          - desc
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          default: 200
+    Playlist:
+      type: object
+      description: A user's playlist, manual or smart, with its visible videos' count, length and first posters.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        kind:
+          type: string
+          enum:
+          - manual
+          - smart
+        smart_query:
+          $ref: '#/components/schemas/SmartQuery'
+        videos:
+          type: integer
+        duration_sec:
+          type: number
+        poster_video_ids:
+          type: array
+          items:
+            type: string
+        hand_ordered:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Category:
+      type: object
+      description: 'A tile of a library''s Categories tab: value is what the grid filters by.'
+      properties:
+        value:
+          type: string
+        label:
+          type: string
+        count:
+          type: integer
+        poster_video_id:
+          type: string
+    LibraryCollection:
+      type: object
+      description: A card of a library's Collections tab.
+      properties:
+        kind:
+          type: string
+          enum:
+          - topic
+          - clip
+          - curated
+          - smart
+          - youtube
+          - plex
+        subkind:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+        videos:
+          type:
+          - integer
+          - 'null'
+        poster_video_ids:
+          type: array
+          items:
+            type: string
+        automatic:
+          type: boolean
+        source_kind:
+          type: string
+          enum:
+          - youtube_playlist
+          - youtube_channel
+          - plex
+        show_on_library:
+          type: boolean
   requestBodies:
     WsClientMessage:
       description: JSON envelope sent from client to server over the WebSocket. Use `subscribe` / `unsubscribe`.

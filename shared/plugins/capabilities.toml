@@ -1,0 +1,147 @@
+# Every capability a plugin may ask for (Epic 54, story 54.01 §3; README §4.5).
+#
+# Read by the four manifest validators (Go shared/go/pluginmanifest, Rust
+# plugind/crates/pluginmanifest, Python maktaba_pipeline.plugins.manifest, TypeScript
+# tools/plugin-sdk/js/manifest.ts), by the host's import audit (54.02 §6) and by the
+# plugin API (54.04). The words an admin reads are Maktaba's own, keyed by title_key and
+# detail_key in web/src/i18n/{en,ar}.json, never the plugin's.
+#
+# Fields:
+#   name        the capability; a name with `param` takes ":<value>" (plugin-data.read:<id>)
+#   risk        low | medium | high (the rating, story 54.08 §2)
+#   interface   the maktaba:plugin interface it unlocks (shared/plugins/wit)
+#   functions   the functions of that interface it unlocks ("*" every one)
+#   param       "plugin_id" when the name takes a plugin id
+#   since       the plugin API minor (1.x) that added it
+#
+# Phase 3's compute.embed and compute.llm (story 54.21) are not listed yet: a manifest
+# asking for them is refused with manifest_bad_capability until that story adds them.
+
+schema = 1
+
+[[capability]]
+name      = "library.read"
+risk      = "low"
+interface = "library"
+functions = ["*"]
+title_key = "plugins.capability.library_read.title"
+detail_key = "plugins.capability.library_read.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "transcript.read"
+risk      = "medium"
+interface = "transcript"
+functions = ["*"]
+title_key = "plugins.capability.transcript_read.title"
+detail_key = "plugins.capability.transcript_read.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "media.read"
+risk      = "medium"
+interface = "media"
+functions = ["open", "read", "size", "close"]
+title_key = "plugins.capability.media_read.title"
+detail_key = "plugins.capability.media_read.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "media.frames"
+risk      = "medium"
+interface = "media"
+functions = ["frame"]
+title_key = "plugins.capability.media_frames.title"
+detail_key = "plugins.capability.media_frames.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "media.audio"
+risk      = "medium"
+interface = "media"
+functions = ["audio"]
+title_key = "plugins.capability.media_audio.title"
+detail_key = "plugins.capability.media_audio.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "metadata.write"
+risk      = "medium"
+interface = "write"
+functions = ["set-field"]
+title_key = "plugins.capability.metadata_write.title"
+detail_key = "plugins.capability.metadata_write.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "tags.write"
+risk      = "low"
+interface = "write"
+functions = ["add-tags"]
+title_key = "plugins.capability.tags_write.title"
+detail_key = "plugins.capability.tags_write.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "chapters.write"
+risk      = "low"
+interface = "write"
+functions = ["set-chapters"]
+title_key = "plugins.capability.chapters_write.title"
+detail_key = "plugins.capability.chapters_write.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "subtitles.write"
+risk      = "low"
+interface = "write"
+functions = ["add-subtitle"]
+title_key = "plugins.capability.subtitles_write.title"
+detail_key = "plugins.capability.subtitles_write.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "artwork.write"
+risk      = "low"
+interface = "write"
+functions = ["set-artwork"]
+title_key = "plugins.capability.artwork_write.title"
+detail_key = "plugins.capability.artwork_write.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "suggest"
+risk      = "low"
+interface = "suggest"
+functions = ["*"]
+title_key = "plugins.capability.suggest.title"
+detail_key = "plugins.capability.suggest.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "jobs.enqueue"
+risk      = "low"
+interface = "queue"
+functions = ["*"]
+title_key = "plugins.capability.jobs_enqueue.title"
+detail_key = "plugins.capability.jobs_enqueue.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "notify.admin"
+risk      = "low"
+interface = "notify"
+functions = ["*"]
+title_key = "plugins.capability.notify_admin.title"
+detail_key = "plugins.capability.notify_admin.detail"
+since     = "1.0"
+
+[[capability]]
+name      = "plugin-data.read"
+risk      = "medium"
+interface = "exports"
+functions = ["*"]
+param     = "plugin_id"
+title_key = "plugins.capability.plugin_data_read.title"
+detail_key = "plugins.capability.plugin_data_read.detail"
+since     = "1.0"

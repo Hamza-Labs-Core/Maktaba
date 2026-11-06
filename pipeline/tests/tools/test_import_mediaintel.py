@@ -167,6 +167,62 @@ async def test_dry_run_reports_and_writes_nothing(db: Database, tmp_path: Path) 
     assert lib
 
 
+async def _holds_summary(db: Database) -> bool:
+    """Whether this connection holds processing_done_subjects as a table (slot 0184)."""
+    return bool(
+        await db.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM pg_locks l WHERE l.locktype = 'relation'"
+            " AND l.pid = pg_backend_pid() AND l.granted"
+            " AND l.relation = 'processing_done_subjects'::regclass"
+            " AND l.mode IN ('ShareRowExclusiveLock', 'ExclusiveLock', 'AccessExclusiveLock'))"
+        )
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("apply", [False, True])
+async def test_the_summary_lock_is_taken_on_apply_only_and_never_held_by_an_enqueue(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, apply: bool
+) -> None:
+    """#662 review: the dry run held the done-subjects table for the whole import, so every
+    finishing job waited on it; and the detect enqueue ran under it, so a running detect
+    job (its row held, waiting on the lock) and the import's enqueue (waiting on that row)
+    deadlocked. The dry run takes no lock and writes no summary; apply takes the lock for
+    the done jobs and queues detect after its commit."""
+    from maktaba_pipeline.engine.sql import is_pg
+    from maktaba_pipeline.tools import import_mediaintel as mi
+
+    if not is_pg(db):
+        pytest.skip("the summary's locks are Postgres's")
+    await _library(db)
+    cache = _cache(tmp_path / "cache.db")
+    seen: dict[str, list[bool]] = {"flush": [], "enqueue": [], "summary": []}
+    flush = mi._flush_jobs
+    from maktaba_pipeline.engine.enqueue import enqueue_job as enqueue
+
+    async def watch_flush(d: object, report: object) -> None:
+        await flush(d, report)  # type: ignore[arg-type]
+        seen["flush"].append(await _holds_summary(db))
+        seen["summary"].append(
+            bool(await db.fetchval("SELECT count(*) FROM processing_done_subjects"))
+        )
+
+    async def watch_enqueue(d: object, **kw: object) -> object:
+        seen["enqueue"].append(await _holds_summary(db))
+        return await enqueue(d, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(mi, "_flush_jobs", watch_flush)
+    monkeypatch.setattr("maktaba_pipeline.tools.import_mediaintel.enqueue_job", watch_enqueue)
+    report = await run_import(db, cache, ["Cached"], apply=apply)
+    assert report.jobs_imported > 0 and seen["flush"] and seen["enqueue"]
+    assert set(seen["flush"]) == {apply}  # the table is held while done jobs go in on apply only
+    assert seen["enqueue"] == [False] * len(seen["enqueue"])  # never under the lock
+    assert any(seen["summary"]) is apply  # a dry run writes no summary row
+    if apply:
+        assert report.detect_queued == 1
+        assert await _count(db, "processing_done_subjects") > 0
+
+
 @pytest.mark.asyncio
 async def test_apply_imports_data_and_every_live_job_is_then_skipped(
     db: Database, tmp_path: Path, _media: dict[str, int]

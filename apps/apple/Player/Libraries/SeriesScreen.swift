@@ -10,6 +10,7 @@ struct SeriesScreen: View {
     let id: String
 
     @State private var model: SeriesModel
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     init(context: PlayerContext, id: String) {
         self.context = context
@@ -55,8 +56,16 @@ struct SeriesScreen: View {
         return n
     }
 
+    /// Beside the poster; at the accessibility sizes below it, so the text and the buttons
+    /// (Continue, Shuffle) have the screen's width and the episodes stay near the top.
+    private var headerLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: MaktabaTokens.Spacing.s3))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: MaktabaTokens.Spacing.s4))
+    }
+
     private var header: some View {
-        HStack(alignment: .top, spacing: MaktabaTokens.Spacing.s4) {
+        headerLayout {
             PosterArt(url: LibraryArt.poster(client, video: model.series?.posterVideoID ?? model.episodes.first?.videoID),
                       title: name)
                 .aspectRatio(2 / 3, contentMode: .fit)
@@ -89,6 +98,8 @@ struct SeriesScreen: View {
                     .accessibilityIdentifier("series.continue")
                     .padding(.top, MaktabaTokens.Spacing.s2)
                 }
+                // Epic 56 story 56.12: Shuffle the series (a server queue)
+                PlayShuffleButtons(context: context, source: QueueSource(kind: "series", id: id), onlyShuffle: true)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -101,8 +112,17 @@ struct SeriesScreen: View {
     }
 
     /// The season picker (only when there is more than one), and Mark watched on the season.
+    /// Side by side; at the accessibility sizes the season's name above and Mark the season
+    /// watched below it at the screen's width (beside the name its label was a column of one
+    /// word a line, taller than an episode row).
+    private var seasonsLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: MaktabaTokens.Spacing.s2))
+            : AnyLayout(HStackLayout(spacing: MaktabaTokens.Spacing.s2))
+    }
+
     private var seasons: some View {
-        HStack(spacing: MaktabaTokens.Spacing.s2) {
+        seasonsLayout {
             if model.seasons.count > 1 {
                 Picker(selection: $model.season) {
                     ForEach(model.seasons) { s in Text(Self.seasonName(s.season)).tag(Optional(s.season)) }
@@ -117,7 +137,7 @@ struct SeriesScreen: View {
                     .foregroundStyle(Color.mktText)
                     .accessibilityAddTraits(.isHeader)
             }
-            Spacer(minLength: MaktabaTokens.Spacing.s2)
+            if !typeSize.isAccessibilitySize { Spacer(minLength: MaktabaTokens.Spacing.s2) }
             if !model.episodes.isEmpty {
                 Button {
                     Task { await model.markSeason() }

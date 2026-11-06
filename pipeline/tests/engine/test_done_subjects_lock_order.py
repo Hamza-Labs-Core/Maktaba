@@ -86,3 +86,30 @@ async def test_a_transaction_that_holds_the_table_may_take_any_order(db: Databas
         "SELECT count(*) FROM processing_done_subjects WHERE library_id = $1", LIB
     )
     assert n == 2
+
+
+class _Rollback(Exception):
+    pass
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_writes_and_locks_no_summary_row(db: Database) -> None:
+    """Slot 0189: the mediaintel import's dry run (always rolled back) sets
+    maktaba.done_subjects_dry_run; the touch then writes nothing, so it locks no row and
+    takes no order, and needs no table lock."""
+    if not is_pg(db):
+        pytest.skip("Postgres's row locks")
+    ids = await _seed(db)
+    seen = -1
+    with pytest.raises(_Rollback):
+        async with db.transaction():
+            await db.execute("SELECT set_config('maktaba.done_subjects_dry_run', 'on', true)")
+            await db.execute(FINISH, ids[V_B])
+            await db.execute(FINISH, ids[V_A])  # out of order: not refused
+            seen = int(await db.fetchval("SELECT count(*) FROM processing_done_subjects"))
+            raise _Rollback
+    assert seen == 0
+    # the setting is the transaction's own: the next one keeps the summary again
+    async with db.transaction():
+        await db.execute(FINISH, ids[V_A])
+    assert await db.fetchval("SELECT count(*) FROM processing_done_subjects") == 1

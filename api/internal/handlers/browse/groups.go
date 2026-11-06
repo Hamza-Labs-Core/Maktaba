@@ -241,13 +241,27 @@ type LibraryCollection struct {
 	Automatic bool `json:"automatic"`
 	// SmartQuery is a saved filter's smart_query, as stored (JSON text).
 	SmartQuery *string `json:"smart_query,omitempty"`
+	// Epic 56 (slot 0193): a collection a pipeline stage keeps in step with
+	// a YouTube playlist or channel or a Plex collection (kind youtube or
+	// plex, read-only like the topic and clip groups), and an admin's
+	// choices: shown as a row on the library's Recommended tab, hidden.
+	SourceKind    string `json:"source_kind,omitempty"`
+	ShowOnLibrary bool   `json:"show_on_library"`
+	Hidden        bool   `json:"hidden,omitempty"`
 
-	rank int
+	rank      int
+	sortTitle string
 }
+
+// The kinds of a sourced collection (Epic 56 stories 56.06, 56.07).
+const (
+	KindYouTube = "youtube" // collections.source_kind youtube_playlist or youtube_channel
+	KindPlex    = "plex"    // collections.source_kind plex
+)
 
 // The kind filter of GET /api/libraries/{id}/collections, and the order of
 // the kinds in the list.
-var collectionFilters = []string{KindTopic, SubFiller, SubStandalone, KindCurated}
+var collectionFilters = []string{KindTopic, SubFiller, SubStandalone, KindCurated, KindYouTube, KindPlex}
 
 func (c LibraryCollection) filter() string {
 	switch c.Kind {
@@ -273,16 +287,19 @@ func (h *Handler) LibraryCollections(w http.ResponseWriter, r *http.Request) {
 		kind = ""
 	}
 	if kind != "" && !contains(collectionFilters, kind) {
-		httperror.Write(w, r, httperror.InvalidQuery("kind must be all, topic, filler, standalone or curated"))
+		httperror.Write(w, r, httperror.InvalidQuery("kind must be all, topic, filler, standalone, curated, youtube or plex"))
 		return
 	}
+	// hidden collections are left out for everyone; an admin may ask for
+	// them (the web's library settings)
+	withHidden := r.URL.Query().Get("hidden") == "true" && p.IsAdmin
 	limit, offset, e := pageParams(r)
 	if e != nil {
 		httperror.Write(w, r, e)
 		return
 	}
 	ctx := r.Context()
-	all, err := h.libraryCollections(ctx, scopeOf(p), lib.ID)
+	all, err := h.libraryCollections(ctx, scopeOf(p), lib.ID, withHidden)
 	if err != nil {
 		internal(w, r, "collections", err)
 		return
@@ -324,27 +341,38 @@ func (h *Handler) LibraryCollections(w http.ResponseWriter, r *http.Request) {
 // one grouped count per source. Topic and clip groups count the library's
 // visible videos (one with none is left out, as Plex gets none); a curated
 // list counts its visible videos the caller may see, as GET /api/collections.
-func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string) ([]LibraryCollection, error) {
+func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, withHidden bool) ([]LibraryCollection, error) {
 	args := []any{lib}
 	itemScope := s.cond("cv.library_id", &args)
 	curatedCount := `(SELECT COUNT(*) FROM collection_items ci JOIN videos cv ON cv.id = ci.video_id
 		WHERE ci.collection_id = c.id AND ` + and(strings.ReplaceAll(visible, "v.", "cv."), itemScope) + `)`
-	rows, err := h.DB.QueryContext(ctx, `SELECT g.rank, g.kind, g.sub, g.id, g.name, g.n, g.sq FROM (
-		SELECT 0 AS rank, 'topic' AS kind, '' AS sub, t.id AS id, t.name AS name, COUNT(*) AS n, NULL AS sq
+	hidden := " AND c.hidden_at IS NULL"
+	if withHidden {
+		hidden = ""
+	}
+	rows, err := h.DB.QueryContext(ctx, `SELECT g.rank, g.kind, g.sub, g.id, g.name, g.n, g.sq, g.sk, g.sol, g.hid, g.st FROM (
+		SELECT 0 AS rank, 'topic' AS kind, '' AS sub, t.id AS id, t.name AS name, COUNT(*) AS n, NULL AS sq,
+		       NULL AS sk, `+falseLit(h.DB)+` AS sol, `+falseLit(h.DB)+` AS hid, NULL AS st
 		FROM topic_collections t JOIN topic_items i ON i.topic_id = t.id JOIN videos v ON v.id = i.video_id
 		WHERE t.library_id = $1 AND v.library_id = $1 AND `+visible+`
 		GROUP BY t.id, t.name
 		UNION ALL
 		SELECT CASE WHEN g.kind = 'clips' THEN 1 ELSE 2 END, 'clip',
-		       CASE WHEN g.kind = 'clips' THEN 'filler' ELSE 'standalone' END, g.id, g.name, COUNT(*), NULL
+		       CASE WHEN g.kind = 'clips' THEN 'filler' ELSE 'standalone' END, g.id, g.name, COUNT(*), NULL,
+		       NULL, `+falseLit(h.DB)+`, `+falseLit(h.DB)+`, NULL
 		FROM clip_groups g JOIN clip_group_items i ON i.group_id = g.id JOIN videos v ON v.id = i.video_id
 		WHERE g.library_id = $1 AND v.library_id = $1 AND `+visible+`
 		GROUP BY g.id, g.name, g.kind
 		UNION ALL
-		SELECT 3, CASE WHEN c.is_smart THEN 'smart' ELSE 'curated' END, '', c.id, c.name,
-		       CASE WHEN c.is_smart THEN NULL ELSE `+curatedCount+` END, CAST(c.smart_query AS TEXT)
-		FROM collections c WHERE c.library_id = $1 AND c.dismissed_at IS NULL
-		) g ORDER BY g.rank, g.name, g.id`, args...)
+		SELECT CASE WHEN c.source_kind IS NULL THEN 3 WHEN c.source_kind = 'plex' THEN 5 ELSE 4 END,
+		       CASE WHEN c.source_kind = 'plex' THEN 'plex' WHEN c.source_kind IS NOT NULL THEN 'youtube'
+		            WHEN c.is_smart THEN 'smart' ELSE 'curated' END,
+		       CASE WHEN c.source_kind = 'youtube_playlist' THEN 'playlist' WHEN c.source_kind = 'youtube_channel' THEN 'channel' ELSE '' END,
+		       c.id, COALESCE(c.name_override, c.name),
+		       CASE WHEN c.is_smart THEN NULL ELSE `+curatedCount+` END, CAST(c.smart_query AS TEXT),
+		       c.source_kind, c.show_on_library, CASE WHEN c.hidden_at IS NULL THEN `+falseLit(h.DB)+` ELSE `+trueLit(h.DB)+` END, c.sort_title
+		FROM collections c WHERE c.library_id = $1 AND c.dismissed_at IS NULL`+hidden+`
+		) g ORDER BY g.rank, COALESCE(g.st, g.name), g.id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -353,9 +381,13 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string) (
 	for rows.Next() {
 		var c LibraryCollection
 		var n sql.NullInt64
-		var sq sql.NullString
-		if err := rows.Scan(&c.rank, &c.Kind, &c.Subkind, &c.ID, &c.Name, &n, &sq); err != nil {
+		var sq, sk, st sql.NullString
+		if err := rows.Scan(&c.rank, &c.Kind, &c.Subkind, &c.ID, &c.Name, &n, &sq, &sk, &c.ShowOnLibrary, &c.Hidden, &st); err != nil {
 			return nil, err
+		}
+		c.SourceKind, c.sortTitle = sk.String, st.String
+		if c.SourceKind != "" && n.Valid && n.Int64 == 0 {
+			continue // a sourced collection whose videos are all gone
 		}
 		if n.Valid {
 			v := n.Int64
@@ -364,7 +396,7 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string) (
 		if sq.Valid && c.Kind == KindSmart {
 			c.SmartQuery = &sq.String
 		}
-		c.Automatic = c.Kind == KindTopic || c.Kind == KindClip
+		c.Automatic = c.Kind == KindTopic || c.Kind == KindClip || c.SourceKind != ""
 		c.PosterVideoIDs = []string{}
 		out = append(out, c)
 	}
@@ -418,7 +450,7 @@ func (h *Handler) collectionPosters(ctx context.Context, s scope, lib string, pa
 	if err := auto(byKind[KindClip], "clip_group_items", "group_id"); err != nil {
 		return err
 	}
-	if ids := byKind[KindCurated]; len(ids) > 0 {
+	if ids := append(append(byKind[KindCurated], byKind[KindYouTube]...), byKind[KindPlex]...); len(ids) > 0 {
 		var args []any
 		in := inList(ids, &args)
 		cond := and(visible, s.cond("v.library_id", &args))
@@ -540,4 +572,19 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// falseLit and trueLit are boolean literals of the database (SQLite stores 0 and 1).
+func falseLit(db *sql.DB) string {
+	if isSQLite(db) {
+		return "0"
+	}
+	return "false"
+}
+
+func trueLit(db *sql.DB) string {
+	if isSQLite(db) {
+		return "1"
+	}
+	return "true"
 }

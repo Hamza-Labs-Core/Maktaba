@@ -153,6 +153,13 @@ export interface AuditRow {
   payload: { before?: unknown; after?: unknown; by?: string; batch_id?: string } | null;
 }
 
+/** A restart's answer: the component, how many of its processes and loops restarted
+ * here, and the hosts asked to restart their loops (their runners act on it; not counted). */
+export interface ComponentRestarted extends ComponentDetail {
+  restarted: number;
+  requested?: string[];
+}
+
 export interface ComponentDetail extends ComponentView {
   machines: (MachinePhase & { parts?: StatusPart[] })[];
   audit: AuditRow[];
@@ -230,7 +237,7 @@ export const componentsApi = {
   preview: (req: ChangeRequest) => api.post<Preview>("/api/components/preview", req),
   apply: (req: ChangeRequest) => api.post<ApplyResult>("/api/components/apply", req),
   /** process and loop kinds only; changes no desired state (so no generation and no preview) */
-  restart: (id: string) => api.post<ComponentDetail | undefined>(`${path(id)}/restart`),
+  restart: (id: string) => api.post<ComponentRestarted | undefined>(`${path(id)}/restart`),
   /** story 51.13: deletes its rules sections; the page asks first */
   resetSettings: (id: string) => api.post<SettingsReset>(`${path(id)}/settings/reset`),
   /** story 51.16: builds an offline file on this machine; poll offlineState with the name */
