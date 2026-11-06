@@ -96,7 +96,8 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertEqual(window.gestureRecognizers?.filter { $0 is TouchWatcher }.count, 1)
     }
 
-    /// A touch the system cancels is counted, and the watcher lets it go.
+    /// A touch the system cancels is counted. (Its `.failed` state isn't checked: outside a
+    /// real touch sequence UIKit resets the recognizer to `.possible` at once.)
     @MainActor
     func testACancelledTouchIsCounted() {
         let view = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
@@ -105,7 +106,8 @@ final class PlayerShellTests: XCTestCase {
         let before = TouchHook.cancelled
         watcher.touchesCancelled([UITouch()], with: UIEvent())
         XCTAssertEqual(TouchHook.cancelled, before + 1)
-        XCTAssertEqual(watcher.state, .failed)
+        watcher.touchesCancelled([UITouch(), UITouch()], with: UIEvent())
+        XCTAssertEqual(TouchHook.cancelled, before + 3, "each cancelled touch counts")
     }
 
     /// A failure after a lost tap starts with it, the count in words; with none, or no app to
