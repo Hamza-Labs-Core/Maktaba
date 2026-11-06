@@ -33,7 +33,7 @@ if grep -q '^  version "0.3.7"$' "${work}/maktaba-app.rb" && grep -q "sha256 \"$
 else
     fail "the cask: $(grep -n 'version\|sha256' "${work}/maktaba-app.rb")"
 fi
-if grep -v '^[[:space:]]*#' "${work}/maktaba.rb" "${work}/maktaba-app.rb" | grep -q '__[A-Z0-9_]*__'; then
+if grep -q '__[A-Z0-9_]*__' < <(grep -v '^[[:space:]]*#' "${work}/maktaba.rb" "${work}/maktaba-app.rb"); then
     fail "a placeholder is left"
 elif grep -q '__VERSION__' "${work}/maktaba.rb"; then
     ok "every placeholder is filled; the header comments keep their names"

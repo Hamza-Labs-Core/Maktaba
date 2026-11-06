@@ -209,10 +209,11 @@ jobs:
           grep -q "owner headless" "$RUNNER_TEMP/runtime-status.txt"
           docker run -d --name maktaba-ci -v maktaba-ci:/var/lib/maktaba maktaba-server:ci >/dev/null
           for _ in $(seq 1 60); do
-            if docker logs maktaba-ci 2>&1 | grep -q "not set up yet"; then break; fi
+            if grep -q "not set up yet" < <(docker logs maktaba-ci 2>&1); then break; fi
             sleep 1
           done
-          docker logs maktaba-ci 2>&1 | tee "$RUNNER_TEMP/container.log" | grep -q "not set up yet"
+          docker logs maktaba-ci >"$RUNNER_TEMP/container.log" 2>&1
+          grep -q "not set up yet" "$RUNNER_TEMP/container.log"
           docker stop -t 30 maktaba-ci >/dev/null
           test "$(docker inspect -f '{{.State.ExitCode}}' maktaba-ci)" = 0
 
