@@ -370,7 +370,8 @@
       ],
       "related": [
         "epic-42-apps-player-remote-server",
-        "ep-get-system-version"
+        "ep-get-system-version",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/42-apps-player-remote-server/README.md",
@@ -378,7 +379,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /system/version"
+        "GET /system/version",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -454,7 +456,8 @@
       ],
       "related": [
         "epic-42-apps-player-remote-server",
-        "ep-get-system-version"
+        "ep-get-system-version",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/42-apps-player-remote-server/README.md",
@@ -462,7 +465,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /system/version"
+        "GET /system/version",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -511,14 +515,17 @@
       ],
       "related": [
         "epic-42-apps-player-remote-server",
-        "entity-users"
+        "entity-users",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/42-apps-player-remote-server/README.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home"
+      ],
       "db_tables": [
         "users"
       ],
@@ -594,14 +601,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-42-apps-player-remote-server"
+        "epic-42-apps-player-remote-server",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/42-apps-player-remote-server/README.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "tv",

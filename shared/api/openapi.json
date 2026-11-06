@@ -102,6 +102,22 @@
     {
       "name": "Components",
       "description": "Turn each part of Maktaba on or off, stop and start it, and see what runs on each machine. The capabilities route is open to every signed-in client; the rest are admin only."
+    },
+    {
+      "name": "Browse",
+      "description": "A library's rows, tabs and categories; Home; the caller's marks."
+    },
+    {
+      "name": "Series",
+      "description": "Series, their seasons and episodes."
+    },
+    {
+      "name": "Playlists",
+      "description": "Each user's playlists, manual and smart."
+    },
+    {
+      "name": "Play queues",
+      "description": "One play queue on the server for every Play and Shuffle."
     }
   ],
   "security": [
@@ -2553,170 +2569,6 @@
           }
         },
         "operationId": "deleteCollection"
-      }
-    },
-    "/collections/{id}/videos": {
-      "parameters": [
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "get": {
-        "tags": [
-          "Collections"
-        ],
-        "summary": "List videos in a collection",
-        "parameters": [
-          {
-            "$ref": "#/components/parameters/Limit"
-          },
-          {
-            "$ref": "#/components/parameters/Cursor"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Page of videos.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/Page"
-                    },
-                    {
-                      "type": "object",
-                      "properties": {
-                        "items": {
-                          "type": "array",
-                          "items": {
-                            "$ref": "#/components/schemas/VideoSummary"
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "default": {
-            "$ref": "#/components/responses/InternalError"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        },
-        "operationId": "listCollectionVideos"
-      },
-      "post": {
-        "tags": [
-          "Collections"
-        ],
-        "summary": "Add a video to a collection",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "video_id"
-                ],
-                "properties": {
-                  "video_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "position": {
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Video added.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CollectionItem"
-                }
-              }
-            }
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "default": {
-            "$ref": "#/components/responses/InternalError"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        },
-        "operationId": "addCollectionVideo"
-      }
-    },
-    "/collections/{id}/videos/{videoId}": {
-      "parameters": [
-        {
-          "in": "path",
-          "name": "id",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        {
-          "in": "path",
-          "name": "videoId",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "delete": {
-        "tags": [
-          "Collections"
-        ],
-        "summary": "Remove a video from a collection",
-        "responses": {
-          "204": {
-            "description": "Removed."
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "default": {
-            "$ref": "#/components/responses/InternalError"
-          },
-          "429": {
-            "$ref": "#/components/responses/RateLimited"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          }
-        },
-        "operationId": "removeCollectionVideo"
       }
     },
     "/tags": {
@@ -7702,6 +7554,2080 @@
         },
         "operationId": "startComponentOnMachine"
       }
+    },
+    "/collections/{id}/items": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "get": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "List videos in a collection",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of videos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Page"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/VideoSummary"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "listCollectionVideos"
+      },
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Add a video to a collection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "video_id"
+                ],
+                "properties": {
+                  "video_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "position": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Video added.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionItem"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "addCollectionVideo"
+      }
+    },
+    "/collections/{id}/items/{video_id}": {
+      "parameters": [
+        {
+          "in": "path",
+          "name": "id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        {
+          "in": "path",
+          "name": "video_id",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      ],
+      "delete": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Remove a video from a collection",
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "removeCollectionVideo"
+      }
+    },
+    "/me/play-queues": {
+      "post": {
+        "tags": [
+          "Play queues"
+        ],
+        "summary": "Create a play queue from a library, series, season, collection or playlist",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "source"
+                ],
+                "properties": {
+                  "source": {
+                    "$ref": "#/components/schemas/PlayQueueSource"
+                  },
+                  "shuffle": {
+                    "type": "boolean"
+                  },
+                  "start_video_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "device_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The queue with its window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayQueue"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createPlayQueue"
+      }
+    },
+    "/me/play-queues/current": {
+      "get": {
+        "tags": [
+          "Play queues"
+        ],
+        "summary": "The caller's most recently used play queue, from any device",
+        "responses": {
+          "200": {
+            "description": "The queue with its window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayQueue"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "No queue."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getCurrentPlayQueue"
+      }
+    },
+    "/me/play-queues/{id}": {
+      "get": {
+        "tags": [
+          "Play queues"
+        ],
+        "summary": "A window of a play queue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "around",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "after",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue with its window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayQueue"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getPlayQueue"
+      },
+      "delete": {
+        "tags": [
+          "Play queues"
+        ],
+        "summary": "Delete a play queue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deletePlayQueue"
+      }
+    },
+    "/me/play-queues/{id}/current": {
+      "put": {
+        "tags": [
+          "Play queues"
+        ],
+        "summary": "Set the current item of a play queue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "pos",
+                  "version"
+                ],
+                "properties": {
+                  "pos": {
+                    "type": "integer"
+                  },
+                  "version": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The queue with its window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayQueue"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "stale_queue: the queue changed on another device; the body's queue is its current state."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "movePlayQueue"
+      }
+    },
+    "/me/play-queues/{id}/items": {
+      "post": {
+        "tags": [
+          "Play queues"
+        ],
+        "summary": "Play next or add to a play queue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "video_ids",
+                  "where"
+                ],
+                "properties": {
+                  "video_ids": {
+                    "type": "array",
+                    "maxItems": 200,
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "where": {
+                    "type": "string",
+                    "enum": [
+                      "next",
+                      "end"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The queue with its window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayQueue"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "addPlayQueueItems"
+      }
+    },
+    "/me/play-queues/{id}/reshuffle": {
+      "post": {
+        "tags": [
+          "Play queues"
+        ],
+        "summary": "Shuffle a play queue again after its current item",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue with its window.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayQueue"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "reshufflePlayQueue"
+      }
+    },
+    "/me/playlists": {
+      "get": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "The caller's playlists",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "library",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The playlists; with library, those with videos of it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Playlist"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listPlaylists"
+      },
+      "post": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "Make a playlist, manual or smart",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "video_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "manual",
+                      "smart"
+                    ]
+                  },
+                  "smart_query": {
+                    "$ref": "#/components/schemas/SmartQuery"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The playlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Playlist"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "createPlaylist"
+      }
+    },
+    "/me/playlists/{id}": {
+      "get": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "A playlist and its videos",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The playlist and its items (a smart one evaluated).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "playlist": {
+                      "$ref": "#/components/schemas/Playlist"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Card"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getPlaylist"
+      },
+      "patch": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "Rename a playlist or change its rules",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "smart_query": {
+                    "$ref": "#/components/schemas/SmartQuery"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The playlist.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Playlist"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A kind change, or rules on a manual playlist."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "updatePlaylist"
+      },
+      "delete": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "Delete a playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "deletePlaylist"
+      }
+    },
+    "/me/playlists/{id}/items": {
+      "get": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "A playlist's videos",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The items (a smart one evaluated).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Card"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listPlaylistItems"
+      },
+      "post": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "Add videos to a playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "video_ids"
+                ],
+                "properties": {
+                  "video_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "How many were added.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "added": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "smart_playlist: a smart playlist changes by its rules."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "addPlaylistItems"
+      }
+    },
+    "/me/playlists/{id}/items/{video_id}": {
+      "delete": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "Remove a video from a playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "video_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "409": {
+            "description": "smart_playlist: a smart playlist changes by its rules."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "removePlaylistItem"
+      }
+    },
+    "/me/playlists/{id}/order": {
+      "put": {
+        "tags": [
+          "Playlists"
+        ],
+        "summary": "Reorder a playlist",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "video_ids"
+                ],
+                "properties": {
+                  "video_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The playlist and its items.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "playlist": {
+                      "$ref": "#/components/schemas/Playlist"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Card"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "smart_playlist: a smart playlist changes by its rules."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "orderPlaylist"
+      }
+    },
+    "/home": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "Home's rows for the caller",
+        "responses": {
+          "200": {
+            "description": "Continue Watching, On Deck, Recently Added, Recently Watched, favorites, pinned libraries, featured and promoted collection rows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getHome"
+      }
+    },
+    "/home/featured": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "Home's featured video",
+        "responses": {
+          "200": {
+            "description": "The featured setting.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getFeatured"
+      },
+      "put": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "Set Home's featured video (admin)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The featured setting.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "setFeatured"
+      }
+    },
+    "/libraries/summary": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "The caller's libraries with their counts",
+        "responses": {
+          "200": {
+            "description": "The libraries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getLibrariesSummary"
+      }
+    },
+    "/libraries/{id}/hub": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "The rows of a library's Recommended tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The library and its rows, with the collections promoted to it.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getLibraryHub"
+      }
+    },
+    "/libraries/{id}/series": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "A library's Series tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Series cards.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listLibrarySeries"
+      }
+    },
+    "/libraries/{id}/collections": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "A library's Collections tab",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "topic",
+                "filler",
+                "standalone",
+                "curated",
+                "youtube",
+                "plex"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection cards and every kind's count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LibraryCollection"
+                      }
+                    },
+                    "counts": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listLibraryCollections"
+      }
+    },
+    "/libraries/{id}/collections/{kind}/{gid}": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "A topic collection's or clip group's videos",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "gid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The group and a page of its videos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getAutoCollection"
+      }
+    },
+    "/libraries/{id}/categories": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "A library's speakers, topics, languages and years",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "At most 50 of each, the most videos first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "speakers": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Category"
+                      }
+                    },
+                    "topics": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Category"
+                      }
+                    },
+                    "languages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Category"
+                      }
+                    },
+                    "years": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Category"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getLibraryCategories"
+      }
+    },
+    "/libraries/{id}/plex-missing": {
+      "get": {
+        "tags": [
+          "Libraries"
+        ],
+        "summary": "The items of a library's Plex collections that are not in Maktaba (admin)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The missing items.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listPlexMissing"
+      }
+    },
+    "/videos/facets": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "What the grid's filters offer",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "library",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Languages, tags, speakers, letters and bands with counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getVideoFacets"
+      }
+    },
+    "/me/videos/{id}": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "The caller's state of one video",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Its playback and favorite.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getMyVideo"
+      }
+    },
+    "/me/watched": {
+      "post": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "Mark videos watched or unwatched",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "video_ids",
+                  "watched"
+                ],
+                "properties": {
+                  "video_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "watched": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Marked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "markWatched"
+      }
+    },
+    "/me/favorites": {
+      "post": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "Add videos to or remove them from the favorites",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "video_ids",
+                  "favorite"
+                ],
+                "properties": {
+                  "video_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "favorite": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Marked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "markFavorites"
+      }
+    },
+    "/me/pinned-libraries": {
+      "get": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "The caller's pinned libraries",
+        "responses": {
+          "200": {
+            "description": "The pins in order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getPinnedLibraries"
+      },
+      "put": {
+        "tags": [
+          "Browse"
+        ],
+        "summary": "Pin libraries to Home, in order",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The pins in order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "setPinnedLibraries"
+      }
+    },
+    "/series": {
+      "get": {
+        "tags": [
+          "Series"
+        ],
+        "summary": "The series the caller can see",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "library",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listSeries"
+      }
+    },
+    "/series/{id}": {
+      "get": {
+        "tags": [
+          "Series"
+        ],
+        "summary": "A series",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "getSeries"
+      },
+      "patch": {
+        "tags": [
+          "Series"
+        ],
+        "summary": "Change a series (admin)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The series.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "updateSeries"
+      }
+    },
+    "/series/{id}/episodes": {
+      "get": {
+        "tags": [
+          "Series"
+        ],
+        "summary": "A series' seasons and episodes, with the next episode to watch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "added",
+                "episode"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Seasons, episodes and next_episode.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listSeriesEpisodes"
+      }
+    },
+    "/series/{id}/missing": {
+      "get": {
+        "tags": [
+          "Series"
+        ],
+        "summary": "The episodes missing from a series",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The gaps.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "listSeriesGaps"
+      }
+    },
+    "/collections/{id}/duplicate": {
+      "post": {
+        "tags": [
+          "Collections"
+        ],
+        "summary": "Duplicate a collection as a curated one (admin)",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new collection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Collection"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        },
+        "operationId": "duplicateCollection"
+      }
     }
   },
   "components": {
@@ -8150,6 +10076,14 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "collection_mode": {
+            "type": "string",
+            "enum": [
+              "tab_only",
+              "hide_items",
+              "show_both"
+            ]
           }
         }
       },
@@ -8195,6 +10129,14 @@
           "settings": {
             "type": "object",
             "additionalProperties": true
+          },
+          "collection_mode": {
+            "type": "string",
+            "enum": [
+              "tab_only",
+              "hide_items",
+              "show_both"
+            ]
           }
         }
       },
@@ -9179,6 +11121,32 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "youtube_playlist",
+              "youtube_channel",
+              "plex"
+            ]
+          },
+          "source_ref": {
+            "type": "string"
+          },
+          "name_override": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "show_on_library": {
+            "type": "boolean"
+          },
+          "show_on_home": {
+            "type": "boolean"
+          },
+          "sort_title": {
+            "type": "string"
           }
         }
       },
@@ -9220,6 +11188,21 @@
           },
           "smart_query": {
             "$ref": "#/components/schemas/SearchRequest"
+          },
+          "name_override": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean"
+          },
+          "show_on_library": {
+            "type": "boolean"
+          },
+          "show_on_home": {
+            "type": "boolean"
+          },
+          "sort_title": {
+            "type": "string"
           }
         }
       },
@@ -11058,6 +13041,346 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "PlayQueueSource": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id"
+        ],
+        "description": "Where a play queue's videos come from.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "library",
+              "series",
+              "season",
+              "collection",
+              "playlist",
+              "video"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "description": "The source's id: a library, series, season (series_seasons), collection (or topic:<id> / clip:<id>), playlist or video id."
+          },
+          "filters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "A library's grid filters, sort and order (the keys of GET /videos)."
+          }
+        }
+      },
+      "PlayQueueItem": {
+        "type": "object",
+        "description": "One item of a play queue's window, with the video's card fields and the caller's playback.",
+        "properties": {
+          "pos": {
+            "type": "integer"
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "source",
+              "next",
+              "added"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filename": {
+            "type": "string"
+          },
+          "library_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "duration_sec": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "poster": {
+            "type": "string"
+          },
+          "position_sec": {
+            "type": "number"
+          },
+          "completed": {
+            "type": "boolean"
+          },
+          "series_id": {
+            "type": "string"
+          },
+          "series_name": {
+            "type": "string"
+          }
+        }
+      },
+      "PlayQueue": {
+        "type": "object",
+        "description": "A play queue with a window of items around a position.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "$ref": "#/components/schemas/PlayQueueSource"
+          },
+          "shuffle": {
+            "type": "boolean"
+          },
+          "current_pos": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "integer",
+            "description": "Bumped by every change; a move with an older version is 409 stale_queue."
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "source_done": {
+            "type": "boolean"
+          },
+          "total_estimate": {
+            "type": "integer"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "used_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlayQueueItem"
+            }
+          }
+        }
+      },
+      "Card": {
+        "type": "object",
+        "description": "A video card of a row or a list, with the caller's playback where the row reads it.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "filename": {
+            "type": "string"
+          },
+          "library_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "duration_sec": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "position_sec": {
+            "type": "number"
+          },
+          "completed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SmartQuery": {
+        "type": "object",
+        "description": "A smart playlist's rules: a saved grid filter with a sort and a limit, evaluated when read.",
+        "properties": {
+          "libraries": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "null: every library the owner can read."
+          },
+          "filters": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "sort": {
+            "type": "string"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 200
+          }
+        }
+      },
+      "Playlist": {
+        "type": "object",
+        "description": "A user's playlist, manual or smart, with its visible videos' count, length and first posters.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "smart"
+            ]
+          },
+          "smart_query": {
+            "$ref": "#/components/schemas/SmartQuery"
+          },
+          "videos": {
+            "type": "integer"
+          },
+          "duration_sec": {
+            "type": "number"
+          },
+          "poster_video_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "hand_ordered": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "Category": {
+        "type": "object",
+        "description": "A tile of a library's Categories tab: value is what the grid filters by.",
+        "properties": {
+          "value": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "poster_video_id": {
+            "type": "string"
+          }
+        }
+      },
+      "LibraryCollection": {
+        "type": "object",
+        "description": "A card of a library's Collections tab.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "clip",
+              "curated",
+              "smart",
+              "youtube",
+              "plex"
+            ]
+          },
+          "subkind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "videos": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "poster_video_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "automatic": {
+            "type": "boolean"
+          },
+          "source_kind": {
+            "type": "string",
+            "enum": [
+              "youtube_playlist",
+              "youtube_channel",
+              "plex"
+            ]
+          },
+          "show_on_library": {
+            "type": "boolean"
           }
         }
       }
