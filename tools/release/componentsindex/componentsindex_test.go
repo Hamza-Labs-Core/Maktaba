@@ -121,7 +121,8 @@ func TestPacks(t *testing.T) {
 }
 
 // Every pack the catalog asks of a release has a recipe (tools/release/packs/recipes): a
-// pack with none fails every release's build leg, and with it the release.
+// pack with none fails every release's build leg, and with it the release. Every
+// lang.hunspell.<code> shares lang.hunspell.sh when it has none of its own, as build.sh does.
 func TestEveryPackHasARecipe(t *testing.T) {
 	seen := map[string]bool{}
 	for _, p := range Packs(components.Default(), "") {
@@ -129,9 +130,27 @@ func TestEveryPackHasARecipe(t *testing.T) {
 			continue
 		}
 		seen[p.ID] = true
-		if _, err := os.Stat(filepath.Join("..", "packs", "recipes", p.ID+".sh")); err != nil {
+		if _, err := os.Stat(recipeFor(p.ID)); err != nil {
 			t.Errorf("%s: no recipe: %v", p.ID, err)
 		}
+	}
+}
+
+// recipeFor is build.sh's lookup: the pack's own recipe, else the shared Hunspell one.
+func recipeFor(id string) string {
+	own := filepath.Join("..", "packs", "recipes", id+".sh")
+	if _, err := os.Stat(own); err != nil && strings.HasPrefix(id, "lang.hunspell.") {
+		return filepath.Join("..", "packs", "recipes", "lang.hunspell.sh")
+	}
+	return own
+}
+
+func TestAHunspellLanguageUsesTheSharedRecipe(t *testing.T) {
+	if got := recipeFor("lang.hunspell.fr"); filepath.Base(got) != "lang.hunspell.sh" {
+		t.Fatalf("lang.hunspell.fr -> %s", got)
+	}
+	if got := recipeFor("tool.ffmpeg"); filepath.Base(got) != "tool.ffmpeg.sh" {
+		t.Fatalf("tool.ffmpeg -> %s", got)
 	}
 }
 
@@ -178,14 +197,21 @@ func opts(dist string) Options {
 // A failed leg's pack is missing: the index is refused, naming it, for any catalog
 // platform, so a release never ships without some platform's packs.
 func TestGenerateRefusesAMissingPack(t *testing.T) {
+	// one build for every case: each hides its own pack and puts it back
+	dist := t.TempDir()
+	buildPacks(t, dist, 0)
+	aside := t.TempDir()
 	for _, p := range Packs(components.Default(), "") {
 		t.Run(p.ID+"/"+p.Platform, func(t *testing.T) {
-			dist := t.TempDir()
-			buildPacks(t, dist, 0)
 			gone := p.Name("0.4.2")
-			if err := os.Remove(filepath.Join(dist, gone)); err != nil {
+			if err := os.Rename(filepath.Join(dist, gone), filepath.Join(aside, gone)); err != nil {
 				t.Fatal(err)
 			}
+			t.Cleanup(func() {
+				if err := os.Rename(filepath.Join(aside, gone), filepath.Join(dist, gone)); err != nil {
+					t.Fatal(err)
+				}
+			})
 			idx, err := Generate(opts(dist))
 			if !errors.Is(err, ErrMissing) || idx != nil {
 				t.Fatalf("Generate = %v, %v; want ErrMissing", idx, err)
