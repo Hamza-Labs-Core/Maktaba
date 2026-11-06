@@ -29,9 +29,7 @@ var StatusGroups = []StatusGroup{
 	{Name: "processing", Components: []string{"core.pipeline", "transcription"},
 		FeaturesDown: []string{"new_media", "transcripts", "thumbnails"}, Banner: "processing_down"},
 	{Name: "search", Components: []string{"search.semantic"}, FeaturesDown: []string{"semantic_search"}, Banner: "search_down"},
-	// logs.index (the log index role, story 53.09) joins the catalog with that role
-	// (story 53.18); until then the group has no process and reads off
-	{Name: "logs", FeaturesDown: []string{"log_search"}},
+	{Name: "logs", Components: []string{"logs.index"}, FeaturesDown: []string{"log_search"}},
 }
 
 // NoStatusGroup are the process components no status group shows, and why.

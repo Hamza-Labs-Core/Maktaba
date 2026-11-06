@@ -80,6 +80,8 @@ type Handler struct {
 	Client *http.Client
 	// FileSource reads a machine's own log files (files.go). nil: none are there.
 	FileSource FileSource
+	// IndexAddr is the log index role's address (index.go; "": MAKTABA_LOGS_ADDR).
+	IndexAddr string
 }
 
 // Mount wires the routes. Admin routes are gated with RequireAdmin; the
@@ -89,6 +91,10 @@ func (h *Handler) Mount(r chi.Router) {
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/stream", h.Stream)
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/files", h.Files)
 	r.With(authmw.RequireAdmin).Get("/api/admin/logs/export", h.AdminExport)
+	// Epic 53 story 53.09: the log index, admins only
+	r.With(authmw.RequireAdmin).Get("/api/admin/logs/search", h.proxyIndex("/search", false))
+	r.With(authmw.RequireAdmin).Get("/api/admin/logs/tail", h.proxyIndex("/tail", true))
+	r.With(authmw.RequireAdmin).Get("/api/admin/logs/around", h.proxyIndex("/around", false))
 	r.With(authmw.RequireAuth).Get("/api/diagnostics/export", h.UserExport)
 }
 

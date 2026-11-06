@@ -380,6 +380,8 @@ class ApiClient(
         return Request.Builder().url(url).method(method, payload)
             .header("Accept", "application/json")
             .header(ClientHeader.NAME, ClientHeader.value)
+            // the home follows the call under this id (Epic 53 story 53.08)
+            .header(RequestId.HEADER, RequestId.next())
             .build()
     }
 

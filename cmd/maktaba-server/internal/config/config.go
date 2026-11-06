@@ -223,6 +223,9 @@ type LogsSection struct {
 	// ServerLog is what server.log still gets: "all" (every line, as before; the
 	// default for now) or "warn" (warnings and errors only).
 	ServerLog string `toml:"server_log,omitempty"`
+	// Addr is where the log index answers (story 53.09; "": the port registry's, a
+	// loopback port). Set it to run two machines on one host.
+	Addr string `toml:"addr,omitempty"`
 }
 
 // ResolvedLogs is the [logs] table with its defaults filled in and its limits applied.
