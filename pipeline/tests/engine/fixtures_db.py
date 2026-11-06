@@ -107,6 +107,9 @@ async def db(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[Da
     name = "maktaba_t_" + uuid.uuid4().hex[:10]
     admin = await asyncpg.connect(PG_URL)
     await admin.execute(f'CREATE DATABASE "{name}" TEMPLATE "{template_name}"')
+    # slot 0184 (#642): a transaction that locks processing_done_subjects rows out of key
+    # order across statements fails the test instead of only warning
+    await admin.execute(f"ALTER DATABASE \"{name}\" SET maktaba.lock_order_strict = 'on'")
     await admin.close()
     database = await Database.connect(_swap_db(PG_URL, name))
     try:
