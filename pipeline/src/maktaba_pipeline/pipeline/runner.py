@@ -52,7 +52,7 @@ from ..db import claim_owner
 from ..db.jobs import Job, Stage
 from ..db.jobs_claim import claim_one
 from ..engine.claim import PoolConfig, claim_for_pool, load_pools
-from ..log import bind_job_id, bind_video_id, get_logger
+from ..log import bind_component, bind_job_id, bind_video_id, get_logger
 from .signals import install_shutdown_handlers
 from .wakeup import PgListenWakeup, PubsubWakeup, WakeupSource
 
@@ -75,6 +75,9 @@ def _job_log_context(job: Job) -> Iterator[None]:
     with ExitStack() as stack:
         stack.enter_context(bind_job_id(str(job.id)))
         stack.enter_context(structlog.contextvars.bound_contextvars(stage=str(job.stage)))
+        # the catalog component that owns the stage (Epic 53 story 53.01)
+        if component := _stage_component(str(job.stage)):
+            stack.enter_context(bind_component(component))
         if job.video_id is not None:
             stack.enter_context(bind_video_id(str(job.video_id)))
         if job.subject_id is not None and job.subject_id != job.video_id:
@@ -84,6 +87,17 @@ def _job_log_context(job: Job) -> Iterator[None]:
                 )
             )
         yield
+
+
+def _stage_component(stage: str) -> str:
+    """The catalog id of the component that owns ``stage`` ("" when none does)."""
+    from ..components import catalog  # noqa: PLC0415  (the catalog imports the engine)
+
+    try:
+        comp = catalog.default().by_stage(stage)
+    except Exception:  # a broken catalog never stops a job's logging
+        return ""
+    return comp.id if comp is not None else ""
 
 
 def default_worker_id() -> str:

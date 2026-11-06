@@ -27,12 +27,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+
 	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 	"time"
+
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/cloudlink"
 )
@@ -50,7 +53,9 @@ func main() {
 		return
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// the shared logger (shared/log/go, Epic 53 story 53.01): service, version, env and
+	// node on every line, the shared redaction; cloudlink runs on the home
+	logger := mlog.Init(mlog.Options{Service: "cloudlink", Env: "prod", Version: Version, Format: "json", RingCapacity: -1})
 
 	cfg, err := loadConfig()
 	if err != nil {

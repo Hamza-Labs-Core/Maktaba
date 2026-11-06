@@ -9,11 +9,15 @@
 //	log.From(ctx).Info("video imported", "duration_s", 12.4)
 //
 // Required base fields on every line: ts (RFC 3339 UTC), level, service,
-// msg, version, env. Contextual fields (request_id, session_id, job_id,
-// video_id, user_id) are injected via context.
+// msg, version, env, node. Contextual fields (request_id, session_id, job_id,
+// video_id, component, user id) are injected via context. The line's shape is
+// shared/log/schema/line.schema.json (Epic 53 story 53.01).
 //
-// Sensitive field names listed in DefaultRedactedFields are masked
-// before emission.
+// Sensitive field names listed in DefaultRedactedFields are masked and the
+// values scrubbed with the shared list (shared/redact/rules.json) before
+// emission. A user id is never written: a `user_id` attribute becomes `user_h`,
+// its hash under the home's log key (userhash.go), or is dropped when there is
+// no key.
 package log
 
 import (
@@ -36,6 +40,9 @@ type Options struct {
 	// Version is the build-time version stamp (Story 22.2). Emitted on
 	// every line so logs from different binaries can be told apart.
 	Version string
+	// Node is the machine the process runs on (the home, a joined machine's
+	// id, a cloud node). Empty means MAKTABA_NODE_ID, else "home".
+	Node string
 	// Format forces "json" or "text" regardless of Env. Empty means auto:
 	// "json" for env=="prod", "text" otherwise.
 	Format string
@@ -96,6 +103,12 @@ func build(opts Options, ring *RingBuffer) *slog.Logger {
 	if opts.Version == "" {
 		opts.Version = "unknown"
 	}
+	if opts.Node == "" {
+		opts.Node = strings.TrimSpace(os.Getenv("MAKTABA_NODE_ID"))
+	}
+	if opts.Node == "" {
+		opts.Node = "home"
+	}
 	out := opts.Output
 	if out == nil {
 		out = os.Stdout
@@ -146,6 +159,7 @@ func build(opts Options, ring *RingBuffer) *slog.Logger {
 		"service", opts.Service,
 		"version", opts.Version,
 		"env", opts.Env,
+		"node", opts.Node,
 	)
 }
 
@@ -175,7 +189,8 @@ func Level() slog.Level { return levelVar.Level() }
 // that:
 //  1. renames the standard time/level/msg keys to the Maktaba contract
 //     (`ts` / `level` / `msg`);
-//  2. masks any field whose key is in the redact set;
+//  2. masks any field whose key is in the redact set, and writes a user id
+//     as its hash (user_h);
 //  3. truncates very large `msg` values to keep a single log line under
 //     the 64 KiB pipe buffer (EC1).
 func makeReplaceAttr(redact map[string]struct{}) func([]string, slog.Attr) slog.Attr {
@@ -194,7 +209,15 @@ func makeReplaceAttr(redact map[string]struct{}) func([]string, slog.Attr) slog.
 			}
 			return a
 		}
-		if keySensitive(redact, a.Key) {
+		if a.Key == "user_id" {
+			// a person is named by their hash only (story 53.01 §3)
+			id := a.Value.String()
+			if h := HashUser(id); h != "" {
+				return slog.String("user_h", h)
+			}
+			return slog.Attr{}
+		}
+		if keySensitive(redact, a.Key, a.Value.Kind() == slog.KindString) {
 			return slog.String(a.Key, redactedValue)
 		}
 		if r, ok := redactValue(a.Value); ok {

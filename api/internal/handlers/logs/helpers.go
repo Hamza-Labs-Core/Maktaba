@@ -70,7 +70,7 @@ const errorLevel = 8
 
 // scopeJSONL restricts a block of newline-delimited JSON log lines to a
 // single user: it keeps lines attributed to scopeUserID only (the
-// server's own lines, with no user_id, are an admin's), mirroring
+// server's own lines, naming no user, are an admin's), mirroring
 // scopedEntries.
 // Used to scope proxied peer logs, which arrive as raw JSONL the peer
 // service cannot filter by user. A line that does not parse as JSON is
@@ -81,17 +81,12 @@ func scopeJSONL(data []byte, scopeUserID string) []byte {
 		return data
 	}
 	var buf bytes.Buffer
+	hash := mlog.HashUser(scopeUserID)
 	for _, line := range bytes.Split(data, []byte{'\n'}) {
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		var rec struct {
-			UserID string `json:"user_id"`
-		}
-		if err := json.Unmarshal(line, &rec); err != nil {
-			continue
-		}
-		if rec.UserID == scopeUserID {
+		if ownedBy(line, scopeUserID, hash) {
 			buf.Write(line)
 			buf.WriteByte('\n')
 		}

@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maktaba.app/schema/log-line.json",
+  "title": "One Maktaba log line (Epic 53 story 53.01)",
+  "description": "One JSON object per line (NDJSON), UTF-8, at most 64 KB. Every Maktaba process and app writes this shape: Go, Python, Swift, Kotlin, TypeScript, Rust and the cloud. A person is named by user_h only; raw_user_id, user_id, email, name, IPs and tokens are never fields.",
+  "type": "object",
+  "required": [
+    "ts",
+    "level",
+    "service",
+    "msg"
+  ],
+  "properties": {
+    "ts": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+    },
+    "level": {
+      "enum": [
+        "debug",
+        "info",
+        "warn",
+        "error",
+        "fatal"
+      ]
+    },
+    "service": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]*$",
+      "examples": [
+        "api",
+        "streaming",
+        "pipeline",
+        "supervisor",
+        "logs",
+        "postgres",
+        "desktop",
+        "web",
+        "apple.player",
+        "apple.remote",
+        "apple.tv",
+        "android.player",
+        "android.remote",
+        "android.tv",
+        "cloud.api",
+        "cloud.relay",
+        "cloud.worker",
+        "cloudlink"
+      ]
+    },
+    "component": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.-]*$"
+    },
+    "msg": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 60000
+    },
+    "version": {
+      "type": "string"
+    },
+    "env": {
+      "type": "string"
+    },
+    "node": {
+      "type": "string"
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "span_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "session_id": {
+      "type": "string"
+    },
+    "job_id": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "video_id": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "stage": {
+      "type": "string"
+    },
+    "channel_id": {
+      "type": [
+        "string",
+        "integer"
+      ]
+    },
+    "user_h": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "home_h": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "err": {
+      "description": "a failure: the 53.01 object, or a plain message on lines that predate it",
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "msg": {
+              "type": "string"
+            },
+            "stack": {
+              "type": "array",
+              "maxItems": 30,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "fn": {
+                    "type": "string"
+                  },
+                  "file": {
+                    "type": "string"
+                  },
+                  "line": {
+                    "type": "integer"
+                  },
+                  "own": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "error_id": {
+      "type": "string"
+    },
+    "app": {
+      "type": "string"
+    },
+    "app_version": {
+      "type": "string"
+    },
+    "platform": {
+      "type": "string"
+    },
+    "os_version": {
+      "type": "string"
+    },
+    "device_model": {
+      "type": "string"
+    },
+    "install_id": {
+      "type": "string"
+    },
+    "attrs": {
+      "type": "object",
+      "maxProperties": 50
+    },
+    "user_id": false,
+    "raw_user_id": false,
+    "email": false,
+    "name": false,
+    "ip": false,
+    "client_ip": false,
+    "remote_addr": false
+  },
+  "additionalProperties": true
+}
