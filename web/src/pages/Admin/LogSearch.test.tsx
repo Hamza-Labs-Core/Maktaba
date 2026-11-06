@@ -96,7 +96,8 @@ describe("Logs over the index", () => {
     expect(calls("/api/admin/logs/search")[0]).toContain("service=api");
     expect(calls("/api/admin/logs/search")[0]).toContain("level=warn");
     expect(calls("/api/admin/logs/search")[0]).toContain("component=core.api");
-    expect(screen.getByText("sara")).toBeInTheDocument();
+    // the names come in their own call, after the first lines
+    expect(await screen.findByText("sara")).toBeInTheDocument();
     const box = screen.getByRole("textbox", { name: en["logs.search"] });
     await userEvent.setup().type(box, '"connection refused" -disk{Enter}');
     await waitFor(() =>
