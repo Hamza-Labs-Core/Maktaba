@@ -208,10 +208,17 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	home, _ := r.seeded("home", profile("small"))
 	home.startWithTV(k.prev, 8*time.Minute)
 	db := home.superDB("maktaba")
-	// the home's own choices, made on the previous release: Plex on, one stage turned off
-	// on the Queues page, the HDHomeRun device off (the relay is off: no [cloud])
+	// the home's own choices, made on the previous release: Plex on (in Settings: the
+	// components' apply writes ext.plex and its extensions mirror together; a write to
+	// extensions behind the API's back is repaired only at its next start, which here
+	// would be the update's), one stage turned off on the Queues page, the HDHomeRun
+	// device off (the relay is off: no [cloud])
+	owner := home.signIn()
+	if resp, body := owner.b.do("POST", home.webURL()+"/api/components/apply", map[string]any{
+		"changes": []map[string]string{{"id": "ext.plex", "want": "enabled"}}}, owner.csrf); resp.StatusCode != http.StatusOK {
+		t.Fatalf("Plex on (components apply): %d %s", resp.StatusCode, body)
+	}
 	for _, q := range []string{
-		`INSERT INTO extensions (name, enabled) VALUES ('plex', true) ON CONFLICT (name) DO UPDATE SET enabled = true`,
 		`UPDATE job_stages SET enabled = false, disabled_reason = 'operator' WHERE stage = 'youtube_backfill'`,
 		`INSERT INTO hdhr_device (id, device_id, enabled) VALUES (1, 'rehearsal', false)
 			ON CONFLICT (id) DO UPDATE SET enabled = false`,
@@ -239,7 +246,7 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 		t.Fatalf("the update to %s ended %s: %s (steps %+v)", k.cur, run.State, run.Error, run.Steps)
 	}
 	home.waitServing(k.cur, 3*time.Minute)
-	r.budget(mon, "an update that seeds the components (previous release -> this commit)", 2*time.Minute)
+	r.budget(mon, "an update of a seeded home (previous release -> this commit)", 2*time.Minute)
 	home.assertServing(k.cur)
 
 	after := home.componentsHome(db)
