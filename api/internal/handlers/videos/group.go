@@ -396,4 +396,3 @@ func (h *Handler) modeCollections(ctx context.Context, p *principal.Principal, l
 	}
 	return out, rows.Err()
 }
-

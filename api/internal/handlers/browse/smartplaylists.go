@@ -62,7 +62,9 @@ var smartSorts = map[string]bool{"created_at": true, "updated_at": true, "title"
 // checkSmartQuery validates and normalizes q (422s naming the field).
 func checkSmartQuery(q *SmartQuery) []httperror.FieldError {
 	var fe []httperror.FieldError
-	bad := func(field, msg string) { fe = append(fe, httperror.FieldError{Field: "smart_query." + field, Message: msg}) }
+	bad := func(field, msg string) {
+		fe = append(fe, httperror.FieldError{Field: "smart_query." + field, Message: msg})
+	}
 	if q.Filters == nil {
 		q.Filters = map[string]string{}
 	}
