@@ -1,0 +1,20 @@
+# expect: manifest_subject_mismatch
+schema = 1
+id = "dev.example.silence-chapters"
+version = "1.4.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0, <0.9.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "find_silences"
+subject = "library"
+export = "run-find-silences"
+version = 3
+
+  [[stage.trigger]]
+  event = "transcript.ready"
