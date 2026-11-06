@@ -68,7 +68,8 @@ func newFixture(t *testing.T) *fixture {
 		}
 		return id
 	}
-	f.videoA, f.videoB, f.videoC = video(f.libA, "ha"), video(f.libA, "hb"), video(f.libB, "hc")
+	f.videoA, f.videoB, f.videoC = video(f.libA, strings.Repeat("a", 64)), video(f.libA, strings.Repeat("b", 64)),
+		video(f.libB, strings.Repeat("c", 64))
 	stage := QueueName(testPlugin, "tag")
 	other := QueueName(testPlugin, "more")
 	f.exec(t, `INSERT INTO worker_pools (pool, label, scope, size, default_size) VALUES ('plugins','Plugins','global',1,1) ON CONFLICT DO NOTHING`)
