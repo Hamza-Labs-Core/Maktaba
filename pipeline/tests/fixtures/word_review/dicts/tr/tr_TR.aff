@@ -1,0 +1,6 @@
+SET UTF-8
+TRY aeiıoöuüklmnrstyzbcçdfgğhjpşvAEIİOÖUÜ
+SFX L Y 1
+SFX L 0 lar .
+SFX M Y 1
+SFX M 0 ler .

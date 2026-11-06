@@ -198,6 +198,12 @@ export function QueueCard({
               {t("queue.card.pausedBy", { who: pauseOwner(info, t) })}
             </span>
           )}
+          {/* Epic 52: the backfill's jobs wait while transcription has work: not red */}
+          {info.stage === "word_check" && summary.counts.paused > 0 && (
+            <span className="mkt-q-card__flag" data-testid="queue-card-backfill-waiting">
+              {t("queue.backfill.waiting")}
+            </span>
+          )}
           {catchup && (
             <span
               className="mkt-q-card__flag mkt-q-card__flag--catchup"

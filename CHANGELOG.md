@@ -207,6 +207,28 @@ build fails when the two differ.
 
 ### Added
 
+- **Word review: the transcript words that may be wrong go to a home admin, in every language
+  (Epic 52).** Every new transcript keeps each word's time, Whisper's confidence and what the
+  second listen heard (packed in `transcript_segments.word_data`, 9 bytes a word). A new CPU
+  stage, `word_check` (the `review.words` component), saves each suspect word with its reasons
+  (low confidence, not in the dictionary, heard differently, close to the vocabulary, a name)
+  and suggested spellings, within a budget per hour of audio; Quran verses recited or quoted
+  are compared with the bundled Tanzil text, and only a word that differs from the verse is
+  asked about. Languages are packs: Arabic (CAMeL Tools morphology and Ayaspell), English
+  (SCOWL), eleven LibreOffice Hunspell dictionaries installed on demand (`lang.hunspell.*`),
+  and a fallback for any other language; every check is deterministic, no language model
+  judges a word. Existing transcripts are checked from their text in the background, at the
+  lowest priority and only while nothing waits to be transcribed. The web's **Word review**
+  page (home admins only) shows one word at a time with its clip and sentence, keyboard-first
+  (physical keys, so an Arabic layout works); a fix edits the transcript, its subtitle files
+  and search without transcribing again, can be undone, is carried over when the video is
+  transcribed again, and teaches a vocabulary that new transcriptions and the second listen
+  use (never queuing the library again). Words can also be fixed from a video's Transcript
+  tab, each library has its word review settings, the Transcription page shows the open
+  counts and the share accepted as is, and the Remote apps on iPhone, iPad, Mac and Android
+  review words too. A component a later release adds now starts as the home's bundle says
+  (off on a Core home), never on by default. Slots 0186-0188 add `word_flags`,
+  `language_packs`, `transcript_edits`, `transcripts.revision`, `vocabulary` and `vocab_pairs`.
 - **The Player for Windows and Linux has the phone and Mac Players' sections (Epic 55).**
   After sign-in, a rail (on the right in Arabic) holds Home, Libraries, Live TV, Search and
   Profile, each with its own pages and Back (also Alt+Left and the mouse's back button). Home

@@ -20,17 +20,17 @@ func load(t *testing.T, name string) error {
 	return err
 }
 
-// T01: the real catalog loads, with about 30 switchable components, and requirements
-// come first.
+// T01: the real catalog loads, with about 30 switchable components besides the Hunspell
+// languages (Epic 52: one asset each, generated from a list), and requirements come first.
 func TestDefaultLoads(t *testing.T) {
 	c := Default()
 	switchable := 0
 	for _, comp := range c.Components() {
-		if comp.Switchable {
+		if comp.Switchable && !strings.HasPrefix(comp.ID, "lang.hunspell.") {
 			switchable++
 		}
 	}
-	if switchable < 25 || switchable > 45 {
+	if switchable < 25 || switchable > 50 {
 		t.Fatalf("%d switchable components, want about 30", switchable)
 	}
 	order := c.Order()
@@ -267,6 +267,40 @@ func TestModelSourcesArePinned(t *testing.T) {
 	}
 	if c, _ := Default().Get("model.cohere-arabic"); !c.Gated {
 		t.Fatal("model.cohere-arabic is gated")
+	}
+}
+
+// Epic 52 (story 52.16): word review owns word_check, needs runtime.lang, wants the Arabic
+// and English packs and the CAMeL database; every Hunspell language is an asset no bundle
+// installs.
+func TestWordReviewComponents(t *testing.T) {
+	c := Default()
+	byID := map[string]*Component{}
+	for _, comp := range c.Components() {
+		byID[comp.ID] = comp
+	}
+	rw, ok := byID["review.words"]
+	if !ok {
+		t.Fatal("no review.words")
+	}
+	if rw.Kind != "stages" || len(rw.Stages) != 1 || rw.Stages[0] != "word_check" {
+		t.Fatalf("review.words: %+v", rw)
+	}
+	if strings.Join(rw.Requires, ",") != "runtime.lang" ||
+		strings.Join(rw.Wants, ",") != "lang.ar,lang.en,model.refine" {
+		t.Fatalf("review.words requirements: %v wants %v", rw.Requires, rw.Wants)
+	}
+	for _, id := range []string{"runtime.lang", "lang.ar", "lang.en", "lang.hunspell.fr", "lang.hunspell.de"} {
+		comp, ok := byID[id]
+		if !ok {
+			t.Fatalf("no %s", id)
+		}
+		if comp.Kind != "asset" {
+			t.Fatalf("%s: %+v", id, comp)
+		}
+		if strings.HasPrefix(id, "lang.hunspell.") && len(comp.Bundles) != 0 {
+			t.Fatalf("%s is in bundles %v", id, comp.Bundles)
+		}
 	}
 }
 

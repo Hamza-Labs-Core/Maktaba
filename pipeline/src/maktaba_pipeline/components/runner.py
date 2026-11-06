@@ -107,6 +107,12 @@ def reconcile_enabled() -> bool:
     return v not in ("off", "0", "false", "no")
 
 
+def current_machine() -> str:
+    """The machine this process's runner reads desired state for (HOME without one)."""
+    r = _ACTIVE
+    return r.machine if r is not None else HOME
+
+
 def gate_open(component: str) -> bool:
     """Whether this process's runner has ``component`` on (True with no runner, or with
     the reconciler off): for code that serves a component outside a stage (the

@@ -493,6 +493,7 @@
 		97895C2FD6F1E1971D033BD1 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		97A6A7999C5586C11B0D8BF9 /* Home.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2C17944DFD5B9A7EB8F161F4 /* Home.xcstrings */; };
 		98528BBE7A03CE5885E171F2 /* MacFullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7044588B28669A5A259C36 /* MacFullScreen.swift */; };
+		9879E091F132F0825D859A82 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091B3C19FECC6C2E8A08E113 /* ReviewView.swift */; };
 		98AF81355E56718565C73082 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
 		98E057030FF2F148C3BEBAE7 /* video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 9C597463B3D151244BC108BB /* video-v3.json */; };
 		98ED643C57336A3E7BAEBC45 /* me-video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = 668F58D5C274795590DE0C27 /* me-video-v7.json */; };
@@ -738,6 +739,7 @@
 		E63F969E402CBCD2A448A7E3 /* library-series-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 15376060DE47516866176397 /* library-series-docs.json */; };
 		E6ACAA757723DFD151C217A5 /* home.json in Resources */ = {isa = PBXBuildFile; fileRef = 5EFFA92E7C6A2006B0D6623A /* home.json */; };
 		E7049292D816F2682F316B2E /* recommendations.json in Resources */ = {isa = PBXBuildFile; fileRef = 92323C1B857B017169B42F2B /* recommendations.json */; };
+		E71B0FEFD4E4D690DE0F6A43 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091B3C19FECC6C2E8A08E113 /* ReviewView.swift */; };
 		E72E39E2C78585FAC07A7E45 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
 		E7420B7E621C0D7C555BD742 /* pinned-libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = B8F40A31A58629458B396F20 /* pinned-libraries.json */; };
 		E74308BD12FDD7720D3E80C6 /* search-results.json in Resources */ = {isa = PBXBuildFile; fileRef = 490E14DE48F36E33CD099CAB /* search-results.json */; };
@@ -887,6 +889,7 @@
 		0383452500957C67748FAE90 /* Amiri-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Amiri-Bold.ttf"; sourceTree = "<group>"; };
 		04EB31B36EACFCAD4E26EEC6 /* facets.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = facets.json; sourceTree = "<group>"; };
 		04FE44A4268352AF7F418DE5 /* segments.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = segments.json; sourceTree = "<group>"; };
+		091B3C19FECC6C2E8A08E113 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
 		099A5FD71E3C9479CBB5EE0C /* videos-page2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "videos-page2.json"; sourceTree = "<group>"; };
 		0AF5420DFA5978BDE908D101 /* Libraries.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Libraries.xcstrings; sourceTree = "<group>"; };
 		0B1505FA1D7C0A36BE82F492 /* me-video-v10.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "me-video-v10.json"; sourceTree = "<group>"; };
@@ -1394,6 +1397,7 @@
 				C7CF3F653F8E0BF0DCFD0D63 /* QueueView.swift */,
 				5E7C782FE57543EEFC505FBD /* RemoteApp.swift */,
 				3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */,
+				091B3C19FECC6C2E8A08E113 /* ReviewView.swift */,
 				3778308DD4F7209391FA5071 /* UpdatesView.swift */,
 			);
 			path = Remote;
@@ -2662,6 +2666,7 @@
 				2638E1C13AA0226C38DBF50E /* QueueView.swift in Sources */,
 				1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */,
 				C4B017ECF5FFC90DD08793B2 /* RemoteRoot.swift in Sources */,
+				9879E091F132F0825D859A82 /* ReviewView.swift in Sources */,
 				C97B44941D2AAC3B9F3A92D9 /* UpdatesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2698,6 +2703,7 @@
 				676D599F8129B51DD231B3F2 /* QueueView.swift in Sources */,
 				80E256576FD19547D635B132 /* RemoteApp.swift in Sources */,
 				9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */,
+				E71B0FEFD4E4D690DE0F6A43 /* ReviewView.swift in Sources */,
 				FE46EABC4FB279D6AE1ED715 /* UpdatesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

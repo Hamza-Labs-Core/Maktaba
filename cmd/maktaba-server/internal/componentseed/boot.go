@@ -47,6 +47,18 @@ func (h Home) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("seed: %w", err)
 	}
+	// story 52.17: the components a later release added get the home bundle's default,
+	// never "on" by having no row
+	if !seeded {
+		wrote, err := SeedNew(ctx, h.Store, cat, h.Release)
+		if err != nil {
+			return fmt.Errorf("seed new components: %w", err)
+		}
+		if len(wrote) > 0 {
+			fmt.Fprintf(log, "[serve] components: %d new in release %s, set as the home's bundle says: %v\n",
+				len(wrote), h.Release, wrote)
+		}
+	}
 	desired, _, err := h.Store.Desired(ctx, store.Home)
 	if err != nil {
 		return fmt.Errorf("desired state: %w", err)

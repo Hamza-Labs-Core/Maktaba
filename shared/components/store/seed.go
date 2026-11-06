@@ -190,3 +190,86 @@ func (s *Store) SeedOverrides(ctx context.Context, node string, wants map[string
 	}
 	return n, tx.Commit()
 }
+
+// SeedMissing writes the rows of the components the home has no row for (story 52.17:
+// those a later release adds), at every boot after the first seed. In one transaction
+// under the seed's lock it reads the ids that have a row, asks plan for the wants of the
+// others, inserts them (a row an admin wrote meanwhile is kept) and writes one audit row
+// when it inserted any. It answers the rows it wrote; an unseeded home is the first
+// seed's, so it writes nothing.
+func (s *Store) SeedMissing(ctx context.Context, release string,
+	plan func(ctx context.Context, bundle string, have map[string]string) (map[string]string, error)) (map[string]string, error) {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if !s.sqlite() {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, SeedLock); err != nil {
+			return nil, fmt.Errorf("components: seed lock: %w", err)
+		}
+	}
+	var bundle sql.NullString
+	var at nullTime
+	if err := tx.QueryRowContext(ctx, `SELECT bundle, seeded_at FROM component_meta`).Scan(&bundle, &at); err != nil {
+		return nil, err
+	}
+	if !at.Valid {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id, want FROM components`)
+	if err != nil {
+		return nil, err
+	}
+	have := map[string]string{}
+	for rows.Next() {
+		var id string
+		var want sql.NullString
+		if err := rows.Scan(&id, &want); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		have[id] = want.String
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	wants, err := plan(ctx, bundle.String, have)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(wants))
+	for id, want := range wants {
+		if _, ok := have[id]; ok {
+			continue
+		}
+		if !validWant(want) {
+			return nil, fmt.Errorf("components: seed: bad want %q for %s", want, id)
+		}
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	wrote := map[string]string{}
+	for _, id := range ids {
+		res, err := tx.ExecContext(ctx, `INSERT INTO components (id, want, updated_by) VALUES ($1, $2, $3)
+			ON CONFLICT (id) DO NOTHING`, id, wants[id], SeedBy)
+		if err != nil {
+			return nil, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			wrote[id] = wants[id]
+		}
+	}
+	if len(wrote) == 0 {
+		return nil, nil
+	}
+	payload, err := json.Marshal(map[string]any{"release": release, "wants": wrote, "new": true})
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (category, action, target_kind, actor_source, payload)
+		VALUES ($1, 'component.seed', 'component', $2, $3)`, AuditCategory, SeedBy, string(payload)); err != nil {
+		return nil, err
+	}
+	return wrote, tx.Commit()
+}
