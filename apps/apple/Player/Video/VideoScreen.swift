@@ -202,6 +202,9 @@ private struct VideoDetails: View {
                 ? AnyLayout(VStackLayout(alignment: .leading, spacing: MaktabaTokens.Spacing.s2))
                 : AnyLayout(HStackLayout(spacing: MaktabaTokens.Spacing.s2))
             marksLayout { marks }
+            // Epic 56 story 56.12: Play next and Add to queue (the server queue), a row of their
+            // own: the marks' row holds two
+            marksLayout { QueueMarks(client: client, video: video.id) }
         }
     }
 
@@ -235,8 +238,6 @@ private struct VideoDetails: View {
     }
 
     @ViewBuilder private var marks: some View {
-        // Epic 56 story 56.12: Play next and Add to queue (the server queue)
-        QueueMarks(client: client, video: video.id)
         MarkButton(on: page.favorite, symbol: "heart", id: "video.favorite") {
             Text("Favorite", tableName: "Video", comment: "Keep the video among the person's favorites (a toggle)")
         } action: { Task { await page.toggleFavorite() } }
