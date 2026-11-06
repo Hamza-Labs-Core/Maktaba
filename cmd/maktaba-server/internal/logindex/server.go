@@ -97,6 +97,12 @@ func (ix *Index) Sweep(ctx context.Context) (int, error) {
 	if err := ix.sweepErrors(ctx, ix.ErrorRetention); err != nil {
 		return total, err
 	}
+	if err := ix.Rollup(ctx); err != nil {
+		return total, err
+	}
+	if err := ix.sweepMetrics(ctx); err != nil {
+		return total, err
+	}
 	if total > 0 {
 		_, _ = ix.db.ExecContext(ctx, `PRAGMA incremental_vacuum(2000)`)
 	}
@@ -134,6 +140,10 @@ func (ix *Index) Serve(ctx context.Context, ln net.Listener, poll time.Duration)
 			}
 		}
 	}()
+	// the dashboards' metrics (story 53.12)
+	if len(ix.MetricsURLs) > 0 {
+		go ix.scrapeLoop(ctx)
+	}
 	srv := &http.Server{Handler: ix.Handler(&ready), ReadHeaderTimeout: 10 * time.Second}
 	go func() { <-ctx.Done(); _ = srv.Close() }()
 	err := srv.Serve(ln)
@@ -211,6 +221,22 @@ func (ix *Index) Handler(ready *atomic.Bool) http.Handler {
 		ix.tail(w, r, q)
 	})
 	ix.errorRoutes(mux)
+	mux.HandleFunc("GET /dashboards/{board}", func(w http.ResponseWriter, r *http.Request) {
+		rng := r.URL.Query().Get("range")
+		if rng == "" {
+			rng = "24h"
+		}
+		doc, err := ix.Board(r.Context(), r.PathValue("board"), rng)
+		if errors.Is(err, ErrBoard) {
+			writeErr(w, http.StatusNotFound, err)
+			return
+		}
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, doc)
+	})
 	return mux
 }
 

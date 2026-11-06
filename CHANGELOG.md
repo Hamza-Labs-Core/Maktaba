@@ -622,6 +622,16 @@ build fails when the two differ.
   (1 GB), shows what each uses, and turns on detailed logs for one service for an hour, which
   ends by itself. A component's drawer links to its logs and errors.
 
+- **Dashboards (Epic 53, story 53.12).** The log index now reads this machine's metrics every
+  15 seconds and keeps an allow-list of series (about 30 today; 50 label sets each, the
+  catalog's ids for component series) at one minute for 7 days and one hour for 30, so a new
+  metric with many values cannot grow the store. Administration → Dashboards draws Overview
+  (components up, restarts, errors per hour by component, the API's memory and CPU), Queue,
+  Processing, Streaming, Storage (backups, log files and index) and Use (plays per day by app,
+  people per day and the most played videos: counts only). The range runs from 1 hour to 90
+  days, each chart shows its values under the pointer and a sentence for screen readers, and
+  Open in Logs opens the same time. `GET /api/admin/dashboards/{board}` is admin only.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
