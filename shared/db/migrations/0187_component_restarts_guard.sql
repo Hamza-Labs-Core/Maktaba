@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0186 - only the home asks for a restart, and a restart's seq only goes up.
+-- Slot 0187 - only the home asks for a restart, and a restart's seq only goes up.
 --
 -- component_restarts (slot 0185) kept the default grants of a new table, so maktaba_worker
 -- (every joined machine's login role) could write any row, while slot 0178 took writes on
