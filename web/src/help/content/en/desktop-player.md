@@ -66,17 +66,17 @@ A video resumes where you left it, unless you finished it or were nearly at the 
 
 The keys:
 
-| Key | Does |
-|---|---|
-| **Space**, the media play key | play or pause |
-| **←** / **→** | back or forward 10 seconds (in Arabic, **→** goes back) |
-| **Shift+←** / **Shift+→** | back or forward 30 seconds |
-| **N** | the next episode |
-| **S** | subtitles on or off |
-| **M** | mute |
-| **↑** / **↓** | volume |
-| **F** | full screen (**F11** stays big screen) |
-| **Escape** | leave full screen, else close the video |
+| Key                           | Does                                                    |
+| ----------------------------- | ------------------------------------------------------- |
+| **Space**, the media play key | play or pause                                           |
+| **←** / **→**                 | back or forward 10 seconds (in Arabic, **→** goes back) |
+| **Shift+←** / **Shift+→**     | back or forward 30 seconds                              |
+| **N**                         | the next episode                                        |
+| **S**                         | subtitles on or off                                     |
+| **M**                         | mute                                                    |
+| **↑** / **↓**                 | volume                                                  |
+| **F**                         | full screen (**F11** stays big screen)                  |
+| **Escape**                    | leave full screen, else close the video                 |
 
 Where you stopped is kept: Continue Watching on your other devices starts there. The home sends this player H.264 video, at most 1080p. A video stored another way (HEVC, a 4K file) is converted by the home as it plays, so it may take a few seconds to start.
 
