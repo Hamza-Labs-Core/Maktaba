@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..engine.media import FFMPEG, FFPROBE
+from ..engine import media
 
 __all__ = [
     "FORMAT",
@@ -95,8 +95,9 @@ class Probed:
         return self.duration is not None
 
 
-def check(path: str, *, ffprobe: str = FFPROBE, run: Run = subprocess.run) -> Probed:
-    """ffprobe ``path`` now."""
+def check(path: str, *, ffprobe: str | None = None, run: Run = subprocess.run) -> Probed:
+    """ffprobe ``path`` now (``ffprobe``: the one to run; default the current one)."""
+    ffprobe = ffprobe or media.ffprobe()
     try:
         out = run(
             [ffprobe, "-v", "error", "-select_streams", "v:0",
@@ -180,8 +181,8 @@ def fetch_and_swap(
     keep_broken: bool = True,
     download_timeout_s: float = 3600.0,
     run: Run = subprocess.run,
-    ffmpeg: str = FFMPEG,
-    ffprobe: str = FFPROBE,
+    ffmpeg: str | None = None,
+    ffprobe: str | None = None,
 ) -> RepairOutcome:
     """Fetch, check and swap one file (``work`` is an empty local folder); never raises
     for a download or file problem, it says what happened. The broken file is only moved
@@ -210,7 +211,7 @@ def fetch_and_swap(
         for audio in (["-c", "copy"], ["-c:v", "copy", "-c:a", "aac", "-b:a", "160k"]):
             local.unlink(missing_ok=True)
             try:
-                r = run([ffmpeg, "-v", "error", "-y", "-i", str(got[0]),
+                r = run([ffmpeg or media.ffmpeg(), "-v", "error", "-y", "-i", str(got[0]),
                          "-map", "0:v:0", "-map", "0:a:0?", *audio, str(local)],
                         capture_output=True, timeout=1800, check=False)  # fmt: skip
             except (subprocess.TimeoutExpired, OSError):

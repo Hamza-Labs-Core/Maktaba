@@ -44,6 +44,11 @@ build fails when the two differ.
   second time. The components tests now keep each local run's logs in a folder of its own,
   with the failed test's report and the database's component state, locally as in CI.
 
+- **A new Arabic dictionary or ffmpeg pack is used without restarting the pipeline.** A
+  pipeline that was already running kept the dictionary and ffmpeg of the packs it started
+  with until it restarted. It now follows each pack's current version at its next use: the
+  next video's ffmpeg, ffprobe and second listen use the newly installed or updated pack.
+
 - **A new way of finishing jobs can no longer bring back a deadlock with the queue's
   clean-up unnoticed.** The done-subjects summary of the queue locks its rows in one order
   within a statement; a transaction that finished jobs over several statements out of that

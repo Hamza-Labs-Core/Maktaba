@@ -28,7 +28,7 @@ from ...thumbnail.generator import thumbnail_dir_for
 from ..context import StageContext, StageFailure
 from ..graph import THUMB_SMALL_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
-from ..media import FFMPEG, run_media
+from ..media import ffmpeg, run_media
 from ..sql import loads, uid
 from ._common import load_video, require_video
 from .content_hash import is_pending
@@ -63,10 +63,11 @@ def staged_path(video_id: Any) -> Path:
     return thumbnail_dir_for("imported", root=ROOT) / f"{video_id}.jpg"
 
 
-def small_args(src: str, *, binary: str = FFMPEG) -> list[str]:
-    """One frame of ``src`` scaled to ``WIDTH`` px, JPEG on stdout."""
+def small_args(src: str, *, binary: str | None = None) -> list[str]:
+    """One frame of ``src`` scaled to ``WIDTH`` px, JPEG on stdout (``binary``: the ffmpeg;
+    default the current one)."""
     return [
-        binary, "-v", "error", "-nostdin", "-i", src,
+        binary or ffmpeg(), "-v", "error", "-nostdin", "-i", src,
         "-vf", f"scale={WIDTH}:-2", "-frames:v", "1", "-q:v", "5",
         "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
     ]  # fmt: skip

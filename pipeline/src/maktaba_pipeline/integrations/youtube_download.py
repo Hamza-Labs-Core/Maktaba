@@ -31,7 +31,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Protocol
 
-from ..engine.media import FFMPEG
+from ..engine import media
 from ..library_mgmt.repair import format_for, plain_name
 
 __all__ = [
@@ -115,7 +115,8 @@ def unavailable() -> str | None:
 
 
 def _ffmpeg_args() -> list[str]:
-    return ["--ffmpeg-location", FFMPEG] if os.path.isabs(FFMPEG) else []
+    ff = media.ffmpeg()
+    return ["--ffmpeg-location", ff] if os.path.isabs(ff) else []
 
 
 def listing_argv(
