@@ -29,13 +29,17 @@ var ErrLevelRole = errors.New("no such service")
 
 // SetLevelFor makes role log at level until now+d ("info" ends it at once).
 func SetLevelFor(cfg config.Config, role Role, level string, d time.Duration, now time.Time) (time.Time, error) {
-	ok := false
+	// the file is named by the list's own value, never by what the caller sent
+	known := Role("")
 	for _, r := range LevelRoles {
-		ok = ok || r == role
+		if r == role {
+			known = r
+		}
 	}
-	if !ok {
+	if known == "" {
 		return time.Time{}, ErrLevelRole
 	}
+	role = known
 	level = strings.ToLower(strings.TrimSpace(level))
 	if level != "debug" && level != "info" {
 		return time.Time{}, fmt.Errorf("level %q: debug or info", level)
