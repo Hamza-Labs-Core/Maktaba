@@ -70,6 +70,9 @@ type Handler struct {
 	// home, a hub's recently added) from memory (rowcache.go). Nil: read each
 	// time.
 	Rows *RowCache
+	// ListVideos is GET /api/videos (videos.Handler.List), which smart
+	// playlists are evaluated with (Epic 56 story 56.09). Nil: they list nothing.
+	ListVideos http.HandlerFunc
 }
 
 // Mount attaches the routes. /api/libraries/summary is a static segment, so
@@ -95,6 +98,8 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/libraries/{id}/series", h.LibrarySeries)
 	r.Get("/api/libraries/{id}/collections", h.LibraryCollections)
 	r.Get("/api/libraries/{id}/collections/{kind}/{gid}", h.AutoCollection)
+	// Epic 56 story 56.05: the TVs' Categories tab
+	r.Get("/api/libraries/{id}/categories", h.Categories)
 }
 
 func (h *Handler) now() time.Time {

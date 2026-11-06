@@ -148,6 +148,12 @@ class _Loop:
         return "stopped"
 
 
+def _no_restarts_table(exc: BaseException) -> bool:
+    """A schema before slot 0185: no ``component_restarts`` table (Postgres or SQLite)."""
+    msg = str(exc).lower()
+    return "component_restarts" in msg and ("does not exist" in msg or "no such table" in msg)
+
+
 class ComponentRunner:
     """See the module docstring. ``apply`` is the worker's ``WorkerAgent.apply`` (it
     recomputes the selection and writes it to the registry); ``claims`` (set once the claim
@@ -391,12 +397,18 @@ class ComponentRunner:
     async def _take_restarts(self) -> None:
         """Restart this process's loops of each component whose restart request moved
         since the last read (``POST /api/components/{id}/restart`` writes one for the
-        pipeline's loops, which the API cannot reach). A failed read (a schema before slot
-        0185) changes nothing."""
+        pipeline's loops, which the API cannot reach). A schema before slot 0185 has no
+        requests. Any other failed read makes the next poll a full pass, which reads them
+        again: a request is not left waiting for an unrelated change."""
         try:
             seqs = await store.restarts(self.db, self.machine, "pipeline")
-        except Exception as exc:  # noqa: BLE001 - an older schema: no restarts
-            _log.debug("components_restarts_unreadable", error=f"{type(exc).__name__}: {exc}")
+        except Exception as exc:  # noqa: BLE001 - read again at the next poll
+            err = f"{type(exc).__name__}: {exc}"
+            if _no_restarts_table(exc):
+                _log.debug("components_restarts_unreadable", error=err)
+                return
+            self.revision = -1
+            _log.warning("components_restarts_read_failed", error=err)
             return
         self.take_restarts(seqs)
 

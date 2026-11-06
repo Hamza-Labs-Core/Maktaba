@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.player.libraries
 
 import androidx.compose.foundation.clickable
+import com.hamzalabs.maktaba.core.queue.QueueSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -143,6 +144,8 @@ private fun Header(state: SeriesState, client: ApiClient, onContinue: (Episode) 
             )
             ProgressStrip(series.progress.toFloat(), Modifier.widthIn(max = 320.dp).fillMaxWidth())
         }
+        // Epic 56 story 56.12: the series' Shuffle, through the server queue
+        com.hamzalabs.maktaba.player.libraries.PlayShuffleRow(client, QueueSource("series", state.id), playLabel = R.string.series_shuffle, onlyShuffle = true)
         state.next?.let { next ->
             Button(onClick = { onContinue(next) }, modifier = Modifier.testTag("continue").heightIn(min = 48.dp)) {
                 Icon(Icons.Filled.PlayArrow, null)

@@ -110,6 +110,8 @@ func setupAccess(t *testing.T) (*acEnv, func(q string, args ...any) int) {
 			p = &principal.Principal{UserID: acMember, Libraries: []string{acLibA}, Source: principal.SourceJWT}
 		case "other":
 			p = &principal.Principal{UserID: acOther, Libraries: []string{acLibA}, Source: principal.SourceJWT}
+		case "member-lost-a": // the member after an admin took library A from them (Epic 56)
+			p = &principal.Principal{UserID: acMember, Libraries: []string{acLibB}, Source: principal.SourceJWT}
 		}
 		if p != nil {
 			req = req.WithContext(principal.WithPrincipal(req.Context(), p))

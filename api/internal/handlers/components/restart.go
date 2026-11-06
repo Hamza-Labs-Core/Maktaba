@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"strings"
 
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -42,21 +41,29 @@ type Restarter struct {
 // hostSupervisor is the catalog's host of the supervisor's own loops.
 const hostSupervisor = "supervisor"
 
-// Restart restarts id and records it (component.restart; no desired row changes). It
-// answers how many processes and loops it restarted, started or asked another process to
-// restart: 0 when none of its processes runs now (the supervisor starts them). Refusals,
-// as *svc.Refusal:
+// Restarted is what a restart did: the processes and loops it restarted or started here
+// (Restarted: 0 when none of its processes runs now, the supervisor starts them), and the
+// hosts asked to restart their loops through a restart request (Requested: streaming, the
+// pipeline, or the API from another process). A host asked is not counted: its runner
+// restarts the loops it runs when it reads the request, which this cannot confirm.
+type Restarted struct {
+	Restarted int
+	Requested []string
+}
+
+// Restart restarts id and records it (component.restart; no desired row changes).
+// Refusals, as *svc.Refusal:
 //   - not_switchable: part of the server;
 //   - not_restartable: nothing to restart (stages, an extension, an asset);
 //   - not_running: off or held, or loops of this process only and a requirement is off
 //     (its gate shut).
-func (x Restarter) Restart(ctx context.Context, id string, actor svc.Actor) (int, error) {
+func (x Restarter) Restart(ctx context.Context, id string, actor svc.Actor) (Restarted, error) {
 	c, ok := x.Service.Component(id)
 	if !ok {
-		return 0, svc.ErrUnknown
+		return Restarted{}, svc.ErrUnknown
 	}
-	refuse := func(code, detail string) (int, error) {
-		return 0, &svc.Refusal{Status: http.StatusConflict, ID: id, Code: code, Detail: detail}
+	refuse := func(code, detail string) (Restarted, error) {
+		return Restarted{}, &svc.Refusal{Status: http.StatusConflict, ID: id, Code: code, Detail: detail}
 	}
 	if !c.Switchable {
 		return refuse(svc.CodeNotSwitchable, id+" is part of the server")
@@ -76,18 +83,18 @@ func (x Restarter) Restart(ctx context.Context, id string, actor svc.Actor) (int
 	}
 	d, err := x.Service.Show(ctx, id)
 	if err != nil {
-		return 0, err
+		return Restarted{}, err
 	}
 	if d.Want != components.WantEnabled || d.Hold != nil {
 		return refuse(svc.CodeNotRunning, id+" is off or stopped: start it instead")
 	}
 	if (procs || supLoops) && x.Packs == nil {
-		return 0, ErrNoSupervisor
+		return Restarted{}, ErrNoSupervisor
 	}
 	n := 0
 	if procs || supLoops {
 		if n, err = x.Packs.Restart(ctx, id); err != nil {
-			return 0, &supCallError{err}
+			return Restarted{}, &supCallError{err}
 		}
 	}
 	if local {
@@ -97,25 +104,15 @@ func (x Restarter) Restart(ctx context.Context, id string, actor svc.Actor) (int
 		}
 		n += m
 	}
+	requested := []string{}
 	for _, h := range asked {
 		if _, err := x.Service.Store.RequestRestart(ctx, store.Home, id, h, actor.By); err != nil {
-			return 0, err
+			return Restarted{}, err
 		}
-		n += loopsIn(c, h)
+		requested = append(requested, h)
 	}
 	if err := x.Service.Restarted(ctx, id, actor); err != nil {
-		return 0, err
+		return Restarted{}, err
 	}
-	return n, nil
-}
-
-// loopsIn is how many of c's loops run in host.
-func loopsIn(c *components.Component, host string) int {
-	n := 0
-	for _, l := range c.Loops {
-		if h, _, _ := strings.Cut(l, ":"); h == host {
-			n++
-		}
-	}
-	return n
+	return Restarted{Restarted: n, Requested: requested}, nil
 }

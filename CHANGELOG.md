@@ -186,6 +186,16 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **A restart of a component running in another service is no longer lost or overstated.** A
+  joined machine can no longer change or lower a restart request (which hid every later
+  restart), a request whose read failed once is read again within seconds instead of waiting
+  for the next change, and the restart's answer lists the services it asked (`requested`)
+  apart from what it restarted itself. Admin > Components says when a restart was only asked
+  of another service.
+- **A MediaIntel import's dry run no longer holds up the queue.** The dry run (the default)
+  locked the jobs' summary for its whole run, so every job that finished meanwhile waited for
+  it; it now locks nothing. An applied import queues its library scans after it commits, so a
+  scan that finishes during the import can no longer deadlock with it.
 - **`serve --offline` also stops the pipeline's own outbound calls.** With `MAKTABA_OFFLINE=1`
   the YouTube listings, downloads, exact dates and repairs wait (no scheduled refresh is
   queued), the books stage looks nothing up on Wikipedia (a book not looked up yet is looked up
@@ -206,6 +216,39 @@ build fails when the two differ.
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
 ### Added
+
+- **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
+  play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
+  its grid's sort and filters, a series or a season (from the next unwatched episode), a
+  collection, a playlist or one video. Shuffle is a seeded order of the whole source (not one
+  random page), paged 500 at a time, with Play next, Add to queue and Shuffle again; a queue
+  started on one device is offered as Continue your queue on another. Smart playlists keep a
+  saved filter with a sort and a limit, per user. Collections come by themselves from YouTube
+  playlists and channels and from Plex's own collections, kept in step with their source, and an
+  admin can show one as a row on a library's Recommended tab or on Home, hide it, rename it,
+  duplicate it, and choose per library whether the grid shows collections in place of their
+  videos. `GET /api/videos` groups by series (`group=series`), `GET /api/libraries/{id}/categories`
+  lists speakers, topics, languages and years, and the jump bar lists Arabic letters first. The
+  web uses the server queue, adds a library's Playlists tab, Shuffle on a series and a season,
+  and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
+  route (a test fails on an undescribed one). Migrations 0191-0193. Every new word in English
+  and Arabic.
+- **Plugins, part 1: the manifest, the package and a sandboxed plugin host (Epic 54, stories
+  54.01–54.03).** Nothing runs yet: no plugin can be installed until the next parts. A plugin
+  is one `.mkplugin` file (a zstd tar) holding a WebAssembly component, a `manifest.toml` and
+  English and Arabic strings. One schema (`shared/plugins/manifest.schema.json`) with one list
+  of capabilities and one list of events is read by four validators (Go, Rust, Python and the
+  JavaScript SDK) that refuse the same 49 broken manifests with the same codes and normalise
+  good ones to the same bytes. The package reader refuses paths outside the folder, links,
+  devices, unlisted files, wrong checksums and packages over 50 MB. The new
+  `maktaba-plugind` runs each plugin job in its own Wasmtime store with no network, no files
+  and no processes linked, a memory cap, fuel and a deadline (a runaway job ends within 200
+  ms of it; a crash ends its job, not the host), and forwards every plugin call, with a token
+  the plugin never sees, to the plugin API on a unix socket. The host puts itself in the
+  operating system's sandbox before it reads any plugin (a Seatbelt profile on macOS;
+  seccomp, Landlock and empty network namespaces on Linux; a capability-less AppContainer on
+  Windows) or refuses to run, and CI proves on each system that native code inside it cannot
+  open a connection, read a planted secret or start a process.
 
 - **Word review: the transcript words that may be wrong go to a home admin, in every language
   (Epic 52).** Every new transcript keeps each word's time, Whisper's confidence and what the

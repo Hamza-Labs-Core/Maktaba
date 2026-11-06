@@ -24,7 +24,8 @@ struct LibraryView: View {
                 LazyVGrid(columns: columns, spacing: 56) {
                     ForEach(libraries) { library in
                         NavigationLink {
-                            VideoGrid(title: library.name, library: library.id)
+                            // Epic 56: a library's five tabs
+                            LibraryTabsView(library: library.id, name: library.name)
                         } label: {
                             LibraryCard(library: library)
                         }

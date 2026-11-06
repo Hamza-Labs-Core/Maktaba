@@ -32,6 +32,7 @@ from .collection import (
     fingerprint,
     run_collection,
 )
+from .collections_import import run_collections_import
 from .groups import fingerprint as groups_fingerprint
 from .groups import run_groups
 from .index import run_index
@@ -49,6 +50,7 @@ PLEX_EXPORT_VERSION = 1
 PLEX_INDEX_VERSION = 1
 PLEX_GROUPS_VERSION = 1
 PLEX_LIVETV_VERSION = 2  # 2: Plex's actual channel map counts (drift repair)
+PLEX_COLLECTIONS_IMPORT_VERSION = 1
 
 MANIFEST = Manifest(
     name="plex",
@@ -66,7 +68,13 @@ MANIFEST = Manifest(
             env="MAKTABA_PATH_MAP",
         ),
     ),
-    stages=("plex_index", "plex_collection", "plex_groups", "plex_livetv"),
+    stages=(
+        "plex_index",
+        "plex_collection",
+        "plex_groups",
+        "plex_livetv",
+        "plex_collections_import",
+    ),
 )
 
 
@@ -118,6 +126,24 @@ class PlexExtension:
         )
         if graph.has_stage("scan"):  # a rescan may add, move or drop files Plex lists
             graph.add_edge("scan", Edge("plex_index", "same"))
+        # Epic 56 story 56.07: Plex's own collections, read into Maktaba after each index
+        graph.add_stage(
+            StageDef(
+                name="plex_collections_import",
+                label="Read Plex collections",
+                subject_kinds=("library",),
+                pool="network_plex",
+                lane="sources",
+                lane_order=2,
+                version=PLEX_COLLECTIONS_IMPORT_VERSION,
+                entry_for=("library",),
+                debounce_sec=60,
+                debounce_max_sec=600,
+                placement="home",  # needs the Plex token (home_secrets) ...
+                relay="plex",  # ... which the home's relay adds for a node
+            )
+        )
+        graph.add_edge("plex_index", Edge("plex_collections_import", "same"))
         graph.add_stage(
             StageDef(
                 name="plex_collection",
@@ -196,6 +222,9 @@ class PlexExtension:
                 output_fingerprint=None,
             ),
             # no input fingerprint: every run looks at Plex (the state is there, not here)
+            "plex_collections_import": StageImpl(
+                run=self._run_collections_import, input_fingerprint=None, output_fingerprint=None
+            ),
             "plex_livetv": StageImpl(
                 run=self._run_livetv, input_fingerprint=None, output_fingerprint=None
             ),
@@ -211,6 +240,9 @@ class PlexExtension:
 
     async def _run_groups(self, db: Any, job: Any, ctx: Any) -> StageResult:
         return await run_groups(db, job, ctx, self.service)
+
+    async def _run_collections_import(self, db: Any, job: Any, ctx: Any) -> StageResult:
+        return await run_collections_import(db, job, ctx, self.service)
 
     async def _run_livetv(self, db: Any, job: Any, ctx: Any) -> StageResult:
         return await run_livetv(db, job, ctx, self.service)

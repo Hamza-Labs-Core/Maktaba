@@ -2752,14 +2752,17 @@
       ],
       "related": [
         "epic-16-subscriptions",
-        "plan-16.02-premium-features"
+        "plan-16.02-premium-features",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/16-subscriptions/story-16-02-premium-features.md",
         "plan": "specs/epics/16-subscriptions/plan-16-02-premium-features.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /home"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "premium-features"

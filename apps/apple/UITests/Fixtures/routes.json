@@ -426,5 +426,46 @@
   "method": "DELETE",
   "path": "/api/tv/remote/sessions/{id}",
   "status": 204
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/{id}/collections",
+  "status": 200,
+  "file": "library-collections.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/{id}/categories",
+  "status": 200,
+  "file": "library-categories.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/me/play-queues",
+  "status": 201,
+  "file": "play-queue.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/play-queues/current",
+  "status": 204
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/play-queues/{id}",
+  "status": 200,
+  "file": "play-queue.json"
+ },
+ {
+  "method": "PUT",
+  "path": "/api/me/play-queues/{id}/current",
+  "status": 200,
+  "file": "play-queue.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/me/play-queues/{id}/reshuffle",
+  "status": 200,
+  "file": "play-queue.json"
  }
 ]

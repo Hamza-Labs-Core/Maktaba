@@ -2287,7 +2287,8 @@
       ],
       "related": [
         "epic-50-cloud-no-downtime",
-        "ep-get-capabilities"
+        "ep-get-capabilities",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-13-apps-ride-out-outage.md",
@@ -2295,7 +2296,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /capabilities"
+        "GET /capabilities",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -2342,7 +2344,8 @@
       ],
       "related": [
         "epic-50-cloud-no-downtime",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-15-direct-remote.md",
@@ -2350,7 +2353,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -2371,7 +2375,8 @@
       ],
       "related": [
         "epic-50-cloud-no-downtime",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-16-relay-pool.md",
@@ -2379,7 +2384,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /ws"
+        "GET /ws",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -2452,7 +2458,8 @@
       ],
       "related": [
         "epic-50-cloud-no-downtime",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-19-plans-relay-billing.md",
@@ -2460,7 +2467,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -2507,7 +2515,8 @@
       ],
       "related": [
         "epic-50-cloud-no-downtime",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-21-broadcast-edge.md",
@@ -2515,7 +2524,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /ws"
+        "GET /ws",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -2893,7 +2903,8 @@
         "epic-50-cloud-no-downtime",
         "ep-get-ws",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-35-remote-access-capability.md",
@@ -2903,7 +2914,8 @@
       "api_endpoints": [
         "GET /ws",
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -3204,7 +3216,8 @@
         "ep-post-search",
         "ep-get-ws",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-09-capabilities.md",
@@ -3216,7 +3229,8 @@
         "POST /search",
         "GET /ws",
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [
         "chapters",
@@ -3281,7 +3295,8 @@
         "ep-put-settings",
         "ep-get-ws",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-11-clients.md",
@@ -3293,7 +3308,8 @@
         "PUT /settings",
         "GET /ws",
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [
         "chapters",
@@ -3472,7 +3488,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-post-components-id-install"
+        "ep-post-components-id-install",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-16-install-remove.md",
@@ -3487,7 +3504,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "POST /components/{id}/install"
+        "POST /components/{id}/install",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -3544,7 +3562,8 @@
       ],
       "related": [
         "epic-51-configurable-components",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-18-update-rehearsal.md",
@@ -3552,7 +3571,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -4115,7 +4135,8 @@
         "entity-audit_log",
         "ep-get-ws",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/52-transcript-word-review/story-52-17-new-component-defaults.md",
@@ -4125,7 +4146,8 @@
       "api_endpoints": [
         "GET /ws",
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [
         "audit_log"
@@ -4148,7 +4170,8 @@
       ],
       "related": [
         "epic-53-logs-errors-reports",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-01-log-schema.md",
@@ -4156,7 +4179,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -4323,7 +4347,8 @@
         "entity-transcripts",
         "ep-get-ws",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-06-status-strip.md",
@@ -4333,7 +4358,8 @@
       "api_endpoints": [
         "GET /ws",
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [
         "transcripts"
@@ -4619,7 +4645,8 @@
       ],
       "related": [
         "epic-53-logs-errors-reports",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-16-reports-to-maktaba.md",
@@ -4627,7 +4654,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -5149,7 +5177,8 @@
       "related": [
         "epic-54-plugins",
         "ep-post-sessions",
-        "ep-get-workers"
+        "ep-get-workers",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-15-store-service.md",
@@ -5158,7 +5187,8 @@
       },
       "api_endpoints": [
         "POST /sessions",
-        "GET /workers"
+        "GET /workers",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -5260,7 +5290,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-19-paid-plugins.md",
@@ -5268,7 +5299,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {
@@ -5291,7 +5323,8 @@
         "epic-54-plugins",
         "ep-get-ws",
         "ep-get-capabilities",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-home"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-20-panels.md",
@@ -5301,7 +5334,8 @@
       "api_endpoints": [
         "GET /ws",
         "GET /capabilities",
-        "GET /components"
+        "GET /components",
+        "GET /home"
       ],
       "db_tables": [],
       "metadata": {

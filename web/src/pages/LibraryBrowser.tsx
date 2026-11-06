@@ -55,7 +55,15 @@ import {
   pickFilters,
   saveCollectionFilters,
 } from "../lib/collections";
-import { EMPTY_FACETS, fetchFacets, markWatched, setFavorite, type Facets } from "../lib/me";
+import {
+  createSmartPlaylist,
+  EMPTY_FACETS,
+  fetchFacets,
+  markWatched,
+  setFavorite,
+  updateSmartRules,
+  type Facets,
+} from "../lib/me";
 import { startQueueFromQuery, watchPath } from "../lib/playQueue";
 import { PUBLISH_DATE, videosUrl } from "../lib/browse";
 import { errorText } from "../lib/errorText";
@@ -380,6 +388,12 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   const [saveName, setSaveName] = useState("");
   const [saving, setSaving] = useState(false);
   const editCollection = params.get("collection") || "";
+  // Epic 56 story 56.09: Save as smart playlist, and a smart playlist's Edit rules
+  // (?smartPlaylist=<id> opens the grid with its rules; saving writes them back)
+  const editSmart = params.get("smartPlaylist") || "";
+  const [smartOpen, setSmartOpen] = useState(false);
+  const [smartName, setSmartName] = useState("");
+  const [smartLimit, setSmartLimit] = useState(200);
   const curator = !!user?.is_admin && !!libraryId && !badLibrary;
   const [starting, setStarting] = useState(false);
 
@@ -661,6 +675,42 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     }
   }
 
+  async function saveSmart() {
+    const rules = { ...pickFilters(params) } as Record<string, string>;
+    delete rules.sort; // the sort and order go beside the filters
+    delete rules.order;
+    if (params.get("favorite") === "true") rules.favorite = "true";
+    const query = {
+      libraries: libraryId ? [libraryId] : null,
+      filters: rules,
+      sort,
+      order,
+      limit: Math.min(5000, Math.max(1, Math.round(smartLimit) || 200)),
+    };
+    setSaving(true);
+    try {
+      if (editSmart) {
+        await updateSmartRules(editSmart, query);
+        navigate(`/playlists/${encodeURIComponent(editSmart)}`);
+        return;
+      }
+      const nm = smartName.trim();
+      if (!nm) return;
+      const p = await createSmartPlaylist(nm, query);
+      setSmartOpen(false);
+      setSmartName("");
+      toast.show({ tone: "success", message: t("playlists.smart.saved", { name: p.name }) });
+      navigate(`/playlists/${encodeURIComponent(p.id)}`);
+    } catch (e) {
+      toast.show({
+        tone: "error",
+        message: `${t("playlists.smart.saveError")}: ${errorText(e, t)}`,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function toggleSelected(id: string) {
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
@@ -933,6 +983,17 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           onClick={() => (editCollection ? void saveFilters() : setSaveOpen(true))}
         >
           {editCollection ? t("collections.saveFiltersTo") : t("collections.saveAs")}
+        </Button>
+      )}
+      {user && (
+        <Button
+          variant="ghost"
+          size="sm"
+          loading={saving}
+          disabled={saving}
+          onClick={() => (editSmart ? void saveSmart() : setSmartOpen(true))}
+        >
+          {editSmart ? t("playlists.smart.editRules") : t("playlists.smart.save")}
         </Button>
       )}
     </div>
@@ -1272,6 +1333,49 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           onClose={() => setCollectionOpen(false)}
           onAdded={() => setSelected([])}
         />
+      )}
+      {user && (
+        <Modal
+          open={smartOpen}
+          onClose={() => setSmartOpen(false)}
+          title={t("playlists.smart.save")}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setSmartOpen(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                disabled={saving || !smartName.trim()}
+                loading={saving}
+                onClick={() => void saveSmart()}
+              >
+                {t("common.save")}
+              </Button>
+            </>
+          }
+        >
+          <p className="mkt-muted">{t("playlists.smart.updates")}</p>
+          <label className="mkt-field">
+            <span className="mkt-field__label">{t("playlists.smart.name")}</span>
+            <input
+              type="text"
+              dir="auto"
+              value={smartName}
+              maxLength={200}
+              onChange={(e) => setSmartName(e.target.value)}
+            />
+          </label>
+          <label className="mkt-field">
+            <span className="mkt-field__label">{t("playlists.smart.limitLabel")}</span>
+            <input
+              type="number"
+              min={1}
+              max={5000}
+              value={smartLimit}
+              onChange={(e) => setSmartLimit(Number(e.target.value))}
+            />
+          </label>
+        </Modal>
       )}
       {curator && (
         <Modal

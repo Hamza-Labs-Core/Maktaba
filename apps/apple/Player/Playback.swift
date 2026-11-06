@@ -199,6 +199,7 @@ final class Playback {
         Task {
             do {
                 let v = try await client.video(n.videoID)
+                PlayerQueues.played(v.id, client)
                 play(v)
             } catch {
                 failure = HomeFailure(error)
@@ -630,6 +631,12 @@ final class Playback {
         nextTask?.cancel()
         nextTask = Task { [client] in
             do {
+                // Epic 56 story 56.12: the queue's next first, when this video is its current one
+                if let q = await PlayerQueues.next(after: v.id, client) {
+                    guard !Task.isCancelled, video?.id == v.id else { return }
+                    nextFound(q)
+                    return
+                }
                 guard let series = try await client.myVideo(v.id).series else { return }
                 let all = try await client.episodes(series: series.id).episodes
                 let keys = all.map { WatchLogic.EpisodeKey(id: $0.videoID, season: $0.season, episode: $0.episode, absolute: $0.absoluteNumber) }

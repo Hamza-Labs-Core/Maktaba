@@ -112,6 +112,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/** The toasts when a provider is above, else null (a component that may stand alone). */
+export function useOptionalToast(): ToastApi | null {
+  return useContext(ToastContext);
+}
+
 export function useToast(): ToastApi {
   const ctx = useContext(ToastContext);
   if (!ctx) {

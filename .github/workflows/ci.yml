@@ -94,6 +94,7 @@ jobs:
       unit_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_web == 'true' }}
       unit_tokens: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
+      plugins: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.plugins == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.compat_prev == 'true' }}
@@ -240,6 +241,13 @@ jobs:
     with:
       live: ${{ needs.changes.outputs.components == 'true' }}
       chaos: ${{ needs.changes.outputs.components_chaos == 'true' }}
+
+  plugins:
+    # Epic 54: the plugin host's tests and, on every OS, the sandbox's escape probes
+    # against a canary (see _plugins.yml)
+    needs: [changes]
+    if: needs.changes.outputs.plugins == 'true'
+    uses: ./.github/workflows/_plugins.yml
 
   e2e:
     needs: [changes, integration]
@@ -523,6 +531,7 @@ jobs:
       - integration
       - replica
       - components
+      - plugins
       - e2e
       - media-e2e
       - perf-ci
