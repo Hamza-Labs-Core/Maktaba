@@ -41,6 +41,8 @@ class HomeRowsTest {
         val rows = homeRows(rails, recs, now).filterIsInstance<HomeRow.Cards>().associateBy { it.key }
         val cw = rows.getValue(KEY_CONTINUE).cards.single()
         assertEquals(600, cw.resumeAtSec)
+        // its length goes with it: a resume past 95% starts from the start
+        assertEquals(2400.0, cw.durationSec!!, 0.001)
         assertEquals(CardOpen.Video(HomeRowsFixtures.CONTINUE), cw.open)
         assertEquals(0.25f, cw.progress!!, 0.001f)
         assertFalse(cw.recommended)

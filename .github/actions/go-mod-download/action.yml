@@ -60,7 +60,7 @@ runs:
             if [ "${n}" -ge 3 ]; then
               # the module go names in its error ("go: path@version: ..."), else the directory
               local mod
-              mod=$(grep -oE '[A-Za-z0-9._~/-]+@v[0-9][^ :"]*' "${log}" | head -n1 || true)
+              mod=$(grep -oE '[A-Za-z0-9._~/-]+@v[0-9][^ :"]*' "${log}" | sed -n 1p || true)
               echo "::error::${what} never downloaded after 3 attempts${mod:+: ${mod}} ($(grep -v '^\s*$' "${log}" | tail -n1))"
               exit 1
             fi

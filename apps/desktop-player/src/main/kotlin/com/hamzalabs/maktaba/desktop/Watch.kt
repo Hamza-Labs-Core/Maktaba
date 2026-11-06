@@ -123,7 +123,7 @@ fun Watch(
                     CircularProgressIndicator()
                     Text(t["watch.opening"], color = Color.White)
                 }
-                else -> VideoSurface(player, Modifier.fillMaxSize(), caption = playback.caption)
+                else -> VideoSurface((player as? FxVideo)?.media, Modifier.fillMaxSize(), caption = playback.caption)
             }
         }
         playback.note?.let { Text(t["watch.failed", it], color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }

@@ -67,6 +67,13 @@ stt = [
     # the dictionary: on Windows camel-tools needs no kenlm (its own marker); Linux has a wheel
     "camel-tools>=1.6,<2 ; (sys_platform == 'win32' and platform_machine == 'AMD64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
 ]
+# Word review's language packs (Epic 52, story 52.16; the runtime.lang pack): word
+# frequencies for the fallback pack. PyICU (UAX #29 word breaks) is used when a machine has
+# it, but is not required: it has no wheels on every platform, and without it the packs'
+# own splitter runs (recorded as tokenizer=regex in the pack report).
+lang = [
+    "wordfreq>=3.1,<4",
+]
 dev = [
     "grpcio-tools>=1.68",
     "mypy>=1.11",

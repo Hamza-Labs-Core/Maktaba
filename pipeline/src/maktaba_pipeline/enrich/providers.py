@@ -108,7 +108,11 @@ async def load_web_search(db: Any) -> WebSearchSettings:
 def pick_search(
     cfg: EnrichConfig, ws: WebSearchSettings, *, transport: Transport = urllib_transport
 ) -> SearchBackend | None:
+    from .. import offline
+
     want = cfg.search
+    if offline.offline():
+        return None  # no web search while offline (#640): internal intel only
     if want in ("auto", "google") and ws.google:
         return GoogleSearch(ws.google_api_key, ws.google_cx, transport=transport)
     if want in ("auto", "ollama") and ws.ollama:

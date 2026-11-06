@@ -6042,6 +6042,72 @@
    ]
   },
   {
+   "key": "word_review",
+   "title": "Word review",
+   "what": "suspect transcript words saved for a home admin: which transcripts are checked, how many words an hour of audio may ask about, which reasons count",
+   "version": [
+    1,
+    0
+   ],
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Word review",
+     "label": "Check new transcripts",
+     "help": "Each new transcript is checked for words that are not in the dictionary, look wrong or were heard with low confidence; they wait for a home admin in Word review.",
+     "default": true
+    },
+    {
+     "name": "backfill",
+     "kind": "bool",
+     "group": "Word review",
+     "label": "Check existing transcripts",
+     "help": "Transcripts made before word review are checked too, from their text alone, at the lowest priority and only while nothing waits to be transcribed.",
+     "default": true
+    },
+    {
+     "name": "sensitivity",
+     "kind": "str",
+     "group": "Word review",
+     "label": "Sensitivity",
+     "help": "Low asks about fewer words, only the surest; high asks about more.",
+     "default": "normal",
+     "choices": [
+      "low",
+      "normal",
+      "high"
+     ]
+    },
+    {
+     "name": "budget_per_hour",
+     "kind": "int",
+     "group": "Word review",
+     "label": "Most words per hour of audio",
+     "help": "At most this many words of a file wait for review per hour of its audio; the rest are kept, skipped, and a file with too many is marked as maybe poor.",
+     "default": 40,
+     "minimum": 10,
+     "maximum": 200
+    },
+    {
+     "name": "reasons_off",
+     "kind": "words",
+     "group": "Word review",
+     "label": "Reasons switched off",
+     "help": "Words flagged only for these reasons are not asked about: low_confidence, not_in_dictionary, listeners_disagree, quran_mismatch, named_entity, near_vocabulary. With quran_mismatch off, verse runs are left unchecked.",
+     "default": []
+    },
+    {
+     "name": "reviewers_note",
+     "kind": "str",
+     "group": "Word review",
+     "label": "Note for reviewers",
+     "help": "Shown at the top of the review queue (for example: spell names as on the book covers).",
+     "default": ""
+    }
+   ]
+  },
+  {
    "key": "search",
    "title": "Search",
    "what": "how search results are grouped per video, how many show on a page, how long a search's results are kept and how many recent searches each user keeps",

@@ -1,0 +1,68 @@
+{
+ "text": "ذهب الولد إلى المدرسة",
+ "start": 5.25,
+ "words": [
+  {
+   "start": 5.25,
+   "end": 5.5,
+   "text": " ذهب",
+   "prob": 0.7,
+   "flags": 0
+  },
+  {
+   "start": 5.5,
+   "end": 5.9,
+   "text": " الولد",
+   "prob": 0.6,
+   "flags": 1
+  },
+  {
+   "start": 5.9,
+   "end": 6.0,
+   "text": " إلى",
+   "prob": null,
+   "flags": 2
+  },
+  {
+   "start": 6.0,
+   "end": 6.7,
+   "text": " المدرسة",
+   "prob": 0.93,
+   "flags": 0
+  }
+ ],
+ "slots": [
+  {
+   "char_start": 0,
+   "char_len": 3,
+   "start_cs": 0,
+   "dur_cs": 25,
+   "prob": 178,
+   "flags": 0
+  },
+  {
+   "char_start": 4,
+   "char_len": 5,
+   "start_cs": 25,
+   "dur_cs": 40,
+   "prob": 153,
+   "flags": 1
+  },
+  {
+   "char_start": 10,
+   "char_len": 3,
+   "start_cs": 65,
+   "dur_cs": 10,
+   "prob": 255,
+   "flags": 10
+  },
+  {
+   "char_start": 14,
+   "char_len": 7,
+   "start_cs": 75,
+   "dur_cs": 70,
+   "prob": 237,
+   "flags": 0
+  }
+ ]
+}

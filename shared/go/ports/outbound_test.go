@@ -26,37 +26,59 @@ var notCalled = map[string]string{
 }
 
 var (
-	hostRe = regexp.MustCompile(`"https?://([a-zA-Z0-9.-]+)`)
+	// a URL in a string: "…", '…' (Python) or `…`; the quote is checked apart, so the
+	// pattern starts with a literal and the scan of every file stays fast
+	hostRe = regexp.MustCompile(`https?://([a-zA-Z0-9.-]+)`)
 	ipRe   = regexp.MustCompile(`^[0-9.]+$`)
 )
 
-// #640: every internet host the servers' Go code names is a listed outbound call (or a
-// name nothing calls), so a new one cannot be added without saying how it is turned off.
+// scanned are the folders whose code runs in a Maktaba process, and the source files in
+// them: the servers' Go code and the pipeline's Python code.
+var scanned = []string{"api", "streaming", "cmd", "shared/components", "shared/go", "pipeline/src"}
+
+// source: a file of code a process runs (not a test).
+func source(p string) bool {
+	switch {
+	case strings.HasSuffix(p, ".go"):
+		return !strings.HasSuffix(p, "_test.go")
+	case strings.HasSuffix(p, ".py"):
+		return true
+	}
+	return false
+}
+
+// #640: every internet host the servers' Go code and the pipeline's Python code name is a
+// listed outbound call (or a name nothing calls), so a new one cannot be added without
+// saying how it is turned off.
 func TestOutboundHostsAreListed(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
 	listed := OutboundHosts()
 	found := map[string][]string{}
-	for _, dir := range []string{"api", "streaming", "cmd/maktaba-server", "shared/components", "shared/go"} {
+	for _, dir := range scanned {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 			if d.IsDir() {
 				switch d.Name() {
-				case "testdata", "node_modules", "releaseverifytest":
+				case "testdata", "node_modules", "releaseverifytest", "__pycache__", "tests":
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+			if !source(p) {
 				return nil
 			}
 			b, err := os.ReadFile(p)
 			if err != nil {
 				return err
 			}
-			for _, m := range hostRe.FindAllStringSubmatch(string(b), -1) {
-				h := strings.ToLower(m[1])
+			text := string(b)
+			for _, ix := range hostRe.FindAllStringSubmatchIndex(text, -1) {
+				if ix[0] == 0 || !strings.ContainsRune("\"'`", rune(text[ix[0]-1])) {
+					continue // not the start of a string
+				}
+				h := strings.ToLower(text[ix[2]:ix[3]])
 				if h == "localhost" || strings.HasSuffix(h, ".local") || ipRe.MatchString(h) ||
 					(!strings.Contains(h, ".") && h != "customer-") {
 					continue // this machine, the LAN, an example address

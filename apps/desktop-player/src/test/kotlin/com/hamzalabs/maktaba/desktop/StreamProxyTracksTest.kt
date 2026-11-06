@@ -91,7 +91,7 @@ class StreamProxyTracksTest {
     @Test
     fun aRelayRequestCarriesTheNewestTokenInItsPath() {
         val old = "https://customer-x.cloudflarestream.com/OLDTOKEN/manifest/video.m3u8".toHttpUrl()
-        val local = proxy.relayLocal(old)!!
+        val local = proxy.relaySession(old)!!
         assertTrue(local, local.startsWith(proxy.origin + "/relay/customer-x.cloudflarestream.com/OLDTOKEN/"))
         val rawPath = local.removePrefix(proxy.origin.substringBeforeLast('/')).substringBefore('?')
         assertEquals(old, proxy.relayRemote(rawPath, null))
@@ -105,6 +105,18 @@ class StreamProxyTracksTest {
         assertTrue(lines[1].startsWith(proxy.origin + "/relay/"))
         assertTrue(lines[2], lines[2].contains("URI=\"${proxy.origin}/relay/"))
         assertEquals("https://elsewhere.example/x.ts", lines[3])
+    }
+
+    @Test
+    fun theRelayFetchesOnlyTheSessionsOwnHost() {
+        val secret = proxy.origin.substringAfterLast('/')
+        // before a session, no Cloudflare host at all
+        assertNull(proxy.relayLocal("https://customer-x.cloudflarestream.com/T/manifest/video.m3u8".toHttpUrl()))
+        assertNull(proxy.relayRemote("/$secret/relay/customer-x.cloudflarestream.com/T/x.ts", null))
+        proxy.relaySession("https://customer-x.cloudflarestream.com/T/manifest/video.m3u8".toHttpUrl())!!
+        assertNull(proxy.relayLocal("https://customer-y.cloudflarestream.com/T/x.ts".toHttpUrl()))
+        assertNull(proxy.relayRemote("/$secret/relay/customer-y.cloudflarestream.com/T/x.ts", null))
+        assertEquals("https://customer-x.cloudflarestream.com/T/x.ts", proxy.relayRemote("/$secret/relay/customer-x.cloudflarestream.com/T/x.ts", null).toString())
     }
 
     @Test

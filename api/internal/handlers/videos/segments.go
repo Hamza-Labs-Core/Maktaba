@@ -12,19 +12,23 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
 // Segment is one transcript_segments row in the over-the-wire shape.
 type Segment struct {
-	ID        int64     `json:"id"`
-	Seq       int       `json:"seq"`
-	StartSec  float64   `json:"start_sec"`
-	EndSec    float64   `json:"end_sec"`
-	Text      string    `json:"text"`
-	Speaker   *string   `json:"speaker,omitempty"`
-	Words     []Word    `json:"words,omitempty"`
+	ID       int64   `json:"id"`
+	Seq      int     `json:"seq"`
+	StartSec float64 `json:"start_sec"`
+	EndSec   float64 `json:"end_sec"`
+	Text     string  `json:"text"`
+	Speaker  *string `json:"speaker,omitempty"`
+	Words    []Word  `json:"words,omitempty"`
+	// Raw is the stored text (no bidi isolation), only for a home admin: word fixes
+	// address its code points (Epic 52, story 52.12)
+	Raw       string    `json:"raw,omitempty"`
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 }
 
@@ -125,7 +129,7 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 	err = h.DB.QueryRowContext(r.Context(), transQ, id).Scan(&transID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Segment{}, "partial": true})
+			common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": []Segment{}, "partial": true, "can_review": false})
 			return
 		}
 		httperror.Write(w, r, httperror.Internal("load transcript").Wrap(err))
@@ -144,12 +148,18 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
+	// word review is the home admins' (Epic 52): only they get the edit affordance
+	p := principal.FromContext(r.Context())
+	canReview := p != nil && p.IsAdmin
 	items := []Segment{}
 	for rows.Next() {
 		var s Segment
 		if err := rows.Scan(&s.ID, &s.Seq, &s.StartSec, &s.EndSec, &s.Text, &s.Speaker); err != nil {
 			httperror.Write(w, r, httperror.Internal("scan segment").Wrap(err))
 			return
+		}
+		if canReview {
+			s.Raw = s.Text
 		}
 		s.Text = bidiIsolate(s.Text)
 		items = append(items, s)
@@ -193,8 +203,9 @@ func (h *Handler) Segments(w http.ResponseWriter, r *http.Request) {
 		items = items[:limit]
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{
-		"items":   items,
-		"partial": partial,
+		"items":      items,
+		"partial":    partial,
+		"can_review": canReview,
 	})
 }
 

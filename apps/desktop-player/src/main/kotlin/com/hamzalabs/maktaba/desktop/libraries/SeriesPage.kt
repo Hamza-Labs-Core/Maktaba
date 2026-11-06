@@ -96,11 +96,11 @@ fun SeriesContent(state: SeriesState, home: DesktopHome) {
                 val allWatched = shown.episodes.isNotEmpty() && shown.episodes.all { it.watched }
                 item {
                     TextButton(
-                        onClick = { scope.launch { state.mark(state.seasonIds(shown.season), !allWatched) } },
+                        onClick = { home.change { state.mark(state.seasonIds(shown.season), !allWatched) } },
                         modifier = Modifier.padding(horizontal = 16.dp).testTag("mark-season"),
                     ) { Text(if (allWatched) t["series.unmarkSeason"] else t["series.markSeason"]) }
                 }
-                items(shown.episodes, key = { it.videoId }) { e -> EpisodeRow(e, home, onMark = { scope.launch { state.mark(listOf(e.videoId), !e.watched) } }) }
+                items(shown.episodes, key = { it.videoId }) { e -> EpisodeRow(e, home, onMark = { home.change { state.mark(listOf(e.videoId), !e.watched) } }) }
             }
         }
     }
