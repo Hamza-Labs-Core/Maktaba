@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.profile
 
+import com.hamzalabs.maktaba.core.playback.PlaybackSettings
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule

@@ -2,7 +2,7 @@
 
 package com.hamzalabs.maktaba.player.media
 
-import com.hamzalabs.maktaba.player.profile.PlaybackSettings
+import com.hamzalabs.maktaba.core.playback.PlaybackSettings
 import com.hamzalabs.maktaba.player.profile.LocalPlaybackSettings
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager

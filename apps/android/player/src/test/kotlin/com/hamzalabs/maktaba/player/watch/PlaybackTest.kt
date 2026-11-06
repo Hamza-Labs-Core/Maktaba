@@ -2,8 +2,10 @@
 
 package com.hamzalabs.maktaba.player.watch
 
-import com.hamzalabs.maktaba.player.profile.SubtitleLanguage
-import com.hamzalabs.maktaba.player.profile.PlaybackValues
+import com.hamzalabs.maktaba.core.playback.QualityOption
+import com.hamzalabs.maktaba.core.playback.TrackChoice
+import com.hamzalabs.maktaba.core.playback.SubtitleLanguage
+import com.hamzalabs.maktaba.core.playback.PlaybackValues
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.C

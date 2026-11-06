@@ -48,7 +48,7 @@ import com.hamzalabs.maktaba.player.media.pictureInPicture
 import com.hamzalabs.maktaba.player.watch.PlayerClock
 import com.hamzalabs.maktaba.player.watch.PlayerControls
 import com.hamzalabs.maktaba.player.watch.UpNext
-import com.hamzalabs.maktaba.player.watch.upNextDue
+import com.hamzalabs.maktaba.core.playback.upNextDue
 import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
