@@ -78,6 +78,10 @@ built_from: v0.3.81         # the previous snapshot, or full for a rebuild from 
 - Every item cites at least one event: `#634` (a pull request's events), `i649` (an issue's),
   or a `dYYYYMMDD-slug` name. The checker refuses an item with no citation or a citation that
   matches no event at `up_to_commit`.
+- An issue is named `issue #649` (the word `issue`, a space, then `#N`): that form cites nothing
+  and needs no event, so an item can point at its issue next to its citation
+  (`- The cache key is still per path (issue #649). (#634)`). Any other `#N` is a pull request.
+- `snapshots/` holds only `vX.Y.Z.md` files; the checker refuses anything else there.
 - `Missing events` and `Index` are computed, never written by hand
   (`trail.py skeleton --tag vX.Y.Z` prints them). Missing lists each pull request merged after
   #653 that has no event, so a session that forgot to write one shows up.
