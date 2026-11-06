@@ -146,7 +146,12 @@ describe("Epic 53 story 53.11 routes", () => {
     } finally {
       amal.is_admin = false;
     }
-    for (const path of ["/admin/errors", "/admin/errors/ab12", "/admin/logs/settings"]) {
+    for (const path of [
+      "/admin/errors",
+      "/admin/errors/ab12",
+      "/admin/logs/settings",
+      "/admin/dashboards",
+    ]) {
       const { unmount } = open(path);
       expect(
         await screen.findByText(en["common.forbidden.desc"], {}, { timeout: 3000 })

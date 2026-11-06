@@ -45,10 +45,17 @@ on:
       - '.github/workflows/relay.yml'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
   # run the deploy job against the `production` environment.
+  # Or a tag's run, as a pushed tag's: auto-tag.yml dispatches it on each tag it makes
+  # (`--ref vX.Y.Z -f tag=vX.Y.Z`; a tag pushed with GITHUB_TOKEN starts no push run).
+  # "A tag's run" below is a pushed tag, or a dispatch with `tag` on that tag's ref.
   workflow_dispatch:
     inputs:
       image_tag:
         description: 'Image tag to deploy (e.g. v1.2.3). Blank = latest.'
+        required: false
+        default: ''
+      tag:
+        description: "A tag's run (auto-tag.yml), dispatched with --ref set to it; blank for a manual rollout"
         required: false
         default: ''
 
@@ -333,7 +340,7 @@ jobs:
     name: the release, published and the latest
     needs: [lint, test, build]
     if: >-
-      !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+      !cancelled() && startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name)) &&
       !contains(github.ref, '-') && vars.RELAY_DEPLOY == 'true' &&
       needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-22.04
@@ -376,7 +383,7 @@ jobs:
           set -euo pipefail
           # release.yml's newest run for this tag: "<id> <status> <conclusion>" ("" while none)
           release_run() {
-            gh run list --repo "${GITHUB_REPOSITORY}" --workflow release.yml --event push --limit 50 \
+            gh run list --repo "${GITHUB_REPOSITORY}" --workflow release.yml --limit 50 \
               --json databaseId,headBranch,status,conclusion \
               --jq "[.[] | select(.headBranch == \"${TAG}\")][0] // empty | \"\(.databaseId) \(.status) \(.conclusion)\"" \
               2>/dev/null || true
@@ -437,8 +444,8 @@ jobs:
       !cancelled() &&
       needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success' &&
       (
-        (github.event_name == 'workflow_dispatch' && needs.docker.result == 'skipped') ||
-        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+        (github.event_name == 'workflow_dispatch' && inputs.tag == '' && needs.docker.result == 'skipped') ||
+        (startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name)) &&
           needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true')
       )
     runs-on: ubuntu-22.04
@@ -472,10 +479,10 @@ jobs:
             echo "tag=latest" >> "$GITHUB_OUTPUT"
           fi
 
-      # A pushed tag: its release is published (the gate), so release.yml's image of it is
+      # A tag's run: its release is published (the gate), so release.yml's image of it is
       # pushed and signed; checked here once more before the rollout.
       - name: Registry login
-        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name))
         uses: docker/login-action@v4.2.0
         with:
           registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
@@ -483,7 +490,7 @@ jobs:
           password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Wait for the release's image
-        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+        if: startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name))
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.tag }}
         run: |
