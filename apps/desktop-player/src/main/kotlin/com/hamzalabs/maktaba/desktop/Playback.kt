@@ -33,6 +33,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -264,14 +265,15 @@ class Playback(
         }
     }
 
-    private suspend fun run(r: PlayRequest) {
+    /** The video's work: its side reads are children of its job, so another video or Close stops them. */
+    private suspend fun run(r: PlayRequest) = coroutineScope {
         val start = r.startSec ?: resumeAt(r)
         quality = chosenQuality ?: settings().qualityWifi.let { s -> if (s.maxBitrateKbps == null) QualityOption.Auto else QualityOption(s.height, s.maxBitrateKbps) }
-        scope.launch { findNext(r) }
-        if (features().isOn(Feature.CHAPTERS)) scope.launch { chapters = runCatching { client.chapters(r.videoId) }.getOrDefault(emptyList()) }
+        launch { findNext(r) }
+        if (features().isOn(Feature.CHAPTERS)) launch { chapters = runCatching { client.chapters(r.videoId) }.getOrDefault(emptyList()) }
         open(fromMs = start * 1000L, kbps = quality.maxBitrateKbps)
         if (player != null) {
-            scope.launch { followTracks() }
+            launch { followTracks() }
             watch()
         }
     }
@@ -474,7 +476,7 @@ class Playback(
     private suspend fun watch() {
         var told = false
         var second = 0
-        while (scope.isActive) {
+        while (currentCoroutineContext().isActive) {
             delay(1_000)
             if (player == null) return
             upNext.tick(positionMs, durationMs, ended, settings().autoplayNext)?.let {
