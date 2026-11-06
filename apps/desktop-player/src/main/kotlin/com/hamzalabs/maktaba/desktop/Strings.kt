@@ -20,6 +20,9 @@ enum class Lang(val code: String, val direction: LayoutDirection) {
 class Texts(val lang: Lang) {
     private val table = if (lang == Lang.Ar) Strings.AR else Strings.EN
 
+    /** Whether this language (or English) has words for [key]. */
+    fun has(key: String): Boolean = key in table || key in Strings.EN
+
     operator fun get(key: String, vararg args: Any?): String {
         var s = table[key] ?: Strings.EN[key] ?: key
         args.forEachIndexed { i, a -> s = s.replace("{$i}", a?.toString() ?: "") }
@@ -127,7 +130,6 @@ object Strings {
         "watch.pause" to "Pause",
         "watch.back" to "Back 10 seconds",
         "watch.forward" to "Forward 10 seconds",
-        "watch.fullscreen" to "Full screen",
         "watch.close" to "Close the video",
 
         "approve.title" to "Approve a sign-in",
@@ -253,7 +255,6 @@ object Strings {
         "watch.pause" to "إيقاف مؤقت",
         "watch.back" to "رجوع 10 ثوانٍ",
         "watch.forward" to "تقديم 10 ثوانٍ",
-        "watch.fullscreen" to "ملء الشاشة",
         "watch.close" to "إغلاق المقطع",
 
         "approve.title" to "الموافقة على تسجيل دخول",

@@ -66,6 +66,10 @@ class Navigator {
     var section by mutableStateOf(Section.Home)
         private set
 
+    /** Grows each time Ctrl+F or `/` asks for the search field: Search focuses it. */
+    var searchAsked by mutableStateOf(0)
+        private set
+
     /** The page shown. */
     val current: Route get() = stacks.getValue(section).last()
 
@@ -97,9 +101,15 @@ class Navigator {
         return true
     }
 
-    /** Shows [s] at its root, wherever its stack was (a shortcut: Ctrl+F opens Search). */
+    /** Shows [s] as its stack was (a shortcut opens a section without leaving its page). */
     fun open(s: Section) {
         section = s
+    }
+
+    /** Ctrl+F or `/`: Search, with its field focused. */
+    fun askSearch() {
+        section = Section.Search
+        searchAsked++
     }
 
     /**
