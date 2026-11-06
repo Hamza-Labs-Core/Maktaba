@@ -19,7 +19,7 @@ import com.hamzalabs.maktaba.core.api.playlist
 import com.hamzalabs.maktaba.core.api.playlists
 import com.hamzalabs.maktaba.core.api.signInSessions
 import com.hamzalabs.maktaba.core.api.watchHistory
-import com.hamzalabs.maktaba.player.ReadOrder
+import com.hamzalabs.maktaba.core.session.ReadOrder
 import kotlinx.coroutines.CancellationException
 
 /** A list a page shows: loading, its rows, or why it could not be read. */

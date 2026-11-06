@@ -182,13 +182,24 @@ class ApiClient(
      * this player can play (the streaming service's profiles: the desktop player's JavaFX
      * `desktop-player`); none lets the home pick for a generic player. [maxBitrateKbps] caps
      * the stream (a player's quality choice, FR-35); none is the home's own ceiling.
+     * [audioTrack] picks the file's audio track (from 0) and [format] asks for a container
+     * ("hls"): a player that plays one audio track only asks for another this way.
      */
-    suspend fun openStream(video: String, startSec: Int = 0, profile: String? = null, maxBitrateKbps: Int? = null): StreamSession {
+    suspend fun openStream(
+        video: String,
+        startSec: Int = 0,
+        profile: String? = null,
+        maxBitrateKbps: Int? = null,
+        audioTrack: Int? = null,
+        format: String? = null,
+    ): StreamSession {
         val body = buildJsonObject {
             put("video_id", video)
             if (startSec > 0) put("start_sec", startSec)
             if (profile != null) put("client_profile", profile)
             if (maxBitrateKbps != null && maxBitrateKbps > 0) put("max_bitrate_kbps", maxBitrateKbps)
+            if (audioTrack != null && audioTrack >= 0) put("audio_track", audioTrack)
+            if (format != null) put("format", format)
         }
         return decode(send(request("POST", "/api/stream/sessions", body = body)))
     }

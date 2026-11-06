@@ -9,6 +9,7 @@
 //   POST   /api/components/{id}/stop    no body: hold until start -> Detail
 //   POST   /api/components/{id}/start   clears the hold -> Detail
 //   POST   /api/components/{id}/restart no body: process and loop kinds -> Detail (or empty);
+//                                        (loops in streaming or the pipeline are asked to restart);
 //                                        409 not_restartable (another kind), 409 not_running
 //   POST   /api/components/{id}/settings/reset  its rules sections back to the defaults (51.13)
 //   POST   /api/components/offline      {bundle?, components?, platform?} -> 202 {name, url} (51.16)

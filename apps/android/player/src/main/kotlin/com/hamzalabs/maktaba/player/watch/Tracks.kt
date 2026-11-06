@@ -1,6 +1,5 @@
 package com.hamzalabs.maktaba.player.watch
 
-import com.hamzalabs.maktaba.player.profile.PlaybackValues
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -8,7 +7,9 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
-import com.hamzalabs.maktaba.core.api.Rendition
+import com.hamzalabs.maktaba.core.playback.PlaybackValues
+import com.hamzalabs.maktaba.core.playback.TrackChoice
+import com.hamzalabs.maktaba.core.playback.plan
 import java.util.Locale
 
 /**
@@ -51,18 +52,6 @@ fun trackOptions(tracks: Tracks, type: Int): List<TrackOption> = buildList {
 }
 
 /**
- * The audio and subtitle choice a person made, kept for the next video (FR-34: "a choice is
- * kept for the next video in the series"): by language, since the next video's tracks are
- * other tracks. Null fields: no choice, the player's default.
- */
-data class TrackChoice(
-    val audioLanguage: String? = null,
-    /** True: subtitles off; false: on in [textLanguage]; null: no choice made. */
-    val textOff: Boolean? = null,
-    val textLanguage: String? = null,
-)
-
-/**
  * The player's selection for a new video: the [choice] kept from the last one, else the
  * Settings' defaults (FR-31: subtitles off unless turned on, in the chosen language).
  */
@@ -70,12 +59,12 @@ fun TrackSelectionParameters.Builder.applyChoice(choice: TrackChoice, prefs: Pla
     clearOverrides()
     // sound is never turned off by a choice (FR-39a)
     setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
+    // the rule is :client's (the desktop Player follows it too)
+    val plan = choice.plan(prefs)
     choice.audioLanguage?.let { setPreferredAudioLanguage(it) }
-    val textOn = choice.textOff?.not() ?: prefs.subtitlesOn
-    setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !textOn)
-    if (textOn) {
-        val lang = choice.textLanguage ?: prefs.subtitleLanguage.tag
-        if (lang != null) setPreferredTextLanguage(lang)
+    setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !plan.textOn)
+    if (plan.textOn) {
+        plan.textLanguage?.let { setPreferredTextLanguage(it) }
         setSelectUndeterminedTextLanguage(true)
     }
     return this
@@ -125,24 +114,4 @@ fun Player.ensureAudio(tracks: Tracks = currentTracks): Boolean {
         .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track))
         .build()
     return true
-}
-
-/** A quality the picker offers (FR-35): Auto (no cap), or a height and the cap it sends. */
-data class QualityOption(val height: Int?, val maxBitrateKbps: Int?) {
-    companion object {
-        val Auto = QualityOption(null, null)
-
-        /**
-         * The streaming service's own ladder (`streaming/internal/ffmpeg`): offered when a session
-         * names none (direct play), so a person can still ask for less.
-         */
-        val Standard = listOf(Rendition(1080, 1920, 6000), Rendition(720, 1280, 3000), Rendition(480, 854, 1200))
-
-        /** Auto, then each rung of [ladder] (else [Standard]) from the highest, one per height. */
-        fun of(ladder: List<Rendition>): List<QualityOption> {
-            val rungs = ladder.filter { it.height > 0 && it.bitrateKbps > 0 }.ifEmpty { Standard }
-            return listOf(Auto) + rungs.sortedByDescending { it.height }.distinctBy { it.height }
-                .map { QualityOption(it.height, it.bitrateKbps) }
-        }
-    }
 }

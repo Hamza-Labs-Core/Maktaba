@@ -143,6 +143,17 @@ async def revision(db: Any) -> int:
     return int(await db.fetchval("SELECT revision FROM component_meta"))
 
 
+async def restarts(db: Any, machine: str, host: str) -> dict[str, int]:
+    """The restart requests of ``host`` on ``machine`` (slot 0185, #636): component -> seq.
+    ``POST /api/components/{id}/restart`` writes one for the loops it cannot reach."""
+    rows = await db.fetch(
+        "SELECT id, seq FROM component_restarts WHERE machine = $1 AND host = $2",
+        machine or HOME,
+        host,
+    )
+    return {str(r["id"]): int(r["seq"]) for r in rows}
+
+
 _MERGE_SQLITE = """
 SELECT COALESCE(c.id, o.id) AS id, COALESCE(o.want, c.want) AS want,
        CASE WHEN o.hold_at IS NOT NULL THEN o.hold_by ELSE c.hold_by END AS hold_by,

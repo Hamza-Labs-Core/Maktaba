@@ -2,7 +2,7 @@
 
 package com.hamzalabs.maktaba.player.watch
 
-import com.hamzalabs.maktaba.player.profile.PlaybackSettings
+import com.hamzalabs.maktaba.core.playback.PlaybackSettings
 import com.hamzalabs.maktaba.player.profile.LocalPlaybackSettings
 import android.content.Context
 import android.os.Looper

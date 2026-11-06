@@ -36,6 +36,26 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A component turned back on catches up even when another worker turns it on.** On a home
+  with several pipeline workers, the one that turned a component's stages off was not always
+  the one that turned them on again, and then the catch-up job for what the stages missed
+  while off was not queued until the next change. The worker that opens the stages again now
+  queues it, with the time the component went off, and the other one does not queue it a
+  second time. The components tests now keep each local run's logs in a folder of its own,
+  with the failed test's report and the database's component state, locally as in CI.
+
+- **A new Arabic dictionary or ffmpeg pack is used without restarting the pipeline.** A
+  pipeline that was already running kept the dictionary and ffmpeg of the packs it started
+  with until it restarted. It now follows each pack's current version at its next use: the
+  next video's ffmpeg, ffprobe and second listen use the newly installed or updated pack.
+
+- **A new way of finishing jobs can no longer bring back a deadlock with the queue's
+  clean-up unnoticed.** The done-subjects summary of the queue locks its rows in one order
+  within a statement; a transaction that finished jobs over several statements out of that
+  order could deadlock with the retention. The database now notices it: the tests fail on
+  it, and a home logs a warning naming the jobs' subjects. It found one: the MediaIntel import,
+  which now holds the summary for its whole run (jobs that finish meanwhile wait for it).
+
 - **The library dashboard and the queue page load at once on a large home.** On a home with
   3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out
@@ -172,7 +192,7 @@ build fails when the two differ.
   and suggested spellings, within a budget per hour of audio; Quran verses recited or quoted
   are compared with the bundled Tanzil text, and only a word that differs from the verse is
   asked about. Languages are packs: Arabic (CAMeL Tools morphology and Ayaspell), English
-  (SCOWL), twelve LibreOffice Hunspell dictionaries installed on demand (`lang.hunspell.*`),
+  (SCOWL), eleven LibreOffice Hunspell dictionaries installed on demand (`lang.hunspell.*`),
   and a fallback for any other language; every check is deterministic, no language model
   judges a word. Existing transcripts are checked from their text in the background, at the
   lowest priority and only while nothing waits to be transcribed. The web's **Word review**
@@ -184,8 +204,32 @@ build fails when the two differ.
   tab, each library has its word review settings, the Transcription page shows the open
   counts and the share accepted as is, and the Remote apps on iPhone, iPad, Mac and Android
   review words too. A component a later release adds now starts as the home's bundle says
-  (off on a Core home), never on by default. Slots 0184-0186 add `word_flags`,
+  (off on a Core home), never on by default. Slots 0186-0188 add `word_flags`,
   `language_packs`, `transcript_edits`, `transcripts.revision`, `vocabulary` and `vocab_pairs`.
+- **The Player for Windows and Linux has the phone and Mac Players' sections (Epic 55).**
+  After sign-in, a rail (on the right in Arabic) holds Home, Libraries, Live TV, Search and
+  Profile, each with its own pages and Back (also Alt+Left and the mouse's back button). Home
+  has the featured hero and the rows (Continue Watching, On Deck, What's On Now, Favorites,
+  Recently Added, Recently Watched, pinned libraries, For You with Not interested). Libraries
+  pins libraries and opens a library's rows, its videos (sort, language, speaker) and series;
+  series and video pages have Resume and Play from start, Favorite, Mark watched (an episode or
+  a season), chapters and the next episodes. Search suggests as you type, searches titles and
+  what is said in videos (Play from a passage) and keeps recent searches (Ctrl+F or /). Live TV
+  has Now, the Guide and a channel player, at home and away through Maktaba Cloud. Watching
+  resumes where you left, offers audio tracks, subtitles (drawn by the player), quality and Up
+  next, with the keys of the help page. Profile has watch history, favorites, playlists,
+  browser sessions, approving a device, playback settings, language and about. A feature the
+  home has off is hidden from a viewer and explained to an admin with a link to Components;
+  `-Pmaktaba.capabilitiesGate=off` builds a player without that gate (#638). Everything is in
+  English and Arabic. The Home rows, the guide's time maths, the playback settings and the track
+  and Up next rules are now shared with the Android Player.
+- **One switch keeps a test or offline server from reaching the internet.** `maktaba-server
+  serve --offline` (or `MAKTABA_OFFLINE=1`) turns off every call the server and its parts
+  make by themselves: the update check, pack and model downloads, the language model's
+  downloads, usage data, the licence refresh and the link to Maktaba Cloud. A branch's
+  scratch stack no longer contacts GitHub. A list of every outbound call, with the setting
+  that stops it, is checked by a test, so a new one cannot be added unnoticed.
+
 - **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
   (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
   as a component, with what it needs and what it conflicts with. Admin > Components shows each
@@ -389,6 +433,13 @@ build fails when the two differ.
   slot must start again on the new release and the change must reach verifying, never be held
   with `slot.health` / `release_mismatch` as change #58 was on 2026-10-31. The rehearsal now
   builds its streaming binary with TV staging, as the release does.
+
+- **Every component with loops can be restarted, wherever its loops run.** Restart on the
+  Components page and `maktaba-server components restart` refused a component whose loops
+  run in streaming, the pipeline or the supervisor itself (Live TV in the server, HDHomeRun,
+  the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
+  streaming and the pipeline restart theirs within seconds of the request: each loop stops
+  within its grace and starts again, as a process does.
 
 ### Fixed
 

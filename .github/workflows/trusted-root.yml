@@ -85,7 +85,7 @@ jobs:
             exit 0
           fi
           branch="trusted-root/$(date -u +%Y-%m-%d)"
-          if gh pr list --state open --search "head:trusted-root/" --json number --jq '.[].number' | grep -q .; then
+          if [ -n "$(gh pr list --state open --search "head:trusted-root/" --json number --jq '.[].number')" ]; then
             echo "a trusted-root pull request is open already"
             exit 0
           fi

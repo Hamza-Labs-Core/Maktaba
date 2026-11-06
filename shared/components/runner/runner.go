@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"runtime/debug"
 	"slices"
@@ -197,6 +198,9 @@ type Runner struct {
 	unknown map[string]bool
 	// served are components this process serves with no loop (Serve): each has a row.
 	served []string
+	// restartSeen are the restart requests of this host read last (#636): component id ->
+	// seq; nil until the first read, which is only remembered.
+	restartSeen map[string]int64
 }
 
 // New is a runner for o.Host. Its gates start on (the database is not read yet): a loop
@@ -317,6 +321,62 @@ func (r *Runner) Restart(id string) int {
 	return n
 }
 
+// restartSource is a Store that has the restart requests (*store.Store).
+type restartSource interface {
+	Restarts(ctx context.Context, machine, host string) (map[string]int64, error)
+}
+
+// readRestarts reads this host's restart requests and acts on them (TakeRestarts). A
+// read that fails (a schema before slot 0185, a busy database) changes nothing: the next
+// change reads them again.
+func (r *Runner) readRestarts(ctx context.Context, st Store) {
+	rs, ok := st.(restartSource)
+	if !ok {
+		return
+	}
+	seqs, err := rs.Restarts(ctx, r.machine, r.host)
+	if err != nil {
+		if ctx.Err() == nil {
+			r.log.Debug("components: the restart requests cannot be read", "host", r.host, "err", err.Error())
+		}
+		return
+	}
+	r.TakeRestarts(seqs)
+}
+
+// TakeRestarts takes this host's restart requests (component id -> seq, slot 0185): each
+// component whose seq moved since the last call has its loops here restarted (Restart).
+// The first call only remembers them: a process that starts restarts nothing. It answers
+// the components it restarted.
+func (r *Runner) TakeRestarts(seqs map[string]int64) []string {
+	if r == nil {
+		return nil
+	}
+	r.mu.Lock()
+	prev := r.restartSeen
+	r.restartSeen = maps.Clone(seqs)
+	if r.restartSeen == nil {
+		r.restartSeen = map[string]int64{}
+	}
+	r.mu.Unlock()
+	if prev == nil {
+		return nil
+	}
+	var ids []string
+	for id, seq := range seqs {
+		if seq > prev[id] {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	for _, id := range ids {
+		n := r.Restart(id)
+		r.log.Info("components: a restart was asked for", "host", r.host, "component", id, "loops", n,
+			"event", "components_restart_requested")
+	}
+	return ids
+}
+
 // Hosts are the hosts that run c's loops, as the catalog names them (api, streaming,
 // pipeline, supervisor), in its order.
 func Hosts(c *components.Component) []string {
@@ -419,7 +479,10 @@ func (r *Runner) Run(ctx context.Context, src Source) {
 		defer func() { cancel(); <-done }()
 		go func() {
 			defer close(done)
-			_ = w.Run(wctx, func(d map[string]store.Desired, _ int64) { r.Apply(d) })
+			_ = w.Run(wctx, func(d map[string]store.Desired, _ int64) {
+				r.Apply(d)
+				r.readRestarts(wctx, src.Store)
+			})
 		}()
 	}
 	r.notify()

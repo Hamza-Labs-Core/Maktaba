@@ -50,6 +50,7 @@ def test_api_env_never_points_at_the_real_home(tmp_path: Path) -> None:
     assert "XDG_CONFIG_HOME" not in env
     assert env["DATABASE_URL"] == "postgres://ci@127.0.0.1:5432/x?sslmode=disable"
     assert env["MAKTABA_UPDATE_DISABLE"] == "1"
+    assert env["MAKTABA_OFFLINE"] == "1"  # #640: no outbound call
     assert env["MAKTABA_DISCOVERY_MDNS"] == "0"
     for key, value in env.items():
         if key.endswith(("_KEY", "_DIR", "_CONFIG")) or key == "HOME":

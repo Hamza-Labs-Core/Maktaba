@@ -29,6 +29,18 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.api.capabilitiesGate
+import com.hamzalabs.maktaba.core.session.KeyValueStore
+import com.hamzalabs.maktaba.core.session.TokenStore
+import com.hamzalabs.maktaba.desktop.shell.AppPrefs
+import com.hamzalabs.maktaba.desktop.shell.DesktopHome
+import com.hamzalabs.maktaba.desktop.shell.HomeActions
+import com.hamzalabs.maktaba.desktop.shell.LocalDesktopHome
+import com.hamzalabs.maktaba.desktop.shell.Shell
+import com.hamzalabs.maktaba.desktop.shell.features
+import com.hamzalabs.maktaba.desktop.shell.openInBrowser
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.FoundHome
 import javafx.application.Platform
@@ -36,10 +48,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.emptyFlow
-import java.awt.Desktop
 import javax.jmdns.JmmDNS
 import kotlin.system.exitProcess
-import java.net.URI
 
 /** This app as the home sees it (`X-Maktaba-Client`): a label, never a right. */
 fun clientHeader(version: String = BuildInfo.VERSION, os: String = System.getProperty("os.name")): String {
@@ -53,8 +63,17 @@ fun clientHeader(version: String = BuildInfo.VERSION, os: String = System.getPro
     return "player/$version ($platform; desktop)"
 }
 
-private const val KEY_LANG = "lang"
-private const val KEY_START_BIG = "start_big"
+/**
+ * Story 51.11's gate for this build (issue #638): the Gradle property `maktaba.capabilitiesGate`
+ * (`-Pmaktaba.capabilitiesGate=off`), written into [BuildInfo.CAPABILITIES_GATE]. "off", "no",
+ * "false" or "0" turn it off; anything else, or nothing, leaves it on. Release builds pass
+ * nothing: the gate is on.
+ */
+fun buildCapabilitiesGate(setting: String = BuildInfo.CAPABILITIES_GATE): Boolean = capabilitiesGate(setting)
+
+/** The Player's session, with this build's capabilities gate. */
+fun playerSession(settings: KeyValueStore, scope: CoroutineScope, tokens: (String) -> TokenStore): AppSession =
+    AppSession(settings, scope, tokens, capabilitiesGate = buildCapabilitiesGate())
 
 fun main(args: Array<String>) {
     // JavaFX lives as long as the player, not as long as a video
@@ -64,7 +83,8 @@ fun main(args: Array<String>) {
     // the session's own work (restoring a sign-in) and what must outlive a screen (a stopped
     // video's last position)
     val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val session = AppSession(stores.settings, CoroutineScope(SupervisorJob() + Dispatchers.Main), stores::tokens)
+    val session = playerSession(stores.settings, CoroutineScope(SupervisorJob() + Dispatchers.Main), stores::tokens)
+    val prefs = AppPrefs(stores.settings)
     // a home's link handed to the player (`maktaba://connect?…`, by the system or a shortcut): asked, never followed
     args.firstOrNull { it.startsWith("maktaba:", ignoreCase = true) }?.let(session::openLink)
     // the homes on this network, the whole time the player runs: a saved home is found again
@@ -73,8 +93,8 @@ fun main(args: Array<String>) {
     session.discover(true)
 
     application {
-        var lang by remember { mutableStateOf(Lang.of(stores.settings.get(KEY_LANG))) }
-        var startBig by remember { mutableStateOf(stores.settings.get(KEY_START_BIG) == "true") }
+        val lang = prefs.lang
+        var startBig by remember { mutableStateOf(stores.settings.get(AppPrefs.KEY_START_BIG) == "true") }
         var big by remember { mutableStateOf(startBig) }
         var approving by remember { mutableStateOf(false) }
         var updating by remember { mutableStateOf(false) }
@@ -109,15 +129,12 @@ fun main(args: Array<String>) {
                     Item(if (big) texts["menu.leaveBigScreen"] else texts["menu.bigScreen"], onClick = { big = !big })
                     CheckboxItem(texts["menu.startBig"], checked = startBig, onCheckedChange = {
                         startBig = it
-                        stores.settings.put(KEY_START_BIG, it.toString())
+                        stores.settings.put(AppPrefs.KEY_START_BIG, it.toString())
                     })
                 }
                 Menu(texts["menu.language"]) {
                     for (l in Lang.entries) {
-                        RadioButtonItem(if (l == Lang.Ar) "العربية" else "English", selected = lang == l, onClick = {
-                            lang = l
-                            stores.settings.put(KEY_LANG, l.code)
-                        })
+                        RadioButtonItem(if (l == Lang.Ar) "العربية" else "English", selected = lang == l, onClick = { prefs.chooseLang(l) })
                     }
                 }
                 Menu(texts["menu.help"]) {
@@ -127,7 +144,18 @@ fun main(args: Array<String>) {
             }
             PlayerTheme(texts, big) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    PlayerApp(session, background)
+                    PlayerApp(
+                        session, background, prefs,
+                        HomeActions(
+                            switchHome = session::switchHome,
+                            signOut = session::signOut,
+                            approve = { approving = true },
+                            updates = { updating = true },
+                            openUrl = ::openInBrowser,
+                        ),
+                        fullScreen = big,
+                        onFullScreen = { big = it },
+                    )
                 }
                 session.link.collectAsState().value?.let { ConnectLinkDialog(session, it) }
                 val signedIn = phase as? AppSession.Phase.SignedIn
@@ -144,13 +172,19 @@ fun main(args: Array<String>) {
 
 /** The help page for this player: the home's own (every edition serves it), else the project's. */
 fun openHelp(home: String?) {
-    val url = (home?.let { "$it/help/desktop-player" } ?: "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/web/src/help/content/en/desktop-player.md")
-    runCatching { if (Desktop.isDesktopSupported()) Desktop.getDesktop().browse(URI(url)) }
+    openInBrowser(home?.let { "${it.trimEnd('/')}/help/desktop-player" } ?: "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/web/src/help/content/en/desktop-player.md")
 }
 
 /** The screens: a home to choose, signing in, then the library and the video. */
 @Composable
-fun PlayerApp(session: AppSession, background: CoroutineScope) {
+fun PlayerApp(
+    session: AppSession,
+    background: CoroutineScope,
+    prefs: AppPrefs,
+    actions: HomeActions = HomeActions(),
+    fullScreen: Boolean = false,
+    onFullScreen: (Boolean) -> Unit = {},
+) {
     val phase by session.phase.collectAsState()
     val focus = LocalFocusManager.current
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -174,7 +208,7 @@ fun PlayerApp(session: AppSession, background: CoroutineScope) {
                 HomePicker(session, found)
             }
             AppSession.Phase.SigningIn -> SignIn(session)
-            is AppSession.Phase.SignedIn -> SignedIn(p, session, background)
+            is AppSession.Phase.SignedIn -> SignedIn(p, session, background, prefs, actions, fullScreen, onFullScreen)
         }
     }
 }
@@ -183,14 +217,46 @@ fun PlayerApp(session: AppSession, background: CoroutineScope) {
 private fun discoverOrNothing() = runCatching { discoverHomes() }.getOrElse { emptyFlow<List<FoundHome>>() }
 
 @Composable
-private fun SignedIn(p: AppSession.Phase.SignedIn, session: AppSession, background: CoroutineScope) {
+private fun SignedIn(
+    p: AppSession.Phase.SignedIn,
+    session: AppSession,
+    background: CoroutineScope,
+    prefs: AppPrefs,
+    actions: HomeActions,
+    fullScreen: Boolean,
+    onFullScreen: (Boolean) -> Unit,
+) {
     val scope = rememberCoroutineScope()
-    val playback = remember(p.client) { Playback(p.client, scope, background, session::signedOut) }
-    val posters = remember(p.client) { Posters(p.client) }
+    val label = session.current.collectAsState().value?.label.orEmpty()
+    val playback = remember(p.client) {
+        Playback(p.client, scope, background, session::signedOut, settings = { prefs.playback.current }, features = { session.capabilities.value })
+    }
+    // a new sign-in or another home: a new DesktopHome, and every page's kept state with it
+    val home = remember(p.client, p.user) {
+        DesktopHome(
+            p.user, p.client, label, prefs, background,
+            capabilities = session.capabilities,
+            actions = actions,
+            onPlay = playback::play,
+            onSignedOut = session::signedOut,
+        )
+    }
+    // what the home has on: asked at sign-in, then every five minutes while the window is open
+    // (a desktop window has no background state); a failed answer keeps the last good one
+    LaunchedEffect(p.client) { session.followCapabilities() }
     DisposableEffect(playback) { onDispose { playback.close() } }
-    if (playback.video != null) {
-        Watch(playback, onClose = { playback.stop() })
-    } else {
-        LibraryBrowser(p.client, posters, onPlay = playback::play, onSignedOut = session::signedOut)
+    CompositionLocalProvider(LocalDesktopHome provides home) {
+        if (playback.request != null) {
+            Watch(
+                playback, home.features(), home.webUrl, fullScreen, onFullScreen,
+                onClose = {
+                    playback.stop()
+                    if (fullScreen) onFullScreen(false)
+                },
+                posters = home.posters,
+            )
+        } else {
+            Shell(home)
+        }
     }
 }

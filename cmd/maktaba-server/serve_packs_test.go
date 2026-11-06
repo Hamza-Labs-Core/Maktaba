@@ -301,6 +301,13 @@ func (f *fakeRestarter) RestartComponent(id string) int {
 	return 2
 }
 
+type fakeLoopRestarter struct{ asked []string }
+
+func (f *fakeLoopRestarter) RestartLoops(id string) int {
+	f.asked = append(f.asked, id)
+	return 1
+}
+
 // POST /components/{id}/restart asks the supervisor to restart the component's
 // processes, behind the token, with or without a reconciler; no supervisor is 503.
 func TestPacksRestartRoute(t *testing.T) {
@@ -318,6 +325,13 @@ func TestPacksRestartRoute(t *testing.T) {
 	}
 	if code, _ := packsCall(t, h, http.MethodPost, "/components/../restart", "tok"); code == http.StatusOK {
 		t.Fatalf("a bad id: %d", code)
+	}
+	// #636: the supervisor's own loops of the component too
+	l := &fakeLoopRestarter{}
+	h = (&packsAdmin{token: "tok", sup: f, loops: l}).adminHandler(http.NotFoundHandler())
+	code, out = packsCall(t, h, http.MethodPost, "/components/backups/restart", "tok")
+	if code != http.StatusOK || out["restarted"] != float64(3) || len(l.asked) != 1 || l.asked[0] != "backups" {
+		t.Fatalf("%d %v %v", code, out, l.asked)
 	}
 	none := (&packsAdmin{token: "tok"}).adminHandler(http.NotFoundHandler())
 	if code, _ := packsCall(t, none, http.MethodPost, "/components/transcription/restart", "tok"); code != http.StatusServiceUnavailable {

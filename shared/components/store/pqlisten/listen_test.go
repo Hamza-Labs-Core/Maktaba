@@ -2,12 +2,12 @@ package pqlisten
 
 import (
 	"database/sql"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 func next(t *testing.T, l *Listener) store.Event {
@@ -48,7 +48,7 @@ func until(t *testing.T, l *Listener, ok func(store.Event) bool) store.Event {
 // T09 on lib/pq, against scratch Postgres: a notification arrives parsed; a killed
 // connection comes back and says so with a Reload.
 func TestRealPostgres(t *testing.T) {
-	dsn := os.Getenv("MAKTABA_TEST_PG_URL")
+	dsn := testpg.Get()
 	if dsn == "" {
 		t.Skip("MAKTABA_TEST_PG_URL not set")
 	}

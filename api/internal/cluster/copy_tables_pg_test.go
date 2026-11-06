@@ -22,6 +22,8 @@ var copyReviewed = []string{
 	// slot 0178 (Epic 51): what should run is no secret, and a promoted copy needs it;
 	// the status rows are every machine's health, rewritten by each runner's next report
 	"component_meta", "component_overrides", "component_status", "components",
+	// slot 0185 (#636): restart requests, each machine's runners' to read; harmless copied
+	"component_restarts",
 	"collection_suggestions", "collections", "dependency_health", "display_title_llm",
 	"enrich_jobs", "enrich_usage", "enrichment_decisions", "episode_tags", "events", "extensions",
 	"external_links", "failure_ignores", "filler_items", "filler_pools",
@@ -64,7 +66,7 @@ var copyReviewed = []string{
 	// copied processing_jobs (ids and times only); copied so a replica's library rows
 	// read the same as the home's
 	"processing_done_subjects",
-	// slots 0184-0186 (Epic 52): suspect words, the packs' report, word fixes and the
+	// slots 0186-0188 (Epic 52): suspect words, the packs' report, word fixes and the
 	// vocabulary hold transcript words, ids and times, no secret; a promoted copy keeps
 	// the review queue
 	"language_packs", "transcript_edits", "vocab_pairs", "vocabulary", "word_flags",

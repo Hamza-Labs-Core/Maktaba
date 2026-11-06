@@ -97,7 +97,7 @@ for f in ollama/ollama ollama/llama-server licenses/ollama/LICENSE licenses/olla
 done
 [ -x "$ol/stage-a/ollama/ollama" ] || fail "runtime.ollama's ollama is not executable"
 cmp "$ol/src/ollama" "$ol/stage-a/ollama/ollama" || fail "runtime.ollama's ollama is not Ollama's"
-if [ -e "$ol/stage-a/licenses/ollama/MLX-LICENSE" ] || find "$ol/stage-a" -name 'mlx*' | grep -q .; then
+if [ -e "$ol/stage-a/licenses/ollama/MLX-LICENSE" ] || [ -n "$(find "$ol/stage-a" -name 'mlx*' -print -quit)" ]; then
     fail "runtime.ollama's pack carries the MLX engine"
 fi
 if recipe b linux-amd64 >"$ol/b.log" 2>&1; then fail "runtime.ollama built for linux-amd64"; fi

@@ -17,7 +17,7 @@ import com.hamzalabs.maktaba.core.api.searchSuggestions
 import com.hamzalabs.maktaba.core.api.searchTitles
 import com.hamzalabs.maktaba.core.api.searchTranscripts
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
-import com.hamzalabs.maktaba.player.ReadOrder
+import com.hamzalabs.maktaba.core.session.ReadOrder
 import kotlinx.coroutines.CancellationException
 
 /** How long typing rests before the field asks for suggestions. */

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -806,6 +807,62 @@ func TestReconcileLoops(t *testing.T) {
 	case <-started:
 	case <-time.After(5 * time.Second):
 		t.Fatal("backups did not start again")
+	}
+}
+
+// #636: an admin's restart of a component with a supervisor loop stops the loop within
+// its grace, as a switch-off does, and the next pass starts it again; nothing for a
+// component with no loop here or one that is off.
+func TestReconcileRestartLoops(t *testing.T) {
+	tab := &fakeTable{}
+	st := &fakeStore{}
+	r, _ := newTestReconciler(components.Default(), tab, st)
+	var starts, stops atomic.Int32
+	r.Loops = []*Loop{{Name: "supervisor:backups", ConfigOn: true, Run: func(ctx context.Context) {
+		starts.Add(1)
+		<-ctx.Done()
+		stops.Add(1)
+	}}}
+	r.defaults()
+	ctx := context.Background()
+	on := map[string]store.Desired{"backups": want("backups", "enabled", 1)}
+	passWith(r, on)
+	waitUntil(t, "the loop to start", func() bool { return starts.Load() == 1 })
+	if n := r.RestartLoops("transcription"); n != 0 {
+		t.Fatalf("a component with no loop here: %d", n)
+	}
+	if n := r.RestartLoops("backups"); n != 1 {
+		t.Fatalf("restarted %d", n)
+	}
+	if n := r.RestartLoops("backups"); n != 0 {
+		t.Fatalf("a loop already stopping was restarted again: %d", n)
+	}
+	waitUntil(t, "the loop to start again", func() bool {
+		r.pass(ctx)
+		return stops.Load() == 1 && starts.Load() == 2
+	})
+	if row, _ := st.row("backups"); row.Phase != components.PhaseRunning {
+		t.Fatalf("backups %+v", row)
+	}
+	passWith(r, map[string]store.Desired{"backups": want("backups", "installed", 2)})
+	waitUntil(t, "the loop to stop", func() bool { r.pass(ctx); return stops.Load() == 2 })
+	if n := r.RestartLoops("backups"); n != 0 {
+		t.Fatalf("a component that is off restarted %d", n)
+	}
+	var nilRec *Reconciler
+	if nilRec.RestartLoops("backups") != 0 {
+		t.Fatal("no reconciler")
+	}
+}
+
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

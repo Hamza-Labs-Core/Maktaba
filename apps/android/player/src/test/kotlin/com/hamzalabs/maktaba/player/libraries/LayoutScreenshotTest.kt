@@ -25,7 +25,7 @@ import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.harness.acrossHinge
 import com.hamzalabs.maktaba.player.harness.setShell
 import com.hamzalabs.maktaba.player.home.HomeFixtures
-import com.hamzalabs.maktaba.player.home.KEY_WATCHED
+import com.hamzalabs.maktaba.core.browse.KEY_WATCHED
 import com.hamzalabs.maktaba.player.home.setHome
 import com.hamzalabs.maktaba.player.search.SearchFixtures
 import com.hamzalabs.maktaba.player.shell.AppScreens

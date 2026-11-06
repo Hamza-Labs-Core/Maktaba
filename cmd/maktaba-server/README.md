@@ -47,7 +47,7 @@ maktaba-server serve
 
 | Command      | Purpose                                                        |
 |--------------|----------------------------------------------------------------|
-| `serve`      | Start all roles (or one with `--role api\|streaming\|pipeline\|web`) |
+| `serve`      | Start all roles (or one with `--role api\|streaming\|pipeline\|web`); `--offline` makes no outbound call |
 | `setup`      | The desktop app's setup steps in the terminal (check, admin, libraries, Plex, finish) plus where the data goes and the database → writes `server.toml`, creates and migrates the database, seeds the admin |
 | `update`     | Self-update from GitHub Releases, verified in process (Sigstore bundle, exact release-workflow identity, `release.json`, no downgrade); `--check`, `--version`, `--rollback`. In the Linux app's runtime copy with owner `headless`: installs the release's payload tarball as a new runtime and switches the service to it (an app-owned runtime is updated by the app) |
 | `uninstall`  | Guided teardown (`--purge` for non-interactive full removal)   |
@@ -81,6 +81,18 @@ enabled = "auto"         # auto (when the payload carries ollama) | on | off
 models = ["qwen2.5:7b"]  # what the server keeps
 pull = "auto"            # auto: the supervisor downloads a missing model | off
 ```
+
+**Offline (`serve --offline`, `MAKTABA_OFFLINE=1`).** A test stack, a branch's scratch
+stack or a home with no internet: the server and every role make no outbound call of
+their own. Offline turns off the update check and downloads (`MAKTABA_UPDATE_DISABLE=1`),
+pack and model downloads (`[components] packs = "off"`), the bundled Ollama's model pulls
+(`[llm] pull = "off"`), usage data (`[telemetry] enabled = "off"`,
+`MAKTABA_TELEMETRY_URL=off`), the licence refresh and the relay agent's link to Maktaba
+Cloud (`[cloud] enabled = false`), and the pipeline's Hugging Face downloads
+(`HF_HUB_OFFLINE=1`). A pack install an admin asks for is refused (`packs_disabled`); the
+other calls an admin starts (a Plex sign-in, a web search) run only when an admin acts.
+`ports.Outbound` (`shared/go/ports/outbound.go`) lists every outbound
+call with its switch, and its test fails on a host in the code that it does not list.
 
 **Usage data (`[telemetry]`, Epic 16 stories 16.5, 16.7).** Anonymous usage data goes
 to Maktaba Cloud, for Maktaba's makers, never to a sink on this server. Two separate

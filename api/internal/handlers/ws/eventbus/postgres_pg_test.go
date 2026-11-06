@@ -3,12 +3,13 @@ package eventbus
 import (
 	"context"
 	"database/sql"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // #157: a listener whose connection string was settled while the database did not
@@ -16,7 +17,7 @@ import (
 // again and made anew, and the notifications come. Opt-in: MAKTABA_TEST_PG_URL on a
 // server without TLS (sslmode=disable).
 func TestTheListenerIsSettledAgain(t *testing.T) {
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" || !strings.Contains(base, "sslmode=disable") {
 		t.Skip("MAKTABA_TEST_PG_URL unset or not a server without TLS (sslmode=disable)")
 	}

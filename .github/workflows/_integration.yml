@@ -102,6 +102,12 @@ jobs:
           echo "::error::Services not ready after 60s"
           exit 1
 
+      # Slot 0184 (#642): a transaction that locks processing_done_subjects rows out of key
+      # order across statements fails in the tests instead of only warning, so a new code
+      # path that could deadlock with the retention is caught here
+      - name: Strict lock order on the test databases
+        run: psql "postgres://maktaba:maktaba@localhost:5432/maktaba" -c "ALTER ROLE maktaba SET maktaba.lock_order_strict = 'on'"
+
       - name: Run migrations (first run — applies pending)
         run: make migrate
 

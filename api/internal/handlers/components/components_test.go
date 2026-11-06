@@ -80,6 +80,16 @@ func schema(t testing.TB, db *sql.DB) {
 			t.Fatalf("0178: %v\n%s", err, s)
 		}
 	}
+	// slot 0185 (#636): the restart requests of loops in another process
+	restarts, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0185_component_restarts.sqlite.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range upStatements(string(restarts)) {
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("0185: %v\n%s", err, s)
+		}
+	}
 }
 
 type fixture struct {

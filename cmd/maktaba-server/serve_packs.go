@@ -304,6 +304,9 @@ type packsAdmin struct {
 	// sup restarts a component's processes (POST /components/{id}/restart, story
 	// 51.08); nil: the route answers 503.
 	sup restarter
+	// loops restarts the supervisor's own loops of a component (#636); nil: no
+	// reconciler, so none is restarted.
+	loops loopRestarter
 
 	mu      sync.Mutex
 	offline map[string]*offlineJob
@@ -327,6 +330,12 @@ func (a *packsAdmin) authorized(r *http.Request) bool {
 // restarter is the supervisor as the restart route uses it.
 type restarter interface {
 	RestartComponent(id string) int
+}
+
+// loopRestarter is the reconciler as the restart route uses it: the supervisor's own
+// loops of a component (#636).
+type loopRestarter interface {
+	RestartLoops(id string) int
 }
 
 // adminHandler adds /components/ to base.
@@ -386,8 +395,8 @@ func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 	return mux
 }
 
-// postRestart restarts component id's running processes: {id, restarted} (0: none of
-// them runs now).
+// postRestart restarts component id's running processes and the supervisor's own loops
+// of it: {id, restarted} (0: none of them runs now).
 func (a *packsAdmin) postRestart(w http.ResponseWriter, r *http.Request, id string) {
 	if id == "" || strings.Contains(id, "..") || strings.ContainsAny(id, `/\`) {
 		http.NotFound(w, r)
@@ -401,7 +410,11 @@ func (a *packsAdmin) postRestart(w http.ResponseWriter, r *http.Request, id stri
 		writeConfigJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "components_unavailable"})
 		return
 	}
-	writeConfigJSON(w, http.StatusOK, map[string]any{"id": id, "restarted": a.sup.RestartComponent(id)})
+	n := a.sup.RestartComponent(id)
+	if a.loops != nil {
+		n += a.loops.RestartLoops(id)
+	}
+	writeConfigJSON(w, http.StatusOK, map[string]any{"id": id, "restarted": n})
 }
 
 func reasonJSON(err error) map[string]any {
