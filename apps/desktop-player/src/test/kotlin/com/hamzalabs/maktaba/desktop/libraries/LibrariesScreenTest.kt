@@ -2,6 +2,9 @@ package com.hamzalabs.maktaba.desktop.libraries
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
@@ -16,7 +19,10 @@ import com.hamzalabs.maktaba.desktop.TestHome
 import com.hamzalabs.maktaba.desktop.shell.Route
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
 
 /** Story 55.05 T06, and choosing a library or a series. */
 @OptIn(ExperimentalTestApi::class)
@@ -70,6 +76,31 @@ class LibrariesScreenTest {
             onNodeWithTag("library-all").assertExists()
             onNodeWithText("Beta").performClick()
             assertEquals(Route.Library("b"), home.nav.current)
+        }
+    }
+
+    @Test
+    fun aPinMadeJustBeforeLeavingThePageStays() = TestHome().use { fake ->
+        fake.answer("GET /api/libraries/summary", """{"items":[{"id":"a","name":"Alpha","pinned":false},{"id":"b","name":"Beta","pinned":true,"pin_position":0}]}""")
+        val gate = CountDownLatch(1)
+        // the home puts the new pin first: its order wins once it answers
+        fake.held("PUT /api/me/pinned-libraries", { """{"library_ids":["a","b"]}""" }, gate)
+        val s = LibrariesState(fake.client) {}.also { runBlocking { it.load() } }
+        val home = fake.home()
+        var shown by mutableStateOf(true)
+        runComposeUiTest {
+            setContent { InPlayer(home) { if (shown) LibrariesContent(s, home) } }
+            onNodeWithTag("pin-a").performClick()
+            waitUntil(timeoutMillis = 5_000) { fake.asked("PUT /api/me/pinned-libraries").isNotEmpty() }
+            // the person leaves Libraries while the home has not answered yet
+            shown = false
+            waitForIdle()
+            gate.countDown()
+            Thread.sleep(500)
+            waitForIdle()
+            assertTrue("the pin stays", s.libraries.first { it.id == "a" }.pinned)
+            assertEquals("the home's answer was taken", listOf("a", "b"), s.libraries.filter { it.pinned }.map { it.id })
+            assertFalse(s.saveFailed)
         }
     }
 }
