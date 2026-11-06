@@ -314,7 +314,12 @@ async def test_a_failed_restart_read_is_read_again_at_the_next_poll(
     await sync_graph(db, GRAPH, gates={})
     r, _ = _runner(db)
     restarted: list[str] = []
-    monkeypatch.setattr(r, "restart", lambda cid: restarted.append(cid) or 1)
+
+    def restart(cid: str) -> int:
+        restarted.append(cid)
+        return 1
+
+    monkeypatch.setattr(r, "restart", restart)
     await r._pass(force=True)  # the first read: remembered
     await db.execute(
         "INSERT INTO component_restarts (machine, id, host, seq)"
