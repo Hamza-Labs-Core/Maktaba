@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -36,7 +37,7 @@ CREATE TABLE IF NOT EXISTS play_queues (
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE INDEX IF NOT EXISTS play_queues_user_used_idx ON play_queues (user_id, used_at DESC);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS play_queues_user_used_idx ON play_queues (user_id, used_at DESC);
 -- +goose StatementEnd
 
 -- +goose StatementBegin

@@ -1,3 +1,4 @@
+-- +goose NO TRANSACTION
 -- +goose Up
 -- +goose StatementBegin
 --
@@ -55,7 +56,7 @@ ALTER TABLE collections ADD COLUMN IF NOT EXISTS sort_title TEXT;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-CREATE UNIQUE INDEX IF NOT EXISTS collections_source_uidx
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS collections_source_uidx
     ON collections (library_id, source_kind, source_ref) WHERE source_kind IS NOT NULL;
 -- +goose StatementEnd
 
