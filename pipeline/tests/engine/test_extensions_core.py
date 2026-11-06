@@ -217,3 +217,17 @@ async def test_an_operator_disable_survives_the_extension_sync(db: Database) -> 
     await sync_graph(db, graph, on)
     r = await db.fetchrow("SELECT enabled, disabled_reason FROM job_stages WHERE stage='fake_push'")
     assert not r["enabled"] and r["disabled_reason"] == "operator"
+
+
+@pytest.mark.unit
+def test_graph_refuses_a_core_stage_named_like_a_plugin_stage() -> None:
+    """Epic 54, 54.01 T05: ``p_*`` names belong to plugin stages; ``validate()`` refuses
+    one on a core stage and accepts it on a plugin's."""
+    from dataclasses import replace
+
+    from maktaba_pipeline.engine.graph import validate
+
+    core = replace(GRAPH[0], name="p_x", edges=(), may_request=())
+    with pytest.raises(GraphError, match="p_x"):
+        validate((*GRAPH, core))
+    validate((*GRAPH, replace(core, extension="plugin:dev.example.x")))

@@ -220,6 +220,24 @@ desktop_shell:
   - 'apps/desktop/**'
   - '.github/workflows/_unit.yml'
 
+# Epic 54: the plugin host (Rust), the SDK's TypeScript validator, and the sandbox proof
+# on macOS, Ubuntu 22.04 and 24.04 and Windows (_plugins.yml): the host's workspace and
+# guests, the shared schema, capabilities, events and WIT it embeds, the Windows
+# AppContainer launcher, the canary and probe checker, and the i18n its SDK test reads
+plugins:
+  - *ci
+  - *make
+  - 'plugind/**'
+  - 'shared/plugins/**'
+  - 'tools/plugin-sdk/**'
+  - 'tools/ci/plugins/**'
+  # the Epic 53 line the host's log lines follow (a test reads its plugind example)
+  - 'shared/log/schema/**'
+  - 'cmd/maktaba-server/internal/appcontainer/**'
+  - 'cmd/maktaba-server/go.mod'
+  - 'web/src/i18n/**'
+  - '.github/workflows/_plugins.yml'
+
 # ---- the server's tiers ---------------------------------------------------------------
 
 # Postgres + Chroma: the Go modules' and the pipeline's integration tiers, cloud's, and the

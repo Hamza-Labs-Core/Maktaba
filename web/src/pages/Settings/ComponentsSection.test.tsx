@@ -1046,6 +1046,26 @@ describe("Components page: Restart (story 51.08 §2)", () => {
     expect(await screen.findByText("Transcription is restarting.")).toBeInTheDocument();
   });
 
+  it("a restart only asked of another process says so, not that it restarts", async () => {
+    const user = userEvent.setup();
+    post.mockImplementation((url: string) => {
+      if (url === "/api/components/cluster/restart")
+        return Promise.resolve({ id: "cluster", restarted: 0, requested: ["pipeline"] });
+      return Promise.reject(new Error(`unmocked POST ${url}`));
+    });
+    open();
+    await loaded();
+    const name = within(row("cluster"))
+      .getByRole("button", { name: /^Restart / })
+      .getAttribute("aria-label")!
+      .replace(/^Restart /, "");
+    await user.click(within(row("cluster")).getByRole("button", { name: /^Restart / }));
+    expect(
+      await screen.findByText(`${name}: a restart was asked of the service that runs it.`)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(`${name} is restarting.`)).toBeNull();
+  });
+
   it("a held or off row has no Restart, and a refusal is said in words", async () => {
     setRow("transcription", {
       hold: { by: "admin", at: "2026-11-03T10:00:00Z" },

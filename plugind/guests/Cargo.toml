@@ -1,0 +1,21 @@
+# Test guests for the plugin host (Epic 54, stories 54.02 T02–T10 and 54.03 T07), built
+# for wasm32-wasip2 by `make plugind-guests` before `cargo test` in plugind/:
+#
+#   hello        a well-behaved plugin, no_std, importing maktaba:plugin only
+#   hostile      no_std; the stage name picks a misbehaviour (loop, memory bomb, trap,
+#                recursion, an ungranted call, log and API floods, cancel with checkpoint)
+#   hostile-std  Rust std reaching for the network and files: imports wasi:sockets,
+#                wasi:filesystem and wasi:cli/stdin, refused by the audit and the linker
+[workspace]
+resolver = "2"
+members = ["hello", "hostile", "hostile-std"]
+
+[workspace.dependencies]
+wit-bindgen = { version = "0.46", default-features = false, features = ["macros", "realloc"] }
+dlmalloc = { version = "0.2", features = ["global"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"

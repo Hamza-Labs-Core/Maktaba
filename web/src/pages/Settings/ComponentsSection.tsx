@@ -315,10 +315,14 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
       setFlash(null);
       setBusy(v.id);
       try {
-        await componentsApi.restart(v.id);
+        const res = await componentsApi.restart(v.id);
+        // only asked of another process (streaming, the pipeline): not confirmed here
+        const askedOnly = !!res && res.restarted === 0 && (res.requested?.length ?? 0) > 0;
         toast.show({
           tone: "success",
-          message: t("components.done.restart", { name: titleOf(v.id) }),
+          message: t(askedOnly ? "components.done.restartAsked" : "components.done.restart", {
+            name: titleOf(v.id),
+          }),
         });
         await reload();
       } catch (e) {

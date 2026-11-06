@@ -1,0 +1,189 @@
+# Epic 54: plugins. The plugin host (maktaba-plugind), the manifest validators of the SDK,
+# and the sandbox proof on every OS (README §5.4, §13).
+#
+#   plugind          the Rust workspace: format, clippy, the host against real hostile
+#                    components (54.02 T01–T10), the N1 bench in a release build, and the
+#                    TypeScript SDK's manifest validator on the shared corpus (54.01)
+#   plugins-sandbox  CI ONLY, never on a developer's or the owner's machine: on macOS,
+#                    Ubuntu 22.04 and 24.04 and Windows the sandboxed host runs a job, then
+#                    a test build tries to get out as native code (TCP and UDP to a canary
+#                    on loopback and the LAN address, a TEST-NET-3 literal, names, a bound
+#                    port, raw and netlink sockets, planted files, writes, a process):
+#                    every probe DENIED and the canary counts 0 (N8). The same probes
+#                    without the sandbox must reach the canary (the positive control).
+#                    Ubuntu 24.04 also runs with user namespaces blocked: Degraded
+#                    (sandbox_partial: namespaces) and still no network.
+
+name: Plugins
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  plugind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            plugind
+            plugind/guests
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: The host's format, lint and tests (make plugind-test)
+        run: make plugind-test
+
+      # N1 and N7 in a release build (story 54.02 T07; README §7.2)
+      - name: Job start bench
+        working-directory: plugind
+        run: cargo test --locked --release -p plugind-core --test host -- --include-ignored --nocapture bench_job_start runaway
+
+      - uses: pnpm/action-setup@v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+
+      # story 54.01 T01, T02, T06 (ts): the SDK's validator on the shared corpus
+      - name: The TypeScript SDK's manifest validator
+        working-directory: tools/plugin-sdk/js
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+
+  plugins-sandbox:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-24.04, ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            plugind
+            plugind/guests
+          key: ${{ matrix.os }}
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - uses: actions/setup-go@v6.4.0
+        if: runner.os == 'Windows'
+        with:
+          go-version-file: cmd/maktaba-server/go.mod
+          cache: false
+
+      # this job's Go module (the AppContainer launcher), retried; the build reads the cache
+      - name: Go modules
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server
+
+      - name: Build the guests
+        run: cd plugind/guests && cargo build --locked --release --target wasm32-wasip2
+
+      # GitHub's 24.04 image may block unprivileged user namespaces; the first run expects
+      # the full sandbox, the last step blocks them on purpose
+      - name: Allow user namespaces
+        if: matrix.os == 'ubuntu-24.04'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      # the sandboxed host for real: starts, runs a job through the API socket, and exits
+      # 78 naming the step when a required layer fails (54.03 T05, T06's host side)
+      - name: The sandboxed host runs a job
+        working-directory: plugind
+        run: cargo test --locked --release -p maktaba-plugind
+
+      - name: The hostile components inside the sandboxed host (54.03 T07)
+        if: runner.os != 'Windows'
+        working-directory: plugind
+        run: cargo test --locked --release -p plugind-core --test host
+
+      # after the tests: they build the same binary without the probes
+      - name: Build the probe build
+        working-directory: plugind
+        run: cargo build --locked --release -p maktaba-plugind --features escape-probes
+
+      - name: Plant the files the probes reach for
+        id: plant
+        run: |
+          data="$RUNNER_TEMP/plugind-data"
+          mkdir -p "$data/plugins/cache" "$data/run/plugins" "$data/state" "$HOME/.ssh"
+          echo "not a real key" > "$HOME/.ssh/plugind_probe_fake"
+          echo "state" > "$data/state/probe.txt"
+          echo "data=$data" >>"$GITHUB_OUTPUT"
+          python3 tools/ci/plugins/canary.py --port 47391 --count "$RUNNER_TEMP/canary.count" --lan-file "$RUNNER_TEMP/lan.txt" > "$RUNNER_TEMP/canary.log" 2>&1 &
+          for _ in $(seq 1 50); do [ -s "$RUNNER_TEMP/lan.txt" ] && break; sleep 0.2; done
+          echo "lan=$(cat "$RUNNER_TEMP/lan.txt")" >>"$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/canary.log"
+
+      - name: Escape probes, sandboxed and as the positive control
+        env:
+          DATA: ${{ steps.plant.outputs.data }}
+          PROBE_LAN: ${{ steps.plant.outputs.lan }}
+          PROBE_PORT: '47391'
+        run: |
+          native() { if [ "$RUNNER_OS" = Windows ]; then cygpath -w "$1"; else echo "$1"; fi; }
+          export PROBE_SECRET="$(native "$HOME/.ssh/plugind_probe_fake")" PROBE_STATE="$(native "$DATA/state/probe.txt")" PROBE_WRITE="$(native "$DATA/escape.txt")"
+          bin=plugind/target/release/maktaba-plugind
+          count() { cat "$RUNNER_TEMP/canary.count"; }
+          before=$(count)
+          if [ "$RUNNER_OS" = Windows ]; then
+            (cd cmd/maktaba-server && go build -o "$RUNNER_TEMP/aclaunch.exe" ./internal/appcontainer/aclaunch)
+            "$RUNNER_TEMP/aclaunch.exe" -profile Maktaba.Plugins.CI \
+              -read "$(cygpath -w "$PWD/plugind/target/release")" -read "$(cygpath -w "$DATA/plugins")" \
+              -write "$(cygpath -w "$DATA/plugins/cache")" -write "$(cygpath -w "$DATA/run/plugins")" \
+              -- "$(cygpath -w "$PWD/$bin.exe")" --data "$(cygpath -w "$DATA")" --escape-probes | tee "$RUNNER_TEMP/sandboxed.txt"
+          else
+            "$bin" --data "$DATA" --escape-probes | tee "$RUNNER_TEMP/sandboxed.txt"
+          fi
+          sleep 1
+          after_sandboxed=$(count)
+          "$bin" --data "$(native "$DATA")" --escape-probes --no-sandbox | tee "$RUNNER_TEMP/control.txt"
+          sleep 1
+          after_control=$(count)
+          cat "$RUNNER_TEMP/canary.log"
+          python3 tools/ci/plugins/check_probes.py --sandboxed "$RUNNER_TEMP/sandboxed.txt" --control "$RUNNER_TEMP/control.txt" \
+            --canary-before "$before" --canary-after-sandboxed "$after_sandboxed" --canary-after-control "$after_control"
+
+      # 54.03 T03: user namespaces blocked (Ubuntu 24.04's AppArmor rule): Degraded, and
+      # seccomp still refuses every network family
+      - name: Escape probes with user namespaces blocked
+        if: matrix.os == 'ubuntu-24.04'
+        env:
+          DATA: ${{ steps.plant.outputs.data }}
+          PROBE_LAN: ${{ steps.plant.outputs.lan }}
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+          export PROBE_SECRET="$HOME/.ssh/plugind_probe_fake" PROBE_STATE="$DATA/state/probe.txt" PROBE_WRITE="$DATA/escape.txt"
+          before=$(cat "$RUNNER_TEMP/canary.count")
+          plugind/target/release/maktaba-plugind --data "$DATA" --escape-probes | tee "$RUNNER_TEMP/partial.txt"
+          sleep 1
+          after=$(cat "$RUNNER_TEMP/canary.count")
+          python3 tools/ci/plugins/check_probes.py --sandboxed "$RUNNER_TEMP/partial.txt" \
+            --canary-before "$before" --canary-after-sandboxed "$after" --expect-missing namespaces

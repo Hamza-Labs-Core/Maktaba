@@ -1,0 +1,3 @@
+{"ts":"2026-11-06T10:00:00.000Z","level":"info","service":"plugin.dev.example.silence-chapters","version":"1.4.0","job_id":"4211","stage":"find_silences","msg":"chapters_found","attrs":{"n":3,"origin":"plugin"}}
+{"ts":"2026-11-06T10:00:01.000Z","level":"warn","service":"plugin.dev.example.silence-chapters","version":"1.4.0","job_id":"4211","stage":"find_silences","msg":"log_dropped","attrs":{"dropped":9890,"origin":"host"}}
+{"ts":"2026-11-06T10:00:02.000Z","level":"info","service":"plugins.host","msg":"started","attrs":{"sandbox":"full","missing":[],"pool":2,"wasmtime":"50.0.1"}}

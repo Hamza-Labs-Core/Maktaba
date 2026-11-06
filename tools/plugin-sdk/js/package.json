@@ -1,0 +1,23 @@
+{
+  "name": "@maktaba/plugin-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Maktaba plugin SDK for JavaScript and TypeScript: the manifest validator (Epic 54, story 54.01).",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "gen": "node scripts/gen-data.mjs",
+    "gen:check": "node scripts/gen-data.mjs --check",
+    "build": "tsc -p tsconfig.json",
+    "test": "node scripts/gen-data.mjs --check && tsc -p tsconfig.json && node --test dist/test/*.test.js"
+  },
+  "dependencies": {
+    "smol-toml": "1.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "typescript": "5.7.3"
+  },
+  "packageManager": "pnpm@9.15.4"
+}
