@@ -123,6 +123,39 @@ describe("App routes (test-cases/app-shell.md)", () => {
   });
 });
 
+describe("Epic 53 story 53.11 routes", () => {
+  it("routes /admin/errors and /admin/logs/settings: admins see them, members are refused", async () => {
+    signedIn = true;
+    amal.is_admin = true;
+    try {
+      const a = open("/admin/errors");
+      expect(
+        await screen.findByRole(
+          "heading",
+          { level: 1, name: en["errors.title"] },
+          { timeout: 3000 }
+        )
+      ).toBeInTheDocument();
+      a.unmount();
+      const b = open("/admin/logs/settings");
+      // the generic answer is no settings document: the page says it could not read them
+      expect(
+        await screen.findByText(en["logs.settings.loadError"], {}, { timeout: 3000 })
+      ).toBeInTheDocument();
+      b.unmount();
+    } finally {
+      amal.is_admin = false;
+    }
+    for (const path of ["/admin/errors", "/admin/errors/ab12", "/admin/logs/settings"]) {
+      const { unmount } = open(path);
+      expect(
+        await screen.findByText(en["common.forbidden.desc"], {}, { timeout: 3000 })
+      ).toBeInTheDocument();
+      unmount();
+    }
+  });
+});
+
 // The public pages sit outside AppShell, so App.tsx gives them their own
 // RouteErrorBoundary: a render crash there shows the fallback, and Back
 // brings the app back.

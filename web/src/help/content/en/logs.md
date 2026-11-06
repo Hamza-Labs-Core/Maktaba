@@ -20,6 +20,26 @@ Maktaba writes a log: one line for each thing it does, with the time, the level 
 
 Click the small arrow at the end of a line to see all of its details.
 
+### Search, and follow one request {#search}
+
+Type words in **Search logs** and press Enter. Put a phrase in quotes ("connection refused"), put a minus before a word to leave it out (-disk), or end a word with \* to find what starts with it. Pick a **Level**, a **Service** and a **Time** to narrow the list; they stay in the page's address, so a link keeps them.
+
+When an error screen in an app shows **Reference: xxxxxxxx**, type those 8 characters in **Search logs**. **Follow this request** opens: every line of that one action, from every part of Maktaba, in time order, with a dashed line where more than a second passed. A line's **Request** chip opens the same view, and **Lines around this** (under a line's details) shows what every part wrote at that moment.
+
+### Watch it live {#live}
+
+Tick **Live** to see lines as they are written, newest at the top, within about two seconds. Scroll down to read and the list holds still; **N new lines** takes you back to the top with what arrived.
+
+### Errors {#errors}
+
+[Administration → Errors](/admin/errors) groups the errors that look alike: one row per problem, with how often it happened today and in all, a 14-day chart, how many people it hit and when it was last seen. The number on **Errors** in the menu is how many are **New**. Open one to see its recent lines and act on it: **Mark seen**, **Resolve** (it comes back as new, marked **Came back**, if it happens again in a later version) or **Mute** it for 24 hours, 7 days or until it is resolved. Administrators get a notification for a new error that happens again and again, or one that came back.
+
+### Keep diagnostics, and detailed logs for an hour {#retention}
+
+[Diagnostics settings](/admin/logs/settings) says how long Maktaba keeps its logs (7 days at first), its errors (30 days) and problem reports (90 days), and how much disk they may use in all (1 GB at first), with what each uses now. When the limit is reached the oldest go first, even if they are newer than the days you chose.
+
+**Detailed logs for one hour** makes one part (the API, streaming, processing or log search) write its debug lines for an hour, then go back by itself. Use it when you are asked for more detail about a problem.
+
 ### Stop the scrolling {#pause}
 
 New lines keep arriving. Click **Pause** to freeze the list while you read, and **Resume** to carry on. Untick **Auto-scroll** to stay where you are while lines keep coming.

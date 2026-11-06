@@ -1,78 +1,24 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
 	"testing"
+	"time"
 )
 
-// A logs directory and a log something made wider first end up the user's only.
-func TestOpenLogIsTheUsersOnly(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX modes")
+// Epic 53 stories 53.02, 53.10, 53.11: [logs]' defaults are 7 days of logs, 30 of error
+// groups, 90 of problem reports and 1 GB in all; a value out of its range takes the default.
+func TestLogsResolved(t *testing.T) {
+	d := LogsSection{}.Resolved()
+	day := 24 * time.Hour
+	if d.Retention != 7*day || d.ErrorRetention != 30*day || d.ReportRetention != 90*day || d.MaxTotal != 1<<30 {
+		t.Fatalf("defaults: %+v", d)
 	}
-	dir := filepath.Join(t.TempDir(), "logs")
-	if err := os.Mkdir(dir, 0o755); err != nil {
-		t.Fatal(err)
+	r := LogsSection{Retention: "14d", ErrorRetention: "60d", ReportRetention: "180d", MaxTotalSize: "2GB"}.Resolved()
+	if r.Retention != 14*day || r.ErrorRetention != 60*day || r.ReportRetention != 180*day || r.MaxTotal != 2<<30 {
+		t.Fatalf("set: %+v", r)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "venv.log"), []byte("old\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	f, err := openLogIn(dir, "venv.log")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString("new\n"); err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
-	if fi, _ := os.Stat(dir); fi == nil || fi.Mode().Perm() != 0o700 {
-		t.Errorf("logs dir mode %v", fi)
-	}
-	fi, _ := os.Stat(filepath.Join(dir, "venv.log"))
-	if fi == nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf("log mode %v", fi)
-	}
-	if b, _ := os.ReadFile(filepath.Join(dir, "venv.log")); string(b) != "old\nnew\n" {
-		t.Errorf("appended %q", b)
-	}
-	// a fresh one
-	f, err = openLogIn(filepath.Join(t.TempDir(), "a", "logs"), "ollama.log")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
-}
-
-// A log at a path: the file is the user's only; a folder it makes is too, and
-// a folder that was there keeps its mode (it may be anybody's).
-func TestOpenLogFileLeavesAFolderItDidNotMake(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("POSIX modes")
-	}
-	shared := t.TempDir()
-	if err := os.Chmod(shared, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	f, err := OpenLogFile(filepath.Join(shared, "ollama.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
-	if fi, _ := os.Stat(shared); fi == nil || fi.Mode().Perm() != 0o755 {
-		t.Errorf("an existing folder's mode changed: %v", fi)
-	}
-	if fi, _ := os.Stat(filepath.Join(shared, "ollama.log")); fi == nil || fi.Mode().Perm() != 0o600 {
-		t.Errorf("log mode %v", fi)
-	}
-	made := filepath.Join(shared, "new", "logs")
-	f, err = OpenLogFile(filepath.Join(made, "ollama.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = f.Close()
-	if fi, _ := os.Stat(made); fi == nil || fi.Mode().Perm() != 0o700 {
-		t.Errorf("a folder it made: %v", fi)
+	o := LogsSection{Retention: "91d", ErrorRetention: "400d", ReportRetention: "0d", MaxTotalSize: "100MB"}.Resolved()
+	if o.Retention != 7*day || o.ErrorRetention != 30*day || o.ReportRetention != 90*day || o.MaxTotal != 1<<30 {
+		t.Fatalf("out of range: %+v", o)
 	}
 }

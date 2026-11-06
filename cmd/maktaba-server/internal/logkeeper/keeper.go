@@ -56,6 +56,30 @@ type Keeper struct {
 	free    int64
 	echoMu  sync.Mutex
 	runCtx  context.Context
+	// limMu guards the limits SetLimits changes while the keeper runs
+	limMu sync.Mutex
+}
+
+// SetLimits changes retention and the segments' cap while the keeper runs (the admin's
+// Retention page, story 53.11); the next janitor pass applies them. A zero leaves a value.
+func (k *Keeper) SetLimits(retention, debugRetention time.Duration, maxSegments int64) {
+	k.limMu.Lock()
+	defer k.limMu.Unlock()
+	if retention > 0 {
+		k.cfg.Retention = retention
+	}
+	if debugRetention > 0 {
+		k.cfg.DebugRetention = debugRetention
+	}
+	if maxSegments > 0 {
+		k.cfg.MaxSegments = maxSegments
+	}
+}
+
+func (k *Keeper) limits() (retention, debugRetention time.Duration, maxSegments int64) {
+	k.limMu.Lock()
+	defer k.limMu.Unlock()
+	return k.cfg.Retention, k.cfg.DebugRetention, k.cfg.MaxSegments
 }
 
 // New makes a keeper; Run starts its followers' polling, the syncs and the janitor.
@@ -485,13 +509,14 @@ func (k *Keeper) files() []segmentFile {
 // service's newest 24 h of warn and above (warn/), which go last.
 func (k *Keeper) Janitor() {
 	now := k.cfg.Now().UTC()
+	retention, debugRetention, maxSegments := k.limits()
 	files := k.files()
 	var keep []segmentFile
 	for _, f := range files {
 		age := now.Sub(f.hour.Add(time.Hour))
-		limit := k.cfg.Retention
+		limit := retention
 		if f.kind == "debug" {
-			limit = k.cfg.DebugRetention
+			limit = debugRetention
 		}
 		if age > limit && !k.segs.isOpen(f.path) {
 			k.remove(f)
@@ -504,7 +529,7 @@ func (k *Keeper) Janitor() {
 		total += f.size
 	}
 	over := func() bool {
-		if total > k.cfg.MaxSegments {
+		if total > maxSegments {
 			return true
 		}
 		free := k.cfg.Free(k.cfg.Root)

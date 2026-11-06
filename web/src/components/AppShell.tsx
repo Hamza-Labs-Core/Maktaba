@@ -27,6 +27,7 @@ import { BigScreenButton } from "./BigScreenButton";
 import { NotificationsBell } from "./NotificationsBell";
 import { updateAvailable, useUpdateStatus } from "../lib/updates";
 import { useSystemStatus } from "../lib/systemStatus";
+import { useNewErrors } from "../lib/newErrors";
 import { UpdateBanner } from "./UpdateBanner";
 import { MacPermissionsReminder } from "./MacPermissions/MacPermissionsReminder";
 import { TelemetryPrompt } from "./TelemetryPrompt";
@@ -48,6 +49,7 @@ function UpdateDot() {
 // The red dot on "System health" (and on More, on the phone) while the
 // system status is down, for admins; HEALTH_DESC says so to a screen reader.
 const HEALTH_PATH = "/admin/health";
+const ERRORS_PATH = "/admin/errors";
 const HEALTH_DESC = "mkt-shell-health-badge";
 function HealthDot() {
   return (
@@ -130,6 +132,7 @@ const ADMIN = [
   { to: "/admin/machines", key: "nav.admin.machines", icon: "⌘" },
   { to: "/admin/updates", key: "nav.admin.updates", icon: "⟳" },
   { to: "/admin/logs", key: "nav.admin.logs", icon: "≣" },
+  { to: "/admin/errors", key: "nav.admin.errors", icon: "⚠" },
   { to: "/admin/devices", key: "nav.admin.devices", icon: "▤" },
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },
 ] as const;
@@ -180,6 +183,8 @@ export function AppShell() {
   const badged = (to: string) => hasUpdate && BADGED.has(to);
   const manage = SERVER_PAGES && !!user?.is_admin;
   const healthDown = useSystemStatus(manage) === "down";
+  // Epic 53 story 53.11: how many error groups are new (the Errors entry's count)
+  const newErrors = useNewErrors(manage);
   const pins = usePins(user?.id);
   // story 51.11: a viewer has no Guide while Live TV is off; an admin keeps it
   // and the page says it is off
@@ -365,6 +370,15 @@ export function AppShell() {
                     {healthDown && item.to === HEALTH_PATH && <HealthDot />}
                   </span>
                   <span className="mkt-nav-link__label">{t(item.key)}</span>
+                  {item.to === ERRORS_PATH && newErrors > 0 && (
+                    <span
+                      className="mkt-nav-count"
+                      data-testid="errors-count"
+                      aria-label={t("nav.admin.errorsNew", { count: newErrors })}
+                    >
+                      {newErrors > 99 ? "99+" : newErrors}
+                    </span>
+                  )}
                 </NavLink>
               ))}
             </>

@@ -101,6 +101,9 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/admin/machines", { topic: "machines" }],
   ["/admin/updates", { topic: "updates" }],
   ["/admin/logs", { topic: "logs" }],
+  ["/admin/logs/settings", { topic: "logs", anchor: "retention" }],
+  ["/admin/errors", { topic: "logs", anchor: "errors" }],
+  ["/admin/errors/:fp", { topic: "logs", anchor: "errors" }],
   ["/admin/devices", { topic: "cloud", anchor: "devices" }],
   ["*", { topic: "getting-started", anchor: "find-your-way" }],
 ];

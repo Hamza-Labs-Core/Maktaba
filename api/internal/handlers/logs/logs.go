@@ -40,6 +40,7 @@ import (
 	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/serversettings"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
@@ -82,6 +83,8 @@ type Handler struct {
 	FileSource FileSource
 	// IndexAddr is the log index role's address (index.go; "": MAKTABA_LOGS_ADDR).
 	IndexAddr string
+	// Supervisor keeps the diagnostics' settings (retention.go; nil: from the environment).
+	Supervisor *serversettings.Supervisor
 }
 
 // Mount wires the routes. Admin routes are gated with RequireAdmin; the
@@ -99,6 +102,11 @@ func (h *Handler) Mount(r chi.Router) {
 	r.With(authmw.RequireAdmin).Get("/api/admin/errors", h.proxyIndex("/errors", false))
 	r.With(authmw.RequireAdmin).Get("/api/admin/errors/{fp}", h.proxyIndex("/errors/{fp}", false))
 	r.With(authmw.RequireAdmin).Post("/api/admin/errors/{fp}/status", h.errorStatus)
+	// the Retention page and detailed logs (story 53.11)
+	r.With(authmw.RequireAdmin).Get("/api/admin/logs/retention", h.proxyConfig("/config/logs", ""))
+	r.With(authmw.RequireAdmin).Put("/api/admin/logs/retention", h.proxyConfig("/config/logs", EventRetentionChanged))
+	r.With(authmw.RequireAdmin).Post("/api/admin/logs/level", h.proxyConfig("/config/logs/level", EventDetailedLogs))
+	r.With(authmw.RequireAdmin).Get("/api/admin/logs/users", h.users)
 	r.With(authmw.RequireAuth).Get("/api/diagnostics/export", h.UserExport)
 }
 

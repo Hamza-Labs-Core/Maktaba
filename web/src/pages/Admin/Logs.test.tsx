@@ -231,8 +231,11 @@ describe("AdminLogs", () => {
 
   it("polls the stream endpoint and renders entries", async () => {
     renderLogs();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    expect(get.mock.calls[0][0]).toContain("/api/admin/logs/stream");
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    // the log index is asked first (story 53.11); an API without one answers no lines, and
+    // the page reads the rings
+    expect(get.mock.calls[0][0]).toContain("/api/admin/logs/search");
+    expect(get.mock.calls[1][0]).toContain("/api/admin/logs/stream");
     await waitFor(() => {
       expect(screen.getByText("started")).toBeInTheDocument();
       expect(screen.getByText("boom")).toBeInTheDocument();

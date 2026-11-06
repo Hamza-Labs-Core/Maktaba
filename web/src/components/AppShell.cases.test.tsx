@@ -18,6 +18,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { useEffect, type ComponentProps, type ReactNode } from "react";
+import { ERRORS_CHANGED_EVENT } from "../lib/newErrors";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("../lib/api", async () => {
@@ -315,6 +316,7 @@ const ADMIN_LINKS = [
   ["nav.admin.machines", "/admin/machines"],
   ["nav.admin.updates", "/admin/updates"],
   ["nav.admin.logs", "/admin/logs"],
+  ["nav.admin.errors", "/admin/errors"],
   ["nav.admin.devices", "/admin/devices"],
   ["nav.admin.extensions", "/admin/extensions"],
 ] as const;
@@ -461,6 +463,34 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     expect(within(tabbar()).getAllByRole("link")).toHaveLength(5);
     // /admin/enrichment is routed but not in the nav (reported as a gap)
     expect(within(sidebar()).queryByRole("link", { name: /enrichment/i })).toBeNull();
+  });
+
+  it("SHL-09b: Errors shows how many groups are new; a status change reads it again", async () => {
+    let fresh = 3;
+    const base = get.getMockImplementation() as (p: string) => Promise<unknown>;
+    get.mockImplementation((path: string) =>
+      path.startsWith("/api/admin/errors?")
+        ? Promise.resolve({ groups: Array.from({ length: fresh }, (_, i) => ({ fp: `f${i}` })) })
+        : base(path)
+    );
+    signedIn(root);
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    expect(await within(sidebar()).findByTestId("errors-count")).toHaveTextContent("3");
+    fresh = 2;
+    act(() => {
+      window.dispatchEvent(new Event(ERRORS_CHANGED_EVENT));
+    });
+    await waitFor(() =>
+      expect(within(sidebar()).getByTestId("errors-count")).toHaveTextContent("2")
+    );
+    expect(get.mock.calls.some(([p]) => String(p).includes("status=new"))).toBe(true);
+  });
+
+  it("SHL-09c: a viewer's shell never asks for the error groups", async () => {
+    renderShell(["/library"]);
+    await screen.findByRole("heading", { name: "page /library" });
+    expect(get.mock.calls.some(([p]) => String(p).startsWith("/api/admin/errors"))).toBe(false);
   });
 
   it.each([["/admin/users"], ["/admin/live-tv"], ["/admin/logs"]])(

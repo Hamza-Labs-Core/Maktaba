@@ -4296,3 +4296,108 @@ button.mkt-video__hero {
   margin-block: var(--space-2) 0;
   font-size: var(--font-size-sm);
 }
+
+/* Epic 53 story 53.11: the Logs page over the index, Errors and diagnostics settings */
+.mkt-logs__notice {
+  padding: 0.5rem 0.75rem;
+  border-inline-start: 3px solid var(--color-warn, #b7791f);
+  background: var(--color-surface-2, transparent);
+}
+.mkt-logs__chip {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0 0.4rem;
+  border-radius: 0.6rem;
+  font-size: 0.8em;
+  border: 1px solid var(--color-border, #8884);
+  background: transparent;
+  color: inherit;
+}
+.mkt-logs__chip--link {
+  cursor: pointer;
+}
+.mkt-logs__chip--link:hover,
+.mkt-logs__chip--link:focus-visible {
+  border-color: var(--color-accent);
+}
+.mkt-logs__row--gap {
+  border-block-start: 2px dashed var(--color-warn, #b7791f);
+}
+.mkt-logs__row--mark {
+  outline: 2px solid var(--color-accent);
+}
+.mkt-logs__around {
+  margin-block-start: 1rem;
+}
+.mkt-nav-count {
+  margin-inline-start: auto;
+  min-width: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 0.65rem;
+  font-size: 0.75rem;
+  text-align: center;
+  background: var(--color-danger, #c0392b);
+  color: #fff;
+}
+.mkt-errors__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.mkt-errors__table th,
+.mkt-errors__table td {
+  padding: 0.4rem 0.5rem;
+  text-align: start;
+  vertical-align: top;
+}
+.mkt-errors__spark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 1.25rem;
+  width: 5rem;
+}
+.mkt-errors__spark--big {
+  width: 100%;
+  height: 6rem;
+}
+.mkt-errors__bar {
+  flex: 1;
+  min-width: 2px;
+  background: var(--color-danger, #c0392b);
+  opacity: 0.8;
+}
+.mkt-errors__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+.mkt-errors__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+}
+.mkt-logset__field {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 20rem;
+  margin-block: 0.75rem;
+}
+.mkt-logset__services {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.mkt-comp-drawer__links {
+  display: flex;
+  gap: 0.25rem;
+}
+@media (max-width: 640px) {
+  .mkt-errors__table th:nth-child(4),
+  .mkt-errors__table td:nth-child(4),
+  .mkt-errors__table th:nth-child(2),
+  .mkt-errors__table td:nth-child(2) {
+    display: none;
+  }
+}

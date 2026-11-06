@@ -568,6 +568,27 @@ describe("Components page (story 51.10)", () => {
     ).toBeInTheDocument();
   });
 
+  it("Epic 53 story 53.11: the drawer links to the component's logs and errors", async () => {
+    get.mockImplementation((url: string) => {
+      if (url === "/api/components") return Promise.resolve(structuredClone(list));
+      if (url === "/api/components/llm") return Promise.resolve(detailOf("llm"));
+      return Promise.reject(new Error(`unmocked GET ${url}`));
+    });
+    const user = userEvent.setup();
+    open();
+    await loaded();
+    await user.click(within(row("llm")).getByRole("button", { name: "Details of Language model" }));
+    const drawer = await screen.findByRole("dialog", { name: "Language model" });
+    expect(within(drawer).getByRole("link", { name: "Logs" })).toHaveAttribute(
+      "href",
+      "/admin/logs?components=llm"
+    );
+    expect(within(drawer).getByRole("link", { name: "Errors" })).toHaveAttribute(
+      "href",
+      "/admin/errors?component=llm"
+    );
+  });
+
   it("T12: it reads the list every 5 s while visible, and not at all while the tab is hidden", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     let state: DocumentVisibilityState = "visible";

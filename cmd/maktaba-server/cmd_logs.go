@@ -28,11 +28,13 @@ func newLogsCmd() *cobra.Command {
 		Short:  "Run the log index (search and live tail of this machine's logs)",
 		Hidden: true, // the supervisor starts it
 		RunE: func(_ *cobra.Command, _ []string) error {
+			// [logs] as saved: retention, the cap, the errors' retention (an earlier
+			// version passed none, so the index kept its defaults whatever was set)
+			cfg, _, err := config.Load()
+			if err != nil {
+				return err
+			}
 			if root == "" {
-				cfg, _, err := config.Load()
-				if err != nil {
-					return err
-				}
 				root = LogsRoot(cfg)
 			}
 			if addr == "" {
@@ -40,7 +42,7 @@ func newLogsCmd() *cobra.Command {
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
-			return runLogIndex(ctx, root, addr, config.LogsSection{})
+			return runLogIndex(ctx, root, addr, cfg.Logs)
 		},
 	}
 	cmd.Flags().StringVar(&root, "root", "", "the log keeper's folder (default: <data>/logs)")
@@ -55,7 +57,7 @@ func runLogIndex(ctx context.Context, root, addr string, logs config.LogsSection
 	}
 	defer ix.Close()
 	r := logs.Resolved()
-	ix.Retention = r.Retention
+	ix.Retention, ix.ErrorRetention = r.Retention, r.ErrorRetention
 	ix.MaxBytes = r.MaxTotal * 35 / 100
 	ix.Log = func(msg string, kv ...any) { logLine("info", msg, kv...) }
 	if why := ix.Rebuilt(); why != "" {

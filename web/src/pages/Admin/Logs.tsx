@@ -32,6 +32,10 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
 import { clusterApi } from "../../lib/clusterApi";
+import { Link } from "react-router-dom";
+import { useHomeStatus } from "../../lib/homeStatus";
+import { readIndexQuery, searchLogs, type SearchResult } from "../../lib/logIndex";
+import { LogSearch } from "./LogSearch";
 import {
   inWindow,
   logFilesURL,
@@ -85,8 +89,77 @@ const FILES_LIMIT = 2000;
 export function AdminLogs() {
   return (
     <AdminGate>
-      <LogsInner />
+      <LogsPage />
     </AdminGate>
+  );
+}
+
+/** Epic 53 story 53.11: the index's view (LogSearch) when the log index answers; else this
+ * file's view of the rings and files, with a notice when the index is off or restarting. */
+function LogsPage() {
+  const { t } = useI18n();
+  const [initial] = useState(() =>
+    readIndexQuery(typeof window === "undefined" ? "" : window.location.search)
+  );
+  const [probe, setProbe] = useState<
+    | { kind: "wait" }
+    | { kind: "index"; first: SearchResult }
+    | { kind: "files"; why?: "restarting" | "off" }
+  >({ kind: "wait" });
+  const status = useHomeStatus(false);
+  useEffect(() => {
+    let alive = true;
+    Promise.resolve()
+      .then(() => searchLogs(initial))
+      .then((r) => {
+        if (!alive) return;
+        // an older API has no index: its answer has no lines (the files view, no notice)
+        if (r && Array.isArray(r.lines))
+          setProbe({ kind: "index", first: { ...r, ids: r.ids ?? [] } });
+        else setProbe({ kind: "files" });
+      })
+      .catch((e: unknown) => {
+        if (!alive) return;
+        const down = e instanceof ApiError && e.status === 503;
+        setProbe({ kind: "files", why: down ? "restarting" : undefined });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [initial]);
+  if (probe.kind === "wait") return null;
+  if (probe.kind === "index") {
+    return (
+      <section className="mkt-logs">
+        <header>
+          <TitleRow>
+            <h1>{t("logs.title")}</h1>
+          </TitleRow>
+          <span className="mkt-muted">{t("logs.subtitle")}</span>
+          <p>
+            <Link to="/admin/logs/settings">{t("logs.settings.title")}</Link>
+          </p>
+        </header>
+        <LogSearch initial={initial} first={probe.first} />
+      </section>
+    );
+  }
+  const off = probe.why && status?.components.logs === "off";
+  return (
+    <>
+      {probe.why && (
+        <p className="mkt-logs__notice" role="status" data-testid="logs-files-only">
+          {off ? (
+            <>
+              {t("logs.indexOff")} <Link to="/settings/components">{t("logs.indexOffLink")}</Link>
+            </>
+          ) : (
+            t("logs.filesOnly")
+          )}
+        </p>
+      )}
+      <LogsInner />
+    </>
   );
 }
 

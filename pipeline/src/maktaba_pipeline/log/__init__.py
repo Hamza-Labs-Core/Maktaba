@@ -163,6 +163,12 @@ def init(
     # picks them up via the merge_contextvars processor.
     node = os.environ.get("MAKTABA_NODE_ID", "").strip() or "home"
     structlog.contextvars.bind_contextvars(service=service, version=version, env=env, node=node)
+    # "Detailed logs for one hour" (Epic 53 story 53.11): the supervisor's level file
+    global _level_watch
+    if _level_watch is None:
+        from .levelfile import watch
+
+        _level_watch = watch(level, set_level)
     return structlog.get_logger()
 
 
@@ -340,6 +346,8 @@ LEVEL_NUMBERS: dict[str, int] = {
 LogSink = Callable[[Mapping[str, Any]], None]
 _SINKS: list[LogSink] = []
 _console_level = logging.INFO
+#: the level file's watcher (one per process; levelfile.watch)
+_level_watch: Any = None
 #: the lowest level any sink asked for (records below the console level still reach
 #: the sinks, then stop before the ring and the console)
 _sink_level = logging.INFO
