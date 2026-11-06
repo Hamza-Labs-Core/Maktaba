@@ -93,6 +93,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
     "tools/trail/**": "the Claude trail's checker and hook: the lint job runs the checker and its tests (tools/ci/tests) on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
+    "tools/ci/devportal_follows.py": "run by the affected-tests job on every pull request (a warning); its tests (tools/ci/tests) run on every pull request",
     "tools/ci/tests/**": "the guard's tests: the lint job runs them on every pull request",
     "tools/ci/play_release.py": "play-bundles.yml on a tag; its tests (tools/ci/tests) run on every pull request",
     "deploy/cloud-relay/**": "relay.yml",
