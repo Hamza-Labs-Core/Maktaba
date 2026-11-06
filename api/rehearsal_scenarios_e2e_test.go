@@ -335,9 +335,7 @@ func TestUpdateRehearsal02WatchWithTVWaiting(t *testing.T) {
 	}
 	// the TV on, as on the owner's home: the update's TV step runs (story 35.6)
 	home, _ := r.seeded("home", profile("restore"))
-	home.tvSlots = "on"
-	home.start()
-	home.waitServing(k.prev, 8*time.Minute)
+	home.startWithTV(k.prev, 8*time.Minute)
 	db := home.superDB("maktaba")
 	before := seedCounts(t, db)
 	if _, err := db.Exec(`INSERT INTO tv_releases (id, digest, kinds, sched_gen, streaming_version, streaming_sha256, created_by)

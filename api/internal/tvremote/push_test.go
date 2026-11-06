@@ -47,6 +47,9 @@ func TestPoolCreatesLazilyUpToMax(t *testing.T) {
 		if err != nil || !strings.Contains(string(b), in.RTMPS.StreamKey) {
 			t.Errorf("stream key not in home_secrets: %v", err)
 		}
+		if by := fx.store.By(tvremote.SecretInputPrefix + uid); by != "" {
+			t.Errorf("stream key written by %q, want no user (a system writer)", by)
+		}
 	}
 	if !names["maktaba-1a2b3c4d-1"] || !names["maktaba-1a2b3c4d-2"] {
 		t.Errorf("names %v", names)

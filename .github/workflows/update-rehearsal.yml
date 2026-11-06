@@ -419,7 +419,7 @@ jobs:
           - { id: '10a', name: machines after the home (the driver), test: TestUpdateRehearsal10aMachinesAfterHomeDriver, profile: small }
           - { id: '10b', name: machines after the home (their own updater), test: TestUpdateRehearsal10bMachineOwnUpdater, profile: small }
           - { id: '11', name: the TV's change restarts a slot left on the old release, test: TestUpdateRehearsal11TVChangeRestartsARunningSlot, profile: small }
-          - { id: '12', name: no behaviour change (the components seeded from today), test: TestUpdateRehearsal12NoBehaviourChange, profile: small }
+          - { id: '12', name: no behaviour change (an update of a seeded home), test: TestUpdateRehearsal12NoBehaviourChange, profile: small }
           - { id: '13', name: an update carries the packs and a rollback finds the kept one, test: TestUpdateRehearsal13UpdateWithPacks, profile: small }
           - { id: '14', name: a pack that fails its verification stops the update, test: TestUpdateRehearsal14PackFailsVerification, profile: small }
     steps:

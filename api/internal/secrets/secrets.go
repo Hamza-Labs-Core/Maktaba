@@ -32,6 +32,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // KeySize is the AES-256 key length.
@@ -218,7 +220,8 @@ func gcm(k *Key) (cipher.AEAD, error) {
 type Store interface {
 	// Get opens a secret: ErrNotFound, ErrWrongKey or ErrNoKey on failure.
 	Get(ctx context.Context, name string) ([]byte, error)
-	// Put seals and stores a secret (insert or replace).
+	// Put seals and stores a secret (insert or replace). by is the user who set it
+	// (a users.id); a system writer passes "" (any other value is stored as no user).
 	Put(ctx context.Context, name string, value []byte, by string) error
 	// Delete removes a secret; a missing one is not an error.
 	Delete(ctx context.Context, name string) error
@@ -279,8 +282,10 @@ func (s *DBStore) put(ctx context.Context, q execer, name string, value []byte, 
 	if err != nil {
 		return err
 	}
+	// updated_by is a users.id (uuid): a system writer's name ("cluster-ca") would fail
+	// the insert, so anything that is not a user id is stored as no user
 	var updatedBy any
-	if by != "" {
+	if _, err := uuid.Parse(by); err == nil {
 		updatedBy = by
 	}
 	_, err = q.ExecContext(ctx, `
@@ -315,6 +320,7 @@ type Memory struct {
 	rows map[string][2][]byte
 	// Writes counts Put calls (tests).
 	Writes int
+	by     map[string]string
 }
 
 // NewMemory returns an empty Memory store with a random key.
@@ -337,7 +343,7 @@ func (m *Memory) Get(_ context.Context, name string) ([]byte, error) {
 }
 
 // Put implements Store.
-func (m *Memory) Put(_ context.Context, name string, value []byte, _ string) error {
+func (m *Memory) Put(_ context.Context, name string, value []byte, by string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ct, nonce, err := Seal(m.key, name, value)
@@ -345,8 +351,20 @@ func (m *Memory) Put(_ context.Context, name string, value []byte, _ string) err
 		return err
 	}
 	m.rows[name] = [2][]byte{ct, nonce}
+	if m.by == nil {
+		m.by = map[string]string{}
+	}
+	m.by[name] = by
 	m.Writes++
 	return nil
+}
+
+// By is the by the last Put of name passed, as given (tests: a system writer passes "",
+// a user their users.id).
+func (m *Memory) By(name string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.by[name]
 }
 
 // Delete implements Store.
