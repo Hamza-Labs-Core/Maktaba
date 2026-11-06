@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
@@ -87,6 +88,8 @@ func main() {
 // initLogger configures the global structured logger from environment.
 // Idempotent: subsequent calls return the cached instance.
 func initLogger() *slog.Logger {
+	// a component loop's lines carry its catalog id (Epic 53 story 53.01)
+	runner.LoopContext = mlog.WithComponent
 	return mlog.Init(mlog.Options{
 		Service: "streaming",
 		Env:     env(),

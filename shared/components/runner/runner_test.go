@@ -612,3 +612,31 @@ func TestParentEndedStartsNothing(t *testing.T) {
 		t.Fatalf("the loop started %d times after its parent ended, want 0", n-1)
 	}
 }
+
+// Epic 53 story 53.01 T07: a declared loop's context names its component.
+func TestLoopContextNamesTheComponent(t *testing.T) {
+	type key struct{}
+	LoopContext = func(ctx context.Context, comp string) context.Context { return context.WithValue(ctx, key{}, comp) }
+	t.Cleanup(func() { LoopContext = nil })
+	cat := components.Default()
+	comp, ok := cat.ByLoop("api", "updates_health_sampler")
+	if !ok {
+		t.Fatal("no api:updates_health_sampler loop in the catalog")
+	}
+	r := newRunner(t, newClock(), func(o *Options) { o.Catalog = cat })
+	got := make(chan string, 1)
+	r.Declare("updates_health_sampler", func(ctx context.Context) error {
+		v, _ := ctx.Value(key{}).(string)
+		got <- v
+		<-ctx.Done()
+		return nil
+	})
+	select {
+	case v := <-got:
+		if v != comp.ID {
+			t.Fatalf("component = %q, want %q", v, comp.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loop never ran")
+	}
+}

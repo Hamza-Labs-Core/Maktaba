@@ -405,3 +405,28 @@ async def test_the_listener_is_up_before_the_first_pass(db: Database) -> None:
     r._pass = a_pass  # type: ignore[method-assign]
     await r.run(stop)
     assert order[:2] == ["listen", "pass"], order
+
+
+@pytest.mark.asyncio
+async def test_a_loops_lines_carry_its_component(db: Database) -> None:
+    """Epic 53 story 53.01 T07: a declared loop logs with its catalog component."""
+    import structlog
+
+    await sync_graph(db, GRAPH, gates={})
+    r, _ = _runner(db)
+    seen: list[Any] = []
+
+    async def topup(stop: asyncio.Event) -> None:
+        seen.append(structlog.contextvars.get_contextvars().get("component"))
+        await stop.wait()
+
+    r.declare("channel-topup", topup)
+    await _pass(r)
+    for _ in range(50):
+        if seen:
+            break
+        await asyncio.sleep(0.01)
+    await r.close()
+    comp = default_catalog().by_loop("pipeline", "channel-topup")
+    assert comp is not None and seen == [comp.id]
+    assert structlog.contextvars.get_contextvars().get("component") is None

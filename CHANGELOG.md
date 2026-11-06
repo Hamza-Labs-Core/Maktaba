@@ -164,6 +164,19 @@ build fails when the two differ.
 
 ### Added
 
+- **One log line for every part of Maktaba, and no line names a person (Epic 53, story 53.01).**
+  The server, the pipeline, the web app, the Apple and Android apps, the desktop app and the
+  cloud now write the same line (`shared/log/schema/line.schema.json`: `ts`, `level`,
+  `service`, `msg`, plus `version`, `env`, `node` and the Epic 51 `component` on the server's
+  lines), checked by a shared conformance test. One redaction list
+  (`shared/redact/rules.json`) is used by every language and passes one table of cases: tokens
+  in links (`token=[REDACTED]`), passwords in database and share addresses, JWTs, bearer
+  tokens, emails (`[EMAIL]`), card numbers, the last part of IP addresses and the person's
+  folder in a path (`/Users/<name>/` becomes `~/`). A user is named by `user_h`, a hash of the
+  id under a key that stays on each machine (`log.key` beside `secrets.key`), never by the raw
+  id. The Apple and Android apps keep their recent lines on the device (under 1 MB), the web
+  app the last 2,000 in memory, for problem reports later in Epic 53.
+
 - **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
   (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
   as a component, with what it needs and what it conflicts with. Admin > Components shows each

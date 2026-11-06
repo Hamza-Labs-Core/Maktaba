@@ -202,10 +202,10 @@ def test_redaction_scrubs_secrets_inside_strings() -> None:
         )
     )
 
-    assert rec["msg"] == "fetch failed http://plex:32400/library?X-Plex-Token=***&type=1"
-    assert rec["url"] == "https://cdn/x.m3u8?sig=***&exp=99"
-    assert rec["error"] == "GET /a?token=*** failed"
-    assert rec["detail"] == "connect postgres://maktaba:***@db:5432/maktaba"
+    assert rec["msg"] == "fetch failed http://plex:32400/library?X-Plex-Token=[REDACTED]&type=1"
+    assert rec["url"] == "https://cdn/x.m3u8?sig=[REDACTED]&exp=99"
+    assert rec["error"] == "GET /a?token=[REDACTED] failed"
+    assert rec["detail"] == "connect postgres://[REDACTED]@db:5432/maktaba"
     assert rec["path"] == "/films/design=final.mkv"
     assert "s3cr3t" not in json.dumps(rec) and "hunter2" not in json.dumps(rec)
 
@@ -223,4 +223,4 @@ def test_redaction_scrubs_the_rendered_traceback() -> None:
 
     rec = _emit_one(emit)
     assert "hunter2" not in rec["exception"]
-    assert "postgres://maktaba:***@db/maktaba" in rec["exception"]
+    assert "postgres://[REDACTED]@db/maktaba" in rec["exception"]

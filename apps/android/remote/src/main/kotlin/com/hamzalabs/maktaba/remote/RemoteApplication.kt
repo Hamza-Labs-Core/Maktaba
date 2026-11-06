@@ -4,6 +4,7 @@ import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.capabilitiesGate
 import com.hamzalabs.maktaba.core.api.init
+import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.PreferencesStore
@@ -16,6 +17,7 @@ class RemoteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this) // an uncaught exception is kept on the device, without anything personal
+        AppLog.install(this) // its log lines too, in the shared shape (Epic 53 story 53.01)
         ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
     }
 

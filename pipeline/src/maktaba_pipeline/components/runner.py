@@ -41,7 +41,7 @@ from ..cluster.stages import REASON_UNAVAILABLE
 from ..engine.graph import CATALOG_ID, StageDef
 from ..engine.sql import is_pg, now, parse_ts
 from ..engine.sync import COMPONENT_OFF, apply_gates
-from ..log import get_logger
+from ..log import bind_component, get_logger
 from ..log.tasks import watch as watch_task
 from . import store
 from .catalog import DEFAULT_STOP_GRACE_S, Catalog, default
@@ -544,7 +544,9 @@ class ComponentRunner:
             ended = lp.task is not None and lp.task.done() and not (lp.stop and lp.stop.is_set())
             if want and not lp.running() and not lp.failed and not ended:
                 lp.stop = asyncio.Event()
-                lp.task = watch_task(asyncio.create_task(lp.fn(lp.stop), name=lp.name))
+                # the task copies the context: its lines carry the loop's component
+                with bind_component(lp.component):
+                    lp.task = watch_task(asyncio.create_task(lp.fn(lp.stop), name=lp.name))
                 lp.task.add_done_callback(lambda _t: self._wake.set())
                 _log.info("component_loop_started", loop=lp.name, component=lp.component)
             elif not want and lp.running() and lp.stop is not None and not lp.stop.is_set():
