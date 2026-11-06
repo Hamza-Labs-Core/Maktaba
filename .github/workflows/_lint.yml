@@ -96,6 +96,13 @@ jobs:
           uv run --no-project --python 3.12 --with pyyaml==6.0.3 --with pytest==8.4.2
           pytest tools/ci/tests -q -p no:cacheprovider
 
+      # docs/trail: every event and snapshot (front matter, sections, citations, no secrets,
+      # the computed Index and Missing events). Needs the tags for the snapshots' up_to_commit.
+      - name: The Claude trail checks (tools/trail/trail.py)
+        run: |
+          git fetch -q --tags origin
+          python3 tools/trail/trail.py check
+
   lint:
     if: inputs.go || inputs.pipeline || inputs.web
     runs-on: ubuntu-22.04
