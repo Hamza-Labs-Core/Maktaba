@@ -20,6 +20,9 @@ enum class Lang(val code: String, val direction: LayoutDirection) {
 class Texts(val lang: Lang) {
     private val table = if (lang == Lang.Ar) Strings.AR else Strings.EN
 
+    /** Whether this language (or English) has words for [key]. */
+    fun has(key: String): Boolean = key in table || key in Strings.EN
+
     operator fun get(key: String, vararg args: Any?): String {
         var s = table[key] ?: Strings.EN[key] ?: key
         args.forEachIndexed { i, a -> s = s.replace("{$i}", a?.toString() ?: "") }
@@ -33,7 +36,40 @@ val LocalTexts = staticCompositionLocalOf { Texts(Lang.En) }
 fun Texts.sentence(kind: ErrorKind): String = this["error." + kind.name.replaceFirstChar { it.lowercase() }]
 
 object Strings {
-    val EN: Map<String, String> = mapOf(
+    /** One area's words (`<area>/<Area>Strings.kt`), so the area stories never edit one file. */
+    class Part(val en: Map<String, String>, val ar: Map<String, String>)
+
+    /** The tables joined: a key defined in two of them is an error, naming the key. */
+    fun merge(parts: List<Part>): Part {
+        val en = LinkedHashMap<String, String>()
+        val ar = LinkedHashMap<String, String>()
+        for (p in parts) {
+            for ((k, v) in p.en) check(en.put(k, v) == null) { "the key $k is defined twice" }
+            for ((k, v) in p.ar) check(ar.put(k, v) == null) { "the key $k is defined twice" }
+        }
+        return Part(en, ar)
+    }
+
+    /** Every table: the start screens' (here), then each area's. */
+    val parts: List<Part> by lazy {
+        listOf(
+            Part(START_EN, START_AR),
+            com.hamzalabs.maktaba.desktop.shell.ShellStrings.part,
+            com.hamzalabs.maktaba.desktop.home.HomeStrings.part,
+            com.hamzalabs.maktaba.desktop.search.SearchStrings.part,
+            com.hamzalabs.maktaba.desktop.libraries.LibrariesStrings.part,
+            com.hamzalabs.maktaba.desktop.video.VideoStrings.part,
+            com.hamzalabs.maktaba.desktop.live.LiveStrings.part,
+            com.hamzalabs.maktaba.desktop.watch.WatchStrings.part,
+            com.hamzalabs.maktaba.desktop.profile.ProfileStrings.part,
+        )
+    }
+
+    private val all: Part by lazy { merge(parts) }
+    val EN: Map<String, String> get() = all.en
+    val AR: Map<String, String> get() = all.ar
+
+    private val START_EN: Map<String, String> = mapOf(
         "app.title" to "Maktaba Player",
         "common.cancel" to "Cancel",
         "common.close" to "Close",
@@ -75,13 +111,6 @@ object Strings {
         "signin.restoreFailed" to "Your kept sign-in could not be checked: {0}",
         "signin.otherHome" to "Choose another home",
 
-        "nav.home" to "Home",
-        "nav.libraries" to "Libraries",
-        "nav.all" to "All videos",
-        "nav.search" to "Search",
-        "lib.empty" to "Nothing here yet.",
-        "lib.more" to "Load more",
-        "lib.searchHint" to "Search titles",
 
         "menu.account" to "Account",
         "menu.switchHome" to "Switch home",
@@ -101,7 +130,6 @@ object Strings {
         "watch.pause" to "Pause",
         "watch.back" to "Back 10 seconds",
         "watch.forward" to "Forward 10 seconds",
-        "watch.fullscreen" to "Full screen",
         "watch.close" to "Close the video",
 
         "approve.title" to "Approve a sign-in",
@@ -166,7 +194,7 @@ object Strings {
         "error.off" to "This feature is turned off on this home.",
     )
 
-    val AR: Map<String, String> = mapOf(
+    private val START_AR: Map<String, String> = mapOf(
         "app.title" to "مشغّل مكتبة",
         "common.cancel" to "إلغاء",
         "common.close" to "إغلاق",
@@ -208,13 +236,6 @@ object Strings {
         "signin.restoreFailed" to "تعذّر التحقق من تسجيل دخولك المحفوظ: {0}",
         "signin.otherHome" to "اختر منزلًا آخر",
 
-        "nav.home" to "الرئيسية",
-        "nav.libraries" to "المكتبات",
-        "nav.all" to "كل المقاطع",
-        "nav.search" to "بحث",
-        "lib.empty" to "لا شيء هنا بعد.",
-        "lib.more" to "تحميل المزيد",
-        "lib.searchHint" to "ابحث في العناوين",
 
         "menu.account" to "الحساب",
         "menu.switchHome" to "تبديل المنزل",
@@ -234,7 +255,6 @@ object Strings {
         "watch.pause" to "إيقاف مؤقت",
         "watch.back" to "رجوع 10 ثوانٍ",
         "watch.forward" to "تقديم 10 ثوانٍ",
-        "watch.fullscreen" to "ملء الشاشة",
         "watch.close" to "إغلاق المقطع",
 
         "approve.title" to "الموافقة على تسجيل دخول",

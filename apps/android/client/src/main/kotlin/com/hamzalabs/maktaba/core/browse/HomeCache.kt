@@ -1,4 +1,4 @@
-package com.hamzalabs.maktaba.player.home
+package com.hamzalabs.maktaba.core.browse
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.HomeRails

@@ -176,19 +176,23 @@ build fails when the two differ.
 
 ### Added
 
-- **One log line for every part of Maktaba, and no line names a person (Epic 53, story 53.01).**
-  The server, the pipeline, the web app, the Apple and Android apps, the desktop app and the
-  cloud now write the same line (`shared/log/schema/line.schema.json`: `ts`, `level`,
-  `service`, `msg`, plus `version`, `env`, `node` and the Epic 51 `component` on the server's
-  lines), checked by a shared conformance test. One redaction list
-  (`shared/redact/rules.json`) is used by every language and passes one table of cases: tokens
-  in links (`token=[REDACTED]`), passwords in database and share addresses, JWTs, bearer
-  tokens, emails (`[EMAIL]`), card numbers, the last part of IP addresses and the person's
-  folder in a path (`/Users/<name>/` becomes `~/`). A user is named by `user_h`, a hash of the
-  id under a key that stays on each machine (`log.key` beside `secrets.key`), never by the raw
-  id. The Apple and Android apps keep their recent lines on the device (under 1 MB), the web
-  app the last 2,000 in memory, for problem reports later in Epic 53.
-
+- **The Player for Windows and Linux has the phone and Mac Players' sections (Epic 55).**
+  After sign-in, a rail (on the right in Arabic) holds Home, Libraries, Live TV, Search and
+  Profile, each with its own pages and Back (also Alt+Left and the mouse's back button). Home
+  has the featured hero and the rows (Continue Watching, On Deck, What's On Now, Favorites,
+  Recently Added, Recently Watched, pinned libraries, For You with Not interested). Libraries
+  pins libraries and opens a library's rows, its videos (sort, language, speaker) and series;
+  series and video pages have Resume and Play from start, Favorite, Mark watched (an episode or
+  a season), chapters and the next episodes. Search suggests as you type, searches titles and
+  what is said in videos (Play from a passage) and keeps recent searches (Ctrl+F or /). Live TV
+  has Now, the Guide and a channel player, at home and away through Maktaba Cloud. Watching
+  resumes where you left, offers audio tracks, subtitles (drawn by the player), quality and Up
+  next, with the keys of the help page. Profile has watch history, favorites, playlists,
+  browser sessions, approving a device, playback settings, language and about. A feature the
+  home has off is hidden from a viewer and explained to an admin with a link to Components;
+  `-Pmaktaba.capabilitiesGate=off` builds a player without that gate (#638). Everything is in
+  English and Arabic. The Home rows, the guide's time maths, the playback settings and the track
+  and Up next rules are now shared with the Android Player.
 - **One switch keeps a test or offline server from reaching the internet.** `maktaba-server
   serve --offline` (or `MAKTABA_OFFLINE=1`) turns off every call the server and its parts
   make by themselves: the update check, pack and model downloads, the language model's
@@ -399,6 +403,19 @@ build fails when the two differ.
   slot must start again on the new release and the change must reach verifying, never be held
   with `slot.health` / `release_mismatch` as change #58 was on 2026-10-31. The rehearsal now
   builds its streaming binary with TV staging, as the release does.
+
+- **One log line for every part of Maktaba, and no line names a person (Epic 53, story 53.01).**
+  The server, the pipeline, the web app, the Apple and Android apps, the desktop app and the
+  cloud now write the same line (`shared/log/schema/line.schema.json`: `ts`, `level`,
+  `service`, `msg`, plus `version`, `env`, `node` and the Epic 51 `component` on the server's
+  lines), checked by a shared conformance test. One redaction list
+  (`shared/redact/rules.json`) is used by every language and passes one table of cases: tokens
+  in links (`token=[REDACTED]`), passwords in database and share addresses, JWTs, bearer
+  tokens, emails (`[EMAIL]`), card numbers, the last part of IP addresses and the person's
+  folder in a path (`/Users/<name>/` becomes `~/`). A user is named by `user_h`, a hash of the
+  id under a key that stays on each machine (`log.key` beside `secrets.key`), never by the raw
+  id. The Apple and Android apps keep their recent lines on the device (under 1 MB), the web
+  app the last 2,000 in memory, for problem reports later in Epic 53.
 
 ### Fixed
 

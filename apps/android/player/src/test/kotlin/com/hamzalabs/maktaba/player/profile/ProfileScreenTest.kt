@@ -1,5 +1,7 @@
 package com.hamzalabs.maktaba.player.profile
 
+import com.hamzalabs.maktaba.core.playback.PlaybackSettings
+import com.hamzalabs.maktaba.core.playback.SubtitleSize
 import android.app.Application
 import android.content.Intent
 import android.provider.Settings

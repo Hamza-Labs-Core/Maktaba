@@ -1,4 +1,4 @@
-// Maktaba Player for Windows and Linux (Epic 42.4): browse and watch a home, nothing else.
+// Maktaba Player for Windows and Linux (Epic 42.4, Epic 55): the Android and Apple Players' sections.
 // Compose for Desktop on the apps' portable client (`:client`, shared with the Android apps);
 // JavaFX plays the video (H.264 and AAC, as MP4 or HLS: the streaming service's
 // `desktop-player` profile). Installers: `packageReleaseMsi` (Windows), `packageReleaseDeb`
@@ -60,6 +60,8 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
+    // screen tests off screen (runComposeUiTest: no window, no display)
+    testImplementation(compose.desktop.uiTestJUnit4)
 }
 
 // The version the app shows and compares with the update feed's
@@ -69,8 +71,13 @@ val writeBuildInfo = tasks.register("writeBuildInfo") {
     // the apps' updater key (the repository variable TAURI_UPDATER_PUBKEY): updates are checked against it
     val pubkey = (findProperty("maktaba.updaterPubkey") as String?)?.trim().orEmpty()
     require(pubkey.all { it.isLetterOrDigit() || it in "+/=" }) { "maktaba.updaterPubkey must be base64" }
+    // story 51.11's gate (issue #638): -Pmaktaba.capabilitiesGate=off builds a Player that shows
+    // every feature; nothing (a release) leaves it on
+    val gate = (findProperty("maktaba.capabilitiesGate") as String?)?.trim().orEmpty()
+    require(gate.all { it.isLetterOrDigit() }) { "maktaba.capabilitiesGate must be letters and digits" }
     inputs.property("version", version)
     inputs.property("pubkey", pubkey)
+    inputs.property("capabilitiesGate", gate)
     outputs.dir(out)
     doLast {
         val f = out.get().file("com/hamzalabs/maktaba/desktop/BuildInfo.kt").asFile
@@ -83,6 +90,7 @@ val writeBuildInfo = tasks.register("writeBuildInfo") {
             |object BuildInfo {
             |    const val VERSION = "$version"
             |    const val UPDATER_PUBKEY = "$pubkey"
+            |    const val CAPABILITIES_GATE = "$gate"
             |}
             |""".trimMargin(),
         )

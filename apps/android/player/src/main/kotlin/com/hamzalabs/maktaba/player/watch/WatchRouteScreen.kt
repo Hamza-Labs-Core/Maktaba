@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.core.playback.nextVideo
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable

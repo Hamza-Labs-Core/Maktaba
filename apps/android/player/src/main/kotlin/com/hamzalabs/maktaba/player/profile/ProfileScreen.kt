@@ -1,5 +1,8 @@
 package com.hamzalabs.maktaba.player.profile
 
+import com.hamzalabs.maktaba.core.playback.StreamQuality
+import com.hamzalabs.maktaba.core.playback.SubtitleLanguage
+import com.hamzalabs.maktaba.core.playback.SubtitleSize
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent

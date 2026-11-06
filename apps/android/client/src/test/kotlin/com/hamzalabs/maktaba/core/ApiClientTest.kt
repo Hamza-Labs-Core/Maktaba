@@ -93,6 +93,12 @@ class ApiClientTest {
         // the Android players leave it to the home, as before
         c.openStream("v1")
         assertFalse(seen.last().body!!.utf8().contains("client_profile"))
+        // another audio track, as HLS (the desktop Player's JavaFX plays one track only)
+        c.openStream("v1", profile = "desktop-player", audioTrack = 1, format = "hls")
+        val body = seen.last().body!!.utf8()
+        assertTrue(body, body.contains("\"audio_track\":1") && body.contains("\"format\":\"hls\""))
+        c.openStream("v1")
+        assertFalse(seen.last().body!!.utf8().contains("audio_track"))
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.core.playback.QualityOption
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut

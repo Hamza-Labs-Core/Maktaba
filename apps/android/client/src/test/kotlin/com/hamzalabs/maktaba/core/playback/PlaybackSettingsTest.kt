@@ -1,10 +1,6 @@
-package com.hamzalabs.maktaba.player.watch
+package com.hamzalabs.maktaba.core.playback
 
 import com.hamzalabs.maktaba.core.MapStore
-import com.hamzalabs.maktaba.player.profile.PlaybackSettings
-import com.hamzalabs.maktaba.player.profile.StreamQuality
-import com.hamzalabs.maktaba.player.profile.SubtitleLanguage
-import com.hamzalabs.maktaba.player.profile.SubtitleSize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
