@@ -183,6 +183,10 @@ func (f *Files) Discard(ctx context.Context, id, folder string, keep ...string) 
 			return false, nil
 		}
 	}
+	// one path element each, checked where they meet the disk
+	if strings.Contains(id, "..") || strings.ContainsAny(id, `/\`) || strings.Contains(folder, "..") {
+		return false, fmt.Errorf("plugins: not a plugin folder: %q/%q", id, folder)
+	}
 	dir := filepath.Join(f.Layout.Dir(id), folder)
 	if _, err := os.Stat(dir); err != nil {
 		return false, nil
