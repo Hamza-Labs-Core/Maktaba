@@ -17,13 +17,43 @@ import java.time.Instant
 object AppLog {
     const val TAG = "Maktaba"
 
+    /** The on-device ring every line also goes to (Epic 53 story 53.01); set by [install]. */
+    @Volatile
+    var ring: LogRing? = null
+
+    /**
+     * Keeps this process's lines in `files/logs/app.ndjson` too (call once, from
+     * `Application.onCreate`, beside [CrashLog.install]).
+     */
+    fun install(context: Context, tv: Boolean = false) {
+        val version = runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "-"
+        ring = LogRing(
+            java.io.File(context.filesDir, "logs"),
+            mapOf(
+                "service" to LogRing.service(context.packageName, tv),
+                "app" to context.packageName,
+                "app_version" to version,
+                "platform" to "android",
+                "os_version" to Build.VERSION.RELEASE.orEmpty(),
+            ),
+        )
+    }
+
     /** [where] failed with [e]: one warning line, with the redacted stack. */
     fun failure(where: String, e: Throwable) {
         Log.w(TAG, "$where failed: ${describe(e)}", Redacted.of(e))
+        ring?.write("warn", "screen_failed", mapOf("where" to where, "what" to describe(e)))
     }
 
     fun info(message: String) {
         Log.i(TAG, message)
+    }
+
+    /** One shared-schema line in the ring: [msg] a snake_case event name, [attrs] scrubbed. */
+    fun event(level: String, msg: String, attrs: Map<String, Any?> = emptyMap()) {
+        ring?.write(level, msg, attrs)
     }
 
     /**

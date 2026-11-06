@@ -1,0 +1,1 @@
+{"ts":"2026-11-06T10:00:02.5Z","level":"warn","msg":"stage_retry","service":"pipeline","version":"v0.3.50","env":"prod","node":"home","component":"transcription","stage":"transcribe","job_id":"8812","video_id":"01J9ZK","attempt":2}

@@ -38,6 +38,7 @@ mod flavour;
 mod lang;
 mod mode;
 mod permissions;
+mod redact;
 mod run_entry;
 mod setup;
 mod shell;

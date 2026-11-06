@@ -35,7 +35,7 @@ func runAdmin(args []string) {
 	if err := fs.Parse(args[1:]); err != nil {
 		os.Exit(2)
 	}
-	logger := newLogger()
+	logger := newLogger("admin")
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		logger.Error("config load", "err", err)

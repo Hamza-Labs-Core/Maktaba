@@ -24,12 +24,19 @@ query (the `?sig=` signature), DSNs are not logged, and the pipeline's
 redaction masks token/secret/password/dsn keys and `X-Plex-Token=`, `sig=`
 and `user:pass@` inside messages.
 
+Every line follows one shape (`shared/log/schema/line.schema.json`, Epic 53), and every part
+scrubs with one list (`shared/redact/rules.json`): links' tokens become `[REDACTED]`, emails
+`[EMAIL]`, a person's folder `~/`, and an IP address keeps all but its last part. A line never
+names a user: it has `user_h`, the first 16 hex of HMAC-SHA256 of the user id under this
+machine's `log.key` (beside `secrets.key`). The same user always has the same `user_h` on one
+machine, and a log sent elsewhere cannot be turned back into a name.
+
 ## A video does not play
 
 Follow the session from the API to the encoder to the player:
 
 1. **`event=stream_session_opened`** (api): `session_id`, `video_id`,
-   `user_id`, `mode` (`direct`, `transcode`), `start_sec`. Note the
+   `user_h` (the user, as a hash: see below), `mode` (`direct`, `transcode`), `start_sec`. Note the
    `session_id`; every later line names only it.
    If the open itself failed: **`event=stream_open_failed`** (api) with the
    streaming service's error, or an **`event=http_error`** line.

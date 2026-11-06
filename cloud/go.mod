@@ -7,6 +7,7 @@ go 1.26.0
 godebug multipathtcp=0
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
 	github.com/go-chi/chi/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
@@ -22,3 +23,6 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 )
+
+// The shared logger (Epic 53 story 53.01); cloud/Dockerfile copies it beside cloud/.
+replace github.com/Hamza-Labs-Core/Maktaba/shared/log/go => ../shared/log/go
