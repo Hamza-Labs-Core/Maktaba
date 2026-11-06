@@ -91,6 +91,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/ci/branch_head.py": "ci-branch.yml's guard; its tests (tools/ci/tests) run on every pull request",
     ".githooks/**": "the pre-push hook: the affected-tests job shellchecks it on every pull request",
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
+    "tools/lint/**": "the foreign-domain check (story 50.01): the lint job's repo checks run it and its test on every pull request",
     "tools/trail/**": "the Claude trail's checker and hook: the lint job runs the checker and its tests (tools/ci/tests) on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
     "tools/ci/tests/**": "the guard's tests: the lint job runs them on every pull request",
