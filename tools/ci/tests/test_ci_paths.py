@@ -322,6 +322,17 @@ def test_a_push_of_only_the_trail_starts_no_run() -> None:
     assert run("docs/claude-trail.md", event="push") == {}
 
 
+def test_a_push_of_only_trail_events_and_snapshots_starts_no_run() -> None:
+    # trail v2: an event or snapshot merged alone never replaces the code commit's pending run
+    assert run("docs/trail/events/0654-x.md", "docs/trail/current.md", event="push") == {}
+    assert ran(run("docs/trail/events/0654-x.md", "web/src/pages/Home.tsx", event="push")) == ran(run(event="push"))
+
+
+def test_a_pull_request_of_trail_events_runs_the_repository_checks() -> None:
+    # unlike the frozen file, events are checked: the lint job runs tools/trail/trail.py check
+    assert ran(run("docs/trail/events/0654-x.md")) == ALWAYS
+
+
 def test_guard_catches_a_filter_that_does_not_exist() -> None:
     wf = _wf_with("new-tests", {"needs": ["changes"], "if": "needs.changes.outputs.nope == 'true'", "steps": []})
     assert any("needs.changes.outputs.nope, which is no filter" in e for e in ci_paths.guard(wf))
@@ -451,9 +462,9 @@ def test_a_trail_only_push_starts_no_run_so_it_never_cancels_the_code_commits(wo
     on = wf.get("on", wf.get(True))
     push = on["push"]
     assert push["branches"] == ["main", "release/**"]
-    assert push["paths-ignore"] == [ci_paths.TRAIL]
+    assert push["paths-ignore"] == ci_paths.PUSH_IGNORE
     assert "paths" not in push  # paths and paths-ignore cannot be combined on one event
-    assert ci_paths.push_paths_ignore(WORKFLOWS / workflow) == [ci_paths.TRAIL]
+    assert ci_paths.push_paths_ignore(WORKFLOWS / workflow) == ci_paths.PUSH_IGNORE
     # a pull request into main keeps its own trigger: ci.yml's runs on every PR (the jobs
     # gated by the `repo` output), the rehearsal's by its paths
     assert "paths-ignore" not in (on["pull_request"] or {})
