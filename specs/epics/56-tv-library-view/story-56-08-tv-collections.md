@@ -1,6 +1,6 @@
 # Story 56.08 — Collections on the TVs, collection mode and Recommended rows
 
-> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0186) · Needed by: —
+> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0187) · Needed by: —
 
 ## Why
 
@@ -27,7 +27,7 @@ the collection's order (a smart one: its saved sort); focus starts on Play.
 
 ### 3. Collection mode (server and web admin)
 
-`libraries.collection_mode` (slot 0186): `tab_only` (default: collections only in their tab),
+`libraries.collection_mode` (slot 0187): `tab_only` (default: collections only in their tab),
 `hide_items` (the Library grid shows a collection's card in place of its items), `show_both`
 (cards and items). Only admin-made and Plex collections take part (YouTube channel collections
 never replace items: they would hide most of a library). `GET /api/videos` honours it when

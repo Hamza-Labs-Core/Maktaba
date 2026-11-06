@@ -66,11 +66,11 @@ setup() {
   sudo resolvectl mdns "$host_if" yes
   local n
   for n in $(seq 1 20); do
-    resolvectl status "$host_if" | grep -q 'mDNS/IPv4' && break
+    grep -q 'mDNS/IPv4' < <(resolvectl status "$host_if") && break
     sleep 0.5
   done
   echo "the peer's link: $host_if ($(resolvectl mdns "$host_if"), after $n tries)"
-  resolvectl status "$host_if" | grep -q 'mDNS/IPv4' || { echo "::error::resolved does not answer mDNS on $host_if"; exit 1; }
+  grep -q 'mDNS/IPv4' < <(resolvectl status "$host_if") || { echo "::error::resolved does not answer mDNS on $host_if"; exit 1; }
   systemctl --version | sed -n 1p
   resolvectl status
 

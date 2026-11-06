@@ -51,7 +51,7 @@ Every route but `POST` is the owner's only: another user's id answers 404. `POST
 a source the user cannot read (a library outside `library_acl`, another user's playlist), as the
 source's own route does. The maintenance loop deletes queues whose `used_at` is older than 7 days.
 
-### 4. Migration (slot 0184, planned; see README §6.2)
+### 4. Migration (slot 0185, planned; see README §6.2)
 
 `0184_play_queues.sql` and `.sqlite.sql`: the two tables and the index of README §6.2.
 

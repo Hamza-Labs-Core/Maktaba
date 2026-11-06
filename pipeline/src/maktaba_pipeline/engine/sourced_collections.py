@@ -1,4 +1,4 @@
-"""Collections a source keeps in step (Epic 56, stories 56.06 and 56.07; slot 0186).
+"""Collections a source keeps in step (Epic 56, stories 56.06 and 56.07; slot 0187).
 
 A YouTube playlist, a YouTube channel or a Plex collection becomes a ``collections`` row
 with ``source_kind`` and ``source_ref``: the stage that reads the source writes its members

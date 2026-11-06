@@ -36,6 +36,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A new way of finishing jobs can no longer bring back a deadlock with the queue's
+  clean-up unnoticed.** The done-subjects summary of the queue locks its rows in one order
+  within a statement; a transaction that finished jobs over several statements out of that
+  order could deadlock with the retention. The database now notices it: the tests fail on
+  it, and a home logs a warning naming the jobs' subjects. It found one: the MediaIntel import,
+  which now holds the summary for its whole run (jobs that finish meanwhile wait for it).
+
 - **The library dashboard and the queue page load at once on a large home.** On a home with
   3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out
@@ -164,6 +171,22 @@ build fails when the two differ.
 
 ### Added
 
+- **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
+  play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
+  its grid's sort and filters, a series or a season (from the next unwatched episode), a
+  collection, a playlist or one video. Shuffle is a seeded order of the whole source (not one
+  random page), paged 500 at a time, with Play next, Add to queue and Shuffle again; a queue
+  started on one device is offered as Continue your queue on another. Smart playlists keep a
+  saved filter with a sort and a limit, per user. Collections come by themselves from YouTube
+  playlists and channels and from Plex's own collections, kept in step with their source, and an
+  admin can show one as a row on a library's Recommended tab or on Home, hide it, rename it,
+  duplicate it, and choose per library whether the grid shows collections in place of their
+  videos. `GET /api/videos` groups by series (`group=series`), `GET /api/libraries/{id}/categories`
+  lists speakers, topics, languages and years, and the jump bar lists Arabic letters first. The
+  web uses the server queue, adds a library's Playlists tab, Shuffle on a series and a season,
+  and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
+  route (a test fails on an undescribed one). Migrations 0185-0187. Every new word in English
+  and Arabic.
 - **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
   (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
   as a component, with what it needs and what it conflicts with. Admin > Components shows each

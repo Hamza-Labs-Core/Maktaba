@@ -564,3 +564,66 @@ func TestReadPaths_FinishAndRetentionNeverDeadlock(t *testing.T) {
 	}
 	sameDone(t, db, "finish and retention at once")
 }
+
+// TestReadPaths_LockOrderAcrossStatements: slot 0184 (#642). Within one transaction,
+// processing_done_subjects rows must be locked in key order across statements too:
+// finishing subject B and then, in a later statement, subject A breaks it. With
+// maktaba.lock_order_strict = on (the test databases) the second statement fails;
+// without it the transaction goes through with a warning. In key order it always does.
+func TestReadPaths_LockOrderAcrossStatements(t *testing.T) {
+	db := parityDB(t)
+	const lib = "17500000-0000-4000-8000-0000000000e1"
+	mustExec(t, db, `INSERT INTO libraries (id, name, roots) VALUES ($1, 'L', ARRAY['/l'])`, lib)
+	vA := "17500000-0000-4000-8004-00000000000a"
+	vB := "17500000-0000-4000-8004-00000000000b"
+	for i, v := range []string{vA, vB} {
+		mustExec(t, db, `INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime)
+			VALUES ($1, $2, repeat(chr(101 + $3::int), 64), '/l/' || $3::text || '.mp4', $3::text || '.mp4', 1, now())`, v, lib, i)
+	}
+	running := func(v string) int64 {
+		var id int64
+		if err := db.QueryRow(`INSERT INTO processing_jobs (video_id, library_id, stage, state, started_at)
+			VALUES ($1, $2, 'probe', 'running', now()) RETURNING id`, v, lib).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	finish := `UPDATE processing_jobs SET state = 'done', finished_at = now(), outcome = 'changed' WHERE id = $1`
+	// both subjects, one statement each, in one transaction; the second statement's error
+	both := func(strict string, first, second int64) error {
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if _, err := tx.Exec(`SELECT set_config('maktaba.lock_order_strict', $1, true)`, strict); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(finish, first); err != nil {
+			t.Fatalf("the first statement: %v", err)
+		}
+		if _, err := tx.Exec(finish, second); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+
+	if err := both("on", running(vB), running(vA)); err == nil || !strings.Contains(err.Error(), "lock order") {
+		t.Fatalf("B then A, strict: err = %v, want the lock order refused", err)
+	}
+	// the refused transaction rolled back: its jobs are still running
+	mustExec(t, db, `UPDATE processing_jobs SET state = 'cancelled', finished_at = now() WHERE state = 'running'`)
+	if err := both("off", running(vB), running(vA)); err != nil {
+		t.Fatalf("B then A, not strict: %v (want a warning only)", err)
+	}
+	if err := both("on", running(vA), running(vB)); err != nil {
+		t.Fatalf("A then B, strict: %v", err)
+	}
+	// one statement per transaction (every finisher today) never trips it
+	mustExec(t, db, finish, running(vB))
+	mustExec(t, db, finish, running(vA))
+	if n := doneSubjects(t, db, lib); n != 2 {
+		t.Fatalf("subjects = %d, want 2", n)
+	}
+	sameDone(t, db, "finished across statements")
+}

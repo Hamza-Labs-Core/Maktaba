@@ -18,14 +18,14 @@ is a play queue: the web keeps its queue in one browser tab, and Shuffle reads o
 
 | | |
 |---|---|
-| Play queue | on the server (slot 0184): made from a source, shuffled by a seeded hash so a whole library shuffles, materialized 500 items at a time, Play next and Add to queue, continued on any device, deleted after 7 idle days |
+| Play queue | on the server (slot 0185): made from a source, shuffled by a seeded hash so a whole library shuffles, materialized 500 items at a time, Play next and Add to queue, continued on any device, deleted after 7 idle days |
 | Tabs | Plex's five names; Categories holds Maktaba's speakers, topics, languages and years |
 | Series | the Library tab shows Videos or Series; series Play starts at the next unwatched episode |
-| Collections | admin-made (manual, smart) as today, plus automatic ones from YouTube playlists, YouTube channels and Plex's collections (slot 0186), kept in step by their source; collection mode per library; promoted rows |
-| Playlists | per user, manual and smart (slot 0185); viewers make smart playlists, not collections |
+| Collections | admin-made (manual, smart) as today, plus automatic ones from YouTube playlists, YouTube channels and Plex's collections (slot 0187), kept in step by their source; collection mode per library; promoted rows |
+| Playlists | per user, manual and smart (slot 0186); viewers make smart playlists, not collections |
 | Up next | the queue's next item with a 10 s countdown, on by default |
 | Players and web | the same Play, Shuffle, queue, collections and playlists; the web moves off `sessionStorage` |
-| Migrations | 0184–0186 planned; taken at merge time per `MANIFEST.md` |
+| Migrations | 0185–0187 planned; taken at merge time per `MANIFEST.md` |
 
 ## Stories
 

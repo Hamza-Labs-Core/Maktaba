@@ -541,7 +541,7 @@
       "title": "Automatic collections from YouTube playlists and channels",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.06 — Automatic collections from YouTube playlists and channels\n\n> Epic 56 · Phase 2 · Depends on: — (slot 0186 shared with 56.07, 56.08) · Needed by: 56.08\n\n## Why\n\nMost of a Maktaba library came from YouTube, where its creators already grouped it into\nplaylists and channels. Today the pipeline turns a playlist into a **season** when it matches\none, and into a **topic collection** (`topic_collections`, slot 0094) only when it cuts across\nshows (`find_topics` in `classify/series_detector.py`). Every other playlist, and every channel,\nis lost to browsing. Plex builds collections autom",
+      "content": "# Story 56.06 — Automatic collections from YouTube playlists and channels\n\n> Epic 56 · Phase 2 · Depends on: — (slot 0187 shared with 56.07, 56.08) · Needed by: 56.08\n\n## Why\n\nMost of a Maktaba library came from YouTube, where its creators already grouped it into\nplaylists and channels. Today the pipeline turns a playlist into a **season** when it matches\none, and into a **topic collection** (`topic_collections`, slot 0094) only when it cuts across\nshows (`find_topics` in `classify/series_detector.py`). Every other playlist, and every channel,\nis lost to browsing. Plex builds collections autom",
       "tags": [
         "story",
         "56-tv-library-view",
@@ -589,7 +589,7 @@
       "title": "Plex collections, read into Maktaba",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.07 — Plex collections, read into Maktaba\n\n> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0186) · Needed by: 56.08\n\n## Why\n\nA home that used Plex before Maktaba has collections there that people made by hand over\nyears. Maktaba already indexes Plex (`plex_index` fills `plex_items`, rating key ↔ video) and\nwrites its own season and topic collections into Plex (`plex_collection`, `plex_groups`), but\nnever reads Plex's collections back. Moving from Plex should not lose them.\n\n## Description\n\n### 1. The stage\n\n`plex_collections_import`, in `pipeline/src/maktaba_pipeline/extensions/plex/`,",
+      "content": "# Story 56.07 — Plex collections, read into Maktaba\n\n> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0187) · Needed by: 56.08\n\n## Why\n\nA home that used Plex before Maktaba has collections there that people made by hand over\nyears. Maktaba already indexes Plex (`plex_index` fills `plex_items`, rating key ↔ video) and\nwrites its own season and topic collections into Plex (`plex_collection`, `plex_groups`), but\nnever reads Plex's collections back. Moving from Plex should not lose them.\n\n## Description\n\n### 1. The stage\n\n`plex_collections_import`, in `pipeline/src/maktaba_pipeline/extensions/plex/`,",
       "tags": [
         "story",
         "56-tv-library-view",
@@ -626,7 +626,7 @@
       "title": "Collections on the TVs, collection mode and Recommended rows",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.08 — Collections on the TVs, collection mode and Recommended rows\n\n> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0186) · Needed by: —\n\n## Why\n\nCollections exist on the server (admin-made manual and smart ones, topic and clip groups, and now\nYouTube and Plex ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,\nlets an admin choose whether they also show in the library grid (collection mode), and lets an\nadmin promote one to a row on Recommended and on Home.\n\n## Description\n\n### 1. The Collections tab (TVs)\n\nA grid of collection cards from `GET",
+      "content": "# Story 56.08 — Collections on the TVs, collection mode and Recommended rows\n\n> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0187) · Needed by: —\n\n## Why\n\nCollections exist on the server (admin-made manual and smart ones, topic and clip groups, and now\nYouTube and Plex ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,\nlets an admin choose whether they also show in the library grid (collection mode), and lets an\nadmin promote one to a row on Recommended and on Home.\n\n## Description\n\n### 1. The Collections tab (TVs)\n\nA grid of collection cards from `GET",
       "tags": [
         "story",
         "56-tv-library-view",
@@ -681,7 +681,7 @@
       "title": "Smart playlists",
       "epic": "56-tv-library-view",
       "phase": 5,
-      "content": "# Story 56.09 — Smart playlists\n\n> Epic 56 · Phase 1 · Depends on: — (slot 0185) · Needed by: 56.10, 56.12, 56.13\n\n## Why\n\nPlaylists today are manual lists (`user_playlists`, slot 0162). Plex also has smart playlists: a\nsaved filter with a sort and a limit, that keeps itself up to date, per user. Viewers cannot make\ncollections (admin-only, README §11 decision 3), so smart playlists are how a viewer keeps\n\"unwatched lessons of speaker X, newest first\" one click away, on every device.\n\n## Description\n\n### 1. Model (slot 0185, planned)\n\n`user_playlists` gains `kind` (`manual` | `smart`) and `sma",
+      "content": "# Story 56.09 — Smart playlists\n\n> Epic 56 · Phase 1 · Depends on: — (slot 0186) · Needed by: 56.10, 56.12, 56.13\n\n## Why\n\nPlaylists today are manual lists (`user_playlists`, slot 0162). Plex also has smart playlists: a\nsaved filter with a sort and a limit, that keeps itself up to date, per user. Viewers cannot make\ncollections (admin-only, README §11 decision 3), so smart playlists are how a viewer keeps\n\"unwatched lessons of speaker X, newest first\" one click away, on every device.\n\n## Description\n\n### 1. Model (slot 0186, planned)\n\n`user_playlists` gains `kind` (`manual` | `smart`) and `sma",
       "tags": [
         "story",
         "56-tv-library-view",
