@@ -22,6 +22,7 @@ package plugins
 // components service, so they write the rows and audit actions of /api/components/plugin.<id>.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -49,9 +50,9 @@ const maxPackage = 50<<20 + 1<<20
 type Admin struct {
 	L      *pl.Lifecycle
 	Logger *slog.Logger
-	// Reauth, when set, checks a sensitive change's re-authentication (story 54.10 §2:
-	// turning on Allow unreviewed plugins); nil: none is asked.
-	Reauth func(r *http.Request) *httperror.Error
+	// VerifyPassword checks the signed-in admin's password again (story 54.10 §2: turning
+	// on Allow unreviewed plugins asks for it); nil: none is asked.
+	VerifyPassword func(ctx context.Context, userID, password string) error
 }
 
 // Mount adds the routes to r.
@@ -72,6 +73,8 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/{id}/rollback", h.rollback)
 		r.Delete("/api/plugins/{id}", h.remove)
 		r.Get("/api/plugins/{id}/writes", h.writes)
+		r.Get("/api/plugins/{id}/settings", h.getSettings)
+		r.Put("/api/plugins/{id}/settings", h.putSettings)
 		r.Post("/api/plugins/{id}/writes/revert", h.revert)
 	})
 }
@@ -187,15 +190,28 @@ func (h *Admin) getPolicy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Admin) putPolicy(w http.ResponseWriter, r *http.Request) {
-	var p pl.Policy
-	if e := common.ReadJSON(r, &p, 4<<10); e != nil {
+	var body struct {
+		pl.Policy
+		Password string `json:"password"`
+	}
+	if e := common.ReadJSON(r, &body, 4<<10); e != nil {
 		httperror.Write(w, r, e)
 		return
 	}
-	if p.AllowUnreviewed && h.Reauth != nil {
-		if e := h.Reauth(r); e != nil {
-			httperror.Write(w, r, e)
+	p := body.Policy
+	if p.AllowUnreviewed && h.VerifyPassword != nil {
+		// a sensitive change: the admin's password again (401 reauth_required)
+		cur, err := pl.LoadPolicy(r.Context(), h.L.DB)
+		if err != nil {
+			h.fail(w, r, err)
 			return
+		}
+		if !cur.AllowUnreviewed {
+			pr := principal.FromContext(r.Context())
+			if body.Password == "" || pr == nil || h.VerifyPassword(r.Context(), pr.UserID, body.Password) != nil {
+				httperror.Write(w, r, problem(http.StatusUnauthorized, "reauth_required", "type your password again to allow unreviewed plugins"))
+				return
+			}
 		}
 	}
 	out, err := h.L.SetPolicy(r.Context(), p, h.actor(r))
@@ -406,4 +422,27 @@ func (h *Admin) revert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"reverted": n})
+}
+
+func (h *Admin) getSettings(w http.ResponseWriter, r *http.Request) {
+	out, err := h.L.GetSettings(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
+}
+
+func (h *Admin) putSettings(w http.ResponseWriter, r *http.Request) {
+	var values map[string]any
+	if e := common.ReadJSON(r, &values, 256<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	out, err := h.L.PutSettings(r.Context(), chi.URLParam(r, "id"), values, h.actor(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
 }

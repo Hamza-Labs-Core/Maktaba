@@ -99,7 +99,12 @@ def _install(api: R.Api, pkg: Path) -> Any:
     """POST /api/plugins/install as the Plugins page sends it: the fields, then the file."""
     boundary = "----maktaba" + uuid.uuid4().hex
     parts: list[bytes] = []
-    for name, value in (("enable", "true"), ("grants", "[]"), ("libraries", "[]")):
+    for name, value in (
+        ("enable", "true"),
+        ("grants", "[]"),
+        ("libraries", "[]"),
+        ("confirm_name", "Hello"),  # an unreviewed plugin is confirmed by its name (54.10)
+    ):
         parts.append(
             f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode()
         )
@@ -186,7 +191,7 @@ def _run(
     assert _plugind(supervisor).get("pid", 0) == 0
 
     # the admin allows unreviewed plugins, installs the file and turns it on
-    api.call("PUT", "/api/plugins/policy", {"allow_unreviewed": True})
+    api.call("PUT", "/api/plugins/policy", {"allow_unreviewed": True, "password": R.OWNER_PASS})
     t0 = time.time()
     out = _install(api, pkg)
     m["install_s"] = round(time.time() - t0, 3)

@@ -29,6 +29,8 @@ var adminRoutes = []string{
 	"DELETE /api/plugins/dev.example.x",
 	"GET /api/plugins/dev.example.x/writes",
 	"POST /api/plugins/dev.example.x/writes/revert",
+	"GET /api/plugins/dev.example.x/settings",
+	"PUT /api/plugins/dev.example.x/settings",
 }
 
 // Story 54.08 T01 (the refusals): every route answers no one 401, a viewer 403 and a
