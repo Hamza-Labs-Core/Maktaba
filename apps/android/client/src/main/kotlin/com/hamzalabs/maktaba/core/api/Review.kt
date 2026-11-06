@@ -2,9 +2,7 @@ package com.hamzalabs.maktaba.core.api
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -111,7 +109,14 @@ data class ReviewPage(
 object FlagList : kotlinx.serialization.KSerializer<List<ReviewFlag>> by LenientList(ReviewFlag.serializer())
 
 @Serializable
-data class ReviewClip(val url: String, val start: Double = 0.0, val end: Double = 0.0, @SerialName("expires_at") val expiresAt: String = "")
+data class ReviewClip(val url: String, val start: Double = 0.0, val end: Double = 0.0, @SerialName("expires_at") val expiresAt: String = "") {
+    /** The clip's address on [home] (the API answers a path; a home under a base path keeps it). */
+    fun absolute(home: okhttp3.HttpUrl): String? {
+        val base = home.encodedPath.trimEnd('/')
+        val path = if (base.isNotEmpty() && url.startsWith("/") && !url.startsWith("//") && !url.startsWith("$base/")) base + url else url
+        return home.resolve(path)?.toString()
+    }
+}
 
 @Serializable
 data class ReviewResult(
@@ -175,6 +180,3 @@ fun ApiException.isReviewForbidden(): Boolean = this is ApiException.Status && c
 /** A 409's code from the home (locked, stale, resolved, changed_since), or null. */
 fun ApiException.reviewConflict(): String? =
     (this as? ApiException.Status)?.takeIf { it.code == 409 }?.problem?.slug
-
-@Suppress("unused")
-private val unusedJson: (JsonElement) -> JsonPrimitive? = { it as? JsonPrimitive }
