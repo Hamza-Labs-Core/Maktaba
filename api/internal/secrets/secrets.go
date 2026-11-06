@@ -320,6 +320,7 @@ type Memory struct {
 	rows map[string][2][]byte
 	// Writes counts Put calls (tests).
 	Writes int
+	by     map[string]string
 }
 
 // NewMemory returns an empty Memory store with a random key.
@@ -342,7 +343,7 @@ func (m *Memory) Get(_ context.Context, name string) ([]byte, error) {
 }
 
 // Put implements Store.
-func (m *Memory) Put(_ context.Context, name string, value []byte, _ string) error {
+func (m *Memory) Put(_ context.Context, name string, value []byte, by string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ct, nonce, err := Seal(m.key, name, value)
@@ -350,8 +351,20 @@ func (m *Memory) Put(_ context.Context, name string, value []byte, _ string) err
 		return err
 	}
 	m.rows[name] = [2][]byte{ct, nonce}
+	if m.by == nil {
+		m.by = map[string]string{}
+	}
+	m.by[name] = by
 	m.Writes++
 	return nil
+}
+
+// By is the by the last Put of name passed, as given (tests: a system writer passes "",
+// a user their users.id).
+func (m *Memory) By(name string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.by[name]
 }
 
 // Delete implements Store.
