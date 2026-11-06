@@ -36,6 +36,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Every component with loops can be restarted, wherever its loops run.** Restart on the
+  Components page and `maktaba-server components restart` refused a component whose loops
+  run in streaming, the pipeline or the supervisor itself (Live TV in the server, HDHomeRun,
+  the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
+  streaming and the pipeline restart theirs within seconds of the request: each loop stops
+  within its grace and starts again, as a process does.
+
 - **The library dashboard and the queue page load at once on a large home.** On a home with
   3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out

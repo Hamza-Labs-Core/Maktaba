@@ -801,6 +801,38 @@ func (r *Reconciler) loopOn(id string) bool {
 	return run != nil && !run.stopping
 }
 
+// RestartLoops restarts the supervisor's loops of component id (an admin's restart,
+// story 51.08, #636): a running one is stopped as a switch-off stops it, and the next
+// pass (every Tick) starts it again once it returned, its gate still open; one that
+// ended on its own starts again at the next pass. It answers how many: 0 when id has
+// no loop here or it is off.
+func (r *Reconciler) RestartLoops(id string) int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, l := range r.Loops {
+		if l.component != id {
+			continue
+		}
+		run := r.loops[l.Name]
+		switch {
+		case run == nil || run.stopping:
+		case run.ended:
+			r.loops[l.Name] = nil
+			n++
+		default:
+			run.stopping, run.stoppedAt = true, r.Now()
+			run.cancel()
+			n++
+			r.logf("%s: restarted (component %s): its loop is stopped and starts again", l.Name, id)
+		}
+	}
+	return n
+}
+
 // pass is one reconcile: gates, loops, status. It returns how many things it changed.
 func (r *Reconciler) pass(ctx context.Context) int {
 	decs, moved := r.applyGates(r.table.procViews(), nil)

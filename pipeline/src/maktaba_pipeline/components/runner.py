@@ -207,6 +207,9 @@ class ComponentRunner:
         self._transitions: dict[str, list[Any]] = {}
         self._wake = asyncio.Event()
         self._listener: Any = None
+        #: the pipeline's restart requests read last (slot 0185, #636): component -> seq;
+        #: None until the first read, which is only remembered
+        self._restart_seen: dict[str, int] | None = None
         self._graph_names = {s.name for s in self.graph}
 
     # -- declaring -------------------------------------------------------------
@@ -376,7 +379,55 @@ class ComponentRunner:
             if self.role == "home" and self.machine == HOME:
                 await self._lead()
         self._loops()
+        await self._take_restarts()
         await self._report()
+
+    async def _take_restarts(self) -> None:
+        """Restart this process's loops of each component whose restart request moved
+        since the last read (``POST /api/components/{id}/restart`` writes one for the
+        pipeline's loops, which the API cannot reach). A failed read (a schema before slot
+        0185) changes nothing."""
+        try:
+            seqs = await store.restarts(self.db, self.machine, "pipeline")
+        except Exception as exc:  # noqa: BLE001 - an older schema: no restarts
+            _log.debug("components_restarts_unreadable", error=f"{type(exc).__name__}: {exc}")
+            return
+        self.take_restarts(seqs)
+
+    def take_restarts(self, seqs: Mapping[str, int]) -> list[str]:
+        """Act on the pipeline's restart requests (component -> seq): each component whose
+        seq moved since the last call has its running loops here stopped within their
+        grace and started again (:meth:`restart`). The first call only remembers them. The
+        components restarted."""
+        prev, self._restart_seen = self._restart_seen, dict(seqs)
+        if prev is None:
+            return []
+        ids = sorted(cid for cid, seq in seqs.items() if seq > prev.get(cid, 0))
+        for cid in ids:
+            n = self.restart(cid)
+            _log.info("components_restart_requested", component=cid, loops=n)
+        return ids
+
+    def restart(self, cid: str) -> int:
+        """Restart ``cid``'s loops here (an admin's restart, story 51.08): a running one is
+        stopped within its grace and the next pass starts it again; one that ended on its
+        own starts again at once. How many: 0 when none is here or its gate is shut."""
+        n = 0
+        for lp in self.loops.values():
+            if lp.component != cid or not self._loop_wanted(lp):
+                continue
+            if lp.running():
+                if lp.stop is not None and not lp.stop.is_set():
+                    stopper = asyncio.ensure_future(self._stop_loop(lp))
+                    self._stoppers.add(stopper)
+                    stopper.add_done_callback(self._stoppers.discard)
+                    n += 1
+            else:
+                lp.task, lp.stop, lp.failed = None, None, ""
+                n += 1
+        if n:
+            self._wake.set()
+        return n
 
     async def _read_extensions(self) -> None:
         if self._extension_states is None:
