@@ -125,6 +125,10 @@ func (t *Tunnel) Close() {
 
 var errTunnelClosed = errors.New("relay: tunnel closed")
 
+// ErrTunnelClosed: the tunnel closed before the home answered (a drained
+// tunnel the home just closed): a GET may be tried again on its new tunnel.
+var ErrTunnelClosed = errTunnelClosed
+
 // Done returns a channel closed when the tunnel is closed. Useful for
 // the server-handler goroutine that wants to keep the HTTP upgrade
 // alive until the websocket terminates.

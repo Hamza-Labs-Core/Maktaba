@@ -4,12 +4,14 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net"
 	"sync"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
@@ -133,5 +135,44 @@ func TestMeterAllowDuringAnOutage(t *testing.T) {
 	m.Record(ctx, sv, 0, FreeOverageGrace+1)
 	if err := m.Allow(ctx, sv); !errors.Is(err, ErrOverLimit) {
 		t.Errorf("past the cap and its grace: %v", err)
+	}
+}
+
+// Allow waits at most the connect timeout (2 s, db.Open) on a database that
+// vanished, and for the next 5 s not at all (the rehearsal's db-blip).
+func TestMeterAllowDoesNotWaitOnAVanishedDatabase(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	// accepts and never answers: a connect that hangs
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer func() { _ = c.Close() }()
+		}
+	}()
+	pool, err := db.Open("postgres://u@"+ln.Addr().String()+"/x?sslmode=disable", 2, 1, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMeter(pool.DB)
+	ctx := context.Background()
+	sv := stores.Server{ID: "a", Plan: PlanFree}
+	start := time.Now()
+	if err := m.Allow(ctx, sv); err != nil {
+		t.Fatal(err)
+	}
+	if took := time.Since(start); took > 3*time.Second {
+		t.Errorf("Allow waited %s", took)
+	}
+	start = time.Now()
+	_ = m.Allow(ctx, sv)
+	if took := time.Since(start); took > 50*time.Millisecond {
+		t.Errorf("the next Allow waited %s", took)
 	}
 }

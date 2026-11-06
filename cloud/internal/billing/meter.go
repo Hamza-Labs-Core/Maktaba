@@ -49,6 +49,9 @@ type Meter struct {
 	counters map[string]*counter // since the last flush attempt, by server id
 	pending  map[bucketKey]*counter
 	months   map[string]monthTotal // persisted month totals read, by server id
+	// dbDownUntil: a month read failed; until then Allow uses the totals it has
+	// without asking (a request must not wait on a database that is away)
+	dbDownUntil time.Time
 
 	stop       chan struct{}
 	stopped    chan struct{} // closed when the flush loop has made its last flush
@@ -223,16 +226,30 @@ func (m *Meter) persistedMonth(ctx context.Context, serverID string, month time.
 	now := m.now()
 	m.mu.Lock()
 	mt, ok := m.months[serverID]
+	down := now.Before(m.dbDownUntil)
 	m.mu.Unlock()
 	if ok && mt.month.Equal(month) && now.Sub(mt.at) < ttl {
 		return mt.bytes
 	}
-	total, err := m.MonthlyBytes(ctx, serverID, month)
-	if err != nil {
+	cached := func() int64 {
 		if ok && mt.month.Equal(month) {
 			return mt.bytes
 		}
 		return 0
+	}
+	if down {
+		return cached()
+	}
+	// a request waits at most this long on the database (the rehearsal's db-blip:
+	// a database that vanished leaves connects hanging until their timeout)
+	rctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	total, err := m.MonthlyBytes(rctx, serverID, month)
+	if err != nil {
+		m.mu.Lock()
+		m.dbDownUntil = now.Add(5 * time.Second)
+		m.mu.Unlock()
+		return cached()
 	}
 	m.mu.Lock()
 	m.months[serverID] = monthTotal{month: month, bytes: total, at: now}

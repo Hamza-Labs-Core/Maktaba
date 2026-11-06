@@ -134,7 +134,10 @@ func (l *LenientReadiness) clock() time.Time {
 
 func (l *LenientReadiness) handler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		// fast, so the edge's health check (1–2 s) gets the answer during an
+		// outage instead of timing out and taking the relay out of rotation
+		// (the rehearsal's db-blip)
+		ctx, cancel := context.WithTimeout(r.Context(), 500*time.Millisecond)
 		defer cancel()
 		w.Header().Set("Content-Type", "application/json")
 		if err := pool.Ping(ctx); err != nil {

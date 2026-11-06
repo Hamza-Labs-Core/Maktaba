@@ -117,3 +117,38 @@ func TestHomeCacheBoundsAndInvalidation(t *testing.T) {
 		t.Error("warm")
 	}
 }
+
+// slowLookup never answers until its context ends (a database that vanished:
+// connects hang).
+type slowLookup struct{ calls atomic.Int64 }
+
+func (l *slowLookup) BySlug(ctx context.Context, _ string) (stores.Server, error) {
+	l.calls.Add(1)
+	<-ctx.Done()
+	return stores.Server{}, ctx.Err()
+}
+
+// The rehearsal's db-blip: a known home's request waits at most a second on
+// a database that vanished, and for the next 5 s not at all.
+func TestHomeCacheDoesNotWaitOnAVanishedDatabase(t *testing.T) {
+	clock := time.Now()
+	l := &countingLookup{plan: "pro"}
+	c := &HomeCache{Lookup: l, now: func() time.Time { return clock }}
+	ctx := context.Background()
+	_, _ = c.BySlug(ctx, "acme")
+	slow := &slowLookup{}
+	c.Lookup = slow
+	clock = clock.Add(6 * time.Minute) // past its life: a database read is due
+	start := time.Now()
+	if sv, err := c.BySlug(ctx, "acme"); err != nil || sv.Plan != "pro" {
+		t.Fatalf("stale entry: %+v %v", sv, err)
+	}
+	if took := time.Since(start); took > 1500*time.Millisecond {
+		t.Errorf("waited %s on the database", took)
+	}
+	start = time.Now()
+	_, _ = c.BySlug(ctx, "acme")
+	if took := time.Since(start); took > 100*time.Millisecond || slow.calls.Load() != 1 {
+		t.Errorf("the next request waited %s (%d reads): the database is known to be away", took, slow.calls.Load())
+	}
+}
