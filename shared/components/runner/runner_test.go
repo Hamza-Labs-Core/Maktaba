@@ -638,6 +638,8 @@ func TestLoopContextNamesTheComponent(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the loop never ran")
+	}
+}
 
 // restartStore is a countingStore with restart requests (slot 0185).
 type restartStore struct {
