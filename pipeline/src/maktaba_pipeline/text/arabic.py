@@ -12,7 +12,7 @@ Two strengths are provided:
   tatweel, bidi controls) and unifies digits/punctuation. Safe for prefix
   matching: ``فائ`` must not match ``فأين``.
 - :func:`fold` additionally merges letter variants (أ/إ/آ/ٱ → ا, ة → ه,
-  ى → ي, ؤ → و, ئ → ي). Use for whole-token equality.
+  ى → ي, ؤ → و, ئ → ي, and the Persian ی → ي, ک → ك). Use for whole-token equality.
 
 Pure functions, no I/O.
 """
@@ -31,12 +31,25 @@ __all__ = [
 ]
 
 #: Bumped when folding rules change (cached folded forms must be rebuilt).
-ARABIC_VERSION: int = 1
+#: 2: the Persian look-alikes ی (U+06CC) → ي and ک (U+06A9) → ك (Epic 52, story 52.4)
+ARABIC_VERSION: int = 2
 
 _MARKS_RE = re.compile("[ً-ٰٟۖ-ۭـ‌-‏‪-‮⁦-⁩]")
 _DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 _LETTERS = str.maketrans(
-    {"أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا", "ة": "ه", "ى": "ي", "ؤ": "و", "ئ": "ي"}
+    {
+        "أ": "ا",
+        "إ": "ا",
+        "آ": "ا",
+        "ٱ": "ا",
+        "ة": "ه",
+        "ى": "ي",
+        "ؤ": "و",
+        "ئ": "ي",
+        # Persian look-alikes Whisper sometimes writes in Arabic speech
+        "ی": "ي",
+        "ک": "ك",
+    }
 )
 _NON_WORD_RE = re.compile(r"[^\w]+|_+")
 

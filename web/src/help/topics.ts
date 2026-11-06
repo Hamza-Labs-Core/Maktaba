@@ -14,7 +14,10 @@ export const HELP_CATEGORIES = [
     topics: ["library", "series", "playlists", "videos", "search", "watch-tv", "big-screen"],
   },
   { id: "you", topics: ["account", "settings", "updates"] },
-  { id: "processing", topics: ["processing", "stages", "failures", "transcription", "metadata"] },
+  {
+    id: "processing",
+    topics: ["processing", "stages", "failures", "transcription", "word-review", "metadata"],
+  },
   {
     id: "tv",
     topics: ["channels", "filler", "live-tv-admin", "tv-changes", "remote-tv", "simulcast"],
@@ -28,6 +31,7 @@ export const HELP_CATEGORIES = [
       "machines",
       "system-health",
       "logs",
+      "recovery",
       "audit-log",
       "analytics",
       "cloud",

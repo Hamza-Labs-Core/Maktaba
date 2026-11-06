@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0186 - the mediaintel import's dry run writes no done-subjects summary.
+-- Slot 0189 - the mediaintel import's dry run writes no done-subjects summary.
 --
 -- The import (pipeline tools/import_mediaintel.py) writes synthetic done jobs stage after
 -- stage in one transaction: each stage's fingerprint reads the done jobs of the stages

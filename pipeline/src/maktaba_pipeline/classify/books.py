@@ -227,6 +227,9 @@ def _ssl() -> ssl.SSLContext:
 
 
 def http_get(url: str, cfg: BooksConfig) -> dict[str, Any]:
+    from .. import offline
+
+    offline.check(urllib.parse.urlsplit(url).netloc)
     req = urllib.request.Request(
         url, headers={"User-Agent": "maktaba-mediaintel/1.0 (book lookup)"}
     )

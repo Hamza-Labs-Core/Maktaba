@@ -310,7 +310,7 @@ async def _resolve_libraries(db: Any, names: list[str]) -> list[tuple[UUID, str]
 
 
 async def _hold_done_subjects(db: Any, apply: bool) -> None:
-    """The done-subjects summary for the import's transaction (slots 0184, 0186).
+    """The done-subjects summary for the import's transaction (slots 0184, 0189).
 
     The import writes done jobs in many statements, stage after stage (each stage's
     fingerprint reads the done jobs of the stages before it), so it takes the summary's
@@ -318,7 +318,7 @@ async def _hold_done_subjects(db: Any, apply: bool) -> None:
     key order could wait on it in a circle. With ``apply`` it holds the whole table: no
     other writer of the summary runs beside it, and jobs that finish meanwhile wait for
     the import to commit. A dry run is always rolled back, so it writes no summary at all
-    (``maktaba.done_subjects_dry_run``, slot 0186): it locks nothing a finishing job
+    (``maktaba.done_subjects_dry_run``, slot 0189): it locks nothing a finishing job
     needs. Either way the import waits on no job row while it holds this: the detect jobs
     are queued after it (:func:`_queue_detect`)."""
     if not is_pg(db):

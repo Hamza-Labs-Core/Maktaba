@@ -24,6 +24,19 @@ query (the `?sig=` signature), DSNs are not logged, and the pipeline's
 redaction masks token/secret/password/dsn keys and `X-Plex-Token=`, `sig=`
 and `user:pass@` inside messages.
 
+**Where the lines are (Epic 53, story 53.02).** The supervisor keeps every process's output
+on disk, per service, in `<data>/logs/segments/<service>/` (`api`, `streaming`, `pipeline`,
+`pipeline.stt-0`, `postgres`, `supervisor`, `desktop`, …): one file per hour
+(`20261106-10.ndjson`, closed hours compressed as `.ndjson.zst`), debug lines in `debug/`,
+and a copy of warnings and errors in `warn/`, which go last when room runs out. Info and above
+stay 7 days, debug 24 hours, all of it under 550 MB of the 1 GB diagnostics cap (`[logs]` in
+`server.toml`: `retention`, `debug_retention`, `max_total_size`, `max_segments_size`,
+`min_free`). Below 5 GB free on the data volume debug lines stop, below 1 GB only warnings and
+errors are written. Each child writes to its own spool, `<data>/logs/spool/<service>.out`,
+which the keeper reads and empties. `server.log` still gets every line for now
+(`server_log = "warn"` keeps only warnings and errors there). The roles write JSON lines
+(`MAKTABA_LOG_FORMAT=json`). Read a segment with `zstd -dc 20261106-10.ndjson.zst | jq`.
+
 Every line follows one shape (`shared/log/schema/line.schema.json`, Epic 53), and every part
 scrubs with one list (`shared/redact/rules.json`): links' tokens become `[REDACTED]`, emails
 `[EMAIL]`, a person's folder `~/`, and an IP address keeps all but its last part. A line never

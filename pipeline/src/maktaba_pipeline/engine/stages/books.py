@@ -18,6 +18,7 @@ import urllib.error
 from typing import Any
 from uuid import UUID
 
+from ... import offline
 from ...classify import books as bk
 from ...classify.topic_tags import branding, chapter_tags
 from ...db.jobs import Job
@@ -120,8 +121,13 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     if not cfg.enabled:
         return canonical_hash({"off": True, "v": bk.BOOKS_VERSION})
     library, ref = got
+    extra: dict[str, Any] = {}
+    if ref is not None and offline.offline() and await cached_book(db, ref.name, cfg) is None:
+        # offline (#640): not looked up now; the run after the switch goes off looks it up
+        extra["offline"] = True
     return canonical_hash(
         {
+            **extra,
             "book": None if ref is None else [ref.name, ref.chapter],
             "library": library,
             "rules": to_json(cfg),
@@ -146,6 +152,12 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         )
     book = await cached_book(db, ref.name, cfg)
     looked_up = book is None
+    if book is None and offline.offline():
+        # offline (#640): no lookup; the fingerprint says so, so it runs again once online
+        return StageResult(
+            output_hash=await season_tags_digest(db, season_id),
+            summary={"enabled": cfg.enabled, "book": None, "offline": True},
+        )
     if book is None:
         try:
             book = await asyncio.to_thread(bk.lookup, ref.name, cfg)

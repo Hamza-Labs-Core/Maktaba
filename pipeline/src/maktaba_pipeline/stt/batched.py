@@ -40,6 +40,7 @@ from .settings import (
     Sentence,
     Transcript,
     WhisperSettings,
+    Word,
 )
 
 __all__ = [
@@ -279,7 +280,12 @@ def to_sentences(segments: list[dict[str, Any]]) -> list[Sentence]:
                 avg_logprob=float(s["avg_logprob"]),
                 no_speech_prob=float(s["no_speech_prob"]),
                 words=[
-                    (round(float(w["start"]), 3), round(float(w["end"]), 3), str(w["word"]))
+                    Word(
+                        round(float(w["start"]), 3),
+                        round(float(w["end"]), 3),
+                        str(w["word"]),
+                        None if w.get("probability") is None else float(w["probability"]),
+                    )
                     for w in words
                 ]
                 or None,

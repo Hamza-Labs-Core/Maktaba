@@ -1,0 +1,113 @@
+{
+ "text": "قال النبي ﷺ in the hadith الصحيح",
+ "start": 10.0,
+ "words": [
+  {
+   "start": 10.0,
+   "end": 10.3,
+   "text": " قال",
+   "prob": 0.9,
+   "flags": 0
+  },
+  {
+   "start": 10.3,
+   "end": 10.7,
+   "text": " النبي",
+   "prob": 0.8,
+   "flags": 0
+  },
+  {
+   "start": 10.7,
+   "end": 11.0,
+   "text": " ﷺ",
+   "prob": 0.4,
+   "flags": 0
+  },
+  {
+   "start": 11.0,
+   "end": 11.2,
+   "text": " in",
+   "prob": 0.95,
+   "flags": 0
+  },
+  {
+   "start": 11.2,
+   "end": 11.3,
+   "text": " the",
+   "prob": 0.99,
+   "flags": 0
+  },
+  {
+   "start": 11.3,
+   "end": 11.8,
+   "text": " hadith",
+   "prob": 0.6,
+   "flags": 1
+  },
+  {
+   "start": 11.8,
+   "end": 12.4,
+   "text": " الصحيح",
+   "prob": null,
+   "flags": 2
+  }
+ ],
+ "slots": [
+  {
+   "char_start": 0,
+   "char_len": 3,
+   "start_cs": 0,
+   "dur_cs": 30,
+   "prob": 230,
+   "flags": 0
+  },
+  {
+   "char_start": 4,
+   "char_len": 5,
+   "start_cs": 30,
+   "dur_cs": 40,
+   "prob": 204,
+   "flags": 0
+  },
+  {
+   "char_start": 10,
+   "char_len": 1,
+   "start_cs": 70,
+   "dur_cs": 30,
+   "prob": 102,
+   "flags": 0
+  },
+  {
+   "char_start": 12,
+   "char_len": 2,
+   "start_cs": 100,
+   "dur_cs": 20,
+   "prob": 242,
+   "flags": 0
+  },
+  {
+   "char_start": 15,
+   "char_len": 3,
+   "start_cs": 120,
+   "dur_cs": 10,
+   "prob": 252,
+   "flags": 0
+  },
+  {
+   "char_start": 19,
+   "char_len": 6,
+   "start_cs": 130,
+   "dur_cs": 50,
+   "prob": 153,
+   "flags": 1
+  },
+  {
+   "char_start": 26,
+   "char_len": 6,
+   "start_cs": 180,
+   "dur_cs": 60,
+   "prob": 255,
+   "flags": 10
+  }
+ ]
+}

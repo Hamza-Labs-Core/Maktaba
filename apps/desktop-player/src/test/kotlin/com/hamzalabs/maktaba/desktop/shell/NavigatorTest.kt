@@ -65,6 +65,22 @@ class NavigatorTest {
     }
 
     @Test
+    fun aChannelOpenedFromHomeClosesWhenLiveTvGoesOff() {
+        val nav = Navigator()
+        nav.push(Route.Video("v1"))
+        nav.push(Route.Channel("c1"))
+        nav.push(Route.Video("v2"))
+        nav.follow(Capabilities(off = setOf(Feature.LIVE_TV)))
+        assertEquals(Section.Home, nav.section)
+        assertEquals(listOf(Route.Home, Route.Video("v1")), nav.stack(Section.Home))
+        // an admin still sees Live TV: nothing closes
+        val admin = Navigator()
+        admin.push(Route.Channel("c1"))
+        admin.follow(Capabilities(off = setOf(Feature.LIVE_TV), admin = true))
+        assertEquals(Route.Channel("c1"), admin.current)
+    }
+
+    @Test
     fun ctrlFAsksForSearch() {
         val nav = Navigator()
         val before = nav.searchAsked

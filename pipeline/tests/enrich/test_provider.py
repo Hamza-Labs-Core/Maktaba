@@ -363,6 +363,22 @@ async def test_ollama_web_search_when_chosen(db: Database, net: FakeNet) -> None
 
 
 @pytest.mark.asyncio
+async def test_no_web_search_while_offline(
+    db: Database, net: FakeNet, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#640: MAKTABA_OFFLINE stops the web search a set key makes by itself."""
+    vid = await make_lesson(db)
+    await web_search_on(db, google=True, ollama=True)
+    await set_rules(db, "tagcheck", {"url": MODEL_URL, "model": "qwen2.5:7b"})
+    monkeypatch.setenv("MAKTABA_OFFLINE", "1")
+    net.items = items()
+    net.answer = good_answer
+    await queue(db, vid)
+    await run_enrich(db, vid)
+    assert net.count("google") == 0 and net.count("ollama") == 0 and net.count("page") == 0
+
+
+@pytest.mark.asyncio
 async def test_a_manual_search_uses_the_librarians_words_and_the_cache(
     db: Database, net: FakeNet
 ) -> None:

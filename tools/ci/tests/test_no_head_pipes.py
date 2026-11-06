@@ -1,4 +1,4 @@
-"""No shell script in tools/ and no workflow step pipes into a reader that leaves early.
+"""No shell script in tools/ or deploy/ and no workflow or action step pipes into a reader that leaves early.
 
 They run under pipefail (`set -euo pipefail`; a workflow's `shell: bash` is
 `bash -eo pipefail`). `head` leaves after its lines, so a producer that writes more than
@@ -10,7 +10,8 @@ with exit 2 and no message (`find | sort | head -n 1` over a venv's RECORD files
 under pipefail fails with curl's exit 23 when the page is bigger than a pipe holds and
 the match comes early). Feed them without a pipe instead: `grep -q x <<<"$out"`,
 `grep -q x < <(cmd)` (pipefail does not see a process substitution), or
-`[ -n "$(find … -print -quit)" ]`. Not `| grep -c … >/dev/null` or `| grep … >/dev/null`:
+`[ -n "$(find … -print -quit)" ]`. Where the producer's own failure must fail the step,
+capture first (`out="$(cmd)"; grep -q x <<<"$out"`): `< <(cmd)` checks only grep's status. Not `| grep -c … >/dev/null` or `| grep … >/dev/null`:
 GNU grep stops at the first match when its output is /dev/null."""
 
 from __future__ import annotations
@@ -34,8 +35,11 @@ EARLY_START = re.compile(r"^\s*(?:" + _EARLY + ")")
 
 
 def _scripts(root: Path) -> list[Path]:
-    out = sorted(root.glob("tools/**/*.sh")) + sorted(
-        root.glob(".github/workflows/*.y*ml")
+    out = (
+        sorted(root.glob("tools/**/*.sh"))
+        + sorted(root.glob("deploy/**/*.sh"))
+        + sorted(root.glob(".github/workflows/*.y*ml"))
+        + sorted(root.glob(".github/actions/**/*.y*ml"))
     )
     return [p for p in out if p.is_file()]
 

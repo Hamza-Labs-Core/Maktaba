@@ -94,7 +94,7 @@ class _Rollback(Exception):
 
 @pytest.mark.asyncio
 async def test_a_dry_run_writes_and_locks_no_summary_row(db: Database) -> None:
-    """Slot 0186: the mediaintel import's dry run (always rolled back) sets
+    """Slot 0189: the mediaintel import's dry run (always rolled back) sets
     maktaba.done_subjects_dry_run; the touch then writes nothing, so it locks no row and
     takes no order, and needs no table lock."""
     if not is_pg(db):
