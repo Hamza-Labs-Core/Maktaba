@@ -215,7 +215,16 @@ build fails when the two differ.
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
+### Added
 
+- **Maktaba Cloud's names, written down once, and the cloud's own names kept from homes
+  (Epic 50, story 50.01).** `docs/cloud-dns.md` lists every public name, what it points at,
+  its TTL and whether Cloudflare proxies it (relay names are DNS only, on the Floating IP).
+  A home can no longer take `canary`, `direct`, `staging`, `plugins`, `plugins-cdn` or
+  `r1`…`r99` as its address; a reserved address is refused with `409 subdomain_reserved`,
+  and the claim code stays usable. A lint fails a pull request that adds a host name under
+  `maktaba.app`, which is not ours (app identifiers like `com.maktaba.app` pass), and the
+  stale relay example in a migration comment and the log schema's `$id` now say `maktaba.tv`.
 - **A relay that restarts no longer drops the homes' tunnels (Epic 50, story 50.03).** On
   shutdown the relay refuses new tunnels and asks each home, 100 a second, to move (a new
   `DRAIN` frame): the home opens a new tunnel within a few seconds, new requests go there,
@@ -227,7 +236,15 @@ build fails when the two differ.
   before. The relay's stop grace is 150 s (the container's 160 s), with switches
   `relay.drain.enabled` and `relay.ticket.enabled`, and `/metrics` counts drains, forced
   closes and handshakes by method.
-
+- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
+  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
+  each minute, and dropped at once when a plan, an address or an owner changes, through
+  database notifications sent by triggers), so a request needs no database call, and a home
+  it served in the last hour keeps playing however long the database is away. Metering is
+  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
+  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
+  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
+  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
 - **Any relay process answers for any home, and a home that is reconnecting is waited for
   (Epic 50, story 50.04).** A tunnel directory in the cloud database (`relay_tunnels`,
   `relay_nodes`) records which relay process holds each home's tunnel; a process without it
@@ -238,18 +255,6 @@ build fails when the two differ.
   `503 home_reconnecting` with `Retry-After: 5`; a home offline longer answers
   `503 server_offline` at once (it was a 502). The relay's error pages are in Arabic too,
   right to left, by the browser's language.
-
-- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
-  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
-  each minute, and dropped at once when a plan, an address or an owner changes, through
-  database notifications sent by triggers), so a request needs no database call, and a home
-  it served in the last hour keeps playing however long the database is away. Metering is
-  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
-  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
-  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
-  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
-### Added
-
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -654,6 +659,16 @@ build fails when the two differ.
   long logs (7 days), errors (30) and problem reports (90) are kept and the disk they may use
   (1 GB), shows what each uses, and turns on detailed logs for one service for an hour, which
   ends by itself. A component's drawer links to its logs and errors.
+
+- **Dashboards (Epic 53, story 53.12).** The log index now reads this machine's metrics every
+  15 seconds and keeps an allow-list of series (about 30 today; 50 label sets each, the
+  catalog's ids for component series) at one minute for 7 days and one hour for 30, so a new
+  metric with many values cannot grow the store. Administration → Dashboards draws Overview
+  (components up, restarts, errors per hour by component, the API's memory and CPU), Queue,
+  Processing, Streaming, Storage (backups, log files and index) and Use (plays per day by app,
+  people per day and the most played videos: counts only). The range runs from 1 hour to 90
+  days, each chart shows its values under the pointer and a sentence for screen readers, and
+  Open in Logs opens the same time. `GET /api/admin/dashboards/{board}` is admin only.
 
 ### Fixed
 

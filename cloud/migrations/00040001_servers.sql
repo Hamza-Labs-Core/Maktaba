@@ -2,7 +2,7 @@
 -- Per-user Maktaba servers and the claim flow used to link them.
 --
 -- servers:        one row per registered on-prem server. `slug` is the
---                 subdomain prefix (e.g. "skylark-12" → skylark-12.relay.maktaba.app).
+--                 subdomain prefix (e.g. "skylark-12" → skylark-12.relay.maktaba.tv).
 -- server_claims:  short-lived (10 min) 8-char tokens minted by the
 --                 cloud and entered on the server UI to bind the two.
 -- server_health:  most recent heartbeat snapshot — overwritten on each

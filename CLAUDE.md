@@ -10,8 +10,12 @@
    doing, what is open. Something learned after the merge goes in a second event, in a
    trail-only pull request. Events are append-only; real PR numbers and shas only. The hook in
    `.claude/settings.json` reminds a session that merged a PR with no event.
-3. **After a v\* tag, build its snapshot** (`trail.py skeleton --tag vX.Y.Z`), as the skill
-   says, in a trail-only pull request. `python3 tools/trail/trail.py check` must pass.
+3. **Tags are automatic**: `auto-tag.yml` tags each green commit of main as the next patch
+   version and starts the release workflows (`docs/updates.md`, "How a release is made"); do
+   not tag by hand unless a release needs it. A scheduled session builds each new tag's
+   snapshot (`trail.py skeleton --tag vX.Y.Z`), as the skill says, in a trail-only pull
+   request; a session that finds a tag without one builds it. `python3 tools/trail/trail.py
+   check` must pass.
 4. Never write secrets in the trail or anywhere in the repo.
 5. **Never quote the owner's words in repo text** (specs, docs, the trail, comments, tests): state
    each requirement or decision neutrally, with no attribution to the owner.

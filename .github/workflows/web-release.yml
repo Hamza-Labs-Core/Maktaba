@@ -14,7 +14,8 @@
 # and (optionally) attach the web bundle for an existing tag without
 # cutting a full server release — useful for re-publishing the SPA after a
 # CDN/static-host change. It never fires automatically, so it cannot
-# collide with `release.yml`.
+# collide with `release.yml`. auto-tag.yml, which starts every tag workflow
+# on the tags it makes, leaves this one out for the same reason.
 name: Web Release
 
 on:
@@ -38,7 +39,10 @@ jobs:
     permissions:
       contents: write # gh release upload (only when an input tag is given)
     steps:
+      # the tag's own code when one is given (the run's ref, a branch, otherwise)
       - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6.0.8

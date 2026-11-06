@@ -80,6 +80,13 @@ jobs:
           done < <(git diff --name-only --diff-filter=AM "$base" HEAD)
           exit $bad
 
+      # Story 50.01: no host name under a domain that is not ours (maktaba.app), on the lines
+      # the pull request adds; app identifiers (com.maktaba.app) pass.
+      - name: No foreign domains (tools/lint/no-foreign-domains.sh)
+        run: |
+          bash tools/lint/no-foreign-domains-test.sh
+          bash tools/lint/no-foreign-domains.sh
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
         with:
