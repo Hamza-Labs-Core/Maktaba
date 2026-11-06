@@ -116,7 +116,7 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("appcontainer: job object: %w", err)
 	}
-	defer windows.CloseHandle(job)
+	defer func() { _ = windows.CloseHandle(job) }()
 	var info windows.JOBOBJECT_EXTENDED_LIMIT_INFORMATION
 	info.BasicLimitInformation.LimitFlags = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | jobObjectLimitActiveProcess
 	info.BasicLimitInformation.ActiveProcessLimit = 1
@@ -170,8 +170,7 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 	if err := windows.CreateProcess(exe16, cmd16, nil, nil, true, flags, envBlock(o.Env), dir16, &si.StartupInfo, &pi); err != nil {
 		return 0, fmt.Errorf("appcontainer: start %s: %w", exe, err)
 	}
-	defer windows.CloseHandle(pi.Process)
-	defer windows.CloseHandle(pi.Thread)
+	defer func() { _ = windows.CloseHandle(pi.Process); _ = windows.CloseHandle(pi.Thread) }()
 	if err := windows.AssignProcessToJobObject(job, pi.Process); err != nil {
 		_ = windows.TerminateProcess(pi.Process, 1)
 		return 0, fmt.Errorf("appcontainer: assign to job: %w", err)

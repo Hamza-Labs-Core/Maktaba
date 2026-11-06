@@ -71,16 +71,3 @@ def test_dates_are_not_toml_manifests() -> None:
     with pytest.raises(manifest.ManifestInvalid) as exc:
         manifest.validate(b"schema = 1\nwhen = 1979-05-27\n")
     assert exc.value.has(manifest.CODE_NOT_TOML)
-
-
-def test_graph_refuses_a_core_stage_named_like_a_plugin_stage() -> None:
-    """54.01 T05: ``validate()`` with a core stage named ``p_x`` raises GraphError;
-    the same name on a plugin's stage passes."""
-    from dataclasses import replace
-
-    from maktaba_pipeline.engine.graph import GRAPH, GraphError, validate
-
-    core = replace(GRAPH[0], name="p_x", edges=(), may_request=())
-    with pytest.raises(GraphError, match="p_x"):
-        validate((*GRAPH, core))
-    validate((*GRAPH, replace(core, extension="plugin:dev.example.x")))

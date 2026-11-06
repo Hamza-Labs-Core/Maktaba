@@ -24,28 +24,28 @@ import (
 
 // Error codes (words in web/src/i18n/{en,ar}.json as plugins.error.<code>).
 const (
-	CodeInvalid              = "manifest_invalid"
-	CodeUnknownKey           = "manifest_unknown_key"
-	CodeMissingKey           = "manifest_missing_key"
-	CodeSchemaNewer          = "manifest_schema_newer"
-	CodeReservedID           = "manifest_reserved_id"
-	CodeBadPlatform          = "manifest_bad_platform"
-	CodeBadRange             = "manifest_bad_range"
-	CodeBadCapability        = "manifest_bad_capability"
-	CodeDuplicateCapability  = "manifest_duplicate_capability"
-	CodeDuplicateStage       = "manifest_duplicate_stage"
-	CodeBadRequest           = "manifest_bad_request"
-	CodeUnknownEvent         = "manifest_unknown_event"
-	CodeSubjectMismatch      = "manifest_subject_mismatch"
-	CodeBadSchedule          = "manifest_bad_schedule"
-	CodeMissingString        = "manifest_missing_string"
-	CodeStringTooLong        = "manifest_string_too_long"
-	CodeMissingFile          = "manifest_missing_file"
-	CodeBadSettings          = "manifest_bad_settings"
-	CodeNotTOML              = "manifest_not_toml"
-	MaxNameCodePoints        = 40
-	MaxSummaryCodePoints     = 140
-	SchemaVersion      int64 = 1
+	CodeInvalid                   = "manifest_invalid"
+	CodeUnknownKey                = "manifest_unknown_key"
+	CodeMissingKey                = "manifest_missing_key"
+	CodeSchemaNewer               = "manifest_schema_newer"
+	CodeReservedID                = "manifest_reserved_id"
+	CodeBadPlatform               = "manifest_bad_platform"
+	CodeBadRange                  = "manifest_bad_range"
+	CodeBadCapability             = "manifest_bad_capability"
+	CodeDuplicateCapability       = "manifest_duplicate_capability"
+	CodeDuplicateStage            = "manifest_duplicate_stage"
+	CodeBadRequest                = "manifest_bad_request"
+	CodeUnknownEvent              = "manifest_unknown_event"
+	CodeSubjectMismatch           = "manifest_subject_mismatch"
+	CodeBadSchedule               = "manifest_bad_schedule"
+	CodeMissingString             = "manifest_missing_string"
+	CodeStringTooLong             = "manifest_string_too_long"
+	CodeMissingFile               = "manifest_missing_file"
+	CodeBadSettings               = "manifest_bad_settings"
+	CodeNotTOML                   = "manifest_not_toml"
+	MaxNameCodePoints             = 40
+	MaxSummaryCodePoints          = 140
+	SchemaVersion           int64 = 1
 )
 
 // Error is one refusal: a code, where (a slash path into the manifest) and a detail
