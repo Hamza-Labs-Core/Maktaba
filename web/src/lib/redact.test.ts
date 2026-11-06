@@ -1,10 +1,20 @@
 // Epic 53 story 53.01 T01: the web's redaction passes the shared cases
 // (shared/redact/cases.json), the same table every Maktaba logger passes.
 import { describe, expect, it } from "vitest";
-import cases from "../../../shared/redact/cases.json";
-import shared from "../../../shared/redact/rules.json";
 import copy from "./redactRules.json";
 import { keySensitive, redactAttrs, scrub } from "./redact";
+
+// the shared files are outside src/ (the web's image builds from web/ alone): read them at
+// run time, as stageWords.test.ts reads the graph
+const FS = "node:fs";
+const { readFileSync } = (await import(/* @vite-ignore */ FS)) as {
+  readFileSync: (path: string, encoding: "utf8") => string;
+};
+const cases = JSON.parse(readFileSync("../shared/redact/cases.json", "utf8")) as {
+  scrub: { in: string; out: string }[];
+  keys: { key: string; string: boolean; masked: boolean }[];
+};
+const shared: unknown = JSON.parse(readFileSync("../shared/redact/rules.json", "utf8"));
 
 describe("redact (shared rules)", () => {
   it("is the shared file's copy", () => {
