@@ -1,4 +1,9 @@
-# Claude trail
+# Claude trail (frozen)
+
+> **Frozen on 2026-11-05.** This file is read-only history. The trail now lives in
+> [`docs/trail/`](trail/README.md): one event per piece of work and a snapshot per tag, written
+> as the `trail` skill (`.claude/skills/trail/SKILL.md`) says. Its entries are migrated into
+> `docs/trail/events/` (`source: claude-trail.md`). Do not add to this file.
 
 The one file a new Claude session reads to carry on the owner's Maktaba work. It holds the
 owner's standing rules, the decisions and why they were made, what broke and how it was fixed,

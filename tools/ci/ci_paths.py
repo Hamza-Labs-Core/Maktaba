@@ -90,6 +90,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/ci/branch_head.py": "ci-branch.yml's guard; its tests (tools/ci/tests) run on every pull request",
     ".githooks/**": "the pre-push hook: the affected-tests job shellchecks it on every pull request",
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
+    "tools/trail/**": "the Claude trail's checker and hook: the lint job runs the checker and its tests (tools/ci/tests) on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
     "tools/ci/tests/**": "the guard's tests: the lint job runs them on every pull request",
     "tools/ci/play_release.py": "play-bundles.yml on a tag; its tests (tools/ci/tests) run on every pull request",
@@ -114,6 +115,11 @@ MARKERS = {"always-run", "push-only", "pr-only", "pr-event", "not-a-gate"}
 # changed, and an always-run job is gated by it. No filter may match the trail, so `repo` is
 # true whenever a filter is.
 TRAIL = "docs/claude-trail.md"
+# A push to main changing only these starts no run (ci.yml's and update-rehearsal.yml's
+# paths-ignore): the frozen trail and trail v2's events and snapshots. A pull request of
+# docs/trail/** alone still runs the lint job, whose repo checks run tools/trail/trail.py check;
+# only the frozen file runs nothing at all.
+PUSH_IGNORE = [TRAIL, "docs/trail/**"]
 REPO = "repo"
 REPO_FILTERS = {REPO: [f"!{TRAIL}"]}
 # the changes job's step whose `full` output is true on a push to main or release/**
