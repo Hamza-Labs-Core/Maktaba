@@ -57,10 +57,10 @@ func TestRedactionMasksURLCredentialsInValues(t *testing.T) {
 
 func TestRedactURL(t *testing.T) {
 	cases := map[string]string{
-		"/v/1.m3u8?sig=abc&exp=2":  "/v/1.m3u8?sig=" + redactedValue + "&exp=2",
-		"/a?b=1&api_key=zz":        "/a?b=1&api_key=" + redactedValue,
+		"/v/1.m3u8?sig=abc&exp=2":  "/v/1.m3u8?sig=[REDACTED]&exp=2",
+		"/a?b=1&api_key=zz":        "/a?b=1&api_key=[REDACTED]",
 		"/no/query":                "/no/query",
-		"/a?TOKEN=zz#frag":         "/a?TOKEN=" + redactedValue + "#frag",
+		"/a?TOKEN=zz#frag":         "/a?TOKEN=[REDACTED]#frag",
 		"keyframe=3 (not a query)": "keyframe=3 (not a query)",
 	}
 	for in, want := range cases {

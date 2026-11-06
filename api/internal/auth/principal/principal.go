@@ -7,7 +7,12 @@
 // fields here later costs a search-and-replace across handlers.
 package principal
 
-import "context"
+import (
+	"context"
+	"sync/atomic"
+
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+)
 
 // Source distinguishes how the principal was authenticated. Audit
 // rows include this so an operator can tell single-user-token
@@ -110,9 +115,37 @@ func (p *Principal) ViaCloud() bool { return p != nil && p.CloudScope != "" }
 
 type ctxKey struct{}
 
+type slotKey struct{}
+
+// Slot lets a middleware above the sign-in learn who the request was signed in
+// as (the request logger names the user on its line, by user_h, Epic 53 story
+// 53.01): WithSlot plants one, WithPrincipal fills it.
+type Slot struct{ p atomic.Pointer[Principal] }
+
+// Principal is who the request below was signed in as (nil: no one).
+func (s *Slot) Principal() *Principal {
+	if s == nil {
+		return nil
+	}
+	return s.p.Load()
+}
+
+// WithSlot returns a child context carrying an empty Slot, and the slot.
+func WithSlot(ctx context.Context) (context.Context, *Slot) {
+	s := &Slot{}
+	return context.WithValue(ctx, slotKey{}, s), s
+}
+
 // WithPrincipal returns a child context carrying p. nil principals are
-// stored as nil (handlers can distinguish "not set" from "empty").
+// stored as nil (handlers can distinguish "not set" from "empty"). Lines
+// logged with the context name the user by their hash (user_h).
 func WithPrincipal(ctx context.Context, p *Principal) context.Context {
+	if s, ok := ctx.Value(slotKey{}).(*Slot); ok && p != nil {
+		s.p.Store(p)
+	}
+	if p != nil && p.UserID != "" {
+		ctx = mlog.WithUserID(ctx, p.UserID)
+	}
 	return context.WithValue(ctx, ctxKey{}, p)
 }
 

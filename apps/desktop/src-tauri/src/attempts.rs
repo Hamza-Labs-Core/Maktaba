@@ -1190,12 +1190,37 @@ fn append_log(dir: &Path, line: &str, now: SystemTime) -> std::io::Result<()> {
         .create(true)
         .append(true)
         .open(&path)?;
-    writeln!(
-        f,
-        "{} {}",
-        rfc3339(now),
-        clean_detail(&line.replace('\n', " "))
-    )
+    writeln!(f, "{}", log_line(line, now))
+}
+
+/// app.log's line for `text` (Epic 53 story 53.01): the shared schema's shape
+/// (shared/log/schema/line.schema.json), service `desktop`. The shell's words are free
+/// text, so they go scrubbed in `attrs.text` under the event `raw_line` (`panic` for a
+/// panic); a leading "warn: " or "error: " (applog.rs) is the line's level.
+fn log_line(text: &str, now: SystemTime) -> String {
+    let text = clean_detail(&text.replace('\n', " "));
+    let (level, rest) = if let Some(r) = text.strip_prefix("error: ") {
+        ("error", r)
+    } else if let Some(r) = text.strip_prefix("warn: ") {
+        ("warn", r)
+    } else {
+        ("info", text.as_str())
+    };
+    let msg = if rest.starts_with("panic in thread ") {
+        "panic"
+    } else {
+        "raw_line"
+    };
+    serde_json::json!({
+        "ts": rfc3339(now),
+        "level": level,
+        "service": "desktop",
+        "msg": msg,
+        "app_version": env!("CARGO_PKG_VERSION"),
+        "platform": std::env::consts::OS,
+        "attrs": { "text": crate::redact::scrub(rest) },
+    })
+    .to_string()
 }
 
 /// A version without its v.
@@ -1655,10 +1680,10 @@ mod tests {
         )
         .unwrap();
         let text = std::fs::read_to_string(dir.path().join("app.log")).unwrap();
-        assert!(
-            text.starts_with("2026-10-24T05:30:00Z fetch https://a/b z")
-                && text.len() < DETAIL_MAX + 40
-        );
+        let line: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        assert_eq!(line["ts"], "2026-10-24T05:30:00Z");
+        let said = line["attrs"]["text"].as_str().unwrap();
+        assert!(said.starts_with("fetch https://a/b z") && said.len() < DETAIL_MAX + 4);
     }
 
     #[test]
@@ -2006,10 +2031,9 @@ mod tests {
         let now = UNIX_EPOCH + Duration::from_secs(1_792_819_800);
         append_log(dir.path(), "update app-1: begin\nsecond line", now).unwrap();
         let text = std::fs::read_to_string(dir.path().join("app.log")).unwrap();
-        assert_eq!(
-            text,
-            "2026-10-24T05:30:00Z update app-1: begin second line\n"
-        );
+        assert!(text.ends_with("}\n") && text.lines().count() == 1);
+        let line: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+        assert_eq!(line["attrs"]["text"], "update app-1: begin second line");
         std::fs::write(
             dir.path().join("app.log"),
             vec![b'x'; (LOG_ROTATE_BYTES + 1) as usize],
@@ -2017,9 +2041,41 @@ mod tests {
         .unwrap();
         append_log(dir.path(), "after", now).unwrap();
         assert!(dir.path().join("app.log.1").exists());
+        let after: serde_json::Value = serde_json::from_str(
+            std::fs::read_to_string(dir.path().join("app.log"))
+                .unwrap()
+                .trim(),
+        )
+        .unwrap();
+        assert_eq!(after["attrs"]["text"], "after");
+    }
+
+    // Epic 53 story 53.01 T02: an app.log line has the shared schema's fields, its level
+    // from applog's prefix, and its text scrubbed with the shared list.
+    #[test]
+    fn an_app_log_line_is_a_shared_schema_line() {
+        let now = UNIX_EPOCH + Duration::from_secs(1_792_819_800);
+        let line: serde_json::Value = serde_json::from_str(&log_line(
+            "warn: the order's state: open /Users/sara/x?token=abc (denied)",
+            now,
+        ))
+        .unwrap();
+        assert_eq!(line["level"], "warn");
+        assert_eq!(line["service"], "desktop");
+        assert_eq!(line["msg"], "raw_line");
+        assert_eq!(line["ts"], "2026-10-24T05:30:00Z");
+        assert!(line["app_version"].is_string() && line["platform"].is_string());
         assert_eq!(
-            std::fs::read_to_string(dir.path().join("app.log")).unwrap(),
-            "2026-10-24T05:30:00Z after\n"
+            line["attrs"]["text"],
+            "the order's state: open ~/x?token=[REDACTED] (denied)"
         );
+        let panic: serde_json::Value =
+            serde_json::from_str(&log_line("error: panic in thread main: boom", now)).unwrap();
+        assert_eq!(
+            (panic["level"].as_str(), panic["msg"].as_str()),
+            (Some("error"), Some("panic"))
+        );
+        let info: serde_json::Value = serde_json::from_str(&log_line("plain words", now)).unwrap();
+        assert_eq!(info["level"], "info");
     }
 }

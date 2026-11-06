@@ -27,15 +27,16 @@ Python services emerge this module is the obvious thing to lift into
 
 from __future__ import annotations
 
-import functools
 import logging
-import re
+import os
 import sys
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
 from contextlib import contextmanager, suppress
 from typing import Any
 
 import structlog
+
+from . import redact as _redact
 
 __all__ = [
     "DEFAULT_REDACTED_FIELDS",
@@ -48,6 +49,7 @@ __all__ = [
     "REDACTED_VALUE",
     "SCRUBBED_VALUE",
     "TRUNCATION_SUFFIX",
+    "bind_component",
     "bind_job_id",
     "bind_request_id",
     "bind_session_id",
@@ -63,60 +65,20 @@ __all__ = [
 
 
 #: Sensitive attribute keys (case-insensitive) whose values are masked
-#: before emission. Mirrors ``shared/log/go``'s ``DefaultRedactedFields``.
-DEFAULT_REDACTED_FIELDS: tuple[str, ...] = (
-    "password",
-    "passwd",
-    "pwd",
-    "secret",
-    "token",
-    "access_token",
-    "refresh_token",
-    "id_token",
-    "api_key",
-    "apikey",
-    "authorization",
-    "auth",
-    "cookie",
-    "set_cookie",
-    "session_cookie",
-    "private_key",
-    "client_secret",
-    "credit_card",
-    "card_number",
-    "cvv",
-    "ssn",
-)
+#: before emission: the shared list's ``keys`` (``shared/redact/rules.json``, Epic 53
+#: story 53.01), the same as ``shared/log/go``'s ``DefaultRedactedFields``.
+DEFAULT_REDACTED_FIELDS: tuple[str, ...] = tuple(_redact.RULES.raw["keys"])
 
-REDACTED_VALUE = "***REDACTED***"
+REDACTED_VALUE: str = _redact.RULES.key_mask
 
 #: A string-valued key *containing* one of these is masked too (``plex_token``,
 #: ``x_plex_token``, ``db_password``, ``database_url``). Only string values: a numeric
 #: ``max_tokens`` / ``tokens_used`` is a count, not a secret.
-REDACTED_KEY_PARTS: tuple[str, ...] = (
-    "token",
-    "secret",
-    "password",
-    "passwd",
-    "dsn",
-    "database_url",
-    "api_key",
-    "apikey",
-    "private_key",
-)
+REDACTED_KEY_PARTS: tuple[str, ...] = _redact.RULES.key_parts
 
 #: What a secret inside a string value is replaced with (the key-level mask keeps
 #: :data:`REDACTED_VALUE`).
-SCRUBBED_VALUE = "***"
-
-# ``X-Plex-Token=abc``, ``?token=abc``, ``&sig=abc``, ``access_token=abc``,
-# ``password=abc`` in a URL query, a header dump or an exception text
-_SECRET_PARAM_RE = re.compile(
-    r"(?i)(?<![\w-])([\w-]*(?:token|password|passwd|secret|api_?key)|sig|signature)"
-    r"=([\"']?)([^&\s\"'<>,;]+)"
-)
-# ``scheme://user:pass@host`` (a DSN, an authenticated share URL): the password goes
-_URL_USERINFO_RE = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://[^/\s:@]*):([^/\s@]+)@")
+SCRUBBED_VALUE: str = _redact.RULES.value_mask
 
 #: Upper bound on the ``msg`` (a.k.a. structlog ``event``) field. The OS
 #: pipe buffer is 64 KiB on Linux; we leave ~4 KiB for the surrounding
@@ -196,7 +158,8 @@ def init(
     # Stash the per-service base fields on the contextvar scope so every
     # logger returned by get_logger() — not just the one returned here —
     # picks them up via the merge_contextvars processor.
-    structlog.contextvars.bind_contextvars(service=service, version=version, env=env)
+    node = os.environ.get("MAKTABA_NODE_ID", "").strip() or "home"
+    structlog.contextvars.bind_contextvars(service=service, version=version, env=env, node=node)
     return structlog.get_logger()
 
 
@@ -245,7 +208,14 @@ def bind_video_id(video_id: str) -> Iterator[None]:
 
 @contextmanager
 def bind_user_id(user_id: str) -> Iterator[None]:
+    """Lines in the scope name the user by ``user_h`` (their hash), never the id."""
     yield from _bind("user_id", user_id)
+
+
+@contextmanager
+def bind_component(component: str) -> Iterator[None]:
+    """Lines in the scope carry ``component``: the Epic 51 catalog id of the work."""
+    yield from _bind("component", component)
 
 
 def _bind(key: str, value: str) -> Iterator[None]:
@@ -298,9 +268,14 @@ def _redact_in_place(
     event_dict: MutableMapping[str, Any],
     redact_set: frozenset[str],
 ) -> MutableMapping[str, Any]:
+    if "user_id" in event_dict:
+        # a person is named by their hash only (story 53.01 §3); no key, no id
+        user_h = _redact.hash_user(event_dict.pop("user_id"))
+        if user_h:
+            event_dict["user_h"] = user_h
     for key, value in list(event_dict.items()):
         lowered = key.lower()
-        if lowered in redact_set or (isinstance(value, str) and _key_looks_secret(lowered)):
+        if lowered in redact_set or _redact.RULES.key_sensitive(lowered, isinstance(value, str)):
             event_dict[key] = REDACTED_VALUE
         elif isinstance(value, str):
             scrubbed = scrub_secrets(value)
@@ -309,23 +284,12 @@ def _redact_in_place(
     return event_dict
 
 
-@functools.lru_cache(maxsize=1024)
-def _key_looks_secret(lowered: str) -> bool:
-    return any(part in lowered for part in REDACTED_KEY_PARTS)
-
-
 def scrub_secrets(text: str) -> str:
-    """``text`` with secret query/header parameters and URL passwords replaced by
-    :data:`SCRUBBED_VALUE`; the very same object when there is nothing to scrub (the
-    common case costs two ``in`` checks)."""
-    if "=" not in text and "@" not in text:
-        return text
-    out = text
-    if "=" in out:
-        out = _SECRET_PARAM_RE.sub(lambda m: f"{m.group(1)}={m.group(2)}{SCRUBBED_VALUE}", out)
-    if "@" in out:
-        out = _URL_USERINFO_RE.sub(lambda m: f"{m.group(1)}:{SCRUBBED_VALUE}@", out)
-    return text if out == text else out
+    """``text`` with the shared value rules applied (``shared/redact/rules.json``):
+    credentials in query strings, URL passwords, JWTs, bearer tokens, emails, home
+    directories, card numbers and the host part of IP addresses; the very same object
+    when there is nothing to scrub."""
+    return _redact.scrub(text)
 
 
 def _scrub_exception(

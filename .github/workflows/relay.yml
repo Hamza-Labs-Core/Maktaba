@@ -30,6 +30,8 @@ on:
     branches: [main]
     paths:
       - 'cloud/**'
+      # the shared logger the cloud builds with (Epic 53 story 53.01)
+      - 'shared/log/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
     tags:
@@ -37,6 +39,8 @@ on:
   pull_request:
     paths:
       - 'cloud/**'
+      # the shared logger the cloud builds with (Epic 53 story 53.01)
+      - 'shared/log/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and

@@ -13,6 +13,7 @@
 // production build both work without ifdefs.
 
 import { CLIENT_HEADER, clientHeaderValue } from "./clientHeader";
+import { logApiFailure } from "./errorLog";
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
@@ -75,6 +76,8 @@ export function retryAfterSeconds(value: string | null | undefined): number | un
 function logApiError(method: string, path: string, status: number, detail: string): void {
   const where = path.split("?")[0];
   console.error(`[api] ${method} ${where} failed (${status}): ${detail}`);
+  // the log ring (Epic 53 story 53.01): the route's pattern and the status only
+  logApiFailure(method, where, status);
 }
 
 // Epic 35 (story 35.10): a node answers 503 {code: "paused"} when its code
