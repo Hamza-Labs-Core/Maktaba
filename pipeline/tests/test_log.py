@@ -224,3 +224,12 @@ def test_redaction_scrubs_the_rendered_traceback() -> None:
     rec = _emit_one(emit)
     assert "hunter2" not in rec["exception"]
     assert "postgres://[REDACTED]@db/maktaba" in rec["exception"]
+
+
+@pytest.mark.unit
+def test_the_supervisors_format_asks_for_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Epic 53 story 53.02: MAKTABA_LOG_FORMAT=json makes a dev logger write JSON."""
+    monkeypatch.setenv("MAKTABA_LOG_FORMAT", "json")
+    init(service="pipeline", env="dev", version="v0")
+    rec = _emit_one(lambda: get_logger().info("stage_done"))
+    assert rec["msg"] == "stage_done" and rec["service"] == "pipeline"

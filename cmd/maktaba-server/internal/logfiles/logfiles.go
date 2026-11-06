@@ -471,3 +471,11 @@ func Raw(es []Entry) []byte {
 	}
 	return b.Bytes()
 }
+
+// Guess is what a plain line says of itself, as the logs page reads it: its time (zero when
+// it has none) and its level ("" when it names none; a Go panic or a Python traceback is
+// "error"). The log keeper (Epic 53 story 53.02) wraps such lines with them.
+func Guess(line string) (time.Time, string) {
+	e := parse(line, "")
+	return e.t, e.Level
+}

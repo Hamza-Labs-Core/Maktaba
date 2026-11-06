@@ -160,9 +160,22 @@ type Reconciler struct {
 	updates  chan desiredUpdate
 	passes   int
 	loopsCtx context.Context
-	health   map[string]*compHealth // story 51.14: transitions and last errors, by component
-	rssAt    time.Time              // the last RSS sample
-	rss      map[string]int64       // by component, MB, as last written (hysteresis: rssMoved)
+	health   map[string]*compHealth    // story 51.14: transitions and last errors, by component
+	rssAt    time.Time                 // the last RSS sample
+	rss      map[string]int64          // by component, MB, as last written (hysteresis: rssMoved)
+	phases   map[string]ComponentPhase // the last pass's phase of each component (Phases)
+}
+
+// Phases is each component's phase and reason as the last pass found them (Epic 53 story
+// 53.03: /status.json reads off from here, without Postgres).
+func (r *Reconciler) Phases() map[string]ComponentPhase {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]ComponentPhase, len(r.phases))
+	for k, v := range r.phases {
+		out[k] = v
+	}
+	return out
 }
 
 // compHealth is what the status rows' detail carries of one component beyond its phase
@@ -1003,10 +1016,23 @@ func (r *Reconciler) loopPhase(l *Loop) string {
 // report writes the status rows when they changed since the last write (an idle machine
 // writes nothing: N12). A failed write is tried again after statusRetry.
 func (r *Reconciler) report(ctx context.Context, decs map[string]decision) {
+	rows := r.rows(decs)
+	r.mu.Lock()
+	r.phases = make(map[string]ComponentPhase, len(rows))
+	for _, row := range rows {
+		ph := ComponentPhase{Phase: row.Phase}
+		for _, c := range row.Conditions {
+			if c.Reason != "" {
+				ph.Reason = c.Reason
+				break
+			}
+		}
+		r.phases[row.ID] = ph
+	}
+	r.mu.Unlock()
 	if r.Status == nil {
 		return
 	}
-	rows := r.rows(decs)
 	now := r.Now()
 	r.mu.Lock()
 	prev := r.written
