@@ -2861,50 +2861,6 @@
     {
       "bundles": [],
       "conflicts": [],
-      "desc_key": "components.lang.hunspell.ms.desc",
-      "drain": {
-        "checkpoint": false,
-        "grace_s": 30
-      },
-      "features": [],
-      "gated": false,
-      "group": "languages",
-      "id": "lang.hunspell.ms",
-      "in_payload": false,
-      "kind": "asset",
-      "licence": "",
-      "loops": [],
-      "placement": "any",
-      "platforms": [
-        "darwin-arm64",
-        "windows-amd64",
-        "linux-amd64",
-        "linux-arm64"
-      ],
-      "processes": [],
-      "requires": [
-        [
-          "runtime.lang"
-        ]
-      ],
-      "resources": {
-        "disk_mb": 0,
-        "gpu": "",
-        "ram_mb": 0
-      },
-      "settings": [],
-      "since": "0.3.82",
-      "source": "pack:lang.hunspell.ms",
-      "sources": {},
-      "stages": [],
-      "stop_grace_s": 0,
-      "switchable": true,
-      "title_key": "components.lang.hunspell.ms.title",
-      "wants": []
-    },
-    {
-      "bundles": [],
-      "conflicts": [],
       "desc_key": "components.lang.hunspell.sv.desc",
       "drain": {
         "checkpoint": false,
@@ -3061,7 +3017,6 @@
     "lang.hunspell.tr",
     "lang.hunspell.ru",
     "lang.hunspell.id",
-    "lang.hunspell.ms",
     "lang.hunspell.sv",
     "lang.hunspell.pl"
   ],

@@ -6196,8 +6196,6 @@
   "components.lang.hunspell.ru.desc": "The Hunspell dictionary for Russian: word review checks transcripts in this language with it.",
   "components.lang.hunspell.id.title": "Indonesian dictionary",
   "components.lang.hunspell.id.desc": "The Hunspell dictionary for Indonesian: word review checks transcripts in this language with it.",
-  "components.lang.hunspell.ms.title": "Malay dictionary",
-  "components.lang.hunspell.ms.desc": "The Hunspell dictionary for Malay: word review checks transcripts in this language with it.",
   "components.lang.hunspell.sv.title": "Swedish dictionary",
   "components.lang.hunspell.sv.desc": "The Hunspell dictionary for Swedish: word review checks transcripts in this language with it.",
   "components.lang.hunspell.pl.title": "Polish dictionary",

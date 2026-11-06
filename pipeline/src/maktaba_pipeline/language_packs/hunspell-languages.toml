@@ -95,15 +95,6 @@ ar = "الإندونيسية"
 licence = "LGPL-3.0-or-later"
 
 [[language]]
-code = "ms"
-folder = "ms"
-files = "ms_MY"
-script = "Latn"
-en = "Malay"
-ar = "الملايوية"
-licence = "GPL-2.0-or-later"
-
-[[language]]
 code = "sv"
 folder = "sv_SE"
 files = "sv_SE"

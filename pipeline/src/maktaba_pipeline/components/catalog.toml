@@ -972,20 +972,6 @@ bundles    = []
 since      = "0.3.82"
 
 [[component]]
-id         = "lang.hunspell.ms"
-kind       = "asset"
-group      = "languages"
-title_key  = "components.lang.hunspell.ms.title"
-desc_key   = "components.lang.hunspell.ms.desc"
-requires   = ["runtime.lang"]
-# LibreOffice's ms dictionary (GPL-2.0-or-later)
-source     = "pack:lang.hunspell.ms"
-in_payload = false
-platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
-bundles    = []
-since      = "0.3.82"
-
-[[component]]
 id         = "lang.hunspell.sv"
 kind       = "asset"
 group      = "languages"
