@@ -210,6 +210,9 @@ describe("VideoDetail actions", () => {
     );
     expect(await screen.findByText("Added to the queue")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Add to queue/ }));
-    expect(post).toHaveBeenLastCalledWith("/api/me/play-queues/Q/items", { video_ids: ["v2"], where: "end" });
+    expect(post).toHaveBeenLastCalledWith("/api/me/play-queues/Q/items", {
+      video_ids: ["v2"],
+      where: "end",
+    });
   });
 });

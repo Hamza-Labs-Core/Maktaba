@@ -21,7 +21,8 @@ export function deviceLabel(id: string | undefined, t: (k: string) => string): s
   if (!id) return "";
   if (id.startsWith("web")) return t("devices.kind.web");
   if (id.startsWith("tv")) return t("devices.kind.tv");
-  if (id.startsWith("phone") || id.startsWith("android") || id.startsWith("ios")) return t("devices.kind.phone");
+  if (id.startsWith("phone") || id.startsWith("android") || id.startsWith("ios"))
+    return t("devices.kind.phone");
   return id;
 }
 
@@ -35,7 +36,8 @@ export function ContinueQueue({ now = () => Date.now() }: { now?: () => number }
       .then((x) => {
         if (!live || !x) return;
         const used = x.used_at ? Date.parse(x.used_at) : NaN;
-        if (Number.isFinite(used) && now() - used <= CONTINUE_QUEUE_WITHIN_MS && currentItem(x)) setQ(x);
+        if (Number.isFinite(used) && now() - used <= CONTINUE_QUEUE_WITHIN_MS && currentItem(x))
+          setQ(x);
       })
       .catch(() => {
         /* an older server, or none: no row */
@@ -49,7 +51,11 @@ export function ContinueQueue({ now = () => Date.now() }: { now?: () => number }
   const title = cur.title || cur.filename || "";
   const device = deviceLabel(q.device_id, t);
   return (
-    <section className="mkt-continue-queue" aria-label={t("home.continueQueue")} data-testid="row-continue-queue">
+    <section
+      className="mkt-continue-queue"
+      aria-label={t("home.continueQueue")}
+      data-testid="row-continue-queue"
+    >
       <h2 className="mkt-row__title">{t("home.continueQueue")}</h2>
       <Button
         variant="secondary"
@@ -61,8 +67,7 @@ export function ContinueQueue({ now = () => Date.now() }: { now?: () => number }
           }
         }}
       >
-        ▶{" "}
-        <bdi>{device ? t("home.continueQueue.from", { title, device }) : title}</bdi>
+        ▶ <bdi>{device ? t("home.continueQueue.from", { title, device }) : title}</bdi>
       </Button>
     </section>
   );

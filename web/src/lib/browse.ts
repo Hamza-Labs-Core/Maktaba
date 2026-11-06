@@ -88,14 +88,24 @@ export interface HomeResponse {
 
 /** A collection promoted to a row, with its first videos. */
 export interface CollectionRow {
-  collection: { id: string; name: string; library: { id: string; name: string }; source_kind?: string };
+  collection: {
+    id: string;
+    name: string;
+    library: { id: string; name: string };
+    source_kind?: string;
+  };
   items: VideoCard[];
 }
 
 const collectionRows = (v: unknown): CollectionRow[] =>
   (Array.isArray(v) ? v : [])
-    .filter((r) => r && typeof r === "object" && typeof (r as CollectionRow).collection?.id === "string")
-    .map((r) => ({ collection: (r as CollectionRow).collection, items: cards((r as CollectionRow).items) }));
+    .filter(
+      (r) => r && typeof r === "object" && typeof (r as CollectionRow).collection?.id === "string"
+    )
+    .map((r) => ({
+      collection: (r as CollectionRow).collection,
+      items: cards((r as CollectionRow).items),
+    }));
 
 export interface LibrarySummary {
   id: string;

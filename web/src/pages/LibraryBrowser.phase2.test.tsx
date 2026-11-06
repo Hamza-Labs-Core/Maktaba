@@ -202,14 +202,23 @@ describe("LibraryBrowser, Phase 2", () => {
     expect(await screen.findByText("player")).toBeInTheDocument();
     expect(post).toHaveBeenCalledWith(
       "/api/me/play-queues",
-      expect.objectContaining({ source: expect.objectContaining({ kind: "library", id: LIB }), shuffle: true })
+      expect.objectContaining({
+        source: expect.objectContaining({ kind: "library", id: LIB }),
+        shuffle: true,
+      })
     );
   });
 
   // Epic 56 story 56.09 T07: Save as smart playlist takes the grid's filters and sort
   it("Save as smart playlist posts the grid's filters, sort and the limit", async () => {
     serve();
-    post.mockResolvedValue({ id: "sp1", name: "X unwatched", kind: "smart", videos: 0, poster_video_ids: [] });
+    post.mockResolvedValue({
+      id: "sp1",
+      name: "X unwatched",
+      kind: "smart",
+      videos: 0,
+      poster_video_ids: [],
+    });
     renderGrid(`/library/${LIB}?watched=unwatched&speaker=X&sort=title&order=asc`);
     await screen.findByText("الدرس الأول");
     const user = userEvent.setup();

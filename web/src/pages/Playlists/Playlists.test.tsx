@@ -175,7 +175,11 @@ describe("PlaylistPage", () => {
     expect(await screen.findByText("player")).toBeInTheDocument();
     expect(post).toHaveBeenCalledWith(
       "/api/me/play-queues",
-      expect.objectContaining({ source: { kind: "playlist", id: "p1" }, shuffle: false, start_video_id: "b" })
+      expect.objectContaining({
+        source: { kind: "playlist", id: "p1" },
+        shuffle: false,
+        start_video_id: "b",
+      })
     );
     expect(readServerQueue()?.current_pos).toBe(1);
   });
@@ -243,7 +247,13 @@ describe("PlaylistPage", () => {
       playlist: {
         ...P1,
         kind: "smart",
-        smart_query: { libraries: ["L1"], filters: { watched: "unwatched", speaker: "X" }, sort: "created_at", order: "desc", limit: 50 },
+        smart_query: {
+          libraries: ["L1"],
+          filters: { watched: "unwatched", speaker: "X" },
+          sort: "created_at",
+          order: "desc",
+          limit: 50,
+        },
       },
       items: DETAIL.items,
     });
@@ -261,13 +271,19 @@ describe("PlaylistPage", () => {
 
   it("the rules read in Arabic", async () => {
     get.mockResolvedValue({
-      playlist: { ...P1, kind: "smart", smart_query: { libraries: null, filters: { watched: "unwatched" }, limit: 50 } },
+      playlist: {
+        ...P1,
+        kind: "smart",
+        smart_query: { libraries: null, filters: { watched: "unwatched" }, limit: 50 },
+      },
       items: [],
     });
     localStorage.setItem("mkt:locale", "ar");
     open();
     await screen.findByRole("heading", { name: "رمضان" });
-    expect(screen.getByLabelText(ar["playlists.smart.rules"])).toHaveTextContent(ar["playlists.smart.rule.unwatched"]);
+    expect(screen.getByLabelText(ar["playlists.smart.rules"])).toHaveTextContent(
+      ar["playlists.smart.rule.unwatched"]
+    );
     expect(screen.getByText(ar["playlists.smart.empty"])).toBeInTheDocument();
     localStorage.clear();
   });

@@ -97,6 +97,10 @@ When a lesson series explains a book, looks the book up once and lets its subjec
 
 Finds curated playlists that cut across shows (a "file" on one subject) and keeps each as its own collection. An episode keeps its season. Runs after **Place episodes** and feeds **Clip groups** and the channel plan.
 
+### Collections from YouTube {#youtube-collections}
+
+Makes a collection from each YouTube playlist a library's videos came from (three videos or more), unless the playlist is exactly a season or a topic collection, and one from each channel when a library holds videos of several channels. It keeps them in step with YouTube: an admin's name, hidden flag and rows stay. Runs after **Topic collections**.
+
 ### Promo links {#promo-links}
 
 Links each promo, trailer or teaser to the show it advertises, so channels can air it near that show. Runs after **Place episodes** and feeds **Clip groups** and the channel plan.
@@ -120,6 +124,10 @@ Plex extension. Keeps one Plex collection per season in step with Maktaba's seas
 ### Plex topic and clip collections {#plex-groups}
 
 Plex extension. Writes the topic collections and clip groups as Plex collections, and removes the ones that are gone. It writes to Plex and offers **Review first**. Runs after **Topic collections**, **Clip groups** and **Plex index**.
+
+### Read Plex collections {#plex-collections-import}
+
+Plex extension. Copies each Plex collection of a linked library into Maktaba, in Plex's order, with the videos that are in Maktaba (the others are counted on Manage libraries). Collections Maktaba wrote to Plex are not read back. Runs after **Plex index**.
 
 ### dizqueTV show {#dizquetv-show}
 

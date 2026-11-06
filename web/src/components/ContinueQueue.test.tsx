@@ -73,7 +73,9 @@ describe("ContinueQueue", () => {
     localStorage.setItem("mkt:locale", "ar");
     get.mockResolvedValue(queue("2026-11-06T11:50:00Z"));
     open();
-    expect(await screen.findByRole("heading", { name: ar["home.continueQueue"] })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: ar["home.continueQueue"] })
+    ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Lesson 3 · من هاتف/ })).toBeInTheDocument();
   });
 });

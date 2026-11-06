@@ -36,7 +36,8 @@ function BigContinueQueue() {
     fetchCurrentQueue()
       .then((x) => {
         const used = x?.used_at ? Date.parse(x.used_at) : NaN;
-        if (live && x && Number.isFinite(used) && Date.now() - used <= CONTINUE_QUEUE_WITHIN_MS) setQ(x);
+        if (live && x && Number.isFinite(used) && Date.now() - used <= CONTINUE_QUEUE_WITHIN_MS)
+          setQ(x);
       })
       .catch(() => undefined);
     return () => {
@@ -48,7 +49,11 @@ function BigContinueQueue() {
   const title = cur.title || cur.filename || "";
   const device = deviceLabel(q.device_id, t);
   return (
-    <div className="bs-hero__actions" data-bs-group="continue-queue" data-testid="big-continue-queue">
+    <div
+      className="bs-hero__actions"
+      data-bs-group="continue-queue"
+      data-testid="big-continue-queue"
+    >
       <button
         type="button"
         className="bs-btn bs-btn--primary"

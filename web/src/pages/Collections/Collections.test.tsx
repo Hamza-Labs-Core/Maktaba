@@ -200,14 +200,20 @@ describe("CollectionPage", () => {
     patch.mockResolvedValue({});
     renderOne("c1", adminUser);
     const user = userEvent.setup();
-    await user.click(await screen.findByRole("checkbox", { name: en["collections.showOnLibrary"] }));
+    await user.click(
+      await screen.findByRole("checkbox", { name: en["collections.showOnLibrary"] })
+    );
     expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { show_on_library: true });
     await user.click(screen.getByRole("checkbox", { name: en["collections.showOnHome"] }));
     expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { show_on_home: true });
     await user.click(screen.getByRole("checkbox", { name: en["collections.hide"] }));
     expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { hidden: true });
     await user.type(screen.getByLabelText(en["collections.renameDisplay"]), "Ramadan");
-    await user.click(screen.getByRole("button", { name: `${en["common.save"]}: ${en["collections.renameDisplay"]}` }));
+    await user.click(
+      screen.getByRole("button", {
+        name: `${en["common.save"]}: ${en["collections.renameDisplay"]}`,
+      })
+    );
     expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { name_override: "Ramadan" });
   });
 
@@ -221,9 +227,13 @@ describe("CollectionPage", () => {
     expect(
       screen.queryByRole("button", { name: en["libraries.moveUp"].replace("{name}", "Lesson 2") })
     ).toBeNull();
-    await userEvent.setup().click(screen.getByRole("button", { name: en["collections.duplicate"] }));
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: en["collections.duplicate"] }));
     expect(post).toHaveBeenCalledWith("/api/collections/c1/duplicate", {});
-    await waitFor(() => expect(screen.getAllByTestId("loc").at(-1)).toHaveTextContent("/collections/c9"));
+    await waitFor(() =>
+      expect(screen.getAllByTestId("loc").at(-1)).toHaveTextContent("/collections/c9")
+    );
   });
 
   it("a viewer has no collection settings", async () => {
