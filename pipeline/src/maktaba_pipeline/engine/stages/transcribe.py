@@ -59,6 +59,7 @@ import re
 import subprocess
 import sys
 import time
+from collections.abc import Sequence
 from datetime import UTC, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -798,6 +799,7 @@ def _refine(
     share: Path | None = None,
     settings: WhisperSettings | None = None,
     beside_whisper: bool = True,
+    vocabulary: Sequence[str] = (),
 ) -> dict[str, Any]:
     """The second listen (in a thread: it decodes on the GPU). The model comes from
     Hugging Face or, on a machine without the licence, from the home's copy on the share
@@ -825,7 +827,7 @@ def _refine(
     extra = {"source": source, **({"runtime": str(runtime)} if runtime else {})}
     try:
         spelling = dictionary()
-        stats = refine(result, audio, rec, spelling, model).as_dict()
+        stats = refine(result, audio, rec, spelling, model, vocabulary).as_dict()
     except Exception as exc:  # noqa: BLE001 - each stretch is merged whole: what is done stands
         _log.warning("transcribe.refine_failed", model=model, exc_info=True)
         return {"model": model, **extra, "failed": f"{type(exc).__name__}: {exc}"[:300]}
@@ -884,6 +886,16 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": TRANSCRIBE_VERSION,
         }
     )
+
+
+async def decode_prompt(db: Any, library_id: Any) -> str | None:
+    """What Whisper is given at decode time (Epic 52, story 52.10): the library's own
+    prompt first, never cut, then the vocabulary's most used names and terms within
+    Whisper's 224-token limit. Only :func:`library_prompt` is in the input fingerprint:
+    learning a word never queues the library for transcription again."""
+    from ...word_review.vocabulary import derived_prompt, prompt_terms
+
+    return derived_prompt(await library_prompt(db, library_id), await prompt_terms(db, library_id))
 
 
 async def library_prompt(db: Any, library_id: Any) -> str | None:
@@ -1229,7 +1241,7 @@ async def _transcribe_file(
             async with gpu_turns.use(gpu_turns.WHISPER, refine_model(), settings):
                 result = await _run_saving(
                     db, v, ctx, fingerprint, audio, settings, round(total_sec), scale,
-                    prompt=await library_prompt(db, v.library_id),
+                    prompt=await decode_prompt(db, v.library_id),
                 )  # fmt: skip
     except Exception as exc:  # the model or the GPU: retryable (a restart may fix it)
         raise StageFailure("stt_failed", f"{type(exc).__name__}: {exc}") from exc

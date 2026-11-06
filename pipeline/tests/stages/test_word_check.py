@@ -389,3 +389,31 @@ async def test_the_pack_report_says_what_loaded(db: Database) -> None:
     await registry.load(db)
     rows = {r["code"]: r["state"] for r in await db.fetch("SELECT code, state FROM language_packs")}
     assert rows["ar"] == "loaded" and rows["en"] == "loaded" and rows["fallback"] == "loaded"
+
+
+@pytest.mark.asyncio
+async def test_vocabulary_does_not_change_the_transcribe_fingerprint(db: Database) -> None:
+    """Learning words never queues the library for transcription again (story 52.10)."""
+    vid, _tid, lib = await _transcript(db, [("قال الشيخ", None, None)])
+    before = await tr.input_fingerprint(db, Subject("video", vid))
+    for i in range(50):
+        await db.execute(
+            "INSERT INTO vocabulary (id, scope, library_id, language, term, key, kind, source,"
+            " uses) VALUES ($1, 'library', $2, 'ar', $3, $3, 'name', 'review', $4)",
+            str(uuid4()), str(lib), f"اسم{i}", i,
+        )  # fmt: skip
+    assert await tr.input_fingerprint(db, Subject("video", vid)) == before
+    got = await tr.decode_prompt(db, lib)
+    assert got is not None and got.startswith("اسم49")  # most used first
+
+
+@pytest.mark.asyncio
+async def test_a_fix_s_revision_moves_the_subtitles_and_the_index(db: Database) -> None:
+    from maktaba_pipeline.engine.stages import index, subtitle_gen
+
+    vid, tid, _ = await _transcript(db, [("قال الشيخ", None, None)])
+    subs = await subtitle_gen.input_fingerprint(db, Subject("video", vid))
+    vec = await index.input_fingerprint(db, Subject("video", vid))
+    await db.execute("UPDATE transcripts SET revision = 1 WHERE id = $1", tid)
+    assert await subtitle_gen.input_fingerprint(db, Subject("video", vid)) != subs
+    assert await index.input_fingerprint(db, Subject("video", vid)) != vec

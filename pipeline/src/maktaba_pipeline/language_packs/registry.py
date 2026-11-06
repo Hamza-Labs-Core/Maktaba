@@ -192,6 +192,17 @@ class Registry:
         return {code: self.version_of(p) for code, p in sorted(self.packs.items())}
 
 
+def packs_by_script(dicts: Path, analyse: Any = None) -> dict[str, LanguagePack]:
+    """The dedicated packs over a folder of ``<code>/`` dictionaries, by their script (the
+    evaluation's packs: no components, no database)."""
+    out: dict[str, LanguagePack] = {}
+    for code, _comp, make in _table(analyse):
+        for script in next((s for c, _x, s in _DEDICATED if c == code), frozenset()):
+            if (dicts / code).is_dir() and script not in out:
+                out[script] = make(dicts / code)
+    return out
+
+
 Builder = Callable[[Path], LanguagePack]
 
 

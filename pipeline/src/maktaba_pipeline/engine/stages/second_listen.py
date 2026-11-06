@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
@@ -212,7 +213,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             backend=str(row["backend"] or ""),
             backend_version=row["backend_version"],
         )
-        refined = await listen(db, result, audio, model)
+        refined = await listen(db, result, audio, model, await speller_terms(db, v.library_id))
         del audio
     finally:
         await budget.release(held)
@@ -239,7 +240,17 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     )
 
 
-async def listen(db: Any, result: Transcript, audio: Any, model: str) -> dict[str, Any]:
+async def speller_terms(db: Any, library_id: Any) -> list[str]:
+    """The vocabulary's spellings the speller prefers (Epic 52, story 52.10)."""
+    from ...word_review.vocabulary import load
+
+    v = await load(db, library_id)
+    return sorted({t for terms in v.terms.values() for t in terms.values()})
+
+
+async def listen(
+    db: Any, result: Transcript, audio: Any, model: str, vocabulary: Sequence[str] = ()
+) -> dict[str, Any]:
     """The second listen on ``result`` (in place), in its turn on the GPU where Whisper and
     it take turns (:mod:`maktaba_pipeline.stt.gpu_turns`). Where they were to share it but
     the GPU has no room beside Whisper after all, they take turns from then on, and this
@@ -258,8 +269,9 @@ async def listen(db: Any, result: Transcript, audio: Any, model: str) -> dict[st
         async with gpu_turns.use(gpu_turns.COHERE, model, settings):
             t0 = asyncio.get_running_loop().time()
             refined = await asyncio.to_thread(
-                tr._refine, result, audio, model, share, settings, beside
-            )
+                tr._refine, result, audio, model, share, settings, beside,
+                **({"vocabulary": list(vocabulary)} if vocabulary else {}),
+            )  # fmt: skip
             seconds = asyncio.get_running_loop().time() - t0
         if refined.get("no_room") and mode == gpu_turns.TOGETHER:
             from ...stt import cohere

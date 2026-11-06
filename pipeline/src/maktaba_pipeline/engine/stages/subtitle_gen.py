@@ -73,11 +73,19 @@ async def _active(db: Any, video_id: Any) -> tuple[str, str, list[tuple[float, f
 
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     t = await db.fetchrow(
-        "SELECT id FROM transcripts WHERE video_id = $1 AND is_active"
-        " ORDER BY created_at DESC LIMIT 1",
+        "SELECT id, COALESCE(revision, 0) AS revision FROM transcripts"
+        " WHERE video_id = $1 AND is_active ORDER BY created_at DESC LIMIT 1",
         uid(subject.id),
     )
-    return canonical_hash({"t": None if t is None else str(t["id"]), "v": SUBTITLE_VERSION})
+    if t is None:
+        return canonical_hash({"t": None, "v": SUBTITLE_VERSION})
+    # Epic 52 (story 52.9): a reviewer's fix bumps the revision, and the files follow. Only
+    # once there is one: a transcript nobody edited keeps the fingerprint it had, so the
+    # release rewrites no subtitle file by itself
+    rev = int(t["revision"])
+    return canonical_hash(
+        {"t": str(t["id"]), **({"revision": rev} if rev else {}), "v": SUBTITLE_VERSION}
+    )
 
 
 def _sha(data: bytes) -> str:

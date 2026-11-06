@@ -75,7 +75,7 @@ __all__ = [
 ]
 
 _ACTIVE_SQL = (
-    "SELECT t.id AS id,"
+    "SELECT t.id AS id, COALESCE(t.revision, 0) AS revision,"
     " (SELECT COUNT(*) FROM transcript_segments s WHERE s.transcript_id = t.id) AS n"
     " FROM transcripts t WHERE t.video_id = $1 AND t.is_active"
     " ORDER BY t.created_at DESC, t.id DESC LIMIT 1"
@@ -137,6 +137,13 @@ async def video_language(db: Any, video_id: UUID | str) -> str | None:
     return None if lang is None else str(lang)
 
 
+async def _revision(db: Any, transcript_id: str) -> int:
+    got = await db.fetchval(
+        "SELECT COALESCE(revision, 0) FROM transcripts WHERE id = $1", transcript_id
+    )
+    return int(got or 0)
+
+
 async def _fingerprint(
     db: Any, video_id: UUID | str, active: tuple[str, int] | None, *, missing: bool = False
 ) -> str:
@@ -149,6 +156,11 @@ async def _fingerprint(
     }
     if missing:
         fields["stored"] = False
+    # Epic 52 (story 52.9): a reviewer's fix bumps the revision; only once there is one, so
+    # a transcript nobody edited keeps its fingerprint
+    rev = await _revision(db, active[0]) if active else 0
+    if rev:
+        fields["revision"] = rev
     return canonical_hash(fields)
 
 
@@ -265,6 +277,18 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         )
         for r in rows
     ]
+    # Epic 52 (story 52.9): a word fix names the sentences it changed: only those are
+    # embedded again (the others' vectors stand)
+    payload = getattr(job, "payload", None) or {}
+    seqs = payload.get("seqs")
+    only = (
+        {int(s) for s in seqs}
+        if isinstance(seqs, list) and payload.get("transcript_id") == transcript_id
+        else None
+    )
+    everything = segments
+    if only is not None:
+        segments = [s for s in segments if s.seq in only]
     language = await video_language(db, v.id)
     size = batch_size()
     total = len(segments)
@@ -322,7 +346,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         if pg is not None:
             # every vector of the video but its active transcript's non-blank segments
             began = time.perf_counter()
-            keep = [s.segment_id for s in segments if s.text.strip()]
+            keep = [s.segment_id for s in everything if s.text.strip()]
             dropped = await pg.keep_only(v.id, keep)
             t.write += time.perf_counter() - began
             stale_count = stale_count or dropped

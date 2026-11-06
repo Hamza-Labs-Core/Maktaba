@@ -419,10 +419,14 @@ def _budget(inp: Inputs, flags: list[Flag], words: int) -> list[Flag]:
     out = sorted(flags, key=lambda f: (f.segment_seq, f.char_start))
     hallucinated = sum(1 for s in inp.sentences if s.no_speech > 0.6 and s.words)
     suspect_share = len(flags) / words if words else 0.0
-    if flags and (
-        (over and over / len(flags) > scoring.POOR_OVER_BUDGET)
-        or (words >= scoring.POOR_MIN_WORDS and suspect_share > scoring.POOR_SUSPECT_SHARE)
-        or hallucinated >= 3
+    if (
+        hallucinated >= 3
+        or flags
+        and (
+            (over and over / len(flags) > scoring.POOR_OVER_BUDGET)
+            or (words >= scoring.POOR_MIN_WORDS and suspect_share > scoring.POOR_SUSPECT_SHARE)
+            or hallucinated >= 3
+        )
     ):
         counts: dict[str, int] = {}
         for f in flags:

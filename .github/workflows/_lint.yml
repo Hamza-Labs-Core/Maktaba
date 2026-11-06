@@ -203,6 +203,24 @@ jobs:
         if: inputs.pipeline
         run: python3 tools/ci/rules_schema_versions.py
 
+      # Epic 52 (story 52.3): word review names no language outside its language packs
+      - name: Word review names no language
+        if: inputs.pipeline
+        run: python3 tools/ci/word_review_languages.py
+
+      # Epic 52 (story 52.2): word review's scoring on the CI gold subset (no model, seconds);
+      # a drop in precision or recall of more than 0.02 needs an Eval-Change trailer
+      - name: Word review evaluation
+        if: inputs.pipeline
+        working-directory: pipeline
+        run: |
+          uv run --frozen python -m maktaba_pipeline.word_review.eval --set ci --out "$RUNNER_TEMP/word-review-eval.json"
+          base=""
+          if git rev-parse --verify -q origin/main >/dev/null; then base="--base-ref origin/main"; fi
+          # shellcheck disable=SC2086
+          python3 ../tools/eval-gate/gate.py --report "$RUNNER_TEMP/word-review-eval.json" \
+            --baseline tests/fixtures/word_review/gold/baseline.json $base
+
       - name: golangci-lint (api)
         if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1
