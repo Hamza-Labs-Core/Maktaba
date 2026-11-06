@@ -233,3 +233,20 @@ def test_the_supervisors_format_asks_for_json(monkeypatch: pytest.MonkeyPatch) -
     init(service="pipeline", env="dev", version="v0")
     rec = _emit_one(lambda: get_logger().info("stage_done"))
     assert rec["msg"] == "stage_done" and rec["service"] == "pipeline"
+
+
+def test_init_watches_the_level_file(monkeypatch, tmp_path):
+    """init() starts one watcher when the supervisor names a level file."""
+    import logging
+
+    import maktaba_pipeline.log as mlog
+
+    started = []
+    monkeypatch.setattr(mlog, "_level_watch", None)
+    monkeypatch.setenv("MAKTABA_LOG_LEVEL_FILE", str(tmp_path / "pipeline"))
+    monkeypatch.setattr(
+        "maktaba_pipeline.log.levelfile.watch", lambda base, apply: started.append(base) or object()
+    )
+    mlog.init(service="pipeline", level=logging.INFO)
+    mlog.init(service="pipeline", level=logging.INFO)
+    assert started == [logging.INFO]

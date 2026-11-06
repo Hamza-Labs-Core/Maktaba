@@ -51,7 +51,12 @@ function SettingsInner() {
   };
   useEffect(() => {
     getRetention()
-      .then(take)
+      .then((x) => {
+        // an answer that is not the settings document (an older server) is not shown
+        if (!x || typeof x.logs_days !== "number" || !x.used || !x.ranges)
+          throw new Error("no settings");
+        take({ ...x, detailed: x.detailed ?? {} });
+      })
       .catch(() => setErr(t("logs.settings.loadError")));
   }, [t]);
 
