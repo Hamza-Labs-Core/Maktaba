@@ -85,9 +85,12 @@ func TestHomeCacheStaleOnError(t *testing.T) {
 	if _, err := c.BySlug(ctx, "idle"); !errors.Is(err, down) {
 		t.Errorf("not served for over an hour: %v", err)
 	}
+	waitOn(t, "the background refreshes", func() bool { return l.reads.Load() >= 4 })
 	l.set(stores.ErrServerNotFound, "")
-	if _, err := c.BySlug(ctx, "acme"); !errors.Is(err, stores.ErrServerNotFound) || c.Len() != 1 {
-		t.Errorf("not found: %v, %d left", err, c.Len())
+	_, _ = c.BySlug(ctx, "acme") // served stale; the refresh finds it gone
+	waitOn(t, "a removed home dropped", func() bool { return c.Len() == 1 })
+	if _, err := c.BySlug(ctx, "acme"); !errors.Is(err, stores.ErrServerNotFound) {
+		t.Errorf("not found: %v", err)
 	}
 }
 
@@ -109,10 +112,8 @@ func TestHomeCacheBoundsAndInvalidation(t *testing.T) {
 		t.Errorf("an invalidated entry was not read again: %d", l.reads.Load())
 	}
 	c.Expire()
-	_, _ = c.BySlug(ctx, "c")
-	if l.reads.Load() != 5 {
-		t.Errorf("an expired entry was not read again: %d", l.reads.Load())
-	}
+	_, _ = c.BySlug(ctx, "c") // served, read again in the background
+	waitOn(t, "an expired entry read again", func() bool { return l.reads.Load() == 5 })
 	if !c.Warm() {
 		t.Error("warm")
 	}
@@ -128,8 +129,8 @@ func (l *slowLookup) BySlug(ctx context.Context, _ string) (stores.Server, error
 	return stores.Server{}, ctx.Err()
 }
 
-// The rehearsal's db-blip: a known home's request waits at most a second on
-// a database that vanished, and for the next 5 s not at all.
+// The rehearsal's db-blip: a known home's request never waits on a database
+// that vanished; the read happens in the background.
 func TestHomeCacheDoesNotWaitOnAVanishedDatabase(t *testing.T) {
 	clock := time.Now()
 	l := &countingLookup{plan: "pro"}
@@ -143,12 +144,9 @@ func TestHomeCacheDoesNotWaitOnAVanishedDatabase(t *testing.T) {
 	if sv, err := c.BySlug(ctx, "acme"); err != nil || sv.Plan != "pro" {
 		t.Fatalf("stale entry: %+v %v", sv, err)
 	}
-	if took := time.Since(start); took > 1500*time.Millisecond {
+	if took := time.Since(start); took > 100*time.Millisecond {
 		t.Errorf("waited %s on the database", took)
 	}
-	start = time.Now()
 	_, _ = c.BySlug(ctx, "acme")
-	if took := time.Since(start); took > 100*time.Millisecond || slow.calls.Load() != 1 {
-		t.Errorf("the next request waited %s (%d reads): the database is known to be away", took, slow.calls.Load())
-	}
+	waitOn(t, "the background read", func() bool { return slow.calls.Load() == 1 })
 }
