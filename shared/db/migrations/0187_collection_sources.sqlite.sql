@@ -64,7 +64,21 @@ ALTER TABLE libraries ADD COLUMN IF NOT EXISTS collection_mode TEXT NOT NULL DEF
     CHECK (collection_mode IN ('tab_only', 'hide_items', 'show_both'));
 -- +goose StatementEnd
 
+-- +goose StatementBegin
+-- the youtube_collections stage (story 56.06), as the pipeline's graph has it
+INSERT INTO job_stages
+    (stage, label, subject_kinds, pool, lane, lane_order, version, debounce_sec,
+     debounce_max_sec, max_attempts, edges, may_request, entry_for, legacy, hidden,
+     external_write, write_mode, placement, enabled, disabled_reason)
+VALUES
+    ('youtube_collections', 'Collections from YouTube', '["library"]', 'cpu', 'seasons', 3, 1, 30, 300, 3, '[]', '[]', '[]', 0, 0, 0, 'auto', 'any', 1, NULL)
+ON CONFLICT (stage) DO NOTHING;
+-- +goose StatementEnd
+
 -- +goose Down
+-- +goose StatementBegin
+DELETE FROM job_stages WHERE stage = 'youtube_collections';
+-- +goose StatementEnd
 -- +goose StatementBegin
 ALTER TABLE libraries DROP COLUMN collection_mode;
 -- +goose StatementEnd
