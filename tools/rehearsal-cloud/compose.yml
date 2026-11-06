@@ -1,0 +1,101 @@
+# The cloud rehearsal's cluster (Epic 50 story 50.06): what the Phase 1 pair runs, on one
+# runner, with nothing outside it. The scenario tests (cloud/rehearsal, -tags
+# cloudrehearsal) bring it up with `docker compose -p <scenario> up`, run the simulated homes
+# and the stream generator on the host against the edge, and break it.
+#
+#   postgres     the cloud database (50.07 replaces it with the Patroni pair and etcd)
+#   relay-blue   this commit's relay, process "a-blue"
+#   relay-green  the same, process "a-green" (its peer: the tunnel directory, 50.04)
+#   edge         Caddy in front of both (deploy/cloud-ha's edge without TLS)
+#
+# The network stands in for the Hetzner private network. Ports are published on
+# 127.0.0.1 only.
+name: maktaba-rehearsal
+
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: 10.50.0.0/24
+
+x-relay: &relay
+  image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+  command: ["serve", "--role", "relay"]
+  restart: "no"
+  stop_grace_period: 160s
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8443/healthz"]
+    interval: 2s
+    timeout: 2s
+    retries: 30
+
+x-relay-env: &relay-env
+  MAKTABA_ENV: rehearsal
+  MAKTABA_CLOUD_LISTEN_ADDR: 0.0.0.0:8443
+  MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@10.50.0.10:5432/maktaba?sslmode=disable
+  MAKTABA_CLOUD_PUBLIC_URL: http://relay.test
+  MAKTABA_CLOUD_RELAY_PUBLIC_HOST: relay.test
+  MAKTABA_CLOUD_TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  MAKTABA_CLOUD_BILLING_PROVIDER: none
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: maktaba
+      POSTGRES_PASSWORD: rehearsal
+      POSTGRES_DB: maktaba
+    networks:
+      private:
+        ipv4_address: 10.50.0.10
+    ports:
+      - "127.0.0.1:${PG_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maktaba -d maktaba"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+
+  relay-blue:
+    <<: *relay
+    environment:
+      <<: *relay-env
+      MAKTABA_NODE_ID: a-blue
+      MAKTABA_CLOUD_RELAY_ID: a-blue
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: 10.50.0.11:8444
+    networks:
+      private:
+        ipv4_address: 10.50.0.11
+
+  relay-green:
+    <<: *relay
+    environment:
+      <<: *relay-env
+      MAKTABA_NODE_ID: a-green
+      MAKTABA_CLOUD_RELAY_ID: a-green
+      MAKTABA_CLOUD_RELAY_PEER_ADDR: 10.50.0.12:8444
+    networks:
+      private:
+        ipv4_address: 10.50.0.12
+
+  edge:
+    image: caddy:2-alpine
+    restart: "no"
+    environment:
+      RELAY_UPSTREAMS: 10.50.0.11:8443 10.50.0.12:8443
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      private:
+        ipv4_address: 10.50.0.20
+    ports:
+      - "127.0.0.1:${EDGE_PORT:-18080}:80"
+    depends_on:
+      relay-blue:
+        condition: service_healthy
+      relay-green:
+        condition: service_healthy

@@ -1,0 +1,22 @@
+# The rehearsal's edge (Epic 50 story 50.06): plain HTTP, the relay processes behind it
+# in order (lb_policy first), each taken out of rotation while its /readyz fails (a
+# draining process answers 503 "draining"). Production's TLS edge is deploy/cloud-ha's.
+{
+	admin 0.0.0.0:2019
+	auto_https off
+}
+
+:80 {
+	reverse_proxy {$RELAY_UPSTREAMS} {
+		lb_policy first
+		lb_try_duration 5s
+		lb_try_interval 100ms
+		health_uri /readyz
+		health_interval 500ms
+		health_timeout 1s
+		health_passes 1
+		health_fails 1
+		fail_duration 2s
+		flush_interval -1
+	}
+}
