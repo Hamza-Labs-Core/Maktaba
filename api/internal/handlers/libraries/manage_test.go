@@ -41,7 +41,8 @@ func manageDB(t *testing.T) *sql.DB {
 	t.Cleanup(func() { _ = db.Close() })
 	for _, s := range []string{
 		`CREATE TABLE libraries (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, roots TEXT NOT NULL,
-			settings TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMP, updated_at TIMESTAMP)`,
+			settings TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMP, updated_at TIMESTAMP,
+			collection_mode TEXT NOT NULL DEFAULT 'tab_only')`,
 		`CREATE TABLE videos (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, content_hash TEXT NOT NULL,
 			path TEXT NOT NULL, state TEXT NOT NULL, UNIQUE (library_id, content_hash))`,
 		`CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, subject_kind TEXT NOT NULL DEFAULT 'video',
