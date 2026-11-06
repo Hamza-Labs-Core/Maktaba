@@ -107,3 +107,21 @@ def test_norm_replaces_ids_hex_numbers_and_paths() -> None:
 
 def test_norm_truncates() -> None:
     assert len(norm("x " * 200)) <= 120
+
+
+@pytest.mark.parametrize(
+    "cause",
+    [
+        "plugin_trap",
+        "plugin_timeout",
+        "plugin_memory",
+        "plugin_capability",
+        "plugin_scope",
+        "plugin_quota",
+        "plugin_failed",
+        "plugin_held",
+    ],
+)
+def test_plugin_causes_are_their_own_codes(cause: str) -> None:
+    """Epic 54 (54.06 §3): a plugin job's end keeps its cause, whatever the message."""
+    assert classify(cause, "wasm backtrace at 0x1f in /x/plugin.wasm") == cause

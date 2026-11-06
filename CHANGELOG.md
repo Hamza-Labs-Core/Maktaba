@@ -211,6 +211,23 @@ build fails when the two differ.
 
 ### Added
 
+- **Plugins, part 2: the plugin API and plugin stages in the queue (Epic 54, stories
+  54.04–54.06).** Still dark until a plugin is installed (part 3). The API serves the plugin
+  API on a unix socket only, never on a network port. Each plugin job gets a token minted
+  from the grants the API stores (the pipeline cannot pass grants), bound to the job, its
+  subject and the admin's libraries, ended when the job ends and refused the moment its
+  grants change. Every call is checked again: the capability, the job's subject or the
+  granted libraries, the field allow-list (a plugin never writes a title, a state or a path),
+  200 calls a second, 64 KB values, a data quota. Every change a plugin makes to tags,
+  chapters, subtitles, posters or details is recorded with its before and after, so it can be
+  listed and undone. Subtitles are read and written again as plain WebVTT; media are handed
+  out as handles on the job's own video (at most twice the file read, 2,000 frames, four times
+  the audio, and a file that changes mid-job answers "changed"). In the queue, plugin stages
+  run in a new Plugins pool (a quarter of the cores), each plugin within its own concurrency,
+  triggered by stable events (video added, audio ready, transcript ready…), and their
+  failures have their own causes in English and Arabic (a crash or a timeout is retried once;
+  a refusal is not; a stopped plugin's jobs wait without spending attempts).
+
 - **Plugins, part 1: the manifest, the package and a sandboxed plugin host (Epic 54, stories
   54.01–54.03).** Nothing runs yet: no plugin can be installed until the next parts. A plugin
   is one `.mkplugin` file (a zstd tar) holding a WebAssembly component, a `manifest.toml` and
