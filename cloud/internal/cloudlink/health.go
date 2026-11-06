@@ -369,17 +369,37 @@ func (s *Supervisor) move(ctx context.Context, p DrainPayload, dial func(context
 	}
 }
 
-// drainPoll is how often a drained tunnel is checked for its last stream.
-var drainPoll = 50 * time.Millisecond
+// drainPoll is how often a drained tunnel is checked for its last stream;
+// drainQuiet how long it must have had no stream and no new request before it
+// closes: the relay may send a request on it until it has registered the new
+// tunnel, and one cut off by the close fails (found by the rehearsal's
+// drain-1k).
+var (
+	drainPoll  = 50 * time.Millisecond
+	drainQuiet = time.Second
+)
 
 // finishDrained lets the old tunnel finish its streams, then closes it with
-// 4000: when it has none, or at the deadline, whichever comes first.
+// 4000: when it has had none (and no new request) for drainQuiet, or at the
+// deadline, whichever comes first.
 func (s *Supervisor) finishDrained(mux *Multiplexer, deadline time.Time) {
 	defer s.setCounters(mux.Stats())
+	moved := time.Now()
 	tk := time.NewTicker(drainPoll)
 	defer tk.Stop()
+	idleSince := time.Time{}
 	for {
-		if mux.Active() == 0 || !time.Now().Before(deadline) {
+		now := time.Now()
+		if mux.Active() == 0 {
+			if idleSince.IsZero() {
+				idleSince = now
+			}
+		} else {
+			idleSince = time.Time{}
+		}
+		quiet := !idleSince.IsZero() && now.Sub(idleSince) >= drainQuiet &&
+			now.Sub(mux.LastRequest()) >= drainQuiet && now.Sub(moved) >= drainQuiet
+		if quiet || !now.Before(deadline) {
 			mux.CloseNormal()
 			return
 		}

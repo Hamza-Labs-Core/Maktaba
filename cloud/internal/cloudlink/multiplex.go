@@ -81,6 +81,10 @@ type Multiplexer struct {
 	inflight atomic.Int64
 	// control receives DRAIN and TICKET frames (the supervisor's)
 	control func(Frame)
+	// lastRequest is when the cloud last sent a request (unix nanos): a
+	// drained tunnel closes only after a quiet spell, so a request the relay
+	// sent just before the new tunnel took over is not cut off
+	lastRequest atomic.Int64
 
 	// counters surfaced via Stats() for the admin state endpoint.
 	bytesIn  atomic.Int64
@@ -108,6 +112,15 @@ func WithControl(fn func(Frame)) MuxOption { return func(m *Multiplexer) { m.con
 
 // Active is how many requests the tunnel is serving right now.
 func (m *Multiplexer) Active() int64 { return m.inflight.Load() }
+
+// LastRequest is when the cloud last sent a request on this tunnel (zero:
+// never).
+func (m *Multiplexer) LastRequest() time.Time {
+	if n := m.lastRequest.Load(); n != 0 {
+		return time.Unix(0, n)
+	}
+	return time.Time{}
+}
 
 // CloseNormal ends a drained tunnel with 4000 normal_closure (when the
 // connection can send a close code), then tears it down as Close does.
@@ -228,6 +241,7 @@ func (m *Multiplexer) dispatch(f Frame) {
 		// Reply to our own keepalive PING (health.go); readLoop already
 		// noted the frame's arrival (lastRead).
 	case KindRequestHead:
+		m.lastRequest.Store(time.Now().UnixNano())
 		m.mu.Lock()
 		m.streams[f.StreamID] = &reqAssembly{head: append([]byte(nil), f.Payload...)}
 		m.mu.Unlock()

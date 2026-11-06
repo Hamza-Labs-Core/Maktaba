@@ -155,18 +155,27 @@ func (d *Deps) Handler() http.Handler {
 			d.Editions.ServeHTTP(w, r)
 			return
 		}
-		t, _ := d.Registry.Lookup(slug)
-		if t != nil && !t.Draining() {
-			d.serve(w, r, sv, t)
-			return
-		}
-		// not here, or only a draining tunnel: a newer one on a peer wins
-		if !hopped && d.forwardIfElsewhere(w, r, slug, t) {
-			return
-		}
-		if t != nil {
-			d.serve(w, r, sv, t)
-			return
+		// a GET whose tunnel closed under it before the home answered (a drained
+		// tunnel the home just left) is routed once more: to the home's new tunnel
+		for attempt := 0; ; attempt++ {
+			t, _ := d.Registry.Lookup(slug)
+			if t != nil && !t.Draining() {
+				if d.serve(w, r, sv, t) && attempt == 0 {
+					continue
+				}
+				return
+			}
+			// not here, or only a draining tunnel: a newer one on a peer wins
+			if !hopped && d.forwardIfElsewhere(w, r, slug, t) {
+				return
+			}
+			if t != nil {
+				if d.serve(w, r, sv, t) && attempt == 0 {
+					continue
+				}
+				return
+			}
+			break
 		}
 		if !d.recentlySeen(sv) {
 			writeErr(w, r, http.StatusServiceUnavailable, "server_offline", "")
@@ -187,14 +196,15 @@ func (d *Deps) Handler() http.Handler {
 
 // serve proxies r through the home's tunnel t: the plan gate, the exchange,
 // metering. Only the relay that owns the tunnel does this, so a forwarded
-// request is metered once.
-func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t *relaypkg.Tunnel) {
+// request is metered once. It reports retry, having written nothing, when
+// the tunnel closed before the home answered a GET or HEAD.
+func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t *relaypkg.Tunnel) (retry bool) {
 	{
 		// Tier gate: the plan's monthly relay allowance.
 		if d.Meter != nil {
 			if err := d.Meter.Allow(r.Context(), sv); err != nil {
 				writeErr(w, r, http.StatusPaymentRequired, "tier_limit", err.Error())
-				return
+				return false
 			}
 		}
 		// No deadline on the exchange: a video plays as long as its client
@@ -224,12 +234,15 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 		}
 		resp, err := t.ProxyWithin(ctx, req, headTimeout)
 		if err != nil {
+			if errors.Is(err, relaypkg.ErrTunnelClosed) && (r.Method == http.MethodGet || r.Method == http.MethodHead) && r.Context().Err() == nil {
+				return true
+			}
 			if errors.Is(err, relaypkg.ErrHeadTimeout) {
 				writeErr(w, r, http.StatusGatewayTimeout, "tunnel_timeout", err.Error())
-				return
+				return false
 			}
 			writeErr(w, r, http.StatusBadGateway, "tunnel_error", err.Error())
-			return
+			return false
 		}
 		// Closing before the home's EOF (the client left) stops the home.
 		defer resp.Body.Close()
@@ -288,6 +301,7 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 			d.Collector.RecordRequest(privacy.CountryFromRequest(r, d.CountryHeader))
 		}
 	}
+	return false
 }
 
 // SlugFromHost is the exported view of slug extraction. The relay role
