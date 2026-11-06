@@ -7,22 +7,45 @@ The analysis stages call :func:`run_media`; a test installs a fake with
 from __future__ import annotations
 
 import asyncio
-import os
 import shutil
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 __all__ = [
-    "FFMPEG",
-    "FFPROBE",
     "ProcResult",
+    "ffmpeg",
+    "ffprobe",
     "reset_runner",
     "run_media",
     "set_runner",
 ]
 
-FFMPEG: str = os.environ.get("MAKTABA_FFMPEG") or shutil.which("ffmpeg") or "ffmpeg"
-FFPROBE: str = os.environ.get("MAKTABA_FFPROBE") or shutil.which("ffprobe") or "ffprobe"
+
+def ffmpeg() -> str:
+    """The ffmpeg to run now (:func:`~maktaba_pipeline.binaries.ffmpeg_binary`, then the
+    PATH's): read at each call, so a ``tool.ffmpeg`` pack installed or updated while the
+    pipeline runs is used without a restart (#637)."""
+    from ..binaries import ffmpeg_binary
+
+    b = ffmpeg_binary()
+    return b if b != "ffmpeg" else (shutil.which("ffmpeg") or "ffmpeg")
+
+
+def ffprobe() -> str:
+    """The ffprobe to run now (as :func:`ffmpeg`)."""
+    from ..binaries import ffprobe_binary
+
+    b = ffprobe_binary()
+    return b if b != "ffprobe" else (shutil.which("ffprobe") or "ffprobe")
+
+
+def __getattr__(name: str) -> str:
+    # media.FFMPEG / media.FFPROBE: the binaries now, not as they were at import
+    if name == "FFMPEG":
+        return ffmpeg()
+    if name == "FFPROBE":
+        return ffprobe()
+    raise AttributeError(name)
 
 
 @dataclass(frozen=True, slots=True)
