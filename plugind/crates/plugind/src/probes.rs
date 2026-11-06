@@ -96,6 +96,13 @@ pub fn run() -> Vec<Probe> {
         "dns",
         ("maktaba-probe.invalid", 80).to_socket_addrs().map(|a| format!("{} addresses", a.count())),
     ));
+    // Windows lets a process in an AppContainer bind loopback and reach its own listener
+    // (both ends are inside the container); no one outside can connect in, since the
+    // container has no inbound capability. There the probe is "local": reported, and not
+    // a way out. Everywhere else the bind itself is refused.
+    #[cfg(windows)]
+    out.push(probe("bind", "local", bind()));
+    #[cfg(not(windows))]
     out.push(probe("bind", "network", bind()));
     #[cfg(target_os = "linux")]
     {

@@ -59,3 +59,10 @@ def test_partial_sandbox(tmp_path: Path) -> None:
     assert run(tmp_path, partial, CONTROL, missing="namespaces") == []
     assert run(tmp_path, partial, CONTROL) != []
     assert run(tmp_path, SANDBOXED, CONTROL, missing="namespaces") != []
+
+
+def test_a_local_probe_may_be_allowed(tmp_path: Path) -> None:
+    local = SANDBOXED + "PROBE bind local ALLOWED bound 127.0.0.1:1, reached from 127.0.0.1:2\n"
+    assert run(tmp_path, local, CONTROL) == []
+    leaked = SANDBOXED + "PROBE bind network ALLOWED bound 127.0.0.1:1\n"
+    assert run(tmp_path, leaked, CONTROL) != []

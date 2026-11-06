@@ -44,7 +44,9 @@ def check(args: argparse.Namespace) -> list[str]:
         errors.append(f"sandbox {level} missing {missing}, expected full")
     for name, kind, verdict, detail in probes:
         print(f"sandboxed {name:16} {kind:8} {verdict} {detail}")
-        if verdict != "DENIED":
+        # "local": a listener only the sandboxed process itself can reach (Windows'
+        # AppContainer loopback); no traffic leaves, as the canary's count proves
+        if verdict != "DENIED" and kind != "local":
             errors.append(f"sandboxed probe {name} was {verdict}: {detail}")
     if args.canary_after_sandboxed != args.canary_before:
         errors.append(
