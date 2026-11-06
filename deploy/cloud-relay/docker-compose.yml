@@ -55,6 +55,10 @@ services:
     image: ghcr.io/hamza-labs-core/maktaba-cloud:${MAKTABA_CLOUD_TAG:-latest}
     restart: *restart
     command: ["serve", "--role", "relay"]
+    # SIGTERM drains the homes' tunnels for up to relay.shutdown_grace (150 s,
+    # Epic 50 story 50.03) before the relay exits; Docker's default 10 s would
+    # SIGKILL it mid-drain and drop every tunnel.
+    stop_grace_period: 160s
     depends_on:
       postgres:
         condition: service_healthy

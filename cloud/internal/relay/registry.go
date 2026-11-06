@@ -3,6 +3,7 @@ package relay
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
 )
 
 // Registry tracks live server connections. The HTTP proxy looks up a
@@ -12,7 +13,12 @@ import (
 // writes only on connect/disconnect — we use sync.RWMutex.
 type Registry struct {
 	mu    sync.RWMutex
-	conns map[string]*Tunnel // keyed by server slug
+	conns map[string]*Tunnel // keyed by server slug: the tunnel new requests take
+	// open is every tunnel not yet closed, a draining one a newer tunnel
+	// replaced included (story 50.03): Shutdown waits for them all
+	open map[*Tunnel]struct{}
+	// closing: the process is shutting down; new tunnels are refused
+	closing atomic.Bool
 
 	// slugLocks serialize a slug's tunnel coming and going with the recording of it
 	// (Up, Down), apart from mu: the recording is a database write, and Lookup is the
@@ -29,7 +35,7 @@ type slugLock struct {
 var ErrNoTunnel = errors.New("relay: no live tunnel for slug")
 
 func NewRegistry() *Registry {
-	return &Registry{conns: make(map[string]*Tunnel), slugLocks: make(map[string]*slugLock)}
+	return &Registry{conns: make(map[string]*Tunnel), open: make(map[*Tunnel]struct{}), slugLocks: make(map[string]*slugLock)}
 }
 
 // lockSlug holds slug's lock until the returned func is called (dropped once no one
@@ -93,16 +99,19 @@ func (r *Registry) Down(slug string, t *Tunnel, record func()) bool {
 	return true
 }
 
-// Register installs a tunnel. If the slug already has a tunnel we
-// close the old one — the new connection wins, on the assumption that
-// the server agent reconnected after a network blip.
+// Register installs a tunnel: new requests for the slug take it. If the
+// slug already has a tunnel the new connection wins: the old one is closed
+// (4003 superseded: the agent reconnected after a blip or a restart) unless
+// it is draining, when it keeps serving the streams it has until the home
+// closes it or its deadline (story 50.03).
 func (r *Registry) Register(slug string, t *Tunnel) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if old, ok := r.conns[slug]; ok && old != t {
+	if old, ok := r.conns[slug]; ok && old != t && !old.Draining() {
 		old.Close()
 	}
 	r.conns[slug] = t
+	r.track(t)
 }
 
 // Unregister removes a tunnel ONLY if it matches the one we know

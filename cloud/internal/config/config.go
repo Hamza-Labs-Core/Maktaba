@@ -121,6 +121,19 @@ type RelayConfig struct {
 	// /play/ and /manage/ on each home's address (Epic 42.9): play/ and manage/, each a
 	// build of web/ (`pnpm build:player:cloud`, `build:remote:cloud`). Empty: none.
 	EditionsDir string
+
+	// Tunnel handover (Epic 50 story 50.03). DrainEnabled: on SIGTERM the relay
+	// sends every home DRAIN and waits for it to move (false: today's close on
+	// shutdown). TicketsEnabled: homes reconnect with a resume ticket instead of
+	// their bearer secret (false: every handshake checks the bearer).
+	DrainEnabled   bool          // relay.drain.enabled, default true
+	TicketsEnabled bool          // relay.ticket.enabled, default true
+	DrainWithin    time.Duration // relay.drain.within, default 5s: open the new tunnel within this
+	DrainDeadline  time.Duration // relay.drain.deadline, default 120s: the old tunnel closes after this
+	DrainRate      int           // relay.drain.rate, default 100: homes sent DRAIN a second
+	// ShutdownGrace replaces server.shutdown_grace for the relay role, which
+	// waits for its homes to move (relay.shutdown_grace, default 150s).
+	ShutdownGrace time.Duration
 }
 
 // Default values per the bootstrap plan; the loader fills these for any
@@ -146,7 +159,15 @@ func defaultConfig() Config {
 			Sample2xxAfterDays: 7,
 			Sample2xxRate:      0.10,
 		},
-		Relay: RelayConfig{PublicHost: "relay.maktaba.tv"},
+		Relay: RelayConfig{
+			PublicHost:     "relay.maktaba.tv",
+			DrainEnabled:   true,
+			TicketsEnabled: true,
+			DrainWithin:    5 * time.Second,
+			DrainDeadline:  120 * time.Second,
+			DrainRate:      100,
+			ShutdownGrace:  150 * time.Second,
+		},
 	}
 }
 
@@ -311,6 +332,18 @@ func assign(c *Config, section, key, val string) error {
 		return setFloat(&c.Telemetry.Sample2xxRate, val)
 	case "relay.public_host":
 		c.Relay.PublicHost = val
+	case "relay.drain.enabled":
+		return setBool(&c.Relay.DrainEnabled, val)
+	case "relay.ticket.enabled":
+		return setBool(&c.Relay.TicketsEnabled, val)
+	case "relay.drain.within":
+		return setDur(&c.Relay.DrainWithin, val)
+	case "relay.drain.deadline":
+		return setDur(&c.Relay.DrainDeadline, val)
+	case "relay.drain.rate":
+		return setInt(&c.Relay.DrainRate, val)
+	case "relay.shutdown_grace":
+		return setDur(&c.Relay.ShutdownGrace, val)
 	case "relay.editions_dir":
 		c.Relay.EditionsDir = val
 	}

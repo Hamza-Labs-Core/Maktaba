@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
@@ -80,7 +81,19 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg))
 
-	r.Get("/v1/relay/ws", relaypkg.ServeTunnels(registry, relaypkg.NewTunnelStore(serversStore), logger))
+	// Story 50.03: resume tickets (the key derived from the token secret every
+	// node shares) and DRAIN on shutdown, each with its switch.
+	var tickets *relaypkg.Tickets
+	if cfg.Relay.TicketsEnabled {
+		tickets = relaypkg.NewTickets([]byte(cfg.Auth.TokenSecret))
+	}
+	r.Get("/v1/relay/ws", (&relaypkg.TunnelServer{
+		Registry: registry,
+		Store:    relaypkg.NewTunnelStore(serversStore),
+		Logger:   logger,
+		Tickets:  tickets,
+		Drain:    cfg.Relay.DrainEnabled,
+	}).ServeHTTP)
 
 	// All non-control paths fall through to the proxy. We deliberately
 	// don't restrict by route prefix — the proxied server's URL space
@@ -110,7 +123,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector)))
+	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
@@ -121,8 +134,36 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	r.HandleFunc("/*", proxy.ServeHTTP)
 
 	srv := httpServer(cfg.Server.ListenAddr, r, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
-	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {
+	if err := server.RunDraining(ctx, logger, srv, relayGrace(cfg), relayDrain(logger, cfg, registry, tickets)); err != nil {
 		logger.Error("relay exited", "err", err)
 		os.Exit(1)
+	}
+}
+
+// relayGrace is how long a stopping relay waits for its homes to move: the
+// relay's own shutdown_grace (150 s), never less than the server's.
+func relayGrace(cfg config.Config) time.Duration {
+	return max(cfg.Relay.ShutdownGrace, cfg.Server.ShutdownGrace)
+}
+
+// relayDrain is what a stopping relay does before its listener closes (story
+// 50.03): refuse new tunnels, send DRAIN to drain.rate homes a second, and
+// wait for them to move. With relay.drain.enabled = false it closes every
+// tunnel at once, as before.
+func relayDrain(logger *slog.Logger, cfg config.Config, reg *relaypkg.Registry, tickets *relaypkg.Tickets) func(context.Context) {
+	return func(ctx context.Context) {
+		if !cfg.Relay.DrainEnabled {
+			for _, t := range reg.All() {
+				t.Close()
+			}
+			return
+		}
+		logger.Info("relay: draining tunnels", "tunnels", reg.Live(), "event", "relay_drain_start")
+		reg.Shutdown(ctx, relaypkg.DrainOptions{
+			Reason:   relaypkg.DrainShutdown,
+			Within:   cfg.Relay.DrainWithin,
+			Deadline: cfg.Relay.DrainDeadline,
+		}, cfg.Relay.DrainRate, tickets.Mint)
+		logger.Info("relay: tunnels drained", "left", reg.Live(), "event", "relay_drain_done")
 	}
 }
