@@ -102,7 +102,7 @@ fi
 ENV_FILE="$DEPLOY_DIR/.env"
 
 # get_env KEY -> current value (empty if unset)
-get_env() { grep -E "^$1=" "$ENV_FILE" | head -n1 | cut -d= -f2- || true; }
+get_env() { grep -E "^$1=" "$ENV_FILE" | sed -n 1p | cut -d= -f2- || true; }
 
 # set_env KEY VALUE — replace in place (value used verbatim, so base64
 # `+/=` are safe) or append if absent.

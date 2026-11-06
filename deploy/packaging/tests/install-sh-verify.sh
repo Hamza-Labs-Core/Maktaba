@@ -172,6 +172,17 @@ case "${root_msg}" in *"without sudo"*) echo "ok   the root refusal names the fi
 nv_msg="$(app_as 1000 MAKTABA_NO_VERIFY=1 2>&1)"
 case "${nv_msg}" in *"never runs a payload"*) echo "ok   the MAKTABA_NO_VERIFY refusal says why" ;; *) echo "FAIL no-verify refusal: ${nv_msg}"; fails=$((fails + 1)) ;; esac
 
+# "latest" resolves when the API's answer is bigger than a pipe holds and tag_name comes
+# first: `fetch | grep -m1` under pipefail failed there (curl: (56) Failure writing output).
+latest_tag() {
+    bash -c "MAKTABA_INSTALL_LIB=1 . '${here}/../install.sh'; set -euo pipefail
+        fetch_stdout() { printf '{\"tag_name\": \"v9.8.7\",\n'; seq 1 200000; }
+        VERSION=latest; resolve_version"
+}
+expect ok "latest resolves from a large API answer" latest_tag
+latest="$(latest_tag 2>&1)"
+[ "${latest}" = "v9.8.7" ] && echo "ok   the latest tag is read" || { echo "FAIL latest tag: ${latest:0:200}"; fails=$((fails + 1)); }
+
 if [ "${fails}" -ne 0 ]; then
     echo "${fails} case(s) failed" >&2
     exit 1
