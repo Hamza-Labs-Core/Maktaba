@@ -1,7 +1,7 @@
 # Every capability a plugin may ask for (Epic 54, story 54.01 §3; README §4.5).
 #
 # Read by the four manifest validators (Go shared/go/pluginmanifest, Rust
-# plugind/crates/manifest, Python maktaba_pipeline.plugins.manifest, TypeScript
+# plugind/crates/pluginmanifest, Python maktaba_pipeline.plugins.manifest, TypeScript
 # tools/plugin-sdk/js/manifest.ts), by the host's import audit (54.02 §6) and by the
 # plugin API (54.04). The words an admin reads are Maktaba's own, keyed by title_key and
 # detail_key in web/src/i18n/{en,ar}.json, never the plugin's.

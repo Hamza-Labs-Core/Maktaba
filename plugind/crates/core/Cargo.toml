@@ -8,7 +8,7 @@ publish.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-maktaba-plugin-manifest = { path = "../manifest" }
+maktaba-plugin-manifest = { path = "../pluginmanifest" }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-io = { workspace = true }

@@ -10,7 +10,7 @@
 # normal release path (README §5.2). Caches recompile when the version changes (54.02 §6).
 [workspace]
 resolver = "2"
-members = ["crates/manifest", "crates/core", "crates/plugind"]
+members = ["crates/pluginmanifest", "crates/core", "crates/plugind"]
 
 [workspace.package]
 edition = "2021"

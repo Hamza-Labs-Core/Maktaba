@@ -91,7 +91,11 @@ pub fn run() -> Vec<Probe> {
     #[cfg(unix)]
     out.push(probe("dns", "network", ("localhost", 80).to_socket_addrs().map(|a| format!("{} addresses", a.count()))));
     #[cfg(windows)]
-    out.push(probe("dns", "dns", ("maktaba-probe.invalid", 80).to_socket_addrs().map(|a| format!("{} addresses", a.count()))));
+    out.push(probe(
+        "dns",
+        "dns",
+        ("maktaba-probe.invalid", 80).to_socket_addrs().map(|a| format!("{} addresses", a.count())),
+    ));
     out.push(probe("bind", "network", bind()));
     #[cfg(target_os = "linux")]
     {

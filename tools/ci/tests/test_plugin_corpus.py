@@ -1,6 +1,6 @@
 """Story 54.01 §3: the shared manifest corpus is whole. Each language's unit job runs it
 through its own validator against the committed normalised JSON (Go
-shared/plugins/pluginmanifest, Rust plugind/crates/manifest, Python
+shared/plugins/pluginmanifest, Rust plugind/crates/pluginmanifest, Python
 pipeline/tests/plugins/test_manifest.py, TypeScript tools/plugin-sdk/js), so the four agree
 byte for byte through the goldens. This checks the corpus they share: every invalid case
 names its code, every valid case has its golden, and the copies are the shared files."""

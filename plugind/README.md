@@ -6,7 +6,7 @@ plugin code runs here and nowhere else: one process per home, started by the sup
 
 | Crate | What |
 |---|---|
-| `crates/manifest` | the Rust manifest validator (story 54.01): `shared/plugins/manifest.schema.json`, the capability and event lists, the same rules and normalised JSON as the Go, Python and TypeScript validators |
+| `crates/pluginmanifest` | the Rust manifest validator (story 54.01): `shared/plugins/manifest.schema.json`, the capability and event lists, the same rules and normalised JSON as the Go, Python and TypeScript validators |
 | `crates/core` (`plugind-core`) | the host as a library: the Wasmtime engine and linker, one store per job with fuel, an epoch deadline and memory caps, the import audit, the compile cache, the `maktaba:plugin` forwarders, plugin log limits and the dispatch protocol. The SDK's harness (54.12) runs this same code |
 | `crates/plugind` | the `maktaba-plugind` binary: flags, the OS sandbox (`src/sandbox/`), the dispatch socket; `--features escape-probes` adds the CI-only escape probes |
 | `guests/` | test plugins built for `wasm32-wasip2` (`make plugind-guests`): a well-behaved one, a hostile one, and one written with Rust std that reaches for sockets and files |
