@@ -492,3 +492,35 @@ Every release's update paths are rehearsed in CI first: [update-rehearsal.md](up
 does it: migrations, a TV change that waits, rollbacks with and without a restore, a
 restore under logins and killed part way, halted roles, no room, a joined machine). The
 release's tag guard refuses a commit the rehearsal did not pass on.
+
+## How a release is made
+
+Tags are automatic. Each time CI (`ci.yml`) or the update rehearsal finishes green on main,
+[`auto-tag.yml`](../.github/workflows/auto-tag.yml) takes the newest commit of main that both
+passed on and tags it as the next patch version: the highest `vX.Y.Z` plus one, an annotated
+tag whose message is its name. The choice is
+[`tools/release/next_tag.py`](../tools/release/next_tag.py). A commit is not tagged when:
+
+- it has a `v*` tag already, or a newer commit does (an older commit is never tagged after a
+  newer one);
+- it does not contain the highest tag's commit;
+- its change since the highest tag is only the Claude trail (`docs/claude-trail.md`,
+  `docs/trail/**`: a push of only those starts neither workflow, so it is never tagged).
+
+A merge that got no run of its own (main's runs replace a pending one) is released with the
+next green commit's tag. A CI run that failed only on the flaky iPhone/iPad shards is not green
+here, though the tag guard would let it through: the next green commit is tagged instead, or a
+session tags that commit by hand.
+
+A tag pushed with `GITHUB_TOKEN` starts no `on: push: tags` workflow, so auto-tag starts each
+tag workflow itself (`gh workflow run <workflow> --ref vX.Y.Z -f tag=vX.Y.Z`): `release.yml`,
+`desktop-release.yml`, `mobile-release.yml`, `tv-release.yml`, `play-bundles.yml`,
+`testflight.yml` and `relay.yml`. Each runs on the tag, and its tag guard runs first, as for a
+pushed tag (a dispatched run whose ref is not the tag is refused). A workflow that already has a
+run for the tag is not started again. `packages.yml` follows `release.yml` and
+`desktop-release.yml` as before, for dispatched runs too.
+
+Tagging by hand still works (a tag pushed with a personal token starts the workflows itself):
+auto-tag then sees the commit tagged and leaves it. Play's release notes come from the tag's
+message ([google-play.md](google-play.md#release-notes)), so a release with notes is still
+tagged by hand.
