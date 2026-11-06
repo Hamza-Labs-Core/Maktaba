@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	_ "github.com/lib/pq" // the scratch-PG test's writer
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // fakeConn hands out the notes it is given, then drops.
@@ -166,7 +166,7 @@ func until(t *testing.T, l *Listener, ok func(store.Event) bool) store.Event {
 // On scratch Postgres (MAKTABA_TEST_PG_URL, slot 0178 applied by the caller's test DB or
 // here): a real notification and a reconnect after pg_terminate_backend.
 func TestRealPostgres(t *testing.T) {
-	dsn := os.Getenv("MAKTABA_TEST_PG_URL")
+	dsn := testpg.Get()
 	if dsn == "" {
 		t.Skip("MAKTABA_TEST_PG_URL not set")
 	}

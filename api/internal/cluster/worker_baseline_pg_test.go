@@ -3,7 +3,6 @@ package cluster
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -12,6 +11,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // The machines' group made late (slot 0147: a home whose migrations ran without the
@@ -23,7 +23,7 @@ import (
 // grants of every slot skipped), then that user may and slot 0147 runs; another
 // database is migrated by the superuser the normal way. Their grants must be the same.
 func TestWorkerGroupMadeLateGetsTheSamePrivileges(t *testing.T) {
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset")
 	}
