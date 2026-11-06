@@ -193,6 +193,12 @@ build fails when the two differ.
   `-Pmaktaba.capabilitiesGate=off` builds a player without that gate (#638). Everything is in
   English and Arabic. The Home rows, the guide's time maths, the playback settings and the track
   and Up next rules are now shared with the Android Player.
+- **One switch keeps a test or offline server from reaching the internet.** `maktaba-server
+  serve --offline` (or `MAKTABA_OFFLINE=1`) turns off every call the server and its parts
+  make by themselves: the update check, pack and model downloads, the language model's
+  downloads, usage data, the licence refresh and the link to Maktaba Cloud. A branch's
+  scratch stack no longer contacts GitHub. A list of every outbound call, with the setting
+  that stops it, is checked by a test, so a new one cannot be added unnoticed.
 
 - **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
   (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
