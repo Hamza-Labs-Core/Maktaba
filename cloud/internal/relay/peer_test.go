@@ -88,6 +88,7 @@ func TestTunnelSeqIsTheTimeItWasMade(t *testing.T) {
 	}
 	// another process's counter that started long ago: its next tunnel is still newer
 	tunnelSeq.Store(before - uint64(time.Hour))
+	time.Sleep(2 * time.Millisecond) // later than b on any clock's resolution
 	c := NewTunnel("s", "acme", &nopConn{done: make(chan struct{})})
 	defer c.Close()
 	if c.Seq() <= b.Seq() {
