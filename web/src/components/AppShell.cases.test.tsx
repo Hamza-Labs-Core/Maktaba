@@ -316,6 +316,7 @@ const ADMIN_LINKS = [
   ["nav.admin.updates", "/admin/updates"],
   ["nav.admin.logs", "/admin/logs"],
   ["nav.admin.errors", "/admin/errors"],
+  ["nav.admin.dashboards", "/admin/dashboards"],
   ["nav.admin.devices", "/admin/devices"],
   ["nav.admin.extensions", "/admin/extensions"],
 ] as const;

@@ -131,6 +131,7 @@ const ADMIN = [
   { to: "/admin/updates", key: "nav.admin.updates", icon: "⟳" },
   { to: "/admin/logs", key: "nav.admin.logs", icon: "≣" },
   { to: "/admin/errors", key: "nav.admin.errors", icon: "⚠" },
+  { to: "/admin/dashboards", key: "nav.admin.dashboards", icon: "◔" },
   { to: "/admin/devices", key: "nav.admin.devices", icon: "▤" },
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },
 ] as const;

@@ -40,6 +40,10 @@ Tick **Live** to see lines as they are written, newest at the top, within about 
 
 **Detailed logs for one hour** makes one part (the API, streaming, processing or log search) write its debug lines for an hour, then go back by itself. Use it when you are asked for more detail about a problem.
 
+### Dashboards {#dashboards}
+
+[Administration → Dashboards](/admin/dashboards) draws how the home has been doing: **Overview** (components up, restarts, errors per hour, the API's memory and CPU), **Queue**, **Processing**, **Streaming**, **Storage** (backups and the log files) and **Use** (plays and people per day, the most played videos; counts only, never one person's history). Pick a time from 1 hour to 90 days; point at a chart to read its values, and **Open in Logs** shows the lines of that time. Maktaba keeps a minute's detail for 7 days and an hour's for 30.
+
 ### Stop the scrolling {#pause}
 
 New lines keep arriving. Click **Pause** to freeze the list while you read, and **Resume** to carry on. Untick **Auto-scroll** to stay where you are while lines keep coming.

@@ -39,8 +39,12 @@ func (h *Handler) proxyIndex(path string, stream bool) http.HandlerFunc {
 			return
 		}
 		p := path
-		if fp := chi.URLParam(r, "fp"); fp != "" {
-			p = strings.ReplaceAll(p, "{fp}", url.PathEscape(fp))
+		if rc := chi.RouteContext(r.Context()); rc != nil {
+			for i, k := range rc.URLParams.Keys {
+				if k != "" && k != "*" && i < len(rc.URLParams.Values) {
+					p = strings.ReplaceAll(p, "{"+k+"}", url.PathEscape(rc.URLParams.Values[i]))
+				}
+			}
 		}
 		u := url.URL{Scheme: "http", Host: base, Path: p, RawQuery: r.URL.RawQuery}
 		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
