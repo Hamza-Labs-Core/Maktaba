@@ -1,4 +1,4 @@
-package com.hamzalabs.maktaba.player
+package com.hamzalabs.maktaba.core.session
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart

@@ -77,6 +77,14 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} -Pmaktaba.version=0.0.1
 
+      # Story 55.02 (issue #638): a build with the capabilities gate switched off makes its
+      # session with the gate off. The installers above are built with no property: gate on.
+      - name: Gate switched off
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --stacktrace :test --tests '*CapabilitiesGateTest*' -Pmaktaba.capabilitiesGate=off -Pmaktaba.version=0.0.1
+
       - name: Check the installers
         run: |
           set -euo pipefail

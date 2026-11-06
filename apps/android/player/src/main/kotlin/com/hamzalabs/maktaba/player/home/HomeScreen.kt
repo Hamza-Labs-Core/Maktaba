@@ -59,6 +59,12 @@ import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.Featured
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.NowEntry
+import com.hamzalabs.maktaba.core.browse.CardOpen
+import com.hamzalabs.maktaba.core.browse.HomeCache
+import com.hamzalabs.maktaba.core.browse.HomeCard
+import com.hamzalabs.maktaba.core.browse.HomeRow
+import com.hamzalabs.maktaba.core.browse.KEY_LIVE
+import com.hamzalabs.maktaba.core.browse.RowTitle
 import com.hamzalabs.maktaba.core.layout.HingeSplit
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
@@ -314,13 +320,20 @@ private fun CardsRow(row: HomeRow.Cards, client: ApiClient, cardWidth: Dp, nav: 
     Rail(
         row.title.text(),
         Modifier.testTag("row-${row.key}"),
-        onSeeAll = row.seeAll?.let { route -> { nav.open(route) } },
+        onSeeAll = row.seeAll?.let { library -> { nav.open(Route.Library(library)) } },
     ) {
         items(row.cards, key = { it.key }) { card ->
             HomeCardView(card, client, cardWidth, nav, state, onNotInterested)
         }
     }
 }
+
+/** The page a card opens, on the Player's navigation. */
+private val CardOpen.route: Route
+    get() = when (this) {
+        is CardOpen.Video -> Route.Video(id)
+        is CardOpen.Series -> Route.Series(id)
+    }
 
 /** What a card's menu offers. */
 private enum class CardAction { Resume, NotInterested }
@@ -340,7 +353,7 @@ private fun HomeCardView(card: HomeCard, client: ApiClient, width: Dp, nav: Play
         PosterCard(
             title = title,
             posterUrl = posterUrl(client, card.posterVideo, PosterSize.Small),
-            onClick = { nav.open(card.open) },
+            onClick = { nav.open(card.open.route) },
             modifier = Modifier.testTag("card-${card.key}"),
             subtitle = subtitle,
             progress = card.progress,

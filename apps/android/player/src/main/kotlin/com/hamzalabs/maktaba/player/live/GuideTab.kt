@@ -63,6 +63,7 @@ import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.GuideRow
 import com.hamzalabs.maktaba.core.api.LiveChannel
 import com.hamzalabs.maktaba.core.api.Programme
+import com.hamzalabs.maktaba.core.live.GuideWindow
 import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.player.R
@@ -160,7 +161,7 @@ private fun DayPicker(day: Int, base: Long, onDay: (Int) -> Unit, onEarlier: () 
 private fun GuideGrid(live: LiveTv, window: GuideWindow, rows: List<GuideRow>, nowMs: Long, onOpen: (LiveChannel, Programme) -> Unit) {
     // one horizontal position for the ruler and every row: they scroll together
     val across = rememberScrollState()
-    val nowAt = window.minutesTo(nowMs).takeIf { it >= 0 && it < window.minutes }
+    val nowAt = window.nowLine(nowMs)
     LazyColumn(Modifier.fillMaxSize().testTag("guide-rows")) {
         stickyHeader {
             Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface).height(32.dp)) {
@@ -225,11 +226,7 @@ private fun NowLine(minutes: Float, modifier: Modifier = Modifier, head: Boolean
 
 @Composable
 private fun Block(window: GuideWindow, p: Programme, nowMs: Long, onClick: () -> Unit) {
-    val s = p.startMs ?: return
-    val e = p.stopMs ?: return
-    val from = window.minutesTo(s).coerceAtLeast(0f)
-    val to = window.minutesTo(e).coerceAtMost(window.minutes.toFloat())
-    if (to <= from) return
+    val (from, to) = window.cut(p) ?: return
     val airing = p.isAiring(nowMs)
     val range = timeRange(p)
     Box(

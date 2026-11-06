@@ -1,4 +1,4 @@
-package com.hamzalabs.maktaba.player
+package com.hamzalabs.maktaba.core.session
 
 /**
  * The order of a list's reads and changes. A read that began before a change was answered

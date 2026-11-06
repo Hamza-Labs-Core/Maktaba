@@ -176,6 +176,23 @@ build fails when the two differ.
 
 ### Added
 
+- **The Player for Windows and Linux has the phone and Mac Players' sections (Epic 55).**
+  After sign-in, a rail (on the right in Arabic) holds Home, Libraries, Live TV, Search and
+  Profile, each with its own pages and Back (also Alt+Left and the mouse's back button). Home
+  has the featured hero and the rows (Continue Watching, On Deck, What's On Now, Favorites,
+  Recently Added, Recently Watched, pinned libraries, For You with Not interested). Libraries
+  pins libraries and opens a library's rows, its videos (sort, language, speaker) and series;
+  series and video pages have Resume and Play from start, Favorite, Mark watched (an episode or
+  a season), chapters and the next episodes. Search suggests as you type, searches titles and
+  what is said in videos (Play from a passage) and keeps recent searches (Ctrl+F or /). Live TV
+  has Now, the Guide and a channel player, at home and away through Maktaba Cloud. Watching
+  resumes where you left, offers audio tracks, subtitles (drawn by the player), quality and Up
+  next, with the keys of the help page. Profile has watch history, favorites, playlists,
+  browser sessions, approving a device, playback settings, language and about. A feature the
+  home has off is hidden from a viewer and explained to an admin with a link to Components;
+  `-Pmaktaba.capabilitiesGate=off` builds a player without that gate (#638). Everything is in
+  English and Arabic. The Home rows, the guide's time maths, the playback settings and the track
+  and Up next rules are now shared with the Android Player.
 - **One switch keeps a test or offline server from reaching the internet.** `maktaba-server
   serve --offline` (or `MAKTABA_OFFLINE=1`) turns off every call the server and its parts
   make by themselves: the update check, pack and model downloads, the language model's

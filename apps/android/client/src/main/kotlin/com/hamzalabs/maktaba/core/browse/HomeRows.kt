@@ -1,4 +1,4 @@
-package com.hamzalabs.maktaba.player.home
+package com.hamzalabs.maktaba.core.browse
 
 import com.hamzalabs.maktaba.core.api.AddedEntry
 import com.hamzalabs.maktaba.core.api.HomeRails
@@ -6,11 +6,18 @@ import com.hamzalabs.maktaba.core.api.NowAnswer
 import com.hamzalabs.maktaba.core.api.NowEntry
 import com.hamzalabs.maktaba.core.api.Recommendations
 import com.hamzalabs.maktaba.core.api.VideoCard
-import com.hamzalabs.maktaba.player.shell.Route
 
 // What Home shows, as data (FR-10, FR-11): the rows in their order, each row's cards and what a
 // card does. Built by a pure function from the three answers, so the order and the hiding of
-// empty rows are unit-tested apart from the screen.
+// empty rows are unit-tested apart from the screen. Shared by the Android and desktop Players
+// (Epic 55, story 55.03): a card names what it opens ([CardOpen]), each Player maps that to its
+// own navigation.
+
+/** What a card opens: a video's page or a series' page. */
+sealed interface CardOpen {
+    data class Video(val id: String) : CardOpen
+    data class Series(val id: String) : CardOpen
+}
 
 /** A row's title: one of Home's own (translated on screen), or a pinned library's name. */
 sealed interface RowTitle {
@@ -23,8 +30,8 @@ sealed interface HomeRow {
     val key: String
     val title: RowTitle
 
-    /** A row of video (or series) cards; [seeAll] opens the whole list when there is a screen for it. */
-    data class Cards(override val key: String, override val title: RowTitle, val cards: List<HomeCard>, val seeAll: Route? = null) : HomeRow
+    /** A row of video (or series) cards; [seeAll] is the library that holds the whole list, when there is one. */
+    data class Cards(override val key: String, override val title: RowTitle, val cards: List<HomeCard>, val seeAll: String? = null) : HomeRow
 
     /** Live TV on now: one card per channel. */
     data class Live(val channels: List<NowEntry>) : HomeRow {
@@ -44,7 +51,7 @@ sealed interface HomeRow {
 data class HomeCard(
     val videoId: String,
     val title: String?,
-    val open: Route,
+    val open: CardOpen,
     val posterVideo: String = videoId,
     val subtitle: String? = null,
     val progress: Float? = null,
@@ -55,7 +62,7 @@ data class HomeCard(
     val seriesName: String? = null,
 ) {
     /** The list key: a series group and its first lesson's video card never collide. */
-    val key: String get() = if (newLessons != null) "series:${(open as? Route.Series)?.id}" else videoId
+    val key: String get() = if (newLessons != null) "series:${(open as? CardOpen.Series)?.id}" else videoId
 }
 
 const val KEY_CONTINUE = "continue"
@@ -78,7 +85,7 @@ val HOME_RAIL_KINDS = listOf("for_you" to RowTitle.Own.ForYou, "from_library" to
  * cards (by id); Home's own rows name most of them already.
  */
 fun homeRows(rails: HomeRails, recs: Recommendations?, now: NowAnswer?, known: Map<String, VideoCard> = emptyMap()): List<HomeRow> = buildList {
-    fun cards(key: String, title: RowTitle, cards: List<HomeCard>, seeAll: Route? = null) {
+    fun cards(key: String, title: RowTitle, cards: List<HomeCard>, seeAll: String? = null) {
         if (cards.isNotEmpty()) add(HomeRow.Cards(key, title, cards, seeAll))
     }
 
@@ -93,7 +100,7 @@ fun homeRows(rails: HomeRails, recs: Recommendations?, now: NowAnswer?, known: M
     rails.pinned.forEach { p ->
         // what the person is in the middle of first, then what is new (the web's order)
         val videos = (p.continueWatching + p.recentlyAdded).distinctBy { it.id }
-        cards(KEY_PINNED + p.library.id, RowTitle.Named(p.library.name), videos.map { it.card() }, Route.Library(p.library.id))
+        cards(KEY_PINNED + p.library.id, RowTitle.Named(p.library.name), videos.map { it.card() }, p.library.id)
     }
 
     // what Home's rows already say about a video names a recommendation's card too
@@ -112,7 +119,7 @@ fun homeRows(rails: HomeRails, recs: Recommendations?, now: NowAnswer?, known: M
                 HomeCard(
                     videoId = item.videoId,
                     title = v?.displayTitle,
-                    open = Route.Video(item.videoId),
+                    open = CardOpen.Video(item.videoId),
                     subtitle = v?.series?.name,
                     progress = com.hamzalabs.maktaba.core.api.watchedFraction(item.positionSec, item.durationSec, false)?.toFloat(),
                     recommended = true,
@@ -123,10 +130,10 @@ fun homeRows(rails: HomeRails, recs: Recommendations?, now: NowAnswer?, known: M
 }
 
 /** A video card; [resume] gives it Resume at the person's position (Continue Watching). */
-internal fun VideoCard.card(resume: Boolean = false): HomeCard = HomeCard(
+fun VideoCard.card(resume: Boolean = false): HomeCard = HomeCard(
     videoId = id,
     title = displayTitle,
-    open = Route.Video(id),
+    open = CardOpen.Video(id),
     subtitle = series?.name,
     progress = watchedFraction?.toFloat(),
     watched = completed == true,
@@ -134,13 +141,13 @@ internal fun VideoCard.card(resume: Boolean = false): HomeCard = HomeCard(
 )
 
 /** A Recently Added entry: a series with its new lessons (opens the series), or a video. */
-internal fun AddedEntry.card(): HomeCard {
+fun AddedEntry.card(): HomeCard {
     val s = series
     return if (kind == "series" && s != null) {
         HomeCard(
             videoId = video.id,
             title = s.name.takeIf { it.isNotBlank() },
-            open = Route.Series(s.id),
+            open = CardOpen.Series(s.id),
             newLessons = count,
             seriesName = s.name,
         )
