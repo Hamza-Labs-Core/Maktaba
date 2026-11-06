@@ -21,7 +21,8 @@ var ErrUnsupported = errors.New("appcontainer: Windows only")
 type Options struct {
 	// MemoryBytes caps the process's committed memory (0: no cap).
 	MemoryBytes uint64
-	// Env is the child's environment ("K=V"); nil inherits nothing but SystemRoot.
+	// Env is the child's environment ("K=V"); SystemRoot, TEMP, TMP and the profile's
+	// folders are added from this process's own (Windows needs them).
 	Env []string
 	// Dir is the working folder ("" for the caller's).
 	Dir string

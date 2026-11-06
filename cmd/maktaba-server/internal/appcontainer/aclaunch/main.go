@@ -45,7 +45,7 @@ func main() {
 			os.Exit(2)
 		}
 	}
-	env := []string{"SystemRoot=" + os.Getenv("SystemRoot")}
+	var env []string // SystemRoot, TEMP and the profile's folders are added by Run
 	for _, kv := range os.Environ() {
 		if strings.HasPrefix(kv, "PROBE_") || strings.HasPrefix(kv, "MAKTABA_PLUGIND_") {
 			env = append(env, kv)

@@ -18,7 +18,7 @@ PROBE read_passwd file DENIED Permission denied (Some(13))
 PROBE spawn process DENIED Operation not permitted (Some(1))
 """
 CONTROL = """SANDBOX none missing=all
-PROBE tcp_loopback4 network ALLOWED connected to 127.0.0.1:47001
+PROBE tcp_loopback4 network ALLOWED connected to 127.0.0.1:47391
 PROBE read_passwd file ALLOWED read 16 bytes
 PROBE spawn process ALLOWED exit status: 0
 """

@@ -7,7 +7,7 @@
 //! connection; the public literal is TEST-NET-3 (RFC 5737), routed nowhere, so even a
 //! probe that fails open reaches no one.
 //!
-//! Inputs (environment): PROBE_PORT (default 47001), PROBE_LAN (the runner's LAN address),
+//! Inputs (environment): PROBE_PORT (default 47391), PROBE_LAN (the runner's LAN address),
 //! PROBE_SECRET (a planted fake key), PROBE_STATE (a planted file in the data folder),
 //! PROBE_WRITE (a path outside the run folder).
 
@@ -69,7 +69,7 @@ fn read(path: &str) -> std::io::Result<String> {
 }
 
 pub fn run() -> Vec<Probe> {
-    let port: u16 = std::env::var("PROBE_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(47001);
+    let port: u16 = std::env::var("PROBE_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(47391);
     let mut out = Vec::new();
     let mut targets: Vec<(String, SocketAddr)> = vec![
         ("loopback4".into(), SocketAddr::from(([127, 0, 0, 1], port))),

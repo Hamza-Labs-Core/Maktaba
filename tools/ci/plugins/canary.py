@@ -1,11 +1,11 @@
 """The canary of the plugins-sandbox CI job (Epic 54, story 54.03 §5).
 
 Listens on 127.0.0.1, ::1 and the runner's LAN address, TCP and UDP, on one port
-(default 47001), and counts every connection and packet. UDP packets are echoed, so a
+(default 47391; 47001 is WinRM's on Windows), and counts every connection and packet. UDP packets are echoed, so a
 probe counts as ALLOWED only when it heard back. The count is written to --count after
 every event, so the job reads it between the sandboxed run and the positive control.
 
-    python3 canary.py --port 47001 --count canary.count --lan-file lan.txt &
+    python3 canary.py --port 47391 --count canary.count --lan-file lan.txt &
 
 CI only: it runs beside the escape probes, never on a developer's machine.
 """
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import socket
+import sys
 import threading
 from pathlib import Path
 
@@ -46,7 +47,8 @@ class Counter:
 
 def serve_tcp(fam: int, addr: str, port: int, c: Counter) -> None:
     s = socket.socket(fam, socket.SOCK_STREAM)
-    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if sys.platform != "win32":  # on Windows it lets another socket take the port
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind((addr, port))
     s.listen(16)
     while True:
@@ -66,7 +68,7 @@ def serve_udp(fam: int, addr: str, port: int, c: Counter) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--port", type=int, default=47001)
+    ap.add_argument("--port", type=int, default=47391)
     ap.add_argument("--count", required=True)
     ap.add_argument("--lan-file", required=True)
     a = ap.parse_args()

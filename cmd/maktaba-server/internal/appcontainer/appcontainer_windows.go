@@ -85,9 +85,20 @@ func Grant(profile, path string, write bool) error {
 	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, acl, nil)
 }
 
+// profileVars are the variables Windows rewrites to an AppContainer's own folders when
+// it starts one: CreateProcess fails (ERROR_ENVVAR_NOT_FOUND) when they are missing.
+var profileVars = []string{"SystemRoot", "TEMP", "TMP", "LOCALAPPDATA", "APPDATA", "USERPROFILE"}
+
 func envBlock(env []string) *uint16 {
-	if env == nil {
-		env = []string{"SystemRoot=" + os.Getenv("SystemRoot")}
+	have := map[string]bool{}
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		have[strings.ToUpper(k)] = true
+	}
+	for _, k := range profileVars {
+		if v := os.Getenv(k); v != "" && !have[strings.ToUpper(k)] {
+			env = append(env, k+"="+v)
+		}
 	}
 	// a block sorted by name, as Windows keeps its own
 	env = append([]string(nil), env...)

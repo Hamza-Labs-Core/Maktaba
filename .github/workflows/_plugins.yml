@@ -137,7 +137,7 @@ jobs:
           echo "not a real key" > "$HOME/.ssh/plugind_probe_fake"
           echo "state" > "$data/state/probe.txt"
           echo "data=$data" >>"$GITHUB_OUTPUT"
-          python3 tools/ci/plugins/canary.py --port 47001 --count "$RUNNER_TEMP/canary.count" --lan-file "$RUNNER_TEMP/lan.txt" > "$RUNNER_TEMP/canary.log" 2>&1 &
+          python3 tools/ci/plugins/canary.py --port 47391 --count "$RUNNER_TEMP/canary.count" --lan-file "$RUNNER_TEMP/lan.txt" > "$RUNNER_TEMP/canary.log" 2>&1 &
           for _ in $(seq 1 50); do [ -s "$RUNNER_TEMP/lan.txt" ] && break; sleep 0.2; done
           echo "lan=$(cat "$RUNNER_TEMP/lan.txt")" >>"$GITHUB_OUTPUT"
           cat "$RUNNER_TEMP/canary.log"
@@ -146,7 +146,7 @@ jobs:
         env:
           DATA: ${{ steps.plant.outputs.data }}
           PROBE_LAN: ${{ steps.plant.outputs.lan }}
-          PROBE_PORT: '47001'
+          PROBE_PORT: '47391'
         run: |
           native() { if [ "$RUNNER_OS" = Windows ]; then cygpath -w "$1"; else echo "$1"; fi; }
           export PROBE_SECRET="$(native "$HOME/.ssh/plugind_probe_fake")" PROBE_STATE="$(native "$DATA/state/probe.txt")" PROBE_WRITE="$(native "$DATA/escape.txt")"
