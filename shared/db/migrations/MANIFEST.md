@@ -14,7 +14,7 @@
 The `depends on` column lists the slots that must already be applied for
 the migration to succeed. Slots are reserved in groups per epic; new plans
 land at the next free integer after the highest slot on `main` (no
-reservations; the one permanent gap is listed below the table).
+reservations; the permanent gaps are listed below the table).
 
 ---
 
@@ -191,7 +191,11 @@ reservations; the one permanent gap is listed below the table).
 
 ### Permanent gaps
 
-- **0133**: never used, and never to be filled. `0136_tv_swap_ops` was written as 0133; #111 merged 0134 and 0135 first, so it was renumbered to 0136 (PR #108). goose runs without `--allow-missing` (`api/migrate.go`): on a database already at 0134 or above, a new 0133 is an out-of-order migration and goose refuses to apply it, which stops every upgraded home. A new migration takes the next slot after the highest one on `main` (0138 at the time of writing). `tools/migration-lint` does not check that slots are contiguous, so it accepts this gap; the schema revision (`SchemaRev` / `SCHEMA_REV`) is the highest slot, not a count.
+- **0017–0027**: never used on `main`. The first Phase 5 branch numbered its search and chapter migrations 0017–0026 (`cb167ef63`), but the version that merged (`fabaf1f07`, 2026-05-10) used other slots (`chapters` is 0032), and 0028 had already landed. Every database is past them.
+- **0133**: never used, and never to be filled. `0136_tv_swap_ops` was written as 0133; #111 merged 0134 and 0135 first, so it was renumbered to 0136 (PR #108). goose runs without `--allow-missing` (`api/migrate.go`): on a database already at 0134 or above, a new 0133 is an out-of-order migration and goose refuses to apply it, which stops every upgraded home. A new migration takes the next slot after the highest one on `main` (0138 at the time of writing). The schema revision (`SchemaRev` / `SCHEMA_REV`) is the highest slot, not a count.
+- **0176–0177**: never used. Epic 51 (#608) landed at 0178–0181 above them, and 0182 (#634) followed (#643). Every database at 0178 or above is past them.
+
+`tools/migration-lint` (rule 7, `gaps.go`) fails when a slot below the highest one has no migration and is not listed here, or when a listed slot has one.
 
 ---
 
@@ -199,8 +203,8 @@ reservations; the one permanent gap is listed below the table).
 
 1. New migrations land at the next free integer after the highest slot on
    `main`, never in a hole below it (goose would refuse it on every database
-   already past it). The only hole is `0133` (Permanent gaps above); do not
-   fill it.
+   already past it). The holes are listed under Permanent gaps above
+   (0017–0027, 0133, 0176–0177); do not fill them.
 2. SQLite-only variants reuse the same slot with a `.sqlite.sql` suffix
    (e.g. `0002_processing_jobs.sqlite.sql`). They **do not** consume an
    independent slot.
