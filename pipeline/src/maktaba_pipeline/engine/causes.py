@@ -18,6 +18,15 @@ _MAX_LEN = 120
 _KNOWN: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
     (cause, re.compile(pattern, re.IGNORECASE))
     for cause, pattern in (
+        # Epic 54: a plugin job's end as its host (maktaba-plugind) or the plugin API said
+        ("plugin_trap", r"\bplugin_trap\b"),
+        ("plugin_timeout", r"\bplugin_timeout\b"),
+        ("plugin_memory", r"\bplugin_memory\b"),
+        ("plugin_capability", r"\bplugin_capability\b"),
+        ("plugin_scope", r"\bplugin_scope\b"),
+        ("plugin_quota", r"\bplugin_quota\b"),
+        ("plugin_failed", r"\bplugin_failed\b"),
+        ("plugin_held", r"\bplugin_held\b"),
         ("youtube_bot_check", r"confirm you.?re not a bot|sign in to confirm(?! your age)"),
         ("youtube_rate_limited", r"youtube_rate_limited|too many requests|http error 429"),
         (

@@ -157,6 +157,12 @@ Every failure gets a class that says what Maktaba does with it. The first name o
 - **What Maktaba does:** the YouTube jobs wait and spend no try; the source shows **bot check** in its YouTube sources. They try again after a day at the latest.
 - **What you can do:** wait, or set **Cookies from browser** on the source in **YouTube sources…** on the Queues page. See [YouTube asked for a bot check](#youtube-bot-check).
 
+### Waits on a service or share: the plugin is stopped (dependency:plugin) {#class-dependency-plugin}
+
+- **What it means:** the plugin whose step this is is off, stopped, or waiting for you to approve new permissions.
+- **What Maktaba does:** its jobs wait and spend no try; they run again as soon as the plugin is on.
+- **What you can do:** turn the plugin on, or press **Start**, in **Settings → Plugins**. See [The plugin is stopped](#plugin-held).
+
 ### Waits on disk or memory: YouTube's rate limit (resource:youtube_rate_limit) {#class-resource-youtube-rate-limit}
 
 - **What it means:** YouTube answered "Too Many Requests" (HTTP 429).
@@ -235,6 +241,54 @@ An item leaves the group when it runs again and succeeds, for example because it
 The cause labels come from the server and are in English for now. The Arabic page of this guide gives each one an Arabic name and keeps the English label next to it.
 
 ## When something goes wrong {#troubleshooting}
+
+### The plugin crashed {#plugin-trap}
+
+- **What it means:** the plugin's code stopped with an error (a trap) while it worked on this item. Its host and every other job keep running.
+- **Does Maktaba fix it itself?** Yes, once: it is a [passing problem](#class-transient) and the job is tried one more time. A plugin that keeps crashing stops itself.
+- **What you can do:** open **Settings → Plugins** to see the plugin's logs. If it keeps happening, turn the plugin off and tell its developer.
+
+### The plugin ran out of time {#plugin-timeout}
+
+- **What it means:** the plugin worked longer than the time it may take for one job, or used all the computing it was given.
+- **Does Maktaba fix it itself?** Yes, once: the job is tried one more time.
+- **What you can do:** if the items are very long, a newer version of the plugin may handle them; otherwise tell its developer.
+
+### The plugin used more memory than it may {#plugin-memory}
+
+- **What it means:** the plugin asked for more memory than its limit, so its job was ended.
+- **Does Maktaba fix it itself?** No: the same job would hit the same limit.
+- **What you can do:** tell the plugin's developer, or turn the plugin off for this library.
+
+### The plugin asked for something it was not allowed {#plugin-capability}
+
+- **What it means:** the plugin called something its permissions do not cover. Maktaba refused it.
+- **Does Maktaba fix it itself?** No: it would be refused again.
+- **What you can do:** open the plugin's permissions in **Settings → Plugins**. Grant the permission only if you trust the plugin to have it.
+
+### The plugin reached outside its job or its libraries {#plugin-scope}
+
+- **What it means:** the plugin asked for a video other than the one it works on, or one in a library you did not give it. Maktaba refused it.
+- **Does Maktaba fix it itself?** No.
+- **What you can do:** tick the library in the plugin's permissions if it should see it; otherwise tell the plugin's developer.
+
+### The plugin used up its quota {#plugin-quota}
+
+- **What it means:** the plugin used up one of its limits: its own storage, how much it may read of a video, or how many notices it may send.
+- **Does Maktaba fix it itself?** No: it would hit the same limit.
+- **What you can do:** clear what the plugin stored, or tell its developer.
+
+### The plugin reported an error {#plugin-failed}
+
+- **What it means:** the plugin could not do its work on this item and said why (see the job's details).
+- **Does Maktaba fix it itself?** No.
+- **What you can do:** read the plugin's message in the job's details and its logs; tell its developer if the item looks fine.
+
+### The plugin is stopped {#plugin-held}
+
+- **What it means:** the plugin is off or stopped, so its jobs wait without spending attempts.
+- **Does Maktaba fix it itself?** Its jobs run again as soon as the plugin is on.
+- **What you can do:** turn the plugin on, or press **Start**, in **Settings → Plugins**.
 
 ### NAS read timed out {#nas-timeout}
 

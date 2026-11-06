@@ -40,6 +40,7 @@ from tests.engine.toy import Recorder, drain, rows, setup, toy_graph
 # --------------------------------------------------------------------- the table
 
 
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("cause", "cls"),
     [
@@ -423,3 +424,24 @@ async def test_a_bundled_model_with_the_language_model_off_reads_off_not_down(
         assert got["dependency:model:tagcheck"][0] is True  # on: probed as before
     finally:
         set_model_fetcher(None)
+
+
+@pytest.mark.parametrize(
+    ("cause", "cls"),
+    [
+        ("plugin_trap", "transient"),
+        ("plugin_timeout", "transient"),
+        ("plugin_memory", "item_permanent"),
+        ("plugin_capability", "item_permanent"),
+        ("plugin_scope", "item_permanent"),
+        ("plugin_quota", "item_permanent"),
+        ("plugin_failed", "item_permanent"),
+        ("plugin_held", "dependency:plugin"),
+    ],
+)
+def test_plugin_causes_classes(cause: str, cls: str) -> None:
+    """Epic 54 (54.06 §3, 54.06 T07): a trap or a deadline is retried once, a refusal is not,
+    a held plugin's jobs wait."""
+    from maktaba_pipeline.engine.failure_classes import class_for
+
+    assert class_for(cause) == cls

@@ -7104,5 +7104,13 @@
   "plugins.capability.notify_admin.title": "تنبيه المسؤولين",
   "plugins.capability.notify_admin.detail": "إرسال تنبيهات إلى المسؤولين.",
   "plugins.capability.plugin_data_read.title": "قراءة بيانات إضافة أخرى",
-  "plugins.capability.plugin_data_read.detail": "قراءة ما تشاركه إضافة أخرى."
+  "plugins.capability.plugin_data_read.detail": "قراءة ما تشاركه إضافة أخرى.",
+  "queue.issues.cause.plugin_trap": "تعطّلت الإضافة",
+  "queue.issues.cause.plugin_timeout": "نفد وقت الإضافة",
+  "queue.issues.cause.plugin_memory": "استخدمت الإضافة ذاكرة أكثر من المسموح",
+  "queue.issues.cause.plugin_capability": "طلبت الإضافة شيئًا لم يُسمح لها به",
+  "queue.issues.cause.plugin_scope": "تجاوزت الإضافة مهمتها أو مكتباتها",
+  "queue.issues.cause.plugin_quota": "استنفدت الإضافة حصتها",
+  "queue.issues.cause.plugin_failed": "أبلغت الإضافة عن خطأ",
+  "queue.issues.cause.plugin_held": "الإضافة متوقفة"
 }

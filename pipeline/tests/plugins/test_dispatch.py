@@ -1,0 +1,252 @@
+"""Story 54.06 T03, T04 (dispatch, no database): the plugin stage handler against a fake
+maktaba-plugind on a unix socket and a fake plugin API: each host outcome maps to its
+StageResult or failure cause; a host that is gone or closes mid-job gives the job back
+without an attempt; the token is always ended."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import struct
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+import pytest
+
+from maktaba_pipeline.engine.context import JobDeferred, StageFailure
+from maktaba_pipeline.plugins import dispatch
+from maktaba_pipeline.plugins import manifest as pm
+
+# the event loop opens a socket pair, which the unit tier forbids: these need no service
+pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
+
+ROOT = Path(__file__).resolve().parents[3]
+PKG = ROOT / "shared" / "plugins" / "testdata" / "manifests" / "package"
+PID = "dev.example.silence-chapters"
+
+
+def _files(p: str) -> bytes | None:
+    f = PKG / p
+    return f.read_bytes() if f.is_file() else None
+
+
+DOC = pm.validate(
+    (ROOT / "shared/plugins/testdata/manifests/valid/minimal.toml").read_bytes(), _files
+)
+STAGE = pm.queue_name(PID, "find_silences")
+
+
+@dataclass
+class FakeDB:
+    executed: list[tuple[str, tuple[Any, ...]]] = field(default_factory=list)
+
+    async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
+        return [
+            {
+                "plugin_id": PID,
+                "version": "1.4.0",
+                "path": "/data/plugins/x",
+                "manifest": DOC,
+                "review_level": "none",
+            }
+        ]
+
+    async def fetchrow(self, sql: str, *args: Any) -> dict[str, Any] | None:
+        if "app_settings" in sql:
+            return {"value": '{"threshold":3}'}
+        return None
+
+    async def execute(self, sql: str, *args: Any) -> str:
+        self.executed.append((sql, args))
+        return "UPDATE 1"
+
+
+@dataclass
+class Subject:
+    kind: str
+    id: Any
+
+
+@dataclass
+class Job:
+    id: int = 7
+    stage: str = STAGE
+    payload: dict[str, Any] | None = None
+    attempts: int = 1
+    subject: Subject = field(default_factory=lambda: Subject("video", uuid4()))
+
+
+@dataclass
+class Stage:
+    extension: str = f"plugin:{PID}"
+
+
+@dataclass
+class Ctx:
+    stage: Stage = field(default_factory=Stage)
+    progressed: list[int] = field(default_factory=list)
+
+    async def progress(self, step: str, done: int, total: int, *a: Any, **k: Any) -> None:
+        self.progressed.append(done)
+
+
+@pytest.fixture
+def api(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    calls: list[tuple[str, str]] = []
+
+    def fake(
+        method: str, path: str, body: dict[str, Any] | None = None
+    ) -> tuple[int, dict[str, Any]]:
+        calls.append((method, path))
+        if method == "POST":
+            return 200, {"invocation_id": "inv_1", "token": "t", "grants": ["chapters.write"]}
+        return 200, {"ended": True}
+
+    monkeypatch.setattr(dispatch, "_api", fake)
+    return calls
+
+
+class FakeWriter:
+    def __init__(self) -> None:
+        self.buf = bytearray()
+
+    def write(self, b: bytes) -> None:
+        self.buf += b
+
+    async def drain(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+def _host(
+    monkeypatch: pytest.MonkeyPatch,
+    frames: list[dict[str, Any]],
+    seen: list[dict[str, Any]],
+    eof: bool = True,
+) -> None:
+    """A fake maktaba-plugind: answers ``frames`` and records the Run it was sent."""
+
+    async def connect(path: str) -> tuple[Any, Any]:
+        r = asyncio.StreamReader()
+        for f in frames:
+            body = json.dumps(f).encode()
+            r.feed_data(struct.pack(">I", len(body)) + body)
+        r.feed_eof()
+        w = FakeWriter()
+
+        class Recording(FakeWriter):
+            def write(self, b: bytes) -> None:
+                w.write(b)
+                (n,) = struct.unpack(">I", bytes(w.buf[:4]))
+                if len(w.buf) >= 4 + n:
+                    seen.append(json.loads(bytes(w.buf[4 : 4 + n])))
+
+        return r, Recording()
+
+    monkeypatch.setattr(dispatch, "_connect", connect)
+
+
+def _no_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def connect(path: str) -> Any:
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(dispatch, "_connect", connect)
+
+
+def _result(outcome: str, **kw: Any) -> dict[str, Any]:
+    return {"type": "result", "invocation_id": "inv_1", "outcome": outcome, **kw}
+
+
+@pytest.mark.parametrize(
+    ("result", "want"),
+    [
+        (_result("trap", error_code="plugin_trap"), ("plugin_trap", True)),
+        (_result("timeout", error_code="plugin_timeout"), ("plugin_timeout", True)),
+        (_result("memory", error_code="plugin_memory"), ("plugin_memory", False)),
+        (_result("refused", error_code="plugin_capability"), ("plugin_capability", False)),
+        (_result("refused", error_code="plugin_scope"), ("plugin_scope", False)),
+        (_result("refused", error_code="plugin_quota"), ("plugin_quota", False)),
+        (
+            _result("failed", error_code="plugin_failed", detail="bad_input"),
+            ("plugin_failed", False),
+        ),
+        (
+            _result("refused", error_code="plugin_forbidden_import"),
+            ("plugin_forbidden_import", False),
+        ),
+    ],
+)
+async def test_outcomes_map_to_causes(
+    monkeypatch: pytest.MonkeyPatch, api: Any, result: dict[str, Any], want: Any
+) -> None:
+    _host(monkeypatch, [result], [])
+    with pytest.raises(StageFailure) as exc:
+        await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+    assert (exc.value.kind, exc.value.retryable) == want
+    assert api[-1] == ("DELETE", "/internal/plugins/invocations/inv_1")
+
+
+async def test_ok_with_progress_checkpoint_and_requests(
+    monkeypatch: pytest.MonkeyPatch, api: Any
+) -> None:
+    vid = str(uuid4())
+    frames = [
+        {"type": "progress", "invocation_id": "inv_1", "pct": 40},
+        {"type": "progress", "invocation_id": "inv_1", "pct": 0, "checkpoint": "aGFsZg=="},
+        _result(
+            "ok",
+            output_hash="h1",
+            summary='{"chapters":3}',
+            requests=[
+                {"stage": "find_silences", "subject": {"kind": "video", "id": vid}, "payload": "{}"}
+            ],
+        ),
+    ]
+    seen: list[dict[str, Any]] = []
+    _host(monkeypatch, frames, seen)
+    db, ctx = FakeDB(), Ctx()
+    res = await dispatch.run_plugin_stage(db, Job(), ctx)
+    assert res.output_hash == "h1" and res.summary["chapters"] == 3
+    assert [r.stage for r in res.requests] == [STAGE]
+    assert ctx.progressed == [40]
+    assert any("plugin_checkpoint" in sql for sql, _ in db.executed)
+    run = seen[0]
+    assert run["type"] == "run" and run["token"] == "t" and run["plugin_id"] == PID
+    assert run["job"]["stage"] == "find_silences" and run["settings"] == '{"threshold":3}'
+    assert run["grants"] == ["chapters.write"]
+
+
+async def test_host_gone_or_lost_gives_the_job_back(
+    monkeypatch: pytest.MonkeyPatch, api: Any
+) -> None:
+    """T04: no host, or a host that closes mid-job: deferred, no attempt spent."""
+    _no_host(monkeypatch)
+    with pytest.raises(JobDeferred, match="plugin_host_unavailable"):
+        await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+    _host(monkeypatch, [{"type": "progress", "invocation_id": "inv_1", "pct": 10}], [])
+    with pytest.raises(JobDeferred, match="plugin_host_lost"):
+        await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+    assert api.count(("DELETE", "/internal/plugins/invocations/inv_1")) == 2
+
+
+async def test_a_refused_mint_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(dispatch, "_api", lambda *a, **k: (409, {"code": "plugin_not_installed"}))
+    with pytest.raises(JobDeferred, match="plugin_held"):
+        await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+
+
+async def test_cancel_goes_back_to_the_queue(monkeypatch: pytest.MonkeyPatch, api: Any) -> None:
+    _host(monkeypatch, [_result("refused", error_code="cancelled", checkpoint="Y3A=")], [])
+    db = FakeDB()
+    with pytest.raises(JobDeferred, match="plugin_cancelled"):
+        await dispatch.run_plugin_stage(db, Job(), Ctx())
+    assert any("plugin_checkpoint" in sql for sql, _ in db.executed)
+
+
+def test_frames_are_length_prefixed_json() -> None:
+    body = json.dumps({"type": "health"}).encode()
+    assert len(body) < dispatch.MAX_FRAME

@@ -104,6 +104,7 @@ require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/layout v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/plugins v0.0.0
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -164,3 +165,5 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme => ../shared/go/p
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/ports => ../shared/go/ports
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/components => ../shared/components
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/plugins => ../shared/plugins
