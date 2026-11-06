@@ -833,7 +833,7 @@ func (c *Controller) saveKeys(ctx context.Context, uid string, k inputKeys) erro
 		return errors.New("tvremote: no secret store")
 	}
 	blob, _ := json.Marshal(k)
-	return c.Integration.Secrets.Put(ctx, SecretInputPrefix+uid, blob, "tv_remote")
+	return c.Integration.Secrets.Put(ctx, SecretInputPrefix+uid, blob, "")
 }
 
 // keys opens an input's keys (fetching them from Cloudflare when missing).

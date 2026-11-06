@@ -897,6 +897,66 @@ func (m *appMachine) superDB(db string) *sql.DB {
 	return d
 }
 
+// startWithTV starts the machine with its TV slots on, as the owner's home airs TV, and
+// waits until it serves version. server.toml's [tv] slots turns them on only while the
+// components are not seeded: from a release that seeds them (v0.3.81 on, Epic 51) the
+// database decides (story 51.03), and a seeded home made with the slots off keeps them off
+// whatever server.toml says. There the owner turns them on in Settings (the apply below),
+// and the home starts again: its next boot builds the slots from the reconciler's cache
+// (supervisor.BootConfig).
+func (m *appMachine) startWithTV(version string, d time.Duration) {
+	t := m.r.t
+	t.Helper()
+	m.tvSlots = "on"
+	m.start()
+	m.waitServing(version, d)
+	db := m.superDB("maktaba")
+	var want sql.NullString
+	if err := db.QueryRow(`SELECT (SELECT want FROM components WHERE id = 'livetv.slots')
+		WHERE to_regclass('components') IS NOT NULL`).Scan(&want); err != nil && err != sql.ErrNoRows {
+		t.Fatalf("livetv.slots: %v", err)
+	}
+	if !want.Valid || want.String == "enabled" {
+		return // not seeded yet (server.toml decides), or on already
+	}
+	a := m.signIn()
+	resp, body := a.b.do("POST", m.webURL()+"/api/components/apply", map[string]any{
+		"changes": []map[string]string{{"id": "livetv.slots", "want": "enabled"},
+			{"id": "livetv.inprocess", "want": "installed"}},
+		"with_conflicts": true}, a.csrf)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("the TV slots on (components apply): %d %s", resp.StatusCode, body)
+	}
+	waitFor(t, "the reconciler's cache with the TV slots on", 2*time.Minute, func() bool {
+		return m.cachedWant("livetv.slots") == "enabled"
+	})
+	m.r.logf("%s: the TV slots turned on in the components (they were %s): starting again", m.name, want.String)
+	m.stop()
+	m.start()
+	m.waitServing(version, d)
+}
+
+// cachedWant is a component's want in the reconciler's cache (state/components.json under
+// the machine's folders), "" when there is none.
+func (m *appMachine) cachedWant(id string) string {
+	var want string
+	_ = filepath.WalkDir(m.dir, func(path string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() || e.Name() != "components.json" || filepath.Base(filepath.Dir(path)) != "state" {
+			return nil
+		}
+		var c struct {
+			Desired map[string]struct {
+				Want string `json:"want"`
+			} `json:"desired"`
+		}
+		if raw, err := os.ReadFile(path); err == nil && json.Unmarshal(raw, &c) == nil {
+			want = c.Desired[id].Want
+		}
+		return filepath.SkipAll
+	})
+	return want
+}
+
 // waitServing waits until the machine answers with version on its web, with its API ready.
 func (m *appMachine) waitServing(version string, d time.Duration) {
 	m.r.t.Helper()

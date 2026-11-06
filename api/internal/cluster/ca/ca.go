@@ -185,7 +185,7 @@ func LoadOrCreate(ctx context.Context, dir string, sec secrets.Store, name strin
 	if sec != nil && !sealedOK {
 		if has, err := sec.Has(ctx, SecretName); err == nil && !has {
 			raw, _ := json.Marshal(sealedCA{Key: string(keyPEM), Cert: string(certPEM)})
-			_ = sec.Put(ctx, SecretName, raw, "cluster-ca")
+			_ = sec.Put(ctx, SecretName, raw, "")
 		}
 	}
 	return c, nil

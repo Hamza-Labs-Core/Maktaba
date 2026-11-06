@@ -140,6 +140,11 @@ func TestCALoadOrCreateRestoresFromSealedCopy(t *testing.T) {
 	if err != nil || b.SHA256 != a.SHA256 {
 		t.Fatalf("reload: %v, %s vs %s", err, b.SHA256, a.SHA256)
 	}
+	// the CA is a system writer: no user (home_secrets.updated_by is a users.id; the
+	// name "cluster-ca" failed the insert and the sealed copy never reached the database)
+	if by := sec.By(SecretName); by != "" {
+		t.Errorf("the sealed copy was written by %q, want no user", by)
+	}
 	if has, _ := sec.Has(ctx, SecretName); !has {
 		t.Fatal("no sealed copy")
 	}

@@ -195,9 +195,7 @@ func TestUpdateRehearsal11TVChangeRestartsARunningSlot(t *testing.T) {
 			"this machine, and the rehearsal's TV would meet it")
 	}
 	home, _ := r.seeded("home", profile("small"))
-	home.tvSlots = "on"
-	home.start()
-	home.waitServing(k.prev, 8*time.Minute)
+	home.startWithTV(k.prev, 8*time.Minute)
 	db := home.superDB("maktaba")
 	before := seedCounts(t, db)
 
