@@ -21,8 +21,14 @@
 -- job_stages.stage takes names up to 63 characters (a plugin stage is
 -- p_<8 hex>_<name up to 40>, story 54.01 §4); chapters gain the source 'plugin'.
 --
--- Only the home's API reads and writes these; maktaba_worker (the joined machines) gets
--- nothing but SELECT on plugin_installs (plugin stages run on the home only, README H12).
+-- Only the home's API writes these (plugin stages run on the home only, README H12).
+-- plugin_tables_guard() refuses any insert, update or delete by a member of maktaba_worker
+-- (every joined machine's login role) that is not also a member of the table's owner,
+-- as slot 0190 does for component_restarts. The grants stay the defaults of a new table:
+-- the previous release re-makes maktaba_worker with them, and its worker-group check
+-- reads a revoke as a change. A joined machine may SELECT them: none holds a secret
+-- (plugin_invocations keeps only the sha256 of a token, never the token; grants are
+-- capability names and library ids, which a joined machine reads elsewhere already).
 --
 -- Additive: new tables, a wider check, one more allowed chapter source.
 --
@@ -160,13 +166,36 @@ CREATE OR REPLACE TRIGGER plugin_installs_changed_trg
 -- +goose StatementEnd
 
 -- +goose StatementBegin
-DO $$
+CREATE OR REPLACE FUNCTION plugin_tables_guard() RETURNS trigger
+LANGUAGE plpgsql AS $$
+DECLARE
+    owner name := (SELECT pg_get_userbyid(c.relowner) FROM pg_class c WHERE c.oid = TG_RELID);
 BEGIN
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
-        REVOKE ALL ON plugin_installs, plugin_grants, plugin_invocations, plugin_data,
-            plugin_writes, plugin_suggestions FROM maktaba_worker;
-        GRANT SELECT ON plugin_installs TO maktaba_worker;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker')
+       AND pg_has_role(current_user, 'maktaba_worker', 'MEMBER')
+       AND NOT pg_has_role(current_user, owner, 'MEMBER')
+    THEN
+        RAISE EXCEPTION '%: only the home writes plugin tables (role %)', TG_TABLE_NAME, current_user
+            USING ERRCODE = '42501';
     END IF;
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+DO $$
+DECLARE
+    t text;
+BEGIN
+    FOREACH t IN ARRAY ARRAY['plugin_installs', 'plugin_grants', 'plugin_invocations', 'plugin_data',
+                             'plugin_writes', 'plugin_suggestions'] LOOP
+        EXECUTE format('CREATE OR REPLACE TRIGGER %I BEFORE INSERT OR UPDATE OR DELETE ON %I'
+                       ' FOR EACH ROW EXECUTE FUNCTION plugin_tables_guard()', t || '_guard_trg', t);
+    END LOOP;
 END
 $$;
 -- +goose StatementEnd
@@ -179,6 +208,7 @@ DROP INDEX IF EXISTS plugin_invocations_created_idx;
 DROP TRIGGER IF EXISTS plugin_installs_changed_trg ON plugin_installs;
 DROP TRIGGER IF EXISTS plugin_grants_changed_trg ON plugin_grants;
 DROP FUNCTION IF EXISTS plugin_installs_notify();
+DROP FUNCTION IF EXISTS plugin_tables_guard() CASCADE;
 DROP FUNCTION IF EXISTS plugin_grants_notify();
 DROP TABLE IF EXISTS plugin_suggestions, plugin_writes, plugin_data, plugin_invocations,
     plugin_grants, plugin_installs;
