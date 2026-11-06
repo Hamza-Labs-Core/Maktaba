@@ -225,7 +225,8 @@ fn runaway_jobs_end_and_the_host_serves_the_next() {
     assert_eq!(r.error_code, "plugin_timeout");
     // N7: within the deadline plus 200 ms (a tick and the unwind) in a release build; a
     // debug build sharing the machine with the other tests gets more room
-    let most = if cfg!(debug_assertions) { 3_000 } else { 1_250 };
+    // (CI's release step checks the 200 ms; a debug build on a busy runner only ends)
+    let most = if cfg!(debug_assertions) { 15_000 } else { 1_250 };
     assert!(took >= Duration::from_millis(1_000) && took < Duration::from_millis(most), "took {took:?}");
     let r = f.run(&p, "memory", &[], Limits { memory_mb: 32, ..Default::default() });
     assert_eq!(r.outcome, Outcome::Memory, "{r:?}");
