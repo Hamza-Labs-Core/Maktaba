@@ -1,0 +1,51 @@
+{
+ "text": "قال الصلوة خير من النوم",
+ "word_data": "AQUAAAADAAAeAOYABAAGHgAyAEwBCwADUAAUAOYADwACZAAUAOYAEgAFeAAoAMwA",
+ "char_start": 4,
+ "char_len": 6,
+ "after": "الصلاة",
+ "want_text": "قال الصلاة خير من النوم",
+ "want_word_data": "AQUAAAADAAAeAOYABAAGHgAyAP8ACwADUAAUAOYADwACZAAUAOYAEgAFeAAoAMwA",
+ "want_slots": [
+  {
+   "char_start": 0,
+   "char_len": 3,
+   "start_cs": 0,
+   "dur_cs": 30,
+   "prob": 230,
+   "flags": 0
+  },
+  {
+   "char_start": 4,
+   "char_len": 6,
+   "start_cs": 30,
+   "dur_cs": 50,
+   "prob": 255,
+   "flags": 0
+  },
+  {
+   "char_start": 11,
+   "char_len": 3,
+   "start_cs": 80,
+   "dur_cs": 20,
+   "prob": 230,
+   "flags": 0
+  },
+  {
+   "char_start": 15,
+   "char_len": 2,
+   "start_cs": 100,
+   "dur_cs": 20,
+   "prob": 230,
+   "flags": 0
+  },
+  {
+   "char_start": 18,
+   "char_len": 5,
+   "start_cs": 120,
+   "dur_cs": 40,
+   "prob": 204,
+   "flags": 0
+  }
+ ]
+}

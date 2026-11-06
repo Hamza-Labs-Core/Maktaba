@@ -246,7 +246,8 @@ jobs:
           sudo /usr/bin/maktaba-launcher --verify /var/lib/maktaba/bin/releases/1.2.3
           grep -q '^ExecStart=/usr/bin/maktaba-launcher --root /var/lib/maktaba serve$' /usr/lib/systemd/system/maktaba-server.service
           grep -q '^RestartForceExitStatus=75$' /usr/lib/systemd/system/maktaba-server.service
-          grep -q 'v1.2.3' < <(sudo /usr/bin/maktaba-server --version)
+          out="$(sudo /usr/bin/maktaba-server --version)"
+          grep -q 'v1.2.3' <<<"$out"
           test "$(sudo stat -c %U /var/lib/maktaba/bin/releases/1.2.3)" = maktaba
 
           echo "==> upgrade: 1.2.4 becomes current under the boot-loop guard"
@@ -268,7 +269,8 @@ jobs:
           sudo dpkg -i --force-depends --force-downgrade out/maktaba-server_1.2.2-1_amd64.deb 2>&1 | tee dpkg.log
           want current 1.2.4
           said "the service keeps running release 1.2.4"
-          grep -q 'v1.2.2' < <(/usr/bin/maktaba-launcher --version)
+          out="$(/usr/bin/maktaba-launcher --version)"
+          grep -q 'v1.2.2' <<<"$out"
 
       - name: rpm for the package check
         timeout-minutes: 8

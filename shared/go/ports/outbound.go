@@ -9,10 +9,11 @@ import (
 // internet is listed in Outbound, with the switch that stops it. MAKTABA_OFFLINE=1 (what
 // `maktaba-server serve --offline` sets for itself and every role) stops each one a
 // server makes by itself (By "auto"): a test stack, a branch's scratch stack or an offline
-// home then calls nothing outside on its own. The ones an admin starts (By "admin": a Plex
-// sign-in, a web search) run only when an admin acts; a pack install is refused while
-// packs are off. TestOutboundHostsAreListed fails on a host
-// in the code that is not listed here, so a new call cannot be added silently.
+// home then calls nothing outside on its own; the pipeline reads the variable too
+// (maktaba_pipeline/offline.py). The ones an admin starts (By "admin": a Plex sign-in, a
+// machine's conversion) run only when an admin acts; a pack install is refused while packs
+// are off. TestOutboundHostsAreListed fails on a host in the Go or the pipeline's Python
+// code that is not listed here, so a new call cannot be added silently.
 
 // EnvOffline turns every outbound call off.
 const EnvOffline = "MAKTABA_OFFLINE"
@@ -69,10 +70,25 @@ var Outbound = []Call{
 		What: "setup's model download", Off: "setup only"},
 	{Name: "plex-tv", Hosts: []string{"plex.tv", "app.plex.tv"}, By: "admin",
 		What: "a Plex sign-in", Off: "never started by the server"},
-	{Name: "youtube", Hosts: []string{"www.youtube.com", "i.ytimg.com"}, By: "admin",
-		What: "YouTube links, thumbnails and downloads of the libraries an admin linked", Off: "no YouTube source"},
-	{Name: "websearch", Hosts: []string{"www.googleapis.com"}, By: "admin",
-		What: "enrichment's web search, when an admin set a search key", Off: "no search key"},
+	{Name: "youtube", Hosts: []string{"www.youtube.com", "i.ytimg.com"}, By: "auto",
+		What: "the listings, downloads, exact dates and repairs of the libraries an admin linked to YouTube; " +
+			"the reconciler refreshes their listings by itself (the pipeline's YouTube stages)",
+		Off: "no YouTube source; offline, the stages are not claimed and no refresh is queued"},
+	{Name: "encyclopedia", Hosts: []string{"ar.wikipedia.org"}, By: "auto",
+		What: "the books stage's lookup of the book a lesson series explains (pipeline classify/books.py)",
+		Off:  `rules books.enabled = false; offline, only the books already looked up are used`},
+	{Name: "websearch", Hosts: []string{"www.googleapis.com", "ollama.com"}, By: "auto",
+		What: "enrichment's web search (Google or Ollama), which each enrich job makes once an admin set a search key",
+		Off:  "no search key; offline, enrichment reads the internal intel only"},
+	{Name: "camel-dictionary", Hosts: []string{""}, By: "auto",
+		What: "CAMeL Tools' download of its dictionary when its data folder (outside the packs) lacks it",
+		Off:  "the model.refine pack; never inside a pack's folder, never offline"},
+	{Name: "machine-conversion", Hosts: []string{"github.com"}, By: "admin",
+		What: "a machine converted to the Go node fetches the release from the home's mirror, else GitHub",
+		Off:  "never started by the server"},
+	{Name: "model-downloads", Hosts: []string{"huggingface.co"}, By: "admin",
+		What: "a model an admin downloads from the Models page (the pipeline's model service)",
+		Off:  "HF_HUB_OFFLINE=1 for the transcription models' cache"},
 	{Name: "cloudflare", Hosts: []string{"api.cloudflare.com"}, By: "admin",
 		What: "the TV remote's Cloudflare Stream, when an admin set it up", Off: "ext.cloudflare_stream off"},
 }

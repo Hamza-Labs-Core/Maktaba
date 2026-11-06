@@ -21,7 +21,7 @@ import pytest
 
 from maktaba_pipeline.engine.stages import transcribe as stage
 from maktaba_pipeline.stt import batched, ct2, engine
-from maktaba_pipeline.stt.settings import SAMPLE_RATE, FileProgress, WhisperSettings
+from maktaba_pipeline.stt.settings import SAMPLE_RATE, FileProgress, WhisperSettings, Word
 
 TS = 1000  # timestamp_begin of the fake tokenizer
 EOT = 999
@@ -478,7 +478,10 @@ async def test_files_share_each_pass_and_come_out_as_the_mac_s() -> None:
     # bounded by their words, which are on the file's timeline (window start + offset)
     s = r1.sentences[1]
     assert (s.start, s.end, s.text) == (30.5, 31.2, "w101 w101")
-    assert s.words == [(30.5, 30.8, " w101"), (30.9, 31.2, " w101")]
+    assert s.words is not None
+    assert [w.as_tuple() for w in s.words] == [(30.5, 30.8, " w101"), (30.9, 31.2, " w101")]
+    # Epic 52 (story 52.1): faster-whisper's word probability is kept
+    assert all(w.prob is not None for w in s.words)
     assert all(x.words for r in (r1, r2) for x in r.sentences)
     assert r1.backend == "ct2-batched" and r1.backend_version == _loaded(model).version
     assert r1.detected_language == "ar" and r1.language == "ar"
@@ -669,7 +672,7 @@ async def test_the_legacy_faster_whisper_backend_runs_on_the_engine(
 
         async def transcribe(self, audio: Any, *, prompt: str | None = None) -> Transcript:
             asked.append((self.s, prompt))
-            words = [(0.5, 0.9, " قال"), (1.0, 1.6, " الشيخ")]
+            words = [Word(0.5, 0.9, " قال"), Word(1.0, 1.6, " الشيخ")]
             return Transcript(
                 [Sentence(0.5, 1.6, "قال الشيخ", -0.2, 0.0, words)], 2.0, "ar", self.s.model,
                 1.0, backend="ct2-batched", backend_version="faster-whisper 1.2.1",

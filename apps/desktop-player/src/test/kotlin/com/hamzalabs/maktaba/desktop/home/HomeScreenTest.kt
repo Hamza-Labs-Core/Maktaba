@@ -13,8 +13,11 @@ import com.hamzalabs.maktaba.desktop.Lang
 import com.hamzalabs.maktaba.desktop.TestHome
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
 
 /** Story 55.03 T06 and T07, off screen. */
 @OptIn(ExperimentalTestApi::class)
@@ -55,6 +58,34 @@ class HomeScreenTest {
             onNodeWithTag("card-cw").performClick()
             assertEquals("cw", fake.played.single().videoId)
             assertNull("where the person left it", fake.played.single().startSec)
+            assertEquals("its length goes too (the 95% rule)", 2400.0, fake.played.single().durationSec)
+        }
+    }
+
+    @Test
+    fun notInterestedOnARowsLastCardStaysDone() = TestHome().use { fake ->
+        fake.answer("GET /api/home", homeBody)
+        fake.answer("GET /api/recommendations", recsBody)
+        fake.answer("GET /api/videos/r1", """{"id":"r1","title":"Seerah 1","filename":"r1.mp4","library_id":"l1"}""")
+        val gate = CountDownLatch(1)
+        fake.held("DELETE /api/recommendations/items/r1", { "" }, gate)
+        val state = loaded(fake, recsOn = true)
+        val home = fake.home()
+        runComposeUiTest {
+            setContent { InPlayer(home) { HomeContent(state, home, fake.features.value) } }
+            waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("more-r1")).fetchSemanticsNodes().isNotEmpty() }
+            onNodeWithTag("more-r1").performClick()
+            onNodeWithTag("not-interested").performClick()
+            // the row's only card went, and the row with it
+            waitUntil(timeoutMillis = 5_000) { fake.asked("DELETE /api/recommendations/items/r1").isNotEmpty() }
+            waitForIdle()
+            assertEquals(0, onAllNodes(hasTestTag("row-$KEY_FOR_YOU")).fetchSemanticsNodes().size)
+            gate.countDown()
+            Thread.sleep(500)
+            waitForIdle()
+            assertTrue("the card stays gone", state.recs!!.rails.all { r -> r.items.none { it.videoId == "r1" } })
+            assertFalse(state.dismissFailed)
+            assertEquals(0, onAllNodes(hasTestTag("card-r1")).fetchSemanticsNodes().size)
         }
     }
 

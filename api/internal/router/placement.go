@@ -168,6 +168,9 @@ func buildPlacement() placement.Table {
 		"/api/components",
 		// and the capabilities, from the home's in-memory snapshot (story 51.09)
 		"/api/capabilities",
+		// Epic 52: word review, its vocabulary and the language packs' report (home
+		// admins only; the edits write the home's transcripts)
+		"/api/review/", "/api/vocabulary", "/api/language-packs",
 	))
 	return t
 }

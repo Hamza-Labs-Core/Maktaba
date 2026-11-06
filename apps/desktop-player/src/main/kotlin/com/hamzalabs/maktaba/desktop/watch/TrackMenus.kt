@@ -81,14 +81,14 @@ fun AudioMenu(options: List<AudioOption>, chosen: AudioOption?, onChoose: (Audio
     }
 }
 
-/** Quality: Auto and the session's ladder. */
+/** Quality: Auto and the session's ladder; the choice is marked by its height (a cap from the settings is not a rung's). */
 @Composable
 fun QualityMenu(options: List<QualityOption>, chosen: QualityOption, onChoose: (QualityOption) -> Unit) {
     val t = LocalTexts.current
     MenuButton(Icons.Filled.HighQuality, t["watch.quality"], "quality") { close ->
         options.forEach { q ->
             val label = q.height?.let { t["watch.qualityHeight", it] } ?: t["watch.qualityAuto"]
-            Choice(label, q == chosen, "quality-${q.height ?: "auto"}") { onChoose(q); close() }
+            Choice(label, q.height == chosen.height, "quality-${q.height ?: "auto"}") { onChoose(q); close() }
         }
     }
 }

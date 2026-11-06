@@ -624,4 +624,51 @@
     <string name="w_updates_trigger_menu">its menu</string>
     <string name="w_updates_trigger_order">the home\'s order</string>
     <string name="w_updates_trigger_start">its first start</string>
+
+    <!-- Epic 52 (story 52.13): word review, in the web's words (review.*) -->
+    <string name="review_title">Word review</string>
+    <string name="review_back">Back</string>
+    <string name="review_loading">Loading…</string>
+    <string name="review_empty">No words to review</string>
+    <string name="review_admins_only">Only home admins can review words</string>
+    <string name="review_stale">The sentence changed since this word was found: it is shown again as it is now.</string>
+    <string name="review_action_failed">That did not work. Try again.</string>
+    <string name="review_undo">Undo</string>
+    <string name="review_no_audio">Audio not available</string>
+    <string name="review_play">Play / pause</string>
+    <string name="review_slow">Play at 0.75×</string>
+    <string name="review_replay">Replay</string>
+    <string name="review_edit">Spelling</string>
+    <string name="review_accept">Accept as is</string>
+    <string name="review_correct">Correct</string>
+    <string name="review_name">Mark as a name</string>
+    <string name="review_dictionary">Add to dictionary</string>
+    <string name="review_skip">Skip</string>
+    <string name="review_done_accept">Kept «%1$s» as it is</string>
+    <string name="review_done_name">«%1$s» is a name now</string>
+    <string name="review_done_dictionary">«%1$s» is in the dictionary now</string>
+    <string name="review_done_skip">Skipped «%1$s»</string>
+    <string name="review_fixed">Fixed «%1$s» → «%2$s»</string>
+    <string name="review_reason_low_confidence">Whisper was unsure</string>
+    <string name="review_reason_not_in_dictionary">Not in the dictionary</string>
+    <string name="review_reason_listeners_disagree">Heard differently</string>
+    <string name="review_reason_quran_mismatch">Differs from the Quran text</string>
+    <string name="review_reason_named_entity">Looks like a name</string>
+    <string name="review_reason_near_vocabulary">Close to a known word</string>
+    <string name="review_reason_manual">Picked by a reviewer</string>
+    <string name="review_reason_previous_fix">An earlier fix</string>
+    <string name="review_reason_over_budget">Over the file\'s limit</string>
+    <string name="review_reason_unknown">Another reason</string>
+    <string name="review_quran_expected">The verse has: %1$s</string>
+    <string name="review_quran_missing">A word of the verse may be missing: %1$s</string>
+    <string name="review_quran_inserted">Not in the verse</string>
+    <string name="review_quran_credit">Quran text: Tanzil Project (tanzil.net)</string>
+    <plurals name="review_open">
+        <item quantity="one">Word review: %d word</item>
+        <item quantity="other">Word review: %d words</item>
+    </plurals>
+    <plurals name="review_apply_all">
+        <item quantity="one">Apply to this place</item>
+        <item quantity="other">Apply to all %d places</item>
+    </plurals>
 </resources>

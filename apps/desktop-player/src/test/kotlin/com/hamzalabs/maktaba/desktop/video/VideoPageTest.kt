@@ -2,6 +2,9 @@ package com.hamzalabs.maktaba.desktop.video
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasTestTag
@@ -16,8 +19,10 @@ import com.hamzalabs.maktaba.desktop.Lang
 import com.hamzalabs.maktaba.desktop.TestHome
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
 
 /** Story 55.06 T06 and T07, off screen. */
 @OptIn(ExperimentalTestApi::class)
@@ -39,6 +44,28 @@ class VideoPageTest {
             onNodeWithTag("from-start").assertExists()
             onNodeWithTag("chapter-2").performClick()
             assertEquals(listOf(724, 600), f.played.map { it.startSec })
+        }
+    }
+
+    @Test
+    fun aFavoriteMadeJustBeforeLeavingThePageStays() = TestHome().use { f ->
+        val s = loaded(f)
+        val gate = CountDownLatch(1)
+        f.held("POST /api/me/favorites", { """{"updated":1}""" }, gate)
+        val home = f.home()
+        var shown by mutableStateOf(true)
+        runComposeUiTest {
+            setContent { InPlayer(home) { if (shown) Box(Modifier.size(1200.dp, 900.dp)) { VideoContent(s, home, f.features.value) } } }
+            onNodeWithTag("favorite").performClick()
+            waitUntil(timeoutMillis = 5_000) { f.asked("POST /api/me/favorites").isNotEmpty() }
+            // the person goes back while the home has not answered yet
+            shown = false
+            waitForIdle()
+            gate.countDown()
+            Thread.sleep(500)
+            waitForIdle()
+            assertTrue("the favorite stays", s.favorite)
+            assertFalse(s.saveFailed)
         }
     }
 
