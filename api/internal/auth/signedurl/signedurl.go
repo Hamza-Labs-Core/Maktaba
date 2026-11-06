@@ -79,7 +79,7 @@ func (m *Minter) KID() string {
 }
 
 var (
-	directRe  = regexp.MustCompile(`^/stream/direct/([0-9a-fA-F-]{36})$`)
+	directRe  = regexp.MustCompile(`^/stream/(?:direct|clip)/([0-9a-fA-F-]{36})$`)
 	sessionRe = regexp.MustCompile(`^/stream/([0-9a-fA-F-]{36})/`)
 )
 

@@ -177,6 +177,10 @@ Turns speech into text, sentence by sentence with its time, using a Whisper spee
 
 Listens to the speech again with a second model, Cohere Transcribe Arabic, and corrects Whisper's words. It runs on the machines that can: a Mac with Apple silicon, or a PC whose NVIDIA GPU holds the model (8 GB or more on Windows). Where the GPU is too small for both models at once, Whisper and the second listen take turns on it. A machine that cannot run it still transcribes, and one that can corrects its transcripts. With the second listen turned off it passes Whisper's transcript on as it is. Runs after **Transcribe** and feeds **Subtitle files**, **Search index** and **Tag topics**.
 
+### Word review {#word-check}
+
+Finds the words of each transcript that may be wrong: words the language's dictionary does not know, words Whisper was unsure of, words the second listen heard differently, and words of a Quran verse that differ from the Quran text. It saves where each one is, with the reasons and suggested spellings, for a home admin to check in [Word review](/help/word-review). It never changes the transcript itself. It runs on any machine's CPU after **Second listen**, and again when a dictionary, the vocabulary or the library's word review settings change. Transcripts made before it are checked too, from their text alone, at the lowest priority and only while nothing waits to be transcribed ("waiting: transcription busy").
+
 ### Subtitle files {#subtitle-gen}
 
 Writes the transcript as subtitle files (.srt and .vtt) next to the video, so Plex, VLC and TVs pick them up. It never overwrites a subtitle file Maktaba did not write. It writes to your share, so it offers **Review first**. Runs after **Second listen**.

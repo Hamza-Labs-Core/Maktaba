@@ -28,6 +28,7 @@ from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import cohere, engine, model_share
 from maktaba_pipeline.stt.batched import Sentence, Transcript
 from maktaba_pipeline.stt.placement import TranscriptionConfig
+from maktaba_pipeline.stt.settings import Word
 from tests.stages.test_transcribe import FakeTranscriber, _one_video
 from tests.stages.world import core_runtime, drain_core
 
@@ -164,7 +165,7 @@ class _WithWords(FakeTranscriber):
         t = await super().transcribe(audio, **kw)
         t.sentences = [
             Sentence(s.start, s.end, s.text, s.avg_logprob, s.no_speech_prob,
-                     words=[(s.start, s.end, s.text)])
+                     words=[Word(s.start, s.end, s.text)])
             for s in t.sentences
         ]  # fmt: skip
         return t

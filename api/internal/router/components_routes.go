@@ -75,6 +75,9 @@ var CoreRoutes = componentTable{
 	// /api/tv/changes, rollback, slots and releases answer component_off themselves,
 	// after their admin check (middleware.RequireComponent, story 51.05).
 	{Prefix: "/api/channels"}, {Prefix: "/api/filler/"}, {Prefix: "/api/tv/"}, {Prefix: "/api/extensions"},
+	// Epic 52: word review never answers component_off: fixes are the API's own edits and
+	// work while review.words is off; the pages read its phase from /api/components
+	{Prefix: "/api/review/"}, {Prefix: "/api/vocabulary"}, {Prefix: "/api/language-packs"},
 }
 
 func (r componentRule) matches(method, pattern string) bool {

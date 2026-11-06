@@ -113,13 +113,13 @@ fun VideoContent(state: VideoPageState, home: DesktopHome, features: Capabilitie
                     PlayButtons(state.resumeSec, onPlay = { home.play(request(it)) })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(
-                            state.favorite, { scope.launch { state.toggleFavorite() } },
+                            state.favorite, { home.change { state.toggleFavorite() } },
                             label = { Text(t["video.favorite"]) },
                             leadingIcon = { Icon(if (state.favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, null) },
                             modifier = Modifier.testTag("favorite"),
                         )
                         FilterChip(
-                            state.watched, { scope.launch { state.toggleWatched() } },
+                            state.watched, { home.change { state.toggleWatched() } },
                             label = { Text(t["video.markWatched"]) },
                             leadingIcon = { if (state.watched) Icon(Icons.Filled.Check, null) },
                             modifier = Modifier.testTag("watched"),

@@ -86,12 +86,12 @@ fun LibrariesContent(state: LibrariesState, home: DesktopHome) {
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(t["lib.pinned"], style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() }.testTag("pinned"))
                     }
-                    items(pinned, key = { "p-" + it.id }) { lib -> SummaryCard(lib, home) { scope.launch { state.togglePin(lib.id) } } }
+                    items(pinned, key = { "p-" + it.id }) { lib -> SummaryCard(lib, home) { home.change { state.togglePin(lib.id) } } }
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         Text(t["section.libraries"], style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                     }
                 }
-                items(rest, key = { it.id }) { lib -> SummaryCard(lib, home) { scope.launch { state.togglePin(lib.id) } } }
+                items(rest, key = { it.id }) { lib -> SummaryCard(lib, home) { home.change { state.togglePin(lib.id) } } }
             }
         }
     }

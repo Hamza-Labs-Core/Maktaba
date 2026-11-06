@@ -636,4 +636,59 @@
     <string name="w_updates_trigger_menu">قائمته</string>
     <string name="w_updates_trigger_order">طلب الجهاز الرئيسي</string>
     <string name="w_updates_trigger_start">تشغيله الأول</string>
+
+    <!-- Epic 52 (story 52.13): word review, in the web's words (review.*) -->
+    <string name="review_title">مراجعة الكلمات</string>
+    <string name="review_back">رجوع</string>
+    <string name="review_loading">جارٍ التحميل…</string>
+    <string name="review_empty">لا كلمات للمراجعة</string>
+    <string name="review_admins_only">مراجعة الكلمات للمشرفين فقط</string>
+    <string name="review_stale">تغيّرت الجملة منذ العثور على هذه الكلمة: تُعرض من جديد كما هي الآن.</string>
+    <string name="review_action_failed">لم ينجح ذلك. حاول مرة أخرى.</string>
+    <string name="review_undo">تراجع</string>
+    <string name="review_no_audio">الصوت غير متاح</string>
+    <string name="review_play">تشغيل / إيقاف</string>
+    <string name="review_slow">تشغيل بسرعة 0.75×</string>
+    <string name="review_replay">إعادة التشغيل</string>
+    <string name="review_edit">الإملاء</string>
+    <string name="review_accept">قبول كما هي</string>
+    <string name="review_correct">تصحيح</string>
+    <string name="review_name">تعليم كاسم</string>
+    <string name="review_dictionary">إضافة إلى القاموس</string>
+    <string name="review_skip">تخطٍّ</string>
+    <string name="review_done_accept">أُبقيت «%1$s» كما هي</string>
+    <string name="review_done_name">صارت «%1$s» اسمًا</string>
+    <string name="review_done_dictionary">أُضيفت «%1$s» إلى القاموس</string>
+    <string name="review_done_skip">تُخطّيت «%1$s»</string>
+    <string name="review_fixed">صُحّحت «%1$s» ← «%2$s»</string>
+    <string name="review_reason_low_confidence">لم يكن Whisper متأكدًا</string>
+    <string name="review_reason_not_in_dictionary">ليست في القاموس</string>
+    <string name="review_reason_listeners_disagree">سُمعت بشكل مختلف</string>
+    <string name="review_reason_quran_mismatch">يختلف عن نص القرآن</string>
+    <string name="review_reason_named_entity">تبدو اسمًا</string>
+    <string name="review_reason_near_vocabulary">قريبة من كلمة معروفة</string>
+    <string name="review_reason_manual">اختارها مراجع</string>
+    <string name="review_reason_previous_fix">تصحيح سابق</string>
+    <string name="review_reason_over_budget">تجاوزت حدّ الملف</string>
+    <string name="review_reason_unknown">سبب آخر</string>
+    <string name="review_quran_expected">في الآية: %1$s</string>
+    <string name="review_quran_missing">قد تكون كلمة من الآية ناقصة: %1$s</string>
+    <string name="review_quran_inserted">ليست في الآية</string>
+    <string name="review_quran_credit">نص القرآن: مشروع تنزيل (tanzil.net)</string>
+    <plurals name="review_open">
+        <item quantity="zero">مراجعة الكلمات: لا كلمات</item>
+        <item quantity="one">مراجعة الكلمات: كلمة واحدة</item>
+        <item quantity="two">مراجعة الكلمات: كلمتان</item>
+        <item quantity="few">مراجعة الكلمات: %d كلمات</item>
+        <item quantity="many">مراجعة الكلمات: %d كلمة</item>
+        <item quantity="other">مراجعة الكلمات: %d كلمة</item>
+    </plurals>
+    <plurals name="review_apply_all">
+        <item quantity="zero">تطبيق على كل المواضع</item>
+        <item quantity="one">تطبيق على هذا الموضع</item>
+        <item quantity="two">تطبيق على الموضعين</item>
+        <item quantity="few">تطبيق على المواضع الـ%d كلها</item>
+        <item quantity="many">تطبيق على المواضع الـ%d كلها</item>
+        <item quantity="other">تطبيق على المواضع الـ%d كلها</item>
+    </plurals>
 </resources>

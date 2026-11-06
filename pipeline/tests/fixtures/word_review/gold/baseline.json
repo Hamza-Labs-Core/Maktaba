@@ -1,0 +1,60 @@
+{
+ "languages": {
+  "ar": {
+   "words": 41,
+   "wrong": 7,
+   "flagged": 7,
+   "precision": 0.7143,
+   "recall": 0.7143,
+   "flag_rate": 0.1707
+  },
+  "en": {
+   "words": 25,
+   "wrong": 2,
+   "flagged": 5,
+   "precision": 0.4,
+   "recall": 1.0,
+   "flag_rate": 0.2
+  }
+ },
+ "reasons": {
+  "listeners_disagree": {
+   "words": 66,
+   "wrong": 9,
+   "flagged": 4,
+   "precision": 0.5,
+   "recall": 0.2222,
+   "flag_rate": 0.0606
+  },
+  "low_confidence": {
+   "words": 66,
+   "wrong": 9,
+   "flagged": 6,
+   "precision": 0.5,
+   "recall": 0.3333,
+   "flag_rate": 0.0909
+  },
+  "not_in_dictionary": {
+   "words": 66,
+   "wrong": 9,
+   "flagged": 4,
+   "precision": 0.5,
+   "recall": 0.2222,
+   "flag_rate": 0.0606
+  },
+  "quran_mismatch": {
+   "words": 66,
+   "wrong": 9,
+   "flagged": 1,
+   "precision": 1.0,
+   "recall": 0.1111,
+   "flag_rate": 0.0152
+  }
+ },
+ "hearing_test": {
+  "spots": 3,
+  "flagged": 3,
+  "missed": []
+ },
+ "flags_per_hour": 864.0
+}

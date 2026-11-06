@@ -118,3 +118,9 @@ def test_the_dictionary_is_read_again_when_its_pack_moves(
     assert Path(built[1]) == (components / "model.refine" / "r13-2" / "camel_tools").resolve()
     assert Path(os.environ["CAMELTOOLS_DATA"]) == Path(built[1])
     assert cohere.dictionary() is second
+
+
+def test_inside_a_pack(components: Path) -> None:
+    assert pack_paths.inside(str(components / "model.refine" / "r13-1" / "camel_tools"))
+    assert not pack_paths.inside(str(components / "model.refine"))
+    assert not pack_paths.inside(str(components.parent / "models" / "camel_tools"))

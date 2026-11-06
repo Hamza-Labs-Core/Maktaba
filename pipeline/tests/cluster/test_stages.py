@@ -307,3 +307,19 @@ def test_a_ct2_gpu_node_claims_from_the_gpu_pool(monkeypatch: pytest.MonkeyPatch
     selector = StageSelector(graph=graph, role="node", storage={"read": "ok", "write": "ok"})
     assert selector.compute()
     assert selector.current() == ("transcribe",) and selector.pools == ["gpu"]
+
+
+def test_the_stages_that_reach_the_internet_wait_while_offline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#640: MAKTABA_OFFLINE keeps the YouTube stages (listings, downloads, pages) off."""
+    from maktaba_pipeline.offline import OUTBOUND_STAGES, REASON
+
+    graph = [s for s in REAL_GRAPH if s.name in OUTBOUND_STAGES]
+    assert {s.name for s in graph} == set(OUTBOUND_STAGES)  # every name is a real stage
+    monkeypatch.setenv("MAKTABA_OFFLINE", "1")
+    detail: dict[str, str] = {}
+    served, off = select_stages(graph, detail=detail)
+    assert served == []
+    assert all(detail[s.name] == REASON for s in graph), detail
+    assert set(off) == set(OUTBOUND_STAGES)

@@ -82,6 +82,10 @@ _log = get_logger()
 
 def _cannot_run(st: StageDef, handlers: Collection[str]) -> str | None:
     """Why this worker cannot run the stage (the detail, logged), or None."""
+    from .. import offline
+
+    if offline.offline() and st.name in offline.OUTBOUND_STAGES:
+        return offline.REASON  # the job waits for the switch to go off (#640)
     if st.legacy:
         return None if st.name in handlers else "no handler in this worker"
     from ..engine.stages.registry import get_impl

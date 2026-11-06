@@ -107,6 +107,10 @@ def ytdlp_command() -> list[str]:
 
 def unavailable() -> str | None:
     """Why this worker cannot run yt-dlp, or None."""
+    from .. import offline
+
+    if offline.offline():
+        return offline.REASON
     if os.environ.get(YTDLP_ENV, "").strip():
         return None
     if importlib.util.find_spec("yt_dlp") is None:
