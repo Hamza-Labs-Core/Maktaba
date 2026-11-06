@@ -491,7 +491,8 @@ func (r *Runner) Apply(desired map[string]store.Desired) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for id := range desired {
-		if _, ok := r.cat.Get(id); ok || r.unknown[id] {
+		// a plugin's entry (Epic 54) is this host's to ignore: it runs no plugin loop
+		if _, ok := r.cat.Get(id); ok || r.unknown[id] || components.IsPlugin(id) {
 			continue
 		}
 		if r.unknown == nil {

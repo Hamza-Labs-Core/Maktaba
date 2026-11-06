@@ -1,9 +1,13 @@
 package supervisor
 
 import (
+	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
@@ -136,4 +140,42 @@ func TestFatalExitIsNotRestarted(t *testing.T) {
 		e := proc(s, RolePlugins).LastExit
 		return e != nil && !e.At.Equal(got.LastExit.At)
 	})
+}
+
+// The sockets move to a short folder when <data>/run is too long for a unix socket.
+func TestPluginsSocketsFitSunPath(t *testing.T) {
+	short := config.Config{}
+	short.Server.DataDir = "/var/lib/maktaba"
+	p := PluginsPaths(short)
+	if p.Sockets != "" || p.Dispatch != "/var/lib/maktaba/run/plugins/plugind.sock" {
+		t.Fatalf("short: %+v", p)
+	}
+	long := config.Config{}
+	long.Server.DataDir = "/" + strings.Repeat("deep/", 30) + "data"
+	p = PluginsPaths(long)
+	if p.Sockets == "" || len(p.Dispatch) > maxSocketPath || len(p.API) > maxSocketPath ||
+		filepath.Dir(p.Dispatch) != p.Sockets || PluginsPaths(long).Sockets != p.Sockets {
+		t.Fatalf("long: %+v", p)
+	}
+}
+
+// The roles that serve plugins are told where: the API its socket, the pipeline the
+// host's socket and the per-boot token its dispatcher mints with (a home on Postgres).
+func TestPluginsEnvOfTheRoles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no plugins on Windows yet")
+	}
+	cfg := config.Config{}
+	cfg.Server.DataDir = t.TempDir()
+	cfg.Database.URL = "postgres://home/maktaba"
+	p := PluginsPaths(cfg)
+	api := envMap(childEnvOK(RoleAPI, cfg))
+	pipe := envMap(childEnvOK(RolePipeline, cfg))
+	if api[EnvPluginAPISocket] != p.API || pipe[EnvPluginDSocket] != p.Dispatch || pipe["MAKTABA_SUPERVISOR_TOKEN_FILE"] == "" {
+		t.Fatalf("api %q, pipeline %q %q", api[EnvPluginAPISocket], pipe[EnvPluginDSocket], pipe["MAKTABA_SUPERVISOR_TOKEN_FILE"])
+	}
+	cfg.Database.URL = "sqlite:///x.db"
+	if _, ok := envMap(childEnvOK(RolePipeline, cfg))[EnvPluginDSocket]; ok {
+		t.Fatal("a SQLite home runs no plugins")
+	}
 }

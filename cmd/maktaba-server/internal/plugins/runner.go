@@ -42,6 +42,7 @@ type Install struct {
 	PreviousPath string
 	Manifest     json.RawMessage
 	ReviewLevel  string
+	InstalledAt  time.Time
 }
 
 // state is what one pass reads.
@@ -79,6 +80,9 @@ type Runner struct {
 	// RestartPipeline restarts the main pipeline worker, which loads plugin stages at its
 	// start (story 54.06), when the installed set changes (nil: nothing).
 	RestartPipeline func()
+	// PipelineStarted is when the main pipeline worker last started (zero: not known, or
+	// not running): at the first pass, a plugin installed after it restarts it.
+	PipelineStarted func() time.Time
 	// Host is the plugin host's last health (plugins.host's sandbox level); RunDir its run
 	// folder (the failed sandbox step's file).
 	Host   *supervisor.PluginsHealth
@@ -269,14 +273,14 @@ func (r *Runner) Pass(ctx context.Context) {
 func (r *Runner) load(ctx context.Context) (*state, error) {
 	st := &state{installs: map[string]Install{}, grants: map[string][]string{}, keepOff: map[string]bool{}}
 	rows, err := r.DB.QueryContext(ctx, `SELECT plugin_id, version, digest, path, COALESCE(previous_path, ''),
-		manifest, review_level FROM plugin_installs`)
+		manifest, review_level, installed_at FROM plugin_installs`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var in Install
 		var raw []byte
-		if err := rows.Scan(&in.ID, &in.Version, &in.Digest, &in.Path, &in.PreviousPath, &raw, &in.ReviewLevel); err != nil {
+		if err := rows.Scan(&in.ID, &in.Version, &in.Digest, &in.Path, &in.PreviousPath, &raw, &in.ReviewLevel, &in.InstalledAt); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -508,6 +512,16 @@ func (r *Runner) restartIfChanged(st *state) {
 	changed := r.loaded != set
 	r.loaded, r.primed = set, true
 	r.mu.Unlock()
+	if first && r.PipelineStarted != nil {
+		// the worker loaded the set of its own start: one installed since (before this
+		// runner's first read) is not in it
+		started := r.PipelineStarted()
+		for _, in := range st.installs {
+			if !started.IsZero() && in.InstalledAt.After(started) {
+				first, changed = false, true
+			}
+		}
+	}
 	if first || !changed || r.RestartPipeline == nil {
 		return
 	}

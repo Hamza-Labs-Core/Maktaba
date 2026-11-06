@@ -193,12 +193,12 @@ func revertOne(ctx context.Context, tx *sql.Tx, pluginID, target, subject, field
 	}
 	switch target {
 	case "videos":
-		switch {
-		case field == "description":
+		switch field {
+		case "description":
 			res, err := tx.ExecContext(ctx, `UPDATE videos SET description = $3, updated_at = now()
 				WHERE id = $1 AND description IS NOT DISTINCT FROM $2`, subject, afterS, nullable)
 			return affected(res, err)
-		case field == "poster_path":
+		case "poster_path":
 			res, err := tx.ExecContext(ctx, `UPDATE videos SET poster_path = $3, updated_at = now()
 				WHERE id = $1 AND poster_path IS NOT DISTINCT FROM $2`, subject, afterS, nullable)
 			return affected(res, err)

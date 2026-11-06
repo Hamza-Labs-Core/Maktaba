@@ -97,7 +97,9 @@ func TestSeedFromCoreChoice(t *testing.T) {
 		t.Fatalf("log: %s", log.String())
 	}
 	for _, c := range components.Default().Components() {
-		if c.Switchable && c.HasPart(components.KindProcess) && d[c.ID].Want == components.WantEnabled && c.Kind != components.KindExtension {
+		// an on-demand process (plugins.host) runs only while a plugin is on: none at first
+		if c.Switchable && c.HasPart(components.KindProcess) && d[c.ID].Want == components.WantEnabled &&
+			c.Kind != components.KindExtension && !c.OnDemand {
 			t.Errorf("core enables the process component %s", c.ID)
 		}
 	}

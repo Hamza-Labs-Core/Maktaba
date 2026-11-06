@@ -233,6 +233,23 @@ build fails when the two differ.
   and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
   route (a test fails on an undescribed one). Migrations 0191-0193. Every new word in English
   and Arabic.
+- **Plugins, part 3: install, turn on, run and remove a plugin (Epic 54, stories 54.03,
+  54.07–54.09, 54.37, 54.38).** An admin installs a plugin package on a Postgres home with
+  `POST /api/plugins/install` (Allow unreviewed plugins on: every file is unreviewed before the
+  store), ticks what it may do and which libraries it may see (none until ticked), and turns it
+  on; the Plugins and Components routes switch it the same way, and every change is audited.
+  The supervisor runs the sandboxed plugin host, `maktaba-plugind`, only while a plugin is on
+  (Plugin host reads running and idle otherwise), never restarts it when its sandbox cannot
+  start, and the host ships in the macOS and Linux payloads, archives and packages. Each
+  plugin's stages are its component's: off, held, or waiting with the reason (needs a newer
+  Maktaba, waiting for new permissions, unreviewed plugins not allowed). Turning a plugin off
+  keeps it off through updates, reinstalls and restores until an admin turns it on. An update
+  keeps the previous version for a rollback (refused when its data is newer, unless the data
+  is cleared); removing a plugin drops its queued jobs, and with purge its data and every change
+  it made that no one changed since. A plugin that keeps failing (five crashes in ten minutes,
+  most of its last twenty jobs, or fifty refused calls) stops itself and tells the admins.
+  Plugin log lines have their own log segments. Migration 0195. Every new word in English and
+  Arabic.
 - **Plugins, part 2: the plugin API and plugin stages in the queue (Epic 54, stories
   54.04–54.06).** Still dark until a plugin is installed (part 3). The API serves the plugin
   API on a unix socket only, never on a network port. Each plugin job gets a token minted

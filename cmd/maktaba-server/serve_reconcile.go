@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
@@ -192,6 +193,14 @@ func startPlugins(cfg config.Config, po *pluginsOptions, rec *supervisor.Reconci
 	pr := &plugins.Runner{Files: files, DB: db, DSN: dsn, Machine: machine, Version: version.Version,
 		Catalog: rec, Status: st, Host: po.host, RunDir: paths.Run, Off: rec.Off, Log: log}
 	if sup != nil {
+		pr.PipelineStarted = func() time.Time {
+			for _, p := range sup.Snapshot().Processes {
+				if p.Role == supervisor.RolePipeline && p.Instance == "" && p.StartedAt != nil {
+					return *p.StartedAt
+				}
+			}
+			return time.Time{}
+		}
 		pr.RestartPipeline = func() {
 			if err := sup.Restart(supervisor.RolePipeline, ""); err != nil {
 				fmt.Fprintf(log, "[plugins] level=warn the pipeline worker is not restarted: %v\n", err)

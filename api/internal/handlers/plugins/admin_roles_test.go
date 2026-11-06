@@ -39,7 +39,7 @@ func TestEveryPluginRouteIsAdminOnly(t *testing.T) {
 	h := &Admin{L: &pl.Lifecycle{}}
 	h.Mount(r)
 	mounted := 0
-	_ = chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+	_ = chi.Walk(r, func(_, _ string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		mounted++
 		return nil
 	})

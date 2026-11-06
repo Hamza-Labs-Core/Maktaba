@@ -220,3 +220,27 @@ func TestRunnerFollowsTheInstalls(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A plugin installed after the pipeline worker started and before this runner's first
+// read (the tables were not there yet) restarts the worker: it is not in its graph.
+func TestFirstPassRestartsForAnInstallAfterTheWorkerStarted(t *testing.T) {
+	db := scratchDB(t)
+	ctx := context.Background()
+	f, _ := newFiles(t)
+	restarts := 0
+	r := &Runner{Files: f, DB: db, Machine: store.Home, Version: "0.3.83", Catalog: &sink{},
+		RestartPipeline: func() { restarts++ }, PipelineStarted: func() time.Time { return time.Now().Add(-time.Hour) }}
+	in, err := f.Install(ctx, bytes.NewReader(pkg(t, testID, "1.0.0")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record(t, db, in, nil)
+	r.Pass(ctx)
+	if restarts != 1 {
+		t.Fatalf("restarts %d, want 1", restarts)
+	}
+	r.Pass(ctx)
+	if restarts != 1 {
+		t.Fatalf("restarts %d after a second pass, want 1", restarts)
+	}
+}

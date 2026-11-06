@@ -2,7 +2,9 @@ package supervisor
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,14 +54,29 @@ type PluginPaths struct {
 	Dispatch string
 	// API is the plugin API's socket (<data>/run/plugin-api.sock).
 	API string
+	// Sockets, when set, is the short folder the two sockets moved to (PluginsPaths).
+	Sockets string
 }
 
-// PluginsPaths are cfg's plugin paths.
+// maxSocketPath is the longest unix socket path used as it is (sun_path holds 104 bytes
+// on macOS, 108 on Linux, with its NUL).
+const maxSocketPath = 100
+
+// PluginsPaths are cfg's plugin paths. The two sockets are in <data>/run, or, when that
+// path is too long for a unix socket, in /tmp/maktaba-<12 hex of the data folder>/ (a
+// folder of this user only, made by the plugins role's start).
 func PluginsPaths(cfg config.Config) PluginPaths {
 	root := filepath.Join(cfg.StateDir(), "plugins")
 	run := filepath.Join(cfg.Server.DataDir, "run", "plugins")
-	return PluginPaths{Root: root, Cache: filepath.Join(root, ".cache"), Run: run,
+	p := PluginPaths{Root: root, Cache: filepath.Join(root, ".cache"), Run: run,
 		Dispatch: filepath.Join(run, "plugind.sock"), API: filepath.Join(cfg.Server.DataDir, "run", "plugin-api.sock")}
+	if len(p.Dispatch) > maxSocketPath || len(p.API) > maxSocketPath {
+		sum := sha256.Sum256([]byte(filepath.Clean(cfg.Server.DataDir)))
+		dir := filepath.Join("/tmp", "maktaba-"+hex.EncodeToString(sum[:6]))
+		p.Sockets = dir
+		p.Dispatch, p.API = filepath.Join(dir, "plugind.sock"), filepath.Join(dir, "plugin-api.sock")
+	}
+	return p
 }
 
 // PluginsHere reports whether this machine runs plugins: a whole home on Postgres (the
@@ -111,6 +128,9 @@ func BuildPlugins(opts Options) (Process, *PluginsHealth, error) {
 		BeforeStart: func() {
 			_ = os.MkdirAll(p.Root, 0o700)
 			_ = os.MkdirAll(p.Run, 0o700)
+			if p.Sockets != "" {
+				privateDir(p.Sockets)
+			}
 			_ = os.Remove(SandboxStepFile(p.Run))
 		},
 		FatalExits: map[int]string{PluginsSandboxExit: ReasonSandboxUnavailable},
@@ -251,4 +271,14 @@ func HostCall(ctx context.Context, socket string, req any, out *json.RawMessage)
 	}
 	*out = buf
 	return nil
+}
+
+// privateDir makes dir this user's own folder (0700): a link or another user's file in its
+// place in /tmp is removed first.
+func privateDir(dir string) {
+	if info, err := os.Lstat(dir); err == nil && (!info.IsDir() || info.Mode()&os.ModeSymlink != 0) {
+		_ = os.Remove(dir)
+	}
+	_ = os.MkdirAll(dir, 0o700)
+	_ = os.Chmod(dir, 0o700)
 }

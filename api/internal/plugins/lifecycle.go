@@ -91,7 +91,6 @@ type Lifecycle struct {
 	// ArtifactsDir is <data>/plugins/artifacts (a purge deletes the plugin's there).
 	ArtifactsDir string
 	Logger       *slog.Logger
-	Now          func() time.Time
 }
 
 func (l *Lifecycle) logger() *slog.Logger {
@@ -99,13 +98,6 @@ func (l *Lifecycle) logger() *slog.Logger {
 		return l.Logger
 	}
 	return slog.Default()
-}
-
-func (l *Lifecycle) now() time.Time {
-	if l.Now != nil {
-		return l.Now()
-	}
-	return time.Now()
 }
 
 // manifestOf is what the lifecycle reads of a normalised manifest.
@@ -821,7 +813,7 @@ func (l *Lifecycle) Trip(ctx context.Context, id, reason string) (bool, error) {
 	}
 	params, _ := json.Marshal(map[string]any{"plugin": id, "reason": reason})
 	if _, err := l.DB.ExecContext(ctx, `INSERT INTO notifications (kind, severity, title_key, params, link, audience, subject)
-		VALUES ('plugin', 'warn', 'plugins.notice.breaker', $1, '/settings/plugins', 'admins', $2)`, string(params), id); err != nil {
+		VALUES ('plugin', 'warn', 'notify.plugins.breaker', $1, '/settings/plugins', 'admins', $2)`, string(params), id); err != nil {
 		l.logger().Warn("plugin_breaker_notice_failed", "plugin", id, "err", err)
 	}
 	l.logger().Warn("plugin_breaker_tripped", "plugin", id, "reason", reason, "event", "plugin_breaker_tripped")
