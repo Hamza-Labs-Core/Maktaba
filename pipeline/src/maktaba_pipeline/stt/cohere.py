@@ -329,9 +329,7 @@ class CamelDictionary:
         else:
             db_file = _camel_db_file(data_dir)
             db = (
-                MorphologyDB(str(db_file))
-                if db_file
-                else MorphologyDB.builtin_db("calima-msa-r13")
+                MorphologyDB(str(db_file)) if db_file else MorphologyDB.builtin_db("calima-msa-r13")
             )
             self._an = Analyzer(db, backoff="NONE")
         self._dediac = dediac_ar
