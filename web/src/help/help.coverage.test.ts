@@ -276,3 +276,11 @@ describe("help links from the app", () => {
     expect(pageHelp("/help/failures")).toBeNull();
   });
 });
+
+// Epic 53 story 53.04: the recovery page links to its topic, in the admin's category.
+describe("the recovery topic", () => {
+  it("is a topic in both languages", () => {
+    expect(isHelpTopic("recovery")).toBe(true);
+    for (const l of LOCALES) expect(src(l, "recovery")).toBeTruthy();
+  });
+});
