@@ -309,15 +309,24 @@ async def _resolve_libraries(db: Any, names: list[str]) -> list[tuple[UUID, str]
 # --------------------------------------------------------------------------- batching
 
 
-async def _hold_done_subjects(db: Any) -> None:
-    """Hold the done-subjects summary for the whole import (slot 0184, #642). The import
-    writes done jobs in many statements of one transaction, stage after stage, so it
-    takes the summary's rows in no single key order; a retention batch or a finishing job
-    that took them in key order could wait on it in a circle. Holding the table first,
-    no other writer of the summary runs beside it: jobs that finish meanwhile wait for
-    the import to commit."""
-    if is_pg(db):
+async def _hold_done_subjects(db: Any, apply: bool) -> None:
+    """The done-subjects summary for the import's transaction (slots 0184, 0186).
+
+    The import writes done jobs in many statements, stage after stage (each stage's
+    fingerprint reads the done jobs of the stages before it), so it takes the summary's
+    rows in no single key order; a retention batch or a finishing job that took them in
+    key order could wait on it in a circle. With ``apply`` it holds the whole table: no
+    other writer of the summary runs beside it, and jobs that finish meanwhile wait for
+    the import to commit. A dry run is always rolled back, so it writes no summary at all
+    (``maktaba.done_subjects_dry_run``, slot 0186): it locks nothing a finishing job
+    needs. Either way the import waits on no job row while it holds this: the detect jobs
+    are queued after it (:func:`_queue_detect`)."""
+    if not is_pg(db):
+        return
+    if apply:
         await db.execute("LOCK TABLE processing_done_subjects IN SHARE ROW EXCLUSIVE MODE")
+    else:
+        await db.execute("SELECT set_config('maktaba.done_subjects_dry_run', 'on', true)")
 
 
 _BATCH = 2000
@@ -490,7 +499,7 @@ async def run_import(
         before = {t: int(await db.fetchval(f"SELECT count(*) FROM {t}")) for t in TABLES}
         try:
             async with db.transaction():
-                await _hold_done_subjects(db)
+                await _hold_done_subjects(db, apply)
                 if create:
                     libs = await _create_libraries(db, conn, libraries, maps, report)
                     await _analyze(db)
@@ -504,12 +513,15 @@ async def run_import(
                 with ThumbSource.open(_thumbs_at(cache, thumbs)) as source:
                     await _thumbs(db, conn, libs, maps, source, report, apply)
                 await _flush_jobs(db, report)
-                report.tables = {
-                    t: (before[t], int(await db.fetchval(f"SELECT count(*) FROM {t}")))
-                    for t in TABLES
-                }
                 if not apply:
+                    await _queue_detect(db, libs, report)
+                    report.tables = await _counts(db, before)
                     raise _Rollback
+            # after the commit, without the summary's lock: an enqueue waits on a
+            # running detect job's row, whose finish waits on that lock (#662 review)
+            async with db.transaction():
+                await _queue_detect(db, libs, report)
+            report.tables = await _counts(db, before)
         except _Rollback:
             pass
         return report
@@ -564,6 +576,13 @@ async def _import(
     await _tags_styles_plex(db, cache, match, seasons)
     await _analyze(db)
     await _jobs(db, cache, files, match, libs, seasons, report, detect_hashes)
+    return match, seasons
+
+
+async def _queue_detect(db: Any, libs: list[tuple[UUID, str]], report: ImportReport) -> None:
+    """A ``detect`` per library, once the import's jobs are written. Never under the
+    summary's table lock: ``enqueue_job`` waits on a live detect job's row, and that job's
+    finish waits on the lock, a circle."""
     for lib_id, _ in libs:
         res = await enqueue_job(
             db,
@@ -573,7 +592,10 @@ async def _import(
             reason={"why": "import", "by": "system"},
         )
         report.detect_queued += 1 if res.job_id is not None else 0
-    return match, seasons
+
+
+async def _counts(db: Any, before: dict[str, int]) -> dict[str, tuple[int, int]]:
+    return {t: (before[t], int(await db.fetchval(f"SELECT count(*) FROM {t}"))) for t in TABLES}
 
 
 # --------------------------------------------------------------------------- the model's answers

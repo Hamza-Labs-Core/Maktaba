@@ -175,6 +175,10 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **A MediaIntel import's dry run no longer holds up the queue.** The dry run (the default)
+  locked the jobs' summary for its whole run, so every job that finished meanwhile waited for
+  it; it now locks nothing. An applied import queues its library scans after it commits, so a
+  scan that finishes during the import can no longer deadlock with it.
 
 ### Security
 
