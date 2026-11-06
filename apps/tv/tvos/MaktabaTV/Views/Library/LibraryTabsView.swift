@@ -52,6 +52,9 @@ struct LibraryTabsView: View {
                     PlayShuffleButtons(source: source)
                 }
             }
+            // the whole header is one section: Up from any tab (even the first, far from the
+            // buttons) lands on Play, never on the app's tab bar above
+            .focusSection()
             if let f = queue?.failure {
                 Text(f).font(Theme.body(26)).foregroundStyle(Theme.gold).accessibilityIdentifier("library.failure")
             }
