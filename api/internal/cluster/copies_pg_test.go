@@ -27,6 +27,7 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // The home's side of a machine's copy (slot 0147, specs/epics/37-node-replica), on a
@@ -38,7 +39,7 @@ import (
 // database that is not Maktaba's own Postgres, the home keeps copies only with the rule
 // (rules.cluster.copies_on_operator_postgres). The server must run with wal_level=logical.
 func TestAMachineGetsItsCopy(t *testing.T) {
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset")
 	}
@@ -634,7 +635,7 @@ func TestCopiesOnAnOperatorsPostgres(t *testing.T) {
 // pg_recvlogical (MAKTABA_TEST_PG_BIN, or on PATH) and wal_level=logical; touches no
 // other database's slots.
 func TestAForeignStreamIsEndedBeforeItsSlotIsDropped(t *testing.T) {
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset")
 	}

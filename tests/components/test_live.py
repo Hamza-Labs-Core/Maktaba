@@ -3,7 +3,7 @@ a component switched off, held and on again, and the numbers N1, N2, N4 and N5 m
 
     cd pipeline && uv run --extra dev pytest ../tests/components/test_live.py
 
-N3 (a process component) is the supervisor's (51.04): its scenario joins this job there.
+N3 (a process component) is the supervisor's (51.04): test_server_live.py runs it on a whole server.
 The measurements go to ``components-live.json`` beside the workers' logs.
 """
 

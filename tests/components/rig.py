@@ -417,8 +417,9 @@ class Api:
 
 def api_env(base: dict[str, str], home: Path, url: str, port: int, admin: int) -> dict[str, str]:
     """The API's environment: ``base`` without a ``MAKTABA_*``, ``XDG_*``, ``HOME`` or
-    ``DATABASE_URL`` of its own, every key and folder under ``home``, no update checks,
-    no discovery, and the pipeline and streaming at a dead address."""
+    ``DATABASE_URL`` of its own, every key and folder under ``home``, offline (no update
+    check, telemetry or licence refresh), no discovery, and the pipeline and streaming at
+    a dead address."""
     env = {
         k: v
         for k, v in base.items()
@@ -442,6 +443,8 @@ def api_env(base: dict[str, str], home: Path, url: str, port: int, admin: int) -
             "MAKTABA_PIPELINE_ADDR": DEAD_API_URL.removeprefix("http://"),
             "MAKTABA_STREAMING_ADDR": DEAD_API_URL.removeprefix("http://"),
             "MAKTABA_UPDATE_DISABLE": "1",
+            # every outbound call off (#640: updates, telemetry, the licence refresh)
+            "MAKTABA_OFFLINE": "1",
             "MAKTABA_DISCOVERY_MDNS": "0",
             "MAKTABA_HSTS": "0",
             "MAKTABA_HEALTH_WARM": "0s",

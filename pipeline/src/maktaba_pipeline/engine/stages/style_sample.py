@@ -27,7 +27,7 @@ from ...db.jobs import Job
 from ..context import StageContext, StageFailure
 from ..graph import StageResult, Subject
 from ..hashing import canonical_hash
-from ..media import FFMPEG, run_media
+from ..media import ffmpeg, run_media
 from ._common import load_video, require_video, upsert_signals
 from .registry import StageImpl
 
@@ -46,7 +46,7 @@ async def sample_file(
     for start, length in sample_windows(duration_s, count=WINDOWS, length_s=WINDOW_S):
         async with ctx.nas.timed(path):
             res = await run_media(
-                ffmpeg_sample_args(path, start, length, binary=FFMPEG), timeout=300.0
+                ffmpeg_sample_args(path, start, length, binary=ffmpeg()), timeout=300.0
             )
         log = res.text_err
         if res.returncode == 124:  # timed out: count it against the NAS and move on

@@ -22,6 +22,9 @@ struct PlayerApp: App {
         // the UI tests' Dynamic Type sizes, changed while the app runs (`TextSizeHook`; only
         // when launched with its flag)
         TextSizeHook.start()
+        // a touch the system cancels, counted for a UI test that fails after it (`TouchHook`,
+        // #639; only when launched with its flag)
+        TouchHook.start()
         #endif
         // once per process, before any view: the UI tests' first-run reset of the walkthrough
         PermissionsModel.applyLaunchArguments()

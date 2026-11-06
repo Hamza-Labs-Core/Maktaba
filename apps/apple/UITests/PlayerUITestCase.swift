@@ -134,6 +134,49 @@ class PlayerUITestCase: XCTestCase {
         home?.stop()
     }
 
+    // MARK: a tap the simulator lost (#639)
+
+    /// A failure after the simulator cancelled one of the test's touches says so first.
+    ///
+    /// On a loaded runner the simulator's `backboardd` can register XCTest's per-tap touch
+    /// device twice; the press and the lift land on different copies and the system cancels
+    /// the touch, so the app never sees the tap (about once in a few hundred taps). The test
+    /// then fails on what the tap should have done, which reads as an app bug. When a test
+    /// fails, the running app is asked how many touches the system cancelled since launch
+    /// (`TouchHook`); if any, the failure starts with that. Retrying is not an option: the
+    /// failure stays a failure, with its real cause named.
+    override nonisolated func record(_ issue: XCTIssue) {
+        guard Thread.isMainThread else { return super.record(issue) }
+        // on the main thread, so on the main actor, where `app` lives: XCTest records a UI
+        // test's issues there (any other thread records the issue as it is)
+        nonisolated(unsafe) let test = self
+        let cancelled = MainActor.assumeIsolated { Self.cancelledTouches(in: test.app) }
+        super.record(Self.withLostTaps(issue, cancelled: cancelled))
+    }
+
+    /// How many touches the system cancelled in `app` since it launched; nil when it is not
+    /// running or does not answer (launched without the hook).
+    static func cancelledTouches(in app: XCUIApplication?) -> Int? {
+        guard let app, app.state == .runningForeground || app.state == .runningBackground else { return nil }
+        return TouchAnswers.shared.cancelledTouches(within: 3)
+    }
+
+    /// `issue`, its description led by `lostTapsNote` when the app said the system cancelled
+    /// touches; as it is when it cancelled none or the app did not answer (nil).
+    nonisolated static func withLostTaps(_ issue: XCTIssue, cancelled: Int?) -> XCTIssue {
+        guard let cancelled, cancelled > 0 else { return issue }
+        var issue = issue
+        issue.compactDescription = lostTapsNote(cancelled) + issue.compactDescription
+        return issue
+    }
+
+    /// The words a failure starts with when the system cancelled `cancelled` touches.
+    nonisolated static func lostTapsNote(_ cancelled: Int) -> String {
+        let count = cancelled > TouchHook.most ? "more than \(TouchHook.most) touches" : cancelled == 1 ? "1 touch" : "\(cancelled) touches"
+        return "[the simulator may have dropped a tap: the system cancelled \(count) of this test before the app saw it end; "
+            + "see #639 (backboardd's digitizer race) and the app's log before reading the failure as the app's] "
+    }
+
     /// Closes the app if it is running.
     static func close(_ app: XCUIApplication?) {
         guard let app, app.state != .notRunning else { return }
@@ -176,6 +219,8 @@ class PlayerUITestCase: XCTestCase {
         if controlsStay { args += ["-player.controls_hide_after", "600"] }
         // the app takes the text sizes `setTextSize` asks for (`TextSizeHook`)
         args.append(TextSizeHook.flag)
+        // and counts the touches the system cancels (`TouchHook`, read by `record(_:)`)
+        args.append(TouchHook.flag)
         app.launchArguments = args + extra
         app.launch()
     }
@@ -619,5 +664,47 @@ final class TextSizeAnswers: @unchecked Sendable {
     func received(_ answer: (size: String, count: Int)) -> Bool {
         lock.lock(); defer { lock.unlock() }
         return counts[answer.size, default: 0] >= answer.count
+    }
+}
+
+/// The app's answers about cancelled touches (Darwin notifications from its `TouchHook`):
+/// the last count it gave and how many answers came, on the test's main run loop, which the
+/// wait turns.
+final class TouchAnswers: @unchecked Sendable {
+    static let shared = TouchAnswers()
+    private let lock = NSLock()
+    private var answers = 0
+    private var last: Int?
+
+    private init() {
+        for name in TouchHook.answers {
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, name, _, _ in
+                guard let name = name?.rawValue as String?, let count = TouchHook.count(in: name) else { return }
+                TouchAnswers.shared.note(count)
+            }, name as CFString, nil, .deliverImmediately)
+        }
+    }
+
+    private func note(_ count: Int) {
+        lock.lock(); defer { lock.unlock() }
+        answers += 1
+        last = count
+    }
+
+    private var answered: Int {
+        lock.lock(); defer { lock.unlock() }
+        return answers
+    }
+
+    /// Asks the running app how many touches the system cancelled since it launched; nil
+    /// when it does not answer within `seconds` (not running, or launched without the hook).
+    func cancelledTouches(within seconds: TimeInterval) -> Int? {
+        let before = answered
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName(TouchHook.ask as CFString), nil, nil, true)
+        let end = Date().addingTimeInterval(seconds)
+        while answered == before, Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+        lock.lock(); defer { lock.unlock() }
+        return answers > before ? last : nil
     }
 }

@@ -27,13 +27,15 @@ import (
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/pressly/goose/v3"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // ScratchDB creates and migrates a scratch database and returns a handle
 // and its DSN. It skips the test when MAKTABA_TEST_PG_URL is unset.
 func ScratchDB(t *testing.T) (*sql.DB, string) {
 	t.Helper()
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset: skipping the real-Postgres cluster test")
 	}
@@ -224,7 +226,7 @@ func MigrateTo(t *testing.T, db *sql.DB, version int64) {
 	// one run at a time in the cluster: the migrations make cluster-wide roles
 	// (maktaba_worker and the rest), which two runs in two of its databases (the packages
 	// of a module test in parallel processes) would each try to create
-	if base := os.Getenv("MAKTABA_TEST_PG_URL"); base != "" {
+	if base := testpg.Get(); base != "" {
 		defer lockCluster(ctx, t, base, "clustertest_migrate")()
 	}
 	if version > 0 {

@@ -75,7 +75,7 @@ for f in ./usr/bin/maktaba ./usr/share/maktaba/server/payload.json; do
     [[ "$line" == *" root/root "* ]] || fail "$f not root's: $line"
 done
 [[ "$(grep ' ./usr/bin/maktaba$' <<<"$listing")" == -rwxr-xr-x* ]] || fail "the binary lost its mode"
-dpkg-deb -I "$deb" prerm | grep -q 'echo removing' || fail "the prerm is gone"
+grep -q 'echo removing' < <(dpkg-deb -I "$deb" prerm) || fail "the prerm is gone"
 
 if [ "$failures" -gt 0 ]; then
     echo "$failures failure(s)" >&2

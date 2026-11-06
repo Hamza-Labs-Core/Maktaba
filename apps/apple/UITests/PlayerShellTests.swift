@@ -53,6 +53,79 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertTrue(TextSizeHook.start(arguments: ["-AppleLanguages", "(en)", TextSizeHook.flag]))
     }
 
+    /// #639: the touch hook, like the text-size one, does nothing without its flag.
+    func testTheTouchHookIsInertWithoutItsFlag() {
+        XCTAssertFalse(TouchHook.start(arguments: []))
+        XCTAssertFalse(TouchHook.start(arguments: ["-maktaba-section", "home", TextSizeHook.flag]))
+        XCTAssertTrue(TouchHook.start(arguments: ["-AppleLanguages", "(en)", TouchHook.flag]))
+    }
+
+    /// Each count the app can answer has a name of its own that reads back as that count
+    /// (a Darwin notification carries no data), "more" above the highest; the question is
+    /// none of the answers.
+    func testTheTouchHooksAnswersNameEachCount() {
+        XCTAssertEqual(TouchHook.answers.count, TouchHook.most + 2)
+        XCTAssertEqual(Set(TouchHook.answers).count, TouchHook.answers.count, "one name per answer")
+        for n in 0 ... TouchHook.most {
+            XCTAssertEqual(TouchHook.count(in: TouchHook.answer(n)), n)
+        }
+        XCTAssertEqual(TouchHook.answer(TouchHook.most + 5), TouchHook.answerPrefix + "more")
+        XCTAssertEqual(TouchHook.count(in: TouchHook.answer(TouchHook.most + 5)), TouchHook.most + 1)
+        XCTAssertTrue(TouchHook.answers.contains(TouchHook.answer(TouchHook.most + 1)))
+        XCTAssertNil(TouchHook.count(in: TouchHook.ask))
+        XCTAssertFalse(TouchHook.answers.contains(TouchHook.ask))
+    }
+
+    /// The watcher never changes what a tap does: it does not delay or cancel a view's
+    /// touches, runs beside every recognizer, neither stops one nor is stopped; a window gets
+    /// one, however often it shows.
+    @MainActor
+    func testTheTouchWatcherOnlyWatches() {
+        let watcher = TouchWatcher()
+        XCTAssertFalse(watcher.cancelsTouchesInView)
+        XCTAssertFalse(watcher.delaysTouchesBegan)
+        XCTAssertFalse(watcher.delaysTouchesEnded)
+        let other = UITapGestureRecognizer()
+        XCTAssertFalse(watcher.canPrevent(other))
+        XCTAssertFalse(watcher.canBePrevented(by: other))
+        XCTAssertEqual(watcher.delegate?.gestureRecognizer?(watcher, shouldRecognizeSimultaneouslyWith: other), true)
+
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        XCTAssertTrue(TouchHook.watch(window))
+        XCTAssertFalse(TouchHook.watch(window), "a window already watched")
+        XCTAssertEqual(window.gestureRecognizers?.filter { $0 is TouchWatcher }.count, 1)
+    }
+
+    /// A touch the system cancels is counted. (Its `.failed` state isn't checked: outside a
+    /// real touch sequence UIKit resets the recognizer to `.possible` at once.)
+    @MainActor
+    func testACancelledTouchIsCounted() {
+        let view = UIView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let watcher = TouchWatcher()
+        view.addGestureRecognizer(watcher)
+        let before = TouchHook.cancelled
+        watcher.touchesCancelled([UITouch()], with: UIEvent())
+        XCTAssertEqual(TouchHook.cancelled, before + 1)
+        watcher.touchesCancelled([UITouch(), UITouch()], with: UIEvent())
+        XCTAssertEqual(TouchHook.cancelled, before + 3, "each cancelled touch counts")
+    }
+
+    /// A failure after a lost tap starts with it, the count in words; with none, or no app to
+    /// ask, the failure is left as it is.
+    @MainActor
+    func testAFailureAfterALostTapSaysSo() {
+        XCTAssertTrue(PlayerUITestCase.lostTapsNote(1).contains("cancelled 1 touch of this test"))
+        XCTAssertTrue(PlayerUITestCase.lostTapsNote(3).contains("cancelled 3 touches"))
+        XCTAssertTrue(PlayerUITestCase.lostTapsNote(TouchHook.most + 1).contains("more than \(TouchHook.most) touches"))
+        XCTAssertTrue(PlayerUITestCase.lostTapsNote(1).contains("#639"))
+        let issue = XCTIssue(type: .assertionFailure, compactDescription: "the row opened")
+        XCTAssertEqual(PlayerUITestCase.withLostTaps(issue, cancelled: nil).compactDescription, "the row opened")
+        XCTAssertEqual(PlayerUITestCase.withLostTaps(issue, cancelled: 0).compactDescription, "the row opened")
+        XCTAssertEqual(PlayerUITestCase.withLostTaps(issue, cancelled: 2).compactDescription,
+                       PlayerUITestCase.lostTapsNote(2) + "the row opened")
+        XCTAssertNil(PlayerUITestCase.cancelledTouches(in: nil), "no app, no answer")
+    }
+
     /// A size the hook sets on a scene reaches its views while they show: the trait a view
     /// reads, and a label's Dynamic Type font, smaller at XS and larger at AX3; the default
     /// takes the override off again. A size the tests do not use changes nothing.

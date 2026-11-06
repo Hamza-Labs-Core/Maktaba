@@ -36,6 +36,18 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A new Arabic dictionary or ffmpeg pack is used without restarting the pipeline.** A
+  pipeline that was already running kept the dictionary and ffmpeg of the packs it started
+  with until it restarted. It now follows each pack's current version at its next use: the
+  next video's ffmpeg, ffprobe and second listen use the newly installed or updated pack.
+
+- **A new way of finishing jobs can no longer bring back a deadlock with the queue's
+  clean-up unnoticed.** The done-subjects summary of the queue locks its rows in one order
+  within a statement; a transaction that finished jobs over several statements out of that
+  order could deadlock with the retention. The database now notices it: the tests fail on
+  it, and a home logs a warning naming the jobs' subjects. It found one: the MediaIntel import,
+  which now holds the summary for its whole run (jobs that finish meanwhile wait for it).
+
 - **The library dashboard and the queue page load at once on a large home.** On a home with
   3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out
@@ -176,6 +188,13 @@ build fails when the two differ.
   id under a key that stays on each machine (`log.key` beside `secrets.key`), never by the raw
   id. The Apple and Android apps keep their recent lines on the device (under 1 MB), the web
   app the last 2,000 in memory, for problem reports later in Epic 53.
+
+- **One switch keeps a test or offline server from reaching the internet.** `maktaba-server
+  serve --offline` (or `MAKTABA_OFFLINE=1`) turns off every call the server and its parts
+  make by themselves: the update check, pack and model downloads, the language model's
+  downloads, usage data, the licence refresh and the link to Maktaba Cloud. A branch's
+  scratch stack no longer contacts GitHub. A list of every outbound call, with the setting
+  that stops it, is checked by a test, so a new one cannot be added unnoticed.
 
 - **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
   (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model

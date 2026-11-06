@@ -22,6 +22,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
 
 // RepoRoot is the repository root (from this file's location).
@@ -51,7 +53,7 @@ func GoBin() string {
 
 // Base returns MAKTABA_TEST_PG_URL or skips the test.
 func Base(t testing.TB) string {
-	base := os.Getenv("MAKTABA_TEST_PG_URL")
+	base := testpg.Get()
 	if base == "" {
 		t.Skip("MAKTABA_TEST_PG_URL unset: skipping the real-Postgres test")
 	}

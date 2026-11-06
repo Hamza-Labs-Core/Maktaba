@@ -270,6 +270,11 @@ components:
   - 'api/internal/handlers/queues/snapshot.go'
   - 'api/internal/handlers/systemstatus/**'
   - 'api/internal/router/components_routes.go'
+  # the whole server the process scenario runs (test_server_live.py, 51.04 N3): the
+  # supervisor's reconciler and serve's wiring of it
+  - 'cmd/maktaba-server/internal/supervisor/reconcile*.go'
+  - 'cmd/maktaba-server/serve_reconcile.go'
+  - 'cmd/maktaba-server/cmd_serve.go'
 
 # components-chaos on a pull request: the runner, the drain and the claims it stops
 components_chaos:

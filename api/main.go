@@ -223,6 +223,7 @@ func runServe() error {
 	logger = slog.New(serverErrors.Handler(logger.Handler()))
 	slog.SetDefault(logger)
 	processStart := time.Now()
+	applyOffline(logger)
 
 	// Epic 35 story 35.8: a full node (MAKTABA_NODE_MODE=1) never migrates and needs
 	// its home's address; checked before anything binds.
