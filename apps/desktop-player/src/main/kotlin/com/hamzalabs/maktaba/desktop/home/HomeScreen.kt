@@ -97,7 +97,8 @@ fun Texts.rowTitle(title: RowTitle): String = when (title) {
 /** What choosing [card] does: Continue Watching plays from where the person left; others open their page. */
 fun DesktopHome.choose(card: HomeCard) {
     when {
-        card.resumeAtSec != null -> play(PlayRequest(card.videoId, card.title.orEmpty(), startSec = null))
+        // the length goes too: past 95% the video starts again from its start (story 55.08)
+        card.resumeAtSec != null -> play(PlayRequest(card.videoId, card.title.orEmpty(), card.durationSec, startSec = null))
         else -> when (val o = card.open) {
             is CardOpen.Video -> nav.push(Route.Video(o.id))
             is CardOpen.Series -> nav.push(Route.Series(o.id))
@@ -158,12 +159,12 @@ fun HomeContent(state: HomeState, home: DesktopHome, features: Capabilities) {
 @Composable
 private fun CardsRow(row: HomeRow.Cards, state: HomeState, home: DesktopHome) {
     val t = LocalTexts.current
-    val scope = rememberCoroutineScope()
     Rail(t.rowTitle(row.title), Modifier.testTag("row-${row.key}"), onSeeAll = row.seeAll?.let { lib -> { home.nav.push(Route.Library(lib)) } }) {
         items(row.cards, key = { it.key }) { card ->
             if (card.title == null && card.newLessons == null) LaunchedEffect(card.videoId) { state.resolve(card.videoId) }
             val title = card.title ?: if (card.newLessons != null) t["series.untitled"] else t["common.loading"]
-            val dismiss = { scope.launch { state.dismiss(card.videoId) }; Unit }
+            // on the home's background scope: the row's last card takes the row (and its scope) with it
+            val dismiss = { home.change { state.dismiss(card.videoId) }; Unit }
             Box {
                 PosterCard(
                     title = title,

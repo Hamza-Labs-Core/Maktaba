@@ -64,11 +64,14 @@ echo "packs for $PLATFORM: ${ids[*]:-none}"
 
 for id in ${ids[@]+"${ids[@]}"}; do
     recipe="$RECIPES/$id.sh"
+    # every Hunspell language shares one recipe (Epic 52, story 52.16)
+    case "$id" in lang.hunspell.*) [ -f "$recipe" ] || recipe="$RECIPES/lang.hunspell.sh" ;; esac
     [ -f "$recipe" ] || die "no recipe for $id ($recipe)"
     stage="$WORK/stage/$id"
     mkdir -p "$stage"
     echo "--- $id ($PLATFORM)"
-    WORK="$WORK/recipe-$id" REPO_ROOT="$REPO_ROOT" bash "$recipe" "$stage" "$PLATFORM" "$VERSION"
+    mkdir -p "$WORK/recipe-$id"
+    PACK_ID="$id" WORK="$WORK/recipe-$id" REPO_ROOT="$REPO_ROOT" bash "$recipe" "$stage" "$PLATFORM" "$VERSION"
     "$WORK/bin/build-pack" --dir "$stage" --id "$id" --version "$VERSION" --platform "$PLATFORM" \
         --out "$OUT" --part-size "$PART_SIZE"
     "$WORK/bin/build-pack" --verify "$id-$VERSION-$PLATFORM.tar.zst" --out "$OUT"

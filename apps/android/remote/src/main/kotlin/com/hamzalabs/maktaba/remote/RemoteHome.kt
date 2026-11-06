@@ -102,6 +102,8 @@ class Remote(
     private val session: AppSession,
     /** What the home has on (story 51.11): Machines says how many parts are off. */
     val capabilities: StateFlow<Capabilities> = session.capabilities,
+    /** A home admin: word review is theirs (Epic 52; the API's 403 is the rule). */
+    val isAdmin: Boolean = false,
 ) {
     private val kept = mutableMapOf<String, MutableState<*>>()
 
@@ -192,7 +194,7 @@ data class ActionProblem(val what: String?, val failure: Failure)
  */
 @Composable
 fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: ThemeStore) {
-    val remote = remember(client) { Remote(client, session) }
+    val remote = remember(client) { Remote(client, session, isAdmin = user.isAdmin) }
     // a TV waiting to sign in: a banner above every place, and a notification
     PendingSignInsHost(session, user, client) {
         // what is down on the home, on top (Epic 53 story 53.06)
@@ -256,7 +258,7 @@ internal fun RemoteFrame(
 @Composable
 private fun PlaceScreen(place: Place, remote: Remote, account: @Composable () -> Unit) {
     when (place) {
-        Place.Attention -> AttentionScreen(remote, account)
+        Place.Attention -> WithWordReview(remote) { AttentionScreen(remote, account) }
         Place.Queue -> QueueScreen(remote, account)
         Place.Updates -> UpdatesScreen(remote, account)
         Place.Libraries -> LibrariesScreen(remote, account)
