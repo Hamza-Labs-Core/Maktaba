@@ -52,6 +52,7 @@ type Meter struct {
 	// dbDownUntil: a month read failed; until then Allow uses the totals it has
 	// without asking (a request must not wait on a database that is away)
 	dbDownUntil time.Time
+	refreshing  map[string]bool // month reads in the background, by server id
 
 	stop       chan struct{}
 	stopped    chan struct{} // closed when the flush loop has made its last flush
@@ -228,33 +229,61 @@ func (m *Meter) persistedMonth(ctx context.Context, serverID string, month time.
 	mt, ok := m.months[serverID]
 	down := now.Before(m.dbDownUntil)
 	m.mu.Unlock()
-	if ok && mt.month.Equal(month) && now.Sub(mt.at) < ttl {
+	if ok && mt.month.Equal(month) {
+		// read in the background past the TTL: a request never waits on a
+		// database that is away (a vanished one makes connects hang for their
+		// timeout: found by the rehearsal's db-blip)
+		if now.Sub(mt.at) >= ttl && !down {
+			m.refreshMonth(serverID, month)
+		}
 		return mt.bytes
 	}
-	cached := func() int64 {
-		if ok && mt.month.Equal(month) {
-			return mt.bytes
-		}
+	if down {
 		return 0
 	}
-	if down {
-		return cached()
-	}
-	// a request waits at most this long on the database (the rehearsal's db-blip:
-	// a database that vanished leaves connects hanging until their timeout)
-	rctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
-	defer cancel()
-	total, err := m.MonthlyBytes(rctx, serverID, month)
+	total, err := m.readMonth(ctx, serverID, month)
 	if err != nil {
-		m.mu.Lock()
-		m.dbDownUntil = now.Add(5 * time.Second)
-		m.mu.Unlock()
-		return cached()
+		return 0
 	}
-	m.mu.Lock()
-	m.months[serverID] = monthTotal{month: month, bytes: total, at: now}
-	m.mu.Unlock()
 	return total
+}
+
+// refreshMonth reads serverID's month total in the background (one at a time
+// per server).
+func (m *Meter) refreshMonth(serverID string, month time.Time) {
+	m.mu.Lock()
+	if m.refreshing == nil {
+		m.refreshing = map[string]bool{}
+	}
+	if m.refreshing[serverID] {
+		m.mu.Unlock()
+		return
+	}
+	m.refreshing[serverID] = true
+	m.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = m.readMonth(ctx, serverID, month)
+		m.mu.Lock()
+		delete(m.refreshing, serverID)
+		m.mu.Unlock()
+	}()
+}
+
+// readMonth reads serverID's month total and keeps it, or notes the database
+// away for 5 s.
+func (m *Meter) readMonth(ctx context.Context, serverID string, month time.Time) (int64, error) {
+	now := m.now()
+	total, err := m.MonthlyBytes(ctx, serverID, month)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err != nil {
+		m.dbDownUntil = now.Add(5 * time.Second)
+		return 0, err
+	}
+	m.months[serverID] = monthTotal{month: month, bytes: total, at: now}
+	return total, nil
 }
 
 // unflushedLocked is serverID's bytes this month not yet in the database.

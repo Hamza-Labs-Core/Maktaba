@@ -129,6 +129,7 @@ func TestMeterAllowDuringAnOutage(t *testing.T) {
 	m.months["a"] = monthTotal{month: MonthStart(clock), bytes: Tiers[PlanFree].BandwidthBytesPerMo, at: clock.Add(-time.Hour)}
 	sv := stores.Server{ID: "a", Plan: PlanFree}
 	// the cached total is stale and the database errors: the cached one is used
+	// (and read again in the background)
 	if err := m.Allow(ctx, sv); err != nil {
 		t.Fatalf("at the cap: %v", err)
 	}
@@ -138,8 +139,9 @@ func TestMeterAllowDuringAnOutage(t *testing.T) {
 	}
 }
 
-// Allow waits at most the connect timeout (2 s, db.Open) on a database that
-// vanished, and for the next 5 s not at all (the rehearsal's db-blip).
+// Allow waits at most the connect timeout (2 s, db.Open) for a home whose
+// month total it never read, on a database that vanished; then for 5 s not at
+// all; and never for a home whose total it holds (the rehearsal's db-blip).
 func TestMeterAllowDoesNotWaitOnAVanishedDatabase(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -171,8 +173,20 @@ func TestMeterAllowDoesNotWaitOnAVanishedDatabase(t *testing.T) {
 		t.Errorf("Allow waited %s", took)
 	}
 	start = time.Now()
-	_ = m.Allow(ctx, sv)
+	_ = m.Allow(ctx, stores.Server{ID: "b", Plan: PlanFree})
 	if took := time.Since(start); took > 50*time.Millisecond {
 		t.Errorf("the next Allow waited %s", took)
+	}
+	// a home whose total is held, past its TTL: never waits
+	clock := time.Now().UTC()
+	m.now = func() time.Time { return clock }
+	m.mu.Lock()
+	m.dbDownUntil = time.Time{}
+	m.months["c"] = monthTotal{month: MonthStart(clock), bytes: 5, at: clock.Add(-time.Hour)}
+	m.mu.Unlock()
+	start = time.Now()
+	_ = m.Allow(ctx, stores.Server{ID: "c", Plan: PlanFree})
+	if took := time.Since(start); took > 50*time.Millisecond {
+		t.Errorf("a held total waited %s", took)
 	}
 }

@@ -13,12 +13,14 @@ import (
 )
 
 // HomeCache keeps the relay serving the homes it knows while Postgres fails
-// over (Epic 50 story 50.05). BySlug results live in an LRU (50,000 homes,
-// 5 minutes); an entry over 60 s old is served and refreshed in the
-// background, so a plan change shows within a minute (at once with the
-// tier_changed and server_changed notifications, which drop entries). When the
-// database errors, an entry of any age is served for a home this relay
-// served in the last hour. A home it never saw gets the error (503).
+// over (Epic 50 story 50.05). BySlug results live in an LRU (50,000 homes);
+// an entry over 60 s old is served and refreshed in the background, so a plan
+// change shows within a minute (at once with the tier_changed and
+// server_changed notifications, which drop entries). An entry past its life
+// (5 minutes) is still served, for a home this relay served in the last hour,
+// while the background refresh runs: no request of a known home waits on the
+// database. A home it never saw (or not for an hour) is read at once, and
+// gets the error (503) when the database is away.
 type HomeCache struct {
 	Lookup ServerLookup
 	// Size, Life, RefreshAfter, StaleFor: 50,000, 5 min, 60 s, 1 h by default.
@@ -31,10 +33,6 @@ type HomeCache struct {
 	mu      sync.Mutex
 	entries map[string]*list.Element
 	lru     *list.List
-	// downUntil: a lookup failed; until then a home with an entry is served
-	// from it without asking the database (a request must not wait on one
-	// that is away)
-	downUntil time.Time
 }
 
 type homeEntry struct {
@@ -127,23 +125,24 @@ func (c *HomeCache) BySlug(ctx context.Context, slug string) (stores.Server, err
 			return sv, nil
 		}
 	}
-	if e != nil && now.Before(c.downUntil) && now.Sub(e.served) < orDefault(c.StaleFor, time.Hour) {
+	// past its life: a home this relay served in the last hour is served from
+	// its entry while the database is read in the background, so no request
+	// waits on a database that is away (a vanished one makes connects hang for
+	// their timeout: found by the rehearsal's db-blip)
+	if e != nil && now.Sub(e.served) < orDefault(c.StaleFor, time.Hour) {
 		e.served = now
 		sv := e.sv
+		if !e.refreshing {
+			e.refreshing = true
+			go c.refresh(slug)
+		}
 		c.mu.Unlock()
 		countCache(CacheStale)
 		return sv, nil
 	}
 	c.mu.Unlock()
 
-	// bounded: with an old entry to fall back on, a request does not wait for
-	// a database that is away (found by the rehearsal's db-blip)
 	lctx := ctx
-	if e != nil {
-		var cancel context.CancelFunc
-		lctx, cancel = context.WithTimeout(ctx, time.Second)
-		defer cancel()
-	}
 	sv, err := c.Lookup.BySlug(lctx, slug)
 	if err == nil {
 		c.put(slug, sv, now)
@@ -157,7 +156,6 @@ func (c *HomeCache) BySlug(ctx context.Context, slug string) (stores.Server, err
 	// the database is away: a home served in the last hour keeps working
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.downUntil = now.Add(5 * time.Second)
 	if el, ok := c.entries[slug]; ok {
 		e := el.Value.(*homeEntry)
 		if now.Sub(e.served) < orDefault(c.StaleFor, time.Hour) {
