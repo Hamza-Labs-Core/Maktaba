@@ -17,7 +17,7 @@ import com.hamzalabs.maktaba.core.api.homeRails
 import com.hamzalabs.maktaba.core.api.recommendations
 import com.hamzalabs.maktaba.core.api.videoDetail
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
-import com.hamzalabs.maktaba.player.ReadOrder
+import com.hamzalabs.maktaba.core.session.ReadOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
