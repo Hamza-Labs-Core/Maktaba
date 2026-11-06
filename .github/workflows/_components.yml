@@ -5,7 +5,10 @@
 #   README section 11 measured (components-live.json), on PRs touching the components.
 #   With the API built from the commit, a loop and a stages component switched through
 #   the Components page's calls: the phase, the health, the Queues tile and System health
-#   (components-api-live.json; 51.10 T14, 51.14 T13).
+#   (components-api-live.json; 51.10 T14, 51.14 T13). With maktaba-server serve of the
+#   whole machine, a process component (llm, its process a stand-in) switched off and on:
+#   the process table, the status and audit rows (components-server-live.json and the
+#   server's log, server-live.log; 51.04 N3).
 # - components-chaos: 100 random flips of four stage groups while 2,000 jobs run (N6);
 #   on PRs touching the runners, and nightly (components-nightly.yml).
 #
@@ -48,6 +51,10 @@ jobs:
       # the API of the commit, for the scenarios through the Components page's calls
       # (test_api_live.py: 51.10 T14, 51.14 T13)
       MAKTABA_COMPONENTS_API_BIN: ${{ github.workspace }}/components-bin/maktaba-api
+      # the whole server of the commit (maktaba-server serve with the API and streaming
+      # beside it), for a process component switched off and on (test_server_live.py:
+      # 51.04 N3, #641)
+      MAKTABA_COMPONENTS_SERVER_BIN: ${{ github.workspace }}/components-bin
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0
@@ -58,19 +65,25 @@ jobs:
       - name: Go caches
         uses: ./.github/actions/go-cache
         with:
-          go-sum-hash: ${{ hashFiles('api/go.sum') }}
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api
+          modules: api streaming cmd/maktaba-server
 
       - name: Build the API
         working-directory: api
         env:
           CGO_ENABLED: '0'
         run: go build -o "$MAKTABA_COMPONENTS_API_BIN" .
+      - name: Build streaming and maktaba-server
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          (cd streaming && go build -o "$MAKTABA_COMPONENTS_SERVER_BIN/maktaba-streaming" .)
+          (cd cmd/maktaba-server && go build -o "$MAKTABA_COMPONENTS_SERVER_BIN/maktaba-server" .)
       - uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version
@@ -85,7 +98,8 @@ jobs:
         working-directory: pipeline
         run: >-
           uv run --extra dev pytest ../tests/components/test_live.py
-          ../tests/components/test_api_live.py -q -p no:cacheprovider -rsx
+          ../tests/components/test_api_live.py ../tests/components/test_server_live.py
+          -q -p no:cacheprovider -rsx
       - name: Keep the logs
         if: always()
         uses: actions/upload-artifact@v7.0.1

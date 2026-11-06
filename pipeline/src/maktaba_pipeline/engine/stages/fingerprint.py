@@ -24,7 +24,7 @@ from ...thumbnail.dhash import (
 from ..context import StageContext, StageFailure
 from ..graph import SIG_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
-from ..media import FFMPEG, run_media
+from ..media import ffmpeg, run_media
 from ._common import load_video, require_video, upsert_signals
 from .registry import StageImpl
 
@@ -62,7 +62,7 @@ async def read_signature(
     for which, start, length in windows(duration_s):
         async with ctx.nas.timed(path):
             res = await run_media(
-                ffmpeg_chromaprint_args(path, start, length, binary=FFMPEG), timeout=180.0
+                ffmpeg_chromaprint_args(path, start, length, binary=ffmpeg()), timeout=180.0
             )
         if res.returncode == 0:
             fp = parse_raw(res.stdout)
@@ -72,7 +72,7 @@ async def read_signature(
     raw = b""
     unread = 0
     for t in frame_times(duration_s):
-        res = await run_media(ffmpeg_frame_args(path, t, binary=FFMPEG), timeout=60.0)
+        res = await run_media(ffmpeg_frame_args(path, t, binary=ffmpeg()), timeout=60.0)
         if res.returncode == 0 and len(res.stdout) >= 72:
             raw += res.stdout[:72]
         else:

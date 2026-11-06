@@ -36,12 +36,10 @@ build fails when the two differ.
 
 ### Fixed
 
-- **Every component with loops can be restarted, wherever its loops run.** Restart on the
-  Components page and `maktaba-server components restart` refused a component whose loops
-  run in streaming, the pipeline or the supervisor itself (Live TV in the server, HDHomeRun,
-  the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
-  streaming and the pipeline restart theirs within seconds of the request: each loop stops
-  within its grace and starts again, as a process does.
+- **A new Arabic dictionary or ffmpeg pack is used without restarting the pipeline.** A
+  pipeline that was already running kept the dictionary and ffmpeg of the packs it started
+  with until it restarted. It now follows each pack's current version at its next use: the
+  next video's ffmpeg, ffprobe and second listen use the newly installed or updated pack.
 
 - **A new way of finishing jobs can no longer bring back a deadlock with the queue's
   clean-up unnoticed.** The done-subjects summary of the queue locks its rows in one order
@@ -381,6 +379,13 @@ build fails when the two differ.
   slot must start again on the new release and the change must reach verifying, never be held
   with `slot.health` / `release_mismatch` as change #58 was on 2026-10-31. The rehearsal now
   builds its streaming binary with TV staging, as the release does.
+
+- **Every component with loops can be restarted, wherever its loops run.** Restart on the
+  Components page and `maktaba-server components restart` refused a component whose loops
+  run in streaming, the pipeline or the supervisor itself (Live TV in the server, HDHomeRun,
+  the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
+  streaming and the pipeline restart theirs within seconds of the request: each loop stops
+  within its grace and starts again, as a process does.
 
 ### Fixed
 

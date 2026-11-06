@@ -43,7 +43,7 @@ from ..changes import ChangeSet, apply_or_review
 from ..context import StageContext
 from ..graph import Request, StageResult, Subject
 from ..hashing import canonical_hash
-from ..media import FFMPEG, FFPROBE
+from ..media import ffmpeg, ffprobe
 from ..paths import to_db
 from ..sql import is_pg, now, to_ts, uid
 from .registry import StageImpl
@@ -193,8 +193,8 @@ def _fetch_one(local: str, youtube_id: str, cfg: RepairConfig) -> repair.RepairO
             keep_broken=cfg.keep_broken_copy,
             download_timeout_s=cfg.download_timeout_minutes * 60.0,
             run=_run,
-            ffmpeg=FFMPEG,
-            ffprobe=FFPROBE,
+            ffmpeg=ffmpeg(),
+            ffprobe=ffprobe(),
         )
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -240,7 +240,7 @@ async def run(db: Any, job: Any, ctx: StageContext) -> StageResult:
             if b.request_id is not None:
                 await _requested(b, local)
                 continue
-            probed = await asyncio.to_thread(repair.check, local, ffprobe=FFPROBE, run=_run)
+            probed = await asyncio.to_thread(repair.check, local, ffprobe=ffprobe(), run=_run)
             if probed.readable:  # a passing failure: the file is fine
                 counts["readable"] += 1
                 await _record(db, b, library_id, "readable", "reads fine now, kept")
