@@ -309,17 +309,18 @@ export function CollectionsTab({ libraryId }: { libraryId: string }) {
             // YouTube's and Plex's chips only where the library has some
             .filter((k) => (k !== "youtube" && k !== "plex") || counts[k] > 0 || kind === k)
             .map((k) => (
-            <button
-              key={k}
-              type="button"
-              className="mkt-chip-btn"
-              aria-pressed={kind === k}
-              onClick={() => pick(k)}
-            >
-              <Chip selected={kind === k}>
-                {t(`collections.kind.${k}`)} <span className="mkt-chip-count">{n(counts[k])}</span>
-              </Chip>
-            </button>
+              <button
+                key={k}
+                type="button"
+                className="mkt-chip-btn"
+                aria-pressed={kind === k}
+                onClick={() => pick(k)}
+              >
+                <Chip selected={kind === k}>
+                  {t(`collections.kind.${k}`)}{" "}
+                  <span className="mkt-chip-count">{n(counts[k])}</span>
+                </Chip>
+              </button>
             ))}
         </div>
       )}

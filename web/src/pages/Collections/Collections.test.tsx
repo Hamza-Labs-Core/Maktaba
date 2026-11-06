@@ -193,4 +193,43 @@ describe("CollectionPage", () => {
     renderOne("c1");
     expect(await screen.findByText(en["collections.notFound"])).toBeInTheDocument();
   });
+
+  // Epic 56 story 56.08 T04: an admin's display choices, and a sourced collection
+  it("an admin shows it on Recommended and Home, hides it and names it; a viewer sees none of it", async () => {
+    serve();
+    patch.mockResolvedValue({});
+    renderOne("c1", adminUser);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("checkbox", { name: en["collections.showOnLibrary"] }));
+    expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { show_on_library: true });
+    await user.click(screen.getByRole("checkbox", { name: en["collections.showOnHome"] }));
+    expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { show_on_home: true });
+    await user.click(screen.getByRole("checkbox", { name: en["collections.hide"] }));
+    expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { hidden: true });
+    await user.type(screen.getByLabelText(en["collections.renameDisplay"]), "Ramadan");
+    await user.click(screen.getByRole("button", { name: `${en["common.save"]}: ${en["collections.renameDisplay"]}` }));
+    expect(patch).toHaveBeenLastCalledWith("/api/collections/c1", { name_override: "Ramadan" });
+  });
+
+  it("a YouTube collection: its badge, no rename, delete or reorder; Duplicate makes a curated copy", async () => {
+    serve({ "/api/collections/c1": { ...MANUAL, source_kind: "youtube_playlist" } });
+    post.mockResolvedValue({ id: "c9", library_id: LIB, name: "copy", is_smart: false });
+    renderOne("c1", adminUser);
+    expect(await screen.findByText(en["collections.badge.youtubePlaylist"])).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: en["collections.rename"] })).toBeNull();
+    expect(screen.queryByRole("button", { name: en["collections.delete"] })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: en["libraries.moveUp"].replace("{name}", "Lesson 2") })
+    ).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: en["collections.duplicate"] }));
+    expect(post).toHaveBeenCalledWith("/api/collections/c1/duplicate", {});
+    await waitFor(() => expect(screen.getAllByTestId("loc").at(-1)).toHaveTextContent("/collections/c9"));
+  });
+
+  it("a viewer has no collection settings", async () => {
+    serve();
+    renderOne("c1");
+    await screen.findAllByRole("listitem");
+    expect(screen.queryByRole("checkbox", { name: en["collections.showOnHome"] })).toBeNull();
+  });
 });

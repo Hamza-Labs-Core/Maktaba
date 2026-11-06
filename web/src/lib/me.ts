@@ -115,7 +115,9 @@ function toSmartQuery(v: unknown): SmartQuery | undefined {
   const filters: Record<string, string> = {};
   for (const [k, x] of Object.entries(f)) if (typeof x === "string") filters[k] = x;
   return {
-    libraries: Array.isArray(r.libraries) ? r.libraries.filter((x): x is string => typeof x === "string") : null,
+    libraries: Array.isArray(r.libraries)
+      ? r.libraries.filter((x): x is string => typeof x === "string")
+      : null,
     filters,
     sort: typeof r.sort === "string" ? r.sort : undefined,
     order: typeof r.order === "string" ? r.order : undefined,
@@ -188,7 +190,10 @@ export async function createPlaylist(
 }
 
 /** Saves the grid's filters and sort as a smart playlist (story 56.09). */
-export async function createSmartPlaylist(name: string, query: SmartQuery): Promise<PlaylistSummary> {
+export async function createSmartPlaylist(
+  name: string,
+  query: SmartQuery
+): Promise<PlaylistSummary> {
   const created = toSummary(
     await api.post<unknown>("/api/me/playlists", { name, kind: "smart", smart_query: query })
   );

@@ -55,12 +55,18 @@ describe("playQueue", () => {
 
   it("a library's Shuffle is one POST and the window it answers (T01)", async () => {
     post.mockResolvedValueOnce(win(0, ["s1", "s2", "s3"], { shuffle: true }));
-    expect(await startQueueFromQuery("library=L&watched=unwatched&sort=title&order=asc&limit=60", true)).toBe("s1");
+    expect(
+      await startQueueFromQuery("library=L&watched=unwatched&sort=title&order=asc&limit=60", true)
+    ).toBe("s1");
     expect(post).toHaveBeenCalledTimes(1);
     const [path, body] = post.mock.calls[0]!;
     expect(path).toBe("/api/me/play-queues");
     expect(body).toMatchObject({
-      source: { kind: "library", id: "L", filters: { watched: "unwatched", sort: "title", order: "asc" } },
+      source: {
+        kind: "library",
+        id: "L",
+        filters: { watched: "unwatched", sort: "title", order: "asc" },
+      },
       shuffle: true,
     });
     expect(get).not.toHaveBeenCalled();
@@ -107,7 +113,10 @@ describe("playQueue", () => {
     await playSource({ kind: "library", id: "L" }, { shuffle: true });
     post.mockResolvedValueOnce(win(0, ["a", "n", "b"], { shuffle: true }));
     expect(await addToQueue(["n"], "next")).toBe(true);
-    expect(post.mock.calls[1]).toEqual(["/api/me/play-queues/Q/items", { video_ids: ["n"], where: "next" }]);
+    expect(post.mock.calls[1]).toEqual([
+      "/api/me/play-queues/Q/items",
+      { video_ids: ["n"], where: "next" },
+    ]);
     post.mockResolvedValueOnce(win(0, ["a", "x"], { shuffle: true }));
     await reshuffle();
     expect(post.mock.calls[2]![0]).toBe("/api/me/play-queues/Q/reshuffle");

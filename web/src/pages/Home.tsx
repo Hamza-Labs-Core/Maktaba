@@ -20,6 +20,7 @@ import { LoadError } from "../components/LoadError";
 import { HomePlaceholder, Loading } from "../components/Placeholders";
 import { usePageData } from "../lib/usePageData";
 import { useFeature } from "../lib/capabilities";
+import { ContinueQueue } from "../components/ContinueQueue";
 
 export function Home() {
   const { t } = useI18n();
@@ -64,6 +65,9 @@ export function Home() {
         />
       )}
 
+      {/* Epic 56: the queue last used, on any device */}
+      <ContinueQueue />
+
       {home && (
         <>
           <VideoRow
@@ -99,6 +103,16 @@ export function Home() {
       )}
 
       {liveTv === "on" && <WhatsOnNow />}
+
+      {home?.collection_rows.map((row) => (
+        <VideoRow
+          key={row.collection.id}
+          title={<bdi>{row.collection.name}</bdi>}
+          titleTo={`/collections/${encodeURIComponent(row.collection.id)}`}
+          videos={row.items}
+          testId={`row-collection-${row.collection.id}`}
+        />
+      ))}
 
       {home &&
         pinned.map((p) => (

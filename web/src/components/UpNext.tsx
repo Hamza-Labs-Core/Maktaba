@@ -9,7 +9,8 @@ import { Button } from "@ds/components/Button/Button";
 import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { fetchLessons, fetchMyVideo } from "../lib/me";
-import { advanceTo, queueNext, watchPath } from "../lib/playQueue";
+import { advanceTo, QUEUE_STALE_EVENT, queueNext, watchPath } from "../lib/playQueue";
+import { useToast } from "@ds/components/Toast/Toast";
 
 /** Seconds Up next waits before it starts the next video. */
 export const UP_NEXT_SEC = 10;
@@ -56,6 +57,14 @@ export function UpNext({ videoId, el }: { videoId: string; el: HTMLVideoElement 
   const [shown, setShown] = useState(false);
   const [left, setLeft] = useState(UP_NEXT_SEC);
   const lookup = useRef<Promise<NextVideo | null> | null>(null);
+
+  // another device moved the queue: say so (the latest is kept, story 56.13)
+  const toast = useToast();
+  useEffect(() => {
+    const said = () => toast.show({ tone: "info", message: t("playQueue.error.stale") });
+    window.addEventListener(QUEUE_STALE_EVENT, said);
+    return () => window.removeEventListener(QUEUE_STALE_EVENT, said);
+  }, [toast, t]);
 
   // a new video starts afresh
   useEffect(() => {

@@ -23,6 +23,48 @@ import {
 import { ChannelTile } from "./Live";
 import { errorText } from "../../lib/errorText";
 import { useFeature } from "../../lib/capabilities";
+import { currentItem, fetchCurrentQueue, resumeQueue, type ServerQueue } from "../../lib/playQueue";
+import { CONTINUE_QUEUE_WITHIN_MS, deviceLabel } from "../../components/ContinueQueue";
+
+/** Epic 56 story 56.13: the queue last used on any device in the last day, to continue. */
+function BigContinueQueue() {
+  const { t } = useI18n();
+  const { go } = useBigNav();
+  const [q, setQ] = useState<ServerQueue | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchCurrentQueue()
+      .then((x) => {
+        const used = x?.used_at ? Date.parse(x.used_at) : NaN;
+        if (live && x && Number.isFinite(used) && Date.now() - used <= CONTINUE_QUEUE_WITHIN_MS) setQ(x);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  const cur = q ? currentItem(q) : null;
+  if (!q || !cur) return null;
+  const title = cur.title || cur.filename || "";
+  const device = deviceLabel(q.device_id, t);
+  return (
+    <div className="bs-hero__actions" data-bs-group="continue-queue" data-testid="big-continue-queue">
+      <button
+        type="button"
+        className="bs-btn bs-btn--primary"
+        data-bs-focus="continue-queue"
+        onClick={() => {
+          const id = resumeQueue(q);
+          const at = Math.floor(cur.position_sec ?? 0);
+          if (id) go(bigPath.watch(id, at > 0 ? { t: at } : {}));
+        }}
+      >
+        ▶ {t("home.continueQueue")}:{" "}
+        <bdi>{device ? t("home.continueQueue.from", { title, device }) : title}</bdi>
+      </button>
+    </div>
+  );
+}
 
 export function BigHome() {
   const { t } = useI18n();
@@ -81,6 +123,7 @@ export function BigHome() {
   return (
     <Screen testId="big-home">
       {hero && <Hero video={hero} resuming={resuming} />}
+      <BigContinueQueue />
       <Row
         id="continue"
         title={t("home.row.continueWatching")}

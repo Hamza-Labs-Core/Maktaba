@@ -87,6 +87,8 @@ type ManagedLibrary struct {
 	// PlexCollections is what the Plex import read into the library (Epic 56
 	// story 56.07); nil when it imported none.
 	PlexCollections *PlexImport `json:"plex_collections,omitempty"`
+	// CollectionMode is how the library grid shows collections (story 56.08).
+	CollectionMode string `json:"collection_mode,omitempty"`
 }
 
 // PlexImport counts a library's collections read from Plex and their Plex
@@ -185,6 +187,7 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 		m := ManagedLibrary{
 			ID: l.ID, Name: l.Name, Settings: l.Settings, CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,
 			Roots: []ManagedRoot{}, Counts: counts[l.ID], Conflicts: []RootConflict{},
+			CollectionMode: l.CollectionMode,
 		}
 		for _, root := range l.Roots {
 			mr := ManagedRoot{Path: root, LocalPath: libpaths.ToLocal(root), Reachable: true}
@@ -214,7 +217,7 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) allLibraries(ctx context.Context) ([]Library, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT id, name, roots, settings, created_at, updated_at FROM libraries ORDER BY name, id
+		SELECT id, name, roots, settings, created_at, updated_at, collection_mode FROM libraries ORDER BY name, id
 	`)
 	if err != nil {
 		return nil, err
@@ -225,7 +228,7 @@ func (h *Handler) allLibraries(ctx context.Context) ([]Library, error) {
 		var l Library
 		var roots stringArray
 		var settings []byte
-		if err := rows.Scan(&l.ID, &l.Name, &roots, &settings, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.Name, &roots, &settings, &l.CreatedAt, &l.UpdatedAt, &l.CollectionMode); err != nil {
 			return nil, err
 		}
 		l.Roots = roots

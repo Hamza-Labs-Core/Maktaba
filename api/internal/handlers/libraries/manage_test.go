@@ -754,6 +754,9 @@ func TestManageCountsThePlexImport(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
+	if resp.Items[0].CollectionMode != "tab_only" {
+		t.Errorf("collection mode %q", resp.Items[0].CollectionMode)
+	}
 	if pc := resp.Items[0].PlexCollections; pc == nil || pc.Imported != 2 || pc.MissingVideos != 1 {
 		t.Fatalf("plex collections %+v", resp.Items[0].PlexCollections)
 	}

@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
+import { Badge } from "@ds/components/Badge/Badge";
 import { Chip } from "@ds/components/Chip/Chip";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
@@ -32,8 +33,11 @@ import {
   fetchCollectionItems,
   removeFromCollection,
   renameCollection,
+  updateCollectionSettings,
+  duplicateCollection,
   reorderCollection,
   type Collection,
+  type CollectionSettings,
 } from "../../lib/collections";
 import { libraryTabPath } from "../../lib/libraryTabs";
 import { playSource, watchPath } from "../../lib/playQueue";
@@ -300,7 +304,7 @@ function CollectionOf({ id }: { id: string }) {
               {t("collections.editFilters")}
             </Link>
           )}
-          {admin && !renaming && (
+          {admin && !renaming && !col.source_kind && (
             <Button
               variant="ghost"
               onClick={() => {
@@ -311,13 +315,35 @@ function CollectionOf({ id }: { id: string }) {
               {t("collections.rename")}
             </Button>
           )}
-          {admin && (
+          {admin && !col.source_kind && (
             <Button variant="destructive" onClick={() => setConfirmDelete(true)}>
               {t("collections.delete")}
             </Button>
           )}
         </div>
       </header>
+
+      {col.source_kind && (
+        <p className="mkt-muted">
+          <Badge tone="neutral">
+            {t(
+              col.source_kind === "plex"
+                ? "collections.badge.plex"
+                : col.source_kind === "youtube_channel"
+                  ? "collections.badge.youtubeChannel"
+                  : "collections.badge.youtubePlaylist"
+            )}
+          </Badge>{" "}
+          {t("collections.sourced")}
+        </p>
+      )}
+      {admin && (
+        <CollectionSettingsPanel
+          col={col}
+          onChanged={reload}
+          onDuplicated={(nid) => navigate(`/collections/${encodeURIComponent(nid)}`)}
+        />
+      )}
 
       {empty && (
         <EmptyState
@@ -357,7 +383,7 @@ function CollectionOf({ id }: { id: string }) {
                   >
                     ▶ {t("playlists.playFrom")}
                   </Button>
-                  {admin && (
+                  {admin && !col.source_kind && (
                     <>
                       <button
                         type="button"
@@ -424,4 +450,101 @@ function filterLabel(t: (k: string) => string, key: string, value: string): stri
     return t(`browse.${key}.${value}`);
   if (key === "watched") return t(`videosAll.watched.${value}`);
   return value;
+}
+
+/** An admin's choices on a collection (Epic 56 story 56.08): a row on the library's
+ * Recommended tab and on Home, hidden, a display name, and a curated copy. */
+function CollectionSettingsPanel({
+  col,
+  onChanged,
+  onDuplicated,
+}: {
+  col: Collection;
+  onChanged: () => void;
+  onDuplicated: (id: string) => void;
+}) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const [display, setDisplay] = useState(col.name_override ?? "");
+  async function save(s: CollectionSettings) {
+    setBusy(true);
+    try {
+      await updateCollectionSettings(col.id, s);
+      onChanged();
+    } catch {
+      toast.show({ tone: "error", message: t("collections.settingsError") });
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function duplicate() {
+    setBusy(true);
+    try {
+      const id = await duplicateCollection(col.id);
+      toast.show({ tone: "success", message: t("collections.duplicated", { name: col.name }) });
+      if (id) onDuplicated(id);
+    } catch {
+      toast.show({ tone: "error", message: t("collections.settingsError") });
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <fieldset className="mkt-collection__settings" disabled={busy}>
+      <label className="mkt-check">
+        <input
+          type="checkbox"
+          checked={!!col.show_on_library}
+          onChange={(e) => void save({ show_on_library: e.target.checked })}
+        />{" "}
+        {t("collections.showOnLibrary")}
+      </label>
+      <label className="mkt-check">
+        <input
+          type="checkbox"
+          checked={!!col.show_on_home}
+          onChange={(e) => void save({ show_on_home: e.target.checked })}
+        />{" "}
+        {t("collections.showOnHome")}
+      </label>
+      <label className="mkt-check">
+        <input
+          type="checkbox"
+          checked={!!col.hidden}
+          onChange={(e) => void save({ hidden: e.target.checked })}
+        />{" "}
+        {t("collections.hide")}
+      </label>
+      <form
+        className="mkt-collection__display"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save({ name_override: display.trim() });
+        }}
+      >
+        <label className="mkt-field">
+          <span className="mkt-field__label">{t("collections.renameDisplay")}</span>
+          <input
+            type="text"
+            dir="auto"
+            value={display}
+            maxLength={200}
+            onChange={(e) => setDisplay(e.target.value)}
+          />
+        </label>
+        <Button
+          type="submit"
+          variant="secondary"
+          size="sm"
+          aria-label={`${t("common.save")}: ${t("collections.renameDisplay")}`}
+        >
+          {t("common.save")}
+        </Button>
+      </form>
+      <Button variant="ghost" onClick={() => void duplicate()}>
+        {t("collections.duplicate")}
+      </Button>
+    </fieldset>
+  );
 }

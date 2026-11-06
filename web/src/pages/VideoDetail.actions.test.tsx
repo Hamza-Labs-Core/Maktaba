@@ -185,4 +185,31 @@ describe("VideoDetail actions", () => {
       await screen.findByRole("navigation", { name: ar["video.series.nav"] })
     ).toHaveTextContent("الدرس ٢ من ٣ في");
   });
+
+  // Epic 56 story 56.13: Play next and Add to queue go to the server queue
+  it("Play next with no queue playing starts one at this video; Add to queue appends", async () => {
+    serve();
+    sessionStorage.clear();
+    const q = {
+      id: "Q",
+      source: { kind: "video", id: "v2" },
+      shuffle: false,
+      current_pos: 0,
+      version: 1,
+      source_done: true,
+      total_estimate: 3,
+      items: [{ pos: 0, origin: "source", id: "v2" }],
+    };
+    post.mockResolvedValue(q);
+    open();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /Play next/ }));
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "video", id: "v2" } })
+    );
+    expect(await screen.findByText("Added to the queue")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Add to queue/ }));
+    expect(post).toHaveBeenLastCalledWith("/api/me/play-queues/Q/items", { video_ids: ["v2"], where: "end" });
+  });
 });

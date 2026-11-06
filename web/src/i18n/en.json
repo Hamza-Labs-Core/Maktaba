@@ -6693,5 +6693,8 @@
   "playQueue.playNext": "Play next",
   "playQueue.add": "Add to queue",
   "playQueue.added": "Added to the queue",
-  "collections.sourced": "Its source keeps this collection's videos in step."
+  "collections.sourced": "Its source keeps this collection's videos in step.",
+  "devices.kind.web": "a browser",
+  "devices.kind.tv": "the TV",
+  "devices.kind.phone": "a phone"
 }

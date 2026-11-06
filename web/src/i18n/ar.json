@@ -6706,5 +6706,8 @@
   "playQueue.playNext": "شغّل تاليًا",
   "playQueue.add": "أضف إلى قائمة الانتظار",
   "playQueue.added": "أُضيف إلى قائمة الانتظار",
-  "collections.sourced": "يُبقي مصدرُها مقاطعَ هذه المجموعة متوافقة معه."
+  "collections.sourced": "يُبقي مصدرُها مقاطعَ هذه المجموعة متوافقة معه.",
+  "devices.kind.web": "متصفّح",
+  "devices.kind.tv": "التلفاز",
+  "devices.kind.phone": "هاتف"
 }

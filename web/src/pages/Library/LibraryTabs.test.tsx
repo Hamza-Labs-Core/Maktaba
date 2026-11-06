@@ -335,7 +335,14 @@ describe("Library page: Playlists and sourced collections", () => {
       [`/api/me/playlists?library=${encodeURIComponent(ID)}`]: {
         items: [
           { id: "p1", name: "دروس", videos: 3, poster_video_ids: [], kind: "manual" },
-          { id: "p2", name: "Unwatched", videos: 50, poster_video_ids: [], kind: "smart", smart_query: { filters: {}, limit: 50 } },
+          {
+            id: "p2",
+            name: "Unwatched",
+            videos: 50,
+            poster_video_ids: [],
+            kind: "smart",
+            smart_query: { filters: {}, limit: 50 },
+          },
         ],
       },
     });
@@ -354,7 +361,11 @@ describe("Library page: Playlists and sourced collections", () => {
   });
 
   it("a YouTube playlist collection has its badge, its chip and its own page", async () => {
-    const yt = col("youtube", "y1", "دروس الفقه", { subkind: "playlist", source_kind: "youtube_playlist", automatic: true });
+    const yt = col("youtube", "y1", "دروس الفقه", {
+      subkind: "playlist",
+      source_kind: "youtube_playlist",
+      automatic: true,
+    });
     serve({
       [`/api/libraries/${ID}/collections`]: {
         ...ALL,

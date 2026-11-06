@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { playSource } from "../../lib/playQueue";
 import {
   fetchHub,
   fetchLibrarySummary,
@@ -184,12 +185,41 @@ export function BigLibrary() {
   if (!hub) return <Loading />;
   const open = (v: VideoCard) => go(bigPath.video(v.id));
   const r = hub.rows;
+  // Epic 56 story 56.13: Play and Shuffle the whole library (one server queue)
+  async function queue(shuffle: boolean) {
+    try {
+      const first = await playSource({ kind: "library", id }, { shuffle });
+      if (first) go(bigPath.watch(first));
+    } catch {
+      /* the screen stays; the button can be pressed again */
+    }
+  }
   return (
     <Screen
       title={<bdi>{hub.library.name}</bdi>}
       subtitle={t("big.videoCount", { n: n(hub.library.videos) })}
       testId="big-library"
     >
+      <div className="bs-hero__actions" data-bs-group="library-actions">
+        <button
+          type="button"
+          className="bs-btn bs-btn--primary"
+          data-bs-focus="library:play"
+          disabled={hub.library.videos === 0}
+          onClick={() => void queue(false)}
+        >
+          ▶ {t("big.play")}
+        </button>
+        <button
+          type="button"
+          className="bs-btn"
+          data-bs-focus="library:shuffle"
+          disabled={hub.library.videos < 2}
+          onClick={() => void queue(true)}
+        >
+          ⤮ {t("big.shuffle")}
+        </button>
+      </div>
       <Row id="lib-ondeck" title={t("home.row.onDeck")} count={r.on_deck.length}>
         {r.on_deck.map((v) => (
           <VideoTile

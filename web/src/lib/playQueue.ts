@@ -390,7 +390,9 @@ export async function addToQueue(ids: string[], where: "next" | "end"): Promise<
 export async function reshuffle(): Promise<void> {
   const q = readServerQueue();
   if (!q?.shuffle) return;
-  keepServerQueue(await api.post<ServerQueue>(`/api/me/play-queues/${encodeURIComponent(q.id)}/reshuffle`));
+  keepServerQueue(
+    await api.post<ServerQueue>(`/api/me/play-queues/${encodeURIComponent(q.id)}/reshuffle`)
+  );
 }
 
 /** The caller's most recently used queue, from any device (null when none). */

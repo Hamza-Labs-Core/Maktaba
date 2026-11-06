@@ -236,4 +236,39 @@ describe("PlaylistPage", () => {
     expect(document.documentElement).toHaveAttribute("dir", "rtl");
     localStorage.clear();
   });
+
+  // Epic 56 story 56.09 T08: a smart playlist's rules in words, Edit rules, no item edits
+  it("a smart playlist shows its rules in words and has no reorder or remove", async () => {
+    get.mockResolvedValue({
+      playlist: {
+        ...P1,
+        kind: "smart",
+        smart_query: { libraries: ["L1"], filters: { watched: "unwatched", speaker: "X" }, sort: "created_at", order: "desc", limit: 50 },
+      },
+      items: DETAIL.items,
+    });
+    open();
+    await screen.findByRole("heading", { name: "رمضان" });
+    expect(screen.getByLabelText("Rules")).toHaveTextContent(
+      "Smart Unwatched · Speaker: X · Newest first · Up to 50 videos"
+    );
+    expect(screen.getByRole("link", { name: "Edit rules" })).toHaveAttribute(
+      "href",
+      "/library/L1?tab=browse&watched=unwatched&speaker=X&sort=created_at&order=desc&smartPlaylist=p1"
+    );
+    expect(screen.queryByRole("button", { name: "Remove Lesson b from the playlist" })).toBeNull();
+  });
+
+  it("the rules read in Arabic", async () => {
+    get.mockResolvedValue({
+      playlist: { ...P1, kind: "smart", smart_query: { libraries: null, filters: { watched: "unwatched" }, limit: 50 } },
+      items: [],
+    });
+    localStorage.setItem("mkt:locale", "ar");
+    open();
+    await screen.findByRole("heading", { name: "رمضان" });
+    expect(screen.getByLabelText(ar["playlists.smart.rules"])).toHaveTextContent(ar["playlists.smart.rule.unwatched"]);
+    expect(screen.getByText(ar["playlists.smart.empty"])).toBeInTheDocument();
+    localStorage.clear();
+  });
 });

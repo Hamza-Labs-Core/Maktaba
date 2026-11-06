@@ -206,6 +206,32 @@ describe("LibraryBrowser, Phase 2", () => {
     );
   });
 
+  // Epic 56 story 56.09 T07: Save as smart playlist takes the grid's filters and sort
+  it("Save as smart playlist posts the grid's filters, sort and the limit", async () => {
+    serve();
+    post.mockResolvedValue({ id: "sp1", name: "X unwatched", kind: "smart", videos: 0, poster_video_ids: [] });
+    renderGrid(`/library/${LIB}?watched=unwatched&speaker=X&sort=title&order=asc`);
+    await screen.findByText("الدرس الأول");
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Save as smart playlist" }));
+    await user.type(screen.getByLabelText("Smart playlist name"), "X unwatched");
+    const limit = screen.getByLabelText("How many videos at most");
+    await user.clear(limit);
+    await user.type(limit, "50");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(post).toHaveBeenCalledWith("/api/me/playlists", {
+      name: "X unwatched",
+      kind: "smart",
+      smart_query: {
+        libraries: [LIB],
+        filters: { watched: "unwatched", speaker: "X" },
+        sort: "title",
+        order: "asc",
+        limit: 50,
+      },
+    });
+  });
+
   it("Select: check cards, mark them watched, favorite them, add them to a playlist", async () => {
     serve();
     post.mockImplementation((path: string, body: { video_ids?: string[] }) => {

@@ -497,6 +497,46 @@ describe("Series", () => {
   });
 });
 
+// Epic 56 story 56.13 T04: Play and Shuffle on /big, reached with the keyboard
+describe("Play and Shuffle on the big screen", () => {
+  const q = (id: string) => ({
+    id: "Q",
+    source: { kind: "library", id: "L1" },
+    shuffle: true,
+    current_pos: 0,
+    version: 1,
+    source_done: false,
+    total_estimate: 2,
+    items: [{ pos: 0, origin: "source", id }],
+  });
+
+  it("a library's Shuffle makes one shuffled library queue and plays it", async () => {
+    serve();
+    post.mockResolvedValue(q("v6"));
+    renderBig("/big/library/L1");
+    const lib = await screen.findByTestId("big-library");
+    fireEvent.click(within(lib).getByRole("button", { name: `⤮ ${E["big.shuffle"]}` }));
+    await waitFor(() => expect(where).toBe("/big/watch/v6"));
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "library", id: "L1" }, shuffle: true })
+    );
+  });
+
+  it("a series' Shuffle makes a shuffled series queue", async () => {
+    serve();
+    post.mockResolvedValue(q("e3"));
+    renderBig("/big/series/S1");
+    const s = await screen.findByTestId("big-series");
+    fireEvent.click(within(s).getByRole("button", { name: `⤮ ${E["big.shuffle"]}` }));
+    await waitFor(() => expect(where).toBe("/big/watch/e3?series=S1"));
+    expect(post).toHaveBeenCalledWith(
+      "/api/me/play-queues",
+      expect.objectContaining({ source: { kind: "series", id: "S1" }, shuffle: true })
+    );
+  });
+});
+
 describe("A video's page", () => {
   it("offers Resume and Play from the start, the chapters and the transcript's opening", async () => {
     post.mockReturnValue(new Promise(() => {}));

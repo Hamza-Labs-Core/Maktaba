@@ -184,6 +184,30 @@ describe("AdminLibraries", () => {
     ).toBeInTheDocument();
   });
 
+  // Epic 56 stories 56.07 T07 and 56.08 T04: the collection mode and the Plex import
+  it("sets a library's collection mode and lists the Plex items not in Maktaba", async () => {
+    const big = { ...BIG, collection_mode: "tab_only", plex_collections: { imported: 2, missing_videos: 1 } };
+    open({ ...DATA, items: [big, SMALL] }, adminUser, {
+      "/api/libraries/big/plex-missing": {
+        items: [{ collection: "Favourites", rating_key: "199", title: "Not here", file: "/x/not.mp4" }],
+      },
+    });
+    patch.mockResolvedValue({});
+    await screen.findByRole("heading", { level: 2, name: "Dr. Othman Alkamees" });
+    const c = card("Dr. Othman Alkamees");
+    expect(within(c).getByText("Plex collections: 2 imported, 1 videos not in Maktaba")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.selectOptions(within(c).getByRole("combobox", { name: en["libraryAdmin.collectionMode"] }), "hide_items");
+    expect(patch).toHaveBeenCalledWith("/api/libraries/big", { collection_mode: "hide_items" });
+    await user.click(within(c).getByRole("button", { name: en["libraryAdmin.plex.skipped"] }));
+    expect(await within(c).findByText("Not here")).toBeInTheDocument();
+  });
+
+  it("the collection mode's words are Arabic in Arabic", () => {
+    expect(ar["libraryAdmin.collectionMode.hideItems"]).toBe("اعرض المجموعة بدل مقاطعها");
+    expect(ar["libraryAdmin.plex.collections"]).toContain("{n}");
+  });
+
   it("follows a scan already running after a reload", async () => {
     open({
       items: [
