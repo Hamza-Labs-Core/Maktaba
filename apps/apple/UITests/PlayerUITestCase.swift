@@ -173,8 +173,8 @@ class PlayerUITestCase: XCTestCase {
     /// The words a failure starts with when the system cancelled `cancelled` touches.
     nonisolated static func lostTapsNote(_ cancelled: Int) -> String {
         let count = cancelled > TouchHook.most ? "more than \(TouchHook.most) touches" : cancelled == 1 ? "1 touch" : "\(cancelled) touches"
-        return "[the simulator dropped a tap: the system cancelled \(count) of this test before the app saw it end; "
-            + "see #639 (backboardd's digitizer race) before reading the failure as the app's] "
+        return "[the simulator may have dropped a tap: the system cancelled \(count) of this test before the app saw it end; "
+            + "see #639 (backboardd's digitizer race) and the app's log before reading the failure as the app's] "
     }
 
     /// Closes the app if it is running.
