@@ -87,6 +87,9 @@ function signedIn(
   return res.cloud_scope ? { ...u, cloud_scope: res.cloud_scope } : u;
 }
 
+/** How often a signed-in admin's recovery pass is renewed (it lasts 7 days). */
+export const RECOVERY_PASS_EVERY_MS = 12 * 60 * 60 * 1000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -125,6 +128,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // or another user
   const userId = user?.id ?? null;
   useEffect(() => forgetAnswers(), [userId]);
+
+  // Epic 53 story 53.04: an admin keeps a recovery pass (a cookie scoped to /recovery)
+  // so the recovery console opens while the API or the database is down. Asked for at
+  // sign-in and every 12 hours; a viewer never asks.
+  const isAdmin = !!user?.is_admin;
+  useEffect(() => {
+    if (!isAdmin) return;
+    // best effort: a failure (an older home, the API restarting) changes nothing
+    const ask = () =>
+      void Promise.resolve()
+        .then(() => api.post("/api/auth/recovery-pass", {}))
+        .catch(() => {});
+    ask();
+    const t = window.setInterval(ask, RECOVERY_PASS_EVERY_MS);
+    return () => window.clearInterval(t);
+  }, [isAdmin, userId]);
 
   useEffect(() => {
     const ended = () => {

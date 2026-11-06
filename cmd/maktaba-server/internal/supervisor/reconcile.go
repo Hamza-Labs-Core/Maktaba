@@ -121,9 +121,13 @@ type Reconciler struct {
 	CachePath string
 	Bundle    string
 	// Off is [components] reconcile = "off".
-	Off   bool
-	Loops []*Loop
-	Log   io.Writer
+	Off bool
+	// SafeMode keeps every component but components.SafeModeComponents off for this
+	// boot, the always-on ones too (Epic 53 story 53.05), reason boot_flag; the desired
+	// state is never written.
+	SafeMode bool
+	Loops    []*Loop
+	Log      io.Writer
 	// Tick is how often a pass runs on what the supervisor holds (0: 1 s).
 	Tick time.Duration
 	// After is the store poll's timer (nil: time.After); Retry how often the first read
@@ -489,6 +493,11 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 	d, has := desired[id]
 	dec := decision{gen: d.Generation}
 	switch {
+	case r.SafeMode && !components.SafeModeAllows(id):
+		dec.phase = components.PhaseOff
+		dec.conds = append(dec.conds, cond(CondReconciled, condFalse, ReasonBootFlag,
+			map[string]any{"flag": components.SafeModeFlag}))
+		return dec
 	case !comp.Switchable:
 		dec.open = true
 		return dec
@@ -775,7 +784,7 @@ func (r *Reconciler) applyGates(views []procView, loops map[string]decision) (ma
 	moved := 0
 	for i := len(comps) - 1; i >= 0; i-- {
 		id := comps[i].ID
-		if decs[id].open || !comps[i].Switchable {
+		if decs[id].open || (!comps[i].Switchable && !r.SafeMode) {
 			continue
 		}
 		for _, p := range procs[id] {
@@ -950,7 +959,7 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		} else {
 			phase = components.PhaseOff
 		}
-		if !dec.open && phase != components.PhaseDraining && comp.Switchable && !r.Off {
+		if !dec.open && phase != components.PhaseDraining && (comp.Switchable || r.SafeMode) && !r.Off {
 			phase = dec.phase
 		}
 		// open and running, but a model it needs is not on this machine (or its install

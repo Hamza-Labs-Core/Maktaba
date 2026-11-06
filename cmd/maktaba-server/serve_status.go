@@ -37,6 +37,12 @@ func serveStatusJSON(w http.ResponseWriter, r *http.Request) {
 // its own every 10 s (a Postgres that runs but refuses connections).
 func startStatusBoard(ctx context.Context, cfg config.Config, sup *supervisor.Supervisor, rec *supervisor.Reconciler, node *nodeServices) {
 	b := supervisor.NewStatusBoard(sup)
+	b.Mode = func() string {
+		if supervisor.SafeModeBoot {
+			return "safe"
+		}
+		return "normal"
+	}
 	if rec != nil {
 		b.Phases = rec.Phases
 	}

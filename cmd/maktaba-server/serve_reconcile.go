@@ -84,6 +84,8 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec := supervisor.NewReconciler(sup)
 	rec.Machine = machine
 	rec.Off = !cfg.Components.ReconcileOn()
+	// Epic 53 story 53.05: this start keeps all but the safe set off
+	rec.SafeMode = supervisor.SafeModeBoot
 	rec.CachePath = supervisor.CompCachePath(cfg.StateDir())
 	rec.Loops = loops
 	rec.Log = log
