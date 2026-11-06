@@ -10,9 +10,9 @@ REPO_ROOT="${REPO_ROOT:-$(cd "$here/../../.." && pwd)}"
 # shellcheck source-path=SCRIPTDIR source=fetch.sh
 . "$here/fetch.sh"
 sources="${LANG_SOURCES:-$here/lang-sources.toml}"
-python3 - "$sources" "$id" >"${WORK:?}/lang-files.tsv" <<'PY'
-import sys, tomllib
-raw = tomllib.load(open(sys.argv[1], "rb"))
+PYTHONPATH="$here" python3 - "$sources" "$id" >"${WORK:?}/lang-files.tsv" <<'PY'
+import sys, minitoml
+raw = minitoml.load(open(sys.argv[1], "rb"))
 pack = raw.get("pack", {}).get(sys.argv[2])
 if not pack:
     sys.exit(f"lang.sh: {sys.argv[2]} is not in {sys.argv[1]}")
@@ -36,8 +36,8 @@ for f in NOTICE samples.txt; do
     fi
 done
 if [ ! -f "$stage/NOTICE" ]; then
-    licence="$(python3 -c 'import sys,tomllib
-for l in tomllib.load(open(sys.argv[1],"rb"))["language"]:
+    licence="$(PYTHONPATH="$here" python3 -c 'import sys,minitoml
+for l in minitoml.load(open(sys.argv[1],"rb"))["language"]:
     if l["code"]==sys.argv[2]: print(l["licence"])' "$here/hunspell-languages.toml" "$code")"
     printf 'Hunspell dictionary for %s (Maktaba word review, Epic 52)\n\nFrom the LibreOffice dictionaries repository; licence: %s. The licence and\nreadme files of the dictionary are in this pack beside it.\n' "$code" "$licence" >"$stage/NOTICE"
     chmod 0644 "$stage/NOTICE"

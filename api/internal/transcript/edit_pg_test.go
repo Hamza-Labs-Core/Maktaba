@@ -121,8 +121,8 @@ func indexOf(s, sub string) int {
 func TestStaleChangedSinceAndNotActive(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
 	ctx := context.Background()
-	w := tt.Seed(t, db, tt.Sentence{Text: "a teh b", WithWords: true})
-	flag := tt.Flag(t, db, w, 0, 2, 3, "teh", "teh", "en", 0.7)
+	w := tt.Seed(t, db, tt.Sentence{Text: "a thw b", WithWords: true})
+	flag := tt.Flag(t, db, w, 0, 2, 3, "thw", "thw", "en", 0.7)
 	err := inTx(t, db, func(tx *sql.Tx) error {
 		_, err := transcript.ApplyEdit(ctx, tx, transcript.Edit{TranscriptID: w.TranscriptID, CharStart: 2, CharLen: 3,
 			Before: "tah", After: "the", FlagID: flag})
@@ -133,7 +133,7 @@ func TestStaleChangedSinceAndNotActive(t *testing.T) {
 	}
 	var first, second transcript.Result
 	_ = inTx(t, db, func(tx *sql.Tx) error {
-		first, err = transcript.ApplyEdit(ctx, tx, transcript.Edit{TranscriptID: w.TranscriptID, CharStart: 2, CharLen: 3, Before: "teh", After: "the"})
+		first, err = transcript.ApplyEdit(ctx, tx, transcript.Edit{TranscriptID: w.TranscriptID, CharStart: 2, CharLen: 3, Before: "thw", After: "the"})
 		return err
 	})
 	_ = inTx(t, db, func(tx *sql.Tx) error {
@@ -165,11 +165,11 @@ func TestStaleChangedSinceAndNotActive(t *testing.T) {
 func TestBatchUndoIsAllOrNothing(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
 	ctx := context.Background()
-	w := tt.Seed(t, db, tt.Sentence{Text: "x teh y", WithWords: true}, tt.Sentence{Text: "teh z", Start: 5, WithWords: true})
+	w := tt.Seed(t, db, tt.Sentence{Text: "x thw y", WithWords: true}, tt.Sentence{Text: "thw z", Start: 5, WithWords: true})
 	batch := "33333333-3333-4333-8333-333333333333"
 	for _, e := range []transcript.Edit{
-		{TranscriptID: w.TranscriptID, SegmentSeq: 0, CharStart: 2, CharLen: 3, Before: "teh", After: "the", BatchID: batch},
-		{TranscriptID: w.TranscriptID, SegmentSeq: 1, CharStart: 0, CharLen: 3, Before: "teh", After: "the", BatchID: batch},
+		{TranscriptID: w.TranscriptID, SegmentSeq: 0, CharStart: 2, CharLen: 3, Before: "thw", After: "the", BatchID: batch},
+		{TranscriptID: w.TranscriptID, SegmentSeq: 1, CharStart: 0, CharLen: 3, Before: "thw", After: "the", BatchID: batch},
 	} {
 		if err := inTx(t, db, func(tx *sql.Tx) error { _, err := transcript.ApplyEdit(ctx, tx, e); return err }); err != nil {
 			t.Fatal(err)

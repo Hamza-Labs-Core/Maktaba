@@ -62,8 +62,8 @@ func (f *pgf) json(rec *httptest.ResponseRecorder, want int, v any) {
 // locks it for 5 minutes; another admin then gets 409 with the holder's name, unless
 // they force it; a correction edits the transcript and its undo reopens the flag.
 func TestListLockResolveUndo(t *testing.T) {
-	f := newPG(t, tt.Sentence{Text: "قال الصلوة خير", WithWords: true}, tt.Sentence{Text: "teh sky", Start: 5, WithWords: true})
-	low := tt.Flag(t, f.db, f.w, 1, 0, 3, "teh", "teh", "en", 0.55)
+	f := newPG(t, tt.Sentence{Text: "قال الصلوة خير", WithWords: true}, tt.Sentence{Text: "thw sky", Start: 5, WithWords: true})
+	low := tt.Flag(t, f.db, f.w, 1, 0, 3, "thw", "thw", "en", 0.55)
 	high := tt.Flag(t, f.db, f.w, 0, 4, 6, "الصلوة", "الصلوه", "ar", 0.9, "quran_mismatch")
 	var page struct {
 		Items      []Flag  `json:"items"`
@@ -79,7 +79,7 @@ func TestListLockResolveUndo(t *testing.T) {
 	}
 	var d Detail
 	f.json(f.do("GET", "/api/review/flags/"+high, "", f.w.AdminID), 200, &d)
-	if d.LockedBy == nil || *d.LockedBy != f.w.AdminID || d.After != "teh sky" {
+	if d.LockedBy == nil || *d.LockedBy != f.w.AdminID || d.After != "thw sky" {
 		t.Fatalf("detail %+v", d)
 	}
 	// the other admin: the locked flag is not in the list, resolving it is 409
@@ -134,11 +134,11 @@ func TestListLockResolveUndo(t *testing.T) {
 // Apply to every place: one batch, one undo; the third time a correction is made its
 // spelling joins the vocabulary.
 func TestSameKeyBatchAndLearning(t *testing.T) {
-	f := newPG(t, tt.Sentence{Text: "a teh b", WithWords: true}, tt.Sentence{Text: "teh c", Start: 5, WithWords: true},
-		tt.Sentence{Text: "d teh", Start: 10, WithWords: true})
-	first := tt.Flag(t, f.db, f.w, 0, 2, 3, "teh", "teh", "en", 0.8)
-	tt.Flag(t, f.db, f.w, 1, 0, 3, "teh", "teh", "en", 0.7)
-	tt.Flag(t, f.db, f.w, 2, 2, 3, "teh", "teh", "en", 0.6)
+	f := newPG(t, tt.Sentence{Text: "a thw b", WithWords: true}, tt.Sentence{Text: "thw c", Start: 5, WithWords: true},
+		tt.Sentence{Text: "d thw", Start: 10, WithWords: true})
+	first := tt.Flag(t, f.db, f.w, 0, 2, 3, "thw", "thw", "en", 0.8)
+	tt.Flag(t, f.db, f.w, 1, 0, 3, "thw", "thw", "en", 0.7)
+	tt.Flag(t, f.db, f.w, 2, 2, 3, "thw", "thw", "en", 0.6)
 	var d Detail
 	f.json(f.do("GET", "/api/review/flags/"+first, "", f.w.AdminID), 200, &d)
 	if d.SameKeyOpen != 2 || len(d.SameKeyPreview) != 2 {
@@ -166,7 +166,7 @@ func TestSameKeyBatchAndLearning(t *testing.T) {
 		texts = append(texts, s)
 	}
 	_ = rows.Close()
-	if strings.Join(texts, "|") != "a teh b|teh c|d teh" {
+	if strings.Join(texts, "|") != "a thw b|thw c|d thw" {
 		t.Fatalf("after the batch undo %v", texts)
 	}
 	// three corrections of the same word, one at a time: the third teaches the vocabulary
@@ -182,7 +182,7 @@ func TestSameKeyBatchAndLearning(t *testing.T) {
 		f.json(f.do("POST", "/api/review/flags/"+id+"/resolve", `{"action":"correct","text":"the"}`, f.w.AdminID), 200, nil)
 	}
 	var uses, words int
-	_ = f.db.QueryRow(`SELECT uses FROM vocab_pairs WHERE heard_key = 'teh'`).Scan(&uses)
+	_ = f.db.QueryRow(`SELECT uses FROM vocab_pairs WHERE heard_key = 'thw'`).Scan(&uses)
 	_ = f.db.QueryRow(`SELECT COUNT(*) FROM vocabulary WHERE term = 'the' AND kind = 'word'`).Scan(&words)
 	if uses < 3 || words != 1 {
 		t.Fatalf("pairs %d, vocabulary %d", uses, words)

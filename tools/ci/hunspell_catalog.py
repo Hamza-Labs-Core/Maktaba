@@ -14,10 +14,11 @@ import json
 import re
 import shutil
 import sys
-import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "tools" / "release" / "packs"))
+import minitoml  # noqa: E402 - Python 3.10 on the runners has no tomllib
 LIST = ROOT / "tools" / "release" / "packs" / "hunspell-languages.toml"
 CATALOG = ROOT / "shared" / "components" / "catalog.toml"
 COPY = ROOT / "pipeline" / "src" / "maktaba_pipeline" / "language_packs" / "hunspell-languages.toml"
@@ -88,7 +89,7 @@ def words(path: Path, langs: list[dict[str, str]], arabic: bool) -> None:
 
 
 def main() -> int:
-    langs = tomllib.loads(LIST.read_text(encoding="utf-8"))["language"]
+    langs = minitoml.loads(LIST.read_text(encoding="utf-8"))["language"]
     cat = CATALOG.read_text(encoding="utf-8")
     m = re.search(re.escape(BEGIN) + r"[^\n]*\n(.*?)" + re.escape(END), cat, re.S)
     if m is None:
