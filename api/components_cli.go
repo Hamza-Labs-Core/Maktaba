@@ -90,7 +90,7 @@ type componentsCLI struct {
 	wait     func(time.Duration)
 	// restart is a restart through this machine's supervisor, and a restart request for
 	// the loops of the other processes (componentsh.Restarter; nil: none).
-	restart func(ctx context.Context, id string, actor components.Actor) (int, error)
+	restart func(ctx context.Context, id string, actor components.Actor) (componentsh.Restarted, error)
 }
 
 // runComponents is `maktaba-api components …`: the components' desired state from the
@@ -647,7 +647,7 @@ func (c *componentsCLI) restartOne(ctx context.Context, id string, yes bool) int
 			return exitComponentsFailed
 		}
 	}
-	n, err := c.restart(ctx, id, components.Actor{By: c.user, Source: "cli"})
+	res, err := c.restart(ctx, id, components.Actor{By: c.user, Source: "cli"})
 	if errors.Is(err, componentsh.ErrNoSupervisor) {
 		fmt.Fprintln(c.errOut, "components: no maktaba-server answers on this machine: run this through maktaba-server")
 		return exitComponentsFailed
@@ -655,10 +655,14 @@ func (c *componentsCLI) restartOne(ctx context.Context, id string, yes bool) int
 	if err != nil {
 		return c.fail(err)
 	}
-	if n == 0 {
+	switch {
+	case res.Restarted > 0:
+		fmt.Fprintf(c.out, "%s: restarted %d.\n", id, res.Restarted)
+	case len(res.Requested) == 0:
 		fmt.Fprintf(c.out, "%s: none of its processes runs now; the server starts them.\n", id)
-	} else {
-		fmt.Fprintf(c.out, "%s: restarted %d.\n", id, n)
+	}
+	if len(res.Requested) > 0 {
+		fmt.Fprintf(c.out, "%s: asked %s to restart its loops.\n", id, strings.Join(res.Requested, ", "))
 	}
 	fmt.Fprintln(c.out, "Done.")
 	return 0
