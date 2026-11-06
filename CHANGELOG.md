@@ -527,6 +527,14 @@ build fails when the two differ.
   days, each chart shows its values under the pointer and a sentence for screen readers, and
   Open in Logs opens the same time. `GET /api/admin/dashboards/{board}` is admin only.
 
+- **A performance budget for logging (Epic 53, story 53.13).** A new CI job, `log-bench`, runs on
+  every change to the log path. It measures the keeper's cost per line under a burst (and that
+  no line, and no warning or error, is lost), the index's catch-up and lag, search with
+  filters, full text and by request over a seeded 7-day corpus, the dashboards' 30 days, the
+  Go logger's cost per call and the disk caps through a day. A bench over its budget fails
+  with its numbers. The budgets follow the runner's speed, and the numbers are kept as the
+  job's artifact (`docs/performance/logs.md`).
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
