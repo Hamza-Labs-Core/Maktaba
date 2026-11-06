@@ -52,7 +52,7 @@ command -v uv >/dev/null 2>&1 || die "uv is required (https://docs.astral.sh/uv/
 # write a file without it, which cannot install torch's CUDA build.
 UV_MIN="0.12.0"
 uv_version="$(uv --version | awk '{print $2}')"
-if [ "$(printf '%s\n%s\n' "$UV_MIN" "$uv_version" | sort -t. -k1,1n -k2,2n -k3,3n | head -n1)" != "$UV_MIN" ]; then
+if [ "$(printf '%s\n%s\n' "$UV_MIN" "$uv_version" | sort -t. -k1,1n -k2,2n -k3,3n | sed -n 1p)" != "$UV_MIN" ]; then
     die "uv $uv_version is too old: the constraints need uv $UV_MIN or later (uv export --emit-index-url). Update it with \`uv self update\` or from https://docs.astral.sh/uv/"
 fi
 case "$TAG" in v*) ;; *) TAG="v$TAG" ;; esac
@@ -209,7 +209,7 @@ chmod 0755 "$stage/install-node.sh" "$stage/uninstall-node.sh" "$stage/launchd/m
 
 # Deterministic archives where the tools allow: sorted names, pinned mtime, no owners.
 sde="${SOURCE_DATE_EPOCH:-$(git -C "$REPO_ROOT" log -1 --pretty=%ct 2>/dev/null || date +%s)}"
-if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+if grep -q 'GNU tar' <<<"$(tar --version 2>/dev/null)"; then
     tar --sort=name --mtime="@$sde" --owner=0 --group=0 --numeric-owner \
         -C "$WORK" -czf "$OUT/$BUNDLE.tar.gz" "$BUNDLE"
 else

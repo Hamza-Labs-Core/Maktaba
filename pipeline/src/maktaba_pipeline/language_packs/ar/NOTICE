@@ -1,0 +1,16 @@
+Arabic language pack (Maktaba, Epic 52, stories 52.4 and 52.15)
+
+The pack's code, its dialect and confusion lists and samples.txt are Maktaba's.
+
+Its data comes from two Epic 51 assets, never bundled here:
+
+- lang.ar: the Ayaspell Hunspell dictionary for Arabic (ar.aff / ar.dic) from
+  LibreOffice's dictionaries repository, tri-licensed GPL 2+ / LGPL 2.1+ / MPL 1.1. It is
+  data, read at run time, never linked.
+- model.refine: CAMeL Tools' MSA morphology database (calima-msa-r13), GPL v2, fetched
+  with the ML runtime. CAMeL Tools' code is MIT.
+
+The Quran check compares verse runs with the bundled Tanzil Quran Text (Simple Clean,
+v1.1), Copyright (C) 2007-2026 Tanzil Project, CC BY 3.0, used verbatim
+(data/quran/LICENSE-TANZIL.txt). Verse words shown as suggestions credit
+"Quran text: Tanzil Project (tanzil.net)".

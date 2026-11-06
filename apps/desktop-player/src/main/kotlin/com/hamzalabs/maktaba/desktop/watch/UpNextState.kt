@@ -12,7 +12,8 @@ const val UP_NEXT_LEAD_SEC = 20
 /**
  * Up next below the picture (story 55.08): when an episode ends, or [leadSec] before its end
  * when there is a [next], a card counts down [countSec] seconds and then plays it from its
- * start. Cancel (or Escape) keeps the video; N plays the next at once. Driven by [tick] once a
+ * start. Cancel (or Escape) keeps the video; N plays the next at once; a seek back before the
+ * lead takes the card away until the lead comes again. Driven by [tick] once a
  * second, so a test is the clock.
  */
 class UpNextState(private val leadSec: Int = UP_NEXT_LEAD_SEC, private val countSec: Int = UP_NEXT_SEC) {
@@ -46,6 +47,11 @@ class UpNextState(private val leadSec: Int = UP_NEXT_LEAD_SEC, private val count
         if (cancelled || !autoplay) return null
         val due = ended || (durationMs > 0 && positionMs > 0 && durationMs - positionMs <= leadSec * 1000L)
         val left = secondsLeft
+        // a seek back before the lead: the card goes, and comes again at the lead
+        if (left != null && !due) {
+            secondsLeft = null
+            return null
+        }
         if (left == null) {
             if (due) secondsLeft = countSec
             return null

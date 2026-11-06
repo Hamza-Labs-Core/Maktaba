@@ -296,6 +296,7 @@ const MORE_LINKS = [
 const SERVER_LINKS = [
   ["nav.queue", "/queue"],
   ["nav.transcription", "/transcription"],
+  ["nav.review", "/review"],
   ["nav.settings", "/settings"],
 ] as const;
 
@@ -455,7 +456,10 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     expect(within(sidebar()).getByText(en["nav.admin"])).toBeInTheDocument();
     expect(linkList(sidebar())).toEqual([...named(USER_LINKS), ...named(ADMIN_LINKS)]);
     // Processing, Transcription and Settings open the group, before the other admin links
-    const admin = linkList(sidebar()).slice(USER_LINKS.length, USER_LINKS.length + 3);
+    const admin = linkList(sidebar()).slice(
+      USER_LINKS.length,
+      USER_LINKS.length + SERVER_LINKS.length
+    );
     expect(admin).toEqual(named(SERVER_LINKS));
     // the tab bar stays the same five for an admin
     expect(within(tabbar()).getAllByRole("link")).toHaveLength(5);
@@ -1011,7 +1015,7 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
     expect(lists).toHaveLength(2);
     expect(linkList(lists[0])).toEqual(named(MORE_LINKS));
     expect(linkList(lists[1])).toEqual(named(ADMIN_LINKS));
-    expect(linkList(lists[1]).slice(0, 3)).toEqual(named(SERVER_LINKS));
+    expect(linkList(lists[1]).slice(0, SERVER_LINKS.length)).toEqual(named(SERVER_LINKS));
   });
 
   it.each([

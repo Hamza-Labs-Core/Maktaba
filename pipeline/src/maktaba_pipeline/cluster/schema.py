@@ -46,7 +46,7 @@ __all__ = [
 
 #: the highest migration slot this code ships (``shared/db/migrations``); a test fails
 #: when a migration is added without raising it
-SCHEMA_REV = 185
+SCHEMA_REV = 188
 
 #: the reason code every stage gets while the machine is paused
 REASON_PAUSED = "paused"

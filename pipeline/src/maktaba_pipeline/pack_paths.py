@@ -14,7 +14,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-__all__ = ["current_dir", "follow"]
+__all__ = ["current_dir", "follow", "inside"]
 
 
 def _root() -> Path | None:
@@ -57,3 +57,16 @@ def follow(path: str) -> str:
         return path
     moved = cur.joinpath(*parts[2:])
     return str(moved) if moved.exists() else path
+
+
+def inside(path: str) -> bool:
+    """Whether ``path`` is inside a pack's version folder
+    (``<components>/<pack>/<version>/...``): a place only a pack's install writes."""
+    root = _root()
+    if root is None or not path:
+        return False
+    try:
+        rel = Path(path).resolve(strict=False).relative_to(root.resolve(strict=False))
+    except (ValueError, OSError):
+        return False
+    return len(rel.parts) >= 2

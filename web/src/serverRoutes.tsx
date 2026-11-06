@@ -34,6 +34,14 @@ const Transcription = /* @__PURE__ */ page(
   "Transcription"
 );
 const Settings = /* @__PURE__ */ page(() => import("./pages/Settings"), "Settings");
+// Epic 52: word review (home admins only)
+const Review = /* @__PURE__ */ page(() => import("./pages/review/Review"), "Review");
+const ReviewHistory = /* @__PURE__ */ page(() => import("./pages/review/History"), "ReviewHistory");
+const Vocabulary = /* @__PURE__ */ page(() => import("./pages/review/Vocabulary"), "Vocabulary");
+const LanguagePacks = /* @__PURE__ */ page(
+  () => import("./pages/review/LanguagePacks"),
+  "LanguagePacks"
+);
 const ServerStatus = /* @__PURE__ */ page(
   () => import("./pages/Cloud/ServerStatus"),
   "ServerStatus"
@@ -105,6 +113,10 @@ export function serverRoutes() {
       <Route path="/queue/libraries" element={<LibraryDashboard />} />
       <Route path="/queue/:stage" element={<QueueDetail />} />
       <Route path="/transcription" element={<Transcription />} />
+      <Route path="/review" element={<Review />} />
+      <Route path="/review/history" element={<ReviewHistory />} />
+      <Route path="/review/vocabulary" element={<Vocabulary />} />
+      <Route path="/review/languages" element={<LanguagePacks />} />
       <Route path="/settings/*" element={<Settings />} />
       <Route path="/billing" element={<Navigate to="/settings/subscription" replace />} />
       <Route path="/cloud/status" element={<ServerStatus />} />

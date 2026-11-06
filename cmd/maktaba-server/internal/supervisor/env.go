@@ -93,6 +93,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	if os.Getenv("MAKTABA_MODEL_CACHE_DIR") == "" {
 		add("MAKTABA_MODEL_CACHE_DIR", filepath.Join(cfg.StateDir(), "models"))
 	}
+	// Epic 52 (story 52.16): where the installed component packs are, so the pipeline
+	// finds a data pack's folder (components/packs.py pack_dir: the lang.* dictionaries)
+	if os.Getenv("MAKTABA_COMPONENTS_DIR") == "" {
+		add("MAKTABA_COMPONENTS_DIR", filepath.Join(cfg.StateDir(), "components"))
+	}
 	if os.Getenv("MAKTABA_CHROMA_DIR") == "" {
 		add("MAKTABA_CHROMA_DIR", filepath.Join(cfg.StateDir(), "chroma"))
 	}
