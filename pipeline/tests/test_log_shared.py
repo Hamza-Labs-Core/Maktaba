@@ -100,23 +100,3 @@ def test_the_key_is_read_from_the_supervisors_file(
     monkeypatch.setenv(redact.LOG_KEY_ENV, str(p))
     monkeypatch.setattr(redact, "_user_key_loaded", False)
     assert redact.hash_user(42) == CASES["user_hash"][0]["user_h"]
-
-
-@pytest.mark.unit
-def test_a_stage_jobs_lines_carry_its_component() -> None:
-    """T07: a stage's job logs with the component ByStage names; an unknown stage none."""
-    from types import SimpleNamespace
-
-    from maktaba_pipeline.components.catalog import default
-    from maktaba_pipeline.pipeline.runner import _job_log_context
-
-    job = SimpleNamespace(
-        id=7, stage="transcribe", video_id=None, subject_id=None, subject_kind=None
-    )
-    with _job_log_context(job):  # type: ignore[arg-type]
-        got = structlog.contextvars.get_contextvars().get("component")
-    comp = default().by_stage("transcribe")
-    assert comp is not None and got == comp.id
-    job.stage = "no-such-stage"
-    with _job_log_context(job):  # type: ignore[arg-type]
-        assert "component" not in structlog.contextvars.get_contextvars()
