@@ -197,9 +197,6 @@ class ComponentRunner:
         #: component -> when the leader turned its stages off (None: unknown)
         self._off_since: dict[str, datetime | None] = {}
         self._off_loaded = False
-        #: the components of _off_since this runner turned off itself (not read back from
-        #: the status rows at start)
-        self._off_mine: set[str] = set()
         #: the built-in extensions' rows (name -> ExtensionState), read at each pass that
         #: acts (story 51.07: an enabled extension without its settings is Waiting)
         self.ext_states: Mapping[str, Any] = {}
@@ -509,8 +506,32 @@ class ComponentRunner:
             async with leader(self.db, LEADER_KEY) as got:
                 if got:
                     await self._write_home()
+            if not got:
+                await self._forget_reopened()
             return
         await self._write_home()
+
+    def _closed(self, reasons: Mapping[str, str]) -> set[str]:
+        """The components whose stages make no jobs now (off, not held: a held stage's
+        jobs queue and wait)."""
+        closed: set[str] = set()
+        for st, why in reasons.items():
+            comp = self.catalog.by_stage(st)
+            if comp is not None and why == COMPONENT_OFF and st in self._graph_names:
+                closed.add(comp.id)
+        return closed
+
+    async def _forget_reopened(self) -> None:
+        """A pass that does not lead drops the off times of the components that are on and
+        whose stages the database says are open: another leader opened them and queued
+        their catch-up. Kept, they would be reported as off (the Components page) and
+        widen a later catch-up (#659 review)."""
+        if not self._off_since:
+            return
+        closed = self._closed(home_reasons(self.home_gates, self.catalog))
+        still_off = await self._components_off(self._managed())
+        for cid in [c for c in self._off_since if c not in closed and c not in still_off]:
+            self._off_since.pop(cid, None)
 
     def _managed(self) -> list[str]:
         return [
@@ -538,27 +559,23 @@ class ComponentRunner:
         exts = self.ext_states
         managed = self._managed()
         t = now()
-        # the components whose stages make no jobs now (off, not held: a held stage's
-        # jobs queue and wait); each one's time off is kept until it is back
-        closed: set[str] = set()
-        for st, why in reasons.items():
-            comp = self.catalog.by_stage(st)
-            if comp is not None and why == COMPONENT_OFF and st in self._graph_names:
-                closed.add(comp.id)
+        # the components whose stages make no jobs now; each one's time off is kept until
+        # it is back
+        closed = self._closed(reasons)
         for cid in closed:
             if cid not in self._off_since:
                 self._off_since[cid] = t
-                self._off_mine.add(cid)
         back = {cid: at for cid, at in self._off_since.items() if cid not in closed}
         async with self.db.transaction():
-            # one this runner turned off whose stages another leader has opened again
-            # since: that leader queued the catch-up (below), so this one does not again
-            if mine := back.keys() & self._off_mine:
+            # one whose stages another leader has opened again since this runner knew it
+            # off (it turned it off, or read the time from the status rows at start): that
+            # leader queued the catch-up (below), so this one does not again. Only the
+            # stages this write opens again are this runner's to catch up (#659 review)
+            if back:
                 still_off = await self._components_off(managed)
-                for cid in mine - still_off:
+                for cid in back.keys() - still_off:
                     back.pop(cid)
                     self._off_since.pop(cid, None)
-                    self._off_mine.discard(cid)
             changes = await apply_gates(self.db, self.graph, reasons, exts, stages=managed)
             if changes:
                 _log.info(
@@ -598,7 +615,6 @@ class ComponentRunner:
                 _log.info("component_catchup_queued", components=entries, job_id=res.job_id)
         for cid in back:
             self._off_since.pop(cid, None)
-            self._off_mine.discard(cid)
 
     async def _components_off(self, stages: Sequence[str]) -> set[str]:
         """The components with one of ``stages`` off in ``job_stages`` (component_off)."""

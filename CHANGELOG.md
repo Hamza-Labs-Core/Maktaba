@@ -36,6 +36,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
+  A quality or audio change that finished after the video was closed, or after another video
+  started, no longer leaves an unseen player playing or replaces the new video (its stream
+  session is closed instead). "Not interested" on a row's last card, and a pin, favorite or
+  watched mark made just before leaving a page, no longer undo themselves. A direct-play file
+  starts in the kept audio language. Up next stops counting after a seek back. The Quality
+  menu marks the right height when the default comes from the playback settings. A Continue
+  Watching card past 95% starts from the beginning. A removal during Load more on Favorites
+  no longer skips a page for good. A channel opened from Home's What's On Now closes when Live
+  TV is turned off, and the Live TV relay fetches only the session's own Cloudflare host.
+
 - **A component turned back on catches up even when another worker turns it on.** On a home
   with several pipeline workers, the one that turned a component's stages off was not always
   the one that turned them on again, and then the catch-up job for what the stages missed
@@ -183,6 +194,10 @@ build fails when the two differ.
 - **A spelling dictionary that fails to load after a pack update no longer stops the
   corrections.** The second listen keeps the dictionary it was using and tries the new one again
   later, and never downloads into a pack's folder.
+- **Turning a component back on queues its catch-up once.** A worker that started while the
+  component was off could queue a second catch-up after another worker's had finished, running
+  the whole time off again (or all history). A worker that loses the lead also stops reporting
+  the component as off once it is on again, so Admin > Components no longer shows it off.
 
 ### Security
 

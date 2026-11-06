@@ -90,7 +90,8 @@ jobs:
           "$RUNNER_TEMP/pip-venv/bin/python" -m pip check
           cd "$RUNNER_TEMP"
           [ "$("$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" --version)" = "$NODE_VERSION" ]
-          grep -q -- '--node' < <("$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" run --help)
+          out="$("$RUNNER_TEMP/pip-venv/bin/maktaba-pipeline" run --help)"
+          grep -q -- '--node' <<<"$out"
 
       # Maktaba.app's first-run venv (Epic 36, story 36.3): real venvs, offline, from tiny
       # wheels (fresh, resume, no-op, rebuild); the real wheel runs on macOS and Windows
@@ -484,7 +485,8 @@ jobs:
           venv="$RUNNER_TEMP/App Support/Maktaba/venv"
           PYTHONPATH="$whl" "$py" -m maktaba_pipeline.venv_bootstrap --python "$py" \
             --payload dist --venv "$venv" | tee boot.jsonl | cut -c1-200
-          grep -q '"state": "ready"' < <(tail -1 boot.jsonl)
+          last="$(tail -1 boot.jsonl)"
+          grep -q '"state": "ready"' <<<"$last"
           grep -q '"state": "ready"' "$RUNNER_TEMP/App Support/Maktaba/venv-status.json"
           "$venv/bin/maktaba-pipeline" --version
           "$venv/bin/python" -c "import mlx_whisper, mlx_audio, chromadb, sentence_transformers, camel_tools, silero_vad"
