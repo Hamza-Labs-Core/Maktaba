@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use plugind_core::api::{Answer, ApiError, PluginApi};
-use plugind_core::logging::{Logs, MemorySink};
+use plugind_core::logging::{Logs, MemorySink, BURST, LINES_PER_SECOND};
 use plugind_core::protocol::{self, Job, Limits, Outcome, Request, Response, Run, Subject};
 use plugind_core::{Host, HostConfig};
 use serde_json::{json, Value};
@@ -353,11 +353,16 @@ fn progress_requests_and_job_data_reach_their_places() {
 fn log_flood_is_throttled() {
     let f = Fixture::new(false);
     let p = f.package("hostile", &guest("hostile"), ALL);
+    let t = Instant::now();
     let r = f.run(&p, "flood_log", &[], Limits::default());
+    let elapsed = t.elapsed().as_secs_f64();
     assert_eq!(r.outcome, Outcome::Ok);
     assert!(r.log_dropped >= 9_000, "{r:?}");
     let lines = f.sink.0.lock().unwrap();
-    assert!(lines.len() < 200, "{} lines", lines.len());
+    // the burst, what the rate refilled while the job ran (a slow runner refills more), and
+    // the host's own few lines (log_dropped among them)
+    let most = BURST + elapsed * LINES_PER_SECOND + 10.0;
+    assert!((lines.len() as f64) <= most, "{} lines in {elapsed:.2}s, at most {most:.0}", lines.len());
     assert!(lines.iter().any(|l| l.contains("log_dropped")));
 }
 
