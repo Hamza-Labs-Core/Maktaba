@@ -36,6 +36,30 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
+  A quality or audio change that finished after the video was closed, or after another video
+  started, no longer leaves an unseen player playing or replaces the new video (its stream
+  session is closed instead). "Not interested" on a row's last card, and a pin, favorite or
+  watched mark made just before leaving a page, no longer undo themselves. A direct-play file
+  starts in the kept audio language. Up next stops counting after a seek back. The Quality
+  menu marks the right height when the default comes from the playback settings. A Continue
+  Watching card past 95% starts from the beginning. A removal during Load more on Favorites
+  no longer skips a page for good. A channel opened from Home's What's On Now closes when Live
+  TV is turned off, and the Live TV relay fetches only the session's own Cloudflare host.
+
+- **A component turned back on catches up even when another worker turns it on.** On a home
+  with several pipeline workers, the one that turned a component's stages off was not always
+  the one that turned them on again, and then the catch-up job for what the stages missed
+  while off was not queued until the next change. The worker that opens the stages again now
+  queues it, with the time the component went off, and the other one does not queue it a
+  second time. The components tests now keep each local run's logs in a folder of its own,
+  with the failed test's report and the database's component state, locally as in CI.
+
+- **A new Arabic dictionary or ffmpeg pack is used without restarting the pipeline.** A
+  pipeline that was already running kept the dictionary and ffmpeg of the packs it started
+  with until it restarted. It now follows each pack's current version at its next use: the
+  next video's ffmpeg, ffprobe and second listen use the newly installed or updated pack.
+
 - **A new way of finishing jobs can no longer bring back a deadlock with the queue's
   clean-up unnoticed.** The done-subjects summary of the queue locks its rows in one order
   within a statement; a transaction that finished jobs over several statements out of that
@@ -162,6 +186,18 @@ build fails when the two differ.
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
   (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
   Settings → General → Sharing → Local hostname.
+- **`serve --offline` also stops the pipeline's own outbound calls.** With `MAKTABA_OFFLINE=1`
+  the YouTube listings, downloads, exact dates and repairs wait (no scheduled refresh is
+  queued), the books stage looks nothing up on Wikipedia (a book not looked up yet is looked up
+  at its next run once online), enrichment makes no web search, and the spelling dictionary is
+  never downloaded. The test that lists every outbound call now reads the pipeline's code too.
+- **A spelling dictionary that fails to load after a pack update no longer stops the
+  corrections.** The second listen keeps the dictionary it was using and tries the new one again
+  later, and never downloads into a pack's folder.
+- **Turning a component back on queues its catch-up once.** A worker that started while the
+  component was off could queue a second catch-up after another worker's had finished, running
+  the whole time off again (or all history). A worker that loses the lead also stops reporting
+  the component as off once it is on again, so Admin > Components no longer shows it off.
 
 ### Security
 
@@ -185,8 +221,54 @@ build fails when the two differ.
   lists speakers, topics, languages and years, and the jump bar lists Arabic letters first. The
   web uses the server queue, adds a library's Playlists tab, Shuffle on a series and a season,
   and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
-  route (a test fails on an undescribed one). Migrations 0185-0187. Every new word in English
+  route (a test fails on an undescribed one). Migrations 0190-0192. Every new word in English
   and Arabic.
+- **Word review: the transcript words that may be wrong go to a home admin, in every language
+  (Epic 52).** Every new transcript keeps each word's time, Whisper's confidence and what the
+  second listen heard (packed in `transcript_segments.word_data`, 9 bytes a word). A new CPU
+  stage, `word_check` (the `review.words` component), saves each suspect word with its reasons
+  (low confidence, not in the dictionary, heard differently, close to the vocabulary, a name)
+  and suggested spellings, within a budget per hour of audio; Quran verses recited or quoted
+  are compared with the bundled Tanzil text, and only a word that differs from the verse is
+  asked about. Languages are packs: Arabic (CAMeL Tools morphology and Ayaspell), English
+  (SCOWL), eleven LibreOffice Hunspell dictionaries installed on demand (`lang.hunspell.*`),
+  and a fallback for any other language; every check is deterministic, no language model
+  judges a word. Existing transcripts are checked from their text in the background, at the
+  lowest priority and only while nothing waits to be transcribed. The web's **Word review**
+  page (home admins only) shows one word at a time with its clip and sentence, keyboard-first
+  (physical keys, so an Arabic layout works); a fix edits the transcript, its subtitle files
+  and search without transcribing again, can be undone, is carried over when the video is
+  transcribed again, and teaches a vocabulary that new transcriptions and the second listen
+  use (never queuing the library again). Words can also be fixed from a video's Transcript
+  tab, each library has its word review settings, the Transcription page shows the open
+  counts and the share accepted as is, and the Remote apps on iPhone, iPad, Mac and Android
+  review words too. A component a later release adds now starts as the home's bundle says
+  (off on a Core home), never on by default. Slots 0186-0188 add `word_flags`,
+  `language_packs`, `transcript_edits`, `transcripts.revision`, `vocabulary` and `vocab_pairs`.
+- **The Player for Windows and Linux has the phone and Mac Players' sections (Epic 55).**
+  After sign-in, a rail (on the right in Arabic) holds Home, Libraries, Live TV, Search and
+  Profile, each with its own pages and Back (also Alt+Left and the mouse's back button). Home
+  has the featured hero and the rows (Continue Watching, On Deck, What's On Now, Favorites,
+  Recently Added, Recently Watched, pinned libraries, For You with Not interested). Libraries
+  pins libraries and opens a library's rows, its videos (sort, language, speaker) and series;
+  series and video pages have Resume and Play from start, Favorite, Mark watched (an episode or
+  a season), chapters and the next episodes. Search suggests as you type, searches titles and
+  what is said in videos (Play from a passage) and keeps recent searches (Ctrl+F or /). Live TV
+  has Now, the Guide and a channel player, at home and away through Maktaba Cloud. Watching
+  resumes where you left, offers audio tracks, subtitles (drawn by the player), quality and Up
+  next, with the keys of the help page. Profile has watch history, favorites, playlists,
+  browser sessions, approving a device, playback settings, language and about. A feature the
+  home has off is hidden from a viewer and explained to an admin with a link to Components;
+  `-Pmaktaba.capabilitiesGate=off` builds a player without that gate (#638). Everything is in
+  English and Arabic. The Home rows, the guide's time maths, the playback settings and the track
+  and Up next rules are now shared with the Android Player.
+- **One switch keeps a test or offline server from reaching the internet.** `maktaba-server
+  serve --offline` (or `MAKTABA_OFFLINE=1`) turns off every call the server and its parts
+  make by themselves: the update check, pack and model downloads, the language model's
+  downloads, usage data, the licence refresh and the link to Maktaba Cloud. A branch's
+  scratch stack no longer contacts GitHub. A list of every outbound call, with the setting
+  that stops it, is checked by a test, so a new one cannot be added unnoticed.
+
 - **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
   (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
   as a component, with what it needs and what it conflicts with. Admin > Components shows each
@@ -390,6 +472,74 @@ build fails when the two differ.
   slot must start again on the new release and the change must reach verifying, never be held
   with `slot.health` / `release_mismatch` as change #58 was on 2026-10-31. The rehearsal now
   builds its streaming binary with TV staging, as the release does.
+
+- **One log line for every part of Maktaba, and no line names a person (Epic 53, story 53.01).**
+  The server, the pipeline, the web app, the Apple and Android apps, the desktop app and the
+  cloud now write the same line (`shared/log/schema/line.schema.json`: `ts`, `level`,
+  `service`, `msg`, plus `version`, `env`, `node` and the Epic 51 `component` on the server's
+  lines), checked by a shared conformance test. One redaction list
+  (`shared/redact/rules.json`) is used by every language and passes one table of cases: tokens
+  in links (`token=[REDACTED]`), passwords in database and share addresses, JWTs, bearer
+  tokens, emails (`[EMAIL]`), card numbers, the last part of IP addresses and the person's
+  folder in a path (`/Users/<name>/` becomes `~/`). A user is named by `user_h`, a hash of the
+  id under a key that stays on each machine (`log.key` beside `secrets.key`), never by the raw
+  id. The Apple and Android apps keep their recent lines on the device (under 1 MB), the web
+  app the last 2,000 in memory, for problem reports later in Epic 53.
+
+- **Every component with loops can be restarted, wherever its loops run.** Restart on the
+  Components page and `maktaba-server components restart` refused a component whose loops
+  run in streaming, the pipeline or the supervisor itself (Live TV in the server, HDHomeRun,
+  the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
+  streaming and the pipeline restart theirs within seconds of the request: each loop stops
+  within its grace and starts again, as a process does.
+
+- **Every part's log is kept on disk, and the home says what is down without the API or the
+  database (Epic 53, stories 53.02 and 53.03).** The supervisor now keeps each process's
+  output in its own hourly files under the data folder (`logs/segments/<service>/`, closed
+  hours compressed), filling in the service, machine and Epic 51 component of each line and
+  scrubbing it once more. Lines are kept 7 days (debug 24 hours) within 550 MB of a 1 GB
+  diagnostics cap, settable under `[logs]` in `server.toml`. When the disk runs low, debug
+  lines go first, and each part's newest warnings and errors go last. A child never waits on
+  its log, and nothing is lost when the API, Postgres or the supervisor itself restarts.
+  `server.log` keeps every line for now. The web port answers `GET /status.json` itself, with
+  no sign-in: the state of the database, the API, streaming, processing, search and log
+  search, which features are down, and a banner key. Something turned off reads `off`,
+  never `down`; a crash shows at once, a failing check after two checks. The document names
+  no host, path or version (`docs/api/status.md`).
+
+- **A recovery page and safe mode, so an admin can fix Maktaba with the database or the API down
+  (Epic 53, stories 53.04 and 53.05).** `/recovery` on the web port is served by the supervisor
+  itself, in English or Arabic. An admin gets in with a 7-day recovery pass the web app keeps
+  for them while the API is up (a cookie only `/recovery` reads, refused after a demotion,
+  deletion or sign-out everywhere), a Remote app's admin token, or the Mac's new **Open
+  recovery page** menu item (a one-time link). Five failed tries in a minute lock it for five
+  minutes. The page shows each part and component with its restarts, last exit and last
+  error, the last 15 minutes of warnings and errors from the log files, and free disk space.
+  Its buttons restart a component or everything, start or leave safe mode, roll back a
+  committed update, restore a backup (asked twice) and download diagnostics. Every action is
+  recorded and copied to the audit log when the API is back. Safe mode runs one start with
+  only the database, the API, updates and log search (desired state untouched; everything
+  else reads off with reason `boot_flag`, and `/status.json` says `mode: "safe"`). A role
+  whose crash loop survives 3 slow retries now stays down until it is restarted. When
+  Maktaba itself stops 3 times in 2 minutes before it is ready, the launcher stops starting
+  it, keeps its last lines in `start-failed.json` and serves a "Maktaba can't start" page
+  with Try again, Start in safe mode and Go back; the Mac's menu offers the same choices.
+  The "Maktaba is restarting" page now says what is down and, after a minute, links to the
+  recovery page.
+
+- **Every app says what is down on the home, and CI kills each part to prove the app survives
+  (Epic 53, stories 53.06 and 53.07).** The web app, the Apple Player, Remote and TV apps, and
+  the Android phone and TV apps show one status strip from the home's `/status.json`, read
+  every 10 seconds while in front: "Maktaba is restarting", a database problem, safe mode,
+  "Playback and Live TV are unavailable right now", search down, and, for admins only,
+  processing paused, with Details to System health or the recovery page. Only the most
+  important line shows, with "N more" for the rest; it can be closed and comes back when
+  things change; it never covers a playing video. Something an admin turned off shows
+  nothing, and Live TV is left out of the playback sentence when it is off. The web player
+  says "Playback is unavailable right now" instead of a generic error while streaming is
+  down. The update rehearsal now also kills streaming, the API and Postgres on a home of the
+  commit, and starts safe mode from the recovery console, checking the web keeps serving,
+  `/status.json` says so in time and the part comes back (`docs/fault-rehearsal.md`).
 
 ### Fixed
 

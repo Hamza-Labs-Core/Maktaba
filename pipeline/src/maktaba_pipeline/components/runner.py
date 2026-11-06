@@ -41,7 +41,7 @@ from ..cluster.stages import REASON_UNAVAILABLE
 from ..engine.graph import CATALOG_ID, StageDef
 from ..engine.sql import is_pg, now, parse_ts
 from ..engine.sync import COMPONENT_OFF, apply_gates
-from ..log import get_logger
+from ..log import bind_component, get_logger
 from ..log.tasks import watch as watch_task
 from . import store
 from .catalog import DEFAULT_STOP_GRACE_S, Catalog, default
@@ -105,6 +105,12 @@ def reconcile_enabled() -> bool:
     ``[components] reconcile``): runners report but act on nothing."""
     v = os.environ.get("MAKTABA_COMPONENTS_RECONCILE", "").strip().lower()
     return v not in ("off", "0", "false", "no")
+
+
+def current_machine() -> str:
+    """The machine this process's runner reads desired state for (HOME without one)."""
+    r = _ACTIVE
+    return r.machine if r is not None else HOME
 
 
 def gate_open(component: str) -> bool:
@@ -207,6 +213,9 @@ class ComponentRunner:
         self._transitions: dict[str, list[Any]] = {}
         self._wake = asyncio.Event()
         self._listener: Any = None
+        #: the pipeline's restart requests read last (slot 0185, #636): component -> seq;
+        #: None until the first read, which is only remembered
+        self._restart_seen: dict[str, int] | None = None
         self._graph_names = {s.name for s in self.graph}
 
     # -- declaring -------------------------------------------------------------
@@ -376,7 +385,55 @@ class ComponentRunner:
             if self.role == "home" and self.machine == HOME:
                 await self._lead()
         self._loops()
+        await self._take_restarts()
         await self._report()
+
+    async def _take_restarts(self) -> None:
+        """Restart this process's loops of each component whose restart request moved
+        since the last read (``POST /api/components/{id}/restart`` writes one for the
+        pipeline's loops, which the API cannot reach). A failed read (a schema before slot
+        0185) changes nothing."""
+        try:
+            seqs = await store.restarts(self.db, self.machine, "pipeline")
+        except Exception as exc:  # noqa: BLE001 - an older schema: no restarts
+            _log.debug("components_restarts_unreadable", error=f"{type(exc).__name__}: {exc}")
+            return
+        self.take_restarts(seqs)
+
+    def take_restarts(self, seqs: Mapping[str, int]) -> list[str]:
+        """Act on the pipeline's restart requests (component -> seq): each component whose
+        seq moved since the last call has its running loops here stopped within their
+        grace and started again (:meth:`restart`). The first call only remembers them. The
+        components restarted."""
+        prev, self._restart_seen = self._restart_seen, dict(seqs)
+        if prev is None:
+            return []
+        ids = sorted(cid for cid, seq in seqs.items() if seq > prev.get(cid, 0))
+        for cid in ids:
+            n = self.restart(cid)
+            _log.info("components_restart_requested", component=cid, loops=n)
+        return ids
+
+    def restart(self, cid: str) -> int:
+        """Restart ``cid``'s loops here (an admin's restart, story 51.08): a running one is
+        stopped within its grace and the next pass starts it again; one that ended on its
+        own starts again at once. How many: 0 when none is here or its gate is shut."""
+        n = 0
+        for lp in self.loops.values():
+            if lp.component != cid or not self._loop_wanted(lp):
+                continue
+            if lp.running():
+                if lp.stop is not None and not lp.stop.is_set():
+                    stopper = asyncio.ensure_future(self._stop_loop(lp))
+                    self._stoppers.add(stopper)
+                    stopper.add_done_callback(self._stoppers.discard)
+                    n += 1
+            else:
+                lp.task, lp.stop, lp.failed = None, None, ""
+                n += 1
+        if n:
+            self._wake.set()
+        return n
 
     async def _read_extensions(self) -> None:
         if self._extension_states is None:
@@ -455,8 +512,32 @@ class ComponentRunner:
             async with leader(self.db, LEADER_KEY) as got:
                 if got:
                     await self._write_home()
+            if not got:
+                await self._forget_reopened()
             return
         await self._write_home()
+
+    def _closed(self, reasons: Mapping[str, str]) -> set[str]:
+        """The components whose stages make no jobs now (off, not held: a held stage's
+        jobs queue and wait)."""
+        closed: set[str] = set()
+        for st, why in reasons.items():
+            comp = self.catalog.by_stage(st)
+            if comp is not None and why == COMPONENT_OFF and st in self._graph_names:
+                closed.add(comp.id)
+        return closed
+
+    async def _forget_reopened(self) -> None:
+        """A pass that does not lead drops the off times of the components that are on and
+        whose stages the database says are open: another leader opened them and queued
+        their catch-up. Kept, they would be reported as off (the Components page) and
+        widen a later catch-up (#659 review)."""
+        if not self._off_since:
+            return
+        closed = self._closed(home_reasons(self.home_gates, self.catalog))
+        still_off = await self._components_off(self._managed())
+        for cid in [c for c in self._off_since if c not in closed and c not in still_off]:
+            self._off_since.pop(cid, None)
 
     def _managed(self) -> list[str]:
         return [
@@ -484,23 +565,46 @@ class ComponentRunner:
         exts = self.ext_states
         managed = self._managed()
         t = now()
-        # the components whose stages make no jobs now (off, not held: a held stage's
-        # jobs queue and wait); each one's time off is kept until it is back
-        closed: set[str] = set()
-        for st, why in reasons.items():
-            comp = self.catalog.by_stage(st)
-            if comp is not None and why == COMPONENT_OFF and st in self._graph_names:
-                closed.add(comp.id)
+        # the components whose stages make no jobs now; each one's time off is kept until
+        # it is back
+        closed = self._closed(reasons)
         for cid in closed:
-            self._off_since.setdefault(cid, t)
+            if cid not in self._off_since:
+                self._off_since[cid] = t
         back = {cid: at for cid, at in self._off_since.items() if cid not in closed}
         async with self.db.transaction():
+            # one whose stages another leader has opened again since this runner knew it
+            # off (it turned it off, or read the time from the status rows at start): that
+            # leader queued the catch-up (below), so this one does not again. Only the
+            # stages this write opens again are this runner's to catch up (#659 review)
+            if back:
+                still_off = await self._components_off(managed)
+                for cid in back.keys() - still_off:
+                    back.pop(cid)
+                    self._off_since.pop(cid, None)
             changes = await apply_gates(self.db, self.graph, reasons, exts, stages=managed)
             if changes:
                 _log.info(
                     "component_stage_gates_written",
                     stages={st: why for st, _a, _b, _c, why in changes},
                 )
+            # the components whose stages this write opened again after they had them off.
+            # The leader that turned them off may not be the one that turns them on (each
+            # pass takes the lock anew and the home's workers race for it), so its memory
+            # alone would miss the catch-up (#646): the rows say what came back
+            reopened = {
+                comp.id
+                for st, _on, old_why, _now_on, why in changes
+                if old_why == COMPONENT_OFF
+                and why != COMPONENT_OFF
+                and (comp := self.catalog.by_stage(st)) is not None
+            }
+            if reopened - back.keys():
+                since = await self._reported_off_since()
+                for cid in reopened - back.keys():
+                    # when the leader that turned it off said so (its status row); unknown
+                    # (all history) when no row says
+                    back[cid] = since.get(cid)
             if back:
                 entries = [
                     {"component": cid, "off_since": None if at is None else at.isoformat()}
@@ -517,6 +621,30 @@ class ComponentRunner:
                 _log.info("component_catchup_queued", components=entries, job_id=res.job_id)
         for cid in back:
             self._off_since.pop(cid, None)
+
+    async def _components_off(self, stages: Sequence[str]) -> set[str]:
+        """The components with one of ``stages`` off in ``job_stages`` (component_off)."""
+        rows = await self.db.fetch(
+            "SELECT stage FROM job_stages WHERE disabled_reason = $1", COMPONENT_OFF
+        )
+        want = set(stages)
+        return {
+            comp.id
+            for r in rows
+            if r["stage"] in want and (comp := self.catalog.by_stage(r["stage"])) is not None
+        }
+
+    async def _reported_off_since(self) -> dict[str, datetime | None]:
+        """component -> the earliest ``off_since`` the home's status rows carry."""
+        out: dict[str, datetime | None] = {}
+        for s in await store.statuses(self.db):
+            if s.machine != HOME or not s.detail.get("off_since"):
+                continue
+            at = parse_ts(s.detail["off_since"])
+            prev = out.get(s.id)
+            if at is not None and (prev is None or at < prev):
+                out[s.id] = at
+        return out
 
     # -- loops ---------------------------------------------------------------
 
@@ -544,7 +672,9 @@ class ComponentRunner:
             ended = lp.task is not None and lp.task.done() and not (lp.stop and lp.stop.is_set())
             if want and not lp.running() and not lp.failed and not ended:
                 lp.stop = asyncio.Event()
-                lp.task = watch_task(asyncio.create_task(lp.fn(lp.stop), name=lp.name))
+                # the task copies the context: its lines carry the loop's component
+                with bind_component(lp.component):
+                    lp.task = watch_task(asyncio.create_task(lp.fn(lp.stop), name=lp.name))
                 lp.task.add_done_callback(lambda _t: self._wake.set())
                 _log.info("component_loop_started", loop=lp.name, component=lp.component)
             elif not want and lp.running() and lp.stop is not None and not lp.stop.is_set():

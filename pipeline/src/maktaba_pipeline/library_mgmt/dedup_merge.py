@@ -100,7 +100,7 @@ RULES: Mapping[tuple[str, str], Rule] = {
     ("watch_sessions", "video_id"): Rule("move"),
     ("streaming_sessions", "video_id"): Rule("move"),
     ("user_playlist_items", "video_id"): Rule("union", ("playlist_id",)),
-    # a play queue (slot 0185) plays the keeper where it held the loser; positions are its own
+    # a play queue (slot 0190) plays the keeper where it held the loser; positions are its own
     ("play_queue_items", "video_id"): Rule("move"),
     ("user_favorites", "video_id"): Rule("union", ("user_id",)),
     ("collection_items", "video_id"): Rule("union", ("collection_id",)),

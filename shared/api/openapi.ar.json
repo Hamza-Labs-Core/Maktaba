@@ -1990,12 +1990,12 @@
       "ar": "إعادة تشغيل مكوّن"
     },
     "/paths/~1components~1{id}~1restart/post/description": {
-      "en": "Restarts a running component: its processes through this machine's supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.",
-      "ar": "يعيد تشغيل مكوّن يعمل: عملياته عبر المشرف على هذا الجهاز، وحلقاته في الواجهة البرمجية تُلغى ثم تبدأ من جديد. ولا تتغير الحالة المطلوبة، وتُسجَّل إعادة التشغيل باسم `component.restart`."
+      "en": "Restarts a running component: its processes and the supervisor's own loops through this machine's supervisor, its loops in the API cancelled and started again, and its loops in streaming or the pipeline through a restart request their runner acts on within seconds. The desired state does not change; the restart is recorded as `component.restart`.",
+      "ar": "يعيد تشغيل مكوّن يعمل: عملياته وحلقات المشرف الخاصة به عبر المشرف على هذا الجهاز، وحلقاته في الواجهة البرمجية تُلغى ثم تبدأ من جديد، وحلقاته في خدمة البث أو خط المعالجة عبر طلب إعادة تشغيل ينفّذه المشغّل فيها خلال ثوانٍ. ولا تتغير الحالة المطلوبة، وتُسجَّل إعادة التشغيل باسم `component.restart`."
     },
     "/paths/~1components~1{id}~1restart/post/responses/200/description": {
-      "en": "The component after the restart, with `restarted`: how many of its processes and loops started again.",
-      "ar": "المكوّن بعد إعادة التشغيل، ومعه `restarted`: عدد عملياته وحلقاته التي بدأت من جديد."
+      "en": "The component after the restart, with `restarted`: how many of its processes and loops started again, or were asked to (its loops in streaming or the pipeline).",
+      "ar": "المكوّن بعد إعادة التشغيل، ومعه `restarted`: عدد عملياته وحلقاته التي بدأت من جديد أو طُلب منها ذلك (حلقاته في خدمة البث أو خط المعالجة)."
     },
     "/paths/~1components~1{id}~1restart/post/responses/202/description": {
       "en": "None of its processes runs now: the supervisor starts them (`restarted` is 0).",
@@ -2006,8 +2006,8 @@
       "ar": "للمشرفين وحدهم."
     },
     "/paths/~1components~1{id}~1restart/post/responses/409/description": {
-      "en": "Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.",
-      "ar": "رُفض الطلب (`code`): `not_restartable` (مراحل أو إضافة أو ملف، أو حلقات تعمل في خدمة أخرى)، أو `not_running` (متوقف أو موقوف مؤقتًا، أو ينتظر ما يحتاج إليه)، أو `not_switchable` (جزء من الخادم). ولم يُعَد تشغيل شيء."
+      "en": "Refused (`code`): `not_restartable` (stages, an extension or an asset), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.",
+      "ar": "رُفض الطلب (`code`): `not_restartable` (مراحل أو إضافة أو ملف)، أو `not_running` (متوقف أو موقوف مؤقتًا، أو ينتظر ما يحتاج إليه)، أو `not_switchable` (جزء من الخادم). ولم يُعَد تشغيل شيء."
     },
     "/paths/~1components~1{id}~1restart/post/responses/503/description": {
       "en": "This server runs under no supervisor, or the supervisor does not answer.",

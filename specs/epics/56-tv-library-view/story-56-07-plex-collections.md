@@ -1,6 +1,6 @@
 # Story 56.07 — Plex collections, read into Maktaba
 
-> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0187) · Needed by: 56.08
+> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0192) · Needed by: 56.08
 
 ## Why
 

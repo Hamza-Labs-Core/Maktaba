@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.core.playback.nextVideo
 import androidx.activity.compose.BackHandler
 import com.hamzalabs.maktaba.core.queue.QueueItem
 import com.hamzalabs.maktaba.player.libraries.PlayerQueues

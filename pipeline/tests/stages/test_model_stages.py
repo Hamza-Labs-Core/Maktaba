@@ -371,6 +371,31 @@ async def test_the_book_a_series_explains_decides_its_topics_and_is_looked_up_on
 
 
 @pytest.mark.asyncio
+async def test_no_book_is_looked_up_while_offline(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#640: MAKTABA_OFFLINE stops the encyclopedia lookup; the season is not marked as
+    looked up, so its next run once online looks the book up."""
+    monkeypatch.setattr(tag_check, "ask", Model(["fiqh"]))
+    calls: list[str] = []
+    monkeypatch.setattr(books, "http_get", lambda url, cfg: _encyclopedia(calls)(url))
+    await set_rules(db, "books", {"request_gap_s": 0})
+    monkeypatch.setenv("MAKTABA_OFFLINE", "1")
+    lib, _ = await _world(db, name=BOOK, clips=False)
+    await _run(db, lib)
+    sid = await _season(db)
+    assert calls == []
+    assert await db.fetchval("SELECT count(*) FROM books") == 0
+    assert (await _jobs(db, "books"))[-1]["state"] == "done"
+
+    monkeypatch.setenv("MAKTABA_OFFLINE", "")
+    await enqueue_job(db, subject_kind="season", subject_id=sid, stage="books")
+    await drain_core(db, await core_runtime(db, models=True), only={"books"})
+    assert len(calls) == 1  # not skipped as current: looked up now
+    assert await db.fetchval("SELECT title FROM books") == "بلوغ المرام"
+
+
+@pytest.mark.asyncio
 async def test_a_series_that_names_no_book_makes_no_lookup(
     db: Database, monkeypatch: pytest.MonkeyPatch
 ) -> None:

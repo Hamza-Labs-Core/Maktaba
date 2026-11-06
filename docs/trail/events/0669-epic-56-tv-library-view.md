@@ -8,9 +8,9 @@ session: local_74545651-2fc4-4693-ac62-08aec457c516
 ---
 
 ## What happened
-One server play queue (`/api/me/play-queues`, slot 0185) behind every Play and Shuffle on
-the web, both TV apps and both phone Players; smart playlists (0186); collections kept in
-step from YouTube playlists and channels and from Plex (0187, two pipeline stages); a
+One server play queue (`/api/me/play-queues`, slot 0190) behind every Play and Shuffle on
+the web, both TV apps and both phone Players; smart playlists (0191); collections kept in
+step from YouTube playlists and channels and from Plex (0192, two pipeline stages); a
 library's collection mode and promoted rows; `group=series`, categories; OpenAPI for every
 library route with a coverage test. Closes #654.
 
@@ -19,9 +19,14 @@ library route with a coverage test. Closes #654.
   (`playqueue/sources.go`): the order and the access rules can never drift from the grid's.
   Shuffle over a whole library is `GET /api/videos?sort=shuffle&seed=N` (md5 of id and seed,
   paged with the list's cursor); SQLite gets `md5()` registered with the modernc driver.
-- Main took slot 0184 while this was in flight: the three migrations moved to 0185-0187, with
-  SCHEMA_REV / SchemaRev raised in the pipeline, the API and the streaming node, and the
-  epic's spec table (and its Arabic hashes) updated.
+- Main took slots 0184-0189 while this was in flight (the queue engine's lock order, the
+  component restarts, Epic 52's word review in #672 and the import dry run in #678): the
+  three migrations moved twice, to 0190-0192 at the end, with SCHEMA_REV / SchemaRev at 192
+  in the pipeline, the API and the streaming node, and the epic's spec table updated. A
+  branch that adds migrations waits for the PRs holding the slots below its own: the gaps
+  lint fails on an empty slot under the highest.
+- The migration lint wants `CREATE INDEX CONCURRENTLY` even on a table the same migration
+  makes; a migration with one runs as `-- +goose NO TRANSACTION`, each statement idempotent.
 - The integration job runs goose up on an already migrated database: an `ADD CONSTRAINT`
   needs a `DROP CONSTRAINT IF EXISTS` before it.
 - An extension's stages must sit in its own `ext.*` component (a catalog test), so the Plex

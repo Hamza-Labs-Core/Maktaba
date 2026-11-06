@@ -116,6 +116,19 @@ class ApiClient(
         return t.user
     }
 
+    /**
+     * The home's `/status.json` (Epic 53 story 53.06), signed in or not; null when the home does
+     * not answer it (an older home, the home unreachable): the strip shows nothing new.
+     */
+    suspend fun homeStatus(): HomeStatusDoc? = try {
+        val (code, body) = execute(request("GET", "/status.json"))
+        if (code == 200) json.decodeFromString(HomeStatusDoc.serializer(), String(body)) else null
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
     /** `GET /api/auth/me` with the home's name. */
     suspend fun whoami(): Me = get("/api/auth/me")
 
@@ -182,13 +195,24 @@ class ApiClient(
      * this player can play (the streaming service's profiles: the desktop player's JavaFX
      * `desktop-player`); none lets the home pick for a generic player. [maxBitrateKbps] caps
      * the stream (a player's quality choice, FR-35); none is the home's own ceiling.
+     * [audioTrack] picks the file's audio track (from 0) and [format] asks for a container
+     * ("hls"): a player that plays one audio track only asks for another this way.
      */
-    suspend fun openStream(video: String, startSec: Int = 0, profile: String? = null, maxBitrateKbps: Int? = null): StreamSession {
+    suspend fun openStream(
+        video: String,
+        startSec: Int = 0,
+        profile: String? = null,
+        maxBitrateKbps: Int? = null,
+        audioTrack: Int? = null,
+        format: String? = null,
+    ): StreamSession {
         val body = buildJsonObject {
             put("video_id", video)
             if (startSec > 0) put("start_sec", startSec)
             if (profile != null) put("client_profile", profile)
             if (maxBitrateKbps != null && maxBitrateKbps > 0) put("max_bitrate_kbps", maxBitrateKbps)
+            if (audioTrack != null && audioTrack >= 0) put("audio_track", audioTrack)
+            if (format != null) put("format", format)
         }
         return decode(send(request("POST", "/api/stream/sessions", body = body)))
     }

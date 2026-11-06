@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.home
 
+import com.hamzalabs.maktaba.core.browse.KEY_CONTINUE
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule

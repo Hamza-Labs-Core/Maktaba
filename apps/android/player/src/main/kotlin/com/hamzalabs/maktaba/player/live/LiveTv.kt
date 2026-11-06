@@ -9,12 +9,10 @@ import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.LiveChannel
 import com.hamzalabs.maktaba.core.api.NowAnswer
 import com.hamzalabs.maktaba.core.api.NowEntry
+import com.hamzalabs.maktaba.core.live.GuideWindow
 import com.hamzalabs.maktaba.player.shell.PlayerHome
 import kotlinx.coroutines.CancellationException
 import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
-import java.time.temporal.ChronoUnit
 
 /**
  * Live TV's state for one signed-in home (kept by [PlayerHome.keep], so Now, the guide and a
@@ -101,32 +99,3 @@ class LiveTv(val api: LiveApi) {
 
 /** This home's Live TV state. */
 fun PlayerHome.liveTv(): LiveTv = keep("live") { LiveTv(LiveApi(client)) }
-
-/** A span of the guide: [startMs] up to [endMs], epoch milliseconds. */
-data class GuideWindow(val startMs: Long, val endMs: Long) {
-    val minutes: Long get() = (endMs - startMs) / 60_000
-
-    /** Minutes from the window's start to [ms] (negative before it). */
-    fun minutesTo(ms: Long): Float = (ms - startMs) / 60_000f
-
-    /** The window moved by [hours] (earlier when negative). */
-    fun shifted(hours: Long): GuideWindow = GuideWindow(startMs + hours * HOUR_MS, endMs + hours * HOUR_MS)
-
-    companion object {
-        const val HOUR_MS = 3_600_000L
-
-        /** How many hours the guide asks for at once: three on a phone, six on a tablet (FR-22). */
-        fun hours(wide: Boolean): Int = if (wide) 6 else 3
-
-        /**
-         * The guide's window [dayOffset] days from today at the same time of day: from the half
-         * hour before [nowMs]'s half hour (so the now-line is never at the very edge), [hours] long.
-         */
-        fun around(nowMs: Long, zone: ZoneId, hours: Int, dayOffset: Int = 0): GuideWindow {
-            val t = ZonedDateTime.ofInstant(Instant.ofEpochMilli(nowMs), zone)
-            val half = t.truncatedTo(ChronoUnit.HOURS).plusMinutes(if (t.minute >= 30) 30L else 0L)
-            val start = half.minusMinutes(30).plusDays(dayOffset.toLong()).toInstant().toEpochMilli()
-            return GuideWindow(start, start + hours * HOUR_MS)
-        }
-    }
-}

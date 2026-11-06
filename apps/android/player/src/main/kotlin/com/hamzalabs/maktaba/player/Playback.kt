@@ -29,8 +29,8 @@ import com.hamzalabs.maktaba.player.media.NowPlaying
 import com.hamzalabs.maktaba.player.media.SEEK_INCREMENT_MS
 import com.hamzalabs.maktaba.player.media.castable
 import com.hamzalabs.maktaba.player.media.isRemote
-import com.hamzalabs.maktaba.player.profile.PlaybackValues
-import com.hamzalabs.maktaba.player.watch.TrackChoice
+import com.hamzalabs.maktaba.core.playback.PlaybackValues
+import com.hamzalabs.maktaba.core.playback.TrackChoice
 import com.hamzalabs.maktaba.player.watch.TrackOption
 import com.hamzalabs.maktaba.player.watch.applyChoice
 import com.hamzalabs.maktaba.player.watch.choose

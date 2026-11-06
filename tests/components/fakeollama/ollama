@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""A stand-in for ``ollama serve`` (components-live, 51.04 N3, #641): the supervisor runs it
+as the llm component's process. It answers what the supervisor asks of a model server
+(GET /, /api/version, /api/tags with the configured models, so nothing is pulled) on
+OLLAMA_HOST, and writes its pid and each start to $FAKE_OLLAMA_LOG, so the scenario sees
+the process stop and start again. No network beyond that loopback port."""
+
+from __future__ import annotations
+
+import json
+import os
+import signal
+import sys
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+MODELS = [m for m in os.environ.get("FAKE_OLLAMA_MODELS", "qwen2.5:7b").split(",") if m]
+
+
+class Handler(BaseHTTPRequestHandler):
+    def _json(self, obj: object) -> None:
+        raw = json.dumps(obj).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server's name
+        if self.path == "/api/version":
+            self._json({"version": "0.0.0-fake"})
+        elif self.path == "/api/tags":
+            self._json({"models": [{"name": m, "model": m, "size": 1} for m in MODELS]})
+        else:
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Ollama is running")
+
+    def log_message(self, *_a: object) -> None:
+        pass
+
+
+def _note(what: str) -> None:
+    path = os.environ.get("FAKE_OLLAMA_LOG")
+    if path:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"event": what, "pid": os.getpid(), "at": time.time()}) + "\n")
+
+
+def main() -> int:
+    if len(sys.argv) < 2 or sys.argv[1] != "serve":
+        print("fake ollama: only 'serve'", file=sys.stderr)
+        return 2
+    host = os.environ.get("OLLAMA_HOST", "127.0.0.1:11434").removeprefix("http://")
+    addr, _, port = host.rpartition(":")
+    srv = ThreadingHTTPServer((addr or "127.0.0.1", int(port)), Handler)
+
+    def stop(*_a: object) -> None:
+        _note("stopped")
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+    _note("started")
+    try:
+        srv.serve_forever()
+    finally:
+        srv.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

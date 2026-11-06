@@ -1,0 +1,7 @@
+{"ts":"2026-11-06T10:00:00Z","level":"info","msg":"has_raw_user","service":"api","user_id":"42"}
+{"ts":"2026-11-06T10:00:00Z","level":"verbose","msg":"bad_level","service":"api"}
+{"ts":"2026-11-06 10:00:00","level":"info","msg":"bad_ts","service":"api"}
+{"level":"info","msg":"no_ts","service":"api"}
+{"ts":"2026-11-06T10:00:00Z","level":"info","msg":"email_field","service":"api","email":"a@b.co"}
+{"ts":"2026-11-06T10:00:00Z","level":"info","msg":"bad_user_h","service":"api","user_h":"42"}
+{"ts":"2026-11-06T10:00:00Z","level":"info","service":"api"}

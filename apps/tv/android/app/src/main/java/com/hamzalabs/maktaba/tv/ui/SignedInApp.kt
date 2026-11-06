@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.ui
 
+import com.hamzalabs.maktaba.core.ui.HomeStatusHost
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -197,68 +198,76 @@ fun SignedInApp(
     }
 
     // a failure that says the home does not answer offers another home
+    // what is down on the home: a top strip, never over the player (Epic 53 story 53.06)
     CompositionLocalProvider(LocalChooseHome provides { app.session.switchHome() }, LocalTvNav provides nav) {
-      Box(Modifier.fillMaxSize()) {
-        when (val top = stack.last()) {
-            Place.Tabs -> Box(Modifier.fillMaxSize()) {
-                if (tab == TvTab.Home) LibraryBackdrop()
-                Column(Modifier.fillMaxSize()) {
-                    TopBar(
-                        tabs = tabs,
-                        selectedIndex = shown.indexOf(tab),
-                        onSelect = { i -> shown.getOrNull(i)?.let { if (it != tab) focusContent = false; chosen = it } },
-                    )
-                    when (tab) {
-                        TvTab.Home -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut,
-                            queue = queue, onContinue = { playItem(it, replace = false) })
-                        TvTab.Libraries -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
-                        TvTab.Search -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                        TvTab.Live -> if (features.explains(Feature.LIVE_TV)) {
-                            LiveOffNote(client.home.toString(), focusFirst = focusContent)
-                        } else {
-                            LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
+        HomeStatusHost(
+            client,
+            admin = user.isAdmin,
+            enabled = stack.last() !is Place.Player && stack.last() !is Place.LivePlayer,
+            liveTvOff = !hasLive,
+        ) {
+          Box(Modifier.fillMaxSize()) {
+            when (val top = stack.last()) {
+                Place.Tabs -> Box(Modifier.fillMaxSize()) {
+                    if (tab == TvTab.Home) LibraryBackdrop()
+                    Column(Modifier.fillMaxSize()) {
+                        TopBar(
+                            tabs = tabs,
+                            selectedIndex = shown.indexOf(tab),
+                            onSelect = { i -> shown.getOrNull(i)?.let { if (it != tab) focusContent = false; chosen = it } },
+                        )
+                        when (tab) {
+                            TvTab.Home -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut,
+                                queue = queue, onContinue = { playItem(it, replace = false) })
+                            TvTab.Libraries -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
+                            TvTab.Search -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                            TvTab.Live -> if (features.explains(Feature.LIVE_TV)) {
+                                LiveOffNote(client.home.toString(), focusFirst = focusContent)
+                            } else {
+                                LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
+                            }
+                            TvTab.Account -> AccountScreen(app, user, onPlaylists = { open(Place.Playlists) })
                         }
-                        TvTab.Account -> AccountScreen(app, user, onPlaylists = { open(Place.Playlists) })
                     }
                 }
+                is Place.Library -> LibraryTabsScreen(api, top.id, top.name)
+                is Place.Series -> SeriesScreen(api, top.id, top.season)
+                is Place.Season -> SeasonScreen(api, top.seriesId, top.season)
+                is Place.Collection -> CollectionScreen(api, top.library, top.collection)
+                is Place.Playlist -> PlaylistScreen(api, top.id)
+                Place.Playlists -> Column(Modifier.fillMaxSize().padding(top = 32.dp)) {
+                    SectionTitle(stringResource(R.string.playlists_title), Modifier.padding(horizontal = Gutter))
+                    PlaylistsTab(api, null)
+                }
+                is Place.Video -> VideoScreen(
+                    api,
+                    top.id,
+                    // a video on its own still plays in a queue: an episode goes on through its series
+                    onPlay = { _, startMs ->
+                        scope.launch {
+                            val item = runCatching { queue.create(QueueSource("video", top.id), false) }.getOrNull()
+                            if (item != null) open(Place.Player(item.id, item.name, startMs, queued = true)) else notice = queueFailed
+                        }
+                    },
+                    signedOut = signedOut,
+                    onBack = ::back,
+                    onSeries = { open(Place.Series(it)) },
+                )
+                is Place.Player -> PlayerScreen(
+                    app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut,
+                    queue = if (top.queued) queue else null,
+                    onQueueItem = { playItem(it, replace = true) },
+                )
+                is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut)
             }
-            is Place.Library -> LibraryTabsScreen(api, top.id, top.name)
-            is Place.Series -> SeriesScreen(api, top.id, top.season)
-            is Place.Season -> SeasonScreen(api, top.seriesId, top.season)
-            is Place.Collection -> CollectionScreen(api, top.library, top.collection)
-            is Place.Playlist -> PlaylistScreen(api, top.id)
-            Place.Playlists -> Column(Modifier.fillMaxSize().padding(top = 32.dp)) {
-                SectionTitle(stringResource(R.string.playlists_title), Modifier.padding(horizontal = Gutter))
-                PlaylistsTab(api, null)
+            menu?.let { (video, series) ->
+                CardMenu(api, video, series, onClose = { menu = null }, onDone = { notice = it }, queue = queue)
             }
-            is Place.Video -> VideoScreen(
-                api,
-                top.id,
-                // a video on its own still plays in a queue: an episode goes on through its series
-                onPlay = { _, startMs ->
-                    scope.launch {
-                        val item = runCatching { queue.create(QueueSource("video", top.id), false) }.getOrNull()
-                        if (item != null) open(Place.Player(item.id, item.name, startMs, queued = true)) else notice = queueFailed
-                    }
-                },
-                signedOut = signedOut,
-                onBack = ::back,
-                onSeries = { open(Place.Series(it)) },
-            )
-            is Place.Player -> PlayerScreen(
-                app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut,
-                queue = if (top.queued) queue else null,
-                onQueueItem = { playItem(it, replace = true) },
-            )
-            is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut)
+            notice?.let { n ->
+                LaunchedEffect(n) { delay(4_000); notice = null }
+                Text(n, style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Gold, modifier = Modifier.align(Alignment.BottomCenter).padding(32.dp).testTag("notice"))
+            }
+          }
         }
-        menu?.let { (video, series) ->
-            CardMenu(api, video, series, onClose = { menu = null }, onDone = { notice = it }, queue = queue)
-        }
-        notice?.let { n ->
-            LaunchedEffect(n) { delay(4_000); notice = null }
-            Text(n, style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Gold, modifier = Modifier.align(Alignment.BottomCenter).padding(32.dp).testTag("notice"))
-        }
-      }
     }
 }

@@ -2,8 +2,11 @@
 sleepy workers (``sleepy/worker.py``) and the queries the scenarios measure with.
 
 Postgres comes from ``MAKTABA_TEST_PG_URL`` (a server the run may create databases on).
-Every worker's log goes to ``MAKTABA_COMPONENTS_LOGS`` (default ``components-logs/``), which
-the workflow keeps as an artifact on every run.
+Every worker's log goes to ``MAKTABA_COMPONENTS_LOGS``, which the workflow keeps as an
+artifact on every run. Without it (a local run) each run has a folder of its own,
+``components-logs/<time>-<pid>/``, so a later run never writes over a failed one's logs
+(#646); the newest :data:`KEEP_RUNS` are kept. A failed test also leaves its report there
+(``conftest.py``) and the database's state (:meth:`Rig.dump_jobs`).
 """
 
 from __future__ import annotations
@@ -26,7 +29,34 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 PG_URL = os.environ.get("MAKTABA_TEST_PG_URL", "")
-LOGS = Path(os.environ.get("MAKTABA_COMPONENTS_LOGS", ROOT / "components-logs"))
+#: the local runs' folders kept under components-logs/ (the oldest go first)
+KEEP_RUNS = 20
+
+
+def _logs_dir() -> Path:
+    given = os.environ.get("MAKTABA_COMPONENTS_LOGS", "")
+    if given:
+        return Path(given)
+    base = ROOT / "components-logs"
+    return base / (time.strftime("%Y%m%d-%H%M%S") + f"-{os.getpid()}")
+
+
+def prune_runs(base: Path, keep: int = KEEP_RUNS) -> list[Path]:
+    """Remove all but the newest ``keep`` run folders under ``base``; the removed ones."""
+    import shutil
+
+    if not base.is_dir():
+        return []
+    runs = sorted(
+        (p for p in base.iterdir() if p.is_dir() and p.name[:8].isdigit()), key=lambda p: p.name
+    )
+    gone = runs[: max(0, len(runs) - keep)]
+    for p in gone:
+        shutil.rmtree(p, ignore_errors=True)
+    return gone
+
+
+LOGS = _logs_dir()
 WORKER = Path(__file__).resolve().parent / "sleepy" / "worker.py"
 
 
@@ -284,15 +314,36 @@ class Rig:
         return bool(r["enabled"]), r["disabled_reason"]
 
     async def dump_jobs(self, name: str) -> Path:
-        """The whole job history, kept as an artifact when a scenario fails."""
+        """The whole job history (``<name>-jobs.json``) and the components' state
+        (``<name>-state.json``: desired rows, status rows, stage rows), kept as an artifact
+        when a scenario fails."""
         LOGS.mkdir(parents=True, exist_ok=True)
         path = LOGS / f"{name}-jobs.json"
         rows = await self.db.fetch(
             "SELECT id, stage, state, outcome, attempts, paused_reason, claimed_by,"
-            " created_at, claimed_at, finished_at FROM processing_jobs ORDER BY id"
+            " created_at, claimed_at, finished_at, payload FROM processing_jobs ORDER BY id"
         )
         path.write_text(
             json.dumps([dict(r) for r in rows], default=str, indent=1), encoding="utf-8"
+        )
+        state: dict[str, Any] = {}
+        for key, q in (
+            ("components", "SELECT * FROM components ORDER BY id"),
+            ("component_status", "SELECT * FROM component_status ORDER BY machine, id, part"),
+            ("component_meta", "SELECT * FROM component_meta"),
+            (
+                "job_stages",
+                "SELECT stage, enabled, disabled_reason, paused, updated_at FROM job_stages"
+                " ORDER BY stage",
+            ),
+            ("workers", "SELECT * FROM workers ORDER BY 1"),
+        ):
+            try:
+                state[key] = [dict(r) for r in await self.db.fetch(q)]
+            except Exception as e:  # noqa: BLE001 - keep what can be read
+                state[key] = f"{type(e).__name__}: {e}"
+        (LOGS / f"{name}-state.json").write_text(
+            json.dumps(state, default=str, indent=1), encoding="utf-8"
         )
         return path
 
@@ -417,8 +468,9 @@ class Api:
 
 def api_env(base: dict[str, str], home: Path, url: str, port: int, admin: int) -> dict[str, str]:
     """The API's environment: ``base`` without a ``MAKTABA_*``, ``XDG_*``, ``HOME`` or
-    ``DATABASE_URL`` of its own, every key and folder under ``home``, no update checks,
-    no discovery, and the pipeline and streaming at a dead address."""
+    ``DATABASE_URL`` of its own, every key and folder under ``home``, offline (no update
+    check, telemetry or licence refresh), no discovery, and the pipeline and streaming at
+    a dead address."""
     env = {
         k: v
         for k, v in base.items()
@@ -442,6 +494,8 @@ def api_env(base: dict[str, str], home: Path, url: str, port: int, admin: int) -
             "MAKTABA_PIPELINE_ADDR": DEAD_API_URL.removeprefix("http://"),
             "MAKTABA_STREAMING_ADDR": DEAD_API_URL.removeprefix("http://"),
             "MAKTABA_UPDATE_DISABLE": "1",
+            # every outbound call off (#640: updates, telemetry, the licence refresh)
+            "MAKTABA_OFFLINE": "1",
             "MAKTABA_DISCOVERY_MDNS": "0",
             "MAKTABA_HSTS": "0",
             "MAKTABA_HEALTH_WARM": "0s",

@@ -370,3 +370,22 @@ async def test_a_drain_cancelled_by_the_gate_reopening_clears_the_flag(db: Datab
         await task
     row = await _job(db, job_id)
     assert (row["state"], bool(row["pause_requested"])) == ("running", False)
+
+
+def test_safe_mode_keeps_all_but_the_safe_set_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Epic 53 story 53.05 T02b: in safe mode every component but the safe set is off for
+    this boot (boot_flag), core.pipeline and transcription too; the desired state is
+    only read."""
+    from maktaba_pipeline.components import stages as stages_mod
+    from maktaba_pipeline.components.store import Desired as D
+
+    monkeypatch.setenv(stages_mod.ENV_SAFE_MODE, "1")
+    desired = {"transcription": D(id="transcription", want="enabled", generation=3)}
+    g = stages_mod.gates(desired)
+    for cid in ("core.pipeline", "transcription", "core.streaming"):
+        assert not g[cid].open and g[cid].reason == stages_mod.BOOT_FLAG, cid
+        assert g[cid].params == {"flag": "--safe-mode"}
+    assert g["transcription"].generation == 3 and g["transcription"].want == "enabled"
+    assert g["core.api"].open
+    monkeypatch.setenv(stages_mod.ENV_SAFE_MODE, "")
+    assert stages_mod.gates(desired)["transcription"].open

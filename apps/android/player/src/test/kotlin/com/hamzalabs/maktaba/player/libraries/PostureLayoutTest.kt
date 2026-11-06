@@ -32,8 +32,8 @@ import com.hamzalabs.maktaba.player.harness.settled
 import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.harness.uprightHinge
 import com.hamzalabs.maktaba.player.home.HomeFixtures
-import com.hamzalabs.maktaba.player.home.KEY_CONTINUE
-import com.hamzalabs.maktaba.player.home.KEY_WATCHED
+import com.hamzalabs.maktaba.core.browse.KEY_CONTINUE
+import com.hamzalabs.maktaba.core.browse.KEY_WATCHED
 import com.hamzalabs.maktaba.player.home.setHome
 import com.hamzalabs.maktaba.player.search.SearchFixtures
 import com.hamzalabs.maktaba.player.shell.CollapsedRailWidth

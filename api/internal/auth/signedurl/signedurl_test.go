@@ -132,3 +132,15 @@ func TestLoadOrCreateKey_StableAndPrivate(t *testing.T) {
 		t.Fatal("garbage must not parse")
 	}
 }
+
+// Epic 52 (story 52.8): a review clip is signed for its video, like direct play.
+func TestSignClipURL_ForTheVideo(t *testing.T) {
+	m, set := newMinter(t)
+	signed, _, err := m.SignStreamURL("/stream/clip/"+vid+"?track=1&start=2&end=5", vid, usr, lib, 5*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := claimsOf(t, set, signed, AudDirect); c.Sub != vid {
+		t.Fatalf("clip sub=%s want the video", c.Sub)
+	}
+}

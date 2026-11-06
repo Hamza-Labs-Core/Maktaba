@@ -81,6 +81,118 @@ async def test_off_then_on_flips_the_selection_the_rows_and_queues_a_catchup(
 
 
 @pytest.mark.asyncio
+async def test_the_catchup_is_queued_when_another_worker_turns_the_stages_back_on(
+    db: Database,
+) -> None:
+    """#646: two home workers race for the leader lock on every pass. When one turned
+    the stages off and the other turns them on, the catch-up is still queued (once), with
+    the time the first one reported."""
+    await sync_graph(db, GRAPH, gates={})
+    a, _ = _runner(db)
+    b, _ = _runner(db)
+    for r in (a, b):
+        await r.prime()
+        await _pass(r)
+
+    await set_want(db, "transcription", "installed")
+    await _pass(a)  # a leads the off; b's pass lost the lock
+    assert await stage_row(db, "transcribe") == (False, "component_off")
+    reported = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    off_since = reported["transcription"].detail["off_since"]
+
+    await set_want(db, "transcription", "enabled")
+    await _pass(b)  # b leads the on
+    assert await stage_row(db, "transcribe") == (True, None)
+    jobs = await db.fetch("SELECT payload FROM processing_jobs WHERE stage = 'component_catchup'")
+    assert len(jobs) == 1
+    entries = {e["component"]: e["off_since"] for e in loads(jobs[0]["payload"])["components"]}
+    assert entries["transcription"] == off_since
+
+    await db.execute("UPDATE processing_jobs SET state = 'done' WHERE stage = 'component_catchup'")
+    await _pass(a)  # a leads next: b queued the catch-up, a does not queue another
+    n = await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'component_catchup'")
+    assert n == 1
+    assert "transcription" not in a._off_since
+    await a.close()
+    await b.close()
+
+
+@pytest.mark.asyncio
+async def test_a_worker_that_read_the_off_time_at_start_queues_no_second_catchup(
+    db: Database,
+) -> None:
+    """#659 review, three home workers: b turns transcription off; c starts meanwhile and
+    reads its off time from b's status row; b leads the on and queues the catch-up, which
+    finishes; c leads next. c must see the stages already open and queue nothing: a
+    second catch-up would run the whole time off again (all history when the time is
+    unknown)."""
+    await sync_graph(db, GRAPH, gates={})
+    a, _ = _runner(db)
+    b, _ = _runner(db)
+    for r in (a, b):
+        await r.prime()
+        await _pass(r)
+
+    await set_want(db, "transcription", "installed")
+    await _pass(b)  # b leads the off
+    c, _ = _runner(db)  # c starts while it is off
+    await c.prime()
+    await _pass(c)  # c leads once: it reads the off time b reported
+    assert "transcription" in c._off_since
+
+    await set_want(db, "transcription", "enabled")
+    await _pass(b)  # b leads the on and queues the catch-up
+    await db.execute("UPDATE processing_jobs SET state = 'done' WHERE stage = 'component_catchup'")
+    await _pass(c)  # c leads next
+    n = await db.fetchval("SELECT count(*) FROM processing_jobs WHERE stage = 'component_catchup'")
+    assert n == 1
+    assert "transcription" not in c._off_since
+    for r in (a, b, c):
+        await r.close()
+
+
+@pytest.mark.asyncio
+async def test_a_worker_that_does_not_lead_forgets_an_off_time_once_it_is_on_again(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#659 review: a worker that turned a component off and then lost the leader lock kept
+    reporting its off time while the component was on (the Components page showed it off
+    since then) and a later catch-up started from it. A pass that does not lead drops the
+    times the database says are over."""
+    if not is_pg(db):
+        pytest.skip("SQLite has one process: it always leads")
+    import contextlib
+
+    from maktaba_pipeline.engine import leader as leader_mod
+
+    await sync_graph(db, GRAPH, gates={})
+    a, _ = _runner(db)
+    b, _ = _runner(db)
+    for r in (a, b):
+        await r.prime()
+        await _pass(r)
+    await set_want(db, "transcription", "installed")
+    await _pass(a)  # a leads the off
+    await set_want(db, "transcription", "enabled")
+    await _pass(b)  # b leads the on
+
+    real = leader_mod.leader
+
+    @contextlib.asynccontextmanager
+    async def lost(*_a: Any, **_k: Any) -> Any:
+        yield False
+
+    monkeypatch.setattr(leader_mod, "leader", lost)
+    await _pass(a)  # a does not lead
+    assert "transcription" not in a._off_since
+    rows = [s for s in await store.statuses(db) if s.id == "transcription"]
+    assert rows and all("off_since" not in s.detail for s in rows), [s.detail for s in rows]
+    monkeypatch.setattr(leader_mod, "leader", real)
+    for r in (a, b):
+        await r.close()
+
+
+@pytest.mark.asyncio
 async def test_held_stops_claiming_but_no_catchup_follows(db: Database) -> None:
     await sync_graph(db, GRAPH, gates={})
     r, sel = _runner(db)
@@ -142,6 +254,55 @@ async def test_loops_follow_their_component(db: Database) -> None:
     assert r.loops["channel-topup"].running()
     await r.close()
     assert ran == ["start", "stop", "start", "stop"]
+
+
+@pytest.mark.asyncio
+async def test_a_restart_request_restarts_the_pipelines_loops(db: Database) -> None:
+    """#636 (slot 0185): POST /api/components/livetv/restart writes a restart request for
+    the pipeline (its loop channel-topup runs here, where the API cannot reach it); the
+    runner's next pass stops the loop within its grace and starts it again. A request
+    made before the runner's first read restarts nothing, and one read again neither."""
+    await sync_graph(db, GRAPH, gates={})
+    ran: list[str] = []
+
+    async def topup(stop: asyncio.Event) -> None:
+        ran.append("start")
+        await stop.wait()
+        ran.append("stop")
+
+    async def request(cid: str) -> None:
+        await db.execute(
+            "INSERT INTO component_restarts AS r (machine, id, host)"
+            " VALUES ('home', $1, 'pipeline')"
+            " ON CONFLICT (machine, id, host) DO UPDATE SET seq = r.seq + 1",
+            cid,
+        )
+
+    await request("livetv")
+    r, _ = _runner(db)
+    r.declare("channel-topup", topup)
+    await _pass(r)
+    await asyncio.sleep(0)
+    assert ran == ["start"]
+    rev = await store.revision(db)
+
+    await request("livetv")
+    assert await store.revision(db) == rev + 1  # the runners hear it
+    await _pass(r)
+    for _ in range(100):
+        if ran == ["start", "stop"] and not r._stoppers:
+            break
+        await asyncio.sleep(0.01)
+    await _pass(r)  # the pass the stopped loop wakes
+    await asyncio.sleep(0)
+    assert ran == ["start", "stop", "start"]
+    assert r.loops["channel-topup"].running()
+
+    await _pass(r)  # the same request read again
+    await asyncio.sleep(0)
+    assert ran == ["start", "stop", "start"]
+    assert r.take_restarts({"livetv": 2, "queue_health": 1}) == ["queue_health"]
+    await r.close()
 
 
 def test_a_loop_not_in_the_catalog_is_refused(db: Any = None) -> None:
@@ -405,3 +566,28 @@ async def test_the_listener_is_up_before_the_first_pass(db: Database) -> None:
     r._pass = a_pass  # type: ignore[method-assign]
     await r.run(stop)
     assert order[:2] == ["listen", "pass"], order
+
+
+@pytest.mark.asyncio
+async def test_a_loops_lines_carry_its_component(db: Database) -> None:
+    """Epic 53 story 53.01 T07: a declared loop logs with its catalog component."""
+    import structlog
+
+    await sync_graph(db, GRAPH, gates={})
+    r, _ = _runner(db)
+    seen: list[Any] = []
+
+    async def topup(stop: asyncio.Event) -> None:
+        seen.append(structlog.contextvars.get_contextvars().get("component"))
+        await stop.wait()
+
+    r.declare("channel-topup", topup)
+    await _pass(r)
+    for _ in range(50):
+        if seen:
+            break
+        await asyncio.sleep(0.01)
+    await r.close()
+    comp = default_catalog().by_loop("pipeline", "channel-topup")
+    assert comp is not None and seen == [comp.id]
+    assert structlog.contextvars.get_contextvars().get("component") is None

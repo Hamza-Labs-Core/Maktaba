@@ -469,6 +469,7 @@
 		8D45DF1C2A9A2C8E9A2083AB /* video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = C8181B1E47B9309AD90DB519 /* video-v7.json */; };
 		8D73B6AAFF85F14CCCD7D6BF /* me-video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FF4BA477197A8D0A5389913 /* me-video-v6.json */; };
 		8D7A42E28061008F779178DD /* subtitles.json in Resources */ = {isa = PBXBuildFile; fileRef = 51275735890B19E8D301D899 /* subtitles.json */; };
+		8DB9176434CDD162CF205698 /* TouchHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACC61EAC6C018F16191D6960 /* TouchHook.swift */; };
 		8DEBEA3D40E1E1D76B8DBF1D /* VideoPoster.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22FA18A5DB4D65FDBA2D9BC9 /* VideoPoster.swift */; };
 		8E4D1BFBEC35B08A8B9B542A /* me-video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = EC72337275DE887837858996 /* me-video-v9.json */; };
 		8ECCBA1B58F63A6C05C5FD63 /* Watch.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B739BF5360457459715101C4 /* Watch.xcstrings */; };
@@ -502,9 +503,11 @@
 		97895C2FD6F1E1971D033BD1 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		97A6A7999C5586C11B0D8BF9 /* Home.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2C17944DFD5B9A7EB8F161F4 /* Home.xcstrings */; };
 		98528BBE7A03CE5885E171F2 /* MacFullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7044588B28669A5A259C36 /* MacFullScreen.swift */; };
+		9879E091F132F0825D859A82 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091B3C19FECC6C2E8A08E113 /* ReviewView.swift */; };
 		98AF81355E56718565C73082 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
 		98E057030FF2F148C3BEBAE7 /* video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 9C597463B3D151244BC108BB /* video-v3.json */; };
 		98ED643C57336A3E7BAEBC45 /* me-video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = 668F58D5C274795590DE0C27 /* me-video-v7.json */; };
+		997D098A8F39252D4EE78EC5 /* TouchHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACC61EAC6C018F16191D6960 /* TouchHook.swift */; };
 		9A3A7433E224848D17479C4F /* Video.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A525332F62424FB900584753 /* Video.xcstrings */; };
 		9A55250AE164203BA3D89967 /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
 		9A9F4494F01310C198A8DC30 /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5255A0CC016A88186A34BE14 /* StatusUITests.swift */; };
@@ -537,6 +540,7 @@
 		A3DEE7A29E1441AF48394771 /* Live.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CBD16C2619B376327A3B02C2 /* Live.xcstrings */; };
 		A41AEDF8D5017B7C14970369 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		A41D0326ED0C0D4959B51FA5 /* series-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A2EF4528458BE561D5D5E3D /* series-seerah.json */; };
+		A4994925D3B764CF1B3ECA3A /* TouchHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACC61EAC6C018F16191D6960 /* TouchHook.swift */; };
 		A4E0BAEE1EFF3E1E7892BB4D /* video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 79ADCCDAFF5E261DE4CB13EB /* video-v10.json */; };
 		A5753F2E48C3030B374C0BCB /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
 		A60FE7308932BEE8359595FF /* TVConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */; };
@@ -605,6 +609,7 @@
 		B8D89A111AC4F8AE4766BB0D /* PlayerConnectProgressUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74EB55E9076F2CDC600C7C63 /* PlayerConnectProgressUITests.swift */; };
 		B95C8D2EB80530A25E861DEE /* me-video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 315ECB314BA012B2C3405B40 /* me-video-v12.json */; };
 		B9D7BBBB9C955F4E43B307D2 /* play-queue.json in Resources */ = {isa = PBXBuildFile; fileRef = 0D6FF4D764A02D3AD472B450 /* play-queue.json */; };
+		B9DD2CAB95989D4068AB3DE0 /* TouchHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACC61EAC6C018F16191D6960 /* TouchHook.swift */; };
 		BA208A347BE7EB4DE2198F6A /* me.json in Resources */ = {isa = PBXBuildFile; fileRef = 62E2346349591CD2A4C6303A /* me.json */; };
 		BA445206DA88B6689C51D8C0 /* video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = DD1C9BEDE6B31452CD3D668D /* video-v8.json */; };
 		BA54D879C433147922E25A36 /* ChannelLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F34386456EC5D928F4F05EE /* ChannelLogo.swift */; };
@@ -754,6 +759,7 @@
 		E63F969E402CBCD2A448A7E3 /* library-series-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 15376060DE47516866176397 /* library-series-docs.json */; };
 		E6ACAA757723DFD151C217A5 /* home.json in Resources */ = {isa = PBXBuildFile; fileRef = 5EFFA92E7C6A2006B0D6623A /* home.json */; };
 		E7049292D816F2682F316B2E /* recommendations.json in Resources */ = {isa = PBXBuildFile; fileRef = 92323C1B857B017169B42F2B /* recommendations.json */; };
+		E71B0FEFD4E4D690DE0F6A43 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091B3C19FECC6C2E8A08E113 /* ReviewView.swift */; };
 		E72E39E2C78585FAC07A7E45 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
 		E7420B7E621C0D7C555BD742 /* pinned-libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = B8F40A31A58629458B396F20 /* pinned-libraries.json */; };
 		E74308BD12FDD7720D3E80C6 /* search-results.json in Resources */ = {isa = PBXBuildFile; fileRef = 490E14DE48F36E33CD099CAB /* search-results.json */; };
@@ -762,6 +768,7 @@
 		E800067EBFC0DDEBD84B938E /* me-video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 7740F056044421402AA41646 /* me-video-v3.json */; };
 		E814ADD47F047D932A98FA1F /* library-series-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 15376060DE47516866176397 /* library-series-docs.json */; };
 		E874C97168BF20243A33317A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
+		E883B3B4163E231E3D3806FE /* TouchHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACC61EAC6C018F16191D6960 /* TouchHook.swift */; };
 		E8FE19510439B849F2FB380E /* chapters.json in Resources */ = {isa = PBXBuildFile; fileRef = 5E3A970B4B2F9D35CFD60293 /* chapters.json */; };
 		E91EF9BB0082BACB13E84403 /* MaktabaTVApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */; };
 		E941EB0FA578C3B56E07B6A5 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
@@ -906,6 +913,7 @@
 		0383452500957C67748FAE90 /* Amiri-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Amiri-Bold.ttf"; sourceTree = "<group>"; };
 		04EB31B36EACFCAD4E26EEC6 /* facets.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = facets.json; sourceTree = "<group>"; };
 		04FE44A4268352AF7F418DE5 /* segments.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = segments.json; sourceTree = "<group>"; };
+		091B3C19FECC6C2E8A08E113 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
 		099A5FD71E3C9479CBB5EE0C /* videos-page2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "videos-page2.json"; sourceTree = "<group>"; };
 		0AF5420DFA5978BDE908D101 /* Libraries.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Libraries.xcstrings; sourceTree = "<group>"; };
 		0B1505FA1D7C0A36BE82F492 /* me-video-v10.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "me-video-v10.json"; sourceTree = "<group>"; };
@@ -1060,6 +1068,7 @@
 		AB13F57BDEAC4243D3662270 /* PlayerVideoUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerVideoUITests.swift; sourceTree = "<group>"; };
 		ABCBF5747692F36353AED506 /* Maktaba Player UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = "Maktaba Player UITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		ABCF89194469D01EE34A5BB4 /* PlayerMenuTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerMenuTests.swift; sourceTree = "<group>"; };
+		ACC61EAC6C018F16191D6960 /* TouchHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TouchHook.swift; sourceTree = "<group>"; };
 		AD2EE657B05C62BB473F4249 /* Player-Mac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "Player-Mac.entitlements"; sourceTree = "<group>"; };
 		AD663EDC4E72A38253593822 /* LibrariesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrariesScreen.swift; sourceTree = "<group>"; };
 		AD804F7D84EC3CE2E4A7B236 /* Rail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rail.swift; sourceTree = "<group>"; };
@@ -1423,6 +1432,7 @@
 				C7CF3F653F8E0BF0DCFD0D63 /* QueueView.swift */,
 				5E7C782FE57543EEFC505FBD /* RemoteApp.swift */,
 				3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */,
+				091B3C19FECC6C2E8A08E113 /* ReviewView.swift */,
 				3778308DD4F7209391FA5071 /* UpdatesView.swift */,
 			);
 			path = Remote;
@@ -1491,6 +1501,7 @@
 				6BA42F40AC03D7A9DCFE3FF7 /* Shell.xcstrings */,
 				BAFE65C7DEC2A1DEB40185CC /* ShellLaunch.swift */,
 				34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */,
+				ACC61EAC6C018F16191D6960 /* TouchHook.swift */,
 			);
 			path = Shell;
 			sourceTree = "<group>";
@@ -2719,6 +2730,7 @@
 				2638E1C13AA0226C38DBF50E /* QueueView.swift in Sources */,
 				1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */,
 				C4B017ECF5FFC90DD08793B2 /* RemoteRoot.swift in Sources */,
+				9879E091F132F0825D859A82 /* ReviewView.swift in Sources */,
 				C97B44941D2AAC3B9F3A92D9 /* UpdatesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2758,6 +2770,7 @@
 				676D599F8129B51DD231B3F2 /* QueueView.swift in Sources */,
 				80E256576FD19547D635B132 /* RemoteApp.swift in Sources */,
 				9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */,
+				E71B0FEFD4E4D690DE0F6A43 /* ReviewView.swift in Sources */,
 				FE46EABC4FB279D6AE1ED715 /* UpdatesView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -2794,6 +2807,7 @@
 				2DEB4EBACCB56D2381A2A5A1 /* ShellLaunch.swift in Sources */,
 				D52644845129E69A4FA0D975 /* StatusUITests.swift in Sources */,
 				7A1AD6E20EE5476361A804CC /* TextSizeHook.swift in Sources */,
+				A4994925D3B764CF1B3ECA3A /* TouchHook.swift in Sources */,
 				31042222174FDCF1130039E7 /* TypingInFields.swift in Sources */,
 				B69C5EA8F02886AB7FB9E83B /* WatchLogic.swift in Sources */,
 			);
@@ -2853,6 +2867,7 @@
 				629161B598CC49A24777052E /* ShellLaunch.swift in Sources */,
 				7D4C64758820258FAC35A196 /* Shimmer.swift in Sources */,
 				1FC0AF872B94C219377DB403 /* TextSizeHook.swift in Sources */,
+				997D098A8F39252D4EE78EC5 /* TouchHook.swift in Sources */,
 				380BB70A819EBAF3217D7868 /* TrackSheets.swift in Sources */,
 				4DFB4099AEA5CB08069AAD21 /* UpNext.swift in Sources */,
 				734F1DE5823302E7A7C6F546 /* VideoDetail.swift in Sources */,
@@ -2957,6 +2972,7 @@
 				5198C9070E1DAFA3A4623F8A /* ShellLaunch.swift in Sources */,
 				244A73523281A83AA08131F7 /* Shimmer.swift in Sources */,
 				373FCF4CF3FC3F3966C6BBAF /* TextSizeHook.swift in Sources */,
+				B9DD2CAB95989D4068AB3DE0 /* TouchHook.swift in Sources */,
 				B0ABF01F091A6E62BFD6D94E /* TrackSheets.swift in Sources */,
 				64B69A146C12FCB2C2AE64A8 /* UpNext.swift in Sources */,
 				6530CBABD0F3D2E98500640E /* VideoDetail.swift in Sources */,
@@ -3014,6 +3030,7 @@
 				D53A93083C6900BD8E864629 /* ShellLaunch.swift in Sources */,
 				C046ABA5EE05CEFF507A2FEF /* Shimmer.swift in Sources */,
 				C94C6BB6F4A80F63A1105789 /* TextSizeHook.swift in Sources */,
+				E883B3B4163E231E3D3806FE /* TouchHook.swift in Sources */,
 				EB743C2031E5A6E4CB12D023 /* TrackSheets.swift in Sources */,
 				0C7828C58E0310E2CD5E769B /* UpNext.swift in Sources */,
 				DA70F8CCD0140FFCE32849A5 /* VideoDetail.swift in Sources */,
@@ -3059,6 +3076,7 @@
 				6B8E948629E2C20F0BBF2844 /* ShellLaunch.swift in Sources */,
 				3669EE88B28CD4A8E802754B /* StatusUITests.swift in Sources */,
 				61E0B572500C1B0648DA8FA3 /* TextSizeHook.swift in Sources */,
+				8DB9176434CDD162CF205698 /* TouchHook.swift in Sources */,
 				E3B09B98EAA2B2A3ECAC5928 /* TypingInFields.swift in Sources */,
 				D8A6501CAD8C57C19D510C01 /* WatchLogic.swift in Sources */,
 			);

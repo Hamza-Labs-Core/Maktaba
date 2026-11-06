@@ -19,7 +19,7 @@ from huggingface_hub import snapshot_download  # noqa: F401 - loaded here, not i
 from maktaba_pipeline.classify.quran import verse_runs
 from maktaba_pipeline.engine.stages import transcribe as stage
 from maktaba_pipeline.stt import cohere, cohere_cuda, ct2, engine, model_share
-from maktaba_pipeline.stt.settings import SAMPLE_RATE, Sentence, Transcript, WhisperSettings
+from maktaba_pipeline.stt.settings import SAMPLE_RATE, Sentence, Transcript, WhisperSettings, Word
 from tests.conftest import NO_TEST_GPU
 
 pytestmark = pytest.mark.unit
@@ -738,7 +738,7 @@ def test_no_gpu_never_loads_anything(gpu: FakeCuda, monkeypatch: pytest.MonkeyPa
 
 def transcript() -> Transcript:
     text = "قال الشيخ رحمه الله"
-    words = [(0.5 * i, 0.5 * i + 0.5, w) for i, w in enumerate(text.split(" "))]
+    words = [Word(0.5 * i, 0.5 * i + 0.5, w) for i, w in enumerate(text.split(" "))]
     return Transcript([Sentence(0.0, 2.0, text, -0.1, 0.01, words)], 2.0, "ar", "m", 1.0)
 
 

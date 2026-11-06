@@ -241,7 +241,7 @@ type LibraryCollection struct {
 	Automatic bool `json:"automatic"`
 	// SmartQuery is a saved filter's smart_query, as stored (JSON text).
 	SmartQuery *string `json:"smart_query,omitempty"`
-	// Epic 56 (slot 0187): a collection a pipeline stage keeps in step with
+	// Epic 56 (slot 0192): a collection a pipeline stage keeps in step with
 	// a YouTube playlist or channel or a Plex collection (kind youtube or
 	// plex, read-only like the topic and clip groups), and an admin's
 	// choices: shown as a row on the library's Recommended tab, hidden.

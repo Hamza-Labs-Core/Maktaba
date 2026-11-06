@@ -51,9 +51,9 @@ Every route but `POST` is the owner's only: another user's id answers 404. `POST
 a source the user cannot read (a library outside `library_acl`, another user's playlist), as the
 source's own route does. The maintenance loop deletes queues whose `used_at` is older than 7 days.
 
-### 4. Migration (slot 0185, planned; see README §6.2)
+### 4. Migration (slot 0190, planned; see README §6.2)
 
-`0184_play_queues.sql` and `.sqlite.sql`: the two tables and the index of README §6.2.
+`0190_play_queues.sql` and `.sqlite.sql`: the two tables and the index of README §6.2.
 
 ## Acceptance criteria
 
@@ -110,7 +110,7 @@ The API returns codes, not text. The apps show these (each app's catalogs, Engli
 
 | File | Change |
 |---|---|
-| `shared/db/migrations/0184_play_queues{,.sqlite}.sql`, `MANIFEST.md` | tables |
+| `shared/db/migrations/0190_play_queues{,.sqlite}.sql`, `MANIFEST.md` | tables |
 | `api/internal/handlers/playqueue/` (new): `playqueue.go`, `sources.go`, `chunks.go`, tests | routes, sources, chunks |
 | `api/internal/handlers/{series,collections,browse}/` | export each list's ordering helper |
 | `api/main.go` (the API's background loops, `loops_test.go`) | delete idle queues every hour |

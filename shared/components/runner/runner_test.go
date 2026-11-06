@@ -612,3 +612,91 @@ func TestParentEndedStartsNothing(t *testing.T) {
 		t.Fatalf("the loop started %d times after its parent ended, want 0", n-1)
 	}
 }
+
+// Epic 53 story 53.01 T07: a declared loop's context names its component.
+func TestLoopContextNamesTheComponent(t *testing.T) {
+	type key struct{}
+	LoopContext = func(ctx context.Context, comp string) context.Context { return context.WithValue(ctx, key{}, comp) }
+	t.Cleanup(func() { LoopContext = nil })
+	cat := components.Default()
+	comp, ok := cat.ByLoop("api", "updates_health_sampler")
+	if !ok {
+		t.Fatal("no api:updates_health_sampler loop in the catalog")
+	}
+	r := newRunner(t, newClock(), func(o *Options) { o.Catalog = cat })
+	got := make(chan string, 1)
+	r.Declare("updates_health_sampler", func(ctx context.Context) error {
+		v, _ := ctx.Value(key{}).(string)
+		got <- v
+		<-ctx.Done()
+		return nil
+	})
+	select {
+	case v := <-got:
+		if v != comp.ID {
+			t.Fatalf("component = %q, want %q", v, comp.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the loop never ran")
+	}
+}
+
+// restartStore is a countingStore with restart requests (slot 0185).
+type restartStore struct {
+	countingStore
+	seqs map[string]int64
+}
+
+func (s *restartStore) Restarts(_ context.Context, machine, host string) (map[string]int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if machine != store.Home || host != "streaming" {
+		return nil, errors.New("asked for another machine or host")
+	}
+	out := map[string]int64{}
+	for k, v := range s.seqs {
+		out[k] = v
+	}
+	return out, nil
+}
+
+// #636: a streaming runner restarts its loops of a component whose restart request moved
+// (the API cannot reach them), and only then: the first read is remembered, and a request
+// read again restarts nothing.
+func TestRestartRequestsOfAnotherProcess(t *testing.T) {
+	clk := newClock()
+	r := newRunner(t, clk, func(o *Options) { o.Host = "streaming" })
+	var p polite
+	r.Declare("channel_engine", p.fn)
+	want := map[string]store.Desired{"livetv": enabled("livetv"), "livetv.inprocess": enabled("livetv.inprocess")}
+	st := &restartStore{countingStore: countingStore{rev: 1, want: want}, seqs: map[string]int64{"livetv.inprocess": 4}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { r.Run(ctx, Source{Store: st}); close(done) }()
+	defer func() { cancel(); <-done }()
+	eventually(t, "the loop to start", func() bool { return p.starts.Load() == 1 })
+	eventually(t, "the first read", func() bool { _, d, _ := st.counts(); return d >= 1 && clk.pending() == 1 })
+	if p.stops.Load() != 0 {
+		t.Fatal("a request made before the process started restarted its loop")
+	}
+
+	// the API asks: the row's seq and the revision move
+	st.mu.Lock()
+	st.seqs["livetv.inprocess"], st.rev = 5, 2
+	st.mu.Unlock()
+	clk.Advance(30 * time.Second)
+	eventually(t, "the loop to start again", func() bool { return p.stops.Load() == 1 && p.starts.Load() == 2 })
+
+	// another change, no new request: nothing restarts
+	st.mu.Lock()
+	st.rev = 3
+	st.mu.Unlock()
+	clk.Advance(30 * time.Second)
+	eventually(t, "the next read", func() bool { _, d, _ := st.counts(); return d >= 3 })
+	if p.starts.Load() != 2 {
+		t.Fatalf("starts = %d, want 2", p.starts.Load())
+	}
+	if got := r.TakeRestarts(map[string]int64{"livetv.inprocess": 5, "youtube": 1}); len(got) != 1 || got[0] != "youtube" {
+		t.Fatalf("restarted %v", got)
+	}
+}

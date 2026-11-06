@@ -17,6 +17,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -256,5 +257,97 @@ func Seed(ctx context.Context, st *store.Store, cat *components.Catalog, f Facts
 		}
 		return store.SeedPlan{Wants: wants, Bundle: BundleOf(f), Release: release,
 			TomlImported: Imported(f.Config)}, nil
+	})
+}
+
+// PlanNew is the want of each catalog component the home has no row for (story 52.17:
+// one a later release adds), from the home's bundle: a component that runs is enabled
+// when the bundle has it, else installed (off); an asset is installed (downloaded) when
+// the bundle has it or a component this step enables requires it, else absent. A custom
+// home follows its base, the bundle (full or core) its rows are closest to, as the API
+// reports it. Core components are always on. Nothing that has a row is planned.
+func PlanNew(cat *components.Catalog, bundle string, have map[string]string) map[string]string {
+	base := bundle
+	if !slices.Contains(components.Bundles, base) {
+		base = closestBase(cat, have)
+	}
+	out := map[string]string{}
+	for _, id := range cat.Order() {
+		if _, ok := have[id]; ok {
+			continue
+		}
+		c, _ := cat.Get(id)
+		inBundle := slices.Contains(c.Bundles, base)
+		switch {
+		case !c.Switchable:
+			out[id] = components.WantEnabled
+		case c.Kind == components.KindAsset:
+			if inBundle {
+				out[id] = components.WantInstalled
+			} else {
+				out[id] = components.WantAbsent
+			}
+		default:
+			out[id] = want(inBundle)
+		}
+	}
+	// an asset a newly enabled component requires is installed, whatever the bundle says;
+	// one an already enabled component needs keeps no row (the first seed leaves it so on
+	// purpose, unsetNeededAssets: no row reads as wanted)
+	for id, w := range out {
+		if w != components.WantEnabled {
+			continue
+		}
+		for _, r := range cat.Requires(id) {
+			for _, need := range r.AnyOf {
+				if c, ok := cat.Get(need); ok && c.Kind == components.KindAsset && out[need] == components.WantAbsent {
+					out[need] = components.WantInstalled
+				}
+			}
+		}
+	}
+	for id, w := range have {
+		if w != components.WantEnabled {
+			continue
+		}
+		for _, r := range cat.Requires(id) {
+			for _, need := range r.AnyOf {
+				if c, ok := cat.Get(need); ok && c.Kind == components.KindAsset {
+					delete(out, need)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// closestBase is the bundle (full or core) whose defaults the home's rows differ least
+// from (ties: core, the smaller).
+func closestBase(cat *components.Catalog, have map[string]string) string {
+	best, base := -1, "core"
+	for _, b := range []string{"core", "full"} {
+		d := 0
+		for id, w := range have {
+			c, ok := cat.Get(id)
+			if !ok || !c.Switchable {
+				continue
+			}
+			on := w == components.WantEnabled || (c.Kind == components.KindAsset && w == components.WantInstalled)
+			if on != slices.Contains(c.Bundles, b) {
+				d++
+			}
+		}
+		if best < 0 || d < best {
+			best, base = d, b
+		}
+	}
+	return base
+}
+
+// SeedNew writes the rows of the components a later release adds (PlanNew), at every
+// boot after the home's first seed; it answers what it wrote.
+func SeedNew(ctx context.Context, st *store.Store, cat *components.Catalog, release string) (map[string]string, error) {
+	return st.SeedMissing(ctx, release, func(_ context.Context, bundle string, have map[string]string) (map[string]string, error) {
+		return PlanNew(cat, bundle, have), nil
 	})
 }

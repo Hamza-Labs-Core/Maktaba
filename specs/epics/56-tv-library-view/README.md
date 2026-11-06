@@ -176,16 +176,16 @@ Every Play and Shuffle creates a **play queue** from a **source**:
 
 ### 6.2 Data model and migrations
 
-Slots **0185, 0186 and 0187 are planned for this epic** (main's highest was 0183 on 2026-11-05; 0184 went to the queue engine's lock order, so these took the next three).
+Slots **0190, 0191 and 0192 are this epic's**, taken when it merged: 0184 went to the queue engine's lock order, 0185 to the component restarts, 0186-0188 to Epic 52's word review and 0189 to the import dry run, so these took the next three.
 Per `shared/db/migrations/MANIFEST.md`, a slot is taken when its migration merges: if main has
-moved past one when a story lands (Epic 52's plan also names 0185 as its next free slot), that
+moved past one when a story lands, that
 story takes the next free integer and updates this table. Each has a `.sqlite.sql` twin.
 
 | Slot | Story | File | Contents |
 |---|---|---|---|
-| 0185 | 56.01 | `0184_play_queues.sql` | `play_queues` (id uuid pk, user_id fk, device_id text null, source_kind text check, source_id text, source_filters jsonb, shuffle bool, seed bigint null, source_cursor text null, source_done bool, current_pos int, version int, created_at, used_at); `play_queue_items` (queue_id fk cascade, pos int, video_id fk cascade, origin text check `source`/`next`/`added`, pk (queue_id, pos)); index `(user_id, used_at desc)` |
-| 0186 | 56.09 | `0185_smart_playlists.sql` | `user_playlists` ADD `kind text not null default 'manual'` check `manual`/`smart`, `smart_query jsonb null` (the `SmartFilter.Filters` keys plus `libraries` (array), `limit` ≤ 5,000), check (kind = 'smart') = (smart_query is not null); smart playlists hold no `user_playlist_items` |
-| 0187 | 56.06, 56.07, 56.08 | `0186_collection_sources.sql` | `collections` ADD `source_kind text null` check `youtube_playlist`/`youtube_channel`/`plex`, `source_ref text null`, `name_override text null`, `hidden_at timestamptz null`, `show_on_library bool not null default false`, `show_on_home bool not null default false`, `sort_title text null`; unique `(library_id, source_kind, source_ref)` where `source_kind` is not null; `libraries` ADD `collection_mode text not null default 'tab_only'` check `tab_only`/`hide_items`/`show_both` |
+| 0190 | 56.01 | `0190_play_queues.sql` | `play_queues` (id uuid pk, user_id fk, device_id text null, source_kind text check, source_id text, source_filters jsonb, shuffle bool, seed bigint null, source_cursor text null, source_done bool, current_pos int, version int, created_at, used_at); `play_queue_items` (queue_id fk cascade, pos int, video_id fk cascade, origin text check `source`/`next`/`added`, pk (queue_id, pos)); index `(user_id, used_at desc)` |
+| 0191 | 56.09 | `0191_smart_playlists.sql` | `user_playlists` ADD `kind text not null default 'manual'` check `manual`/`smart`, `smart_query jsonb null` (the `SmartFilter.Filters` keys plus `libraries` (array), `limit` ≤ 5,000), check (kind = 'smart') = (smart_query is not null); smart playlists hold no `user_playlist_items` |
+| 0192 | 56.06, 56.07, 56.08 | `0192_collection_sources.sql` | `collections` ADD `source_kind text null` check `youtube_playlist`/`youtube_channel`/`plex`, `source_ref text null`, `name_override text null`, `hidden_at timestamptz null`, `show_on_library bool not null default false`, `show_on_home bool not null default false`, `sort_title text null`; unique `(library_id, source_kind, source_ref)` where `source_kind` is not null; `libraries` ADD `collection_mode text not null default 'tab_only'` check `tab_only`/`hide_items`/`show_both` |
 
 ### 6.3 API
 

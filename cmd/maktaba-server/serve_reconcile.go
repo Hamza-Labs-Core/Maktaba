@@ -84,6 +84,8 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec := supervisor.NewReconciler(sup)
 	rec.Machine = machine
 	rec.Off = !cfg.Components.ReconcileOn()
+	// Epic 53 story 53.05: this start keeps all but the safe set off
+	rec.SafeMode = supervisor.SafeModeBoot
 	rec.CachePath = supervisor.CompCachePath(cfg.StateDir())
 	rec.Loops = loops
 	rec.Log = log
@@ -119,7 +121,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	go rec.Run(ctx)
 	// story 51.17: the Linux maktaba-full package's packs, at the first start of its version
 	go importSystemPacks(ctx, m, cfg.StateDir(), rec.Off, log)
-	pa := &packsAdmin{ctx: ctx, m: m, r: run, sup: sup}
+	pa := &packsAdmin{ctx: ctx, m: m, r: run, sup: sup, loops: rec, rec: rec}
 	if st, ok := rec.Source.(*store.Store); ok {
 		pa.metrics = &supervisor.ComponentMetrics{Source: st, Machine: machine}
 	}

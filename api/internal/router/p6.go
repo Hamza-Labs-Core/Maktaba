@@ -11,6 +11,7 @@ package router
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -36,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/recommendations"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/reports"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/review"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/search"
 	seriesh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/series"
@@ -372,6 +374,24 @@ func MountP6(r chi.Router, d P6Deps) {
 	// rides the same /ws/queues + jobs streams for liveness, and gives
 	// the Transcribe card its time left.
 	transcriptionHandler := &transcription.Handler{DB: d.DB}
+	// Epic 52: word review (home admins only)
+	reviewHandler := &review.Handler{DB: d.DB}
+	if d.URLSigner != nil {
+		reviewHandler.Signer = d.URLSigner
+	}
+	reviewHandler.Components = func(ctx context.Context) ([]map[string]any, error) {
+		v, err := components.NewService(d.DB).List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		raw, err := json.Marshal(v.Components)
+		if err != nil {
+			return nil, err
+		}
+		var out []map[string]any
+		return out, json.Unmarshal(raw, &out)
+	}
+	reviewHandler.Mount(r)
 	queuesHandler := &queues.Handler{DB: d.DB, Hub: hub, StageETA: map[string]func(context.Context, time.Time) (*float64, error){
 		"transcribe": transcriptionHandler.ETASeconds,
 	}}

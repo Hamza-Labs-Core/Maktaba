@@ -86,6 +86,19 @@ func New(deps Deps) http.Handler {
 	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib).
 		Head("/stream/direct/{video_id}", directHandler.ServeHTTP)
 
+	// Epic 52 (story 52.8): the audio around a suspect word, signed for the video by the
+	// API for a home admin
+	clipDir := ""
+	if deps.Layout != nil {
+		clipDir = filepath.Join(deps.Layout.Root, "clips")
+	}
+	clipHandler := &handlers.ClipHandler{
+		Probe: deps.Probe, CacheDir: clipDir, FFmpeg: deps.Cfg.FFmpeg.Binary,
+		CacheBytes: handlers.DefaultClipCacheBytes,
+	}
+	r.With(auth.SignedURL(verifier, auth.AudDirect, "video_id"), directLib).
+		Get("/stream/clip/{video_id}", clipHandler.ServeHTTP)
+
 	// HLS / DASH (Stories 8.5/8.6)
 	manifestHandler := &handlers.ManifestHandler{
 		Sessions: sessionStreamReaderAdapter{deps.Sessions},

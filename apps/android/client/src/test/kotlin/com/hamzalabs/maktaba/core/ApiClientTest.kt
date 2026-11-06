@@ -93,6 +93,12 @@ class ApiClientTest {
         // the Android players leave it to the home, as before
         c.openStream("v1")
         assertFalse(seen.last().body!!.utf8().contains("client_profile"))
+        // another audio track, as HLS (the desktop Player's JavaFX plays one track only)
+        c.openStream("v1", profile = "desktop-player", audioTrack = 1, format = "hls")
+        val body = seen.last().body!!.utf8()
+        assertTrue(body, body.contains("\"audio_track\":1") && body.contains("\"format\":\"hls\""))
+        c.openStream("v1")
+        assertFalse(seen.last().body!!.utf8().contains("audio_track"))
     }
 
     @Test
@@ -396,5 +402,23 @@ class ApiClientTest {
         assertTrue(com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().encodedPath("/x").build()))
         assertTrue(!com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().port(8089).build()))
         assertTrue(!com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().scheme("https").port(8088).build()))
+    }
+
+    /** Epic 53 story 53.06: /status.json is read signed in or not; a home without it is null. */
+    @Test
+    fun theHomeStatusIsReadAndAHomeWithoutItIsNull() = runBlocking {
+        route = { r ->
+            if (r.url.encodedPath == "/status.json") {
+                json(200, """{"v":1,"mode":"safe","overall":"degraded","components":{"streaming":"down"},"features_down":["playback"],"extra":1}""")
+            } else {
+                defaultRoute(r)
+            }
+        }
+        val doc = client(MemoryTokens()).homeStatus()
+        assertEquals("safe", doc?.mode)
+        assertEquals("down", doc?.components?.get("streaming"))
+        assertEquals(listOf("playback"), doc?.featuresDown)
+        route = { json(404, """{"title":"not found"}""") }
+        assertNull(client(MemoryTokens()).homeStatus())
     }
 }

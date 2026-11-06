@@ -158,6 +158,8 @@ func main() {
 }
 
 func initLogger() *slog.Logger {
+	// a component loop's lines carry its catalog id (Epic 53 story 53.01)
+	runner.LoopContext = mlog.WithComponent
 	return mlog.Init(mlog.Options{
 		Service: "api",
 		Env:     env(),
@@ -222,6 +224,7 @@ func runServe() error {
 	logger = slog.New(serverErrors.Handler(logger.Handler()))
 	slog.SetDefault(logger)
 	processStart := time.Now()
+	applyOffline(logger)
 
 	// Epic 35 story 35.8: a full node (MAKTABA_NODE_MODE=1) never migrates and needs
 	// its home's address; checked before anything binds.

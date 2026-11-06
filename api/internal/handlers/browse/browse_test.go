@@ -87,8 +87,8 @@ func testDB(t *testing.T) *sql.DB {
 	// slot 0163's column (its file runs through the SQLite migrator, which
 	// reads ADD COLUMN IF NOT EXISTS: TestSQLiteMigrate_AppliesEveryTwinToAFreshDatabase)
 	exec(`ALTER TABLE user_playlists ADD COLUMN hand_ordered INTEGER NOT NULL DEFAULT 0`)
-	// slot 0186's columns (smart playlists) and the collections a library's
-	// rows read (slots 0033, 0076, 0163, 0187)
+	// slot 0191's columns (smart playlists) and the collections a library's
+	// rows read (slots 0033, 0076, 0163, 0192)
 	exec(`ALTER TABLE user_playlists ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual'`)
 	exec(`ALTER TABLE user_playlists ADD COLUMN smart_query TEXT`)
 	exec(`CREATE TABLE collections (id TEXT PRIMARY KEY, library_id TEXT, name TEXT, is_smart INTEGER NOT NULL DEFAULT 0,

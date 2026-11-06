@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -13,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -25,6 +27,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
@@ -40,12 +43,15 @@ var allRoles = []supervisor.Role{
 
 func newServeCmd() *cobra.Command {
 	var (
-		role   string
-		slot   string
-		noMDNS bool
-		noWeb  bool
-		binDir string
-		graceS int
+		role    string
+		slot    string
+		noMDNS  bool
+		noWeb   bool
+		offline bool
+		// safeMode: --safe-mode, one start in safe mode (the launcher's can't-start page)
+		safeMode bool
+		binDir   string
+		graceS   int
 	)
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -65,6 +71,8 @@ In container/orchestrated deployments, start one role per container:
 				if err != nil {
 					return err
 				}
+				// #640: --offline (or MAKTABA_OFFLINE=1) stops every outbound call
+				applyOffline(&cfg, offline, os.Stderr)
 				// Epic 36 story 36.15: the move the web asked for, and the wait for a
 				// data folder whose disk is not connected yet (serve_storage.go)
 				if cfg, err = storageGate(cfg, strings.TrimSpace(strings.ToLower(role)), os.Stderr); err != nil {
@@ -74,12 +82,13 @@ In container/orchestrated deployments, start one role per container:
 					return err
 				}
 				err = runServe(cfg, serveOptions{
-					role:   strings.TrimSpace(strings.ToLower(role)),
-					slot:   strings.TrimSpace(strings.ToLower(slot)),
-					noMDNS: noMDNS,
-					noWeb:  noWeb,
-					binDir: binDir,
-					grace:  time.Duration(graceS) * time.Second,
+					role:     strings.TrimSpace(strings.ToLower(role)),
+					slot:     strings.TrimSpace(strings.ToLower(slot)),
+					noMDNS:   noMDNS,
+					noWeb:    noWeb,
+					safeMode: safeMode,
+					binDir:   binDir,
+					grace:    time.Duration(graceS) * time.Second,
 				})
 				if !errors.Is(err, errReload) {
 					return err
@@ -93,18 +102,21 @@ In container/orchestrated deployments, start one role per container:
 	cmd.Flags().StringVar(&slot, "slot", "", "with --role tv-slot: the instance, blue|green|amber")
 	cmd.Flags().BoolVar(&noMDNS, "no-mdns", false, "disable mDNS LAN advertisement (as [server] mdns = \"off\")")
 	cmd.Flags().BoolVar(&noWeb, "no-web", false, "do not serve the embedded web UI in-process")
+	cmd.Flags().BoolVar(&offline, "offline", false, "make no outbound call: no updates, packs, model pulls, telemetry or cloud link (as MAKTABA_OFFLINE=1)")
+	cmd.Flags().BoolVar(&safeMode, "safe-mode", false, "start in safe mode, this start only: only the database, the API, updates and the log index run (Epic 53)")
 	cmd.Flags().StringVar(&binDir, "bin-dir", "", "directory to find sibling maktaba-api/maktaba-streaming binaries")
 	cmd.Flags().IntVar(&graceS, "shutdown-grace", 30, "seconds to let children drain on shutdown")
 	return cmd
 }
 
 type serveOptions struct {
-	role   string
-	slot   string
-	noMDNS bool
-	noWeb  bool
-	binDir string
-	grace  time.Duration
+	safeMode bool
+	role     string
+	slot     string
+	noMDNS   bool
+	noWeb    bool
+	binDir   string
+	grace    time.Duration
 }
 
 func runServe(cfg config.Config, opts serveOptions) (err error) {
@@ -118,6 +130,11 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 			fmt.Fprintf(os.Stderr, "[serve] level=error fatal: %v\n", err)
 		}
 	}()
+	// Epic 53 story 53.05: safe mode lasts one start (the flag is removed as it is read)
+	if supervisor.TakeSafeMode(cfg.StateDir()) || opts.safeMode {
+		supervisor.SafeModeBoot = true
+		fmt.Fprintf(os.Stderr, "[serve] level=warn safe mode: only the database, the API, updates and the log index run this start\n")
+	}
 	// Epic 35 story 35.8: a half-written node.json stops here, once, with its path,
 	// rather than as every node role's crash loop; one a write is still under way on is
 	// waited for first (nodeConfigSettles).
@@ -432,10 +449,23 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	exe, _ := os.Executable()
 	supOpts = append(supOpts, supervisor.WithFFmpeg(ffmpeg.Watch(ctx,
 		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe), cfg.StateDir()) }, ffmpeg.WatchInterval, os.Stderr)))
+	// Epic 53 story 53.02: every role's output on disk, per service, by the log keeper
+	var echo io.Writer = os.Stderr
+	if supervisor.ChildStderr != nil {
+		echo = supervisor.ChildStderr
+	}
+	keeper, stopKeeper := startLogKeeper(cfg, node, echo)
+	defer stopKeeper()
+	supOpts = append(supOpts, keeperSpool(keeper))
 	sup := supervisor.New(procs, policy, supOpts...)
 	// Epic 51 story 51.04: the gates of the processes set before any starts (the last
 	// desired state seen, cached), then reconciled while serve runs
 	packsRoutes := startComponents(ctx, cfg, sup, wholeMachine, compLoops, releaseDir, os.Stderr)
+	// Epic 53 story 53.03: /status.json on the web port, from the supervisor alone
+	startStatusBoard(ctx, cfg, sup, packsRoutes.rec, node)
+	// Epic 53 story 53.04: the recovery console, and the tray's one-time link
+	recoveryLink := startRecovery(recoveryDeps{cfg: cfg, sup: sup, rec: packsRoutes.rec, keeper: keeper,
+		upd: upd.Load, releaseDir: releaseDir})
 	if pg != nil {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)
@@ -461,7 +491,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if u := upd.Load(); u != nil {
 		u.setSupervisor(sup)
 	}
-	admin := sw.adminHandler(node.adminHandler(sup.Handler()))
+	admin := recoveryAdmin(sw.adminHandler(node.adminHandler(sup.Handler())), recoveryLink)
 	if u := upd.Load(); u != nil {
 		admin = u.adminHandler(admin, token)
 	}
@@ -663,6 +693,12 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 		mux.Handle("/stream/", http.HandlerFunc(pagetheme.NotFound))
 	}
 
+	// Epic 53 story 53.03: the home's status, answered by the supervisor (never proxied),
+	// with the API and Postgres down
+	mux.Handle("/status.json", http.HandlerFunc(serveStatusJSON))
+	// Epic 53 story 53.04: the recovery console, the supervisor's own page
+	mux.Handle("/recovery", http.HandlerFunc(serveRecoveryHTTP))
+	mux.Handle("/recovery/", http.HandlerFunc(serveRecoveryHTTP))
 	mux.Handle("/", webui.Handler("/api/", "/stream/"))
 	return mux
 }
@@ -731,14 +767,24 @@ func keepRelayMark(r *http.Request) {
 func apiUnreachable(w http.ResponseWriter, r *http.Request, err error) {
 	stderrProxyError(apiProxyErrs, "api proxy", r, err)
 	if pagetheme.WantsHTML(r) {
+		lang := recovery.Lang(r.Header.Get("Accept-Language"))
+		links := []pagetheme.Link{{Href: "/", Text: "Back to Maktaba"}}
+		// Epic 53 story 53.04: after a minute down, an admin may open the recovery page
+		if apiDown.since(time.Now()) >= time.Minute {
+			links = append(links, pagetheme.Link{Href: "/recovery", Text: recovery.T(lang, "restarting.openRecovery")})
+		}
+		detail := err.Error()
+		if down := downGroups(lang); down != "" {
+			detail = down
+		}
 		pagetheme.Write(w, pagetheme.Page{
 			Status:       http.StatusBadGateway,
 			Title:        "Maktaba is restarting",
 			Heading:      "Maktaba is starting up",
 			Message:      "The Maktaba API on this server is not answering yet. It is usually starting, restarting or updating; this page reloads by itself.",
-			Detail:       err.Error(),
+			Detail:       detail,
 			RetrySeconds: 5,
-			Links:        []pagetheme.Link{{Href: "/", Text: "Back to Maktaba"}},
+			Links:        links,
 		})
 		return
 	}
@@ -747,6 +793,45 @@ func apiUnreachable(w http.ResponseWriter, r *http.Request, err error) {
 	w.WriteHeader(http.StatusBadGateway)
 	_, _ = fmt.Fprintf(w, `{"type":"about:blank","title":"API unreachable","status":502,"detail":%q}`,
 		"the Maktaba API is not answering (starting or restarting)")
+}
+
+// apiDown is how long the API has failed the proxy: a failure more than 30 s after the
+// last one starts a new streak.
+var apiDown downStreak
+
+type downStreak struct {
+	mu          sync.Mutex
+	first, last time.Time
+}
+
+// since records a failure at now and says how long the streak has lasted.
+func (d *downStreak) since(now time.Time) time.Duration {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.last.IsZero() || now.Sub(d.last) > 30*time.Second {
+		d.first = now
+	}
+	d.last = now
+	return now.Sub(d.first)
+}
+
+// downGroups says which parts /status.json has down ("" when none or not known yet), in
+// the page's language.
+func downGroups(lang string) string {
+	b := serveStatus.Load()
+	if b == nil {
+		return ""
+	}
+	doc := b.Doc()
+	var parts []string
+	for _, g := range supervisor.StatusGroups {
+		st := doc.Components[g.Name]
+		if st == supervisor.StatusOK || st == supervisor.StatusOff || st == "" {
+			continue
+		}
+		parts = append(parts, recovery.T(lang, "status.group."+g.Name)+": "+recovery.T(lang, "status.state."+st))
+	}
+	return strings.Join(parts, " · ")
 }
 
 // apiOrigin turns the API bind spec into a dialable loopback URL for the

@@ -98,6 +98,8 @@ TRANSCRIBE_VERSION = 1
 #: second_listen (Cohere on Whisper's stored transcript): stages/second_listen.py
 SECOND_LISTEN_VERSION = 1
 SUBTITLE_VERSION = 1
+#: word_check (Epic 52): stages/word_check.py; bumps re-check every transcript
+WORD_CHECK_VERSION = 1
 #: transcript analysis (stages/chapter_infer.py, topic_assign.py, topic_recluster.py)
 CHAPTER_VERSION = 1
 CHAPTER_THUMBS_VERSION = 1
@@ -836,6 +838,8 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("index", "same"),
             Edge("tag", "season_of"),
             Edge("tag", "loose_library_of"),
+            # Epic 52: the stored transcript's suspect words, for a home admin
+            Edge("word_check", "same"),
         ),
         max_attempts=3,
         # it decodes the video's audio off the share again
@@ -850,6 +854,20 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=4,
         version=SUBTITLE_VERSION,
         external_write=True,
+    ),
+    # Epic 52 (stories 52.6, 52.15): the transcript's suspect words, saved for a home
+    # admin to review (the review.words component). CPU only, re-runnable without the GPU
+    # whenever a language pack, the vocabulary or the library's settings change. On a
+    # library it plans the backfill of the transcripts made before it (story 52.6 §7)
+    StageDef(
+        name="word_check",
+        label="Word review",
+        subject_kinds=("video", "library"),
+        pool="cpu",
+        lane="speech",
+        lane_order=4,
+        version=WORD_CHECK_VERSION,
+        max_attempts=3,
     ),
     # plan 03-10: the transcript's sentences as e5 vectors (search/semantic.py)
     StageDef(

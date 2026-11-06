@@ -102,7 +102,7 @@ fi
 ENV_FILE="$DEPLOY_DIR/.env"
 
 # get_env KEY -> current value (empty if unset)
-get_env() { grep -E "^$1=" "$ENV_FILE" | head -n1 | cut -d= -f2- || true; }
+get_env() { grep -E "^$1=" "$ENV_FILE" | sed -n 1p | cut -d= -f2- || true; }
 
 # set_env KEY VALUE — replace in place (value used verbatim, so base64
 # `+/=` are safe) or append if absent.
@@ -154,12 +154,20 @@ if [ ! -s "$ENTITLEMENT_KEY" ]; then
 	openssl rand 32 | base64 | tr -d '\n' > "$ENTITLEMENT_KEY"
 fi
 
+# The cloud's log key (Epic 53 story 53.01): 32 raw random bytes the shared logger
+# hashes ids with, so no log line names an account. Without it a line drops the id.
+LOG_KEY="$DEPLOY_DIR/secrets/log.key"
+if [ ! -s "$LOG_KEY" ]; then
+	log "Generating the log key -> secrets/log.key..."
+	openssl rand 32 > "$LOG_KEY"
+fi
+
 # ---------------------------------------------------------------------
 # 5. Ownership + permissions (secrets are sensitive)
 # ---------------------------------------------------------------------
 chown -R "$SERVICE_USER:$SERVICE_USER" "$DEPLOY_DIR"
 chmod 0700 "$DEPLOY_DIR/secrets"
-chmod 0600 "$ENV_FILE" "$ENTITLEMENT_KEY"
+chmod 0600 "$ENV_FILE" "$ENTITLEMENT_KEY" "$LOG_KEY"
 
 # ---------------------------------------------------------------------
 # 6. Container log rotation (docker json-file driver caps)

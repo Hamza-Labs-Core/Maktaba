@@ -29,7 +29,7 @@ import com.hamzalabs.maktaba.core.api.setPinnedLibraries
 import com.hamzalabs.maktaba.core.api.videoFacets
 import com.hamzalabs.maktaba.core.api.videoPage
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
-import com.hamzalabs.maktaba.player.ReadOrder
+import com.hamzalabs.maktaba.core.session.ReadOrder
 import kotlinx.coroutines.CancellationException
 
 // What the Libraries section's screens hold (FR-14 to FR-17): plain state over the browse client

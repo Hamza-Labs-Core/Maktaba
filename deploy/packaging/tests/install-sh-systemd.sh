@@ -101,7 +101,7 @@ check "...as the maktaba user" grep -q "^as maktaba: env MAKTABA_CONFIG=.* setup
 check "the unit that runs the launcher is written by setup, as root" \
     grep -q "^maktaba-server setup --service --system --root ${MAKTABA_TEST_SYS_ROOT} --config ${MAKTABA_TEST_SYS_ETC}/server.toml" "${log}"
 check "the release is set up before the unit" \
-    test "$(grep -n 'setup --self-managed' "${log}" | head -1 | cut -d: -f1)" -lt "$(grep -n 'setup --service' "${log}" | head -1 | cut -d: -f1)"
+    test "$(grep -n 'setup --self-managed' "${log}" | sed -n 1p | cut -d: -f1)" -lt "$(grep -n 'setup --service' "${log}" | sed -n 1p | cut -d: -f1)"
 check "the archive's unit is not installed" bash -c "! grep -q 'maktaba-server.service' '${log}'"
 check "the copy is removed" bash -c "! ls -d '${MAKTABA_TEST_SYS_ROOT}'/.install-* >/dev/null 2>&1"
 check "it says how to start it" grep -q "sudo systemctl start maktaba-server" "${work}/out.txt"

@@ -25,7 +25,7 @@ on:
         type: boolean
         default: true
       catalog:
-        description: the component catalog covers every stage, role and loop, with en + ar words
+        description: the component catalog covers every stage, role and loop, with en + ar words; the log line schema and redaction copies (Epic 53)
         type: boolean
         default: true
 
@@ -210,6 +210,24 @@ jobs:
         if: inputs.pipeline
         run: python3 tools/ci/rules_schema_versions.py
 
+      # Epic 52 (story 52.3): word review names no language outside its language packs
+      - name: Word review names no language
+        if: inputs.pipeline
+        run: python3 tools/ci/word_review_languages.py
+
+      # Epic 52 (story 52.2): word review's scoring on the CI gold subset (no model, seconds);
+      # a drop in precision or recall of more than 0.02 needs an Eval-Change trailer
+      - name: Word review evaluation
+        if: inputs.pipeline
+        working-directory: pipeline
+        run: |
+          uv run --frozen python -m maktaba_pipeline.word_review.eval --set ci --out "$RUNNER_TEMP/word-review-eval.json"
+          base=""
+          if git rev-parse --verify -q origin/main >/dev/null; then base="--base-ref origin/main"; fi
+          # shellcheck disable=SC2086
+          python3 ../tools/eval-gate/gate.py --report "$RUNNER_TEMP/word-review-eval.json" \
+            --baseline tests/fixtures/word_review/gold/baseline.json $base
+
       - name: golangci-lint (api)
         if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1
@@ -351,3 +369,8 @@ jobs:
 
       - name: The catalog (make catalog-check)
         run: make catalog-check
+
+      # Epic 53 (story 53.01): the log line schema's examples, and every copy of the
+      # shared redaction list is current (make log-schema-check)
+      - name: The log line schema and the redaction copies (make log-schema-check)
+        run: make log-schema-check

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -245,6 +246,16 @@ func TestPackVenvSpec(t *testing.T) {
 	if spec.Extras != "stt,search,mediaintel" || spec.Offline {
 		t.Fatalf("adding yt-dlp beside a PyPI venv: %+v", spec)
 	}
+	// Epic 52 (story 52.16): runtime.lang feeds the lang extra, beside the others
+	langStaging := filepath.Join(t.TempDir(), "lang")
+	_ = os.MkdirAll(filepath.Join(langStaging, "wheels"), 0o755)
+	spec, _ = v.spec("runtime.lang", langStaging, "")
+	if spec.Extras != "stt,search,lang" {
+		t.Fatalf("adding runtime.lang beside a PyPI venv: %+v", spec)
+	}
+	if !slices.Contains(venvPacks, "runtime.lang") {
+		t.Fatal("runtime.lang does not rebuild the venv")
+	}
 	// removing the only one: no extras
 	m.OnDisk = nil
 	spec, _ = v.spec("", "", "runtime.ml")
@@ -290,6 +301,13 @@ func (f *fakeRestarter) RestartComponent(id string) int {
 	return 2
 }
 
+type fakeLoopRestarter struct{ asked []string }
+
+func (f *fakeLoopRestarter) RestartLoops(id string) int {
+	f.asked = append(f.asked, id)
+	return 1
+}
+
 // POST /components/{id}/restart asks the supervisor to restart the component's
 // processes, behind the token, with or without a reconciler; no supervisor is 503.
 func TestPacksRestartRoute(t *testing.T) {
@@ -307,6 +325,13 @@ func TestPacksRestartRoute(t *testing.T) {
 	}
 	if code, _ := packsCall(t, h, http.MethodPost, "/components/../restart", "tok"); code == http.StatusOK {
 		t.Fatalf("a bad id: %d", code)
+	}
+	// #636: the supervisor's own loops of the component too
+	l := &fakeLoopRestarter{}
+	h = (&packsAdmin{token: "tok", sup: f, loops: l}).adminHandler(http.NotFoundHandler())
+	code, out = packsCall(t, h, http.MethodPost, "/components/backups/restart", "tok")
+	if code != http.StatusOK || out["restarted"] != float64(3) || len(l.asked) != 1 || l.asked[0] != "backups" {
+		t.Fatalf("%d %v %v", code, out, l.asked)
 	}
 	none := (&packsAdmin{token: "tok"}).adminHandler(http.NotFoundHandler())
 	if code, _ := packsCall(t, none, http.MethodPost, "/components/transcription/restart", "tok"); code != http.StatusServiceUnavailable {

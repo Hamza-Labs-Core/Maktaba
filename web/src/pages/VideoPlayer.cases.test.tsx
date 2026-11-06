@@ -5,6 +5,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 import { ApiError } from "../lib/api";
+import { setHomeStatus } from "../lib/homeStatus";
 import { renderPage, memberUser, quietCrash } from "../test/pageHarness";
 
 const { post, get, del } = vi.hoisted(() => ({ post: vi.fn(), get: vi.fn(), del: vi.fn() }));
@@ -223,6 +224,27 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     expect(screen.queryByTestId("mkt-video")).toBeNull();
     // the home may come back: trying again stays offered
     expect(within(alert).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("VPL-07d: with streaming down on the home (its /status.json), the player says so", async () => {
+    setHomeStatus({
+      v: 1,
+      at: "2026-11-06T10:00:00Z",
+      mode: "normal",
+      overall: "degraded",
+      components: { streaming: "down" },
+      features_down: ["playback"],
+    });
+    try {
+      servePost(() => Promise.reject(problem(503, "streaming unavailable")));
+      renderPlayer();
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(
+        "Playback is unavailable right now. Try again in a few minutes."
+      );
+    } finally {
+      act(() => setHomeStatus(null));
+    }
   });
 
   it("VPL-08: signed-out user is sent to /login; no session is opened", () => {

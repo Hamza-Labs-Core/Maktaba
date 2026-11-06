@@ -1,7 +1,11 @@
 package com.hamzalabs.maktaba.player.watch
 
-import com.hamzalabs.maktaba.player.profile.SubtitleLanguage
-import com.hamzalabs.maktaba.player.profile.PlaybackSettings
+import com.hamzalabs.maktaba.core.playback.nextVideo
+import com.hamzalabs.maktaba.core.playback.QualityOption
+import com.hamzalabs.maktaba.core.playback.nextEpisode
+import com.hamzalabs.maktaba.core.playback.upNextDue
+import com.hamzalabs.maktaba.core.playback.SubtitleLanguage
+import com.hamzalabs.maktaba.core.playback.PlaybackSettings
 import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Episode

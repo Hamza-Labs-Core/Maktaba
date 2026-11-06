@@ -1,0 +1,68 @@
+{
+ "text": "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
+ "start": 1.5,
+ "words": [
+  {
+   "start": 1.5,
+   "end": 1.9,
+   "text": " بِسْمِ",
+   "prob": 0.98,
+   "flags": 4
+  },
+  {
+   "start": 1.9,
+   "end": 2.4,
+   "text": " اللَّهِ",
+   "prob": 0.97,
+   "flags": 4
+  },
+  {
+   "start": 2.4,
+   "end": 3.1,
+   "text": " الرَّحْمَٰنِ",
+   "prob": 0.91,
+   "flags": 4
+  },
+  {
+   "start": 3.1,
+   "end": 3.8,
+   "text": " الرَّحِيمِ",
+   "prob": 0.88,
+   "flags": 4
+  }
+ ],
+ "slots": [
+  {
+   "char_start": 0,
+   "char_len": 6,
+   "start_cs": 0,
+   "dur_cs": 40,
+   "prob": 250,
+   "flags": 4
+  },
+  {
+   "char_start": 7,
+   "char_len": 7,
+   "start_cs": 40,
+   "dur_cs": 50,
+   "prob": 247,
+   "flags": 4
+  },
+  {
+   "char_start": 15,
+   "char_len": 12,
+   "start_cs": 90,
+   "dur_cs": 70,
+   "prob": 232,
+   "flags": 4
+  },
+  {
+   "char_start": 28,
+   "char_len": 10,
+   "start_cs": 160,
+   "dur_cs": 70,
+   "prob": 224,
+   "flags": 4
+  }
+ ]
+}

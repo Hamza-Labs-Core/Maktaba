@@ -45,6 +45,10 @@ import { BackButton, keepFirst } from "../components/BackButton";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { LinesPlaceholder, Loading, TablePlaceholder } from "../components/Placeholders";
 import { usePageData } from "../lib/usePageData";
+import { useToast } from "@ds/components/Toast/Toast";
+import { WordPicker } from "../components/transcript/WordPicker";
+import { reviewApi } from "../lib/reviewApi";
+import "../styles/review.css";
 import { VIDEO_ANSWERS, forgetAnswers } from "../lib/pageCache";
 
 interface Video extends DisplayTitleVideo {
@@ -79,6 +83,8 @@ interface Segment {
   end_sec: number;
   text: string;
   speaker?: string | null;
+  /** the stored text, for a home admin's word fixes (Epic 52) */
+  raw?: string;
 }
 interface Job {
   id: string;
@@ -406,13 +412,22 @@ const TRANSCRIPT_WINDOW = 400;
 
 function TranscriptTab({ videoId }: { videoId: string }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [limit, setLimit] = useState(TRANSCRIPT_WINDOW);
-  const read = usePageData<Segment[]>(`video:${videoId}:segments`, () =>
-    api
-      .get<{ items: Segment[] }>(`/api/videos/${encodeURIComponent(videoId)}/segments`)
-      .then((r) => r.items ?? [])
+  const [editing, setEditing] = useState(false);
+  const read = usePageData<{ items: Segment[]; can_review: boolean }>(
+    `video:${videoId}:segments`,
+    () =>
+      api
+        .get<{
+          items: Segment[];
+          can_review?: boolean;
+        }>(`/api/videos/${encodeURIComponent(videoId)}/segments`)
+        .then((r) => ({ items: r.items ?? [], can_review: !!r.can_review }))
   );
-  const segs = read.err != null ? [] : read.data;
+  const segs = read.err != null ? [] : read.data?.items;
+  // Epic 52 (story 52.12): only a home admin gets the pencil (the API says can_review)
+  const canReview = read.err == null && !!read.data?.can_review;
   if (!segs) {
     return (
       <Loading loading={read.loading}>
@@ -424,8 +439,19 @@ function TranscriptTab({ videoId }: { videoId: string }) {
   // Window cap: render at most TRANSCRIPT_WINDOW rows to bound DOM size
   // on long transcripts (true virtualization deferred — see report).
   const shown = segs.slice(0, limit);
+  const setText = (seq: number, text: string) =>
+    read.setData((prev) =>
+      prev
+        ? { ...prev, items: prev.items.map((x) => (x.seq === seq ? { ...x, text, raw: text } : x)) }
+        : prev
+    );
   return (
     <div className="mkt-transcript">
+      {canReview && (
+        <Button variant="secondary" aria-pressed={editing} onClick={() => setEditing((v) => !v)}>
+          ✎ {t(editing ? "transcript.edit.done" : "transcript.edit.toggle")}
+        </Button>
+      )}
       {shown.map((s) => (
         <p key={s.id} className="mkt-transcript__seg" dir="auto">
           <Link
@@ -435,7 +461,37 @@ function TranscriptTab({ videoId }: { videoId: string }) {
             {TS(s.start_sec)}
           </Link>
           {s.speaker && <strong className="mkt-transcript__spk"> {s.speaker}: </strong>}
-          <span>{s.text}</span>
+          {editing && canReview && s.raw !== undefined ? (
+            <WordPicker
+              videoId={videoId}
+              seq={s.seq}
+              text={s.raw}
+              lang={document.documentElement.lang === "ar" ? "ar" : ""}
+              onSaved={(text) => setText(s.seq, text)}
+              onStale={read.reload}
+              onUndoable={(editId, label) =>
+                toast.show({
+                  id: `fix-${editId}`,
+                  tone: "success",
+                  message: (
+                    <span className="mkt-review-toast">
+                      <span>{label}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void reviewApi.undoEdit(editId).then(read.reload, read.reload)
+                        }
+                      >
+                        {t("review.undo")}
+                      </button>
+                    </span>
+                  ),
+                })
+              }
+            />
+          ) : (
+            <span>{s.text}</span>
+          )}
         </p>
       ))}
       {segs.length > limit && (

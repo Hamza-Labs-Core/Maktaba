@@ -36,7 +36,11 @@ FETCH_EVERY = 600  # seconds between `git fetch origin main` runs from this hook
 
 
 def git(repo: Path, *args: str, timeout: float = 20) -> str:
-    r = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=timeout)
+    """git's output, or "" when it fails or runs out of time."""
+    try:
+        r = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return ""
     return r.stdout if r.returncode == 0 else ""
 
 
@@ -78,8 +82,8 @@ def fetch_main(repo: Path) -> None:
             return
     except OSError:
         pass
+    stamp.touch()  # first: a fetch that hangs is not tried again at every Stop
     git(repo, "fetch", "-q", "origin", "main", timeout=15)
-    stamp.touch()
 
 
 def merged_on_main(repo: Path) -> set[int]:
@@ -102,6 +106,11 @@ def covered(repo: Path) -> set[int]:
 
     for name in git(repo, "log", "--all", "--format=", "--name-only", "--", EVENTS).split():
         add(name)
+    # the prs: lists of those events, from every version git has of them (an event on a
+    # branch that is not checked out anywhere covers its prs: too)
+    patch = git(repo, "log", "--all", "--format=", "-p", "--unified=0", "--", EVENTS)
+    for m in re.finditer(r"^\+prs:\s*\[([^\]]*)\]", patch, re.M):
+        out.update(int(x) for x in re.findall(r"\d+", m.group(1)))
     for line in git(repo, "worktree", "list", "--porcelain").splitlines():
         if line.startswith("worktree "):
             d = Path(line[9:]) / EVENTS

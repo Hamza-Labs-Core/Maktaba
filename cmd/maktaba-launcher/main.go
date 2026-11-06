@@ -83,6 +83,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		defer done()
 		stdout, stderr = w, w
+		serverLogPath = *logPath
 	}
 	if *showVersion {
 		fmt.Fprintf(stdout, "maktaba-launcher %s (launcher_protocol %d)\n", Version, LauncherProtocol)
@@ -130,7 +131,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitFailure
 	}
 	cfg := Config{Root: l.Root, Args: serverArgs, PendingTimeout: *pendingTO, StopGrace: *stopGrace,
-		Stdout: stdout, Stderr: stderr}
+		Stdout: stdout, Stderr: stderr, LogPath: serverLogPath}
 
 	if isService() {
 		setupConsole(true, true)
@@ -189,7 +190,7 @@ func runBundle(rest []string, stdout, stderr io.Writer, bundle, runtimeRoot, roo
 		return exitFailure
 	}
 	cfg := Config{Root: root, Bundle: bundle, RuntimeRoot: runtimeRoot, Args: serverArgs, StopEvent: stopEventName,
-		StopGrace: stopGrace, Stdout: stdout, Stderr: stderr}
+		StopGrace: stopGrace, Stdout: stdout, Stderr: stderr, LogPath: serverLogPath}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := Run(ctx, cfg); err != nil {
@@ -229,3 +230,7 @@ func runVerify(stdout, stderr io.Writer, dir string) int {
 		dir, len(v.SHA256), v.Identity, v.VerifiedAt.Format(time.RFC3339))
 	return exitOK
 }
+
+// serverLogPath is --log-file's file: the can't-start record keeps its last lines (Epic 53
+// story 53.05).
+var serverLogPath string

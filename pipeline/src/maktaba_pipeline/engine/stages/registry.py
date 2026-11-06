@@ -46,6 +46,7 @@ CORE_MODULES: dict[str, str] = {
     "transcribe": "maktaba_pipeline.engine.stages.transcribe",
     "second_listen": "maktaba_pipeline.engine.stages.second_listen",
     "subtitle_gen": "maktaba_pipeline.engine.stages.subtitle_gen",
+    "word_check": "maktaba_pipeline.engine.stages.word_check",
     "index": "maktaba_pipeline.engine.stages.index",
     "chapter_infer": "maktaba_pipeline.engine.stages.chapter_infer",
     "chapter_thumbs": "maktaba_pipeline.engine.stages.chapter_thumbs",

@@ -243,6 +243,7 @@ func TestChildEnvStateDirs(t *testing.T) {
 	t.Setenv("MAKTABA_CHROMA_DIR", "")
 	t.Setenv("MAKTABA_MODEL_CACHE_DIR", "")
 	t.Setenv("MAKTABA_MODELS_DIR", "")
+	t.Setenv("MAKTABA_COMPONENTS_DIR", "")
 	t.Setenv("HOME", t.TempDir())
 	var cfg config.Config
 	cfg.Server.DataDir = config.LocalDirs().Data
@@ -254,6 +255,15 @@ func TestChildEnvStateDirs(t *testing.T) {
 	if m["MAKTABA_MODEL_CACHE_DIR"] != filepath.Join(root, "models") || m["MAKTABA_CHROMA_DIR"] != filepath.Join(root, "chroma") {
 		t.Fatalf("models/chroma = %q / %q, want under %s", m["MAKTABA_MODEL_CACHE_DIR"], m["MAKTABA_CHROMA_DIR"], root)
 	}
+	// Epic 52 (story 52.16): the pipeline finds the installed packs' folders
+	if m["MAKTABA_COMPONENTS_DIR"] != filepath.Join(root, "components") {
+		t.Fatalf("components = %q", m["MAKTABA_COMPONENTS_DIR"])
+	}
+	t.Setenv("MAKTABA_COMPONENTS_DIR", "/elsewhere")
+	if _, set := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_COMPONENTS_DIR"]; set {
+		t.Fatal("an operator's MAKTABA_COMPONENTS_DIR was replaced")
+	}
+	t.Setenv("MAKTABA_COMPONENTS_DIR", "")
 	// MAKTABA_MODELS_DIR is the share's models folder (the pipeline publishes the
 	// second listen's model there for the nodes): never this machine's cache
 	if v, ok := m["MAKTABA_MODELS_DIR"]; ok {

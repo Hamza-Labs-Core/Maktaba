@@ -2,9 +2,9 @@
 
 package com.hamzalabs.maktaba.player.watch
 
-import com.hamzalabs.maktaba.player.profile.SubtitleSize
-import com.hamzalabs.maktaba.player.profile.StreamQuality
-import com.hamzalabs.maktaba.player.profile.PlaybackSettings
+import com.hamzalabs.maktaba.core.playback.SubtitleSize
+import com.hamzalabs.maktaba.core.playback.StreamQuality
+import com.hamzalabs.maktaba.core.playback.PlaybackSettings
 import com.hamzalabs.maktaba.player.profile.LocalPlaybackSettings
 import android.os.Looper
 import androidx.activity.ComponentActivity

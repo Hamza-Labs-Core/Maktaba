@@ -1,6 +1,6 @@
 # Story 56.06 — Automatic collections from YouTube playlists and channels
 
-> Epic 56 · Phase 2 · Depends on: — (slot 0187 shared with 56.07, 56.08) · Needed by: 56.08
+> Epic 56 · Phase 2 · Depends on: — (slot 0192 shared with 56.07, 56.08) · Needed by: 56.08
 
 ## Why
 
@@ -69,7 +69,7 @@ it deletes nothing and writes nothing.
 | T05 | pytest | playlist drops to 2 | run | collection deleted |
 | T06 | pytest | component off | run | no writes |
 | T07 | Go unit | `GET /api/libraries/{id}/collections?kind=youtube` | list | `source_kind` and counts |
-| T08 | migration test | slot 0187 up/down, Postgres and SQLite | migrate | columns and unique index |
+| T08 | migration test | slot 0192 up/down, Postgres and SQLite | migrate | columns and unique index |
 
 Run with `uv run --extra dev pytest`; mypy strict covers the tests.
 
@@ -96,7 +96,7 @@ Run with `uv run --extra dev pytest`; mypy strict covers the tests.
 
 | File | Change |
 |---|---|
-| `shared/db/migrations/0186_collection_sources{,.sqlite}.sql`, `MANIFEST.md` | README §6.2 |
+| `shared/db/migrations/0192_collection_sources{,.sqlite}.sql`, `MANIFEST.md` | README §6.2 |
 | `pipeline/src/maktaba_pipeline/engine/stages/youtube_collections.py` (new), `registry.py` | the stage |
 | `pipeline/src/maktaba_pipeline/engine/reconcile.py` | 6-hour pass |
 | `api/internal/handlers/browse/groups.go` | `kind=youtube`, `source_kind` |

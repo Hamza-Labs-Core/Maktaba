@@ -19,11 +19,14 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+
 	"net/http"
 	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
@@ -75,7 +78,7 @@ func runServe(args []string) {
 		os.Exit(2)
 	}
 
-	logger := newLogger()
+	logger := newLogger(*role)
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		logger.Error("config load failed", "err", err)
@@ -128,7 +131,7 @@ func runMigrate(args []string) {
 	if len(rest) > 0 {
 		sub = rest[0]
 	}
-	logger := newLogger()
+	logger := newLogger("migrate")
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		logger.Error("config load", "err", err)
@@ -171,9 +174,25 @@ func runMigrate(args []string) {
 	}
 }
 
-func newLogger() *slog.Logger {
-	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-	return slog.New(h)
+// newLogger is the shared logger (shared/log/go, Epic 53 story 53.01): every line
+// carries service (cloud.<role>), version, env and node like the home's, with the
+// shared redaction. MAKTABA_ENV (default prod) and MAKTABA_NODE_ID (the cloud node)
+// name the rest.
+func newLogger(role string) *slog.Logger { return mlog.Init(logOptions(role)) }
+
+func logOptions(role string) mlog.Options {
+	env := os.Getenv("MAKTABA_ENV")
+	if env == "" {
+		env = "prod"
+	}
+	return mlog.Options{
+		Service:      "cloud." + role,
+		Env:          env,
+		Version:      Version,
+		Node:         os.Getenv("MAKTABA_NODE_ID"),
+		Format:       "json",
+		RingCapacity: -1,
+	}
 }
 
 // httpServer is a small helper to wire chi + timeouts consistently

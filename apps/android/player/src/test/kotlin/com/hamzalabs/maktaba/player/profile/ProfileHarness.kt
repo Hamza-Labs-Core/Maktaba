@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.profile
 
+import com.hamzalabs.maktaba.core.playback.PlaybackSettings
 import android.content.Context
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface

@@ -1,6 +1,6 @@
 # Story 56.09 — Smart playlists
 
-> Epic 56 · Phase 1 · Depends on: — (slot 0186) · Needed by: 56.10, 56.12, 56.13
+> Epic 56 · Phase 1 · Depends on: — (slot 0191) · Needed by: 56.10, 56.12, 56.13
 
 ## Why
 
@@ -11,7 +11,7 @@ collections (admin-only, README §11 decision 3), so smart playlists are how a v
 
 ## Description
 
-### 1. Model (slot 0186, planned)
+### 1. Model (slot 0191, planned)
 
 `user_playlists` gains `kind` (`manual` | `smart`) and `smart_query` (README §6.2). A smart query
 is `{libraries: [ids] | null (all the user can read), filters: {FilterKeys…}, sort, order,
@@ -57,7 +57,7 @@ reopens the grid with them.
 | T03 | Go unit | invalid key, limit 0, limit 6,000 | create | 422 naming the field |
 | T04 | Go role test | other user; none | each route | 404; 401 |
 | T05 | Go unit | ACL removed | read | library absent |
-| T06 | migration test | 0186 up/down, both stores | migrate | check constraint holds |
+| T06 | migration test | 0191 up/down, both stores | migrate | check constraint holds |
 | T07 | unit (web) | grid with filters | Save as smart playlist | POST body has filters, sort, limit |
 | T08 | unit (web) | playlist page en/ar | render rules | words in both languages |
 | T09 | e2e (Playwright) | real home | save from grid, open, play | plays the first match |
@@ -89,7 +89,7 @@ reopens the grid with them.
 
 | File | Change |
 |---|---|
-| `shared/db/migrations/0185_smart_playlists{,.sqlite}.sql`, `MANIFEST.md` | columns, check |
+| `shared/db/migrations/0191_smart_playlists{,.sqlite}.sql`, `MANIFEST.md` | columns, check |
 | `api/internal/handlers/browse/playlists.go` | kind, query, evaluation, 409s |
 | `api/internal/handlers/videos/` | export the query builder for reuse |
 | `web/src/pages/Playlists/*`, `web/src/pages/LibraryBrowser.tsx` | save and rules |
