@@ -197,6 +197,7 @@ func TestFaultRehearsalF06APICrash(t *testing.T) {
 	}
 	home.shellServes(time.Second)
 	back := home.untilGroup("api", 30*time.Second, "ok")
+	home.waitServing(r.kit.cur, time.Minute)
 	r.summary(fmt.Sprintf("| %s | the API down in /status.json, then back | %s / %s | 5s / 30s |", t.Name(),
 		took.Round(100*time.Millisecond), back.Round(time.Second)))
 	home.assertServing(r.kit.cur)
@@ -239,6 +240,9 @@ func TestFaultRehearsalF04PostgresKilled(t *testing.T) {
 	}
 	r.summary(fmt.Sprintf("| %s | the recovery console with Postgres down | %s | 10s |", t.Name(), took.Round(100*time.Millisecond)))
 	home.untilGroup("database", 2*time.Minute, "ok")
+	// /status.json reads the database's process; the API's pool may hold a connection the
+	// kill broke for one more check, so it serves again when its readiness does
+	home.waitServing(r.kit.cur, time.Minute)
 	home.assertServing(r.kit.cur)
 }
 
