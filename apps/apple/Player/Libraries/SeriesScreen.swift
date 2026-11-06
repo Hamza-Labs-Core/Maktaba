@@ -112,8 +112,17 @@ struct SeriesScreen: View {
     }
 
     /// The season picker (only when there is more than one), and Mark watched on the season.
+    /// Side by side; at the accessibility sizes the season's name above and Mark the season
+    /// watched below it at the screen's width (beside the name its label was a column of one
+    /// word a line, taller than an episode row).
+    private var seasonsLayout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: MaktabaTokens.Spacing.s2))
+            : AnyLayout(HStackLayout(spacing: MaktabaTokens.Spacing.s2))
+    }
+
     private var seasons: some View {
-        HStack(spacing: MaktabaTokens.Spacing.s2) {
+        seasonsLayout {
             if model.seasons.count > 1 {
                 Picker(selection: $model.season) {
                     ForEach(model.seasons) { s in Text(Self.seasonName(s.season)).tag(Optional(s.season)) }
@@ -128,7 +137,7 @@ struct SeriesScreen: View {
                     .foregroundStyle(Color.mktText)
                     .accessibilityAddTraits(.isHeader)
             }
-            Spacer(minLength: MaktabaTokens.Spacing.s2)
+            if !typeSize.isAccessibilitySize { Spacer(minLength: MaktabaTokens.Spacing.s2) }
             if !model.episodes.isEmpty {
                 Button {
                     Task { await model.markSeason() }
