@@ -30,6 +30,9 @@ type Supervisor struct {
 	policy Policy
 	sink   EventSink
 	log    io.Writer
+	// spool is the file a child writes its output to (the log keeper's, Epic 53 story
+	// 53.02); nil: the output the template was given (serve's stderr)
+	spool  func(role Role, instance string) (*os.File, error)
 	now    func() time.Time
 	client *http.Client
 	host   string
@@ -116,6 +119,13 @@ func WithLog(w io.Writer) Option { return func(s *Supervisor) { s.log = w } }
 // WithExitHook calls f after every child exit (Epic 33: the front door hears a
 // TV slot's end at once).
 func WithExitHook(f func(Process, ExitInfo)) Option { return func(s *Supervisor) { s.onExit = f } }
+
+// WithSpool sends each child's stdout and stderr to the file spool opens for it (the log
+// keeper's spool: logkeeper.Keeper.Spool). A child whose spool cannot be opened writes
+// where its template says, as before.
+func WithSpool(spool func(role Role, instance string) (*os.File, error)) Option {
+	return func(s *Supervisor) { s.spool = spool }
+}
 
 // maxEvents is the in-memory event ring size.
 const maxEvents = 200
@@ -419,6 +429,8 @@ func (s *Supervisor) cannotAsk(p Process, err error) {
 func (s *Supervisor) loop(ctx context.Context, c *child) {
 	backoff := s.policy.BackoffInitial
 	tpl := c.proc.Cmd
+	// the output the template was wired to: where a child writes when its spool fails
+	tplOut, tplErr := tpl.Stdout, tpl.Stderr
 	first := true
 	s.mu.Lock()
 	a := c.adopt
@@ -506,6 +518,15 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			// a source checkout's): the held TV's binary too, never the new software
 			applyHeldPath(cmd, held.path)
 		}
+		var spool *os.File
+		if startErr == nil && s.spool != nil {
+			if f, err := s.spool(c.proc.Role, c.proc.Instance); err == nil {
+				spool = f
+				cmd.Stdout, cmd.Stderr = f, f
+			} else {
+				cmd.Stdout, cmd.Stderr = tplOut, tplErr
+			}
+		}
 		if startErr == nil {
 			prepareTree(cmd)
 			orig := cmd.SysProcAttr
@@ -529,6 +550,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 				survive = surviveNot
 				startErr = cmd.Start()
 			}
+		}
+		if spool != nil {
+			_ = spool.Close() // the child holds its own copy
 		}
 		if err := startErr; err != nil {
 			info = ExitInfo{At: startedAt, Code: -1, Reason: ReasonStartFailed, Error: err.Error()}

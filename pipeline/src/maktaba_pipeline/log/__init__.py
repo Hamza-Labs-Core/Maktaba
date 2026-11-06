@@ -136,7 +136,10 @@ def init(
         ring = LogRingBuffer(cap)
         set_ring(ring)
 
-    if env == "prod":
+    # the supervisor asks its roles for JSON (MAKTABA_LOG_FORMAT=json): the log keeper
+    # keeps their fields (Epic 53 story 53.02)
+    as_json = env == "prod" or os.environ.get("MAKTABA_LOG_FORMAT", "").strip().lower() == "json"
+    if as_json:
         processors.append(_rename_event_to_msg)
         if ring is not None:
             processors.append(make_ring_processor(ring))

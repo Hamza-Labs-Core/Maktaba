@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logkeeper"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
@@ -35,7 +36,12 @@ func stampStderr() (stop func()) {
 		for {
 			line, err := br.ReadString('\n')
 			if line != "" {
-				_, _ = io.WriteString(orig, stampLine(time.Now(), line))
+				stamped := stampLine(time.Now(), line)
+				_, _ = io.WriteString(orig, stamped)
+				// and in the supervisor's own segments (Epic 53 story 53.02)
+				if k := serveKeeper.Load(); k != nil {
+					k.Ingest(logkeeper.Origin{Service: "supervisor"}, []byte(stamped))
+				}
 			}
 			if err != nil {
 				return

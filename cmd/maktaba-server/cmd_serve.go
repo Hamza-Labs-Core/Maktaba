@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -436,10 +437,20 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	exe, _ := os.Executable()
 	supOpts = append(supOpts, supervisor.WithFFmpeg(ffmpeg.Watch(ctx,
 		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe), cfg.StateDir()) }, ffmpeg.WatchInterval, os.Stderr)))
+	// Epic 53 story 53.02: every role's output on disk, per service, by the log keeper
+	var echo io.Writer = os.Stderr
+	if supervisor.ChildStderr != nil {
+		echo = supervisor.ChildStderr
+	}
+	keeper, stopKeeper := startLogKeeper(cfg, node, echo)
+	defer stopKeeper()
+	supOpts = append(supOpts, keeperSpool(keeper))
 	sup := supervisor.New(procs, policy, supOpts...)
 	// Epic 51 story 51.04: the gates of the processes set before any starts (the last
 	// desired state seen, cached), then reconciled while serve runs
 	packsRoutes := startComponents(ctx, cfg, sup, wholeMachine, compLoops, releaseDir, os.Stderr)
+	// Epic 53 story 53.03: /status.json on the web port, from the supervisor alone
+	startStatusBoard(ctx, cfg, sup, packsRoutes.rec, node)
 	if pg != nil {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)
@@ -667,6 +678,9 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 		mux.Handle("/stream/", http.HandlerFunc(pagetheme.NotFound))
 	}
 
+	// Epic 53 story 53.03: the home's status, answered by the supervisor (never proxied),
+	// with the API and Postgres down
+	mux.Handle("/status.json", http.HandlerFunc(serveStatusJSON))
 	mux.Handle("/", webui.Handler("/api/", "/stream/"))
 	return mux
 }

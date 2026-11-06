@@ -43,8 +43,8 @@ type Options struct {
 	// Node is the machine the process runs on (the home, a joined machine's
 	// id, a cloud node). Empty means MAKTABA_NODE_ID, else "home".
 	Node string
-	// Format forces "json" or "text" regardless of Env. Empty means auto:
-	// "json" for env=="prod", "text" otherwise.
+	// Format forces "json" or "text" regardless of Env. Empty means
+	// MAKTABA_LOG_FORMAT, else auto: "json" for env=="prod", "text" otherwise.
 	Format string
 	// Level is the initial level. Zero value (LevelInfo) is the default.
 	Level slog.Level
@@ -130,6 +130,11 @@ func build(opts Options, ring *RingBuffer) *slog.Logger {
 	}
 
 	format := opts.Format
+	if format == "" {
+		// the supervisor asks its roles for JSON: the log keeper keeps their fields
+		// (Epic 53 story 53.02)
+		format = strings.ToLower(strings.TrimSpace(os.Getenv("MAKTABA_LOG_FORMAT")))
+	}
 	if format == "" {
 		if opts.Env == "prod" {
 			format = "json"

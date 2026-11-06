@@ -447,6 +447,20 @@ build fails when the two differ.
   streaming and the pipeline restart theirs within seconds of the request: each loop stops
   within its grace and starts again, as a process does.
 
+- **Every part's log is kept on disk, and the home says what is down without the API or the
+  database (Epic 53, stories 53.02 and 53.03).** The supervisor now keeps each process's
+  output in its own hourly files under the data folder (`logs/segments/<service>/`, closed
+  hours compressed), filling in the service, machine and Epic 51 component of each line and
+  scrubbing it once more. Lines are kept 7 days (debug 24 hours) within 550 MB of a 1 GB
+  diagnostics cap, settable under `[logs]` in `server.toml`. When the disk runs low, debug
+  lines go first, and each part's newest warnings and errors go last. A child never waits on
+  its log, and nothing is lost when the API, Postgres or the supervisor itself restarts.
+  `server.log` keeps every line for now. The web port answers `GET /status.json` itself, with
+  no sign-in: the state of the database, the API, streaming, processing, search and log
+  search, which features are down, and a banner key. Something turned off reads `off`,
+  never `down`; a crash shows at once, a failing check after two checks. The document names
+  no host, path or version (`docs/api/status.md`).
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

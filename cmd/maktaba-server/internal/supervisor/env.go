@@ -144,6 +144,13 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		add("MAKTABA_SECRETS_KEY", SecretsKeyPath())
 	}
 
+	// One JSON line per record (Epic 53 story 53.02): the log keeper keeps each role's
+	// fields (level, component, request ids) instead of wrapping its text. An operator's
+	// own MAKTABA_LOG_FORMAT is kept.
+	if os.Getenv("MAKTABA_LOG_FORMAT") == "" {
+		add("MAKTABA_LOG_FORMAT", "json")
+	}
+
 	// The log key (Epic 53 story 53.01): every role names a user in its lines by
 	// user_h, the id's hash under it. Made here on the first start that needs it; a
 	// key that cannot be made leaves the variable out, and the roles then write no

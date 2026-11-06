@@ -48,3 +48,16 @@ func TestChildEnvSharesTheLogKey(t *testing.T) {
 		t.Fatal("with an unusable key the roles get none (they then write no user)")
 	}
 }
+
+// Epic 53 story 53.02: every role writes JSON lines for the log keeper, unless the
+// operator chose a format.
+func TestChildEnvAsksForJSONLines(t *testing.T) {
+	t.Setenv("MAKTABA_LOG_FORMAT", "")
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(t.TempDir(), "server.toml"))
+	cfg := config.Defaults()
+	for _, role := range []Role{RoleAPI, RoleStreaming, RolePipeline} {
+		if !hasKV(childEnvOK(role, cfg), "MAKTABA_LOG_FORMAT", "json") {
+			t.Errorf("role %s: MAKTABA_LOG_FORMAT not json", role)
+		}
+	}
+}

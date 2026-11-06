@@ -507,7 +507,7 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 		logins.end(r)
 	}
 	home.assertServing(k.prev)
-	if !o.kill || !strings.Contains(home.log.String(), "level=error") {
+	if !o.kill || !logField(home.log.String(), "level", "error") {
 		// the safe path: a database of its own, checked whole, renamed into place
 		for _, want := range []string{"into a fresh database of its own", "is put back whole"} {
 			if !strings.Contains(home.log.String(), want) {
