@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
@@ -109,21 +110,20 @@ func TestRestartLoop(t *testing.T) {
 	}
 }
 
-// What has nothing the API can restart is 409 not_restartable: stages, an extension, an
-// asset, a loop of another service; part of the server is not_switchable; off or held
+// What has nothing to restart is 409 not_restartable: stages, an extension, an asset;
+// part of the server is not_switchable; off or held
 // is not_running. None calls the supervisor, starts a loop or writes a row.
 func TestRestartRefused(t *testing.T) {
 	f, sup, starts := restartFixture(t)
 	decode(t, f.do("POST", "/api/components/transcription/stop", "", admin()), 200, nil)
 	base := f.audits(t)
 	for id, want := range map[string]string{
-		"youtube":          svc.CodeNotRestartable, // stages
-		"ext.plex":         svc.CodeNotRestartable,
-		"runtime.ml":       svc.CodeNotRestartable,
-		"livetv.hdhomerun": svc.CodeNotRestartable, // streaming:hdhr_ssdp
-		"core.api":         svc.CodeNotSwitchable,
-		"cloud.relay":      svc.CodeNotRunning, // installed, not enabled
-		"transcription":    svc.CodeNotRunning, // held
+		"youtube":       svc.CodeNotRestartable, // stages
+		"ext.plex":      svc.CodeNotRestartable,
+		"runtime.ml":    svc.CodeNotRestartable,
+		"core.api":      svc.CodeNotSwitchable,
+		"cloud.relay":   svc.CodeNotRunning, // installed, not enabled
+		"transcription": svc.CodeNotRunning, // held
 	} {
 		p := code(t, f.do("POST", "/api/components/"+id+"/restart", "", admin()), 409, want)
 		if want != svc.CodeNotSwitchable && p["id"] != id {
@@ -138,6 +138,55 @@ func TestRestartRefused(t *testing.T) {
 	}
 	if starts.Load() != 1 || f.audits(t) != base {
 		t.Fatalf("starts %d, audit rows %d -> %d", starts.Load(), base, f.audits(t))
+	}
+}
+
+// #636: a loop component whose loops run in another process (livetv.hdhomerun:
+// streaming:hdhr_ssdp) is asked for through a restart request that process's runner
+// reads; the supervisor is not asked, and each restart moves the request's seq. One with
+// a supervisor loop (backups: supervisor:backups) is the supervisor's to restart.
+func TestRestartLoopsOfAnotherProcess(t *testing.T) {
+	f, sup, starts := restartFixture(t)
+	var v struct {
+		Restarted int `json:"restarted"`
+	}
+	for want := int64(1); want <= 2; want++ {
+		decode(t, f.do("POST", "/api/components/livetv.hdhomerun/restart", "", admin()), 200, &v)
+		if v.Restarted != 1 {
+			t.Fatalf("%+v", v)
+		}
+		got, err := f.st.Restarts(context.Background(), "home", "streaming")
+		if err != nil || got["livetv.hdhomerun"] != want {
+			t.Fatalf("streaming's requests %v (%v), want seq %d", got, err, want)
+		}
+	}
+	if slices.ContainsFunc(sup.called(), func(c string) bool { return strings.Contains(c, "hdhomerun") }) {
+		t.Fatalf("the supervisor was asked: %v", sup.called())
+	}
+	if got, _ := f.st.Restarts(context.Background(), "home", "api"); len(got) != 0 {
+		t.Fatalf("the API's own loops are restarted here, not asked for: %v", got)
+	}
+	if starts.Load() != 1 || f.actions(t, svc.ActionRestart) != 2 {
+		t.Fatalf("starts %d, %d restart rows", starts.Load(), f.actions(t, svc.ActionRestart))
+	}
+	// the fake supervisor runs no loop of it: 202, as a process that does not run now
+	decode(t, f.do("POST", "/api/components/backups/restart", "", admin()), 202, nil)
+	if !slices.Contains(sup.called(), "POST /components/backups/restart") {
+		t.Fatalf("the supervisor was not asked for its loop: %v", sup.called())
+	}
+}
+
+// From the CLI (no API runner here) the API's own loops are asked for through a request
+// too, which the API's runner reads.
+func TestRestartAPILoopsFromAnotherProcess(t *testing.T) {
+	f := newFixture(t)
+	n, err := Restarter{Service: &svc.Service{Store: f.st, Catalog: components.Default()}}.Restart(context.Background(), "enrich", svc.Actor{By: "maya", Source: "cli"})
+	if err != nil || n != 1 {
+		t.Fatalf("%d %v", n, err)
+	}
+	got, err := f.st.Restarts(context.Background(), "home", "api")
+	if err != nil || got["enrich"] != 1 {
+		t.Fatalf("the API's requests %v (%v)", got, err)
 	}
 }
 

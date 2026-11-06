@@ -39,7 +39,7 @@ const componentsUsage = `Usage:
   maktaba-server components disable <id> [--yes]
   maktaba-server components stop <id> [--yes]               stopped until start (a hold has no end time)
   maktaba-server components start <id>
-  maktaba-server components restart <id> [--yes]            restart its processes (its running work starts again)
+  maktaba-server components restart <id> [--yes]            restart its processes and loops (its running work starts again)
   maktaba-server components install <id>                    put it on disk, off
   maktaba-server components remove <id> [--yes]             take it off disk
   maktaba-server components reset-settings <id> [--yes]     its settings back to the defaults
@@ -88,8 +88,8 @@ type componentsCLI struct {
 	user     string            // the OS user: the audit's actor
 	values   map[string]string // --out, --platform
 	wait     func(time.Duration)
-	// restart is a restart through this machine's supervisor (componentsh.Restarter;
-	// nil: none). A loop restarts only in its own process, so not from here.
+	// restart is a restart through this machine's supervisor, and a restart request for
+	// the loops of the other processes (componentsh.Restarter; nil: none).
 	restart func(ctx context.Context, id string, actor components.Actor) (int, error)
 }
 

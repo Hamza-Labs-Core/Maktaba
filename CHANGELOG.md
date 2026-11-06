@@ -412,6 +412,13 @@ build fails when the two differ.
   with `slot.health` / `release_mismatch` as change #58 was on 2026-10-31. The rehearsal now
   builds its streaming binary with TV staging, as the release does.
 
+- **Every component with loops can be restarted, wherever its loops run.** Restart on the
+  Components page and `maktaba-server components restart` refused a component whose loops
+  run in streaming, the pipeline or the supervisor itself (Live TV in the server, HDHomeRun,
+  the queue's health, mDNS, backups). The supervisor now restarts its own loops, and
+  streaming and the pipeline restart theirs within seconds of the request: each loop stops
+  within its grace and starts again, as a process does.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

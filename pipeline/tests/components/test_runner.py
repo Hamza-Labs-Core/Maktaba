@@ -181,6 +181,55 @@ async def test_loops_follow_their_component(db: Database) -> None:
     assert ran == ["start", "stop", "start", "stop"]
 
 
+@pytest.mark.asyncio
+async def test_a_restart_request_restarts_the_pipelines_loops(db: Database) -> None:
+    """#636 (slot 0185): POST /api/components/livetv/restart writes a restart request for
+    the pipeline (its loop channel-topup runs here, where the API cannot reach it); the
+    runner's next pass stops the loop within its grace and starts it again. A request
+    made before the runner's first read restarts nothing, and one read again neither."""
+    await sync_graph(db, GRAPH, gates={})
+    ran: list[str] = []
+
+    async def topup(stop: asyncio.Event) -> None:
+        ran.append("start")
+        await stop.wait()
+        ran.append("stop")
+
+    async def request(cid: str) -> None:
+        await db.execute(
+            "INSERT INTO component_restarts AS r (machine, id, host)"
+            " VALUES ('home', $1, 'pipeline')"
+            " ON CONFLICT (machine, id, host) DO UPDATE SET seq = r.seq + 1",
+            cid,
+        )
+
+    await request("livetv")
+    r, _ = _runner(db)
+    r.declare("channel-topup", topup)
+    await _pass(r)
+    await asyncio.sleep(0)
+    assert ran == ["start"]
+    rev = await store.revision(db)
+
+    await request("livetv")
+    assert await store.revision(db) == rev + 1  # the runners hear it
+    await _pass(r)
+    for _ in range(100):
+        if ran == ["start", "stop"] and not r._stoppers:
+            break
+        await asyncio.sleep(0.01)
+    await _pass(r)  # the pass the stopped loop wakes
+    await asyncio.sleep(0)
+    assert ran == ["start", "stop", "start"]
+    assert r.loops["channel-topup"].running()
+
+    await _pass(r)  # the same request read again
+    await asyncio.sleep(0)
+    assert ran == ["start", "stop", "start"]
+    assert r.take_restarts({"livetv": 2, "queue_health": 1}) == ["queue_health"]
+    await r.close()
+
+
 def test_a_loop_not_in_the_catalog_is_refused(db: Any = None) -> None:
     r = ComponentRunner(None, reconcile=True)
 
