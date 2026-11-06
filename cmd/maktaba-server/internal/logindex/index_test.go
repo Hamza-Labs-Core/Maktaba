@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
+
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logkeeper"
 )
 
@@ -249,5 +251,36 @@ func TestTail(t *testing.T) {
 		if r.StatusCode != 200 {
 			t.Errorf("%s: %d", p, r.StatusCode)
 		}
+	}
+}
+
+// A segment the keeper compressed after the index read it is read from its .zst, at the
+// same offsets (readAt also looks again when the .ndjson goes between its look and open).
+func TestReadAtFollowsACompressedHour(t *testing.T) {
+	root, now := t.TempDir(), t0
+	k := keeperAt(t, root, &now)
+	write(t, k, "api", "", `{"level":"info","msg":"kept_through","ts":"2026-11-06T10:00:00Z"}`)
+	ix := open(t, root, &now)
+	if _, err := ix.Ingest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var seg string
+	var off int64
+	if err := ix.db.QueryRow(`SELECT seg, off FROM lines`).Scan(&seg, &off); err != nil {
+		t.Fatal(err)
+	}
+	plain, _ := ix.segFile(seg)
+	// the keeper's compression, as it runs: the .zst whole, then the .ndjson gone
+	k.Close()
+	b, _ := os.ReadFile(plain)
+	zf, _ := os.Create(plain + ".zst")
+	zw, _ := zstd.NewWriter(zf)
+	_, _ = zw.Write(b)
+	_ = zw.Close()
+	_ = zf.Close()
+	_ = os.Remove(plain)
+	got := ix.readAt(seg, []int64{off})
+	if got[0] == nil || !strings.Contains(string(got[0]), "kept_through") {
+		t.Fatalf("read %q", got[0])
 	}
 }
