@@ -415,6 +415,8 @@ admin_addr = "127.0.0.1:%d"
 [tv]
 slots = "off"
 `, api, filepath.ToSlash(filepath.Join(dir, "data")), web, p(), stream, p(), p(), p(), p(), extra, p())
+		// each machine's log index on a port of its own: two machines share this host (53.09)
+		body += fmt.Sprintf("\n[logs]\naddr = \"127.0.0.1:%d\"\n", p())
 		_ = os.WriteFile(path, []byte(body), 0o600)
 		return path
 	}
