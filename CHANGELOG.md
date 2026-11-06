@@ -511,6 +511,20 @@ build fails when the two differ.
   The "Maktaba is restarting" page now says what is down and, after a minute, links to the
   recovery page.
 
+- **Every app says what is down on the home, and CI kills each part to prove the app survives
+  (Epic 53, stories 53.06 and 53.07).** The web app, the Apple Player, Remote and TV apps, and
+  the Android phone and TV apps show one status strip from the home's `/status.json`, read
+  every 10 seconds while in front: "Maktaba is restarting", a database problem, safe mode,
+  "Playback and Live TV are unavailable right now", search down, and, for admins only,
+  processing paused, with Details to System health or the recovery page. Only the most
+  important line shows, with "N more" for the rest; it can be closed and comes back when
+  things change; it never covers a playing video. Something an admin turned off shows
+  nothing, and Live TV is left out of the playback sentence when it is off. The web player
+  says "Playback is unavailable right now" instead of a generic error while streaming is
+  down. The update rehearsal now also kills streaming, the API and Postgres on a home of the
+  commit, and starts safe mode from the recovery console, checking the web keeps serving,
+  `/status.json` says so in time and the part comes back (`docs/fault-rehearsal.md`).
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

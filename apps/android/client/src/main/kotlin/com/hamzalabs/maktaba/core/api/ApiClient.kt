@@ -116,6 +116,19 @@ class ApiClient(
         return t.user
     }
 
+    /**
+     * The home's `/status.json` (Epic 53 story 53.06), signed in or not; null when the home does
+     * not answer it (an older home, the home unreachable): the strip shows nothing new.
+     */
+    suspend fun homeStatus(): HomeStatusDoc? = try {
+        val (code, body) = execute(request("GET", "/status.json"))
+        if (code == 200) json.decodeFromString(HomeStatusDoc.serializer(), String(body)) else null
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+
     /** `GET /api/auth/me` with the home's name. */
     suspend fun whoami(): Me = get("/api/auth/me")
 

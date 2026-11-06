@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { setHomeStatus } from "./lib/homeStatus";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("./lib/api", async () => {
@@ -134,6 +135,28 @@ describe("App error screens", () => {
     expect(alert).toHaveTextContent(en["error.kind.signedOut"]);
     const signIn = within(alert).getByRole("link", { name: en["error.signIn"] });
     expect(signIn).toHaveAttribute("href", "/login");
+  });
+
+  it("with a part of the home down, the status strip says what is down", async () => {
+    open("/");
+    await screen.findByRole("heading", { name: en["home.title"] });
+    act(() =>
+      setHomeStatus({
+        v: 1,
+        at: "2026-11-06T10:00:00Z",
+        mode: "normal",
+        overall: "degraded",
+        components: { search: "down" },
+        features_down: ["search"],
+      })
+    );
+    try {
+      expect(await screen.findByTestId("status-strip")).toBeInTheDocument();
+      expect(screen.queryByTestId("offline-banner")).toBeNull();
+    } finally {
+      act(() => setHomeStatus(null));
+    }
+    await waitFor(() => expect(screen.queryByTestId("status-strip")).toBeNull());
   });
 
   it("going offline shows the offline banner; coming back hides it", async () => {

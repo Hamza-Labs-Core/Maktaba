@@ -49,6 +49,9 @@ struct RootView: View {
             case let .signedIn(user):
                 if let client = session.client {
                     ContentView(session: session, user: user)
+                        // what is down on the home: a top strip that takes no focus (Epic 53 story 53.06)
+                        .homeStatusStrip(client: client, admin: user.isAdmin,
+                                         liveTVOff: session.capabilities.current.shown(.liveTV) == .hidden)
                         .environment(\.client, client)
                         .environment(\.appSession, session)
                 }

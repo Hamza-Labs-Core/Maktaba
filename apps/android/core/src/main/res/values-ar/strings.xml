@@ -244,4 +244,18 @@
     <string name="components_licence_waiting">متوقف حتى تشمله الخطة مرة أخرى. اختيارك محفوظ.</string>
     <string name="components_licence_locked">يتطلب خطة</string>
     <string name="components_licence_open_subscription">فتح الاشتراك</string>
+    <!-- Epic 53 story 53.06: the status strip (the web's status.*) -->
+    <string name="status_offline">أنت غير متصل بالإنترنت</string>
+    <string name="status_restarting">مكتبة تُعاد تشغيلها. قد لا تعمل بعض الميزات للحظات.</string>
+    <string name="status_database">تواجه مكتبة مشكلة في قاعدة البيانات. قد لا يعمل التشغيل والتصفح.</string>
+    <string name="status_safe">مكتبة في الوضع الآمن. التشغيل والمعالجة والبث المباشر متوقفة حتى إعادة التشغيل.</string>
+    <string name="status_streaming">التشغيل والبث المباشر غير متاحين الآن.</string>
+    <string name="status_streaming_no_tv">التشغيل غير متاح الآن.</string>
+    <string name="status_search">البحث غير متاح الآن.</string>
+    <string name="status_processing">المعالجة متوقفة مؤقتًا: لن تُضاف فيديوهات جديدة الآن.</string>
+    <string name="status_logs">البحث في السجلات يُعاد تشغيله. ما زال يمكن قراءة السجلات الأخيرة من صفحة الاستعادة.</string>
+    <string name="status_details">التفاصيل</string>
+    <string name="status_more">%1$d أخرى</string>
+    <string name="status_close">إغلاق</string>
+    <string name="status_player">التشغيل غير متاح الآن. حاول مجددًا بعد دقائق.</string>
 </resources>
