@@ -378,8 +378,10 @@ func TestLauncherRestartsOn75(t *testing.T) {
 	stop := startLauncher(t, cfg)
 	waitFor(t, "third start", func() bool { return countAct(readTrace(l), "1.0.0", "run") == 1 })
 	tr := readTrace(l)
-	if d := tr[2].at.Sub(tr[0].at); d > 1500*time.Millisecond {
-		t.Fatalf("restarts on 75 took %v (backoff applied?)", d)
+	// one backoff alone is BackoffInitial: two restarts in less than that had none (a fixed
+	// 1.5 s failed a slow Windows runner at 1.54 s with no backoff at all)
+	if d := tr[2].at.Sub(tr[0].at); d >= cfg.BackoffInitial {
+		t.Fatalf("restarts on 75 took %v, at least the %v backoff (backoff applied?)", d, cfg.BackoffInitial)
 	}
 	if err := stop(); err != nil {
 		t.Fatal(err)

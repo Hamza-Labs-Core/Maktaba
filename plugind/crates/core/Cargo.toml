@@ -1,0 +1,27 @@
+[package]
+name = "plugind-core"
+version = "1.0.0"
+description = "The Maktaba plugin host's core: engine, WIT host, limits, audit, cache, dispatch (Epic 54, story 54.02)"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+maktaba-plugin-manifest = { path = "../pluginmanifest" }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+wasmtime-wasi-io = { workspace = true }
+base64 = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+uds_windows = "1.1"
+
+[dev-dependencies]
+wat = "1"
+tempfile = "3"
