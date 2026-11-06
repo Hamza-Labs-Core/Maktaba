@@ -50,9 +50,10 @@ DATABASE_URL=... make migrate-status
    and rebases. A slot below the highest one is never filled later, even
    when it is free: goose runs without `--allow-missing`, so on a database
    already past it the migration is out of order and goose refuses it.
-   `0133` is such a permanent gap (MANIFEST.md, "Permanent gaps"): never
-   add a `0133_*` file. `tools/migration-lint` does not check for
-   contiguous slots, so the gap passes it.
+   0017–0027, 0133, 0176 and 0177 are such permanent gaps (MANIFEST.md,
+   "Permanent gaps"): never add a file in one of them. `tools/migration-lint`
+   fails when a slot below the highest has no file and is not listed there,
+   so a new gap is listed in the same PR that leaves it.
 
 8. **Raise the nodes' schema revision.** A new slot also raises
    `SCHEMA_REV` in `pipeline/src/maktaba_pipeline/cluster/schema.py` and
