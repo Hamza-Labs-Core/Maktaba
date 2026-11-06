@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.ui
 
+import com.hamzalabs.maktaba.core.ui.HomeStatusHost
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -117,39 +118,47 @@ fun SignedInApp(
     }
 
     // a failure that says the home does not answer offers another home
+    // what is down on the home: a top strip, never over the player (Epic 53 story 53.06)
     CompositionLocalProvider(LocalChooseHome provides { app.session.switchHome() }) {
-        when (val top = stack.last()) {
-            Place.Tabs -> Box(Modifier.fillMaxSize()) {
-                if (tab == TvTab.Home) LibraryBackdrop()
-                Column(Modifier.fillMaxSize()) {
-                    TopBar(
-                        tabs = tabs,
-                        selectedIndex = shown.indexOf(tab),
-                        onSelect = { i -> shown.getOrNull(i)?.let { if (it != tab) focusContent = false; chosen = it } },
-                    )
-                    when (tab) {
-                        TvTab.Home -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                        TvTab.Libraries -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
-                        TvTab.Search -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                        TvTab.Live -> if (features.explains(Feature.LIVE_TV)) {
-                            LiveOffNote(client.home.toString(), focusFirst = focusContent)
-                        } else {
-                            LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
+        HomeStatusHost(
+            client,
+            admin = user.isAdmin,
+            enabled = stack.last() !is Place.Player && stack.last() !is Place.LivePlayer,
+            liveTvOff = !hasLive,
+        ) {
+            when (val top = stack.last()) {
+                Place.Tabs -> Box(Modifier.fillMaxSize()) {
+                    if (tab == TvTab.Home) LibraryBackdrop()
+                    Column(Modifier.fillMaxSize()) {
+                        TopBar(
+                            tabs = tabs,
+                            selectedIndex = shown.indexOf(tab),
+                            onSelect = { i -> shown.getOrNull(i)?.let { if (it != tab) focusContent = false; chosen = it } },
+                        )
+                        when (tab) {
+                            TvTab.Home -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                            TvTab.Libraries -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
+                            TvTab.Search -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                            TvTab.Live -> if (features.explains(Feature.LIVE_TV)) {
+                                LiveOffNote(client.home.toString(), focusFirst = focusContent)
+                            } else {
+                                LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
+                            }
+                            TvTab.Account -> AccountScreen(app, user)
                         }
-                        TvTab.Account -> AccountScreen(app, user)
                     }
                 }
+                is Place.Library -> LibraryScreen(api, top.id, top.name, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                is Place.Video -> VideoScreen(
+                    api,
+                    top.id,
+                    onPlay = { title, startMs -> open(Place.Player(top.id, title, startMs)) },
+                    signedOut = signedOut,
+                    onBack = ::back,
+                )
+                is Place.Player -> PlayerScreen(app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut)
+                is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut)
             }
-            is Place.Library -> LibraryScreen(api, top.id, top.name, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-            is Place.Video -> VideoScreen(
-                api,
-                top.id,
-                onPlay = { title, startMs -> open(Place.Player(top.id, title, startMs)) },
-                signedOut = signedOut,
-                onBack = ::back,
-            )
-            is Place.Player -> PlayerScreen(app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut)
-            is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut)
         }
     }
 }

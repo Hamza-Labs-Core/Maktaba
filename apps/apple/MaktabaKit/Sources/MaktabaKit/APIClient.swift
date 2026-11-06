@@ -24,7 +24,7 @@ public enum APIError: LocalizedError, Equatable {
 public actor APIClient {
     public nonisolated let home: URL
     private let tokens: TokenStore
-    private let session: URLSession
+    let session: URLSession
     private var refreshing: Task<String, Error>?
 
     public init(home: URL, tokens: TokenStore, session: URLSession = .shared) {

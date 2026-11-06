@@ -8204,6 +8204,136 @@
           }
         }
       }
+    },
+    "You're offline" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أنت غير متصل بالإنترنت"
+          }
+        }
+      }
+    },
+    "Maktaba is restarting. Some things won't work for a moment." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبة تُعاد تشغيلها. قد لا تعمل بعض الميزات للحظات."
+          }
+        }
+      }
+    },
+    "Maktaba is having trouble with its database. Playback and browsing may not work." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تواجه مكتبة مشكلة في قاعدة البيانات. قد لا يعمل التشغيل والتصفح."
+          }
+        }
+      }
+    },
+    "Maktaba is in safe mode. Playback, processing and Live TV are off until it restarts." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبة في الوضع الآمن. التشغيل والمعالجة والبث المباشر متوقفة حتى إعادة التشغيل."
+          }
+        }
+      }
+    },
+    "Playback and Live TV are unavailable right now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل والبث المباشر غير متاحين الآن."
+          }
+        }
+      }
+    },
+    "Playback is unavailable right now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل غير متاح الآن."
+          }
+        }
+      }
+    },
+    "Search is unavailable right now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث غير متاح الآن."
+          }
+        }
+      }
+    },
+    "Processing is paused: new videos won't be added for now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المعالجة متوقفة مؤقتًا: لن تُضاف فيديوهات جديدة الآن."
+          }
+        }
+      }
+    },
+    "Log search is restarting. Recent logs can still be read from the recovery page." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث في السجلات يُعاد تشغيله. ما زال يمكن قراءة السجلات الأخيرة من صفحة الاستعادة."
+          }
+        }
+      }
+    },
+    "Details" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التفاصيل"
+          }
+        }
+      }
+    },
+    "%lld more" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld أخرى"
+          }
+        }
+      }
+    },
+    "Close" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إغلاق"
+          }
+        }
+      }
+    },
+    "Playback is unavailable right now. Try again in a few minutes." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل غير متاح الآن. حاول مجددًا بعد دقائق."
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

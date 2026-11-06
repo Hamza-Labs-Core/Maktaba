@@ -403,4 +403,22 @@ class ApiClientTest {
         assertTrue(!com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().port(8089).build()))
         assertTrue(!com.hamzalabs.maktaba.core.api.SameOriginCredentials.sameOrigin(a, a.newBuilder().scheme("https").port(8088).build()))
     }
+
+    /** Epic 53 story 53.06: /status.json is read signed in or not; a home without it is null. */
+    @Test
+    fun theHomeStatusIsReadAndAHomeWithoutItIsNull() = runBlocking {
+        route = { r ->
+            if (r.url.encodedPath == "/status.json") {
+                json(200, """{"v":1,"mode":"safe","overall":"degraded","components":{"streaming":"down"},"features_down":["playback"],"extra":1}""")
+            } else {
+                defaultRoute(r)
+            }
+        }
+        val doc = client(MemoryTokens()).homeStatus()
+        assertEquals("safe", doc?.mode)
+        assertEquals("down", doc?.components?.get("streaming"))
+        assertEquals(listOf("playback"), doc?.featuresDown)
+        route = { json(404, """{"title":"not found"}""") }
+        assertNull(client(MemoryTokens()).homeStatus())
+    }
 }

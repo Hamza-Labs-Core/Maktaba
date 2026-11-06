@@ -192,6 +192,10 @@ build fails when the two differ.
   for the next change, and the restart's answer lists the services it asked (`requested`)
   apart from what it restarted itself. Admin > Components says when a restart was only asked
   of another service.
+- **A MediaIntel import's dry run no longer holds up the queue.** The dry run (the default)
+  locked the jobs' summary for its whole run, so every job that finished meanwhile waited for
+  it; it now locks nothing. An applied import queues its library scans after it commits, so a
+  scan that finishes during the import can no longer deadlock with it.
 - **`serve --offline` also stops the pipeline's own outbound calls.** With `MAKTABA_OFFLINE=1`
   the YouTube listings, downloads, exact dates and repairs wait (no scheduled refresh is
   queued), the books stage looks nothing up on Wikipedia (a book not looked up yet is looked up
@@ -516,6 +520,20 @@ build fails when the two differ.
   with Try again, Start in safe mode and Go back; the Mac's menu offers the same choices.
   The "Maktaba is restarting" page now says what is down and, after a minute, links to the
   recovery page.
+
+- **Every app says what is down on the home, and CI kills each part to prove the app survives
+  (Epic 53, stories 53.06 and 53.07).** The web app, the Apple Player, Remote and TV apps, and
+  the Android phone and TV apps show one status strip from the home's `/status.json`, read
+  every 10 seconds while in front: "Maktaba is restarting", a database problem, safe mode,
+  "Playback and Live TV are unavailable right now", search down, and, for admins only,
+  processing paused, with Details to System health or the recovery page. Only the most
+  important line shows, with "N more" for the rest; it can be closed and comes back when
+  things change; it never covers a playing video. Something an admin turned off shows
+  nothing, and Live TV is left out of the playback sentence when it is off. The web player
+  says "Playback is unavailable right now" instead of a generic error while streaming is
+  down. The update rehearsal now also kills streaming, the API and Postgres on a home of the
+  commit, and starts safe mode from the recovery console, checking the web keeps serving,
+  `/status.json` says so in time and the part comes back (`docs/fault-rehearsal.md`).
 
 ### Fixed
 
