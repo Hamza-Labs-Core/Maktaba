@@ -26,7 +26,9 @@ var notCalled = map[string]string{
 }
 
 var (
-	hostRe = regexp.MustCompile("[\"'`]https?://([a-zA-Z0-9.-]+)")
+	// a URL in a string: "…", '…' (Python) or `…`; the quote is checked apart, so the
+	// pattern starts with a literal and the scan of every file stays fast
+	hostRe = regexp.MustCompile(`https?://([a-zA-Z0-9.-]+)`)
 	ipRe   = regexp.MustCompile(`^[0-9.]+$`)
 )
 
@@ -71,8 +73,12 @@ func TestOutboundHostsAreListed(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			for _, m := range hostRe.FindAllStringSubmatch(string(b), -1) {
-				h := strings.ToLower(m[1])
+			text := string(b)
+			for _, ix := range hostRe.FindAllStringSubmatchIndex(text, -1) {
+				if ix[0] == 0 || !strings.ContainsRune("\"'`", rune(text[ix[0]-1])) {
+					continue // not the start of a string
+				}
+				h := strings.ToLower(text[ix[2]:ix[3]])
 				if h == "localhost" || strings.HasSuffix(h, ".local") || ipRe.MatchString(h) ||
 					(!strings.Contains(h, ".") && h != "customer-") {
 					continue // this machine, the LAN, an example address

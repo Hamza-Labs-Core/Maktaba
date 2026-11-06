@@ -62,7 +62,7 @@ def test_a_dictionary_that_fails_to_load_keeps_the_one_in_use(
     monkeypatch.setattr(cohere, "_DICT_FAILED", [], raising=False)
     monkeypatch.setattr(importlib.util, "find_spec", lambda _n: object())
     clock = {"t": 1000.0}
-    monkeypatch.setattr(cohere.time, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr("maktaba_pipeline.stt.cohere.time.monotonic", lambda: clock["t"])
     first = cohere.dictionary()
     assert first is not None
 
