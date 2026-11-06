@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0187 (a restart's seq only goes up). SQLite has no
+-- SQLite parity sibling for slot 0190 (a restart's seq only goes up). SQLite has no
 -- joined machines (no roles): only the seq rule applies.
 --
 CREATE TRIGGER IF NOT EXISTS component_restarts_seq_up

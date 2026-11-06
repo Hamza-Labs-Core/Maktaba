@@ -122,10 +122,12 @@ resolve_version() {
         echo "${VERSION}"
         return
     fi
-    local tag
-    tag="$(fetch_stdout "https://api.github.com/repos/${REPO}/releases/latest" \
-        | grep -m1 '"tag_name"' \
-        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+    # captured first: under pipefail, `fetch | grep -m1` fails when grep leaves before the
+    # whole response is written (curl: (56) Failure writing output)
+    local json tag
+    json="$(fetch_stdout "https://api.github.com/repos/${REPO}/releases/latest")" || json=""
+    tag="$(grep -m1 '"tag_name"' <<<"${json}" \
+        | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true)"
     [ -n "${tag}" ] || die "could not resolve the latest release tag"
     echo "${tag}"
 }
@@ -133,7 +135,8 @@ resolve_version() {
 # A release tag is vMAJOR.MINOR.PATCH[-prerelease]; anything else would end
 # up in URLs and in the signing identity.
 valid_tag() {
-    printf '%s' "$1" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+    local re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+    [[ "$1" =~ ${re} ]]
 }
 
 # payload_archive <version> <amd64|arm64>: the Linux payload asset's name.

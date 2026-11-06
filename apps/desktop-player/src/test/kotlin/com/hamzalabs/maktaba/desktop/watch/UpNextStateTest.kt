@@ -26,6 +26,22 @@ class UpNextStateTest {
     }
 
     @Test
+    fun aSeekBackBeforeTheLeadTakesTheCardAway() {
+        val s = UpNextState(leadSec = 20, countSec = 3)
+        s.reset(next)
+        assertNull(s.tick(80_000, 100_000, ended = false))
+        assertEquals(3, s.secondsLeft)
+        // back to the middle: no card, and no countdown running on
+        assertNull(s.tick(30_000, 100_000, ended = false))
+        assertNull(s.secondsLeft)
+        repeat(5) { assertNull(s.tick(31_000L + it * 1_000, 100_000, ended = false)) }
+        assertNull(s.secondsLeft)
+        // at the lead again: the card again, from the start
+        assertNull(s.tick(81_000, 100_000, ended = false))
+        assertEquals(3, s.secondsLeft)
+    }
+
+    @Test
     fun cancelKeepsTheVideo() {
         val s = UpNextState(countSec = 2)
         s.reset(next)

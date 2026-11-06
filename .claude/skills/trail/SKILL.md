@@ -73,9 +73,10 @@ The session that tags (or the next one) builds `docs/trail/snapshots/vX.Y.Z.md`:
 python3 tools/trail/trail.py skeleton --tag vX.Y.Z > docs/trail/snapshots/vX.Y.Z.md
 ```
 
-The skeleton carries the last snapshot's sections forward and lists the new events in a
+The skeleton carries the last snapshot older than the tag forward (its sections) and lists the new events in a
 comment. Fold each new event in: add its lessons to the right section with its citation
-(`#634`, `i649`, `d20261104-slug`), merge items that say the same thing (keep all their
+(`#634`, `i649`, `d20261104-slug`; an issue that is only mentioned is written `issue #649`,
+which cites nothing), merge items that say the same thing (keep all their
 citations), drop an item only when a newer event shows it is no longer true. Delete the comment,
 leave `Missing events` and `Index` exactly as printed, copy it to `docs/trail/current.md`,
 run `trail.py check`, and merge it as a trail-only pull request.

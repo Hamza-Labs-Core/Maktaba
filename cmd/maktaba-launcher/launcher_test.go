@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,6 +87,9 @@ func fakeServerMain() {
 	ver := filepath.Base(rel)
 	if lb, err := os.ReadFile(filepath.Join(rel, "label")); err == nil { // a payload's own name (guard tests)
 		ver = strings.TrimSpace(string(lb))
+	}
+	if slices.Contains(os.Args, "--safe-mode") { // started in safe mode (Epic 53 story 53.05)
+		appendLine(filepath.Join(root, "safe"), ver)
 	}
 	// a stop asked once the trace says this start ran is caught: the handler is in place
 	// before the line is written (a test may wait for the line, then ask for the stop)
@@ -406,6 +410,7 @@ func TestLauncherBackoff(t *testing.T) {
 	cfg := testConfig(l.Root)
 	cfg.BackoffInitial = 100 * time.Millisecond
 	cfg.BackoffMax = 400 * time.Millisecond
+	cfg.CantStartMax = -1 // the waits are not timed: every crash is "early" (cantstart.go)
 	// the backoff the launcher asks for between the crashes, not the wall clock's gaps (a
 	// loaded runner's process starts made those meaningless)
 	var mu sync.Mutex

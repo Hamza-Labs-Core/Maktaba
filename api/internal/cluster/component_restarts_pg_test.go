@@ -9,7 +9,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// Slot 0187 (#663 review): a joined machine (maktaba_worker) keeps its grants on
+// Slot 0190 (#663 review): a joined machine (maktaba_worker) keeps its grants on
 // component_restarts but cannot write a row, and no one can move a seq down: both runners
 // restart only when the seq moved up, so a lowered one hid every later request.
 func TestComponentRestartsAreTheHomesAndOnlyGoUp(t *testing.T) {

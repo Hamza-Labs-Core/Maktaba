@@ -114,7 +114,8 @@ class Navigator {
 
     /**
      * The home's features changed: a section that is no longer shown (Live TV went off for a
-     * viewer) gives way to Home, and its stack starts again.
+     * viewer) gives way to Home, and its stack starts again. A page of that feature on any other
+     * section (a channel opened from Home's What's On Now) closes too, with the pages above it.
      */
     fun follow(features: Capabilities) {
         for (s in Section.entries) {
@@ -122,6 +123,12 @@ class Navigator {
             val st = stacks.getValue(s)
             while (st.size > 1) st.removeAt(st.lastIndex)
             if (section == s) section = Section.Home
+        }
+        if (features.hides(Feature.LIVE_TV)) {
+            for (st in stacks.values) {
+                val at = st.indexOfFirst { it is Route.Channel }
+                if (at > 0) while (st.size > at) st.removeAt(st.lastIndex)
+            }
         }
     }
 }

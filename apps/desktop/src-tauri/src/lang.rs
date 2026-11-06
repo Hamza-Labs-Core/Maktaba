@@ -148,6 +148,13 @@ pub struct Words {
     pub open_logs: &'static str,
     /// The home's Components page in the browser (story 51.10).
     pub open_components: &'static str,
+    /// The recovery console (Epic 53 story 53.04), and the launcher's can't-start
+    /// cut-off with its choices (story 53.05; `{count}`, `{version}`).
+    pub open_recovery: &'static str,
+    pub cant_start: &'static str,
+    pub cant_start_retry: &'static str,
+    pub cant_start_safe: &'static str,
+    pub cant_start_rollback: &'static str,
     pub play: &'static str,
     pub pause_playback: &'static str,
     pub settings: &'static str,
@@ -258,6 +265,11 @@ pub static EN: Words = Words {
     pause: "Pause server",
     open_logs: "Open logs",
     open_components: "Open Components",
+    open_recovery: "Open recovery page",
+    cant_start: "Maktaba can't start: it stopped {count} times in a row",
+    cant_start_retry: "Try again",
+    cant_start_safe: "Start in safe mode",
+    cant_start_rollback: "Go back to version {version}",
     play: "Play",
     pause_playback: "Pause playback",
     settings: "Settings",
@@ -328,6 +340,11 @@ pub static AR: Words = Words {
     pause: "إيقاف الخادم مؤقتًا",
     open_logs: "فتح السجلات",
     open_components: "فتح المكوّنات",
+    open_recovery: "افتح صفحة الاستعادة",
+    cant_start: "تعذّر تشغيل مكتبة: توقف {count} مرات متتالية",
+    cant_start_retry: "حاول مجددًا",
+    cant_start_safe: "التشغيل في الوضع الآمن",
+    cant_start_rollback: "الرجوع إلى الإصدار {version}",
     play: "تشغيل",
     pause_playback: "إيقاف التشغيل مؤقتًا",
     settings: "الإعدادات",
@@ -734,6 +751,24 @@ mod tests {
         assert_eq!(
             fill(AR.has_a_problem, &[("reason", AR.no_answer)]),
             "في مكتبة مشكلة: الخادم لا يستجيب"
+        );
+    }
+
+    // Epic 53 (53.04, 53.05): the recovery page's and the can't-start words, in both
+    // languages, with their placeholders
+    #[test]
+    fn the_recovery_words_are_in_both_languages() {
+        for l in [Lang::En, Lang::Ar] {
+            let w = l.words();
+            for s in [w.open_recovery, w.cant_start_retry, w.cant_start_safe] {
+                assert!(!s.is_empty());
+            }
+            assert!(w.cant_start.contains("{count}"));
+            assert!(w.cant_start_rollback.contains("{version}"));
+        }
+        assert_ne!(
+            Lang::En.words().open_recovery,
+            Lang::Ar.words().open_recovery
         );
     }
 }

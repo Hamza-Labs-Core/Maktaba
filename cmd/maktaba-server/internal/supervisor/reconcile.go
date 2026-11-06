@@ -121,9 +121,13 @@ type Reconciler struct {
 	CachePath string
 	Bundle    string
 	// Off is [components] reconcile = "off".
-	Off   bool
-	Loops []*Loop
-	Log   io.Writer
+	Off bool
+	// SafeMode keeps every component but components.SafeModeComponents off for this
+	// boot, the always-on ones too (Epic 53 story 53.05), reason boot_flag; the desired
+	// state is never written.
+	SafeMode bool
+	Loops    []*Loop
+	Log      io.Writer
 	// Tick is how often a pass runs on what the supervisor holds (0: 1 s).
 	Tick time.Duration
 	// After is the store poll's timer (nil: time.After); Retry how often the first read
@@ -160,9 +164,22 @@ type Reconciler struct {
 	updates  chan desiredUpdate
 	passes   int
 	loopsCtx context.Context
-	health   map[string]*compHealth // story 51.14: transitions and last errors, by component
-	rssAt    time.Time              // the last RSS sample
-	rss      map[string]int64       // by component, MB, as last written (hysteresis: rssMoved)
+	health   map[string]*compHealth    // story 51.14: transitions and last errors, by component
+	rssAt    time.Time                 // the last RSS sample
+	rss      map[string]int64          // by component, MB, as last written (hysteresis: rssMoved)
+	phases   map[string]ComponentPhase // the last pass's phase of each component (Phases)
+}
+
+// Phases is each component's phase and reason as the last pass found them (Epic 53 story
+// 53.03: /status.json reads off from here, without Postgres).
+func (r *Reconciler) Phases() map[string]ComponentPhase {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make(map[string]ComponentPhase, len(r.phases))
+	for k, v := range r.phases {
+		out[k] = v
+	}
+	return out
 }
 
 // compHealth is what the status rows' detail carries of one component beyond its phase
@@ -476,6 +493,11 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 	d, has := desired[id]
 	dec := decision{gen: d.Generation}
 	switch {
+	case r.SafeMode && !components.SafeModeAllows(id):
+		dec.phase = components.PhaseOff
+		dec.conds = append(dec.conds, cond(CondReconciled, condFalse, ReasonBootFlag,
+			map[string]any{"flag": components.SafeModeFlag}))
+		return dec
 	case !comp.Switchable:
 		dec.open = true
 		return dec
@@ -762,7 +784,7 @@ func (r *Reconciler) applyGates(views []procView, loops map[string]decision) (ma
 	moved := 0
 	for i := len(comps) - 1; i >= 0; i-- {
 		id := comps[i].ID
-		if decs[id].open || !comps[i].Switchable {
+		if decs[id].open || (!comps[i].Switchable && !r.SafeMode) {
 			continue
 		}
 		for _, p := range procs[id] {
@@ -937,7 +959,7 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		} else {
 			phase = components.PhaseOff
 		}
-		if !dec.open && phase != components.PhaseDraining && comp.Switchable && !r.Off {
+		if !dec.open && phase != components.PhaseDraining && (comp.Switchable || r.SafeMode) && !r.Off {
 			phase = dec.phase
 		}
 		// open and running, but a model it needs is not on this machine (or its install
@@ -1003,10 +1025,23 @@ func (r *Reconciler) loopPhase(l *Loop) string {
 // report writes the status rows when they changed since the last write (an idle machine
 // writes nothing: N12). A failed write is tried again after statusRetry.
 func (r *Reconciler) report(ctx context.Context, decs map[string]decision) {
+	rows := r.rows(decs)
+	r.mu.Lock()
+	r.phases = make(map[string]ComponentPhase, len(rows))
+	for _, row := range rows {
+		ph := ComponentPhase{Phase: row.Phase}
+		for _, c := range row.Conditions {
+			if c.Reason != "" {
+				ph.Reason = c.Reason
+				break
+			}
+		}
+		r.phases[row.ID] = ph
+	}
+	r.mu.Unlock()
 	if r.Status == nil {
 		return
 	}
-	rows := r.rows(decs)
 	now := r.Now()
 	r.mu.Lock()
 	prev := r.written

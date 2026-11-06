@@ -229,6 +229,10 @@ func (h *Handler) AdminUpdateUser(w http.ResponseWriter, r *http.Request) {
 	// nodes drop their cached copy of this user's sessions (story 35.9 AC4): a new
 	// password, name or admin flag is re-read from the home at once
 	sessions.NotifyRevoked(sessions.Revocation{UserID: id, Reason: "user_updated"})
+	if req.IsAdmin != nil && !*req.IsAdmin {
+		// a demoted admin's recovery passes go (Epic 53 story 53.04)
+		_ = RevokeRecoveryPasses(id, h.now())
+	}
 	h.audit(r.Context(), securityaudit.Entry{
 		Event:       securityaudit.EventPasswordChanged,
 		ActorUserID: actor.UserID,
@@ -254,6 +258,7 @@ func (h *Handler) AdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sessions.NotifyRevoked(sessions.Revocation{UserID: id, Reason: "user_deleted"})
+	_ = RevokeRecoveryPasses(id, h.now())
 	h.audit(r.Context(), securityaudit.Entry{
 		Event:       securityaudit.EventPasswordChanged,
 		ActorUserID: actor.UserID,

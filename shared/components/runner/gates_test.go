@@ -96,3 +96,29 @@ func TestGatesLicence(t *testing.T) {
 		t.Fatalf("relay past its grace %+v", x)
 	}
 }
+
+// Epic 53 story 53.05: in safe mode every component but the safe set is off for this
+// boot (boot_flag), the always-on ones too; the desired state is read, never changed.
+func TestSafeModeKeepsAllButTheSafeSetOff(t *testing.T) {
+	t.Setenv(components.EnvSafeMode, "1")
+	cat := components.Default()
+	desired := map[string]store.Desired{"transcription": {ID: "transcription", Want: components.WantEnabled, Generation: 3}}
+	g := Gates(cat, desired, false)
+	for _, id := range []string{"core.pipeline", "core.streaming", "transcription"} {
+		if g[id].On || g[id].Reason != ReasonBootFlag || g[id].Phase != components.PhaseOff {
+			t.Errorf("%s in safe mode: %+v", id, g[id])
+		}
+	}
+	for _, id := range []string{"core.api", "core.updates", "core.postgres"} {
+		if !g[id].On {
+			t.Errorf("%s must run in safe mode: %+v", id, g[id])
+		}
+	}
+	if desired["transcription"].Generation != 3 || desired["transcription"].Want != components.WantEnabled {
+		t.Error("safe mode must not change the desired state")
+	}
+	t.Setenv(components.EnvSafeMode, "")
+	if g := Gates(cat, desired, false); !g["transcription"].On || !g["core.pipeline"].On {
+		t.Error("out of safe mode every gate is as the desired state says")
+	}
+}

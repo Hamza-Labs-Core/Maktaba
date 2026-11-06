@@ -1,0 +1,68 @@
+{
+ "text": "الحمد لله رب العالمين",
+ "start": 2.0,
+ "words": [
+  {
+   "start": 2.0,
+   "end": 2.4,
+   "text": "الحمد",
+   "prob": 1.0,
+   "flags": 4
+  },
+  {
+   "start": 2.4,
+   "end": 2.7,
+   "text": "لله",
+   "prob": 0.99,
+   "flags": 4
+  },
+  {
+   "start": 2.7,
+   "end": 2.9,
+   "text": "رب",
+   "prob": 0.97,
+   "flags": 4
+  },
+  {
+   "start": 2.9,
+   "end": 3.6,
+   "text": "العالمين",
+   "prob": 0.95,
+   "flags": 4
+  }
+ ],
+ "slots": [
+  {
+   "char_start": 0,
+   "char_len": 5,
+   "start_cs": 0,
+   "dur_cs": 40,
+   "prob": 255,
+   "flags": 4
+  },
+  {
+   "char_start": 6,
+   "char_len": 3,
+   "start_cs": 40,
+   "dur_cs": 30,
+   "prob": 252,
+   "flags": 4
+  },
+  {
+   "char_start": 10,
+   "char_len": 2,
+   "start_cs": 70,
+   "dur_cs": 20,
+   "prob": 247,
+   "flags": 4
+  },
+  {
+   "char_start": 13,
+   "char_len": 8,
+   "start_cs": 90,
+   "dur_cs": 70,
+   "prob": 242,
+   "flags": 4
+  }
+ ]
+}

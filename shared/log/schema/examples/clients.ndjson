@@ -1,0 +1,4 @@
+{"ts":"2026-11-06T10:00:03.000Z","level":"error","msg":"screen_failed","service":"apple.player","app":"com.hamzalabs.maktaba.player","app_version":"1.4.0","platform":"ios","os_version":"26.1","device_model":"iPhone17,1","install_id":"6c1e8f0a-3b2d-4c5e-8f7a-9b0c1d2e3f40","attrs":{"where":"home_shelves","kind":"unreachable","status":0}}
+{"ts":"2026-11-06T10:00:04.000Z","level":"warn","msg":"screen_failed","service":"android.remote","app":"com.hamzalabs.maktaba.remote","app_version":"1.4.0","platform":"android","os_version":"16","attrs":{"where":"live_tv","kind":"timeout"}}
+{"ts":"2026-11-06T10:00:05.000Z","level":"info","msg":"route_changed","service":"web","app_version":"v0.3.50","platform":"web","attrs":{"route":"/videos/:id"}}
+{"ts":"2026-11-06T10:00:06.000Z","level":"error","msg":"panic","service":"desktop","app_version":"0.3.50","platform":"macos","attrs":{"thread":"main","at":"src/shell.rs:12"}}

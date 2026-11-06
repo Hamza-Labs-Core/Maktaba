@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -365,8 +366,32 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 			t.Errorf("%s's generation moved on a restart: %d -> %s", id, gens[id], g)
 		}
 	}
-	if n := queryInt(t, db, `SELECT count(*) FROM audit_log WHERE action = 'component.seed'`); n != 1 {
+	if n := queryInt(t, db, `SELECT count(*) FROM audit_log WHERE action = 'component.seed'
+		AND NOT COALESCE((payload::jsonb ->> 'new')::boolean, false)`); n != 1 {
 		t.Errorf("%d seeds in the audit log, want 1", n)
+	}
+	// story 52.17: the components this release adds over the seeded one got one seed of
+	// their own, as the home's bundle says (on in it, off outside it), and a restart adds
+	// no other
+	if n := queryInt(t, db, `SELECT count(*) FROM audit_log WHERE action = 'component.seed'
+		AND COALESCE((payload::jsonb ->> 'new')::boolean, false)`); n > 1 {
+		t.Errorf("%d seeds of new components, want at most 1", n)
+	}
+	for _, s := range stringsOf(t, db, `SELECT id || ' ' || want FROM components WHERE updated_by = 'seed'
+		AND id IN ('review.words', 'runtime.lang', 'lang.ar', 'lang.en')`) {
+		id, want, _ := strings.Cut(s, " ")
+		c, ok := cat.Get(id)
+		if !ok {
+			continue
+		}
+		in := slices.Contains(c.Bundles, bundle.String)
+		switch {
+		case c.Kind == components.KindAsset && in && want != components.WantInstalled,
+			c.Kind == components.KindAsset && !in && want != components.WantAbsent,
+			c.Kind != components.KindAsset && in && want != components.WantEnabled,
+			c.Kind != components.KindAsset && !in && want != components.WantInstalled:
+			t.Errorf("new component %s is %s on a %s home", id, want, bundle.String)
+		}
 	}
 	// (the first start on the previous release found it superseded: the seeded home was
 	// made with the TV slots off, and startWithTV turned them on in the components)

@@ -30,12 +30,19 @@ type Policy struct {
 	MaxRestarts    int
 	Window         time.Duration
 	FailedRetry    time.Duration
-	ProbeInterval  time.Duration
-	ProbeTimeout   time.Duration
-	ProbeFailures  int
-	StartupGrace   time.Duration
-	AdminAddr      string
+	// FailedRetries slow retries that fail leave a crash-looping child down until a
+	// person acts (Epic 53 story 53.05); 0: never.
+	FailedRetries int
+	ProbeInterval time.Duration
+	ProbeTimeout  time.Duration
+	ProbeFailures int
+	StartupGrace  time.Duration
+	AdminAddr     string
 }
+
+// DefaultFailedRetries is how many slow retries of a crash loop fail before the child is
+// cut off (Epic 53 story 53.05: 5 exits in 10 minutes, then 3 retries 5 minutes apart).
+const DefaultFailedRetries = 3
 
 // DefaultPolicy is the policy a fresh install runs with.
 func DefaultPolicy() Policy {
@@ -88,6 +95,12 @@ func PolicyFromConfig(s config.SupervisorSection) (Policy, error) {
 	p.ProbeInterval = dur("probe_interval", s.ProbeInterval, def.ProbeInterval, time.Millisecond)
 	p.ProbeTimeout = dur("probe_timeout", s.ProbeTimeout, def.ProbeTimeout, time.Millisecond)
 	p.StartupGrace = dur("startup_grace", s.StartupGrace, def.StartupGrace, 0)
+	switch {
+	case s.FailedRetries == 0:
+		p.FailedRetries = DefaultFailedRetries
+	case s.FailedRetries > 0:
+		p.FailedRetries = s.FailedRetries
+	}
 	p.MaxRestarts = s.MaxRestarts
 	if p.MaxRestarts == 0 {
 		p.MaxRestarts = def.MaxRestarts
