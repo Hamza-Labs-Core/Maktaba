@@ -399,7 +399,8 @@ private fun VideoDetails(
                         label = { Text(stringResource(R.string.video_mark_watched)) },
                         leadingIcon = { Icon(if (page.watched) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle, null, Modifier.size(18.dp)) },
                         modifier = Modifier.heightIn(min = 48.dp).testTag("video-watched"),
-                    )
+                    )                    // Epic 56 story 56.12: the server queue's Play next and Add to queue
+                    QueueChips(video.id)
                 }
             }
 
@@ -509,4 +510,25 @@ internal fun formatDate(text: String?, locale: Locale): String? {
         ?: runCatching { LocalDate.parse(t.take(10)) }.getOrNull()
         ?: return null
     return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).withDecimalStyle(DecimalStyle.of(locale)).format(date)
+}
+
+/** Play next and Add to queue (a queue starts at this video when none plays). */
+@Composable
+private fun QueueChips(video: String) {
+    val client = LocalPlayerHome.current.client
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var said by androidx.compose.runtime.remember(video) { androidx.compose.runtime.mutableStateOf(false) }
+    listOf("next" to R.string.queue_play_next, "end" to R.string.queue_add).forEach { (where, label) ->
+        FilterChip(
+            selected = false,
+            onClick = {
+                scope.launch {
+                    said = runCatching { com.hamzalabs.maktaba.player.libraries.PlayerQueues.of(client).add(listOf(video), where) }.isSuccess
+                }
+            },
+            label = { Text(stringResource(label)) },
+            modifier = Modifier.heightIn(min = 48.dp).testTag("video-queue-$where"),
+        )
+    }
+    if (said) Text(stringResource(R.string.queue_added), style = MaterialTheme.typography.labelMedium, modifier = Modifier.testTag("video-queue-added"))
 }

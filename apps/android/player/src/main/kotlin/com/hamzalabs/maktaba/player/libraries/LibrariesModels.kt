@@ -190,7 +190,7 @@ class LibrariesState(private val client: ApiClient, private val signedOut: () ->
 }
 
 /** A library's tabs (FR-15). */
-enum class LibraryTab { Videos, Series }
+enum class LibraryTab { Videos, Series, Collections, Playlists }
 
 /** A library's grid sorts: newest first, or A to Z. */
 enum class LibrarySort(val sort: VideoSort, val order: String?) {
@@ -225,6 +225,14 @@ class LibraryState(private val client: ApiClient, val id: String, private val si
     var seriesLoaded by mutableStateOf(false)
         private set
     val moreSeries: Boolean get() = seriesNext != null
+
+    /** The grid's view as a library queue's filters (Play and Shuffle play it, Epic 56). */
+    fun queueFilters(): Map<String, String> = listOfNotNull(
+        "sort" to sort.sort.wire,
+        sort.order?.let { "order" to it },
+        language?.let { "language" to it },
+        speaker?.let { "speaker" to it },
+    ).toMap()
 
     /** The query the grid's next page is asked with. */
     fun query(cursor: String? = null) = VideoQuery(
