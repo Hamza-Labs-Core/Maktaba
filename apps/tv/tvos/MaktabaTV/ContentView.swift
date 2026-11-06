@@ -7,8 +7,20 @@ import SwiftUI
 struct ContentView: View {
     let session: AppSession
     let user: User
+    @Environment(\.client) private var client
+    @State private var queue: QueuePlayer?
 
     var body: some View {
+        tabs
+            .environment(\.queuePlayer, queue)
+            .task(id: client.map { ObjectIdentifier($0) }) { if let client { queue = QueuePlayer(client: client) } }
+            // Epic 56: the queue's player over every tab
+            .fullScreenCover(isPresented: Binding(get: { queue?.playback != nil }, set: { if !$0 { queue?.close() } })) {
+                if let queue { QueuePlayerScreen(queue: queue) }
+            }
+    }
+
+    private var tabs: some View {
         TabView {
             Tab("Home", systemImage: "house.fill") {
                 NavigationStack { HomeView() }

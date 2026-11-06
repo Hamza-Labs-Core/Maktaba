@@ -1,6 +1,8 @@
 package com.hamzalabs.maktaba.player.libraries
 
 import androidx.compose.foundation.horizontalScroll
+import com.hamzalabs.maktaba.core.queue.QueueSource
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -126,15 +128,21 @@ internal fun LibraryPage(id: String, nav: PlayerNavigator, embedded: Boolean, in
                     horizontalArrangement = Arrangement.spacedBy(MaktabaTokens.Spacing.s3),
                 ) {
                     hubRows(state, home.client)
+                    // Epic 56 story 56.12: Play and Shuffle the grid's view, through the server queue
+                    full("play") { PlayShuffleRow(home.client, QueueSource("library", id, state.queueFilters()), Modifier.padding(horizontal = sidePadding)) }
                     full("tabs") {
-                        PrimaryTabRow(selectedTabIndex = state.tab.ordinal) {
+                        PrimaryScrollableTabRow(selectedTabIndex = state.tab.ordinal, edgePadding = sidePadding) {
                             Tab(state.tab == LibraryTab.Videos, onClick = { state.tab = LibraryTab.Videos }, modifier = Modifier.testTag("library-tab-videos"), text = { Text(stringResource(R.string.library_tab_videos)) })
                             Tab(state.tab == LibraryTab.Series, onClick = { state.tab = LibraryTab.Series }, modifier = Modifier.testTag("library-tab-series"), text = { Text(stringResource(R.string.libraries_tab_series)) })
+                            Tab(state.tab == LibraryTab.Collections, onClick = { state.tab = LibraryTab.Collections }, modifier = Modifier.testTag("library-tab-collections"), text = { Text(stringResource(R.string.library_tab_collections)) })
+                            Tab(state.tab == LibraryTab.Playlists, onClick = { state.tab = LibraryTab.Playlists }, modifier = Modifier.testTag("library-tab-playlists"), text = { Text(stringResource(R.string.library_tab_playlists)) })
                         }
                     }
                     when (state.tab) {
                         LibraryTab.Videos -> videos(state, home.client, onRetry = { scope.launch { state.reload() } }, onMore = { scope.launch { state.loadMore() } })
                         LibraryTab.Series -> series(state, home.client, nav, onMore = { scope.launch { state.loadSeries() } })
+                        LibraryTab.Collections -> full("collections") { CollectionsList(home.client, id) }
+                        LibraryTab.Playlists -> full("playlists") { PlaylistsList(home.client, id) }
                     }
                 }
             }
@@ -242,6 +250,8 @@ private fun Filters(state: LibraryState) {
                 tag = "filter-speaker",
             ) { state.speaker = it }
         }
+        // Epic 56 story 56.12: the view as a smart playlist (it plays on the TV too)
+        SaveSmartPlaylist(state)
     }
 }
 

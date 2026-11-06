@@ -56,6 +56,28 @@ type Collection struct {
 	// of them (its poster mosaic). A smart one's are its query's.
 	Videos         *int64   `json:"videos,omitempty"`
 	PosterVideoIDs []string `json:"poster_video_ids,omitempty"`
+	// Epic 56 (slot 0193): a collection a pipeline stage keeps in step with
+	// its source (youtube_playlist, youtube_channel, plex) and an admin's
+	// choices on any collection, kept across the stage's runs.
+	SourceKind    *string `json:"source_kind,omitempty"`
+	SourceRef     *string `json:"source_ref,omitempty"`
+	NameOverride  *string `json:"name_override,omitempty"`
+	Hidden        bool    `json:"hidden"`
+	ShowOnLibrary bool    `json:"show_on_library"`
+	ShowOnHome    bool    `json:"show_on_home"`
+	SortTitle     *string `json:"sort_title,omitempty"`
+}
+
+// Automatic tells a collection its source keeps in step: its members and
+// name are the source's (an admin renames it with name_override).
+func (c Collection) Automatic() bool { return c.SourceKind != nil }
+
+// TypeAutomaticCollection is the 409 of a member or name edit on a sourced collection.
+const TypeAutomaticCollection = "https://maktaba.tv/problems/automatic_collection"
+
+func automaticRefused() *httperror.Error {
+	return httperror.Conflict(TypeAutomaticCollection,
+		"its source keeps this collection's videos; duplicate it as a curated collection to change them")
 }
 
 // itemOrder is the ORDER BY of a manual collection's items ci (videos v,
@@ -85,6 +107,13 @@ type PatchRequest struct {
 	Description *string         `json:"description,omitempty"`
 	SmartQuery  json.RawMessage `json:"smart_query,omitempty"`
 	Items       []ItemEntry     `json:"items,omitempty"`
+	// Epic 56 story 56.08: the display choices, the only fields a sourced
+	// collection takes. An empty name_override or sort_title clears it.
+	NameOverride  *string `json:"name_override,omitempty"`
+	Hidden        *bool   `json:"hidden,omitempty"`
+	ShowOnLibrary *bool   `json:"show_on_library,omitempty"`
+	ShowOnHome    *bool   `json:"show_on_home,omitempty"`
+	SortTitle     *string `json:"sort_title,omitempty"`
 }
 
 // ItemEntry is one item of PATCH's items: the list replaces the items the
@@ -113,6 +142,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/collections/{id}/items", h.GetItems)
 	r.Post("/api/collections/{id}/items", h.AddItem)
 	r.Delete("/api/collections/{id}/items/{video_id}", h.RemoveItem)
+	r.Post("/api/collections/{id}/duplicate", h.Duplicate)
 }
 
 // List returns the collections the caller may see: every visible library's,
@@ -126,7 +156,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	lib := r.URL.Query().Get("library")
-	q := `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered
+	q := `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered, source_kind, source_ref, name_override, hidden_at, show_on_library, show_on_home, sort_title
 		FROM collections ORDER BY created_at DESC`
 	var args []any
 	if lib != "" {
@@ -134,7 +164,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, httperror.NotFound("library "+lib))
 			return
 		}
-		q = `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered
+		q = `SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered, source_kind, source_ref, name_override, hidden_at, show_on_library, show_on_home, sort_title
 			FROM collections WHERE library_id = $1 AND dismissed_at IS NULL ORDER BY name, id`
 		args = append(args, lib)
 	}
@@ -377,6 +407,23 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, e)
 		return
 	}
+	if c0.Automatic() && (req.Name != nil || req.Description != nil || len(req.SmartQuery) > 0 || req.Items != nil) {
+		httperror.Write(w, r, automaticRefused())
+		return
+	}
+	for _, f := range []struct {
+		name string
+		v    *string
+	}{{"name_override", req.NameOverride}, {"sort_title", req.SortTitle}} {
+		if f.v != nil {
+			t := strings.TrimSpace(*f.v)
+			if len([]rune(t)) > 200 {
+				httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: f.name, Message: "at most 200 characters"}}))
+				return
+			}
+			*f.v = t
+		}
+	}
 	if req.Name != nil {
 		trimmed := strings.TrimSpace(*req.Name)
 		if trimmed == "" {
@@ -444,6 +491,35 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		args = append(args, true)
 		idx++
 	}
+	for _, f := range []struct {
+		col string
+		v   *string
+	}{{"name_override", req.NameOverride}, {"sort_title", req.SortTitle}} {
+		if f.v != nil {
+			sets = append(sets, f.col+" = $"+itoa(idx))
+			args = append(args, sqlNullString(*f.v))
+			idx++
+		}
+	}
+	if req.Hidden != nil {
+		sets = append(sets, "hidden_at = $"+itoa(idx))
+		if *req.Hidden {
+			args = append(args, h.now())
+		} else {
+			args = append(args, nil)
+		}
+		idx++
+	}
+	for _, f := range []struct {
+		col string
+		v   *bool
+	}{{"show_on_library", req.ShowOnLibrary}, {"show_on_home", req.ShowOnHome}} {
+		if f.v != nil {
+			sets = append(sets, f.col+" = $"+itoa(idx))
+			args = append(args, *f.v)
+			idx++
+		}
+	}
 	if len(sets) > 0 {
 		sets = append(sets, "updated_at = $"+itoa(idx))
 		args = append(args, h.now())
@@ -497,6 +573,8 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 	h.audit(r, p, "collection-patched", c0.LibraryID, map[string]any{
 		"collection_id": id, "name": req.Name != nil, "description": req.Description != nil,
 		"smart_query": len(req.SmartQuery) > 0, "items": len(req.Items),
+		"name_override": req.NameOverride != nil, "hidden": req.Hidden, "show_on_library": req.ShowOnLibrary,
+		"show_on_home": req.ShowOnHome, "sort_title": req.SortTitle != nil,
 	})
 	c, _ := h.loadCollection(r, id)
 	common.WriteJSON(w, r, http.StatusOK, c)
@@ -663,6 +741,10 @@ func (h *Handler) AddItem(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.Unprocessable([]httperror.FieldError{{Field: "video_ids", Message: "a smart collection's items are its query's"}}))
 		return
 	}
+	if c.Automatic() {
+		httperror.Write(w, r, automaticRefused())
+		return
+	}
 	if req.VideoIDs != nil {
 		h.appendItems(w, r, c, p, req.VideoIDs)
 		return
@@ -744,6 +826,10 @@ func (h *Handler) RemoveItem(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if c.Automatic() {
+		httperror.Write(w, r, automaticRefused())
+		return
+	}
 	vid := chi.URLParam(r, "video_id")
 	_, err := h.DB.ExecContext(r.Context(), `
 		DELETE FROM collection_items WHERE collection_id=$1 AND video_id=$2
@@ -758,7 +844,7 @@ func (h *Handler) RemoveItem(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) loadCollection(r *http.Request, id string) (Collection, error) {
 	row := h.DB.QueryRowContext(r.Context(), `
-		SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered
+		SELECT id, library_id, name, description, is_smart, smart_query, created_at, updated_at, hand_ordered, source_kind, source_ref, name_override, hidden_at, show_on_library, show_on_home, sort_title
 		FROM collections WHERE id = $1
 	`, id)
 	return scanCollection(row)
@@ -790,10 +876,22 @@ func scanCollection(rs rowScanner) (Collection, error) {
 	var c Collection
 	var desc sql.NullString
 	var sq []byte
-	var created, updated nullTime
-	if err := rs.Scan(&c.ID, &c.LibraryID, &c.Name, &desc, &c.IsSmart, &sq, &created, &updated, &c.HandOrdered); err != nil {
+	var created, updated, hidden nullTime
+	var sk, sr, no, st sql.NullString
+	if err := rs.Scan(&c.ID, &c.LibraryID, &c.Name, &desc, &c.IsSmart, &sq, &created, &updated, &c.HandOrdered,
+		&sk, &sr, &no, &hidden, &c.ShowOnLibrary, &c.ShowOnHome, &st); err != nil {
 		return Collection{}, err
 	}
+	for _, f := range []struct {
+		from sql.NullString
+		to   **string
+	}{{sk, &c.SourceKind}, {sr, &c.SourceRef}, {no, &c.NameOverride}, {st, &c.SortTitle}} {
+		if f.from.Valid {
+			v := f.from.String
+			*f.to = &v
+		}
+	}
+	c.Hidden = !hidden.T.IsZero()
 	c.CreatedAt, c.UpdatedAt = created.T, updated.T
 	if desc.Valid {
 		c.Description = &desc.String
@@ -880,4 +978,105 @@ func (n *nullTime) parse(s string) error {
 		}
 	}
 	return fmt.Errorf("nullTime: bad timestamp %q", s)
+}
+
+// DuplicateRequest is the body of POST /api/collections/{id}/duplicate.
+type DuplicateRequest struct {
+	Name string `json:"name,omitempty"`
+}
+
+// Duplicate implements POST /api/collections/{id}/duplicate (Epic 56 story
+// 56.08): a new curated collection of the library with the collection's
+// current members in its order (a smart one's current matches); the source
+// never changes it again. Admin only, as every collection write. 201 and the
+// new collection.
+func (h *Handler) Duplicate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	c, p, ok := h.writableCollection(w, r, id)
+	if !ok {
+		return
+	}
+	var req DuplicateRequest
+	if r.ContentLength != 0 {
+		if e := common.ReadJSON(r, &req, 8<<10); e != nil {
+			httperror.Write(w, r, e)
+			return
+		}
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		base := c.Name
+		if c.NameOverride != nil {
+			base = *c.NameOverride
+		}
+		name = base + " (2)"
+	}
+	ctx := r.Context()
+	var ids []string
+	if c.IsSmart {
+		items, _, err := h.LiveItemsFor(ctx, p, c, 0, maxItems)
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("evaluate").Wrap(err))
+			return
+		}
+		for _, it := range items {
+			ids = append(ids, it.VideoID)
+		}
+	} else {
+		rows, err := h.DB.QueryContext(ctx, `SELECT ci.video_id FROM collection_items ci
+			JOIN collections c ON c.id = ci.collection_id JOIN videos v ON v.id = ci.video_id
+			WHERE ci.collection_id = $1 AND `+visibleVideo+` ORDER BY `+itemOrder, id)
+		if err != nil {
+			httperror.Write(w, r, httperror.Internal("items").Wrap(err))
+			return
+		}
+		for rows.Next() {
+			var vid string
+			if err := rows.Scan(&vid); err != nil {
+				rows.Close()
+				httperror.Write(w, r, httperror.Internal("scan item").Wrap(err))
+				return
+			}
+			ids = append(ids, vid)
+		}
+		rows.Close()
+	}
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("tx").Wrap(err))
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	newID := uuid.NewString()
+	var actor any
+	if _, err := uuid.Parse(p.UserID); err == nil {
+		actor = p.UserID
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO collections (id, library_id, name, description, is_smart, created_by, created_at, updated_at, hand_ordered)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $8)`, newID, c.LibraryID, name, c.Description, false, actor, h.now(), true); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			httperror.Write(w, r, nameExists())
+			return
+		}
+		httperror.Write(w, r, httperror.Internal("duplicate").Wrap(err))
+		return
+	}
+	for i, vid := range ids {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1, $2, $3)
+			ON CONFLICT (collection_id, video_id) DO NOTHING`, newID, vid, (i+1)*10); err != nil {
+			httperror.Write(w, r, httperror.Internal("duplicate items").Wrap(err))
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		httperror.Write(w, r, httperror.Internal("commit").Wrap(err))
+		return
+	}
+	h.audit(r, p, "collection-duplicated", c.LibraryID, map[string]any{"collection_id": id, "new_collection_id": newID, "items": len(ids)})
+	out, err := h.loadCollection(r, newID)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load").Wrap(err))
+		return
+	}
+	common.WriteJSON(w, r, http.StatusCreated, out)
 }

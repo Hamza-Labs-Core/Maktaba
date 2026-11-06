@@ -36,7 +36,13 @@ import {
   libraryTabPath,
   type CollectionsPage,
 } from "../../lib/libraryTabs";
-import { CollectionsTab, LibraryCollectionCard, SeriesTab, collectionsKey } from "./LibraryTabs";
+import {
+  CollectionsTab,
+  LibraryCollectionCard,
+  PlaylistsTab,
+  SeriesTab,
+  collectionsKey,
+} from "./LibraryTabs";
 import { SERVER_PAGES } from "../../lib/edition";
 import { LoadError } from "../../components/LoadError";
 import { LibraryPagePlaceholder, Loading } from "../../components/Placeholders";
@@ -44,7 +50,7 @@ import { usePageData } from "../../lib/usePageData";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const TABS = ["overview", "browse", "series", "collections"] as const;
+const TABS = ["overview", "browse", "series", "collections", "playlists"] as const;
 type Tab = (typeof TABS)[number];
 /** Cards a row of the Overview shows. */
 const ROW_CARDS = 20;
@@ -296,6 +302,11 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
             id: "collections",
             label: t("libraryPage.tab.collections"),
             content: <CollectionsTab libraryId={libraryId} />,
+          },
+          {
+            id: "playlists",
+            label: t("libraryPage.tab.playlists"),
+            content: <PlaylistsTab libraryId={libraryId} />,
           },
         ]}
       />

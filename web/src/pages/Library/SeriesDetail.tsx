@@ -13,7 +13,7 @@
 // button targets the next unwatched/in-progress episode in lesson order,
 // whatever the sort. Season 0 is a "Specials" row. RTL-correct for Arabic.
 import { useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
@@ -30,6 +30,7 @@ import { TitleRow } from "../../help/HelpLink";
 import { seriesPictureUrl } from "./SeriesBrowser";
 import { errorText } from "../../lib/errorText";
 import { LoadError } from "../../components/LoadError";
+import { playSource, watchPath, type QueueSourceRef } from "../../lib/playQueue";
 
 interface Episode {
   video_id: string;
@@ -44,6 +45,8 @@ interface Episode {
 }
 interface Season {
   season: number;
+  /** the season's series_seasons row: a season queue's source (Epic 56) */
+  id?: string;
   episodes: Episode[];
 }
 interface EpisodesResponse {
@@ -75,6 +78,23 @@ export function SeriesDetail() {
   const { user } = useAuth();
   const toast = useToast();
   const [accepting, setAccepting] = useState(false);
+  const navigate = useNavigate();
+  const seriesId = id ?? "";
+  // which Play is starting (no second press is sent meanwhile)
+  const [starting, setStarting] = useState<string | null>(null);
+  async function play(source: QueueSourceRef, shuffle: boolean) {
+    if (starting) return;
+    setStarting(source.kind);
+    try {
+      const first = await playSource(source, { shuffle });
+      if (first) navigate(watchPath(first), { state: { autoplay: true } });
+      else toast.show({ tone: "info", message: t("playQueue.empty") });
+    } catch (e) {
+      toast.show({ tone: "error", message: errorText(e, t) });
+    } finally {
+      setStarting(null);
+    }
+  }
   const [headerBroken, setHeaderBroken] = useState(false);
   const [params, setParams] = useSearchParams();
   // the person's pick; without one, the server's newest-added order
@@ -152,7 +172,8 @@ export function SeriesDetail() {
           ...ghosts,
         ];
         if (byEpisode) cells.sort((a, b) => cellNo(a) - cellNo(b));
-        return { season, cells };
+        const id = data.seasons.find((x) => x.season === season)?.id;
+        return { season, cells, id };
       });
   }, [data, gapsBySeason, byEpisode]);
 
@@ -236,10 +257,22 @@ export function SeriesDetail() {
               <Link
                 to={`/videos/${data.next_episode.video_id}/watch`}
                 className="mkt-btn mkt-btn--primary"
+                onClick={(e) => {
+                  // Continue plays on through the series (a series queue, story 56.13)
+                  e.preventDefault();
+                  void play({ kind: "series", id: seriesId }, false);
+                }}
               >
                 ▶ {t("series.continue")}
               </Link>
             )}
+            <Button
+              variant="secondary"
+              onClick={() => void play({ kind: "series", id: seriesId }, true)}
+              loading={starting === "series"}
+            >
+              ⤮ {t("series.shuffle")}
+            </Button>
             <label className="mkt-field">
               <span className="mkt-field__label">{t("library.sort")}</span>
               <select
@@ -279,6 +312,24 @@ export function SeriesDetail() {
             <h2 className="mkt-season__title">
               {s.season === 0 ? t("series.specials") : t("series.season", { n: String(s.season) })}
             </h2>
+            {s.id ? (
+              <div className="mkt-season__actions">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void play({ kind: "season", id: s.id! }, false)}
+                >
+                  ▶ {t("series.season.play")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void play({ kind: "season", id: s.id! }, true)}
+                >
+                  ⤮ {t("series.season.shuffle")}
+                </Button>
+              </div>
+            ) : null}
             <ul className="mkt-episode-grid" role="list">
               {s.cells.map((c) =>
                 c.kind === "ep" ? (

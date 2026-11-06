@@ -207,6 +207,28 @@
         }
       }
     },
+    "Add to queue" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضف إلى قائمة الانتظار"
+          }
+        }
+      }
+    },
+    "Added to the queue" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُضيف إلى قائمة الانتظار"
+          }
+        }
+      }
+    },
     "Any language" : {
       "comment" : "A library's language filter: off",
       "localizations" : {
@@ -251,6 +273,17 @@
         }
       }
     },
+    "Collections" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المجموعات"
+          }
+        }
+      }
+    },
     "Continue" : {
       "comment" : "A series' button: open its next episode",
       "localizations" : {
@@ -269,6 +302,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تابع المشاهدة"
+          }
+        }
+      }
+    },
+    "Continue your queue" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تابع قائمة الانتظار"
           }
         }
       }
@@ -405,6 +449,17 @@
         }
       }
     },
+    "No collections in this library yet." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا مجموعات في هذه المكتبة بعد."
+          }
+        }
+      }
+    },
     "No libraries yet" : {
       "comment" : "The Libraries grid with no library",
       "localizations" : {
@@ -449,6 +504,17 @@
         }
       }
     },
+    "None of your playlists has videos from this library." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تحتوي أيٌّ من قوائم تشغيلك على مقاطع من هذه المكتبة."
+          }
+        }
+      }
+    },
     "Not available" : {
       "comment" : "A library or series that is gone or not shared",
       "localizations" : {
@@ -456,6 +522,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "غير متاح"
+          }
+        }
+      }
+    },
+    "Nothing to play here." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يوجد ما يُشغَّل هنا."
           }
         }
       }
@@ -511,6 +588,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مثبّتة"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل"
+          }
+        }
+      }
+    },
+    "Play next" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل تاليًا"
+          }
+        }
+      }
+    },
+    "Playlists" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قوائم التشغيل"
+          }
+        }
+      }
+    },
+    "Plex collection" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مجموعة Plex"
           }
         }
       }
@@ -581,6 +702,28 @@
         }
       }
     },
+    "Shuffle" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل عشوائي"
+          }
+        }
+      }
+    },
+    "Smart" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ذكية"
+          }
+        }
+      }
+    },
     "Sort" : {
       "comment" : "A library's sort menu, spoken",
       "localizations" : {
@@ -599,6 +742,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "المتحدث"
+          }
+        }
+      }
+    },
+    "The queue could not be loaded." : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحميل قائمة الانتظار."
           }
         }
       }
@@ -654,6 +808,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مُشاهَد"
+          }
+        }
+      }
+    },
+    "YouTube channel" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قناة يوتيوب"
+          }
+        }
+      }
+    },
+    "YouTube playlist" : {
+      "comment" : "Epic 56: the library view",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قائمة تشغيل يوتيوب"
           }
         }
       }

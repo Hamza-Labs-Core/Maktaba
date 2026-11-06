@@ -11,6 +11,7 @@ import SwiftUI
 /// shows as a tile whose Try again reads Home again.
 struct HomeScreen: View {
     let context: PlayerContext
+    @State private var queueDoc: QueueDoc?
 
     @State private var model: HomeModel
     /// A route opened by a button rather than a link: the player from the hero's Play or a
@@ -91,6 +92,10 @@ struct HomeScreen: View {
     private var rows: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s6) {
+                // Epic 56: the queue last used on any device, to continue
+                if let q = queueDoc {
+                    ContinueQueueRow(context: context, doc: q).padding(.horizontal, MaktabaTokens.Spacing.s4)
+                }
                 if model.stale {
                     Text("Couldn't refresh — showing the last rows.", tableName: "Home",
                          comment: "Home's refresh failed; the rows shown are the last ones read")
@@ -116,6 +121,7 @@ struct HomeScreen: View {
             .padding(.bottom, MaktabaTokens.Spacing.s8)
         }
         .refreshable { await model.load() }
+        .task { queueDoc = await ContinueQueueRow.recent(context.client) }
     }
 
     private var liveTVOn: Bool { context.session.capabilities.current.isOn(.liveTV) }

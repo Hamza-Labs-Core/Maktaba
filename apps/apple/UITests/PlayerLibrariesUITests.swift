@@ -88,6 +88,24 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         XCTAssertEqual(pages, [nil, "c2"], "the first page, then the next by cursor, then the end")
     }
 
+    /// Epic 56 story 56.12 T01: Shuffle on a library makes one shuffled library queue of the grid's
+    /// view, and the player opens at its first item.
+    func testShuffleMakesALibraryQueue() throws {
+        launchSignedIn(section: "libraries", open: "library/lib-docs")
+        XCTAssertTrue(element("screen.library").waitForExistence(timeout: 20))
+        let shuffle = app.buttons["queue.shuffle"]
+        XCTAssertTrue(shuffle.waitForExistence(timeout: 10), "Shuffle on the library")
+        shuffle.tap()
+        let made = waitForRequest { $0.method == "POST" && $0.path == "/api/me/play-queues" }
+        XCTAssertNotNil(made, "one queue made; the home saw \(home.seen)")
+        let body = try JSONSerialization.jsonObject(with: made?.body ?? Data()) as? [String: Any]
+        XCTAssertEqual(body?["shuffle"] as? Bool, true)
+        let source = body?["source"] as? [String: Any]
+        XCTAssertEqual(source?["kind"] as? String, "library")
+        XCTAssertEqual(source?["id"] as? String, "lib-docs")
+        XCTAssertEqual((source?["filters"] as? [String: String])?["sort"], "created_at")
+    }
+
     /// Sort and the facets (language, speaker) change the grid's request.
     func testFacetsAndSortChangeTheRequestsQuery() {
         launchSignedIn(section: "libraries", open: "library/lib-docs")

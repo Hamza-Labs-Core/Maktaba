@@ -87,6 +87,15 @@ func testDB(t *testing.T) *sql.DB {
 	// slot 0163's column (its file runs through the SQLite migrator, which
 	// reads ADD COLUMN IF NOT EXISTS: TestSQLiteMigrate_AppliesEveryTwinToAFreshDatabase)
 	exec(`ALTER TABLE user_playlists ADD COLUMN hand_ordered INTEGER NOT NULL DEFAULT 0`)
+	// slot 0192's columns (smart playlists) and the collections a library's
+	// rows read (slots 0033, 0076, 0163, 0193)
+	exec(`ALTER TABLE user_playlists ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual'`)
+	exec(`ALTER TABLE user_playlists ADD COLUMN smart_query TEXT`)
+	exec(`CREATE TABLE collections (id TEXT PRIMARY KEY, library_id TEXT, name TEXT, is_smart INTEGER NOT NULL DEFAULT 0,
+		smart_query TEXT, hand_ordered INTEGER NOT NULL DEFAULT 0, dismissed_at TEXT, source_kind TEXT, source_ref TEXT,
+		name_override TEXT, hidden_at TEXT, show_on_library INTEGER NOT NULL DEFAULT 0, show_on_home INTEGER NOT NULL DEFAULT 0,
+		sort_title TEXT)`)
+	exec(`CREATE TABLE collection_items (collection_id TEXT, video_id TEXT, position INTEGER, PRIMARY KEY (collection_id, video_id))`)
 	exec(`INSERT INTO libraries (id, name) VALUES ($1,'Alpha'), ($2,'Beta'), ($3,'Gamma')`, libA, libB, libC)
 	day := func(d int) string { return iso(now.AddDate(0, 0, -d)) }
 	for _, r := range []struct {

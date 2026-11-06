@@ -47,12 +47,15 @@ fun MediaCard(
     /** On the focusable card itself (a FocusRequester goes here). */
     cardModifier: Modifier = Modifier,
     onClick: () -> Unit = {},
+    /** A long press (Epic 56: the card menu); null for none. */
+    onLongClick: (() -> Unit)? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.width(width)) {
         Card(
             onClick = onClick,
+            onLongClick = onLongClick,
             modifier = cardModifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)

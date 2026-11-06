@@ -23,7 +23,9 @@ import {
   updatePlaylist,
   type PlaylistDetail,
 } from "../../lib/me";
-import { shuffled, startQueue, watchPath } from "../../lib/playQueue";
+import { playSource, watchPath } from "../../lib/playQueue";
+import { editRulesPath, rulesInWords } from "../../lib/smartRules";
+import { Badge } from "@ds/components/Badge/Badge";
 import { TitleRow } from "../../help/HelpLink";
 import { VideoPoster, formatDuration } from "../../components/VideoViews";
 import { LoadError } from "../../components/LoadError";
@@ -93,12 +95,21 @@ function PlaylistOf({ id }: { id: string }) {
   }
 
   const { playlist, items } = doc;
+  // a smart playlist changes by its rules: no item is moved or removed by hand
+  const smart = playlist.kind === "smart";
   const ids = items.map((v) => v.id);
 
-  function playFrom(index: number, shuffle = false) {
-    const list = shuffle ? shuffled(ids) : ids;
-    const first = startQueue(list, shuffle ? 0 : index);
-    if (first) navigate(watchPath(first), { state: { autoplay: true } });
+  // one server queue (Epic 56 story 56.13): it moves to the TV and the phone too
+  async function playFrom(index: number, shuffle = false) {
+    try {
+      const first = await playSource(
+        { kind: "playlist", id: playlist.id },
+        { shuffle, startVideoId: shuffle ? undefined : ids[index] }
+      );
+      if (first) navigate(watchPath(first), { state: { autoplay: true } });
+    } catch {
+      /* the page stays; the button can be pressed again */
+    }
   }
 
   async function move(index: number, delta: number) {
@@ -205,6 +216,12 @@ function PlaylistOf({ id }: { id: string }) {
           {t("libraries.videos", { n: n(items.length) })}
           {playlist.duration_sec > 0 && ` · ${formatDuration(playlist.duration_sec)}`}
         </span>
+        {smart && playlist.smart_query && (
+          <p className="mkt-playlist__rules" aria-label={t("playlists.smart.rules")}>
+            <Badge tone="accent">{t("playlists.smart.badge")}</Badge>{" "}
+            <bdi>{rulesInWords(playlist.smart_query, t, (x) => n(x)).join(" · ")}</bdi>
+          </p>
+        )}
         {playlist.description && (
           <p className="mkt-muted" dir="auto">
             {playlist.description}
@@ -221,6 +238,14 @@ function PlaylistOf({ id }: { id: string }) {
           >
             ⇄ {t("browse.shuffle")}
           </Button>
+          {smart && playlist.smart_query && (
+            <Link
+              className="mkt-btn mkt-btn--secondary"
+              to={editRulesPath(playlist.smart_query, playlist.id)}
+            >
+              {t("playlists.smart.editRules")}
+            </Link>
+          )}
           {!renaming && (
             <Button
               variant="ghost"
@@ -239,10 +264,14 @@ function PlaylistOf({ id }: { id: string }) {
       </header>
 
       {items.length === 0 ? (
-        <EmptyState
-          title={t("playlists.emptyList.title")}
-          description={t("playlists.emptyList.desc")}
-        />
+        smart ? (
+          <EmptyState title={t("playlists.smart.empty")} />
+        ) : (
+          <EmptyState
+            title={t("playlists.emptyList.title")}
+            description={t("playlists.emptyList.desc")}
+          />
+        )
       ) : (
         <ol className="mkt-plitems">
           {items.map((v, i) => {
@@ -278,33 +307,37 @@ function PlaylistOf({ id }: { id: string }) {
                   >
                     ▶ {t("playlists.playFrom")}
                   </Button>
-                  <button
-                    type="button"
-                    className="mkt-btn mkt-btn--ghost"
-                    aria-label={t("libraries.moveUp", { name: title })}
-                    disabled={busy || i === 0}
-                    onClick={() => void move(i, -1)}
-                  >
-                    <span aria-hidden="true">↑</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="mkt-btn mkt-btn--ghost"
-                    aria-label={t("libraries.moveDown", { name: title })}
-                    disabled={busy || i === items.length - 1}
-                    onClick={() => void move(i, 1)}
-                  >
-                    <span aria-hidden="true">↓</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="mkt-btn mkt-btn--ghost"
-                    aria-label={t("playlists.removeNamed", { name: title })}
-                    disabled={busy}
-                    onClick={() => void remove(v.id)}
-                  >
-                    <span aria-hidden="true">✕</span>
-                  </button>
+                  {!smart && (
+                    <>
+                      <button
+                        type="button"
+                        className="mkt-btn mkt-btn--ghost"
+                        aria-label={t("libraries.moveUp", { name: title })}
+                        disabled={busy || i === 0}
+                        onClick={() => void move(i, -1)}
+                      >
+                        <span aria-hidden="true">↑</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="mkt-btn mkt-btn--ghost"
+                        aria-label={t("libraries.moveDown", { name: title })}
+                        disabled={busy || i === items.length - 1}
+                        onClick={() => void move(i, 1)}
+                      >
+                        <span aria-hidden="true">↓</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="mkt-btn mkt-btn--ghost"
+                        aria-label={t("playlists.removeNamed", { name: title })}
+                        disabled={busy}
+                        onClick={() => void remove(v.id)}
+                      >
+                        <span aria-hidden="true">✕</span>
+                      </button>
+                    </>
+                  )}
                 </span>
               </li>
             );

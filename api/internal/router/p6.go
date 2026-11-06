@@ -33,6 +33,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/jobs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/libraries"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/models"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/playqueue"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/recommendations"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/reports"
@@ -211,6 +212,8 @@ func MountP6(r chi.Router, d P6Deps) {
 		return err
 	}
 	videoHandler.Mount(r)
+	// Epic 56 story 56.09: smart playlists are GET /api/videos run as their owner
+	browseHandler.ListVideos = videoHandler.List
 
 	// Story 18.2 AC2/AC4 (HLB-333): the search handler gets an
 	// in-process embedding-result cache (reusing the orphaned generic
@@ -327,6 +330,13 @@ func MountP6(r chi.Router, d P6Deps) {
 
 	seriesHandler := &seriesh.Handler{DB: d.DB}
 	seriesHandler.Mount(r)
+	// Epic 56 story 56.01: the play queue reads its sources through their list
+	// routes, in process and as the caller, so its order and its access are theirs
+	pqHandler := &playqueue.Handler{DB: d.DB, Sources: playqueue.Sources{
+		Videos: videoHandler.List, Video: videoHandler.Detail, SeriesEpisodes: seriesHandler.Episodes,
+		CollectionItems: colHandler.GetItems, AutoCollection: browseHandler.AutoCollection, Playlist: browseHandler.GetPlaylist,
+	}}
+	pqHandler.Mount(r)
 
 	devHandler := &devices.Handler{DB: d.DB}
 	devHandler.Mount(r)

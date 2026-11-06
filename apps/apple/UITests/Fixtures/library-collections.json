@@ -1,0 +1,45 @@
+{
+ "items": [
+  {
+   "kind": "youtube",
+   "subkind": "playlist",
+   "id": "col-yt",
+   "name": "دروس الفقه",
+   "videos": 3,
+   "poster_video_ids": [
+    "v1"
+   ],
+   "automatic": true,
+   "source_kind": "youtube_playlist"
+  },
+  {
+   "kind": "plex",
+   "id": "col-plex",
+   "name": "Plex picks",
+   "videos": 2,
+   "poster_video_ids": [
+    "v2"
+   ],
+   "automatic": true,
+   "source_kind": "plex"
+  },
+  {
+   "kind": "curated",
+   "id": "col-mine",
+   "name": "Picked",
+   "videos": 2,
+   "poster_video_ids": [
+    "v3"
+   ],
+   "automatic": false
+  }
+ ],
+ "counts": {
+  "all": 3,
+  "youtube": 1,
+  "plex": 1,
+  "curated": 1
+ },
+ "total": 3,
+ "next": null
+}

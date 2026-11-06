@@ -150,6 +150,8 @@ class PlexCollection:
     child_count: int | None = None
     #: label tags as listed (empty when the listing did not include them)
     labels: tuple[str, ...] = ()
+    #: the collection's summary (Plex's description), when the listing carries it
+    summary: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -425,6 +427,7 @@ class PlexClient:
                 bool(m.get("smart")),
                 int(m["childCount"]) if m.get("childCount") is not None else None,
                 _tags(m.get("Label")),
+                str(m.get("summary") or ""),
             )
             for m in md
         ]

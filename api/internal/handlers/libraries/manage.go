@@ -22,6 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
@@ -81,6 +84,18 @@ type ManagedLibrary struct {
 	Conflicts []RootConflict  `json:"conflicts"`
 	// YouTube is what the library follows on YouTube (manage_youtube.go).
 	YouTube LibraryYouTube `json:"youtube"`
+	// PlexCollections is what the Plex import read into the library (Epic 56
+	// story 56.07); nil when it imported none.
+	PlexCollections *PlexImport `json:"plex_collections,omitempty"`
+	// CollectionMode is how the library grid shows collections (story 56.08).
+	CollectionMode string `json:"collection_mode,omitempty"`
+}
+
+// PlexImport counts a library's collections read from Plex and their Plex
+// items that are not Maktaba videos (GET /api/libraries/{id}/plex-missing lists them).
+type PlexImport struct {
+	Imported      int `json:"imported"`
+	MissingVideos int `json:"missing_videos"`
 }
 
 // ConflictMember is a library of a conflict group.
@@ -156,6 +171,11 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	plex, err := h.plexImports(ctx)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load plex collections").Wrap(err))
+		return
+	}
 	var roots []string
 	for _, l := range libs {
 		roots = append(roots, l.Roots...)
@@ -167,6 +187,7 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 		m := ManagedLibrary{
 			ID: l.ID, Name: l.Name, Settings: l.Settings, CreatedAt: l.CreatedAt, UpdatedAt: l.UpdatedAt,
 			Roots: []ManagedRoot{}, Counts: counts[l.ID], Conflicts: []RootConflict{},
+			CollectionMode: l.CollectionMode,
 		}
 		for _, root := range l.Roots {
 			mr := ManagedRoot{Path: root, LocalPath: libpaths.ToLocal(root), Reachable: true}
@@ -178,6 +199,10 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 		}
 		if y := yt[l.ID]; y != nil {
 			m.YouTube = *y
+		}
+		if pi, ok := plex[l.ID]; ok {
+			pi := pi
+			m.PlexCollections = &pi
 		}
 		if s, ok := scans[l.ID]; ok {
 			s := s
@@ -192,7 +217,7 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) allLibraries(ctx context.Context) ([]Library, error) {
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT id, name, roots, settings, created_at, updated_at FROM libraries ORDER BY name, id
+		SELECT id, name, roots, settings, created_at, updated_at, collection_mode FROM libraries ORDER BY name, id
 	`)
 	if err != nil {
 		return nil, err
@@ -203,7 +228,7 @@ func (h *Handler) allLibraries(ctx context.Context) ([]Library, error) {
 		var l Library
 		var roots stringArray
 		var settings []byte
-		if err := rows.Scan(&l.ID, &l.Name, &roots, &settings, &l.CreatedAt, &l.UpdatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.Name, &roots, &settings, &l.CreatedAt, &l.UpdatedAt, &l.CollectionMode); err != nil {
 			return nil, err
 		}
 		l.Roots = roots
@@ -704,4 +729,102 @@ func (h *Handler) places(ctx context.Context) ([]Place, error) {
 		out = append(out, Place{Name: name, Path: path, LocalPath: local})
 	}
 	return out, nil
+}
+
+// plexRule is the part of a Plex collection's auto_rule the admin view reads.
+type plexRule struct {
+	Missing     int      `json:"missing"`
+	MissingKeys []string `json:"missing_keys"`
+}
+
+// plexImports counts each library's collections read from Plex.
+func (h *Handler) plexImports(ctx context.Context) (map[string]PlexImport, error) {
+	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(library_id AS TEXT), CAST(auto_rule AS TEXT) FROM collections WHERE source_kind = 'plex'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]PlexImport{}
+	for rows.Next() {
+		var lib string
+		var rule sql.NullString
+		if err := rows.Scan(&lib, &rule); err != nil {
+			return nil, err
+		}
+		pi := out[lib]
+		pi.Imported++
+		var pr plexRule
+		if rule.Valid && json.Unmarshal([]byte(rule.String), &pr) == nil {
+			pi.MissingVideos += pr.Missing
+		}
+		out[lib] = pi
+	}
+	return out, rows.Err()
+}
+
+// PlexMissingItem is a Plex item of an imported collection that is no Maktaba video.
+type PlexMissingItem struct {
+	Collection string `json:"collection"`
+	RatingKey  string `json:"rating_key"`
+	Title      string `json:"title,omitempty"`
+	File       string `json:"file,omitempty"`
+}
+
+// PlexMissing implements GET /api/libraries/{id}/plex-missing (admin, Epic 56
+// story 56.07): the items of the library's Plex collections that are not in
+// Maktaba, with Plex's title and file when Plex's index listed them.
+func (h *Handler) PlexMissing(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil || !p.IsAdmin {
+		httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if _, err := uuid.Parse(id); err != nil {
+		httperror.Write(w, r, httperror.NotFound("library "+id))
+		return
+	}
+	ctx := r.Context()
+	rows, err := h.DB.QueryContext(ctx, `SELECT name, source_ref, CAST(auto_rule AS TEXT) FROM collections
+		WHERE library_id = $1 AND source_kind = 'plex' ORDER BY name`, id)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("plex collections").Wrap(err))
+		return
+	}
+	out := []PlexMissingItem{}
+	for rows.Next() {
+		var name, ref string
+		var rule sql.NullString
+		if err := rows.Scan(&name, &ref, &rule); err != nil {
+			rows.Close()
+			httperror.Write(w, r, httperror.Internal("scan").Wrap(err))
+			return
+		}
+		var pr plexRule
+		if rule.Valid {
+			_ = json.Unmarshal([]byte(rule.String), &pr)
+		}
+		server, _, _ := strings.Cut(ref, ":")
+		for _, k := range pr.MissingKeys {
+			out = append(out, PlexMissingItem{Collection: name, RatingKey: server + ":" + k})
+		}
+	}
+	rows.Close()
+	for i := range out {
+		server, key, _ := strings.Cut(out[i].RatingKey, ":")
+		var title, file sql.NullString
+		_ = h.DB.QueryRowContext(ctx, `SELECT CAST(detail AS TEXT), file FROM plex_items WHERE server = $1 AND rating_key = $2`,
+			server, key).Scan(&title, &file)
+		out[i].RatingKey = key
+		if title.Valid {
+			var d struct {
+				Title string `json:"title"`
+			}
+			if json.Unmarshal([]byte(title.String), &d) == nil {
+				out[i].Title = d.Title
+			}
+		}
+		out[i].File = file.String
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": out})
 }

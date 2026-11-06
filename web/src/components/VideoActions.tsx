@@ -23,7 +23,7 @@ import {
   type MyVideo,
   type SeriesPosition,
 } from "../lib/me";
-import { watchPath } from "../lib/playQueue";
+import { addToQueue, watchPath } from "../lib/playQueue";
 import { formatDuration } from "./VideoViews";
 import { AddToPlaylist } from "./AddToPlaylist";
 import { FeatureOnHome } from "./FeatureOnHome";
@@ -47,6 +47,15 @@ export function VideoActions({ videoId }: { videoId: string }) {
   // A read of the series begun before Mark watched was saved still counts the
   // lesson as it was: it is dropped (lib/readOrder).
   const order = useReadOrder();
+
+  async function queue(where: "next" | "end") {
+    try {
+      if (await addToQueue([videoId], where))
+        toast.show({ tone: "success", message: t("playQueue.added") });
+    } catch {
+      toast.show({ tone: "error", message: t("playQueue.error.load") });
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -150,6 +159,13 @@ export function VideoActions({ videoId }: { videoId: string }) {
         </Button>
         <Button variant="ghost" onClick={() => setPlaylistOpen(true)}>
           + {t("video.addToPlaylist")}
+        </Button>
+        {/* Epic 56 story 56.13: the server queue's Play next and Add to queue */}
+        <Button variant="ghost" disabled={busy} onClick={() => void queue("next")}>
+          ⤵ {t("playQueue.playNext")}
+        </Button>
+        <Button variant="ghost" disabled={busy} onClick={() => void queue("end")}>
+          ☰ {t("playQueue.add")}
         </Button>
         <FeatureOnHome videoId={videoId} />
       </div>
