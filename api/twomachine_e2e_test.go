@@ -239,6 +239,18 @@ func startMachine(t *testing.T, name, bin string, env []string) *machine {
 	return m
 }
 
+// logField reports whether a role's output has key=value in either form it may write: the
+// text form (key=value) or, since the supervisor asks its roles for JSON lines (Epic 53
+// story 53.02), "key":"value".
+func logField(out, key, value string) bool {
+	return strings.Contains(out, key+"="+value) || strings.Contains(out, `"`+key+`":"`+value+`"`)
+}
+
+// countField counts the lines with key=value in either form (logField).
+func countField(out, key, value string) int {
+	return strings.Count(out, key+"="+value+" ") + strings.Count(out, `"`+key+`":"`+value+`"`)
+}
+
 func tail(s string, n int) string {
 	if len(s) > n {
 		return s[len(s)-n:]
@@ -606,7 +618,7 @@ slots = "off"
 		}
 	})
 
-	homeRequests := func() int { return strings.Count(home.log.String(), "path=/api/stream/sessions ") }
+	homeRequests := func() int { return countField(home.log.String(), "path", "/api/stream/sessions") }
 	t.Run("VOD read on the node; fallback to the home", func(t *testing.T) {
 		before := homeRequests()
 		var resp *http.Response
