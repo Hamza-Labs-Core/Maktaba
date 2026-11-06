@@ -6709,5 +6709,20 @@
   "queue.issues.cause.plugin_scope": "تجاوزت الإضافة مهمتها أو مكتباتها",
   "queue.issues.cause.plugin_quota": "استنفدت الإضافة حصتها",
   "queue.issues.cause.plugin_failed": "أبلغت الإضافة عن خطأ",
-  "queue.issues.cause.plugin_held": "الإضافة متوقفة"
+  "queue.issues.cause.plugin_held": "الإضافة متوقفة",
+  "components.group.plugins": "الإضافات",
+  "components.plugins.host.title": "مضيف الإضافات",
+  "components.plugins.host.desc": "يشغّل الإضافات في عزل بلا إنترنت، ولا يعمل إلا ما دامت إضافة مشغّلة.",
+  "components.reason.incompatible": "لا تعمل هذه الإضافة على هذا الإصدار من مكتبة.",
+  "components.reason.grants_needed": "بانتظار موافقة مسؤول على أذونات جديدة.",
+  "components.reason.revoked": "أوقفت مكتبة هذه الإضافة لدى الجميع.",
+  "components.reason.unreviewed_disallowed": "الإضافات غير المراجَعة غير مسموحة على هذا الجهاز الرئيسي.",
+  "components.reason.entitlement_missing": "تحتاج هذه الإضافة إلى شراء.",
+  "components.reason.plugin_crash_loop": "توقفت من تلقاء نفسها بعد أخطاء متكررة.",
+  "components.reason.sandbox_partial": "تعمل بجزء من عزلها: ينقص هذا النظامَ بعضُه.",
+  "components.reason.sandbox_unavailable": "تعذّر بدء العزل، فلا تعمل أي إضافة.",
+  "components.reason.runner_crash_loop": "يتعطّل مشغّلها مرارًا.",
+  "components.reason.plugin_trusted_unsigned": "تدّعي صلاحيات مكتبة الخاصة دون توقيع مكتبة.",
+  "components.reason.plugin_trusted_version": "إضافة من مكتبة لإصدار آخر من الجهاز الرئيسي.",
+  "components.reason.kept_off": "أوقفت هذه الإضافة، وستبقى متوقفة حتى تشغّلها."
 }
