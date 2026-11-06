@@ -78,3 +78,18 @@ sample_2xx_rate       = 0.10
 # Public host used to construct per-server subdomains:
 #   <server-slug>.relay.maktaba.tv
 public_host = "relay.maktaba.tv"
+# How long a stopping relay waits for its homes to move their tunnels
+# (Epic 50 story 50.03); the container's stop grace must be longer.
+shutdown_grace = "150s"
+
+[relay.drain]
+# On SIGTERM: refuse new tunnels, send each home DRAIN (rate a second), and
+# wait. false: close every tunnel at once, as before 50.03.
+enabled  = true
+within   = "5s"
+deadline = "120s"
+rate     = 100
+
+[relay.ticket]
+# Homes reconnect with a 10-minute resume ticket instead of their secret.
+enabled = true

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://maktaba.app/schema/log-line.json",
+  "$id": "https://maktaba.tv/schema/log-line.json",
   "title": "One Maktaba log line (Epic 53 story 53.01)",
   "description": "One JSON object per line (NDJSON), UTF-8, at most 64 KB. Every Maktaba process and app writes this shape: Go, Python, Swift, Kotlin, TypeScript, Rust and the cloud. A person is named by user_h only; raw_user_id, user_id, email, name, IPs and tokens are never fields.",
   "type": "object",

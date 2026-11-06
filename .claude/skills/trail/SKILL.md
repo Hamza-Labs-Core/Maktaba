@@ -67,7 +67,8 @@ sessions left without one: write them if you have the context.
 
 ## 4. After a v* tag: build the snapshot
 
-The session that tags (or the next one) builds `docs/trail/snapshots/vX.Y.Z.md`:
+Tags are automatic (`auto-tag.yml` tags each green commit of main). A scheduled session builds
+each new tag's `docs/trail/snapshots/vX.Y.Z.md` (any session that finds a tag without one builds it):
 
 ```bash
 python3 tools/trail/trail.py skeleton --tag vX.Y.Z > docs/trail/snapshots/vX.Y.Z.md

@@ -2699,6 +2699,9 @@ server.
   │    0x12 WINDOW_UPDATE  per-stream backpressure                        │
   │    0x20 REVOKE         cloud → server (sever the link)                │
   │    0x21 ENT_REFRESH    cloud → server (push fresh entitlement)        │
+  │    0x22 DRAIN          cloud → server (open a new tunnel, then finish │
+  │                        this one's streams; Epic 50 story 50.03)       │
+  │    0x23 TICKET         cloud → server (a fresh 10-min resume ticket)  │
   │    0x30 WS_HEAD        client-side WS upgrade pass-through             │
   │    0x40 META_ENDPOINTS server → cloud (LAN candidates etc.)           │
   └───────────────────────────────────────────────────────────────────────┘
@@ -2709,6 +2712,21 @@ cloud-initiated). The cloud has bounded write buffers and per-stream
 windows (64 KiB). Backpressure flows symmetrically; one slow client
 or server never starves another. PINGs every 25 s, deadline 10 s,
 idle close at 90 s.
+
+**Moving a tunnel without a gap** (Epic 50 story 50.03). A home
+announces `"features": ["drain", "ticket"]` in its AUTH frame. On
+`DRAIN {reason, within_ms, deadline_ms, ticket}` it waits a random
+time in `[0, within_ms)`, dials a new tunnel with the resume ticket,
+and lets the old tunnel finish its streams before closing it with
+`4000`; the relay closes it at `deadline_ms` regardless. A resume
+ticket (HMAC-SHA256 under a key derived by HKDF from the cloud's token
+secret, bound to one server, 10 minutes, refreshed every 5 by
+`TICKET`) replaces the argon2id bearer check on a reconnect, and works
+on every node. Reconnects use full jitter. A home that announces no
+features is closed when idle (or at the deadline) and reconnects by
+backoff. (The frame numbers in the box above are the design's; the
+code's are in `cloud/internal/relay/protocol.go`, where DRAIN and
+TICKET are `0x22` and `0x23` too.)
 
 The tunnel protocol is **deliberately not gRPC**: WebSockets traverse
 hotel / corp / airplane wifi reliably; HTTP/2 streaming over an

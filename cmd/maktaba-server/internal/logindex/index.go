@@ -85,6 +85,9 @@ type Index struct {
 	Log func(msg string, kv ...any)
 	// rebuilt: why the file was made again at Open ("" when it was not)
 	rebuilt string
+	// metrics is the dashboards' scraper state (metrics.go); MetricsURLs what it scrapes
+	metrics     *metricsState
+	MetricsURLs []string
 }
 
 // Rebuilt is why Open made the index again (a corrupt file moved aside), "" when it did not.
@@ -101,7 +104,7 @@ func Open(root string, now func() time.Time) (*Index, error) {
 		now = time.Now
 	}
 	ix := &Index{root: root, now: now, Retention: 7 * 24 * time.Hour, ErrorRetention: 30 * 24 * time.Hour, MaxBytes: 350 << 20,
-		Log: func(string, ...any) {}}
+		Log: func(string, ...any) {}, metrics: newMetricsState()}
 	p := Path(root)
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return nil, err
@@ -131,7 +134,7 @@ func openDB(p string) (*sql.DB, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(4)
-	if _, err := db.Exec(schema + errorsSchema); err != nil {
+	if _, err := db.Exec(schema + errorsSchema + metricsSchema); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

@@ -23,6 +23,13 @@
 //	0x0a  AUTH_FAIL       payload = JSON `{"error":"..."}`
 //	0x0b  HEARTBEAT       payload = JSON server stats; mirrors POST /heartbeat
 //	0x0c  WINDOW_UPDATE   payload = uint32 BE: RESPONSE_BODY bytes the cloud grants
+//	0x22  DRAIN           payload = JSON DrainPayload: open a new tunnel, then let this one
+//	                      finish its streams (story 50.03)
+//	0x23  TICKET          payload = JSON TicketPayload: a fresh resume ticket
+//
+// DRAIN and TICKET are sent only to a home that announced the features
+// "drain" and "ticket" in AUTH; an older home never sees them (a frame kind
+// it does not know is ignored by its dispatch anyway).
 //
 // Flow control (WINDOW_UPDATE) is negotiated: the agent sends "flow":1 in
 // AUTH and the cloud answers "flow":1 in AUTH_OK when it agrees. On such a
@@ -54,7 +61,42 @@ const (
 	KindAuthFail     byte = 0x0a
 	KindHeartbeat    byte = 0x0b
 	KindWindowUpdate byte = 0x0c
+	KindDrain        byte = 0x22
+	KindTicket       byte = 0x23
 )
+
+// Tunnel features a home announces in AUTH ("features"), story 50.03.
+const (
+	// FeatureDrain: the home understands DRAIN (make before break).
+	FeatureDrain = "drain"
+	// FeatureTicket: the home keeps resume tickets and presents them.
+	FeatureTicket = "ticket"
+)
+
+// Drain reasons (DrainPayload.Reason).
+const (
+	DrainDeploy    = "deploy"
+	DrainRebalance = "rebalance"
+	DrainShutdown  = "shutdown"
+)
+
+// DrainPayload asks the home to move: wait a random time in [0, WithinMS),
+// dial a new tunnel (presenting Ticket), then close this one with 4000 once
+// it has no streams, or at DeadlineMS, whichever is first.
+type DrainPayload struct {
+	Reason     string `json:"reason"`
+	WithinMS   int64  `json:"within_ms"`
+	DeadlineMS int64  `json:"deadline_ms"`
+	Ticket     string `json:"ticket,omitempty"`
+}
+
+// TicketPayload carries a fresh resume ticket (sent every TicketRefresh).
+type TicketPayload struct {
+	Ticket string `json:"ticket"`
+}
+
+// CloseNormal is the websocket close code a home ends a drained tunnel with.
+const CloseNormal = 4000
 
 // InitialWindow is the RESPONSE_BODY credit (bytes) each stream starts
 // with on a flow-controlled tunnel: what the home may send before the

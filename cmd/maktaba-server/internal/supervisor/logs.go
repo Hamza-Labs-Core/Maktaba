@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -23,6 +24,18 @@ func LogsAddr(cfg config.Config) string {
 	return ports.LogsIndex.Addr()
 }
 
+// dialable is a bind address as a client dials it (":9100" is 127.0.0.1:9100).
+func dialable(a string) string {
+	host, port, err := net.SplitHostPort(a)
+	if err != nil {
+		return a
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
 // BuildLogs is the log index's process: this maktaba-server, `logs --root <logs root>`.
 func BuildLogs(cfg config.Config, root string) (Process, error) {
 	exe, err := os.Executable()
@@ -32,6 +45,10 @@ func BuildLogs(cfg config.Config, root string) (Process, error) {
 	addr := LogsAddr(cfg)
 	cmd := exec.Command(exe, "logs", "--root", root, "--addr", addr)
 	cmd.Env = os.Environ()
+	// the dashboards scrape the API's admin /metrics, which merges the supervisor's (53.12)
+	if a := strings.TrimSpace(cfg.Server.AdminAddr); a != "" && os.Getenv("MAKTABA_METRICS_URLS") == "" {
+		cmd.Env = append(cmd.Env, "MAKTABA_METRICS_URLS=http://"+dialable(a)+"/metrics")
+	}
 	wire(cmd)
 	return Process{
 		Role:  RoleLogs,

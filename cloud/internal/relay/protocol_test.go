@@ -2,6 +2,7 @@ package relay
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"testing"
@@ -58,5 +59,31 @@ func TestEncodeFrameRefusesOversize(t *testing.T) {
 	f, err := ReadFrame(bytes.NewReader(b))
 	if err != nil || f.Kind != KindPing || f.StreamID != 7 || string(f.Payload) != "hi" {
 		t.Fatalf("round trip %+v %v", f, err)
+	}
+}
+
+// T03 (story 50.03): DRAIN and TICKET round-trip on the wire; unknown fields
+// are ignored.
+func TestDrainAndTicketFrames(t *testing.T) {
+	p, _ := json.Marshal(DrainPayload{Reason: DrainDeploy, WithinMS: 5000, DeadlineMS: 120000, Ticket: "tk"})
+	for _, f := range []Frame{{Kind: KindDrain, Payload: p}, {Kind: KindTicket, Payload: []byte(`{"ticket":"tk2"}`)}} {
+		var buf bytes.Buffer
+		if err := WriteFrame(&buf, f); err != nil {
+			t.Fatal(err)
+		}
+		got, err := ReadFrame(&buf)
+		if err != nil || got.Kind != f.Kind || !bytes.Equal(got.Payload, f.Payload) {
+			t.Fatalf("round trip %#x: %+v %v", f.Kind, got, err)
+		}
+	}
+	var d DrainPayload
+	if err := json.Unmarshal([]byte(`{"reason":"shutdown","within_ms":1,"deadline_ms":2,"ticket":"x","later":true}`), &d); err != nil {
+		t.Fatal(err)
+	}
+	if d != (DrainPayload{Reason: DrainShutdown, WithinMS: 1, DeadlineMS: 2, Ticket: "x"}) {
+		t.Errorf("decoded %+v", d)
+	}
+	if KindDrain != 0x22 || KindTicket != 0x23 {
+		t.Error("frame numbers changed")
 	}
 }
