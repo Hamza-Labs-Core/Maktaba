@@ -36,6 +36,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A new Arabic dictionary or ffmpeg pack is used without restarting the pipeline.** A
+  pipeline that was already running kept the dictionary and ffmpeg of the packs it started
+  with until it restarted. It now follows each pack's current version at its next use: the
+  next video's ffmpeg, ffprobe and second listen use the newly installed or updated pack.
+
 - **The library dashboard and the queue page load at once on a large home.** On a home with
   3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out

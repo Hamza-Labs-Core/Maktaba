@@ -22,7 +22,7 @@ from ...thumbnail.dhash import DHASH_VERSION, dhash_from_gray, ffmpeg_gray_args
 from ..context import StageContext, StageFailure
 from ..graph import StageResult, Subject
 from ..hashing import canonical_hash
-from ..media import FFMPEG, run_media
+from ..media import ffmpeg, run_media
 from ..paths import to_local
 from ._common import VideoFacts, load_video, require_video, upsert_signals
 from .registry import StageImpl
@@ -88,7 +88,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     dhash: str | None = None
     if thumb is not None:
         async with ctx.nas.timed(thumb):
-            res = await run_media(ffmpeg_gray_args(thumb, binary=FFMPEG), timeout=60.0)
+            res = await run_media(ffmpeg_gray_args(thumb, binary=ffmpeg()), timeout=60.0)
         if res.returncode != 0 or not res.stdout:
             ctx.nas.record_stderr(res.text_err)
             raise StageFailure("thumbnail_unreadable", res.text_err[-300:] or "no output")
