@@ -4,6 +4,7 @@ call, with no restart."""
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import stat
 import sys
@@ -108,7 +109,7 @@ def test_the_dictionary_is_read_again_when_its_pack_moves(
 
     monkeypatch.setattr(cohere, "_new_dictionary", fake)
     monkeypatch.setattr(cohere, "_DICT", [])
-    monkeypatch.setattr(cohere.importlib.util, "find_spec", lambda _n: object())
+    monkeypatch.setattr(importlib.util, "find_spec", lambda _n: object())
     first = cohere.dictionary()
     assert cohere.dictionary() is first and len(built) == 1
     _current(components, "model.refine", "r13-2")  # a newer dictionary installed
