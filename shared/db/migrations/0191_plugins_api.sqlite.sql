@@ -7,6 +7,12 @@
 -- (the API serves the plugin socket only there), so this sibling keeps the schema in
 -- step and leaves those two checks as they are.
 --
+-- the plugins pool (story 54.06 §2), before a worker syncs the graph; its size is the
+-- graph's (a quarter of the home's cores), written by the sync
+INSERT INTO worker_pools (pool, label, scope, size, default_size)
+VALUES ('plugins', 'Plugins', 'global', 1, 1)
+ON CONFLICT (pool) DO NOTHING;
+
 CREATE TABLE IF NOT EXISTS plugin_installs (
     plugin_id         TEXT PRIMARY KEY,
     version           TEXT NOT NULL,
@@ -105,4 +111,5 @@ DROP TABLE IF EXISTS plugin_data;
 DROP TABLE IF EXISTS plugin_invocations;
 DROP TABLE IF EXISTS plugin_grants;
 DROP TABLE IF EXISTS plugin_installs;
+DELETE FROM worker_pools WHERE pool = 'plugins';
 -- +goose StatementEnd

@@ -157,6 +157,12 @@ Every failure gets a class that says what Maktaba does with it. The first name o
 - **What Maktaba does:** the YouTube jobs wait and spend no try; the source shows **bot check** in its YouTube sources. They try again after a day at the latest.
 - **What you can do:** wait, or set **Cookies from browser** on the source in **YouTube sources…** on the Queues page. See [YouTube asked for a bot check](#youtube-bot-check).
 
+### Waits on a service or share: the plugin is stopped (dependency:plugin) {#class-dependency-plugin}
+
+- **What it means:** the plugin whose step this is is off, stopped, or waiting for you to approve new permissions.
+- **What Maktaba does:** its jobs wait and spend no try; they run again as soon as the plugin is on.
+- **What you can do:** turn the plugin on, or press **Start**, in **Settings → Plugins**. See [The plugin is stopped](#plugin-held).
+
 ### Waits on disk or memory: YouTube's rate limit (resource:youtube_rate_limit) {#class-resource-youtube-rate-limit}
 
 - **What it means:** YouTube answered "Too Many Requests" (HTTP 429).

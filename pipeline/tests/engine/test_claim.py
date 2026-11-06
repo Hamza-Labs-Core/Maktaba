@@ -264,8 +264,14 @@ def test_a_stage_jobs_lines_carry_its_component() -> None:
 @pytest.mark.asyncio
 async def test_a_plugin_runs_at_most_its_concurrency(db: Database) -> None:
     """Epic 54 story 54.06 T05: a plugin with concurrency 1 never runs two jobs at once,
-    whatever the plugins pool's size; another plugin is not held back by it."""
+    whatever the plugins pool's size; another plugin is not held back by it. Postgres only:
+    plugins run on a Postgres home (the SQLite schema keeps job_stages' 40-character names)."""
     import json
+
+    from maktaba_pipeline.engine.sql import is_pg
+
+    if not is_pg(db):
+        pytest.skip("plugins need a Postgres home")
 
     await db.execute(
         "INSERT INTO worker_pools (pool, label, scope, size, default_size)"

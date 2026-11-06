@@ -32,6 +32,12 @@
 --
 -- Additive: new tables, a wider check, one more allowed chapter source.
 --
+-- the plugins pool (story 54.06 §2), before a worker syncs the graph; its size is the
+-- graph's (a quarter of the home's cores), written by the sync
+INSERT INTO worker_pools (pool, label, scope, size, default_size)
+VALUES ('plugins', 'Plugins', 'global', 1, 1)
+ON CONFLICT (pool) DO NOTHING;
+
 ALTER TABLE job_stages DROP CONSTRAINT IF EXISTS job_stages_stage_check;
 ALTER TABLE job_stages ADD CONSTRAINT job_stages_stage_check CHECK (stage ~ '^[a-z][a-z0-9_]{1,62}$');
 
@@ -212,6 +218,7 @@ DROP FUNCTION IF EXISTS plugin_tables_guard() CASCADE;
 DROP FUNCTION IF EXISTS plugin_grants_notify();
 DROP TABLE IF EXISTS plugin_suggestions, plugin_writes, plugin_data, plugin_invocations,
     plugin_grants, plugin_installs;
+DELETE FROM worker_pools WHERE pool = 'plugins';
 ALTER TABLE chapters DROP CONSTRAINT IF EXISTS chapters_source_check;
 ALTER TABLE chapters ADD CONSTRAINT chapters_source_check
     CHECK (source IN ('embedded', 'inferred', 'manual'));
