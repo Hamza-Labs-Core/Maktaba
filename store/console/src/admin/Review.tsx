@@ -19,6 +19,10 @@ export const REVIEW_WORDS = {
     "review.capabilities": "Capabilities and the developer's reasons",
     "review.checks": "Automated checks",
     "review.diff": "Changes since the last version",
+    "review.flow": "The flow",
+    "review.flow_events": "Published events",
+    "review.flow_subscriptions": "Subscriptions",
+    "review.flow_chart": "The flow's chart: its plugins' stages, the Maktaba events they start from and the events between them",
     "review.source": "Download the source archive",
     "review.approve": "Approve",
     "review.reject": "Reject",
@@ -50,6 +54,10 @@ export const REVIEW_WORDS = {
     "review.capabilities": "القدرات وأسباب المطوّر",
     "review.checks": "الفحوص الآلية",
     "review.diff": "التغييرات منذ الإصدار السابق",
+    "review.flow": "التدفق",
+    "review.flow_events": "الأحداث المنشورة",
+    "review.flow_subscriptions": "الاشتراكات",
+    "review.flow_chart": "مخطط التدفق: مراحل إضافاته، وأحداث مكتبة التي تبدأ منها، والأحداث بينها",
     "review.source": "نزّل أرشيف المصدر",
     "review.approve": "قبول",
     "review.reject": "رفض",
@@ -163,10 +171,12 @@ interface Detail {
   submission: { id: string; plugin: string; version: string; status: string };
   version: { notes_en: string; notes_ar: string; manifest: string } | null;
   report: {
-    checks: { id: string; result: string; code?: string; detail?: string }[];
+    checks: { id: string; result: string; code?: string; detail?: string; detail_ar?: string }[];
     capabilities: { required: string[]; optional: string[] };
     diff?: Record<string, unknown>;
+    flow?: { id: string; version: string; members: string[]; events: string[]; subscriptions: string[] };
   } | null;
+  flow_chart: string;
   developer: string;
   source: { size: number; url: string } | null;
 }
@@ -212,10 +222,40 @@ function Submission({ id, lang, onBack }: { id: string; lang: Lang; onBack: () =
       <ul dir="ltr">
         {d.report?.checks.map((c, n) => (
           <li key={n}>
-            {c.id} {c.result} {c.code} {c.detail}
+            {c.id} {c.result} {c.code} {lang === "ar" && c.detail_ar ? <bdi dir="rtl">{c.detail_ar}</bdi> : c.detail}
           </li>
         ))}
       </ul>
+      {d.report?.flow && (
+        <>
+          <h2>
+            {t(lang, "review.flow")} <bdi dir="ltr">{d.report.flow.id} {d.report.flow.version}</bdi>
+          </h2>
+          {d.flow_chart && (
+            <img
+              className="flow-chart"
+              alt={t(lang, "review.flow_chart")}
+              src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(d.flow_chart)}`}
+            />
+          )}
+          <h3>{t(lang, "review.flow_events")}</h3>
+          <ul dir="ltr">
+            {d.report.flow.events.map((e) => (
+              <li key={e}>
+                <code>{e}</code>
+              </li>
+            ))}
+          </ul>
+          <h3>{t(lang, "review.flow_subscriptions")}</h3>
+          <ul dir="ltr">
+            {d.report.flow.subscriptions.map((e) => (
+              <li key={e}>
+                <code>{e}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {d.report?.diff && (
         <>
           <h2>{t(lang, "review.diff")}</h2>
