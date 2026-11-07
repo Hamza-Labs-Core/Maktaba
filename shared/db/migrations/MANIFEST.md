@@ -234,6 +234,13 @@ reservations; the permanent gaps are listed below the table).
    for `CREATE INDEX CONCURRENTLY` and similar non-transactional steps.
 5. If two epics need to land migrations concurrently, they coordinate slot
    assignment by editing this file in the same PR.
+6. A migration that redefines a whole-list function starts from the newest
+   definition on `main` at merge time, not the one it was written against, and
+   its Down restores that exact definition. `cluster_copy_excluded()` is one:
+   migration-lint's `copy-excluded-keeps` fails when a redefinition loses a
+   table an earlier one listed, or when its Down does not restore the previous
+   definition. A table taken out on purpose is named on a line
+   `-- cluster_copy_excluded drops: <table>`.
 
 ## Cross-epic ownership
 
