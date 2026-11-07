@@ -5,8 +5,9 @@
 The pipeline's logger (``maktaba_pipeline.log``: contextvars, redaction of keys and values,
 the ring, the JSON renderer) logs ``--calls`` lines to ``/dev/null`` and each call is timed.
 The budget is 20 µs at the 99th percentile on the reference machine (an Apple M2), times the
-runner's speed against it: the slower of a hashing and JSON loop and a loop of the logger's
-own work (the report shows both times), clamped to 1–4, as the Go benches'
+runner's speed against it: the slowest of a hashing and JSON loop, a loop of the logger's
+own work, that work's p99 in small chunks, and a call's p99 through structlog's stock
+pipeline (the report shows each), clamped to 1–4, as the Go benches'
 ``logbench.Calibrate`` does. Over budget it warns (a GitHub
 ``::warning::`` with the numbers) and exits 1 only with ``LOGBENCH_PY_STRICT=1``: CI's
 ``log-bench`` job sets it; the nightly Mac warns only, its p99 being the runner's noise as
@@ -38,6 +39,14 @@ REFERENCE_LINES_S = 0.060
 # is on a p99, and on a slow runner the tail grows more than the total does (CI, 2026-11-07:
 # logging 2.8 times slower at p50 and 3.3 times at p99 on a runner both loops called 2.7).
 REFERENCE_TAIL_P99_NS = 7_300
+# the p99 of a call through structlog's stock JSON pipeline, on the reference. The loops
+# above are C code (hashing, JSON, the regex scrub); the logger's call is mostly the
+# interpreter running structlog. On CI's AMD EPYC 7763 runners the logger's p99 was 0.75-0.79
+# of a budget set by the loops alone, against 0.55-0.63 on its other runners: the loops ran
+# there 2.7 times the reference's time, the logger 3.4 times at p50 and more at p99. The
+# stock pipeline's p99 follows it there (the logger's p99 is 1.7 times it on the 7763, the
+# 9V74 and the Xeon alike), and a slower logger does not move it (issue #807, 48 runners).
+REFERENCE_STOCK_P99_NS = 8_700
 
 
 def _best_of_three(work: Callable[[], None]) -> float:
@@ -98,6 +107,43 @@ def _tail_p99_ns(chunks: int = 20_000) -> int:
     return best
 
 
+def _stock_p99_ns(calls: int = 20_000) -> tuple[int, int]:
+    """structlog's stock JSON pipeline (its context merge, the level, an ISO timestamp, the
+    JSON renderer) to /dev/null, timed call by call: (p50, p99) of the round with the
+    lowest p99, of three. The same library and interpreter paths as the logger, with none of
+    its processors, so a slower logger does not move it."""
+    import structlog
+
+    devnull = open(os.devnull, "w")  # noqa: SIM115 - closed below
+    logger = structlog.wrap_logger(
+        structlog.PrintLogger(devnull),
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.JSONRenderer(),
+        ],
+        context_class=dict,
+    )
+    for _ in range(2_000):
+        logger.info("http_request", path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
+    clock = time.perf_counter_ns
+    best = (0, 0)
+    for _ in range(3):
+        times = [0] * calls
+        for i in range(calls):
+            start = clock()
+            logger.info(
+                "http_request", path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2
+            )
+            times[i] = clock() - start
+        times.sort()
+        got = (percentile(times, 0.5), percentile(times, 0.99))
+        best = got if best == (0, 0) or got[1] < best[1] else best
+    devnull.close()
+    return best
+
+
 def calibrate() -> tuple[float, dict[str, float]]:
     """The runner's speed against the reference (the slowest of the three loops, 1–4) and the
     loops' times, which the report shows."""
@@ -106,10 +152,12 @@ def calibrate() -> tuple[float, dict[str, float]]:
         "lines_s": _best_of_three(_lines_work),
         "tail_p99_ns": float(_tail_p99_ns()),
     }
+    raw["stock_p50_ns"], raw["stock_p99_ns"] = (float(v) for v in _stock_p99_ns())
     f = max(
         raw["hash_s"] / REFERENCE_HASH_S,
         raw["lines_s"] / REFERENCE_LINES_S,
         raw["tail_p99_ns"] / REFERENCE_TAIL_P99_NS,
+        raw["stock_p99_ns"] / REFERENCE_STOCK_P99_NS,
     )
     return min(4.0, max(1.0, f)), {k: round(v, 4) for k, v in raw.items()}
 

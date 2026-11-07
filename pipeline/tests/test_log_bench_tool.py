@@ -1,5 +1,5 @@
-"""``tools/log_bench.py``'s runner factor (issue #744): the slower of its two loops against
-the reference, clamped to 1–4, with the loops' times in the report."""
+"""``tools/log_bench.py``'s runner factor (issues #744, #807): the slowest of its loops
+against the reference, clamped to 1–4, with the loops' times in the report."""
 
 from __future__ import annotations
 
@@ -32,9 +32,10 @@ def test_the_factor_is_the_slower_loop_clamped(
     times = iter([lb.REFERENCE_HASH_S * hash_x, lb.REFERENCE_LINES_S * lines_x])
     monkeypatch.setattr(lb, "_best_of_three", lambda _work: next(times))
     monkeypatch.setattr(lb, "_tail_p99_ns", lambda: lb.REFERENCE_TAIL_P99_NS)
+    monkeypatch.setattr(lb, "_stock_p99_ns", lambda: (6_000, lb.REFERENCE_STOCK_P99_NS))
     got, raw = lb.calibrate()
     assert got == pytest.approx(factor)
-    assert set(raw) == {"hash_s", "lines_s", "tail_p99_ns"}
+    assert set(raw) == {"hash_s", "lines_s", "tail_p99_ns", "stock_p50_ns", "stock_p99_ns"}
 
 
 @pytest.mark.unit
@@ -45,8 +46,23 @@ def test_a_heavy_tail_raises_the_factor(monkeypatch: pytest.MonkeyPatch) -> None
     times = iter([lb.REFERENCE_HASH_S * 2.7, lb.REFERENCE_LINES_S * 2.7])
     monkeypatch.setattr(lb, "_best_of_three", lambda _work: next(times))
     monkeypatch.setattr(lb, "_tail_p99_ns", lambda: int(lb.REFERENCE_TAIL_P99_NS * 3.3))
+    monkeypatch.setattr(lb, "_stock_p99_ns", lambda: (6_000, lb.REFERENCE_STOCK_P99_NS))
     got, _ = lb.calibrate()
     assert got == pytest.approx(3.3, rel=0.01)
+
+
+@pytest.mark.unit
+def test_structlogs_own_tail_raises_the_factor(monkeypatch: pytest.MonkeyPatch) -> None:
+    # CI's AMD EPYC 7763: the C loops 2.7 times the reference, the tail 3.4, a call through
+    # structlog's stock pipeline 3.6 at p99, as the logger is: the factor follows structlog
+    lb = _tool()
+    times = iter([lb.REFERENCE_HASH_S * 2.7, lb.REFERENCE_LINES_S * 2.5])
+    monkeypatch.setattr(lb, "_best_of_three", lambda _work: next(times))
+    monkeypatch.setattr(lb, "_tail_p99_ns", lambda: int(lb.REFERENCE_TAIL_P99_NS * 3.4))
+    monkeypatch.setattr(lb, "_stock_p99_ns", lambda: (14_600, int(lb.REFERENCE_STOCK_P99_NS * 3.6)))
+    got, raw = lb.calibrate()
+    assert got == pytest.approx(3.6, rel=0.01)
+    assert raw["stock_p50_ns"] == 14_600
 
 
 @pytest.mark.unit
@@ -55,6 +71,8 @@ def test_the_loops_run() -> None:
     lb._lines_work()
     assert 0 < lb._best_of_three(lambda: None) < 1
     assert lb._tail_p99_ns(200) > 0
+    p50, p99 = lb._stock_p99_ns(200)
+    assert 0 < p50 <= p99
 
 
 @pytest.mark.unit
