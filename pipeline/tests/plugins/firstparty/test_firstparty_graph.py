@@ -7,7 +7,6 @@ import copy
 import json
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -25,12 +24,22 @@ def test_a_first_party_stage_is_defined_by_its_manifest(toy: bytes) -> None:
     assert p.id == "tv.maktaba.toy" and p.component == "classify"
     s = firstparty.stage_def("fp_toy")
     assert (s.name, s.pool, s.lane, s.lane_order, s.version, s.subject_kinds, s.placement) == (
-        "fp_toy", "cpu", "seasons", 99, 1, ("library",), "any",
+        "fp_toy",
+        "cpu",
+        "seasons",
+        99,
+        1,
+        ("library",),
+        "any",
     )
     assert firstparty.impl_entry("fp_toy") == "fp_toy.stage:IMPL"
     assert firstparty.runner_group("fp_toy") == "light"
     assert set(firstparty.registry("tv.maktaba.toy").by_name) == {
-        "rules.read", "stage.input_fingerprint", "stage.run", "stage.run.2", "stage.run.3",
+        "rules.read",
+        "stage.input_fingerprint",
+        "stage.run",
+        "stage.run.2",
+        "stage.run.3",
     }
 
 
@@ -40,11 +49,21 @@ def test_its_trusted_fields_are_refused_in_any_other_manifest() -> None:
         pm.validate(text.encode())
     assert e.value.has(pm.CODE_TRUSTED_FIELD)
     # the same manifest is read in full only as a built-in one
-    assert pm.validate((TOY / "manifest.toml").read_bytes(), trusted=True)["stage"][0]["pool"] == "cpu"
+    assert (
+        pm.validate((TOY / "manifest.toml").read_bytes(), trusted=True)["stage"][0]["pool"] == "cpu"
+    )
 
 
 def test_a_third_party_stage_named_like_a_core_stage_is_refused() -> None:
-    corpus = ROOT / "shared" / "plugins" / "testdata" / "manifests" / "invalid" / "trusted_reserved_stage.toml"
+    corpus = (
+        ROOT
+        / "shared"
+        / "plugins"
+        / "testdata"
+        / "manifests"
+        / "invalid"
+        / "trusted_reserved_stage.toml"
+    )
     with pytest.raises(pm.ManifestInvalid) as e:
         pm.validate(corpus.read_bytes())
     assert e.value.has(pm.CODE_TRUSTED_FIELD)
@@ -82,10 +101,16 @@ def test_the_golden_check_names_a_changed_field() -> None:
 
 
 def test_the_bundle_and_its_copy_are_current() -> None:
-    out = subprocess.run([sys.executable, str(ROOT / "tools" / "plugins" / "bundle.py")], capture_output=True, text=True)
+    out = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "plugins" / "bundle.py")],
+        capture_output=True,
+        text=True,
+    )
     assert out.returncode == 0, out.stderr
     a = (ROOT / "shared" / "plugins" / "firstparty.json").read_bytes()
-    b = (ROOT / "pipeline" / "src" / "maktaba_pipeline" / "plugins" / "data" / "firstparty.json").read_bytes()
+    b = (
+        ROOT / "pipeline" / "src" / "maktaba_pipeline" / "plugins" / "data" / "firstparty.json"
+    ).read_bytes()
     assert a == b
 
 
@@ -102,8 +127,9 @@ def test_every_first_party_plugin_folder_is_in_the_wheel() -> None:
 
 
 def test_the_roles_of_a_plugin_grant_only_its_tables() -> None:
-    import roles
     import tomllib
+
+    import roles
 
     sql = roles.role_sql(tomllib.loads((TOY / "manifest.toml").read_text()))
     assert "CREATE ROLE maktaba_fp_toy NOLOGIN" in sql
@@ -115,7 +141,9 @@ def test_the_roles_of_a_plugin_grant_only_its_tables() -> None:
 def test_parity_toml_refuses_unknown_keys() -> None:
     from maktaba_plugin_sdk.parity import ParityConfig, ParityError
 
-    cfg = ParityConfig.parse('tables = ["a"]\n[ignore]\na = ["updated_at"]\n[[cases]]\nname = "x"\n')
+    cfg = ParityConfig.parse(
+        'tables = ["a"]\n[ignore]\na = ["updated_at"]\n[[cases]]\nname = "x"\n'
+    )
     assert cfg.tables == ("a",) and cfg.ignore == {"a": ("updated_at",)}
     with pytest.raises(ParityError):
         ParityConfig.parse("tablez = []\n")
@@ -126,7 +154,15 @@ def test_parity_toml_refuses_unknown_keys() -> None:
 def test_the_statements_of_the_toy_are_what_its_code_runs() -> None:
     pytest.importorskip("pglast")
     out = subprocess.run(
-        [sys.executable, str(ROOT / "tools" / "plugins" / "statements_build.py"), "check", "--dir", str(TOY)],
-        capture_output=True, text=True, env={**__import__("os").environ, "PYTHONPATH": str(TOY / "src")},
+        [
+            sys.executable,
+            str(ROOT / "tools" / "plugins" / "statements_build.py"),
+            "check",
+            "--dir",
+            str(TOY),
+        ],
+        capture_output=True,
+        text=True,
+        env={**__import__("os").environ, "PYTHONPATH": str(TOY / "src")},
     )
     assert out.returncode == 0, out.stderr

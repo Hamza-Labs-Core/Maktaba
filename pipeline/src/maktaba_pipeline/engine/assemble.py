@@ -25,6 +25,8 @@ def check(graph: Sequence[StageDef], first_party: Sequence[StageDef]) -> None:
     for fp in first_party:
         mine = by_name.get(fp.name)
         if mine is None:
-            raise GraphError(f"{fp.name}: a first-party manifest defines it; GRAPH does not name it")
+            raise GraphError(
+                f"{fp.name}: a first-party manifest defines it; GRAPH does not name it"
+            )
         if mine != fp:
             raise GraphError(f"{fp.name}: defined in GRAPH and in its manifest (use _fp)")

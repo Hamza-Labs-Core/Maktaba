@@ -24,7 +24,7 @@ def _in_plugin(db: Any) -> bool:
 
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     rows = await db.fetch(
-        "SELECT id, size_bytes FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",
+        "SELECT id, size_bytes FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",  # noqa: E501
         uid(subject.id),
     )
     extra = 1 if PLANT["fingerprint"] and _in_plugin(db) else 0
@@ -37,7 +37,7 @@ async def run(db: Any, job: Any, ctx: Any) -> StageResult:
         await asyncio.sleep(PLANT["slow"])
     cfg = (await read_rules(db, "groups"))[0]
     rows = await db.fetch(
-        "SELECT id, title, size_bytes FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",
+        "SELECT id, title, size_bytes FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",  # noqa: E501
         uid(library),
     )
     await ctx.progress("count", 0, len(rows))

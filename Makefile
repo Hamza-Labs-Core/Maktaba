@@ -284,8 +284,8 @@ lint-go:  ## gofmt + go vet + golangci-lint over every Go module.
 
 .PHONY: lint-py
 lint-py:  ## ruff + mypy --strict over the pipeline package.
-	cd $(PIPELINE_DIR) && uv run ruff check .
-	cd $(PIPELINE_DIR) && uv run ruff format --check .
+	cd $(PIPELINE_DIR) && uv run ruff check . ../plugins ../tools/plugins
+	cd $(PIPELINE_DIR) && uv run ruff format --check . ../plugins ../tools/plugins
 	cd $(PIPELINE_DIR) && uv run mypy
 	@echo "==> lint-log (Python: no runtime data in a log event name, Epic 53 story 53.01)"
 	cd $(PIPELINE_DIR) && uv run python tools/lint_log.py

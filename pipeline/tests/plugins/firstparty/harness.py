@@ -26,11 +26,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from maktaba_plugin_sdk.parity import JOB_COLUMNS, diff_rows, perf_check
+
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.graph import StageDef, bound_graph
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.runtime import Database
-from maktaba_plugin_sdk.parity import JOB_COLUMNS, diff_rows, perf_check
 
 ROOT = Path(__file__).resolve().parents[4]
 API_DIR = ROOT / "api"
@@ -48,7 +49,9 @@ def plugin_api_dev() -> str | None:
         return None
     out = Path(tempfile.gettempdir()) / "maktaba-plugin-api-dev"
     if not out.exists():
-        subprocess.run([go, "build", "-o", str(out), "./tools/plugin-api-dev"], cwd=API_DIR, check=True)
+        subprocess.run(
+            [go, "build", "-o", str(out), "./tools/plugin-api-dev"], cwd=API_DIR, check=True
+        )
     return str(out)
 
 
@@ -101,7 +104,9 @@ class Parity:
             job = None
             for pool in pools:
                 stages = [s.name for s in self.graph.values() if s.pool == pool and not s.legacy]
-                job = await claim_for_pool(side.db, worker_id="parity", pool=pool, stages=stages, scope="per_worker")
+                job = await claim_for_pool(
+                    side.db, worker_id="parity", pool=pool, stages=stages, scope="per_worker"
+                )
                 if job is not None:
                     break
             if job is None:
@@ -147,9 +152,11 @@ class Parity:
                 res.append(d)
             return res
 
-        out += diff_rows("processing_jobs", keyed(ja), keyed(jb), ("stage", "subject_kind", "subject_id", "n"))
+        out += diff_rows(
+            "processing_jobs", keyed(ja), keyed(jb), ("stage", "subject_kind", "subject_id", "n")
+        )
         q = (
-            "SELECT j.stage, e.kind, e.level, e.message FROM job_events e JOIN processing_jobs j ON j.id = e.job_id"
+            "SELECT j.stage, e.kind, e.level, e.message FROM job_events e JOIN processing_jobs j ON j.id = e.job_id"  # noqa: E501
             " WHERE e.kind NOT IN ('claimed') ORDER BY e.id"
         )
         ea, eb = await self.a.db.fetch(q), await self.b.db.fetch(q)
@@ -164,11 +171,15 @@ class Parity:
                 res.append({**d, "n": seen[k]})
             return res
 
-        out += diff_rows("job_events", counted(ea), counted(eb), ("stage", "kind", "level", "message", "n"))
+        out += diff_rows(
+            "job_events", counted(ea), counted(eb), ("stage", "kind", "level", "message", "n")
+        )
         if perf:
             for s in stages:
                 # a job of a few milliseconds is the noise of two event loops: 5 ms floor
-                out += perf_check(s, self.a.times.get(s, []), self.b.times.get(s, []), floor_s=0.005)
+                out += perf_check(
+                    s, self.a.times.get(s, []), self.b.times.get(s, []), floor_s=0.005
+                )
         return out
 
     async def fingerprints(self, stage: str, subjects: Sequence[Any]) -> list[str]:
@@ -180,7 +191,11 @@ class Parity:
         assert impl is not None and impl.input_fingerprint is not None
         a = [await impl.input_fingerprint(self.a.db, s) for s in subjects]
         b = await native.fingerprints(stage, "input", list(subjects), group="light")
-        return [f"fingerprint {stage} {s.kind} {s.id}: in-process {x} != plugin {y}" for s, x, y in zip(subjects, a, b, strict=True) if x != y]
+        return [
+            f"fingerprint {stage} {s.kind} {s.id}: in-process {x} != plugin {y}"
+            for s, x, y in zip(subjects, a, b, strict=True)
+            if x != y
+        ]
 
 
 @contextlib.asynccontextmanager
@@ -199,8 +214,8 @@ async def parity(
 ) -> AsyncIterator[Parity]:
     import asyncpg  # type: ignore[import-untyped]
 
-    from maktaba_plugin_runner.server import Runner
     from maktaba_pipeline.plugins import firstparty, native
+    from maktaba_plugin_runner.server import Runner
 
     binary = plugin_api_dev()
     if binary is None:
@@ -231,14 +246,22 @@ async def parity(
         for d in sides:
             await sync_graph(d, list(graph.values()))
             await seed(d)
-        for s in stages:
-            await b.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = $1", s)
+        for name in stages:
+            await b.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = $1", name)
         (tmp / "bundle.json").write_bytes(bundle)
         api_sock = tmp / "api.sock"
         proc = subprocess.Popen(
-            [binary, "-dsn", _swap_db(pg_url, names[1]) + ("&" if "?" in pg_url else "?") + "sslmode=disable",
-             "-socket", str(api_sock), "-bundle", str(tmp / "bundle.json")],
-            stdout=subprocess.PIPE, text=True,
+            [
+                binary,
+                "-dsn",
+                _swap_db(pg_url, names[1]) + ("&" if "?" in pg_url else "?") + "sslmode=disable",
+                "-socket",
+                str(api_sock),
+                "-bundle",
+                str(tmp / "bundle.json"),
+            ],
+            stdout=subprocess.PIPE,
+            text=True,
         )
         assert proc.stdout is not None
         line = await asyncio.to_thread(proc.stdout.readline)
@@ -247,9 +270,13 @@ async def parity(
         run_dir = tmp / "runners"
         monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(run_dir))
         served = {s: (firstparty.impl_entry(s) or "") for s in stages}
-        runner = Runner(group=group, api_socket=str(api_sock), stages=served,
-                        plugin_of={s: firstparty.by_stage(s).id for s in stages},  # type: ignore[union-attr]
-                        bundle=firstparty.bundle_digest())
+        runner = Runner(
+            group=group,
+            api_socket=str(api_sock),
+            stages=served,
+            plugin_of={s: firstparty.by_stage(s).id for s in stages},  # type: ignore[union-attr]
+            bundle=firstparty.bundle_digest(),
+        )
         sock = run_dir / f"runner-{group}.sock"
         task = asyncio.create_task(runner.serve(sock))
         for _ in range(200):

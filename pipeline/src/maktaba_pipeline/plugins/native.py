@@ -34,8 +34,9 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from uuid import UUID
 
-from maktaba_plugin_runner import socket_path
 from maktaba_plugin_sdk.native.codec import decode, encode
+
+from maktaba_plugin_runner import socket_path
 
 from ..engine.context import JobCancelled, JobDeferred, StageFailure
 from ..engine.graph import GraphViolation, Request, StageResult
@@ -90,7 +91,9 @@ async def hello(group: str) -> dict[str, Any] | None:
     if hit is not None and now - hit[0] < HELLO_TTL:
         return hit[1]
     out: dict[str, Any] | None = None
-    with contextlib.suppress(OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError):
+    with contextlib.suppress(
+        OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError
+    ):
         r, w = await asyncio.wait_for(asyncio.open_unix_connection(str(socket_path(group))), 2)
         try:
             await write_frame(w, {"type": "hello"})
@@ -238,7 +241,12 @@ def result_from_wire(d: dict[str, Any]) -> StageResult:
 def failure_to_wire(exc: BaseException) -> dict[str, Any]:
     """An exception the stage's code raised, so the worker raises the same one."""
     if isinstance(exc, StageFailure):
-        return {"status": "failure", "kind": exc.kind, "message": exc.message, "retryable": exc.retryable}
+        return {
+            "status": "failure",
+            "kind": exc.kind,
+            "message": exc.message,
+            "retryable": exc.retryable,
+        }
     if isinstance(exc, JobDeferred):
         return {"status": "deferred", "reason": exc.reason, "retry_after_sec": exc.retry_after_sec}
     if isinstance(exc, JobCancelled):
@@ -264,7 +272,9 @@ def raise_failure(d: dict[str, Any]) -> None:
     if st == "unregistered":
         raise Unregistered(str(d.get("message") or ""))
     if st == "refused":
-        raise StageFailure(str(d.get("code") or "plugin_capability"), str(d.get("message") or ""), retryable=False)
+        raise StageFailure(
+            str(d.get("code") or "plugin_capability"), str(d.get("message") or ""), retryable=False
+        )
     # any other exception: one of the same class name and message, so the failure's kind
     # and cause are the in-process handler's (run.py names a failure by its class)
     name = str(d.get("type") or "Exception")
@@ -286,7 +296,9 @@ async def _mint(job_id: int) -> dict[str, Any]:
     from .dispatch import _api
 
     try:
-        status, body = await asyncio.to_thread(_api, "POST", "/internal/plugins/invocations", {"job_id": job_id})
+        status, body = await asyncio.to_thread(
+            _api, "POST", "/internal/plugins/invocations", {"job_id": job_id}
+        )
     except OSError as exc:
         raise JobDeferred(f"plugin_api_unavailable: {exc}", 30) from None
     if status != 200:
@@ -357,7 +369,9 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
     minted = await _mint(int(job.id))
     handle = engine_handler(db, ctx)
     try:
-        opener = connect or (lambda: asyncio.open_unix_connection(str(socket_path(group)), limit=1 << 20))
+        opener = connect or (
+            lambda: asyncio.open_unix_connection(str(socket_path(group)), limit=1 << 20)
+        )
         try:
             r, w = await opener()
         except OSError as exc:
@@ -374,7 +388,9 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
                     "token": minted["token"],
                     "job": job_to_wire(job),
                     "write_mode": getattr(ctx, "write_mode", "auto"),
-                    "path_map": [list(e) for e in getattr(getattr(ctx, "path_map", None), "entries", ())],
+                    "path_map": [
+                        list(e) for e in getattr(getattr(ctx, "path_map", None), "entries", ())
+                    ],
                 },
             )
             while True:
@@ -422,7 +438,10 @@ async def _fp_token(plugin_id: str) -> str:
     if hit is not None and now - hit[0] < FP_TOKEN_TTL:
         return hit[1]
     status, body = await asyncio.to_thread(
-        _api, "POST", "/internal/plugins/invocations", {"plugin_id": plugin_id, "purpose": "fingerprints"}
+        _api,
+        "POST",
+        "/internal/plugins/invocations",
+        {"plugin_id": plugin_id, "purpose": "fingerprints"},
     )
     if status != 200:
         raise ConnectionError(f"fingerprint token: {body.get('code', status)}")
@@ -430,7 +449,9 @@ async def _fp_token(plugin_id: str) -> str:
     return str(body["token"])
 
 
-async def fingerprints(stage: str, kind: str, subjects: list[Any], *, group: str = "fp") -> list[str | None]:
+async def fingerprints(
+    stage: str, kind: str, subjects: list[Any], *, group: str = "fp"
+) -> list[str | None]:
     """The stage's input or output fingerprints of ``subjects``, in one batch, from the
     runner that serves fingerprints (read statements only). Raises ``ConnectionError``
     when it does not answer; the caller then computes them in-process."""
@@ -448,7 +469,8 @@ async def fingerprints(stage: str, kind: str, subjects: list[Any], *, group: str
                 "kind": kind,
                 "token": token,
                 "subjects": [
-                    [s.kind, str(s.id), str(s.library_id) if s.library_id else None] for s in subjects
+                    [s.kind, str(s.id), str(s.library_id) if s.library_id else None]
+                    for s in subjects
                 ],
             },
         )

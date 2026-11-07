@@ -78,12 +78,18 @@ def role_sql(m: dict[str, object]) -> str:
         lines.append("    END LOOP;")
     if writes:
         lines.append(f"    FOREACH t IN ARRAY ARRAY[{', '.join(repr(x) for x in writes)}] LOOP")
-        lines.append(f"        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO {role}', t);")
+        lines.append(
+            f"        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO {role}', t);"
+        )
         lines.append("        -- the table's own sequences (serial and identity columns)")
-        lines.append("        FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid")
+        lines.append(
+            "        FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid"
+        )
         lines.append("                  JOIN pg_class c ON c.oid = d.refobjid")
         lines.append("                 WHERE s.relkind = 'S' AND c.relname = t LOOP")
-        lines.append(f"            EXECUTE format('GRANT USAGE, SELECT, UPDATE ON SEQUENCE %I TO {role}', sq);")
+        lines.append(
+            f"            EXECUTE format('GRANT USAGE, SELECT, UPDATE ON SEQUENCE %I TO {role}', sq);"  # noqa: E501
+        )
         lines.append("        END LOOP;")
         lines.append("    END LOOP;")
     lines += [

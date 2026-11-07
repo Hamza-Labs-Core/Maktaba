@@ -65,12 +65,24 @@ def run_probe(tmp_path: Path, *, sandboxed: bool, net: bool = False) -> dict[str
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     out = subprocess.run(
-        [sys.executable, "-c", PROBE, str(granted.resolve()), str(secret.resolve()), str(run_dir.resolve()),
-         "1" if net else "0", "1" if sandboxed else "0"],
-        capture_output=True, text=True, timeout=60, env={**os.environ, "HOME": str(tmp_path / "home")},
+        [
+            sys.executable,
+            "-c",
+            PROBE,
+            str(granted.resolve()),
+            str(secret.resolve()),
+            str(run_dir.resolve()),
+            "1" if net else "0",
+            "1" if sandboxed else "0",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "HOME": str(tmp_path / "home")},
     )
     assert out.returncode == 0, out.stderr
-    return json.loads(out.stdout.strip().splitlines()[-1])
+    got: dict[str, str] = json.loads(out.stdout.strip().splitlines()[-1])
+    return got
 
 
 def test_without_the_sandbox_every_probe_succeeds(tmp_path: Path) -> None:
@@ -100,7 +112,9 @@ def test_a_net_group_may_open_the_network(tmp_path: Path) -> None:
 def test_the_macos_profile_names_no_tcp_and_no_host() -> None:
     from maktaba_plugin_runner import sandbox
 
-    text = sandbox.seatbelt_profile(sandbox.Policy(api_socket="/x/api.sock", own_socket="/x/r.sock", run_dir="/x"))
+    text = sandbox.seatbelt_profile(
+        sandbox.Policy(api_socket="/x/api.sock", own_socket="/x/r.sock", run_dir="/x")
+    )
     assert "(deny default)" in text and "tcp" not in text.lower() and "remote ip" not in text
     assert "(allow network-outbound)" not in text
     assert "(allow network-outbound)" in sandbox.seatbelt_profile(sandbox.Policy(net=True))
@@ -109,7 +123,9 @@ def test_the_macos_profile_names_no_tcp_and_no_host() -> None:
 def test_a_runner_refuses_to_start_with_secrets_in_its_environment() -> None:
     out = subprocess.run(
         [sys.executable, "-m", "maktaba_plugin_runner", "--group", "light"],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True,
+        text=True,
+        timeout=60,
         env={**os.environ, "DATABASE_URL": "postgres://x"},
     )
     assert out.returncode == 72, out.stderr

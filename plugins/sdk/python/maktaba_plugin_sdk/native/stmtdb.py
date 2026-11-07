@@ -100,7 +100,9 @@ class StatementDB:
             self._on_call(st)
         return st
 
-    async def _run(self, op: str, sql: str, args: Sequence[Any] = (), **extra: Any) -> dict[str, Any]:
+    async def _run(
+        self, op: str, sql: str, args: Sequence[Any] = (), **extra: Any
+    ) -> dict[str, Any]:
         st = self._statement(sql)
         tx = _TX.get()
         body: dict[str, Any] = {"name": st.name, "op": op, "args": [encode(a) for a in args]}
@@ -148,7 +150,9 @@ class StatementDB:
                 yield self
             except BaseException:
                 with contextlib.suppress(Exception):
-                    await self.transport.call("trusted/tx", {"op": "rollback_to", "tx": tx, "sp": sp})
+                    await self.transport.call(
+                        "trusted/tx", {"op": "rollback_to", "tx": tx, "sp": sp}
+                    )
                 raise
             else:
                 await self.transport.call("trusted/tx", {"op": "release", "tx": tx, "sp": sp})

@@ -507,7 +507,9 @@ def _validate(c: Component, where: str, features: tuple[str, ...], bad: list[str
     if c.on_demand and not c.has_part("process"):
         bad.append(f"{where}: on_demand is for a component with a process")
     if c.plugin and (not c.plugin.startswith("tv.maktaba.") or not c.has_part("stages")):
-        bad.append(f"{where}: plugin names a first-party plugin (tv.maktaba.*) of a component with stages")
+        bad.append(
+            f"{where}: plugin names a first-party plugin (tv.maktaba.*) of a component with stages"
+        )
     core = c.id.startswith("core.")
     if core and c.switchable:
         bad.append(f"{where}: core.* components must have switchable = false")

@@ -176,9 +176,15 @@ select = ["E", "F", "I", "B", "UP", "SIM", "T20"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src/maktaba_pipeline", "tests"]
+files = ["src/maktaba_pipeline", "src/maktaba_plugin_runner", "../plugins/sdk/python/maktaba_plugin_sdk", "tests"]
 # The shared test-tier plugin lives outside this package's source
 # tree (Story 20.1 — common across future Python services). Point
 # mypy at it so `import maktaba_testtier` resolves the same way it
 # does at runtime via tests/conftest.py.
 mypy_path = "../shared/testtier/py"
+
+# Epic 54 Phase 4: what the first-party plugin tests import from outside the package (the
+# tools of tools/plugins, the tests' toy plugin) and the wheel's build hook
+[[tool.mypy.overrides]]
+module = ["bundle", "roles", "graph_golden", "statements_build", "fp_toy", "fp_toy.*", "hatchling.*", "hatch_build"]
+ignore_missing_imports = true

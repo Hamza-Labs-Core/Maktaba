@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -13,8 +14,14 @@ from . import GROUPS, socket_path
 
 #: what the supervisor never gives a runner (a test asserts the child's environment):
 #: refused here too, so a runner started by hand with them does not run
-FORBIDDEN_ENV = ("DATABASE_URL", "MAKTABA_DATABASE_URL", "MAKTABA_HOME_SECRETS", "MAKTABA_SUPERVISOR_TOKEN_FILE",
-                 "MAKTABA_PLEX_TOKEN", "MAKTABA_CLOUD_TOKEN")
+FORBIDDEN_ENV = (
+    "DATABASE_URL",
+    "MAKTABA_DATABASE_URL",
+    "MAKTABA_HOME_SECRETS",
+    "MAKTABA_SUPERVISOR_TOKEN_FILE",
+    "MAKTABA_PLEX_TOKEN",
+    "MAKTABA_CLOUD_TOKEN",
+)
 
 EXIT_SANDBOX = 70
 EXIT_UNTRUSTED = 71
@@ -33,9 +40,11 @@ def members(group: str) -> dict[str, tuple[str, str]]:
             if not entry:
                 continue
             fp = s.get("fingerprint") or {}
-            if group == "fp" and (fp.get("input") or fp.get("output")):
-                out[name] = (entry, p.id)
-            elif firstparty.runner_group(name) == group:
+            if (
+                group == "fp"
+                and (fp.get("input") or fp.get("output"))
+                or firstparty.runner_group(name) == group
+            ):  # noqa: E501
                 out[name] = (entry, p.id)
     return out
 
@@ -79,7 +88,9 @@ def main(argv: list[str] | None = None) -> int:
     if group == "fp":
         tables = [{}]  # the fingerprint runner reads statements only: no files, no tools
     areas = json.loads(os.environ.get("MAKTABA_RUNNER_AREAS") or "{}")
-    policy = sandbox.policy_for(tables, areas=areas, api_socket=args.api_socket, own_socket=str(own), run_dir=run_dir)
+    policy = sandbox.policy_for(
+        tables, areas=areas, api_socket=args.api_socket, own_socket=str(own), run_dir=run_dir
+    )
     try:
         applied = sandbox.apply(policy)
     except sandbox.SandboxUnavailable as exc:
@@ -99,15 +110,25 @@ def main(argv: list[str] | None = None) -> int:
         reason = impl.unavailable() if getattr(impl, "unavailable", None) else None
         if reason:
             unavailable[stage] = str(reason)
-    runner = Runner(group=group, api_socket=args.api_socket, stages=entries,
-                    plugin_of={s: pid for s, (_, pid) in served.items()}, bundle=firstparty.bundle_digest(),
-                    unavailable=unavailable)
-    log("plugin_runner_serving", group=group, stages=sorted(entries), trust=level, sandbox=applied.level,
-        sandbox_missing=list(applied.missing), socket=str(own))
-    try:
+    runner = Runner(
+        group=group,
+        api_socket=args.api_socket,
+        stages=entries,
+        plugin_of={s: pid for s, (_, pid) in served.items()},
+        bundle=firstparty.bundle_digest(),
+        unavailable=unavailable,
+    )
+    log(
+        "plugin_runner_serving",
+        group=group,
+        stages=sorted(entries),
+        trust=level,
+        sandbox=applied.level,
+        sandbox_missing=list(applied.missing),
+        socket=str(own),
+    )
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(runner.serve(own))
-    except KeyboardInterrupt:
-        pass
     return 0
 
 

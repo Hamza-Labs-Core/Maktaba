@@ -30,7 +30,12 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from maktaba_plugin_sdk.native import PluginRefused, StatementDB, StatementUnregistered, UnixTransport
+from maktaba_plugin_sdk.native import (
+    PluginRefused,
+    StatementDB,
+    StatementUnregistered,
+    UnixTransport,
+)
 
 __all__ = ["Runner", "load_impl"]
 
@@ -70,7 +75,13 @@ class Relay:
         async with self._lock:
             n = next(self._ids)
             await write_frame(
-                self.w, {"type": "engine", "id": n, "op": op, "args": {k: encode_any(v) for k, v in args.items()}}
+                self.w,
+                {
+                    "type": "engine",
+                    "id": n,
+                    "op": op,
+                    "args": {k: encode_any(v) for k, v in args.items()},
+                },
             )
             while True:
                 msg = await read_frame(self.r)
@@ -95,13 +106,15 @@ class Relay:
         return None if v is None else decode_any(v)
 
 
-def runner_context(db: Any, job: Any, stage: Any, relay: Relay, write_mode: str, path_map: Any) -> Any:
+def runner_context(
+    db: Any, job: Any, stage: Any, relay: Relay, write_mode: str, path_map: Any
+) -> Any:
     """The job's :class:`StageContext` in the runner: what writes queue tables asks the
     worker; ``rules`` reads through the plugin's statements."""
     from maktaba_pipeline.engine.context import JobCancelled, StageContext
 
     class RunnerContext(StageContext):
-        async def progress(  # type: ignore[override]
+        async def progress(
             self,
             step: str,
             done: int,
@@ -112,7 +125,13 @@ def runner_context(db: Any, job: Any, stage: Any, relay: Relay, write_mode: str,
             force: bool = False,
         ) -> None:
             await relay.ask(
-                "progress", step=step, done=done, total=total, message=message, steps=steps, force=force
+                "progress",
+                step=step,
+                done=done,
+                total=total,
+                message=message,
+                steps=steps,
+                force=force,
             )
 
         async def log(self, level: str, message: str, data: dict[str, Any] | None = None) -> None:
@@ -175,7 +194,9 @@ class Runner:
             with contextlib.suppress(Exception):
                 await w.wait_closed()
 
-    async def _run(self, msg: dict[str, Any], r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
+    async def _run(
+        self, msg: dict[str, Any], r: asyncio.StreamReader, w: asyncio.StreamWriter
+    ) -> None:
         from maktaba_pipeline.engine.graph import get_stage
         from maktaba_pipeline.engine.paths import PathMap
         from maktaba_pipeline.plugins import firstparty
@@ -183,8 +204,15 @@ class Runner:
 
         stage = str(msg["stage"])
         if stage not in self.stages or msg.get("entry") != self.stages[stage]:
-            await write_frame(w, {"type": "result", "status": "refused", "code": "plugin_capability",
-                                  "message": f"{stage} is not served by {self.group}"})
+            await write_frame(
+                w,
+                {
+                    "type": "result",
+                    "status": "refused",
+                    "code": "plugin_capability",
+                    "message": f"{stage} is not served by {self.group}",
+                },
+            )
             return
         job = job_from_wire(msg["job"])
         relay = Relay(r, w)

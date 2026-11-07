@@ -149,14 +149,20 @@ def _assigns(body: list[ast.stmt]) -> dict[str, list[ast.AST]]:
     out: dict[str, list[ast.AST]] = {}
     for st in body:
         for n in ast.walk(st) if not isinstance(st, ast.FunctionDef | ast.AsyncFunctionDef) else ():
-            if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+            if (
+                isinstance(n, ast.Assign)
+                and len(n.targets) == 1
+                and isinstance(n.targets[0], ast.Name)
+            ):
                 out.setdefault(n.targets[0].id, []).append(n.value)
             elif isinstance(n, ast.AnnAssign) and isinstance(n.target, ast.Name) and n.value:
                 out.setdefault(n.target.id, []).append(n.value)
     return out
 
 
-def scan_source(src: str, file: str, *, module: str = "", only: set[str] | None = None) -> list[Found]:
+def scan_source(
+    src: str, file: str, *, module: str = "", only: set[str] | None = None
+) -> list[Found]:
     """Every statement text passed to a database method in ``src``; ``only`` limits the scan
     to those top-level functions (a shared module whose other functions serve other stages)."""
     tree = ast.parse(src)
@@ -194,7 +200,7 @@ def scan_source(src: str, file: str, *, module: str = "", only: set[str] | None 
                 texts = _const(child.args[0], names)
                 if texts is None:
                     arg = child.args[0]
-                    if isinstance(arg, ast.JoinedStr) or isinstance(arg, ast.BinOp):
+                    if isinstance(arg, ast.JoinedStr | ast.BinOp):
                         found.append(Found(None, file, child.lineno, func, "built at run time"))
                     elif isinstance(arg, ast.Name | ast.Attribute | ast.Subscript | ast.Call):
                         found.append(Found(None, file, child.lineno, func, "not a constant text"))

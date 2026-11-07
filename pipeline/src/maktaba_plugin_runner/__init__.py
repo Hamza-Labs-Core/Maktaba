@@ -44,7 +44,9 @@ def runner_dir() -> Path:
     data = os.environ.get("MAKTABA_DATA_DIR", "").strip() or "."
     d = Path(data) / "run" / "runners"
     if len(str(d / "runner-service.sock")) > _MAX_SOCKET:
-        d = Path("/tmp") / ("maktaba-r-" + hashlib.sha256(str(Path(data).resolve()).encode()).hexdigest()[:12])
+        d = Path("/tmp") / (
+            "maktaba-r-" + hashlib.sha256(str(Path(data).resolve()).encode()).hexdigest()[:12]
+        )
     return d
 
 

@@ -71,5 +71,5 @@ TOY_TABLE_SQLITE = (
 )
 
 
-async def toy_table(db: Any) -> None:
-    await db.execute(TOY_TABLE_PG if db.dialect == "postgres" else TOY_TABLE_SQLITE)
+async def toy_table(database: Any) -> None:
+    await database.execute(TOY_TABLE_PG if database.dialect == "postgres" else TOY_TABLE_SQLITE)

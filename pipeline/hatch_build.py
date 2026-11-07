@@ -18,7 +18,7 @@ from typing import Any
 try:
     from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 except ImportError:  # the tests import package_dirs outside a build
-    BuildHookInterface = object  # type: ignore[assignment,misc]
+    BuildHookInterface = object  # type: ignore[assignment,misc,unused-ignore]
 
 
 def package_dirs(root: Path) -> dict[str, str]:
@@ -40,7 +40,7 @@ def package_dirs(root: Path) -> dict[str, str]:
     return out
 
 
-class CustomBuildHook(BuildHookInterface):  # type: ignore[type-arg]
+class CustomBuildHook(BuildHookInterface):  # type: ignore[misc,type-arg,unused-ignore]
     def initialize(self, version: str, build_data: dict[str, Any]) -> None:
         if version == "editable":
             return

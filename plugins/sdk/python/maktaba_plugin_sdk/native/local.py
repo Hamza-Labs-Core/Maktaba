@@ -64,7 +64,9 @@ class LocalTransport:
             status = await self.db.execute(st.text, *args)
             return {"status": status if isinstance(status, str) else ""}
         if op == "executemany":
-            await self.db.executemany(st.text, [[decode(a) for a in r] for r in body.get("rows") or []])
+            await self.db.executemany(
+                st.text, [[decode(a) for a in r] for r in body.get("rows") or []]
+            )
             return {}
         raise PluginRefused(400, "plugin_invalid", f"op {op}")
 

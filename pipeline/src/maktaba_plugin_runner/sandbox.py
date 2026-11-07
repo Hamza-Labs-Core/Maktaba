@@ -36,7 +36,9 @@ class SandboxUnavailable(RuntimeError):
     """The sandbox could not be applied; ``step`` says which part."""
 
     def __init__(self, step: str, detail: str = "") -> None:
-        super().__init__(f"sandbox_unavailable: {step}: {detail}" if detail else f"sandbox_unavailable: {step}")
+        super().__init__(
+            f"sandbox_unavailable: {step}: {detail}" if detail else f"sandbox_unavailable: {step}"
+        )
         self.step = step
 
 
@@ -61,7 +63,12 @@ class Applied:
 
 def python_paths() -> list[str]:
     """What the interpreter itself reads: its installation, its packages, sys.path."""
-    out = {sys.prefix, sys.base_prefix, sys.exec_prefix, os.path.dirname(os.path.realpath(sys.executable))}
+    out = {
+        sys.prefix,
+        sys.base_prefix,
+        sys.exec_prefix,
+        os.path.dirname(os.path.realpath(sys.executable)),
+    }
     for k in ("stdlib", "platstdlib", "purelib", "platlib"):
         with _ignore():
             out.add(sysconfig.get_path(k))
@@ -81,7 +88,12 @@ class _ignore:
 
 def tool_path(name: str) -> str | None:
     """A tool the group may run, as this machine has it (Epic 51 assets on PATH)."""
-    env = {"ffmpeg": "MAKTABA_FFMPEG", "ffprobe": "MAKTABA_FFPROBE", "fpcalc": "MAKTABA_FPCALC", "yt-dlp": "MAKTABA_YTDLP"}
+    env = {
+        "ffmpeg": "MAKTABA_FFMPEG",
+        "ffprobe": "MAKTABA_FFPROBE",
+        "fpcalc": "MAKTABA_FPCALC",
+        "yt-dlp": "MAKTABA_YTDLP",
+    }
     explicit = os.environ.get(env.get(name, ""), "").strip()
     found = explicit or shutil.which(name)
     return os.path.realpath(found) if found else None
@@ -104,7 +116,7 @@ def seatbelt_profile(p: Policy) -> str:
         '(allow file-read* (literal "/dev/urandom") (literal "/dev/random") (literal "/dev/null"))',
         '(allow file-write-data (literal "/dev/null"))',
         ";; the interpreter, its libraries and the system's shared libraries",
-        '(allow file-read* (subpath "/usr/lib") (subpath "/System") (subpath "/Library/Preferences")'
+        '(allow file-read* (subpath "/usr/lib") (subpath "/System") (subpath "/Library/Preferences")'  # noqa: E501
         ' (subpath "/private/var/db/timezone") (subpath "/usr/share") (subpath "/private/etc"))',
         '(allow mach-lookup (global-name "com.apple.system.opendirectoryd.libinfo"))',
     ]
@@ -124,15 +136,19 @@ def seatbelt_profile(p: Policy) -> str:
         lines.append("(deny process-fork)")
     if p.gpu:
         lines += [
-            '(allow iokit-open (iokit-user-client-class "AGXDeviceUserClient") (iokit-user-client-class "IOSurfaceRootUserClient"))',
+            '(allow iokit-open (iokit-user-client-class "AGXDeviceUserClient") (iokit-user-client-class "IOSurfaceRootUserClient"))',  # noqa: E501
             '(allow mach-lookup (global-name "com.apple.MTLCompilerService"))',
             "(allow iokit-get-properties)",
         ]
     lines.append(";; the network: the plugin API's socket and this runner's own")
     if p.api_socket:
-        lines.append(f"(allow network-outbound (remote unix-socket (path-literal {_q(p.api_socket)})))")
+        lines.append(
+            f"(allow network-outbound (remote unix-socket (path-literal {_q(p.api_socket)})))"
+        )
     if p.own_socket:
-        lines.append(f"(allow network-bind network-inbound (local unix-socket (path-literal {_q(p.own_socket)})))")
+        lines.append(
+            f"(allow network-bind network-inbound (local unix-socket (path-literal {_q(p.own_socket)})))"  # noqa: E501
+        )
         lines.append(f"(allow file-read* file-write* (literal {_q(p.own_socket)}))")
     if p.api_socket:
         lines.append(f"(allow file-read* file-write* (literal {_q(p.api_socket)}))")
@@ -145,7 +161,12 @@ def seatbelt_profile(p: Policy) -> str:
 def _apply_darwin(p: Policy) -> Applied:
     lib = ctypes.CDLL(ctypes.util.find_library("sandbox") or "/usr/lib/libsandbox.1.dylib")
     fn = lib.sandbox_init_with_parameters
-    fn.argtypes = [ctypes.c_char_p, ctypes.c_uint64, ctypes.POINTER(ctypes.c_char_p), ctypes.POINTER(ctypes.c_char_p)]
+    fn.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_uint64,
+        ctypes.POINTER(ctypes.c_char_p),
+        ctypes.POINTER(ctypes.c_char_p),
+    ]
     fn.restype = ctypes.c_int
     err = ctypes.c_char_p()
     params = (ctypes.c_char_p * 1)(None)
@@ -159,12 +180,24 @@ def _apply_darwin(p: Policy) -> Applied:
 _LL_CREATE, _LL_ADD, _LL_RESTRICT = 444, 445, 446
 _FS_EXECUTE, _FS_WRITE, _FS_READ_FILE, _FS_READ_DIR = 1, 2, 4, 8
 _FS_REMOVE_DIR, _FS_REMOVE_FILE, _FS_MAKE_CHAR, _FS_MAKE_DIR = 16, 32, 64, 128
-_FS_MAKE_REG, _FS_MAKE_SOCK, _FS_MAKE_FIFO, _FS_MAKE_BLOCK, _FS_MAKE_SYM = 256, 512, 1024, 2048, 4096
+_FS_MAKE_REG, _FS_MAKE_SOCK, _FS_MAKE_FIFO, _FS_MAKE_BLOCK, _FS_MAKE_SYM = (
+    256,
+    512,
+    1024,
+    2048,
+    4096,
+)
 _FS_REFER, _FS_TRUNCATE = 8192, 16384
 _READ = _FS_READ_FILE | _FS_READ_DIR
 _WRITE = (
-    _FS_WRITE | _FS_REMOVE_DIR | _FS_REMOVE_FILE | _FS_MAKE_DIR | _FS_MAKE_REG | _FS_MAKE_SOCK
-    | _FS_MAKE_FIFO | _FS_MAKE_SYM
+    _FS_WRITE
+    | _FS_REMOVE_DIR
+    | _FS_REMOVE_FILE
+    | _FS_MAKE_DIR
+    | _FS_MAKE_REG
+    | _FS_MAKE_SOCK
+    | _FS_MAKE_FIFO
+    | _FS_MAKE_SYM
 )
 
 _SECCOMP = {
@@ -214,12 +247,24 @@ def _landlock(p: Policy) -> tuple[bool, list[str]]:
         finally:
             os.close(pfd)
 
-    for path in ["/usr", "/lib", "/lib64", "/etc", "/proc/self", "/sys/devices/system/cpu", *python_paths(), *p.read]:
+    for path in [
+        "/usr",
+        "/lib",
+        "/lib64",
+        "/etc",
+        "/proc/self",
+        "/sys/devices/system/cpu",
+        *python_paths(),
+        *p.read,
+    ]:
         rule(path, _READ | _FS_EXECUTE if path in ("/usr", "/lib", "/lib64") else _READ)
     for path in ["/dev/null", "/dev/urandom"]:
         rule(path, _FS_READ_FILE | _FS_WRITE)
     for path in [x for x in (p.run_dir, *p.write) if x]:
-        rule(path, _READ | _WRITE | (_FS_REFER if abi >= 2 else 0) | (_FS_TRUNCATE if abi >= 3 else 0))
+        rule(
+            path,
+            _READ | _WRITE | (_FS_REFER if abi >= 2 else 0) | (_FS_TRUNCATE if abi >= 3 else 0),
+        )
     for path in p.exec:
         rule(path, _FS_EXECUTE | _FS_READ_FILE)
     if p.gpu:
@@ -290,8 +335,14 @@ def apply(p: Policy) -> Applied:
     raise SandboxUnavailable("platform", sys.platform)
 
 
-def policy_for(trusted: list[dict[str, object]], *, areas: dict[str, str], api_socket: str, own_socket: str,
-               run_dir: str) -> Policy:
+def policy_for(
+    trusted: list[dict[str, object]],
+    *,
+    areas: dict[str, str],
+    api_socket: str,
+    own_socket: str,
+    run_dir: str,
+) -> Policy:
     """The union of a group's ``[trusted]`` tables; ``areas`` maps an area name
     (``library``, ``data.thumbnails`` …) to this machine's folders (``;``-separated)."""
     p = Policy(api_socket=api_socket, own_socket=own_socket, run_dir=run_dir)

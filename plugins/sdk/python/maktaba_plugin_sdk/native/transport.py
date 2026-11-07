@@ -72,7 +72,9 @@ class UnixTransport:
                 self._give_back(r, w)
             out = json.loads(raw or b"{}")
             if status >= 300:
-                raise PluginRefused(status, str(out.get("code") or status), str(out.get("detail") or ""))
+                raise PluginRefused(
+                    status, str(out.get("code") or status), str(out.get("detail") or "")
+                )
             return out if isinstance(out, dict) else {"value": out}
         raise ConnectionError("plugin API unreachable")  # pragma: no cover
 

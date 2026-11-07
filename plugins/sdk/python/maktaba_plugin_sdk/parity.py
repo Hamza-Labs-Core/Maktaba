@@ -167,7 +167,7 @@ def diff_rows(
             for col in sorted(set(ia[k]) | set(ib[k])):
                 if ia[k].get(col) != ib[k].get(col):
                     lines.append(
-                        f"{table} {k} {col}: in-process {json.dumps(ia[k].get(col), ensure_ascii=False, default=str)}"
+                        f"{table} {k} {col}: in-process {json.dumps(ia[k].get(col), ensure_ascii=False, default=str)}"  # noqa: E501
                         f" != plugin {json.dumps(ib[k].get(col), ensure_ascii=False, default=str)}"
                     )
     return lines
@@ -187,7 +187,9 @@ def diff_files(area: str, a: Mapping[str, str], b: Mapping[str, str]) -> list[st
     out = []
     for k in sorted(set(a) | set(b)):
         if a.get(k) != b.get(k):
-            out.append(f"file {area}/{k}: in-process {a.get(k, 'missing')} != plugin {b.get(k, 'missing')}")
+            out.append(
+                f"file {area}/{k}: in-process {a.get(k, 'missing')} != plugin {b.get(k, 'missing')}"
+            )
     return out
 
 
@@ -199,7 +201,9 @@ def _quantile(xs: Sequence[float], q: float) -> float:
     return s[i]
 
 
-def perf_check(stage: str, inproc: Sequence[float], plugin: Sequence[float], *, floor_s: float = 0.0) -> list[str]:
+def perf_check(
+    stage: str, inproc: Sequence[float], plugin: Sequence[float], *, floor_s: float = 0.0
+) -> list[str]:
     """N16: p50 ≤ 1.10× and p95 ≤ 1.15× of the in-process job time. ``floor_s`` is the
     smallest difference that counts (a job of a few milliseconds is noise)."""
     if not inproc or not plugin:
@@ -208,5 +212,7 @@ def perf_check(stage: str, inproc: Sequence[float], plugin: Sequence[float], *, 
     for name, q, limit in (("p50", 0.5, P50_LIMIT), ("p95", 0.95, P95_LIMIT)):
         a, b = _quantile(inproc, q), _quantile(plugin, q)
         if b > a * limit and b - a > floor_s:
-            out.append(f"{stage} {name}: plugin {b * 1000:.1f} ms > {limit:.2f} x in-process {a * 1000:.1f} ms")
+            out.append(
+                f"{stage} {name}: plugin {b * 1000:.1f} ms > {limit:.2f} x in-process {a * 1000:.1f} ms"  # noqa: E501
+            )
     return out

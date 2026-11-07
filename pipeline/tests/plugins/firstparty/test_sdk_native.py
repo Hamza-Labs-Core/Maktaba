@@ -10,18 +10,23 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-
 from maktaba_plugin_sdk.native import PluginRefused, StatementDB, StatementUnregistered
 from maktaba_plugin_sdk.native.codec import decode, encode
 from maktaba_plugin_sdk.native.records import Record
-from maktaba_plugin_sdk.statements import Registry, Statement, StatementError, parse_file, render_file
+from maktaba_plugin_sdk.statements import (
+    Registry,
+    Statement,
+    StatementError,
+    parse_file,
+    render_file,
+)
 
 asyncio_test = pytest.mark.asyncio
 
 
 def test_a_statement_file_round_trips_and_its_header_is_checked() -> None:
     text = (
-        "-- name: promo_links.run.2\n-- mode: write\n-- scope: library $1\n-- tables: promo_links*\n"
+        "-- name: promo_links.run.2\n-- mode: write\n-- scope: library $1\n-- tables: promo_links*\n"  # noqa: E501
         "DELETE FROM promo_links WHERE library_id = $1\n"
     )
     st = parse_file(text)
@@ -116,7 +121,9 @@ async def test_the_database_sends_names_never_text() -> None:
 
 @asyncio_test
 async def test_a_transaction_holds_its_statements_and_nests_as_savepoints() -> None:
-    reg = Registry.of("tv.maktaba.x", [Statement("x.w", "UPDATE t SET a = 1", mode="write", writes=("t",))])
+    reg = Registry.of(
+        "tv.maktaba.x", [Statement("x.w", "UPDATE t SET a = 1", mode="write", writes=("t",))]
+    )
     t = FakeTransport()
     db = StatementDB(reg, t)
     async with db.transaction():

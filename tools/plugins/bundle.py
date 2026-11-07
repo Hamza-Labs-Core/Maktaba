@@ -78,7 +78,11 @@ def main(argv: list[str] | None = None) -> int:
         for p in (OUT, COPY):
             p.write_text(text, encoding="utf-8")
         return 0
-    stale = [str(p.relative_to(ROOT)) for p in (OUT, COPY) if not p.is_file() or p.read_text(encoding="utf-8") != text]
+    stale = [
+        str(p.relative_to(ROOT))
+        for p in (OUT, COPY)
+        if not p.is_file() or p.read_text(encoding="utf-8") != text
+    ]
     for p in stale:
         print(f"{p} is stale: run python3 tools/plugins/bundle.py --write", file=sys.stderr)  # noqa: T201
     return 1 if stale else 0

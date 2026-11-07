@@ -39,7 +39,10 @@ def encode(v: Any) -> Any:
         return v
     if isinstance(v, float):
         if math.isnan(v) or math.isinf(v):
-            return {"$t": "float", "v": "NaN" if math.isnan(v) else ("Infinity" if v > 0 else "-Infinity")}
+            return {
+                "$t": "float",
+                "v": "NaN" if math.isnan(v) else ("Infinity" if v > 0 else "-Infinity"),
+            }
         return v
     if isinstance(v, UUID):
         return {"$t": "uuid", "v": str(v)}

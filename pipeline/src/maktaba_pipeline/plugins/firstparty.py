@@ -176,7 +176,7 @@ def stage_def(name: str) -> StageDef:
     return StageDef(
         name=name,
         label=str(s.get("label") or name),
-        subject_kinds=kinds,  # type: ignore[arg-type]
+        subject_kinds=kinds,
         pool=str(s.get("pool") or "plugins"),
         lane=s.get("lane") or "media",
         lane_order=int(s.get("lane_order", 0)),
@@ -191,7 +191,7 @@ def stage_def(name: str) -> StageDef:
             for e in s.get("edges") or []
         ),
         may_request=tuple(s.get("may_request") or ()),
-        entry_for=tuple(s.get("entry_for") or ()),  # type: ignore[arg-type]
+        entry_for=tuple(s.get("entry_for") or ()),
         debounce_sec=int(s.get("debounce_sec", 0)),
         debounce_max_sec=int(s.get("debounce_max_sec", 0)),
         external_write=bool(s.get("external_write", False)),
