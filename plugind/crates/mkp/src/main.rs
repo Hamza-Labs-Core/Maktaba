@@ -1,13 +1,14 @@
 //! mkp: the Maktaba plugin SDK's CLI (Epic 54, story 54.12).
 //!
-//!   mkp new rust|python|js <id> <folder>
+//!   mkp new rust|python|js|go <id> <folder>
 //!                                     a project from a template (Rust: no_std, wit-bindgen;
-//!                                     Python: componentize-py; JavaScript: jco componentize)
+//!                                     Python: componentize-py; JavaScript: jco componentize;
+//!                                     Go: TinyGo's wasm-unknown target)
 //!   mkp build <project> [--entry <file.js>]
 //!                                     the language's toolchain makes package/plugin.wasm,
 //!                                     then the home's checks (as `mkp check`)
 //!   mkp world <project>               the project's WIT with the `plugin` world narrowed to
-//!                                     what its manifest may import (Python, JS)
+//!                                     what its manifest may import (Python, JS, Go)
 //!   mkp check <folder>                the home's manifest validation (54.01) and import audit (54.02)
 //!   mkp pack <folder> <out.mkplugin> [--key <id>]
 //!                                     files.json and the package, every file's sha256 listed;
@@ -40,7 +41,7 @@ use std::process::exit;
 
 fn usage() -> ! {
     eprintln!(
-        "usage:\n  mkp new rust|python|js <id> <folder>\n  mkp build <project> [--entry <file.js>]\n  \
+        "usage:\n  mkp new rust|python|js|go <id> <folder>\n  mkp build <project> [--entry <file.js>]\n  \
          mkp world <project>\n  mkp check <folder>\n  mkp pack <folder> <out.mkplugin> [--key <id>]\n  \
          mkp keys new | list | export-public [id]\n  \
          mkp run <folder> --home <http://home:port> --user <admin>\n  \
@@ -54,7 +55,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
         Some("new") if args.len() == 4 && args[1] == "rust" => template::new_rust(&args[2], Path::new(&args[3])),
-        Some("new") if args.len() == 4 && (args[1] == "python" || args[1] == "js") => {
+        Some("new") if args.len() == 4 && ["python", "js", "go"].contains(&args[1].as_str()) => {
             template::new_lang(&args[1], &args[2], Path::new(&args[3]))
         }
         Some("build") if args.len() == 2 => buildcmd::build(Path::new(&args[1]), None),
