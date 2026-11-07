@@ -65,28 +65,45 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from ...audio.probe import AudioTrack, parse_ffprobe_json
-from ...binaries import ffmpeg_binary
-from ...db.jobs import Job
-from ...log import get_logger
-from ...stt import engine
-from ...stt.cohere import DEFAULT_MODEL as REFINE_MODEL
-from ...stt.placement import TranscriptionConfig
-from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
-from ..context import JobDeferred, StageContext, StageFailure
-from ..events import log_event
-from ..graph import TRANSCRIBE_VERSION, Request, StageResult, Subject
-from ..hashing import canonical_hash
-from ..health import system_memory
-from ..sql import dumps, is_pg, loads, now, parse_ts, to_ts, uid
-from ._common import load_video, require_video
-from .content_hash import READ_TIMEOUT_S, on_disk
-from .registry import StageImpl
+from maktaba_pipeline.audio.probe import AudioTrack, parse_ffprobe_json
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.engine.context import JobDeferred, StageContext, StageFailure
+from maktaba_pipeline.engine.events import log_event
+from maktaba_pipeline.engine.graph import TRANSCRIBE_VERSION, Request, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.health import system_memory
+from maktaba_pipeline.engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts, uid
+from maktaba_pipeline.engine.stages._common import load_video, require_video
+from maktaba_pipeline.engine.stages.content_hash import READ_TIMEOUT_S, on_disk
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.log import get_logger
+from maktaba_pipeline.stt import engine
+
+# the settings and the audio decode live in the pipeline (maktaba_pipeline.stt.env), which
+# reads them too; this stage's own name for each is kept (second_listen and tests use it)
+from maktaba_pipeline.stt.env import (
+    DECODE_TIMEOUT_S as DECODE_TIMEOUT_S,
+)
+from maktaba_pipeline.stt.env import (
+    decode_audio as decode_audio,
+)
+from maktaba_pipeline.stt.env import (
+    refine_model as refine_model,
+)
+from maktaba_pipeline.stt.env import (
+    settings_from_env as settings_from_env,
+)
+from maktaba_pipeline.stt.placement import TranscriptionConfig
+from maktaba_pipeline.stt.settings import (
+    SAMPLE_RATE,
+    Checkpoint,
+    FileProgress,
+    Transcript,
+    WhisperSettings,
+)
 
 if TYPE_CHECKING:
-    import numpy as np
-
-    from ...stt.batched import BatchedTranscriber
+    from maktaba_pipeline.stt.batched import BatchedTranscriber
 
 __all__ = [
     "IMPL",
@@ -116,7 +133,7 @@ def _engine_unavailable() -> str | None:
     if engine.current() == engine.CT2:
         if importlib.util.find_spec("numpy") is None:
             return "numpy is not installed (the stt extra)"
-        from ...stt.ct2 import unavailable as ct2_unavailable
+        from maktaba_pipeline.stt.ct2 import unavailable as ct2_unavailable
 
         return ct2_unavailable(settings_from_env())
     if platform.system() != "Darwin" or platform.machine() != "arm64":
@@ -132,7 +149,7 @@ def use_vad() -> bool:
     default: on 5.45 h of lectures it cut 7 % of the audio but decoding only 3 %, and the
     text moved (word similarity to the full decode 0.89, one file 0.67), so it is not
     worth it for this library (plan 03-10)."""
-    from ...stt.vad import vad_available
+    from maktaba_pipeline.stt.vad import vad_available
 
     return os.environ.get("MAKTABA_STT_VAD", "0") == "1" and vad_available()
 
@@ -150,10 +167,10 @@ def _remap(result: Transcript, tmap: Any, audio_sec: float) -> Transcript:
 def get_transcriber(settings: WhisperSettings) -> BatchedTranscriber:
     """The process's transcriber for these settings, on this machine's engine."""
     if engine.current() == engine.CT2:
-        from ...stt.ct2 import get_transcriber as on_ct2
+        from maktaba_pipeline.stt.ct2 import get_transcriber as on_ct2
 
         return on_ct2(settings)
-    from ...stt.batched import get_transcriber as shared
+    from maktaba_pipeline.stt.batched import get_transcriber as shared
 
     return shared(settings)
 
@@ -166,7 +183,6 @@ def _where(settings: WhisperSettings) -> str:
 
 
 #: decoding the audio off the share: generous, a long lecture over a busy NAS
-DECODE_TIMEOUT_S = 900.0
 
 #: how often a file's progress is saved (``MAKTABA_STT_CHECKPOINT_S``): a restart loses
 #: at most this much of each file's decoding
@@ -212,41 +228,6 @@ def audio_budget() -> AudioBudget:
     return _BUDGET
 
 
-def settings_from_env(max_batch: int | None = None) -> WhisperSettings:
-    """This machine's settings, each engine reading its own knobs."""
-    env = os.environ
-    name = engine.current()
-    model = engine.model_for(name, env.get("MAKTABA_STT_MODEL"))
-    language = env.get("MAKTABA_STT_LANGUAGE", "ar")
-    words = env.get("MAKTABA_STT_WORDS", "1") != "0"
-    batch = max_batch or int(env.get("MAKTABA_STT_BATCH") or engine.DEFAULT_BATCH[name])
-    if name == engine.CT2:
-        return WhisperSettings(
-            model=model,
-            language=language,
-            word_timestamps=words,
-            max_batch=batch,
-            device=env.get("MAKTABA_STT_DEVICE") or "auto",
-            compute_type=env.get("MAKTABA_STT_COMPUTE_TYPE") or "auto",
-            cpu_threads=int(env.get("MAKTABA_STT_CPU_THREADS") or 0),
-        )
-    return WhisperSettings(
-        model=model,
-        language=language,
-        word_timestamps=words,
-        max_batch=batch,
-        gpu_limit_gb=float(env.get("MAKTABA_STT_GPU_GB", "24")),
-        gpu_cache_gb=float(env.get("MAKTABA_STT_GPU_CACHE_GB", "2")),
-    )
-
-
-def refine_model() -> str | None:
-    """The model of the second listen, or None when it is off (``MAKTABA_STT_REFINE=0``)."""
-    if os.environ.get("MAKTABA_STT_REFINE", "1") == "0":
-        return None
-    return os.environ.get("MAKTABA_STT_REFINE_MODEL", REFINE_MODEL)
-
-
 # ------------------------------------------------------------------ where it runs
 
 #: ``rules.transcription`` as this worker last read it (:func:`refresh`, before each
@@ -257,7 +238,7 @@ _RULES = TranscriptionConfig()
 def second_listen_problem() -> str | None:
     """Why this worker cannot run the second listen, or None (whether it has the model
     shows when it loads it)."""
-    from ...stt.cohere import unavailable as no_second_listen
+    from maktaba_pipeline.stt.cohere import unavailable as no_second_listen
 
     why = no_second_listen()
     if why is None and engine.current() == engine.MLX and not importlib.util.find_spec("mlx_audio"):
@@ -272,7 +253,7 @@ def runs_second_listen() -> bool:
     model = refine_model()
     if model is None or second_listen_problem() is not None:
         return False
-    from ...stt.cohere import load_failure
+    from maktaba_pipeline.stt.cohere import load_failure
 
     return load_failure(model) is None
 
@@ -288,7 +269,7 @@ def waits_for_second_listen() -> str | None:
         return None
     why = second_listen_problem()
     if why is None:
-        from ...stt.cohere import load_failure
+        from maktaba_pipeline.stt.cohere import load_failure
 
         why = load_failure(model)
     if why is None:
@@ -405,7 +386,7 @@ async def listen_refresh(db: Any, serving: bool) -> None:
 async def read_rules(db: Any) -> None:
     """The home's ``rules.transcription``, as this worker reads it now."""
     global _RULES
-    from ...rules import read
+    from maktaba_pipeline.rules import read
 
     _RULES = (await read(db, "transcription"))[0]
 
@@ -420,8 +401,8 @@ async def relisten(db: Any) -> int:
     transcript again). The videos tried least come first, the oldest among them; one
     tried already waits out its backoff, and one tried ``relisten_tries`` times gets no
     more (:func:`_stop_relistens`). Returns the jobs queued."""
-    from ...pipeline.backoff import compute_backoff
-    from ..enqueue import enqueue_job
+    from maktaba_pipeline.engine.enqueue import enqueue_job
+    from maktaba_pipeline.pipeline.backoff import compute_backoff
 
     t = time.monotonic()
     if _LAST_RELISTEN and t - _LAST_RELISTEN[0] < RELISTEN_EVERY_S:
@@ -534,7 +515,7 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
         " FROM relisten_attempts r LEFT JOIN processing_jobs j ON j.id = r.last_job_id"
         f" WHERE r.ended_at IS NULL AND NOT {_open_job('r.video_id')}"
     )
-    from ...pipeline.backoff import compute_backoff
+    from maktaba_pipeline.pipeline.backoff import compute_backoff
 
     for r in rows:
         ended = parse_ts(r["finished_at"]) or now()
@@ -630,7 +611,7 @@ def second_listen_capability() -> tuple[str, dict[str, Any]]:
 def _gpu_key() -> dict[str, Any] | None:
     """The NVIDIA GPU the second listen runs on (Whisper's, ``MAKTABA_STT_DEVICE``), as its
     driver names it, or None without one."""
-    from ...stt import cohere_cuda, ct2
+    from maktaba_pipeline.stt import cohere_cuda, ct2
 
     index = cohere_cuda.device_index(os.environ.get("MAKTABA_STT_DEVICE") or "auto")
     gpu = None if index is None else ct2.gpu_info(index)
@@ -659,7 +640,7 @@ def stable_machine_id() -> str:
     """This machine's own id, "" when it cannot be read: ``MAKTABA_MACHINE_ID`` or Windows'
     MachineGuid (:func:`~maktaba_pipeline.cluster.config.machine_id`), macOS' IOPlatformUUID
     (``ioreg``, run without a shell, its answer matched by a pattern), Linux's machine-id."""
-    from ...cluster.config import machine_id
+    from maktaba_pipeline.cluster.config import machine_id
 
     mid = machine_id()
     if mid or sys.platform == "win32":
@@ -785,7 +766,7 @@ def _reason_first(message: str) -> str:
 def _has_second_listen_model(model: str) -> bool:
     """The second listen's model is loaded here, or on this machine's disk (a folder, the
     Hugging Face cache, a copy of the home's)."""
-    from ...stt import cohere, model_share
+    from maktaba_pipeline.stt import cohere, model_share
 
     if cohere.loaded(model) or Path(model).expanduser().is_dir():
         return True
@@ -809,8 +790,8 @@ def _refine(
     no room for it beside Whisper, whose ``settings`` say its device and batch; no copy of
     the model) keeps Whisper's words and says why. ``beside_whisper``: Whisper stays on the
     GPU meanwhile (else the two take turns, :mod:`maktaba_pipeline.stt.gpu_turns`)."""
-    from ...stt.cohere import NoRoom, dictionary, recogniser
-    from ...stt.refine import refine
+    from maktaba_pipeline.stt.cohere import NoRoom, dictionary, recogniser
+    from maktaba_pipeline.stt.refine import refine
 
     try:
         rec = recogniser(model, share, settings, beside_whisper=beside_whisper)
@@ -893,54 +874,25 @@ async def decode_prompt(db: Any, library_id: Any) -> str | None:
     prompt first, never cut, then the vocabulary's most used names and terms within
     Whisper's 224-token limit. Only :func:`library_prompt` is in the input fingerprint:
     learning a word never queues the library for transcription again."""
-    from ...word_review.vocabulary import derived_prompt, prompt_terms
+    from maktaba_pipeline.word_review.vocabulary import derived_prompt, prompt_terms
 
     return derived_prompt(await library_prompt(db, library_id), await prompt_terms(db, library_id))
 
 
 async def library_prompt(db: Any, library_id: Any) -> str | None:
     """The library's ``stt.initial_prompt`` (names and terms that bias Whisper), or None."""
-    from ._analysis import library_setting
+    from maktaba_pipeline.engine.stages._analysis import library_setting
 
     stt = await library_setting(db, library_id, "stt")
     got = stt.get("initial_prompt") if isinstance(stt, dict) else None
     return (got.strip() or None) if isinstance(got, str) else None
 
 
-async def decode_audio(
-    path: str, timeout: float = DECODE_TIMEOUT_S, *, stream: int = 0
-) -> np.ndarray:
-    """The file's audio stream ``stream`` (``-map 0:a:N``; the first by default) as
-    mono float32 at 16 kHz, piped out of ffmpeg into memory (no file written)."""
-    import numpy as np
-
-    proc = await asyncio.create_subprocess_exec(
-        ffmpeg_binary(), "-nostdin", "-hide_banner", "-loglevel", "error",
-        "-i", path, "-map", f"0:a:{stream}", "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
-        "-f", "s16le", "-",
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )  # fmt: skip
-    try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout)
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
-        raise
-    if proc.returncode != 0:
-        msg = err.decode("utf-8", "replace").strip().splitlines()
-        tail = msg[-1] if msg else f"ffmpeg exit {proc.returncode}"
-        if "matches no streams" in tail or "does not contain any stream" in tail:
-            raise StageFailure("no_audio", f"{path}: no audio track", retryable=False)
-        raise StageFailure("decode_failed", f"{path}: {tail}", retryable=False)
-    return np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
-
-
 def needs_file() -> bool:
     """Whether the configured STT backend reads a file (openai-api) rather than the PCM
     this stage decodes itself: then the extract stage's WAV is asked for first
     (graph ``may_request``). False for whisper-mlx, the default."""
-    from ...stt.transcribe import configured_backend_requires_file
+    from maktaba_pipeline.stt.transcribe import configured_backend_requires_file
 
     return configured_backend_requires_file()
 
@@ -973,7 +925,7 @@ async def chosen_track(db: Any, video_id: Any) -> tuple[int, int] | None:
     replaced file's streams. None for a file with one audio stream, one not probed, or a
     chosen stream with no ``audio_tracks`` row: its first stream is decoded and recorded
     as track 0, as before."""
-    from ...audio.track_selection import select_tracks
+    from maktaba_pipeline.audio.track_selection import select_tracks
 
     audio = await _probed_audio(db, video_id)
     if len(audio) < 2:
@@ -1090,7 +1042,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         await budget.release(held)
     if wav is not None:
         # this transcription was the WAV's only reader: the file and its row go
-        from ...audio.extract import release_audio_cache
+        from maktaba_pipeline.audio.extract import release_audio_cache
 
         row = await db.fetchrow("SELECT content_hash FROM videos WHERE id = $1", uid(v.id))
         if row is not None and row["content_hash"]:
@@ -1225,7 +1177,7 @@ async def _transcribe_file(
     total_sec = audio.size / SAMPLE_RATE
     tmap: Any = None
     if use_vad():
-        from ...stt.vad import pack, speech_chunks
+        from maktaba_pipeline.stt.vad import pack, speech_chunks
 
         # the pauses out (CPU, beside the GPU): Whisper decodes the speech only
         chunks = await asyncio.to_thread(speech_chunks, audio)
@@ -1234,7 +1186,7 @@ async def _transcribe_file(
         if audio.size < SAMPLE_RATE // 2:  # no speech at all: nothing to decode
             result = Transcript([], total_sec, settings.language, settings.model, 0.0)
         else:
-            from ...stt import gpu_turns
+            from maktaba_pipeline.stt import gpu_turns
 
             scale = total_sec / (audio.size / SAMPLE_RATE)
             # where the GPU holds one model at a time, Whisper waits for its turn
@@ -1354,7 +1306,7 @@ def segment_rows(sentences: list[Any]) -> tuple[list[SegmentRow], bool]:
     sentence's words packed in ``word_data`` (Epic 52, story 52.1), what the second listen
     replaced in ``metadata.alt``, words not found in the text in ``metadata.word_misses``.
     And whether any sentence kept its words."""
-    from ...stt.word_data import pack
+    from maktaba_pipeline.stt.word_data import pack
 
     rows: list[SegmentRow] = []
     any_words = False
@@ -1388,7 +1340,7 @@ async def carry_over_edits(db: Any, video_id: Any, new_tid: Any) -> None:
     """A reviewer's fixes to the video's active transcript, applied again to ``new_tid``
     (Epic 52, story 52.9): inside the caller's transaction, so the new transcript is never
     active without them."""
-    from ...transcript.edits import carry_over
+    from maktaba_pipeline.transcript.edits import carry_over
 
     old = await db.fetchrow(
         "SELECT id FROM transcripts WHERE video_id = $1 AND is_active AND id <> $2",

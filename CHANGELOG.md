@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3).**
+  Whisper and the second listen run in `tv.maktaba.transcription`, in an `ml` runner beside
+  each transcription worker that holds the model and opens the GPU; the search index,
+  chapters and topics run in `tv.maktaba.semantic-search`, in an `index` runner beside the
+  search worker. Both write what they wrote in the worker (the parity proof compares both
+  ways). Runners have no network: a model not downloaded yet is fetched by the worker, which
+  runs that job itself. While a home's search vectors are still in Chroma, the index and
+  chapters stay in the worker.
 - **Thumbnails and subtitle files are made by Maktaba's built-in plugins (Epic 54 wave 2).**
   The small thumbnail and the chapter frames run in `tv.maktaba.thumbnails`, and subtitle
   files in `tv.maktaba.subtitles`, in the sandboxed `light` runner: it reads the library,

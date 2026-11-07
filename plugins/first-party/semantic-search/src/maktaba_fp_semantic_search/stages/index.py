@@ -41,12 +41,18 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
-from ...db.jobs import Job
-from ...log import get_logger
-from ...search import gate
-from ...search.embedder import embed_id_for
-from ...search.pgstore import PgVectorStore, store_state
-from ...search.semantic import (
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.sql import uid
+from maktaba_pipeline.engine.stages._common import load_video, require_video
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.log import get_logger
+from maktaba_pipeline.search import gate
+from maktaba_pipeline.search.embedder import embed_id_for
+from maktaba_pipeline.search.pgstore import PgVectorStore, store_state
+from maktaba_pipeline.search.semantic import (
     INDEX_VERSION,
     Embedder,
     IndexedSegment,
@@ -58,12 +64,6 @@ from ...search.semantic import (
     embed_segments,
     get_embedder,
 )
-from ..context import StageContext, StageFailure
-from ..graph import StageResult, Subject
-from ..hashing import canonical_hash
-from ..sql import uid
-from ._common import load_video, require_video
-from .registry import StageImpl
 
 __all__ = [
     "IMPL",
@@ -387,7 +387,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
 
 def unavailable() -> str | None:
     """Why this worker cannot index (the optional ``search`` extra is missing), or None."""
-    from ...search.semantic import search_available
+    from maktaba_pipeline.search.semantic import search_available
 
     if search_available():
         return None
