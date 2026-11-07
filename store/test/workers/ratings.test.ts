@@ -115,7 +115,7 @@ describe("the listing pages (T05, T08)", () => {
     expect(listRes.headers.get("Content-Security-Policy")).not.toContain("script-src");
     const pageRes = await exports_fetch(`/p/${id}`);
     const pageHtml = await pageRes.text();
-    const { OPEN_SCRIPT, openScriptHash } = await import("../../web/listing");
+    const { OPEN_SCRIPT, openScriptHash } = await import("../../web/open-script");
     expect(pageHtml).toContain(`<script>${OPEN_SCRIPT}</script>`);
     expect(pageHtml).toContain(`data-plugin="${id}"`);
     const csp = pageRes.headers.get("Content-Security-Policy") ?? "";
