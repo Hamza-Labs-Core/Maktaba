@@ -216,7 +216,9 @@ def main(argv: list[str] | None = None) -> int:
     for f in errors:
         print("::error::" + f.replace("\n", " "))
     for h in outside:
-        print(f"::error::yt-dlp contacted {h}, which tv.maktaba.youtube's [trusted] net does not list")
+        print(
+            f"::error::yt-dlp contacted {h}, which tv.maktaba.youtube's [trusted] net does not list"
+        )
     if not hosts and not failures:
         print("::error::no host was recorded: the proxy was not used")
         return 1
