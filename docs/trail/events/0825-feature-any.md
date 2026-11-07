@@ -15,6 +15,7 @@ prs: [808]
 ## What we learned
 - 50.15 depends on 50.35 (the story says so), so 50.35 went first, out of the listed order.
 - A catalog key goes in five places: `topKeys`, `rawCatalog`, the plugin merge's `Catalog{}` copy (`plugins.go`), the Python loader's `_TOP_KEYS` and its `with_entries`, and both dumps.
+- golangci-lint passing doesn't mean gofmt passes: `lint / lint` runs `gofmt -l` on every module (`make lint-go`), and a struct field added to `Catalog` realigned its neighbours. Run `gofmt -l <module>` on each touched module before pushing.
 - `make catalog-check` compares the synced copies against git: commit before running it, or it reports the uncommitted change as drift.
 
 ## Open

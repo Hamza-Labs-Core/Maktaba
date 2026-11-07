@@ -208,10 +208,10 @@ type Requirement struct {
 
 // Catalog is a loaded, validated catalog. It is read-only.
 type Catalog struct {
-	Schema     int
-	Phases     []string
-	Reasons    []string
-	Features   []string
+	Schema   int
+	Phases   []string
+	Reasons  []string
+	Features []string
 	// FeatureAny are the feature groups (story 50.35): for a feature, groups of components that
 	// count as one, on when any member is on (cloud.relay or cloud.direct for remote_access).
 	FeatureAny map[string][][]string
@@ -274,9 +274,9 @@ type rawComponent struct {
 }
 
 type rawCatalog struct {
-	Schema    int            `toml:"schema"`
-	Phases    []string       `toml:"phases"`
-	Reasons   []string       `toml:"reasons"`
+	Schema     int                   `toml:"schema"`
+	Phases     []string              `toml:"phases"`
+	Reasons    []string              `toml:"reasons"`
 	Features   []string              `toml:"features"`
 	FeatureAny map[string][][]string `toml:"feature_any"`
 	Component  []rawComponent        `toml:"component"`
