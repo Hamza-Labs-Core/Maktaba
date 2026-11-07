@@ -96,7 +96,7 @@ var Outbound = []Call{
 		What: "the plugin store's signed lists: the revocation list's head every 5 minutes, the list and the catalog (Epic 54 story 54.17)",
 		Off:  "idle while no plugin is installed and Browse was not opened in 7 days; offline, the kept lists age (an expired one warns, never stops a plugin)"},
 	{Name: "plugin-store-downloads", Hosts: []string{"plugins-cdn.maktaba.tv"}, By: "auto",
-		What: "a plugin package from the store's CDN, for an admin's install from the store or a plugin's nightly automatic update (54.17)",
+		What: "a plugin package from the store's CDN, for an admin's install from the store or a plugin's nightly automatic update (54.17); a paid plugin's from its /paid/ path, by a URL the store signs for this home (54.19 §6)",
 		Off:  "automatic updates are off per plugin by default; offline, store installs answer store_offline"},
 	{Name: "plugin-store-seen", Hosts: []string{"plugins.maktaba.tv"}, By: "auto",
 		What: "a linked home's daily list of the store plugins it has installed (54.15 §5)",

@@ -9,8 +9,8 @@ import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "../api";
-import { useI18n, type I18nState } from "../i18n";
+import { api } from "../shared/api";
+import { useI18n, type I18nState } from "../shared/i18n";
 import { navigateExternal } from "../nav";
 import { ProExtras, UsageByModePanel, type UsageByMode } from "./BillingPayg";
 import {
@@ -22,7 +22,7 @@ import {
   useErrorMessage,
   useLoad,
   useMoney,
-} from "../ui";
+} from "../shared/ui";
 
 /** A plan of the catalog (Epic 50 story 50.19): free, basic and pro. A null number is a value
  * not set yet (the price, Pro's allowance and device count): "Price coming soon". */

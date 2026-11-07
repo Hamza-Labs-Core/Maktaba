@@ -42,6 +42,19 @@ pub const MAX_TOKENS: u32 = 1024;
 /// An emitted event's payload (README §4.7).
 pub const MAX_EVENT: usize = 16 << 10;
 
+/// Core instances in one job's store (54.02 §5). A component holds several (its module,
+/// shims, an adapter); a Python one (componentize-py) holds one per module of its runtime,
+/// 38 measured, so the cap leaves room above that. An instance owns no memory of its own
+/// beyond the memories counted below, so this does not loosen the memory bound.
+pub const MAX_INSTANCES: usize = 64;
+/// Tables in one job's store; each grows to at most [`MAX_TABLE_ELEMENTS`].
+pub const MAX_TABLES: usize = 16;
+/// Linear memories in one job's store; each grows to at most the job's memory cap, so a
+/// job's memory is at most `MAX_MEMORIES` times that cap whatever the instance count.
+pub const MAX_MEMORIES: usize = 4;
+/// Elements one table may grow to.
+pub const MAX_TABLE_ELEMENTS: usize = 100_000;
+
 /// Memory, table and instance caps of one job's store (54.02 §5). A component holds a few
 /// core instances, memories and tables (its module, shims, an adapter), so the counts are
 /// small numbers rather than one.
@@ -62,7 +75,7 @@ impl ResourceLimiter for Limiter {
     }
 
     fn table_growing(&mut self, _current: usize, desired: usize, _max: Option<usize>) -> wasmtime::Result<bool> {
-        if desired > 100_000 {
+        if desired > MAX_TABLE_ELEMENTS {
             self.hit = true;
             return Err(wasmtime::Error::msg(format!("plugin_memory: table of {desired} elements")));
         }
@@ -70,13 +83,13 @@ impl ResourceLimiter for Limiter {
     }
 
     fn instances(&self) -> usize {
-        16
+        MAX_INSTANCES
     }
     fn tables(&self) -> usize {
-        16
+        MAX_TABLES
     }
     fn memories(&self) -> usize {
-        4
+        MAX_MEMORIES
     }
 }
 

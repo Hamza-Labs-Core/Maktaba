@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
+  runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
+  and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
+  standby's name server, then the leader's, and puts the previous release back on a node whose
+  name server doesn't stay up.
 - **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
   `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
   enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
@@ -113,6 +118,12 @@ build fails when the two differ.
   data on the way up: only the tables they touched change, every other table, index and
   row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
   or recast data, or a Down script fails.
+
+- **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
+  June it exited at start and none of its jobs ever ran: expired-token cleanup, account
+  deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
+  certificates. It now listens once, and a test runs the worker in its own process and checks
+  it answers, stays up and stops cleanly. The cloud is not live yet, so no account was affected.
 
 - **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
   before the database's own thread had ended, so the worker sometimes counted that thread as
@@ -1132,6 +1143,13 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Paid plugins' packages stay private (Epic 54, story 54.19).** Once a plugin has a price,
+  its packages are kept out of the public CDN. A home that bought it downloads it from
+  `plugins-cdn.maktaba.tv/paid/` with a URL the store signs for that home for 10 minutes,
+  only while its purchase holds; an expired, forged or another home's URL is refused. A home
+  that has not bought it is told to buy it first. The store needs the new Worker secret
+  `PAID_URL_KEY`.
+
 - **Buying a paid plugin (Epic 54, story 54.19).** A paid plugin's page in Settings →
   Plugins → Browse shows its price and **Buy**, or **Link this home to buy** on a home not
   linked to a store account, which links it right there. Buy asks the store for a one-time
@@ -1239,6 +1257,12 @@ build fails when the two differ.
   installed plugin to the store from Browse, the admin can attach its log lines from the last
   day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
   reviewers alone and deleted after 90 days.
+
+- **Plugins on Windows (Epic 54, #710).** A home with Postgres on Windows now runs plugins.
+  The plugin host runs inside a Windows AppContainer with no network capability, granted only
+  its own folders, and Maktaba reaches it through a named pipe that only the user it runs as
+  can open; a plugin still gets no network, no files and no sockets of its own. maktaba.dev:
+  Building Maktaba plugins, Installing and managing plugins, The sandbox.
 
 ### Fixed
 
@@ -1819,6 +1843,15 @@ build fails when the two differ.
   when a version that supports the release is installed; the update itself goes ahead.
   maktaba.dev: Installing a plugin, *When Maktaba itself updates*.
 
+- **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
+  `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
+  accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
+  builds with jco, every optional feature off. Each is built against a plugin world cut to the
+  interfaces its manifest's capabilities cover, so a call it did not declare does not build;
+  `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
+  up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
+  maktaba.dev: Testing and packaging, *Python and JavaScript*.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -1905,6 +1938,12 @@ build fails when the two differ.
   calls Basic, and on Basic the subscription settings say that relayed videos are converted on
   this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
   too many devices playing, or the home too busy to prepare the video.
+
+- **The operator console is its own web app (Epic 50 story 50.32, part 1).** Maktaba Cloud's
+  console moved out of the account web app into `web/admin` (`pnpm dev:admin`, `pnpm build:admin`),
+  for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
+  new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
+  or staff API path, an admin string or a console module.
 
 ### Fixed
 
@@ -2371,6 +2410,16 @@ build fails when the two differ.
   the runner's sandbox named the first and was refused the second, so the runner exited
   about 10 s after it started and its stages ran in the worker. The sandbox now names the
   sockets and the run folder by their real paths.
+
+- **A plugin's first job after an update no longer times out while its package compiles
+  (Epic 54, story 54.02).** A job's time limit used to start before the host compiled a
+  package it had not loaded and before the job waited for a free slot, so a large plugin (a
+  Python one: about 15 s to compile on a slow machine) could time out before its code ran.
+  Now the limit counts only the plugin's own work. Compiling has a limit of its own (3
+  minutes per package; a package that goes over is refused with
+  `plugin_compile_timeout`), and the host compiles every installed plugin in the background
+  when it starts, so an update that changes the plugin engine recompiles each one before its
+  first job. maktaba.dev: Testing and packaging.
 
 ## [0.2.0] - 2026-10-19
 

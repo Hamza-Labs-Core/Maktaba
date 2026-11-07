@@ -4,7 +4,8 @@
 // and the admin's browser posts it to the store's buy page in a new tab, where the buyer
 // signs in and pays on the provider's page; the home then looks for the purchase every 15
 // seconds. An unlinked home gets "Link this home to buy", which opens the linking here.
-// Install stays: a paid plugin installs and waits for its purchase.
+// Install stays beside it: a paid plugin's package is downloaded only by a home that bought
+// it (a URL the store signs against the home's entitlement), so Install says so until then.
 import { useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";

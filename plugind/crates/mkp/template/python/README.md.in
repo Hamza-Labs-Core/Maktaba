@@ -1,0 +1,24 @@
+# {{id}}
+
+A Maktaba plugin made with `mkp new python` (Epic 54). It runs in maktaba-plugind's sandbox:
+no network, no files, only the plugin API calls its manifest asks for and the admin grants.
+
+```sh
+pip install componentize-py                    # in a virtual environment of its own
+mkp build .                                    # app.py to package/plugin.wasm, then the home's checks
+mkp test package --stage hello                 # run it in the harness
+mkp pack package {{id}}.mkplugin               # the file to install (Settings, Plugins)
+```
+
+- **Pure Python only.** A package with a C extension does not build; use the plugin API's
+  services instead (`compute`, `media`, ...).
+- **No WASI.** The build replaces every WASI import with a stub that fails when called: `print`,
+  `open`, sockets and stdin fail, and `random` is seeded when the plugin is built (never use
+  it for anything secret). Log with `log.write`.
+- **The world follows the manifest.** `mkp build` (or `mkp world .`) writes `wit/` so the
+  plugin imports only the interfaces its capabilities cover; add a capability to
+  `package/manifest.toml`, then build again to use its interface.
+- `componentize-py -d wit -w plugin bindings .` writes the `wit_world` bindings for your editor.
+
+`mkp test --fixtures api.json` answers the plugin API from a file:
+`{"library/video": {"id": "v1", "title": "A film"}}` (each key is `interface/function`).
