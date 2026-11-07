@@ -35,7 +35,7 @@ fn main() {
         Some("pack") if args.len() == 3 => pack::pack(Path::new(&args[1]), Path::new(&args[2])),
         Some("test") if args.len() >= 2 => test(&args[1..]),
         Some("--version") => {
-            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 0);
+            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 1);
             Ok(())
         }
         _ => usage(),

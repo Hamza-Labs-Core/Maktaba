@@ -6197,6 +6197,63 @@
      "maximum": 200
     }
    ]
+  },
+  {
+   "key": "plugin_compute",
+   "title": "Plugin models",
+   "what": "which language model plugins ask, and how much of the home's models each plugin may use a day",
+   "version": [
+    1,
+    0
+   ],
+   "fields": [
+    {
+     "name": "url",
+     "kind": "str",
+     "group": "The model plugins ask",
+     "label": "Model server for plugins (Ollama)",
+     "help": "Empty: the server the tag check asks. It must be this home or a machine on the local network: a plugin's question is refused when the server is on the internet.",
+     "default": ""
+    },
+    {
+     "name": "model",
+     "kind": "str",
+     "group": "The model plugins ask",
+     "label": "Model for plugins",
+     "help": "Empty: the tag check's model. Any model the server serves.",
+     "default": ""
+    },
+    {
+     "name": "generate_per_day",
+     "kind": "int",
+     "group": "How much each plugin may ask",
+     "label": "Questions a day per plugin",
+     "help": "How many questions one plugin may ask the language model a day. Over it, the plugin is told it used its share until the next day.",
+     "default": 2000,
+     "minimum": 0,
+     "maximum": 100000
+    },
+    {
+     "name": "embed_texts_per_day",
+     "kind": "int",
+     "group": "How much each plugin may ask",
+     "label": "Texts a day per plugin",
+     "help": "How many texts one plugin may turn into vectors a day with the embedding model.",
+     "default": 50000,
+     "minimum": 0,
+     "maximum": 1000000
+    },
+    {
+     "name": "timeout_s",
+     "kind": "int",
+     "group": "How much each plugin may ask",
+     "label": "Longest question (seconds)",
+     "help": "A question that takes longer is ended, and the plugin is told the model is unavailable.",
+     "default": 120,
+     "minimum": 10,
+     "maximum": 600
+    }
+   ]
   }
  ]
 }
