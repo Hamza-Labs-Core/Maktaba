@@ -166,11 +166,17 @@ actor ImageCache {
         return ImageFetch(data: data, status: http?.statusCode ?? 200, cacheControl: http?.value(forHTTPHeaderField: "Cache-Control"))
     }
 
+    /// The session's delegate, set by the app at launch before any picture loads: MaktabaKit's
+    /// `PinnedTrust.shared`, so a home reached by its LAN address has its certificate checked
+    /// against its own name (story 50.15 §3). Set from outside because the UI-test bundle
+    /// compiles this file without MaktabaKit.
+    nonisolated(unsafe) static var trust: URLSessionDelegate?
+
     private static let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
+        return URLSession(configuration: config, delegate: trust, delegateQueue: nil)
     }()
 
     // MARK: freshness

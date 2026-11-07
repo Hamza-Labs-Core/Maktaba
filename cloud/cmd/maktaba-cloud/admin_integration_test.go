@@ -60,6 +60,14 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 	if !slices.ContainsFunc(routes, func(rt [2]string) bool { return rt[1] == "/v1/admin/reports" }) {
 		t.Fatalf("the walk missed /v1/admin/reports: %v", routes)
 	}
+	// nor the release symbol tables their crashes are read against (53.14)
+	if !slices.ContainsFunc(routes, func(rt [2]string) bool { return rt[1] == "/v1/admin/symbols" }) {
+		t.Fatalf("the walk missed /v1/admin/symbols: %v", routes)
+	}
+	// the upload is the symbols token's, and off with none set up
+	if r := anon.do("POST", "/v1/symbols", nil); r.code != http.StatusServiceUnavailable || r.errCode() != "symbols_off" {
+		t.Errorf("an upload with no symbols token set up = %d %s", r.code, r.errCode())
+	}
 	for _, rt := range routes {
 		method, path := rt[0], concrete(rt[1], victimID)
 		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}

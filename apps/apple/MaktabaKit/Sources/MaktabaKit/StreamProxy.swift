@@ -40,7 +40,7 @@ public final class StreamProxy: @unchecked Sendable {
     /// The only home paths served (`/stream/channel/{id}/`), nil: any `/stream/` path.
     public let onlyUnder: String?
 
-    public init(client: APIClient, session: URLSession = .shared, reach: Reach = .loopback, onlyUnder: String? = nil) throws {
+    public init(client: APIClient, session: URLSession = PinnedTrust.session, reach: Reach = .loopback, onlyUnder: String? = nil) throws {
         self.client = client
         self.session = session
         self.reach = reach

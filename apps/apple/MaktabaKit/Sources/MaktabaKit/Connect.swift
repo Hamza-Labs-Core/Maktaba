@@ -192,7 +192,7 @@ public struct HomeProbe: Sendable {
     /// How long one address may take to answer.
     let timeout: TimeInterval
 
-    public init(session: URLSession = .shared, timeout: TimeInterval = 6) {
+    public init(session: URLSession = PinnedTrust.session, timeout: TimeInterval = 6) {
         self.session = session
         self.timeout = timeout
     }

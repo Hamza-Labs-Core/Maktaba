@@ -132,6 +132,10 @@ class AppSession(
         data class SignedIn(val user: User, val client: ApiClient) : Phase
     }
 
+    init {
+        SavedCloudHomes.pinAll(store) // the homes reached by LAN address (story 50.15 §3)
+    }
+
     private val _homes = MutableStateFlow(loadHomes())
     val homes: StateFlow<List<Home>> = _homes.asStateFlow()
 
