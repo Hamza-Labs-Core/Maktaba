@@ -30,6 +30,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
@@ -178,7 +179,15 @@ func runMigrate(args []string) {
 // carries service (cloud.<role>), version, env and node like the home's, with the
 // shared redaction. MAKTABA_ENV (default prod) and MAKTABA_NODE_ID (the cloud node)
 // name the rest.
-func newLogger(role string) *slog.Logger { return mlog.Init(logOptions(role)) }
+// Its lines are counted for /metrics (53.17 §4: maktaba_log_lines_total, and error lines by
+// code in maktaba_errors_total), the service named for the request series too.
+func newLogger(role string) *slog.Logger {
+	opts := logOptions(role)
+	obs.SetService(opts.Service)
+	l := slog.New(obs.Handler(mlog.Init(opts).Handler(), opts.Service, obs.Default))
+	slog.SetDefault(l)
+	return l
+}
 
 func logOptions(role string) mlog.Options {
 	env := os.Getenv("MAKTABA_ENV")

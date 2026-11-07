@@ -34,6 +34,7 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
@@ -283,7 +284,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 	// Prometheus scrape of this role's push counters (aggregate only, like
 	// the relay's /metrics).
-	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics))
+	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
 
 	return r, stopMetrics, nil
 }
