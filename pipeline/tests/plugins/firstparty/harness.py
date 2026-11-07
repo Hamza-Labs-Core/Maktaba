@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from maktaba_plugin_sdk.parity import JOB_COLUMNS, diff_rows, perf_check
+from maktaba_plugin_sdk.parity import JOB_COLUMNS, diff_files, diff_rows, files_tree, perf_check
 
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.graph import StageDef, bound_graph
@@ -141,6 +141,9 @@ class Parity:
     b: Side
     graph: dict[str, StageDef]
     tmp: Path
+    #: the file areas the wave's stages write (area -> folder): each side starts from the
+    #: same files, and what each leaves is kept (``tmp/files-a``, ``tmp/files-b``) to compare
+    files: dict[str, Path] = field(default_factory=dict)
     breakdowns: list[tuple[float, str, list[tuple[str, float]]]] = field(default_factory=list)
 
     async def drain(self, side: Side, *, limit: int = 500) -> None:
@@ -179,8 +182,31 @@ class Parity:
         raise AssertionError(f"parity: no quiet after {limit} jobs")
 
     async def run(self) -> None:
+        if not self.files:
+            await self.drain(self.a)
+            await self.drain(self.b)
+            return
+        base = self.tmp / "files-base"
+        self._keep(base)
         await self.drain(self.a)
+        self._keep(self.tmp / "files-a")
+        self._restore(base)
         await self.drain(self.b)
+        self._keep(self.tmp / "files-b")
+
+    def _keep(self, to: Path) -> None:
+        shutil.rmtree(to, ignore_errors=True)
+        for area, root in self.files.items():
+            if root.is_dir():
+                shutil.copytree(root, to / area, symlinks=True)
+
+    def _restore(self, frm: Path) -> None:
+        for area, root in self.files.items():
+            shutil.rmtree(root, ignore_errors=True)
+            if (frm / area).is_dir():
+                shutil.copytree(frm / area, root, symlinks=True)
+            else:
+                root.mkdir(parents=True, exist_ok=True)
 
     def slowest(self, n: int = 3) -> str:
         """Where the slowest plugin jobs spent their time (printed when N16 fails)."""
@@ -302,6 +328,12 @@ class Parity:
         out += diff_rows(
             "job_events", counted(ea), counted(eb), ("stage", "kind", "level", "message", "n")
         )
+        for area in self.files:
+            out += diff_files(
+                area,
+                files_tree(self.tmp / "files-a" / area),
+                files_tree(self.tmp / "files-b" / area),
+            )
         if perf:
             for s in stages:
                 # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
@@ -339,6 +371,7 @@ async def parity(
     roles_sql: str = "",
     seed: Seed,
     group: str = "light",
+    files: dict[str, Path] | None = None,
     monkeypatch: Any,
 ) -> AsyncIterator[Parity]:
     import asyncpg  # type: ignore[import-untyped]
@@ -405,12 +438,16 @@ async def parity(
         run_dir = tmp / "runners"
         monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(run_dir))
         served = {s: (firstparty.impl_entry(s) or "") for s in stages}
+        # the worker's areas (the runner's sandbox folders), as refresh_stages writes them
+        native._AREAS_WRITTEN.clear()
+        areas = await native.write_areas(b)
         runner = Runner(
             group=group,
             api_socket=str(api_sock),
             stages=served,
             plugin_of={s: firstparty.by_stage(s).id for s in stages},  # type: ignore[union-attr]
             bundle=firstparty.bundle_digest(),
+            areas=areas,
         )
         sock = run_dir / f"runner-{group}.sock"
         task = asyncio.create_task(runner.serve(sock))
@@ -421,10 +458,11 @@ async def parity(
         native.forget_hello()
         native._FP_TOKENS.clear()
         _instrument()
-        yield Parity(a=Side(a), b=Side(b), graph=graph, tmp=tmp)
+        yield Parity(a=Side(a), b=Side(b), graph=graph, tmp=tmp, files=dict(files or {}))
     finally:
         native.forget_hello()
         native._FP_TOKENS.clear()
+        native._AREAS_WRITTEN.clear()
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

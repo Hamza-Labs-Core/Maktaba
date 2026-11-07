@@ -24,6 +24,7 @@ from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.sql import uid
 from maktaba_pipeline.engine.stages._common import load_video, require_video
 from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.thumbnail import small
 from maktaba_pipeline.thumbnail.generator import (
     DEFAULT_CONFIG,
     generate_chapter_thumbs,
@@ -37,8 +38,13 @@ _CHAPTERS_SQL = "SELECT seq, start_sec FROM chapters WHERE video_id = $1 ORDER B
 FrameRunner = Callable[[list[str]], Awaitable[None]]
 #: runs one ffmpeg command line (None: the generator's own); tests swap in a fake
 _runner: FrameRunner | None = None
-#: the cache root (None: ``~/.maktaba/cache/thumbnails``); tests point it at a tmp dir
+#: the cache root (None: the thumbnail cache, maktaba_pipeline.thumbnail.small.ROOT, which
+#: the API reads frames from and the runner's sandbox allows); tests point it at a tmp dir
 _root: str | None = None
+
+
+def _cache_root() -> str | None:
+    return _root if _root is not None else small.ROOT
 
 
 def set_frame_runner(runner: FrameRunner | None, root: str | None = None) -> None:
@@ -90,7 +96,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     if content_hash is None:
         raise StageFailure("video_unhashed", "the file has no content hash yet", retryable=False)
     chapters = await _chapters(db, v.id)
-    out_dir = thumbnail_dir_for(content_hash, root=_root)
+    out_dir = thumbnail_dir_for(content_hash, root=_cache_root())
     made: dict[int, Path] = {}
     if chapters:
         src = ctx.local_path(v.path)
@@ -100,7 +106,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
                 src,
                 chapters=chapters,
                 content_hash=content_hash,
-                root=_root,
+                root=_cache_root(),
                 runner=_runner,
             )
         except Exception as exc:  # ThumbnailError and I/O: the share can come back

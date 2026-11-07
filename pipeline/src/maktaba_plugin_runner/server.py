@@ -241,7 +241,12 @@ class Runner:
             import traceback
 
             sys.stderr.write(traceback.format_exc())
-            out = failure_to_wire(exc)
+            from maktaba_pipeline.plugins.native import sandbox_refused
+
+            if sandbox_refused(exc):
+                out = {"status": "sandbox_refused", "message": str(exc)}
+            else:
+                out = failure_to_wire(exc)
         else:
             out = {"status": "ok", "result": result_to_wire(result)}
             if ctx.review_digests:

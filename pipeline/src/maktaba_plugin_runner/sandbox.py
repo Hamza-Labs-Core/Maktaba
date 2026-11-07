@@ -86,6 +86,22 @@ class _ignore:
         return True
 
 
+#: package managers whose tools load libraries from elsewhere in their prefix
+_TOOL_PREFIXES = ("/opt/homebrew", "/usr/local", "/opt/local")
+
+
+def tool_prefixes(tool: str) -> list[str]:
+    """What a tool reads to start: its installation (the folder above its ``bin``), or the
+    whole prefix of a package manager that links its libraries from other packages."""
+    real = os.path.realpath(tool)
+    for pm in _TOOL_PREFIXES:
+        if real.startswith(pm + "/"):
+            return [pm]
+    here = os.path.dirname(real)
+    up = os.path.dirname(here) if os.path.basename(here) == "bin" else here
+    return [up] if up not in ("/", "/usr", "") else [real]
+
+
 def tool_path(name: str) -> str | None:
     """A tool the group may run, as this machine has it (Epic 51 assets on PATH)."""
     env = {
@@ -129,9 +145,14 @@ def seatbelt_profile(p: Policy) -> str:
             lines.append(f"(allow file-read* file-write* (subpath {_q(path)}))")
     if p.exec:
         lines.append("(allow process-fork)")
+        # a child's loader reads the root folder's entry (not what is under it) and maps the
+        # system's libraries; a tool's own libraries are in its installation
+        lines.append('(allow file-read-data (literal "/"))')
+        lines.append('(allow file-map-executable (subpath "/usr/lib") (subpath "/System"))')
         for tool in p.exec:
             lines.append(f"(allow process-exec (literal {_q(tool)}))")
-            lines.append(f"(allow file-read* (literal {_q(tool)}))")
+            for prefix in tool_prefixes(tool):
+                lines.append(f"(allow file-read* file-map-executable (subpath {_q(prefix)}))")
     else:
         lines.append("(deny process-fork)")
     if p.gpu:
@@ -273,6 +294,8 @@ def _landlock(p: Policy) -> tuple[bool, list[str]]:
             _READ | _WRITE | (_FS_REFER if abi >= 2 else 0) | (_FS_TRUNCATE if abi >= 3 else 0),
         )
     for path in p.exec:
+        for prefix in tool_prefixes(path):
+            rule(prefix, _READ)  # its own libraries (a tool outside /usr)
         rule(path, _FS_EXECUTE | _FS_READ_FILE)
     if p.gpu:
         for d in ("/dev/dri", "/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/nvidia0"):

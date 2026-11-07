@@ -17,7 +17,8 @@ mixed cluster or a machine without a runner never stops a stage.
    log, its events, whether it was cancelled: ``engine`` frames), answered here;
 4. the ``result``: the :class:`StageResult`, or the failure exactly as the in-process
    handler would have raised it (the same kind, message and retry class); a statement the
-   plugin did not register (``unregistered``) runs the job in-process instead, logged;
+   plugin did not register (``unregistered``), or a file its sandbox refused
+   (``sandbox_refused``), runs the job in-process instead, logged;
 5. the token ends in a ``finally``.
 """
 
@@ -45,6 +46,7 @@ from . import firstparty
 
 __all__ = [
     "ImplChoice",
+    "SandboxRefused",
     "Unregistered",
     "choose",
     "hello",
@@ -63,6 +65,28 @@ HELLO_TTL = 15.0
 
 class Unregistered(Exception):
     """The plugin ran a statement it does not have: the job runs in-process instead."""
+
+
+class SandboxRefused(Exception):
+    """The runner's sandbox refused a file the job needed (a folder added since the runner
+    started, before it restarts on the new areas): the job runs in-process instead."""
+
+
+def sandbox_refused(exc: BaseException) -> bool:
+    """Whether a permission refusal is in the exception's chain (a stage that wraps an I/O
+    error in a StageFailure keeps it as the cause)."""
+    import errno
+
+    seen: BaseException | None = exc
+    for _ in range(10):
+        if seen is None:
+            return False
+        if isinstance(seen, PermissionError) or (
+            isinstance(seen, OSError) and seen.errno in (errno.EPERM, errno.EACCES)
+        ):
+            return True
+        seen = seen.__cause__ or seen.__context__
+    return False
 
 
 async def write_frame(w: asyncio.StreamWriter, msg: dict[str, Any]) -> None:
@@ -313,6 +337,8 @@ def raise_failure(d: dict[str, Any]) -> None:
         raise GraphViolation(str(d["message"]))
     if st == "unregistered":
         raise Unregistered(str(d.get("message") or ""))
+    if st == "sandbox_refused":
+        raise SandboxRefused(str(d.get("message") or ""))
     if st == "refused":
         raise StageFailure(
             str(d.get("code") or "plugin_capability"), str(d.get("message") or ""), retryable=False
@@ -557,6 +583,7 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
     library roots through this machine's share-path mapping, and the data folders the
     stages' own settings name. A runner applies its sandbox from them."""
+    from ..thumbnail import small
     from ..thumbnail.generator import thumbnail_dir_for
 
     roots: set[str] = set()
@@ -574,9 +601,8 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
         for root in raw or ():
             local = path_map.to_local(str(root)) if path_map is not None else str(root)
             roots.add(os.path.realpath(local) if os.path.isabs(local) else local)
-    thumbs = str(
-        thumbnail_dir_for("x", root=os.environ.get("MAKTABA_THUMBNAIL_ROOT") or None).parent
-    )
+    # the cache the thumbnail stages write (maktaba_pipeline.thumbnail.small.ROOT)
+    thumbs = str(thumbnail_dir_for("x", root=small.ROOT).parent)
     return {"library": ";".join(sorted(roots)), "data.thumbnails": thumbs}
 
 
