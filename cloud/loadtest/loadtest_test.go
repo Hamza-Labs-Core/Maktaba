@@ -134,7 +134,7 @@ func TestTheCgroupCPUAndTheMedian(t *testing.T) {
 func TestOnlyTheSameMethodIsCompared(t *testing.T) {
 	old := Baseline{CPUSecondsPerMbit: 0.0004, MemBytesPerTunnel: 50_000}
 	ok, rep := Compare(old, Baseline{Method: Method, CPUSecondsPerMbit: 0.0009, MemBytesPerTunnel: 50_000}, Regressed)
-	if !ok || !strings.Contains(rep, "not compared") {
+	if !ok || !strings.Contains(rep, "not compared") || !strings.Contains(rep, "the base measured") {
 		t.Fatalf("an older method's CPU compared:\n%s", rep)
 	}
 	if ok, _ := Compare(old, Baseline{Method: Method, CPUSecondsPerMbit: 0.0009, MemBytesPerTunnel: 70_000}, Regressed); ok {
