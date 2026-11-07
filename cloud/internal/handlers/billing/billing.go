@@ -83,33 +83,42 @@ func Mount(r chi.Router, d *Deps) {
 	r.Get("/v1/billing/usage", d.Usage)
 }
 
-// Plans returns the static catalog from billing.Tiers.
+// Plans returns the static catalog from billing.Tiers (story 50.19): free, basic and pro. A
+// value the owner hasn't set yet (a price, Pro's allowance and stream count) is null: "price
+// coming soon".
 func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 	type viewTier struct {
-		ID          string `json:"id"`
-		Name        string `json:"name"`
-		PriceCents  int    `json:"price_cents"`
-		Bandwidth   int64  `json:"bandwidth_bytes_per_month"`
-		MaxServers  int    `json:"max_servers"`
-		MaxStreams  int    `json:"max_concurrent_streams"`
-		RelayQoS    string `json:"relay_qos"`
-		Transcoding bool   `json:"includes_transcoding"`
-		FamilySeats int    `json:"family_seats"`
-		Purchasable bool   `json:"purchasable"`
-		// HomeTier is the plan the license gives the owner's homes
-		// (Epic 16: home or pro; "" for free).
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		PriceCents *int   `json:"price_cents"`
+		Relay      bool   `json:"relay"`
+		// RelayCapKbps is the relayed streams' cap (0: full quality)
+		RelayCapKbps     int    `json:"relay_cap_kbps"`
+		MaxRelayStreams  *int   `json:"max_relay_streams"`
+		FairUseBytes     int64  `json:"fair_use_bytes_per_month"`
+		AllowanceBytes   *int64 `json:"allowance_bytes_per_month"`
+		PayAsYouGo       bool   `json:"pay_as_you_go"`
+		PAYGPricePerGB   *int   `json:"payg_price_per_gb_cents"`
+		ExtraStreams     bool   `json:"extra_streams"`
+		ExtraStreamPrice *int   `json:"extra_stream_price_cents"`
+		MaxServers       int    `json:"max_servers"`
+		Purchasable      bool   `json:"purchasable"`
+		// HomeTier is the tier the license gives the owner's homes ("" for free).
 		HomeTier string `json:"home_tier"`
 	}
 	p := d.provider()
 	out := []viewTier{}
-	for _, id := range []string{billingpkg.PlanFree, billingpkg.PlanPro, billingpkg.PlanFamily} {
+	for _, id := range billingpkg.Plans {
 		t := billingpkg.Tiers[id]
 		out = append(out, viewTier{
-			ID: t.ID, Name: t.Name, PriceCents: t.PricePerMonthCents,
-			Bandwidth: t.BandwidthBytesPerMo, MaxServers: t.MaxServers,
-			MaxStreams: t.MaxConcurrentStreams, RelayQoS: t.RelayQoS,
-			Transcoding: t.IncludesTranscoding, FamilySeats: t.FamilySeats,
-			Purchasable: p.Enabled() && p.Sells(id),
+			ID: t.ID, Name: t.Name, PriceCents: t.PriceCents, Relay: t.Relay,
+			RelayCapKbps: t.RelayCapKbps, MaxRelayStreams: t.MaxRelayStreams,
+			FairUseBytes: t.FairUseBytesPerMo, AllowanceBytes: t.AllowanceBytesPerMo,
+			PayAsYouGo: t.PayAsYouGo, PAYGPricePerGB: t.PAYGPricePerGBCents,
+			ExtraStreams: t.ExtraStreamsAddOn, ExtraStreamPrice: t.ExtraStreamPriceCents,
+			MaxServers: t.MaxServers,
+			// a plan with a price not set yet can't be bought (the launch gate, T12)
+			Purchasable: p.Enabled() && p.Sells(id) && t.PriceCents != nil,
 			HomeTier:    license.TierForPlan(id),
 		})
 	}
@@ -297,17 +306,29 @@ func (d *Deps) Usage(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "load usage", err)
 		return
 	}
-	tier, ok := billingpkg.Tiers[u.Plan]
-	if !ok {
-		tier = billingpkg.Tiers[billingpkg.PlanFree]
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"month":       month.Format("2006-01"),
 		"plan":        u.Plan,
-		"limit_bytes": tier.BandwidthBytesPerMo,
+		"limit_bytes": UsageLimit(u.Plan),
 		"used_bytes":  used,
 		"servers":     servers,
 	})
+}
+
+// UsageLimit is what a plan's month of relayed bytes is shown against (story 50.19): Pro's
+// full-quality allowance, Basic's fair use; 0 when there is none (Free, or an allowance not set
+// yet). Past it nothing stops: the relay slows.
+func UsageLimit(plan string) int64 {
+	t, ok := billingpkg.Tiers[plan]
+	switch {
+	case !ok || !t.Relay:
+		return 0
+	case t.AllowanceBytesPerMo != nil:
+		return *t.AllowanceBytesPerMo
+	case t.RelayCapKbps > 0:
+		return t.FairUseBytesPerMo
+	}
+	return 0
 }
 
 // AccountUsage sums an account's relayed bytes for a month, per server.

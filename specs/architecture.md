@@ -2844,17 +2844,20 @@ validation): paid plans show "Payments coming soon", checkout and the
 portal answer `503 payments_not_set_up`, `/v1/billing/webhook/{provider}`
 is a 404, and service admins set a user's plan by hand
 (`POST /v1/admin/accounts/{id}/plan`, reason required, audited as
-`admin.account.set_plan`, provider `manual`, not counted as revenue). Three plans for v1 (final list in story 25.15):
+`admin.account.set_plan`, provider `manual`, not counted as revenue). Three plans (Epic 50
+story 50.19, which replaced the Pro and Family plans): only the relay is paid, and a paid plan
+never cuts remote play off.
 
-| Plan      | Price          | Relay GB / mo | Concurrent streams | Servers |
-|-----------|----------------|---------------|--------------------|---------|
-| Free      | $0             | 0             | 0                  | 1       |
-| Pro       | $9.99 / mo     | 100           | 2                  | 2       |
-| Family    | $24.99 / mo    | 500           | 5                  | 5       |
-| Pro Y / Family Y | 17% off  | same          | same               | same    |
+| Plan  | Relay | Relayed streams at once | A month of relay | Price |
+|-------|-------|-------------------------|------------------|-------|
+| Free  | none (direct remote is free, 50.15) | — | — | $0 |
+| Basic | capped at about 3 Mbps | 2 | 500 GB fair use, then slower | TBD |
+| Pro   | full quality | N (TBD), plus paid extra streams | an allowance (TBD), then optional pay-as-you-go up to a cap the owner sets, then Basic's quality | TBD |
 
-**Free tier ships zero relay** — the gate to remote streaming is
-the paid tier. Push and status are cheap; bandwidth is what costs
+The relay decides a mode for every request from the home's plan and this month's bytes by mode
+(`relay_usage_monthly`): `refused`, `full`, `capped`, `capped_slow` (`billing.ModeFor`).
+
+**Free has no relay**: the gate to relayed remote play is the paid plan. Push and status are cheap; bandwidth is what costs
 money.
 
 Entitlements travel from cloud to server as **Ed25519-signed JCS

@@ -147,7 +147,9 @@ server's version, plugin API and platform can run; the switch "Show plugins that
 Maktaba" adds the rest, marked. Search matches names, summaries and tags in English and Arabic
 (letter forms and diacritics folded); filter by category, sort by rating, installs or newest.
 A plugin's page shows its description, what it can do in Maktaba's own words, its review
-level, the rating (shown from 5 ratings), its versions and Install (or Update). Install waits
+level, the rating (shown from 5 ratings), its versions and Install (or Update). A plugin in a
+flow also shows the whole flow drawn (the store's approved flow, carried in the signed
+catalog) with the events it publishes and the ones it listens to. Install waits
 while the catalog has expired or the store's signing is not trusted.
 
 From the same page an admin rates the plugin (1 to 5 stars and optional text, sent to the

@@ -274,6 +274,16 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
     n: number;
   }>();
   const count = new Map(installs.results.map((r) => [r.plugin, r.n]));
+  // each plugin's approved flow (54.16 C12's record), for the home's Browse to draw (54.41):
+  // carried in extra, which homes keep without checking, so older homes read the catalog
+  const flows = await env.DB_CATALOG.prepare(
+    `SELECT m.plugin, f.id, f.version, f.graph, f.events, f.subscriptions FROM flow_members m
+       JOIN flows f ON f.id = m.flow_id AND f.version = m.version ORDER BY f.approved_at`,
+  )
+    .all<{ plugin: string; id: string; version: string; graph: string; events: string; subscriptions: string }>()
+    .then((r) => r.results)
+    .catch(() => []);
+  const flowOf = new Map(flows.map((f) => [f.plugin, f]));
   const out = [];
   for (const p of plugins.results) {
     const vs = versions.results
@@ -307,7 +317,20 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
       price: "free",
       machine_translated: JSON.parse(p.machine_translated),
       versions: vs,
-      extra: { descriptions: JSON.parse(p.descriptions) },
+      extra: {
+        descriptions: JSON.parse(p.descriptions),
+        ...(flowOf.has(p.id)
+          ? {
+              flow: {
+                id: flowOf.get(p.id)!.id,
+                version: flowOf.get(p.id)!.version,
+                graph: JSON.parse(flowOf.get(p.id)!.graph),
+                events: JSON.parse(flowOf.get(p.id)!.events),
+                subscriptions: JSON.parse(flowOf.get(p.id)!.subscriptions),
+              },
+            }
+          : {}),
+      },
     });
   }
   return { version, issued: iso(at), expires: iso(new Date(at.getTime() + 7 * 24 * 3600_000)), api_major: apiMajor, plugins: out };

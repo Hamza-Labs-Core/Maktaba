@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 from pathlib import Path
 
@@ -382,3 +384,71 @@ def test_only_the_net_group_reaches_the_network(
                 "tv.maktaba.plex"
             }
         assert "(allow network-outbound)" not in seatbelt_profile(p), other
+
+
+BIND = textwrap.dedent(
+    """
+    import json, os, socket, sys
+    from maktaba_plugin_runner import sandbox
+    run_dir, own = sys.argv[1], sys.argv[2]
+    policy = sandbox.policy_for([], areas={}, api_socket="", own_socket=own, run_dir=run_dir)
+    out = {"applied": None, "bind": None}
+    try:
+        out["applied"] = sandbox.apply(policy).level
+    except sandbox.SandboxUnavailable as exc:
+        out["applied"] = "unavailable:" + exc.step
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        s.bind(own)
+        s.listen(1)
+        out["bind"] = "allowed"
+    except OSError as exc:
+        out["bind"] = "denied:" + type(exc).__name__
+    finally:
+        s.close()
+    print(json.dumps(out))
+    """
+)
+
+
+def test_the_policy_names_the_sockets_and_run_folder_by_their_real_paths(tmp_path: Path) -> None:
+    from maktaba_plugin_runner import sandbox
+
+    real = tmp_path / "real"
+    real.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(real)
+    p = sandbox.policy_for(
+        [],
+        areas={},
+        api_socket=str(link / "api.sock"),
+        own_socket=str(link / "light.sock"),
+        run_dir=str(link),
+    )
+    assert p.run_dir == str(real.resolve())
+    assert p.own_socket == str(real.resolve() / "light.sock")
+    assert p.api_socket == str(real.resolve() / "api.sock")
+
+
+def test_a_runner_binds_its_socket_through_a_linked_folder() -> None:
+    """The runner's socket outside a long data folder is under /tmp (supervisor.RunnerDir),
+    which is a link on macOS: the sandboxed runner must still bind it there."""
+    real = Path(tempfile.mkdtemp(prefix="mkr-", dir="/tmp"))
+    link = Path("/tmp") / (real.name + "-l")
+    try:
+        link.symlink_to(real)
+        own = link / "light.sock"
+        out = subprocess.run(
+            [sys.executable, "-c", BIND, str(link), str(own)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert out.returncode == 0, out.stderr
+        got = json.loads(out.stdout.strip().splitlines()[-1])
+        if str(got["applied"]).startswith("unavailable"):
+            pytest.skip(f"this machine cannot apply the sandbox: {got['applied']}")
+        assert got["bind"] == "allowed", got
+    finally:
+        link.unlink(missing_ok=True)
+        shutil.rmtree(real, ignore_errors=True)

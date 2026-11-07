@@ -14,37 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
-- **Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave
-  8).** Indexing Plex, writing collections, reading Plex's own collections back and keeping
-  Maktaba's channels in Plex Live TV run in `tv.maktaba.plex`, in a runner with no network:
-  every call to Plex goes through the home's service door, which adds the Plex token and
-  removes it from every answer, so the plugin never holds the token or Plex's address. The
-  dizqueTV stages stay in the worker for now. The parity proof compares the calls Plex receives
-  on both paths.
-- **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
-  wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
-  swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
-  sandboxed `light` runner. A swap and a rollback still put the TV settings on the air in
-  one step with the lineup: the worker does that part for the plugin's job. The dizqueTV
-  export's additions to the plan keep working there. The parity proof compares the plan,
-  the channels, the TV change and its schedule through a stage, a swap, a rollback and the
-  clean-up.
-- **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
-  wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
-  fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download
-  again in `tv.maktaba.repair`, in the sandboxed `net` runner, the only one that reaches the
-  network. Each reads only the rules it lists, a new download's first job is queued once its
-  video is saved, and the parity proof compares the downloaded files, the rows and the queue
-  with the recorded yt-dlp.
-- **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
-  wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
-  duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the
-  sandboxed `files` runner, a new runner group of their own (in `light` their library writes
-  would have covered the subtitles' name-only rule): they write only the library's folders and their trash, and what
-  only the engine may change (queuing jobs, a merge's re-pointing of everything that refers
-  to a video, a restored video's state) the worker does for them, checked against the job.
-  The parity proof compares the library and its trash byte for byte, through a merge, a
-  restore and a purge.
+- **Maktaba Cloud's plans are Free, Basic and Pro (Epic 50 story 50.19, part 1).** Only the
+  relay is paid, and a paid plan never cuts remote play off. Free has no relay (direct access
+  will be free on every plan); Basic relays at about 3 Mbps on 2 devices with 500 GB a month of
+  fair use, after which streams play slower; Pro relays at full quality for an allowance. The
+  Family plan is gone: accounts on the old Pro are now Basic, those on Family are Pro. Prices
+  are not set yet, so paid plans stay "coming soon". The relay counts each home's bytes by
+  quality mode, and no longer refuses a home for its bytes.
 - **Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3).**
   Whisper and the second listen run in `tv.maktaba.transcription`, in an `ml` runner beside
   each transcription worker that holds the model and opens the GPU; the search index,
@@ -1194,6 +1170,11 @@ build fails when the two differ.
   Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
   review is plain text.
 
+- **The store browser draws a plugin's flow (Epic 54, stories 54.18 and 54.41).** Settings →
+  Plugins → Browse the store shows, for a plugin in a flow, the whole flow drawn with the events
+  it publishes and the ones it listens to, from the store's signed catalog. The store's review
+  and listing pages now draw flows with the same chart as the home.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -1836,6 +1817,41 @@ build fails when the two differ.
 - On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
 
+- **Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave
+  8).** Indexing Plex, writing collections, reading Plex's own collections back and keeping
+  Maktaba's channels in Plex Live TV run in `tv.maktaba.plex`, in a runner with no network:
+  every call to Plex goes through the home's service door, which adds the Plex token and
+  removes it from every answer, so the plugin never holds the token or Plex's address. The
+  dizqueTV stages stay in the worker for now. The parity proof compares the calls Plex receives
+  on both paths.
+
+- **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
+  wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
+  swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
+  sandboxed `light` runner. A swap and a rollback still put the TV settings on the air in
+  one step with the lineup: the worker does that part for the plugin's job. The dizqueTV
+  export's additions to the plan keep working there. The parity proof compares the plan,
+  the channels, the TV change and its schedule through a stage, a swap, a rollback and the
+  clean-up.
+
+- **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
+  wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
+  fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download
+  again in `tv.maktaba.repair`, in the sandboxed `net` runner, the only one that reaches the
+  network. Each reads only the rules it lists, a new download's first job is queued once its
+  video is saved, and the parity proof compares the downloaded files, the rows and the queue
+  with the recorded yt-dlp.
+
+- **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
+  wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
+  duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the
+  sandboxed `files` runner, a new runner group of their own (in `light` their library writes
+  would have covered the subtitles' name-only rule): they write only the library's folders and their trash, and what
+  only the engine may change (queuing jobs, a merge's re-pointing of everything that refers
+  to a video, a restored video's state) the worker does for them, checked against the job.
+  The parity proof compares the library and its trash byte for byte, through a merge, a
+  restore and a purge.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -2295,6 +2311,12 @@ build fails when the two differ.
 - **No stale page after an update.** The service worker carries each build's stamp, pages load
   from the network first, and a page an older release left open reloads once instead of going
   blank.
+
+- **A plugin runner starts on a Mac whose data folder has a long path (Epic 54, story
+  54.23).** A runner's socket then lives under `/tmp`, which macOS keeps at `/private/tmp`;
+  the runner's sandbox named the first and was refused the second, so the runner exited
+  about 10 s after it started and its stages ran in the worker. The sandbox now names the
+  sockets and the run folder by their real paths.
 
 ## [0.2.0] - 2026-10-19
 
