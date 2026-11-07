@@ -53,9 +53,9 @@ const clientWriteIdle = 2 * time.Minute
 type Deps struct {
 	Registry *relaypkg.Registry
 	// Servers resolves slugs unless Lookup is set.
-	Servers    *stores.Servers
-	Lookup     ServerLookup
-	Meter      Metering
+	Servers *stores.Servers
+	Lookup  ServerLookup
+	Meter   Metering
 	// Plans enforces each plan on the relay (story 50.19 §3): refusal, the cap, pacing and
 	// the stream limit. Nil: every home is forwarded as it comes.
 	Plans      *Plans
