@@ -32,7 +32,12 @@ struct VideoScreen: View {
             #endif
             .onGeometryChange(for: CGSize.self) { $0.size } action: { area = $0 }
             // each time the page shows: coming back from the player reads the home again
-            .task { await page.load() }
+            .task {
+                await page.load()
+                // story 54.20: installed plugins' panels, while the home serves them
+                await page.loadPanels(context.session.capabilities.current,
+                                      language: AppLanguage.locale.language.languageCode?.identifier == "ar" ? "ar" : "en")
+            }
             .alert(Text("Couldn't save that. Try again.", tableName: "Video", comment: "A favorite or watched mark the home did not take"),
                    isPresented: Binding { page.saveFailed } set: { page.saveFailed = $0 }) {}
             .accessibilityElement(children: .contain)
@@ -128,6 +133,10 @@ private struct VideoDetails: View {
                 case .nothing:
                     EmptyView()
                 }
+                // story 54.20: "From plugins", collapsed, below Maktaba's own sections
+                PluginPanelsSection<PlayerRoute>(panels: page.panels,
+                                                 seek: { PlayerRoute.watch(videoID: video.id, at: $0) })
+                    .padding(.horizontal, gutter)
                 if !page.nextEpisodes.isEmpty {
                     Rail(Text("Next episodes", tableName: "Video", comment: "The episodes after this one, a row's title"),
                          items: page.nextEpisodes) { e in

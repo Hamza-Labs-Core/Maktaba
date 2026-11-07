@@ -1,0 +1,2343 @@
+{
+ "pools": {
+  "audits": {
+   "default_size": 1,
+   "label": "Channel audit",
+   "scope": "global",
+   "size": 1
+  },
+  "convert": {
+   "default_size": 1,
+   "label": "Convert to MP4",
+   "scope": "global",
+   "size": 1
+  },
+  "cpu": {
+   "default_size": null,
+   "label": "CPU",
+   "scope": "per_worker",
+   "size": null
+  },
+  "gpu": {
+   "default_size": 32,
+   "label": "GPU",
+   "scope": "per_worker",
+   "size": 32
+  },
+  "listen": {
+   "default_size": 4,
+   "label": "Second listen",
+   "scope": "per_worker",
+   "size": 4
+  },
+  "lookup": {
+   "default_size": 1,
+   "label": "Model and encyclopedia",
+   "scope": "global",
+   "size": 1
+  },
+  "nas_read": {
+   "default_size": 2,
+   "label": "NAS reads",
+   "scope": "global",
+   "size": 2
+  },
+  "nas_write": {
+   "default_size": 4,
+   "label": "NAS writes",
+   "scope": "global",
+   "size": 4
+  },
+  "network_plex": {
+   "default_size": 2,
+   "label": "Plex",
+   "scope": "global",
+   "size": 2
+  },
+  "network_tv": {
+   "default_size": 1,
+   "label": "dizqueTV",
+   "scope": "global",
+   "size": 1
+  },
+  "network_yt": {
+   "default_size": 1,
+   "label": "YouTube",
+   "scope": "global",
+   "size": 1
+  },
+  "repairs": {
+   "default_size": 1,
+   "label": "Repairs",
+   "scope": "global",
+   "size": 1
+  },
+  "reports": {
+   "default_size": 1,
+   "label": "Review pages",
+   "scope": "global",
+   "size": 1
+  }
+ },
+ "schema": 1,
+ "stages": {
+  "access_check": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Access check",
+   "lane": "media",
+   "lane_order": 13,
+   "legacy": false,
+   "max_attempts": 1,
+   "may_request": [],
+   "model_rules": null,
+   "name": "access_check",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "books": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "season"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Books",
+   "lane": "seasons",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "books",
+   "placement": "any",
+   "pool": "lookup",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "season"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "categorize": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Categorize",
+   "lane": "media",
+   "lane_order": 8,
+   "legacy": true,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "categorize",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "chapter_infer": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "chapter_thumbs",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "topic_assign",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Chapters",
+   "lane": "speech",
+   "lane_order": 6,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "chapter_infer",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "chapter_thumbs": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Chapter frames",
+   "lane": "speech",
+   "lane_order": 7,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "chapter_thumbs",
+   "placement": "home",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "check_clips": {
+   "after_topup": false,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "clip_groups",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Check clip tags",
+   "lane": "seasons",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": "tagcheck",
+   "name": "check_clips",
+   "placement": "home",
+   "pool": "lookup",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 2
+  },
+  "check_tags": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "books",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "season"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Check series tags",
+   "lane": "seasons",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": "tagcheck",
+   "name": "check_tags",
+   "placement": "home",
+   "pool": "lookup",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "season"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "clip_groups": {
+   "after_topup": false,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "plex_groups",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Clip groups",
+   "lane": "seasons",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "clip_groups",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "component_catchup": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": true,
+   "label": "Catch up",
+   "lane": "media",
+   "lane_order": 99,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "component_catchup",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "content_hash": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "thumb_small",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "thumbnail",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "transcribe",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "File identity",
+   "lane": "episodes",
+   "lane_order": 0,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "content_hash",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "convert_mp4": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same_video",
+     "to": "dedup_scan",
+     "when": "always"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "Convert to MP4",
+   "lane": "media",
+   "lane_order": 14,
+   "legacy": false,
+   "max_attempts": 2,
+   "may_request": [
+    "probe",
+    "thumbnail",
+    "thumb_small"
+   ],
+   "model_rules": null,
+   "name": "convert_mp4",
+   "placement": "home",
+   "pool": "convert",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video",
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "dedup_apply": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "Merge duplicates",
+   "lane": "media",
+   "lane_order": 16,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "dedup_apply",
+   "placement": "any",
+   "pool": "nas_write",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "dup_group"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "dedup_scan": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Find duplicates",
+   "lane": "media",
+   "lane_order": 15,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "dedup_apply"
+   ],
+   "model_rules": null,
+   "name": "dedup_scan",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library",
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "detect": {
+   "after_topup": false,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "display_title",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "seasons_changed",
+     "to": "dizquetv_show",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "seasons_changed",
+     "to": "plex_collection",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "promo_links",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "seasons_changed",
+     "to": "rate_style",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "review_pages",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "tag",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "seasons_changed",
+     "to": "tag",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "topic_collections",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Place episodes",
+   "lane": "seasons",
+   "lane_order": 1,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "fingerprint",
+    "fp_gate"
+   ],
+   "model_rules": null,
+   "name": "detect",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 3
+  },
+  "display_title": {
+   "after_topup": false,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Display titles",
+   "lane": "seasons",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": "tagcheck",
+   "name": "display_title",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 3
+  },
+  "dizquetv_audit": {
+   "after_topup": false,
+   "debounce_max_sec": 900,
+   "debounce_sec": 60,
+   "edges": [],
+   "entry_for": [
+    "catalog"
+   ],
+   "every_minutes_rule": null,
+   "extension": "dizquetv",
+   "external_write": false,
+   "hidden": false,
+   "label": "Channel audit",
+   "lane": "channels",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "dizquetv_audit",
+   "placement": "home",
+   "pool": "audits",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "dizquetv_channels": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "dizquetv_audit",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "catalog"
+   ],
+   "every_minutes_rule": null,
+   "extension": "dizquetv",
+   "external_write": true,
+   "hidden": false,
+   "label": "dizqueTV channels",
+   "lane": "channels",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "dizquetv_channels",
+   "placement": "home",
+   "pool": "network_tv",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "dizquetv_show": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [
+    "season"
+   ],
+   "every_minutes_rule": null,
+   "extension": "dizquetv",
+   "external_write": true,
+   "hidden": false,
+   "label": "dizqueTV show",
+   "lane": "seasons",
+   "lane_order": 5,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "dizquetv_show",
+   "placement": "any",
+   "pool": "network_tv",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "season"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "enrich": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Find metadata",
+   "lane": "media",
+   "lane_order": 12,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "enrich",
+   "placement": "home",
+   "pool": "lookup",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "exact_dates": {
+   "after_topup": false,
+   "debounce_max_sec": 3600,
+   "debounce_sec": 300,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "detect",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Exact dates",
+   "lane": "sources",
+   "lane_order": 1,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "exact_dates",
+   "placement": "any",
+   "pool": "network_yt",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "extract": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": true,
+     "map": "same",
+     "to": "transcribe",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Extract audio",
+   "lane": "media",
+   "lane_order": 1,
+   "legacy": true,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "extract",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "file_restore": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "Restore from trash",
+   "lane": "media",
+   "lane_order": 18,
+   "legacy": false,
+   "max_attempts": 2,
+   "may_request": [],
+   "model_rules": null,
+   "name": "file_restore",
+   "placement": "any",
+   "pool": "nas_write",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "fingerprint": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "library_of",
+     "to": "detect",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "payload_seasons",
+     "to": "fp_gate",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Fingerprint",
+   "lane": "episodes",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "fingerprint",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 101
+  },
+  "fp_gate": {
+   "after_topup": false,
+   "debounce_max_sec": 120,
+   "debounce_sec": 10,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": true,
+   "label": "Samples to candidates",
+   "lane": "seasons",
+   "lane_order": 1,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "fingerprint"
+   ],
+   "model_rules": null,
+   "name": "fp_gate",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "season"
+   ],
+   "unreleased": false,
+   "version": 101
+  },
+  "index": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "chapter_infer",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Search index",
+   "lane": "speech",
+   "lane_order": 5,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "index",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 2
+  },
+  "link": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "library_of",
+     "to": "detect",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Link",
+   "lane": "episodes",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "link",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "plan_channels": {
+   "after_topup": false,
+   "debounce_max_sec": 3600,
+   "debounce_sec": 300,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "dizquetv_channels",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "write_channels",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "catalog"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Plan channels",
+   "lane": "channels",
+   "lane_order": 1,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "plan_channels",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 5
+  },
+  "plex_collection": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "dizquetv_show",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "season"
+   ],
+   "every_minutes_rule": null,
+   "extension": "plex",
+   "external_write": true,
+   "hidden": false,
+   "label": "Plex collection",
+   "lane": "seasons",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "plex_collection",
+   "placement": "home",
+   "pool": "network_plex",
+   "relay": "plex",
+   "storage": null,
+   "subject_kinds": [
+    "season"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "plex_collections_import": {
+   "after_topup": false,
+   "debounce_max_sec": 600,
+   "debounce_sec": 60,
+   "edges": [],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": "plex",
+   "external_write": false,
+   "hidden": false,
+   "label": "Read Plex collections",
+   "lane": "sources",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "plex_collections_import",
+   "placement": "home",
+   "pool": "network_plex",
+   "relay": "plex",
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "plex_groups": {
+   "after_topup": false,
+   "debounce_max_sec": 600,
+   "debounce_sec": 60,
+   "edges": [],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": "plex",
+   "external_write": true,
+   "hidden": false,
+   "label": "Plex topic and clip collections",
+   "lane": "seasons",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "plex_groups",
+   "placement": "home",
+   "pool": "network_plex",
+   "relay": "plex",
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "plex_index": {
+   "after_topup": false,
+   "debounce_max_sec": 600,
+   "debounce_sec": 60,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "seasons_changed",
+     "to": "dizquetv_show",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "seasons_changed",
+     "to": "plex_collection",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "plex_collections_import",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "plex_groups",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": "plex",
+   "external_write": false,
+   "hidden": false,
+   "label": "Plex index",
+   "lane": "sources",
+   "lane_order": 1,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "plex_index",
+   "placement": "home",
+   "pool": "network_plex",
+   "relay": "plex",
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "plex_livetv": {
+   "after_topup": true,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [],
+   "entry_for": [
+    "catalog"
+   ],
+   "every_minutes_rule": [
+    "plexlive",
+    "drift_check_minutes"
+   ],
+   "extension": "plex",
+   "external_write": true,
+   "hidden": false,
+   "label": "Plex Live TV",
+   "lane": "channels",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "plex_livetv",
+   "placement": "home",
+   "pool": "network_plex",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 2
+  },
+  "probe": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "library_of",
+     "to": "detect",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "link",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "thumb_hash",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Length",
+   "lane": "episodes",
+   "lane_order": 1,
+   "legacy": true,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "probe",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "promo_links": {
+   "after_topup": false,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "clip_groups",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Promo links",
+   "lane": "seasons",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "promo_links",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "rate_style": {
+   "after_topup": false,
+   "debounce_max_sec": 120,
+   "debounce_sec": 10,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "season"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Rate style",
+   "lane": "seasons",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "style_sample"
+   ],
+   "model_rules": null,
+   "name": "rate_style",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "season"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "repair_broken": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "Repair broken files",
+   "lane": "media",
+   "lane_order": 10,
+   "legacy": false,
+   "max_attempts": 1,
+   "may_request": [
+    "probe",
+    "content_hash"
+   ],
+   "model_rules": null,
+   "name": "repair_broken",
+   "placement": "any",
+   "pool": "repairs",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "review_pages": {
+   "after_topup": false,
+   "debounce_max_sec": 900,
+   "debounce_sec": 120,
+   "edges": [],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Review pages",
+   "lane": "seasons",
+   "lane_order": 6,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "review_pages",
+   "placement": "home",
+   "pool": "reports",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "scan": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "plex_index",
+     "when": "output_changed"
+    },
+    {
+     "legacy": true,
+     "map": "videos_of",
+     "to": "probe",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Scan folders",
+   "lane": "media",
+   "lane_order": 0,
+   "legacy": true,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "scan",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "second_listen": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "index",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "subtitle_gen",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "loose_library_of",
+     "to": "tag",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "season_of",
+     "to": "tag",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "word_check",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Second listen",
+   "lane": "speech",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "second_listen",
+   "placement": "any",
+   "pool": "listen",
+   "relay": null,
+   "storage": "read",
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "storage_canonicalize": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Canonical share paths",
+   "lane": "media",
+   "lane_order": 11,
+   "legacy": false,
+   "max_attempts": 1,
+   "may_request": [],
+   "model_rules": null,
+   "name": "storage_canonicalize",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "style_sample": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "payload_seasons",
+     "to": "rate_style",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Style sample",
+   "lane": "episodes",
+   "lane_order": 5,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "style_sample",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "subtitle_gen": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "Subtitle files",
+   "lane": "speech",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "subtitle_gen",
+   "placement": "any",
+   "pool": "nas_write",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "tag": {
+   "after_topup": false,
+   "debounce_max_sec": 3600,
+   "debounce_sec": 300,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "library_of",
+     "to": "check_clips",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "check_tags",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "season"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Tag topics",
+   "lane": "seasons",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "tag",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "season",
+    "library"
+   ],
+   "unreleased": false,
+   "version": 7
+  },
+  "thumb_hash": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "library_of",
+     "to": "detect",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "thumb_small",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Thumbnail",
+   "lane": "episodes",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "thumb_hash",
+   "placement": "any",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "thumb_small": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "library_of",
+     "to": "review_pages",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "video"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Small thumbnail",
+   "lane": "episodes",
+   "lane_order": 6,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "thumb_small",
+   "placement": "home",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "thumbnail": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "thumb_small",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Poster and sprites",
+   "lane": "media",
+   "lane_order": 5,
+   "legacy": true,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "thumbnail",
+   "placement": "home",
+   "pool": "nas_read",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "topic_assign": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "library_of",
+     "to": "topic_recluster",
+     "when": "always"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Topics",
+   "lane": "speech",
+   "lane_order": 8,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "topic_assign",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "topic_collections": {
+   "after_topup": false,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "clip_groups",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "catalog",
+     "to": "plan_channels",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "plex_groups",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "youtube_collections",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Topic collections",
+   "lane": "seasons",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "topic_collections",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "topic_recluster": {
+   "after_topup": false,
+   "debounce_max_sec": 21600,
+   "debounce_sec": 1800,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Library topics",
+   "lane": "speech",
+   "lane_order": 9,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "topic_recluster",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "transcribe": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "second_listen",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Transcribe",
+   "lane": "speech",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "extract"
+   ],
+   "model_rules": null,
+   "name": "transcribe",
+   "placement": "any",
+   "pool": "gpu",
+   "relay": null,
+   "storage": "read",
+   "subject_kinds": [
+    "video"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "trash_purge": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "Empty file trash",
+   "lane": "media",
+   "lane_order": 17,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "trash_purge",
+   "placement": "any",
+   "pool": "nas_write",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "tv_gc": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "TV staging clean-up",
+   "lane": "channels",
+   "lane_order": 5,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "tv_gc",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "tv_rollback": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Roll back TV change",
+   "lane": "channels",
+   "lane_order": 6,
+   "legacy": false,
+   "max_attempts": 2,
+   "may_request": [],
+   "model_rules": null,
+   "name": "tv_rollback",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "tv_stage": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Stage TV change",
+   "lane": "channels",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 2,
+   "may_request": [],
+   "model_rules": null,
+   "name": "tv_stage",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "tv_swap": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Swap TV change",
+   "lane": "channels",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 1,
+   "may_request": [],
+   "model_rules": null,
+   "name": "tv_swap",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "word_check": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Word review",
+   "lane": "speech",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "word_check",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "video",
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "write_channels": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "plex_livetv",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Write channels",
+   "lane": "channels",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "write_channels",
+   "placement": "home",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 5
+  },
+  "youtube_backfill": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "YouTube back catalogue",
+   "lane": "sources",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "convert_mp4",
+    "youtube_backfill"
+   ],
+   "model_rules": null,
+   "name": "youtube_backfill",
+   "placement": "any",
+   "pool": "network_yt",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "youtube_collections": {
+   "after_topup": false,
+   "debounce_max_sec": 300,
+   "debounce_sec": 30,
+   "edges": [],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Collections from YouTube",
+   "lane": "seasons",
+   "lane_order": 3,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [],
+   "model_rules": null,
+   "name": "youtube_collections",
+   "placement": "any",
+   "pool": "cpu",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "youtube_fetch": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": true,
+   "hidden": false,
+   "label": "YouTube downloads",
+   "lane": "sources",
+   "lane_order": 2,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "convert_mp4",
+    "youtube_fetch"
+   ],
+   "model_rules": null,
+   "name": "youtube_fetch",
+   "placement": "any",
+   "pool": "network_yt",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "youtube_sync": {
+   "after_topup": false,
+   "debounce_max_sec": 3600,
+   "debounce_sec": 300,
+   "edges": [
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "detect",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "same",
+     "to": "exact_dates",
+     "when": "output_changed"
+    },
+    {
+     "legacy": false,
+     "map": "videos_of",
+     "to": "link",
+     "when": "output_changed"
+    }
+   ],
+   "entry_for": [
+    "library"
+   ],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "YouTube listing",
+   "lane": "sources",
+   "lane_order": 0,
+   "legacy": false,
+   "max_attempts": 3,
+   "may_request": [
+    "youtube_fetch",
+    "youtube_backfill"
+   ],
+   "model_rules": null,
+   "name": "youtube_sync",
+   "placement": "any",
+   "pool": "network_yt",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "library"
+   ],
+   "unreleased": false,
+   "version": 1
+  },
+  "youtube_tartube": {
+   "after_topup": false,
+   "debounce_max_sec": 0,
+   "debounce_sec": 0,
+   "edges": [],
+   "entry_for": [],
+   "every_minutes_rule": null,
+   "extension": null,
+   "external_write": false,
+   "hidden": false,
+   "label": "Tartube import",
+   "lane": "sources",
+   "lane_order": 4,
+   "legacy": false,
+   "max_attempts": 1,
+   "may_request": [],
+   "model_rules": null,
+   "name": "youtube_tartube",
+   "placement": "home",
+   "pool": "network_yt",
+   "relay": null,
+   "storage": null,
+   "subject_kinds": [
+    "catalog"
+   ],
+   "unreleased": false,
+   "version": 1
+  }
+ }
+}

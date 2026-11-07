@@ -26,6 +26,7 @@ import {
   pluginErrorCode,
   pluginWord,
   pluginsApi,
+  type BuiltInPlugin,
   type Grants,
   type Plugin,
   type PluginDetail,
@@ -85,6 +86,7 @@ export function PluginsSection() {
 function PluginsInner() {
   const { t } = useI18n();
   const [plugins, setPlugins] = useState<Plugin[] | null>(null);
+  const [builtIn, setBuiltIn] = useState<BuiltInPlugin[]>([]);
   const [policy, setPolicy] = useState<Policy>({ allow_unreviewed: false });
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -94,6 +96,7 @@ function PluginsInner() {
     try {
       const r = await pluginsApi.list();
       setPlugins(r.plugins ?? []);
+      setBuiltIn(r.built_in ?? []);
       setPolicy(r.policy);
       setError("");
     } catch (e) {
@@ -133,6 +136,7 @@ function PluginsInner() {
           </li>
         ))}
       </ul>
+      {builtIn.length > 0 && <BuiltInSection plugins={builtIn} />}
       <PolicySection policy={policy} onChange={setPolicy} />
       <StoreAccount />
       {installing && (
@@ -145,6 +149,46 @@ function PluginsInner() {
         />
       )}
     </div>
+  );
+}
+
+/** "Built into Maktaba" (story 54.22 §4): Maktaba's own stages as first-party plugins, each
+ * with what it can do in Maktaba's words. Its component is its switch (Components page). */
+export function BuiltInSection({ plugins }: { plugins: BuiltInPlugin[] }) {
+  const { t, locale } = useI18n();
+  return (
+    <section className="mkt-plugins__builtin" aria-labelledby="pl-builtin">
+      <h3 id="pl-builtin">{t("plugins.builtin.title")}</h3>
+      <p>{t("plugins.builtin.lead")}</p>
+      <ul className="mkt-plugins__cards">
+        {plugins.map((p) => {
+          const name = (locale === "ar" ? p.name_ar : p.name) || p.name || p.id;
+          const summary = (locale === "ar" ? p.summary_ar : p.summary) || p.summary;
+          return (
+            <li key={p.id}>
+              <article className="mkt-plugins__card" aria-label={name}>
+                <h4 className="mkt-plugins__name">{bidiIsolate(name)}</h4>
+                {summary && <p>{summary}</p>}
+                <details>
+                  <summary>{t("plugins.builtin.can")}</summary>
+                  <ul>
+                    {p.capabilities.map((c) => (
+                      <li key={c.key + c.param}>
+                        {t(c.key)}
+                        {c.param && <> · {bidiIsolate(c.param)}</>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+                <p className="mkt-plugins__switch">
+                  {t("plugins.builtin.switch", { component: t(`components.${p.component}.title`) })}
+                </p>
+              </article>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

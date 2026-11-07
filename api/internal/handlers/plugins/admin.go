@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
@@ -176,7 +177,41 @@ func (h *Admin) list(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": v, "policy": pol})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": v, "policy": pol, "built_in": builtIn()})
+}
+
+// BuiltIn is one of Maktaba's own first-party plugins as the Plugins page lists it under
+// "Built into Maktaba" (story 54.22 §4): its name in both languages, its component (the
+// Components page's switch is its switch: no grants dialog), its stages, and what it can do
+// (fp.trusted.<capability> words with their parameter).
+type BuiltIn struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	NameAr       string              `json:"name_ar"`
+	Summary      string              `json:"summary"`
+	SummaryAr    string              `json:"summary_ar"`
+	Component    string              `json:"component"`
+	Stages       []string            `json:"stages"`
+	Capabilities []map[string]string `json:"capabilities"`
+}
+
+func builtIn() []BuiltIn {
+	list, err := firstparty.Plugins()
+	if err != nil {
+		return []BuiltIn{}
+	}
+	out := make([]BuiltIn, 0, len(list))
+	for _, fp := range list {
+		strs, _ := fp.Manifest["strings"].(map[string]any)
+		word := func(lang, key string) string {
+			k, _ := strs[key].(string)
+			return fp.Strings[lang][k]
+		}
+		out = append(out, BuiltIn{ID: fp.ID, Name: word("en", "name"), NameAr: word("ar", "name"),
+			Summary: word("en", "summary"), SummaryAr: word("ar", "summary"), Component: fp.Trusted.Component,
+			Stages: fp.Stages, Capabilities: fp.Capabilities()})
+	}
+	return out
 }
 
 func (h *Admin) show(w http.ResponseWriter, r *http.Request) {

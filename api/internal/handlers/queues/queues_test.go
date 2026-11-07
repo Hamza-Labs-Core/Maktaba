@@ -144,6 +144,7 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{"GET", "/api/queues/{stage}/failures", "/api/queues/probe/failures", ""},
 		{"POST", "/api/queues/{stage}/pause", "/api/queues/probe/pause", ""},
 		{"POST", "/api/queues/{stage}/resume", "/api/queues/probe/resume", ""},
+		{"PUT", "/api/queues/{stage}/impl", "/api/queues/promo_links/impl", `{"impl":"plugin"}`},
 		{"POST", "/api/queues/{stage}/retry", "/api/queues/probe/retry", `{}`},
 		{"POST", "/api/queues/{stage}/apply", "/api/queues/probe/apply", `{}`},
 		{"GET", "/api/workers", "/api/workers", ""},

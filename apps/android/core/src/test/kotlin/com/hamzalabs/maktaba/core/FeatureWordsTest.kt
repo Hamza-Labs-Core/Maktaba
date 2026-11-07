@@ -22,6 +22,7 @@ class FeatureWordsTest {
 
     private val features = listOf(
         "live_tv", "transcripts", "subtitles", "semantic_search", "chapters", "youtube", "plex", "remote_access", "recommendations",
+        "plugin_panels",
     )
 
     @Test

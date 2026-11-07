@@ -14,6 +14,20 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba's own stages can run as built-in plugins (the foundation, Epic 54 Phase 4).** A
+  built-in plugin's stage runs in `maktaba-plugin-runner`, a sandboxed process with no database
+  password and no secrets (Seatbelt on macOS, Landlock and seccomp on Linux), and reaches the
+  database only by the names of the statements the release built, each run under the
+  plugin's own Postgres role, scope-checked against the job and attributed. A built-in
+  plugin's manifest keys are refused in any other plugin (`plugin_trusted_field`), and only
+  the manifests built into the server are trusted. Each stage has a switch,
+  `job_stages.impl` (`inproc` or `plugin`): Queues shows a built-in plugin's stage with a
+  **Runs in** menu for admins, and `maktaba-server stages impl <stage> <impl>` flips one; a
+  flip loses and reruns no job. The parity proof (`tools/plugins/parity.py`) runs a stage both
+  ways on two copies of one database and fails on any difference in rows, results,
+  fingerprints, enqueued jobs or speed. Settings → Plugins lists **Built into Maktaba** with
+  what each can do. No stage moves yet: every stage still runs in the worker until its wave.
+  Migration 0198.
 - **The second listen is a stage of its own, and an 8 GB card on Windows runs it.** Whisper's
   `transcribe` stores its transcript with each sentence's words (their timings), and a new
   `second_listen` stage (its own `listen` pool, per machine) reads that transcript and the
@@ -237,6 +251,18 @@ build fails when the two differ.
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
 ### Added
+
+- **The Apple apps send crash reports to the home, report problems, and the Remote reads the
+  home's diagnostics.** Maktaba Remote's Home tab has **Errors** (the error groups with their
+  14 days, a group's chart and lines, Mark seen, Resolve and Mute), **Logs** (search, and
+  Follow a request from a reference), **Dashboards** (Overview and Storage) and **Problem
+  reports** (the inbox: status and reply), through the web's routes. Every Apple app asks once
+  after signing in whether to **send crash reports** to the home, off until the person says
+  yes; when on, a kept crash (MetricKit on iPhone, iPad and Mac, PLCrashReporter on Apple TV)
+  goes to the home at the next launch as a scrubbed envelope with the app's log. **Report a
+  problem** (Profile, the Remote's Home tab, the TV's Settings, and **Report this** on error
+  screens) previews what it sends and says the report's number; **My reports** shows the
+  admin's reply. `docs/app-privacy.md` keeps the App Store and Play privacy answers.
 
 - **Maktaba Cloud's names, written down once, and the cloud's own names kept from homes
   (Epic 50, story 50.01).** `docs/cloud-dns.md` lists every public name, what it points at,
@@ -875,17 +901,16 @@ build fails when the two differ.
   refused; an offline home, `serve --offline`, calls no store). The store is built dark: sign-up and submissions stay closed until it is opened.
   maktaba.dev's Publishing and Installing pages describe it.
 
-- **The Apple apps send crash reports to the home, report problems, and the Remote reads the
-  home's diagnostics.** Maktaba Remote's Home tab has **Errors** (the error groups with their
-  14 days, a group's chart and lines, Mark seen, Resolve and Mute), **Logs** (search, and
-  Follow a request from a reference), **Dashboards** (Overview and Storage) and **Problem
-  reports** (the inbox: status and reply), through the web's routes. Every Apple app asks once
-  after signing in whether to **send crash reports** to the home, off until the person says
-  yes; when on, a kept crash (MetricKit on iPhone, iPad and Mac, PLCrashReporter on Apple TV)
-  goes to the home at the next launch as a scrubbed envelope with the app's log. **Report a
-  problem** (Profile, the Remote's Home tab, the TV's Settings, and **Report this** on error
-  screens) previews what it sends and says the report's number; **My reports** shows the
-  admin's reply. `docs/app-privacy.md` keeps the App Store and Play privacy answers.
+- **Plugin panels in the apps (Epic 54, story 54.20).** A plugin can show a read-only panel on
+  a video's page, declared as data (`ui/panel.json`, ui@1: key–value rows, badges, chips that
+  search Maktaba, a table, markers on the timeline that play from their time, one image the
+  home serves, a paragraph) and drawn by each app with its own components: the web, the
+  iPhone, iPad and Mac Player, and the Android Player, under **From plugins**, collapsed.
+  Everyone who can see the video sees it, viewers included, in their language; a plugin
+  turned off shows none. Every value is plain text: the plugin API refuses a URL, HTML,
+  markdown or a control character in a value a panel shows (`plugin_text_forbidden`), and
+  every app escapes again and makes no request from one. `GET /api/panels` and the
+  capability `plugin_panels`, which apps read missing as off.
 
 ### Fixed
 

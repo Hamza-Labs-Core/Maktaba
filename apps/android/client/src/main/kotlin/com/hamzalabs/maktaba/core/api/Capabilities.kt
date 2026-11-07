@@ -49,6 +49,11 @@ data class Capabilities(
     val adminOff: Map<String, FeatureOff> = emptyMap(),
     /** The answer's version, sent back as `If-None-Match`; null before the first answer. */
     val etag: String? = null,
+    /**
+     * Plugin panels (Epic 54 story 54.20): true only when the answer says `plugin_panels: "on"`.
+     * Unlike the known features, a missing key is off, so the app never asks an older home.
+     */
+    val panels: Boolean = false,
 ) {
     fun isOn(feature: String): Boolean = feature !in off
 
@@ -81,7 +86,8 @@ data class Capabilities(
                     )
                 }
             val etag = (o["etag"] as? JsonPrimitive)?.contentOrNull
-            return Capabilities(off, admin != null, adminOff, etag)
+            val panels = (features["plugin_panels"] as? JsonPrimitive)?.contentOrNull == "on"
+            return Capabilities(off, admin != null, adminOff, etag, panels)
         }
     }
 }

@@ -143,7 +143,8 @@ func TestSnapshotBodies(t *testing.T) {
 	}
 	var feats map[string]string
 	_ = json.Unmarshal(viewer["features"], &feats)
-	if feats["semantic_search"] != "off" || feats["live_tv"] != "on" || len(feats) != 9 {
+	// story 54.20: plugin_panels is the tenth, on while plugins.host is
+	if feats["semantic_search"] != "off" || feats["live_tv"] != "on" || feats["plugin_panels"] != "on" || len(feats) != 10 {
 		t.Fatalf("features %v", feats)
 	}
 	if err := json.Unmarshal(s.Body(true), &admin); err != nil {

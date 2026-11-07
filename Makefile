@@ -215,13 +215,14 @@ lint-log:  ## Story 21.1 AC-4: no runtime data concatenated into log msg.
 
 .PHONY: plugins-sync
 plugins-sync:  ## Epic 54: copy shared/plugins into the pipeline and regenerate the TypeScript SDK's data.
-	cp shared/plugins/manifest.schema.json shared/plugins/capabilities.toml shared/plugins/events.toml $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data/
+	cp shared/plugins/manifest.schema.json shared/plugins/capabilities.toml shared/plugins/events.toml shared/plugins/reserved_stages.txt $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data/
 	cd tools/plugin-sdk/js && node scripts/gen-data.mjs
+	python3 tools/plugins/bundle.py --write
 
 .PHONY: plugins-check
 plugins-check:  ## Epic 54 (story 54.01): the copies of shared/plugins are current.
 	$(MAKE) --no-print-directory plugins-sync
-	git diff --exit-code -- $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data tools/plugin-sdk/js/src/data.generated.ts
+	git diff --exit-code -- $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data tools/plugin-sdk/js/src/data.generated.ts shared/plugins/firstparty.json
 
 .PHONY: plugind-guests
 plugind-guests:  ## Epic 54: build the plugin host's test guests (wasm32-wasip2; rustup target add wasm32-wasip2).
@@ -283,8 +284,8 @@ lint-go:  ## gofmt + go vet + golangci-lint over every Go module.
 
 .PHONY: lint-py
 lint-py:  ## ruff + mypy --strict over the pipeline package.
-	cd $(PIPELINE_DIR) && uv run ruff check .
-	cd $(PIPELINE_DIR) && uv run ruff format --check .
+	cd $(PIPELINE_DIR) && uv run ruff check . ../plugins ../tools/plugins
+	cd $(PIPELINE_DIR) && uv run ruff format --check . ../plugins ../tools/plugins
 	cd $(PIPELINE_DIR) && uv run mypy
 	@echo "==> lint-log (Python: no runtime data in a log event name, Epic 53 story 53.01)"
 	cd $(PIPELINE_DIR) && uv run python tools/lint_log.py
