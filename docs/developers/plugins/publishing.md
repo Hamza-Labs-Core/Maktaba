@@ -6,8 +6,9 @@
 > passkeys) and re-authentication, the developer console, signing keys, id prefixes,
 > submissions, linking a home, store admin, the signed catalog and revocation list. The store
 > is built but **not open yet**: sign-up and submissions are closed until its keys, hosting and
-> reviewers are in place. Automated checks and review, the home's catalog and kill switch, and
-> the store browser follow in the next changes of Phase 2; paid plugins are Phase 3. This page
+> reviewers are in place. The automated checks and the review queue are built too
+> ([Review guidelines](guidelines.md)). The home's catalog and kill switch, and the store
+> browser follow in the next changes of Phase 2; paid plugins are Phase 3. This page
 > describes the design in
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
 > section 6, which can change.

@@ -447,3 +447,27 @@ fn bench_job_start() {
     println!("N1 job start p95 {p95:?}, p50 {:?}", times[499]);
     assert!(p95 < Duration::from_millis(20), "N1: p95 {p95:?}");
 }
+
+/// 54.16 C4: the store reads a component's import and export names without Wasmtime
+/// (maktaba-plugin-audit's component_names, in its WebAssembly); they are the names Wasmtime
+/// reads, so the store's audit is the host's.
+#[test]
+fn the_stores_names_are_wasmtimes() {
+    let mut cfg = wasmtime::Config::new();
+    cfg.wasm_component_model(true);
+    let engine = wasmtime::Engine::new(&cfg).unwrap();
+    for (name, bytes) in [
+        ("hello", guest("hello")),
+        ("hostile", guest("hostile")),
+        ("hostile_std", guest("hostile_std")),
+        ("http", wat::parse_str(HTTP_IMPORT).unwrap()),
+    ] {
+        let c = wasmtime::component::Component::new(&engine, &bytes).unwrap();
+        let (mut wi, mut we) = plugind_core::audit::names(&engine, &c);
+        let (mut si, mut se) = plugind_core::audit::component_names(&bytes).unwrap();
+        for v in [&mut wi, &mut we, &mut si, &mut se] {
+            v.sort();
+        }
+        assert_eq!((si, se), (wi, we), "{name}");
+    }
+}

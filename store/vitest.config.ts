@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from "node:fs";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
 import { defineConfig } from "vitest/config";
 import { testSigner } from "./scripts/gen-vectors";
@@ -36,6 +37,19 @@ async function workers() {
         MFA_ENC_KEY: toB64(crypto.getRandomValues(new Uint8Array(32))),
         BOOTSTRAP_ADMIN_TOKEN: "test-bootstrap-token-0123456789abcdef",
         TEST_STORE_KEYS: storeKeys,
+        // the component corpus (checks/testdata/components, made by crates/audit's test)
+        TEST_COMPONENTS: JSON.stringify(
+          Object.fromEntries(
+            readdirSync("./checks/testdata/components").map((f) => [
+              f.replace(/\.wasm$/, ""),
+              readFileSync(`./checks/testdata/components/${f}`).toString("base64"),
+            ]),
+          ),
+        ),
+        RUNNER: "none",
+        // the tests run the checks themselves (runChecks)
+        CHECKS_FROM_QUEUE: "false",
+        REVIEW_SAMPLE: "0",
         TEST_MIGRATIONS: JSON.stringify({
           accounts: await readD1Migrations("./migrations/accounts"),
           catalog: await readD1Migrations("./migrations/catalog"),
@@ -53,7 +67,7 @@ export default defineConfig(async () => ({
       { esbuild: { jsx: "automatic" }, test: { name: "console", environment: "jsdom", include: ["console/test/**/*.test.tsx"] } },
       {
         plugins: [await workers()],
-        test: { name: "workers", include: ["test/workers/**/*.test.ts"], setupFiles: ["./test/workers/setup.ts"] },
+        test: { name: "workers", include: ["test/workers/**/*.test.ts"], setupFiles: ["./test/workers/setup.ts"], testTimeout: 60_000 },
       },
     ],
   },

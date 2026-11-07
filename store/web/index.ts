@@ -12,6 +12,8 @@ import * as homes from "./homes";
 import { Refusal, json, problem, refuse } from "./http";
 import { type Mail, deliver } from "./mail";
 import { resignPage } from "./publish";
+import { runChecks, runnerRoute } from "./checks";
+import * as review from "./review";
 
 export { AccountGuard } from "../objects/account-guard";
 export { CatalogWriter } from "../objects/catalog-writer";
@@ -63,12 +65,23 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["DELETE", /^\/v1\/admin\/revocations\/(\d+)$/, admin.liftRevocation],
   ["POST", /^\/v1\/admin\/resign$/, admin.resignAll],
   ["GET", /^\/v1\/admin\/audit$/, admin.auditLog],
+  ["GET", /^\/v1\/admin\/queue$/, review.queue],
+  ["GET", /^\/v1\/admin\/submissions\/([\w-]+)$/, review.submission],
+  ["GET", /^\/v1\/admin\/submissions\/([\w-]+)\/source$/, review.source],
+  ["POST", /^\/v1\/admin\/submissions\/([\w-]+)\/approve$/, review.approve],
+  ["POST", /^\/v1\/admin\/submissions\/([\w-]+)\/reject$/, review.reject],
+  ["POST", /^\/v1\/admin\/submissions\/([\w-]+)\/ask$/, review.ask],
+  ["POST", /^\/v1\/admin\/flagged-words$/, review.flagWord],
+  ["POST", /^\/v1\/submissions\/([\w-]+)\/answer$/, review.answer],
 ];
 
 /** Routes a home calls with its own signature, not a session (no cookie, no Origin). */
 const HOME_ROUTES: [string, RegExp, (env: Env, req: Request, ...p: string[]) => Promise<Response>][] = [
   ["POST", /^\/v1\/homes\/([\w-]+)\/seen$/, homes.seen],
   ["PUT", /^\/v1\/uploads\/([A-Za-z0-9_-]{43})$/, dev.workerUpload],
+  // the isolated runner's single-use URLs (54.16 §1): it holds no session and no secret
+  ["GET", /^\/v1\/runner\/([A-Za-z0-9_-]{43})$/, runnerRoute],
+  ["POST", /^\/v1\/runner\/([A-Za-z0-9_-]{43})$/, runnerRoute],
 ];
 
 /** The routes table, for the role tests (54.15 T01). */
@@ -95,6 +108,33 @@ async function api(req: Request, env: Env): Promise<Response> {
   return refuse(methodSeen ? 405 : 404, methodSeen ? "method_not_allowed" : "not_found");
 }
 
+/**
+ * /admin/… (54.15 §7): its own bundle, sent only after the role check on the server, with a
+ * strict CSP, noindex and no-store. Hiding a menu is never the guard: every /v1/admin route
+ * checks again.
+ */
+async function adminPage(req: Request, env: Env): Promise<Response> {
+  const ctx = await context(env, req);
+  const staffOK =
+    ctx.account &&
+    (ctx.roles.has("store_reviewer") || ctx.roles.has("store_admin")) &&
+    ctx.factors.passkey > 0 &&
+    ctx.session?.mfa_kind === "passkey";
+  const headers = {
+    "Cache-Control": "no-store",
+    "X-Robots-Tag": "noindex, nofollow",
+    "Content-Security-Policy":
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (!staffOK) return Response.redirect(`${env.STORE_ORIGIN}/signin?next=/admin`, 302);
+  if (!env.ASSETS) return new Response("not built", { status: 503, headers });
+  const page = await env.ASSETS.fetch(new Request(new URL("/admin.html", req.url), req));
+  const out = new Response(page.body, page);
+  for (const [k, v] of Object.entries(headers)) out.headers.set(k, v);
+  return out;
+}
+
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
@@ -107,6 +147,7 @@ export default {
         return json({ error: "internal" }, 500);
       }
     }
+    if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return adminPage(req, env);
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return json({ error: "not_found" }, 404);
   },
@@ -115,6 +156,9 @@ export default {
     for (const msg of batch.messages) {
       if (batch.queue.startsWith("store-mail")) {
         await deliver(env, msg.body as Mail);
+      } else if (batch.queue.startsWith("store-checks")) {
+        // a test store drives the checks itself (CHECKS_FROM_QUEUE = "false")
+        if (env.CHECKS_FROM_QUEUE !== "false") await runChecks(env, (msg.body as { submission: string }).submission);
       } else if (batch.queue.startsWith("store-catalog")) {
         const b = msg.body as { kind: string; after?: string };
         if (b.kind === "resign") {
@@ -135,6 +179,7 @@ export default {
         break;
       case "15 3 * * *":
         await nightlyExport(env);
+        await review.backlogAlert(env);
         break;
       case "0 4 1 * *":
         await dev.recheckPrefixes(env);

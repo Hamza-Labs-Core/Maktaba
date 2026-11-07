@@ -262,7 +262,9 @@ store:
   - 'plugind/Cargo.lock'
   - 'plugind/crates/storewasm/**'
   - 'plugind/crates/pluginmanifest/**'
+  - 'plugind/crates/audit/**'
   - '.github/workflows/_store.yml'
+  - '.github/workflows/store-check-runner.yml'
 
 # ---- the server's tiers ---------------------------------------------------------------
 

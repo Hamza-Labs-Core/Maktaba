@@ -18,6 +18,13 @@ export interface Env {
   UPLOADS: "presigned" | "worker";
   MAIL_PROVIDER: "postmark" | "outbox";
   MAIL_FROM: string;
+  /** The isolated runner (54.16 §1): "github" (the CI fallback, store-check-runner.yml) or "none". */
+  RUNNER?: "github" | "none";
+  RUNNER_REPOSITORY?: string;
+  /** The share of plain updates sampled for a person's review (54.16 §2: 0.05). */
+  REVIEW_SAMPLE?: string;
+  /** "false" in the tests only: they run the checks themselves. */
+  CHECKS_FROM_QUEUE?: string;
   /** The plugin root (plugins-root.json's text); tests set a test root. Unset: the committed one. */
   PLUGINS_ROOT?: string;
 
@@ -43,6 +50,8 @@ export interface Env {
   R2_SECRET_ACCESS_KEY?: string;
   R2_ACCOUNT_ID?: string;
   EXPORT_PUBLIC_KEY?: string;
+  /** A fine-grained token that can only start store-check-runner.yml (repository_dispatch). */
+  RUNNER_DISPATCH_TOKEN?: string;
   CF_ZONE_ID?: string;
   CF_PURGE_TOKEN?: string;
 }

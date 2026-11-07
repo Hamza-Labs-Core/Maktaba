@@ -142,7 +142,9 @@ empty. To open it:
    add a passkey, and call `POST /v1/admin/bootstrap {token}` once with `BOOTSTRAP_ADMIN_TOKEN`:
    that account is the first `store_admin`. Delete the secret afterwards.
 4. Grant `store_reviewer` to the reviewers (each with a passkey), then set
-   `SUBMISSIONS_OPEN = "true"`.
+   `SUBMISSIONS_OPEN = "true"`. The isolated runner is the GitHub Actions fallback
+   (`RUNNER = "github"`); Cloudflare Containers (`check-runner/Dockerfile`) needs the spike of
+   README §14 item 11 first, and is not wired.
 5. Once the root keys are in a server release (step 1), homes accept the store's signatures.
 
 ### Rollback

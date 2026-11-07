@@ -310,8 +310,9 @@ export async function startSubmission(ctx: Ctx): Promise<Response> {
       optStr(b.notes_ar, "notes_ar", 4000) ?? "",
     ),
     ctx.env.DB_CATALOG.prepare(
-      "INSERT INTO submissions (id, plugin, version, uploaded_by, package_key, source_key, package_sha256, package_size, source_size, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    ).bind(sid, id, version, a.id, pkgKey, srcKey, sha, size, sourceSize, at),
+      `INSERT INTO submissions (id, plugin, version, uploaded_by, package_key, source_key, package_sha256, package_size, source_size, created, first_version)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM versions WHERE plugin = ? AND status = 'approved'))`,
+    ).bind(sid, id, version, a.id, pkgKey, srcKey, sha, size, sourceSize, at, id),
   ]);
   await audit(ctx, a.id, "submission.start", `${id}@${version}`);
   const origin = ctx.env.STORE_ORIGIN;

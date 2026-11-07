@@ -10,6 +10,7 @@ interface Exports {
   inspect(p: number, n: number): number;
   repack(p: number, n: number, s: number, sn: number): number;
   pack(p: number, n: number): number;
+  extract(p: number, n: number, q: number, qn: number): number;
 }
 
 let inst: Exports | undefined;
@@ -51,6 +52,11 @@ async function call(f: (w: Exports, args: number[]) => number, inputs: Uint8Arra
   return bodyBytes;
 }
 
+/** One file of a package, after the package's checks. */
+export async function extract(pkg: Uint8Array, path: string): Promise<Uint8Array> {
+  return call((w, a) => w.extract(a[0]!, a[1]!, a[2]!, a[3]!), [pkg, new TextEncoder().encode(path)]);
+}
+
 export interface Inspected {
   manifest: string;
   files_json: string;
@@ -58,6 +64,11 @@ export interface Inspected {
   store_sig: string | null;
   files: { path: string; sha256: string; size: number }[];
   unpacked_bytes: number;
+  imports: string[];
+  exports: string[];
+  audit: { code: string; detail: string } | null;
+  strings: Record<string, Record<string, unknown>>;
+  wasm_size: number;
 }
 
 export async function inspect(pkg: Uint8Array): Promise<Inspected> {

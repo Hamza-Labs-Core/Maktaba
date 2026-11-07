@@ -7,7 +7,14 @@ import { code, stepAt } from "../../web/totp";
 import { pack, inspect } from "../../web/wasm";
 import { Signer } from "../../signing/sig";
 
-export const E = env as unknown as Env & { TEST_STORE_KEYS: string; PLUGINS_ROOT: string };
+export const E = env as unknown as Env & { TEST_STORE_KEYS: string; PLUGINS_ROOT: string; TEST_COMPONENTS: string };
+
+/** A component of the corpus (checks/testdata/components). */
+export function component(name: string): Uint8Array {
+  const b64 = (JSON.parse(E.TEST_COMPONENTS) as Record<string, string>)[name];
+  if (!b64) throw new Error(`no component ${name}`);
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
 export const ORIGIN = "https://plugins.maktaba.tv";
 
 export interface Res {
@@ -28,6 +35,7 @@ export async function call(
   if (opts.body !== undefined) h.set("Content-Type", "application/json");
   const r = await (exports as unknown as { default: Fetcher }).default.fetch(`${ORIGIN}${path}`, {
     method,
+    redirect: "manual",
     headers: h,
     body: opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
   });
