@@ -1,0 +1,5 @@
+{
+  "about": "a one-plugin flow that loops through one store plugin of another flow",
+  "mode": "store",
+  "states": {}
+}

@@ -188,6 +188,20 @@ case("transitive_chain_store", "store", "a flow over a two-deep chain of store p
      catalog=[dict(cx, stages=[{"name": "x", "triggers": ["audio.ready", f"plugin:{Y}/y.done"], "emits": ["x.done"]}]),
               dict(cy, stages=[{"name": "y", "triggers": ["audio.ready"], "emits": ["y.done"]}])])
 
+cx_back = {"id": X, "stages": [{"name": "x", "triggers": [f"plugin:{A}/a.done"], "emits": ["x.done"]}],
+           "events": [{"name": "x.done"}]}
+case("cycle_through_two_flows", "store",
+     "a one-plugin flow that loops through one store plugin of another flow",
+     [fa], flow_members=[fa], catalog=[cx_back])
+CHAIN = [f"dev.example.link{i}" for i in range(6)]
+chain = [{"id": pid, "stages": [{"name": "s", "triggers": (
+             ["audio.ready"] if i == len(CHAIN) - 1 else [f"plugin:{CHAIN[i + 1]}/l.done"]),
+             "emits": ["l.done"]}], "events": [{"name": "l.done"}]}
+         for i, pid in enumerate(CHAIN)]
+fl = {"id": A, "stages": [{"name": "one", "triggers": [f"plugin:{CHAIN[0]}/l.done"]}]}
+case("long_chain_store", "store", "a flow over a six-deep chain of store plugins, each its own flow: allowed",
+     [fl], flow_members=[fl], catalog=chain)
+
 
 def main() -> None:
     if OUT.exists():
