@@ -73,17 +73,16 @@ func TestRecoveryPassForANativeApp(t *testing.T) {
 	h := &Handler{Keys: testKeys(t)}
 	call := func(p *principal.Principal) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/auth/recovery-pass", nil)
-		req.Header.Set("Authorization", "Bearer x")
 		req = req.WithContext(principal.WithPrincipal(req.Context(), p))
 		rec := httptest.NewRecorder()
 		h.RecoveryPass(rec, req)
 		return rec
 	}
-	if rec := call(&principal.Principal{UserID: "v", IsAdmin: false}); rec.Code != http.StatusForbidden ||
+	if rec := call(&principal.Principal{UserID: "v", IsAdmin: false, Source: principal.SourceJWT}); rec.Code != http.StatusForbidden ||
 		strings.Contains(rec.Body.String(), `"pass":`) {
 		t.Fatalf("viewer: %d %s", rec.Code, rec.Body.String())
 	}
-	rec := call(&principal.Principal{UserID: "a1", IsAdmin: true})
+	rec := call(&principal.Principal{UserID: "a1", IsAdmin: true, Source: principal.SourceJWT})
 	var body struct {
 		Pass      string `json:"pass"`
 		ExpiresAt string `json:"expires_at"`
@@ -94,6 +93,23 @@ func TestRecoveryPassForANativeApp(t *testing.T) {
 	claims, err := jwt.Verify(h.Keys, body.Pass, RecoveryAudience)
 	if err != nil || claims.Sub != "a1" || !claims.IsAdmin {
 		t.Fatalf("pass: %+v %v", claims, err)
+	}
+}
+
+// The pass reaches the body only for a request signed in with a bearer access token: a
+// web session (the cookie) gets the cookie alone even when it sends the native client's
+// header or an Authorization header, so a script on the web page never reads the pass.
+func TestRecoveryPassBodyFollowsTheSignIn(t *testing.T) {
+	h := &Handler{Keys: testKeys(t)}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/recovery-pass", nil)
+	req.Header.Set(HeaderClient, "apple.remote/0.3.99")
+	req.Header.Set("Authorization", "Bearer forged")
+	req = req.WithContext(principal.WithPrincipal(req.Context(),
+		&principal.Principal{UserID: "a1", IsAdmin: true, Source: principal.SourceCookie}))
+	rec := httptest.NewRecorder()
+	h.RecoveryPass(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"pass":`) {
+		t.Fatalf("a cookie session: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

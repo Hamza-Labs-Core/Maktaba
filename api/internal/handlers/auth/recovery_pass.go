@@ -90,7 +90,8 @@ func ImportRecoveryActions(ctx context.Context, w *securityaudit.Writer, path st
 }
 
 // RecoveryPass is POST /api/auth/recovery-pass: an admin gets the cookie (and the pass,
-// for a native app that sends it as a bearer); a viewer 403 and no cookie; nobody 401.
+// when signed in with a bearer access token, as the native apps are); a viewer 403 and
+// no cookie; nobody 401.
 func (h *Handler) RecoveryPass(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
@@ -123,8 +124,11 @@ func (h *Handler) RecoveryPass(w http.ResponseWriter, r *http.Request) {
 	})
 	out := map[string]any{"expires_at": exp.UTC().Format(time.RFC3339)}
 	// a native app (a Remote) keeps the pass itself and sends it as a bearer to the
-	// console; the web's stays in the HttpOnly cookie, out of reach of its scripts
-	if isNativeClient(r) {
+	// console; the web's stays in the HttpOnly cookie, out of reach of its scripts. Which
+	// one is decided by how the request signed in (a bearer access token the middleware
+	// verified), never by a header the caller sets: a script on the web page could set
+	// X-Maktaba-Client or Authorization, but it rides the session cookie
+	if p.Source == principal.SourceJWT {
 		out["pass"] = tok
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
