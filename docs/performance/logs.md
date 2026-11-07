@@ -53,11 +53,13 @@ encode it) against their times on the reference, clamped to 1–4, as `logbench.
 does. The report shows both loops' times (`_runner.calibration`). The `log-bench` job runs
 it after the Go benches and keeps its numbers (`logbench-python.json`).
 
-Over budget it warns rather than fails, as the story's rollout starts a budget;
-`LOGBENCH_PY_STRICT=1` makes it fail.
+Over budget it fails in CI's `log-bench` job (`LOGBENCH_PY_STRICT=1`) and warns elsewhere,
+as the story's rollout starts a budget. The nightly Mac only warns: on that 3-core VM a p99
+is 6–10 times its p50 for the Go and the Python logger alike (issue #807).
 
 Issue #744 took a call from 19.5 to 11.5 µs at p50 (27 to 17 µs at p99) on the reference
-class of Mac, an M3 Ultra; CI's runner was 55 µs at p50 and 82 µs at p99 before it:
+class of Mac, an M3 Ultra. CI's Linux runner went from 55 µs at p50 and 82 µs at p99 to
+12.4 and 18.0 µs (its budget, at factor 1.51: 30 µs):
 
 | What | Before | After |
 |---|---|---|
