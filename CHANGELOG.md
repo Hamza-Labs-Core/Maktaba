@@ -1133,6 +1133,30 @@ build fails when the two differ.
   that cannot be fetched, does not verify, has expired or is older than the committed copy
   stops the release. Until the plugin root keys exist it embeds nothing.
 
+- **The plugin store browser, listing pages, ratings and reports (Epic 54, story 54.18).**
+  Settings → Plugins → Browse the store shows the catalog this home keeps, only the versions
+  this server's version, plugin API and platform can run (a switch shows those that need a
+  newer Maktaba), searched in English and Arabic with letter forms and diacritics folded, by
+  category, sorted by rating, installs or newest. A plugin's page shows its words, what it can
+  do in Maktaba's own words, its review level, the rating (shown from 5 ratings), its versions
+  and Install. A store account linked to a home that has had the plugin for 24 hours can rate
+  it once (1 to 5 stars, optional text, editable); the developer can reply once; a review can
+  be reported and hidden by the store's reviewers. Anyone can report a plugin; malware and
+  data misuse reports alert the store admins and lead the moderation queue, and the reporter
+  hears the outcome. plugins.maktaba.tv lists every plugin and has a page per plugin, in
+  English and Arabic (right to left), rendered on the server from the signed catalog, with
+  Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
+  review is plain text.
+
+- **The store browser draws a plugin's flow (Epic 54, stories 54.18 and 54.41).** Settings →
+  Plugins → Browse the store shows, for a plugin in a flow, the whole flow drawn with the events
+  it publishes and the ones it listens to, from the store's signed catalog. The store's review
+  and listing pages now draw flows with the same chart as the home.
+
+- **Open in my Maktaba works without an app (Epic 54, story 54.18, #757).** A plugin's page on
+  plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
+  remembers it in that browser only, and opens the home's Browse on the plugin.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
