@@ -7,8 +7,10 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
+    "resolveJsonModule": true,
     "types": ["node"],
     "skipLibCheck": true
   },
-  "include": ["signing/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["signing/**/*.ts", "scripts/**/*.ts", "test/*.ts"],
+  "exclude": ["scripts/decrypt-export.ts"]
 }

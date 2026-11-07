@@ -1,10 +1,15 @@
 # Publishing
 
-> **Status: Phase 2 is being built.** Signing is on `main`: `mkp keys`, `mkp pack --key` and
-> the home's checks of both signatures ([Signing and the chain of trust](trust.md)). The store,
-> review, the catalog and the kill switch follow in the next changes of Phase 2; paid plugins
-> are Phase 3. Until the store opens, every file is Unreviewed. This page describes the design
-> in [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
+> **Status: Phase 2 is being built.** On `main`: signing (`mkp keys`, `mkp pack --key`, the
+> home's checks of both signatures, [Signing and the chain of trust](trust.md)) and the store
+> service itself: store accounts with email verification, MFA (an authenticator app or
+> passkeys) and re-authentication, the developer console, signing keys, id prefixes,
+> submissions, linking a home, store admin, the signed catalog and revocation list. The store
+> is built but **not open yet**: sign-up and submissions are closed until its keys, hosting and
+> reviewers are in place. Automated checks and review, the home's catalog and kill switch, and
+> the store browser follow in the next changes of Phase 2; paid plugins are Phase 3. This page
+> describes the design in
+> [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
 > section 6, which can change.
 
 ## Where things live
@@ -35,8 +40,32 @@ with the cloud, and keeps working when the cloud is down.
    publish, and sensitive actions (keys, submissions, payouts) ask you to sign in again.
 3. Accept the developer agreement. A new version must be accepted before your next submission.
 4. Choose an **id prefix**: prove a domain with a DNS TXT record
-   `maktaba-developer=<value from the console>`, or take a community prefix
+   `maktaba-developer=<value from the console>` (for the prefix `dev.example`, the record is on
+   `example.dev`; the store re-checks it monthly, and new submissions under a prefix whose
+   record is gone wait until it is back), or take a community prefix
    `tv.maktaba.community.<handle>`.
+
+Sensitive actions (adding or revoking a key, submitting, withdrawing, changing your email,
+password or factors, linking a home) need a factor confirmed in the last 5 minutes; otherwise
+the API answers `401 reauth_required` and the console asks you to **Confirm it's you**. Five
+failed sign-ins pause signing in for 15 minutes (doubling up to a day) and email you. Reviewers
+and store admins sign in with a passkey.
+
+### The store API you use
+
+| Route | What |
+|---|---|
+| `POST /v1/developers {agreement_version}` | become a developer, or accept a new agreement |
+| `POST /v1/developers/keys {id, public}` | the output of `mkp keys export-public` |
+| `DELETE /v1/developers/keys/{id}` | revoke a key |
+| `POST /v1/developers/prefixes {prefix}` or `{community}` | claim a prefix; `…/{prefix}/check` checks the TXT record |
+| `POST /v1/submissions {plugin_id, version, package_sha256, package_size, source_size, notes_en, notes_ar}` | start a submission: answers upload URLs for the package and the source archive |
+| `POST /v1/submissions/{id}/uploaded` | the uploads are checked (size and sha256) and the checks queued |
+| `GET /v1/submissions/{id}` | its status and report |
+| `POST /v1/plugins/{id}/withdraw` | delist your plugin |
+
+A version is never submitted twice (`409 version_exists`: bump the version), and every
+version needs its source archive.
 
 ## Signing keys
 

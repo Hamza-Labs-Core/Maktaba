@@ -727,7 +727,7 @@ func runServe() error {
 			// service, the plugin API's invocation and breaker routes, and the plugin API
 			// on its unix socket when the supervisor names one
 			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
-				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version})
+				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

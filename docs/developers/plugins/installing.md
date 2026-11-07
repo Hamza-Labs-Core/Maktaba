@@ -1,8 +1,9 @@
 # Installing and managing plugins
 
-> **Status: on `main` (Phase 1).** Everything on this page is built. Plugins run on a home with
-> Postgres, on macOS and Linux; Windows is not supported yet. Before Phase 2 there is no store
-> and no signature check, so every file is **unreviewed**.
+> **Status: on `main`.** Everything on this page is built. Plugins run on a home with
+> Postgres, on macOS and Linux; Windows is not supported yet. A home checks a file's signatures
+> ([Signing and the chain of trust](trust.md)); until the store opens, every file is
+> **unreviewed**.
 
 This is what the admin of a home does with your plugin, and what your plugin sees of it.
 
@@ -86,6 +87,24 @@ It is held, the admins get one notice, and its jobs stay queued until an admin p
 Every change your plugin makes to the library (a field, a tag, chapters, subtitles, artwork) is
 recorded with the value before and after. The admin can select changes and revert them; a
 change someone made after your plugin wins.
+
+## Linking a home to a store account
+
+A home needs a **plugin store account** only to rate plugins (and, in Phase 3, to buy them).
+Free plugins install without one. The store is its own service on `plugins.maktaba.tv`, with
+its own accounts, not Maktaba Cloud's.
+
+On Settings, Plugins, **Store account**, the admin chooses **Link this home**. The home makes
+an Ed25519 *home store key* (kept sealed in its secrets store), asks the store for a code and
+shows it with a QR code for `plugins.maktaba.tv/link` (the code is never in the link). The admin
+signs in to their store account on any device, opens `/link`, types the code, sees the home's
+name, version and platform, and confirms. The home polls every 5 seconds and is linked within
+seconds; the code lasts 10 minutes, and five wrong entries end it. Afterwards the home signs
+each store request with its key (time-limited, each nonce once): there is no password or token
+to leak. An account links up to 10 homes; **Unlink** works from either side.
+
+The routes, admin only: `GET /api/plugins/store-account`, `POST …/link`, `POST …/poll`,
+`DELETE /api/plugins/store-account`.
 
 ## The admin's API
 

@@ -257,6 +257,11 @@ store:
   - *ci
   - 'store/**'
   - 'shared/plugins/**'
+  # the Worker's WebAssembly is built from the home's package reader and manifest validator
+  - 'plugind/Cargo.toml'
+  - 'plugind/Cargo.lock'
+  - 'plugind/crates/storewasm/**'
+  - 'plugind/crates/pluginmanifest/**'
   - '.github/workflows/_store.yml'
 
 # ---- the server's tiers ---------------------------------------------------------------
