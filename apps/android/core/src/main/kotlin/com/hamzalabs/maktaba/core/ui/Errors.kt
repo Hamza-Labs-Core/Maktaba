@@ -208,6 +208,13 @@ fun ErrorState(
                 else OutlinedButton(onClick = run, modifier = tag) { Text(stringResource(a.label())) }
             }
         }
+        // the form, with the reference of the call that failed (Epic 53 story 53.15)
+        LocalReportProblem.current?.let { report ->
+            TextButton(onClick = { report(com.hamzalabs.maktaba.core.api.RequestId.recent().lastOrNull()?.let { it.take(8) }) },
+                modifier = Modifier.testTag("error-report")) {
+                Text(stringResource(R.string.report_this), color = muted)
+            }
+        }
         val details = failure.details
         if (!details.isNullOrBlank()) {
             TextButton(onClick = { showDetails = !showDetails }, modifier = Modifier.testTag("error-details-toggle")) {

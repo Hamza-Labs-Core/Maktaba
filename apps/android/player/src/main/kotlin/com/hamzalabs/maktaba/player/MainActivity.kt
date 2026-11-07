@@ -65,7 +65,10 @@ class MainActivity : ComponentActivity() {
                                 PendingSignInsHost(app.session, user, client, enabled = !playing) {
                                     // what is down on the home, on top (Epic 53 story 53.06; not over a playing video)
                                     HomeStatusHost(client, admin = user.isAdmin, enabled = !playing) {
-                                        PlayerShell(sections = rememberShownSections(home), immersive = playing, link = link.value, onLinkOpened = { link.value = null })
+                                        // crash reports to the home (asked once, off until yes) and Report a problem (Epic 53)
+                                        com.hamzalabs.maktaba.core.ui.DiagnosticsHost(client, app.session.current.collectAsState().value) {
+                                            PlayerShell(sections = rememberShownSections(home), immersive = playing, link = link.value, onLinkOpened = { link.value = null })
+                                        }
                                     }
                                 }
                             }
