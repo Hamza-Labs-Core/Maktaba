@@ -58,7 +58,11 @@ a library with a thin binary) and a **mock plugin API** in-process:
   that passes locally is not surprised at home;
 - it records every call (`trace.json`) and the outputs; `mkp test --golden` compares with
   stored goldens;
-- limits are the manifest's; `--limits strict` uses the store's review limits.
+- limits are the manifest's; `--limits strict` uses the store's review limits;
+- `mkp test --with <other.mkplugin>` runs a two-plugin chain: events the first emits are
+  delivered to the second's subscriber stages with their lineage, and `mkp flow` draws the
+  flow as a text chart and Mermaid (54.41). The SDK's bindings add `events.emit` and its
+  templates a `flow.toml` of one plugin (54.39, 54.40).
 
 The Go API and the mock are checked against each other in CI: the same request corpus
 (`shared/plugins/testdata/api-corpus/`) goes through both and the answers must match.
