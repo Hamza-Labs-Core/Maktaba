@@ -4474,6 +4474,20 @@ button.mkt-video__hero {
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* a report's way to Maktaba (story 53.16) */
+.mkt-report__maktaba {
+  margin-block: var(--space-2, 8px);
+}
+.mkt-report__label {
+  font-weight: 600;
+}
+.mkt-report__shot {
+  display: block;
+  max-inline-size: 100%;
+  border: 1px solid var(--color-border, #ddd);
+  margin-block: var(--space-2, 8px);
+}
+
 .mkt-report__said {
   margin: 1rem 0;
   padding-inline-start: 0.75rem;

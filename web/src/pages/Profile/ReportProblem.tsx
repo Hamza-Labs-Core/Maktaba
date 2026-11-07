@@ -2,8 +2,9 @@
 // category, when it happened, and always what will be sent (the app and its version, the
 // app's lines of the last 30 minutes with a preview, the last requests). The home adds its
 // side. Sent, it shows the report's number. An error screen's "Report this" opens it with
-// that error's reference (?ref=).
-import { useMemo, useState } from "react";
+// that error's reference (?ref=). While the home's admin lets people send reports to Maktaba
+// (story 53.16), it offers "Also send to Maktaba", unticked.
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { Button } from "@ds/components/Button/Button";
@@ -11,7 +12,13 @@ import { Select } from "@ds/components/Select/Select";
 import { useI18n } from "../../lib/i18n";
 import { logAppVersion } from "../../lib/errorLog";
 import { lastRequests } from "../../lib/requestIds";
-import { CATEGORIES, reportLines, sendReport, type Category } from "../../lib/problemReports";
+import {
+  CATEGORIES,
+  maktabaSetting,
+  reportLines,
+  sendReport,
+  type Category,
+} from "../../lib/problemReports";
 
 export function ReportProblem() {
   const { t, n } = useI18n();
@@ -25,7 +32,14 @@ export function ReportProblem() {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<number | null>(null);
   const [err, setErr] = useState(false);
+  const [maktabaOn, setMaktabaOn] = useState(false);
+  const [toMaktaba, setToMaktaba] = useState(false);
   const lines = useMemo(() => reportLines(), []);
+  useEffect(() => {
+    maktabaSetting()
+      .then((s) => setMaktabaOn(s?.enabled === true))
+      .catch(() => setMaktabaOn(false));
+  }, []);
   const requests = useMemo(() => lastRequests(), []);
 
   const send = () => {
@@ -37,7 +51,14 @@ export function ReportProblem() {
       when = d.toISOString();
     }
     setBusy(true);
-    sendReport({ category, text, when, appVersion: logAppVersion(), requestRef: ref })
+    sendReport({
+      category,
+      text,
+      when,
+      appVersion: logAppVersion(),
+      requestRef: ref,
+      shareWithMaktaba: maktabaOn && toMaktaba,
+    })
       .then((id) => {
         setSent(id);
         setErr(false);
@@ -120,6 +141,19 @@ export function ReportProblem() {
           </pre>
         </details>
         <p className="mkt-muted">{t("report.toHome")}</p>
+        {maktabaOn && (
+          <div className="mkt-report__field" data-testid="report-to-maktaba">
+            <label>
+              <input
+                type="checkbox"
+                checked={toMaktaba}
+                onChange={(e) => setToMaktaba(e.target.checked)}
+              />{" "}
+              {t("report.to.maktaba")}
+            </label>
+            {toMaktaba && <p className="mkt-muted">{t("report.to.maktaba.note")}</p>}
+          </div>
+        )}
         {err && (
           <p role="alert" className="mkt-muted">
             {t("report.error")}

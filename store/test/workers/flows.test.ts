@@ -128,6 +128,16 @@ describe("C12 at verification", () => {
     expect(JSON.parse(flow!.subscriptions).length).toBe(1);
     // the listing draws the whole flow and lists the plugin's own events and subscriptions
     await E.CATALOG_WRITER.get(E.CATALOG_WRITER.idFromName("main")).regenerate();
+    // the signed catalog carries each member's flow for the home's Browse (in extra, which
+    // homes keep without checking)
+    const cat = JSON.parse(await (await E.BUCKET.get("catalog-1.json"))!.text()) as {
+      signed: { plugins: { id: string; extra?: { flow?: { id: string; graph: { nodes: unknown[] }; events: string[] } } }[] };
+    };
+    for (const id of f.ids) {
+      const flowInCatalog = cat.signed.plugins.find((x) => x.id === id)?.extra?.flow;
+      expect(flowInCatalog?.id).toBe(f.flowId);
+      expect(flowInCatalog?.graph.nodes.length).toBeGreaterThan(0);
+    }
     const { exports } = await import("cloudflare:workers");
     const page = (path: string) => (exports as unknown as { default: Fetcher }).default.fetch(`https://plugins.maktaba.tv${path}`).then((r) => r.text());
     const silences = f.ids.find((i) => i.endsWith("silences"))!;

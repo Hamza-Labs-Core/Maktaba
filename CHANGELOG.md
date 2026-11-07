@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba Cloud's plans are Free, Basic and Pro (Epic 50 story 50.19, part 1).** Only the
+  relay is paid, and a paid plan never cuts remote play off. Free has no relay (direct access
+  will be free on every plan); Basic relays at about 3 Mbps on 2 devices with 500 GB a month of
+  fair use, after which streams play slower; Pro relays at full quality for an allowance. The
+  Family plan is gone: accounts on the old Pro are now Basic, those on Family are Pro. Prices
+  are not set yet, so paid plans stay "coming soon". The relay counts each home's bytes by
+  quality mode, and no longer refuses a home for its bytes.
 - **Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3).**
   Whisper and the second listen run in `tv.maktaba.transcription`, in an `ml` runner beside
   each transcription worker that holds the model and opens the GPU; the search index,
@@ -307,6 +314,18 @@ build fails when the two differ.
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
 ### Added
+
+- **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
+  (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
+  Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
+  Then **Report a problem** on the web, Apple and Android apps offers **Also send to Maktaba**,
+  unticked, and an admin can send any report after seeing exactly what leaves the home.
+  Names, video titles, file names, library folders and addresses are removed first, and the
+  person shows as user-1. The home sends it through its relay agent and keeps trying for 7
+  days when the cloud can't be reached. Maktaba keeps it for 90 days; its reply shows in the
+  report and in the sender's **My reports**; **Delete what Maktaba has** deletes every report
+  of the home there. The cloud's service admin reads, triages and answers them at
+  **/admin/reports**; a home admin's cloud account cannot.
 
 - **The Player for Windows and Linux has Report this on its error screens and says what
   happened to its last crash.** An error's **Report this** opens Report a problem with that
@@ -1163,14 +1182,14 @@ build fails when the two differ.
   Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
   review is plain text.
 
-- **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
-  `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
-  accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
-  builds with jco, every optional feature off. Each is built against a plugin world cut to the
-  interfaces its manifest's capabilities cover, so a call it did not declare does not build;
-  `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
-  up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
-  maktaba.dev: Testing and packaging, *Python and JavaScript*.
+- **The store browser draws a plugin's flow (Epic 54, stories 54.18 and 54.41).** Settings →
+  Plugins → Browse the store shows, for a plugin in a flow, the whole flow drawn with the events
+  it publishes and the ones it listens to, from the store's signed catalog. The store's review
+  and listing pages now draw flows with the same chart as the home.
+
+- **Open in my Maktaba works without an app (Epic 54, story 54.18, #757).** A plugin's page on
+  plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
+  remembers it in that browser only, and opens the home's Browse on the plugin.
 
 ### Fixed
 
@@ -1735,6 +1754,15 @@ build fails when the two differ.
   http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
   developer's machine. maktaba.dev: Testing and packaging.
 
+- **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
+  `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
+  accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
+  builds with jco, every optional feature off. Each is built against a plugin world cut to the
+  interfaces its manifest's capabilities cover, so a call it did not declare does not build;
+  `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
+  up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
+  maktaba.dev: Testing and packaging, *Python and JavaScript*.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -2273,6 +2301,12 @@ build fails when the two differ.
 - **No stale page after an update.** The service worker carries each build's stamp, pages load
   from the network first, and a page an older release left open reloads once instead of going
   blank.
+
+- **A plugin runner starts on a Mac whose data folder has a long path (Epic 54, story
+  54.23).** A runner's socket then lives under `/tmp`, which macOS keeps at `/private/tmp`;
+  the runner's sandbox named the first and was refused the second, so the runner exited
+  about 10 s after it started and its stages ran in the worker. The sandbox now names the
+  sockets and the run folder by their real paths.
 
 ## [0.2.0] - 2026-10-19
 

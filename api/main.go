@@ -386,7 +386,7 @@ func runServe() error {
 	// it never contends with handler traffic. Peer log URLs let the
 	// bundle proxy the streaming + pipeline ring buffers.
 	hubRef := &router.HubRef{} // Epic 35: the update driver's cluster channel (and a machine's log files)
-	router.MountLogs(r, router.LogsDeps{
+	forwarder := router.MountLogs(r, router.LogsDeps{
 		DB:                 statsDB,
 		DataDir:            statsDataDir,
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", schemaguard.SchemaRev),
@@ -397,7 +397,10 @@ func runServe() error {
 		// this machine's server.log, app.log and launcher.log from its supervisor, and a
 		// machine's over the machine channel: where an update's story is
 		Files: router.LogFiles(os.Getenv("MAKTABA_SUPERVISOR_URL"), os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"), hubRef, nil),
+		// Epic 53 story 53.16: whether reports.share is on
+		Switches: loops,
 	})
+	wireReportsForwarder(loops, forwarder, logger)
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Process supervision (Story 22.9): the supervisor's per-process

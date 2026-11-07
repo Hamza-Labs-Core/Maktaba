@@ -151,6 +151,7 @@ object ReportPart {
         reference: String?,
         screenshotPreviewed: Boolean,
         scrub: (String) -> String,
+        toMaktaba: Boolean = false,
     ): ByteArray {
         val reqs = requests.toMutableList()
         if (reference != null && reqs.none { it.startsWith(reference) }) reqs += reference
@@ -164,7 +165,7 @@ object ReportPart {
                 put("os_version", header.osVersion); put("device_model", header.deviceModel); put("install_id", header.installId)
                 put("request_ids", JsonArray(reqs.takeLast(20).map(::JsonPrimitive)))
                 put("screenshot_previewed", screenshotPreviewed)
-                put("share_with_maktaba", false)
+                put("share_with_maktaba", toMaktaba)
                 if (crashes.isNotEmpty()) put("crashes", JsonArray(crashes))
                 put("lines", JsonArray(objects))
             }

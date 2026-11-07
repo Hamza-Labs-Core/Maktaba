@@ -31,7 +31,7 @@ func TestNoneProvider(t *testing.T) {
 	if p.Enabled() {
 		t.Error("none is enabled")
 	}
-	for _, plan := range []string{PlanFree, PlanPro, PlanFamily} {
+	for _, plan := range []string{PlanFree, PlanBasic, PlanPro} {
 		if p.Sells(plan) {
 			t.Errorf("none sells %s", plan)
 		}
