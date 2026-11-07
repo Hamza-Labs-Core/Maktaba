@@ -134,8 +134,29 @@ def _plain(v: Any) -> Any:
 
 
 def canonical(row: Mapping[str, Any], ignore: Iterable[str] = ()) -> dict[str, Any]:
-    masked = set(ignore)
-    return {k: ("<ignored>" if k in masked else _plain(v)) for k, v in sorted(row.items())}
+    """A row as compared: each ignored column masked, and an ignored ``column.key.key``
+    (a dotted path) masked inside that JSON column (a measured time in ``metadata``)."""
+    masked = {x for x in ignore if "." not in x}
+    paths = [x.split(".") for x in ignore if "." in x]
+    out = {k: ("<ignored>" if k in masked else _plain(v)) for k, v in sorted(row.items())}
+    for col, *keys in paths:
+        if col in out:
+            out[col] = _mask_path(out[col], keys)
+    return out
+
+
+def _mask_path(v: Any, keys: list[str]) -> Any:
+    if isinstance(v, str) and v[:1] in "[{":
+        try:
+            v = json.loads(v)
+        except ValueError:
+            return v
+    if not isinstance(v, dict) or not keys:
+        return v
+    k, rest = keys[0], keys[1:]
+    if k not in v:
+        return v
+    return {**v, k: "<ignored>" if not rest else _mask_path(v[k], rest)}
 
 
 def diff_rows(

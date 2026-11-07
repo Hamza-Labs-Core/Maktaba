@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from tests.components import rig
+from components import rig
 
 
 def test_worker_env_never_points_at_the_real_home(tmp_path: Path) -> None:

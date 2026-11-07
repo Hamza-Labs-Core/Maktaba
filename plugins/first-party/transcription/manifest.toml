@@ -1,0 +1,56 @@
+# tv.maktaba.transcription: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3
+# (story 54.30): Whisper and the second listen, on the GPU, in the ml runner of each
+# transcription worker.
+schema     = 1
+id         = "tv.maktaba.transcription"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.transcription.name"
+summary = "fp.transcription.summary"
+
+[trusted]
+runner    = "ml"
+component = "transcription"
+db.read   = ["app_settings", "libraries", "library_roots", "media_info", "processing_jobs", "vocab_pairs", "vocabulary"]
+db.write  = ["audio_cache", "audio_tracks", "relisten_attempts", "transcribe_checkpoints", "transcript_edits", "transcript_segments", "transcripts", "videos", "word_flags"]
+settings  = ["transcription"]
+files.read  = ["library", "models"]
+files.write = ["models"]
+exec      = ["ffmpeg"]
+gpu       = "preferred"
+
+[[stage]]
+name         = "transcribe"
+subject      = "video"
+export       = "transcribe"
+version      = 1
+label        = "Transcribe"
+subject_kinds = ["video"]
+pool         = "gpu"
+lane         = "speech"
+lane_order   = 2
+may_request  = ["extract"]
+storage      = "read"
+edges        = [{ to = "second_listen", map = "same" }]
+entry        = "maktaba_fp_transcription.stages.transcribe:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "second_listen"
+subject      = "video"
+export       = "second-listen"
+version      = 1
+label        = "Second listen"
+subject_kinds = ["video"]
+pool         = "listen"
+lane         = "speech"
+lane_order   = 3
+storage      = "read"
+edges        = [{ to = "subtitle_gen", map = "same" }, { to = "index", map = "same" }, { to = "tag", map = "season_of" }, { to = "tag", map = "loose_library_of" }, { to = "word_check", map = "same" }]
+entry        = "maktaba_fp_transcription.stages.second_listen:IMPL"
+fingerprint  = { input = true, output = false }

@@ -25,7 +25,6 @@ from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
 from ..schedule.channel_planner import PLANNER_VERSION
-from ..search.semantic import INDEX_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -761,46 +760,13 @@ GRAPH: tuple[StageDef, ...] = (
     # plan 03-10: transcription on the engine. The file is decoded straight off the share
     # and batched across the worker's jobs (content_hash's edge reaches it). When the
     # configured STT backend reads a file it asks for the extract stage's WAV first.
-    StageDef(
-        name="transcribe",
-        label="Transcribe",
-        subject_kinds=("video",),
-        pool="gpu",
-        lane="speech",
-        lane_order=2,
-        version=TRANSCRIBE_VERSION,
-        # Whisper's words (with their timings) go to the second listen; what reads a
-        # transcript follows that stage, so it runs once, on the corrected words
-        edges=(Edge("second_listen", "same"),),
-        may_request=("extract",),
-        max_attempts=3,
-        # it decodes the video off the share: not where the share cannot be read
-        storage="read",
-    ),
+    # Epic 54: defined by tv.maktaba.transcription's manifest
+    _fp("transcribe"),
     # Cohere Transcribe Arabic on Whisper's stored transcript and the file's audio: any
     # machine whose GPU holds it (beside Whisper, or taking turns with it); with the second
     # listen off it passes the transcript on as it is
-    StageDef(
-        name="second_listen",
-        label="Second listen",
-        subject_kinds=("video",),
-        pool="listen",
-        lane="speech",
-        lane_order=3,
-        version=SECOND_LISTEN_VERSION,
-        # what is said is tagging evidence too: its season, or its library's loose videos
-        edges=(
-            Edge("subtitle_gen", "same"),
-            Edge("index", "same"),
-            Edge("tag", "season_of"),
-            Edge("tag", "loose_library_of"),
-            # Epic 52: the stored transcript's suspect words, for a home admin
-            Edge("word_check", "same"),
-        ),
-        max_attempts=3,
-        # it decodes the video's audio off the share again
-        storage="read",
-    ),
+    # Epic 54: defined by tv.maktaba.transcription's manifest
+    _fp("second_listen"),
     # Epic 54: defined by tv.maktaba.subtitles's manifest
     _fp("subtitle_gen"),
     # Epic 52 (stories 52.6, 52.15): the transcript's suspect words, saved for a home
@@ -818,58 +784,18 @@ GRAPH: tuple[StageDef, ...] = (
         max_attempts=3,
     ),
     # plan 03-10: the transcript's sentences as e5 vectors (search/semantic.py)
-    StageDef(
-        name="index",
-        label="Search index",
-        subject_kinds=("video",),
-        pool="cpu",
-        lane="speech",
-        lane_order=5,
-        version=INDEX_VERSION,
-        edges=(Edge("chapter_infer", "same"),),
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.semantic-search's manifest
+    _fp("index"),
     # Stories 9.18 / 9.9: chapters at the transcript's topic shifts, and the video's mean
     # vector for its topics. Reads the index's vectors (Chroma: the home holds it)
-    StageDef(
-        name="chapter_infer",
-        label="Chapters",
-        subject_kinds=("video",),
-        pool="cpu",
-        lane="speech",
-        lane_order=6,
-        version=CHAPTER_VERSION,
-        # only the chapter frames depend on chapters; the poster and sprite came from
-        # content_hash already
-        edges=(Edge("chapter_thumbs", "same"), Edge("topic_assign", "same")),
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.semantic-search's manifest
+    _fp("chapter_infer"),
     # Epic 54: defined by tv.maktaba.thumbnails's manifest
     _fp("chapter_thumbs"),
-    StageDef(
-        name="topic_assign",
-        label="Topics",
-        subject_kinds=("video",),
-        pool="cpu",
-        lane="speech",
-        lane_order=8,
-        version=TOPIC_ASSIGN_VERSION,
-        # every newly vectored video counts towards the library's next clustering
-        edges=(Edge("topic_recluster", "library_of", when="always"),),
-    ),
-    StageDef(
-        name="topic_recluster",
-        label="Library topics",
-        subject_kinds=("library",),
-        pool="cpu",
-        lane="speech",
-        lane_order=9,
-        version=TOPIC_RECLUSTER_VERSION,
-        # once per batch of transcriptions, not per video: a 47 000-video library
-        # clusters in seconds, but there is no point doing it every few seconds
-        debounce_sec=1800,
-        debounce_max_sec=6 * 3600,
-    ),
+    # Epic 54: defined by tv.maktaba.semantic-search's manifest
+    _fp("topic_assign"),
+    # Epic 54: defined by tv.maktaba.semantic-search's manifest
+    _fp("topic_recluster"),
     # The poster and sprites go to the thumbnail cache of the machine that makes them
     # and their paths into videos.poster_path / sprite_path, which the home serves:
     # the per-machine caches stay on the home (Epic 31 R3.4, R4.2; moving them to the

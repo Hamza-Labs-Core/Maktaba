@@ -149,6 +149,7 @@ async def prepare(db: Any, *, chroma_path: str | None = None) -> StoreState:
     except Exception as exc:  # noqa: BLE001 - before slot 0152, or no right to: as it is
         _log.warning("semantic_store_ensure_failed", error=f"{type(exc).__name__}: {exc}")
         return await store_state(db, fresh=True)
+    await _grant_plugin_role(db)
     state = await store_state(db, fresh=True)
     if state.store == CHROMA and not chroma_has_vectors(chroma_path):
         moved = await db.fetchval(
@@ -160,6 +161,25 @@ async def prepare(db: Any, *, chroma_path: str | None = None) -> StoreState:
             _log.info("semantic_store_postgres", reason="no Chroma vectors", ready=state.ready)
             state = await store_state(db, fresh=True)
     return state
+
+
+#: tv.maktaba.semantic-search's role (Epic 54 wave 3): its roles migration grants the tables
+#: that exist; segment_embeddings comes later, with pgvector, so it is granted here
+PLUGIN_ROLE = "maktaba_fp_semantic_search"
+
+
+async def _grant_plugin_role(db: Any) -> None:
+    try:
+        if await db.fetchval(
+            "SELECT to_regclass('public.segment_embeddings') IS NOT NULL"
+            " AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)",
+            PLUGIN_ROLE,
+        ):
+            await db.execute(
+                f"GRANT SELECT, INSERT, UPDATE, DELETE ON segment_embeddings TO {PLUGIN_ROLE}"
+            )
+    except Exception as exc:  # noqa: BLE001 - not ours to grant: the stage runs in-process
+        _log.warning("semantic_store_grant_failed", error=f"{type(exc).__name__}: {exc}")
 
 
 def _literal(vec: Sequence[float]) -> str:

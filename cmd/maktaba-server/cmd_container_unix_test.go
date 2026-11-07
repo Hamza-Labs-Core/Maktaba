@@ -239,7 +239,9 @@ func TestContainerRunsAGivenCommand(t *testing.T) {
 // docker stop: the launcher is asked to stop (SIGTERM) and the container ends with it.
 func TestRunLauncherPassesTheStopOn(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "launcher")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\ntrap 'echo stopped; exit 0' TERM\nwhile :; do sleep 0.05; done\n"), 0o755); err != nil {
+	// "ready" once the trap is set: the stop is sent only then (a fixed wait raced the trap
+	// on a loaded runner, issue #682)
+	if err := os.WriteFile(script, []byte("#!/bin/sh\ntrap 'echo stopped; exit 0' TERM\necho ready\nwhile :; do sleep 0.05; done\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -249,7 +251,12 @@ func TestRunLauncherPassesTheStopOn(t *testing.T) {
 		code, _ := runLauncher(ctx, script, nil, os.Environ(), &out)
 		done <- code
 	}()
-	time.Sleep(200 * time.Millisecond)
+	for deadline := time.Now().Add(10 * time.Second); !strings.Contains(out.String(), "ready"); {
+		if time.Now().After(deadline) {
+			t.Fatalf("the launcher never set its trap: %q", out.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	cancel()
 	select {
 	case code := <-done:
