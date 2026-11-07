@@ -14,7 +14,7 @@ import os
 import sys
 import threading
 import time
-from collections.abc import Generator, Iterator
+from collections.abc import Generator
 from pathlib import Path
 from typing import NoReturn
 
@@ -198,24 +198,13 @@ def _app_cache_in_tmp(tmp_path_factory: pytest.TempPathFactory) -> object:
     thumb_small.ROOT = old
 
 
-@pytest.fixture(scope="session")
-def _runner_dir() -> Iterator[str]:
-    """One short folder under /tmp for the session (a socket path must stay under 100
-    bytes, and pytest's own folders on macOS are longer)."""
-    import shutil
-    import tempfile
-
-    d = tempfile.mkdtemp(prefix="mkr-", dir="/tmp")
-    yield d
-    shutil.rmtree(d, ignore_errors=True)
-
-
 @pytest.fixture(autouse=True)
-def _runner_dir_in_tmp(monkeypatch: pytest.MonkeyPatch, _runner_dir: str) -> None:
+def _runner_dir_in_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The worker writes its plugin runners' areas (areas.json) to the runner folder, which
     is <data>/run/runners when MAKTABA_RUNNER_DIR is unset: in the checkout, for a test.
-    A test that starts a runner sets its own."""
-    monkeypatch.setenv("MAKTABA_RUNNER_DIR", _runner_dir)
+    Each test gets its own; one that binds a runner's socket sets a shorter one itself (a
+    socket path must stay under 100 bytes)."""
+    monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(tmp_path / "runners"))
 
 
 @pytest.fixture(autouse=True)
