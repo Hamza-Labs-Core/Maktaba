@@ -5,12 +5,14 @@ import { createServer } from "node:http";
 /** Starts a server answering from routes: {"GET /path": (req, body) => [status, json|string, headers]}. */
 export async function fakeServer(routes) {
   const seen = [];
+  // a Map: a request's path never names a property of an object
+  const table = new Map(Object.entries(routes));
   const srv = createServer(async (req, res) => {
     let body = "";
     for await (const c of req) body += c;
     const key = `${req.method} ${req.url}`;
     seen.push({ key, host: req.headers.host, auth: req.headers.authorization, body });
-    const h = routes[key] ?? routes[`${req.method} ${req.url.split("?")[0]}`];
+    const h = table.get(key) ?? table.get(`${req.method} ${req.url.split("?")[0]}`);
     if (!h) {
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ success: false, errors: [{ code: 7003, message: "No route" }] }));

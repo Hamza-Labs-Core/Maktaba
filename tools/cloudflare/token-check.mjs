@@ -9,7 +9,7 @@
 // policy's permission groups are compared with the table below; otherwise each permission is
 // probed with one read call on its resource (which proves the token reaches it; the write
 // itself is then checked by Cloudflare on apply).
-import { client, mask, tokenFor, DEFAULT_BASE } from "./cf.mjs";
+import { client, tokenFor, DEFAULT_BASE } from "./cf.mjs";
 
 /** What each piece needs (README §15.6), as Cloudflare's permission group names. */
 export const PIECES = {
@@ -126,7 +126,6 @@ async function main() {
   const token = tokenFor(process.env, pieces.length === 1 ? pieces[0] : "");
   if (!pieces.length) throw new Error("--pieces is required (workers, zone, tunnel, aop)");
   if (!accountId || !token) throw new Error("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required");
-  mask(accountId);
   const { lines, missing } = await check({ pieces, zoneName, accountId, token, base: process.env.CLOUDFLARE_API_BASE || DEFAULT_BASE });
   for (const l of lines) console.log(l);
   if (missing.length) {
