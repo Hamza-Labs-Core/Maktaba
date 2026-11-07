@@ -1017,3 +1017,15 @@ describe("VideoDetail (test-cases/video-detail.md)", () => {
 
   it.todo("VID-25: in RTL, ArrowLeft moves to the next tab (DS Tabs)");
 });
+
+// Story 54.20: a home that does not answer plugin_panels "on" is never asked for panels (an
+// older server would answer 404 for nothing).
+describe("plugin panels on the video page", () => {
+  it("asks no panels while the home does not serve them", async () => {
+    serve();
+    renderVideo();
+    expect(await screen.findByRole("heading", { name: "Lecture 1" })).toBeInTheDocument();
+    expect(gets("/api/panels")).toEqual([]);
+    expect(screen.queryByText(en["plugins.panels.title"])).toBeNull();
+  });
+});

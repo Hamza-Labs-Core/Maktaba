@@ -12,6 +12,10 @@
 --
 -- Wave 1 (story 54.28): tv.maktaba.classify.
 --
+-- Where the migration may not make the role (no right to create roles) or not grant it (a
+-- role another database's owner made on a shared Postgres), it says so with a NOTICE and goes
+-- on: the worker then runs those stages in-process (plugins/native.py, role_unusable).
+--
 -- Additive: roles and grants only; an older release never uses them.
 --
 -- tv.maktaba.classify: maktaba_fp_classify
@@ -22,6 +26,13 @@ DECLARE
     sq text;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_fp_classify') THEN
+        -- a home whose role may not create roles (Maktaba.app before its cluster
+        -- bootstrap) has none: its stages run in-process (native.choose)
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user
+                       AND (rolsuper OR rolcreaterole)) THEN
+            RAISE NOTICE 'maktaba_fp_classify: not made (no right to create roles)';
+            RETURN;
+        END IF;
         CREATE ROLE maktaba_fp_classify NOLOGIN NOINHERIT;
     END IF;
     EXECUTE 'REVOKE ALL ON ALL TABLES IN SCHEMA public FROM maktaba_fp_classify';
@@ -40,14 +51,20 @@ BEGIN
         END LOOP;
     END LOOP;
     -- every machine's API may SET ROLE to it; membership alone gives no right
-    EXECUTE format('GRANT maktaba_fp_classify TO %I', current_user);
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
-        BEGIN
-            EXECUTE 'GRANT maktaba_fp_classify TO maktaba_worker WITH INHERIT FALSE';
-        EXCEPTION WHEN syntax_error THEN
-            EXECUTE 'GRANT maktaba_fp_classify TO maktaba_worker';
-        END;
-    END IF;
+    -- (a role made by another database's owner on a shared Postgres may not be ours to
+    -- grant: then this home's stages run in-process, native.choose)
+    BEGIN
+        EXECUTE format('GRANT maktaba_fp_classify TO %I', current_user);
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'maktaba_worker') THEN
+            BEGIN
+                EXECUTE 'GRANT maktaba_fp_classify TO maktaba_worker WITH INHERIT FALSE';
+            EXCEPTION WHEN syntax_error THEN
+                EXECUTE 'GRANT maktaba_fp_classify TO maktaba_worker';
+            END;
+        END IF;
+    EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'maktaba_fp_classify: not ours to grant';
+    END;
 END;
 $$;
 -- +goose StatementEnd

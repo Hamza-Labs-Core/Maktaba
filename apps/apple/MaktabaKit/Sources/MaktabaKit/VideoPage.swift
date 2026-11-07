@@ -25,6 +25,8 @@ public final class VideoPage {
     public private(set) var chapters: [Chapter] = []
     public private(set) var transcript: [TranscriptSegment] = []
     public private(set) var nextEpisodes: [Episode] = []
+    /// Installed plugins' panels for this video (story 54.20); empty unless loaded.
+    public private(set) var panels: [PanelView] = []
     public private(set) var favorite = false
     public private(set) var watched = false
     public private(set) var notAvailable = false
@@ -86,6 +88,16 @@ public final class VideoPage {
                 problem = HomeFailure(error)
             }
         }
+    }
+
+    /// The panels of installed plugins, only while the home answers `plugin_panels: on`; a
+    /// failure is no panels (they are extras, never the page).
+    public func loadPanels(_ caps: Capabilities, language: String) async {
+        guard caps.panels else {
+            panels = []
+            return
+        }
+        panels = (try? await client.panels(kind: "video", id: id, language: language)) ?? []
     }
 
     /// Favorite on or off (`POST /api/me/favorites`); the toggle goes back when the home does
