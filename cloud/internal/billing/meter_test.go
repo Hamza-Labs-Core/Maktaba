@@ -78,8 +78,8 @@ func TestMeterKeepsBytesThroughAFailedFlush(t *testing.T) {
 	f.down = true
 	var want int64
 	for i := range 12 { // 60 s of 5 s retries
-		m.Record(ctx, a, 100, 1_000)
-		m.Record(ctx, b, 10, 10)
+		m.Record(ctx, a, Decision{Mode: ModeFull}, 100, 1_000)
+		m.Record(ctx, b, Decision{Mode: ModeFull}, 10, 10)
 		want += 1_100
 		if err := m.flush(ctx); err == nil {
 			t.Fatal("a flush succeeded while the database is down")
@@ -90,8 +90,8 @@ func TestMeterKeepsBytesThroughAFailedFlush(t *testing.T) {
 	if in, out := m.Buffered(); in+out != want+12*20 {
 		t.Fatalf("buffered %d, want %d", in+out, want+12*20)
 	}
-	if got := m.unflushedLocked("a", MonthStart(clock)); got != want {
-		t.Errorf("Allow's view of a: %d, want %d", got, want)
+	if got := m.unflushedLocked("a", MonthStart(clock)).Total(); got != want {
+		t.Errorf("Decide's view of a: %d, want %d", got, want)
 	}
 	f.down = false
 	if err := m.flush(ctx); err != nil {
@@ -119,7 +119,7 @@ func TestMeterCoarsensPastItsBound(t *testing.T) {
 	totals := map[string]int64{}
 	for i := range 150 {
 		id := []string{"a", "b", "c"}[i%3]
-		m.Record(ctx, stores.Server{ID: id}, int64(i), 7)
+		m.Record(ctx, stores.Server{ID: id}, Decision{Mode: ModeFull}, int64(i), 7)
 		totals[id] += int64(i) + 7
 		_ = m.flush(ctx)
 		clock = clock.Add(5 * time.Minute)
@@ -138,28 +138,29 @@ func TestMeterCoarsensPastItsBound(t *testing.T) {
 	}
 }
 
-// Allow keeps working while the database is away: the month total read
-// before is used (here none: the home is allowed), and a home over its cap
-// by its buffered bytes is refused.
-func TestMeterAllowDuringAnOutage(t *testing.T) {
+// Decide keeps working while the database is away: the month's usage read before is used,
+// and the bytes buffered since count (story 50.19: a Basic home just under fair use goes to
+// capped_slow on its buffered bytes, never refused).
+func TestMeterDecideDuringAnOutage(t *testing.T) {
 	clock := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
 	m, f := newTestMeter(&clock)
 	ctx := context.Background()
 	f.down = true
-	m.months["a"] = monthTotal{month: MonthStart(clock), bytes: Tiers[PlanFree].BandwidthBytesPerMo, at: clock.Add(-time.Hour)}
-	sv := stores.Server{ID: "a", Plan: PlanFree}
-	// the cached total is stale and the database errors: the cached one is used
+	fair := Tiers[PlanBasic].FairUseBytesPerMo
+	m.months["a"] = monthTotal{month: MonthStart(clock), usage: Usage{Capped: fair - 10}, at: clock.Add(-time.Hour)}
+	sv := stores.Server{ID: "a", Plan: PlanBasic}
+	// the cached usage is stale and the database errors: the cached one is used
 	// (and read again in the background)
-	if err := m.Allow(ctx, sv); err != nil {
-		t.Fatalf("at the cap: %v", err)
+	if d := m.Decide(ctx, sv); d.Mode != ModeCapped {
+		t.Fatalf("under fair use: %+v", d)
 	}
-	m.Record(ctx, sv, 0, FreeOverageGrace+1)
-	if err := m.Allow(ctx, sv); !errors.Is(err, ErrOverLimit) {
-		t.Errorf("past the cap and its grace: %v", err)
+	m.Record(ctx, sv, Decision{Mode: ModeCapped}, 0, 11)
+	if d := m.Decide(ctx, sv); d.Mode != ModeCappedSlow {
+		t.Errorf("past fair use on buffered bytes: %+v", d)
 	}
 }
 
-// Allow waits at most the connect timeout (2 s, db.Open) for a home whose
+// Decide waits at most the connect timeout (2 s, db.Open) for a home whose
 // month total it never read, on a database that vanished; then for 5 s not at
 // all; and never for a home whose total it holds (the rehearsal's db-blip).
 func TestMeterAllowDoesNotWaitOnAVanishedDatabase(t *testing.T) {
@@ -186,26 +187,24 @@ func TestMeterAllowDoesNotWaitOnAVanishedDatabase(t *testing.T) {
 	ctx := context.Background()
 	sv := stores.Server{ID: "a", Plan: PlanFree}
 	start := time.Now()
-	if err := m.Allow(ctx, sv); err != nil {
-		t.Fatal(err)
-	}
+	_ = m.Decide(ctx, sv)
 	if took := time.Since(start); took > 3*time.Second {
-		t.Errorf("Allow waited %s", took)
+		t.Errorf("Decide waited %s", took)
 	}
 	start = time.Now()
-	_ = m.Allow(ctx, stores.Server{ID: "b", Plan: PlanFree})
+	_ = m.Decide(ctx, stores.Server{ID: "b", Plan: PlanFree})
 	if took := time.Since(start); took > 50*time.Millisecond {
-		t.Errorf("the next Allow waited %s", took)
+		t.Errorf("the next Decide waited %s", took)
 	}
 	// a home whose total is held, past its TTL: never waits
 	clock := time.Now().UTC()
 	m.now = func() time.Time { return clock }
 	m.mu.Lock()
 	m.dbDownUntil = time.Time{}
-	m.months["c"] = monthTotal{month: MonthStart(clock), bytes: 5, at: clock.Add(-time.Hour)}
+	m.months["c"] = monthTotal{month: MonthStart(clock), usage: Usage{Full: 5}, at: clock.Add(-time.Hour)}
 	m.mu.Unlock()
 	start = time.Now()
-	_ = m.Allow(ctx, stores.Server{ID: "c", Plan: PlanFree})
+	_ = m.Decide(ctx, stores.Server{ID: "c", Plan: PlanFree})
 	if took := time.Since(start); took > 50*time.Millisecond {
 		t.Errorf("a held total waited %s", took)
 	}
@@ -219,12 +218,12 @@ func TestMeterLostCommitIsNotCountedTwice(t *testing.T) {
 	m, f := newTestMeter(&clock)
 	ctx := context.Background()
 	sv := stores.Server{ID: "a"}
-	m.Record(ctx, sv, 0, 1000)
+	m.Record(ctx, sv, Decision{Mode: ModeFull}, 0, 1000)
 	f.lostCommit = true
 	if err := m.flush(ctx); err == nil {
 		t.Fatal("a lost answer looked like success")
 	}
-	m.Record(ctx, sv, 0, 500) // while the first batch is in flight
+	m.Record(ctx, sv, Decision{Mode: ModeFull}, 0, 500) // while the first batch is in flight
 	if err := m.flush(ctx); err != nil {
 		t.Fatal(err)
 	}

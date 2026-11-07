@@ -153,6 +153,7 @@
     "queue_health",
     "analytics",
     "telemetry",
+    "reports.share",
     "backups",
     "updates.auto",
     "model.cohere-arabic",

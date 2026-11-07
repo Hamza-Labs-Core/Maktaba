@@ -100,7 +100,7 @@ type Event struct {
 	SubscriptionID string
 
 	// Subscription events.
-	Plan              string // PlanFree / PlanPro / PlanFamily ("" = free)
+	Plan              string // PlanFree / PlanBasic / PlanPro ("" = free)
 	PriceID           string
 	Interval          string // "monthly" / "yearly" / ""
 	Status            string // active, trialing, past_due, canceled, incomplete, ...

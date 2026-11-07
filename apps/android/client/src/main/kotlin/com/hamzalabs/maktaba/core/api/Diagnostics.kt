@@ -192,7 +192,20 @@ data class ReportSummary(
     val status: String = "new",
     @SerialName("shared_with_maktaba") val sharedWithMaktaba: Boolean = false,
     val reply: String? = null,
+    /** Its way to Maktaba and Maktaba's reply (story 53.16); null: not sent there. */
+    val maktaba: ToMaktaba? = null,
 )
+
+/** A report's way to Maktaba (53.16): queued, sent, expired, refused, cancelled or deleted. */
+@Serializable
+data class ToMaktaba(
+    val state: String,
+    val reply: String? = null,
+    @SerialName("fixed_in") val fixedIn: String? = null,
+)
+
+@Serializable
+internal data class MaktabaSetting(val enabled: Boolean = false)
 
 @Serializable
 internal data class ReportList(val reports: List<ReportSummary>? = null)
@@ -259,6 +272,16 @@ suspend fun ApiClient.board(board: Board, range: String): BoardDoc =
 
 /** The admin's inbox, or a viewer's own reports. */
 suspend fun ApiClient.problemReports(): List<ReportSummary> = get<ReportList>("/api/reports").reports.orEmpty()
+
+/**
+ * Whether the home lets people send problem reports to Maktaba (story 53.16): the form offers
+ * "Also send to Maktaba" only then. Any failure (an older home, no link) reads as no.
+ */
+suspend fun ApiClient.reportsToMaktaba(): Boolean =
+    runCatching { get<MaktabaSetting>("/api/reports/maktaba").enabled }.getOrElse {
+        if (it is kotlin.coroutines.cancellation.CancellationException) throw it
+        false
+    }
 
 suspend fun ApiClient.problemReport(id: Int): ReportDoc = get("/api/reports/$id")
 

@@ -108,7 +108,9 @@ function PluginsInner() {
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
-  const [browsing, setBrowsing] = useState(false);
+  // ?store=<id>: the store's listing page sent the admin here (#757): Browse opens on it
+  const [storeId] = useState(() => new URLSearchParams(window.location.search).get("store") ?? "");
+  const [browsing, setBrowsing] = useState(storeId !== "");
 
   const reload = useCallback(async () => {
     try {
@@ -133,6 +135,7 @@ function PluginsInner() {
           {t("plugins.page.back")}
         </Button>
         <Browse
+          initial={storeId}
           onInstalled={(id) => {
             setBrowsing(false);
             setOpen(id);

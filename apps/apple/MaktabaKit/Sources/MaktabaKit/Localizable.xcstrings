@@ -8912,6 +8912,106 @@
           }
         }
       }
+    },
+    "Also send to Maktaba so the developers can look" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإرسال إلى مكتبة أيضًا ليطّلع عليه المطوّرون"
+          }
+        }
+      }
+    },
+    "Maktaba gets the same report, without your name, video titles or file names, and keeps it for 90 days." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتلقى مكتبة التقرير نفسه، دون اسمك أو عناوين الفيديوهات أو أسماء الملفات، وتحتفظ به 90 يومًا."
+          }
+        }
+      }
+    },
+    "Also sent to Maktaba" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُرسل إلى مكتبة أيضًا"
+          }
+        }
+      }
+    },
+    "Waiting to be sent to Maktaba" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار الإرسال إلى مكتبة"
+          }
+        }
+      }
+    },
+    "Not sent to Maktaba: the cloud could not be reached for 7 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُرسل إلى مكتبة: تعذّر الوصول إلى السحابة طوال 7 أيام"
+          }
+        }
+      }
+    },
+    "Maktaba could not take this report" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر على مكتبة استلام هذا البلاغ"
+          }
+        }
+      }
+    },
+    "Not sent to Maktaba: sending was turned off" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُرسل إلى مكتبة: أُوقف الإرسال"
+          }
+        }
+      }
+    },
+    "Sent to Maktaba, then deleted there" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُرسل إلى مكتبة ثم حُذف منها"
+          }
+        }
+      }
+    },
+    "Maktaba replied: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ردّت مكتبة: %@"
+          }
+        }
+      }
+    },
+    "Fixed in %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُصلح في الإصدار %@"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -35,6 +35,19 @@ public enum ReportWords {
         ReportStatus(rawValue: raw).map(status) ?? raw
     }
 
+    /// A report's way to Maktaba (story 53.16), in a line.
+    public static func maktaba(_ state: String) -> String {
+        switch state {
+        case "sent": kit("Also sent to Maktaba")
+        case "queued": kit("Waiting to be sent to Maktaba")
+        case "expired": kit("Not sent to Maktaba: the cloud could not be reached for 7 days")
+        case "refused": kit("Maktaba could not take this report")
+        case "cancelled": kit("Not sent to Maktaba: sending was turned off")
+        case "deleted": kit("Sent to Maktaba, then deleted there")
+        default: state
+        }
+    }
+
     public static var title: String { kit("Report a problem") }
     public static var mine: String { kit("My reports") }
     public static var thisError: String { kit("Report this") }
@@ -233,6 +246,7 @@ public struct ReportProblemView: View {
     @State private var number: Int?
     @State private var problem: String?
     @State private var showLog = false
+    @State private var maktabaOn = false
     @Environment(\.dismiss) private var dismiss
 
     public init(client: APIClient, home: String, reference: String? = nil, screenshot: Data? = nil) {
@@ -262,6 +276,7 @@ public struct ReportProblemView: View {
         .task {
             lines = ReportProblem.lines(LogRing.shared?.lines() ?? [])
             crashCount = CrashOutbox.shared?.files().count ?? 0
+            maktabaOn = await client.reportsToMaktaba()
         }
     }
 
@@ -304,6 +319,20 @@ public struct ReportProblemView: View {
             Section {
                 Text(verbatim: kit("Send to the admin of \(home)"))
                     .foregroundStyle(.secondary)
+                if maktabaOn {
+                    // 53.16: only while the home's admin allows it; unticked
+                    Toggle(isOn: $draft.toMaktaba) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: kit("Also send to Maktaba so the developers can look"))
+                            if draft.toMaktaba {
+                                Text(verbatim: kit("Maktaba gets the same report, without your name, video titles or file names, and keeps it for 90 days."))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("report.maktaba")
+                }
                 if let problem {
                     Label { Text(verbatim: problem) } icon: { Image(systemName: "exclamationmark.triangle") }
                         .foregroundStyle(.red)
@@ -420,7 +449,9 @@ public struct ReportProblemView: View {
         problem = nil
         defer { sending = false }
         do {
-            number = try await ReportProblem.send(draft, screenshot: screenshot, client: client)
+            var d = draft
+            d.toMaktaba = maktabaOn && draft.toMaktaba
+            number = try await ReportProblem.send(d, screenshot: screenshot, client: client)
         } catch let APIError.status(429, _, _) {
             problem = kit("You've sent many reports today. Try again tomorrow.")
         } catch {
@@ -500,6 +531,15 @@ public struct MyReportsView: View {
                     }
                     if let reply = r.reply, !reply.isEmpty {
                         Text(verbatim: kit("Reply: \(reply)")).font(.callout)
+                    }
+                    if let m = r.maktaba {
+                        Text(verbatim: ReportWords.maktaba(m.state)).font(.caption).foregroundStyle(.secondary)
+                        if let reply = m.reply, !reply.isEmpty {
+                            Text(verbatim: kit("Maktaba replied: \(reply)")).font(.callout)
+                            if let v = m.fixedIn, !v.isEmpty {
+                                Text(verbatim: kit("Fixed in \(v)")).font(.caption)
+                            }
+                        }
                     }
                 }
                 .accessibilityElement(children: .combine)
