@@ -1,0 +1,23 @@
+Heading: Seerah
+StaticText: 3 episodes · 2024
+Unknown: 33% watched
+StaticText: 1 of 3 watched
+Button: Continue
+Button: Shuffle
+Heading: Season 1
+Button: Mark the season watched
+Button: Episode 12, السيرة النبوية، الدرس ١٢, 55:05
+Button: Mark watched
+Button: Episode 11, السيرة النبوية، الدرس ١١, 49:40 | 42% watched
+Button: Mark watched
+Button: Episode 10, السيرة النبوية، الدرس ١٠, 52:00 | Watched
+Button: Mark not watched | Watched
+DisclosureTriangle: From plugins | 1
+StaticText: Topics
+StaticText: Topics
+StaticText: Era
+StaticText: 7th century
+StaticText: Speaker
+StaticText: Dr. Example
+Button: Hijra
+Button: Medina
