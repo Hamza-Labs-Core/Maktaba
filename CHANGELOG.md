@@ -1001,6 +1001,15 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+
+- **The desktop apps report problems and send crash reports to the home.** Maktaba's tray and
+  Help menu have **Report a problem…**, which opens the web app's form. A panic of the app
+  itself is kept, scrubbed, and the web app in its window sends it to the home only when
+  crash reports are on there. The Player for Windows and Linux asks once after signing in
+  whether to send crash reports, off until the person says yes (the Account menu keeps the
+  switch). It sends a kept crash at the next sign-in when on, and has **Report a problem…** and
+  **My reports** in its Help menu.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

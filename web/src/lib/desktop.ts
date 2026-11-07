@@ -67,6 +67,8 @@ export const KNOWN_MENU_IDS = [
   "open-docs",
   // Epic 46: View → Big Screen (the shell also turns the window full screen)
   "big-screen",
+  // Epic 53 story 53.15: Help → Report a Problem… and the tray's item
+  "report-problem",
   // System-tray transport controls (Story 13.4) — emitted through the
   // same "menu" channel so the player can be driven without focusing
   // the window.
@@ -113,6 +115,8 @@ export function resolveMenuAction(id: string): MenuAction | null {
       return { kind: "media-control", command: "pause" };
     case "big-screen":
       return { kind: "big-screen" };
+    case "report-problem":
+      return { kind: "navigate", to: "/account/report" };
     case "open-docs":
       return { kind: "external", url: DOCS_URL };
     default:
