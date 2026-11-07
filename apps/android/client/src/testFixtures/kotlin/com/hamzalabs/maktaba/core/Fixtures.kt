@@ -30,9 +30,13 @@ class MemoryTokens(var accessToken: String? = null, var refreshToken: String? = 
     }
 }
 
-/** A [KeyValueStore] in memory. */
+/**
+ * A [KeyValueStore] in memory. Concurrent: an [AppSession] on an unconfined scope writes it from
+ * the HTTP client's threads while a test reads it (CloudTest once failed on a
+ * ConcurrentModificationException iterating it on the Windows runner).
+ */
 class MapStore : KeyValueStore {
-    val map = mutableMapOf<String, String>()
+    val map: MutableMap<String, String> = java.util.concurrent.ConcurrentHashMap()
     override fun get(key: String) = map[key]
     override fun put(key: String, value: String?) {
         if (value == null) map.remove(key) else map[key] = value

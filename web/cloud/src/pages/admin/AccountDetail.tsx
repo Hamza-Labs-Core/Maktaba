@@ -39,7 +39,7 @@ interface AccountDetailData {
 }
 
 /** The plans a service admin can set by hand (cloud/internal/billing Tiers). */
-const PLANS = ["free", "pro", "family"];
+const PLANS = ["free", "basic", "pro"];
 
 /** The subscription object's scalar fields, as a key/value list. */
 function scalarEntries(o: Record<string, unknown> | null): [string, string][] {

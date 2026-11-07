@@ -17,6 +17,8 @@ import com.hamzalabs.maktaba.core.api.replyToReport
 import com.hamzalabs.maktaba.core.api.searchLogs
 import com.hamzalabs.maktaba.core.api.sendCrashEnvelope
 import com.hamzalabs.maktaba.core.api.sendProblemReport
+import com.hamzalabs.maktaba.core.api.reportsToMaktaba
+import com.hamzalabs.maktaba.core.api.ToMaktaba
 import com.hamzalabs.maktaba.core.api.setErrorStatus
 import com.hamzalabs.maktaba.core.api.setReportStatus
 import kotlinx.coroutines.runBlocking
@@ -191,6 +193,25 @@ class DiagnosticsApiTest {
         assertEquals("looking", lastJson()["status"]!!.jsonPrimitive.content)
         c.replyToReport(27, "Fixed in the next release")
         assertEquals("Fixed in the next release", lastJson()["reply"]!!.jsonPrimitive.content)
+    }
+
+    // Epic 53 story 53.16: the Maktaba box only while the home allows it (an older home: no),
+    // and My reports reads Maktaba's reply
+    @Test
+    fun theMaktabaBoxFollowsTheHomesSetting() = runBlocking {
+        answer = { json(200, """{"available":true,"enabled":true}""") }
+        assertTrue(client().reportsToMaktaba())
+        assertEquals("/api/reports/maktaba", last().url.encodedPath)
+        answer = { json(200, """{"available":true,"enabled":false}""") }
+        assertFalse(client().reportsToMaktaba())
+        answer = { json(404, """{"title":"not found"}""") }
+        assertFalse(client().reportsToMaktaba())
+        answer = {
+            json(200, """{"reports":[{"id":3,"category":"playback","status":"new","shared_with_maktaba":true,""" +
+                """"maktaba":{"state":"sent","reply":"Fixed, thank you","fixed_in":"0.3.96"}}]}""")
+        }
+        val r = client().problemReports().single()
+        assertEquals(ToMaktaba("sent", "Fixed, thank you", "0.3.96"), r.maktaba)
     }
 
     @Test

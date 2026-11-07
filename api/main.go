@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/directaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -386,7 +387,7 @@ func runServe() error {
 	// it never contends with handler traffic. Peer log URLs let the
 	// bundle proxy the streaming + pipeline ring buffers.
 	hubRef := &router.HubRef{} // Epic 35: the update driver's cluster channel (and a machine's log files)
-	router.MountLogs(r, router.LogsDeps{
+	forwarder := router.MountLogs(r, router.LogsDeps{
 		DB:                 statsDB,
 		DataDir:            statsDataDir,
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", schemaguard.SchemaRev),
@@ -397,7 +398,10 @@ func runServe() error {
 		// this machine's server.log, app.log and launcher.log from its supervisor, and a
 		// machine's over the machine channel: where an update's story is
 		Files: router.LogFiles(os.Getenv("MAKTABA_SUPERVISOR_URL"), os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"), hubRef, nil),
+		// Epic 53 story 53.16: whether reports.share is on
+		Switches: loops,
 	})
+	wireReportsForwarder(loops, forwarder, logger)
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Process supervision (Story 22.9): the supervisor's per-process
@@ -655,6 +659,13 @@ func runServe() error {
 					rep := cloudlink.NewReporter(agent, p9.Cloud.Store, logger)
 					p9.Cloud.Store.Changed = rep.Kick
 					loops.Declare("cloudlink_reporter", runner.Func(func(ctx context.Context) { rep.Run(ctx, 30*time.Minute) }))
+					// Epic 50 story 50.15: direct remote access (cloud.direct), through the same agent
+					if direct := directService(appDB, agent, logger); direct != nil {
+						loops.Declare("direct_listener", runner.Func(direct.RunListener))
+						loops.Declare("direct_portmap", runner.Func(direct.RunPortmap))
+						loops.Declare("direct_cert", runner.Func(direct.RunCert))
+						(&directaccess.Routes{Service: direct}).Mount(r)
+					}
 				}
 				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")

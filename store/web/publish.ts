@@ -259,6 +259,26 @@ interface PluginRow {
   machine_translated: string;
 }
 
+/** Each plugin's active product (one-time first) and its prices in minor units, by currency. */
+async function salesOf(env: Env): Promise<Map<string, { kind: "one_time" | "yearly"; prices: Record<string, number> }>> {
+  const out = new Map<string, { kind: "one_time" | "yearly"; prices: Record<string, number> }>();
+  if (!env.DB_COMMERCE) return out;
+  const rows = await env.DB_COMMERCE.prepare(
+    `SELECT p.plugin_id, p.kind, r.currency, r.amount_minor FROM products p
+       JOIN prices r ON r.plugin_id = p.plugin_id AND r.kind = p.kind
+      WHERE p.active = 1 ORDER BY p.plugin_id, p.kind = 'one_time' DESC, r.currency`,
+  )
+    .all<{ plugin_id: string; kind: "one_time" | "yearly"; currency: string; amount_minor: number }>()
+    .then((r) => r.results)
+    .catch(() => []);
+  for (const r of rows) {
+    const s = out.get(r.plugin_id) ?? { kind: r.kind, prices: {} };
+    if (s.kind === r.kind) s.prices[r.currency] = r.amount_minor;
+    out.set(r.plugin_id, s);
+  }
+  return out;
+}
+
 /** The catalog of plugin API major (only approved versions of listed plugins). */
 export async function buildCatalog(env: Env, apiMajor: number, version: number, at: Date): Promise<Record<string, unknown>> {
   const plugins = await env.DB_CATALOG.prepare("SELECT * FROM plugins WHERE status = 'listed' ORDER BY id").all<PluginRow>();
@@ -274,6 +294,19 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
     n: number;
   }>();
   const count = new Map(installs.results.map((r) => [r.plugin, r.n]));
+  // each plugin's approved flow (54.16 C12's record), for the home's Browse to draw (54.41):
+  // carried in extra, which homes keep without checking, so older homes read the catalog
+  const flows = await env.DB_CATALOG.prepare(
+    `SELECT m.plugin, f.id, f.version, f.graph, f.events, f.subscriptions FROM flow_members m
+       JOIN flows f ON f.id = m.flow_id AND f.version = m.version ORDER BY f.approved_at`,
+  )
+    .all<{ plugin: string; id: string; version: string; graph: string; events: string; subscriptions: string }>()
+    .then((r) => r.results)
+    .catch(() => []);
+  const flowOf = new Map(flows.map((f) => [f.plugin, f]));
+  // each paid plugin's product and prices (story 54.19 §4), from store-commerce: the catalog's
+  // price names the product ("one_time" or "yearly", one-time first), extra.prices its amounts
+  const sale = await salesOf(env);
   const out = [];
   for (const p of plugins.results) {
     const vs = versions.results
@@ -304,10 +337,24 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
       rating_avg_x100: (rating.get(p.id)?.n ?? 0) >= 5 ? rating.get(p.id)!.avg : 0,
       rating_count: rating.get(p.id)?.n ?? 0,
       installs: roundInstalls(count.get(p.id) ?? 0),
-      price: "free",
+      price: sale.get(p.id)?.kind ?? "free",
       machine_translated: JSON.parse(p.machine_translated),
       versions: vs,
-      extra: { descriptions: JSON.parse(p.descriptions) },
+      extra: {
+        descriptions: JSON.parse(p.descriptions),
+        ...(sale.has(p.id) ? { prices: sale.get(p.id)!.prices } : {}),
+        ...(flowOf.has(p.id)
+          ? {
+              flow: {
+                id: flowOf.get(p.id)!.id,
+                version: flowOf.get(p.id)!.version,
+                graph: JSON.parse(flowOf.get(p.id)!.graph),
+                events: JSON.parse(flowOf.get(p.id)!.events),
+                subscriptions: JSON.parse(flowOf.get(p.id)!.subscriptions),
+              },
+            }
+          : {}),
+      },
     });
   }
   return { version, issued: iso(at), expires: iso(new Date(at.getTime() + 7 * 24 * 3600_000)), api_major: apiMajor, plugins: out };

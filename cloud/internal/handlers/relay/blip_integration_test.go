@@ -51,9 +51,9 @@ type countingMeter struct {
 	n *atomic.Int64
 }
 
-func (c countingMeter) Record(ctx context.Context, sv stores.Server, in, out int64) {
+func (c countingMeter) Record(ctx context.Context, sv stores.Server, d billing.Decision, in, out int64) {
 	c.n.Add(in + out)
-	c.Meter.Record(ctx, sv, in, out)
+	c.Meter.Record(ctx, sv, d, in, out)
 }
 
 // realHome authenticates simulated home 1 as the real servers row.
@@ -204,17 +204,32 @@ func TestPlanChangeReachesTheCache(t *testing.T) {
 		t.Fatalf("cached: %+v %v", sv, err)
 	}
 	time.Sleep(200 * time.Millisecond) // the listener is up
-	if _, err := w.direct.DB.ExecContext(ctx, `UPDATE servers SET plan = 'family' WHERE id = $1`, w.sv.ID); err != nil {
+	if _, err := w.direct.DB.ExecContext(ctx, `UPDATE servers SET plan = 'basic' WHERE id = $1`, w.sv.ID); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(time.Second)
 	for {
 		sv, err := w.cache.BySlug(ctx, w.sv.Slug)
-		if err == nil && sv.Plan == "family" {
+		if err == nil && sv.Plan == "basic" {
 			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("after 1 s the relay still sees plan %q", sv.Plan)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// story 50.19 T08: extra streams bought reach the cached home within a second (tier_changed)
+	if _, err := w.direct.DB.ExecContext(ctx, `UPDATE servers SET extra_streams = 2 WHERE id = $1`, w.sv.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(time.Second)
+	for {
+		sv, err := w.cache.BySlug(ctx, w.sv.Slug)
+		if err == nil && sv.ExtraStreams == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after 1 s the relay still sees %d extra streams", sv.ExtraStreams)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

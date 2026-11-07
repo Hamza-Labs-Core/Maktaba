@@ -58,6 +58,30 @@ small chunks, against the reference's (7.3 µs). On a slow runner the tail grows
 total does; a factor from the totals alone left the p99 budget too tight there (CI, factor 2.70:
 p99 54.6 µs against 54.0, with logging 2.8 times slower at p50 and 3.3 times at p99).
 
+It also takes structlog's: the p99 of a call through structlog's stock JSON pipeline (its
+context merge, the level, an ISO timestamp, the JSON renderer, none of the logger's own
+processors), against the reference's (8.7 µs). The other loops are C code: hashing, JSON and
+the regex scrub. The logger's call is mostly the interpreter running structlog, and that
+cost differs between CPUs in a way the C loops miss.
+
+48 CI runs (issue #807) put the logger's p99 at these shares of a budget from the C loops and
+the tail alone:
+
+| Runner CPU | Share of the budget |
+|---|---|
+| AMD EPYC 9V45 | 0.55–0.58 |
+| AMD EPYC 9V74 | 0.56–0.60 |
+| Intel Xeon 8573C | 0.60–0.68 |
+| AMD EPYC 7763 | 0.75–0.79 |
+
+On the 7763 the loops ran 2.7 times the reference's time and the logger 3.4 times. The
+logger's p99 is about 1.7 times the stock pipeline's on the 7763, the 9V74 and the Xeon alike,
+so with this term the 7763 sits at 0.73–0.75. A slower logger does not move the stock
+pipeline, so the gate still catches the logger's own regressions.
+
+More rounds or a median of repeats would not help. The three rounds of a run agree within
+2–3 %, and a runner type's runs agree within 4 %. The spread is between CPU types.
+
 It runs three rounds and is judged on the one with the lowest p99 (`LOGBENCH_PY_ROUNDS`; every
 round's p99 is in the report): a shared runner's other tenants only add time, as the
 calibration's best of three says. One noisy round on a slow runner failed a pull request that
@@ -103,6 +127,10 @@ merge (≈ 1.6 µs), the scrub of a value that holds a secret (≈ 2.6 µs), and
 the write.
 
 ## Every night on a Mac
+
+The Go logger's p99 is judged the same way as the Python one: the best of three rounds, every
+round in the report (`p99_ns_rounds`). On the nightly macOS runner a single round's p99 was 6
+to 10 times its p50 for both loggers (issue #807): the runner's tail, not the logger's.
 
 `.github/workflows/nightly-perf.yml` runs the Go and Python benches at 04:17 UTC on a
 macOS arm64 runner (the reference class), keeps the numbers for 90 days (`logbench-nightly`),

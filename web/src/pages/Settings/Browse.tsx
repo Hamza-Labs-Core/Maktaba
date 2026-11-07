@@ -10,10 +10,28 @@ import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { Toggle } from "@ds/components/Choice/Toggle";
+import { Checkbox } from "@ds/components/Choice/Checkbox";
 import { fold } from "../../help/search";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { pluginsApi, type CatalogEntry, type CatalogView } from "../../lib/pluginsApi";
 import { capabilityTitle, refusalWords } from "./PluginsSection";
+import { PluginFlowChart } from "./PluginFlowChart";
+import { BuyPlugin, isPaid } from "./BuyPlugin";
+import type { FlowGraph } from "../../lib/pluginsApi";
+
+/** The plugin's approved flow, as the signed catalog carries it (54.16 C12, 54.41). */
+interface CatalogFlow {
+  id: string;
+  version: string;
+  graph: FlowGraph;
+  events: string[];
+  subscriptions: string[];
+}
+
+function flowOf(p: CatalogEntry): CatalogFlow | null {
+  const f = (p.extra as { flow?: CatalogFlow } | undefined)?.flow;
+  return f && Array.isArray(f.graph?.nodes) && f.graph.nodes.length > 0 ? f : null;
+}
 
 type Sort = "rating" | "installs" | "newest";
 
@@ -49,7 +67,14 @@ export function filterEntries(
   );
 }
 
-export function Browse({ onInstalled }: { onInstalled: (id: string) => void }) {
+export function Browse({
+  onInstalled,
+  initial = "",
+}: {
+  onInstalled: (id: string) => void;
+  /** a plugin to open once the catalog is here (?store=<id> from the store's listing) */
+  initial?: string;
+}) {
   const { t, locale, n } = useI18n();
   const [all, setAll] = useState(false);
   const [view, setView] = useState<CatalogView | null>(null);
@@ -58,10 +83,19 @@ export function Browse({ onInstalled }: { onInstalled: (id: string) => void }) {
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState<Sort>("rating");
   const [open, setOpen] = useState<CatalogEntry | null>(null);
+  const [opened, setOpened] = useState(false);
 
   useEffect(() => {
     pluginsApi.catalog(all).then(setView, (e) => setError(refusalWords(t, e)));
   }, [all, t]);
+
+  // the plugin the listing page sent us to, once (an id not in the catalog: the list shows)
+  useEffect(() => {
+    if (!view || opened || !initial) return;
+    setOpened(true);
+    const p = view.plugins.find((x) => x.id === initial);
+    if (p) setOpen(p);
+  }, [view, initial, opened]);
 
   const shown = useMemo(
     () => (view ? filterEntries(view.plugins, query, category, sort) : []),
@@ -173,7 +207,12 @@ function StorePlugin({
   const [text, setText] = useState("");
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
+  const [attachLogs, setAttachLogs] = useState(false);
   const v = p.newest;
+  const flow = flowOf(p);
+  // the plugin's own published events and the subscriptions into its stages
+  const mine = (l: string[], at: (x: string) => string) =>
+    l.filter((x) => at(x).includes(`${p.id}/`));
   const machine = locale === "ar" && (p.machine_translated ?? []).includes("ar");
   const canInstall =
     !!v &&
@@ -226,6 +265,33 @@ function StorePlugin({
           <li key={c}>{capabilityTitle(t, c).title}</li>
         ))}
       </ul>
+      {flow && (
+        <>
+          <h4>{t("plugins.browse.flow")}</h4>
+          <PluginFlowChart
+            graph={flow.graph}
+            highlight={p.id}
+            names={(id) => word(view.plugins.find((x) => x.id === id)?.names, locale) || id}
+            title={t("plugins.browse.flow")}
+          />
+          <h5>{t("plugins.browse.flow_events")}</h5>
+          <ul dir="ltr">
+            {mine(flow.events, (x) => x).map((e) => (
+              <li key={e}>
+                <code>{e}</code>
+              </li>
+            ))}
+          </ul>
+          <h5>{t("plugins.browse.flow_subscriptions")}</h5>
+          <ul dir="ltr">
+            {mine(flow.subscriptions, (x) => x.split(" -> ")[1] ?? "").map((e) => (
+              <li key={e}>
+                <code>{e}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <h4>{t("plugins.section.versions")}</h4>
       <ul>
         {p.versions.map((x) => (
@@ -248,6 +314,8 @@ function StorePlugin({
           ? t("plugins.browse.update", { version: v?.version ?? "" })
           : t("plugins.browse.install")}
       </Button>
+      {/* story 54.19 §5: a paid plugin's price, and Buy or "Link this home to buy" */}
+      {isPaid(p) && <BuyPlugin entry={p} />}
 
       <h4>{t("plugins.browse.rate")}</h4>
       <div role="radiogroup" aria-label={t("plugins.browse.rate")}>
@@ -305,11 +373,21 @@ function StorePlugin({
         value={details}
         onChange={(e) => setDetails(e.target.value)}
       />
+      {p.installed && (
+        <Checkbox
+          label={t("plugins.browse.report_logs")}
+          checked={attachLogs}
+          onChange={(e) => setAttachLogs(e.target.checked)}
+        />
+      )}
       <Button
         variant="ghost"
         disabled={!reason}
         onClick={() =>
-          void run(() => pluginsApi.report(p.id, reason, details), t("plugins.browse.reported"))
+          void run(
+            () => pluginsApi.report(p.id, reason, details, attachLogs && !!p.installed),
+            t("plugins.browse.reported")
+          )
         }
       >
         {t("plugins.browse.send_report")}

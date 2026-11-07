@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
@@ -32,6 +33,7 @@ func TestBillingNoneProvider(t *testing.T) {
 	e.exec(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1, 'Home', 'member-home', 'x')`, uid)
 	admin := e.serviceAdmin("ops@example.test")
 
+	withPrices(t)
 	cat := c.mustStatus(c.do("GET", "/v1/billing/plans", nil), 200).json(t)
 	if cat["payments_enabled"] != false {
 		t.Fatalf("payments_enabled: %v", cat)
@@ -45,7 +47,7 @@ func TestBillingNoneProvider(t *testing.T) {
 			t.Fatalf("a plan is purchasable with no provider: %v", p)
 		}
 	}
-	for _, plan := range []string{"pro", "family"} {
+	for _, plan := range []string{"basic", "pro"} {
 		if r := c.do("POST", "/v1/billing/checkout", map[string]string{"plan": plan}); r.code != 503 || r.errCode() != "payments_not_set_up" {
 			t.Fatalf("checkout %s: %d %s", plan, r.code, r.body)
 		}
@@ -54,7 +56,7 @@ func TestBillingNoneProvider(t *testing.T) {
 		t.Fatalf("portal: %d %s", r.code, r.body)
 	}
 	hook := e.client()
-	body, sig := signedEvent(subEvent("evt_1", "subscription_started", "sub_1", "cus_1", uid, "active", "pro", time.Now(), time.Now()))
+	body, sig := signedEvent(subEvent("evt_1", "subscription_started", "sub_1", "cus_1", uid, "active", "basic", time.Now(), time.Now()))
 	for _, provider := range []string{"none", "testpay", "anything"} {
 		if r := hook.webhook(provider, body, sig); r.code != 404 {
 			t.Fatalf("webhook/%s with no provider: %d %s", provider, r.code, r.body)
@@ -69,38 +71,38 @@ func TestBillingNoneProvider(t *testing.T) {
 
 	// The manual path: a service admin sets the plan.
 	path := "/v1/admin/accounts/" + uid + "/plan"
-	if r := admin.do("POST", path, map[string]string{"plan": "pro"}); r.code != 400 || r.errCode() != "reason_required" {
+	if r := admin.do("POST", path, map[string]string{"plan": "basic"}); r.code != 400 || r.errCode() != "reason_required" {
 		t.Fatalf("no reason: %d %s", r.code, r.body)
 	}
 	if r := admin.do("POST", path, map[string]string{"plan": "gold", "reason": "x"}); r.code != 422 || r.errCode() != "bad_plan" {
 		t.Fatalf("bad plan: %d %s", r.code, r.body)
 	}
-	if r := admin.do("POST", "/v1/admin/accounts/not-a-uuid/plan", map[string]string{"plan": "pro", "reason": "x"}); r.code != 404 {
+	if r := admin.do("POST", "/v1/admin/accounts/not-a-uuid/plan", map[string]string{"plan": "basic", "reason": "x"}); r.code != 404 {
 		t.Fatalf("bad id: %d", r.code)
 	}
-	if r := c.do("POST", path, map[string]string{"plan": "pro", "reason": "self"}); r.code != 403 {
+	if r := c.do("POST", path, map[string]string{"plan": "basic", "reason": "self"}); r.code != 403 {
 		t.Fatalf("a member set their own plan: %d", r.code)
 	}
-	admin.mustStatus(admin.do("POST", path, map[string]string{"plan": "pro", "reason": "early supporter"}), http.StatusNoContent)
+	admin.mustStatus(admin.do("POST", path, map[string]string{"plan": "basic", "reason": "early supporter"}), http.StatusNoContent)
 	me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t)
-	if me["plan"] != "pro" || me["status"] != "active" || me["has_customer"] != false {
+	if me["plan"] != "basic" || me["status"] != "active" || me["has_customer"] != false {
 		t.Fatalf("after manual pro: %v", me)
 	}
-	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'basic'`, uid) != 1 {
 		t.Fatal("server plan did not follow the manual plan")
 	}
 	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider = 'manual'`, uid) != 1 {
 		t.Fatal("manual subscription not marked")
 	}
 	if e.count(`SELECT count(*) FROM audit_log WHERE action = 'admin.account.set_plan' AND target_id = $1
-        AND detail->>'plan' = 'pro' AND detail->>'previous_plan' = 'free' AND detail->>'reason' = 'early supporter'`, uid) != 1 {
+        AND detail->>'plan' = 'basic' AND detail->>'previous_plan' = 'free' AND detail->>'reason' = 'early supporter'`, uid) != 1 {
 		t.Fatal("manual plan change not audited")
 	}
 	detail := admin.mustStatus(admin.do("GET", "/v1/admin/accounts/"+uid, nil), 200).json(t)
-	if sub := detail["subscription"].(map[string]any); sub["provider"] != "manual" || sub["plan"] != "pro" {
+	if sub := detail["subscription"].(map[string]any); sub["provider"] != "manual" || sub["plan"] != "basic" {
 		t.Fatalf("admin detail subscription: %v", sub)
 	}
-	if u := c.mustStatus(c.do("GET", "/v1/billing/usage", nil), 200).json(t); u["limit_bytes"].(float64) != float64(100<<30) {
+	if u := c.mustStatus(c.do("GET", "/v1/billing/usage", nil), 200).json(t); u["limit_bytes"].(float64) != float64(500_000_000_000) {
 		t.Fatalf("usage limit did not follow the plan: %v", u)
 	}
 	rev := admin.mustStatus(admin.do("GET", "/v1/admin/revenue", nil), 200).json(t)
@@ -129,6 +131,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	uid := e.userID(email)
 	e.exec(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1, 'Home', 'payer-home', 'x')`, uid)
 
+	withPrices(t)
 	cat := c.mustStatus(c.do("GET", "/v1/billing/plans", nil), 200).json(t)
 	plans := cat["plans"].([]any)
 	if cat["payments_enabled"] != true || len(plans) != 3 || plans[0].(map[string]any)["purchasable"] != false ||
@@ -141,11 +144,11 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	if r := c.do("POST", "/v1/billing/portal", nil); r.code != 409 || r.errCode() != "no_customer" {
 		t.Fatalf("portal before paying: %d %s", r.code, r.body)
 	}
-	r := c.mustStatus(c.do("POST", "/v1/billing/checkout", map[string]string{"plan": "pro"}), 200)
+	r := c.mustStatus(c.do("POST", "/v1/billing/checkout", map[string]string{"plan": "basic"}), 200)
 	if r.json(t)["checkout_url"] != "https://pay.example.test/checkout/cs_1" {
 		t.Fatalf("checkout: %s", r.body)
 	}
-	if p := e.pay.lastCheckout(); p.Plan != "pro" || p.UserID != uid || p.CustomerEmail != email || p.CustomerID != "" ||
+	if p := e.pay.lastCheckout(); p.Plan != "basic" || p.UserID != uid || p.CustomerEmail != email || p.CustomerID != "" ||
 		p.SuccessURL != testWebURL+"/billing?billing=ok" || p.CancelURL != testWebURL+"/billing?billing=cancel" {
 		t.Fatalf("checkout params: %+v", p)
 	}
@@ -169,7 +172,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	hook.mustStatus(hook.webhook("testpay", body, sig), 200)
 
 	periodEnd := time.Now().Add(30 * 24 * time.Hour).Truncate(time.Second)
-	body, sig = signedEvent(subEvent("evt_started", "subscription_started", "sub_1", "cus_1", uid, "active", "pro", t0.Add(time.Second), periodEnd))
+	body, sig = signedEvent(subEvent("evt_started", "subscription_started", "sub_1", "cus_1", uid, "active", "basic", t0.Add(time.Second), periodEnd))
 	hook.mustStatus(hook.webhook("testpay", body, sig), 200)
 	// Retry of the same event: 200, no second row, no work.
 	hook.mustStatus(hook.webhook("testpay", body, sig), 200)
@@ -177,13 +180,13 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 		t.Fatalf("event rows %d", n)
 	}
 	me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t)
-	if me["plan"] != "pro" || me["status"] != "active" || me["interval"] != "monthly" || me["has_customer"] != true {
+	if me["plan"] != "basic" || me["status"] != "active" || me["interval"] != "monthly" || me["has_customer"] != true {
 		t.Fatalf("billing/me: %v", me)
 	}
-	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider = 'testpay' AND provider_price_id = 'price_pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider = 'testpay' AND provider_price_id = 'price_basic'`, uid) != 1 {
 		t.Fatal("subscription not stamped with its provider")
 	}
-	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'basic'`, uid) != 1 {
 		t.Fatal("server plan did not follow the subscription")
 	}
 
@@ -194,7 +197,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	}
 
 	// Already subscribed: checkout points to the portal; portal works.
-	if r := c.do("POST", "/v1/billing/checkout", map[string]string{"plan": "family"}); r.code != 409 || r.errCode() != "already_subscribed" {
+	if r := c.do("POST", "/v1/billing/checkout", map[string]string{"plan": "pro"}); r.code != 409 || r.errCode() != "already_subscribed" {
 		t.Fatalf("second checkout: %d %s", r.code, r.body)
 	}
 	if r := c.mustStatus(c.do("POST", "/v1/billing/portal", nil), 200); r.json(t)["portal_url"] != "https://pay.example.test/portal/cus_1" {
@@ -206,11 +209,11 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 
 	// Upgrade to family (newer), then a stale change from before it
 	// arrives late and must not downgrade.
-	body, sig = signedEvent(subEvent("evt_upgrade", "subscription_changed", "sub_1", "cus_1", uid, "active", "family", t0.Add(10*time.Second), periodEnd))
+	body, sig = signedEvent(subEvent("evt_upgrade", "subscription_changed", "sub_1", "cus_1", uid, "active", "pro", t0.Add(10*time.Second), periodEnd))
 	hook.mustStatus(hook.webhook("testpay", body, sig), 200)
-	body, sig = signedEvent(subEvent("evt_stale", "subscription_changed", "sub_1", "cus_1", uid, "active", "pro", t0.Add(5*time.Second), periodEnd))
+	body, sig = signedEvent(subEvent("evt_stale", "subscription_changed", "sub_1", "cus_1", uid, "active", "basic", t0.Add(5*time.Second), periodEnd))
 	hook.mustStatus(hook.webhook("testpay", body, sig), 200)
-	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["plan"] != "family" {
+	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["plan"] != "pro" {
 		t.Fatalf("stale event applied: %v", me)
 	}
 
@@ -221,7 +224,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	if e.count(`SELECT count(*) FROM invoices WHERE provider = 'testpay' AND provider_invoice_id = 'in_1' AND status = 'failed'`) != 1 {
 		t.Fatal("failed payment not recorded")
 	}
-	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["status"] != "past_due" || me["plan"] != "family" {
+	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["status"] != "past_due" || me["plan"] != "pro" {
 		t.Fatalf("past_due: %v", me)
 	}
 	if _, ok := e.mail.Last("payment_failed", email); !ok {
@@ -229,7 +232,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	}
 
 	// Cancelled: back to free, servers too. No user id — resolved by customer.
-	body, sig = signedEvent(subEvent("evt_cancelled", "subscription_cancelled", "sub_1", "cus_1", "", "canceled", "family", t0.Add(30*time.Second), periodEnd))
+	body, sig = signedEvent(subEvent("evt_cancelled", "subscription_cancelled", "sub_1", "cus_1", "", "canceled", "pro", t0.Add(30*time.Second), periodEnd))
 	hook.mustStatus(hook.webhook("testpay", body, sig), 200)
 	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["plan"] != "free" || me["status"] != "canceled" {
 		t.Fatalf("after cancel: %v", me)
@@ -238,7 +241,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 		t.Fatal("server plan not reset")
 	}
 	// After a cancellation a new checkout is allowed, reusing the customer.
-	c.mustStatus(c.do("POST", "/v1/billing/checkout", map[string]string{"plan": "pro"}), 200)
+	c.mustStatus(c.do("POST", "/v1/billing/checkout", map[string]string{"plan": "basic"}), 200)
 	if p := e.pay.lastCheckout(); p.CustomerID != "cus_1" || p.CustomerEmail != "" {
 		t.Fatalf("returning checkout: %+v", p)
 	}
@@ -270,7 +273,7 @@ func TestUsage(t *testing.T) {
 	const email = "ent@example.test"
 	c := e.registerVerified(email)
 	uid := e.userID(email)
-	e.exec(`UPDATE users SET plan = 'pro' WHERE id = $1`, uid)
+	e.exec(`UPDATE users SET plan = 'basic' WHERE id = $1`, uid)
 
 	var sid string
 	if err := e.pool.DB.QueryRow(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1,'NAS','ent-nas','x') RETURNING id`, uid).Scan(&sid); err != nil {
@@ -278,7 +281,7 @@ func TestUsage(t *testing.T) {
 	}
 	e.exec(`INSERT INTO bandwidth_monthly (server_id, month, bytes_in, bytes_out) VALUES ($1, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1000, 5000)`, sid)
 	u := c.mustStatus(c.do("GET", "/v1/billing/usage", nil), http.StatusOK).json(t)
-	if u["used_bytes"].(float64) != 6000 || u["plan"] != "pro" || u["limit_bytes"].(float64) != float64(100<<30) {
+	if u["used_bytes"].(float64) != 6000 || u["plan"] != "basic" || u["limit_bytes"].(float64) != float64(500_000_000_000) {
 		t.Fatalf("usage: %v", u)
 	}
 }
@@ -324,7 +327,7 @@ func TestMigrationBillingProviderNeutral(t *testing.T) {
 	c := e.registerVerified("mig@example.test")
 	_ = c
 	uid := e.userID("mig@example.test")
-	e.exec(`INSERT INTO subscriptions (user_id, provider, plan, status, provider_customer_id) VALUES ($1, 'testpay', 'pro', 'active', 'cus_m')`, uid)
+	e.exec(`INSERT INTO subscriptions (user_id, provider, plan, status, provider_customer_id) VALUES ($1, 'testpay', 'basic', 'active', 'cus_m')`, uid)
 	e.exec(`INSERT INTO provider_events (provider, provider_event_id, type, payload) VALUES ('testpay', 'evt_m', 't', '{}')`)
 	// The same event id from two providers is two events.
 	e.exec(`INSERT INTO provider_events (provider, provider_event_id, type, payload) VALUES ('otherpay', 'evt_m', 't', '{}')`)
@@ -343,7 +346,7 @@ func TestMigrationBillingProviderNeutral(t *testing.T) {
 	if err := mig.Up(ctx); err != nil {
 		t.Fatalf("up again: %v", err)
 	}
-	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider_customer_id = 'cus_m' AND plan = 'pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider_customer_id = 'cus_m' AND plan = 'basic'`, uid) != 1 {
 		t.Fatal("subscription row lost in the round trip")
 	}
 	if e.count(`SELECT count(*) FROM provider_events WHERE provider_event_id = 'evt_m' AND provider = 'legacy'`) != 1 {
@@ -380,4 +383,74 @@ func forge(sig string) string {
 		repl = '1'
 	}
 	return sig[:len(sig)-1] + string(repl)
+}
+
+// Story 50.19 §5, §6 (T08): a Pro owner turns pay-as-you-go on with a cap (item 2 at the
+// provider) and buys 2 extra streams (item 3); the webhook puts them on every home, where the
+// relay's cached home reads them; Basic can't; without a cap it can't be on.
+func TestPayAsYouGoAndExtraStreams(t *testing.T) {
+	e := newPaidEnv(t)
+	withPrices(t)
+	old := billingpkg.Tiers
+	set := map[string]billingpkg.Tier{}
+	for k, v := range old {
+		set[k] = v
+	}
+	pro := set[billingpkg.PlanPro]
+	ten, two := 10, 200
+	pro.PAYGPricePerGBCents, pro.ExtraStreamPriceCents = &ten, &two
+	set[billingpkg.PlanPro] = pro
+	billingpkg.Tiers = set
+	t.Cleanup(func() { billingpkg.Tiers = old })
+
+	const email = "pro@example.test"
+	c := e.registerVerified(email)
+	uid := e.userID(email)
+	e.exec(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1, 'Home', 'pro-home', 'x')`, uid)
+
+	// on Basic: Pro only
+	start := subEvent("evt_b", "subscription_started", "sub_p", "cus_p", uid, "active", "basic", time.Now(), time.Now().Add(720*time.Hour))
+	body, sig := signedEvent(start)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+	if r := c.do("PATCH", "/v1/billing/payg", map[string]any{"enabled": true, "cap_cents": 1000}); r.code != http.StatusConflict || r.errCode() != "needs_pro" {
+		t.Fatalf("payg on basic: %d %s", r.code, r.body)
+	}
+	up := subEvent("evt_p", "subscription_changed", "sub_p", "cus_p", uid, "active", "pro", time.Now().Add(time.Second), time.Now().Add(720*time.Hour))
+	body, sig = signedEvent(up)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+
+	if r := c.do("PATCH", "/v1/billing/payg", map[string]any{"enabled": true}); r.code != http.StatusUnprocessableEntity || r.errCode() != "cap_required" {
+		t.Fatalf("payg without a cap: %d %s", r.code, r.body)
+	}
+	got := c.mustStatus(c.do("PATCH", "/v1/billing/payg", map[string]any{"enabled": true, "cap_cents": 1000}), http.StatusOK).json(t)
+	if got["enabled"] != true || got["cap_cents"].(float64) != 1000 || got["price_per_gb_cents"].(float64) != 10 {
+		t.Fatalf("payg: %v", got)
+	}
+	if it := e.pay.billing.Items("sub_p"); !it.PAYG {
+		t.Fatalf("item 2 not at the provider: %+v", it)
+	}
+	c.mustStatus(c.do("PATCH", "/v1/billing/extra-streams", map[string]any{"count": 2}), http.StatusAccepted)
+	if it := e.pay.billing.Items("sub_p"); it.ExtraStreams != 2 || !it.PAYG {
+		t.Fatalf("item 3 not at the provider: %+v", it)
+	}
+	// the provider confirms: the home carries 2 extra streams
+	confirm := up
+	confirm.ID, confirm.At, confirm.ExtraStreams, confirm.PAYG = "evt_x", time.Now().Add(2*time.Second), 2, true
+	body, sig = signedEvent(confirm)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND extra_streams = 2`, uid) != 1 {
+		t.Fatal("the home doesn't carry the extra streams")
+	}
+	// back to Basic: the extra streams go
+	down := up
+	down.ID, down.At, down.Plan, down.ExtraStreams = "evt_d", time.Now().Add(3*time.Second), "basic", 2
+	body, sig = signedEvent(down)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND extra_streams = 0`, uid) != 1 {
+		t.Fatal("Basic kept Pro's extra streams")
+	}
+	u := c.mustStatus(c.do("GET", "/v1/billing/usage", nil), http.StatusOK).json(t)
+	if _, ok := u["by_mode"].(map[string]any)["capped"]; !ok {
+		t.Fatalf("usage by mode: %v", u)
+	}
 }

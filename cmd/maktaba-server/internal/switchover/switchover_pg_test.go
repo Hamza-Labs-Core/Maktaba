@@ -100,7 +100,7 @@ func newCluster(t *testing.T) *cluster {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	c := &cluster{t: t, ctx: ctx, programs: programs, tmp: t.TempDir(), machines: map[string]*machine{}}
-	c.migrate = pgtest.Migrator(t, c.tmp)
+	c.migrate = pgtest.Migrator(t)
 	c.home, c.homeSrv = pgtest.Bundle(ctx, t, programs, filepath.Join(c.tmp, "a"), true)
 	appURL, err := c.home.URL()
 	if err != nil {

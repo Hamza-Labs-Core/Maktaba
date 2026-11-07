@@ -117,3 +117,31 @@ func TestSetupWants(t *testing.T) {
 		}
 	}
 }
+
+// Story 50.15: cloud.direct is in full only. core still turns on no process component (the
+// test above), so neither cloud.direct nor the cloud.link process it needs; a custom bundle that
+// chooses cloud.direct brings cloud.link with it.
+func TestDirectAccessIsInFullNotCore(t *testing.T) {
+	cat := Default()
+	core, err := cat.BundleSet("core", "", nil, "linux-amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Contains(core, "cloud.direct") || slices.Contains(core, "cloud.link") {
+		t.Fatalf("core turns on direct access or the cloud link: %v", core)
+	}
+	full, err := cat.BundleSet("full", "", nil, "linux-amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(full, "cloud.direct") {
+		t.Fatalf("full lacks cloud.direct: %v", full)
+	}
+	custom, err := cat.BundleSet(BundleCustom, "core", []string{"cloud.direct"}, "linux-amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(custom, "cloud.direct") || !slices.Contains(custom, "cloud.link") {
+		t.Fatalf("custom with cloud.direct: %v", custom)
+	}
+}

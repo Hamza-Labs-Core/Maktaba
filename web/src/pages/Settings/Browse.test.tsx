@@ -111,6 +111,105 @@ describe("Browse", () => {
     expect(await screen.findByText(EN["plugins.browse.opening"])).toBeInTheDocument();
   });
 
+  it("a plugin in a flow: its page draws the flow and lists its events and subscriptions", async () => {
+    const flow = {
+      id: "dev.example.flow",
+      version: "1.0.0",
+      graph: {
+        nodes: [
+          {
+            id: "core:audio.ready",
+            kind: "core",
+            name: "audio.ready",
+            plugin: "",
+            state: "enabled",
+            subject: "video",
+          },
+          {
+            id: "stage:dev.example.silences/find",
+            kind: "stage",
+            name: "find",
+            plugin: "dev.example.silences",
+            state: "enabled",
+            subject: "video",
+          },
+          {
+            id: "event:dev.example.silences/silences.found",
+            kind: "event",
+            name: "silences.found",
+            plugin: "dev.example.silences",
+            state: "enabled",
+            subject: "video",
+          },
+          {
+            id: "stage:dev.example.tagger/write",
+            kind: "stage",
+            name: "write",
+            plugin: "dev.example.tagger",
+            state: "enabled",
+            subject: "video",
+          },
+        ],
+        edges: [
+          { from: "core:audio.ready", kind: "trigger", to: "stage:dev.example.silences/find" },
+          {
+            from: "stage:dev.example.silences/find",
+            kind: "emit",
+            to: "event:dev.example.silences/silences.found",
+          },
+          {
+            from: "event:dev.example.silences/silences.found",
+            kind: "subscribe",
+            to: "stage:dev.example.tagger/write",
+          },
+        ],
+      },
+      events: ["plugin:dev.example.silences/silences.found"],
+      subscriptions: ["plugin:dev.example.silences/silences.found -> dev.example.tagger/write"],
+    };
+    get.mockResolvedValue(view({ plugins: [entry({ extra: { flow } })] }));
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.getByRole("heading", { name: EN["plugins.browse.flow"] })).toBeInTheDocument();
+    expect(document.querySelector("svg")).not.toBeNull();
+    // the tagger listens to the silences' event and publishes none of its own
+    expect(
+      screen.getByText("plugin:dev.example.silences/silences.found -> dev.example.tagger/write")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("plugin:dev.example.silences/silences.found")).toBeNull();
+  });
+
+  it("#757: opened from the store's listing (?store=<id>), the plugin's page shows; an unknown id leaves the list", async () => {
+    get.mockResolvedValue(view());
+    const { unmount } = render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.tagger" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("button", { name: EN["plugins.browse.back"] })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Tagger/ })).toBeInTheDocument();
+    unmount();
+    render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.absent" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("heading", { name: EN["plugins.browse.title"] })
+    ).toBeInTheDocument();
+  });
+
+  it("a plugin with no flow shows no chart", async () => {
+    get.mockResolvedValue(view());
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.queryByRole("heading", { name: EN["plugins.browse.flow"] })).toBeNull();
+  });
+
   it("an expired catalog shows a banner and Install waits; a fresh one installs", async () => {
     get.mockResolvedValue(
       view({ trust: { ...trust, catalog_expired: true, store_installs_ok: false } })
@@ -120,6 +219,34 @@ describe("Browse", () => {
     await act(async () => fireEvent.click(open[0]!));
     expect(screen.getByRole("button", { name: EN["plugins.browse.install"] })).toBeDisabled();
     expect(screen.getAllByRole("alert")[0]).toHaveTextContent(EN["plugins.browse.expired"]);
+  });
+
+  it("#758: a report of an installed plugin can attach its logs; one not installed cannot", async () => {
+    get.mockResolvedValue(view({ plugins: [entry({ installed: "1.1.0" })] }));
+    post.mockResolvedValue({ status: "filed" });
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    fireEvent.change(screen.getByLabelText(EN["plugins.browse.report_reason"]), {
+      target: { value: "does_not_work" },
+    });
+    await act(async () => fireEvent.click(screen.getByLabelText(EN["plugins.browse.report_logs"])));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: EN["plugins.browse.send_report"] }))
+    );
+    expect(post).toHaveBeenCalledWith("/api/plugins/dev.example.tagger/report", {
+      reason: "does_not_work",
+      details: "",
+      attach_logs: true,
+    });
+  });
+
+  it("#758: no logs box for a plugin not installed here", async () => {
+    get.mockResolvedValue(view());
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.queryByLabelText(EN["plugins.browse.report_logs"])).toBeNull();
   });
 
   it("install and a rating too early (the store's words)", async () => {
