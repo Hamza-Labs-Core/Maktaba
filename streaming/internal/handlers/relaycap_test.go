@@ -23,12 +23,12 @@ const ladder = `#EXTM3U
 // 3000 kbps lists only those within the cap less 10 % (2.5 and 1.5); at 1000 none fits 0.9
 // Mbps, so the lowest stays; on the LAN, over direct access or with a bad cap, nothing changes.
 func TestTheMasterFitsTheCap(t *testing.T) {
-	req := func(via, cap string) *http.Request {
+	req := func(via, capKbps string) *http.Request {
 		r := httptest.NewRequest(http.MethodGet, "/stream/s/manifest.m3u8", nil)
 		if via != "" {
 			r.Header.Set("X-Maktaba-Via", via)
 		}
-		r.Header.Set(RelayCapHeader, cap)
+		r.Header.Set(RelayCapHeader, capKbps)
 		return r
 	}
 	got := string(FitMasterToCap([]byte(ladder), relayCapBits(req("relay", "3000"))))
