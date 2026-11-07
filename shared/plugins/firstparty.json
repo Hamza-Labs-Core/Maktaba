@@ -1,5 +1,5 @@
 {
- "digest": "cec13020ce6670cf4e768fc6dccc70959498fce0dc0f3021902990e754c5ca9b",
+ "digest": "c558b9f7f552942fec7a994f36acb4c36de5d429325e4f1f0ecfeb36737e9fae",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -796,7 +796,7 @@
    }
   },
   {
-   "digest": "0b7f7e77dfce6a78f5df490313c19053c1b1830a068075c220e15e9a7c9bced6",
+   "digest": "cf19d2579c3464cd11a4a72d94db0f86320256091907f755452c11818d02d370",
    "folder": "core-media",
    "id": "tv.maktaba.core-media",
    "manifest": "# tv.maktaba.core-media: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 9\n# (story 54.36 §1): the stages every home always runs, the stages of core.pipeline (not\n# switchable). The engine's component_catchup stays in the core, and so does categorize (a\n# placeholder stage with no handler, declared in the graph). The filesystem watcher and the\n# manual scans stay in the core and only enqueue scan. What only the queue engine may write\n# (videos.state, a stage queued again, the path conversion's pauses) the worker writes for the\n# plugin's job: the relayed advance, requeue_failed and storage_canonicalize.\nschema     = 1\nid         = \"tv.maktaba.core-media\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.core-media.name\"\nsummary = \"fp.core-media.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"core.pipeline\"\ndb.read   = [\"app_settings\", \"libraries\", \"media_field_provenance\", \"processing_jobs\", \"transcripts\"]\ndb.write  = [\"audio_tracks\", \"item_checks\", \"media_info\", \"media_metadata_enrichment\", \"series_seasons\", \"video_copies\", \"video_signals\", \"videos\", \"youtube_channel_libraries\", \"youtube_channels\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_source_decisions\", \"youtube_sources\", \"youtube_videos\"]\nfiles.read  = [\"library\", \"data.thumbnails\"]\nfiles.write = []\nexec      = [\"ffprobe\", \"ffmpeg\"]\nsettings  = [\"queue_health\"]\n\n[[stage]]\nname         = \"scan\"\nsubject      = \"library\"\nexport       = \"scan\"\nversion      = 1\nlabel        = \"Scan folders\"\nsubject_kinds = [\"library\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 0\nplacement    = \"any\"\nedges        = [{ to = \"probe\", map = \"videos_changed\", when = \"always\" }]\nentry        = \"maktaba_fp_core_media.stages.scan:IMPL\"\n\n[[stage]]\nname         = \"content_hash\"\nsubject      = \"video\"\nexport       = \"content-hash\"\nversion      = 1\nlabel        = \"File identity\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 0\nplacement    = \"any\"\nedges        = [{ to = \"thumb_small\", map = \"same\" }, { to = \"transcribe\", map = \"same\" }, { to = \"thumbnail\", map = \"same\" }]\nentry        = \"maktaba_fp_core_media.stages.content_hash:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"probe\"\nsubject      = \"video\"\nexport       = \"probe\"\nversion      = 1\nlabel        = \"Length\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 1\nplacement    = \"any\"\nedges        = [{ to = \"thumb_hash\", map = \"same\" }, { to = \"link\", map = \"same\" }, { to = \"detect\", map = \"library_of\" }]\nentry        = \"maktaba_fp_core_media.stages.probe:IMPL\"\n\n[[stage]]\nname         = \"thumb_hash\"\nsubject      = \"video\"\nexport       = \"thumb-hash\"\nversion      = 1\nlabel        = \"Thumbnail\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 2\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }, { to = \"thumb_small\", map = \"same\" }]\nentry        = \"maktaba_fp_core_media.stages.thumb_hash:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"link\"\nsubject      = \"video\"\nexport       = \"link\"\nversion      = 1\nlabel        = \"Link\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"episodes\"\nlane_order   = 3\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }]\nentry        = \"maktaba_fp_core_media.stages.link:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"fingerprint\"\nsubject      = \"video\"\nexport       = \"fingerprint\"\nversion      = 101\nlabel        = \"Fingerprint\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 4\nplacement    = \"any\"\nedges        = [{ to = \"detect\", map = \"library_of\" }, { to = \"fp_gate\", map = \"payload_seasons\" }]\nentry        = \"maktaba_fp_core_media.stages.fingerprint:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"style_sample\"\nsubject      = \"video\"\nexport       = \"style-sample\"\nversion      = 1\nlabel        = \"Style sample\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 5\nplacement    = \"any\"\nedges        = [{ to = \"rate_style\", map = \"payload_seasons\" }]\nentry        = \"maktaba_fp_core_media.stages.style_sample:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"fp_gate\"\nsubject      = \"season\"\nexport       = \"fp-gate\"\nversion      = 101\nlabel        = \"Samples to candidates\"\nsubject_kinds = [\"season\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 1\nplacement    = \"any\"\nmay_request  = [\"fingerprint\"]\ndebounce_sec = 10\ndebounce_max_sec = 120\nhidden       = true\nentry        = \"maktaba_fp_core_media.stages.fp_gate:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"storage_canonicalize\"\nsubject      = \"catalog\"\nexport       = \"storage-canonicalize\"\nversion      = 1\nlabel        = \"Canonical share paths\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"media\"\nlane_order   = 11\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_core_media.stages.storage_canonicalize:IMPL\"\n\n[[stage]]\nname         = \"access_check\"\nsubject      = \"video\"\nexport       = \"access-check\"\nversion      = 1\nlabel        = \"Access check\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 13\nplacement    = \"any\"\nmax_attempts = 1\nentry        = \"maktaba_fp_core_media.stages.access_check:IMPL\"\n",
@@ -817,8 +817,8 @@
      "mode": "write",
      "name": "access_check.run.2",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "909b34cb3c44be081537f104bc9b82554aaac72e9e8df5ff15d7abb9bd741f83",
      "text": "UPDATE videos SET missing_confirmed_at = NULL WHERE id = $1",
      "writes": [
@@ -841,8 +841,8 @@
      "mode": "write",
      "name": "content_hash.run",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "5c0db76d01ca2ac8e7bf9aabb221fa3a998776fcbd21c20686471daa1c0d59f0",
      "text": "UPDATE videos SET path = $2, filename = $3 WHERE id = $1",
      "writes": [
@@ -865,8 +865,8 @@
      "mode": "write",
      "name": "content_hash.run.3",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "7bd9e80cbb3f262d3a6774d7219ee510e403acebbf4657c018d43bda9f0d3ba1",
      "text": "UPDATE videos SET metadata = $2, size_bytes = $3 WHERE id = $1",
      "writes": [
@@ -877,8 +877,8 @@
      "mode": "write",
      "name": "content_hash.run.4",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "3d4178cac8764993dd6bc1beb6b84d7fbdde96e5cb256a0a97d38d6abc97b7b1",
      "text": "UPDATE videos SET content_hash = $2, size_bytes = $3, metadata = $4 WHERE id = $1",
      "writes": [
@@ -913,8 +913,8 @@
      "mode": "write",
      "name": "copies.promote_copy.3",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "7273380bc9c5fd62d8b2c66f860186892e2e04820886adc2781b7840cec4e11d",
      "text": "UPDATE videos SET path = $2, filename = $3, size_bytes = $4, missing_confirmed_at = NULL, mtime = $5 WHERE id = $1",
      "writes": [
@@ -925,8 +925,8 @@
      "mode": "write",
      "name": "copies.promote_copy.4",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "bb7548c7c3d55afeaf3936cbd20bb22553691c45474f4b39f37649f80c223ae7",
      "text": "UPDATE videos SET path = $2, filename = $3, size_bytes = $4, missing_confirmed_at = NULL WHERE id = $1",
      "writes": [
@@ -1220,8 +1220,8 @@
      "mode": "write",
      "name": "missing_files.confirm_missing.2",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "cc10acbaae38771af0023cd44e8d08faa89cd2bf9b6406e919844ab533b673b3",
      "text": "UPDATE videos SET missing_confirmed_at = $2 WHERE id = $1 AND missing_confirmed_at IS NULL",
      "writes": [
@@ -1390,8 +1390,8 @@
      "mode": "write",
      "name": "store.save_candidate.2",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "b7ac914df324c6a483ed08c590aed19d6c54f226b18bc38bd2222f5caf64d801",
      "text": "UPDATE videos SET last_seen_at = $2 WHERE id = $1",
      "writes": [
@@ -6239,7 +6239,7 @@
    }
   },
   {
-   "digest": "c24d9f8981b609880b0608cdbb9e212846a2ea0131ff35a445014854716f7b53",
+   "digest": "9ae82fd8e1c5231cd24a9cde74b09d34508342c357ea1354dd9328fdf122be39",
    "folder": "thumbnails",
    "id": "tv.maktaba.thumbnails",
    "manifest": "# tv.maktaba.thumbnails: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files. Wave 9 (story\n# 54.36 §1): thumbnail, the poster and sprites, once it ran on the engine (54.36 §2); the\n# video's state it advances is written by the worker for the job (the relayed advance).\nschema     = 1\nid         = \"tv.maktaba.thumbnails\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.thumbnails.name\"\nsummary = \"fp.thumbnails.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"media.thumbnails\"\ndb.read   = [\"chapters\", \"processing_jobs\", \"videos\"]\ndb.write  = [\"videos\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"data.thumbnails\"]\nexec      = [\"ffmpeg\"]\n\n[[stage]]\nname         = \"thumbnail\"\nsubject      = \"video\"\nexport       = \"thumbnail\"\nversion      = 1\nlabel        = \"Poster and sprites\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 5\nplacement    = \"home\"\nedges        = [{ to = \"thumb_small\", map = \"same\" }]\nentry        = \"maktaba_fp_thumbnails.stages.thumbnail:IMPL\"\n\n[[stage]]\nname         = \"thumb_small\"\nsubject      = \"video\"\nexport       = \"thumb-small\"\nversion      = 1\nlabel        = \"Small thumbnail\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 6\nentry_for    = [\"video\"]\nplacement    = \"home\"\nedges        = [{ to = \"review_pages\", map = \"library_of\" }]\nentry        = \"maktaba_fp_thumbnails.stages.thumb_small:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"chapter_thumbs\"\nsubject      = \"video\"\nexport       = \"chapter-thumbs\"\nversion      = 1\nlabel        = \"Chapter frames\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"speech\"\nlane_order   = 7\nplacement    = \"home\"\nentry        = \"maktaba_fp_thumbnails.stages.chapter_thumbs:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -6284,8 +6284,8 @@
      "mode": "write",
      "name": "handler.commit_thumbnails",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "subject",
+     "scope_arg": 1,
      "sha256": "43487fb05a3dd7b4960bdedb44382e96289d8952f377ae1c32c32c6257cf061e",
      "text": "UPDATE videos SET poster_path = $2, sprite_path = $3 WHERE id = $1",
      "writes": [

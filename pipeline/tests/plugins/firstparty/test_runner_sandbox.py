@@ -283,7 +283,8 @@ def test_the_light_group_writes_subtitles_by_name_and_thumbnails_in_full() -> No
         own_socket="/run/runner-light.sock",
         run_dir="/run",
     )
-    assert p.read[:2] == ["/media/a", "/media/b"]
+    # tv.maktaba.core-media (thumb_hash) reads the thumbnail cache too (story 54.36)
+    assert p.read[:3] == ["/data/thumbnails", "/media/a", "/media/b"]
     assert p.write == ["/data/thumbnails"]
     assert p.write_named == ["/media/a", "/media/b"]
     profile = seatbelt_profile(p)

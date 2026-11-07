@@ -47,6 +47,10 @@ def toy(monkeypatch: pytest.MonkeyPatch) -> Iterator[bytes]:
     from maktaba_pipeline.plugins import firstparty, native
 
     monkeypatch.syspath_prepend(str(TOY / "src"))
+    # the registry as it was: a lookup while the toy is the only built-in plugin caches what
+    # the real bundle defines from elsewhere (scan's legacy output fingerprint, whose stage
+    # has moved into tv.maktaba.core-media), which must not outlive the toy
+    impls, legacy_loaded = dict(reg._IMPLS), reg._LEGACY_LOADED
     raw = bundle_of(TOY)
     install(monkeypatch, raw)
     from fp_toy import stage
@@ -57,7 +61,9 @@ def toy(monkeypatch: pytest.MonkeyPatch) -> Iterator[bytes]:
     monkeypatch.undo()
     for f in (firstparty._load, firstparty._stage_index, firstparty.registry):
         f.cache_clear()
-    reg._IMPLS.pop("fp_toy", None)
+    reg._IMPLS.clear()
+    reg._IMPLS.update(impls)
+    reg._LEGACY_LOADED = legacy_loaded
     native.forget_hello()
 
 
