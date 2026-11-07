@@ -481,6 +481,7 @@ class ApiClient(
         }
 
         val defaultHttp: OkHttpClient = OkHttpClient.Builder()
+            .hostnameVerifier(PinnedHostnameVerifier) // a home reached by IP: its own name (50.15 §3)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .addNetworkInterceptor(SameOriginCredentials)

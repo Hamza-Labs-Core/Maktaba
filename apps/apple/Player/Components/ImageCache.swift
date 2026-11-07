@@ -2,6 +2,7 @@ import CoreGraphics
 import CryptoKit
 import Foundation
 import ImageIO
+import MaktabaKit
 
 /// The image cache's limits (Epic 48, NFR-4): decoded pictures in memory up to 50 MB and the
 /// fetched files on disk up to 200 MB, each least recently used first out.
@@ -170,7 +171,8 @@ actor ImageCache {
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
+        // a home reached by its LAN address: its certificate checked against its own name (50.15 §3)
+        return URLSession(configuration: config, delegate: PinnedTrust.shared, delegateQueue: nil)
     }()
 
     // MARK: freshness
