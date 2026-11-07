@@ -31,3 +31,10 @@ var ReservedStages []byte
 //
 //go:embed wit/maktaba-plugin.wit
 var WIT []byte
+
+// FirstParty is firstparty.json: Maktaba's own plugins as this release built them (story
+// 54.22 §2, tools/plugins/bundle.py): each manifest, its strings and its compiled
+// statements. Only what is embedded here is ever trusted.
+//
+//go:embed firstparty.json
+var FirstParty []byte
