@@ -1,0 +1,80 @@
+{
+  "_comment": "Story 54.14 T07: canonical JSON, the same bytes in Go, Rust and TypeScript.",
+  "cases": [
+    {
+      "name": "sorted keys, no spaces",
+      "input": "{ \"b\": 1, \"a\": [true, false, null], \"c\": {\"z\": \"x\", \"y\": -2} }",
+      "output": "{\"a\":[true,false,null],\"b\":1,\"c\":{\"y\":-2,\"z\":\"x\"}}"
+    },
+    {
+      "name": "keys by UTF-8 bytes",
+      "input": "{\"é\":1,\"z\":2,\"Z\":3,\"\":4,\"😀\":5}",
+      "output": "{\"Z\":3,\"z\":2,\"é\":1,\"\":4,\"😀\":5}"
+    },
+    {
+      "name": "escapes only what must be",
+      "input": "\"a\\\"b\\\\c\\/d\\u0001\\u001f\\t\\n\\r\\b\\f <>&  é\"",
+      "output": "\"a\\\"b\\\\c/d\\u0001\\u001f\\t\\n\\r\\b\\f <>&  é\""
+    },
+    {
+      "name": "unicode escapes are written as characters",
+      "input": "\"\\u00e9\\u0645\\u0643\"",
+      "output": "\"éمك\""
+    },
+    {
+      "name": "the largest safe integer",
+      "input": "[9007199254740991,-9007199254740991,0]",
+      "output": "[9007199254740991,-9007199254740991,0]"
+    },
+    {
+      "name": "a fraction is refused",
+      "input": "[1.5]",
+      "refused": true
+    },
+    {
+      "name": "an exponent is refused",
+      "input": "[1e3]",
+      "refused": true
+    },
+    {
+      "name": "past the safe range is refused",
+      "input": "[9007199254740992]",
+      "refused": true
+    },
+    {
+      "name": "minus zero is refused",
+      "input": "[-0]",
+      "refused": true
+    },
+    {
+      "name": "a key twice is refused",
+      "input": "{\"a\":1,\"a\":2}",
+      "refused": true
+    },
+    {
+      "name": "a surrogate escape is refused",
+      "input": "\"\\ud83d\\ude00\"",
+      "refused": true
+    },
+    {
+      "name": "a lone surrogate escape is refused",
+      "input": "\"\\ud800\"",
+      "refused": true
+    },
+    {
+      "name": "data after the value is refused",
+      "input": "{\"a\":1} {}",
+      "refused": true
+    },
+    {
+      "name": "a raw control character is refused",
+      "input": "\"a\u0001b\"",
+      "refused": true
+    },
+    {
+      "name": "empty containers",
+      "input": "{\"a\":{},\"b\":[]}",
+      "output": "{\"a\":{},\"b\":[]}"
+    }
+  ]
+}

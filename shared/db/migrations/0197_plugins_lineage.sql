@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0196 - plugins: the lineage a plugin's write leaves on its subject (Epic 54,
+-- Slot 0197 - plugins: the lineage a plugin's write leaves on its subject (Epic 54,
 -- story 54.40 §3).
 --
 --   plugin_write_lineage  for each subject a plugin wrote (a tag, a field, chapters,
@@ -87,7 +87,7 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0195): an admin's keep-off and each plugin's health and breaker,
         -- the home's API and its pipeline alone read and write them
         'plugin_keep_off', 'plugin_health',
-        -- plugins (slot 0196): the lineage a plugin write leaves on its subject, the home's
+        -- plugins (slot 0197): the lineage a plugin write leaves on its subject, the home's
         -- API alone reads and writes it
         'plugin_write_lineage'
     ]::text[]

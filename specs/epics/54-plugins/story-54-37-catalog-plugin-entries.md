@@ -42,7 +42,7 @@ story adds it, once, below 54.07's lifecycle.
 | `requires` | `["plugins.host"]`, plus `llm` for a required `compute.llm` and `search.semantic` for a required `compute.embed` (54.21) |
 | `wants` | the same two for optional ones |
 | `settings` | `["plugins.<id>"]` (54.11) |
-| `placement` | `home` (H12) |
+| `placement` | the manifest's: `home` (the default), `any` or `gpu` (README §4.13, story 54.42) |
 | `platforms` | the manifest's, `any` meaning all four |
 | `bundles` | `[]`: no bundle turns a plugin on |
 | `licence` | empty: a paid plugin is gated by its entitlement (§3), never by a licence flag |

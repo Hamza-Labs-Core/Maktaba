@@ -1,0 +1,75 @@
+# Epic 54 Phase 2: the plugin store (store/), its signer and the home's verifiers on the same
+# vectors (README §13, stories 54.14-54.18). No live Cloudflare, DNS, email or payment call:
+# Miniflare and fakes only, and test keys only (every key is made from a public label).
+#
+#   store  the store's TypeScript (typecheck, the vectors are what the signer makes, the
+#          tests), the shared vectors in Go (shared/plugins/pluginsig), the online key
+#          rotation drill (54.14 T06: the TypeScript signer rotates, the Go verifier checks
+#          that homes accept the new key and refuse the removed one), and the store's
+#          independence from Maktaba Cloud (54.15 T14)
+
+name: Store
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: store/.nvmrc
+          package-manager-cache: false
+
+      # 54.19: each payment provider stays in its own module
+      - name: Payment providers stay in their modules
+        run: python3 tools/ci/payment_provider_allowlist.py
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: shared/plugins/go.mod
+          cache: false
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: shared/plugins
+
+      - name: Install
+        working-directory: store
+        run: npm ci --no-audit --no-fund
+
+      # 54.14 T05, T07, T08 (ts); 54.15 T14
+      - name: The store's tests (vectors current, typecheck, vitest)
+        working-directory: store
+        run: |
+          npm run vectors:check
+          npm run typecheck
+          npm test
+
+      # 54.14 T01-T05, T07, T08 (go) on the same vectors
+      - name: The home's verifier on the vectors
+        working-directory: shared/plugins
+        run: go test ./pluginsig/...
+
+      # 54.14 T06: the online key rotation drill, test keys only
+      - name: Online key rotation drill
+        run: |
+          drill="$RUNNER_TEMP/store-drill"
+          (cd store && npx tsx scripts/drill-rotation.ts "$drill")
+          (cd shared/plugins && MAKTABA_STORE_DRILL="$drill" go test -run TestRotationDrill -v ./pluginsig/)
+
+      # 54.15 T14, also as a plain grep so a file the test skips is caught too
+      - name: Nothing in store/ reaches Maktaba Cloud
+        run: |
+          if grep -rnE "from ['\"][^'\"]*/cloud/|api\.maktaba\.tv" store --include='*.ts' --include='*.tsx' --include='*.toml' --include='*.json' --exclude-dir=node_modules --exclude-dir=test; then
+            echo "::error::store/ must not import cloud/ or call api.maktaba.tv (story 54.15 §1)"
+            exit 1
+          fi
