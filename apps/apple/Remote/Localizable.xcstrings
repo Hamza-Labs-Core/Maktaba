@@ -569,6 +569,16 @@
         }
       }
     },
+    "CPUs" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المعالجات"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "localizations" : {
         "ar" : {
@@ -715,6 +725,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يختلف عن نص القرآن"
+          }
+        }
+      }
+    },
+    "Disk free (data folder)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المساحة الحرة على القرص (مجلد البيانات)"
           }
         }
       }
@@ -1159,6 +1179,16 @@
         }
       }
     },
+    "Load average (1 min)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوسط الحِمل (دقيقة)"
+          }
+        }
+      }
+    },
     "Log files" : {
       "localizations" : {
         "ar" : {
@@ -1275,6 +1305,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تعليم كمرئي"
+          }
+        }
+      }
+    },
+    "Memory" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الذاكرة"
+          }
+        }
+      }
+    },
+    "Memory free" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الذاكرة المتاحة"
           }
         }
       }

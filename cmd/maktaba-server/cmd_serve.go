@@ -544,7 +544,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	packsRoutes.token = token
 	admin = packsRoutes.adminHandler(admin)
 	admin = logFilesAdmin(admin, token, logDirs)
-	admin = metricsAdmin(admin, logDirs.Updates, packsRoutes.metrics)
+	admin = metricsAdmin(admin, logDirs.Updates, packsRoutes.metrics, newHostMetrics(cfg.Server.DataDir))
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}

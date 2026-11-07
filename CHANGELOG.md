@@ -1882,6 +1882,14 @@ build fails when the two differ.
   error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
   each runbook's Check step links to a saved search.
 
+- **Cloudflare deploys from CI only (Epic 50, story 50.34).** The cloud's Cloudflare
+  configuration (the zone's rules, the Tunnel's ingress, the two web Workers) has its own
+  workflows. Pull requests only check the files offline. A push to `main` deploys, after a
+  token check that names any missing permission before anything is written, and a smoke check
+  of the live hosts follows. Each job skips with a notice until its secrets are set. A weekly job
+  proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
+  each piece's token permissions.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -2020,6 +2028,14 @@ build fails when the two differ.
   the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
   of it. Every line is still in the log segments, the Logs page and the recovery console.
   `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
+
+- **The cloud rehearsal proves direct remote access end to end (Epic 50 story 50.15, T06,
+  T10, T12).** Its `direct-remote` scenario puts two homes behind a router that maps ports,
+  with the cloud's relay, worker and name server and two certificate authorities on the other
+  side. Each home gets its certificate through the cloud, the second from the overflow
+  authority once the week's budget is used, and passes the outside check, and an app outside
+  downloads from each home directly, never through the relay. The cloud's name server now
+  starts: its role was refused as unknown.
 
 - **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
   Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request
@@ -2516,6 +2532,11 @@ build fails when the two differ.
 - **The Overview dashboard shows the API's requests per minute and its p95 response time (Epic 53
   story 53.12).** The response-time histogram is kept as two lines over all routes at once: the
   requests in each minute, and the time 95 % of them were answered within.
+
+- **The Overview dashboard shows each machine's memory, disk and load (Epic 53 story 53.12).** The
+  supervisor now reports its machine's memory and how much is free, the free space on the disk
+  that holds the data folder, the one-minute load average and the number of CPUs. A reading the
+  system doesn't give (Windows keeps no load average) is left out rather than shown as 0.
 
 - **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
   refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't

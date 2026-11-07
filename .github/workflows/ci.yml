@@ -98,6 +98,7 @@ jobs:
       desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
       plugins: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.plugins == 'true' }}
       store: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.store == 'true' }}
+      cloudflare: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cloudflare == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
       log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
@@ -261,6 +262,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.store == 'true'
     uses: ./.github/workflows/_store.yml
+
+  cloudflare:
+    # Epic 50 (50.30, 50.31, 50.34): the cloud's Cloudflare files and tools, checked offline;
+    # no secret and no call to Cloudflare (see _cloudflare.yml)
+    needs: [changes]
+    if: needs.changes.outputs.cloudflare == 'true'
+    uses: ./.github/workflows/_cloudflare.yml
 
   e2e:
     needs: [changes, integration]
@@ -558,6 +566,7 @@ jobs:
       - components
       - plugins
       - store
+      - cloudflare
       - e2e
       - media-e2e
       - perf-ci

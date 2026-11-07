@@ -96,6 +96,9 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         // story 53.12: the API's p95, kept from its latency histogram, has its words
         let p95 = element("dash.panel.http_request_duration_seconds_p95")
         XCTAssertTrue(p95.waitForExistence(timeout: 5) && p95.label.contains("API response time, p95"), "the API's p95: \(p95.label)")
+        // and the machine's disk (story 53.12's host metrics)
+        let disk = element("dash.panel.maktaba_host_disk_free_bytes")
+        XCTAssertTrue(disk.waitForExistence(timeout: 5) && disk.label.contains("Disk free"), "the disk free: \(disk.label)")
         shot("dashboards")
         back()
 
@@ -160,6 +163,7 @@ final class RemoteDiagnosticsUITests: XCTestCase {
           \(series("maktaba_component_up", "id=core.api", 1, 0)),
           \(series("maktaba_component_up", "id=streaming", 1, 0)),
           \(series("http_request_duration_seconds_p95", "", 0.12, 0.01)),
+          \(series("maktaba_host_disk_free_bytes", "machine=home", 200_000_000_000, 1_000_000_000)),
           \(series("maktaba_errors_per_hour", "component=streaming", 1, 1)),
           \(series("process_resident_memory_bytes", "", 180_000_000, 4_000_000))]}
         """)

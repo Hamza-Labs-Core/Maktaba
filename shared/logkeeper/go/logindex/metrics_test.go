@@ -294,3 +294,37 @@ func TestScrapeTwoTargetsFirstKeepsASeries(t *testing.T) {
 		t.Errorf("streaming's series: %v, want 3", v)
 	}
 }
+
+// Story 53.12: the Overview keeps each machine's memory, disk free and load, which the
+// supervisor's /metrics writes and the API's merges in.
+func TestOverviewKeepsTheHosts(t *testing.T) {
+	root, now := t.TempDir(), t0
+	ix := open(t, root, &now)
+	ctx := context.Background()
+	text := `maktaba_host_load1{machine="home"} 1.5
+maktaba_host_cpus{machine="home"} 8
+maktaba_host_memory_bytes{machine="home"} 17179869184
+maktaba_host_memory_free_bytes{machine="home"} 4294967296
+maktaba_host_disk_free_bytes{machine="home"} 214748364800
+`
+	for i := 0; i < 2; i++ {
+		now = now.Add(time.Minute)
+		if err := ix.Record(ctx, parseMetrics(strings.NewReader(text)), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	doc, err := ix.Board(ctx, "overview", "1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, s := range doc.Series {
+		got[s.Name] = s.Labels
+	}
+	for _, name := range []string{"maktaba_host_load1", "maktaba_host_cpus", "maktaba_host_memory_bytes",
+		"maktaba_host_memory_free_bytes", "maktaba_host_disk_free_bytes"} {
+		if got[name] != "machine=home" {
+			t.Errorf("%s: %q, want machine=home (overview: %v)", name, got[name], got)
+		}
+	}
+}
