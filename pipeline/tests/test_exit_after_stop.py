@@ -165,3 +165,43 @@ def test_a_thread_ending_as_the_worker_stops_is_not_left_behind(
     assert exits == []
     assert not ending.is_alive()
     assert all(e != "pipeline_exit_threads_left" for e, _ in log.events)
+
+
+def test_a_clean_stop_through_serve_leaves_no_thread_and_never_exits(
+    exits: list[int], monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    # issue #862, end to end: the worker on SQLite stops cleanly with its database's
+    # aiosqlite thread slow to end (a loaded runner); _serve closes the database, waits for
+    # that thread, and returns without os._exit and with no thread of its own left running
+    import time
+
+    import aiosqlite.core
+
+    from maktaba_pipeline.cluster import config as node_config
+
+    real_worker = aiosqlite.core._connection_worker_thread
+
+    def slow_to_end(tx: Any) -> None:
+        real_worker(tx)
+        time.sleep(0.3)
+
+    monkeypatch.setattr(aiosqlite.core, "_connection_worker_thread", slow_to_end)
+    monkeypatch.setenv(node_config.ENV_VAR, str(tmp_path / "node.json"))
+    monkeypatch.setenv("MAKTABA_DATABASE_URL", f"sqlite:///{tmp_path / 'w.db'}")
+    monkeypatch.delenv("MAKTABA_PIPELINE_WORKER_ID", raising=False)
+
+    async def fake_run(_cfg: Any, *, db: Any, dispatch_overrides: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    before = {t for t in threading.enumerate() if not t.daemon}
+    log = _Log()
+    args = cli._build_parser().parse_args(["run"])
+    code = asyncio.run(cli._serve(args, log))
+    assert code == 0
+    assert exits == []
+    assert all(e != "pipeline_exit_threads_left" for e, _ in log.events)
+    left = [
+        t.name for t in threading.enumerate() if not t.daemon and t.is_alive() and t not in before
+    ]
+    assert left == []
