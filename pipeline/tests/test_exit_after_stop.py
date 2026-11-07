@@ -56,6 +56,7 @@ def exits(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     monkeypatch.setattr("maktaba_pipeline.__main__.os._exit", fake_exit)
     monkeypatch.setattr(cli, "_EXIT_WAIT_SEC", 0.2)
     monkeypatch.setattr(cli, "_INDEX_CLOSE_WAIT_SEC", 0.2)
+    monkeypatch.setattr(cli, "_THREAD_END_SEC", 0.2)
     return codes
 
 
@@ -146,3 +147,50 @@ def test_the_exit_never_cuts_a_write(monkeypatch: pytest.MonkeyPatch, exits: lis
         hold.set()
         t.join()
     assert exits == [] and log.events[-1][0] == "search_index_write_still_running"
+
+
+def test_a_thread_ending_as_the_worker_stops_is_not_left_behind(
+    exits: list[int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # issue #862: a closed connection's thread ends a moment after its close returned; the
+    # count gives the threads that are ending their grace, and the exit is the normal one
+    before = set(cli._lingering_threads())
+    real = cli._lingering_threads
+    monkeypatch.setattr(cli, "_lingering_threads", lambda: [t for t in real() if t not in before])
+    monkeypatch.setattr(cli, "_THREAD_END_SEC", 2.0)
+    ending = threading.Thread(target=threading.Event().wait, args=(0.3,), name="ending")
+    ending.start()
+    log = _Log()
+    asyncio.run(cli._exit_if_threads_linger(0, log))
+    assert exits == []
+    assert not ending.is_alive()
+    assert all(e != "pipeline_exit_threads_left" for e, _ in log.events)
+
+
+def test_a_closed_sqlite_database_leaves_no_thread(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    # aiosqlite's worker thread, slow to end after its close said it stops (a loaded
+    # runner): Database.close waits for it, so the worker's exit never counts it
+    import time
+
+    import aiosqlite.core
+
+    from maktaba_pipeline.runtime import Database
+
+    real = aiosqlite.core._connection_worker_thread
+
+    def slow_to_end(tx: Any) -> None:
+        real(tx)
+        time.sleep(0.3)
+
+    monkeypatch.setattr(aiosqlite.core, "_connection_worker_thread", slow_to_end)
+
+    async def go() -> threading.Thread:
+        db = await Database.connect(f"sqlite:///{tmp_path / 'w.db'}")
+        thread: threading.Thread = db._conn._thread
+        await db.close()
+        return thread
+
+    thread = asyncio.run(go())
+    assert not thread.is_alive()
