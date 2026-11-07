@@ -170,9 +170,13 @@ targets:
   Maktaba Player Mac Tests:
     type: bundle.unit-test
     platform: macOS
+    # PageSnapshots (issue #876): the pages drawn from MockHome's fixtures, compared with
+    # PlayerMacTests/Snapshots/*.png, which become this bundle's resources
     sources:
       - path: PlayerMacTests
         excludes: ["UI/**"]
+      - path: UITests/MockHome.swift
+      - path: UITests/Fixtures
     dependencies:
       - target: Maktaba Player Mac
       - package: MaktabaKit
