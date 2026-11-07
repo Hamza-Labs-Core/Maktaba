@@ -215,3 +215,22 @@ def test_placement_decides_where_the_stages_run(
     graph = build_full_graph([PluginExtension(doc["id"], doc["version"], "/data/plugins/x", doc)])
     st = {s.name: s for s in graph}[pm.queue_name(doc["id"], "find_silences")]
     assert (st.placement, st.pool) == (placement, pool)
+
+
+@pytest.mark.parametrize("runs_on", [None, "any", "gpu"])
+def test_every_plugin_has_one_migrate_stage_on_the_home(runs_on: str | None) -> None:
+    """54.07 §5 step 4 (#712): p_<hash>__migrate, a catalog stage only the home claims (it
+    records the data's version), whatever the plugin's placement; its job always runs."""
+    doc = pm.validate(FULL.read_bytes(), _files)
+    if runs_on:
+        doc["placement"] = runs_on
+    e = PluginExtension(doc["id"], doc["version"], "/data/plugins/x", doc, data_version=1)
+    by = {s.name: s for s in build_full_graph([e])}
+    mig = by[pm.queue_name(doc["id"], "_migrate")]
+    assert mig.name == e.migrate_stage and mig.name.endswith("__migrate")
+    assert mig.subject_kinds == ("catalog",) and mig.placement == "home"
+    assert mig.extension == f"plugin:{doc['id']}" and not mig.entry_for and not mig.edges
+    assert e.migrate_stage in e.manifest.stages
+    assert e.impls()[e.migrate_stage].input_fingerprint is None
+    assert e.migrating == (e.target_data_version > 1)
+    assert not PluginExtension(doc["id"], doc["version"], "/x", doc).migrating

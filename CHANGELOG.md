@@ -1908,6 +1908,15 @@ build fails when the two differ.
   proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
   each piece's token permissions.
 
+- **A plugin's data migrates before its new version runs (Epic 54, story 54.07 §5).** When
+  an update raises a plugin's `data_version`, its other stages wait while one migrate job
+  runs on the home first: the plugin's `run` gets the stage `__migrate` with `{"from", "to"}`
+  when its manifest says `migrate = true`, and nothing runs when it does not. The new
+  `plugin_installs.data_version` keeps the data's own version until then (migration 0209),
+  and a rollback before the migration ran no longer needs the plugin's data cleared.
+  maktaba.dev: Queue stages and the plugin API, *Migrating your data*; the manifest's
+  `migrate` field.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
