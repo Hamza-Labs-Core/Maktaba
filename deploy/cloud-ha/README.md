@@ -50,7 +50,9 @@ guard, the switchover's checks).
    4 GB; backups on), and the witness **W**, a CPX22, in HEL1.
 4. One Floating IPv4 in eu-central, assigned to A.
 5. A Hetzner Cloud Firewall on all three: public 22 from the owner's and the deploy runner's
-   addresses, 80 and 443 on A and B; everything else from the private network.
+   addresses, 80 and 443 on A and B, 53/udp and 53/tcp on A and B once the direct-name
+   domains exist (the dns role, story 50.15; `DIRECT_DNS=yes`); everything else from the
+   private network.
 6. A project API token (read/write) in `/etc/maktaba/hcloud-token` on A and B (0600) and as
    the GitHub `production` secret `HCLOUD_TOKEN`.
 7. The Cloudflare DNS-edit token (Zone → DNS → Edit on `maktaba.tv` only) in

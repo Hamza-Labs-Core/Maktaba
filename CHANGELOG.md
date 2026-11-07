@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
+  runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
+  and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
+  standby's name server, then the leader's, and puts the previous release back on a node whose
+  name server doesn't stay up.
 - **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
   `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
   enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
