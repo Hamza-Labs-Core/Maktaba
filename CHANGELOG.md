@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **The rest of classify runs as Maktaba's own plugin (Epic 54 story 54.31).** Placing episodes,
+  tagging topics, the language model's checks of series and clips, the book lookup and the
+  review pages now run in `tv.maktaba.classify`, with the same results. The model's questions go
+  through the plugin API to the same model server the settings name, and the book lookup is the
+  only classify stage that may reach the network (the encyclopedia). Find metadata stays where
+  it was for now. An admin can switch any of these stages back to the worker under **Queues**.
 - **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
   Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
   home's secure LAN names from the browser, and when none answers it explains that the router

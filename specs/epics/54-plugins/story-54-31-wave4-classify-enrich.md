@@ -81,6 +81,27 @@ statements between them, several reading whole libraries), so they use streamed 
 - **An enrichment provider changes its host**: the host list is in the manifest; the change is a
   reviewed manifest edit in a release, which the CI proxy then allows.
 
+## As built
+
+- **Six of the seven stages moved.** `detect`, `tag`, `check_tags`, `check_clips`, `books` and
+  `review_pages` run in `tv.maktaba.classify`. Roles are in migration `0210_fp_roles`.
+- **`enrich` stays in the worker.** It reads whatever page a web search result links to (any
+  public host, `enrich/web.py` `read_page`), so no declared host list can cover it. Its search
+  keys are sealed in `home_secrets`, which the plugin API does not serve. Moving it needs a
+  secrets route for first-party plugins and a rule for the page reads. That is an owner
+  decision, and `tv.maktaba.enrich` is not made until then.
+- **`books` asks no model.** It reaches the encyclopedia only (`net = ["ar.wikipedia.org"]`).
+  It sets its own `runner = "net"`. The runner grants the network to the `net` group only, so
+  classify's `light` stages still get no socket. A stage running outside its plugin's own group
+  brings only the network there (no files, tools or GPU). The wiki address is a setting
+  (`rules.books.wiki_api`): pointing it at another host is a manifest change in a release.
+- **T03 runs in the parity test.** The encyclopedia's recorded answer fails the test on any
+  host outside the manifest's `net`. The model's questions are compared request by request
+  between the two sides.
+- **`compute.generate`** takes `messages`, `format` and `options` from a first-party token whose
+  stage names `model_rules`, and forwards them to `rules.<section>`'s server and model. A
+  third-party plugin that sends them gets `400`.
+
 ## Build plan
 
 ### Files to touch

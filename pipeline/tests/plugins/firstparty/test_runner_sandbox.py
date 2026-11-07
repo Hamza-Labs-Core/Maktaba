@@ -12,6 +12,7 @@ import sys
 import tempfile
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -476,7 +477,7 @@ def test_a_stage_outside_its_plugins_group_brings_only_the_network() -> None:
     runner keeps those and gets no socket."""
     from maktaba_plugin_runner.sandbox import policy_for
 
-    classify = {
+    classify: dict[str, object] = {
         "runner": "light",
         "net": ["ar.wikipedia.org"],
         "files": {"read": ["data.thumbnails"], "write": ["data.review"]},
@@ -484,11 +485,21 @@ def test_a_stage_outside_its_plugins_group_brings_only_the_network() -> None:
         "gpu": "optional",
     }
     areas = {"data.thumbnails": "/data/thumbnails", "data.review": "/data/reviews"}
-    kw = {"areas": areas, "api_socket": "/run/api.sock", "run_dir": "/run"}
-    net = policy_for([classify], own_socket="/run/runner-net.sock", group="net", **kw)
+
+    def policy(group: str) -> Any:
+        return policy_for(
+            [classify],
+            areas=areas,
+            api_socket="/run/api.sock",
+            own_socket=f"/run/runner-{group}.sock",
+            run_dir="/run",
+            group=group,
+        )
+
+    net = policy("net")
     assert net.net
     assert (net.read, net.write, net.write_named, net.exec, net.gpu) == ([], [], [], [], False)
-    light = policy_for([classify], own_socket="/run/runner-light.sock", group="light", **kw)
+    light = policy("light")
     assert not light.net
     assert light.read == ["/data/thumbnails"] and light.write == ["/data/reviews"]
     assert light.gpu

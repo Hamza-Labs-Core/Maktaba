@@ -706,8 +706,8 @@ async def parity(
         # one runner per group the stages run in (classify's books is in net, story 54.31;
         # its other stages in light); ``group`` for a stage with none
         by_group: dict[str, dict[str, str]] = {}
-        for s, entry in served.items():
-            by_group.setdefault(firstparty.runner_group(s) or group, {})[s] = entry
+        for name, entry in served.items():
+            by_group.setdefault(firstparty.runner_group(name) or group, {})[name] = entry
         socks = []
         for g, members in sorted(by_group.items()):
             runner = Runner(
