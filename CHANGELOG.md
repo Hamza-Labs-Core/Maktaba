@@ -109,6 +109,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
+  June it exited at start and none of its jobs ever ran: expired-token cleanup, account
+  deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
+  certificates. It now listens once, and a test runs the worker in its own process and checks
+  it answers, stays up and stops cleanly. The cloud is not live yet, so no account was affected.
+
 - **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
   before the database's own thread had ended, so the worker sometimes counted that thread as
   still running and left without the normal shutdown. The close now waits for the thread to
@@ -342,12 +348,10 @@ build fails when the two differ.
 
 ### Added
 
-- **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
-  a **Purchases** section: each plugin bought with the account, the home it is on, and
-  **Move** to another home linked to the same account, after confirming it's you. A purchase
-  can move twice in any 365 days. The new home gets the plugin at its next daily check (or with
-  **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
-  queue and data.
+- **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
+  the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
+  homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
+  run no script, in English and Arabic.
 - **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
   (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
   Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
@@ -1833,6 +1837,22 @@ build fails when the two differ.
   when a version that supports the release is installed; the update itself goes ahead.
   maktaba.dev: Installing a plugin, *When Maktaba itself updates*.
 
+- **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
+  `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
+  accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
+  builds with jco, every optional feature off. Each is built against a plugin world cut to the
+  interfaces its manifest's capabilities cover, so a call it did not declare does not build;
+  `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
+  up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
+  maktaba.dev: Testing and packaging, *Python and JavaScript*.
+
+- **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
+  a **Purchases** section: each plugin bought with the account, the home it is on, and
+  **Move** to another home linked to the same account, after confirming it's you. A purchase
+  can move twice in any 365 days. The new home gets the plugin at its next daily check (or with
+  **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
+  queue and data.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -2391,6 +2411,16 @@ build fails when the two differ.
   the runner's sandbox named the first and was refused the second, so the runner exited
   about 10 s after it started and its stages ran in the worker. The sandbox now names the
   sockets and the run folder by their real paths.
+
+- **A plugin's first job after an update no longer times out while its package compiles
+  (Epic 54, story 54.02).** A job's time limit used to start before the host compiled a
+  package it had not loaded and before the job waited for a free slot, so a large plugin (a
+  Python one: about 15 s to compile on a slow machine) could time out before its code ran.
+  Now the limit counts only the plugin's own work. Compiling has a limit of its own (3
+  minutes per package; a package that goes over is refused with
+  `plugin_compile_timeout`), and the host compiles every installed plugin in the background
+  when it starts, so an update that changes the plugin engine recompiles each one before its
+  first job. maktaba.dev: Testing and packaging.
 
 ## [0.2.0] - 2026-10-19
 

@@ -16,19 +16,25 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
+// workerControlAddr is the worker's control port, for the LB health checks. A var only so the
+// child-process test can run the worker on a free port.
+var workerControlAddr = "127.0.0.1:9090"
+
 // runWorker is the background-job role. Workers do not serve user
-// traffic — they only host the control port at 127.0.0.1:9090 for the
+// traffic — they only host the control port (workerControlAddr) for the
 // LB health checks, and run periodic tasks (bandwidth roll-ups,
 // expired-token cleanup, account-deletion purges).
+//
+// server.Run is the only listener: a second ListenAndServe on the same
+// address made the worker exit 1 at start (c15649f76 until this fix), so
+// none of its jobs ever ran.
 func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migrator, _ server.BuildInfo) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","role":"worker"}`))
 	})
-	srv := &http.Server{Addr: "127.0.0.1:9090", Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
-	go func() { _ = srv.ListenAndServe() }()
-	defer func() { _ = srv.Shutdown(context.Background()) }()
+	srv := &http.Server{Addr: workerControlAddr, Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

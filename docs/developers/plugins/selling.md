@@ -83,6 +83,11 @@ You get a statement each month, in English and Arabic.
 The store's buy pages run no script. The home sends only the plugin, the language and its
 signature.
 
+**Buying on plugins.maktaba.tv.** Your plugin's page on the store's website has **Buy** too.
+The buyer signs in, chooses which of the account's linked homes it is for, and continues on
+the same buy page as above (steps 4 and 5). With no linked home, the page says to link one
+first from Settings → Plugins → Store account in Maktaba.
+
 ## Moving a purchase to another home
 
 A purchase belongs to the buyer's store account, and it is used on one home at a time. On the

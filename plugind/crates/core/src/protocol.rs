@@ -176,8 +176,15 @@ pub struct RunResult {
     pub fuel_used: u64,
     #[serde(default)]
     pub peak_memory: u64,
+    /// the job's own time, from its store: what its time limit counts
     #[serde(default)]
     pub wall_ms: u64,
+    /// the time this run spent compiling its package first (0 when it was loaded or cached)
+    #[serde(default)]
+    pub compile_ms: u64,
+    /// the time it waited for the host's and the plugin's job slots
+    #[serde(default)]
+    pub wait_ms: u64,
     /// plugin_trap, plugin_timeout, plugin_memory, plugin_capability, plugin_scope,
     /// plugin_quota, plugin_failed, cancelled, plugin_load (and limits_clamped as a note)
     #[serde(default)]
