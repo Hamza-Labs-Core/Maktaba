@@ -895,6 +895,10 @@ export const APPS = [
                 "يحتفظ بسجلات كل جزء المدة التي يختارها المدير، ويجمع الأخطاء المتكررة، وتعرضها صفحات **السجلات** و**الأخطاء** و**لوحات المتابعة** في تطبيق الويب."
               ),
               t(
+                "**Report a problem…** in the tray and the **Help** menu opens the web app's form. If the app itself crashes, the crash is kept on this computer, scrubbed, and the web app in its window sends it to the home only when crash reports are on there (**Settings → Privacy**).",
+                "يفتح **الإبلاغ عن مشكلة…** في منطقة الإشعارات وقائمة **المساعدة** نموذجَ تطبيق الويب. وإذا توقف التطبيق نفسه فجأة، يُحفظ العطل على هذا الحاسوب منقّحًا، ولا يرسله تطبيق الويب في نافذته إلى الجهاز الرئيسي إلا حين تكون تقارير الأعطال مشغّلة هناك (**الإعدادات ← الخصوصية**)."
+              ),
+              t(
                 "Can run with no outbound call at all: `maktaba-server serve --offline` (or `MAKTABA_OFFLINE=1`) turns off the update check, pack and model downloads, usage data and the link to Maktaba Cloud at once.",
                 "ويمكن تشغيله دون أي اتصال صادر: يوقف الأمر `maktaba-server serve --offline` (أو `MAKTABA_OFFLINE=1`) التحقق من التحديثات وتنزيل الحزم والنماذج وبيانات الاستخدام والربط بسحابة مكتبة دفعةً واحدة."
               ),
