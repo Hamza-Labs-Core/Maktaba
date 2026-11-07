@@ -38,13 +38,14 @@ func (s sumLooker) Look(ctx context.Context) (loadtest.Machine, error) {
 // load-small (story 50.14 §3, T04): 1,000 homes holding their tunnels and 50 players at
 // 5 Mbit/s for 5 minutes through the one-node cluster. CI can't measure a Hetzner machine, so
 // this measures what regresses: the relay's CPU-seconds per Mbit relayed and its memory per
-// tunnel, written as load-small-baseline.json; the workflow compares it with main's last
-// (maktaba-loadtest compare) and fails at 20 % worse.
+// tunnel, written as load-small-baseline.json. The workflow runs it twice on one runner, with
+// the base commit's relay and with this commit's, compares the two (maktaba-loadtest compare)
+// and fails at 20 % worse: a figure from another run is another machine (#832).
 //
 // The CPU is the relay containers' own CPU time (their cgroups' counters, read at each round's
 // ends), per Mbit relayed in that round, over REHEARSAL_LOAD_ROUNDS rounds; the median is the
 // figure. A single figure integrated from docker stats' instants swung 1.8 times between runs
-// of the same code on a runner shared with the cluster (#808).
+// of the same code on one runner shared with the cluster (#808).
 func loadSmall(t *testing.T, c *cluster) Result {
 	n := envInt("REHEARSAL_HOMES", 1000)
 	players := envInt("REHEARSAL_STREAMS", 50)

@@ -279,6 +279,12 @@ build fails when the two differ.
   for one refresh. The tray now reads the record again for a moment before it treats it as
   gone.
 
+- **Maktaba's built-in plugins run in their runners again (Epic 54, story 54.23).** Since
+  0.3.93 every first-party runner (light, fp, ml, index) exited about 0.2 s after it
+  started, on a circular import, and was marked failed after five restarts; the worker ran
+  the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
+  runner. The runners start again, and a test imports each entry point in a fresh process.
+
 ### Security
 
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
@@ -1133,6 +1139,21 @@ build fails when the two differ.
   that cannot be fetched, does not verify, has expired or is older than the committed copy
   stops the release. Until the plugin root keys exist it embeds nothing.
 
+- **The plugin store browser, listing pages, ratings and reports (Epic 54, story 54.18).**
+  Settings → Plugins → Browse the store shows the catalog this home keeps, only the versions
+  this server's version, plugin API and platform can run (a switch shows those that need a
+  newer Maktaba), searched in English and Arabic with letter forms and diacritics folded, by
+  category, sorted by rating, installs or newest. A plugin's page shows its words, what it can
+  do in Maktaba's own words, its review level, the rating (shown from 5 ratings), its versions
+  and Install. A store account linked to a home that has had the plugin for 24 hours can rate
+  it once (1 to 5 stars, optional text, editable); the developer can reply once; a review can
+  be reported and hidden by the store's reviewers. Anyone can report a plugin; malware and
+  data misuse reports alert the store admins and lead the moderation queue, and the reporter
+  hears the outcome. plugins.maktaba.tv lists every plugin and has a page per plugin, in
+  English and Arabic (right to left), rendered on the server from the signed catalog, with
+  Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
+  review is plain text.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -1686,6 +1707,15 @@ build fails when the two differ.
   Resume and Stop server work from the tray, or from the window's Server menu where the desktop
   shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
   app's dialogs follow the session's language (English or Arabic).
+
+- **Plugins from the command line, developer mode and `mkp run` (Epic 54, stories 54.10 §4,
+  §5 and 54.12).** `maktaba-server plugins list|show|install|update|enable|disable|start|stop|
+  rollback|remove|grants|policy` does what Settings → Plugins does, for a home without a
+  browser, with the components CLI's `--yes`, `--json`, `--dsn` and exit codes.
+  `maktaba-server plugins dev <folder>` installs a plugin folder as Development and reloads it
+  on every save (removed when it stops, unless `--keep`). `mkp run <folder> --home
+  http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
+  developer's machine. maktaba.dev: Testing and packaging.
 
 ### Changed
 

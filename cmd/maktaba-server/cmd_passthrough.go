@@ -53,6 +53,24 @@ func newComponentsCmd() *cobra.Command {
 	}
 }
 
+// newPluginsCmd is `maktaba-server plugins …` (Epic 54, story 54.10 §5): the plugins' admin
+// routes for a headless home, with the components CLI's flags and exit codes, so the
+// child's code is this process's too.
+func newPluginsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:                "plugins",
+		Short:              "List, install, update, turn on or off, roll back or remove plugins; developer mode (delegates to maktaba-api)",
+		DisableFlagParsing: true,
+		RunE: func(_ *cobra.Command, args []string) error {
+			err := runAPISub("plugins", args)
+			if code, ok := childExitCode(err); ok {
+				os.Exit(code)
+			}
+			return err
+		},
+	}
+}
+
 // childExitCode is the exit code of a child that ran and failed.
 func childExitCode(err error) (int, bool) {
 	var ee *exec.ExitError

@@ -24,6 +24,7 @@ package plugins
 //	GET    /api/plugins/trust                the signed lists' state (withdrawn plugins checked when)
 //	POST   /api/plugins/install (JSON)       {store: {id, version}}: install from the store
 //	PUT    /api/plugins/{id}/auto-update     {on}
+//	POST   /api/plugins/{id}/rate, /report   to the store, signed (report.go, 54.18)
 //
 // Every one is admin-only: no sign-in 401; a viewer, a cloud-linked play sign-in (its
 // scope clears IsAdmin) and a token without the admin scope 403. Switches go through the
@@ -87,6 +88,8 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Get("/api/plugins/catalog", h.catalogView)
 		r.Get("/api/plugins/trust", h.trust)
 		r.Put("/api/plugins/{id}/auto-update", h.autoUpdate)
+		r.Post("/api/plugins/{id}/rate", h.rate)
+		r.Post("/api/plugins/{id}/report", h.reportPlugin)
 		r.Get("/api/plugins/store-account", h.storeStatus)
 		r.Post("/api/plugins/store-account/link", h.storeLink)
 		r.Post("/api/plugins/store-account/poll", h.storePoll)
@@ -364,6 +367,12 @@ func (h *Admin) installForm(w http.ResponseWriter, r *http.Request, expect strin
 			req.Enable, _ = strconv.ParseBool(v)
 		case "confirm_name":
 			req.ConfirmName = v
+		case "development":
+			// `mkp run --home` (story 54.12): marked Development, an unreviewed level, so
+			// the home's Allow unreviewed plugins gates it as any unreviewed file
+			if dev, _ := strconv.ParseBool(v); dev {
+				req.ReviewLevel = "development"
+			}
 		}
 		_ = part.Close()
 	}
