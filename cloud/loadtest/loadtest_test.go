@@ -108,3 +108,39 @@ func TestReadingTheMachine(t *testing.T) {
 		t.Fatalf("cpu seconds %v, peak %v", mt.CPUSeconds(), mt.PeakMem())
 	}
 }
+
+// #808: the gate reads the relay's own CPU time from its cgroup and takes the median of rounds.
+func TestTheCgroupCPUAndTheMedian(t *testing.T) {
+	s, err := ParseCPUStat("usage_usec 12500000\nuser_usec 10000000\nsystem_usec 2500000\nnr_periods 0\n")
+	if err != nil || s != 12.5 {
+		t.Fatalf("%v %v", s, err)
+	}
+	if _, err := ParseCPUStat("user_usec 1\n"); err == nil {
+		t.Fatal("no usage_usec read as 0")
+	}
+	if m := Median([]float64{9, 1, 5}); m != 5 {
+		t.Fatalf("odd: %v", m)
+	}
+	if m := Median([]float64{4, 1, 3, 2}); m != 2.5 {
+		t.Fatalf("even: %v", m)
+	}
+	if Median(nil) != 0 {
+		t.Fatal("none")
+	}
+}
+
+// A baseline measured another way is not compared for CPU, but still for memory; the same
+// method is compared.
+func TestOnlyTheSameMethodIsCompared(t *testing.T) {
+	old := Baseline{CPUSecondsPerMbit: 0.0004, MemBytesPerTunnel: 50_000}
+	ok, rep := Compare(old, Baseline{Method: Method, CPUSecondsPerMbit: 0.0009, MemBytesPerTunnel: 50_000}, Regressed)
+	if !ok || !strings.Contains(rep, "not compared") {
+		t.Fatalf("an older method's CPU compared:\n%s", rep)
+	}
+	if ok, _ := Compare(old, Baseline{Method: Method, CPUSecondsPerMbit: 0.0009, MemBytesPerTunnel: 70_000}, Regressed); ok {
+		t.Fatal("memory 40% worse passed across methods")
+	}
+	if ok, _ := Compare(Baseline{Method: Method, CPUSecondsPerMbit: 0.0004}, Baseline{Method: Method, CPUSecondsPerMbit: 0.0009}, Regressed); ok {
+		t.Fatal("the same method, 125% worse, passed")
+	}
+}

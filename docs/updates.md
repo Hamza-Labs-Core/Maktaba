@@ -523,6 +523,13 @@ tag whose message is its name. A commit is not tagged when:
 - its change since the highest tag is only the Claude trail (`docs/claude-trail.md`,
   `docs/trail/**`: a push of only those starts neither workflow, so it is never tagged).
 
+The tag's release run (`release.yml`) also embeds the plugin store's current lists (Epic 54,
+#755): its `plugin-lists` job fetches `store-keys.json` and `revoked.json` from
+`plugins-cdn.maktaba.tv`, verifies them with the committed plugin root, and every build of
+that release embeds the same two files. Once the root lists keys, an unreachable store or a
+list that does not verify, has expired or is older than the committed copy fails the release
+(re-run it once the store is back); while the root lists none, it embeds nothing and says so.
+
 A merge that got no run of its own (main's runs replace a pending one) is released with the
 next green commit's tag. A CI run that failed only on the flaky iPhone/iPad shards is not green
 here, though the tag guard would let it through: the next green commit is tagged instead, or a

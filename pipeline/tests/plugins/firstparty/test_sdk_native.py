@@ -177,7 +177,7 @@ async def test_the_transport_reads_chunked_answers_on_a_kept_alive_connection() 
             await w.drain()
         w.close()
 
-    with tempfile.TemporaryDirectory(dir="/tmp") as d:
+    with tempfile.TemporaryDirectory() as d:
         sock = str(Path(d) / "api.sock")
         server = await asyncio.start_unix_server(serve, path=sock)
         async with server:
