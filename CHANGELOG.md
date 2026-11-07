@@ -401,6 +401,13 @@ build fails when the two differ.
   show; on the home's own network the cloud's line never shows; and a status page that can't
   be reached shows nothing. The home's web app and the cloud's editions allow that one address
   in their Content Security Policy.
+- **The apps ride out a Maktaba Cloud outage (Epic 50, story 50.13).** `GET /v1/homes` gives
+  each home's `connections` (direct, then the relay; a plan without the relay lists none) beside
+  the old fields. The web, cloud web, Apple and Android apps keep each account's list on the
+  device and show it, with its time, when the cloud can't be reached (marked old after 30 days,
+  removed at sign-out); a new cloud sign-in that can't reach the cloud goes to the home's own
+  sign-in. A request the relay answers `503 home_reconnecting` is tried again for up to a
+  minute while the status strip says "Reconnecting to your home…".
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

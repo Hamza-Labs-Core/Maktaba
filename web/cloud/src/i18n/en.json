@@ -350,5 +350,9 @@
   "banner.relay.outage": "Remote access is down. We're working on it. Playback at home still works.",
   "banner.api.degraded": "Signing in with Maktaba Cloud is slower than usual.",
   "banner.api.outage": "Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password.",
-  "banner.maintenance": "Planned maintenance on {date}, {start}–{end}. Remote play may pause for a few seconds."
+  "banner.maintenance": "Planned maintenance on {date}, {start}–{end}. Remote play may pause for a few seconds.",
+  "cloud.homes.saved": "Maktaba Cloud can't be reached. Showing your homes from {time}.",
+  "cloud.homes.savedOld": "This list is more than 30 days old. Some addresses may have changed.",
+  "homes.openDirectly": "Open directly",
+  "homes.openRelay": "Open through Maktaba Cloud"
 }

@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
@@ -118,12 +119,35 @@ type homeView struct {
 	// direct address when it reported one (story 25.10: try it first).
 	RelayURL  string `json:"relay_url"`
 	DirectURL string `json:"direct_url,omitempty"`
-	Online    bool   `json:"online"`
+	// Connections is every way to reach the home, in the order apps try them (story 50.13):
+	// local, direct, relay hint, relay. Apps save it and use it while the cloud is down. Until
+	// 50.15 and 50.16 it holds the direct address and the relay; a home whose plan has no relay
+	// lists no relay (50.19). DirectURL and RelayURL stay for apps from before it.
+	Connections []connection `json:"connections"`
+	Online      bool         `json:"online"`
 	// Linked: the home linked this account to one of its users (sign-in
 	// works). Owned: this account holds the home's cloud registration,
 	// which by itself is no account inside the home.
 	Linked bool `json:"linked"`
 	Owned  bool `json:"owned"`
+}
+
+// connection is one way to reach a home: kind is local, direct, relay_hint or relay.
+type connection struct {
+	URL  string `json:"url"`
+	Kind string `json:"kind"`
+}
+
+// connectionsFor is a home's connections in the order apps try them (story 50.13 §2).
+func connectionsFor(directURL, relayURL string, relay bool) []connection {
+	out := []connection{}
+	if directURL != "" {
+		out = append(out, connection{URL: directURL, Kind: "direct"})
+	}
+	if relay && relayURL != "" {
+		out = append(out, connection{URL: relayURL, Kind: "relay"})
+	}
+	return out
 }
 
 // List answers the homes this cloud account reaches.
@@ -151,6 +175,7 @@ func (d *Deps) List(w http.ResponseWriter, r *http.Request) {
 			}
 			v.DirectURL = "http://" + host + ":" + strconv.FormatInt(h.DirectPort.Int64, 10)
 		}
+		v.Connections = connectionsFor(v.DirectURL, v.RelayURL, billing.RelayIncluded(h.Plan))
 		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"homes": out})
