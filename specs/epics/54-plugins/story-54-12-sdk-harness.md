@@ -36,7 +36,12 @@ smoke test; best effort. Other languages that make components (C, C#) work but g
   - `mkp keys new|list|export-public` (Ed25519, stored in the OS keychain or a passphrase file);
   - `mkp pack --sign`: writes `files.json`, signs it, makes the `.mkplugin`;
   - `mkp run --home <url>`: installs to a home in developer mode over the admin API (needs the
-    home's admin to have allowed unreviewed plugins);
+    home's admin to have allowed unreviewed plugins); as built, `mkp run <folder> --home
+    http://<home>:<port> --user <admin>` signs in (`MKP_HOME_PASSWORD` or the terminal) and
+    sends the install form with `development=true`, which the route takes as review level
+    `development` (an unreviewed level, the same policy); it speaks HTTP to the home's LAN
+    address (no TLS in `mkp`), and a home reached only over HTTPS takes `maktaba-server
+    plugins dev` on the home; signing is `mkp pack <folder> <out> --key <id>`;
   - `mkp submit` (Phase 2): uploads to the store.
 - **Bindings** generated from `shared/plugins/wit/` for each language, with small helpers:
   typed events, `subject()` helpers, a `Chapters` builder, a VTT writer, `data` as a key–value

@@ -131,7 +131,7 @@ breaks them on purpose:
 | `cert-on-standby` | fresh nodes | each holds its own wildcard certificate before any traffic |
 | `status-feed` | stops every relay process | the status page's `summary.json` says remote access is down within two probe rounds, and working again after two passing ones |
 | `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | runs the one-click recovery workflows' scripts; for the DNS swap, with the Hetzner API down | each does what its runbook says against the real pair: a new leader, the old one fenced, the relay's names on the new leader |
-| `load-small` | 1,000 homes and 50 players at 5 Mbit/s for 5 minutes | the relay's CPU per Mbit (its own CPU time, the median of five rounds) and memory per tunnel no more than 20 % worse than main's |
+| `load-small` | 1,000 homes and 50 players at 5 Mbit/s, with the base commit's relay and then this commit's, on one runner | the relay's CPU per Mbit (its own CPU time, the median of three rounds) and memory per tunnel no more than 20 % worse than the base's |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,
 Cloudflare or Let's Encrypt host is ever contacted: a fake Hetzner API moves the address,

@@ -288,7 +288,7 @@ func readJSON(path string, v any) error {
 
 func compare(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("compare", flag.ExitOnError)
-	basePath := fs.String("baseline", "", "main's last load-small (baseline JSON); missing: this run is the first")
+	basePath := fs.String("baseline", "", "the base commit's load-small on the same runner (baseline JSON)")
 	curPath := fs.String("current", "", "this run's load-small (baseline JSON)")
 	_ = fs.Parse(args)
 	var base, cur loadtest.Baseline
@@ -296,8 +296,8 @@ func compare(args []string, out io.Writer) error {
 		return err
 	}
 	if err := readJSON(*basePath, &base); err != nil {
-		_, werr := fmt.Fprintf(out, "no baseline from main yet (%v): this run becomes it\n", err)
-		return werr
+		// the base runs in the same job: no baseline is a gate that measured nothing
+		return fmt.Errorf("no baseline to compare with: %w", err)
 	}
 	ok, rep := loadtest.Compare(base, cur, loadtest.Regressed)
 	if _, err := fmt.Fprint(out, rep); err != nil {
