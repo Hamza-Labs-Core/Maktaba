@@ -308,7 +308,8 @@ async def parity(
         # A is the in-process side: its graph sync flips first-party stages to their plugin
         # (the flip at update), so they are set back by hand; B runs them as plugins
         await a.execute(
-            "UPDATE job_stages SET impl = 'inproc', impl_changed_at = now(), impl_changed_by = 'parity'"
+            "UPDATE job_stages SET impl = 'inproc', impl_changed_at = now(),"
+            " impl_changed_by = 'parity'"
         )
         for name in stages:
             await b.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = $1", name)
