@@ -52,6 +52,7 @@ import {
   type PlaybackFault,
 } from "../lib/errorKind";
 import { useI18n } from "../lib/i18n";
+import { actionRequestId, withRequestId } from "../lib/requestIds";
 import { attachVod, carrySig } from "@maktaba/tvplayer";
 import { mediaError, reportPlaybackFailure, type PlaybackFailure } from "../lib/playbackReport";
 import { UpNext } from "../components/UpNext";
@@ -66,6 +67,11 @@ interface OpenSessionResponse {
   expires_at: string;
   /** The video's length in the catalogue (absent when unknown). */
   duration_sec?: number;
+  /**
+   * The id of the request that opened the session (this app's, story 53.08): the playlist's
+   * URL carries it as `rid`, so the home's lines for the playback share one id.
+   */
+  rid?: string;
   /**
    * Where in the video the stream starts (absent: its start): a transcode
    * opened at a position. Its times are the video's; before it, nothing plays.
@@ -242,6 +248,8 @@ export function VideoPlayer({
     setPlayError(null);
     faultRef.current = null;
     setSession(null);
+    // the open call's own id (the same action's): its playlist carries it as rid
+    const rid = actionRequestId();
     api
       .post<OpenSessionResponse>("/api/stream/sessions", {
         video_id: videoId,
@@ -269,7 +277,7 @@ export function VideoPlayer({
           return;
         }
         sessionIdRef.current = s.session_id;
-        setSession(s);
+        setSession({ ...s, rid });
       })
       .catch((e) => {
         if (cancelled) return;
@@ -400,6 +408,7 @@ export function VideoPlayer({
     const refresh = (position: number, wasPlaying: boolean) => {
       if (refreshingRef.current) return;
       refreshingRef.current = true;
+      const rid = actionRequestId();
       api
         .post<OpenSessionResponse>("/api/stream/sessions", {
           video_id: videoId,
@@ -419,7 +428,7 @@ export function VideoPlayer({
           }
           sessionIdRef.current = s.session_id;
           resumeRef.current = { at: position, play: wasPlaying };
-          setSession(s);
+          setSession({ ...s, rid });
         })
         .catch((e) => {
           if (!cancelled) setErr(failure(e));
@@ -447,7 +456,7 @@ export function VideoPlayer({
       refresh(position, wasPlaying);
     };
     const expiresAt = Date.parse(session.expires_at);
-    const h = attachVod(el, session.manifest_url, {
+    const h = attachVod(el, withRequestId(session.manifest_url, session.rid), {
       startAt: at,
       onAuthError: refresh,
       onGone: gone,

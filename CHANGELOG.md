@@ -340,6 +340,10 @@ build fails when the two differ.
 
 ### Security
 
+- **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
+  network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
+  a channel listing and a download and fails on one the plugin's reviewed `net` list does not
+  name (story 54.33 T02, issue 805).
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
   field that saved what was typed into the browser's storage in plain text and never used it
   (the server reads `OPENAI_API_KEY`). The field is gone, the page says where the key is set,
@@ -358,6 +362,12 @@ build fails when the two differ.
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
+- **A file job in a plugin's runner moves only its own subject's files (Epic 54 wave 5, story
+  54.32 §2).** The runner's sandbox lets the file plugins write anywhere in the library, so a
+  merge, a conversion or a restore could move a file that is not its own. Now, before such a
+  job starts, the runner reads its subject's files (a duplicate group's members, a video's file
+  and its MP4, the ledger rows a restore names), and refuses any other library file with
+  `plugin_scope`: the job fails, not retried, and the file stays where it is.
 
 ### Added
 
@@ -1271,6 +1281,14 @@ build fails when the two differ.
   can open; a plugin still gets no network, no files and no sockets of its own. maktaba.dev:
   Building Maktaba plugins, Installing and managing plugins, The sandbox.
 
+- **Cloudflare in front of the cloud (Epic 50, story 50.30).** The zone's TLS settings, the WAF
+  managed rules, four custom rules and two rate limits are written in
+  `deploy/cloudflare/zone.maktaba.tv.json`; CI checks the file against its plan and 50.34's
+  workflow applies it. Signing up, signing in and asking for a password reset on the web can ask
+  for a Cloudflare Turnstile check, turned on in the production config; the api verifies the
+  token and answers `turnstile_failed` or `turnstile_unavailable`. The web app explains those
+  and the edge's `rate_limited` in English and Arabic.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2036,6 +2054,13 @@ build fails when the two differ.
   authority once the week's budget is used, and passes the outside check, and an app outside
   downloads from each home directly, never through the relay. The cloud's name server now
   starts: its role was refused as unknown.
+
+- **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
+  queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
+  admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
+  Apple, Android and Android TV) carries the id of the call that opened the session (`rid`), and streaming logs it on a failed
+  playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
+  lines for the same action. Streaming's failure lines also carried no request id until now.
 
 - **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
   Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request

@@ -216,7 +216,9 @@ class ApiClient(
             if (audioTrack != null && audioTrack >= 0) put("audio_track", audioTrack)
             if (format != null) put("format", format)
         }
-        return decode(send(request("POST", "/api/stream/sessions", body = body)))
+        val r = request("POST", "/api/stream/sessions", body = body)
+        // the playlist carries the open call's id (Epic 53 story 53.08)
+        return decode<StreamSession>(send(r)).copy(requestId = r.header(RequestId.HEADER))
     }
 
     suspend fun closeStream(session: String) {

@@ -161,6 +161,31 @@ func TestSearch(t *testing.T) {
 	}
 }
 
+// Epic 53 story 53.08: a pipeline job's lines carry origin_request_id, the request that queued
+// it; searching that request's id finds them after the API's own line. A line's own request_id
+// wins over its origin.
+func TestSearchFindsAJobByTheRequestThatQueuedIt(t *testing.T) {
+	root, now := t.TempDir(), t0
+	k := keeperAt(t, root, &now)
+	const rid = "01932f6e-7c1a-7b2e-9a51-2f5c3d4e5f60"
+	write(t, k, "api", "", `{"level":"info","msg":"http_request","ts":"2026-11-06T10:00:00Z","request_id":"`+rid+`","path":"/api/libraries/x/scan"}`)
+	write(t, k, "pipeline", "",
+		`{"level":"info","msg":"scan_started","ts":"2026-11-06T10:00:01Z","job_id":"42","origin_request_id":"`+rid+`"}`,
+		`{"level":"info","msg":"grpc_call","ts":"2026-11-06T10:00:02Z","request_id":"01932f6e-0000-7000-8000-000000000001","origin_request_id":"`+rid+`"}`,
+		`{"level":"info","msg":"scan_done","ts":"2026-11-06T10:00:03Z","job_id":"43"}`)
+	ix := open(t, root, &now)
+	if _, err := ix.Ingest(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	res, err := ix.Search(context.Background(), Query{RequestID: rid})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(msgs(res), ","); got != "http_request,scan_started" {
+		t.Errorf("the request then the job it queued: %s", got)
+	}
+}
+
 // T04: retention and the segments the keeper removed: their rows go.
 func TestSweep(t *testing.T) {
 	root, now := t.TempDir(), t0
