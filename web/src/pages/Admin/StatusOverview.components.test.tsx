@@ -5,6 +5,7 @@ import { itemName, itemReason } from "./StatusOverview";
 import { lookupMessage, type Locale } from "../../lib/i18n";
 import type { Fmt } from "../../components/queue/format";
 import type { StatusItem } from "../../lib/systemStatus";
+import { firstPartyStages } from "../../test/firstPartyStages";
 
 function tFor(locale: Locale) {
   return (key: string, vars?: Record<string, string | number>) => {
@@ -94,6 +95,9 @@ describe("every System health item has its name in Arabic", () => {
   it("each model a stage names (dependency:model:<rules section>), never its id", () => {
     const graph = readFileSync("../pipeline/src/maktaba_pipeline/engine/graph.py", "utf8");
     const sections = new Set([...graph.matchAll(/model_rules="([a-z_]+)"/g)].map((m) => m[1]!));
+    // a stage a first-party plugin declares keeps its model_rules in its manifest
+    for (const st of firstPartyStages().values())
+      if (typeof st.model_rules === "string") sections.add(st.model_rules);
     expect(sections).toContain("tagcheck");
     // a stage with no model_rules parks on the default section
     sections.add("model");

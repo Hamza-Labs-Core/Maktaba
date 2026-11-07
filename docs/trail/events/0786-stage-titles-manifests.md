@@ -10,7 +10,8 @@ prs: [760]
 
 ## What happened
 - After #760 merged, main's `web/src/lib/stageWords.test.ts` failed `expected 50 to be greater than 50`. Its `graphStages()` read only `engine/graph.py`, and wave 1 moved four stages into `tv.maktaba.classify`'s manifest (`_fp("…")` in the graph).
-- It now also reads every `[[stage]]` of `plugins/first-party/*/manifest.toml` with its label, and requires each `_fp()` stage to be declared in one. The floor stays over the whole graph. It was checked on the wave 3 tree too.
+- It now also reads every `[[stage]]` of `plugins/first-party/*/manifest.toml` with its label, and requires each `_fp()` stage to be declared in one. The floor stays over the whole graph.
+- Two more web tests read the graph's source and would have broken at the next waves. `help.coverage.test.ts` took the shipped stages from `CORE_MODULES` alone: 36 on the wave 3 tree, under its floor of 40. `StatusOverview.components.test.tsx` read `model_rules="…"` from `graph.py` only. All three now share `web/src/test/firstPartyStages.ts`, which reads the manifests, and pass on main and on the wave 3 tree.
 
 ## What we learned
 - A wave that moves stages out of `graph.py` breaks every test that reads the graph from source rather than from the assembled `GRAPH`. #760's CI did not run the web suite against the move, so this reached main.

@@ -8,38 +8,13 @@ import ar from "../i18n/ar.json";
 import { lookupMessage, type Locale } from "./i18n";
 import { stageTitle, titledSnapshot } from "./stageWords";
 import type { QueuesSnapshot, StageInfo } from "./queueApi";
+import { firstPartyStages, graphFirstPartyNames } from "../test/firstPartyStages";
 
-// the graph and the plugins are outside src/: read them at run time, as help.coverage.test.ts
-// does
+// the graph is outside src/: read it at run time, as help.coverage.test.ts does
 const FS = "node:fs";
-const { readFileSync, readdirSync, existsSync } = (await import(/* @vite-ignore */ FS)) as {
+const { readFileSync } = (await import(/* @vite-ignore */ FS)) as {
   readFileSync: (path: string, encoding: "utf8") => string;
-  readdirSync: (path: string) => string[];
-  existsSync: (path: string) => boolean;
 };
-
-const FIRST_PARTY = "../plugins/first-party";
-
-/** name -> label of each stage Maktaba's own plugins declare (plugins/first-party/<p>/
- * manifest.toml, one [[stage]] table each, Epic 54 Phase 4): a stage moved out of graph.py
- * keeps its label there. */
-function manifestStages(): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!existsSync(FIRST_PARTY)) return out;
-  for (const plugin of readdirSync(FIRST_PARTY).sort()) {
-    const path = `${FIRST_PARTY}/${plugin}/manifest.toml`;
-    if (!existsSync(path)) continue;
-    for (const table of readFileSync(path, "utf8")
-      .split(/^\[\[stage\]\]\s*$/m)
-      .slice(1)) {
-      const body = table.split(/^\[/m)[0]!;
-      const name = body.match(/^name\s*=\s*"([a-z0-9_]+)"/m)?.[1];
-      const label = body.match(/^label\s*=\s*"([^"]+)"/m)?.[1];
-      if (name && label) out.set(name, label);
-    }
-  }
-  return out;
-}
 
 /** name -> label of each stage in the graph: StageDef(name=..., label=...), _legacy(...), and
  * each _fp("<name>") (a stage a first-party plugin's manifest defines, with its label there). */
@@ -48,12 +23,12 @@ function graphStages(): { stages: Map<string, string>; missing: string[] } {
   const out = new Map<string, string>();
   for (const m of src.matchAll(/\bname="([a-z0-9_]+)",\s*label="([^"]+)"/g)) out.set(m[1]!, m[2]!);
   for (const m of src.matchAll(/_legacy\(\s*"([a-z0-9_]+)",\s*"([^"]+)"/g)) out.set(m[1]!, m[2]!);
-  const declared = manifestStages();
+  const declared = firstPartyStages();
   const missing: string[] = [];
-  for (const m of src.matchAll(/\b_fp\(\s*"([a-z0-9_]+)"\s*\)/g)) {
-    const label = declared.get(m[1]!);
-    if (label === undefined) missing.push(m[1]!);
-    else out.set(m[1]!, label);
+  for (const name of graphFirstPartyNames(src)) {
+    const label = declared.get(name)?.label;
+    if (typeof label !== "string") missing.push(name);
+    else out.set(name, label);
   }
   return { stages: out, missing };
 }
