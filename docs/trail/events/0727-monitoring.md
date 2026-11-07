@@ -16,3 +16,7 @@ prs: [724]
 - In a promtool test a missing sample (`_`) is not a scrape failure: the last value lives on for the 5-minute lookback. `stale` is what a failed scrape looks like.
 - An SLO counted per probe double-counts: a moment is down only when every probing network fails it, so the recording rule takes the best probe (`max(probe_success)`) before the burn rate.
 - The relay's processes listen on loopback; the witness reaches their `/metrics` through a Caddy site on the node's private address, which follows the same readiness as the public edge (so it scrapes whichever colour leads).
+- A workflow step's `name:` with ": " in it is invalid YAML. actionlint passed it; the lint job's Python tests (which load every workflow with PyYAML) failed. Load the workflows with PyYAML (or run `tools/ci/tests`) after editing one.
+
+## Open
+- Epic 53.17 (the cloud's log forwarding and log store) emits the `maktaba_*` series two of these alerts use; 50.11 to 50.35, 53.16's service-admin view and 53.18's `reports.share` follow.
