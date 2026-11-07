@@ -442,7 +442,9 @@ async def test_a_plugins_job_log_goes_to_the_worker() -> None:
 
 @pytest.mark.asyncio
 async def test_a_first_party_stage_runs_in_process_unless_its_runner_serves_here(
-    toy: bytes, db: Database, monkeypatch: pytest.MonkeyPatch
+    toy: bytes,  # noqa: F811
+    db: Database,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Story 54.25 §3: impl = plugin runs in the runner only when it serves the stage on
     this machine; otherwise (and always on SQLite) the stage runs in the worker."""
