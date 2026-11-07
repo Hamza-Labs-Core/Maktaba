@@ -184,7 +184,7 @@ func TestComponentsCLILicenceRefusal(t *testing.T) {
 		t.Fatalf("exit %d, applied %v", code, f.applied)
 	}
 	if !strings.Contains(errOut.String(), "Refused (licence_missing)") ||
-		!strings.Contains(errOut.String(), "Needs the Home plan. This home is on Free.") {
+		!strings.Contains(errOut.String(), "Needs the Basic plan. This home is on Free.") {
 		t.Fatalf("output: %s", errOut)
 	}
 }

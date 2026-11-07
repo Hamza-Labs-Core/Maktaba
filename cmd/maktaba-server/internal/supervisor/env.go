@@ -194,6 +194,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	if role == RoleAPI && RelayWanted(cfg) {
 		add("MAKTABA_CLOUD_IDENTITY", RelayIdentityPath())
 		add("MAKTABA_CLOUDLINK_ADMIN", RelayAdminAddr(cfg))
+		// Epic 50 story 50.15: direct remote access (the cloud.direct loops) serves this
+		// machine's web port on its own listener, with its key and certificate beside the
+		// agent's credentials
+		add("MAKTABA_DIRECT_LISTEN", orDefault(strings.TrimSpace(cfg.Direct.Listen), ports.DirectHTTPS.Every()))
+		add("MAKTABA_DIRECT_DIR", filepath.Join(config.KeysDir(), "direct"))
+		add("MAKTABA_DIRECT_UPSTREAM", relayLocal(cfg))
 		// Epic 42 story 42.2: the home's relay address (https://<slug>.<relay host>) is
 		// on the tunnel's host; the api assumes Maktaba Cloud's own unless told
 		if v := strings.TrimSpace(cfg.Cloud.RelayWS); v != "" {

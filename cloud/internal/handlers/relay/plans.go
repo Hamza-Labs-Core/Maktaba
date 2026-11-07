@@ -24,8 +24,6 @@ type Plans struct {
 	StreamLimit bool
 	// Streams counts the open streams (nil: none counted).
 	Streams StreamCounter
-	// Extra is a home's extra streams (Pro's add-on, story 50.19 part 3; nil: none).
-	Extra func(ctx context.Context, serverID string) int
 
 	mu      sync.Mutex
 	touched map[string]time.Time // admitted streams, by home and session: when last written

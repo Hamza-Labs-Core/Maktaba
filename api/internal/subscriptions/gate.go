@@ -18,7 +18,7 @@ const TypeLicenseRequired = "https://maktaba.tv/problems/license-required"
 var refusalText = map[Feature]string{
 	FeatureCloudRelay: "Remote access through Maktaba Cloud needs the Home or Pro plan. " +
 		"This home is on %s: use Maktaba on your home network, or apply a license in Settings → Subscription.",
-	FeatureMultiUser: "More than one user needs the Home plan (4 users) or Pro (unlimited). " +
+	FeatureMultiUser: "More than one user needs the Basic plan (4 users) or Pro (unlimited). " +
 		"This home is on %s. Apply a license in Settings → Subscription.",
 	FeatureCloudBackup: "Cloud backup needs the Home or Pro plan. This home is on %s. " +
 		"Apply a license in Settings → Subscription.",
@@ -28,7 +28,8 @@ var refusalText = map[Feature]string{
 		"Apply a license in Settings → Subscription.",
 }
 
-var tierLabel = map[Tier]string{TierFree: "Free", TierHome: "Home", TierPro: "Pro"}
+// Epic 50 story 50.19: the home tier is Maktaba Cloud's Basic plan
+var tierLabel = map[Tier]string{TierFree: "Free", TierHome: "Basic", TierPro: "Pro"}
 
 // TierLabel is a tier's display name.
 func TierLabel(t string) string {

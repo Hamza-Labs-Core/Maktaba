@@ -36,6 +36,25 @@ type Provider interface {
 	// error wrapping ErrBadSignature. An event the cloud does not act on
 	// comes back with an empty Kind and is acknowledged without work.
 	ParseWebhook(ctx context.Context, payload []byte, header http.Header) (Event, error)
+
+	// Story 50.19 §6: the subscription's other items. ReportUsage sends a usage report for
+	// the metered pay-as-you-go GB (item 2); a report whose ID the provider already has is
+	// taken once (the ID is its idempotency key). SetItems adds or removes item 2 and sets
+	// item 3's quantity (extra streams, prorated); the webhook then confirms. ReportedUsage
+	// is the GB the provider recorded for a subscription in a month (the daily reconciliation).
+	ReportUsage(ctx context.Context, r UsageReport) error
+	SetItems(ctx context.Context, subscriptionID string, payg bool, extraStreams int) error
+	ReportedUsage(ctx context.Context, subscriptionID string, month time.Time) (int64, error)
+}
+
+// UsageReport is one hour of a home's pay-as-you-go GB (story 50.19 §6).
+type UsageReport struct {
+	// ID is <server_id>:<month>:<hour>: the provider's idempotency key, the same on a retry.
+	ID             string
+	SubscriptionID string
+	CustomerID     string
+	GB             int64
+	At             time.Time
 }
 
 // ErrNotConfigured is returned by every payment call when no payment
@@ -106,6 +125,10 @@ type Event struct {
 	Status            string // active, trialing, past_due, canceled, incomplete, ...
 	PeriodEnd         time.Time
 	CancelAtPeriodEnd bool
+	// Story 50.19 §6: whether item 2 (pay-as-you-go) is on the subscription, and item 3's
+	// quantity (extra streams).
+	PAYG         bool
+	ExtraStreams int
 
 	// Payment events.
 	InvoiceID   string
@@ -154,4 +177,12 @@ func (None) CreatePortal(context.Context, string, string) (string, error) {
 
 func (None) ParseWebhook(context.Context, []byte, http.Header) (Event, error) {
 	return Event{}, ErrNotConfigured
+}
+
+func (None) ReportUsage(context.Context, UsageReport) error { return ErrNotConfigured }
+
+func (None) SetItems(context.Context, string, bool, int) error { return ErrNotConfigured }
+
+func (None) ReportedUsage(context.Context, string, time.Time) (int64, error) {
+	return 0, ErrNotConfigured
 }

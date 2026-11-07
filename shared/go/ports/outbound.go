@@ -104,6 +104,12 @@ var Outbound = []Call{
 	{Name: "plugin-store-ratings", Hosts: []string{"plugins.maktaba.tv"}, By: "admin",
 		What: "an admin's rating or report of a store plugin, sent signed by this home (54.18)",
 		Off:  "never started by the server; offline, it answers store_offline"},
+	{Name: "plugin-store-entitlements", Hosts: []string{"plugins.maktaba.tv"}, By: "auto",
+		What: "a linked home's paid plugins' entitlements, asked signed by this home daily and every 15 seconds for 15 minutes after a Buy (54.19 §6)",
+		Off:  "no store link; offline, the refresh is skipped and the entitlements held are kept"},
+	{Name: "plugin-store-buy", Hosts: []string{"plugins.maktaba.tv"}, By: "admin",
+		What: "an admin's Buy: a one-time purchase intent, asked signed by this home; the admin's browser then pays on the store (54.19 §5)",
+		Off:  "never started by the server; offline, it answers store_offline"},
 	{Name: "cloudflare", Hosts: []string{"api.cloudflare.com"}, By: "admin",
 		What: "the TV remote's Cloudflare Stream, when an admin set it up", Off: "ext.cloudflare_stream off"},
 }

@@ -143,4 +143,20 @@ class HomeErrorTest {
         assertEquals(com.hamzalabs.maktaba.core.R.string.feature_live_tv, featureName("live_tv"))
         assertNull("a feature from a newer home", featureName("holograms"))
     }
+
+    /** Epic 50 story 50.19: the relay's refusals read as their own sentences, with what helps. */
+    @Test
+    fun theRelaysRefusalsOfAPlan() {
+        assertEquals(ErrorKind.RelayNeedsPlan, kind(402, """{"error":"relay_needs_plan","message":"x"}"""))
+        assertEquals(ErrorKind.RelayStreamLimit, kind(429, """{"error":"stream_limit","message":"2 devices"}"""))
+        assertEquals(ErrorKind.RelayHomeBusy, kind(503, """{"type":"https://maktaba.tv/problems/home-busy","title":"busy","status":503,"code":"home_busy"}"""))
+        assertEquals(com.hamzalabs.maktaba.core.R.string.error_relay_needs_plan, ErrorKind.RelayNeedsPlan.sentence())
+        assertEquals(com.hamzalabs.maktaba.core.R.string.error_relay_stream_limit, ErrorKind.RelayStreamLimit.sentence())
+        assertEquals(com.hamzalabs.maktaba.core.R.string.error_relay_home_busy, ErrorKind.RelayHomeBusy.sentence())
+        // no plan with the relay: trying again doesn't help; too many devices or a busy home: it may
+        val all = { k: ErrorKind -> errorActions(k, canRetry = true, canSignIn = true, canChooseHome = true, canGoBack = true) }
+        assertEquals(listOf(ErrorAction.Back), all(ErrorKind.RelayNeedsPlan))
+        assertEquals(listOf(ErrorAction.TryAgain, ErrorAction.Back), all(ErrorKind.RelayStreamLimit))
+        assertEquals(listOf(ErrorAction.TryAgain, ErrorAction.Back), all(ErrorKind.RelayHomeBusy))
+    }
 }

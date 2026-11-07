@@ -222,6 +222,10 @@ func TestPublisherTimesIncrease(t *testing.T) {
 	var mu sync.Mutex
 	var times []int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != tvremote.SiteStatePath { // a stray request
+			http.NotFound(w, r)
+			return
+		}
 		ts, _ := strconv.ParseInt(r.Header.Get(tvremote.HeaderHomeTime), 10, 64)
 		mu.Lock()
 		times = append(times, ts)

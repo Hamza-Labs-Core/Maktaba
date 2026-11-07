@@ -56,6 +56,16 @@ func TestTheRelayRunsOnTheHomeWithItsCredentials(t *testing.T) {
 	if m := envMap(childEnvOK(RoleAPI, cfg)); m["MAKTABA_CLOUDLINK_STATUS_URL"] != "http://127.0.0.1:8765/admin/cloud-link" {
 		t.Fatalf("the API's relay status address: %q", m["MAKTABA_CLOUDLINK_STATUS_URL"])
 	}
+	// Epic 50 story 50.15: direct access beside the agent, on :8444 unless [direct] listen says
+	m := envMap(childEnvOK(RoleAPI, cfg))
+	if m["MAKTABA_DIRECT_LISTEN"] != ":8444" || m["MAKTABA_DIRECT_DIR"] != filepath.Join(config.KeysDir(), "direct") ||
+		m["MAKTABA_DIRECT_UPSTREAM"] == "" {
+		t.Fatalf("direct access env: %q %q %q", m["MAKTABA_DIRECT_LISTEN"], m["MAKTABA_DIRECT_DIR"], m["MAKTABA_DIRECT_UPSTREAM"])
+	}
+	cfg.Direct.Listen = ":9444"
+	if m := envMap(childEnvOK(RoleAPI, cfg)); m["MAKTABA_DIRECT_LISTEN"] != ":9444" {
+		t.Fatalf("[direct] listen: %q", m["MAKTABA_DIRECT_LISTEN"])
+	}
 }
 
 // Story 51.04: a home with its credentials and [cloud] off builds the agent dormant, so
