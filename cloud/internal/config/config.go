@@ -134,6 +134,19 @@ type RelayConfig struct {
 	// ShutdownGrace replaces server.shutdown_grace for the relay role, which
 	// waits for its homes to move (relay.shutdown_grace, default 150s).
 	ShutdownGrace time.Duration
+
+	// The tunnel directory (story 50.04). ID names this relay process
+	// (relay.id, env MAKTABA_CLOUD_RELAY_ID; default the host name), and
+	// PeerAddr is where its peers forward requests to it (relay.peer_addr,
+	// env MAKTABA_CLOUD_RELAY_PEER_ADDR): loopback or a private address only.
+	// Empty PeerAddr: no directory, no forwarding (holding still works).
+	ID       string
+	PeerAddr string
+	// HoldMax: how long a request waits for a home that is reconnecting
+	// (relay.hold_max, default 15s; 0s turns holding off); HoldRecent: how
+	// recently it must have been seen (relay.hold_recent, default 2m).
+	HoldMax    time.Duration
+	HoldRecent time.Duration
 }
 
 // Default values per the bootstrap plan; the loader fills these for any
@@ -167,6 +180,8 @@ func defaultConfig() Config {
 			DrainDeadline:  120 * time.Second,
 			DrainRate:      100,
 			ShutdownGrace:  150 * time.Second,
+			HoldMax:        15 * time.Second,
+			HoldRecent:     2 * time.Minute,
 		},
 	}
 }
@@ -224,6 +239,13 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_RELAY_EDITIONS_DIR"); v != "" {
 		c.Relay.EditionsDir = v
+	}
+	// the blue/green units (story 50.08) name each process and its peer port
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_ID"); v != "" {
+		c.Relay.ID = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_PEER_ADDR"); v != "" {
+		c.Relay.PeerAddr = v
 	}
 }
 
@@ -342,6 +364,14 @@ func assign(c *Config, section, key, val string) error {
 		return setDur(&c.Relay.DrainDeadline, val)
 	case "relay.drain.rate":
 		return setInt(&c.Relay.DrainRate, val)
+	case "relay.id":
+		c.Relay.ID = val
+	case "relay.peer_addr":
+		c.Relay.PeerAddr = val
+	case "relay.hold_max":
+		return setDur(&c.Relay.HoldMax, val)
+	case "relay.hold_recent":
+		return setDur(&c.Relay.HoldRecent, val)
 	case "relay.shutdown_grace":
 		return setDur(&c.Relay.ShutdownGrace, val)
 	case "relay.editions_dir":

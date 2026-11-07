@@ -462,3 +462,21 @@ func (ix *Index) scrapeLoop(ctx context.Context) {
 		}
 	}
 }
+
+// ImportHours stores rolled-up hours as they are (value, min and max alike): a series
+// brought from elsewhere, or 30 days for the performance budget (logbench).
+func (ix *Index) ImportHours(ctx context.Context, name, labels string, points [][2]float64) error {
+	tx, err := ix.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	for _, p := range points {
+		if _, err := tx.Exec(`INSERT INTO metric_1h(name, labels, hour, value, min, max) VALUES(?, ?, ?, ?, ?, ?)
+			ON CONFLICT(name, labels, hour) DO UPDATE SET value = excluded.value, min = excluded.min, max = excluded.max`,
+			name, labels, int64(p[0])/3600, p[1], p[1], p[1]); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}

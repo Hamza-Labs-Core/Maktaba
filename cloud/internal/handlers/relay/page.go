@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"html"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -44,33 +45,106 @@ func wantsHTML(r *http.Request) bool {
 	return false
 }
 
-// pageText is the heading and sentence of each relay error kind.
-func pageText(kind string) (heading, message string, retry int) {
+// pageWords is a page's heading and sentence in one language.
+type pageWords struct{ heading, message string }
+
+// pageTexts are the relay error pages' words, in English and Arabic (story
+// 50.04 gave them Arabic; «الجهاز الرئيسي» is the home in every app).
+var pageTexts = map[string]map[string]pageWords{
+	"en": {
+		"offline":           {"Your Maktaba server is unreachable", "The relay cannot reach the home server right now. It may be off, restarting or offline; this page retries by itself."},
+		"home_reconnecting": {"Your home is reconnecting", "Your home lost its connection to Maktaba Cloud for a moment and is coming back. This page tries again in a few seconds."},
+		"tier_limit":        {"Daily relay limit reached", "This server used its plan's relay allowance for today."},
+		"none":              {"No Maktaba server here", "There is no Maktaba server at this address."},
+		"retry":             {"Try again", ""},
+	},
+	"ar": {
+		"offline":           {"تعذّر الوصول إلى الجهاز الرئيسي", "لا يستطيع المُرحِّل الوصول إلى الجهاز الرئيسي الآن. ربما هو مطفأ أو يُعاد تشغيله أو غير متصل؛ وستعيد هذه الصفحة المحاولة وحدها."},
+		"home_reconnecting": {"الجهاز الرئيسي يعيد الاتصال", "انقطع اتصال الجهاز الرئيسي بسحابة مكتبة لحظة وهو يعود الآن. ستعيد هذه الصفحة المحاولة بعد ثوانٍ."},
+		"tier_limit":        {"بلغ المُرحِّل حدّه اليومي", "استهلك هذا الجهاز الرئيسي حصة المُرحِّل في خطته لهذا اليوم."},
+		"none":              {"لا يوجد جهاز رئيسي لمكتبة هنا", "لا يوجد جهاز رئيسي لمكتبة على هذا العنوان."},
+		"retry":             {"إعادة المحاولة", ""},
+	},
+}
+
+// pageText is the heading and sentence of each relay error kind in lang, and
+// how many seconds the page waits before it retries (0: it does not).
+func pageText(kind, lang string) (heading, message string, retry int) {
+	words := pageTexts[lang]
+	if words == nil {
+		words = pageTexts["en"]
+	}
+	pick := func(k string) (string, string) { return words[k].heading, words[k].message }
 	switch kind {
 	case "server_offline", "tunnel_error", "tunnel_timeout":
-		return "Your Maktaba server is unreachable",
-			"The relay cannot reach the home server right now. It may be off, restarting or offline; this page retries by itself.", 15
+		h, m := pick("offline")
+		return h, m, 15
+	case "home_reconnecting":
+		h, m := pick("home_reconnecting")
+		return h, m, 5
 	case "tier_limit":
-		return "Daily relay limit reached", "This server used its plan's relay allowance for today.", 0
+		h, m := pick("tier_limit")
+		return h, m, 0
 	default:
-		return "No Maktaba server here", "There is no Maktaba server at this address.", 0
+		h, m := pick("none")
+		return h, m, 0
 	}
 }
 
-func writePage(w http.ResponseWriter, code int, kind, msg string) {
-	heading, message, retry := pageText(kind)
+// pageLang is the page language for the request's Accept-Language: "ar"
+// when Arabic is preferred over English, else "en".
+func pageLang(r *http.Request) string {
+	arQ, enQ := -1.0, -1.0
+	arFirst := false // on equal weights the one listed first wins
+	for _, part := range strings.Split(r.Header.Get("Accept-Language"), ",") {
+		tag, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		tag = strings.ToLower(strings.TrimSpace(tag))
+		q := 1.0
+		if v, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				q = f
+			}
+		}
+		switch lang, _, _ := strings.Cut(tag, "-"); lang {
+		case "ar":
+			if arQ < 0 && enQ < 0 {
+				arFirst = true
+			}
+			arQ = max(arQ, q)
+		case "en":
+			enQ = max(enQ, q)
+		}
+	}
+	// one of two constants, never the header's own text (it goes in the page)
+	if arQ > enQ || arQ == enQ && arQ >= 0 && arFirst {
+		return "ar"
+	}
+	return "en"
+}
+
+func writePage(w http.ResponseWriter, r *http.Request, code int, kind, msg string) {
+	lang := pageLang(r)
+	heading, message, retry := pageText(kind, lang)
+	dir := "ltr"
+	if lang == "ar" {
+		dir = "rtl"
+	}
 	refresh := ""
 	if retry > 0 {
 		refresh = fmt.Sprintf(`<meta http-equiv="refresh" content="%d">`, retry)
 		w.Header().Set("Retry-After", fmt.Sprint(retry))
 	}
 	var b strings.Builder
-	b.WriteString(`<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+	b.WriteString(`<!doctype html><html lang="` + lang + `" dir="` + dir + `"><head><meta charset="utf-8">` +
 		`<meta name="viewport" content="width=device-width, initial-scale=1">` +
 		`<meta name="color-scheme" content="dark light">` + refresh +
 		`<title>` + html.EscapeString(heading) + ` · Maktaba</title><style>` + pageCSS + `</style></head><body><main>`)
 	fmt.Fprintf(&b, `<p class="mk-status">%d · %s</p>`, code, html.EscapeString(http.StatusText(code)))
 	b.WriteString("<h1>" + html.EscapeString(heading) + "</h1><p>" + html.EscapeString(message) + "</p>")
+	if retry > 0 {
+		// a plain link: the page has no script (CSP), the refresh retries too
+		b.WriteString(`<p><a href="">` + html.EscapeString(pageTexts[lang]["retry"].heading) + "</a></p>")
+	}
 	if msg != "" {
 		b.WriteString(`<p class="mk-detail">` + html.EscapeString(msg) + "</p>")
 	}

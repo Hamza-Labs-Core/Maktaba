@@ -192,3 +192,27 @@ func TestCanonLabels(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 }
+
+// Imported hours are stored as they are and answer a 30-day board from the hours table.
+func TestImportHours(t *testing.T) {
+	root, now := t.TempDir(), t0
+	ix := open(t, root, &now)
+	ctx := context.Background()
+	pts := [][2]float64{{float64(now.Add(-48 * time.Hour).Unix()), 3}, {float64(now.Add(-24 * time.Hour).Unix()), 5}}
+	if err := ix.ImportHours(ctx, "go_goroutines", "", pts); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := ix.Board(ctx, "overview", "30d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range doc.Series {
+		if s.Name == "go_goroutines" {
+			if len(s.Points) != 2 || s.Points[0][1] != 3 || s.Points[1][1] != 5 {
+				t.Fatalf("points: %v", s.Points)
+			}
+			return
+		}
+	}
+	t.Fatal("no go_goroutines series")
+}

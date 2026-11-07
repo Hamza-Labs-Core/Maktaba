@@ -15,8 +15,10 @@
 // The screenshots are in static/assets/apps/, `<name>-<lang>.webp` (one per language where
 // the app was shot in both, else a single `<name>-en.webp` or `<name>-ar.webp`). They were
 // taken on made-up test data only: the Apple apps' CI UI tests against MockHome, the Android
-// Roborazzi screenshot tests, and a scratch home seeded with invented libraries for the web
-// app and the big screen. The scan (scan.mjs) checks every image carries no metadata.
+// Roborazzi screenshot tests, the desktop Player's off-screen Compose tests against its test
+// home (TestHome's MockWebServer), and, for the web app and the big screen, a scratch home
+// seeded with invented libraries or the web app in a headless browser with its API answered
+// by invented data. The scan (scan.mjs) checks every image carries no metadata.
 
 const RELEASES = "https://github.com/Hamza-Labs-Core/Maktaba/releases/latest";
 const SRC = "https://github.com/Hamza-Labs-Core/Maktaba/tree/main";
@@ -60,8 +62,8 @@ const TESTING = t(
 );
 
 const SHOTS_NOTE = t(
-  "Every screenshot on these pages was taken in the dark theme on made-up test data: the Apple apps' screenshots come from their UI tests in CI, which run against a pretend home; the Android ones from the apps' screenshot tests; the web app and the big screen from a test home filled with invented libraries. The names, titles and codes in them are test data.",
-  "التُقطت كل لقطات الشاشة في هذه الصفحات بالمظهر الداكن وعلى بيانات اختبار مصطنعة: لقطات تطبيقات آبل من اختبارات الواجهة في التكامل المستمر، وهي تعمل على جهاز رئيسي وهمي؛ ولقطات أندرويد من اختبارات لقطات الشاشة في التطبيقين؛ ولقطات تطبيق الويب والشاشة الكبيرة من جهاز رئيسي تجريبي مُلئ بمكتبات مختلَقة. فالأسماء والعناوين والرموز فيها كلها بيانات اختبار."
+  "Every screenshot on these pages was taken in the dark theme on made-up test data: the Apple apps' screenshots come from their UI tests in CI, which run against a pretend home; the Android ones from the apps' screenshot tests; the Windows and Linux Player's from its screen tests, which also run against a pretend home; the web app and the big screen from a test home filled with invented libraries. The names, titles and codes in them are test data.",
+  "التُقطت كل لقطات الشاشة في هذه الصفحات بالمظهر الداكن وعلى بيانات اختبار مصطنعة: لقطات تطبيقات آبل من اختبارات الواجهة في التكامل المستمر، وهي تعمل على جهاز رئيسي وهمي؛ ولقطات أندرويد من اختبارات لقطات الشاشة في التطبيقين؛ ولقطات المشغّل على ويندوز ولينكس من اختبارات شاشاته، وهي تعمل أيضًا على جهاز رئيسي وهمي؛ ولقطات تطبيق الويب والشاشة الكبيرة من جهاز رئيسي تجريبي مُلئ بمكتبات مختلَقة. فالأسماء والعناوين والرموز فيها كلها بيانات اختبار."
 );
 
 /** The pages: the overview (slug "") first, then one page per app. */
@@ -167,6 +169,37 @@ export const APPS = [
                 "wide",
                 "The web app's Sign in a device page, where a code is typed to approve a device",
                 "صفحة تسجيل دخول جهاز في تطبيق الويب، حيث يُكتب الرمز للموافقة على جهاز"
+              ),
+            ],
+          },
+        ],
+      },
+      {
+        h: t("In every app", "في كل التطبيقات"),
+        blocks: [
+          {
+            ul: [
+              t(
+                "**The status strip**: when part of the home is down, every app says so in one strip at the top, naming what is unavailable (playback, Live TV, search or processing), and shows nothing while all is well. The apps read the home's `/status.json`, which the home answers even while its API or its database is down.",
+                "**شريط الحالة**: حين يتوقف جزء من الجهاز الرئيسي، يقول ذلك كل تطبيق في شريط واحد أعلى الشاشة، ويسمّي ما لا يعمل (التشغيل أو البث المباشر أو البحث أو المعالجة)، ولا يعرض شيئًا ما دام كل شيء يعمل. وتقرأ التطبيقات ملف `/status.json` من الجهاز الرئيسي، وهو يجيب عنه حتى حين تتوقف واجهته البرمجية أو قاعدة بياناته."
+              ),
+              t(
+                "**The play queue**: **Play** and **Shuffle** on a library, a series, a season, a collection or a playlist start one queue that the home keeps for each person. **Play next** and **Add to queue** add a video to it, Up next plays from it first, and Home offers **Continue your queue** on every device.",
+                "**قائمة الانتظار**: يبدأ زرّا **تشغيل** و**تشغيل عشوائي** في مكتبة أو سلسلة أو موسم أو مجموعة أو قائمة تشغيل قائمةَ انتظار واحدة يحفظها الجهاز الرئيسي لكل شخص. ويضيف إليها **شغّل تاليًا** و**أضف إلى قائمة الانتظار** مقطعًا، ويبدأ «التالي» منها أولًا، وتعرض الرئيسية **تابع قائمة الانتظار** على كل جهاز."
+              ),
+              t(
+                "**Report a problem** from any app, and crash reports sent to the home: coming in the next release.",
+                "**الإبلاغ عن مشكلة** من أي تطبيق، وتقارير الأعطال المرسلة إلى الجهاز الرئيسي: في الإصدار القادم."
+              ),
+            ],
+          },
+          {
+            shots: [
+              shot(
+                "web-status-strip",
+                "wide",
+                "The status strip in the web app: playback and Live TV are unavailable right now",
+                "شريط الحالة في تطبيق الويب: التشغيل والبث المباشر غير متاحين الآن"
               ),
             ],
           },
@@ -280,8 +313,12 @@ export const APPS = [
                 "**الرئيسية**: ما كنت تشاهده، والدرس التالي من كل سلسلة تتابعها، وما أُضيف حديثًا، والصفوف التي يقترحها الجهاز الرئيسي."
               ),
               t(
-                "**Libraries**: each library with its series, collections and videos, filtered and sorted; pin the libraries you use most.",
-                "**المكتبات**: كل مكتبة بسلاسلها ومجموعاتها ومقاطعها، مع التصفية والترتيب؛ وثبّت المكتبات التي تستعملها أكثر."
+                "**Libraries**: each library with its series, collections, playlists and videos, filtered and sorted, with **Play** and **Shuffle**; a series shuffles too. Pin the libraries you use most.",
+                "**المكتبات**: كل مكتبة بسلاسلها ومجموعاتها وقوائم تشغيلها ومقاطعها، مع التصفية والترتيب، ومعها **تشغيل** و**تشغيل عشوائي**؛ ويمكن تشغيل السلسلة عشوائيًا أيضًا. وثبّت المكتبات التي تستعملها أكثر."
+              ),
+              t(
+                "**The play queue**: **Play next** and **Add to queue** on a video, Up next from the queue first, and **Continue your queue** on Home. On Android, **Save as smart playlist** on a library's filters.",
+                "**قائمة الانتظار**: **شغّل تاليًا** و**أضف إلى قائمة الانتظار** في المقطع، ويبدأ «التالي» من قائمة الانتظار أولًا، و**تابع قائمة الانتظار** في الرئيسية. وعلى أندرويد **الحفظ كقائمة تشغيل ذكية** من مرشّحات المكتبة."
               ),
               t(
                 "**Live TV**: **Now**, with what is on each channel and how far it has gone, and the **Guide**; choose a channel to watch it live.",
@@ -296,15 +333,58 @@ export const APPS = [
                 "**الملف الشخصي**: سجل المشاهدة والمفضلة وقوائم التشغيل والجلسات، و**الموافقة على تلفاز أو جهاز**، وتبديل الجهاز الرئيسي، وإعدادات المظهر واللغة والتشغيل على هذا الجهاز."
               ),
               t(
-                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, picture in picture and sound with the screen off on Android. On the Mac the video fills the window and the **Playback** menu has the keys.",
-                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة على أندرويد. وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح."
+                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, picture in picture and sound with the screen off on Android. On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below.",
+                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة على أندرويد. وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه."
+              ),
+              t(
+                "**The status strip**: when the home's streaming is down, the Player says so before you press play.",
+                "**شريط الحالة**: حين يتوقف البث في الجهاز الرئيسي، يقول المشغّل ذلك قبل أن تضغط على التشغيل."
               ),
             ],
           },
           {
             p: t(
-              "The layout follows the window: a tab bar on an iPhone and a sidebar on an iPad and the Mac; on Android a bar at the bottom of a phone, a rail or a drawer on a wider window, the list beside the page on a tablet, and the screen split at the hinge of a half-folded foldable.",
-              "يتبع التصميم النافذة: شريط تبويب على آيفون وشريط جانبي على آيباد والماك؛ وعلى أندرويد شريط أسفل شاشة الهاتف، وشريط أو درج جانبي في النافذة الأعرض، والقائمة بجانب الصفحة على الجهاز اللوحي، والشاشة مقسومة عند مفصل الجهاز القابل للطي حين يكون نصف مطوي."
+              "The layout follows the window: a tab bar on an iPhone and a sidebar on an iPad and the Mac; on Windows and Linux a rail at the start side (the right in Arabic) with **Home**, **Libraries**, **Live TV**, **Search** and **Profile**, each keeping its own pages; on Android a bar at the bottom of a phone, a rail or a drawer on a wider window, the list beside the page on a tablet, and the screen split at the hinge of a half-folded foldable.",
+              "يتبع التصميم النافذة: شريط تبويب على آيفون وشريط جانبي على آيباد والماك؛ وعلى ويندوز ولينكس شريط في جهة البداية (اليمين بالعربية) فيه **الرئيسية** و**المكتبات** و**البث المباشر** و**البحث** و**الملف الشخصي**، ويحتفظ كل قسم بصفحاته؛ وعلى أندرويد شريط أسفل شاشة الهاتف، وشريط أو درج جانبي في النافذة الأعرض، والقائمة بجانب الصفحة على الجهاز اللوحي، والشاشة مقسومة عند مفصل الجهاز القابل للطي حين يكون نصف مطوي."
+            ),
+          },
+        ],
+      },
+      {
+        h: t("Keys on Windows and Linux", "المفاتيح على ويندوز ولينكس"),
+        blocks: [
+          {
+            table: {
+              head: [t("While watching", "أثناء المشاهدة"), t("Key", "المفتاح")],
+              rows: [
+                [t("Play or pause", "تشغيل أو إيقاف مؤقت"), t("`Space`", "`Space`")],
+                [
+                  t(
+                    "Back or forward 10 seconds (30 with Shift)",
+                    "رجوع أو تقدّم 10 ثوانٍ (30 مع Shift)"
+                  ),
+                  t("`←` and `→`, mirrored in Arabic", "`←` و`→`، معكوسان بالعربية"),
+                ],
+                [t("Volume", "مستوى الصوت"), t("`↑` and `↓`", "`↑` و`↓`")],
+                [t("Next episode", "الحلقة التالية"), t("`N`", "`N`")],
+                [t("Subtitles", "الترجمة"), t("`S`", "`S`")],
+                [t("Mute", "كتم الصوت"), t("`M`", "`M`")],
+                [t("Full screen", "ملء الشاشة"), t("`F`", "`F`")],
+                [t("Big screen", "الشاشة الكبيرة"), t("`F11`", "`F11`")],
+                [
+                  t(
+                    "Leave full screen, or close the video",
+                    "الخروج من ملء الشاشة، أو إغلاق المقطع"
+                  ),
+                  t("`Esc`", "`Esc`"),
+                ],
+              ],
+            },
+          },
+          {
+            p: t(
+              "Anywhere in the app, `Ctrl+F` or `/` opens Search, and `Alt+←` (or the mouse's back button) goes back a page.",
+              "وفي أي مكان من التطبيق يفتح `Ctrl+F` أو `/` البحث، ويعود `Alt+←` (أو زر الرجوع في الفأرة) صفحة إلى الوراء."
             ),
           },
         ],
@@ -454,6 +534,28 @@ export const APPS = [
               ),
             ],
           },
+          {
+            shots: [
+              shot(
+                "desktop-player-home",
+                "wide",
+                "The Player's Home on Windows and Linux: the rail, a new series, Continue Watching and On Deck",
+                "الرئيسية في المشغّل على ويندوز ولينكس: الشريط الجانبي وسلسلة جديدة وتابع المشاهدة والدرس التالي"
+              ),
+              shot(
+                "desktop-player-video",
+                "wide",
+                "A video's page in the Player on Windows and Linux: resume, play from the start, favorite, chapters",
+                "صفحة مقطع في المشغّل على ويندوز ولينكس: المتابعة والتشغيل من البداية والمفضلة والفصول"
+              ),
+              shot(
+                "desktop-player-live",
+                "wide",
+                "Live TV's Now in the Player on Windows and Linux: three channels and what is on",
+                "قسم الآن في البث المباشر في المشغّل على ويندوز ولينكس: ثلاث قنوات وما يُعرض عليها"
+              ),
+            ],
+          },
           { p: SHOTS_NOTE },
         ],
       },
@@ -507,6 +609,14 @@ export const APPS = [
               t(
                 "**Home**: its name, release, queue state and the machines online, with **Updates** (the plan, what holds it, blocked releases and the run under way) and **Processes** (the supervised processes and their recent events).",
                 "**الجهاز الرئيسي**: اسمه وإصداره وحالة الطابور والأجهزة المتصلة، ومعها صفحة **التحديثات** (الخطة وما يوقفها والإصدارات المحظورة والتحديث الجاري) وصفحة **العمليات** (العمليات الخاضعة للمراقبة وأحداثها الأخيرة)."
+              ),
+              t(
+                "**Word review**, from **Needs attention**: the words the home doubts in its transcripts, one at a time. Hear the clip, then accept the word, correct it, mark it as a name, add it to the dictionary or skip it, and undo; the swipes follow the language's direction.",
+                "**مراجعة الكلمات**، من **ما يحتاج إلى انتباه**: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، كلمةً كلمة. استمع إلى المقطع، ثم اقبل الكلمة أو صحّحها أو علّمها اسمًا أو أضفها إلى القاموس أو تخطَّها، ويمكنك التراجع؛ واتجاه السحب يتبع اتجاه اللغة."
+              ),
+              t(
+                "**The status strip**: what is down on the home, at the top of every screen.",
+                "**شريط الحالة**: ما توقف في الجهاز الرئيسي، أعلى كل شاشة."
               ),
               t(
                 "**Approve a TV or device** on every screen, and a banner with **Enter code** while a TV waits to sign in.",
@@ -606,7 +716,15 @@ export const APPS = [
                 "**Home**: the home's rows, continue watching first.",
                 "**الرئيسية**: صفوف الجهاز الرئيسي، وأولها تابع المشاهدة."
               ),
-              t("**Libraries** and **Search**.", "**المكتبات** و**البحث**."),
+              t(
+                "**Libraries**: each library has five tabs, **Recommended**, **Library** (videos or series, sorted and filtered), **Collections**, **Playlists** and **Categories**, and **Play** and **Shuffle** in its header. The tab chosen last is kept for each library. Series, seasons, collections and playlists each have a page that plays them in order or shuffled.",
+                "**المكتبات**: لكل مكتبة خمسة تبويبات، **المقترحات** و**المكتبة** (المقاطع أو السلاسل، مرتبةً ومصفّاة) و**المجموعات** و**قوائم التشغيل** و**الفئات**، وفي رأسها زرّا **تشغيل** و**تشغيل عشوائي**. ويُحفظ آخر تبويب اختير لكل مكتبة. ولكل سلسلة وموسم ومجموعة وقائمة تشغيل صفحة تشغّلها بالترتيب أو عشوائيًا."
+              ),
+              t(
+                "**The play queue**: Home starts with **Continue your queue**; while watching, **Previous**, **Next** and **Shuffle again**, and an Up next card that counts down 10 seconds. On Android TV a card's menu has **Play next**, **Add to queue**, **Add to playlist** and **Go to series**.",
+                "**قائمة الانتظار**: تبدأ الرئيسية بـ**تابع قائمة الانتظار**؛ وأثناء المشاهدة **السابق** و**التالي** و**إعادة الخلط**، وبطاقة «التالي» بعدّ تنازلي من 10 ثوانٍ. وعلى أندرويد تي في في قائمة البطاقة **شغّل تاليًا** و**أضف إلى قائمة الانتظار** و**أضف إلى قائمة تشغيل** و**اذهب إلى السلسلة**."
+              ),
+              t("**Search**.", "**البحث**."),
               t(
                 "**Live TV**, when the person may watch a channel: **Now**, with every channel and what is on, and the **Guide**; choose a channel to watch it live.",
                 "**البث المباشر** حين يُسمح للشخص بمشاهدة قناة: قسم **الآن** بكل قناة وما يُعرض عليها، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."
@@ -675,6 +793,18 @@ export const APPS = [
                 "الرئيسية في تطبيق التلفاز على آبل تي في: تابع المشاهدة"
               ),
               shot(
+                "appletv-library-tabs-en",
+                "wide",
+                "A library on an Apple TV, in English: Play and Shuffle, the five tabs, and Recommended's On Deck",
+                "مكتبة على آبل تي في، بالإنجليزية: تشغيل وتشغيل عشوائي والتبويبات الخمسة، والدرس التالي في المقترحات"
+              ),
+              shot(
+                "appletv-library-collections-ar",
+                "wide",
+                "A library's Collections tab on an Apple TV, in Arabic: a YouTube playlist, a Plex collection and one made by hand",
+                "تبويب المجموعات في مكتبة على آبل تي في، بالعربية: قائمة تشغيل من يوتيوب، ومجموعة من Plex، ومجموعة أُنشئت يدويًا"
+              ),
+              shot(
                 "appletv-live-guide",
                 "wide",
                 "The Live TV guide on an Apple TV: three channels and what is on each",
@@ -690,8 +820,8 @@ export const APPS = [
           },
           {
             p: t(
-              "The first two screenshots are from the Apple TV app, the sign-in from the Android TV app. The Android TV app has the same sections as the Apple TV app, laid out for the Android TV remote.",
-              "أول لقطتين من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في. ولتطبيق أندرويد تي في أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم أندرويد تي في."
+              "The first four screenshots are from the Apple TV app, the sign-in from the Android TV app. The Android TV app has the same sections as the Apple TV app, laid out for the Android TV remote.",
+              "أول أربع لقطات من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في. ولتطبيق أندرويد تي في أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم أندرويد تي في."
             ),
           },
           { p: SHOTS_NOTE },
@@ -744,7 +874,32 @@ export const APPS = [
                 "Updates itself through signed updates; **View → Big Screen** turns the window into the big-screen view.",
                 "يحدّث نفسه بتحديثات موقَّعة؛ ويحوّل الأمر **عرض ← الشاشة الكبيرة** النافذة إلى عرض الشاشة الكبيرة."
               ),
+              t(
+                "Keeps every part's logs for as long as the admin chooses, and groups repeated errors, which the web app's **Logs**, **Errors** and **Dashboards** pages show.",
+                "يحتفظ بسجلات كل جزء المدة التي يختارها المدير، ويجمع الأخطاء المتكررة، وتعرضها صفحات **السجلات** و**الأخطاء** و**لوحات المتابعة** في تطبيق الويب."
+              ),
+              t(
+                "Can run with no outbound call at all: `maktaba-server serve --offline` (or `MAKTABA_OFFLINE=1`) turns off the update check, pack and model downloads, usage data and the link to Maktaba Cloud at once.",
+                "ويمكن تشغيله دون أي اتصال صادر: يوقف الأمر `maktaba-server serve --offline` (أو `MAKTABA_OFFLINE=1`) التحقق من التحديثات وتنزيل الحزم والنماذج وبيانات الاستخدام والربط بسحابة مكتبة دفعةً واحدة."
+              ),
             ],
+          },
+        ],
+      },
+      {
+        h: t("When something breaks", "حين يتعطل شيء"),
+        blocks: [
+          {
+            p: t(
+              "The **recovery page**, at `/recovery` on the home's address, is for admins. The supervisor, the program that starts and watches every other part, serves it itself, so it works while the database or the API is down. It shows each part's state and last error, the warnings and errors of the last 15 minutes read from the log files, and the free disk space. From there an admin can restart a part, **start in safe mode** (the database, the API, updates and log search only, for one start), go back to the previous version, restore a backup or download diagnostics. On the Mac, **Open recovery page** is in the Maktaba menu.",
+              "**صفحة الاستعادة**، في `/recovery` على عنوان الجهاز الرئيسي، للمدراء. يقدّمها المشرف بنفسه، وهو البرنامج الذي يشغّل كل الأجزاء الأخرى ويراقبها، فتعمل حتى حين تتوقف قاعدة البيانات أو الواجهة البرمجية. وتعرض حالة كل جزء وآخر خطأ فيه، والتحذيرات والأخطاء في آخر 15 دقيقة مقروءةً من ملفات السجل، والمساحة الحرة على القرص. ومنها يستطيع المدير إعادة تشغيل جزء، أو **البدء في الوضع الآمن** (قاعدة البيانات والواجهة البرمجية والتحديثات والبحث في السجلات فقط، لتشغيل واحد)، أو الرجوع إلى الإصدار السابق، أو استعادة نسخة احتياطية، أو تنزيل بيانات التشخيص. وعلى الماك تجد **فتح صفحة الاستعادة** في قائمة مكتبة."
+            ),
+          },
+          {
+            p: t(
+              "A part that fails three times in a row is stopped until an admin restarts it. When Maktaba itself cannot start, a page offers **Try again**, safe mode and, when one is kept, the previous version; the Maktaba menu on the Mac offers the same.",
+              "والجزء الذي يتعطل ثلاث مرات متتالية يُوقَف حتى يعيد المدير تشغيله. وحين لا تستطيع «مكتبة» نفسها أن تبدأ، تعرض صفحةٌ **المحاولة مجددًا** والوضع الآمن، والإصدار السابق إن كان محفوظًا؛ وتعرض قائمة مكتبة على الماك الخيارات نفسها."
+            ),
           },
         ],
       },
@@ -876,8 +1031,12 @@ export const APPS = [
                 "**الرئيسية** و**المكتبات** و**السلاسل** و**قوائم التشغيل** و**دليل التلفاز** و**البحث**، الذي يجد ما يُقال داخل المقاطع."
               ),
               t(
-                "A video's page: resume, mark watched, favorite, add to a playlist, its chapters and its transcript.",
-                "صفحة المقطع: المتابعة، ووضع علامة المشاهدة، والإضافة إلى المفضلة أو إلى قائمة تشغيل، وفصوله، ونصه المفرَّغ."
+                "A video's page: resume, mark watched, favorite, add to a playlist, **Play next** and **Add to queue**, its chapters and its transcript.",
+                "صفحة المقطع: المتابعة، ووضع علامة المشاهدة، والإضافة إلى المفضلة أو إلى قائمة تشغيل، و**شغّل تاليًا** و**أضف إلى قائمة الانتظار**، وفصوله، ونصه المفرَّغ."
+              ),
+              t(
+                "A library's **Playlists** tab, **Save as smart playlist** on its filters, **Shuffle** on a series and on each season, and **Continue your queue** on Home. Admins choose how each collection shows: its name, whether it is hidden, and its rows on Recommended and Home.",
+                "تبويب **قوائم التشغيل** في المكتبة، و**الحفظ كقائمة تشغيل ذكية** من مرشّحاتها، و**تشغيل عشوائي** في السلسلة وفي كل موسم، و**تابع قائمة الانتظار** في الرئيسية. ويختار المدراء طريقة عرض كل مجموعة: اسمها، وهل هي مخفية، وصفوفها في المقترحات والرئيسية."
               ),
               t(
                 "**Account**: devices, **Connect an app** (the link and QR code the apps take), sessions, API tokens, history and preferences; and **Sign in a device**, where a code is approved.",
@@ -886,6 +1045,14 @@ export const APPS = [
               t(
                 "For admins: the libraries and their processing, the queue and its failures, the Live TV channels, the machines, the users, the updates and the settings.",
                 "للمدراء: المكتبات ومعالجتها، والطابور وإخفاقاته، وقنوات البث المباشر، والأجهزة، والمستخدمون، والتحديثات، والإعدادات."
+              ),
+              t(
+                "**Word review** (`/review`), for admins: the words the home doubts in its transcripts, each with its sentence, its clip, why it was flagged and the spellings suggested. Accept, correct, mark as a name, add to the dictionary or skip, for one place or every place with the same word, and undo. Beside it: **Fixes**, the **Vocabulary**, the **Language packs**, and each library's word review settings.",
+                "**مراجعة الكلمات** (`/review`)، للمدراء: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، ومع كل منها جملتها ومقطعها الصوتي وسبب تعليمها والتهجئات المقترحة. اقبل أو صحّح أو علّم اسمًا أو أضف إلى القاموس أو تخطَّ، في موضع واحد أو في كل موضع فيه الكلمة نفسها، ويمكنك التراجع. وبجانبها: **التصحيحات** و**المفردات** و**حزم اللغات**، وإعدادات مراجعة الكلمات لكل مكتبة."
+              ),
+              t(
+                "**Logs**, **Errors** and **Dashboards**, for admins. Logs searches every part's lines, follows one request from app to server and back, and follows new lines live. Errors groups repeated failures, with how often and since which version, and tells admins of a new one. **Diagnostics settings** choose how long logs are kept and turn on detailed logs for an hour. Dashboards draw this machine's metrics over a chosen range.",
+                "**السجلات** و**الأخطاء** و**لوحات المتابعة**، للمدراء. تبحث صفحة السجلات في أسطر كل جزء، وتتتبّع طلبًا واحدًا من التطبيق إلى الخادم وبالعكس، وتعرض الأسطر الجديدة مباشرةً. وتجمع صفحة الأخطاء الإخفاقات المتكررة، مع عدد مراتها ومنذ أي إصدار، وتنبّه المدراء إلى كل خطأ جديد. وتحدد **إعدادات التشخيص** مدة الاحتفاظ بالسجلات، وتشغّل السجلات المفصّلة لمدة ساعة. وترسم لوحات المتابعة مقاييس هذا الجهاز في مدة تختارها."
               ),
             ],
           },
@@ -896,8 +1063,8 @@ export const APPS = [
         blocks: [
           {
             p: t(
-              "The big screen is a full-screen view for a TV or a big monitor: **Home**, **Libraries**, **Series**, **Search**, **Live TV** and **Settings**, in large type, always in the dark library theme. It shows the same videos, watch progress and permissions as the normal view. Open it with **Big screen** at the top of any page, or `g` then `b`; in the desktop apps, **View → Big Screen**, and **Start in Big Screen** opens it at launch. In Arabic the screens run right to left and the arrows follow them.",
-              "الشاشة الكبيرة عرض بملء الشاشة لتلفاز أو شاشة كبيرة: **الرئيسية** و**المكتبات** و**السلاسل** و**البحث** و**البث المباشر** و**الإعدادات**، بخط كبير وبمظهر المكتبة الداكن دائمًا. وتعرض المقاطع نفسها وتقدّم المشاهدة نفسه والصلاحيات نفسها التي في العرض العادي. افتحها بزر **الشاشة الكبيرة** أعلى أي صفحة، أو بالضغط على `g` ثم `b`؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الشاشة الكبيرة**، ويفتحها خيار **البدء بالشاشة الكبيرة** عند التشغيل. وبالعربية تسير الشاشات من اليمين إلى اليسار، وتتبعها الأسهم."
+              "The big screen is a full-screen view for a TV or a big monitor: **Home**, **Libraries**, **Series**, **Search**, **Live TV** and **Settings**, in large type, always in the dark library theme. It shows the same videos, watch progress and permissions as the normal view. On a library, a series and a season, **Play** and **Shuffle** start the play queue. Open it with **Big screen** at the top of any page, or `g` then `b`; in the desktop apps, **View → Big Screen**, and **Start in Big Screen** opens it at launch. In Arabic the screens run right to left and the arrows follow them.",
+              "الشاشة الكبيرة عرض بملء الشاشة لتلفاز أو شاشة كبيرة: **الرئيسية** و**المكتبات** و**السلاسل** و**البحث** و**البث المباشر** و**الإعدادات**، بخط كبير وبمظهر المكتبة الداكن دائمًا. وتعرض المقاطع نفسها وتقدّم المشاهدة نفسه والصلاحيات نفسها التي في العرض العادي. وفي المكتبة والسلسلة والموسم يبدأ زرّا **تشغيل** و**تشغيل عشوائي** قائمة الانتظار. افتحها بزر **الشاشة الكبيرة** أعلى أي صفحة، أو بالضغط على `g` ثم `b`؛ وفي تطبيقات سطح المكتب بالأمر **عرض ← الشاشة الكبيرة**، ويفتحها خيار **البدء بالشاشة الكبيرة** عند التشغيل. وبالعربية تسير الشاشات من اليمين إلى اليسار، وتتبعها الأسهم."
             ),
           },
           {
@@ -955,6 +1122,24 @@ export const APPS = [
                 "wide",
                 "A video's page in the web app: resume, mark watched, favorite, add to a playlist",
                 "صفحة مقطع في تطبيق الويب: المتابعة ووضع علامة المشاهدة والمفضلة والإضافة إلى قائمة تشغيل"
+              ),
+              shot(
+                "web-review",
+                "wide",
+                "Word review in the web app: the flagged words, the sentence, why each was flagged and the spellings suggested",
+                "مراجعة الكلمات في تطبيق الويب: الكلمات المعلَّمة والجملة وسبب تعليم كل كلمة والتهجئات المقترحة"
+              ),
+              shot(
+                "web-errors",
+                "wide",
+                "The Errors page: three error groups, with their counts, their last 14 days and their state",
+                "صفحة الأخطاء: ثلاث مجموعات أخطاء مع أعدادها وآخر 14 يومًا منها وحالتها"
+              ),
+              shot(
+                "web-logs",
+                "wide",
+                "The Logs page: the filters, and the lines of every part with their request ids",
+                "صفحة السجلات: المرشّحات، وأسطر كل جزء مع معرّفات طلباتها"
               ),
               shot(
                 "big-home",

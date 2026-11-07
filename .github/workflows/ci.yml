@@ -96,6 +96,7 @@ jobs:
       desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
       plugins: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.plugins == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
+      log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.compat_prev == 'true' }}
       replica: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.replica == 'true' }}
@@ -208,6 +209,7 @@ jobs:
       || needs.changes.outputs.unit_tokens == 'true'
       || needs.changes.outputs.desktop_shell == 'true'
       || needs.changes.outputs.mdns == 'true'
+      || needs.changes.outputs.log_bench == 'true'
     uses: ./.github/workflows/_unit.yml
     with:
       go: ${{ needs.changes.outputs.unit_go == 'true' }}
@@ -216,6 +218,7 @@ jobs:
       tokens: ${{ needs.changes.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ needs.changes.outputs.desktop_shell == 'true' }}
       mdns: ${{ needs.changes.outputs.mdns == 'true' }}
+      log_bench: ${{ needs.changes.outputs.log_bench == 'true' }}
 
   integration:
     needs: [changes]
@@ -485,6 +488,14 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: go run . gate -C ../.. --range "$BASE...$HEAD"
+      # maktaba.dev follows what ships (CLAUDE.md): a warning, never a failure, when the
+      # pull request adds a screen, an API path or a plugin-contract change and leaves the
+      # portal alone. A `No-Portal-Change: <reason>` trailer turns it into a notice.
+      - name: maktaba.dev follows user-facing work
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/ci/devportal_follows.py --range "$BASE...$HEAD"
 
   fork-rerun-comment:
     # EC2: bot comment on fork PRs telling maintainers how to rerun

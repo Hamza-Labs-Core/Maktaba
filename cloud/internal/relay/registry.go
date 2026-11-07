@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Registry tracks live server connections. The HTTP proxy looks up a
@@ -19,6 +20,9 @@ type Registry struct {
 	open map[*Tunnel]struct{}
 	// closing: the process is shutting down; new tunnels are refused
 	closing atomic.Bool
+	// seen is when each slug last had a tunnel here (registered or gone):
+	// a request for a home seen a moment ago is held while it reconnects
+	seen map[string]time.Time
 
 	// slugLocks serialize a slug's tunnel coming and going with the recording of it
 	// (Up, Down), apart from mu: the recording is a database write, and Lookup is the
@@ -35,7 +39,7 @@ type slugLock struct {
 var ErrNoTunnel = errors.New("relay: no live tunnel for slug")
 
 func NewRegistry() *Registry {
-	return &Registry{conns: make(map[string]*Tunnel), open: make(map[*Tunnel]struct{}), slugLocks: make(map[string]*slugLock)}
+	return &Registry{conns: make(map[string]*Tunnel), open: make(map[*Tunnel]struct{}), seen: make(map[string]time.Time), slugLocks: make(map[string]*slugLock)}
 }
 
 // lockSlug holds slug's lock until the returned func is called (dropped once no one
@@ -111,7 +115,19 @@ func (r *Registry) Register(slug string, t *Tunnel) {
 		old.Close()
 	}
 	r.conns[slug] = t
+	r.seen[slug] = time.Now()
 	r.track(t)
+}
+
+// LastSeen is when slug last had a tunnel here (up or going down).
+func (r *Registry) LastSeen(slug string) (time.Time, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, up := r.conns[slug]; up {
+		return time.Now(), true
+	}
+	at, ok := r.seen[slug]
+	return at, ok
 }
 
 // Unregister removes a tunnel ONLY if it matches the one we know
@@ -122,6 +138,7 @@ func (r *Registry) Unregister(slug string, t *Tunnel) bool {
 	defer r.mu.Unlock()
 	if cur, ok := r.conns[slug]; ok && cur == t {
 		delete(r.conns, slug)
+		r.seen[slug] = time.Now()
 		return true
 	}
 	return false

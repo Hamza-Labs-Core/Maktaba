@@ -22,3 +22,10 @@
 6. **A spec change ships its Arabic:** translate each changed epic, story or plan text in
    `docs/wiki/db/ar/` and regenerate (`python3 docs/wiki/db/generate_wiki.py`); `--check` in CI
    fails, naming the entry and field, on any missing or stale Arabic.
+7. **maktaba.dev follows what ships:** a pull request that ships or changes a user-facing
+   feature, an app screen, a developer-facing API or the plugin system updates maktaba.dev
+   (`web/packages/devportal`, and the guides it publishes from `docs/developers/`) in the same
+   pull request, in English and Arabic: the Apps pages (`scripts/apps.mjs`, with screenshots on
+   test data), the Plugins section, or a guide. The `affected-tests` job warns when such a pull
+   request leaves the portal alone (`tools/ci/devportal_follows.py`); a `No-Portal-Change:
+   <reason>` trailer says it needs nothing.

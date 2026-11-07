@@ -6,11 +6,11 @@
 > file (`mkp test --stage <name> --fixtures api.json`), and packs the `.mkplugin` (`mkp pack`).
 > An admin installs the file from Settings, Plugins, with Allow unreviewed plugins on. The
 > TypeScript, Python and Go templates, signing (`mkp pack --sign`, `mkp keys`), `mkp run` and
-> developer mode are not built yet. The rest of this page is the design in
+> developer mode are not built yet. The manifest is in [manifest](manifest.md), the WIT and the
+> API in the [plugin reference](reference.md). The rest of this page is the design in
 > [story 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > and
-> [story 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md),
-> which can change.
+> [story 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md).
 
 ## Languages
 

@@ -1,9 +1,9 @@
 # The manifest and the package
 
-> **Status: planned (Phase 1).** Nothing reads a plugin manifest yet. This page describes the
-> design in
-> [story 54.01](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-01-manifest-package.md),
-> which can change.
+> **Status: on `main`.** The manifest schema, its four validators (Go, Rust, Python and
+> TypeScript, kept in step by one shared set of test cases) and the `.mkplugin` unpacker are
+> built. Every key, its default, its limits and the error it answers are in the
+> [plugin reference](reference.md), generated from the schema itself.
 
 ## The contract
 
@@ -26,7 +26,7 @@ A `.mkplugin` file is a `tar` archive compressed with zstd:
 |---|---|---|
 | `manifest.toml` | yes | the manifest |
 | `plugin.wasm` | yes | one WebAssembly component (not a core module) |
-| `files.json` | yes | `[{path, sha256, size}]` for every other file, sorted by path |
+| `files.json` | yes | `[{path, sha256, size}]` for every file, `manifest.toml` included, sorted by path: what a signature covers |
 | `i18n/en.json`, `i18n/ar.json` | yes | every string key the manifest and UI files use |
 | `icon.png` | yes | 256 x 256 PNG, at most 200 KB |
 | `LICENSE` | yes | text matching `licence` |

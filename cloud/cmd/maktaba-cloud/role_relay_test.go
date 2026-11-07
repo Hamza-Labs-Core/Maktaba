@@ -77,3 +77,20 @@ func TestRelayDrain(t *testing.T) {
 		t.Error("drain off: DRAIN was sent")
 	}
 }
+
+// Story 50.04: the process's directory name, and relay.hold_max = 0 turning
+// holding off.
+func TestRelayIDAndHoldMax(t *testing.T) {
+	var cfg config.Config
+	cfg.Relay.ID = "a-blue"
+	if relayIDOf(cfg) != "a-blue" {
+		t.Error("relay.id")
+	}
+	cfg.Relay.ID = ""
+	if relayIDOf(cfg) == "" {
+		t.Error("no fallback name")
+	}
+	if holdMax(0) >= 0 || holdMax(15*time.Second) != 15*time.Second {
+		t.Error("holdMax")
+	}
+}
