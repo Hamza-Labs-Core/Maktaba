@@ -86,7 +86,11 @@ func (n *notices) Notify(_ context.Context, _ string, p notify.Payload) error {
 // last says how many more; no role, nothing.
 func TestErrorNotifier(t *testing.T) {
 	role := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/errors/notices" || r.URL.Query().Get("limit") != "10" {
+		if r.Method != http.MethodPost || r.URL.Path != "/errors/notices" { // a stray request
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Query().Get("limit") != "10" {
 			t.Errorf("asked %s %s", r.Method, r.URL)
 		}
 		_, _ = io.WriteString(w, `{"notices":[{"fp":"a1","title":"db.timeout: query","service":"api"},

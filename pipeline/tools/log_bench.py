@@ -8,7 +8,11 @@ The budget is 20 µs at the 99th percentile on the reference machine (an Apple M
 runner's speed against it: the slowest of a hashing and JSON loop, a loop of the logger's
 own work, that work's p99 in small chunks, and a call's p99 through structlog's stock
 pipeline (the report shows each), clamped to 1–4, as the Go benches'
-``logbench.Calibrate`` does. Over budget it warns (a GitHub
+``logbench.Calibrate`` does. With ``--base-src`` (``LOGBENCH_PY_BASE_SRC``: the
+``pipeline/src`` of the commit a change goes onto) it also measures that commit's logger on
+the same runner, round for round, and over the budget fails a change only when it is also
+more than 15 % slower than that: the factor follows the logger only within ~15 % across CI's
+CPUs (issue #807). Over budget it warns (a GitHub
 ``::warning::`` with the numbers) and exits 1 only with ``LOGBENCH_PY_STRICT=1``: CI's
 ``log-bench`` job sets it; the nightly Mac warns only, its p99 being the runner's noise as
 much as the logger's (docs/performance/logs.md, issue #807). The numbers are printed as
@@ -22,6 +26,7 @@ import hashlib
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 from collections.abc import Callable
@@ -47,6 +52,10 @@ REFERENCE_TAIL_P99_NS = 7_300
 # stock pipeline's p99 follows it there (the logger's p99 is 1.7 times it on the 7763, the
 # 9V74 and the Xeon alike), and a slower logger does not move it (issue #807, 48 runners).
 REFERENCE_STOCK_P99_NS = 8_700
+# how much slower than the base's logger on the same runner a change may be before its being
+# over the budget fails it: a run's rounds agree within 2-3 %, and its ordering (base, head,
+# head, base, ...) evens out a runner that drifts during the job
+BASE_TOLERANCE = 0.15
 
 
 def _best_of_three(work: Callable[[], None]) -> float:
@@ -219,6 +228,54 @@ def run(calls: int, rounds: int = 3) -> BenchResult:
     }
 
 
+class Compared(TypedDict):
+    base_p99_ns: int
+    head_p99_ns: int
+    base_p99_ns_rounds: list[int]
+    head_p99_ns_rounds: list[int]
+    ratio: float
+
+
+def _one_round(calls: int, src: str | None) -> tuple[int, int]:
+    """One round of `calls` calls in a fresh process, with the logger from `src` (a
+    ``pipeline/src``) or the installed one: (p50, p99)."""
+    env = dict(os.environ)
+    if src:
+        env["PYTHONPATH"] = src + os.pathsep + env.get("PYTHONPATH", "")
+    out = subprocess.run(
+        [sys.executable, __file__, "--one-round", "--calls", str(calls)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    got = json.loads(out.strip().splitlines()[-1])
+    if src and not os.path.realpath(got["logger"]).startswith(os.path.realpath(src) + os.sep):
+        raise RuntimeError(f"the base round ran {got['logger']}, not the logger in {src}")
+    return int(got["p50_ns"]), int(got["p99_ns"])
+
+
+def compare(base_src: str, calls: int, rounds: int = 3) -> Compared:
+    """The base's logger (``base_src``, the commit this one is compared with) and this one
+    on the same runner, round by round in fresh processes, in the order base, head, head,
+    base, ...: a runner that slows or speeds up during the job weighs on both alike. Each is
+    judged on its round with the lowest p99, as `run` judges."""
+    base: list[int] = []
+    head: list[int] = []
+    for i in range(max(1, rounds)):
+        order = (base_src, None) if i % 2 == 0 else (None, base_src)
+        for src in order:
+            (base if src else head).append(_one_round(calls, src)[1])
+    b, h = min(base), min(head)
+    return {
+        "base_p99_ns": b,
+        "head_p99_ns": h,
+        "base_p99_ns_rounds": base,
+        "head_p99_ns_rounds": head,
+        "ratio": round(h / b, 3),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument(
@@ -226,28 +283,73 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--out", default=os.environ.get("LOGBENCH_PY_OUT", ""))
     ap.add_argument("--rounds", type=int, default=int(os.environ.get("LOGBENCH_PY_ROUNDS", "3")))
+    ap.add_argument(
+        "--base-src",
+        default=os.environ.get("LOGBENCH_PY_BASE_SRC", ""),
+        help="the pipeline/src of the commit to compare with, measured on the same runner",
+    )
+    ap.add_argument("--one-round", action="store_true", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
+    if args.one_round:  # a child of compare: one round, and which logger it ran
+        from maktaba_pipeline import log as mlog
+
+        one = run(args.calls, 1)
+        print(  # noqa: T201
+            json.dumps({"p50_ns": one["p50_ns"], "p99_ns": one["p99_ns"], "logger": mlog.__file__})
+        )
+        return 0
     factor, raw = calibrate()
     got = run(args.calls, args.rounds)
     limit = int(BUDGET_P99_NS * factor)
-    report = {
+    report: dict[str, object] = {
         "logger_overhead_python": got,
         "_runner": {"factor": round(factor, 2), "budget_p99_ns": limit, "calibration": raw},
     }
+    vs: Compared | None = None
+    if args.base_src:
+        try:
+            vs = compare(args.base_src, args.calls, args.rounds)
+        except (subprocess.CalledProcessError, RuntimeError, ValueError, KeyError) as e:
+            print(f"::warning::the base logger could not be measured: {e}", file=sys.stderr)  # noqa: T201
+        else:
+            report["vs_base"] = vs
     text = json.dumps(report, indent=2)
     print(text)  # noqa: T201
     if args.out:
         with open(args.out, "w") as f:
             f.write(text)
-    if got["p99_ns"] > limit:
-        why = (
-            f"a Python log call (p99): {got['p99_ns'] / 1000:.1f} µs, "
-            f"over its budget of {limit / 1000:.1f} µs "
-            f"(20 µs at the reference, runner factor {factor:.2f})"
-        )
-        strict = os.environ.get("LOGBENCH_PY_STRICT", "") == "1"
-        print(f"::{'error' if strict else 'warning'}::{why}", file=sys.stderr)  # noqa: T201
+    return verdict(got["p99_ns"], limit, factor, vs)
+
+
+def verdict(p99: int, limit: int, factor: float, vs: Compared | None) -> int:
+    """Over the budget fails with LOGBENCH_PY_STRICT=1, unless the base, measured on the same
+    runner, is as slow: then it is the runner, not the change (#806 failed twice at factor
+    2.7 with no change to the logger, while the commit with its code passed elsewhere). The
+    runner's factor follows the logger only within ~15 % across CI's CPUs (issue #807), so
+    with a base the budget fails a change only when it is also more than BASE_TOLERANCE
+    slower than the base; slower than that, under the budget, warns."""
+    strict = os.environ.get("LOGBENCH_PY_STRICT", "") == "1"
+    over = p99 > limit
+    slower = vs is not None and vs["ratio"] > 1 + BASE_TOLERANCE
+    budget = (
+        f"a Python log call (p99): {p99 / 1000:.1f} µs, budget {limit / 1000:.1f} µs "
+        f"(20 µs at the reference, runner factor {factor:.2f})"
+    )
+    base = (
+        ""
+        if vs is None
+        else f"; the base's on this runner: {vs['base_p99_ns'] / 1000:.1f} µs "
+        f"(this one {vs['ratio']:.2f} times it)"
+    )
+    if over and (vs is None or slower):
+        print(f"::{'error' if strict else 'warning'}::{budget}{base}", file=sys.stderr)  # noqa: T201
         return 1 if strict else 0
+    if over:
+        print(f"::warning::{budget}{base}: the runner, not this change", file=sys.stderr)  # noqa: T201
+    elif slower:
+        print(  # noqa: T201
+            f"::warning::slower than the base, within the budget: {budget}{base}", file=sys.stderr
+        )
     return 0
 
 

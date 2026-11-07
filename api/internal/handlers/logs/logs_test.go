@@ -278,6 +278,10 @@ func TestOwnedByHashOrOldID(t *testing.T) {
 func TestExportForwardsOnlyTheFilter(t *testing.T) {
 	got := make(chan string, 1)
 	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/logs/recent" { // a stray request: not the peer's read
+			http.NotFound(w, r)
+			return
+		}
 		got <- r.URL.RawQuery
 		_, _ = io.WriteString(w, "")
 	}))

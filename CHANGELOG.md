@@ -14,11 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
-- **The operator console is its own web app (Epic 50 story 50.32, part 1).** Maktaba Cloud's
-  console moved out of the account web app into `web/admin` (`pnpm dev:admin`, `pnpm build:admin`),
-  for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
-  new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
-  or staff API path, an admin string or a console module.
+- **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
+  `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
+  enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
+  streams, Pro past its allowance plays at Basic's quality, and pay-as-you-go's usage reaches a
+  fake payment provider once, through an outage. No stream stops in any.
 - **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
   keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
   (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
@@ -104,6 +104,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
+  before the database's own thread had ended, so the worker sometimes counted that thread as
+  still running and left without the normal shutdown. The close now waits for the thread to
+  end, and the worker gives threads that are already ending a second before it counts them
+  (#862).
 - **A rollback no longer keeps the home down for half a day building the search index.**
   Putting a backup back rebuilt semantic search's vector index among the other indexes with
   64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
@@ -1875,6 +1880,20 @@ build fails when the two differ.
   been copied.
 - On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
+
+- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
+  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
+  lists only what fits; on the home's network and over direct access nothing is capped. A
+  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
+  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
+  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
+  too many devices playing, or the home too busy to prepare the video.
+
+- **The operator console is its own web app (Epic 50 story 50.32, part 1).** Maktaba Cloud's
+  console moved out of the account web app into `web/admin` (`pnpm dev:admin`, `pnpm build:admin`),
+  for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
+  new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
+  or staff API path, an admin string or a console module.
 
 ### Fixed
 

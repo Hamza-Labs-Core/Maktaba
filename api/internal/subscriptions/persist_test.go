@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -449,5 +450,40 @@ func TestStore_ReloadActiveTakesUpAnotherProcesssLicense(t *testing.T) {
 		IssuedAt: time.Date(2026, 5, 17, 0, 0, 0, 0, time.UTC), ExpiresAt: time.Date(2027, 5, 17, 0, 0, 0, 0, time.UTC)}))
 	if changed, err := running.ReloadActive(ctx, v); changed || err == nil || running.Current() != nil {
 		t.Fatalf("a forged row: changed=%v err=%v", changed, err)
+	}
+}
+
+// Story 50.19 §7: a "basic" license is stored with the licenses table's tier (home) and its raw
+// license as signed, and comes back after a restart as the home tier.
+func TestPersistentStore_BasicLicenseSurvivesRestart(t *testing.T) {
+	ctx := context.Background()
+	pub, priv := newKeys(t)
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	lic, err := Sign(priv, LicenseInner{LicenseID: "cloud-srv", Tier: TierBasic, Seats: 4, IssuedAt: now, ExpiresAt: now.Add(31 * 24 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := &Verifier{PublicKey: pub}
+	ent, err := v.Verify(lic, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := recordOf(lic); rec.Tier != TierHome || !strings.Contains(rec.RawJWT, `"tier":"basic"`) {
+		t.Fatalf("stored as %q, raw %s", rec.Tier, rec.RawJWT)
+	}
+	db := &fakeLicenseDB{}
+	s1, err := NewPersistentStore(ctx, db, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s1.SetLicense(ctx, lic, ent); err != nil {
+		t.Fatal(err)
+	}
+	s2, err := NewPersistentStore(ctx, db, v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur := s2.Current(); cur == nil || cur.Tier != TierHome || cur.Seats != 4 {
+		t.Fatalf("after a restart: %+v", cur)
 	}
 }

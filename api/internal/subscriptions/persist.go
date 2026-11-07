@@ -150,9 +150,13 @@ func (s *Store) recover(rec *persistedLicense, v *Verifier) (*License, *Entitlem
 
 func recordOf(lic *License) persistedLicense {
 	raw, _ := json.Marshal(lic) // a License always marshals
+	tier := lic.License.Tier
+	if tier == TierBasic {
+		tier = TierHome // the licenses table's tiers (story 50.19); raw_jwt keeps it as signed
+	}
 	return persistedLicense{
 		LicenseID: lic.License.LicenseID,
-		Tier:      lic.License.Tier,
+		Tier:      tier,
 		Seats:     lic.License.Seats,
 		IssuedAt:  lic.License.IssuedAt,
 		ExpiresAt: lic.License.ExpiresAt,
