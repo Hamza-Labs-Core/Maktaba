@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **A page's counts, dates and episode numbers follow the language it is drawn in (Apple apps,
+  Android).** On the Apple apps a series' episode count and year, a video's length and date, and
+  an episode's season and number now take the page's language, as its other words do, so a page
+  drawn in Arabic in a preview or a page snapshot says them in Arabic. On Android a series' year
+  is written in the same digits as its episode count.
 - **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
   Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
   home's secure LAN names from the browser, and when none answers it explains that the router
@@ -2098,6 +2103,11 @@ build fails when the two differ.
   Apple, Android and Android TV) carries the id of the call that opened the session (`rid`), and streaming logs it on a failed
   playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
   lines for the same action. Streaming's failure lines also carried no request id until now.
+
+- **A folder scan is a queue stage like the others (Epic 54, story 54.36).** The scan reports
+  the new videos it found, and the queue starts each one's checks from that, instead of the
+  scanner queuing them itself. What a scan finds and what runs after it are unchanged; a scan
+  that finds nothing new starts nothing.
 
 ### Fixed
 

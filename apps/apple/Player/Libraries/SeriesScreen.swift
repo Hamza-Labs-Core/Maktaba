@@ -12,6 +12,7 @@ struct SeriesScreen: View {
     @State private var model: SeriesModel
     @State private var pluginPanels: [PanelView] = []
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.locale) private var locale
 
     init(context: PlayerContext, id: String) {
         self.context = context
@@ -58,7 +59,7 @@ struct SeriesScreen: View {
     }
 
     private var name: String {
-        guard let n = model.series?.name, !n.isEmpty else { return String(localized: SeriesGrid.untitled) }
+        guard let n = model.series?.name, !n.isEmpty else { return SeriesGrid.untitled.string(in: locale) }
         return n
     }
 
@@ -111,9 +112,12 @@ struct SeriesScreen: View {
         }
     }
 
-    private var details: String {
-        var parts = [String(localized: SeriesGrid.episodes(model.episodeCount))]
-        if let y = model.series?.year { parts.append(y.formatted(.number.grouping(.never))) }
+    private var details: String { Self.details(episodes: model.episodeCount, year: model.series?.year, locale) }
+
+    /// "3 episodes · 2024" in `locale`'s language and digits (the page's), the year ungrouped.
+    static func details(episodes: Int, year: Int?, _ locale: Locale) -> String {
+        var parts = [SeriesGrid.episodes(episodes).string(in: locale)]
+        if let year { parts.append(year.formatted(.number.grouping(.never).locale(locale))) }
         return parts.joined(separator: " · ")
     }
 
@@ -188,6 +192,7 @@ private struct EpisodeRow: View {
     let toggle: () -> Void
 
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.locale) private var locale
 
     private var number: Int? { episode.episode ?? episode.absoluteNumber }
 
@@ -216,7 +221,7 @@ private struct EpisodeRow: View {
                             .font(.maktabaBody(15, weight: .medium, relativeTo: .subheadline))
                             .foregroundStyle(Color.mktText)
                         if let d = episode.durationSec {
-                            Text(verbatim: VideoCard.length(d))
+                            Text(verbatim: VideoCard.length(d, locale))
                                 .font(.maktabaBody(13, relativeTo: .caption))
                                 .foregroundStyle(Color.mktMuted)
                                 .monospacedDigit()
@@ -253,7 +258,7 @@ private struct EpisodeRow: View {
     }
 
     private var label: Text {
-        let rest = Text(verbatim: ([episode.title] + [episode.durationSec.map(VideoCard.length)].compactMap { $0 }).joined(separator: ", "))
+        let rest = Text(verbatim: ([episode.title] + [episode.durationSec.map { VideoCard.length($0, locale) }].compactMap { $0 }).joined(separator: ", "))
         guard let number else { return rest }
         return Text("Episode \(number)", tableName: "Libraries", comment: "An episode's number") + Text(verbatim: ", ") + rest
     }
