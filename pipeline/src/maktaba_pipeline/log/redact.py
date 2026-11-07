@@ -8,7 +8,6 @@ ICU, Java and Rust read them alike; a replacement names its groups as ``$1``.
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import hmac
 import json
@@ -70,12 +69,36 @@ class Rules:
     ipv4_keep: frozenset[str]
     ipv6: re.Pattern[str]
     raw: dict[str, Any] = field(repr=False, compare=False, default_factory=dict)
+    # every value rule's literal needs in one pattern (case folded: a superset), or None when
+    # a rule has none: a value it does not match, and with too few digits, dots and colons
+    # for a card or an address, has nothing to scrub (most values: the rules' loop alone was
+    # ~2 µs a value, Epic 53 story 53.13)
+    needs_re: re.Pattern[str] | None = field(repr=False, compare=False, hash=False, default=None)
+    # each key's answer, kept on the instance: an lru_cache keyed on the rules hashed every
+    # field of this dataclass on every call (most of a log call's cost, Epic 53 story 53.13)
+    _keys_seen: dict[tuple[str, bool], bool] = field(
+        repr=False, compare=False, hash=False, default_factory=dict
+    )
 
     def key_sensitive(self, key: str, is_string: bool) -> bool:
-        return _key_sensitive(self, key.lower(), is_string)
+        low = key.lower()
+        hit = self._keys_seen.get((low, is_string))
+        if hit is None:
+            hit = _key_sensitive(self, low, is_string)
+            if len(self._keys_seen) < 4096:
+                self._keys_seen[(low, is_string)] = hit
+        return hit
 
     def scrub(self, text: str) -> str:
         if not text:
+            return text
+        if (
+            self.needs_re is not None
+            and text.count(".") < 3
+            and text.count(":") < 3
+            and (len(text) < self.card_min or sum(map(str.isdigit, text)) < self.card_min)
+            and not self.needs_re.search(text)
+        ):
             return text
         out = text
         low = out.lower()
@@ -84,7 +107,7 @@ class Rules:
                 new = rule.regex.sub(rule.replace, out)
                 if new != out:
                     out, low = new, new.lower()
-        digits = sum(c.isdigit() for c in out)
+        digits = sum(map(str.isdigit, out))
         if digits >= self.card_min:
             out = _replace_checked(out, self.cards, self._card)
         if out.count(".") >= 3 and digits >= 4:
@@ -111,7 +134,6 @@ class Rules:
         return f"{parts[0]}.{parts[1]}.{parts[2]}.0"
 
 
-@functools.lru_cache(maxsize=2048)
 def _key_sensitive(rules: Rules, low: str, is_string: bool) -> bool:
     if low in rules.keys or any(low.endswith(s) for s in rules.key_suffixes):
         return True
@@ -197,6 +219,11 @@ def load_rules(raw: dict[str, Any]) -> Rules:
         key_suffixes=tuple(raw["key_suffixes"]),
         key_parts=tuple(raw["key_parts_string_only"]),
         values=tuple(values),
+        needs_re=(
+            re.compile("|".join(re.escape(n) for v in values for n in v.needs), re.IGNORECASE)
+            if values and all(v.needs for v in values)
+            else None
+        ),
         cards=re.compile(cards["pattern"]),
         card_first=cards["first_digits"],
         card_min=int(cards["min_digits"]),

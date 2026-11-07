@@ -28,7 +28,10 @@ fun Root(app: MaktabaTVApp) {
         is AppSession.Phase.SignedIn -> {
             // what the home has on, asked again each time the TV app comes to the front (51.11)
             FollowCapabilities(session)
-            SignedInApp(app, p.user, p.client)
+            // crash reports to the home (asked once, off until yes) and Report a problem (Epic 53)
+            com.hamzalabs.maktaba.core.ui.DiagnosticsHost(p.client, app.session.current.collectAsState().value, tv = true) {
+                SignedInApp(app, p.user, p.client)
+            }
         }
     }
     // a maktaba://connect link the app was opened with: asked about first, wherever the TV is

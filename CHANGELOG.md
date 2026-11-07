@@ -48,6 +48,13 @@ build fails when the two differ.
   stored words) that lack their second listen are transcribed again by a machine that runs
   it, a few at a time.
 
+- **The pipeline's logger costs less per line, and the log benches run every night on a Mac.**
+  The shared redaction no longer hashes its whole rule set for every field of every line, and
+  it leaves the logger's own fields (time, level, service, version, node, the event's name)
+  alone. A value that cannot hold a secret is returned at once. A new Python logger bench sits
+  beside the Go benches in CI's `log-bench` job. A nightly macOS run keeps the numbers for 90
+  days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
+
 ### Fixed
 
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
@@ -955,6 +962,16 @@ build fails when the two differ.
   (nothing in a refused flow is countersigned), with the cycle path or bad edge in English and
   Arabic; cycles through the published flows it subscribes to count; the review pages draw the
   whole flow.
+- **The Android apps send crash reports to the home, report problems, and the Remote reads the
+  home's diagnostics.** Maktaba Remote for Android has **Diagnostics** in its account menu:
+  Errors (a group's chart and lines, Mark seen, Resolve and Mute), Logs (search, and Follow a
+  request from a reference), Dashboards (Overview and Storage) and the problem-report inbox
+  (status and reply). The Player, the Remote and the Android TV app ask once after signing in
+  whether to **send crash reports** to the home, off until the person says yes. When on, the
+  last crash and, on Android 11 and later, an ANR (with its trace), a native crash or a
+  low-memory kill go to the home at the next start as scrubbed envelopes with the app's log.
+  **Report a problem** (the account menu, the TV's Account, and **Report this** on error
+  screens) shows what it sends first; **My reports** shows the admin's reply.
 
 ### Fixed
 

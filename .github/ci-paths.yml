@@ -215,7 +215,10 @@ log_bench:
   - 'cmd/maktaba-server/go.mod'
   - 'cmd/maktaba-server/go.sum'
   - 'pipeline/src/maktaba_pipeline/log/**'
+  - 'pipeline/tools/log_bench.py'
+  - 'tools/logbench/**'
   - '.github/workflows/_unit.yml'
+  - '.github/workflows/nightly-perf.yml'
 
 mdns:
   - *ci
