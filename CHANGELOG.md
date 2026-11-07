@@ -64,6 +64,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Mac app no longer says a part keeps stopping when that part is only turned off.** A
+  process whose component is off (the supervisor's `held` state, as the plugin host is with
+  no plugin installed) made the menu bar and the starting screen say "Some parts keep stopping:
+  plugins". The app now counts it as off, as the server does.
+
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
   A quality or audio change that finished after the video was closed, or after another video
   started, no longer leaves an unseen player playing or replaces the new video (its stream
@@ -1010,6 +1015,14 @@ build fails when the two differ.
   purchase arrives. A refund ends it at the next check; a store outage changes nothing for 31
   days, a Maktaba Cloud outage nothing at all. Settings → Plugins → Store account lists the
   purchases held, with **Check for purchases now**. Migration 0201.
+
+- **The desktop apps report problems and send crash reports to the home.** Maktaba's tray and
+  Help menu have **Report a problem…**, which opens the web app's form. A panic of the app
+  itself is kept, scrubbed, and the web app in its window sends it to the home only when
+  crash reports are on there. The Player for Windows and Linux asks once after signing in
+  whether to send crash reports, off until the person says yes (the Account menu keeps the
+  switch). It sends a kept crash at the next sign-in when on, and has **Report a problem…** and
+  **My reports** in its Help menu.
 
 ### Fixed
 

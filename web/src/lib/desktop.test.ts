@@ -130,10 +130,18 @@ describe("resolveMenuAction", () => {
         "new-private",
         "open-docs",
         "big-screen",
+        "report-problem",
         "media-play",
         "media-pause",
       ].sort()
     );
+  });
+
+  it("Report a Problem opens the web app's form (Epic 53 story 53.15)", () => {
+    expect(resolveMenuAction("report-problem")).toEqual({
+      kind: "navigate",
+      to: "/account/report",
+    });
   });
 
   it("resolves the dynamic library-N ids for N=1..9 only", () => {

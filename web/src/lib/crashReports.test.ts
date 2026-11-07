@@ -9,7 +9,9 @@ import {
   envelope,
   reportCrash,
   resetCrashReportsForTest,
+  sendShellCrashes,
   setCrashReports,
+  type ShellCrash,
 } from "./crashReports";
 import { appLog, clearLogLines } from "./errorLog";
 
@@ -63,5 +65,46 @@ describe("crash reports to the home", () => {
     const item = JSON.parse(lines[1]);
     expect(new TextEncoder().encode(lines[2]).length).toBe(item.length);
     expect(JSON.parse(lines[0]).app_version).toBe("0.3.84");
+  });
+
+  // the desktop shell's own panics (apps/desktop/src-tauri/src/crashes.rs)
+  const shellCrash = (id: string): ShellCrash => ({
+    id,
+    at: 1_800_000_000_000,
+    thread: "main",
+    message: "called unwrap on Authorization: Bearer abcdef.ghijkl",
+    location: "src/tray.rs:12",
+    app_version: "0.3.90",
+    platform: "macos",
+    log: ['{"msg":"panic","attrs":{"text":"mail someone@example.com"}}'],
+  });
+
+  it("sends nothing of the shell's crashes while off, and never asks the shell", async () => {
+    const invoke = vi.fn();
+    expect(await sendShellCrashes(invoke)).toBe(0);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends the shell's crashes when on and tells the shell which went", async () => {
+    setCrashReports(true);
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(new Response("{}", { status: 200 }))
+      .mockResolvedValueOnce(new Response("{}", { status: 429 }));
+    const invoke = vi.fn(async (cmd: string) =>
+      cmd === "shell_crashes" ? [shellCrash("a"), shellCrash("b")] : 1
+    );
+    expect(await sendShellCrashes(invoke as never)).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const body = String(fetchMock.mock.calls[0][1].body);
+    const header = JSON.parse(body.split("\n")[0]);
+    expect(header.consent).toBe(CONSENT);
+    expect(header.app).toBe("desktop");
+    expect(body).not.toContain("abcdef");
+    expect(body).not.toContain("someone@example.com");
+    expect(body).toContain("src/tray.rs:12");
+    // only the one the home took; the other is offered again at the next start
+    expect(invoke).toHaveBeenLastCalledWith("shell_crashes_sent", { ids: ["a"] });
   });
 });
