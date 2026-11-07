@@ -135,6 +135,11 @@ They report within about 30 minutes:
 | Source archive present and, for reproducible toolchains (Rust, TinyGo), builds to the same hash | missing source blocks; otherwise a badge |
 | The flow ([Flows](flows.md)): `flow.toml`'s schema, each manifest matching its member exactly, the leaf rule (no edge into a core stage or another plugin's stage), events that exist with payload schemas, every plugin it names in the store at a version it accepts, no cycle through it and the published flows it subscribes to, chains within 16 hops | any refusal, named with its cycle path or bad edge, in English and Arabic |
 
+The malware scan, the sandbox run and the reproducible build run in an isolated runner with
+no network and no secret: a container started for your submission alone (Cloudflare
+Containers), or a GitHub Actions job where the store runs without them. Nothing your plugin
+does there can reach the internet.
+
 ### Submitting a flow
 
 A flow of several plugins is submitted together: `POST /v1/flow-submissions {flow_id,

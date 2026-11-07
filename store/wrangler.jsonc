@@ -59,9 +59,15 @@
       { "name": "IP_BUCKET", "class_name": "IpBucket" },
       { "name": "PAIRING_CODE", "class_name": "PairingCode" },
       { "name": "CATALOG_WRITER", "class_name": "CatalogWriter" },
+      // the isolated runner on Cloudflare Containers (#756): without the containers deploy
+      // config (scripts/containers-config.mjs) it has no container and RUNNER stays "github"
+      { "name": "CHECK_RUNNER", "class_name": "CheckRunner" },
     ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountGuard", "IpBucket", "PairingCode", "CatalogWriter"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AccountGuard", "IpBucket", "PairingCode", "CatalogWriter"] },
+    { "tag": "v2", "new_sqlite_classes": ["CheckRunner"] }
+  ],
   "queues": {
     "producers": [
       { "binding": "Q_CHECKS", "queue": "store-checks" },

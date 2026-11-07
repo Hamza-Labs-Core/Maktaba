@@ -19,6 +19,7 @@ import { listPage, pluginPage } from "./listing";
 
 export { AccountGuard } from "../objects/account-guard";
 export { CatalogWriter } from "../objects/catalog-writer";
+export { CheckRunner } from "../objects/check-runner";
 export { IpBucket } from "../objects/ip-bucket";
 export { PairingCode } from "../objects/pairing-code";
 
