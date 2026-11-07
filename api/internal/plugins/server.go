@@ -38,8 +38,11 @@ type Server struct {
 	Media *Media
 	// ArtifactsDir is <data>/plugins/artifacts: subtitles and artwork plugins write.
 	ArtifactsDir string
-	routes       map[string]route
-	once         sync.Once
+	// ToLocal maps a stored media path to this machine's own (a joined machine's share
+	// mapping, story 54.42 §3); nil: paths are the home's.
+	ToLocal func(string) string
+	routes  map[string]route
+	once    sync.Once
 }
 
 // call is one plugin call, checked: its invocation and its JSON body.
@@ -172,6 +175,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(body) == 0 {
 		body = []byte("{}")
+	}
+	if s.Tokens.Remote != nil && IsForwarded(iface+"/"+fn) {
+		// a machine sends a write to the home, which checks and applies it (54.42 §3)
+		status, ctype, out, err := s.Tokens.Remote.Call(r.Context(), iface+"/"+fn, token, body)
+		if err != nil {
+			s.refused(w, inv, iface+"/"+fn, refuse(503, CodeHomeUnreachable, err.Error()))
+			return
+		}
+		if ctype == "" {
+			ctype = "application/json"
+		}
+		w.Header().Set("Content-Type", ctype)
+		w.WriteHeader(status)
+		_, _ = w.Write(out)
+		return
 	}
 	out, ref := rt(&call{ctx: r.Context(), inv: inv, body: body, s: s})
 	if ref != nil {

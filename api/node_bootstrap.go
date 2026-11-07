@@ -54,6 +54,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
@@ -129,10 +130,12 @@ type nodeRuntime struct {
 	resolver *nodeauth.Resolver
 	guard    *schemaguard.Guard
 	vod      *vodfallback.Fallback
-	home     *clusterauth.HomeInfoCache
-	proxy    http.Handler
-	rules    func() nodemode.Rules
-	logger   *slog.Logger
+	// toLocal maps a stored media path to this machine's mount (plugins' media, 54.42)
+	toLocal func(string) string
+	home    *clusterauth.HomeInfoCache
+	proxy   http.Handler
+	rules   func() nodemode.Rules
+	logger  *slog.Logger
 	// metrics: the node's delegation, placement and pause numbers (story 35.15)
 	metrics *nodemetrics.Metrics
 	// recent: who changed something the copy may not have yet (their reads go to the
@@ -365,6 +368,7 @@ func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *sl
 	if spec := os.Getenv("MAKTABA_STREAM_PATH_MAP"); spec != "" {
 		toLocal = sharepath.ParseStreamMap(spec).ToLocal
 	}
+	rt.toLocal = toLocal
 	// what the home serves goes through the resolver's front (a node-local sign-in is
 	// answered here, never sent to the home, which would sign the person out)
 	rt.vod = &vodfallback.Fallback{DB: dbs.app, Home: rt.resolver.Home(rt.proxy), Logger: logger,
@@ -618,6 +622,10 @@ func (rt *nodeRuntime) mountNodeRoutes(r chi.Router) {
 	r.Get(link.PathLocalFetch, serveLocalFetch(rt.linkC))
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: rt.self, Moved: switchover.MovedHandler(movedDB),
 		EmergencyStatus: em.Status, Emergency: em.Start, TermClaim: em.Claim})
+	// Epic 54 story 54.42: this machine's plugin jobs: the home mints their tokens and
+	// applies their writes; reads and media are served here
+	router.MountP54Node(r, router.P54NodeDeps{DB: rt.dbs.app, Logger: rt.logger,
+		Remote: &plugins.HTTPRemote{Home: rt.link.HomeURL(), Transport: rt.link.Transport()}, ToLocal: rt.toLocal})
 }
 
 // handler is the node's public handler: the placement dispatcher over the local

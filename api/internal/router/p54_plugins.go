@@ -5,7 +5,11 @@
 //	/internal/plugins/breaker      TCP, this machine's pipeline only (54.09 §2)
 //	/plugin-api/v1/*               the unix socket only, never TCP (54.04 §1): served when
 //	                               MAKTABA_PLUGIN_API_SOCKET names the socket (the
-//	                               supervisor sets it on the home while plugins.host runs)
+//	                               supervisor sets it where plugins.host runs)
+//	/internal/cluster/plugin…      the home's routes for its joined machines (54.42)
+//
+// A joined machine mounts MountP54Node instead: its own invocation and outcome routes and
+// its plugin API, which forwards every write to the home.
 package router
 
 import (
@@ -57,6 +61,7 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 	}
 	tokens := plugins.NewTokens(d.DB)
 	inv := &pluginsh.Invocations{Tokens: tokens}
+	var lc *plugins.Lifecycle
 	if d.Components != nil {
 		sup := d.Sup
 		if sup == nil {
@@ -69,6 +74,7 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			l.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 		}
 		d.Components.Plugins = l
+		lc = l
 		inv.Trip = func(r *http.Request, id, reason string) (bool, error) { return l.Trip(r.Context(), id, reason) }
 		accounts := users.New(d.DB)
 		(&pluginsh.Admin{L: l, Logger: logger, VerifyPassword: func(ctx context.Context, id, pw string) error {
@@ -90,12 +96,54 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 	if d.DataDir != "" {
 		s.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 	}
-	sock := d.Socket
+	if lc != nil {
+		// the joined machines' tokens, forwarded writes, outcomes and package files
+		(&pluginsh.Cluster{L: lc, Tokens: tokens, Server: s}).Mount(r)
+	}
+	serveSocket(d.Ctx, d.Socket, s, logger)
+	return s
+}
+
+// P54NodeDeps are a joined machine's (story 54.42).
+type P54NodeDeps struct {
+	// DB is the home's database through the machine's role: reads only.
+	DB     *sql.DB
+	Logger *slog.Logger
+	// Remote is the home over the machine's signed link.
+	Remote plugins.Remote
+	// ToLocal maps a stored media path to this machine's mount.
+	ToLocal func(string) string
+	Socket  string
+	Ctx     context.Context
+}
+
+// MountP54Node mounts a joined machine's plugin routes: the invocation routes its
+// pipeline mints through (the home mints), the outcome route its breaker reports to, and
+// its plugin API on the socket, which serves reads and media here and sends every write
+// to the home.
+func MountP54Node(r chi.Router, d P54NodeDeps) *plugins.Server {
+	if d.DB == nil || d.Remote == nil {
+		return nil
+	}
+	logger := d.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	tokens := plugins.NewTokens(d.DB)
+	tokens.Remote = d.Remote
+	(&pluginsh.Invocations{Tokens: tokens}).Mount(r)
+	r.Post("/internal/plugins/outcome", pluginsh.Outcome(d.Remote))
+	s := &plugins.Server{DB: d.DB, Tokens: tokens, Logger: logger, ToLocal: d.ToLocal,
+		Media: &plugins.Media{FFmpeg: os.Getenv("MAKTABA_FFMPEG")}}
+	serveSocket(d.Ctx, d.Socket, s, logger)
+	return s
+}
+
+func serveSocket(ctx context.Context, sock string, s *plugins.Server, logger *slog.Logger) {
 	if sock == "" {
 		sock = os.Getenv("MAKTABA_PLUGIN_API_SOCKET")
 	}
 	if sock != "" {
-		ctx := d.Ctx
 		if ctx == nil {
 			ctx = context.Background()
 		}
@@ -106,5 +154,4 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		}()
 		logger.Info("plugin_api_listening", "socket", sock)
 	}
-	return s
 }

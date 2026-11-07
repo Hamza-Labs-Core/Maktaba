@@ -58,6 +58,12 @@ func buildPlacement() placement.Table {
 		"/internal/updates/tv-change/{run}/withdraw",
 		// a restore the command line asked for, recorded by this machine's API (story 35.5)
 		"/internal/updates/restored",
+		// this machine's plugin jobs (Epic 54, story 54.42): its pipeline mints, ends and
+		// reports them on its own API, which asks the home
+		"/internal/plugins/invocations",
+		"/internal/plugins/invocations/{id}",
+		"/internal/plugins/breaker",
+		"/internal/plugins/outcome",
 		// VOD is served by the node itself: its streaming role reads the NAS (R13)
 		"/api/stream/capabilities",
 		"/api/stream/sessions",
