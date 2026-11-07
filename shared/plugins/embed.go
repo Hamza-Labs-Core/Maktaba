@@ -21,6 +21,12 @@ var Capabilities []byte
 //go:embed events.toml
 var Events []byte
 
+// ReservedStages is reserved_stages.txt: the stage names only Maktaba's own plugins may
+// define (story 54.22 §1).
+//
+//go:embed reserved_stages.txt
+var ReservedStages []byte
+
 // WIT is the maktaba:plugin world.
 //
 //go:embed wit/maktaba-plugin.wit

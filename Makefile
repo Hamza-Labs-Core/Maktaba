@@ -215,7 +215,7 @@ lint-log:  ## Story 21.1 AC-4: no runtime data concatenated into log msg.
 
 .PHONY: plugins-sync
 plugins-sync:  ## Epic 54: copy shared/plugins into the pipeline and regenerate the TypeScript SDK's data.
-	cp shared/plugins/manifest.schema.json shared/plugins/capabilities.toml shared/plugins/events.toml $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data/
+	cp shared/plugins/manifest.schema.json shared/plugins/capabilities.toml shared/plugins/events.toml shared/plugins/reserved_stages.txt $(PIPELINE_DIR)/src/maktaba_pipeline/plugins/data/
 	cd tools/plugin-sdk/js && node scripts/gen-data.mjs
 
 .PHONY: plugins-check

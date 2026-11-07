@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
+
+	plugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
 )
 
 // The rules across fields (story 54.01 §2), run after the schema passed, in this order in
@@ -17,10 +20,11 @@ import (
 //	                              stages
 //
 // R7–R9 need the package's files and are skipped when files is nil.
-func rules(m map[string]any, files Files) Errors {
+func rules(m map[string]any, files Files, trusted bool) Errors {
 	var errs Errors
 	id := m["id"].(string)
-	if reservedID(id) {
+	firstParty := strings.HasPrefix(id, "tv.maktaba.") && !strings.HasPrefix(id, "tv.maktaba.community.")
+	if trusted && !firstParty || !trusted && reservedID(id) {
 		errs = append(errs, Error{Code: CodeReservedID, Path: "id"})
 	}
 	platforms := m["platforms"].([]any)
@@ -60,12 +64,18 @@ func rules(m map[string]any, files Files) Errors {
 			errs = append(errs, Error{Code: CodeDuplicateStage, Path: "stage/" + strconv.Itoa(i) + "/name", Detail: name})
 		}
 		subjects[name] = st["subject"].(string)
+		// R5a: a core stage's name and the dup_group subject are Maktaba's own (54.22 §1)
+		if !trusted && (ReservedStage(name) || subjects[name] == "dup_group") {
+			errs = append(errs, Error{Code: CodeTrustedField, Path: "stage/" + strconv.Itoa(i) + "/name", Detail: name})
+		}
 	}
 	for i, s := range stages {
 		st := s.(map[string]any)
 		base := "stage/" + strconv.Itoa(i)
 		for j, r := range st["may_request"].([]any) {
-			if _, ok := subjects[r.(string)]; !ok {
+			// a first-party stage requests other core stages by their exact names: the
+			// assembled graph checks them (54.25 §1)
+			if _, ok := subjects[r.(string)]; !ok && !trusted {
 				errs = append(errs, Error{Code: CodeBadRequest, Path: base + "/may_request/" + strconv.Itoa(j), Detail: r.(string)})
 			}
 		}
@@ -201,4 +211,24 @@ func hasLowerBound(r string) bool {
 		}
 	}
 	return false
+}
+
+var (
+	reservedOnce   sync.Once
+	reservedStages map[string]bool
+)
+
+// ReservedStage reports whether name is a stage of Maktaba's own graph
+// (shared/plugins/reserved_stages.txt), which only first-party plugins may define.
+func ReservedStage(name string) bool {
+	reservedOnce.Do(func() {
+		reservedStages = map[string]bool{}
+		for _, line := range strings.Split(string(plugins.ReservedStages), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				reservedStages[line] = true
+			}
+		}
+	})
+	return reservedStages[name]
 }
