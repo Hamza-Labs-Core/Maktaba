@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 )
 
 // stampStderr makes serve's own stderr lines (the supervisor's "[serve]" and "[update]"

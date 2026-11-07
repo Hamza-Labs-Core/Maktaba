@@ -19,9 +19,9 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logindex"
-	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logindex"
 )
 
 var (

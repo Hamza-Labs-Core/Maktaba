@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
-	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logindex"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logindex"
 )
 
 // newLogsCmd is `maktaba-server logs`: the log index role (Epic 53 story 53.09, catalog

@@ -15,12 +15,12 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
-	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 )
 
 // serveRecovery is the recovery console (Epic 53 story 53.04) once the supervisor exists;
