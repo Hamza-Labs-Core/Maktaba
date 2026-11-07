@@ -56,7 +56,10 @@ async function sidebar() {
 // first test's 5 s and a page's 1 s findBy (#697). Done once here, in a hook with its own
 // budget; each test's fresh import after resetModules then only evaluates cached code.
 beforeAll(async () => {
-  await Promise.all([import("./App"), import("./pages/Settings"), import("./pages/Admin/Users")]);
+  // one at a time: modules evaluated at once could each see another half-made
+  await import("./App");
+  await import("./pages/Settings");
+  await import("./pages/Admin/Users");
 }, 60_000);
 
 beforeEach(() => {

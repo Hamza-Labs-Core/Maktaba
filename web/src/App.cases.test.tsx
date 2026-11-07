@@ -52,12 +52,11 @@ async function browserBack() {
 // that, under load, ran out a findBy's wait (#697). Done once here, in a hook with its
 // own budget.
 beforeAll(async () => {
-  await Promise.all([
-    import("./pages/queue/LibraryDashboard"),
-    import("./pages/Admin/LibraryAdmin"),
-    import("./pages/Admin/Errors"),
-    import("./pages/Admin/LogSettings"),
-  ]);
+  // one at a time: modules evaluated at once could each see another half-made
+  await import("./pages/queue/LibraryDashboard");
+  await import("./pages/Admin/LibraryAdmin");
+  await import("./pages/Admin/Errors");
+  await import("./pages/Admin/LogSettings");
 }, 60_000);
 
 beforeEach(() => {
