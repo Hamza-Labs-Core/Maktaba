@@ -1864,6 +1864,10 @@ build fails when the two differ.
   54.36).** It makes and saves the same images, on the home only, as before. A run that makes
   the same images as the last one now counts as unchanged, and its run notes the chapter
   frames it made and the video's state.
+- **Pulling a video's audio for transcription is a queue stage like the others (Epic 54,
+  story 54.36).** It picks the same track and writes the same audio file as before, and still
+  asks for transcription only when the video's transcription is not already handled. Its run
+  now notes the track it used, whether it wrote a file, and the video's state.
 
 ### Fixed
 

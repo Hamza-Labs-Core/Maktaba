@@ -19,11 +19,11 @@ from ...audio.extract import (
     _ExtractDB,
     commit_extract,
     commit_extract_skipped,
+    extract_to_file,
     load_selected_track,
     transcribe_payload,
     transcription_handled,
 )
-from ...audio.extract import extract_to_file as decode
 from ...db.jobs import Job
 from ...log import get_logger
 from ..context import StageContext, StageFailure
@@ -35,6 +35,9 @@ from .registry import StageImpl
 __all__ = ["IMPL"]
 
 _log = get_logger()
+
+# the decoder, a module attribute so a test can swap it for a fake ffmpeg
+decode = extract_to_file
 
 
 def requires_file() -> bool:

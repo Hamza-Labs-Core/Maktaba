@@ -17,8 +17,8 @@ must be identical, with these allowances and no others (each is the conversion i
 * a successful ``extract`` job's ``output_hash`` (the legacy bookkeeping hashed the time; the
   stage hashes the track and the WAV) and ``output_summary`` (the legacy wrote none), both
   checked below, and its ``requested`` event, which must name exactly the transcribes
-  asked for (a live one coalesced). Its outcome, version and propagation are compared, and equal; so are a failed
-  run's error kind, retry flag and attempts.
+  asked for (a live one coalesced). Its outcome, version and propagation are compared, and
+  equal; so are a failed run's error kind, retry flag and attempts.
 
 The rows are compared as sets, and the time inside each queue reason is masked.
 """
