@@ -1235,6 +1235,12 @@ build fails when the two differ.
   day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
   reviewers alone and deleted after 90 days.
 
+- **Plugins on Windows (Epic 54, #710).** A home with Postgres on Windows now runs plugins.
+  The plugin host runs inside a Windows AppContainer with no network capability, granted only
+  its own folders, and Maktaba reaches it through a named pipe that only the user it runs as
+  can open; a plugin still gets no network, no files and no sockets of its own. maktaba.dev:
+  Building Maktaba plugins, Installing and managing plugins, The sandbox.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
