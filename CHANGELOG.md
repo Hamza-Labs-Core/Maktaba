@@ -1098,6 +1098,12 @@ build fails when the two differ.
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
   home sends its daily `seen` report when telemetry is on. Migration 0203.
 
+- **The plugin store's isolated runner can run on Cloudflare Containers (Epic 54, #756).** The
+  malware scan, the sandbox run and the reproducible build of each submission run in a
+  container of its own, started with its internet off and handed the package by the store,
+  instead of a GitHub Actions job. It is turned on by a deploy setting; the GitHub Actions
+  runner stays the default, and a runner that fails refuses the version.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
