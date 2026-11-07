@@ -78,6 +78,13 @@ build fails when the two differ.
   beside the Go benches in CI's `log-bench` job. A nightly macOS run keeps the numbers for 90
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
+- **Each release embeds the plugin store's current lists (Epic 54, #755).** The release run
+  fetches the store's key list and revocation list, verifies them by the chain of trust and
+  builds them into every binary of the release, so a home that never reaches the store still
+  trusts store-signed files and knows the plugins the store withdrew. It fails closed: a list
+  that cannot be fetched, does not verify, has expired or is older than the committed copy
+  stops the release. Until the plugin root keys exist it embeds nothing.
+
 ### Fixed
 
 - **An update no longer rolls back because the transcription pipeline is busy.** The update's
