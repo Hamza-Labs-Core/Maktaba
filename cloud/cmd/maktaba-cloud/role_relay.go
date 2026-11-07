@@ -199,10 +199,20 @@ func relayReadiness(cfg config.Config, cache *relayh.HomeCache) []server.RouterO
 	return []server.RouterOption{server.WithLenientReadiness(&server.LenientReadiness{Warm: cache.Warm})}
 }
 
+// badAfter, in seconds, makes the relay's readiness fail that long after it
+// starts (0: never). Only the rehearsal's bad-release build sets it
+// (rehearsalbad.go).
+var badAfter = 0
+
 // relayRouterOptions: the relay's readiness, and /readyz 503 "draining" while
 // the registry shuts down (the edge then sends new work to the other process).
 func relayRouterOptions(cfg config.Config, cache *relayh.HomeCache, reg *relaypkg.Registry) []server.RouterOption {
-	return append(relayReadiness(cfg, cache), server.WithDraining(reg.Closing))
+	draining := reg.Closing
+	if badAfter > 0 {
+		started := time.Now()
+		draining = func() bool { return reg.Closing() || time.Since(started) > time.Duration(badAfter)*time.Second }
+	}
+	return append(relayReadiness(cfg, cache), server.WithDraining(draining))
 }
 
 // relayIDOf names this relay process in the tunnel directory: relay.id, or

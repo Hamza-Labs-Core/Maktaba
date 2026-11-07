@@ -30,11 +30,18 @@ endpoint="${HCLOUD_ENDPOINT:-https://api.hetzner.cloud/v1}"
 retry_for="${FIP_RETRY_FOR:-60}"
 retry_every="${FIP_RETRY_EVERY:-30}"
 
+# the colour the last deploy left running (50.08: bin/bluegreen records it on both nodes),
+# so a failover starts the same release on this node
+colour="$(cat "${STATE_DIR:-/opt/maktaba-cloud}/colour" 2>/dev/null || echo blue)"
+case "${colour}" in blue|green) ;; *) colour=blue ;; esac
+
 active() { # active start|stop
     if [ -n "${MAKTABA_ACTIVE_CMD:-}" ]; then
         ${MAKTABA_ACTIVE_CMD} "$1"
+    elif [ "$1" = start ]; then
+        sudo -n systemctl start maktaba-cloud-active.target "maktaba-cloud-relay@${colour}.service"
     else
-        sudo -n systemctl "$1" maktaba-cloud-active.target
+        sudo -n systemctl stop maktaba-cloud-active.target
     fi
 }
 

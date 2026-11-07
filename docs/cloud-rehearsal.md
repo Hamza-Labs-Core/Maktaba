@@ -44,8 +44,8 @@ hashes (`cloud/rehearsal/seed`); the relay's check is the real one.
 | C02 | `failover-kill-leader`: the pair (`compose-ha.yml`), 300 homes, 50 streams, a writer committing every 100 ms; the leader killed | 50.07 | the other node leads ≤ 45 s; remote play back ≤ 3 min; no acknowledged commit lost |
 | C03 | `failover-network-partition`: the leader cut from the other node and the witness, still running | 50.07 | it is read-only and its relay stopped ≤ 40 s; never two writable primaries (checked every 250 ms); no commit lost; the IP on the new leader; the old one back as a replica |
 | C04 | `switchover`: `deploy/cloud-ha/bin/switchover` under traffic | 50.07 | remote play pauses ≤ 15 s; no commit lost |
-| C05 | `deploy-blue-green` | 50.08 | 0 s |
-| C06 | `deploy-bad-release-rollback` | 50.08 | 0 s |
+| C05 | `deploy-blue-green`: `deploy/cloud-ha/bin/bluegreen` deploys a new release (`maktaba-cloud:rehearsal-new`) beside blue under 1,000 homes and 100 streams | 50.08 | 0 failed requests; every home on green; no tunnel force-closed; `/version` says new |
+| C06 | `deploy-bad-release-rollback`: a release built with `-tags rehearsalbad` (its readiness fails 20 s after it starts) | 50.08 | the deploy exits non-zero before blue is touched; green removed; 0 failed requests |
 | C07 | `migration-n-minus-1` | 50.08 | — |
 | C08 | `db-blip`: 300 homes streaming; the database container killed for 15 s | 50.06 | 0 failed requests, metering within 1 % of what the clients received |
 | C09 | `restore-pitr` | 50.09 | 4 h |

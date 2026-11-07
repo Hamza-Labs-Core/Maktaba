@@ -94,8 +94,8 @@ func TestScenario(t *testing.T) {
 		{"failover-kill-leader", failoverKillLeader},
 		{"failover-network-partition", failoverNetworkPartition},
 		{"switchover", switchoverScenario},
-		{"deploy-blue-green", nil},
-		{"deploy-bad-release-rollback", nil},
+		{"deploy-blue-green", deployBlueGreen},
+		{"deploy-bad-release-rollback", deployBadRelease},
 		{"migration-n-minus-1", nil},
 		{"db-blip", dbBlip},
 		{"restore-pitr", nil},
@@ -179,7 +179,8 @@ func (c *cluster) env() []string {
 		caddy = "maktaba-caddy:rehearsal"
 	}
 	return []string{"CLOUD_IMAGE=" + img, "CADDY_IMAGE=" + caddy, fmt.Sprintf("PG_PORT=%d", ports[0]), fmt.Sprintf("EDGE_PORT=%d", ports[1]),
-		fmt.Sprintf("CERT_A_PORT=%d", ports[1]+1000), fmt.Sprintf("CERT_B_PORT=%d", ports[1]+1001)}
+		fmt.Sprintf("CERT_A_PORT=%d", ports[1]+1000), fmt.Sprintf("CERT_B_PORT=%d", ports[1]+1001),
+		fmt.Sprintf("BLUE_PORT=%d", ports[1]+500), fmt.Sprintf("GREEN_PORT=%d", ports[1]+501), fmt.Sprintf("EDGE_ADMIN_PORT=%d", ports[1]+502)}
 }
 
 // portsFor gives each scenario its own host ports (they may run on one machine).

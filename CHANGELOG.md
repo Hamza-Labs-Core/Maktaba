@@ -282,6 +282,14 @@ build fails when the two differ.
   rehearsal a killed leader is replaced in 38 s with remote play back in under a minute, a
   leader cut off from the others stops taking writes in 19 s and never runs beside the new
   one, and a switchover pauses play for 2 s, with no committed write lost in any of them.
+- **Cloud deploys with no downtime (Epic 50, story 50.08).** A release now reaches the cloud's
+  pair in order: the standby node tries it first against its own replica, the leader runs only
+  migrations that the running release survives (a new lint refuses a drop, rename, type change
+  or NOT NULL unless marked as a later "contract" release), then the new release starts beside
+  the old one, must stay healthy for 30 s, and the old one hands its homes over (DRAIN) before
+  it exits; a 10-minute watch rolls back by itself. In the cloud rehearsal a deploy under 1,000
+  homes and 100 streams failed no request, and a release that breaks 20 s after it starts is
+  stopped before anything changes for users. One deploy runs at a time.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

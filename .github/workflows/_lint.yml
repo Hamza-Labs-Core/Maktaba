@@ -87,6 +87,13 @@ jobs:
           bash tools/lint/no-foreign-domains-test.sh
           bash tools/lint/no-foreign-domains.sh
 
+      # Story 50.08: a release's cloud migration expands only (blue/green runs the previous
+      # release on the new schema); a contract change says so on its first line.
+      - name: Cloud migrations expand only (tools/lint/cloud-expand-only.sh)
+        run: |
+          bash tools/lint/cloud-expand-only-test.sh
+          bash tools/lint/cloud-expand-only.sh
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
         with:

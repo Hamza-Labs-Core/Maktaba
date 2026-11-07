@@ -542,6 +542,10 @@ jobs:
     # The `production` environment has no protection rules yet, so a
     # deploy does not wait for approval. To add a gate, add required
     # reviewers under Settings → Environments → production.
+    # one deploy at a time (a deploy that waits is never cancelled)
+    concurrency:
+      group: relay-deploy
+      cancel-in-progress: false
     environment:
       name: production
       url: ${{ vars.RELAY_PUBLIC_URL }}
@@ -606,7 +610,9 @@ jobs:
           fi
           SHA="${sha}" bash tools/release/cloud-guard.sh
 
-      - name: Deploy
+      # The single VPS (deploy/cloud-relay), until the Phase 1 pair exists.
+      - name: Deploy (the single VPS)
+        if: vars.CLOUD_HA != 'true'
         env:
           RELAY_SSH_HOST: ${{ secrets.RELAY_SSH_HOST }}
           RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
@@ -615,3 +621,17 @@ jobs:
         # deploy.sh fails if the SSH secrets are missing: once this job
         # runs, a missing host is a misconfiguration, not a skip.
         run: bash deploy/cloud-relay/deploy.sh
+
+      # The Phase 1 pair (Epic 50 story 50.08, deploy/cloud-ha/deploy.sh): Patroni says which
+      # node leads; the standby smoke-tests the release first, then expand-only migrations and
+      # a blue/green on the leader, whose old colour drains its homes to the new one. Set the
+      # repository variable CLOUD_HA to 'true' once the pair runs.
+      - name: Deploy (the Phase 1 pair)
+        if: vars.CLOUD_HA == 'true'
+        env:
+          RELAY_HOST_A: ${{ secrets.RELAY_HOST_A }}
+          RELAY_HOST_B: ${{ secrets.RELAY_HOST_B }}
+          RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: bash deploy/cloud-ha/deploy.sh "${{ steps.tag.outputs.tag }}"
