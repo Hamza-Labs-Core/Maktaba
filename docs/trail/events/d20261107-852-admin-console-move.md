@@ -1,6 +1,6 @@
 ---
 schema: 1
-kind: note
+kind: migration
 title: 53.17's cloud Logs and Errors moved to the separate operator console when main came in
 date: 2026-11-07
 session: 0e9a3649-4e54-455d-9465-045c6636722d
