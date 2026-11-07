@@ -190,6 +190,11 @@ func TestInstallWritesTheRows(t *testing.T) {
 	if err != nil || d.Names.Name["ar"] != "دورة" || d.Rating != 5 || len(d.Stages) != 1 {
 		t.Fatalf("detail %+v %v", d, err)
 	}
+	// the Components page shows the plugin's own name (its title_key is the plugin's key)
+	cv, err := f.l.Components.Show(ctx, cid)
+	if err != nil || cv.Names["name"]["en"] != "Lifecycle" || cv.Names["summary"]["ar"] != "اختبار." {
+		t.Fatalf("component names %+v %v", cv.Names, err)
+	}
 }
 
 // 54.08 T03, T06 and 54.07 T12, T13 (keep-off): enable needs the required grants; a grant
