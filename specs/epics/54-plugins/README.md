@@ -1899,6 +1899,28 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
 - **The YouTube collections and the Tartube import stay with the core** until wave 9
   (story 54.36): `youtube_collections` and `youtube_tartube` build series and playlists
   from the library as a whole, as the core stages there do.
+- **Live TV's files are the reports folder and the channels' art.** No live TV stage writes
+  a channel file: channel definitions are rows, and a slot's release folder is written by
+  its `tv-slot` process. `plan_channels` writes the plan's page (`data.review`), and both
+  plugins read the channels' art (`data.channels`: `<data dir>/channel-art` and the folders
+  the planner's rules name, written into the runners' areas at each refresh).
+  `data.tv-slots` stays unused.
+- **A TV change's swap commit and rollback are the worker's.** Each writes the release's
+  TV settings (`rules.tv`, `rules.tv_output`) in the transaction that writes its lineup,
+  and `app_settings` is the queue engine's. `tv_swap` and `tv_rollback` ask the worker
+  (`tv_commit`, `tv_rollback`); only that stage may ask, and the worker runs it for the
+  change in the job's own payload, so the plugin sends nothing it could choose.
+- **Plan exporters travel by name.** An extension's plan exporter (dizqueTV's) is a
+  function in the worker's process. The worker sends the names it registered with each run
+  and fingerprint request, and the runner takes the same functions from the extensions it
+  discovers; a name it cannot load runs the job in the worker (`unregistered`).
+- **What the core shares stays in the core.** The planner's inputs and the plan's change set
+  (`schedule.plan_inputs`, used by the plan preview) and the channel link's target
+  (`channels.plan_link`, used by the TV release code) moved out of the stage modules.
+- **N16 for the TV change stages is measured on `tv_gc`.** The bench reruns a stage's job;
+  `tv_stage`, `tv_swap` and `tv_rollback` move a TV change from one state to the next and
+  cannot run twice, and the swap and the rollback run in the worker. Their rows are
+  compared after each step.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

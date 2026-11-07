@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
+  wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
+  swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
+  sandboxed `light` runner. A swap and a rollback still put the TV settings on the air in
+  one step with the lineup: the worker does that part for the plugin's job. The dizqueTV
+  export's additions to the plan keep working there. The parity proof compares the plan,
+  the channels, the TV change and its schedule through a stage, a swap, a rollback and the
+  clean-up.
 - **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
   wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
   fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download

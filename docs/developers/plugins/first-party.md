@@ -13,7 +13,9 @@
 > `tv.maktaba.convert`, and finding and merging duplicates, the file trash and restoring
 > from it in `tv.maktaba.dedup`. **Wave 6 has moved**: the YouTube listings, downloads and
 > exact dates run in `tv.maktaba.youtube`, and the repair of broken downloads in
-> `tv.maktaba.repair`, the first stages that reach the network. The other stages move wave by
+> `tv.maktaba.repair`, the first stages that reach the network. **Wave 7 has moved**: the
+> channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
+> and cleaning up TV changes in `tv.maktaba.livetv-slots`. The other stages move wave by
 > wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
@@ -199,6 +201,7 @@ against the job before it writes it with its own database connection:
 | `enqueue` (from `enqueue_job`) | the stage is the job's own, one it may request, or joined to it by an edge, or where the graph starts a new subject (`probe` for a video); the subject is of the job's library |
 | `dedup_commit` (a duplicate group's merge) | the group is the job's subject, and the keeper and the others are its members |
 | `unsupersede` (a restored duplicate) | the video is a superseded video of the job's library |
+| `tv_commit`, `tv_rollback` (a TV change on the air, or the previous release back) | only `tv_swap` / `tv_rollback` may ask; the worker runs it for the change in the job's own payload, and the plugin sends nothing else |
 
 The same code runs in-process, where these calls write directly. Writes go only to the
 library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
@@ -234,6 +237,30 @@ net         = ["www.youtube.com", "youtube.com", "*.googlevideo.com", "www.googl
 - **Parity** runs a channel listing, two downloads and a back-catalogue fill with a recorded
   yt-dlp, the five ways a repair can go, and the exact dates of a series, the same on both
   sides; files, rows, the queue and the job log are compared, then N16.
+
+## Live TV: `tv.maktaba.livetv` and `tv.maktaba.livetv-slots`
+
+Wave 7 moves the channel planner (`plan_channels`), the channel writer (`write_channels`) and
+Epic 33's TV change stages (`tv_stage`, `tv_swap`, `tv_rollback`, `tv_gc`). The loops that
+keep the channels playing (top-up, the change controller, streaming's TV loops) stay where
+they are.
+
+- **Files.** `plan_channels` writes the plan's page to the reports folder
+  (`files.write = ["data.review"]`). Both plugins read the channels' art (`data.channels`):
+  the art an admin uploaded and the logo and watermark folders the planner's rules name. The
+  worker writes these folders into the runners' areas; a changed rule restarts the runner
+  with the new folders.
+- **The stored TV settings stay the engine's.** A swap puts the release's TV settings on the
+  air in the same transaction as its lineup, and only the queue engine writes
+  `app_settings`. So the worker runs the swap commit and the rollback for the plugin's job
+  (`tv_commit`, `tv_rollback` above), for the change the job's payload names.
+- **Extensions add to the plan.** An extension such as the dizqueTV export adds data to each
+  channel of the plan. A runner loads no extension, so the worker sends the names it has
+  registered with every job, and the runner takes the same functions from the extensions it
+  finds. A name it cannot load runs the job in the worker.
+- **Parity** plans a library into channels with staging off (written to the air) and on (a
+  staged TV change), and takes a TV change through stage, swap, rollback and clean-up, with
+  the TV clock frozen on both sides.
 
 ## The repo layout
 
