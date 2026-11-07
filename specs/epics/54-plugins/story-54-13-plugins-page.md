@@ -32,14 +32,18 @@ The plugin's page:
 | Status | phase, conditions, counters and p95s (54.09), quota bars, last errors with links to logs |
 | Settings | the generated form (54.11) |
 | What it wrote | `plugin_writes` paged and filterable (tags, chapters, subtitles, fields), with Revert selected |
+| Graph | the home's whole plugin graph with this plugin highlighted (54.41); missing upstreams and idle subscriptions named |
+| Machines | where it runs and each machine's state (54.42) |
 | Versions | current and previous, Roll back, Update (when the catalog has one, Phase 2) |
 | Danger | Disable / Enable, Stop / Start, Remove, Remove and clear what it wrote (with counts) |
 
 ### 3. Install from a file
 
 A button opening 54.10's dialog: drop a file, see the summary, capabilities, libraries (none
-ticked: the admin ticks each, decided 2026-11-03), rating, badge, typed confirmation for unreviewed, "Install" or "Install and
-turn on".
+ticked: the admin ticks each, decided 2026-11-03), rating, badge, the flow drawn as a chart
+with this plugin highlighted and the flow's missing members named (54.41), or the flow
+check's refusal with the cycle path (54.39), typed confirmation for unreviewed, "Install" or
+"Install and turn on".
 
 ### 4. Policy
 
