@@ -18,7 +18,11 @@ docker run --rm -v "${work}:/etc/prometheus" --entrypoint promtool "${prom}" che
 docker run --rm -v "${here}:/r" -w /r --entrypoint promtool "${prom}" test rules alerts-test.yml backup-rules-test.yml capacity-test.yml
 docker run --rm -v "${work}:/c" --entrypoint amtool prom/alertmanager:v0.28.1 check-config /c/alertmanager.yml
 docker run --rm -v "${work}:/c" prom/blackbox-exporter:v0.27.0 --config.file=/c/blackbox.yml --config.check
-# the witness's public site (story 50.11): a token in front of everything
-docker run --rm -e WITNESS_DOMAIN=witness.example.com -e ACME_EMAIL=ops@example.com -e WITNESS_TOKEN=t \
-    -v "${here}/Caddyfile.witness:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+# the witness's public site (story 50.11): a token in front of everything, and the 401 for a
+# request without it runs before anything is served (tests/deny-first.sh)
+witness=(docker run --rm -e WITNESS_DOMAIN=witness.example.com -e ACME_EMAIL=ops@example.com -e WITNESS_TOKEN=t
+    -v "${here}/Caddyfile.witness:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy)
+"${witness[@]}" validate --config /etc/caddy/Caddyfile --adapter caddyfile
+"${witness[@]}" adapt --config /etc/caddy/Caddyfile --adapter caddyfile >"${work}/witness.json"
+bash "${here}/../tests/deny-first.sh" "${work}/witness.json" witness.example.com 401
 echo "monitoring configs: ok"
