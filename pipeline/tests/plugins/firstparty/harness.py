@@ -63,7 +63,11 @@ def _instrument() -> None:
 
         return wrapper
 
+    from maktaba_plugin_runner import server
+
     native._mint = timed("mint", native._mint)
+    server.Relay.ask = timed("relay", server.Relay.ask)  # type: ignore[method-assign]
+    native.run_native = timed("run_native", native.run_native)
     native.choose = timed("choose", native.choose)
     native.serving_group = timed("serving_fp", native.serving_group)
     run._native_impl = timed("native_impl", run._native_impl)
@@ -186,17 +190,29 @@ class Parity:
             out.append(f"{st} {took * 1000:.1f} ms: {steps}")
         return "\n".join(out)
 
-    async def bench(self, stages: Sequence[str], *, rounds: int = 7) -> None:
+    async def bench(self, stages: Sequence[str], *, rounds: int = 11) -> None:
         """N16's samples: each stage's job run again ``rounds`` times on each side, A and B
         taking turns (a busy machine slows both alike), forced so it does its work. The
         samples replace the drain's one run per job for the comparison."""
-        from maktaba_pipeline.engine.claim import claim_for_pool
-        from maktaba_pipeline.engine.enqueue import enqueue_job
+        import gc
 
         rt = EngineRuntime(graph=self.graph)
         for side in (self.a, self.b):
             for st in stages:
                 side.times[st] = []
+        # the worker and the runner share this test's process and loop: a collector pause
+        # would land on whichever side runs then, so it is held off while both are timed
+        gc.collect()
+        gc.disable()
+        try:
+            await self._bench(stages, rounds, rt)
+        finally:
+            gc.enable()
+
+    async def _bench(self, stages: Sequence[str], rounds: int, rt: Any) -> None:
+        from maktaba_pipeline.engine.claim import claim_for_pool
+        from maktaba_pipeline.engine.enqueue import enqueue_job
+
         for st in stages:
             row = await self.a.db.fetchrow(
                 "SELECT subject_kind, subject_id FROM processing_jobs WHERE stage = $1"
