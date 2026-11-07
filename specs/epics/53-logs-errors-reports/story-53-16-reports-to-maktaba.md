@@ -121,7 +121,7 @@ outbox. A forward while `reports.share` is not on answers `409 component_off` wi
 | `cloud/internal/telemetry/` | Join by fingerprint. |
 | `web/cloud/src/pages/admin/Reports.tsx` (new) | Service admin view. |
 | `web/src/pages/Settings/Privacy*` | The setting, delete button. |
-| `tools/apple/symbolicate.py` (new) | dSYM symbolication. |
+| `cloud/internal/symbols/`, `cloud/cmd/maktaba-symbols/`, `cloud/migrations/00530002_symbol_tables.sql` (new) | dSYM symbolication: a symbol table per binary made from the dSYM where it is built, uploaded with a token, read against a report's crashes when the service admin opens it. |
 | String files | §5. |
 
 ### Tests

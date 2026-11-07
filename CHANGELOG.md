@@ -371,6 +371,13 @@ build fails when the two differ.
 
 ### Added
 
+- **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
+  and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
+  (its functions and line table, keyed by the binary's UUID), uploaded with the new
+  `maktaba-symbols upload` command and a symbols token (`MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE`). The
+  operator console's report page shows each crash, top frame first, with the function, file and
+  line where a table is uploaded and names the binaries that have none; a new **Crash symbols**
+  page lists the uploaded tables. The cloud never receives the dSYM itself.
 - **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
   the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
   homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
