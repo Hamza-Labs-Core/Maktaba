@@ -19,6 +19,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 )
 
 func reportsRouter(t *testing.T, index string) (*Handler, http.Handler) {
@@ -219,5 +220,33 @@ func TestReports(t *testing.T) {
 	bad, ct := reportForm(t, `{"category":"nope"}`, nil)
 	if rec := do("POST", "/api/reports", bad, ct, sara); rec.Code != http.StatusBadRequest {
 		t.Errorf("a bad category: %d", rec.Code)
+	}
+}
+
+// Story 54.09 §3 (#711): a report leaves out a plugin's lines unless an admin allowed that
+// plugin; the host's own lines stay, and the setting is the one the plugins API writes.
+func TestReportsLeaveOutPluginLines(t *testing.T) {
+	if PluginReportLogsKey != plugins.ReportLogsKey {
+		t.Fatalf("the report reads %q, the plugins API writes %q", PluginReportLogsKey, plugins.ReportLogsKey)
+	}
+	lines := []json.RawMessage{
+		json.RawMessage(`{"service":"api","level":"warn","msg":"a"}`),
+		json.RawMessage(`{"service":"plugin.dev.example.allowed","origin":"plugin","level":"warn","code":"b"}`),
+		json.RawMessage(`{"service":"plugin.dev.example.other","origin":"plugin","level":"error","code":"c"}`),
+		json.RawMessage(`{"service":"plugins.host","level":"warn","msg":"d"}`),
+		json.RawMessage(`{"service":"pipeline","origin":"plugin","level":"warn","msg":"e"}`),
+	}
+	got := withoutPluginLines(lines, map[string]bool{"dev.example.allowed": true})
+	var kept []string
+	for _, l := range got {
+		var h struct{ Service string }
+		_ = json.Unmarshal(l, &h)
+		kept = append(kept, h.Service)
+	}
+	if strings.Join(kept, ",") != "api,plugin.dev.example.allowed,plugins.host" {
+		t.Fatalf("kept %v", kept)
+	}
+	if len(withoutPluginLines(lines, nil)) != 2 {
+		t.Fatal("no plugin allowed: two lines stay")
 	}
 }

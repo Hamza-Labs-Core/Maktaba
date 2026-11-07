@@ -3,6 +3,7 @@
 // in api.ts's memory.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { forgetSavedHomes } from "./savedHomes";
 import {
   api,
   onSessionChange,
@@ -77,6 +78,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       // signing out locally is what matters
     }
+    forgetSavedHomes(); // story 50.13: the saved home list goes with the session
     forget();
   }, [forget]);
 

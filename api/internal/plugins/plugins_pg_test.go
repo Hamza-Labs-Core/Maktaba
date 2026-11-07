@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
@@ -343,3 +344,52 @@ func TestListenUnix(t *testing.T) {
 type netConn = net.Conn
 
 var dialer net.Dialer
+
+// 54.09 §4 (#711): the plugins' job numbers on /metrics, read from plugin_health at the
+// scrape: jobs by outcome, p50 and p95 of the last jobs' time, their memory peak.
+func TestHealthMetrics(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	recent := `[{"at":1,"cause":"","ms":1000,"memory":1048576},{"at":2,"cause":"","ms":3000,"memory":4194304},
+		{"at":3,"cause":"plugin_trap","ms":2000,"memory":2097152},{"at":4,"cause":"","ms":10000,"memory":3145728}]`
+	if _, err := db.Exec(`INSERT INTO plugin_health (plugin_id, recent, jobs_done, jobs_failed) VALUES ($1, $2, 3, 1),
+		('dev.example.idle', '[]', 0, 0)`, testPlugin, recent); err != nil {
+		t.Fatal(err)
+	}
+	reg := prometheus.NewRegistry()
+	healthDB.Store(db)
+	t.Cleanup(func() { healthDB.Store(nil) })
+	reg.MustRegister(healthCollector{})
+	fams, err := reg.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]float64{}
+	for _, f := range fams {
+		for _, m := range f.GetMetric() {
+			key := f.GetName()
+			for _, l := range m.GetLabel() {
+				key += "," + l.GetName() + "=" + l.GetValue()
+			}
+			if m.GetCounter() != nil {
+				got[key] = m.GetCounter().GetValue()
+			} else {
+				got[key] = m.GetGauge().GetValue()
+			}
+		}
+	}
+	for key, want := range map[string]float64{
+		"maktaba_plugin_jobs_total,outcome=ok,plugin=" + testPlugin:          3,
+		"maktaba_plugin_jobs_total,outcome=failed,plugin=" + testPlugin:      1,
+		"maktaba_plugin_job_seconds,plugin=" + testPlugin + ",quantile=0.5":  2,
+		"maktaba_plugin_job_seconds,plugin=" + testPlugin + ",quantile=0.95": 10,
+		"maktaba_plugin_memory_peak_bytes,plugin=" + testPlugin:              4194304,
+		"maktaba_plugin_jobs_total,outcome=ok,plugin=dev.example.idle":       0,
+	} {
+		if v, ok := got[key]; !ok || v != want {
+			t.Errorf("%s = %v (present %v), want %v", key, v, ok, want)
+		}
+	}
+	if _, ok := got["maktaba_plugin_job_seconds,plugin=dev.example.idle,quantile=0.5"]; ok {
+		t.Error("a plugin with no recent job has no job time")
+	}
+}

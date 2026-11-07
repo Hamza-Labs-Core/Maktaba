@@ -18,6 +18,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,6 +40,7 @@ import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.CloudStatusRules
 import com.hamzalabs.maktaba.core.api.CloudSummary
+import com.hamzalabs.maktaba.core.api.HomeReconnect
 import com.hamzalabs.maktaba.core.api.HomeStatusDoc
 import com.hamzalabs.maktaba.core.api.StatusStripRules
 import com.hamzalabs.maktaba.core.api.StripKey
@@ -68,6 +70,7 @@ fun stripText(key: StripKey): Int = when (key) {
     StripKey.API_DEGRADED -> R.string.banner_api_degraded
     StripKey.API_OUTAGE -> R.string.banner_api_outage
     StripKey.MAINTENANCE -> R.string.banner_maintenance
+    StripKey.RECONNECTING -> R.string.home_reconnecting
 }
 
 /** A moment's date and time in the device's language and time zone (the maintenance window). */
@@ -116,7 +119,9 @@ fun HomeStatusHost(
         }
     }
     val cloudLine = if (viaCloud) CloudStatusRules.line(cloud, System.currentTimeMillis(), ::localWhen) else null
-    val lines = StatusStripRules.lines(status, online = true, admin = admin, liveTvOff = liveTvOff, cloud = cloudLine)
+    // a request waiting for the home behind the relay (story 50.13)
+    val reconnecting by HomeReconnect.waiting.collectAsState()
+    val lines = StatusStripRules.lines(status, online = true, admin = admin, liveTvOff = liveTvOff, cloud = cloudLine, reconnecting = reconnecting > 0)
     val sig = lines.joinToString("|") { "${it.key.name}${it.id ?: ""}${it.args}" }
     val shown = enabled && lines.isNotEmpty() && closed != sig
     Column(Modifier.fillMaxSize()) {

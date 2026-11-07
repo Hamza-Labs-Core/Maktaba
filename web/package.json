@@ -19,7 +19,8 @@
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "e2e:cloud": "playwright test --config playwright.cloud.config.ts"
   },
   "dependencies": {
     "@fontsource/amiri": "5.2.8",
@@ -31,6 +32,7 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.1",
     "@testing-library/jest-dom": "^6",
     "@testing-library/react": "^16",
     "@testing-library/user-event": "^14",

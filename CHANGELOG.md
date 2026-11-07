@@ -431,6 +431,20 @@ build fails when the two differ.
   rehearsal against its own pair. Status updates come from English and Arabic templates; a SEV1
   without a postmortem after 5 days opens a reminder; the Billing page states the 99.9 % target
   and that no credit is given, and CI keeps any template or string from offering one.
+- **The apps ride out a Maktaba Cloud outage (Epic 50, story 50.13).** `GET /v1/homes` gives
+  each home's `connections` (direct, then the relay; a plan without the relay lists none) beside
+  the old fields. The web, cloud web, Apple and Android apps keep each account's list on the
+  device and show it, with its time, when the cloud can't be reached (marked old after 30 days,
+  removed at sign-out); a new cloud sign-in that can't reach the cloud goes to the home's own
+  sign-in. A request the relay answers `503 home_reconnecting` is tried again for up to a
+  minute while the status strip says "Reconnecting to your home…".
+- **What one relay node carries is measured (Epic 50, story 50.14).** `maktaba-loadtest` ramps
+  simulated homes and players at a bitrate against a relay until a stop rule (CPU 70 %, 20 ms
+  added latency, 0.5 % stalls, a dropped tunnel, memory 75 %) holds for 2 minutes, and turns the
+  last good step into a row of `docs/cloud-sizing.md`; it refuses any target under maktaba.tv.
+  The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
+  CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
+  measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -1056,6 +1070,14 @@ build fails when the two differ.
 - **The admin orders plugin panels (Epic 54, story 54.20).** Settings → Plugins → Panel order
   lists the plugins that declare panels; pages show at most three, in that order, then in
   install order. `GET`/`PUT /api/plugins/panel-order` (admin only, audited).
+
+- **Plugin job metrics, and problem reports keep plugin logs out (Epic 54, story 54.09 §3,
+  §4).** The home's `/metrics` has each plugin's `maktaba_plugin_jobs_total{plugin,outcome}`,
+  `maktaba_plugin_job_seconds{plugin,quantile}` (p50 and p95 of its last 20 jobs) and
+  `maktaba_plugin_memory_peak_bytes{plugin}`, read from its health row at each scrape. A
+  problem report leaves out a plugin's log lines unless an admin ticks **Include its logs in
+  problem reports** on the plugin's page (audited); the plugin host's own lines stay.
+  maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
 
 - **The Updates page names the plugins an update will pause (Epic 54, story 54.07 §3).**
   Under the release it is about to install, the page lists each installed plugin whose
