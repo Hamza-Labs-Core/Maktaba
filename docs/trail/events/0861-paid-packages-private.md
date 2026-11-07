@@ -20,11 +20,14 @@ session: 28c0b780-1dd6-4ba0-b27f-a3382e1c1cd1
 
 - The store has three TypeScript configs, and CI's `npm run typecheck` runs all of them. `tsc -p .` alone passed with `new TextDecoder("utf-8", { fatal: true })`, which the Workers types refuse. Strict decoding stays without the option: check the part's base64url alphabet, decode, then require an ASCII-only payload pattern. An invalid byte becomes U+FFFD and fails the pattern.
 
+- The Go lint failed too: `PaidPackage`'s parameter `max` shadowed the builtin (revive `redefines-builtin-id`). Both misses had one cause: a local run of tests and one typecheck, not CI's own checks. `golangci-lint run ./...` in `api/` and `npm run typecheck` in `store/` take a minute and would have caught both before the push.
+
 ## Keep doing
 - A test case for each way a signed URL can be wrong (expired, forged, another home, another file, none), not just the happy path.
 
 ## Stop doing
 - Typechecking the store with one config. Run `npm run typecheck` in `store/`.
+- Pushing Go changes without `golangci-lint run ./...` in their module.
 - Telling users about behaviour the next PR in the same series is about to change.
 
 ## Open
