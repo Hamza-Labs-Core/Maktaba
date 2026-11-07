@@ -93,6 +93,9 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         XCTAssertTrue(chart.waitForExistence(timeout: 15), "the Overview's first chart")
         XCTAssertTrue(chart.label.contains("Components up") && chart.label.contains("now 2") && chart.label.contains("highest 2"),
                       "its summary for VoiceOver, the two components summed: \(chart.label)")
+        // story 53.12: the API's p95, kept from its latency histogram, has its words
+        let p95 = element("dash.panel.http_request_duration_seconds_p95")
+        XCTAssertTrue(p95.waitForExistence(timeout: 5) && p95.label.contains("API response time, p95"), "the API's p95: \(p95.label)")
         shot("dashboards")
         back()
 
@@ -114,6 +117,8 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         let chart = element("dash.panel.maktaba_component_up")
         XCTAssertTrue(chart.waitForExistence(timeout: 15))
         XCTAssertTrue(chart.label.contains("المكوّنات العاملة"), "Components up, in Arabic: \(chart.label)")
+        let p95 = element("dash.panel.http_request_duration_seconds_p95")
+        XCTAssertTrue(p95.waitForExistence(timeout: 5) && p95.label.contains("زمن استجابة الواجهة البرمجية"), "the API's p95, in Arabic: \(p95.label)")
         shot("ar-dashboards")
     }
 
@@ -154,6 +159,7 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         {"board":"overview","range":"24h","step":3600,"series":[
           \(series("maktaba_component_up", "id=core.api", 1, 0)),
           \(series("maktaba_component_up", "id=streaming", 1, 0)),
+          \(series("http_request_duration_seconds_p95", "", 0.12, 0.01)),
           \(series("maktaba_errors_per_hour", "component=streaming", 1, 1)),
           \(series("process_resident_memory_bytes", "", 180_000_000, 4_000_000))]}
         """)

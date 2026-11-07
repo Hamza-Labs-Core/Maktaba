@@ -6,6 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
+	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
 )
 
 // The API's /metrics carries this machine's supervisor's update metrics (one scrape per
@@ -55,5 +61,37 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 	sup.Close()
 	if body := scrape(sup.URL); strings.Contains(body, "maktaba_update_migration_duration_seconds") {
 		t.Fatal("a supervisor that does not answer still showed")
+	}
+}
+
+// The maktaba_* families on prometheus' default registry (the plugins' metrics, Epic 54)
+// show on /metrics too, once even when the process registry has the same family, and its
+// Go and process families are not repeated. The queue's series (Epic 53 story 53.12) show
+// once the home registers them.
+func TestMetricsCarryTheDefaultRegistrysAndTheQueues(t *testing.T) {
+	onlyDefault := prometheus.NewGauge(prometheus.GaugeOpts{Name: "maktaba_test_default_only", Help: "x"})
+	onlyDefault.Set(3)
+	prometheus.MustRegister(onlyDefault)
+	both := prometheus.NewGauge(prometheus.GaugeOpts{Name: "maktaba_test_both", Help: "x"})
+	prometheus.MustRegister(both)
+	metrics.MustRegister(prometheus.NewGauge(prometheus.GaugeOpts{Name: "maktaba_test_both", Help: "x"}))
+	queues.RegisterMetrics(queuestest.New().DB)
+
+	rec := httptest.NewRecorder()
+	metricsHandler("").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, body)
+	}
+	if !strings.Contains(body, "maktaba_test_default_only 3") {
+		t.Fatalf("the default registry's family is missing:\n%s", body)
+	}
+	for _, fam := range []string{"maktaba_test_both", "go_goroutines", "process_cpu_seconds_total"} {
+		if n := strings.Count(body, "# TYPE "+fam+" "); n != 1 {
+			t.Errorf("%s: %d families", fam, n)
+		}
+	}
+	if !strings.Contains(body, "maktaba_pipeline_audio_seconds_last_hour 0") {
+		t.Errorf("the queue's series are missing:\n%s", body)
 	}
 }

@@ -76,8 +76,9 @@ class DiagnosticsScreenTest {
         }
     }
 
-    private fun show(tab: DiagTab = DiagTab.Errors) {
+    private fun show(tab: DiagTab = DiagTab.Errors, also: () -> Unit = {}) {
         stub()
+        also()
         compose.setContent { MaktabaTheme(ThemeMode.Dark) { Surface { DiagnosticsScreen(home.remote, onBack = {}, start = tab) } } }
     }
 
@@ -127,6 +128,34 @@ class DiagnosticsScreenTest {
         show(DiagTab.Dashboards)
         compose.settledUntil { compose.has("dash-panel-maktaba_errors_per_hour") }
         shot("diagnostics_dashboards_dark_ar")
+    }
+
+    // Story 53.12: the API's requests and p95, kept from its latency histogram, carry their words.
+    private fun showLatency() = show(DiagTab.Dashboards) {
+        val pts = (0 until 24).joinToString(",") { "[${java.time.Instant.now().epochSecond - (23 - it) * 3600},0.1${it % 3}]" }
+        home.answer("/api/admin/dashboards/overview") {
+            FakeRemoteHome.json("""{"board":"overview","range":"24h","series":[
+              {"name":"http_request_duration_seconds_p95","labels":"","kind":"gauge","points":[$pts]},
+              {"name":"http_request_duration_seconds_count","labels":"","kind":"counter","points":[$pts]}]}""")
+        }
+    }
+
+    private fun shown(text: String) =
+        compose.onAllNodes(androidx.compose.ui.test.hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty()
+
+    @Test
+    fun theApisResponseTimeHasItsWords() {
+        showLatency()
+        compose.settledUntil { compose.has("dash-panel-http_request_duration_seconds_p95") }
+        assertTrue(shown("API response time, p95 (seconds)"))
+        assertTrue(shown("API requests per minute"))
+    }
+
+    @Test @Config(qualifiers = "ar-w411dp-h891dp-420dpi")
+    fun theApisResponseTimeInArabic() {
+        showLatency()
+        compose.settledUntil { compose.has("dash-panel-http_request_duration_seconds_p95") }
+        assertTrue(shown("زمن استجابة الواجهة البرمجية، p95 (ثوانٍ)"))
     }
 
     @Test

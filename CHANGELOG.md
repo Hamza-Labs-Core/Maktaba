@@ -2497,6 +2497,24 @@ build fails when the two differ.
   when it starts, so an update that changes the plugin engine recompiles each one before its
   first job. maktaba.dev: Testing and packaging.
 
+- **The Queue and Processing dashboards show the queue (Epic 53 story 53.12).** Both boards were
+  empty: they kept series that nothing exported. The home's metrics now carry the jobs waiting or
+  running by stage, the jobs finished in the last hour by stage and outcome, the audio
+  transcribed in the last hour and the transcription speed, read from the queue once a minute.
+
+- **The Streaming dashboard shows the TV (Epic 53 story 53.12).** The dashboards read only the
+  API's metrics, so the TV's channels on air, switches, failovers and viewers never reached the
+  Streaming board. They read streaming's too now; a series both processes have is kept from the
+  API's.
+
+- **The Overview dashboard shows the API's requests per minute and its p95 response time (Epic 53
+  story 53.12).** The response-time histogram is kept as two lines over all routes at once: the
+  requests in each minute, and the time 95 % of them were answered within.
+
+- **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
+  refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
+  read, so they never showed. They do now, and no family is listed twice.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
