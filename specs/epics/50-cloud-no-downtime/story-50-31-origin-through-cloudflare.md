@@ -149,9 +149,9 @@ follows the database leader" (README §6).
 | T03 | unit (go) | relay role | request with `CF-Connecting-IP` | ignored; peer used |
 | T04 | unit (shell) | Caddyfile | `caddy validate`; grep for site blocks | only relay names; no catch-all; `request_header -CF-Connecting-IP` on both |
 | T05 | unit (node:test) | `tunnel.mjs check` on `tunnel.maktaba.tv.json` | the file; a fixture adding `x.relay.maktaba.tv`; a fixture without the 404 catch-all | pass; fail; fail |
-| T06 | rehearsal (50.06, new scenario `origin-only-via-edge`) | two nodes; a stand-in edge container (Caddy adding `CF-Connecting-IP`) that reaches the leader's loopback listeners only through a stand-in connector (a `socat` process the role callback starts in place of `cloudflared`) | scan the Floating IP's ports; send a forged header straight to the relay | only 80, 443, 53 open; 443 refuses SNI `api.maktaba.tv`; the forged header is ignored |
+| T06 | rehearsal (50.06, scenario `origin-only-via-edge`, #884) | two nodes; a stand-in edge container (Caddy adding `CF-Connecting-IP`) that reaches the leader's loopback listeners only through a stand-in connector (a `socat` process the role callback starts in place of `cloudflared`) | scan the Floating IP's ports; send a forged header straight to the relay | only 80, 443, 53 open; 443 refuses SNI `api.maktaba.tv`; the forged header is ignored |
 | T07 | rehearsal | same | power off the leader | the stand-in connector moves with the leader; `readyz` back within the RTO; the old leader has no connector |
-| T08 | rehearsal | `origin_mode = aop` with a test CA | with and without the client certificate; from an address outside the test "Cloudflare ranges" | 200; 403; 403 |
+| T08 | rehearsal (`origin-aop`) | `origin_mode = aop` with a test CA | with and without the client certificate; from an address outside the test "Cloudflare ranges" | 200; the TLS handshake refused (`require_and_verify` refuses before any HTTP, stricter than a 403); 403 |
 | T09 | unit (go) | `server.origin_mode` | `tunnel` with an `aop` certificate set; `aop` without the CA file | warning; refused |
 
 No test runs the real `cloudflared` against Cloudflare. The owner's first deploy is checked by

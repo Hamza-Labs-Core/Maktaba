@@ -106,6 +106,8 @@ jobs:
           - load-small
           - relay-plans
           - direct-remote
+          - origin-only-via-edge
+          - origin-aop
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0
