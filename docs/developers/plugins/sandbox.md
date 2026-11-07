@@ -2,8 +2,8 @@
 
 > **Status: on `main`.** The plugin host (`maktaba-plugind`, on Wasmtime), its OS sandbox on
 > macOS, Linux and Windows, and the CI job that runs escape probes against a canary on each
-> are built. **Coming in the next release:** the supervisor running the host as a role, the
-> circuit breaker, and the health figures on the Plugins page. The API's own limits are in the
+> are built, and so are the supervisor's `plugins` role (the host runs only while a plugin is
+> on), the circuit breaker and the health figures on the Plugins page. The API's own limits are in the
 > [plugin reference](reference.md), generated from the code.
 
 ## The rule

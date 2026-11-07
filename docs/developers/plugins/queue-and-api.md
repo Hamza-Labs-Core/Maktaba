@@ -1,7 +1,7 @@
 # Queue stages and the plugin API
 
 > **Status:** plugin stages in the queue, the plugin API and media handles are **on `main`**.
-> Grants and roles and settings are **coming in the next release**; panels and local compute
+> Grants and roles and settings are **on `main`** too; panels and local compute
 > are planned for Phase 3. The exact functions, capabilities, events and refusal codes are in
 > the [plugin reference](reference.md), generated from the WIT and the API's code.
 
@@ -114,15 +114,13 @@ other files in the folder.
 
 ## Grants and roles
 
-> **Coming in the next release.** Until then, the API already checks every call against the grants it stores (`plugin_grants`), but there is no screen to grant them.
-
 At install the admin sees your capabilities in Maktaba's own words, in English or Arabic,
 unticks optional ones, and ticks each library you may use. **No library is ticked by
 default.** With none ticked, your plugin installs and runs, but every library-scoped call
 answers `plugin_scope`. Check `job.grants()` to see what you have.
 
-- An update that adds a **required** capability waits for the admin; the old version keeps
-  running.
+- An update that adds a **required** capability is installed only with the admin granting it
+  in the same step; until then the old version keeps running.
 - New optional capabilities stay off until the admin ticks them.
 - A revoked grant applies on your next call.
 - A **rating** from 1 to 6 is shown at install: it starts at 6 and drops for each medium-risk
@@ -132,8 +130,6 @@ Only admins can install, configure or see plugins. Viewers see plugin outputs as
 (tags, chapters, subtitles) and panels, only on subjects their library access allows.
 
 ## Settings
-
-> **Coming in the next release.**
 
 Declare an admin form as `ui/settings.schema.json`, a JSON Schema subset:
 
@@ -146,7 +142,10 @@ Declare an admin form as `ui/settings.schema.json`, a JSON Schema subset:
 
 No secret fields: no `format: password`, and no field named `token`, `password`, `api_key` or
 `secret`. A plugin with no internet has nothing to sign in to. Read values with
-`job.settings()`. A settings change reruns stages whose inputs depend on it.
+`job.settings()`. A settings change reruns stages whose inputs depend on it. The home checks
+the schema at install (`settings_secret_forbidden`, `settings_schema_invalid`) and every value
+on save (`settings_invalid`); after an update, a field whose type changed goes back to its
+default. Try the form's values with `mkp test --settings '{"threshold": 3}'`.
 
 ## Panels (Phase 3)
 

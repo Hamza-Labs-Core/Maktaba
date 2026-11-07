@@ -121,8 +121,10 @@ func TestHaltedPrepareIsNotTriedAgain(t *testing.T) {
 	stop, _ := running(t, s)
 	snap := waitFor(t, s, "the halt shown", func(s Snapshot) bool {
 		c := proc(s, RoleStreaming)
+		// the state is set under the lock and the event emitted just after it: a snapshot
+		// between the two has the one and not yet the other
 		return c.State == StateFailed && c.Detail == "the update's migrations failed" && c.DetailCode == "db_restored" &&
-			c.DetailParams["release"] == "v0.2.0"
+			c.DetailParams["release"] == "v0.2.0" && hasEvent(s, RoleStreaming, EventFailed)
 	})
 	if c := proc(snap, RoleStreaming); c.NextRestartAt != nil || c.PID != 0 {
 		t.Fatalf("halted = %+v, want no next try and never started", c)

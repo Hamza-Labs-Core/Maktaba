@@ -765,6 +765,19 @@ build fails when the two differ.
   with its numbers. The budgets follow the runner's speed, and the numbers are kept as the
   job's artifact (`docs/performance/logs.md`).
 
+- **Report a problem, and crash reports to the home (Epic 53, stories 53.14 and 53.15).** Anyone
+  can send a problem report from Settings → Privacy, or from an error screen's **Report this**,
+  which adds that error's reference. Before Send, the form shows everything it carries: the
+  app and its version, its log of the last 30 minutes and its last requests. The home adds its
+  own lines of those requests and the warnings around that time, and tells the admins.
+  Administration → Problem reports lists the reports and merges the app's and the home's
+  lines by time. An admin sets a report's status, writes back (the sender sees it in **My
+  reports**, without the home's lines) or downloads it. Reports are kept 90 days. **Send crash
+  reports to your home** is a new switch, off until the person turns it on; the web app asks
+  once. When it is on, an uncaught error is sent to `POST /api/diagnostics/envelope` (a Sentry
+  envelope). The home refuses an envelope without that consent, scrubs it again, keeps it, and
+  groups it on the Errors page.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

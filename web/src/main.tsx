@@ -9,6 +9,7 @@ import ReactDOM from "react-dom/client";
 import { applyResolvedTheme, readMode } from "./lib/theme";
 import { bootNative } from "./lib/native";
 import { installErrorLog } from "./lib/errorLog";
+import { installCrashReports } from "./lib/crashReports";
 import { registerServiceWorker, reloadOnStaleChunks } from "./lib/pwa";
 import { App } from "./App";
 // the theme's fonts, bundled (SIL OFL): Plex for text, Amiri for headings
@@ -26,6 +27,8 @@ import "./styles/connect.css";
 
 // first, so a throw during boot is logged too
 installErrorLog();
+// story 53.14: uncaught errors go to the home only when this person turned crash reports on
+installCrashReports();
 
 applyResolvedTheme(readMode());
 
