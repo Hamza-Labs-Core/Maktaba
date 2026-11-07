@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validate } from "../../tools/plugin-sdk/js/src/manifest.js";
@@ -8,6 +8,8 @@ const corpus = join(import.meta.dirname, "..", "..", "shared", "plugins", "testd
 
 function upload(name: string) {
   const dir = join(corpus, name, "plugins");
+  // git keeps no empty folder: a case of a flow alone has none
+  if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((f) => f.endsWith(".toml"))
     .sort()
