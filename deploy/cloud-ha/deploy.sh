@@ -17,6 +17,9 @@
 #   5. the dns role (story 50.15, bin/dns-update) on the standby, then on the leader: one of
 #      the two name servers always answers, and a release whose dns role won't stay up goes
 #      back on that node and stops the deploy before the other
+#   6. the api and worker (bin/app-update): the binary on the standby (a failover starts it),
+#      then on the leader with its api and worker restarted; one that won't stay up gets the
+#      old binary back and fails the deploy
 #
 # Env: RELAY_HOST_A, RELAY_HOST_B (the nodes' SSH addresses), RELAY_SSH_USER, RELAY_SSH_KEY (a
 # private key's text) or SSH (the command to reach a node: "ssh -i key user@"; NODE_EXEC
@@ -86,3 +89,10 @@ log "5. the dns role on ${standby}, then ${leader}"
 for h in "${standby}" "${leader}"; do
     on "${h}" "sudo /usr/local/bin/dns-update ${tag}" || { log "the dns role failed on ${h}: it runs the previous release; stopping"; exit 1; }
 done
+
+# 6. the api and worker: the standby only installs (they don't run there), the leader restarts
+log "6. the api and worker on ${standby}, then ${leader}"
+for h in "${standby}" "${leader}"; do
+    on "${h}" "sudo /usr/local/bin/app-update ${tag}" || { log "the api or worker failed on ${h}: it runs the previous release; stopping"; exit 1; }
+done
+log "done: ${tag}"

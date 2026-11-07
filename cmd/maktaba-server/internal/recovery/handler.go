@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logkeeper"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 )
 
 // Actions are what the console can do, given by serve (none deletes data).

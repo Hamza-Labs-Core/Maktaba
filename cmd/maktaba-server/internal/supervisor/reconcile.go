@@ -16,6 +16,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+	sharedplugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
 )
 
 // The supervisor's reconciler (Epic 51 story 51.04): it reads this machine's desired
@@ -110,6 +111,10 @@ type StatusReporter interface {
 // supervisor's Run, then Run it.
 type Reconciler struct {
 	Catalog *components.Catalog
+	// RunnerComponents answers, per shared runner group, the components its first-party
+	// plugins serve (nil: sharedplugins.FirstPartyGroupComponents). A group's runner is held
+	// while none of them is on.
+	RunnerComponents func() map[string][]string
 	// Source is the desired state (nil: none; the gates follow the cache, else today's).
 	Source   store.Source
 	Listener store.Listener // nil: poll only (or NewListener)
@@ -842,9 +847,29 @@ func (r *Reconciler) applyGates(views []procView, loops map[string]decision) (ma
 		return decs, 0
 	}
 	moved := 0
+	// Epic 54: a shared runner group's own gate, within core.plugin_runners (open, not
+	// switchable): held while none of the components its plugins serve is on
+	runnerOpen := func(p procView) bool {
+		return decs[PluginRunnersComponent].open && r.runnerGroupOn(p.Instance, decs, procs, desired)
+	}
+	for _, p := range procs[PluginRunnersComponent] {
+		open := runnerOpen(p)
+		switch {
+		case !open && (p.Allowed || (p.Running && !p.Draining)):
+			if err := r.table.Allow(p.Role, p.Instance, false); err != nil {
+				r.logf("level=warn %s/%s: %v", p.Role, p.Instance, err)
+			}
+			moved++
+		case open && !p.Allowed:
+			if err := r.table.Allow(p.Role, p.Instance, true); err != nil {
+				r.logf("level=warn %s/%s: %v", p.Role, p.Instance, err)
+			}
+			moved++
+		}
+	}
 	for i := len(comps) - 1; i >= 0; i-- {
 		id := comps[i].ID
-		if decs[id].open || (!comps[i].Switchable && !r.SafeMode) {
+		if id == PluginRunnersComponent || decs[id].open || (!comps[i].Switchable && !r.SafeMode) {
 			continue
 		}
 		for _, p := range procs[id] {
@@ -857,7 +882,7 @@ func (r *Reconciler) applyGates(views []procView, loops map[string]decision) (ma
 		}
 	}
 	for _, comp := range comps {
-		if !decs[comp.ID].open {
+		if !decs[comp.ID].open || comp.ID == PluginRunnersComponent {
 			continue
 		}
 		for _, p := range procs[comp.ID] {
@@ -870,6 +895,31 @@ func (r *Reconciler) applyGates(views []procView, loops map[string]decision) (ma
 		}
 	}
 	return decs, moved
+}
+
+// runnerGroupOn reports whether a shared runner group serves a component that is on: its
+// decision opens it (enabled, or on by default, and passing its gates). A stages-only
+// component has no process to reconcile, so it is decided here the same way.
+func (r *Reconciler) runnerGroupOn(group string, decs map[string]decision,
+	procs map[string][]procView, desired map[string]store.Desired) bool {
+	of := r.RunnerComponents
+	if of == nil {
+		of = sharedplugins.FirstPartyGroupComponents
+	}
+	for _, id := range of()[group] {
+		d, ok := decs[id]
+		if !ok {
+			comp, known := r.cat().Get(id)
+			if !known {
+				continue
+			}
+			d = r.decide(comp, procs, r.loopOf(id), desired, false)
+		}
+		if d.open {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Reconciler) loopOn(id string) bool {

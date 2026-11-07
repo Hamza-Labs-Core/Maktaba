@@ -387,6 +387,8 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		if RunnersHere(cfg) {
 			add("MAKTABA_RUNNER_DIR", RunnerDir(cfg))
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+			// where it asks for a shared runner group that is not up (it starts on demand)
+			add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
 		}
 		// Recent-logs HTTP endpoint drained by the api's diagnostics
 		// export proxy (see MAKTABA_LOG_PEERS on the api role).

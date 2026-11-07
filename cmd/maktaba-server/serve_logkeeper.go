@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logkeeper"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 )
 
 // serveKeeper is this serve's log keeper (Epic 53 story 53.02), once started: serve's own

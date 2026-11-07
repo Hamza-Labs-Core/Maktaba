@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logindex"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logindex"
 )
 
 // Epic 53 story 53.09: `maktaba-server logs` answers its health and search on loopback,

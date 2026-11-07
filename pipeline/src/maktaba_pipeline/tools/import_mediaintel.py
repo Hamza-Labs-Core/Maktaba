@@ -81,11 +81,11 @@ from ..engine.stages import link as link_stage
 from ..engine.stages import style_sample as style_sample_stage
 from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
-from ..engine.stages import youtube_sync as yt_stage
 from ..engine.stages._leftovers import library_name
 from ..engine.stages._tagging import season_tags_digest, video_tags_digest
 from ..engine.stages.content_hash import PENDING, is_pending
 from ..library_mgmt import youtube_derive
+from ..library_mgmt.youtube_snapshot import _snapshot as yt_snapshot
 from ..log import get_logger
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 from ..thumbnail.small import small_path, staged_path
@@ -1288,7 +1288,7 @@ async def _jobs(
             "SELECT count(*) FROM youtube_channels WHERE library_id = $1", uid(lib_id)
         )
         if chans:
-            snap = await yt_stage._snapshot(db, lib_id)
+            snap = await yt_snapshot(db, lib_id)
             await _write_job(db, report, kind="library", subject_id=lib_id, library_id=lib_id, stage="youtube_sync",
                              version=1, input_hash=None, output_hash=snap.digest())  # fmt: skip
     await _flush_jobs(db, report)  # link's fingerprint reads its library's youtube_sync
