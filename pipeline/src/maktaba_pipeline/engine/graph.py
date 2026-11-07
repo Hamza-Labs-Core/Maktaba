@@ -508,21 +508,8 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_max_sec=3600,
     ),
     # ---- what a language model and the book behind a series say about the tags ----
-    StageDef(
-        name="check_tags",
-        label="Check series tags",
-        subject_kinds=("season",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=3,
-        version=TAG_CHECK_VERSION,
-        edges=(Edge("books", "same"), Edge("plan_channels", "catalog")),
-        entry_for=("season",),
-        # the model server defaults to localhost: the home's own (a node would ask
-        # another model, or none) unless the settings name a shared one
-        placement="home",
-        model_rules="tagcheck",
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("check_tags"),
     StageDef(
         name="check_clips",
         label="Check clip tags",

@@ -1,4 +1,8 @@
-"""``check_tags``: a language model checks each series' topic tags (mediaintel ``check-tags``).
+"""What ``check_tags`` shares with the pipeline (mediaintel's import): a season's question, the
+answer applied to its tags, and the stage's input fingerprint. The stage itself is
+``tv.maktaba.classify``'s (Epic 54 wave 4, story 54.31).
+
+``check_tags``: a language model checks each series' topic tags (mediaintel ``check-tags``).
 
 Subject: a season. Runs after ``tag``. The model reads the series' name, its library and a
 sample of its episode titles and names the topics it is about; its verdict corrects the
@@ -13,25 +17,20 @@ Settings: ``rules.tagcheck`` (off, model server, model, sample size, damping ...
 
 from __future__ import annotations
 
-import asyncio
-import urllib.error
 from typing import Any
 from uuid import UUID
 
 from ...classify import tag_check as tc
-from ...db.jobs import Job
 from ...rules import read as read_rules
 from ...settings import to_json
-from ..context import StageContext, StageFailure
-from ..graph import StageResult, Subject
+from ..graph import Subject
 from ..hashing import canonical_hash
-from ..sql import now, to_ts, uid
+from ..sql import uid
 from ._common import load_season
 from ._leftovers import library_name
-from ._tagging import latest_output, read_season_tags, season_tags_digest, write_season_tags
-from .registry import StageImpl
+from ._tagging import latest_output, read_season_tags, write_season_tags
 
-__all__ = ["IMPL", "apply_answer", "season_inputs"]
+__all__ = ["apply_answer", "input_fingerprint", "season_inputs"]
 
 _TITLES_SQL = """
 SELECT COALESCE(yv.title, v.title, v.filename) AS title
@@ -94,51 +93,3 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": tc.TAG_CHECK_VERSION,
         }
     )
-
-
-async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    season_id: UUID = job.subject.id
-    cfg: tc.TagCheckConfig = await ctx.rules("tagcheck")
-    got = await season_inputs(db, season_id)
-    if got is None:
-        return StageResult(output_hash=canonical_hash("retired"), summary={"checked": False})
-    if not cfg.enabled:
-        out = await season_tags_digest(db, season_id)
-        return StageResult(output_hash=out, summary={"enabled": False})
-    name, library, titles = got
-    h = tc.input_hash(name, library, titles, cfg)
-    row = await db.fetchrow(
-        "SELECT input_hash, answer, applied_hash FROM tag_checks WHERE season_id = $1",
-        uid(season_id),
-    )
-    asked = False
-    if row is not None and row["input_hash"] == h:
-        answer, applied = str(row["answer"]), row["applied_hash"]
-    else:
-        try:
-            answer = await asyncio.to_thread(tc.ask, tc.prompt(name, library, titles, cfg), cfg)
-        except (OSError, urllib.error.URLError, KeyError, ValueError) as e:
-            raise StageFailure(
-                "model_unavailable", f"{name[:50]}: the model did not answer ({e})"
-            ) from e
-        applied, asked = None, True
-        await db.execute(
-            "INSERT INTO tag_checks"
-            " (season_id, input_hash, model, answer, applied_hash, checked_at)"
-            " VALUES ($1,$2,$3,$4,NULL,$5) ON CONFLICT (season_id) DO UPDATE SET"
-            " input_hash = EXCLUDED.input_hash, model = EXCLUDED.model, answer = EXCLUDED.answer,"
-            " applied_hash = NULL, checked_at = EXCLUDED.checked_at",
-            uid(season_id),
-            h,
-            cfg.model,
-            answer,
-            to_ts(db, now()),
-        )
-    corrected = await apply_answer(db, season_id, answer, applied, cfg)
-    return StageResult(
-        output_hash=await season_tags_digest(db, season_id),
-        summary={"asked": asked, "corrected": corrected, "model": cfg.model},
-    )
-
-
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)

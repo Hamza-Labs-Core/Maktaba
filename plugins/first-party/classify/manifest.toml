@@ -1,6 +1,8 @@
 # tv.maktaba.classify: Maktaba's classifiers as a first-party plugin (Epic 54, README §15.2).
-# Wave 1 (story 54.28) moves the stages that read the database and write it, with no file,
-# no model and no network; wave 4 (story 54.31) brings the rest of classify.
+# Wave 1 (story 54.28) moved the stages that read the database and write it, with no file,
+# no model and no network; wave 4 (story 54.31) brings the rest of classify: the model's
+# questions go through the plugin API's compute.generate (model_rules), the encyclopedia
+# lookup runs in the net group.
 schema     = 1
 id         = "tv.maktaba.classify"
 version    = "0.0.0-dev"
@@ -13,12 +15,17 @@ runtime    = "native-python"
 name    = "fp.classify.name"
 summary = "fp.classify.summary"
 
+[capabilities]
+# the model's questions (check_tags, check_clips) go through compute.generate (54.31 §2)
+required = ["compute.llm"]
+
 [trusted]
 runner    = "light"
 component = "classify"
 db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "series", "series_episodes", "series_seasons", "video_signals", "video_topic_tags", "videos", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
-db.write  = ["clip_group_items", "clip_groups", "promo_links", "season_style", "topic_collections", "topic_items"]
-settings  = ["groups", "detect"]
+db.write  = ["clip_group_items", "clip_groups", "promo_links", "season_style", "season_tags", "tag_checks", "topic_collections", "topic_items"]
+settings  = ["groups", "detect", "tagcheck"]
+compute   = ["llm"]
 
 [[stage]]
 name         = "promo_links"
@@ -89,3 +96,21 @@ edges        = [{ to = "plan_channels", map = "catalog" }]
 entry        = "maktaba_fp_classify.stages.rate_style:IMPL"
 fingerprint  = { input = true, output = false }
 
+[[stage]]
+name         = "check_tags"
+subject      = "season"
+export       = "check-tags"
+version      = 1
+label        = "Check series tags"
+subject_kinds = ["season"]
+pool         = "lookup"
+lane         = "seasons"
+lane_order   = 3
+entry_for    = ["season"]
+edges        = [{ to = "books", map = "same" }, { to = "plan_channels", map = "catalog" }]
+# the model server defaults to localhost: the home's own (a node would ask another model,
+# or none) unless the settings name a shared one
+placement    = "home"
+model_rules  = "tagcheck"
+entry        = "maktaba_fp_classify.stages.check_tags:IMPL"
+fingerprint  = { input = true, output = false }

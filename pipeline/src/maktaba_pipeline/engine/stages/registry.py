@@ -54,7 +54,6 @@ CORE_MODULES: dict[str, str] = {
     "detect": "maktaba_pipeline.engine.stages.detect",
     "fp_gate": "maktaba_pipeline.engine.stages.fp_gate",
     "tag": "maktaba_pipeline.engine.stages.tag",
-    "check_tags": "maktaba_pipeline.engine.stages.check_tags",
     "check_clips": "maktaba_pipeline.engine.stages.check_clips",
     "books": "maktaba_pipeline.engine.stages.books",
     "display_title": "maktaba_pipeline.engine.stages.display_title",
