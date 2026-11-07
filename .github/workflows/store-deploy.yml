@@ -110,7 +110,7 @@ jobs:
       - name: D1 migrations (additive)
         working-directory: store
         run: |
-          for db in store-accounts store-catalog store-installs; do
+          for db in store-accounts store-catalog store-installs store-commerce; do
             npx wrangler d1 migrations apply "$db" --remote
           done
 

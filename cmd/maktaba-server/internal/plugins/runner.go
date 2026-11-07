@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
 // Part is the component_status part a plugin's files are reported under (story 54.38 §4).
@@ -53,7 +54,17 @@ type state struct {
 	grants          map[string][]string
 	keepOff         map[string]bool
 	allowUnreviewed bool
+	// entitledUntil is, per plugin, the latest valid_until of its entitlements (story 54.19
+	// §6: checked offline when the API fetched them); at is when the state was read
+	entitledUntil map[string]time.Time
+	at            time.Time
 }
+
+// EntitlementGrace is pluginsig's: an entitlement holds this long past its valid_until.
+const EntitlementGrace = pluginsig.EntitlementGrace
+
+// paid is whether a manifest's price names a product (a paid plugin, story 54.19 §4).
+func paid(price string) bool { return price != "" && price != "free" }
 
 // CatalogSink takes the catalog with the plugins' entries (*supervisor.Reconciler).
 type CatalogSink interface {
@@ -199,14 +210,21 @@ func (st *state) gate(id, version string) (string, map[string]any) {
 	var m struct {
 		Maktaba      string `json:"maktaba"`
 		PluginAPI    string `json:"plugin_api"`
+		Price        string `json:"price"`
 		Capabilities struct {
 			Required []string `json:"required"`
 		} `json:"capabilities"`
 	}
 	_ = json.Unmarshal(in.Manifest, &m)
+	// a paid plugin waits while no entitlement holds now (54.19 §6): queue and data kept
+	missing := false
+	if paid(m.Price) {
+		until, ok := st.entitledUntil[id]
+		missing = !ok || !st.at.Before(until.Add(EntitlementGrace))
+	}
 	return components.PluginGate(components.PluginGateInput{ServerVersion: version, Range: m.Maktaba,
 		PluginAPI: m.PluginAPI, Required: m.Capabilities.Required, Granted: st.grants[id],
-		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked})
+		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked, EntitlementMissing: missing})
 }
 
 // reasonHeld is the reason a held component's row gives (the reconciler's and the
@@ -333,7 +351,8 @@ func (r *Runner) Pass(ctx context.Context) {
 }
 
 func (r *Runner) load(ctx context.Context) (*state, error) {
-	st := &state{installs: map[string]Install{}, grants: map[string][]string{}, keepOff: map[string]bool{}}
+	st := &state{installs: map[string]Install{}, grants: map[string][]string{}, keepOff: map[string]bool{},
+		entitledUntil: map[string]time.Time{}, at: r.now()}
 	rows, err := r.DB.QueryContext(ctx, `SELECT plugin_id, version, digest, path, COALESCE(previous_path, ''),
 		manifest, review_level, installed_at, revoked FROM plugin_installs`)
 	if err != nil {
@@ -376,6 +395,17 @@ func (r *Runner) load(ctx context.Context) (*state, error) {
 			}
 		}
 		krows.Close()
+	}
+	// an older schema has no entitlements table: no paid plugin runs
+	if erows, err := r.DB.QueryContext(ctx, `SELECT plugin_id, max(valid_until) FROM plugin_entitlements GROUP BY plugin_id`); err == nil {
+		for erows.Next() {
+			var id string
+			var until time.Time
+			if erows.Scan(&id, &until) == nil {
+				st.entitledUntil[id] = until
+			}
+		}
+		erows.Close()
 	}
 	var pol []byte
 	if err := r.DB.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = $1`, PolicyKey).Scan(&pol); err == nil {
@@ -603,8 +633,8 @@ func (r *Runner) restartIfChanged(st *state) {
 // pipeline is down (story 54.07 §8). Failed with pack_missing when its folder is gone,
 // removing while a removal waits for the drain, off when it is not wanted on, stopped
 // (held) while an admin or its breaker holds it, waiting with the gate's reason when its
-// gate refuses it (incompatible, grants_needed, unreviewed_disallowed, revoked, a
-// machine's placement), and running when its gate passes.
+// gate refuses it (incompatible, grants_needed, unreviewed_disallowed, revoked,
+// entitlement_missing, a machine's placement), and running when its gate passes.
 //
 // Which one wins: a machine's parts roll up worst first (store.Rollup), so a refusal or a
 // hold written here outranks the pipeline's running, and when the gate passes the
