@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -126,6 +127,10 @@ def _untimed(v: Any) -> Any:
 def _swap_db(url: str, name: str) -> str:
     base, _, _ = url.rpartition("/")
     return f"{base}/{name}"
+
+
+#: a timing line of perf_check (N16), as opposed to a difference in what was written
+_PERF_LINE = re.compile(r" p(50|95): plugin ")
 
 
 @dataclass
@@ -248,6 +253,26 @@ class Parity:
                     side.times[st].append(took)
                     if side is self.b:
                         self.breakdowns.append((took, st, list(marks)))
+
+    async def compare_n16(
+        self,
+        tables: Sequence[tuple[str, Sequence[str]]],
+        *,
+        ignore: dict[str, Sequence[str]] | None = None,
+        stages: Sequence[str],
+        perf: bool = True,
+    ) -> list[str]:
+        """N16's samples (``bench``) and every difference. A failure that is only the timing
+        is measured once more and counts only when the second run fails too: with 11 runs a
+        side, p95 is about the slowest run, and one stall of a shared CI machine (on either
+        side's turn) is not the plugin's cost."""
+        await self.bench(stages)
+        problems = await self.compare(tables, ignore=ignore, stages=stages, perf=perf)
+        if problems and all(_PERF_LINE.search(p) for p in problems):
+            self.breakdowns.clear()
+            await self.bench(stages)
+            problems = await self.compare(tables, ignore=ignore, stages=stages, perf=perf)
+        return problems
 
     async def compare(
         self,
