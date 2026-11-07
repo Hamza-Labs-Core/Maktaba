@@ -1,9 +1,10 @@
 # The sandbox
 
-> **Status: planned (Phase 1).** The plugin host (`maktaba-plugind`), its OS sandbox and the
-> CI egress tests are not built yet. This page describes the design in
-> [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
-> sections 4.7, 4.9 and 5, which can change.
+> **Status: on `main`.** The plugin host (`maktaba-plugind`, on Wasmtime), its OS sandbox on
+> macOS, Linux and Windows, and the CI job that runs escape probes against a canary on each
+> are built. **Coming in the next release:** the supervisor running the host as a role, the
+> circuit breaker, and the health figures on the Plugins page. The API's own limits are in the
+> [plugin reference](reference.md), generated from the code.
 
 ## The rule
 
