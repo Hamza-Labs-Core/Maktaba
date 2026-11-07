@@ -87,7 +87,10 @@ GRANT EXECUTE ON FUNCTION copy_grant() TO maktaba_worker;
 
 // untilWhole sets restoring from when the restore's log says it made the database afresh
 // until it says it is whole.
-type untilWhole struct{ restoring *atomic.Bool }
+type untilWhole struct {
+	restoring *atomic.Bool
+	vectors   *atomic.Bool // the vector index built in a step of its own
+}
 
 func (u untilWhole) Write(p []byte) (int, error) {
 	switch {
@@ -95,6 +98,8 @@ func (u untilWhole) Write(p []byte) (int, error) {
 		u.restoring.Store(true)
 	case strings.Contains(string(p), "is put back whole"):
 		u.restoring.Store(false)
+	case strings.Contains(string(p), "the vector index is built") && u.vectors != nil:
+		u.vectors.Store(true)
 	}
 	return len(p), nil
 }
@@ -181,7 +186,8 @@ func TestRealRestoreKeepsOtherLoginsOutAndIsWhole(t *testing.T) {
 		}
 	})
 	start := time.Now()
-	err = b.RestoreRunning(ctx, dump, untilWhole{&restoring})
+	var vectorsAlone atomic.Bool
+	err = b.RestoreRunning(ctx, dump, untilWhole{&restoring, &vectorsAlone})
 	restoring.Store(false)
 	close(stop)
 	wg.Wait()
@@ -217,6 +223,16 @@ func TestRealRestoreKeepsOtherLoginsOutAndIsWhole(t *testing.T) {
 	} {
 		if got := one(t, q, sql); got != want {
 			t.Errorf("%s = %s, want %s", sql, got, want)
+		}
+	}
+	// the vector index built alone, with memory of its own (the rollback of 2026-11-07)
+	if one(t, q, `SELECT EXISTS (SELECT FROM pg_extension WHERE extname = 'vector')`) == "t" {
+		if !vectorsAlone.Load() {
+			t.Error("the vector index was not built in a step of its own")
+		}
+		if got := one(t, q, `SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+			WHERE c.relname = 'segment_embeddings_hnsw'`); got != "t" {
+			t.Errorf("segment_embeddings_hnsw valid after the restore = %q", got)
 		}
 	}
 	// the database's own grants back: the workers' CONNECT (the machine's way in), PUBLIC's

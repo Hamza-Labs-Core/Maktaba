@@ -80,6 +80,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A rollback no longer keeps the home down for half a day building the search index.**
+  Putting a backup back rebuilt semantic search's vector index among the other indexes with
+  64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
+  down all the while (the rollback of 0.3.90 on 2026-11-07). The vector index is now built
+  in a step of its own, with a third of the machine's memory (at most 32 GB) and parallel
+  workers; if that is refused it is built again with less, so a rollback never fails on it.
+
 - **An update no longer rolls back because the transcription pipeline is busy.** The update's
   watch asked every pipeline process for its version on every check, with three seconds to
   answer; on a busy home the answer sometimes came late, the watch never saw ten healthy
