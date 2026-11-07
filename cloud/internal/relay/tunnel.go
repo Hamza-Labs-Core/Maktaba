@@ -170,7 +170,7 @@ func (t *Tunnel) dispatch(f Frame) {
 			s.fail(err)
 			go t.closeStream(f.StreamID, err.Error())
 		}
-	case KindMetaEndpoints, KindDirectCSR, KindDirectCheckNow:
+	case KindMetaEndpoints, KindDirectCSR, KindDirectCheckNow, KindDirectName:
 		go t.onDirect(f)
 	case KindHeartbeat:
 		// Heartbeat data is consumed by the supervisor goroutine via a

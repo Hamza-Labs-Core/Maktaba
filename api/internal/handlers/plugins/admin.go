@@ -71,6 +71,9 @@ type Admin struct {
 	Entitlements *pl.Entitlements
 	// Catalog is the store's catalog and the kill switch (story 54.17; nil: 503).
 	Catalog *catalog.Service
+	// PluginLogs are a plugin's recent lines for a store report (#758; nil: the logs index's,
+	// logs.PluginLines).
+	PluginLogs func(ctx context.Context, id string) []json.RawMessage
 	// Server and Platform are this server's version and platform (Browse's filter).
 	Server   string
 	Platform catalog.Platform
@@ -98,6 +101,7 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Delete("/api/plugins/store-account", h.storeUnlink)
 		r.Get("/api/plugins/store-account/entitlements", h.entitlements)
 		r.Post("/api/plugins/store-account/entitlements/refresh", h.refreshEntitlements)
+		r.Post("/api/plugins/store-account/buy", h.buy)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
 		r.Put("/api/plugins/{id}/report-logs", h.reportLogs)

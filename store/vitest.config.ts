@@ -42,6 +42,8 @@ async function workers() {
             await crypto.subtle.digest("SHA-256", new TextEncoder().encode("maktaba-plugins TEST KEY, never for production: entitlement-1")),
           ),
         ),
+        // the fake payment provider's webhook secret (story 54.19 §2), a TEST value
+        PAYMENTS_FAKE_WEBHOOK_SECRET: "test-webhook-secret",
         MFA_ENC_KEY: toB64(crypto.getRandomValues(new Uint8Array(32))),
         BOOTSTRAP_ADMIN_TOKEN: "test-bootstrap-token-0123456789abcdef",
         TEST_STORE_KEYS: storeKeys,

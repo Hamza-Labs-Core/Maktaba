@@ -105,6 +105,7 @@ func TestScenario(t *testing.T) {
 		{"runbook-forced-failover", runbookForcedFailover},
 		{"runbook-dns-swap", runbookDNSSwap},
 		{"load-small", loadSmall},
+		{"relay-plans", relayPlans},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -154,8 +155,9 @@ func outDir(t *testing.T) string {
 type cluster struct {
 	t       *testing.T
 	project string
-	dir     string // tools/rehearsal-cloud
-	edge    string // http://127.0.0.1:<port>
+	dir     string   // tools/rehearsal-cloud
+	over    []string // compose files over compose.yml (relay-plans: compose-plans.yml)
+	edge    string   // http://127.0.0.1:<port>
 	db      *sql.DB
 	api     *httptestServer
 	homes   []*simhome.Home
@@ -168,7 +170,11 @@ type httptestServer struct {
 }
 
 func (c *cluster) compose(args ...string) (string, error) {
-	cmd := exec.Command("docker", append([]string{"compose", "-p", c.project, "-f", filepath.Join(c.dir, "compose.yml")}, args...)...)
+	files := []string{"compose", "-p", c.project, "-f", filepath.Join(c.dir, "compose.yml")}
+	for _, f := range c.over {
+		files = append(files, "-f", filepath.Join(c.dir, f))
+	}
+	cmd := exec.Command("docker", append(files, args...)...)
 	cmd.Env = append(os.Environ(), c.env()...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
@@ -211,6 +217,9 @@ func (c *cluster) must(args ...string) string {
 func up(t *testing.T, scenario string) *cluster {
 	t.Helper()
 	c := &cluster{t: t, project: "mr-" + scenario, dir: filepath.Join(repoRoot(t), "tools/rehearsal-cloud")}
+	if scenario == "relay-plans" {
+		c.over = []string{"compose-plans.yml"}
+	}
 	ports := portsFor(c.project)
 	c.edge = fmt.Sprintf("http://127.0.0.1:%d", ports[1])
 	_, _ = c.compose("down", "-v", "--remove-orphans")
@@ -266,22 +275,28 @@ func upOnly(t *testing.T, scenario string) *cluster {
 // homesOnline seeds n homes and runs them against the edge until each has a tunnel.
 func (c *cluster) homesOnline(n int) []string {
 	c.t.Helper()
-	ctx := context.Background()
-	ids, err := seed.Homes(ctx, c.db, 0, n, "pro")
+	ids, err := seed.Homes(context.Background(), c.db, 0, n, "pro")
 	if err != nil {
 		c.t.Fatal(err)
 	}
+	return c.startHomes(ids, 0, n, n)
+}
+
+// startHomes runs seeded homes first..first+n-1 against the edge until the directory holds
+// total tunnels.
+func (c *cluster) startHomes(ids map[string]string, first, n, total int) []string {
+	c.t.Helper()
 	ws := "ws" + strings.TrimPrefix(c.edge, "http") + "/v1/relay/ws"
-	slugs := make([]string, n)
-	for i := range n {
+	slugs := make([]string, 0, n)
+	for i := first; i < first+n; i++ {
 		_, _, slug := simhome.Creds(i)
 		h := simhome.Start(i, ws, c.api.URL, simhome.Options{ServerID: ids[slug], BaseWait: 500 * time.Millisecond, MaxWait: 10 * time.Second, PingEvery: 20 * time.Second})
 		c.mu.Lock()
 		c.homes = append(c.homes, h)
 		c.mu.Unlock()
-		slugs[i] = h.Slug
+		slugs = append(slugs, h.Slug)
 	}
-	waitFor(c.t, 3*time.Minute, fmt.Sprintf("%d homes online", n), func() bool { return c.tunnels("") == n })
+	waitFor(c.t, 3*time.Minute, fmt.Sprintf("%d homes online", total), func() bool { return c.tunnels("") == total })
 	return slugs
 }
 

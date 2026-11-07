@@ -54,14 +54,16 @@ var pageTexts = map[string]map[string]pageWords{
 	"en": {
 		"offline":           {"Your Maktaba server is unreachable", "The relay cannot reach the home server right now. It may be off, restarting or offline; this page retries by itself."},
 		"home_reconnecting": {"Your home is reconnecting", "Your home lost its connection to Maktaba Cloud for a moment and is coming back. This page tries again in a few seconds."},
-		"tier_limit":        {"Daily relay limit reached", "This server used its plan's relay allowance for today."},
+		"relay_needs_plan":  {"Remote play through the relay needs a plan", "Remote play through the relay needs a Basic or Pro plan. Direct access from the internet is free: turn it on in this home's settings."},
+		"stream_limit":      {"Too many devices are playing", "The most devices your plan allows are already playing through the relay. Stop one, or play at home or over a direct connection."},
 		"none":              {"No Maktaba server here", "There is no Maktaba server at this address."},
 		"retry":             {"Try again", ""},
 	},
 	"ar": {
 		"offline":           {"تعذّر الوصول إلى الجهاز الرئيسي", "لا يستطيع المُرحِّل الوصول إلى الجهاز الرئيسي الآن. ربما هو مطفأ أو يُعاد تشغيله أو غير متصل؛ وستعيد هذه الصفحة المحاولة وحدها."},
 		"home_reconnecting": {"الجهاز الرئيسي يعيد الاتصال", "انقطع اتصال الجهاز الرئيسي بسحابة مكتبة لحظة وهو يعود الآن. ستعيد هذه الصفحة المحاولة بعد ثوانٍ."},
-		"tier_limit":        {"بلغ المُرحِّل حدّه اليومي", "استهلك هذا الجهاز الرئيسي حصة المُرحِّل في خطته لهذا اليوم."},
+		"relay_needs_plan":  {"التشغيل عبر الوسيط يتطلب خطة", "التشغيل عن بُعد عبر الوسيط يتطلب الخطة الأساسية أو الاحترافية. الوصول المباشر من الإنترنت مجاني: فعّله من إعدادات هذا الجهاز الرئيسي."},
+		"stream_limit":      {"أجهزة كثيرة تشغّل الآن", "يشغّل عبر الوسيط أكبر عدد من الأجهزة تسمح به خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر."},
 		"none":              {"لا يوجد جهاز رئيسي لمكتبة هنا", "لا يوجد جهاز رئيسي لمكتبة على هذا العنوان."},
 		"retry":             {"إعادة المحاولة", ""},
 	},
@@ -82,8 +84,8 @@ func pageText(kind, lang string) (heading, message string, retry int) {
 	case "home_reconnecting":
 		h, m := pick("home_reconnecting")
 		return h, m, 5
-	case "tier_limit":
-		h, m := pick("tier_limit")
+	case "relay_needs_plan", "stream_limit":
+		h, m := pick(kind)
 		return h, m, 0
 	default:
 		h, m := pick("none")

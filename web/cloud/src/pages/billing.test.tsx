@@ -182,6 +182,61 @@ describe("billing", () => {
     expect(screen.getAllByText("Price coming soon")).toHaveLength(2);
   });
 
+  // Epic 50 story 50.19 §4–§6: use by quality; Pro's pay-as-you-go needs a limit, shows what
+  // it spent and says when 80 % is used.
+  it("lets a Pro owner turn on pay as you go with a monthly limit", async () => {
+    const f = stubFetch({
+      ...routes({ plan: "pro", status: "active" }),
+      "GET /v1/billing/usage": [
+        200,
+        {
+          month: "2026-11",
+          plan: "pro",
+          limit_bytes: 0,
+          used_bytes: 9e9,
+          servers: [],
+          by_mode: { full: 4e9, payg: 1e9, capped: 4e9, capped_slow: 0 },
+        },
+      ],
+      "GET /v1/billing/payg": [
+        200,
+        { enabled: true, cap_cents: 1000, spent_cents: 850, price_per_gb_cents: 10 },
+      ],
+      "PATCH /v1/billing/payg": [
+        200,
+        { enabled: false, cap_cents: 1000, spent_cents: 850, price_per_gb_cents: 10 },
+      ],
+    });
+    renderAt("/billing");
+    expect(await screen.findByText("Pay as you go")).toBeInTheDocument();
+    expect(screen.getByText(/Full quality: /)).toBeInTheDocument();
+    expect(screen.getByText(/Capped quality \(about 3 Mbps\): /)).toBeInTheDocument();
+    expect(
+      screen.getByText("You've used 80% of your pay-as-you-go limit this month.")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/\$8\.50 of \$10\.00 spent this month/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Turn off" }));
+    await waitFor(() =>
+      expect(f.find("PATCH", "/v1/billing/payg")[0].body).toEqual({
+        enabled: false,
+        cap_cents: 1000,
+      })
+    );
+  });
+
+  it("has no pay as you go before its price is set", async () => {
+    stubFetch({
+      ...routes({ plan: "pro", status: "active" }),
+      "GET /v1/billing/payg": [
+        200,
+        { enabled: false, cap_cents: 0, spent_cents: 0, price_per_gb_cents: null },
+      ],
+    });
+    renderAt("/billing");
+    expect(await screen.findByText("Current plan")).toBeInTheDocument();
+    expect(screen.queryByText("Pay as you go")).not.toBeInTheDocument();
+  });
+
   it("shows the return banners", async () => {
     stubFetch(routes());
     renderAt("/billing?billing=ok");

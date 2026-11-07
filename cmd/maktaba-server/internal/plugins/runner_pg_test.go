@@ -52,7 +52,7 @@ func scratchDB(t *testing.T) *sql.DB {
 	u.Path = "/" + name
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	if err := pgtest.Migrator(t, t.TempDir())(ctx, u.String()); err != nil {
+	if err := pgtest.Migrator(t)(ctx, u.String()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	db, err := sql.Open("postgres", u.String())

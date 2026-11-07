@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { b64url } from "../../web/crypto";
 import { sha256hex } from "../../web/crypto";
 import { MAX_WRONG } from "../../objects/pairing-code";
-import { account, call } from "./helpers";
+import { E, account, addPasskey, call, grant } from "./helpers";
 
 async function homeKey() {
   const k = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
@@ -149,5 +149,44 @@ describe("the home's Go signer (the shared vector)", () => {
     } finally {
       setClockOffset(0);
     }
+  });
+});
+
+describe("a home's report with the plugin's lines (#758)", () => {
+  it("keeps the lines (capped) for the store's reviewers only; a web report carries none", async () => {
+    const { hk, homeId } = await linked();
+    const plugin = `dev.example.r${crypto.randomUUID().slice(0, 6)}`;
+    await E.DB_CATALOG.prepare("INSERT INTO plugins (id, developer, developer_name, created) VALUES (?, 'd', 'Dev', ?)").bind(plugin, new Date().toISOString()).run();
+    const lines = Array.from({ length: 250 }, (_, i) => ({ service: `plugin.${plugin}`, msg: `line ${i}` }));
+    const path = `/v1/homes/${homeId}/reports`;
+    const body = JSON.stringify({ plugin, version: "1.0.0", reason: "does_not_work", details: "stops", logs: lines });
+    const r = await call("POST", path, { raw: body, headers: await signed(hk.k.privateKey, homeId, "POST", path, body) });
+    expect(r.status, JSON.stringify(r.body)).toBe(201);
+    const id = r.body.id as string;
+    const row = await E.DB_CATALOG.prepare("SELECT logs_key FROM reports WHERE id = ?").bind(id).first<{ logs_key: string }>();
+    expect(row!.logs_key).toBe(`report-logs/${id}.json`);
+
+    const reviewer = await account();
+    await grant(reviewer.id, "store_reviewer");
+    const { cookie } = await addPasskey(reviewer.cookie);
+    const got = await call("GET", `/v1/admin/reports/${id}/logs`, { cookie });
+    expect(got.status).toBe(200);
+    expect((got.body.lines as unknown[]).length).toBe(200);
+    expect(got.body).toMatchObject({ plugin, home: homeId });
+    const audited = await E.DB_ACCOUNTS.prepare("SELECT count(*) AS n FROM audit WHERE action = 'report.logs' AND target = ?").bind(id).first<{ n: number }>();
+    expect(audited!.n).toBe(1);
+    const q = await call("GET", "/v1/admin/reports", { cookie });
+    expect((q.body.reports as { id: string; logs_key: string }[]).find((x) => x.id === id)?.logs_key).toBeTruthy();
+
+    // anyone else: refused
+    const other = await account();
+    expect((await call("GET", `/v1/admin/reports/${id}/logs`, { cookie: other.cookie })).status).toBe(403);
+
+    // a store account's own report from the web carries no lines, even when it sends some
+    const web = await call("POST", `/v1/plugins/${plugin}/reports`, { cookie: other.cookie, body: { reason: "misleading", logs: lines } });
+    expect(web.status).toBe(201);
+    const webRow = await E.DB_CATALOG.prepare("SELECT logs_key FROM reports WHERE id = ?").bind(web.body.id).first<{ logs_key: string }>();
+    expect(webRow!.logs_key).toBe("");
+    expect((await call("GET", `/v1/admin/reports/${web.body.id}/logs`, { cookie })).status).toBe(404);
   });
 });

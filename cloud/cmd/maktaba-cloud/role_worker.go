@@ -7,11 +7,14 @@ import (
 	"os"
 	"time"
 
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
 // runWorker is the background-job role. Workers do not serve user
@@ -38,6 +41,13 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 
 	go cleanupExpired(ctx, logger, pool)
 	go purgeDeletedAccounts(ctx, logger, pool)
+	// story 50.19: relayed streams silent for 2 minutes stop counting against their plan
+	go sweepStreams(ctx, logger, &billingpkg.Streams{DB: pool.DB}, time.Minute)
+	// story 50.19 §6: the hourly pay-as-you-go usage reports, with a payment provider that
+	// takes payments
+	if r := usageReporter(cfg, pool, logger); r != nil {
+		go r.Run(ctx, time.Hour)
+	}
 	// direct remote access (story 50.15): certificates and the outside checks
 	if j := directJobs(cfg, pool, logger); j != nil {
 		go j.Run(ctx)
@@ -98,4 +108,50 @@ func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, pool *db.Poo
 			}
 		}
 	}
+}
+
+// sweepStreams deletes the relayed streams silent for billing.StreamSilence, every interval
+// (story 50.19 §3: a stream that ended or a relay that crashed frees its slot).
+func sweepStreams(ctx context.Context, logger *slog.Logger, st interface {
+	Sweep(context.Context) (int64, error)
+}, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := st.Sweep(ctx); err != nil {
+				logger.Warn("worker: relayed streams sweep", "err", err)
+			} else if n > 0 {
+				logger.Info("worker: relayed streams ended", "streams", n, "event", "relay_streams_swept")
+			}
+		}
+	}
+}
+
+// usageReporter is the worker's pay-as-you-go reporter, or nil when no payment provider takes
+// payments (nothing can be billed). Its notices go to the account's email.
+func usageReporter(cfg config.Config, pool *db.Pool, logger *slog.Logger) *billingpkg.Reporter {
+	p, err := billingpkg.New(cfg.Billing.Provider)
+	if err != nil || !p.Enabled() {
+		return nil
+	}
+	users := stores.NewUsers(pool.DB)
+	var mailer mailpkg.Mailer = mailpkg.LogMailer{Logger: logger}
+	return &billingpkg.Reporter{DB: pool.DB, Provider: p, Logger: logger,
+		Notify: func(ctx context.Context, uid string, near bool) error {
+			u, err := users.ByID(ctx, uid)
+			if err != nil {
+				return err
+			}
+			kind, subject, body := "payg_cap_reached", "Your pay-as-you-go limit is reached",
+				"You've reached your pay-as-you-go limit. Remote play continues at Basic quality until next month."
+			if near {
+				kind, subject, body = "payg_near_cap", "80% of your pay-as-you-go limit is used",
+					"You've used 80% of your pay-as-you-go limit this month."
+			}
+			return mailer.Send(ctx, mailpkg.Message{To: u.Email, Kind: kind, Subject: subject, Body: body})
+		}}
 }

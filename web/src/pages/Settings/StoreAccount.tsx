@@ -1,5 +1,5 @@
 // Settings → Plugins → Store account (story 54.15 §5): link this home to a plugin store
-// account to rate and, later, buy plugins. Free plugins never need it. The home shows the
+// account to rate and buy plugins. Free plugins never need it. The home shows the
 // code and a QR code for plugins.maktaba.tv/link (the code is never in the URL), polls the
 // store every few seconds while the code lasts, and unlinks with its own signature.
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -9,9 +9,13 @@ import { useI18n } from "../../lib/i18n";
 import { pluginsApi, type HeldEntitlement, type StoreLinkStatus } from "../../lib/pluginsApi";
 import { refusalWords } from "./PluginsSection";
 
-export function StoreAccount() {
+/** onLinked: told once the home is linked (Browse's "Link this home to buy" then shows Buy). */
+export function StoreAccount({ onLinked }: { onLinked?: () => void } = {}) {
   const { t } = useI18n();
   const [st, setSt] = useState<StoreLinkStatus | null>(null);
+  useEffect(() => {
+    if (st?.linked) onLinked?.();
+  }, [st?.linked, onLinked]);
   const [error, setError] = useState("");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
