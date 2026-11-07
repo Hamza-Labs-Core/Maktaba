@@ -868,6 +868,11 @@ build fails when the two differ.
   the evidence on the store's own admin pages, and approve, reject with reasons from a fixed
   list, or ask the developer; the review targets alert the store admins. maktaba.dev has the
   review guidelines.
+  The flow check (C12) runs at the same step, with the shared flow checker of story 54.39:
+  a flow's members are submitted together and refused, reviewed or approved as a whole
+  (nothing in a refused flow is countersigned), with the cycle path or bad edge in English and
+  Arabic; cycles through the published flows it subscribes to count; the review pages draw the
+  whole flow.
 
 
 ### Fixed
