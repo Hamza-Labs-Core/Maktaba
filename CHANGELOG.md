@@ -340,6 +340,10 @@ build fails when the two differ.
 
 ### Security
 
+- **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
+  network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
+  a channel listing and a download and fails on one the plugin's reviewed `net` list does not
+  name (story 54.33 T02, issue 805).
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
   field that saved what was typed into the browser's storage in plain text and never used it
   (the server reads `OPENAI_API_KEY`). The field is gone, the page says where the key is set,

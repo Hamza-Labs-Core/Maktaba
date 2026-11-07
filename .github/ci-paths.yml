@@ -119,6 +119,9 @@ lint_pipeline:
   - 'tools/ci/rules_schema_versions.py'
   # Epic 52: word review names no language outside its packs; its evaluation gate
   - 'tools/ci/word_review_languages.py'
+  # story 54.33 T02: the nightly check of the hosts yt-dlp contacts (its tests run in lint)
+  - 'tools/ci/youtube_hosts.py'
+  - '.github/workflows/youtube-hosts-nightly.yml'
   - 'tools/eval-gate/**'
 
 lint_web:
