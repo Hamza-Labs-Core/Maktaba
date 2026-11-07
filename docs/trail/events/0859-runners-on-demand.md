@@ -11,11 +11,14 @@ prs: [833, 844]
 ## What happened
 - After #833 made the runners start, an idle Core install ran its shared runner groups as idle Python processes. Main went red on `mac-app / Bundle size (Core payload)`: 6 processes and 731 MB against 4 and 700. #844 (waves 5–8) showed 9 and 909 MB.
 - The shared groups now start on demand. The worker runs a job itself while its runner is down and asks the supervisor for it (`POST /runners/{group}/start`). The runner exits 0 after ten idle minutes, and the supervisor doesn't restart it (`Process.IdleOnClean`) until it's asked again.
+- Each group is held while none of the components its plugins serve is on (read from the bundle's manifests). The start endpoint refuses a held group with 409 and never opens a gate.
+- The supervisor reports each process's start mode (`always`, `on_demand`). Update rehearsal scenario 12 reads it: a new on-demand process must be held (gate closed) or idle (gate open). A kept one that the previous release reported without a start mode may come back on demand, held or idle, logged as an expected change; every other row stays exact. `healthyFor` and adoption never wait on an on-demand process nobody asked for.
 
 ## What we learned
 - A process that crashed at start hid a budget breach: the fix for the crash (#833) is what exposed it. When fixing a start-up crash, check the steady-state budgets it was hiding.
 - "Runs while its component is on" is the wrong lifetime for a runner whose components are on in every home. Tie it to work instead. The worker's in-process fallback already covers the moment before the runner is up.
 - The supervisor's health check must not count as activity, or an idle timeout never fires.
+- When a process changes how it starts, model the new state in what the rehearsal reads (the start mode) instead of special-casing a version: "the bundle has it" then has a true reading for an on-demand process.
 
 ## Open
 - None.
