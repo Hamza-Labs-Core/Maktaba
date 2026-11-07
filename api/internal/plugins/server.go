@@ -45,9 +45,11 @@ type Server struct {
 	// Statements runs Maktaba's own plugins' named statements (story 54.24); nil: the
 	// embedded first-party bundle's, on DB.
 	Statements *statements.Executor
-	routes     map[string]route
-	once       sync.Once
-	stmtOnce   sync.Once
+	// Compute answers compute.embed and compute.llm (54.21; nil: unavailable).
+	Compute  *Compute
+	routes   map[string]route
+	once     sync.Once
+	stmtOnce sync.Once
 }
 
 // call is one plugin call, checked: its invocation and its JSON body.
@@ -124,6 +126,7 @@ func (s *Server) init() {
 		s.otherRoutes()
 		s.mediaRoutes()
 		s.trustedRoutes()
+		s.computeRoutes()
 	})
 }
 

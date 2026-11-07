@@ -27,7 +27,7 @@ build fails when the two differ.
   ways on two copies of one database and fails on any difference in rows, results,
   fingerprints, enqueued jobs or speed. Settings → Plugins lists **Built into Maktaba** with
   what each can do. No stage moves yet: every stage still runs in the worker until its wave.
-  Migration 0197.
+  Migration 0198.
 - **The second listen is a stage of its own, and an 8 GB card on Windows runs it.** Whisper's
   `transcribe` stores its transcript with each sentence's words (their timings), and a new
   `second_listen` stage (its own `listen` pool, per machine) reads that transcript and the
@@ -231,6 +231,21 @@ build fails when the two differ.
 
 ### Security
 
+- **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
+  field that saved what was typed into the browser's storage in plain text and never used it
+  (the server reads `OPENAI_API_KEY`). The field is gone, the page says where the key is set,
+  and a key an earlier build kept is removed when the page opens: see
+  `docs/security/advisories/2026-11-06-openai-key-in-browser.md` (English and Arabic).
+- **A processing node's own sign-in cookies are Secure over HTTPS.** They followed only
+  `MAKTABA_HSTS`/`MAKTABA_COOKIES_SECURE`, so a node reached over HTTPS without them set
+  cookies a plain-HTTP request could carry; a node reached over plain HTTP on the LAN keeps
+  working as before.
+- **The diagnostics export asks the streaming and pipeline logs for its filter only.** It
+  passed the caller's whole query string to those internal services; it now sends the level,
+  time window, services, search and limit it parsed, and nothing else.
+- **A status the update pages relay undecorated is never served as HTML.** The About page's
+  update status passed an error or non-JSON body through with whatever type it had; it now
+  goes out as JSON or plain text, with `nosniff`.
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
@@ -835,6 +850,17 @@ build fails when the two differ.
   signer, `store/signing`) agree on one set of vectors, and a new `store` CI job runs the online
   key rotation drill with test keys. maktaba.dev has a new page, Signing and the chain of
   trust. Migration 0196.
+
+- **Plugins can ask the home's own models (Epic 54, story 54.21).** Plugin API 1.1 adds
+  `compute`: `compute.embed` turns up to 64 texts into vectors with the model semantic search
+  uses (with its id), and `compute.llm` asks the language model chosen for plugins (Settings →
+  Rules → Plugin models; the tag check's model by default), up to 1,024 tokens, optionally held
+  to a JSON schema. Only a model on the home or the local network is ever asked: a server on the
+  internet is refused (`compute_remote`), checked on every connection. Plugins share the
+  `lookup` slot with Maktaba's own model stages, one question at a time, and get at most one
+  slot in three while Maktaba's work waits; each plugin may ask 2,000 questions and embed
+  50,000 texts a day by default. Prompts, texts and answers are never logged. Plugins built
+  for 1.0 keep running. Migration 0197 (`plugin_compute_usage`, `compute_leases`).
 
 ### Fixed
 

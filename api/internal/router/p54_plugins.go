@@ -43,6 +43,11 @@ type P54Deps struct {
 	Version string
 	// Sup puts packages on disk (nil: the supervisor this API runs under).
 	Sup plugins.Supervisor
+	// Capabilities says whether llm and search.semantic are on (nil: both are taken as on).
+	Capabilities *components.Capabilities
+	// Embedder is the pipeline worker holding the embedder (54.21; nil: compute.embed is
+	// unavailable). The search pipeline client, when it implements EmbedTexts.
+	Embedder any
 }
 
 // MountP54 mounts the invocation routes on r and, when a socket is named, serves the
@@ -90,6 +95,7 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 	if d.DataDir != "" {
 		s.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 	}
+	s.Compute = computeOf(d)
 	sock := d.Socket
 	if sock == "" {
 		sock = os.Getenv("MAKTABA_PLUGIN_API_SOCKET")
@@ -107,4 +113,35 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		logger.Info("plugin_api_listening", "socket", sock)
 	}
 	return s
+}
+
+// computeOf is the plugin API's local compute (story 54.21): the pipeline's embedder, and
+// the language model while the llm component is on.
+func computeOf(d P54Deps) *plugins.Compute {
+	k := &plugins.Compute{}
+	if e, ok := d.Embedder.(plugins.Embedder); ok {
+		k.Embedder = gatedEmbedder{e: e, caps: d.Capabilities}
+	}
+	if caps := d.Capabilities; caps != nil {
+		k.LLMOn = func(context.Context) bool {
+			_, off := caps.Snapshot().ComponentOff("llm")
+			return !off
+		}
+	}
+	return k
+}
+
+// gatedEmbedder answers ErrComputeOff while search.semantic is off, without asking.
+type gatedEmbedder struct {
+	e    plugins.Embedder
+	caps *components.Capabilities
+}
+
+func (g gatedEmbedder) EmbedTexts(ctx context.Context, texts []string) (string, [][]float32, error) {
+	if g.caps != nil {
+		if _, off := g.caps.Snapshot().ComponentOff("search.semantic"); off {
+			return "", nil, plugins.ErrComputeOff
+		}
+	}
+	return g.e.EmbedTexts(ctx, texts)
 }

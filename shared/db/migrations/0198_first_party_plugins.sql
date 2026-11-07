@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0197 - Maktaba's own stages as first-party plugins (Epic 54, stories 54.22-54.27).
+-- Slot 0198 - Maktaba's own stages as first-party plugins (Epic 54, stories 54.22-54.27).
 --
 -- job_stages.impl     where a stage runs: 'inproc' (its code in the pipeline worker, as
 --                     before) or 'plugin' (the same code in maktaba-plugin-runner, which

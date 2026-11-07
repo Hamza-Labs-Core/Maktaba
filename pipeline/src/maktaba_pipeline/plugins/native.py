@@ -147,7 +147,7 @@ class ImplChoice:
 async def stage_impl(db: Any, stage: str) -> str:
     try:
         v = await db.fetchval("SELECT impl FROM job_stages WHERE stage = $1", stage)
-    except Exception:  # noqa: BLE001 - a database before slot 0197 has no column: in-process
+    except Exception:  # noqa: BLE001 - a database before slot 0198 has no column: in-process
         return "inproc"
     return "plugin" if v == "plugin" else "inproc"
 

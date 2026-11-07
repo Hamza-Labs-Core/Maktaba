@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0197 (Epic 54, stories 54.22-54.27): the per-stage switch.
+-- SQLite parity sibling for slot 0198 (Epic 54, stories 54.22-54.27): the per-stage switch.
 -- Maktaba's first-party plugin runners need a Postgres home (the plugin API's statements
 -- run under a Postgres role); on SQLite every stage stays 'inproc'.
 --
