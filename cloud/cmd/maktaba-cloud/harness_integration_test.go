@@ -102,11 +102,22 @@ func newPaidEnv(t *testing.T) *env {
 
 func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	t.Helper()
-	return newEnvOpts(t, pay, nil)
+	return newEnvFull(t, pay, nil, nil)
 }
 
 // newEnvOpts is newEnvWith with the auth pages' bot check on, checked by ts (story 50.30).
 func newEnvOpts(t *testing.T, pay *fakeProvider, ts turnstile.Verifier) *env {
+	t.Helper()
+	return newEnvFull(t, pay, ts, nil)
+}
+
+// newEnvCfg is newEnvWith with a hook that adjusts the config before it is validated (50.31).
+func newEnvCfg(t *testing.T, pay *fakeProvider, adjust func(*config.Config)) *env {
+	t.Helper()
+	return newEnvFull(t, pay, nil, adjust)
+}
+
+func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust func(*config.Config)) *env {
 	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
@@ -145,6 +156,9 @@ func newEnvOpts(t *testing.T, pay *fakeProvider, ts turnstile.Verifier) *env {
 		cfg.Turnstile.Secret = "test-turnstile-secret"
 		cfg.Turnstile.SiteKey = "test-site-key"
 		cfg.Turnstile.WebOrigins = []string{strings.TrimSuffix(testWebURL, "/")}
+	}
+	if adjust != nil {
+		adjust(&cfg)
 	}
 	if err := config.Validate(cfg, config.RoleAPI); err != nil {
 		t.Fatal(err)
@@ -207,6 +221,7 @@ type client struct {
 	ip      string
 	token   string
 	cookies map[string]string
+	header  map[string]string // extra request headers
 	// origin is sent as Origin (a web page's request; empty: a native app)
 	origin string
 }
@@ -259,6 +274,9 @@ func (c *client) do(method, path string, body any) resp {
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	for k, v := range c.header {
+		req.Header.Set(k, v)
 	}
 	if c.origin != "" {
 		req.Header.Set("Origin", c.origin)

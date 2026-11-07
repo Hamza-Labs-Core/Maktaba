@@ -71,3 +71,14 @@ func TestLimiterSweepsIdleBuckets(t *testing.T) {
 		t.Fatalf("buckets after sweep: %d", n)
 	}
 }
+
+// Without WithClientIP (a route mounted outside it), IPKey falls back to the TCP peer and
+// trusts no proxy: a CF-Connecting-IP the client wrote can't pick its bucket (50.31).
+func TestIPKeyFallbackIgnoresCFConnectingIP(t *testing.T) {
+	r := httptest.NewRequest("POST", "/v1/auth/login", nil)
+	r.RemoteAddr = "127.0.0.1:1111"
+	r.Header.Set("CF-Connecting-IP", "198.51.100.7")
+	if got := IPKey(r); got != "ip:127.0.0.1" {
+		t.Fatalf("key %q", got)
+	}
+}

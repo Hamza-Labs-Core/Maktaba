@@ -87,7 +87,11 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_TUNNEL || secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: node tools/cloudflare/token-check.mjs --pieces tunnel --zone maktaba.tv
+        # the aop fallback (50.31 §3) also uploads its client certificate
+        run: |
+          pieces=tunnel
+          if jq -e '.mode == "aop"' deploy/cloudflare/tunnel.maktaba.tv.json >/dev/null; then pieces=tunnel,aop; fi
+          node tools/cloudflare/token-check.mjs --pieces "$pieces" --zone maktaba.tv
 
       - name: Zone settings and rules (plan, apply, read back)
         if: steps.secrets.outputs.ok == 'true' && contains(steps.pieces.outputs.pieces, 'zone')
@@ -104,6 +108,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_TUNNEL || secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # read by tunnel.mjs only in mode "aop" (the fallback's own client certificate)
+          CLOUDFLARE_AOP_CERT: ${{ secrets.CLOUDFLARE_AOP_CERT }}
+          CLOUDFLARE_AOP_KEY: ${{ secrets.CLOUDFLARE_AOP_KEY }}
         run: |
           node tools/cloudflare/tunnel.mjs plan
           node tools/cloudflare/tunnel.mjs apply
