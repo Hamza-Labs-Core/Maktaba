@@ -375,7 +375,7 @@ jobs:
       # Epic 50 story 50.31 T04: the pair's Caddy serves relay names only (no catch-all, no
       # on-demand certificate), strips CF-Connecting-IP on them, and the aop fallback's sites
       # (written by setup.sh only when ORIGIN_MODE=aop) validate with a test CA and the ranges.
-      - name: T04 the pair's Caddy serves relay names only; the aop fallback validates
+      - name: T04 the pair's Caddy serves relay names only; the aop fallback validates and denies first
         run: |
           set -euo pipefail
           f=deploy/cloud-ha/caddy/Caddyfile
@@ -394,10 +394,15 @@ jobs:
           sed "s|CLOUDFLARE_RANGES|${ranges}|" deploy/cloud-ha/caddy/origin-aop.caddy >"$dir/origin.d/aop.caddy"
           grep -q 'mode require_and_verify' "$dir/origin.d/aop.caddy"
           grep -q 'remote_ip 173.245.48.0/20' "$dir/origin.d/aop.caddy"
-          docker run --rm -v "$dir:/etc/caddy:ro" -e RELAY_DOMAIN=relay.example.com \
-            -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN=test0000000000000000000000000000000000ab -e NODE_ADDR=10.0.0.2 \
-            -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
+          caddy_env=(-e RELAY_DOMAIN=relay.example.com -e ACME_EMAIL=ops@example.com
+            -e CF_API_TOKEN=test0000000000000000000000000000000000ab -e NODE_ADDR=10.0.0.2
+            -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453")
+          docker run --rm -v "$dir:/etc/caddy:ro" "${caddy_env[@]}" \
             maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
+          # the deny rule for addresses outside Cloudflare's ranges runs before any proxying
+          docker run --rm -v "$dir:/etc/caddy:ro" "${caddy_env[@]}" \
+            maktaba-caddy:check caddy adapt --config /etc/caddy/Caddyfile >"$RUNNER_TEMP/aop-adapted.json"
+          bash deploy/cloud-ha/tests/aop-deny-first.sh "$RUNNER_TEMP/aop-adapted.json"
       - name: The HA pair's scripts (Epic 50 story 50.07)
         run: |
           shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
