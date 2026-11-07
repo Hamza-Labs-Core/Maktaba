@@ -114,11 +114,27 @@ jobs:
             npx wrangler d1 migrations apply "$db" --remote
           done
 
+      # #756: the isolated runner on Cloudflare Containers, once the owner turned Containers on
+      # for the account and set the repository variable STORE_RUNNER to "containers"; until
+      # then the committed config (the CI fallback) deploys as it is
+      - name: The runner's config
+        id: config
+        working-directory: store
+        env:
+          STORE_RUNNER: ${{ vars.STORE_RUNNER }}
+        run: |
+          if [ "${STORE_RUNNER}" = "containers" ]; then
+            node scripts/containers-config.mjs wrangler.jsonc wrangler.containers.json
+            echo "file=wrangler.containers.json" >>"$GITHUB_OUTPUT"
+          else
+            echo "file=wrangler.jsonc" >>"$GITHUB_OUTPUT"
+          fi
+
       - name: Upload the new version
         id: upload
         working-directory: store
         run: |
-          out="$(npx wrangler versions upload --message "${GITHUB_REF_NAME}" 2>&1)"
+          out="$(npx wrangler versions upload --config "${{ steps.config.outputs.file }}" --message "${GITHUB_REF_NAME}" 2>&1)"
           echo "$out"
           version="$(grep -oE 'Worker Version ID: [0-9a-f-]+' <<<"$out" | awk '{print $4}')"
           test -n "$version"
@@ -126,7 +142,7 @@ jobs:
 
       - name: 10 % of traffic
         working-directory: store
-        run: npx wrangler versions deploy "${{ steps.upload.outputs.version }}@10" --yes
+        run: npx wrangler versions deploy --config "${{ steps.config.outputs.file }}" "${{ steps.upload.outputs.version }}@10" --yes
 
       - name: Watch the error rate for 30 minutes
         working-directory: store
@@ -134,9 +150,9 @@ jobs:
 
       - name: 100 % of traffic
         working-directory: store
-        run: npx wrangler versions deploy "${{ steps.upload.outputs.version }}@100" --yes
+        run: npx wrangler versions deploy --config "${{ steps.config.outputs.file }}" "${{ steps.upload.outputs.version }}@100" --yes
 
       - name: Roll back on failure
         if: failure() && steps.upload.outputs.version != ''
         working-directory: store
-        run: npx wrangler rollback --message "store-deploy failed for ${GITHUB_REF_NAME}" --yes
+        run: npx wrangler rollback --config "${{ steps.config.outputs.file }}" --message "store-deploy failed for ${GITHUB_REF_NAME}" --yes
