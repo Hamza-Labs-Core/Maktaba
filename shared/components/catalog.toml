@@ -198,6 +198,9 @@ since      = "0.3.66"
 
 [[component]]
 id        = "media.thumbnails"
+# thumb_small and chapter_thumbs (wave 2); the poster stage thumbnail stays the core's until
+# its own move
+plugin    = "tv.maktaba.thumbnails"
 kind      = "stages"
 group     = "media"
 title_key = "components.media.thumbnails.title"
@@ -268,6 +271,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "subtitles"
+plugin    = "tv.maktaba.subtitles"
 kind      = "stages"
 group     = "processing"
 title_key = "components.subtitles.title"

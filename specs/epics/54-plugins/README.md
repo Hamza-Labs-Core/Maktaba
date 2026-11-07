@@ -1814,6 +1814,26 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
 - **A runner never judges an update.** Like a TV slot, a plugin runner that does not run (it
   crash loops, or its sandbox is unavailable) is left out of the update's health rules, before
   and after: its stages run in the worker meanwhile, and the Components page shows it.
+- **A first-party plugin's role may be missing.** A Postgres where the migrations may not
+  create roles, or where another database's owner made the role, gets a notice from the roles
+  migration instead of a failure; the worker then runs those stages in-process
+  (`role_unusable`), checked once a minute.
+- **The legacy `thumbnail` stage moves in its own pull request of story 54.29.** Its hand
+  chaining becomes declared edges first (54.29 §2), with parity against the old behaviour, and
+  only then does it join `tv.maktaba.thumbnails`; `thumb_small`, `chapter_thumbs` and
+  `subtitle_gen` move without waiting for it.
+- **Paths come from the job's own rows.** A file-writing stage reads its video's path through
+  its scoped statements (the subject check of 54.24) and maps it with the machine's share-path
+  mapping, as in-process, instead of asking the API for a `media_path`; the runner's sandbox,
+  built from the worker's `areas.json`, is what keeps it to its areas.
+- **`library.subtitles` is enforced twice.** Seatbelt allows a write next to media only by a
+  name regex (`<video stem>.<lang>.srt|vtt` and its temporary name); on both systems an audit
+  hook in the runner refuses any other name under the library's folders, and the job fails
+  `plugin_scope`. Landlock cannot match names, so on Linux the hook is the rule.
+- **A sandbox refusal runs the job in-process.** A permission error in a job's exception chain
+  (a folder added since the runner started, before it restarts on the new areas) comes back as
+  `sandbox_refused`, and the worker runs that job itself, as for an unregistered statement. A
+  write the plugin may never make is `plugin_scope`, never a fallback.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

@@ -480,7 +480,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.thumbnails",
       "processes": [],
       "requires": [],
       "resources": {
@@ -746,7 +746,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.subtitles",
       "processes": [],
       "requires": [
         [

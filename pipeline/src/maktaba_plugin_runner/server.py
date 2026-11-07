@@ -157,6 +157,9 @@ class Runner:
     bundle: str
     concurrency: int = 8
     unavailable: dict[str, str] = field(default_factory=dict)
+    #: the digest of the file areas the sandbox was built from (the worker's areas.json)
+    areas: str = ""
+    areas_changed: bool = False
     #: the transport a job's database uses (a seam: tests give one in memory)
     transport: Callable[[str], Any] | None = None
     running: dict[int, asyncio.Task[Any]] = field(default_factory=dict)
@@ -173,6 +176,7 @@ class Runner:
             "bundle": self.bundle,
             "pid": os.getpid(),
             "concurrency": self.concurrency,
+            "areas": self.areas,
             "stages": {s: self.unavailable.get(s) for s in sorted(self.stages)},
         }
 
@@ -237,7 +241,12 @@ class Runner:
             import traceback
 
             sys.stderr.write(traceback.format_exc())
-            out = failure_to_wire(exc)
+            from maktaba_pipeline.plugins.native import sandbox_refused
+
+            if sandbox_refused(exc):
+                out = {"status": "sandbox_refused", "message": str(exc)}
+            else:
+                out = failure_to_wire(exc)
         else:
             out = {"status": "ok", "result": result_to_wire(result)}
             if ctx.review_digests:
