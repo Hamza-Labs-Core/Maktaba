@@ -1,0 +1,12 @@
+# The parity proof of tv.maktaba.plex (story 54.35): a library indexed in a fake Plex behind
+# HTTP, its season written as a collection, Plex's collections read back. The calls Plex
+# received are compared by the test; the rows here, only the columns that hold a time masked.
+tables = ["external_links", "plex_items", "videos"]
+
+[ignore]
+external_links = ["id", "created_at", "updated_at"]
+plex_items = ["indexed_at", "updated_at", "seen_at"]
+videos = ["created_at", "updated_at", "last_seen_at"]
+
+[[cases]]
+name = "three episodes of a season and an item of another library; one hand-made Plex collection"

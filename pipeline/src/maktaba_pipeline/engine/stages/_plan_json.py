@@ -2,7 +2,7 @@
 
 Core Live TV only: the plan carries lanes, slots, filler pools and Maktaba's own channel
 definition. Anything specific to an external system (dizqueTV time slots, for example) is added
-by an extension through :func:`~maktaba_pipeline.engine.stages.plan_channels.register_plan_exporter`
+by an extension through :func:`~maktaba_pipeline.schedule.plan_inputs.register_plan_exporter`
 under ``channels[i]["exports"][<name>]``.
 
 In the plan, an episode's or a filler item's ``path`` is the Maktaba **video id**

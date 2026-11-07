@@ -150,13 +150,51 @@ def forget_hello() -> None:
     _HELLO.clear()
 
 
+#: when this worker last asked the supervisor for each runner group (group -> monotonic)
+_ASKED: dict[str, float] = {}
+#: the asks in flight (a task with no reference may be collected before it runs)
+_ASKING: set[asyncio.Task[None]] = set()
+#: how often a group not up is asked for again
+ASK_EVERY_SEC = 60.0
+
+
+def want_runner(group: str) -> None:
+    """Ask the supervisor to start a shared group's runner (it starts on demand and stops
+    when idle, so an idle home runs none). In the background: the job that found it down
+    runs in the worker meanwhile, and the next ones go to the runner once it is up. At most
+    once a minute per group; nothing without a supervisor (tests, a bare worker)."""
+    base = os.environ.get("MAKTABA_SUPERVISOR_URL", "").strip()
+    if not base:
+        return
+    now = time.monotonic()
+    if now - _ASKED.get(group, -ASK_EVERY_SEC) < ASK_EVERY_SEC:
+        return
+    _ASKED[group] = now
+
+    def post() -> None:
+        import urllib.request
+
+        req = urllib.request.Request(base.rstrip("/") + f"/runners/{group}/start", method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as res:  # noqa: S310 - the local supervisor
+                res.read()
+        except Exception:  # noqa: BLE001 - asked again later; the worker runs the job
+            _log.debug("plugin_runner_ask_failed", group=group, exc_info=True)
+
+    task = asyncio.ensure_future(asyncio.to_thread(post))
+    _ASKING.add(task)
+    task.add_done_callback(_ASKING.discard)
+
+
 async def serving(stage: str) -> tuple[bool, str | None]:
-    """Whether the stage's runner serves it here, and its unavailable reason if it said one."""
+    """Whether the stage's runner serves it here, and its unavailable reason if it said one.
+    A runner that is not up is asked for (:func:`want_runner`)."""
     group = firstparty.runner_instance(stage)
     if group is None:
         return False, None
     h = await hello(group)
     if h is None:
+        want_runner(group)
         return False, None
     stages = h.get("stages") or {}
     if stage not in stages:
@@ -168,6 +206,8 @@ async def serving(stage: str) -> tuple[bool, str | None]:
 async def serving_group(group: str, stage: str) -> tuple[bool, str | None]:
     """Whether ``group`` (``fp``, the fingerprint runner) serves the stage here."""
     h = await hello(group)
+    if h is None:
+        want_runner(group)
     if h is None or stage not in (h.get("stages") or {}):
         return False, None
     reason = (h.get("stages") or {}).get(stage)
@@ -455,9 +495,230 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
         if op == "review_digest":
             ctx.review_digests.append(str(a["digest"]))
             return None
+        if op == "enqueue":
+            return await _relayed_enqueue(db, ctx, {k: decode_any(v) for k, v in a.items()})
+        if op == "dedup_uncovered":
+            from ..library_mgmt.dedup_merge import uncovered_foreign_keys
+
+            return [list(x) for x in await uncovered_foreign_keys(db)]
+        if op == "unsupersede":
+            return await _relayed_unsupersede(db, ctx, {k: decode_any(v) for k, v in a.items()})
+        if op == "dedup_commit":
+            return await _relayed_dedup_commit(db, ctx, {k: decode_any(v) for k, v in a.items()})
+        if op in ("tv_commit", "tv_rollback"):
+            return await _relayed_tv(db, ctx, op)
+        if op == "service_request":
+            return await _relayed_service(ctx, a)
         raise ValueError(f"engine op {op!r}")
 
     return handle
+
+
+def _entry_for(stage: str, kind: str) -> bool:
+    """Whether ``stage`` is where the graph starts a new subject of ``kind`` (``probe`` for a
+    video): a stage that makes one (a download) starts its pipeline."""
+    from ..db.jobs import Stage
+    from ..engine.graph import GRAPH
+
+    if kind == "video" and stage == Stage.PROBE:
+        return True  # where the scanner starts a new file (scanner/store.py)
+    return any(s.name == stage and kind in (s.entry_for or ()) for s in GRAPH)
+
+
+def _neighbours(a: str, b: str) -> bool:
+    """Whether an edge of the graph joins the two stages, either way (``dedup_scan`` queues
+    ``convert_mp4``, whose edge leads to it, for a video never planned for conversion)."""
+    from ..engine.graph import GRAPH
+
+    for s in GRAPH:
+        for e in s.edges:
+            if (s.name, e.to) in ((a, b), (b, a)):
+                return True
+    return False
+
+
+class EnqueueRefused(Exception):
+    """A plugin asked to queue what its stage may not (story 54.32: the plugin's scope)."""
+
+
+async def _relayed_enqueue(
+    db: Any, ctx: Any, a: dict[str, Any], *, hold: bool = True
+) -> dict[str, Any]:
+    """A job a plugin's stage queues, as the worker enqueues it: only the stage itself or a
+    stage it may request (``may_request``), and only for a subject of the job's library (a
+    video of it, or the library)."""
+    from uuid import UUID
+
+    from ..engine.enqueue import enqueue_job
+    from ..engine.sql import uid
+
+    job, sdef = ctx.job, ctx.stage
+    stage = str(a["stage"])
+    kind, subject = str(a["subject_kind"]), str(a["subject_id"])
+    if (
+        stage != sdef.name
+        and stage not in (sdef.may_request or ())
+        and not _neighbours(sdef.name, stage)
+        and not _entry_for(stage, kind)
+    ):
+        raise EnqueueRefused(f"plugin_scope: {sdef.name} may not queue {stage}")
+    lib = getattr(job, "library_id", None)
+    if lib is None:
+        raise EnqueueRefused("plugin_scope: this job has no library")
+    if kind == "library":
+        ok = str(lib) == str(UUID(subject))
+    elif kind == "video":
+        owner = await db.fetchval("SELECT library_id FROM videos WHERE id = $1", uid(subject))
+        if owner is None and hold:
+            # a video this job made in its own transaction, which this worker cannot see yet
+            # (a download): queued, after the same checks, once the job's writes are committed
+            held = getattr(ctx, "held_enqueues", None)
+            if held is None:
+                held = []
+                ctx.held_enqueues = held
+            held.append(dict(a))
+            return {"job_id": None, "outcome": "held"}
+        ok = owner is not None and str(owner) == str(lib)
+    else:
+        ok = False
+    if not ok:
+        raise EnqueueRefused(f"plugin_scope: {kind} {subject} is not of this job's library")
+    res = await enqueue_job(
+        db,
+        subject_kind=kind,
+        subject_id=subject,
+        stage=stage,
+        priority=a.get("priority"),
+        force=bool(a.get("force")),
+        force_cascade=bool(a.get("force_cascade")),
+        reason=a.get("reason"),
+        triggered_by=a.get("triggered_by"),
+        payload=a.get("payload"),
+        max_attempts=a.get("max_attempts"),
+    )
+    return {"job_id": res.job_id, "outcome": res.outcome}
+
+
+async def _relayed_unsupersede(db: Any, ctx: Any, a: dict[str, Any]) -> None:
+    """A restored duplicate's video back in its state, by the worker for ``file_restore``:
+    only a superseded video of the job's library (the state is checked by the table's own
+    constraint)."""
+    from ..engine.sql import uid
+    from ..library_mgmt.swap import unsupersede
+
+    vid = str(a["video_id"])
+    lib = getattr(ctx.job, "library_id", None)
+    ok = lib is not None and await db.fetchval(
+        "SELECT 1 FROM videos WHERE id = $1 AND library_id = $2 AND state = 'superseded'",
+        uid(vid),
+        uid(lib),
+    )
+    if not ok:
+        raise EnqueueRefused(f"plugin_scope: video {vid} is not a superseded video of this library")
+    await unsupersede(db, vid, str(a["state"]))
+
+
+#: the TV commits the worker runs for a stage in its runner (story 54.34): the op, the stage
+#: that may ask for it, and what tvrelease.for_job runs
+_TV_OPS = {"tv_commit": ("tv_swap", "commit"), "tv_rollback": ("tv_rollback", "rollback")}
+
+
+async def _relayed_tv(db: Any, ctx: Any, op: str) -> dict[str, Any]:
+    """A TV change's swap commit or rollback, by the worker for ``tv_swap`` / ``tv_rollback``
+    in its runner: only for that stage's job, and only for the change in the job's own
+    payload (nothing the plugin sends is used)."""
+    from ..tvrelease.for_job import run_for_job
+
+    stage, kind = _TV_OPS[op]
+    if ctx.job.stage != stage:
+        raise EnqueueRefused(f"plugin_scope: {op} is {stage}'s, not {ctx.job.stage}'s")
+    got = await run_for_job(db, kind, int(ctx.job.id), ctx.job.payload)
+    return {k: encode_any(v) for k, v in got.items()}
+
+
+async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """A duplicate group's merge, committed by the worker for ``dedup_apply`` in its runner:
+    only this job's group (its subject), and only the group's own members."""
+    from ..library_mgmt.dedup_merge import MergeRefused, commit_merge
+
+    gid = str(a["group_id"])
+    if str(ctx.job.subject.id) != gid:
+        raise EnqueueRefused(f"plugin_scope: group {gid} is not this job's")
+    members = {
+        str(r["video_id"])
+        for r in await db.fetch("SELECT video_id FROM duplicate_members WHERE group_id = $1", gid)
+    }
+    keeper, losers = str(a["keeper"]), [str(x) for x in a.get("losers") or []]
+    if keeper not in members or not set(losers) <= members or keeper in losers:
+        raise EnqueueRefused(f"plugin_scope: not the members of group {gid}")
+    try:
+        moved = await commit_merge(
+            db,
+            gid,
+            keeper,
+            losers,
+            keeper_library=str(a["keeper_library"]),
+            decided_by=a.get("decided_by"),
+        )
+    except MergeRefused as exc:
+        return {"refused": [list(x) for x in exc.uncovered]}
+    return {"moved": moved}
+
+
+def _services_of(stage: str) -> tuple[str, ...]:
+    p = firstparty.by_stage(stage)
+    return tuple(str(s) for s in (p.trusted.get("service") or ())) if p is not None else ()
+
+
+def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
+    """What a plugin's job gets for the services it reaches (story 54.35): the extensions'
+    settings with no secret and no service address, and ``service_via``: ``api`` on the home
+    (the plugin API's door), ``worker`` on a joined machine (this worker's channel to the
+    home's door, as for its own Plex stages)."""
+    from .. import relay
+    from .service import plugin_settings
+
+    services = _services_of(stage)
+    if not services:
+        return {}  # no service: the job gets no extension settings, as before
+    settings = getattr(ctx, "settings", None) or {}
+    via = "worker" if any(relay.relayed(settings.get(s, {})) for s in services) else "api"
+    return {"extension_settings": plugin_settings(settings, services), "service_via": via}
+
+
+async def _relayed_service(ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """A plugin's service call on a joined machine (story 54.35): through this worker's
+    channel to the home's door, which checks it against the allow-list and adds the secret.
+    Only a service the stage's plugin lists."""
+    import base64
+
+    from .. import relay
+
+    service = str(a.get("service") or "")
+    if service not in _services_of(str(ctx.job.stage)):
+        raise EnqueueRefused(f"plugin_capability: {ctx.job.stage} does not reach {service}")
+    t = relay.RelayTransport(service)
+    headers = {
+        "Accept": str(a.get("accept") or ""),
+        "Content-Type": str(a.get("content_type") or ""),
+    }
+    status, data = await asyncio.to_thread(
+        t.request,
+        str(a.get("method") or "GET"),
+        relay.RELAY_BASE + service + str(a.get("target") or "/"),
+        {k: v for k, v in headers.items() if v},
+        base64.b64decode(str(a.get("body") or "")) or None,
+        float(a.get("timeout_ms") or 30000) / 1000.0,
+    )
+    return {"status": int(status), "body": base64.b64encode(data).decode()}
+
+
+def _plan_exporter_names() -> list[str]:
+    """The plan exporters the worker's extensions registered (story 54.34): a runner loads
+    no extension, so it resolves these names itself (schedule.plan_inputs)."""
+    from ..schedule.plan_inputs import plan_exporters
+
+    return sorted(plan_exporters())
 
 
 async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> StageResult:
@@ -489,6 +750,10 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
                     "token": minted["token"],
                     "job": job_to_wire(job),
                     "write_mode": getattr(ctx, "write_mode", "auto"),
+                    "plan_exporters": _plan_exporter_names(),
+                    # story 54.35: the extensions' settings without secrets or a service's
+                    # address, and which way the job's service calls go
+                    **_service_frame(stage, ctx),
                     "path_map": [
                         list(e) for e in getattr(getattr(ctx, "path_map", None), "entries", ())
                     ],
@@ -511,7 +776,12 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
                     continue
                 if kind == "result":
                     if msg.get("status") == "ok":
-                        return result_from_wire(msg["result"])
+                        result = result_from_wire(msg["result"])
+                        # the job's own writes are committed now: what it queued for a video
+                        # it made (not yet visible to this worker then) is checked and queued
+                        for held in getattr(ctx, "held_enqueues", ()):
+                            await _relayed_enqueue(db, ctx, held, hold=False)
+                        return result
                     raise_failure(msg)
                 raise StageFailure("plugin_failed", f"runner sent {kind!r}", retryable=True)
         except asyncio.CancelledError:
@@ -571,6 +841,7 @@ async def fingerprints(
                 "stage": stage,
                 "kind": kind,
                 "token": token,
+                "plan_exporters": _plan_exporter_names(),
                 "subjects": [
                     [s.kind, str(s.id), str(s.library_id) if s.library_id else None]
                     for s in subjects
@@ -613,6 +884,7 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
     library roots through this machine's share-path mapping, and the data folders the
     stages' own settings name. A runner applies its sandbox from them."""
+    from ..engine.stages.review_pages import reviews_dir
     from ..thumbnail import small
     from ..thumbnail.generator import thumbnail_dir_for
 
@@ -638,12 +910,42 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     return {
         "library": lib,
         "library.subtitles": lib,
+        # each root's trash (library_mgmt.trash.TRASH_DIR)
+        "trash": ";".join(f"{r}/.maktaba/trash" for r in sorted(roots)),
         "data.thumbnails": thumbs,
         "models": ";".join(_model_folders()),
+        # the YouTube downloads' work folder (MAKTABA_YT_WORK, else ~/.maktaba/work/yt)
+        "data.cache": os.path.realpath(
+            os.path.expanduser(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt")
+        ),
         "data.index": os.path.realpath(
             os.path.expanduser(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma")
         ),
+        # the reports folder (Reports: the channel plan's page, engine.plan_page)
+        "data.review": os.path.realpath(str(reviews_dir())),
+        # the channels' art: what an admin uploaded (<data dir>/channel-art, the API's
+        # channels.ArtDirName) and the folders the planner's rules name (schedule.tv_channel)
+        "data.channels": ";".join(await _channel_art_folders(db)),
     }
+
+
+async def _channel_art_folders(db: Any) -> list[str]:
+    from ..rules import read as read_rules
+
+    out: set[str] = set()
+    data = (os.environ.get("MAKTABA_DATA_DIR") or "").strip()
+    if data:
+        out.add(os.path.join(data, "channel-art"))
+    try:
+        cfg = (await read_rules(db, "planner"))[0]
+    except Exception:  # noqa: BLE001 - no rules table yet: only the uploads
+        cfg = None
+    for key in ("dz_logo_dir", "dz_watermark_dir"):
+        if folder := str(getattr(cfg, key, "") or "").strip():
+            out.add(folder)
+    if wm := str(getattr(cfg, "dz_watermark_file", "") or "").strip():
+        out.add(os.path.dirname(wm))
+    return sorted(os.path.realpath(os.path.expanduser(x)) for x in out if x)
 
 
 def _model_folders() -> list[str]:

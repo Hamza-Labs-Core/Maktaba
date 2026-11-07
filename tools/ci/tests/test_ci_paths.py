@@ -111,7 +111,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "server only": (
         ["cmd/maktaba-server/internal/supervisor/supervisor.go"],
-        {"unit", "integration", "replica", "launcher", "node-packaging"},
+        # the supervisor decides what runs on an idle Core home: the mac app's Bundle size
+        {"unit", "integration", "replica", "launcher", "node-packaging", "mac-app"},
         {
             "lint": {"go", "catalog"},
             # the supervisor captures the logs: its change runs the log benches (53.13)
@@ -133,7 +134,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "the catalog runs its check, the Go and the pipeline parts": (
         ["shared/components/catalog.toml"],
-        GO_SERVER | {"components-packs", "components"},
+        # the components' defaults decide what runs on an idle Core home: the mac app too
+        GO_SERVER | {"components-packs", "components", "mac-app"},
         {
             "lint": {"go", "pipeline", "catalog"},
             "unit": {"go", "pipeline"},
@@ -217,6 +219,33 @@ def test_which_jobs_a_change_runs(name: str) -> None:
     assert ran(runs) == ALWAYS | jobs, f"{name}: ran {sorted(ran(runs) - ALWAYS)}, want {sorted(jobs)}"
     for job, want in want_parts.items():
         assert parts(runs, job) == want, f"{name}: {job} got {sorted(parts(runs, job))}, want {sorted(want)}"
+
+
+# what runs on an idle Core home: the mac app's Bundle size check counts its processes and
+# idle memory, so a change to what starts there runs it (#859 changed the runners' start and
+# the check never ran: the filter named none of these)
+CORE_FOOTPRINT = [
+    "cmd/maktaba-server/internal/supervisor/runners.go",
+    "cmd/maktaba-server/internal/supervisor/reconcile.go",
+    "cmd/maktaba-server/internal/supervisor/run.go",
+    "cmd/maktaba-server/internal/supervisor/components.go",
+    "cmd/maktaba-server/internal/supervisor/plugins.go",
+    "shared/components/catalog.toml",
+    "shared/plugins/firstparty.go",
+    "pipeline/src/maktaba_plugin_runner/server.py",
+    "pipeline/src/maktaba_plugin_runner/__main__.py",
+    "pipeline/src/maktaba_pipeline/plugins/native.py",
+]
+
+
+@pytest.mark.parametrize("path", CORE_FOOTPRINT)
+def test_a_change_to_what_an_idle_core_home_runs_runs_the_mac_app(path: str) -> None:
+    assert "mac-app" in ran(run(path)), path
+
+
+def test_a_supervisor_change_outside_the_footprint_leaves_the_mac_app_alone() -> None:
+    # the login and the logs decide nothing about what runs idle
+    assert "mac-app" not in ran(run("cmd/maktaba-server/internal/supervisor/login.go"))
 
 
 def test_the_project_file_with_a_player_change_runs_the_player_ui_tests() -> None:

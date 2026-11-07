@@ -25,6 +25,7 @@ import json
 import os
 import struct
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,6 +61,21 @@ async def read_frame(r: asyncio.StreamReader) -> dict[str, Any]:
 def load_impl(entry: str) -> Any:
     module, _, attr = entry.partition(":")
     return getattr(importlib.import_module(module), attr)
+
+
+def _use_plan_exporters(msg: dict[str, Any]) -> str:
+    """The worker's plan exporters for this job (story 54.34): its extensions add data to
+    the channel plan, and this process loads none, so the names it sent are resolved here
+    from the extensions it discovers (the same code). Every job of one worker sends the same
+    names, so concurrent jobs agree. Answers why it could not (the job then runs in the
+    worker, as for an unregistered statement), else ""."""
+    names = msg.get("plan_exporters")
+    if names is None:
+        return ""
+    from maktaba_pipeline.schedule.plan_inputs import use_plan_exporters
+
+    missing = use_plan_exporters(str(n) for n in names)
+    return f"plan exporters this runner cannot load: {', '.join(missing)}" if missing else ""
 
 
 class Relay:
@@ -106,6 +122,12 @@ class Relay:
         v = await self.ask("job_ref", job_id=job_id)
         return None if v is None else decode_any(v)
 
+    async def enqueue(self, **args: Any) -> dict[str, Any]:
+        """Queue a job: the worker enqueues it (only the queue engine writes the queue), and
+        only a stage this job's stage may request, for a subject of the job's library."""
+        v = await self.ask("enqueue", **args)
+        return dict(v or {})
+
 
 def runner_context(
     db: Any, job: Any, stage: Any, relay: Relay, write_mode: str, path_map: Any
@@ -146,6 +168,16 @@ def runner_context(
     return ctx
 
 
+def with_services(ctx: Any, msg: dict[str, Any]) -> Any:
+    """The job's extension settings (no secret, no service address) and the way its service
+    calls go (story 54.35), from the worker's run frame."""
+    settings = msg.get("extension_settings")
+    if isinstance(settings, dict):
+        ctx.settings = {str(k): dict(v) for k, v in settings.items() if isinstance(v, dict)}
+    ctx.service_via = str(msg.get("service_via") or "api")
+    return ctx
+
+
 @dataclass
 class Runner:
     group: str
@@ -163,6 +195,9 @@ class Runner:
     #: the transport a job's database uses (a seam: tests give one in memory)
     transport: Callable[[str], Any] | None = None
     running: dict[int, asyncio.Task[Any]] = field(default_factory=dict)
+    #: when it last had work (a run or a fingerprint request; the health check's hello
+    #: is not work), for the idle timeout
+    last_active: float = field(default_factory=time.monotonic)
 
     def _transport(self, token: str) -> Any:
         if self.transport is not None:
@@ -184,6 +219,8 @@ class Runner:
         try:
             msg = await read_frame(r)
             kind = msg.get("type")
+            if kind in ("run", "fingerprints"):
+                self.last_active = time.monotonic()
             if kind == "hello":
                 await write_frame(w, self.hello())
             elif kind == "run":
@@ -220,12 +257,18 @@ class Runner:
             )
             return
         job = job_from_wire(msg["job"])
+        missing = _use_plan_exporters(msg)
+        if missing:
+            # the plan would lack what those extensions add: the worker runs the job itself
+            await write_frame(w, {"type": "result", "status": "unregistered", "message": missing})
+            return
         relay = Relay(r, w)
         transport = self._transport(str(msg["token"]))
         db = StatementDB(firstparty.registry(self.plugin_of[stage]), transport, engine_relay=relay)
         sdef = get_stage(stage)
         path_map = PathMap(tuple((str(a), str(b)) for a, b in msg.get("path_map") or ()))
         ctx = runner_context(db, job, sdef, relay, str(msg.get("write_mode") or "auto"), path_map)
+        with_services(ctx, msg)
         impl = load_impl(self.stages[stage])
         task = asyncio.ensure_future(impl.run(db, job, ctx))
         self.running[job.id] = task
@@ -267,6 +310,9 @@ class Runner:
         if stage not in self.stages:
             return {"type": "error", "message": f"{stage} is not served by {self.group}"}
         impl = load_impl(self.stages[stage])
+        missing = _use_plan_exporters(msg)
+        if missing:
+            return {"type": "error", "status": "unregistered", "message": missing}
         fn = impl.input_fingerprint if msg.get("kind") == "input" else impl.output_fingerprint
         if fn is None:
             return {"type": "fingerprints", "hashes": [None for _ in msg.get("subjects") or []]}
@@ -284,6 +330,13 @@ class Runner:
             if close is not None:
                 await close()
         return {"type": "fingerprints", "hashes": out, "calls": db.calls}
+
+    def idle_for(self) -> float:
+        """Seconds since it last had work; 0 while a job runs."""
+        if self.running:
+            self.last_active = time.monotonic()
+            return 0.0
+        return time.monotonic() - self.last_active
 
     async def serve(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

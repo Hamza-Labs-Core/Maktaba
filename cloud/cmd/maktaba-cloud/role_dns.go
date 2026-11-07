@@ -18,6 +18,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
+// dnsControlAddr is the dns role's control port. A var only so the child-process test can run
+// the role on a free port.
+var dnsControlAddr = "127.0.0.1:9091"
+
 // runDNS is the direct-name domains' authoritative name server (Epic 50 story 50.15), on UDP and
 // TCP 53 of nodes A and B. A and AAAA are computed from the name; the ACME challenges come from
 // Postgres. It answers only names under direct.domains and refuses the rest.
@@ -73,7 +77,7 @@ func runDNS(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migrato
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","role":"dns"}`))
 	})
-	srv := &http.Server{Addr: "127.0.0.1:9091", Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
+	srv := &http.Server{Addr: dnsControlAddr, Handler: mux, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
 	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {
 		logger.Error("dns exited", "err", err)
 		os.Exit(1)

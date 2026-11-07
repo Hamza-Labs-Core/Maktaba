@@ -45,6 +45,17 @@ def test_t02_a_runbook_missing_a_section(tmp_path):
     assert any("disk.md" in e for e in errs), errs
 
 
+def test_t08_a_check_step_without_a_saved_search(tmp_path):
+    # Epic 53 story 53.17 §5: the Check step links to the cloud log view, not SSH
+    root = copy(tmp_path)
+    p = root / lint.RUNBOOKS / "tunnel-down.md"
+    text = p.read_text()
+    p.write_text(lint.SAVED_SEARCH.sub("(journalctl)", text))
+    errs = lint.check_check_links(root)
+    assert any("tunnel-down.md" in e and "saved search" in e for e in errs), errs
+    assert len(errs) == 1, errs
+
+
 def test_t02_headings_inside_code_are_not_sections():
     text = "## When\n```\n## Check\n```\n## Do\n"
     assert lint.headings(text) == ["When", "Do"]
