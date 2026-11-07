@@ -63,8 +63,12 @@ describe("AdminLogs", () => {
     );
     const user = userEvent.setup();
     renderLogs();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    const url = String(get.mock.calls.map(([u]) => String(u)).find((u) => u.includes("/stream")));
+    // the index probe is asked first; the files' /stream read only once its answer is in:
+    // waiting for any call read the probe's on a busy runner ("undefined" for the url)
+    const streamCall = () =>
+      get.mock.calls.map(([u]) => String(u)).find((u) => u.includes("/stream"));
+    await waitFor(() => expect(streamCall()).toBeDefined());
+    const url = String(streamCall());
     expect(url).toContain("level=warn");
     expect(url).toContain("services=api");
     expect(url).toContain("since=2026-10-24T05%3A28%3A00Z");

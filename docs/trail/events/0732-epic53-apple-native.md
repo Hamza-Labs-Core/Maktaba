@@ -21,6 +21,8 @@ session: 03d72f4f-f05c-4d72-897b-0e3d0c10f530
 - MaktabaKit's String Catalog is not fully sorted (hand edits). A tool that re-sorts it rewrites 300 lines, so new keys are inserted in place.
 - The shared redaction does not mask a bare `token=` in free text, only in a URL query. Tests use a bearer header or an email.
 
+- The web's `Logs.test.tsx` failed on CI with `'undefined'` for the files' url. It waited for any call to `get`, which the index probe makes first, then looked for the `/stream` call that comes after the probe's answer. It now waits for the `/stream` call itself. A "wait for any call" before reading a specific one is the same race as #698's.
+
 ## Open
 - Android (Remote screens, crash capture, forms), the desktop apps, the nightly Mac log bench and the Python logger bench follow in their own PRs.
 - 53.16's "Also send to Maktaba" box needs the home's sharing switch.
