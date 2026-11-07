@@ -114,4 +114,4 @@ Per stage: `maktaba-server stages impl <stage> inproc`. Per release: Epic 51 rol
 Wave 1 moved `promo_links`, `clip_groups`, `topic_collections` and `rate_style` into
 `tv.maktaba.classify` (runner group `light`). `display_title` waits for wave 4: it asks the
 language model when the model is on (README §15.12). The flip at update is each worker's graph
-sync (README §15.12); the role is migration 0197.
+sync (README §15.12); the role is migration 0198.

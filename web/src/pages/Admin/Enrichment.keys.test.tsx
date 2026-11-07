@@ -91,8 +91,12 @@ describe("AdminEnrichment", () => {
         external_id: `ext-${B}`,
       })
     );
-    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(1));
-    expect(selectedTitle()).toContain("Alpha");
+    // the list shrinks at one commit and the selection moves to what is left in the
+    // effect after it: wait for both (#697)
+    await waitFor(() => {
+      expect(screen.getAllByRole("option")).toHaveLength(1);
+      expect(selectedTitle()).toContain("Alpha");
+    });
   });
 
   it("j / k do nothing while typing in the search box", async () => {

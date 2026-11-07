@@ -1,6 +1,6 @@
 -- +goose Up
 --
--- Slot 0197 - the Postgres roles of Maktaba's first-party plugins (Epic 54, story 54.24 §3),
+-- Slot 0198 - the Postgres roles of Maktaba's first-party plugins (Epic 54, story 54.24 §3),
 -- written by tools/plugins/roles.py from the manifests (CI checks they agree: roles.py check).
 --
 -- Each maktaba_fp_<plugin> is NOLOGIN, with SELECT on its [trusted] db.read tables and
