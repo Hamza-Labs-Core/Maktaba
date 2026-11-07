@@ -27,6 +27,7 @@ import {
 } from "react";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
+import { dateTimeFormat, numberFormat } from "./intl";
 
 export type Locale = "en" | "ar";
 export type Direction = "ltr" | "rtl";
@@ -112,7 +113,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const n = useCallback(
     (value: number, opts?: Intl.NumberFormatOptions) =>
-      new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en", opts).format(value),
+      numberFormat(locale === "ar" ? "ar-EG" : "en", opts).format(value),
     [locale]
   );
 
@@ -120,7 +121,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     (value: string | number | Date, opts?: Intl.DateTimeFormatOptions) => {
       const d = value instanceof Date ? value : new Date(value);
       if (Number.isNaN(d.getTime())) return String(value);
-      return new Intl.DateTimeFormat(
+      return dateTimeFormat(
         locale === "ar" ? "ar-EG" : "en",
         opts ?? { dateStyle: "medium", timeStyle: "short" }
       ).format(d);
