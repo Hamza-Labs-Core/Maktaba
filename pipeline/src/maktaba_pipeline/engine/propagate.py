@@ -212,7 +212,7 @@ async def finalize_success(
                 db, job, stage, graph, changed=changed, changed_subjects=changed_subjects
             )
         for req in requests:
-            if req.stage not in stage.may_request:
+            if req.stage not in stage.may_request and not _plugin_event(stage, req, graph):
                 raise GraphViolation(
                     f"{stage.name} requested {req.stage!r}, not in may_request {stage.may_request}"
                 )
@@ -234,6 +234,22 @@ async def finalize_success(
 
         await _log_finish(db, job, stage, final_outcome, triggered, row, t)
         return FinishResult(final_outcome, changed, tuple(triggered), follow)
+
+
+def _plugin_event(stage: StageDef, req: Any, graph: Mapping[str, StageDef]) -> bool:
+    """A plugin's published event delivered to another plugin's subscriber stage (story
+    54.40 §2): not a ``may_request``, because a plugin never names another's stage; the
+    plugin API named the subscribers the admin approved, and the dispatcher checked the
+    lineage. Only from a plugin stage, to another plugin's stage, marked as an event."""
+    target = graph.get(req.stage)
+    src = stage.extension or ""
+    dst = getattr(target, "extension", None) or ""
+    return (
+        str(req.reason).startswith("plugin-event:")
+        and src.startswith("plugin:")
+        and dst.startswith("plugin:")
+        and src != dst
+    )
 
 
 async def enqueue_dependents(

@@ -96,6 +96,12 @@
       "risk": "medium",
       "interface": "compute",
       "param": ""
+    },
+    {
+      "name": "events.subscribe",
+      "risk": "medium",
+      "interface": "events",
+      "param": "plugin_id"
     }
   ]
 }

@@ -309,3 +309,24 @@ async def test_a_drain_cancels_the_job_in_the_host(
 def test_frames_are_length_prefixed_json() -> None:
     body = json.dumps({"type": "health"}).encode()
     assert len(body) < dispatch.MAX_FRAME
+
+
+async def test_the_guest_never_sees_the_lineage(monkeypatch: pytest.MonkeyPatch, api: Any) -> None:
+    """54.40 §3: the payload the host gets has no _lineage."""
+    seen: list[dict[str, Any]] = []
+    _host(monkeypatch, [_result("ok", output_hash="h")], seen)
+    job = Job(payload={"a": 1, "_lineage": {"hops": 2, "path": []}})
+    await dispatch.run_plugin_stage(FakeDB(), job, Ctx())
+    assert json.loads(seen[0]["job"]["payload"]) == {"a": 1}
+
+
+async def test_a_mint_refused_as_a_loop_fails_the_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    """54.40 §3: a job a core event started that closes a loop through data."""
+    monkeypatch.setattr(
+        dispatch,
+        "_api",
+        lambda *a, **k: (409, {"code": "plugin_loop", "detail": "a loop through data"}),
+    )
+    with pytest.raises(StageFailure) as f:
+        await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+    assert f.value.kind == "plugin_loop" and not f.value.retryable
