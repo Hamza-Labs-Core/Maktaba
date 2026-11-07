@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import random
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -167,7 +167,7 @@ async def prove(
         )
         assert n >= len(stages), f"only {n} jobs went through the plugin"
         tables = [(t, keys[t]) for t in cfg.tables]
-        ignore = {k: list(v) for k, v in cfg.ignore.items()}
+        ignore: dict[str, Sequence[str]] = {k: list(v) for k, v in cfg.ignore.items()}
         rows = await p.compare(tables, ignore=ignore, perf=False)
         assert rows == [], "\n".join(rows[:20])
         for area in cfg.files:
