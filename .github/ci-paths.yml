@@ -274,6 +274,18 @@ plugins:
   - 'api/internal/handlers/queues/impl*.go'
   - 'api/tools/plugin-api-dev/**'
 
+# the cloud's Cloudflare files (Epic 50, 50.30, 50.31, 50.34): the zone and Tunnel files, the
+# published IP ranges, the tools that check and deploy them, and their workflows
+# (_cloudflare.yml; the deploys themselves run on main only)
+cloudflare:
+  - *ci
+  - 'deploy/cloudflare/**'
+  - 'tools/cloudflare/**'
+  - '.github/workflows/_cloudflare.yml'
+  - '.github/workflows/cloudflare-zone.yml'
+  - '.github/workflows/cloudflare-ips.yml'
+  - '.github/workflows/cloud-web-deploy.yml'
+
 # the plugin store (Epic 54): its own folder, the shared signature and entitlement vectors
 # and the home's verifier that checks them, paid plugins' payment providers and the check
 # that keeps each provider in its module (_store.yml)

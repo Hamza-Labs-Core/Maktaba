@@ -1882,6 +1882,14 @@ build fails when the two differ.
   error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
   each runbook's Check step links to a saved search.
 
+- **Cloudflare deploys from CI only (Epic 50, story 50.34).** The cloud's Cloudflare
+  configuration (the zone's rules, the Tunnel's ingress, the two web Workers) has its own
+  workflows. Pull requests only check the files offline. A push to `main` deploys, after a
+  token check that names any missing permission before anything is written, and a smoke check
+  of the live hosts follows. Each job skips with a notice until its secrets are set. A weekly job
+  proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
+  each piece's token permissions.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

@@ -1,0 +1,26 @@
+{
+  "id": "ed17574386854bf78a67040be0a770b0",
+  "name": "maktaba-ci (recorded shape, test values)",
+  "status": "active",
+  "policies": [
+    {
+      "id": "p1",
+      "effect": "allow",
+      "resources": { "com.cloudflare.api.account.acc0123": "*" },
+      "permission_groups": [{ "name": "Workers Scripts Write" }, { "name": "Cloudflare Tunnel Write" }]
+    },
+    {
+      "id": "p2",
+      "effect": "allow",
+      "resources": { "com.cloudflare.api.account.zone.zone456": "*" },
+      "permission_groups": [
+        { "name": "Workers Routes Write" },
+        { "name": "Zone Read" },
+        { "name": "Zone WAF Write" },
+        { "name": "Zone Settings Write" },
+        { "name": "DNS Write" },
+        { "name": "SSL and Certificates Write" }
+      ]
+    }
+  ]
+}
