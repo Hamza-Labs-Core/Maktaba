@@ -210,6 +210,16 @@ How the [Search](/help/search) page groups its results per video, pages them and
 - **Keep results for (minutes)** (15): a search's results are kept this long after their last use, so their order stays the same while you page through them. Every page you open starts the time again; after that the search runs again.
 - **Recent searches kept** (20): each user's Recent searches list. The query stays after its results are no longer kept.
 
+### Plugin models {#plugin-compute}
+
+The language model plugins ask, and how much of the home's models each plugin may use (for plugins that ask for the compute capabilities).
+
+- **Model server for plugins (Ollama)** and **Model for plugins** (empty): the tag check's server and model. The server must be this home or a machine on the local network: a server on the internet is refused, and the plugin is told so.
+- **Questions a day per plugin** (2,000) and **Texts a day per plugin** (50,000): over them, the plugin is told it used its share until the next day (UTC).
+- **Longest question (seconds)** (120): a longer question is ended.
+
+Plugins ask the model one question at a time with Maktaba's own model steps, and get at most one turn in three while Maktaba's work waits. Maktaba never logs what plugins ask or what the model answers.
+
 ## What the states and messages mean {#states}
 
 - **changed**: the saved value differs from the built-in default.

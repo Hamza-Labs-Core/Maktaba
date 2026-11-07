@@ -3,6 +3,8 @@
   "cases": [
     {"capabilities": [], "review_level": "store", "rating": 6},
     {"capabilities": [], "review_level": "none", "rating": 5},
+    {"capabilities": [], "review_level": "reviewed", "rating": 6},
+    {"capabilities": ["media.read", "transcript.read"], "review_level": "automated", "rating": 4},
     {"capabilities": ["library.read", "tags.write"], "review_level": "store", "rating": 6},
     {"capabilities": ["media.read", "transcript.read"], "review_level": "none", "rating": 3},
     {"capabilities": ["media.read", "transcript.read"], "review_level": "store", "rating": 4},

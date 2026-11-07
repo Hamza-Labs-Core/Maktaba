@@ -8,7 +8,8 @@
     {"name": "an rc meets its release's range", "in": {"server_version": "v0.9.0-rc1", "range": "<=0.9.0", "plugin_api": "1.0", "review_level": "store"}, "reason": ""},
     {"name": "exact version", "in": {"server_version": "0.3.83", "range": "=0.3.83", "plugin_api": "1.0", "review_level": "store"}, "reason": ""},
     {"name": "a development build meets every range", "in": {"server_version": "dev", "range": ">=9.0.0", "plugin_api": "1.0", "review_level": "store"}, "reason": ""},
-    {"name": "a newer plugin API minor", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.1", "review_level": "store"}, "reason": "incompatible"},
+    {"name": "a newer plugin API minor", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.2", "review_level": "store"}, "reason": "incompatible"},
+    {"name": "plugin API 1.1 (compute) is served", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.1", "review_level": "store"}, "reason": ""},
     {"name": "another plugin API major", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "2.0", "review_level": "store"}, "reason": "incompatible"},
     {"name": "entitlement", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "entitlement_missing": true, "review_level": "store"}, "reason": "entitlement_missing"},
     {"name": "unreviewed while not allowed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "none", "allow_unreviewed": false}, "reason": "unreviewed_disallowed"},
@@ -16,6 +17,9 @@
     {"name": "development is unreviewed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "development", "allow_unreviewed": false}, "reason": "unreviewed_disallowed"},
     {"name": "store-reviewed needs no opt-in", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "store", "allow_unreviewed": false}, "reason": ""},
     {"name": "a required capability not granted", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": ["media.read", "transcript.read"], "granted": ["media.read"], "review_level": "store"}, "reason": "grants_needed", "params": {"capabilities": "transcript.read"}},
-    {"name": "an optional one not granted passes", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": [], "granted": [], "review_level": "store"}, "reason": ""}
+    {"name": "an optional one not granted passes", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": [], "granted": [], "review_level": "store"}, "reason": ""},
+    {"name": "store countersigned, automated: no opt-in needed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "automated", "allow_unreviewed": false}, "reason": ""},
+    {"name": "store countersigned, reviewed: no opt-in needed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "reviewed", "allow_unreviewed": false}, "reason": ""},
+    {"name": "developer signed only needs the opt-in", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "developer", "allow_unreviewed": false}, "reason": "unreviewed_disallowed"}
   ]
 }

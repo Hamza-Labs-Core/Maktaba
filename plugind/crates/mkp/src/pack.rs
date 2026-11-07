@@ -39,17 +39,23 @@ pub fn files_of(dir: &Path) -> Result<Vec<(String, Vec<u8>)>, String> {
     Ok(out)
 }
 
-/// files.json's text for files.
+/// files.json's text for files, in canonical JSON (54.14 §2: what the signatures cover).
 pub fn files_json(files: &[(String, Vec<u8>)]) -> String {
     let list: Vec<serde_json::Value> = files
         .iter()
         .map(|(p, b)| serde_json::json!({"path": p, "sha256": hex::encode(Sha256::digest(b)), "size": b.len()}))
         .collect();
-    serde_json::to_string(&list).unwrap()
+    let c = maktaba_plugin_sig::canonical::canonical_of(&list).expect("files.json is canonical JSON");
+    String::from_utf8(c).expect("canonical JSON is UTF-8")
 }
 
-/// Writes the package of files to w; answers the sha256 of files.json.
-pub fn write(files: &[(String, Vec<u8>)], w: impl Write) -> Result<String, String> {
+/// Writes the package of files to w; answers the sha256 of files.json. With a key it is
+/// signed: signatures/developer.sig over files.json, after files.json in the head.
+pub fn write_signed(
+    files: &[(String, Vec<u8>)],
+    w: impl Write,
+    key: Option<&maktaba_plugin_sig::Signer>,
+) -> Result<String, String> {
     let manifest = files.iter().find(|(p, _)| p == "manifest.toml").ok_or("no manifest.toml")?;
     let fj = files_json(files);
     let enc = zstd::stream::write::Encoder::new(w, 3).map_err(|e| e.to_string())?;
@@ -64,6 +70,11 @@ pub fn write(files: &[(String, Vec<u8>)], w: impl Write) -> Result<String, Strin
     };
     add("manifest.toml", &manifest.1)?;
     add("files.json", fj.as_bytes())?;
+    if let Some(k) = key {
+        let m = crate::manifest_of(&manifest.1)?;
+        let sig = k.sign_developer(&m.0, &m.1, fj.as_bytes()).map_err(|e| e.to_string())?;
+        add("signatures/developer.sig", sig.as_bytes())?;
+    }
     for (p, b) in files {
         if p != "manifest.toml" {
             add(p, b)?;
@@ -74,19 +85,23 @@ pub fn write(files: &[(String, Vec<u8>)], w: impl Write) -> Result<String, Strin
     Ok(hex::encode(Sha256::digest(fj.as_bytes())))
 }
 
-pub fn pack(dir: &Path, out: &Path) -> Result<(), String> {
+pub fn pack(dir: &Path, out: &Path, key: Option<&maktaba_plugin_sig::Signer>) -> Result<(), String> {
     crate::validate(dir)?;
     let files = files_of(dir)?;
     if files.len() > 500 {
         return Err(format!("{} files, at most 500", files.len()));
     }
     let f = std::fs::File::create(out).map_err(|e| format!("{}: {e}", out.display()))?;
-    let sum = write(&files, std::io::BufWriter::new(f))?;
+    if files.iter().any(|(p, _)| p.starts_with("signatures/")) {
+        return Err("signatures/ is the package's own folder: remove it from the plugin folder".into());
+    }
+    let sum = write_signed(&files, std::io::BufWriter::new(f), key)?;
     let size = std::fs::metadata(out).map(|m| m.len()).unwrap_or(0);
     if size > 50 << 20 {
         let _ = std::fs::remove_file(out);
         return Err(format!("the package is {size} bytes, at most 50 MB"));
     }
-    println!("{} ({} files, files.json sha256 {sum})", out.display(), files.len());
+    let signed = key.map(|k| format!(", signed by {}", k.id)).unwrap_or_default();
+    println!("{} ({} files, files.json sha256 {sum}{signed})", out.display(), files.len());
     Ok(())
 }
