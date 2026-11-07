@@ -19,7 +19,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 WORK = Path(tempfile.mkdtemp(prefix="runner-"))
-LIMITS = {"/package": 52_428_800, "/source": 209_715_200}  # the store's own size limits
+# each path's file and the store's own size limit: the file names are fixed here, never taken
+# from the request
+FILES = {"/package": ("package", 52_428_800), "/source": ("source", 209_715_200)}
 RUN_SECONDS = 18 * 60
 
 
@@ -38,15 +40,16 @@ class Handler(BaseHTTPRequestHandler):
             self._answer(404, b"not found")
 
     def do_PUT(self) -> None:  # noqa: N802
-        limit = LIMITS.get(self.path)
-        if limit is None:
+        entry = FILES.get(self.path)
+        if entry is None:
             self._answer(404, b"not found")
             return
+        name, limit = entry
         size = int(self.headers.get("Content-Length") or "-1")
         if size < 0 or size > limit:
             self._answer(413, b"too large or no length")
             return
-        with open(WORK / self.path.lstrip("/"), "wb") as f:
+        with open(WORK / name, "wb") as f:
             left = size
             while left > 0:
                 chunk = self.rfile.read(min(left, 1 << 20))
