@@ -131,8 +131,30 @@ func sections(sql string) (up, down string) {
 	return code(u), code(d)
 }
 
-// losesData is the statement of an Up script that loses data ("" none).
+// withoutBodies is sql without its dollar-quoted bodies (each pair matched by its tag).
+func withoutBodies(sql string) string {
+	var b strings.Builder
+	for {
+		loc := regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)?\$`).FindStringSubmatchIndex(sql)
+		if loc == nil {
+			b.WriteString(sql)
+			return b.String()
+		}
+		tag := sql[loc[0]:loc[1]]
+		end := strings.Index(sql[loc[1]:], tag)
+		if end < 0 {
+			b.WriteString(sql)
+			return b.String()
+		}
+		b.WriteString(sql[:loc[0]] + "''")
+		sql = sql[loc[1]+end+len(tag):]
+	}
+}
+
+// losesData is the statement of an Up script that loses data ("" none). A function's
+// body (dollar-quoted) is only defined, not run: its DELETE deletes nothing now.
 func losesData(up string) string {
+	up = withoutBodies(up)
 	said := func(m string) string { return "loses data (" + strings.Join(strings.Fields(m), " ") + ")" }
 	for _, re := range lossy {
 		if m := re.FindString(up); m != "" {

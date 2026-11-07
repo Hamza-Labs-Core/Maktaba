@@ -18,7 +18,9 @@ func TestReversible(t *testing.T) {
 			"ALTER TABLE p DROP CONSTRAINT IF EXISTS p_kind_check;\n" +
 			"ALTER TABLE p ADD CONSTRAINT p_kind_check CHECK (kind IN ('manual', 'smart'));\n" +
 			"-- DELETE FROM p is only said here\nCREATE UNIQUE INDEX IF NOT EXISTS p_u ON p (kind);\nDROP INDEX IF EXISTS p_old;"),
-		"0003_c.sql":        up("CREATE TABLE IF NOT EXISTS n (id int);\nCREATE OR REPLACE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;"),
+		"0003_c.sql": up("CREATE TABLE IF NOT EXISTS n (id int);\nCREATE OR REPLACE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;\n" +
+			"CREATE OR REPLACE FUNCTION touch() RETURNS void LANGUAGE plpgsql AS $f$ BEGIN DELETE FROM d WHERE x; " +
+			"UPDATE d SET y = 1; END $f$;"), // a function's DELETE and UPDATE run later, not now
 		"0003_c.sqlite.sql": up("DROP TABLE everything;"), // SQLite's sibling: not this database's
 	}
 	dir := migrationsDir(t, nil, files, false)
@@ -62,12 +64,13 @@ func TestDownToFrom(t *testing.T) {
 	}
 }
 
-// The release that rolled back on 2026-11-07 (0.3.90: slot 0192, smart playlists) is
-// undone by its Down script: the real migration file.
+// The release that rolled back on 2026-11-07 (0.3.90: slots 0184..0197, its Down scripts
+// run on the home by hand that day) is undone by its Down scripts: the real migration
+// files, with 0184's and 0189's function bodies that DELETE.
 func TestReversibleSmartPlaylists(t *testing.T) {
 	_, here, _, _ := runtime.Caller(0)
 	dir := filepath.Join(filepath.Dir(here), "..", "..", "..", "..", "shared", "db", "migrations")
-	if ok, why := Reversible(dir, 191, 192); !ok {
-		t.Fatalf("0192: %s", why)
+	if ok, why := Reversible(dir, 183, 197); !ok {
+		t.Fatalf("0184..0197: %s", why)
 	}
 }
