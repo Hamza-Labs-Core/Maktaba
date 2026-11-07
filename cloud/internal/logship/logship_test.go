@@ -173,6 +173,9 @@ func TestTheReceiverChecksTheTokenAndTheNames(t *testing.T) {
 	if c := post("t", Batch{Boot: "b1", Node: "../etc", Service: "cloud.api"}); c != http.StatusBadRequest {
 		t.Fatalf("a node that is a path: %d", c)
 	}
+	if c := post("t", Batch{Boot: "b1", Node: "A..B", Service: "cloud.api"}); c != http.StatusBadRequest {
+		t.Fatalf("a node holding ..: %d", c)
+	}
 	if c := post("t", ok); c != http.StatusOK {
 		t.Fatalf("ok: %d", c)
 	}

@@ -348,7 +348,8 @@ func (rv *Receiver) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad batch", http.StatusBadRequest)
 		return
 	}
-	if !nameRe.MatchString(b.Node) || !nameRe.MatchString(b.Service) || !nameRe.MatchString(b.Boot) {
+	if !nameRe.MatchString(b.Node) || !nameRe.MatchString(b.Service) || !nameRe.MatchString(b.Boot) ||
+		strings.Contains(b.Node+"|"+b.Service, "..") {
 		http.Error(w, "bad names", http.StatusBadRequest)
 		return
 	}

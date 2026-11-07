@@ -80,6 +80,12 @@ func newSegments(root string, now func() time.Time) *segments {
 // a copy of warn and above in warn/.
 func (s *segments) write(service string, l Line, component string) error {
 	svc := safeName(service)
+	// a segment folder is never a way out of segments/: safeName leaves no separator, and a
+	// name holding ".." (from "a/.b") is not taken either. W writes folders named after what
+	// the nodes send (story 53.17)
+	if strings.Contains(svc, "..") || strings.ContainsAny(svc, `/\`) {
+		svc = "unknown"
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	main := filepath.Join(s.root, "segments", svc)
