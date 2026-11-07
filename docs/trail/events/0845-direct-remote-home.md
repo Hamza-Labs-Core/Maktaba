@@ -25,7 +25,7 @@ prs: [808, 825]
 - At runtime nothing turns a requirement on: enabling `cloud.direct` without the link leaves it Waiting (`dependency_off`). Only bundles bring requirements.
 - A new rules section needs English and Arabic words (`localizeRules.test.ts`) and a help entry (`help.coverage.test.ts`), beyond the schema.
 - CodeQL flags every int → uint16/uint32 conversion it can trace back to a parse (`strconv.Atoi` → `uint16(port)`). Parse ports with `strconv.ParseUint(s, 10, 16)` and convert only inside a bounds-checked helper (`portValue`, `leaseSeconds`), returning an error for anything out of range. Write wire-format code that way from the start.
-- A catalog change reaches every module that loads it: `tools/release/pinmodels` builds a tiny catalog from the real one's header, which now carried a `feature_any` naming components the tiny one lacks. Before pushing a catalog change, run the tests of every module whose `go.mod` requires `shared/components` (api, cmd/maktaba-server, streaming, tools/release).
+- A catalog change reaches every module that loads it: `tools/release/pinmodels` builds a tiny catalog from the real one's header, which now carried a `feature_any` naming components the tiny one lacked. The rewriter was right (it splices only the asset blocks it pins); the fixture was invalid. The fix keeps the header's `feature_any` and adds the components it names, and the test checks the group and its line survive the rewrite. Never blank a key in a fixture to get past it. Before pushing a catalog change, run the tests of every module whose `go.mod` requires `shared/components` (api, cmd/maktaba-server, streaming, tools/release).
 - `since` must be the next release: a release (v0.3.94) went out while this was in progress.
 
 ## Open

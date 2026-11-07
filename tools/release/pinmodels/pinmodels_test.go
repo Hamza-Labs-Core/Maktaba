@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -61,14 +60,31 @@ func fake(t *testing.T) *httptest.Server {
 	}))
 }
 
-// tiny is a catalog of one unpinned model, as the catalog was before 51.15.
+// tiny is a catalog of one unpinned model, as the catalog was before 51.15. It keeps the real
+// catalog's header as it is, feature groups included (story 50.35's feature_any), with the
+// components those groups name, so the rewrite is shown to leave them valid.
 func tiny(t *testing.T) []byte {
 	t.Helper()
 	raw := string(components.Raw())
 	head := raw[:strings.Index(raw, "[[component]]")]
-	// the real feature groups name components this tiny catalog doesn't have
-	head = regexp.MustCompile(`(?m)^feature_any = .*$`).ReplaceAllString(head, "feature_any = {}")
-	return []byte(head + `
+	if !strings.Contains(head, `feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }`) {
+		t.Fatal("the catalog's feature groups are not where the test looks")
+	}
+	loop := func(id string, extra string) string {
+		return `
+[[component]]
+id        = "` + id + `"
+kind      = "loop"
+group     = "system"
+title_key = "components.` + id + `.title"
+desc_key  = "components.` + id + `.desc"
+loops     = ["api:` + strings.ReplaceAll(id, ".", "_") + `"]
+platforms = ["darwin-arm64", "linux-amd64"]
+features  = ["remote_access"]
+since     = "0.3.66"
+` + extra
+	}
+	return []byte(head + loop("cloud.relay", "") + loop("cloud.direct", "") + `
 [[component]]
 id         = "model.whisper-medium"
 kind       = "asset"
@@ -139,6 +155,13 @@ func TestPinCatalogRewrites(t *testing.T) {
 	cat, err := components.Load(out)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// the feature groups survive the rewrite: same group, same bytes
+	if g := cat.FeatureAny["remote_access"]; len(g) != 1 || len(g[0]) != 2 || g[0][0] != "cloud.relay" || g[0][1] != "cloud.direct" {
+		t.Fatalf("feature_any after the rewrite: %v", cat.FeatureAny)
+	}
+	if !strings.Contains(string(out), `feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }`) {
+		t.Fatal("the rewrite changed the feature_any line")
 	}
 	m, _ := cat.Get("model.whisper-medium")
 	if m.Source != "hf:Systran/faster-whisper-medium@"+mainSHA || m.SourceFor("darwin-arm64") != "hf:mlx-community/whisper-medium-mlx@"+mlxSHA {
