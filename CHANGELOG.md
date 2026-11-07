@@ -14,6 +14,10 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
+  none of them: a runner starts when the first job of its kind arrives (that job runs in the
+  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
+  processes and its memory budget at rest.
 - **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
   keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
   (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
