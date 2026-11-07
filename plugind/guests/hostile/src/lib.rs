@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 wit_bindgen::generate!({ path: "../../../shared/plugins/wit", world: "plugin", std_feature });
 
 use maktaba::plugin::types::CallError;
-use maktaba::plugin::{data, job, log, queue, write};
+use maktaba::plugin::{data, events, job, log, queue, write};
 
 #[global_allocator]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
@@ -82,6 +82,16 @@ impl Guest for P {
             }
             "request" => {
                 queue::request("other", &s, "{}").map_err(|e| err(&format!("{e:?}")))?;
+            }
+            "emit" => {
+                events::emit("hostile.done", &s, "{\"n\":1}").map_err(|e| err(&format!("{e:?}")))?;
+            }
+            "loop_self" => {
+                // asks for itself again and again on the same subject and ignores every
+                // refusal: the lineage refuses the loop and the job fails anyway (54.40)
+                for _ in 0..20 {
+                    let _ = queue::request("loop_self", &s, "{}");
+                }
             }
             "echo" => {
                 let summary = format!(

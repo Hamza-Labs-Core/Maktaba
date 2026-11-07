@@ -864,6 +864,17 @@ build fails when the two differ.
   (`GET /api/plugins/{id}/downstream`). The check is one algorithm in Go and TypeScript on
   one shared corpus; the store's verification (C12) runs the TypeScript one. maktaba.dev:
   Flows.
+- Plugins, events between plugins and loops at run time (Epic 54, story 54.40): plugin API
+  1.2 adds `events.emit`. A stage emits an event it declares, with a payload its schema
+  accepts (at most 16 KB); it goes, when the job ends well, to every other plugin's stage
+  that subscribes and was granted `events.subscribe:<publisher>` by the admin. Every plugin
+  job carries its lineage (where its chain started, its hop count and the stages it passed
+  through on which subjects): a request or event that would pass 16 hops or start a stage
+  again on a subject already in the chain is refused, including a loop through data (a
+  plugin write leaves its lineage on the video for 10 minutes), and the job fails with the
+  new cause `plugin_loop`, "Stopped a loop between plugins", with help in English and
+  Arabic. Plugins built for 1.0 keep running. Migration 0199: `plugin_write_lineage`.
+  maktaba.dev: Flows gains emitting events and loops at run time.
 
 - **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
   two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)
@@ -959,7 +970,7 @@ build fails when the two differ.
   were last checked and warns when the list has expired (plugins keep running; store installs
   wait). Store installs by `{store: {id, version}}`, with the download checked against its
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
-  home sends its daily `seen` report when telemetry is on. Migration 0197.
+  home sends its daily `seen` report when telemetry is on. Migration 0200.
 
 
 ### Fixed
