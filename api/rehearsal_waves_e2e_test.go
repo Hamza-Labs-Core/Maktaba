@@ -23,6 +23,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,21 +38,28 @@ import (
 
 // rehearsalWave is one wave of Phase 4: its scenario, its story and the stages the
 // scenario queues (those of its stages a home without a GPU, a model or a network
-// service claims).
+// service claims), and what the home's environment adds for them (env).
 type rehearsalWave struct {
 	id, story string
 	stages    []string
+	env       []string
 }
 
+// plexEnv is how a real home turns the Plex extension on: its URL and token in the
+// environment seed the extension enabled and configured (extensions/store.py
+// ensure_rows), so the worker's graph sync gives its stages their rows and enables them.
+// The stages' work is a sleep here, so the address answers nothing (port 9, discard).
+var plexEnv = []string{"MAKTABA_PLEX_URL=http://127.0.0.1:9", "MAKTABA_PLEX_TOKEN=rehearsal-not-a-token"}
+
 var rehearsalWaves = map[string]rehearsalWave{
-	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}},
-	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}},
-	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}},
-	"16.4": {"16.4", "54.31", []string{"detect", "tag"}},
-	"16.5": {"16.5", "54.32", []string{"dedup_scan"}},
-	"16.6": {"16.6", "54.33", []string{"exact_dates"}},
-	"16.8": {"16.8", "54.35", []string{"plex_groups"}},
-	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}},
+	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil},
+	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil},
+	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil},
+	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil},
+	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
+	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
+	"16.8": {"16.8", "54.35", []string{"plex_groups"}, plexEnv},
+	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}, nil},
 }
 
 // waveSleep is how long each job of a wave stage sleeps: longer than the claim loop's
@@ -155,9 +163,19 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	_ = db.QueryRow(`SELECT COALESCE(max(id), 0) FROM processing_jobs`).Scan(&last)
 	queued := 0
 	for _, st := range stages {
+		// an extension's stage gets its row from the worker's graph sync, not a migration
+		// (plex_groups): it may come a little after the home serves
 		var kinds []string
-		if err := db.QueryRow(`SELECT subject_kinds FROM job_stages WHERE stage = $1`, st).Scan(pq.Array(&kinds)); err != nil {
-			t.Fatalf("%s's row: %v", st, err)
+		deadline := time.Now().Add(3 * time.Minute)
+		for {
+			err := db.QueryRow(`SELECT subject_kinds FROM job_stages WHERE stage = $1`, st).Scan(pq.Array(&kinds))
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, sql.ErrNoRows) || time.Now().After(deadline) {
+				t.Fatalf("%s's row: %v", st, err)
+			}
+			time.Sleep(2 * time.Second)
 		}
 		var kind string
 		var ids []string
@@ -349,6 +367,7 @@ func (r *rehearsal) waveScenario(id string) {
 	w := rehearsalWaves[id]
 	k := r.kit
 	r.realPipeline(w.stages)
+	r.pipelineEnv = append(r.pipelineEnv, w.env...)
 	want := map[string]map[string]bool{k.prev: r.builtIn(k.prev), k.cur: r.builtIn(k.cur)}
 	want[k.next] = want[k.cur]
 	for _, st := range w.stages {
