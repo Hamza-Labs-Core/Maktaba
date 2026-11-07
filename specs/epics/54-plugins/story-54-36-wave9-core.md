@@ -2,6 +2,9 @@
 
 > Epic 54 · Phase 4 · Depends on: 54.35 · Needed by: —
 
+**`thumbnail` and `extract` move here too** (legacy stages; wave 2 deferred `thumbnail`'s
+conversion to this story), so that after this wave the worker imports no stage code.
+
 ## Why
 
 The last wave moves the stages every home always runs (scan, probe and the identity stages),
@@ -32,10 +35,17 @@ the pipeline loops stay too:
 | `access_check` | `stages/access_check.py` | `nas_read` | `files.read:library` |
 | `storage_canonicalize` | `stages/storage_canonicalize.py`, `sharepath/` | `cpu` | — |
 | `categorize` (legacy) | the categorize handler | `cpu` | — |
+| `thumbnail` (legacy) | `handlers.py`'s thumbnail handler, `thumbnail/` | `nas_read` | `files.read:library`, `files.write:data.thumbnails`, `exec:ffmpeg` |
+| `extract` (legacy) | `handlers.py:extract_handler`, `audio/` | `nas_read` | `files.read:library`, `files.write:data.cache`, `exec:ffmpeg` |
+
+`thumbnail` and `extract` are here so that no stage code stays in the worker; wave 2 (54.29)
+deferred `thumbnail`'s conversion to this story. A write either makes that only the queue
+engine may hold is done by the worker for the plugin's job, as wave 7 does for a TV change's
+swap commit (relayed, checked against the job's own subject and payload).
 
 ### 2. Legacy first
 
-`scan`, `probe` and `categorize` stop chaining by hand: their enqueues become declared edges,
+`scan`, `probe`, `categorize`, `thumbnail` and `extract` stop chaining by hand: their enqueues become declared edges,
 and `advance_after_stage` (core) keeps writing `videos.state` from their results, as it does for
 every engine stage. Each conversion lands in its own PR, in-process, green in parity against
 the old behaviour, before the move.
@@ -47,7 +57,8 @@ The filesystem watcher (`watcher/`) and manual scans are loops in the core that 
 
 ### 4. Removing the in-process path
 
-One release after these stages flip (and only if no stage of any wave is flipped back):
+One release after these stages flip, and only if no stage of any wave has been flipped back
+(the removal pull request checks `job_stages.impl` on the homes it can see and says so):
 
 1. delete `engine/stages/` modules, `handlers.py`'s stage handlers and `CORE_MODULES`;
 2. delete `GRAPH`'s remaining `StageDef`s (none left) and keep `graph.py` as types and pools;

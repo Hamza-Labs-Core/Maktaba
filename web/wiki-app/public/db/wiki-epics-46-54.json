@@ -5809,7 +5809,7 @@
       "title": "Wave 9: the core stages, and removing the in-process path",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.36 — Wave 9: the core stages, and removing the in-process path\n\n> Epic 54 · Phase 4 · Depends on: 54.35 · Needed by: —\n\n## Why\n\nThe last wave moves the stages every home always runs (scan, probe and the identity stages),\nthen deletes what made the migration safe: the in-process handlers, `CORE_MODULES` and the\nswitch. After it, the pipeline worker is the queue engine plus dispatch, and every stage is a\nplugin (README §15.3, F19).\n\n## Description\n\n### 1. The stages\n\nAll in **`tv.maktaba.core-media`**, the plugin of the `core.pipeline` component (kind\n`stages+process+loop`, `switchabl",
+      "content": "# Story 54.36 — Wave 9: the core stages, and removing the in-process path\n\n> Epic 54 · Phase 4 · Depends on: 54.35 · Needed by: —\n\n**`thumbnail` and `extract` move here too** (legacy stages; wave 2 deferred `thumbnail`'s\nconversion to this story), so that after this wave the worker imports no stage code.\n\n## Why\n\nThe last wave moves the stages every home always runs (scan, probe and the identity stages),\nthen deletes what made the migration safe: the in-process handlers, `CORE_MODULES` and the\nswitch. After it, the pipeline worker is the queue engine plus dispatch, and every stage is a\nplugin ",
       "tags": [
         "story",
         "54-plugins",
