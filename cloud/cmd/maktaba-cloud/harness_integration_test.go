@@ -359,7 +359,7 @@ type fakeProvider struct {
 func (*fakeProvider) Name() string  { return "testpay" }
 func (*fakeProvider) Enabled() bool { return true }
 func (*fakeProvider) Sells(plan string) bool {
-	return plan == billingpkg.PlanPro || plan == billingpkg.PlanFamily
+	return plan == billingpkg.PlanBasic || plan == billingpkg.PlanPro
 }
 
 func (f *fakeProvider) CreateCheckout(_ context.Context, p billingpkg.CheckoutParams) (billingpkg.CheckoutSession, error) {

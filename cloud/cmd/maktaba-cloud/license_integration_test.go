@@ -51,7 +51,7 @@ func TestPlanLicenseOnTheRealRouter(t *testing.T) {
 		t.Fatalf("free plan: %d %s", got, body["error"])
 	}
 
-	e.exec(`UPDATE users SET plan = 'family' WHERE id = $1`, uid)
+	e.exec(`UPDATE users SET plan = 'pro' WHERE id = $1`, uid)
 	got, body := fetch(secret)
 	if got != http.StatusOK {
 		t.Fatalf("paid plan: %d", got)

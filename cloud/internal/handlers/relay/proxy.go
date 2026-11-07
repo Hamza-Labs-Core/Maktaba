@@ -14,6 +14,7 @@ import (
 	"time"
 
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
@@ -29,8 +30,10 @@ type ServerLookup interface {
 // Metering is the per-home bandwidth gate and counter (*billing.Meter
 // satisfies it).
 type Metering interface {
-	Allow(ctx context.Context, sv stores.Server) error
-	Record(ctx context.Context, sv stores.Server, in, out int64)
+	// Decide is the home's relay mode now (story 50.19 §3).
+	Decide(ctx context.Context, sv stores.Server) billing.Decision
+	// Record counts a request's bytes in the mode it was relayed in.
+	Record(ctx context.Context, sv stores.Server, d billing.Decision, in, out int64)
 }
 
 // DefaultHeadTimeout bounds the wait for the home's response head.
@@ -212,11 +215,14 @@ func (d *Deps) Handler() http.Handler {
 // the tunnel closed before the home answered a GET or HEAD.
 func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t *relaypkg.Tunnel) (retry bool) {
 	{
-		// Tier gate: the plan's monthly relay allowance.
+		// The home's relay mode (story 50.19): bytes are counted in it. Nothing is refused for
+		// bytes any more; refusing a plan without the relay, the cap header, pacing and the
+		// stream limit are part 2's.
+		mode := billing.Decision{Mode: billing.ModeFull}
 		if d.Meter != nil {
-			if err := d.Meter.Allow(r.Context(), sv); err != nil {
-				writeErr(w, r, http.StatusPaymentRequired, "tier_limit", err.Error())
-				return false
+			mode = d.Meter.Decide(r.Context(), sv)
+			if mode.Mode == billing.ModeRefused {
+				mode = billing.Decision{Mode: billing.ModeFull} // forwarded until part 2 refuses it
 			}
 		}
 		// No deadline on the exchange: a video plays as long as its client
@@ -275,7 +281,7 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 				return
 			}
 			if d.Meter != nil {
-				d.Meter.Record(ctx, sv, in, out)
+				d.Meter.Record(ctx, sv, mode, in, out)
 			}
 			// Aggregate-only relay analytics (Epic 30): no server id, no
 			// user id.
