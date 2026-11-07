@@ -155,7 +155,7 @@ modprobe softdog
 cat >/etc/udev/rules.d/61-watchdog.rules <<'RULE'
 KERNEL=="watchdog", OWNER="postgres", GROUP="postgres", MODE="0600"
 RULE
-udevadm control --reload && udevadm trigger --name-match=watchdog || true
+{ udevadm control --reload && udevadm trigger --name-match=watchdog; } || true
 
 # ---------------------------------------------------------------------------------------
 # 5. The Floating IP on the interface (Hetzner routes it to the leader only)
