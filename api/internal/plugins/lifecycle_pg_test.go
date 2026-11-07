@@ -554,6 +554,8 @@ func TestReportLogsOptIn(t *testing.T) {
 	}
 	if err := f.l.SetReportLogs(ctx, "dev.example.absent", true, admin); asProblem(err) == nil || asProblem(err).Code != CodeNotInstalled {
 		t.Fatalf("not installed: %v", err)
+	}
+}
 
 // 54.07 §3 (#709): the plugins a server version would pause are the installed ones whose
 // maktaba range excludes it, each with its own name and whether it is on.
