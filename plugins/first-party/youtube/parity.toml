@@ -1,0 +1,17 @@
+# The parity proof of tv.maktaba.youtube (story 54.33): a channel listed, its new video and
+# its back catalogue downloaded into the library (a fake yt-dlp, the same on both sides), the
+# files compared byte for byte, and the rows, only the columns that hold a time masked.
+tables = ["youtube_downloads", "youtube_videos", "youtube_sources", "videos", "file_actions"]
+files  = ["library"]
+
+[ignore]
+youtube_downloads = ["requested_at", "done_at", "updated_at", "not_before"]
+youtube_videos = ["fetched_at", "updated_at", "first_seen_at", "last_seen_at"]
+youtube_sources = ["created_at", "last_checked_at", "last_fetched_at", "updated_at", "last_listed_at"]
+videos = ["created_at", "updated_at", "mtime", "last_seen_at"]
+# the library stages after a download hash each video's mtime (the time it was placed)
+processing_jobs = ["input_hash@clip_groups", "input_hash@promo_links"]
+file_actions = ["created_at", "updated_at", "purge_after"]
+
+[[cases]]
+name = "a channel with a new video and an older one: listed, downloaded, placed and scanned"

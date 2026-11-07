@@ -497,7 +497,9 @@ class EnqueueRefused(Exception):
     """A plugin asked to queue what its stage may not (story 54.32: the plugin's scope)."""
 
 
-async def _relayed_enqueue(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+async def _relayed_enqueue(
+    db: Any, ctx: Any, a: dict[str, Any], *, hold: bool = True
+) -> dict[str, Any]:
     """A job a plugin's stage queues, as the worker enqueues it: only the stage itself or a
     stage it may request (``may_request``), and only for a subject of the job's library (a
     video of it, or the library)."""
@@ -522,12 +524,17 @@ async def _relayed_enqueue(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, An
     if kind == "library":
         ok = str(lib) == str(UUID(subject))
     elif kind == "video":
-        ok = (
-            await db.fetchval(
-                "SELECT 1 FROM videos WHERE id = $1 AND library_id = $2", uid(subject), uid(lib)
-            )
-            is not None
-        )
+        owner = await db.fetchval("SELECT library_id FROM videos WHERE id = $1", uid(subject))
+        if owner is None and hold:
+            # a video this job made in its own transaction, which this worker cannot see yet
+            # (a download): queued, after the same checks, once the job's writes are committed
+            held = getattr(ctx, "held_enqueues", None)
+            if held is None:
+                held = []
+                ctx.held_enqueues = held
+            held.append(dict(a))
+            return {"job_id": None, "outcome": "held"}
+        ok = owner is not None and str(owner) == str(lib)
     else:
         ok = False
     if not ok:
@@ -647,7 +654,12 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
                     continue
                 if kind == "result":
                     if msg.get("status") == "ok":
-                        return result_from_wire(msg["result"])
+                        result = result_from_wire(msg["result"])
+                        # the job's own writes are committed now: what it queued for a video
+                        # it made (not yet visible to this worker then) is checked and queued
+                        for held in getattr(ctx, "held_enqueues", ()):
+                            await _relayed_enqueue(db, ctx, held, hold=False)
+                        return result
                     raise_failure(msg)
                 raise StageFailure("plugin_failed", f"runner sent {kind!r}", retryable=True)
         except asyncio.CancelledError:

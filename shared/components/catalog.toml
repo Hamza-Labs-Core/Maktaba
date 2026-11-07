@@ -235,6 +235,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "library.repair"
+plugin    = "tv.maktaba.repair"
 kind      = "stages"
 group     = "library"
 title_key = "components.library.repair.title"
@@ -406,6 +407,7 @@ since     = "0.3.86"
 
 [[component]]
 id        = "youtube"
+plugin    = "tv.maktaba.youtube"
 kind      = "stages"
 group     = "integrations"
 title_key = "components.youtube.title"

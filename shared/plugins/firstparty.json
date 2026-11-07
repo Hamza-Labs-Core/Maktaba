@@ -1,5 +1,5 @@
 {
- "digest": "6a5eb11b1ac5cdf13bc794b0468458c5bf9a515a9fbeaab4423d565cb97575b5",
+ "digest": "6d2c2f616d5781280f1e278a573014350b518bc185f45e8cd1f67e5333df2cf3",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -2704,7 +2704,7 @@
    }
   },
   {
-   "digest": "41455a051026d7bc97612fe5dca3f9a39def6bfb1eaba0f76bbd9b838f494af9",
+   "digest": "a7df6a1f5c356cf8656432b2bda66ed9044fc2e3abc3fe56e751e0b1f4d770a4",
    "folder": "youtube",
    "id": "tv.maktaba.youtube",
    "manifest": "# tv.maktaba.youtube: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6\n# (story 54.33): lists a library's YouTube channels and downloads their videos, newest first, then the back catalogue.\nschema     = 1\nid         = \"tv.maktaba.youtube\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.youtube.name\"\nsummary = \"fp.youtube.summary\"\n\n[trusted]\nrunner    = \"net\"\ncomponent = \"youtube\"\ndb.read   = [\"app_settings\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"series_episodes\"]\ndb.write  = [\"file_actions\", \"video_copies\", \"videos\", \"youtube_channels\", \"youtube_downloads\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_sources\", \"youtube_videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\n# the downloads' work folder (MAKTABA_YT_WORK) is the data.cache area\nfiles.write = [\"library\", \"data.cache\"]\nexec      = [\"yt-dlp\", \"ffmpeg\", \"ffprobe\"]\n# the hosts YouTube's API and yt-dlp's YouTube extractor reach (reviewed; the nightly\n# recording run checks no other is contacted, story 54.33 T02)\nnet       = [\"www.youtube.com\", \"youtube.com\", \"*.googlevideo.com\", \"www.googleapis.com\", \"i.ytimg.com\"]\n\n[[stage]]\nname         = \"youtube_sync\"\nsubject      = \"library\"\nexport       = \"youtube-sync\"\nversion      = 1\nlabel        = \"YouTube listing\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 0\nmay_request  = [\"youtube_fetch\", \"youtube_backfill\"]\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"link\", map = \"videos_of\" }, { to = \"detect\", map = \"same\" }, { to = \"exact_dates\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.youtube_sync:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_fetch\"\nsubject      = \"library\"\nexport       = \"youtube-fetch\"\nversion      = 1\nlabel        = \"YouTube downloads\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 2\nmay_request  = [\"convert_mp4\", \"youtube_fetch\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_fetch:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_backfill\"\nsubject      = \"library\"\nexport       = \"youtube-backfill\"\nversion      = 1\nlabel        = \"YouTube back catalogue\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 3\nmay_request  = [\"convert_mp4\", \"youtube_backfill\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_backfill:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"exact_dates\"\nsubject      = \"library\"\nexport       = \"exact-dates\"\nversion      = 1\nlabel        = \"Exact dates\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 1\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"detect\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.exact_dates:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -2808,6 +2808,19 @@
      "writes": [
       "youtube_videos"
      ]
+    },
+    {
+     "mode": "read",
+     "name": "jobs.enqueue",
+     "reads": [
+      "processing_jobs",
+      "videos"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "8696807d7fd5d6e1b7cd7390015ed6d3b16f93c2a1140a5e8df2e9ad7b23a8c6",
+     "text": "SELECT pj.id          AS id,\n       pj.finished_at AS finished_at,\n       v.updated_at   AS updated_at\n  FROM processing_jobs pj\n  JOIN videos v ON v.id = pj.video_id\n WHERE pj.video_id = $1\n   AND pj.stage    = $2\n   AND pj.state    = 'done'\n   AND COALESCE(pj.outcome, 'changed') NOT IN ('waiting_inputs', 'awaiting_review')\n ORDER BY pj.finished_at DESC\n LIMIT 1",
+     "writes": []
     },
     {
      "mode": "read",

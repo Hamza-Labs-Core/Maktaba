@@ -352,5 +352,8 @@ def _wrap(job_id: int | None, outcome: str, who: str) -> EnqueueResult:
         if outcome in ("disabled", "skipped_component_off"):
             # a stage its component switched off (Epic 51) is off like a disabled one
             return EnqueueResult(id=0, outcome="disabled")
+        if outcome == "held":
+            # relayed from a plugin for a video its job made: queued once the job commits
+            return EnqueueResult(id=0, outcome="inserted")
         raise ValueError(f"{who}: refused ({outcome})")
     return EnqueueResult(id=job_id, outcome=_legacy_outcome(outcome))

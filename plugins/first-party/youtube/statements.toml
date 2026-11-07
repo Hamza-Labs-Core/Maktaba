@@ -7,6 +7,8 @@ modules = [
     "maktaba_pipeline.library_mgmt.ledger:create_action,get_action,advance,update_fields,open_actions",
     "maktaba_pipeline.library_mgmt.trash",
     "maktaba_pipeline.db.jobs_state:read_flags",
+    # a downloaded video's probe: whether it ran already (the enqueue itself is relayed)
+    "maktaba_pipeline.db.jobs:enqueue",
     "maktaba_pipeline.scanner.store",
     "maktaba_pipeline.rules:read",
 ]
