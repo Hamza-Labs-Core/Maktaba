@@ -2015,6 +2015,12 @@ build fails when the two differ.
   The parity proof compares the library and its trash byte for byte, through a merge, a
   restore and a purge.
 
+- **`server.log` keeps the warnings and errors (Epic 53 story 53.02).** After one release with
+  both written, the server's parts send only their warnings and errors to `server.log`, beside
+  the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
+  of it. Every line is still in the log segments, the Logs page and the recovery console.
+  `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
+
 - **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
   queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
   admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
