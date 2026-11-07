@@ -413,7 +413,9 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 		ar := DisplayName(in.Path, m.Strings.Name, "ar")
 		typed := strings.TrimSpace(req.ConfirmName)
 		if typed == "" || !(strings.EqualFold(typed, name) || typed == ar) {
-			return nil, problem(http.StatusBadRequest, CodeNameMismatch, "type the plugin's name, %q, to confirm", name)
+			p := problem(http.StatusBadRequest, CodeNameMismatch, "type the plugin's name, %q, to confirm", name)
+			p.Params = map[string]any{"name": name, "name_ar": ar}
+			return nil, p
 		}
 	}
 	if err := checkAsked(req.Grants, m); err != nil {
