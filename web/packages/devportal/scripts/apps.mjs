@@ -679,6 +679,24 @@ export const APPS = [
                 "صفحة التحديثات في تطبيق الإدارة عن بُعد على آيفون: تلفاز باقٍ على إصدار أقدم، وإصدار محظور، وإصدار هذا الجهاز الرئيسي"
               ),
               shot(
+                "remote-iphone-errors",
+                "phone",
+                "The Remote's Errors on an iPhone: two error groups with their counts and last 14 days, made-up data",
+                "الأخطاء في تطبيق الإدارة عن بُعد على آيفون: مجموعتا أخطاء بأعدادهما وأيامهما الأربعة عشر الأخيرة، على بيانات مختلَقة"
+              ),
+              shot(
+                "remote-iphone-logs-en",
+                "phone",
+                "The Remote's Logs on an iPhone: three lines of the last 24 hours, two of one request",
+                "السجلات في تطبيق الإدارة عن بُعد على آيفون: ثلاثة أسطر من آخر 24 ساعة، اثنان منها لطلب واحد"
+              ),
+              shot(
+                "remote-iphone-dashboards",
+                "phone",
+                "The Remote's Overview dashboard on an iPhone: the components up and the errors per hour",
+                "لوحة النظرة العامة في تطبيق الإدارة عن بُعد على آيفون: المكوّنات العاملة والأخطاء في الساعة"
+              ),
+              shot(
                 "android-remote-attention",
                 "phone",
                 "The Remote's Needs attention on an Android phone, with the banner of a TV waiting to sign in",
