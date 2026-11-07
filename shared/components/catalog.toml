@@ -58,8 +58,10 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".
+# plugin_panels (story 54.20) is the tenth: apps read it missing as off, unlike the others,
+# so they never ask an older server for panels.
 features = ["live_tv", "transcripts", "subtitles", "semantic_search", "chapters", "youtube",
-            "plex", "remote_access", "recommendations"]
+            "plex", "remote_access", "recommendations", "plugin_panels"]
 
 # ---- core: always on, shown for their health -----------------------------------------
 
@@ -358,6 +360,8 @@ placement = "home"
 # asyncio cannot open there
 platforms = ["darwin-arm64", "linux-amd64", "linux-arm64"]
 bundles   = ["full", "core"]
+# panels of installed plugins on video, series and library pages (story 54.20)
+features  = ["plugin_panels"]
 on_demand = true
 since     = "0.3.83"
 

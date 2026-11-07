@@ -128,6 +128,7 @@ export function readPluginSources(repo) {
       ...goConsts(read("api/internal/plugins/routes.go")),
       ...goConsts(read("api/internal/plugins/media.go")),
       ...goConsts(read("api/internal/plugins/tokens.go")),
+      ...goConsts(read("api/internal/plugins/panels.go")),
     },
     pack: goConsts(read("shared/go/componentpack/plugin.go")),
     causes,
@@ -196,6 +197,10 @@ export const CODE_WORDS = {
   plugin_job_not_runnable: t(
     "The job is not claimed and running, so it gets no token.",
     "المهمة ليست محجوزة وقيد التشغيل، فلا تحصل على رمز."
+  ),
+  plugin_text_forbidden: t(
+    "A value for a key a panel shows holds a URL, HTML, markdown or a control character.",
+    "قيمة لمفتاح تعرضه لوحة فيها رابط أو HTML أو markdown أو محرف تحكم."
   ),
 };
 

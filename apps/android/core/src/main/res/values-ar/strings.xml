@@ -180,6 +180,8 @@
     <string name="feature_plex">Plex</string>
     <string name="feature_remote_access">الوصول من خارج المنزل</string>
     <string name="feature_recommendations">الاقتراحات</string>
+    <string name="feature_plugin_panels">لوحات الإضافات</string>
+    <string name="plugin_panels_title">من الإضافات</string>
     <string name="feature_off_admin">ميزة %1$s متوقفة على الجهاز الرئيسي.</string>
     <string name="feature_turn_on">شغّل من صفحة المكوّنات</string>
     <string name="feature_unavailable">ميزة %1$s غير متاحة على الجهاز الرئيسي.</string>

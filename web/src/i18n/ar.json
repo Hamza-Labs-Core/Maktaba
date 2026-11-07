@@ -6252,6 +6252,8 @@
   "components.feature.plex": "Plex",
   "components.feature.remote_access": "الوصول من خارج المنزل",
   "components.feature.recommendations": "الاقتراحات",
+  "components.feature.plugin_panels": "لوحات الإضافات",
+  "plugins.panels.title": "من الإضافات",
   "capabilities.offAdmin": "ميزة {feature} متوقفة على الجهاز الرئيسي.",
   "capabilities.turnOn": "شغّل من صفحة المكوّنات",
   "capabilities.wordsOnly": "البحث بالكلمات فقط. البحث بالمعنى متوقف.",

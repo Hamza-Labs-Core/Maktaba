@@ -389,6 +389,22 @@
         }
       }
     },
+    "From plugins" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من الإضافات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From plugins"
+          }
+        }
+      }
+    },
     "Idle" : {
       "localizations" : {
         "ar" : {

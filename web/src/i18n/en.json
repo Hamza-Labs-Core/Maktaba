@@ -6239,6 +6239,8 @@
   "components.feature.plex": "Plex",
   "components.feature.remote_access": "Access away from home",
   "components.feature.recommendations": "Recommendations",
+  "components.feature.plugin_panels": "Plugin panels",
+  "plugins.panels.title": "From plugins",
   "capabilities.offAdmin": "The {feature} feature is off on this home.",
   "capabilities.turnOn": "Turn it on in Components",
   "capabilities.wordsOnly": "Searching by words only. Search by meaning is off.",

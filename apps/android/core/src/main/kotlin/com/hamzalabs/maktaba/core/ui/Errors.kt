@@ -73,6 +73,7 @@ fun featureName(feature: String): Int? = when (feature) {
     "plex" -> R.string.feature_plex
     "remote_access" -> R.string.feature_remote_access
     "recommendations" -> R.string.feature_recommendations
+    "plugin_panels" -> R.string.feature_plugin_panels
     else -> null
 }
 

@@ -187,6 +187,8 @@
     <string name="feature_plex">Plex</string>
     <string name="feature_remote_access">Access away from home</string>
     <string name="feature_recommendations">Recommendations</string>
+    <string name="feature_plugin_panels">Plugin panels</string>
+    <string name="plugin_panels_title">From plugins</string>
     <!-- story 51.11: what an app says where a feature that is off would be -->
     <string name="feature_off_admin">The %1$s feature is off on this home.</string>
     <string name="feature_turn_on">Turn it on in Components</string>
