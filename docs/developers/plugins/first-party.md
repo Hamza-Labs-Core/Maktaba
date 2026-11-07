@@ -32,8 +32,9 @@ only one that writes the queue's tables.
 
 A first-party manifest is the [manifest](manifest.md) you know with a `[trusted]` table and
 richer `[[stage]]` entries. Every key marked `x-trusted-only` in the schema is refused in any
-other manifest with `plugin_trusted_field`, and so is a stage named like one of Maktaba's own
-(`shared/plugins/reserved_stages.txt`). Only the manifests built into the release are read with
+other manifest with `plugin_trusted_field`, and so is the `dup_group` subject. (A stage of
+yours may share a name with one of Maktaba's: its queue is always `p_<hash>_<name>`.) Only
+the manifests built into the release are read with
 their `[trusted]` table: the server embeds them, and nothing on disk can add one.
 
 ```toml

@@ -1775,3 +1775,8 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   no `seed.sql` is committed. The runner runs in the test's process without its OS sandbox,
   which has its own escape tests; the plugin API, its statements and its roles are the
   release's (`api/tools/plugin-api-dev`).
+- **A core stage's name is not reserved.** A third-party stage's queue is always
+  `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
+  `tag`; refusing the name would only break existing plugins. The trusted-only keys and the
+  `dup_group` subject stay refused (`plugin_trusted_field`). `reserved_stages.txt` stays as
+  the golden graph's list of names.

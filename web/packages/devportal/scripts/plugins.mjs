@@ -462,8 +462,8 @@ export function pluginReference(src, lang) {
     );
     md.push(
       L(
-        `These keys, and a stage named like one of Maktaba's own, are refused in your manifest with \`plugin_trusted_field\`: only the manifests built into a Maktaba release are read with them ([Maktaba's own plugins](../first-party/)). ${trusted.map(code).join(", ")}.`,
-        `تُرفض هذه المفاتيح، ومعها المرحلة التي تحمل اسم مرحلة من مراحل مكتبة، في بيانك بالرمز \`plugin_trusted_field\`: لا تُقرأ إلا في البيانات المدمجة في إصدار مكتبة ([إضافات مكتبة نفسها](../first-party/)). ${trusted.map(code).join("، ")}.`
+        `These keys, and the \`dup_group\` subject, are refused in your manifest with \`plugin_trusted_field\`: only the manifests built into a Maktaba release are read with them ([Maktaba's own plugins](../first-party/)). ${trusted.map(code).join(", ")}.`,
+        `تُرفض هذه المفاتيح، ومعها العنصر \`dup_group\`، في بيانك بالرمز \`plugin_trusted_field\`: لا تُقرأ إلا في البيانات المدمجة في إصدار مكتبة ([إضافات مكتبة نفسها](../first-party/)). ${trusted.map(code).join("، ")}.`
       )
     );
   }

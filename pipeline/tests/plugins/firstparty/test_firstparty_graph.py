@@ -54,20 +54,25 @@ def test_its_trusted_fields_are_refused_in_any_other_manifest() -> None:
     )
 
 
-def test_a_third_party_stage_named_like_a_core_stage_is_refused() -> None:
-    corpus = (
+def test_a_third_party_stage_may_share_a_core_stages_name_but_not_its_subject() -> None:
+    """Its queue is p_<hash>_<name>, never a core stage's; only the dup_group subject is
+    Maktaba's own (story 54.22 §1, README §15.12)."""
+    base = (
         ROOT
         / "shared"
         / "plugins"
         / "testdata"
         / "manifests"
         / "invalid"
-        / "trusted_reserved_stage.toml"
-    )
+        / "trusted_subject_dup_group.toml"
+    ).read_text()
     with pytest.raises(pm.ManifestInvalid) as e:
-        pm.validate(corpus.read_bytes())
+        pm.validate(base.encode())
     assert e.value.has(pm.CODE_TRUSTED_FIELD)
-    assert "transcribe" in pm.reserved_stages() and "promo_links" in pm.reserved_stages()
+    named = base.replace('subject = "dup_group"', 'subject = "video"').replace(
+        'name = "find_silences"', 'name = "tag"'
+    )
+    assert pm.validate(named.encode())["stage"][0]["name"] == "tag"
 
 
 def test_the_assembled_graph_refuses_a_stage_defined_twice(toy: bytes) -> None:

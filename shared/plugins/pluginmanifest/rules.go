@@ -64,8 +64,9 @@ func rules(m map[string]any, files Files, trusted bool) Errors {
 			errs = append(errs, Error{Code: CodeDuplicateStage, Path: "stage/" + strconv.Itoa(i) + "/name", Detail: name})
 		}
 		subjects[name] = st["subject"].(string)
-		// R5a: a core stage's name and the dup_group subject are Maktaba's own (54.22 §1)
-		if !trusted && (ReservedStage(name) || subjects[name] == "dup_group") {
+		// R5a: the dup_group subject is Maktaba's own (54.22 §1). A core stage's name is not
+		// reserved: a third-party stage's queue is p_<hash>_<name>, never a core stage's
+		if !trusted && subjects[name] == "dup_group" {
 			errs = append(errs, Error{Code: CodeTrustedField, Path: "stage/" + strconv.Itoa(i) + "/name", Detail: name})
 		}
 	}
