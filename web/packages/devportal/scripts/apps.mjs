@@ -465,6 +465,24 @@ export const APPS = [
                 "الرئيسية في المشغّل على آيفون: سلسلة جديدة، وتابع المشاهدة، والدرس التالي"
               ),
               shot(
+                "player-iphone-crash-question",
+                "phone",
+                "The Player on an iPhone after signing in: should it send crash reports to the home? Two equal buttons, neither chosen",
+                "المشغّل على آيفون بعد تسجيل الدخول: هل يرسل تقارير الأعطال إلى الجهاز الرئيسي؟ زرّان متساويان، لم يُختر أيٌّ منهما"
+              ),
+              shot(
+                "player-iphone-report",
+                "phone",
+                "Report a problem on an iPhone: what happened, when, and what will be sent; the screenshot box unticked",
+                "الإبلاغ عن مشكلة على آيفون: ماذا حدث، ومتى، وما الذي سيُرسل؛ ومربّع لقطة الشاشة غير محدَّد"
+              ),
+              shot(
+                "android-player-report-phone",
+                "phone",
+                "Report a problem on an Android phone, with what will be sent shown before Send",
+                "الإبلاغ عن مشكلة على هاتف أندرويد، وما سيُرسل معروض قبل الإرسال"
+              ),
+              shot(
                 "player-iphone-library",
                 "phone",
                 "A library in the Player on an iPhone",
