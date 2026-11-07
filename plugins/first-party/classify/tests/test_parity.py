@@ -117,5 +117,5 @@ async def test_classify_wave_1_is_identical(template: str, monkeypatch: pytest.M
             stages=selected(),
             perf=cfg.perf,
         )
-        slowest = p.slowest()
+        slowest = p.report("tv.maktaba.classify")
     assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
