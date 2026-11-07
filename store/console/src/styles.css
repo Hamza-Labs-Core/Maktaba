@@ -99,3 +99,5 @@ button {
 code {
   overflow-wrap: anywhere;
 }
+
+.flow-chart{max-inline-size:100%;block-size:auto;border:1px solid var(--line,#ddd);border-radius:6px;background:#fff}

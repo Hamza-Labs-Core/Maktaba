@@ -91,4 +91,38 @@ describe("the review pages", () => {
     expect(await screen.findByRole("status")).toHaveProperty("textContent", REVIEW_WORDS.en["review.done"]);
     expect(getCred).toHaveBeenCalled();
   });
+
+  for (const lang of ["en", "ar"] as const) {
+    it(`${lang}: a flow's submission shows the chart, its events and subscriptions, and C12's words`, async () => {
+      vi.stubGlobal(
+        "fetch",
+        server({
+          "GET /v1/admin/queue": () => [200, { items: ITEMS }],
+          "GET /v1/admin/submissions/s1": () => [
+            200,
+            {
+              submission: ITEMS[0],
+              version: { notes_en: "", notes_ar: "", manifest: "{}" },
+              report: {
+                checks: [{ id: "C12", result: "warn", code: "flow_x", detail: "an English finding", detail_ar: "ملاحظة بالعربية" }],
+                capabilities: { required: [], optional: [] },
+                flow: { id: "dev.example.flow", version: "1.0.0", members: ["dev.example.a"], events: ["plugin:dev.example.a/a.done"], subscriptions: ["plugin:dev.example.a/a.done -> dev.example.b/two"] },
+              },
+              flow_chart: '<svg xmlns="http://www.w3.org/2000/svg"><text>dev.example.a</text></svg>',
+              developer: "Dev",
+              source: null,
+            },
+          ],
+        }),
+      );
+      render(<Review initialLang={lang} />);
+      const open = await screen.findAllByRole("button", { name: REVIEW_WORDS[lang]["review.open"] });
+      await act(async () => fireEvent.click(open[0]!));
+      const img = await screen.findByAltText(REVIEW_WORDS[lang]["review.flow_chart"]);
+      expect(img.getAttribute("src")).toMatch(/^data:image\/svg\+xml;charset=utf-8,%3Csvg/);
+      expect(screen.getByText("plugin:dev.example.a/a.done")).toBeTruthy();
+      expect(screen.getByText("plugin:dev.example.a/a.done -> dev.example.b/two")).toBeTruthy();
+      expect(screen.getByText(lang === "ar" ? "ملاحظة بالعربية" : /an English finding/)).toBeTruthy();
+    });
+  }
 });
