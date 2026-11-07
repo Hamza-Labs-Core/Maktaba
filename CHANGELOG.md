@@ -1765,6 +1765,15 @@ build fails when the two differ.
   http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
   developer's machine. maktaba.dev: Testing and packaging.
 
+- **Direct access from the internet, the home's side (Epic 50 story 50.15, part 2).** In
+  Settings → Storage & discovery an admin turns it on: the home opens a port on its router
+  (UPnP-IGD, NAT-PMP or PCP, renewed every 20 minutes, or a port forwarded by hand), notices a
+  shared address (CGNAT), makes its own key and asks Maktaba Cloud for a certificate for
+  `*.<home id>.<domain>` (the key never leaves it), and serves the same pages and API over HTTPS
+  on port 8444. The page shows the cloud's outside check, with Check now. Free on every plan:
+  `remote_access` is on with either the relay or direct access (`feature_any`). Off by default;
+  the `cloud.direct` component is on in the Full bundle where the home is linked to the cloud.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
