@@ -2,9 +2,9 @@
 
 > **Status:** the flow format, the manifest's graph fields and the flow check are **on
 > `main`**: the home checks every install, enable, update and rollback, and the store's
-> verification uses the same check. Emitting events (plugin API 1.2) and run-time lineage
-> are **on `main`** too; the drawn chart and plugins on joined machines follow in the next
-> releases of Epic 54. The exact fields and codes are in the [plugin reference](reference.md).
+> verification uses the same check. Emitting events (plugin API 1.2), run-time lineage, the
+> drawn chart and plugins on joined machines are **on `main`** too. The exact fields and
+> codes are in the [plugin reference](reference.md).
 
 A plugin wires into the queue only through the graph it declares. There is no other way in:
 no edge, request or event outside the declared graph is ever made, and the plugin API, the
@@ -56,7 +56,10 @@ version = ">=1.0.0, <2.0.0"
   triggers = ["stage:write_chapters"]
 ```
 
-Drawn, this flow is:
+Drawn, this flow is (Maktaba draws the same chart on the install screen and the Plugins
+page, from the same code):
+
+![An example flow of two plugins: audio is ready, then silences/find_silences emits silences.found, which starts chapter-writer/write_chapters, then chapter-writer/tidy](example.svg)
 
 ```
 audio.ready ──► silences/find_silences ──► ◆ silences.found ──► chapter-writer/write_chapters ──► chapter-writer/tidy
@@ -172,6 +175,31 @@ it already ran on in the same chain; a write leaves the writer's lineage on its 
 nothing is enqueued, and the job fails with the cause **`plugin_loop`**: it is not
 retried, and the item's next real change runs your stage again. The lineage is Maktaba's:
 your job's payload never shows it, and a payload of yours that names `_lineage` is refused.
+
+## Where a plugin runs
+
+A home can have joined machines (a PC with a GPU, a NAS). The manifest says where your
+plugin may run:
+
+```toml
+placement = "any"   # "home" (the default), "any", or "gpu"
+```
+
+| Placement | Runs on |
+|---|---|
+| `home` (or none) | the home only |
+| `any` | the home and every joined machine; each claims your stages from the queue as it claims core work |
+| `gpu` | machines with a graphics processor (an Apple silicon Mac, or one with an NVIDIA GPU); your stages take the `gpu` pool |
+
+Nothing else changes for your code. The home installs and approves the plugin; each
+machine that may run it fetches the package from the home and checks it (the digest the
+home recorded, the signatures the home recorded it with, every file) before it places
+it, then runs it in its own sandboxed host. Reads and media are served by the machine
+itself; every write (tags, fields, chapters, subtitles, artwork, your own data,
+suggestions, notices, requests, events, and asks of the home's models) is applied by the home, with the same
+permission, quota and lineage checks, so a plugin behaves the same wherever it runs. Your
+logs and health show on the home's Plugins page. Turning the plugin off on the home
+reaches every machine at its next call.
 
 ## Codes
 

@@ -71,7 +71,11 @@ cleanup() {
   sql "DROP DATABASE IF EXISTS $NEW_DB" 2>/dev/null || true
   sql "DROP DATABASE IF EXISTS $OLD_DB" 2>/dev/null || true
 }
+# an interrupted run cleans up too: INT and TERM exit through the EXIT trap (bash runs
+# no EXIT trap for a signal it does not catch), so the probe never stays in api/
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 git -C "$ROOT" worktree add --detach --quiet "$WORK/prev" "$PREV"
 PREV_DIR="$WORK/prev"

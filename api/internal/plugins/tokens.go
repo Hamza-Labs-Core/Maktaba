@@ -160,7 +160,10 @@ type Minted struct {
 type Tokens struct {
 	DB  *sql.DB
 	Now func() time.Time
-	mu  sync.Mutex
+	// Remote is the home, on a joined machine (story 54.42): it mints and ends the tokens
+	// (only the home writes plugin_invocations), and the machine checks them itself
+	Remote Remote
+	mu     sync.Mutex
 	// by sha256 hex of the token
 	byHash map[string]*Invocation
 	byID   map[string]*Invocation
@@ -202,6 +205,13 @@ type installedManifest struct {
 // Mint makes a token for a plugin job (54.04 §2): the job's stage must belong to an
 // installed plugin; grants and libraries come from plugin_grants alone.
 func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
+	if t.Remote != nil {
+		w, err := t.Remote.Mint(ctx, jobID)
+		if err != nil {
+			return nil, err
+		}
+		return t.adopt(w), nil
+	}
 	var stage, kind, subject, payload string
 	var ext sql.NullString
 	err := t.DB.QueryRowContext(ctx, `SELECT j.stage, j.subject_kind, COALESCE(CAST(j.subject_id AS text), ''), s.extension,
@@ -376,6 +386,11 @@ func (t *Tokens) Check(ctx context.Context, token string) (*Invocation, *Refusal
 	if gen != inv.GrantGeneration {
 		return nil, refuse(401, CodeGrantsChanged, "the plugin's grants changed")
 	}
+	if t.Remote != nil {
+		if ref := t.enabledHere(ctx, inv.PluginID); ref != nil {
+			return nil, ref
+		}
+	}
 	return inv, nil
 }
 
@@ -413,6 +428,14 @@ func (t *Tokens) EndCounting(ctx context.Context, id string) (bool, int64) {
 	inv.handles = map[uint64]*handle{}
 	calls, written := inv.refusalsTotal, int64(0)
 	inv.mu.Unlock()
+	if t.Remote != nil {
+		// the home ends its own and counts the refusals of the calls it was sent
+		home, err := t.Remote.End(ctx, id)
+		if err != nil {
+			slogWarn("plugin_end_at_home_failed", id, err)
+		}
+		return true, int64(calls) + home
+	}
 	_, _ = t.DB.ExecContext(ctx, `UPDATE plugin_invocations SET ended_at = now(), calls = calls + $2, bytes_written = bytes_written + $3
 		WHERE id = $1`, id, calls, written)
 	return true, int64(calls)

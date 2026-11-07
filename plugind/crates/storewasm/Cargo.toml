@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 maktaba-plugin-manifest = { path = "../pluginmanifest" }
+maktaba-plugin-audit = { path = "../audit" }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }

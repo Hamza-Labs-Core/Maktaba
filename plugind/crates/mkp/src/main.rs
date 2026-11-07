@@ -16,6 +16,7 @@
 //! ui/settings.schema.json when the manifest names one). The store countersigns a package
 //! after review (store.sig); `mkp pack --key` makes only the developer's signature.
 
+mod flow;
 mod harness;
 mod keys;
 mod pack;
@@ -28,7 +29,8 @@ fn usage() -> ! {
     eprintln!(
         "usage:\n  mkp new rust <id> <folder>\n  mkp check <folder>\n  mkp pack <folder> <out.mkplugin> [--key <id>]\n  \
          mkp keys new | list | export-public [id]\n  \
-         mkp test <folder> --stage <name> [--subject kind:id] [--fixtures api.json] [--settings json]"
+         mkp test <folder> --stage <name> [--subject kind:id] [--fixtures api.json] [--settings json] [--with <folder>]\n  \
+         mkp flow <folder> [<folder>...]"
     );
     exit(2)
 }
@@ -48,6 +50,7 @@ fn main() {
             keys::export_public(args.get(2).map(String::as_str))
         }
         Some("test") if args.len() >= 2 => test(&args[1..]),
+        Some("flow") if args.len() >= 2 => flow_cmd(&args[1..]),
         Some("--version") => {
             println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 1);
             Ok(())
@@ -84,6 +87,7 @@ fn check(dir: &Path) -> Result<(), String> {
 fn test(args: &[String]) -> Result<(), String> {
     let dir = PathBuf::from(&args[0]);
     let mut opts = harness::Options::default();
+    let mut with: Option<PathBuf> = None;
     let mut it = args[1..].iter();
     while let Some(a) = it.next() {
         let mut val = || it.next().cloned().ok_or_else(|| format!("{a} needs a value"));
@@ -92,6 +96,7 @@ fn test(args: &[String]) -> Result<(), String> {
             "--subject" => opts.subject = val()?,
             "--fixtures" => opts.fixtures = Some(PathBuf::from(val()?)),
             "--settings" => opts.settings = val()?,
+            "--with" => with = Some(PathBuf::from(val()?)),
             other => return Err(format!("unknown flag {other}")),
         }
     }
@@ -99,9 +104,79 @@ fn test(args: &[String]) -> Result<(), String> {
         return Err("--stage is required".into());
     }
     let m = validate(&dir)?;
+    if let Some(other) = with {
+        return chain(&dir, &m, &other, opts);
+    }
     let out = harness::run(&dir, &m, &opts)?;
     println!("{}", serde_json::to_string_pretty(&out).unwrap());
     if out["result"]["outcome"] != "ok" {
+        exit(1)
+    }
+    Ok(())
+}
+
+/// `mkp flow <folder>...`: the manifests' graph as a text chart, and flow.mmd beside the
+/// first folder (story 54.41 §3).
+fn flow_cmd(dirs: &[String]) -> Result<(), String> {
+    let ms = dirs.iter().map(|d| validate(Path::new(d))).collect::<Result<Vec<_>, _>>()?;
+    let es = flow::edges(&ms);
+    println!("{}", flow::text(&es));
+    let mmd = Path::new(&dirs[0]).join("flow.mmd");
+    std::fs::write(&mmd, flow::mermaid(&es) + "\n").map_err(|e| format!("{}: {e}", mmd.display()))?;
+    Ok(())
+}
+
+/// `mkp test <a> --stage s --with <b>`: runs a's stage, then each of b's stages that
+/// subscribes to an event a emitted, with the event's payload and a lineage of 2 (story
+/// 54.41 §3, 54.40). The report has both results and the chain drawn.
+fn chain(
+    dir: &Path,
+    a: &serde_json::Map<String, serde_json::Value>,
+    other: &Path,
+    mut opts: harness::Options,
+) -> Result<(), String> {
+    use serde_json::{json, Value};
+    let b = validate(other)?;
+    let a_id = a["id"].as_str().unwrap_or_default().to_string();
+    let b_id = b["id"].as_str().unwrap_or_default().to_string();
+    // b's stages by the published event of a they follow
+    let mut follows: Vec<(String, String)> = Vec::new();
+    for st in b["stage"].as_array().into_iter().flatten() {
+        for t in st["trigger"].as_array().into_iter().flatten() {
+            if let Some(ev) = t["event"].as_str().and_then(|e| e.strip_prefix(&format!("plugin:{a_id}/"))) {
+                follows.push((ev.to_string(), st["name"].as_str().unwrap_or_default().to_string()));
+            }
+        }
+    }
+    opts.subscribers = follows.iter().map(|(_, s)| maktaba_plugin_manifest::queue_name(&b_id, s)).collect();
+    let first = harness::run(dir, a, &opts)?;
+    let mut ok = first["result"]["outcome"] == "ok";
+    let mut ran = Vec::new();
+    for ev in first["result"]["events"].as_array().cloned().unwrap_or_default() {
+        let name = ev["name"].as_str().unwrap_or_default();
+        let payload: Value = serde_json::from_str(ev["payload"].as_str().unwrap_or("{}")).unwrap_or(json!({}));
+        for (_, stage) in follows.iter().filter(|(e, _)| e == name) {
+            let o = harness::Options {
+                stage: stage.clone(),
+                subject: format!(
+                    "{}:{}",
+                    ev["subject"]["kind"].as_str().unwrap_or("video"),
+                    ev["subject"]["id"].as_str().unwrap_or("fixture")
+                ),
+                fixtures: opts.fixtures.clone(),
+                settings: String::new(),
+                payload: json!({"event": name, "from": a_id, "payload": payload}).to_string(),
+                subscribers: Vec::new(),
+            };
+            let out = harness::run(other, &b, &o)?;
+            ok &= out["result"]["outcome"] == "ok";
+            ran.push(json!({"plugin": b_id, "stage": stage, "event": name, "hops": 2, "run": out}));
+        }
+    }
+    let es = flow::edges(&[a.clone(), b]);
+    let report = json!({"first": first, "chain": ran, "flow": flow::text(&es)});
+    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    if !ok {
         exit(1)
     }
     Ok(())

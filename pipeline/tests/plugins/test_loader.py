@@ -199,3 +199,19 @@ def test_assert_plugin_leaves_refuses_an_edge_from_a_plugin_to_core() -> None:
     graph[core] = replace(graph[core], edges=(*graph[core].edges, Edge(graph[i].name, "same")))
     with pytest.raises(GraphViolation):
         assert_plugin_leaves(graph)
+
+
+@pytest.mark.parametrize(
+    ("runs_on", "placement", "pool"),
+    [(None, "home", "plugins"), ("any", "any", "plugins"), ("gpu", "any", "gpu")],
+)
+def test_placement_decides_where_the_stages_run(
+    runs_on: str | None, placement: str, pool: str
+) -> None:
+    """54.42 §1: home (the default), any machine, or a machine that serves the gpu pool."""
+    doc = pm.validate(FULL.read_bytes(), _files)
+    if runs_on:
+        doc["placement"] = runs_on
+    graph = build_full_graph([PluginExtension(doc["id"], doc["version"], "/data/plugins/x", doc)])
+    st = {s.name: s for s in graph}[pm.queue_name(doc["id"], "find_silences")]
+    assert (st.placement, st.pool) == (placement, pool)

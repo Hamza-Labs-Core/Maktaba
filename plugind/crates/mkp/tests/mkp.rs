@@ -138,3 +138,70 @@ fn keys_and_a_signed_pack() {
     let e = pkgv(&entries).unwrap_err();
     assert_eq!((e.code, e.step), ("plugin_signature_invalid", "digest"));
 }
+
+fn guest(name: &str) -> Vec<u8> {
+    let p =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../../guests/target/wasm32-wasip2/release/{name}.wasm"));
+    std::fs::read(&p).unwrap_or_else(|_| panic!("{} is missing: run `make plugind-guests` first", p.display()))
+}
+
+/// A package folder of the hostile guest under another id, with its own graph.
+fn package(dir: &Path, id: &str, graph: &str) -> std::path::PathBuf {
+    let p = dir.join(id);
+    std::fs::create_dir_all(p.join("i18n")).unwrap();
+    std::fs::create_dir_all(p.join("events")).unwrap();
+    std::fs::write(p.join("i18n/en.json"), r#"{"plugin.name":"Chain","plugin.summary":"A chain."}"#).unwrap();
+    std::fs::write(p.join("i18n/ar.json"), r#"{"plugin.name":"سلسلة","plugin.summary":"سلسلة."}"#).unwrap();
+    std::fs::write(p.join("events/done.schema.json"), r#"{"type":"object"}"#).unwrap();
+    std::fs::write(p.join("plugin.wasm"), guest("hostile")).unwrap();
+    std::fs::write(
+        p.join("manifest.toml"),
+        format!(
+            "schema = 1\nid = \"{id}\"\nversion = \"1.0.0\"\nplugin_api = \"1.1\"\nmaktaba = \">=0.1.0\"\nlicence = \"MIT\"\n\n[strings]\nname = \"plugin.name\"\nsummary = \"plugin.summary\"\n\n[capabilities]\noptional = [\"tags.write\", \"jobs.enqueue\"]\n\n{graph}"
+        ),
+    )
+    .unwrap();
+    p
+}
+
+/// Story 54.41 T06, T07: `mkp flow` draws two plugins' graph as text and Mermaid; `mkp
+/// test --with` runs a two-plugin chain: the first plugin's event reaches the second's
+/// subscriber stage with its payload.
+#[test]
+fn flow_and_a_two_plugin_chain() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = package(
+        dir.path(),
+        "dev.example.first",
+        "[[stage]]\nname = \"emit\"\nsubject = \"video\"\nexport = \"run\"\nversion = 1\nemits = [\"hostile.done\"]\n  [[stage.trigger]]\n  event = \"audio.ready\"\n\n[[event]]\nname = \"hostile.done\"\nsubject = \"video\"\npayload = \"events/done.schema.json\"\n",
+    );
+    let b = package(
+        dir.path(),
+        "dev.example.second",
+        "[[stage]]\nname = \"echo\"\nsubject = \"video\"\nexport = \"run\"\nversion = 1\n  [[stage.trigger]]\n  event = \"plugin:dev.example.first/hostile.done\"\n\n[[depends]]\nplugin = \"dev.example.first\"\nversion = \">=1.0.0\"\n",
+    );
+    let out = mkp(&["flow", a.to_str().unwrap(), b.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        text.trim(),
+        "audio.ready → dev.example.first/emit\n\
+         dev.example.first/emit → plugin:dev.example.first/hostile.done\n\
+         plugin:dev.example.first/hostile.done → dev.example.second/echo"
+    );
+    assert!(std::fs::read_to_string(a.join("flow.mmd")).unwrap().starts_with("graph LR\n"));
+
+    let out =
+        mkp(&["test", a.to_str().unwrap(), "--stage", "emit", "--subject", "video:v1", "--with", b.to_str().unwrap()]);
+    assert!(out.status.success(), "{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    let r: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(r["first"]["result"]["events"][0]["name"], "hostile.done");
+    let step = &r["chain"][0];
+    assert_eq!(step["stage"], "echo");
+    assert_eq!(step["hops"], 2);
+    let summary: serde_json::Value = serde_json::from_str(step["run"]["result"]["summary"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        summary["payload"],
+        serde_json::json!({"event": "hostile.done", "from": "dev.example.first", "payload": {"n": 1}})
+    );
+}

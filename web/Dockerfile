@@ -18,7 +18,7 @@ ARG CADDY_VERSION=2-alpine
 # runner's own platform. Under QEMU the arm64 leg's `pnpm install` hung until the
 # release job's 60-minute timeout (v0.2.0); only the caddy stage needs the target.
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS build
-WORKDIR /src
+WORKDIR /src/web
 
 ENV CI=true \
     PNPM_HOME=/usr/local/share/pnpm \
@@ -28,11 +28,14 @@ ENV CI=true \
 # pnpm version pinned in package.json's `packageManager` field.
 RUN corepack enable
 
-COPY web/package.json web/pnpm-lock.yaml /src/
+COPY web/package.json web/pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-COPY web /src
+# the plugin flow chart's drawing (story 54.41) is the SDK's own, imported from source as
+# @maktaba/flowchart (web/tsconfig.json, vite.config.ts): it keeps its repo-relative place
+COPY tools/plugin-sdk/js/src/flowchart.ts /src/tools/plugin-sdk/js/src/flowchart.ts
+COPY web ./
 RUN pnpm run build
 
 FROM caddy:${CADDY_VERSION}
@@ -40,7 +43,7 @@ LABEL org.opencontainers.image.source="https://github.com/Hamza-Labs-Core/Maktab
 LABEL org.opencontainers.image.title="maktaba-web"
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
-COPY --from=build /src/dist /usr/share/caddy
+COPY --from=build /src/web/dist /usr/share/caddy
 COPY web/docker-Caddyfile /etc/caddy/Caddyfile
 
 EXPOSE 80

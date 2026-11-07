@@ -1,0 +1,170 @@
+# The plugin store's isolated runner, the CI fallback (Epic 54, story 54.16 §1): C7's ClamAV
+# scan, C8 the sandbox run and C10 the reproducible build of one submission. The store starts
+# it (workflow_dispatch, with a token that can only start workflows of this repository) with
+# the submission id and three single-use URLs. The plugin's code runs in a job with no secret,
+# no token in the checkout and its egress cut; a separate job that never runs plugin code
+# posts the report back.
+
+name: Store check runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      submission: { description: the submission id, required: true, type: string }
+      package_url: { description: single-use URL of the package, required: true, type: string }
+      source_url: { description: single-use URL of the source archive, required: true, type: string }
+      report_url: { description: single-use URL for the report, required: true, type: string }
+
+permissions: {}
+
+concurrency:
+  group: store-check-${{ inputs.submission }}
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download the package and the source archive (each URL works once)
+        env:
+          PACKAGE_URL: ${{ inputs.package_url }}
+          SOURCE_URL: ${{ inputs.source_url }}
+        run: |
+          mkdir in
+          curl --fail --silent --show-error --max-filesize 52428800 -o in/package.mkplugin "$PACKAGE_URL"
+          curl --fail --silent --show-error --max-filesize 209715200 -o in/source.archive "$SOURCE_URL"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: inputs
+          path: in
+          retention-days: 1
+
+  run:
+    needs: [fetch]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+      - name: Tools (before the network is cut)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q clamav zstd
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam --quiet || true
+          (cd plugind && cargo build --locked --release -p mkp)
+          sudo install plugind/target/release/mkp /usr/local/bin/mkp
+      - name: Download inputs
+        id: artifact-inputs
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: inputs
+          path: in
+      - name: Wait 15s to retry the download of inputs
+        if: steps.artifact-inputs.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download inputs (attempt 2)
+        id: artifact-inputs-2
+        if: steps.artifact-inputs.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: inputs
+          path: in
+      - name: Wait 45s to retry the download of inputs
+        if: steps.artifact-inputs-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download inputs (attempt 3)
+        id: artifact-inputs-3
+        if: steps.artifact-inputs-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: inputs
+          path: in
+      - name: Check inputs downloaded
+        id: artifact-inputs-check
+        if: steps.artifact-inputs-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: inputs
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+      # from here on nothing leaves the machine: only loopback (as plugins-sandbox does, README §5.4)
+      - name: Cut egress
+        run: |
+          for t in iptables ip6tables; do
+            sudo "$t" -A OUTPUT -o lo -j ACCEPT
+            sudo "$t" -P OUTPUT DROP
+          done
+          if curl --silent --max-time 5 https://example.com >/dev/null; then echo "::error::egress is still open"; exit 1; fi
+      - name: Run the checks
+        run: env -i PATH="$PATH" HOME="$RUNNER_TEMP/home" store/check-runner/run.sh in/package.mkplugin in/source.archive report.json
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: report
+          path: report.json
+          retention-days: 1
+
+  post:
+    needs: [fetch, run]
+    if: always() && needs.fetch.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Download report
+        id: artifact-report
+        if: needs.run.result == 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: report
+      - name: Wait 15s to retry the download of report
+        if: steps.artifact-report.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download report (attempt 2)
+        id: artifact-report-2
+        if: steps.artifact-report.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: report
+      - name: Wait 45s to retry the download of report
+        if: steps.artifact-report-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download report (attempt 3)
+        id: artifact-report-3
+        if: steps.artifact-report-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: report
+      - name: Check report downloaded
+        id: artifact-report-check
+        if: steps.artifact-report-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: report
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts; the report says the runner failed"
+      - name: Post the report (the URL works once)
+        env:
+          REPORT_URL: ${{ inputs.report_url }}
+          RUN_RESULT: ${{ needs.run.result }}
+        run: |
+          if [ "$RUN_RESULT" != success ] || [ ! -s report.json ]; then
+            echo '{"c7":{"result":"skip","detail":"the runner failed"},"c8":{"result":"block","code":"runner_failed","detail":"the isolated runner did not finish"},"c10":{"result":"skip"}}' >report.json
+          fi
+          curl --fail --silent --show-error -X POST -H 'Content-Type: application/json' --data-binary @report.json "$REPORT_URL"

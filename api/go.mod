@@ -8,6 +8,7 @@ godebug multipathtcp=0
 
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0-00010101000000-000000000000
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
@@ -73,6 +74,7 @@ require (
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jedisct1/go-minisign v0.0.0-20211028175153-1c139d1cc84b // indirect
+	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -157,6 +159,8 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go => ../shared/metric
 replace github.com/Hamza-Labs-Core/Maktaba/shared/tracing/go => ../shared/tracing/go
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify => ../shared/go/releaseverify
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack => ../shared/go/componentpack
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/layout => ../shared/go/layout
 

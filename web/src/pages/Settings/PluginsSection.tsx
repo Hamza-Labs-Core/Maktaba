@@ -38,13 +38,27 @@ import {
 import { ApiError } from "../../lib/api";
 import { logsPageLink } from "../../lib/logIndex";
 import { phaseTone, phaseWord, reasonText } from "./componentWords";
+import { PluginFlowChart } from "./PluginFlowChart";
+import type { FlowFinding, FlowGraph, PluginFlow } from "../../lib/pluginsApi";
 import { StoreAccount } from "./StoreAccount";
 import "./plugins.css";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
 
 /** The words of a refusal: plugins.error.<code>, else the server's detail. */
-export function refusalWords(t: T, e: unknown): string {
+export function refusalWords(
+  t: T,
+  e: unknown,
+  locale: "en" | "ar" = typeof document !== "undefined" && document.documentElement.lang === "ar"
+    ? "ar"
+    : "en"
+): string {
+  // a flow check's refusal carries its own words, the cycle path named (54.39)
+  if (e instanceof ApiError) {
+    const p = e.problem as unknown as { message?: string; message_ar?: string } | undefined;
+    const words = locale === "ar" ? p?.message_ar || p?.message : p?.message;
+    if (words) return words;
+  }
   const code = pluginErrorCode(e);
   if (code) {
     const key = `plugins.error.${code}`;
@@ -302,7 +316,7 @@ function InstallDialog({
         if (expected && typed) setError(t("plugins.install.wrong_name"));
         setExpected({ en: p.name ?? "", ar: p.name_ar ?? "" });
       } else {
-        setError(refusalWords(t, e));
+        setError(refusalWords(t, e, locale));
       }
     } finally {
       setBusy(false);
@@ -370,6 +384,8 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [confirm, setConfirm] = useState<"remove" | "purge" | "clear" | null>(null);
+  // the other plugins' stages that go idle when this one is off (54.39 §6)
+  const [idle, setIdle] = useState<string[] | null>(null);
   const reload = useCallback(async () => {
     try {
       setD(await pluginsApi.show(id));
@@ -389,7 +405,7 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
       await reload();
     } catch (e) {
       if (pluginErrorCode(e) === "plugin_data_newer") setConfirm("clear");
-      setError(refusalWords(t, e));
+      setError(refusalWords(t, e, locale));
     }
   };
   if (!d) {
@@ -487,6 +503,8 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
         <Link to={logsPageLink({ services: d.component })}>{t("plugins.health.logs")}</Link>
       </section>
 
+      <FlowSection id={d.id} names={(pid) => (pid === d.id ? name : pid)} />
+
       <SettingsSection id={d.id} />
       <WritesSection id={d.id} />
 
@@ -510,7 +528,17 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
         <h3 id="pl-danger">{t("plugins.section.danger")}</h3>
         <div className="mkt-plugins__actions">
           {d.want === "enabled" ? (
-            <Button variant="secondary" onClick={() => void act(() => pluginsApi.disable(d.id))}>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void pluginsApi
+                  .downstream(d.id)
+                  .then((r) =>
+                    r.stages.length ? setIdle(r.stages) : act(() => pluginsApi.disable(d.id))
+                  )
+                  .catch(() => act(() => pluginsApi.disable(d.id)))
+              }
+            >
               {t("plugins.action.disable")}
             </Button>
           ) : (
@@ -535,6 +563,39 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
           </Button>
         </div>
       </section>
+
+      {idle && (
+        <Modal
+          open
+          onClose={() => setIdle(null)}
+          title={t("plugins.flow.disable_title", { name: bidiIsolate(name) })}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setIdle(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  setIdle(null);
+                  void act(() => pluginsApi.disable(d.id));
+                }}
+              >
+                {t("plugins.action.disable")}
+              </Button>
+            </>
+          }
+        >
+          <p>{t("plugins.flow.disable_body")}</p>
+          <ul>
+            {idle.map((s) => (
+              <li key={s} dir="ltr">
+                {s}
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
 
       {confirm && (
         <Modal
@@ -585,6 +646,68 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
         </Modal>
       )}
     </div>
+  );
+}
+
+/** This plugin's flow (the whole set it works with, the members not installed named) and
+ * the whole home's plugin graph, this plugin highlighted (story 54.41 §2). */
+function FlowSection({ id, names }: { id: string; names: (id: string) => string }) {
+  const { t, locale } = useI18n();
+  const [flow, setFlow] = useState<PluginFlow | null>(null);
+  const [home, setHome] = useState<{ graph: FlowGraph; findings: FlowFinding[] | null } | null>(
+    null
+  );
+  useEffect(() => {
+    let live = true;
+    void pluginsApi.flow(id).then(
+      (f) => live && setFlow(f),
+      () => undefined
+    );
+    void pluginsApi.graph().then(
+      (g) => live && setHome(g),
+      () => undefined
+    );
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  if (!flow && !home) return null;
+  const warnings = (home?.findings ?? []).filter((f) => f.plugin === id);
+  return (
+    <section aria-labelledby="pl-flow">
+      <h3 id="pl-flow">{t("plugins.section.flow")}</h3>
+      {flow && flow.missing.length > 0 && (
+        <p role="status">
+          {t("plugins.flow.works_with_missing", {
+            names: flow.missing.map((m) => bidiIsolate(`${m.id} ${m.version}`)).join(", "),
+          })}
+        </p>
+      )}
+      {warnings.map((f, i) => (
+        <p key={i} role="status">
+          {locale === "ar" ? f.message_ar || f.message : f.message}
+        </p>
+      ))}
+      {flow && (
+        <PluginFlowChart
+          graph={flow.graph}
+          highlight={id}
+          names={names}
+          title={t("plugins.flow.this_flow")}
+        />
+      )}
+      {home && home.graph.nodes.length > 0 && (
+        <>
+          <h4>{t("plugins.flow.home_graph")}</h4>
+          <PluginFlowChart
+            graph={home.graph}
+            highlight={id}
+            names={names}
+            title={t("plugins.flow.home_graph")}
+          />
+        </>
+      )}
+    </section>
   );
 }
 

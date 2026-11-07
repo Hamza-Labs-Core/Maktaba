@@ -181,3 +181,6 @@ web/node_modules/
 
 # components-live / components-chaos logs of a local run (tests/components/rig.py)
 components-logs/
+
+# compat-prev writes its schema probe here while it runs (tools/compat-prev/run.sh)
+api/internal/compatprobe/

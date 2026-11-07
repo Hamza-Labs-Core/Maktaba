@@ -77,6 +77,8 @@ _pipeline: &pipeline
 _web: &web
   - 'web/**'
   - 'shared/testtier/ts/**'
+  # the plugin SDK's flow chart, which the Plugins page draws with (54.41)
+  - 'tools/plugin-sdk/js/src/flowchart.ts'
   # help.coverage.test.ts checks the help against these
   - 'api/internal/handlers/rules/schema.json'
   - 'api/internal/handlers/systemstatus/types.go'
@@ -275,15 +277,17 @@ store:
   - *ci
   - 'store/**'
   - 'shared/plugins/**'
-  # the flow check the store's verification runs (story 54.39, 54.16 C12): the SDK's checker
-  - 'tools/plugin-sdk/js/src/**'
   # the Worker's WebAssembly is built from the home's package reader and manifest validator
   - 'plugind/Cargo.toml'
   - 'plugind/Cargo.lock'
   - 'plugind/crates/storewasm/**'
   - 'plugind/crates/pluginmanifest/**'
+  - 'plugind/crates/audit/**'
+  # the flow check the store's verification runs (story 54.39, 54.16 C12): the SDK's checker
+  - 'tools/plugin-sdk/js/src/**'
   - 'tools/ci/payment_provider_allowlist.py'
   - '.github/workflows/_store.yml'
+  - '.github/workflows/store-check-runner.yml'
   - '.github/workflows/store-deploy.yml'
   - '.github/workflows/store-weekly.yml'
 
@@ -622,6 +626,8 @@ devportal:
   - 'api/internal/handlers/queues/causes.go'
   - 'api/internal/security/disclosure.go'
   - 'web/public/icons/**'
+  # the Flows guide's example chart is drawn at build time (54.41)
+  - 'tools/plugin-sdk/js/src/flowchart.ts'
   - '.github/workflows/_devportal.yml'
   - '.github/workflows/devportal-deploy.yml'
 

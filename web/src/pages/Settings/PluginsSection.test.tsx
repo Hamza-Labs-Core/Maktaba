@@ -282,6 +282,135 @@ describe("Settings → Plugins", () => {
     );
   });
 
+  // story 54.41 T03-T05: the plugin's flow drawn with it highlighted and a member that is
+  // not installed named; the whole home's graph; Arabic right to left; turning off an
+  // upstream lists what goes idle first; a flow refusal shows its own words.
+  const node = (plugin: string, kind: string, name: string, state = "enabled") => ({
+    id: kind === "core" ? `core:${name}` : `${kind}:${plugin}/${name}`,
+    kind,
+    name,
+    plugin,
+    state,
+    subject: "video",
+  });
+  const flowGraph = {
+    nodes: [
+      node("", "core", "audio.ready"),
+      node("dev.example.tagger", "stage", "tag"),
+      node("dev.example.tagger", "event", "tag.done"),
+      node("dev.example.writer", "stage", "write", "missing"),
+    ],
+    edges: [
+      { from: "core:audio.ready", kind: "trigger", to: "stage:dev.example.tagger/tag" },
+      {
+        from: "stage:dev.example.tagger/tag",
+        kind: "emit",
+        to: "event:dev.example.tagger/tag.done",
+      },
+      {
+        from: "event:dev.example.tagger/tag.done",
+        kind: "subscribe",
+        to: "stage:dev.example.writer/write",
+      },
+    ],
+  };
+  function flowRoutes(stages: string[] = []) {
+    routes();
+    const base = get.getMockImplementation() as (p: string) => Promise<unknown>;
+    get.mockImplementation(async (path: string) => {
+      if (path === "/api/plugins/dev.example.tagger/flow")
+        return {
+          id: "dev.example.flow",
+          version: "1.0.0",
+          name: "flow.name",
+          graph: flowGraph,
+          missing: [{ id: "dev.example.writer", version: ">=1.0.0" }],
+          findings: [],
+        };
+      if (path === "/api/plugins/graph")
+        return {
+          graph: { nodes: flowGraph.nodes.slice(0, 3), edges: flowGraph.edges.slice(0, 2) },
+          findings: [],
+        };
+      if (path === "/api/plugins/dev.example.tagger/downstream") return { stages };
+      return base(path);
+    });
+  }
+
+  it("54.41 T03, T05: the flow, this plugin highlighted, the missing member named", async () => {
+    flowRoutes();
+    open();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    const charts = await screen.findAllByTestId("flow-chart");
+    expect(charts).toHaveLength(2);
+    expect(screen.getByText(/dev\.example\.writer >=1\.0\.0/)).toBeInTheDocument();
+    const mine = charts[0].querySelector('[data-id="stage:dev.example.tagger/tag"]');
+    expect(mine?.getAttribute("class")).toContain("fc-hl");
+    const missing = charts[0].querySelector('[data-id="stage:dev.example.writer/write"]');
+    expect(missing?.getAttribute("class")).toContain("fc-off");
+    expect(missing?.textContent).toContain(EN["plugins.flow.missing"]);
+    expect(
+      screen.getAllByText(new RegExp(EN["plugins.flow.event.audio.ready"])).length
+    ).toBeGreaterThan(0);
+    expect(charts[0].querySelector("foreignObject, a, image, script")).toBeNull();
+  });
+
+  it("54.41 T04: in Arabic the chart runs right to left, core events in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    flowRoutes();
+    open();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: AR["plugins.action.open"] }));
+    const [chart] = await screen.findAllByTestId("flow-chart");
+    const svg = chart.querySelector("svg") as SVGElement;
+    expect(svg.getAttribute("direction")).toBe("rtl");
+    const x = (id: string) =>
+      Number(chart.querySelector(`[data-id="${id}"] rect`)?.getAttribute("x"));
+    expect(x("core:audio.ready")).toBeGreaterThan(x("stage:dev.example.tagger/tag"));
+    expect(chart.textContent).toContain(AR["plugins.flow.event.audio.ready"]);
+  });
+
+  it("54.39 §6: turning off a plugin others depend on lists what goes idle first", async () => {
+    flowRoutes(["dev.example.writer/write"]);
+    post.mockResolvedValue(detail({ want: "installed" }));
+    open();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    await user.click(await screen.findByRole("button", { name: EN["plugins.action.disable"] }));
+    expect(await screen.findByText("dev.example.writer/write")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+    const dialog = screen.getByRole("dialog");
+    await user.click(
+      Array.from(dialog.querySelectorAll("button")).find(
+        (b) => b.textContent === EN["plugins.action.disable"]
+      ) as HTMLButtonElement
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/plugins/dev.example.tagger/disable")
+    );
+  });
+
+  it("54.39 §6: an install a loop refuses shows the loop in the admin's language", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    routes();
+    upload.mockRejectedValueOnce(
+      problem(409, "plugin_flow_cycle", {
+        message: "These plugins would start each other in a loop: a/x → a/x.",
+        message_ar: "ستشغّل هذه الإضافات بعضها بعضًا في حلقة: a/x → a/x.",
+      })
+    );
+    open();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: AR["plugins.install.button"] }));
+    await user.upload(
+      screen.getByLabelText(AR["plugins.install.file"]),
+      new File(["x"], "a.mkplugin")
+    );
+    await user.click(screen.getByRole("button", { name: AR["plugins.install.install"] }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("في حلقة: a/x → a/x");
+  });
+
   it("T07: every word the page uses is in English and Arabic", () => {
     for (const k of Object.keys(EN).filter(
       (k) => k.startsWith("plugins.") || k === "settings.section.plugins"

@@ -7,7 +7,14 @@ import { code, stepAt } from "../../web/totp";
 import { pack, inspect } from "../../web/wasm";
 import { Signer } from "../../signing/sig";
 
-export const E = env as unknown as Env & { TEST_STORE_KEYS: string; PLUGINS_ROOT: string };
+export const E = env as unknown as Env & { TEST_STORE_KEYS: string; PLUGINS_ROOT: string; TEST_COMPONENTS: string };
+
+/** A component of the corpus (checks/testdata/components). */
+export function component(name: string): Uint8Array {
+  const b64 = (JSON.parse(E.TEST_COMPONENTS) as Record<string, string>)[name];
+  if (!b64) throw new Error(`no component ${name}`);
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
 export const ORIGIN = "https://plugins.maktaba.tv";
 
 export interface Res {
@@ -28,6 +35,7 @@ export async function call(
   if (opts.body !== undefined) h.set("Content-Type", "application/json");
   const r = await (exports as unknown as { default: Fetcher }).default.fetch(`${ORIGIN}${path}`, {
     method,
+    redirect: "manual",
     headers: h,
     body: opts.raw ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
   });
@@ -319,10 +327,10 @@ export async function buildPackage(
   id: string,
   version: string,
   key: Signer | null,
-  opts: { files?: Record<string, Uint8Array>; capabilities?: { required?: string[]; optional?: string[] } } = {},
+  opts: { files?: Record<string, Uint8Array>; capabilities?: { required?: string[]; optional?: string[] }; manifest?: string } = {},
 ): Promise<Uint8Array> {
   const files: Record<string, Uint8Array> = {
-    "manifest.toml": enc.encode(manifestOf(id, version, opts.capabilities)),
+    "manifest.toml": enc.encode(opts.manifest ?? manifestOf(id, version, opts.capabilities)),
     "i18n/en.json": enc.encode('{"plugin.name":"Tagger","plugin.summary":"Adds tags."}'),
     "i18n/ar.json": enc.encode('{"plugin.name":"الوسّام","plugin.summary":"يضيف الوسوم."}'),
     "plugin.wasm": new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 2, 3]),
@@ -341,7 +349,7 @@ async function hexOf(b: Uint8Array): Promise<string> {
 }
 
 /** Submits pkg as dev: start, both uploads, uploaded. Answers the submission id. */
-export async function submit(dev: Dev, id: string, version: string, pkg: Uint8Array): Promise<string> {
+export async function submit(dev: Dev, id: string, version: string, pkg: Uint8Array, extra: Record<string, unknown> = {}): Promise<string> {
   const source = enc.encode("source archive");
   const s = await call("POST", "/v1/submissions", {
     cookie: dev.cookie,
@@ -353,6 +361,7 @@ export async function submit(dev: Dev, id: string, version: string, pkg: Uint8Ar
       source_size: source.length,
       notes_en: "First.",
       notes_ar: "الأول.",
+      ...extra,
     },
   });
   if (s.status !== 201) throw new Error(`submit ${s.status} ${JSON.stringify(s.body)}`);

@@ -109,6 +109,9 @@ export default defineConfig(({ mode }) => ({
       // Epic 34.6: the shared TV player (channel switching), used by the live
       // player here and later the public TV site
       "@maktaba/tvplayer": path.resolve(__dirname, "packages/tvplayer/src"),
+      // Epic 54 (story 54.41): the plugin SDK's flow chart, one layout for every place
+      // that draws a flow; it imports nothing
+      "@maktaba/flowchart": path.resolve(__dirname, "../tools/plugin-sdk/js/src/flowchart.ts"),
     },
   },
   server: {

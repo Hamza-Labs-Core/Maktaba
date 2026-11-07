@@ -363,6 +363,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		if PluginsHere(cfg) {
 			add(EnvPluginDSocket, PluginsPaths(cfg).Dispatch)
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+			// on a joined machine the packages are its own copies (story 54.42 §2): the
+			// dispatcher names this folder to the host, and sends outcomes to the home
+			if n, err := NodeOf(cfg); err == nil && NodeMode(cfg, n) {
+				add(EnvPluginsRoot, PluginsPaths(cfg).Root)
+				add("MAKTABA_PLUGINS_VIA_HOME", "1")
+			}
 		}
 		// Epic 54 Phase 4: where Maktaba's own plugin runners listen (story 54.23); the
 		// worker mints their jobs' tokens with the same local token

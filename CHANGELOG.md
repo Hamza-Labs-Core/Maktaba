@@ -897,6 +897,27 @@ build fails when the two differ.
   new cause `plugin_loop`, "Stopped a loop between plugins", with help in English and
   Arabic. Plugins built for 1.0 keep running. Migration 0199: `plugin_write_lineage`.
   maktaba.dev: Flows gains emitting events and loops at run time.
+- Plugins, the flow chart (Epic 54, story 54.41): a plugin's page draws its flow, the
+  whole set of plugins it works with, this plugin highlighted and the members not installed
+  named and dashed, and the whole home's plugin graph; core events in Maktaba's words, right
+  to left in Arabic, with the steps as a list for screen readers. Turning off a plugin
+  others depend on lists the steps that go idle first; a flow refusal shows the loop in the
+  admin's language. `GET /api/plugins/{id}/flow`. The chart is one layout in the plugin SDK
+  (`flowchart.ts`), drawn by the web as its own SVG elements and by maktaba.dev at build
+  time; `mkp flow` prints a plugin's graph and writes `flow.mmd`, and `mkp test --with`
+  runs a two-plugin chain in the harness. The Remote apps show no plugin administration, so
+  they draw no chart. maktaba.dev: the Flows guide draws its example.
+- Plugins on joined machines (Epic 54, story 54.42): a plugin's manifest says where it may
+  run, `placement = "home"` (the default), `"any"` or `"gpu"` (a machine with a graphics
+  processor, its stages in the gpu pool). The home installs and approves; each joined
+  machine a plugin's placement fits fetches its package from the home over its signed link,
+  checks it (the digest the home recorded, the store's signature when there is one, every
+  file) before placing it, and runs it in its own sandboxed plugin host. The machine's plugin
+  API serves reads and media itself and sends every write to the home, which mints the
+  tokens and applies writes, quotas and lineage with its own checks, so the plugin tables'
+  guard stays. Job outcomes go to the home's breaker; turning a plugin off reaches a machine
+  at its next call. New reasons with English and Arabic words: `plugin_home_only`,
+  `plugin_no_gpu`, `plugin_package_untrusted`. maktaba.dev: Flows gains Where a plugin runs.
 
 - **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
   two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)
@@ -957,6 +978,26 @@ build fails when the two differ.
   every app escapes again and makes no request from one. `GET /api/panels` and the
   capability `plugin_panels`, which apps read missing as off.
 
+- **Automated checks and human review in the plugin store (Epic 54, story 54.16).** Every
+  submitted version is checked by the home's own rules, compiled to WebAssembly for the store's
+  Worker: the package format and limits (C1), the developer's signature, key and prefix (C2),
+  the manifest and its upper bound (C3), the host's import audit (C4, now a crate the host and
+  the store share), the capability audit (C5), both languages and no reserved word in names
+  (C6), malware rules (C7), the diff against the last version (C9) and the rating (C11). An
+  isolated runner with no secrets and its network cut (a GitHub Actions workflow, the fallback
+  of Cloudflare Containers) runs ClamAV, the plugin in the harness on its fixtures and on
+  generated events (C8) and the reproducible build (C10), and posts its report on a single-use
+  URL. A first version, a new capability, panel or `plugin-data.read`, any flag and a 5 %
+  sample go to a person; other updates are approved automatically and countersigned
+  `automated`. Reviewers (passkey required, re-confirmed within 5 minutes) see the queue and
+  the evidence on the store's own admin pages, and approve, reject with reasons from a fixed
+  list, or ask the developer; the review targets alert the store admins. maktaba.dev has the
+  review guidelines.
+  The flow check (C12) runs at the same step, with the shared flow checker of story 54.39:
+  a flow's members are submitted together and refused, reviewed or approved as a whole
+  (nothing in a refused flow is countersigned), with the cycle path or bad edge in English and
+  Arabic; cycles through the published flows it subscribes to count; the review pages draw the
+  whole flow.
 - **The Android apps send crash reports to the home, report problems, and the Remote reads the
   home's diagnostics.** Maktaba Remote for Android has **Diagnostics** in its account menu:
   Errors (a group's chart and lines, Mark seen, Resolve and Mute), Logs (search, and Follow a

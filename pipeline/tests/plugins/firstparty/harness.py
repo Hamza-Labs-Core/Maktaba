@@ -167,14 +167,35 @@ def _go_dsn(url: str) -> str:
     return urlunsplit(u._replace(query=urlencode(q)))
 
 
+def _cpu_of(pid: int) -> float | None:
+    """A process's CPU seconds, every thread (Linux ``/proc/<pid>/schedstat``, in ns; the
+    clock-tick counters of ``stat`` are 10 ms coarse). None elsewhere."""
+    if not pid:
+        return None
+    total = 0
+    try:
+        for task in Path(f"/proc/{pid}/task").iterdir():
+            try:
+                total += int((task / "schedstat").read_text().split()[0])
+            except (OSError, ValueError, IndexError):
+                continue
+    except OSError:
+        return None
+    return total / 1e9
+
+
 #: a timing line of perf_check (N16), as opposed to a difference in what was written
-_PERF_LINE = re.compile(r" p(50|95): plugin ")
+_PERF_LINE = re.compile(r" p(50|95)( \(CPU\))?: plugin ")
 
 
 @dataclass
 class Side:
     db: Database
     times: dict[str, list[float]] = field(default_factory=dict)
+    #: N16's p95 samples: the CPU each benched job cost, this process (the worker and, in
+    #: the harness, the runner) and the plugin API's process; Postgres is left out, as both
+    #: sides run the same queries
+    cpu_times: dict[str, list[float]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
 
 
@@ -188,6 +209,10 @@ class Parity:
     #: same files, and what each leaves is kept (``tmp/files-a``, ``tmp/files-b``) to compare
     files: dict[str, Path] = field(default_factory=dict)
     breakdowns: list[tuple[float, str, list[tuple[str, float]]]] = field(default_factory=list)
+    #: the plugin API's process (its CPU time per job, on Linux)
+    api_pid: int = 0
+    #: every benched job, both sides: wall, CPU and spans (report())
+    jobs: list[dict[str, Any]] = field(default_factory=list)
 
     async def drain(self, side: Side, *, limit: int = 500) -> None:
         """Run every claimable job of the graph on one side, timing each."""
@@ -269,14 +294,42 @@ class Parity:
         for side in (self.a, self.b):
             for st in stages:
                 side.times[st] = []
+                side.cpu_times[st] = []
         # the worker and the runner share this test's process and loop: a collector pause
         # would land on whichever side runs then, so it is held off while both are timed
+        from dataclasses import replace
+
+        from maktaba_pipeline.engine.stages import registry
+
+        def spanned(fn: Any) -> Any:
+            async def run(*a: Any, **kw: Any) -> Any:
+                marks.append(("@start", time.perf_counter()))
+                try:
+                    return await fn(*a, **kw)
+                finally:
+                    marks.append(("@end", time.perf_counter()))
+
+            return run
+
+        # the in-process side's run span, as the plugin side's (run_native): the plugin side
+        # replaces the run, so this wrapper times only the in-process jobs
+        saved = {}
+        for st in stages:
+            impl = registry.get_impl(st)
+            if impl is not None and impl.run is not None:
+                saved[st] = registry._IMPLS.get(st)
+                registry._IMPLS[st] = replace(impl, run=spanned(impl.run))
         gc.collect()
         gc.disable()
         try:
             await self._bench(stages, rounds, rt)
         finally:
             gc.enable()
+            for st, old in saved.items():
+                if old is None:
+                    registry._IMPLS.pop(st, None)
+                else:
+                    registry._IMPLS[st] = old
 
     async def _bench(self, stages: Sequence[str], rounds: int, rt: Any) -> None:
         from maktaba_pipeline.engine.claim import claim_for_pool
@@ -310,29 +363,83 @@ class Parity:
                     )
                     if job is None:
                         continue
-                    t0 = time.perf_counter()
                     marks.clear()
+                    cpu0, api0 = time.process_time(), _cpu_of(self.api_pid)
+                    t0 = time.perf_counter()
                     await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
                     t1 = time.perf_counter()
+                    cpu1, api1 = time.process_time(), _cpu_of(self.api_pid)
                     took = t1 - t0
                     side.times[st].append(took)
+                    at = {k: v for k, v in marks if k.startswith("@")}
+                    steps = [(k, v) for k, v in marks if not k.startswith("@")]
+                    spans: dict[str, float] = {}
+                    if "@start" in at and "@end" in at:
+                        named = sum(v for k, v in steps if k.startswith("api ") or k == "relay")
+                        spans = {
+                            "before": at["@start"] - t0,
+                            "run": at["@end"] - at["@start"],
+                            "after": t1 - at["@end"],
+                            "api_calls": float(sum(1 for k, _ in steps if k.startswith("api "))),
+                            "api": named,
+                            "unnamed": (at["@end"] - at["@start"]) - named,
+                        }
+                    side.cpu_times[st].append(
+                        (cpu1 - cpu0)
+                        + ((api1 - api0) if api0 is not None and api1 is not None else 0.0)
+                    )
+                    self.jobs.append(
+                        {
+                            "side": "plugin" if side is self.b else "in-process",
+                            "stage": st,
+                            "wall": took,
+                            "cpu": cpu1 - cpu0,
+                            "api_cpu": (api1 - api0)
+                            if api0 is not None and api1 is not None
+                            else None,
+                            **spans,
+                            "steps": [(k, round(v * 1000, 2)) for k, v in steps],
+                        }
+                    )
                     if side is self.b:
-                        at = {k: v for k, v in marks if k.startswith("@")}
-                        steps = [(k, v) for k, v in marks if not k.startswith("@")]
-                        if "@start" in at and "@end" in at:
-                            steps = [
-                                ("before", at["@start"] - t0),
-                                ("after", t1 - at["@end"]),
-                                (
-                                    "unnamed",
-                                    (at["@end"] - at["@start"])
-                                    - sum(
-                                        v for k, v in steps if k.startswith("api ") or k == "relay"
-                                    ),
-                                ),
-                                *steps,
-                            ]
-                        self.breakdowns.append((took, st, steps))
+                        lead = [(k, spans[k]) for k in ("before", "after", "unnamed") if k in spans]
+                        self.breakdowns.append((took, st, [*lead, *steps]))
+
+    def report(self, name: str) -> str:
+        """N16's samples, every run (passing or not): per stage and side the p50 and p95 of
+        the wall time, this process's CPU, the plugin API's CPU and the plugin job's spans.
+        Written to ``$MAKTABA_PARITY_REPORT_DIR/<name>.{txt,json}`` when set (CI keeps it as
+        an artifact) and answered."""
+        import json as _json
+
+        def q(xs: list[float], f: float) -> float:
+            xs = sorted(xs)
+            return xs[min(len(xs) - 1, int(f * len(xs)))] if xs else float("nan")
+
+        lines = [f"N16 report: {name} (ms; p50 / p95 over each side's runs)"]
+        keys = ("wall", "cpu", "api_cpu", "before", "run", "after", "api", "unnamed", "api_calls")
+        for st in sorted({j["stage"] for j in self.jobs}):
+            for side in ("in-process", "plugin"):
+                js = [j for j in self.jobs if j["stage"] == st and j["side"] == side]
+                cells = []
+                for k in keys:
+                    xs = [float(j[k]) for j in js if j.get(k) is not None]
+                    if not xs:
+                        continue
+                    m = 1 if k == "api_calls" else 1000
+                    cells.append(f"{k} {q(xs, 0.5) * m:.1f}/{q(xs, 0.95) * m:.1f}")
+                lines.append(f"  {st:<20} {side:<10} n={len(js):<3} " + "  ".join(cells))
+        lines.append("slowest plugin jobs:")
+        lines.append(self.slowest(5))
+        text = "\n".join(lines) + "\n"
+        out = os.environ.get("MAKTABA_PARITY_REPORT_DIR", "").strip()
+        if out:
+            Path(out).mkdir(parents=True, exist_ok=True)
+            (Path(out) / f"{name}.txt").write_text(text, encoding="utf-8")
+            (Path(out) / f"{name}.json").write_text(
+                _json.dumps(self.jobs, indent=1), encoding="utf-8"
+            )
+        return text
 
     async def compare_n16(
         self,
@@ -418,7 +525,12 @@ class Parity:
                 # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
                 # path's fixed cost of a job (its token, the hop to the runner), README §15.12
                 out += perf_check(
-                    s, self.a.times.get(s, []), self.b.times.get(s, []), floor_s=PERF_FLOOR_S
+                    s,
+                    self.a.times.get(s, []),
+                    self.b.times.get(s, []),
+                    floor_s=PERF_FLOOR_S,
+                    inproc_p95=self.a.cpu_times.get(s),
+                    plugin_p95=self.b.cpu_times.get(s),
                 )
         return out
 
@@ -537,7 +649,9 @@ async def parity(
         native.forget_hello()
         native._FP_TOKENS.clear()
         _instrument()
-        yield Parity(a=Side(a), b=Side(b), graph=graph, tmp=tmp, files=dict(files or {}))
+        yield Parity(
+            a=Side(a), b=Side(b), graph=graph, tmp=tmp, files=dict(files or {}), api_pid=proc.pid
+        )
     finally:
         native.forget_hello()
         native._FP_TOKENS.clear()

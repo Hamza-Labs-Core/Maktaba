@@ -129,6 +129,7 @@ file, a log, a commit or a chat.
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ACCOUNT_ID` | the R2 token of step 4 (presigned uploads)                                                                                                                                                                                                  |
 | `EXPORT_PUBLIC_KEY`                                         | the public half (SPKI, base64) of an RSA-3072 key the owner keeps offline: `openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out export-private.pem` then `openssl pkey -in export-private.pem -pubout -outform DER \| base64` |
 | `CF_ZONE_ID`, `CF_PURGE_TOKEN`                              | optional, step 5                                                                                                                                                                                                                            |
+| `RUNNER_DISPATCH_TOKEN`                                     | a fine-grained GitHub token on this repository only, Actions read and write, nothing else: it starts `store-check-runner.yml` (the isolated runner) for each submission                                                                     |
 
 ### 8. Opening
 
@@ -142,7 +143,9 @@ empty. To open it:
    add a passkey, and call `POST /v1/admin/bootstrap {token}` once with `BOOTSTRAP_ADMIN_TOKEN`:
    that account is the first `store_admin`. Delete the secret afterwards.
 4. Grant `store_reviewer` to the reviewers (each with a passkey), then set
-   `SUBMISSIONS_OPEN = "true"`.
+   `SUBMISSIONS_OPEN = "true"`. The isolated runner is the GitHub Actions fallback
+   (`RUNNER = "github"`); Cloudflare Containers (`check-runner/Dockerfile`) needs the spike of
+   README §14 item 11 first, and is not wired.
 5. Once the root keys are in a server release (step 1), homes accept the store's signatures.
 
 ### Rollback

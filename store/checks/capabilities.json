@@ -1,0 +1,107 @@
+{
+  "_comment": "Made by store/scripts/gen-data.ts from shared/plugins/capabilities.toml. Do not edit.",
+  "capabilities": [
+    {
+      "name": "library.read",
+      "risk": "low",
+      "interface": "library",
+      "param": ""
+    },
+    {
+      "name": "transcript.read",
+      "risk": "medium",
+      "interface": "transcript",
+      "param": ""
+    },
+    {
+      "name": "media.read",
+      "risk": "medium",
+      "interface": "media",
+      "param": ""
+    },
+    {
+      "name": "media.frames",
+      "risk": "medium",
+      "interface": "media",
+      "param": ""
+    },
+    {
+      "name": "media.audio",
+      "risk": "medium",
+      "interface": "media",
+      "param": ""
+    },
+    {
+      "name": "metadata.write",
+      "risk": "medium",
+      "interface": "write",
+      "param": ""
+    },
+    {
+      "name": "tags.write",
+      "risk": "low",
+      "interface": "write",
+      "param": ""
+    },
+    {
+      "name": "chapters.write",
+      "risk": "low",
+      "interface": "write",
+      "param": ""
+    },
+    {
+      "name": "subtitles.write",
+      "risk": "low",
+      "interface": "write",
+      "param": ""
+    },
+    {
+      "name": "artwork.write",
+      "risk": "low",
+      "interface": "write",
+      "param": ""
+    },
+    {
+      "name": "suggest",
+      "risk": "low",
+      "interface": "suggest",
+      "param": ""
+    },
+    {
+      "name": "jobs.enqueue",
+      "risk": "low",
+      "interface": "queue",
+      "param": ""
+    },
+    {
+      "name": "notify.admin",
+      "risk": "low",
+      "interface": "notify",
+      "param": ""
+    },
+    {
+      "name": "plugin-data.read",
+      "risk": "medium",
+      "interface": "exports",
+      "param": "plugin_id"
+    },
+    {
+      "name": "compute.embed",
+      "risk": "medium",
+      "interface": "compute",
+      "param": ""
+    },
+    {
+      "name": "compute.llm",
+      "risk": "medium",
+      "interface": "compute",
+      "param": ""
+    },
+    {
+      "name": "events.subscribe",
+      "risk": "medium",
+      "interface": "events",
+      "param": "plugin_id"
+    }
+  ]
+}

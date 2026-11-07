@@ -86,6 +86,12 @@ jobs:
           (cd store && npx tsx scripts/drill-rotation.ts "$drill")
           (cd shared/plugins && MAKTABA_STORE_DRILL="$drill" go test -run TestRotationDrill -v ./pluginsig/)
 
+      # 54.16: the isolated runner's scripts (they run in store-check-runner.yml and the image)
+      - name: The runner's scripts
+        run: |
+          shellcheck store/check-runner/run.sh
+          python3 -m py_compile store/check-runner/*.py
+
       # 54.15 T14, also as a plain grep so a file the test skips is caught too
       - name: Nothing in store/ reaches Maktaba Cloud
         run: |

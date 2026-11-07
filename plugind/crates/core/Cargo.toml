@@ -9,6 +9,7 @@ rust-version.workspace = true
 
 [dependencies]
 maktaba-plugin-manifest = { path = "../pluginmanifest" }
+maktaba-plugin-audit = { path = "../audit" }
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
 wasmtime-wasi-io = { workspace = true }
