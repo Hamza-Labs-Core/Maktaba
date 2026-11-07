@@ -452,6 +452,13 @@ build fails when the two differ.
   The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
   CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
   measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
+- **Direct remote access, the cloud's side (Epic 50, story 50.15, part 1).** Maktaba Cloud can
+  give each home its own HTTPS names under separate direct-name domains (never maktaba.tv): a
+  name server (`--role dns`) that computes each name's address and serves the ACME challenges
+  and CAA, certificates ordered from a home's own CSR (Let's Encrypt within each domain's weekly
+  budget, then ZeroSSL, then Google Trust Services; a home keeps its domain), an outside check
+  every 15 minutes, and the home list's HTTPS `direct` connection once it passes. Free on every
+  plan. Off until the domains exist; the home's side follows.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

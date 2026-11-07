@@ -133,6 +133,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
 		WebURL: cfg.Server.WebURL}
+	if cfg.Direct.Enabled {
+		homes.Direct = stores.NewDirect(pool.DB) // story 50.15: a direct entry once its check passed
+	}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
 	// dispatcher will log no-driver and skip those rows safely.

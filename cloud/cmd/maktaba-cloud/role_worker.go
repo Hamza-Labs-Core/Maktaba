@@ -32,6 +32,10 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 
 	go cleanupExpired(ctx, logger, pool)
 	go purgeDeletedAccounts(ctx, logger, pool)
+	// direct remote access (story 50.15): certificates and the outside checks
+	if j := directJobs(cfg, pool, logger); j != nil {
+		go j.Run(ctx)
+	}
 
 	// Block until SIGTERM.
 	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {

@@ -184,3 +184,7 @@ components-logs/
 
 # compat-prev writes its schema probe here while it runs (tools/compat-prev/run.sh)
 api/internal/compatprobe/
+
+# a worker's plugin-runner folder (areas.json, sockets) when MAKTABA_RUNNER_DIR is unset:
+# never in the repo (tests point it at /tmp)
+pipeline/run/
