@@ -39,6 +39,8 @@ from maktaba_plugin_sdk.native import (
     UnixTransport,
 )
 
+from . import sandbox
+
 __all__ = ["Runner", "load_impl"]
 
 MAX_FRAME = 256 << 20
@@ -171,6 +173,24 @@ def runner_context(
     return ctx
 
 
+def library_roots(areas: dict[str, Any]) -> list[str]:
+    """The ``library`` area's folders (``;``-separated, as the sandbox reads them)."""
+    return [x for x in str(areas.get("library") or "").split(";") if x]
+
+
+async def job_scope(db: Any, stage: str, job: Any, ctx: Any, roots: list[str]) -> Any:
+    """The files a job of a file stage may change (story 54.32 §2), as this machine names
+    them, read through the plugin's statements before the job runs; None when its stage
+    keeps no scope."""
+    from maktaba_pipeline.library_mgmt.scope import JobScope, job_paths
+
+    found = await job_paths(db, stage, job)
+    if found is None:
+        return None
+    sandbox.guard_scope()  # once per process; the runner's main installs it before any job
+    return JobScope.of(stage, (ctx.local_path(p) for p in found), roots)
+
+
 def with_services(ctx: Any, msg: dict[str, Any]) -> Any:
     """The job's extension settings (no secret, no service address) and the way its service
     calls go (story 54.35), from the worker's run frame."""
@@ -194,6 +214,8 @@ class Runner:
     unavailable: dict[str, str] = field(default_factory=dict)
     #: the digest of the file areas the sandbox was built from (the worker's areas.json)
     areas: str = ""
+    #: this machine's library roots (the ``library`` area): where a job's scope applies
+    library_roots: list[str] = field(default_factory=list)
     areas_changed: bool = False
     #: the transport a job's database uses (a seam: tests give one in memory)
     transport: Callable[[str], Any] | None = None
@@ -273,7 +295,18 @@ class Runner:
         ctx = runner_context(db, job, sdef, relay, str(msg.get("write_mode") or "auto"), path_map)
         with_services(ctx, msg)
         impl = load_impl(self.stages[stage])
-        task = asyncio.ensure_future(impl.run(db, job, ctx))
+        scope = None
+        try:
+            scope = await job_scope(db, stage, job, ctx, self.library_roots)
+        except StatementUnregistered as exc:
+            await write_frame(w, {"type": "result", "status": "unregistered", "message": str(exc)})
+            return
+        # the task copies the context: its scope is this job's alone (asyncio.to_thread too)
+        token = sandbox.JOB_SCOPE.set(scope)
+        try:
+            task = asyncio.ensure_future(impl.run(db, job, ctx))
+        finally:
+            sandbox.JOB_SCOPE.reset(token)
         self.running[job.id] = task
         try:
             result = await task
@@ -303,6 +336,13 @@ class Runner:
             close = getattr(transport, "close", None)
             if close is not None:
                 await close()
+        if scope is not None and scope.refused:
+            # refused even when the job's code caught the error (a move it reports failed)
+            out = {
+                "status": "refused",
+                "code": "plugin_scope",
+                "message": f"{scope.refused[0]}: not a file of this {stage} job's subject",
+            }
         await write_frame(w, {"type": "result", **out})
 
     async def _fingerprints(self, msg: dict[str, Any]) -> dict[str, Any]:

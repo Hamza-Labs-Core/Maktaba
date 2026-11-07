@@ -261,6 +261,36 @@ def test_a_stage_jobs_lines_carry_its_component() -> None:
         assert "component" not in structlog.contextvars.get_contextvars()
 
 
+@pytest.mark.unit
+def test_a_jobs_lines_carry_the_request_that_queued_it() -> None:
+    """Epic 53 story 53.08: the API puts the request's id in the job's payload; the job's
+    lines carry it as origin_request_id beside job_id. No payload, or a value that is not a
+    string, binds nothing."""
+    from types import SimpleNamespace
+
+    import structlog
+
+    from maktaba_pipeline.pipeline.runner import _job_log_context
+
+    rid = "01932f6e-7c1a-7b2e-9a51-2f5c3d4e5f60"
+    job = SimpleNamespace(
+        id=9,
+        stage="scan",
+        video_id=None,
+        subject_id=None,
+        subject_kind=None,
+        payload={"origin_request_id": rid, "seasons": []},
+    )
+    with _job_log_context(job):  # type: ignore[arg-type]
+        bound = structlog.contextvars.get_contextvars()
+        assert bound.get("origin_request_id") == rid and bound.get("job_id") == "9"
+    assert "origin_request_id" not in structlog.contextvars.get_contextvars()
+    for payload in (None, {}, {"origin_request_id": 7}, ["not", "a", "mapping"]):
+        job.payload = payload
+        with _job_log_context(job):  # type: ignore[arg-type]
+            assert "origin_request_id" not in structlog.contextvars.get_contextvars()
+
+
 @pytest.mark.asyncio
 async def test_a_plugin_runs_at_most_its_concurrency(db: Database) -> None:
     """Epic 54 story 54.06 T05: a plugin with concurrency 1 never runs two jobs at once,

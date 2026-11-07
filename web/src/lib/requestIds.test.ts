@@ -6,6 +6,7 @@ import {
   KEPT_REQUESTS,
   actionRequestId,
   lastRequests,
+  withRequestId,
   newAction,
   noteRequest,
   shortRef,
@@ -64,5 +65,16 @@ describe("request ids", () => {
         .slice(-2)
         .map((r) => r.route)
     ).toEqual(["/api/libraries", "/api/videos"]);
+  });
+
+  it("puts the id on a playlist URL as rid, once, before any fragment", () => {
+    const id = "01932f6e-7c1a-7b2e-9a51-2f5c3d4e5f60";
+    expect(withRequestId("/stream/s/manifest.m3u8", id)).toBe(`/stream/s/manifest.m3u8?rid=${id}`);
+    expect(withRequestId("/stream/s/manifest.m3u8?sig=a.b", id)).toBe(
+      `/stream/s/manifest.m3u8?sig=a.b&rid=${id}`
+    );
+    expect(withRequestId("/m.m3u8?sig=a#t=5", id)).toBe(`/m.m3u8?sig=a&rid=${id}#t=5`);
+    expect(withRequestId("/m.m3u8?rid=old", id)).toBe("/m.m3u8?rid=old");
+    expect(withRequestId("/m.m3u8", undefined)).toBe("/m.m3u8");
   });
 });

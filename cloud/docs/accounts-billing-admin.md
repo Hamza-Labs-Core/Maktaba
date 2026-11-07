@@ -39,7 +39,7 @@ All bodies are JSON. Errors are `{"error": "<code>", "message": "…"}`.
 | `GET /v1/auth/oauth/google/callback` | — | `302` to `{web_url}/signed-in` with the refresh cookie set | `302` to `{web_url}/sign-in?error=<code>` |
 | `GET /v1/auth/oauth/apple` | — | `302` to Apple (`response_mode=form_post`) | `501 apple_disabled` |
 | `POST /v1/auth/oauth/apple/callback` | form `code, state` | as Google | as Google |
-| `GET /v1/auth/providers` | — | `200 {"google":bool,"apple":bool}` | — |
+| `GET /v1/auth/providers` | — | `200 {"google":bool,"apple":bool}`, plus `turnstile_site_key` while Turnstile is on | — |
 
 `user` is `{id, email, email_verified, display_name?, plan, role}`.
 Access tokens last 15 minutes; refresh sessions 30 days. The refresh
@@ -59,6 +59,21 @@ minutes lock it for 30 minutes. A blocklisted IP or account gets `403
 blocked`. The client IP is the TCP peer unless `server.trust_proxy_headers`
 is on (then `CF-Connecting-IP`, else the right-most `X-Forwarded-For` entry,
 the one the proxy appended).
+
+**Turnstile (Epic 50 story 50.30).** With `[turnstile] enabled = true`, register, login and
+`password/forgot` need a `turnstile_token` in the body when the request comes from the web app
+(its `Origin` is one of `turnstile.web_origins`, by default `web_url`). The api checks it with
+Cloudflare's siteverify (3 s timeout), with the client IP and the expected hostname. A missing,
+used or wrong token gets `403 turnstile_failed`; siteverify down gets `503
+turnstile_unavailable` with `Retry-After: 30`. Native apps send no `Origin` and are not asked.
+`GET /v1/auth/providers` adds `turnstile_site_key` while it is on. The secret comes only from
+`MAKTABA_CLOUD_TURNSTILE_SECRET` (a `turnstile.secret` in the file is refused); on with no secret,
+the api refuses to start. Off by default.
+
+**At the edge (50.30).** In production Cloudflare also rate-limits the auth routes per IP
+(20 a minute) and the API (1,200 a minute), answering `429 {"error":"rate_limited"}` itself.
+Both rules start in `log` mode (counted, not blocked) and are switched to `block` in the zone
+file after a week of traffic; `deploy/cloudflare/zone.maktaba.tv.json` holds the rules.
 
 ## Account — `/v1/account/*` (bearer token)
 

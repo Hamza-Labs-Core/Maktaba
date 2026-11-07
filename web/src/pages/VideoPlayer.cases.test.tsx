@@ -15,6 +15,7 @@ vi.mock("../lib/api", async () => {
 });
 
 import { VideoPlayer } from "./VideoPlayer";
+import { withRid } from "../test/ridMatcher";
 
 const problem = (status: number, title: string) =>
   new ApiError({ type: "about:blank", title, status });
@@ -454,7 +455,7 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     expect(alert).not.toHaveTextContent("transcoder busy");
     fail = false;
     await userEvent.setup().click(within(alert).getByRole("button", { name: "Try again" }));
-    expect(await video()).toHaveAttribute("src", SESSION.manifest_url);
+    expect(await video()).toHaveAttribute("src", withRid(SESSION.manifest_url));
   });
 
   it("VPL-19: the error clears when moving to another video", async () => {
@@ -466,7 +467,7 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     renderPlayer("/videos/vid-1/watch", { history: ["/videos/vid-2/watch"] });
     expect(await screen.findByRole("alert")).toHaveTextContent(SENTENCE.noAccess);
     await userEvent.setup().click(screen.getByRole("button", { name: "go back" }));
-    expect(await video()).toHaveAttribute("src", "/stream/s2/manifest.m3u8");
+    expect(await video()).toHaveAttribute("src", withRid("/stream/s2/manifest.m3u8"));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

@@ -1,5 +1,5 @@
 {
- "digest": "6eeff9bf7f4b82552023a7de8ecd74395dd4418f52d4d8f9be517808dd4f0135",
+ "digest": "fe40f4cfa426769761221f2c98cdd56f519308ed5422b567d6a2df5839f49d25",
  "plugins": [
   {
    "digest": "1aadfefb9c09702f1662158e3a378a7460702385cf3951a3de06e912678c6ed1",
@@ -1237,7 +1237,7 @@
    }
   },
   {
-   "digest": "a9985a05887906797d53fc66b1b453375cc4dd733133754db3aa32bf0452a8c2",
+   "digest": "b2ceea3ee93d1bfa8c0db7f03fc3ff0f27d60b0b72ef7ec0d492cad80416ab11",
    "folder": "convert",
    "id": "tv.maktaba.convert",
    "manifest": "# tv.maktaba.convert: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): rewrites a library video as MP4 and swaps it in, the original kept in the trash.\nschema     = 1\nid         = \"tv.maktaba.convert\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.convert.name\"\nsummary = \"fp.convert.summary\"\n\n[trusted]\nrunner    = \"files\"\ncomponent = \"library.convert\"\ndb.read   = [\"libraries\", \"media_info\", \"processing_jobs\"]\ndb.write  = [\"audio_tracks\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"convert_mp4\"\nsubject      = \"video\"\nexport       = \"convert-mp4\"\nversion      = 1\nlabel        = \"Convert to MP4\"\nsubject_kinds = [\"video\", \"library\"]\npool         = \"convert\"\nlane         = \"media\"\nlane_order   = 14\nmay_request  = [\"probe\", \"thumbnail\", \"thumb_small\"]\nexternal_write = true\nmax_attempts = 2\nplacement    = \"home\"\nedges        = [{ to = \"dedup_scan\", map = \"same_video\", when = \"always\" }]\nentry        = \"maktaba_fp_convert.stages.convert_mp4:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -1449,6 +1449,30 @@
      ]
     },
     {
+     "mode": "read",
+     "name": "scope.video_paths",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9c90222eae49308bd6dd1dc74f482fb6053cdfe647b7682e4853c000a9a5c553",
+     "text": "SELECT path FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "scope.video_paths.2",
+     "reads": [
+      "file_actions"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "20cbb1eb9347ce804ae98f758d47c5a1ce117a9baf17f837230bd4a5dbc67c69",
+     "text": "SELECT old_path, new_path FROM file_actions WHERE video_id = $1",
+     "writes": []
+    },
+    {
      "mode": "write",
      "name": "swap.restore_dedup",
      "reads": [],
@@ -1545,7 +1569,7 @@
    }
   },
   {
-   "digest": "fc7288f5a56eb5965b2dfbdc4065c543e7d093fb77d671776fef243ac1179b06",
+   "digest": "4a760b606fd3c0b461f77b0f316cdf12481a7039c082f278b629cceab4e0b042",
    "folder": "dedup",
    "id": "tv.maktaba.dedup",
    "manifest": "# tv.maktaba.dedup: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): finds duplicates, merges a group into its keeper, empties and restores the file trash.\nschema     = 1\nid         = \"tv.maktaba.dedup\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.dedup.name\"\nsummary = \"fp.dedup.summary\"\n\n[trusted]\nrunner    = \"files\"\ncomponent = \"library.dedup\"\ndb.read   = [\"audio_tracks\", \"libraries\", \"media_info\", \"media_metadata_enrichment\", \"playback_state\", \"processing_jobs\", \"user_favorites\", \"user_playlist_items\", \"video_signals\"]\ndb.write  = [\"duplicate_groups\", \"duplicate_members\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"dedup_scan\"\nsubject      = \"library\"\nexport       = \"dedup-scan\"\nversion      = 1\nlabel        = \"Find duplicates\"\nsubject_kinds = [\"library\", \"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 15\nmay_request  = [\"dedup_apply\"]\nentry        = \"maktaba_fp_dedup.stages.dedup_scan:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dedup_apply\"\nsubject      = \"dup_group\"\nexport       = \"dedup-apply\"\nversion      = 1\nlabel        = \"Merge duplicates\"\nsubject_kinds = [\"dup_group\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 16\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.dedup_apply:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"trash_purge\"\nsubject      = \"library\"\nexport       = \"trash-purge\"\nversion      = 1\nlabel        = \"Empty file trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 17\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.trash_purge:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"file_restore\"\nsubject      = \"library\"\nexport       = \"file-restore\"\nversion      = 1\nlabel        = \"Restore from trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 18\nexternal_write = true\nmax_attempts = 2\nentry        = \"maktaba_fp_dedup.stages.file_restore:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
@@ -2203,6 +2227,43 @@
      "writes": [
       "file_actions"
      ]
+    },
+    {
+     "mode": "read",
+     "name": "scope.group_paths",
+     "reads": [
+      "duplicate_members"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e520a365abaa7511b4eb08079d41b488d5644a5aeeb0e7c6859a0b58ffd3c931",
+     "text": "SELECT path FROM duplicate_members WHERE group_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "scope.group_paths.2",
+     "reads": [
+      "duplicate_members",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "4c3f1ec0aef3c5d5fac07b4b62f1f91b40d479f940f4c4902d98250d62cf2015",
+     "text": "SELECT v.path FROM videos v JOIN duplicate_members m ON m.video_id = v.id WHERE m.group_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "scope.restore_paths",
+     "reads": [
+      "file_actions"
+     ],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "5e85b9cf8627afcc61be72ceed46aed4f116a23340a0fb9d00fe0795648a3a51",
+     "text": "SELECT old_path, new_path FROM file_actions WHERE id = $1 AND library_id = $2",
+     "writes": []
     },
     {
      "mode": "write",

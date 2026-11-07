@@ -1,6 +1,8 @@
 package channels
 
 import (
+	"context"
+	"database/sql/driver"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 )
 
 // newBuilderEnv is the art env plus what the builder reads: the edited_at
@@ -236,5 +242,28 @@ func TestSources(t *testing.T) {
 	user := &principal.Principal{UserID: "u", AccessAllLibraries: true}
 	if rec, _ := e.do(t, user, httptest.NewRequest("GET", "/api/channels/sources?kind=series", nil)); rec.Code != http.StatusForbidden {
 		t.Fatalf("non-admin: %d", rec.Code)
+	}
+}
+
+// Epic 53 story 53.08: the forced write_channels run goes through queues.Enqueue, so it names
+// the request that queued it; a refused enqueue reads as not queued.
+func TestEnqueueWriteChannelsNamesTheRequest(t *testing.T) {
+	id := uuid.Must(uuid.NewV7())
+	ctx := reqid.WithID(context.Background(), id)
+	p := &principal.Principal{UserID: "u1"}
+	for outcome, want := range map[string]bool{"inserted": true, "coalesced": true, "disabled": false} {
+		db := queuestest.New(&queuestest.Rule{Match: "from processing_jobs_enqueue(", Cols: []string{"job_id", "outcome"},
+			Rows: [][]driver.Value{{int64(5), outcome}}})
+		h := &Handler{DB: db.DB}
+		if got := h.enqueueWriteChannels(ctx, p); got != want {
+			t.Errorf("%s: queued = %v want %v", outcome, got, want)
+		}
+		args := db.Calls()[0].Args
+		if args[0] != "catalog" || args[1] != catalogSubjectID || args[2] != "write_channels" || args[4] != true {
+			t.Errorf("args = %#v", args[:5])
+		}
+		if want := `{"origin_request_id":"` + id.String() + `"}`; args[8] != want {
+			t.Errorf("payload = %#v want %s", args[8], want)
+		}
 	}
 }
