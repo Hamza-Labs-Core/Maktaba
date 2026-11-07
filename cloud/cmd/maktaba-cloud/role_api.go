@@ -264,6 +264,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			adminh.Mount(g, &adminh.Deps{
 				DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 				Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
+				// the cloud's log index on W (53.17), as the forwarder reaches it
+				Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
 			})
 
 			// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
