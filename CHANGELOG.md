@@ -48,6 +48,13 @@ build fails when the two differ.
   stored words) that lack their second listen are transcribed again by a machine that runs
   it, a few at a time.
 
+- **The pipeline's logger costs less per line, and the log benches run every night on a Mac.**
+  The shared redaction no longer hashes its whole rule set for every field of every line, and
+  it leaves the logger's own fields (time, level, service, version, node, the event's name)
+  alone. A value that cannot hold a secret is returned at once. A new Python logger bench sits
+  beside the Go benches in CI's `log-bench` job. A nightly macOS run keeps the numbers for 90
+  days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
+
 ### Fixed
 
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
@@ -852,6 +859,29 @@ build fails when the two differ.
   CI's new `store` job runs the tests and keeps each provider's code in its own module; the
   store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
   adding a provider).
+- Plugins, flows (Epic 54, story 54.39): a set of plugins that work together declares one
+  flow (`flow.toml` in each package): every plugin's stages, the core events they follow,
+  the events they publish and who subscribes to what; each manifest declares its part
+  (`emits`, a trigger after its own `stage`, a trigger on another plugin's
+  `plugin:<id>/<event>`, `[[event]]`, `[[depends]]`) and must match it. Plugin stages stay
+  leaves after core stages. The home refuses an install, enable, update or rollback that
+  would close a loop among plugins or reach a core stage (`409 plugin_flow_cycle`, the loop
+  named in English and Arabic), shows a missing upstream as a warning, and answers its whole
+  plugin graph (`GET /api/plugins/graph`) and what goes idle when a plugin is off
+  (`GET /api/plugins/{id}/downstream`). The check is one algorithm in Go and TypeScript on
+  one shared corpus; the store's verification (C12) runs the TypeScript one. maktaba.dev:
+  Flows.
+- Plugins, events between plugins and loops at run time (Epic 54, story 54.40): plugin API
+  1.2 adds `events.emit`. A stage emits an event it declares, with a payload its schema
+  accepts (at most 16 KB); it goes, when the job ends well, to every other plugin's stage
+  that subscribes and was granted `events.subscribe:<publisher>` by the admin. Every plugin
+  job carries its lineage (where its chain started, its hop count and the stages it passed
+  through on which subjects): a request or event that would pass 16 hops or start a stage
+  again on a subject already in the chain is refused, including a loop through data (a
+  plugin write leaves its lineage on the video for 10 minutes), and the job fails with the
+  new cause `plugin_loop`, "Stopped a loop between plugins", with help in English and
+  Arabic. Plugins built for 1.0 keep running. Migration 0199: `plugin_write_lineage`.
+  maktaba.dev: Flows gains emitting events and loops at run time.
 
 - **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
   two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)

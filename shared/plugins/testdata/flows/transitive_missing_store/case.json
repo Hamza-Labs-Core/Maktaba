@@ -1,0 +1,5 @@
+{
+  "about": "a flow whose store upstream depends on a plugin not in the store: refused",
+  "mode": "store",
+  "states": {}
+}

@@ -1,0 +1,23 @@
+# expect: manifest_bad_depends
+schema = 1
+id = "dev.example.silence-chapters"
+version = "1.4.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0, <0.9.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name    = "find_silences"
+subject = "video"
+export  = "run-find-silences"
+version = 3
+  [[stage.trigger]]
+  event = "plugin:dev.example.music-finder/music.found"
+
+[[depends]]
+plugin  = "dev.example.music-finder"
+version = "<3.0.0"

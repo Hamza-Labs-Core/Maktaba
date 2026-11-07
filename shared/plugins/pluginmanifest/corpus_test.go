@@ -132,6 +132,35 @@ func TestEveryCodeHasAnInvalidCase(t *testing.T) {
 	}
 }
 
+// 54.39 §1: a flow.toml is read with the manifest's schema reader, against flow.schema.json;
+// its refusals carry flow_* codes and say where.
+func TestValidateFlowDoc(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "testdata", "flows", "chain_two_store", "flow.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, errs := ValidateFlowDoc(src)
+	if errs != nil {
+		t.Fatalf("refused: %v", errs)
+	}
+	members := doc["plugin"].([]any)
+	stage := members[1].(map[string]any)["stage"].([]any)[1].(map[string]any)
+	if len(members) != 2 || len(stage["emits"].([]any)) != 0 {
+		t.Fatalf("defaults not filled: %v", stage)
+	}
+	for src, code := range map[string]string{
+		strings.Replace(string(src), "schema = 1", "schema = 1\nnetwork = true", 1):         "flow_unknown_key",
+		strings.Replace(string(src), `subject = "video"`, `subject = "user"`, 1):            "flow_invalid",
+		strings.Replace(string(src), `triggers = ["audio.ready"]`, `triggers = ["Bad"]`, 1): "flow_invalid",
+		"not toml = = =": "flow_invalid",
+	} {
+		_, errs := ValidateFlowDoc([]byte(src))
+		if !errs.Has(code) {
+			t.Errorf("want %s, got %v", code, errs)
+		}
+	}
+}
+
 // Story 54.22: a built-in plugin's manifest is read with its trusted keys only in the
 // trusted mode, which only the release's own bundle gets; its id must be Maktaba's.
 func TestValidateTrusted(t *testing.T) {

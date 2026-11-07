@@ -290,6 +290,12 @@ The cause labels come from the server and are in English for now. The Arabic pag
 - **Does Maktaba fix it itself?** Its jobs run again as soon as the plugin is on.
 - **What you can do:** turn the plugin on, or press **Start**, in **Settings → Plugins**.
 
+### Stopped a loop between plugins {#plugin-loop}
+
+- **What it means:** plugins were about to start each other in a loop on this item, through the events they publish or through what they write (a plugin's change made Maktaba run a step again, which started the same plugin again). Maktaba stopped the chain before it repeated. The job's details name the path.
+- **Does Maktaba fix it itself?** No: the same loop would start again. The item's next real change runs the plugin again.
+- **What you can do:** turn off one of the plugins on the path in **Settings → Plugins**, and tell their developers.
+
 ### NAS read timed out {#nas-timeout}
 
 - **What it means:** reading the video from the network share took too long. The share was busy, asleep or briefly offline. Any step that reads files can hit it.
