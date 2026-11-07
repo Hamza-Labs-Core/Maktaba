@@ -12,8 +12,12 @@ struct SearchScreen: View {
     @State private var model: SearchModel
     @FocusState private var typing: Bool
 
-    init(context: PlayerContext) {
+    /// A query sent as the screen opens (a plugin panel's chip, `PlayerRoute.search`).
+    private let initial: String?
+
+    init(context: PlayerContext, query: String? = nil) {
         self.context = context
+        self.initial = query
         let session = context.session
         _model = State(initialValue: SearchModel(client: context.client,
                                                  byMeaning: { session.capabilities.current.isOn(.semanticSearch) }) { session.signedOut() })
@@ -39,6 +43,9 @@ struct SearchScreen: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("screen.search")
+            .task {
+                if let initial, model.submitted == nil { submit(initial) }
+            }
             .maktabaSurface()
             .navigationTitle(Text(PlayerSection.search.title))
             .searchable(text: $model.query, placement: Self.placement,
