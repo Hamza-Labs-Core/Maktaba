@@ -19,6 +19,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
 	authmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 )
 
 // Limits of what a home sends.
@@ -92,6 +93,7 @@ func (d *AgentDeps) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if d.Refuse {
+		obs.Default.ProblemReport("refused")
 		w.Header().Set("Retry-After", "3600")
 		writeErr(w, http.StatusServiceUnavailable, "reports_paused", "Maktaba is not taking reports now; keep it and try later")
 		return
@@ -140,6 +142,7 @@ func (d *AgentDeps) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := http.StatusOK
+	obs.Default.ProblemReport(map[bool]string{true: "created", false: "duplicate"}[created])
 	if created {
 		code = http.StatusCreated
 		if d.Logger != nil {

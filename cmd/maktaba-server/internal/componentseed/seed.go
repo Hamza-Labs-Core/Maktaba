@@ -97,6 +97,10 @@ func Plan(cat *components.Catalog, f Facts) map[string]string {
 			w = want(f.LLMProcess || strings.TrimSpace(cfg.LLM.URL) != "")
 		case c.ID == "cloud.link", c.ID == "cloud.relay":
 			w = want(f.Relay)
+		case c.ID == "cloud.direct":
+			// Epic 50 story 50.15: in Full, and only where the relay is wanted: it needs the
+			// cloud link, which follows [cloud] enabled and is never turned on for it here
+			w = want(f.Relay && slices.Contains(c.Bundles, Bundle))
 		case c.ID == "discovery.mdns":
 			w = want(cfg.Server.MDNSOn())
 		case c.ID == "backups":

@@ -12,7 +12,7 @@ is needed: the other leads by itself ([failover-check.md](failover-check.md)). *
 
 ## Check
 
-1. The cloud's logs and error groups in the service admin's cloud log view (Epic 53.17): the
+1. The cloud's logs and error groups in the service admin's cloud log view ([warnings, last 2 h](https://admin.maktaba.tv/logs?level=warn&last=2h); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17): the
    witness keeps both nodes' last lines.
 2. Hetzner's status page and the Hetzner console: are the machines gone, or only unreachable?
 3. Both backup repositories answer (`pgbackrest --stanza=cloud info` from W, which has the

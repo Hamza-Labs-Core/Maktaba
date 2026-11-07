@@ -130,7 +130,7 @@ func scratchHome(t *testing.T) string {
 	dsn := u.String()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	if err := pgtest.Migrator(t, t.TempDir())(ctx, dsn); err != nil {
+	if err := pgtest.Migrator(t)(ctx, dsn); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return dsn

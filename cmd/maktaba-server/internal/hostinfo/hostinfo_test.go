@@ -3,6 +3,7 @@ package hostinfo
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -35,5 +36,17 @@ func TestThisMachine(t *testing.T) {
 	// a folder that does not exist yet is measured on the disk it would go on
 	if got := FreeDisk(filepath.Join(dir, "not", "yet")); got == 0 {
 		t.Fatal("FreeDisk of a folder to be made is 0")
+	}
+}
+
+// Epic 53 story 53.12: the load average the Overview charts is a number of runnable
+// processes: never negative, and read on the systems that keep one.
+func TestLoadAverage(t *testing.T) {
+	v, ok := LoadAverage()
+	if (runtime.GOOS == "darwin" || runtime.GOOS == "linux") && !ok {
+		t.Fatal("no load average on a system that keeps one")
+	}
+	if v < 0 || v > 10000 {
+		t.Fatalf("load average %v", v)
 	}
 }

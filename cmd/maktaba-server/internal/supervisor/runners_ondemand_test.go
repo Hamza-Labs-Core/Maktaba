@@ -107,3 +107,42 @@ func TestARunnerStartsWhenAskedAndStaysDownWhenIdle(t *testing.T) {
 		resp.Body.Close()
 	}
 }
+
+// A held runner group (none of its components on) is refused by the start endpoint, and the
+// ask leaves it held: an on-demand start never bypasses a hold.
+func TestTheStartEndpointRefusesAHeldRunner(t *testing.T) {
+	p, _ := fakeProc(t, RolePluginRunner, "serve")
+	p.Instance, p.OnDemand, p.IdleOnClean = "service", true, true
+	p.Component = PluginRunnersComponent
+	s := New([]Process{p}, testPolicy(), WithLog(&syncBuffer{}))
+	running(t, s)
+	if err := s.Allow(RolePluginRunner, "service", false); err != nil {
+		t.Fatal(err)
+	}
+	service := func() ChildStatus {
+		for _, c := range s.Snapshot().Processes {
+			if c.Instance == "service" {
+				return c
+			}
+		}
+		return ChildStatus{}
+	}
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	resp, err := http.Post(srv.URL+"/runners/service/start", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("a held group's start: %d, want 409", resp.StatusCode)
+	}
+	time.Sleep(300 * time.Millisecond)
+	c := service()
+	if c.PID != 0 || c.Wanted || c.State != StateHeld || c.StartMode != StartOnDemand {
+		t.Fatalf("the ask touched a held runner: %+v", c)
+	}
+	if _, open, _ := s.Gate(RolePluginRunner, "service"); open {
+		t.Fatal("the ask opened the gate")
+	}
+}

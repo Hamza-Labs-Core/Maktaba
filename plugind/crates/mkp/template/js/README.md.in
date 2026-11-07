@@ -1,0 +1,23 @@
+# {{id}}
+
+A Maktaba plugin made with `mkp new js` (Epic 54). It runs in maktaba-plugind's sandbox: no
+network, no files, only the plugin API calls its manifest asks for and the admin grants.
+
+```sh
+npm install -g @bytecodealliance/jco @bytecodealliance/componentize-js
+mkp build .                                    # plugin.js to package/plugin.wasm, then the home's checks
+mkp test package --stage hello                 # run it in the harness
+mkp pack package {{id}}.mkplugin               # the file to install (Settings, Plugins)
+```
+
+- **No WASI.** The build turns off every feature that would import WASI (`jco componentize
+  --disable all`): no `fetch`, no `console` output, no clocks or random from WASI. Log with
+  `write` from `maktaba:plugin/log`.
+- **The world follows the manifest.** `mkp build` (or `mkp world .`) writes `wit/` so the
+  plugin imports only the interfaces its capabilities cover; add a capability to
+  `package/manifest.toml`, then build again to import its interface.
+- TypeScript: compile to one ES module first (`tsc`, `esbuild`), and point the build at it
+  with `mkp build . --entry dist/plugin.js`. `jco guest-types wit -o types` writes the types.
+
+`mkp test --fixtures api.json` answers the plugin API from a file:
+`{"library/video": {"id": "v1", "title": "A film"}}` (each key is `interface/function`).

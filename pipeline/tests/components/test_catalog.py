@@ -438,4 +438,4 @@ def test_feature_any() -> None:
     ):
         with pytest.raises(catalog.CatalogError, match=want):
             catalog.load(_fixture(name))
-    assert catalog.default().feature_any == {}
+    assert catalog.default().feature_any == {"remote_access": [["cloud.relay", "cloud.direct"]]}

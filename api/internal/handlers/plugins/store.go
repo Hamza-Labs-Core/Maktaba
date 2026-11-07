@@ -8,6 +8,7 @@ package plugins
 //	DELETE /api/plugins/store-account        unlinks (a request signed with the home store key)
 //	GET    /api/plugins/store-account/entitlements          the paid plugins' entitlements held (54.19 §6)
 //	POST   /api/plugins/store-account/entitlements/refresh  asks the store now; {"after_buy": true}
+//	POST   /api/plugins/store-account/buy    a purchase intent for the admin's browser (buy.go, 54.19 §5)
 //	                                                        also asks every 15 s for 15 minutes
 
 import (

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# app-update <tag>: put a release's binary under the api and worker roles on this node
+# (/usr/local/bin/maktaba-cloud, which maktaba-cloud-api.service and -worker.service run),
+# keeping the one before. Nothing else installed it: bluegreen installs only the relay's
+# colours and dns-update the dns role's copy, so the api and worker never ran a release.
+#
+# deploy.sh runs it on the standby (the units are stopped there: it only installs, so a
+# failover starts this release) and then on the leader, where each running unit is restarted,
+# the worker first. If one isn't running SETTLE seconds later, the old binary goes back, the
+# units are restarted on it, and it exits 1.
+#
+# Story 50.08 has the api and worker in the relay's blue/green; until they are, the leader's
+# api is down for its restart (about a second; cloudflared answers 502 meanwhile).
+#
+# Env (tests): RELEASES (/opt/maktaba-cloud/releases), BIN (/usr/local/bin/maktaba-cloud),
+# SETTLE (seconds to wait, 10).
+set -euo pipefail
+tag="${1:?usage: app-update <tag>}"
+releases="${RELEASES:-/opt/maktaba-cloud/releases}"
+bin="${BIN:-/usr/local/bin/maktaba-cloud}"
+settle="${SETTLE:-10}"
+units=(maktaba-cloud-worker.service maktaba-cloud-api.service)
+log() { echo "app-update: $*" >&2; }
+
+new="${releases}/${tag}/maktaba-cloud"
+[ -x "${new}" ] || { log "${new} is missing"; exit 2; }
+running=()
+for u in "${units[@]}"; do
+    if systemctl is-active --quiet "${u}"; then running+=("${u}"); fi
+done
+[ ! -e "${bin}" ] || cp -p "${bin}" "${bin}.prev"
+install -m 0755 "${new}" "${bin}"
+if [ "${#running[@]}" -eq 0 ]; then
+    log "the api and worker don't run on this node: binary installed, nothing restarted"
+    exit 0
+fi
+for u in "${running[@]}"; do systemctl restart "${u}"; done
+sleep "${settle}"
+down=()
+for u in "${running[@]}"; do
+    systemctl is-active --quiet "${u}" || down+=("${u}")
+done
+if [ "${#down[@]}" -eq 0 ]; then
+    log "${tag} runs the api and worker on this node"
+    exit 0
+fi
+log "${tag}: ${down[*]} did not stay up: the previous binary goes back"
+if [ -e "${bin}.prev" ]; then
+    install -m 0755 "${bin}.prev" "${bin}"
+    for u in "${running[@]}"; do systemctl restart "${u}" || true; done
+fi
+exit 1

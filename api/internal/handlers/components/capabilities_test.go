@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -113,26 +112,7 @@ func TestCapabilitiesETag(t *testing.T) {
 // for a viewer too; with direct access off it is off, and an admin sees both members of the
 // group with the first one's reason.
 func TestRemoteAccessGroupInCapabilities(t *testing.T) {
-	raw := strings.Replace(string(components.Raw()), "feature_any = {}",
-		`feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }`, 1) + `
-[[component]]
-id        = "cloud.direct"
-kind      = "loop"
-group     = "system"
-title_key = "components.cloud.direct.title"
-desc_key  = "components.cloud.direct.desc"
-loops     = ["api:direct_listener"]
-requires  = ["cloud.link"]
-placement = "home"
-platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
-bundles   = ["full"]
-features  = ["remote_access"]
-since     = "0.3.93"
-`
-	cat, err := components.Load([]byte(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cat := components.Default() // cloud.direct and its remote_access group (story 50.15)
 	caps := svc.NewCapabilities(svc.CapabilitiesOptions{Catalog: cat})
 	caps.SetLicensed(func(flag string) bool { return flag != "cloud_relay" })
 	d := map[string]store.Desired{}

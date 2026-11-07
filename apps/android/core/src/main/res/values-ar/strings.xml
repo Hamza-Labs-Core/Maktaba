@@ -170,6 +170,10 @@
     <string name="error_server">حدث خطأ في الجهاز الرئيسي. حاول مجددًا بعد قليل.</string>
     <!-- a part of the home that is off (Epic 51 story 51.09) and the features' names -->
     <string name="error_off">هذه الميزة متوقفة على الجهاز الرئيسي.</string>
+    <!-- رفض وسيط سحابة مكتبة تشغيلَ خطة (الملحمة 50، القصة 50.19) -->
+    <string name="error_relay_needs_plan">التشغيل عن بُعد عبر الوسيط يتطلب الخطة الأساسية أو الاحترافية. الوصول المباشر من الإنترنت مجاني: فعّله من إعدادات هذا الجهاز الرئيسي.</string>
+    <string name="error_relay_stream_limit">يشغّل عبر الوسيط أكبر عدد من الأجهزة تسمح به خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر.</string>
+    <string name="error_relay_home_busy">جهازك الرئيسي مشغول جدًا لتجهيز هذا الفيديو للتشغيل عن بُعد الآن. حاول بعد قليل.</string>
     <string name="error_off_admin">%1$s شغّل من صفحة المكوّنات.</string>
     <string name="feature_live_tv">البث المباشر</string>
     <string name="feature_transcripts">نصوص الفيديو</string>

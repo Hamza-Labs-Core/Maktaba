@@ -7,7 +7,12 @@
 //
 //	GET /api/health        200 "ok <home>"
 //	GET /stream?bytes=N&ms=D  N bytes of a known pattern, written over D ms
+//	GET /stream/…?bytes=N&ms=D  the same, as a player's segment (story 50.19's rehearsal);
+//	                       a path ending .m3u8 is a small playlist
 //	GET /hang              headers, then nothing until the client leaves
+//
+// A /stream/ answer says the cap the relay asked it to fit (X-Sim-Cap, from
+// X-Maktaba-Relay-Cap-Kbps), as a home that fits its renditions to the cap would.
 package simhome
 
 import (
@@ -16,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,6 +30,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
+// capHeader is the bitrate the relay asks a relayed request's media to fit (relay.CapHeader in
+// internal/handlers/relay).
+const capHeader = "X-Maktaba-Relay-Cap-Kbps"
+
 // Pattern is byte i of every /stream body, so a client can check each byte.
 func Pattern(i int) byte { return byte('a' + i%26) }
 
@@ -31,7 +41,16 @@ func Pattern(i int) byte { return byte('a' + i%26) }
 func API() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		home := r.Header.Get("X-Sim-Home")
-		switch r.URL.Path {
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/stream/") {
+			w.Header().Set("X-Sim-Cap", r.Header.Get(capHeader))
+			if strings.HasSuffix(path, ".m3u8") {
+				_, _ = fmt.Fprint(w, "#EXTM3U\n")
+				return
+			}
+			path = "/stream"
+		}
+		switch path {
 		case "/api/health":
 			_, _ = fmt.Fprintf(w, "ok %s", home)
 		case "/stream":

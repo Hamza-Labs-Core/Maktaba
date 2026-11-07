@@ -179,3 +179,41 @@ func TestPluginsEnvOfTheRoles(t *testing.T) {
 		t.Fatal("a SQLite home runs no plugins")
 	}
 }
+
+// Epic 54: a shared runner group's gate is its own within core.plugin_runners (always
+// open): held while none of the components its first-party plugins serve is on, open once
+// one is. A held group reads held; the worker's ask never opens it (see
+// TestTheStartEndpointRefusesAHeldRunner).
+func TestARunnerGroupIsHeldUntilAComponentItServesIsOn(t *testing.T) {
+	tab := &fakeTable{}
+	for _, g := range []string{"files", "service"} {
+		tab.procs = append(tab.procs, procView{Role: RolePluginRunner, Instance: g,
+			Component: PluginRunnersComponent, State: StateStopped})
+	}
+	st := &fakeStore{}
+	r, _ := newTestReconciler(components.Default(), tab, st)
+	r.RunnerComponents = func() map[string][]string {
+		return map[string][]string{"files": {"library.convert"}, "service": {"ext.plex"}}
+	}
+	// convert on, Plex off: files opens, service stays held
+	desired := map[string]store.Desired{
+		"library.convert": want("library.convert", "enabled", 1),
+		"ext.plex":        want("ext.plex", "installed", 1),
+	}
+	passWith(r, desired)
+	if calls := tab.takeCalls(); !slices.Equal(calls, []string{"files=true"}) {
+		t.Fatalf("calls %v, want only files opened", calls)
+	}
+	// Plex turned on: service opens
+	desired["ext.plex"] = want("ext.plex", "enabled", 2)
+	passWith(r, desired)
+	if calls := tab.takeCalls(); !slices.Equal(calls, []string{"service=true"}) {
+		t.Fatalf("calls %v, want service opened", calls)
+	}
+	// and off again: held again
+	desired["ext.plex"] = want("ext.plex", "installed", 3)
+	passWith(r, desired)
+	if calls := tab.takeCalls(); !slices.Equal(calls, []string{"service=false"}) {
+		t.Fatalf("calls %v, want service held", calls)
+	}
+}

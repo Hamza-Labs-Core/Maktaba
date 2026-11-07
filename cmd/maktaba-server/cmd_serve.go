@@ -24,7 +24,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -33,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logfiles"
 )
 
 // allRoles is the default set started by a bare `serve`.
@@ -544,7 +544,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	packsRoutes.token = token
 	admin = packsRoutes.adminHandler(admin)
 	admin = logFilesAdmin(admin, token, logDirs)
-	admin = metricsAdmin(admin, logDirs.Updates, packsRoutes.metrics)
+	admin = metricsAdmin(admin, logDirs.Updates, packsRoutes.metrics, newHostMetrics(cfg.Server.DataDir))
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
@@ -703,6 +703,7 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 		proxy.Director = func(r *http.Request) {
 			apiDirector(r)
 			keepRelayMark(r)
+			keepRelayCap(r)
 		}
 		// this machine's API is down or restarting: a themed page for a browser
 		proxy.ErrorHandler = apiUnreachable
@@ -762,6 +763,10 @@ func newStreamProxy(streamAddr string) http.Handler {
 		// the web session is for the API only, never the streaming service
 		r.Header.Del("Cookie")
 		r.Header.Del("Authorization")
+		// only the relay agent on loopback marks a request relayed, and only a relayed one
+		// carries Maktaba Cloud's bitrate cap (Epic 50 story 50.19)
+		keepRelayMark(r)
+		keepRelayCap(r)
 	}
 	proxy.FlushInterval = -1
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -804,6 +809,15 @@ func keepRelayMark(r *http.Request) {
 	}
 	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
 		r.Header.Del("X-Maktaba-Via")
+	}
+}
+
+// keepRelayCap keeps Maktaba Cloud's bitrate cap (X-Maktaba-Relay-Cap-Kbps, story 50.19)
+// only on a request the relay agent forwarded: run after keepRelayMark, so a client's own
+// relay mark is already gone. On the LAN and over direct access nothing is capped.
+func keepRelayCap(r *http.Request) {
+	if r.Header.Get("X-Maktaba-Via") != "relay" {
+		r.Header.Del("X-Maktaba-Relay-Cap-Kbps")
 	}
 }
 

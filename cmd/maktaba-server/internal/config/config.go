@@ -39,6 +39,7 @@ type Config struct {
 	Media         MediaSection         `toml:"media"`
 	Transcription TranscriptionSection `toml:"transcription"`
 	Cloud         CloudSection         `toml:"cloud"`
+	Direct        DirectSection        `toml:"direct,omitempty"`
 	Supervisor    SupervisorSection    `toml:"supervisor"`
 	TV            TVSection            `toml:"tv"`
 	Pipeline      PipelineSection      `toml:"pipeline"`
@@ -226,8 +227,10 @@ type LogsSection struct {
 	// MinFree is the data volume's free space under which debug lines stop and the
 	// oldest hours go ("5GB").
 	MinFree string `toml:"min_free,omitempty"`
-	// ServerLog is what server.log still gets: "all" (every line, as before; the
-	// default for now) or "warn" (warnings and errors only).
+	// ServerLog is what server.log gets of the supervised processes' lines: "warn"
+	// (warnings and errors only, the default since story 53.02's one release of both)
+	// or "all" (every line as it came, as before the log keeper). Every line is in the
+	// segments either way; the supervisor's and the launcher's own lines always go there.
 	ServerLog string `toml:"server_log,omitempty"`
 	// Addr is where the log index answers (story 53.09; "": the port registry's, a
 	// loopback port). Set it to run two machines on one host.
@@ -255,7 +258,7 @@ func (l LogsSection) Resolved() ResolvedLogs {
 		ReportRetention: 90 * 24 * time.Hour,
 		MaxTotal:        1 << 30,
 		MinFree:         5 << 30,
-		ServerLogAll:    !strings.EqualFold(strings.TrimSpace(l.ServerLog), "warn"),
+		ServerLogAll:    strings.EqualFold(strings.TrimSpace(l.ServerLog), "all"),
 	}
 	if d, ok := parseDays(l.Retention); ok && d >= 24*time.Hour && d <= 90*24*time.Hour {
 		r.Retention = d
@@ -549,6 +552,14 @@ type TranscriptionSection struct {
 // API. Its credentials come from a claim once (ClaimCode and Slug, used on the first run
 // only) and are kept in the keys directory; a switch of the home moves them, and the
 // agent with them (specs/epics/37-node-replica).
+// DirectSection is [direct] (Epic 50 story 50.15): the listener apps outside the home reach it
+// on directly, over HTTPS with the home's own certificate. Whether direct access is on, the port
+// mapping and a port forwarded by hand are rules.direct.
+type DirectSection struct {
+	// Listen is the direct listener's address (default :8444).
+	Listen string `toml:"listen,omitempty" json:"listen,omitempty"`
+}
+
 type CloudSection struct {
 	Enabled   bool   `toml:"enabled" json:"enabled"`
 	ClaimCode string `toml:"claim_code" json:"-"`

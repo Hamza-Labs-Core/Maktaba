@@ -166,6 +166,9 @@ type Service struct {
 	Getenv      func(string) string
 	Loc         *time.Location
 	Now         func() time.Time
+	// PluginsPaused lists the installed plugins a version would pause (story 54.07 §3;
+	// nil: a home with no plugins).
+	PluginsPaused func(ctx context.Context, version string) ([]PausedPlugin, error)
 
 	// lastTick is the scheduler's last decision (the Updates page shows why nothing
 	// starts: a blocker, a retry's pause)

@@ -70,9 +70,9 @@ features = ["live_tv", "transcripts", "subtitles", "semantic_search", "chapters"
 
 # Feature groups (story 50.35): for a feature, components that count as one, on when any member
 # is on, beside the rule that every component listing a feature is on. Each member lists the
-# feature itself. Story 50.15 adds remote_access = [["cloud.relay", "cloud.direct"]] with
-# cloud.direct.
-feature_any = {}
+# feature itself. remote_access: the relay or direct access is enough (story 50.15), with the
+# cloud link always needed.
+feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }
 
 # ---- core: always on, shown for their health -----------------------------------------
 
@@ -593,6 +593,27 @@ platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = []
 features  = ["remote_access"]
 since     = "0.3.66"
+
+# Direct remote access (Epic 50 story 50.15): the port on the router, the TLS listener and its
+# certificate. Free on every plan (no licence). It serves remote_access as either-is-enough with
+# cloud.relay (feature_any, story 50.35). In full only: core turns on no process (N9), and without the
+# cloud.link process direct access does nothing. A custom bundle choosing it brings cloud.link;
+# turned on where the link is off, it waits (dependency_off).
+[[component]]
+id        = "cloud.direct"
+kind      = "loop"
+group     = "system"
+title_key = "components.cloud.direct.title"
+desc_key  = "components.cloud.direct.desc"
+# the direct listener serves the same API and web as the LAN port
+loops     = ["api:direct_listener", "api:direct_portmap", "api:direct_cert"]
+requires  = ["cloud.link"]
+settings  = ["rules.direct", "toml:direct.listen"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+features  = ["remote_access"]
+since     = "0.3.95"
 
 [[component]]
 id        = "cluster"

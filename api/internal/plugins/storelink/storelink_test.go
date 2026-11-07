@@ -220,3 +220,13 @@ func TestKeyFingerprint(t *testing.T) {
 		t.Fatalf("fingerprint %q %v", fp, err)
 	}
 }
+
+// Base is where a buy page may be: the configured store, or plugins.maktaba.tv (54.19 §5).
+func TestBase(t *testing.T) {
+	if b := (&Link{}).Base(); b != DefaultStore {
+		t.Fatalf("default: %q", b)
+	}
+	if b := (&Link{StoreURL: "https://store.example/"}).Base(); b != "https://store.example" {
+		t.Fatalf("configured: %q", b)
+	}
+}
