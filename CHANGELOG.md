@@ -109,6 +109,10 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A cloud deploy now updates the API and the worker (Epic 50).** Deploys installed the new
+  release only for the relay and the name server, so the API and the worker never ran a
+  release on the nodes. They now get it too, the standby first; on the leader they restart,
+  and one that doesn't stay up gets the previous release back and stops the deploy.
 - **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
   June it exited at start and none of its jobs ever ran: expired-token cleanup, account
   deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
