@@ -410,3 +410,38 @@ func TestStreamingGetsThePathMapInItsForm(t *testing.T) {
 		t.Fatalf("StreamPathMap = %q", got)
 	}
 }
+
+// Epic 54 story 54.42: a full node of a Postgres home runs plugins: its pipeline names
+// its own plugins folder and sends outcomes to the home, and its API serves the plugin API.
+func TestFullNodeRunsPlugins(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no plugins on Windows yet")
+	}
+	t.Setenv("MAKTABA_ROLE", "")
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig {
+		return config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001",
+			DatabaseURL: "postgres://node_6f1c9a2e@home:5432/maktaba?sslmode=prefer",
+			Home:        config.HomeRef{URL: "http://home:8080"}}
+	}
+	var cfg config.Config
+	cfg.Database.URL = "sqlite:///local/ignored.db"
+	cfg.Server.DataDir = t.TempDir()
+	if !PluginsHere(cfg) {
+		t.Fatal("a full node of a Postgres home runs plugins")
+	}
+	m := envMap(childEnvOK(RolePipeline, cfg))
+	if m[EnvPluginsRoot] != PluginsPaths(cfg).Root || m["MAKTABA_PLUGINS_VIA_HOME"] != "1" || m[EnvPluginDSocket] == "" {
+		t.Fatalf("pipeline env: %v", m)
+	}
+	if a := envMap(childEnvOK(RoleAPI, cfg)); a[EnvPluginAPISocket] != PluginsPaths(cfg).API {
+		t.Fatalf("api env: %v", a)
+	}
+	// the home itself: no via-home
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	cfg.Database.URL = "postgres://home/maktaba"
+	if m := envMap(childEnvOK(RolePipeline, cfg)); m["MAKTABA_PLUGINS_VIA_HOME"] != "" || m[EnvPluginsRoot] != "" {
+		t.Fatalf("home pipeline env: %v", m)
+	}
+}

@@ -153,3 +153,72 @@ func (l *Lifecycle) Downstream(ctx context.Context, id string) ([]string, error)
 	}
 	return out, nil
 }
+
+// FlowView is GET /api/plugins/{id}/flow: the plugin's own flow (54.41 §2), the whole set
+// it works with, each member's state on this home, and the members not installed.
+type FlowView struct {
+	ID       string           `json:"id"`
+	Version  string           `json:"version"`
+	Name     string           `json:"name"`
+	Graph    pluginflow.Graph `json:"graph"`
+	Missing  []FlowMember     `json:"missing"`
+	Findings []FlowFinding    `json:"findings"`
+}
+
+// FlowMember names a member of a flow and the versions the flow takes.
+type FlowMember struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+}
+
+// Flow answers plugin id's flow as this home has it: members installed here as their
+// manifests say, the others as the flow declares them, marked missing. A plugin with no
+// flow.toml is the flow of itself.
+func (l *Lifecycle) Flow(ctx context.Context, id string) (*FlowView, error) {
+	in, err := loadInstall(ctx, l.DB, id, false)
+	if err != nil {
+		return nil, err
+	}
+	if in == nil {
+		return nil, problem(http.StatusNotFound, CodeNotInstalled, "%s is not installed", id)
+	}
+	home, err := l.homeMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byID := map[string]pluginflow.Member{}
+	for _, m := range home {
+		byID[m.ID] = m
+	}
+	view := &FlowView{ID: id, Version: in.Version, Missing: []FlowMember{}}
+	var members []pluginflow.Member
+	src, err := os.ReadFile(filepath.Join(in.Path, "flow.toml"))
+	switch {
+	case err == nil:
+		f, fs := pluginflow.ParseFlow(src)
+		if fs != nil {
+			view.Findings = withWords(fs)
+			break
+		}
+		view.ID, view.Version, view.Name = f.ID, f.Version, f.Name
+		for _, fm := range f.Members {
+			if m, ok := byID[fm.ID]; ok {
+				members = append(members, m)
+				continue
+			}
+			fm.State = pluginflow.StateMissing
+			members = append(members, fm)
+			view.Missing = append(view.Missing, FlowMember{ID: fm.ID, Version: fm.Version})
+		}
+	case errors.Is(err, os.ErrNotExist):
+		members = append(members, byID[id])
+	default:
+		return nil, err
+	}
+	g, fs := pluginflow.HomeGraph(members)
+	view.Graph = g
+	if view.Findings == nil {
+		view.Findings = withWords(fs)
+	}
+	return view, nil
+}

@@ -655,23 +655,35 @@ machine is a full Maktaba, so every machine can serve the plugin API itself.
   capability such as `"gpu"`, with the meaning core placement has (a `gpu` stage runs only on
   machines that serve the `gpu` pool). The plugin catalog entry (54.37) carries it.
 - **Distribution.** The home offers each enabled plugin's signed package to every machine
-  whose placement fits, over the cluster channel (Epic 35). Each machine verifies the
-  package before it unpacks it: against Phase 2's trust root when the package carries a
-  store signature (§6.3), otherwise against the home's own signature, which the home makes
-  over `files.json` at install with its cluster identity key. A package that fails is never
-  unpacked, and the machine reports it.
+  whose placement fits, over the machine's signed link (the route machines already fetch
+  release files from, Epic 35). Each machine verifies the package before it places it:
+  against Phase 2's trust root when the package carries a store signature (§6.3), and
+  always against the home's own word on it, the digest of `files.json` the home recorded
+  in `plugin_installs` (only the home writes that table, and the machine reads it over its
+  verified database link); every file must match `files.json`. A package that fails is
+  never placed, and the machine reports `plugin_package_untrusted`.
 - **Running.** Each machine runs its own `maktaba-plugind` under the same OS sandbox (§5.3),
   as Epic 51's `plugins.host` component per machine, on demand. Each machine's Go API serves
-  the plugin API on its own unix socket, mints the tokens for its own jobs from the home's
-  grants (read from its copy of the database, and refused when the copy is older than the
-  grants' generation), and opens media through local handles (the share-path mapping of
-  Epic 35). Plugin stages are claimed per pool on that machine, as core stages are.
-- **Logs and health** go to the home through Epic 53's channels (`service = plugin.<id>`, the
-  machine's name), and each machine reports its own `component_status` row for
-  `plugin.<id>` (Epic 51's lifecycle per machine).
+  the plugin API on its own unix socket for its own jobs: it checks their tokens, opens
+  media through local handles (the share-path mapping of Epic 35) and serves every read
+  through the machine's database role. **Every write goes to the home.** The plugin tables
+  refuse a machine's writes (`plugin_tables_guard`), so the home mints each token (it
+  writes the invocation row) and the machine adopts it, and every call that writes,
+  spends a quota or extends a lineage (data, tags, fields, chapters, subtitles, artwork,
+  suggestions, notices, requests, events) is sent to the home's plugin API over the
+  machine's signed link, where the home applies it under its own role with the same
+  capability, scope, quota and lineage checks. One place enforces them, and the guard
+  stays. Plugin stages are claimed per pool on that machine, as core stages are.
+- **Logs and health** go to the home: the machine's host writes `service = plugin.<id>`
+  lines to its Epic 53 segments, which travel with the machine's other logs; each job's
+  outcome goes to the home's breaker (`plugin_health`, the same statements as the home's
+  own dispatcher); and each machine reports its own `component_status` rows (Epic 51's
+  lifecycle per machine), with `plugin_home_only`, `plugin_no_gpu` or
+  `plugin_package_untrusted` when it does not run a plugin.
 - **Off reaches every machine.** Turning a plugin off, holding it, a revocation `disable` or
-  an uninstall stops claiming on every machine within the same ≤ 2 s (N9) and ends its tokens;
-  an uninstall removes the files there too.
+  an uninstall stops claiming on every machine within the same ≤ 2 s (N9); a machine checks
+  the plugin is still on at the home on every call of a job's token, and the home mints no
+  new one; an uninstall removes the machine's copies too.
 
 ## 5. The "no internet" guarantee
 
@@ -962,7 +974,7 @@ records and refunds owned by the store.
 | F28 | One cycle check (strongly connected components over core events, plugin stages and published events, plus the leaf, subject, hop and existence rules), built in Go and TypeScript against one corpus, runs at the store's verification (54.16 C12) and on the home at install, enable, update, and an upstream's update or re-enable; a refusal names the cycle path or the bad edge in English and Arabic. |
 | F29 | Every plugin job carries its lineage (origin, hops, path); a request or event that would pass 16 hops or re-enter a `(plugin stage, subject)` in it is refused, and the job fails with `plugin_loop`, labelled and explained in English and Arabic. |
 | F30 | Maktaba draws each flow as a chart on the install and approve screen, on the Plugins page (the whole home's plugin graph, this plugin highlighted), on the store listing and in review, and on maktaba.dev; installing one plugin of a flow shows which other members are missing. |
-| F31 | A third-party plugin whose placement allows it (`any`, or a machine capability such as `gpu`) runs on joined machines: the home installs and approves and distributes the signed package; each machine verifies it, runs its own sandboxed host and plugin API, mints tokens for its own jobs from the home's grants, and reports logs and health to the home; turning the plugin off or revoking it reaches every machine. |
+| F31 | A third-party plugin whose placement allows it (`any`, or a machine capability such as `gpu`) runs on joined machines: the home installs and approves and distributes the signed package; each machine verifies it, runs its own sandboxed host and plugin API (reads and media there; every write, quota and lineage on the home, which also mints the tokens), and reports logs and health to the home; turning the plugin off or revoking it reaches every machine. |
 
 ### 7.2 Non-functional: the numbers
 
@@ -1056,7 +1068,7 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | T17 | **A first-party plugin bug writes outside its job** (wrong subject, wrong table) | Named statements only, registered from the signed package; scope arguments bound by the API from the token; a per-plugin Postgres role with grants on the manifest's tables only; per-plugin CI tests of each refusal (§15.10). |
 | T19 | **A loop of plugins floods the queue** (a cycle across two or three plugins, or a loop through data: a write reruns a core stage whose event starts the writer again) | Cycles in the declared graph are refused at the store and at every install, enable and update (§4.12); at run time each job's lineage caps the chain at 16 hops and refuses re-entering a `(plugin stage, subject)`, including through a plugin write within 10 minutes; `plugin_loop` fails the job without a retry. Hostile tests per path (54.40). |
 | T20 | **A plugin reaches into the core pipeline** (an edge to a core stage, a request to one, a stage a core stage waits on) | The leaf rule in the schema, the flow check, the loader's graph assertion and the API's `may_request` and `emits` checks; first-party rights only with `[trusted]` (T16). |
-| T21 | **A tampered package on a joined machine** (a machine fed a different package, or one that missed a revocation) | Each machine verifies the store's or the home's signature over `files.json` and every file's sha256 before unpacking; tokens are minted only for plugins the home's rows enable at a grants generation the machine has; off, hold, revocation and uninstall reach every machine in ≤ 2 s and end its tokens. |
+| T21 | **A tampered package on a joined machine** (a machine fed a different package, or one that missed a revocation) | Each machine checks `files.json` against the digest the home recorded, its signatures against the review level the home recorded (an unsigned package only for an unreviewed install), and every file's sha256 before placing it; the home mints tokens only for plugins its rows enable and place for machines, and applies every write itself; a machine checks the plugin is on at the home on every call, so off, hold, revocation and uninstall reach it at its next call. |
 | T18 | **A first-party runner is compromised** (a malicious file parsed by ffmpeg, a hostile page fetched by yt-dlp) | The runner has no database login and no secrets; its OS sandbox allows only its declared files, tools and (for `net` groups) network; secrets-bearing services only through the service door; the API checks every call it makes. |
 
 ## 10. Plex, Jellyfin, Home Assistant and Maktaba
@@ -1087,7 +1099,7 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | H9 | **Store signing uses its own keys (offline root + online keys), not the release Sigstore identity.** | *Reuse Epic 51's release identity*: it means "built by Maktaba's release workflow from Maktaba's commit", which a third-party plugin is not; the store signs outside GitHub Actions. *Sigstore keyless for developers*: ties developers to an OIDC provider and makes offline verification of a developer's identity need Rekor; Ed25519 keys are simpler for an offline home. |
 | H10 | **Revocation `disable` cannot be undone; an admin's own "keep off" sticks through updates, restores and reinstalls; an expired revocation list warns but does not stop plugins.** | *Admin override of everything*: a known-malware plugin would keep running. *Keep-off on the install row*: a reinstall or a restore would silently turn back on a plugin the admin switched off. *Expired list stops plugins*: a store or network outage would switch off every plugin in every home. |
 | H11 | **Unreviewed install is allowed, off by default, behind a re-authenticated admin opt-in, and marked everywhere.** | *Never allow it*: kills development, offline sharing and private plugins; the sandbox does not depend on review. *Allow silently*: Obsidian learned to start in Restricted Mode. |
-| H12 | **Third-party plugins can run on joined machines** (decided 2026-11-06): the home installs, approves and distributes the signed package; each machine whose placement fits verifies it, runs its own sandboxed host, serves the plugin API on its own socket and mints tokens for its own jobs from the home's grants, as first-party plugins do (§4.13, §15.4). | *Home only* (the first draft): a GPU or a faster machine on the LAN could not help, and every plugin job queued behind the home. *A plugin API on the home reached over the LAN*: tokens and calls would cross the network, against H5. *Grants per machine*: two places to approve and a machine an admin forgot. |
+| H12 | **Third-party plugins can run on joined machines** (decided 2026-11-06): the home installs, approves and distributes the signed package; each machine whose placement fits verifies it, runs its own sandboxed host and serves the plugin API on its own socket, its reads and media there and every write sent to the home (which mints the tokens and keeps the plugin tables' guard), as first-party plugins run per machine (§4.13, §15.4). | *Home only* (the first draft): a GPU or a faster machine on the LAN could not help, and every plugin job queued behind the home. *A plugin API on the home reached over the LAN*: tokens and calls would cross the network, against H5. *Grants per machine*: two places to approve and a machine an admin forgot. *Letting machines write the plugin tables*: the guard would go, and quotas and lineage would be kept in as many places as there are machines. |
 | H24 | **Third-party stages are leaves after core stages.** | *Plugins anywhere in the graph*: one plugin before or between core stages could stall or corrupt every library, and a plugin release would change what core computes. |
 | H25 | **The flow is the configuration: one signed document per set of plugins, checked at the store and again on the home, by one algorithm in Go and TypeScript on one corpus.** | *Wiring from code at run time*: no one could see or check the graph before it runs. *A per-plugin graph only*: a publisher's plugins could not be reviewed as a whole. *Store-only checks*: a home combines flows the store never saw together, and file installs skip the store. *Two hand-kept checkers with no shared corpus*: they would drift. |
 | H26 | **Loops are refused twice: statically on the declared graph, and at run time by each job's lineage.** | *Static only*: a loop through data (a write that reruns a core stage) is invisible in the declared graph. *Run time only*: the admin would learn about a cycle from a flooded queue, after enabling. *A time-to-live alone*: lets a cycle run 16 times on every subject before stopping it. |

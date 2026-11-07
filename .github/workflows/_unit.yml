@@ -315,12 +315,38 @@ jobs:
           LOGBENCH_OUT: ${{ runner.temp }}/logbench.json
         run: go test -tags logbench -count=1 -v -timeout 12m ./internal/logbench/
 
+      # the Python logger's cost per call (pipeline/tools/log_bench.py: 20 µs at p99 on the
+      # reference, times the runner's factor), and the nightly run's regression check's tests
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: The Python logger bench
+        working-directory: pipeline
+        env:
+          LOGBENCH_PY_OUT: ${{ runner.temp }}/logbench-python.json
+        run: |
+          uv sync --frozen
+          uv run --frozen python tools/log_bench.py
+
+      - name: The nightly comparison's tests
+        run: uv run --no-project --python 3.12 --with pytest==8.4.2 pytest tools/logbench/tests -q -p no:cacheprovider
+
       - name: Keep the numbers
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
           name: logbench
-          path: ${{ runner.temp }}/logbench.json
+          path: |
+            ${{ runner.temp }}/logbench.json
+            ${{ runner.temp }}/logbench-python.json
           if-no-files-found: warn
 
   # Epic 36: the Mac app shell (apps/desktop, Tauri 2): menu-bar status,

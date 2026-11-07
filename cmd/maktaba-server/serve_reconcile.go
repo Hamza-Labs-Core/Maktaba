@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -166,6 +167,9 @@ type pluginsOptions struct {
 	host    *supervisor.PluginsHealth
 	plugind string
 	preload func(dir, id, version string) []string
+	// home is set on a joined machine: its packages come from the home (story 54.42)
+	home plugins.HomeFiles
+	gpu  bool
 }
 
 // pluginsOpts is the plugin host's options, when serve built it (nil otherwise).
@@ -191,7 +195,7 @@ func startPlugins(cfg config.Config, po *pluginsOptions, rec *supervisor.Reconci
 	st := store.New(db)
 	st.Version = version.Version
 	pr := &plugins.Runner{Files: files, DB: db, DSN: dsn, Machine: machine, Version: version.Version,
-		Catalog: rec, Status: st, Host: po.host, RunDir: paths.Run, Off: rec.Off, Log: log}
+		Catalog: rec, Status: st, Host: po.host, RunDir: paths.Run, Off: rec.Off, Log: log, Home: po.home, GPU: po.gpu}
 	if sup != nil {
 		pr.PipelineStarted = func() time.Time {
 			for _, p := range sup.Snapshot().Processes {
@@ -211,4 +215,14 @@ func startPlugins(cfg config.Config, po *pluginsOptions, rec *supervisor.Reconci
 	rec.Overlay = pr.Overlay
 	routes := &plugins.Routes{Files: files, Off: !cfg.Plugins.InstallOn(), Keep: pr.Kept}
 	return pr, routes
+}
+
+// servesGPU reports whether this machine serves the gpu pool's plugins (story 54.42 §1):
+// an Apple silicon Mac (Metal) or a machine with an NVIDIA GPU.
+func servesGPU() bool {
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		return true
+	}
+	_, ok := supervisor.NvidiaGPU()
+	return ok
 }

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from typing import Any
 
@@ -115,6 +116,10 @@ async def record(
     not fail the job."""
     if getattr(db, "dialect", "postgres") != "postgres":
         return ""  # plugins run on a Postgres home only (#693)
+    if os.environ.get("MAKTABA_PLUGINS_VIA_HOME") == "1":
+        # a joined machine cannot write plugin_health: the home records it, with these
+        # same statements (story 54.42 §4)
+        return await _via_home(plugin_id, cause, ms, memory, refusals)
     at = time.time() if now is None else now
     entry = json.dumps({"at": at, "cause": cause, "ms": ms, "memory": memory})
     try:
@@ -147,6 +152,27 @@ async def record(
     _log.warning("plugin_breaker_tripped", plugin=plugin_id, reason=why)
     await _ask_hold(plugin_id, why)
     return why
+
+
+async def _via_home(plugin_id: str, cause: str, ms: int, memory: int, refusals: int) -> str:
+    from .dispatch import _api
+
+    body = {
+        "plugin_id": plugin_id,
+        "cause": cause,
+        "ms": ms,
+        "memory": memory,
+        "refusals": refusals,
+    }
+    try:
+        status, out = await asyncio.to_thread(_api, "POST", "/internal/plugins/outcome", body)
+    except Exception as exc:  # noqa: BLE001 - the job's outcome stands
+        _log.warning("plugin_breaker_not_recorded", plugin=plugin_id, error=str(exc))
+        return ""
+    if status != 200:
+        _log.warning("plugin_breaker_not_recorded", plugin=plugin_id, status=status, body=out)
+        return ""
+    return str(out.get("tripped") or "")
 
 
 async def _ask_hold(plugin_id: str, why: str) -> None:
