@@ -161,5 +161,10 @@ class CrashOutboxTest {
         assertTrue(ReportPart.part("other", "", null, big, emptyList(), header, emptyList(), null, false, scrub).size <= ReportPart.PART_MAX)
         val none = Json.parseToJsonElement(String(ReportPart.part("other", "", null, emptyList(), emptyList(), header, emptyList(), null, false, scrub))).jsonObject
         assertNull(none["crashes"])
+        assertEquals("false", none["share_with_maktaba"]!!.jsonPrimitive.content)
+        // 53.16: a ticked Maktaba box goes in the report
+        val shared = Json.parseToJsonElement(String(ReportPart.part("other", "", null, emptyList(), emptyList(), header, emptyList(), null, false, scrub,
+            toMaktaba = true))).jsonObject
+        assertEquals("true", shared["share_with_maktaba"]!!.jsonPrimitive.content)
     }
 }
