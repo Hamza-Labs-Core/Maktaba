@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 )
 
 // Epic 36 story 36.9: a Mac that ran the developer stack moves its database into
@@ -181,18 +183,22 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 	if err != nil {
 		return err
 	}
-	main, acls, err := writeRestoreLists(dump, toc)
+	main, vectors, acls, err := writeRestoreLists(dump, toc)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(main); _ = os.Remove(acls) }()
+	defer func() { _ = os.Remove(main); _ = os.Remove(vectors); _ = os.Remove(acls) }()
 	// not the dump's publications (the machines' copies, Epic 37): their slots go with the
 	// database replaced, each machine copies it anew, and its next grant makes its
 	// publication again with the tables there then (cluster_copy_publication). The dump's
 	// own ALTER PUBLICATION ... ADD TABLE failed the whole restore once ("is already member
 	// of publication"; the rollback of 2026-10-27).
 	env := append(os.Environ(), "PGPASSWORD="+q.pw)
+	var restoreWith func(list string, workers int, env []string, sections ...string) error
 	restore := func(list string, workers int, sections ...string) error {
+		return restoreWith(list, workers, env, sections...)
+	}
+	restoreWith = func(list string, workers int, env []string, sections ...string) error {
 		args := []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser, "-d", restoringDatabase,
 			"--no-owner", "--role=" + AppRole, "--exit-on-error", "--no-publications", "-j", strconv.Itoa(workers), "-L", list}
 		for _, s := range sections {
@@ -206,6 +212,8 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 			switch {
 			case list == acls:
 				what = "the grants"
+			case list == vectors:
+				what = "the semantic search's vector index"
 			case len(sections) == 1 && sections[0] == "pre-data":
 				what = "the tables and functions"
 			case len(sections) == 1 && sections[0] == "post-data":
@@ -233,6 +241,14 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 	// the indexes, keys and triggers, in parallel (pg_restore orders those of a table)
 	if err := restore(main, jobs, "post-data"); err != nil {
 		return err
+	}
+	// the vector index alone, with the memory and workers of its own build (indexBuilds)
+	if hasItems(vectors) {
+		if err := buildVectorIndexes(log, func(opts string) error {
+			return restoreWith(vectors, 1, append(env, "PGOPTIONS="+opts), "post-data")
+		}); err != nil {
+			return err
+		}
 	}
 	// the grants and default privileges last, one worker: every object they name is there
 	if err := restore(acls, 1); err != nil {
@@ -483,10 +499,11 @@ func (b Bundle) tableOfContents(ctx context.Context, dump, superPW string) (stri
 	return sb.String(), nil
 }
 
-// writeRestoreLists writes the table of contents as two lists for pg_restore -L beside
-// the dump: main, every item but the grants and default privileges (restored by section),
-// and acls, those alone (restored last, once every object they name is there).
-func writeRestoreLists(dump, toc string) (main, acls string, err error) {
+// writeRestoreLists writes the table of contents as three lists for pg_restore -L beside
+// the dump: the main one, the vector indexes (isVectorIndex: built alone after the rest)
+// and the grants and default privileges (restored last). What is commented out stays so
+// in each.
+func writeRestoreLists(dump, toc string) (main, vectors, acls string, err error) {
 	write := func(keep func(line string) bool) (string, error) {
 		f, err := os.CreateTemp(filepath.Dir(dump), ".restore-list-*")
 		if err != nil {
@@ -506,14 +523,98 @@ func writeRestoreLists(dump, toc string) (main, acls string, err error) {
 		}
 		return f.Name(), f.Close()
 	}
-	if main, err = write(func(l string) bool { return !isACL(l) }); err != nil {
-		return "", "", err
+	written := []string{}
+	fail := func(err error) (string, string, string, error) {
+		for _, p := range written {
+			_ = os.Remove(p)
+		}
+		return "", "", "", err
 	}
-	if acls, err = write(isACL); err != nil {
-		_ = os.Remove(main)
-		return "", "", err
+	for _, keep := range []func(string) bool{
+		func(l string) bool { return !isACL(l) && !isVectorIndex(l) },
+		isVectorIndex,
+		isACL,
+	} {
+		p, err := write(keep)
+		if err != nil {
+			return fail(err)
+		}
+		written = append(written, p)
 	}
-	return main, acls, nil
+	return written[0], written[1], written[2], nil
+}
+
+// vectorIndexes are the HNSW indexes (pgvector) a restore builds alone: slot 0152's
+// segment_embeddings_hnsw. Built among the other indexes with the server's 64 MB of
+// maintenance_work_mem, its graph of 28 M rows was 9% built after two hours of a
+// rollback on 2026-11-07 (some fourteen hours in all), the home down all the while.
+var vectorIndexes = map[string]bool{"segment_embeddings_hnsw": true}
+
+func isVectorIndex(line string) bool {
+	for _, e := range ParseTOC(line) {
+		return e.Desc == "INDEX" && vectorIndexes[e.Name]
+	}
+	return false
+}
+
+// hasItems reports whether a restore list has an item not commented out.
+func hasItems(list string) bool {
+	b, err := os.ReadFile(list)
+	if err != nil {
+		return true // pg_restore says what is wrong with it
+	}
+	for _, l := range strings.Split(string(b), "\n") {
+		if l != "" && !strings.HasPrefix(l, ";") {
+			return true
+		}
+	}
+	return false
+}
+
+// indexBuilds are the settings (PGOPTIONS) a vector index is built with, the fastest
+// first: a third of the RAM for its graph (at most 32 GB: the graph of 28 M halfvec(384)
+// rows is some 36 GB, and what does not fit is built on disk, far slower) with parallel
+// workers; the same memory with none (a parallel build's shared memory refused); the
+// server's own settings, as before. A build that fails is undone by Postgres, so the next
+// starts clean.
+func indexBuilds(totalRAM uint64, cpus int) []string {
+	mb := totalRAM / 3 >> 20
+	if mb > 32<<10 {
+		mb = 32 << 10
+	}
+	workers := cpus / 2
+	if workers > 7 {
+		workers = 7
+	}
+	var out []string
+	if mb >= 256 {
+		mem := "-c maintenance_work_mem=" + strconv.FormatUint(mb, 10) + "MB"
+		if workers > 0 {
+			out = append(out, mem+" -c max_parallel_maintenance_workers="+strconv.Itoa(workers))
+		}
+		out = append(out, mem+" -c max_parallel_maintenance_workers=0")
+	}
+	return append(out, "")
+}
+
+// buildVectorIndexes runs build with each of indexBuilds in turn until one succeeds: a
+// rollback is never failed by a setting that only meant to make it faster.
+func buildVectorIndexes(log io.Writer, build func(opts string) error) error {
+	var err error
+	for _, opts := range indexBuilds(hostinfo.TotalMemory(), runtime.NumCPU()) {
+		shown := opts
+		if shown == "" {
+			shown = "the server's own settings"
+		}
+		_, _ = fmt.Fprintf(log, "[postgres] building the semantic search's vector index alone (%s)\n", shown)
+		start := time.Now()
+		if err = build(opts); err == nil {
+			_, _ = fmt.Fprintf(log, "[postgres] the vector index is built (%s)\n", time.Since(start).Round(time.Second))
+			return nil
+		}
+		_, _ = fmt.Fprintf(log, "[postgres] level=warn the vector index build failed (%s): %v\n", shown, err)
+	}
+	return err
 }
 
 // Querier runs SQL as the superuser on a bundle's running server.
