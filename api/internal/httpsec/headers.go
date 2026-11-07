@@ -43,6 +43,10 @@ type HeadersConfig struct {
 	XContentType string
 }
 
+// CloudStatusOrigin is Maktaba Cloud's status page (Epic 50 story 50.11), the one other origin
+// the web app may read from.
+const CloudStatusOrigin = "https://status.maktaba.tv"
+
 // DefaultHeaders returns the production-default header set described
 // in Story 10.15 AC-5 / Story 23.3 AC-2. HSTS is secure-by-default:
 // the field is pre-populated with HSTSOneYear so a transport that
@@ -53,8 +57,11 @@ type HeadersConfig struct {
 // header here defaults to its hardened value rather than to "off".
 func DefaultHeaders() HeadersConfig {
 	return HeadersConfig{
-		HSTS:         HSTSOneYear,
-		CSP:          "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'",
+		HSTS: HSTSOneYear,
+		// connect-src adds the cloud's status feed (Epic 50 story 50.11): the web app reads
+		// https://status.maktaba.tv/summary.json, a public, read-only file, when it reaches the
+		// home through the relay, to tell people when remote access is down
+		CSP:          "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' " + CloudStatusOrigin + "; frame-ancestors 'none'",
 		Referrer:     "strict-origin-when-cross-origin",
 		COOP:         "same-origin",
 		XContentType: "nosniff",

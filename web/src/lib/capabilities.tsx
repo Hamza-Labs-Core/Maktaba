@@ -60,6 +60,11 @@ export interface Capabilities {
   answered: boolean;
   etag: string | null;
   features: Readonly<Record<FeatureId, FeatureState>>;
+  /**
+   * Plugin panels (story 54.20): true only when the answer says `plugin_panels: "on"`. Unlike
+   * the known features, a missing key is off, so the app never asks an older server for them.
+   */
+  panels: boolean;
   /** null for a viewer */
   admin: {
     manageComponents: boolean;
@@ -90,6 +95,7 @@ export const ALL_ON: Capabilities = Object.freeze({
   answered: false,
   etag: null,
   features: Object.freeze(allOn()),
+  panels: false,
   admin: null,
 });
 
@@ -121,7 +127,8 @@ export function readCapabilities(raw: unknown, etag: string | null = null): Capa
     admin = { manageComponents: a.manage_components === true, off };
   }
   const tag = typeof r.etag === "string" && r.etag !== "" ? r.etag : etag;
-  return { answered: true, etag: tag, features, admin };
+  const panels = (r.features as Record<string, unknown>).plugin_panels === "on";
+  return { answered: true, etag: tag, features, panels, admin };
 }
 
 /** What one GET answered. */

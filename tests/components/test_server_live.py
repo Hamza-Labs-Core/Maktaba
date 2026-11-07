@@ -49,7 +49,20 @@ STOP_LIMIT_S = 30 + 10
 
 
 def _free_ports(n: int) -> list[int]:
-    return [R._free_port() for _ in range(n)]
+    """n distinct free ports: every socket stays bound until all are picked, so the OS
+    cannot hand one port out twice (the server refuses two parts on one port)."""
+    import socket
+
+    socks = []
+    try:
+        for _ in range(n):
+            s = socket.socket()
+            s.bind(("127.0.0.1", 0))
+            socks.append(s)
+        return [int(s.getsockname()[1]) for s in socks]
+    finally:
+        for s in socks:
+            s.close()
 
 
 @contextlib.contextmanager

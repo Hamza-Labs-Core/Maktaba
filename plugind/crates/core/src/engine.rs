@@ -483,3 +483,25 @@ fn truncate(mut s: String, max: usize) -> String {
     }
     s
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A plugin built for plugin API 1.0 links on this 1.1 host (story 54.21: a minor only
+    /// adds; the linker matches a 1.0 import against the 1.1 interfaces by semver).
+    #[test]
+    fn a_1_0_import_links_on_the_1_1_host() {
+        let engine = Engine::new(&engine_config()).unwrap();
+        let linker = build_linker(&engine).unwrap();
+        for version in ["1.0.0", "1.1.0"] {
+            let wat = format!(
+                r#"(component (import "maktaba:plugin/job@{version}" (instance (export "progress" (func (param "pct" u8))))))"#
+            );
+            let c = Component::new(&engine, wat).unwrap();
+            linker.instantiate_pre(&c).unwrap_or_else(|e| panic!("{version}: {e}"));
+        }
+        // a newer minor links by semver too: the import audit refuses it first
+        // (plugin_api_newer, audit::tests::newer_api_and_missing_run)
+    }
+}

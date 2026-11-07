@@ -16,6 +16,11 @@ options:
 packages:
   MaktabaKit:
     path: MaktabaKit
+  # the Apple TV's crash reports (Epic 53 story 53.14): tvOS has no MetricKit. MIT, its
+  # tvOS target only; the reports stay on the TV unless the person sends them to the home.
+  PLCrashReporter:
+    url: https://github.com/microsoft/plcrashreporter
+    exactVersion: 1.12.2
 settings:
   base:
     DEVELOPMENT_TEAM: G58UVTKQPB
@@ -312,6 +317,9 @@ targets:
   Maktaba TV:
     templates: [App]
     platform: tvOS
+    dependencies:
+      - package: PLCrashReporter
+        product: CrashReporter
     sources:
       - path: ../tv/tvos/MaktabaTV
         excludes: ["Info.plist", "Resources/Fonts/*.txt"]

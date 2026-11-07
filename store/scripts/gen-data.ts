@@ -25,7 +25,7 @@ const out =
 const path = resolve(HERE, "../checks/capabilities.json");
 if (process.argv.includes("--check")) {
   if (readFileSync(path, "utf8") !== out) {
-    console.error(`${path} is stale: run pnpm data in store/`);
+    console.error(`${path} is stale: run npm run data in store/`);
     process.exit(1);
   }
 } else writeFileSync(path, out);

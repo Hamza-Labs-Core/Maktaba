@@ -6,7 +6,7 @@
   - `GET /api/models` → a bare array `Model[]`, `Model = { id, type: "stt"|"embedding"|"diarization", name, size, platform, status: "active"|"downloaded"|"downloading"|"available", progress, active, last_test?: { ok, latency_ms, detail? } }`.
   - `POST /api/models/{id}/download` (202), `DELETE /api/models/{id}`, `PATCH /api/models/{id}/activate`, `POST /api/models/{id}/test`. After each, the list is reloaded.
   - Polling: while any model has `status: "downloading"`, `GET /api/models` every 600 ms; stops when none is downloading or on unmount.
-  - OpenAI API key: only saved to `localStorage["mkt:openai_api_key"]`; never sent to the server.
+  - OpenAI API key: set on the server (`OPENAI_API_KEY`); the page only says so. It has no key field, and removes `localStorage["mkt:openai_api_key"]`, where an earlier build kept a typed key in plain text.
 - **Access:** signed-in user (`RequireAuth`). No admin gate in the UI and no admin check visible in the handler `Mount` (all users see Download / Delete / Activate). Server returns "pipeline offline" errors on mutations when no pipeline client is wired.
 - **Existing tests:** none. Gaps: all below.
 
@@ -32,7 +32,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 | SMD-14 | Load fails (401 / 403 / 500 / network / bad JSON)            | Error         | P2       | Yes (`ModelsSection.test.tsx`)                                  |
 | SMD-15 | Action fails (pipeline offline 503, 404, network)            | Error         | P2       | Yes (`ModelsSection.test.tsx`)                                  |
 | SMD-16 | Polling error does not loop forever silently                 | Error         | P2       | Yes (`ModelsSection.test.tsx`)                                  |
-| SMD-17 | OpenAI API key save                                          | Validation    | P2       | Yes (`ModelsSection.test.tsx`)                                  |
+| SMD-17 | OpenAI API key never kept by the browser                     | Security      | P2       | Yes (`ModelsSection.test.tsx`)                                  |
 | SMD-18 | Non-admin sees model mutations                               | Permissions   | P1       | Yes (ModelsSection.test.tsx)                                    |
 | SMD-19 | Signed-out deep link redirects to /login                     | Permissions   | P1       | Yes (`ModelsSection.test.tsx`)                                  |
 | SMD-20 | Render crash shows route error fallback; Back works          | Error         | P1       | Yes (`ModelsSection.test.tsx`)                                  |
@@ -208,16 +208,15 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
   1. Advance 6 s.
 - **Expected:** Alert shows the error. Note: the model stays `downloading` in state, so polling keeps going every 600 ms while the server is down (10 calls in 6 s). Wanted: back off or stop after errors. Record the call count.
 
-### SMD-17 — OpenAI API key save
+### SMD-17 — OpenAI API key never kept by the browser
 
 - **Priority:** P2
-- **Category:** Validation
+- **Category:** Security
 - **Covered by existing test?** Yes (`ModelsSection.test.tsx`)
-- **Preconditions / data:** empty storage; second run with `mkt:openai_api_key = "sk-old"`.
+- **Preconditions / data:** `mkt:openai_api_key = "sk-old"` in storage (kept by an earlier build).
 - **Steps:**
-  1. Type `sk-test-123` in "OpenAI API key"; click "Save".
-  2. Reload the tab.
-- **Expected:** Input is `type="password"`, `autocomplete="off"`, placeholder "sk-…". After Save, `localStorage["mkt:openai_api_key"] === "sk-test-123"`; after reload the field is prefilled. Wanted: feedback on save and the key used by the server; **current** no toast, no validation (empty or "abc" saved as is), and the key is never sent to any API (currently unhandled — likely bug: control has no effect, and a secret sits in plain localStorage).
+  1. Open Settings → Models.
+- **Expected:** No "OpenAI API key" field and no password input; a note says the key is set on the server (`OPENAI_API_KEY`). `localStorage["mkt:openai_api_key"]` is removed, and no `api_key` entry is left in storage.
 
 ### SMD-18 — Non-admin sees model mutations
 
@@ -278,7 +277,7 @@ Errors are shown in a `<p role="alert">` above the controls: `ApiError.message` 
 - **Preconditions / data:** SMD-02 data.
 - **Steps:**
   1. Run axe; query by role.
-- **Expected:** `combobox` "Active STT backend" and textbox "OpenAI API key" are labelled. `progressbar` has `aria-valuemin/max/now`. Errors are `role="alert"`. Wanted: card buttons name their model (e.g. "Delete E5 base"); **current** several identical "Delete"/"Test" names on one page.
+- **Expected:** `combobox` "Active STT backend" is labelled. `progressbar` has `aria-valuemin/max/now`. Errors are `role="alert"`. Wanted: card buttons name their model (e.g. "Delete E5 base"); **current** several identical "Delete"/"Test" names on one page.
 
 ### SMD-24 — Error colour and badges in both themes
 

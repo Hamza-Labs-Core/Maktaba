@@ -205,6 +205,43 @@ function subscription(t: string): { publisher: string; event: string } | undefin
 const stageId = (p: string, s: string) => `stage:${p}/${s}`;
 const eventId = (p: string, e: string) => `event:${p}/${e}`;
 
+/** The plugin a store or a home holds under id, at the newest version a range accepts. */
+export type Lookup = (id: string, range: string) => Member | undefined;
+
+/** Add to members every plugin they subscribe to that they do not hold, from lookup, and
+ * then the plugins those subscribe to, and so on (Go's ResolveDepends): a cycle or a
+ * missing upstream two or more plugins away is then in the graph checkMembers walks. */
+export function resolveDepends(members: Member[], lookup: Lookup): Member[] {
+  const out = [...members];
+  const have = new Set(out.map((m) => m.id));
+  const asked = new Set<string>();
+  let stages = out.reduce((n, m) => n + m.stages.length, 0);
+  for (let i = 0; i < out.length; i++) {
+    const m = out[i] as Member;
+    const want: string[] = [];
+    for (const s of m.stages) {
+      for (const t of s.triggers) {
+        const sub = subscription(t);
+        if (sub && !have.has(sub.publisher) && !asked.has(sub.publisher)) {
+          want.push(sub.publisher);
+          asked.add(sub.publisher);
+        }
+      }
+    }
+    want.sort(cmp);
+    for (const p of want) {
+      if (stages > MAX_STAGES) return out;
+      const up = lookup(p, m.depends?.[p] ?? "");
+      if (up) {
+        out.push({ ...up, state: "" });
+        have.add(p);
+        stages += up.stages.length;
+      }
+    }
+  }
+  return out;
+}
+
 /** Build the combined graph of the active members and check it (54.39 §4, checks 4 to 8).
  * strict (the store) refuses a missing upstream; the home only warns. */
 export function checkMembers(members: Member[], opts: { strict?: boolean } = {}): { graph: Graph; findings: Finding[] } {
@@ -446,7 +483,9 @@ function longest(g: Graph, adj: Map<string, string[]>): string[] {
   for (const [from, tos] of adj) {
     for (const to of tos) {
       indeg.set(to, (indeg.get(to) ?? 0) + 1);
-      preds.set(to, [...(preds.get(to) ?? []), from]);
+      const ps = preds.get(to);
+      if (ps) ps.push(from);
+      else preds.set(to, [from]);
     }
   }
   const ready = new IdHeap();

@@ -21,7 +21,7 @@ pub const CODE_API_NEWER: &str = "plugin_api_newer";
 
 /// The plugin API this host serves (the WIT package's major and minor).
 pub const PLUGIN_API_MAJOR: u64 = 1;
-pub const PLUGIN_API_MINOR: u64 = 0;
+pub const PLUGIN_API_MINOR: u64 = 1;
 
 /// The WASI interfaces the host links (README §5.2), without their versions. Nothing else
 /// of WASI is linked: not sockets, http, filesystem, stdin, terminals or processes.
@@ -57,6 +57,7 @@ pub const PLUGIN_INTERFACES: &[&str] = &[
     "queue",
     "notify",
     "exports",
+    "compute",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,9 +240,20 @@ mod tests {
 
     #[test]
     fn newer_api_and_missing_run() {
-        assert_eq!(audit(&s(&["maktaba:plugin/job@1.1.0"]), &s(&["run"]), &[]).unwrap_err().code, CODE_API_NEWER);
+        assert_eq!(audit(&s(&["maktaba:plugin/job@1.2.0"]), &s(&["run"]), &[]).unwrap_err().code, CODE_API_NEWER);
         assert_eq!(audit(&s(&["maktaba:plugin/job@2.0.0"]), &s(&["run"]), &[]).unwrap_err().code, CODE_API_NEWER);
         assert_eq!(audit(&[], &s(&["other"]), &[]).unwrap_err().code, CODE_MISSING_EXPORT);
+    }
+
+    #[test]
+    fn api_1_1_compute_is_gated_and_1_0_plugins_still_pass() {
+        // a plugin built for 1.0 runs on this 1.1 host (README §4.4: a minor only adds)
+        audit(&s(&["maktaba:plugin/job@1.0.0", "maktaba:plugin/media@1.0.0"]), &s(&["run"]), &s(&["media.read"]))
+            .unwrap();
+        let e = audit(&s(&["maktaba:plugin/compute@1.1.0"]), &s(&["run"]), &[]).unwrap_err();
+        assert_eq!(e.code, CODE_UNDECLARED_IMPORT);
+        audit(&s(&["maktaba:plugin/compute@1.1.0"]), &s(&["run"]), &s(&["compute.llm"])).unwrap();
+        audit(&s(&["maktaba:plugin/compute@1.1.0"]), &s(&["run"]), &s(&["compute.embed"])).unwrap();
     }
 
     #[test]

@@ -66,7 +66,9 @@ import com.hamzalabs.maktaba.core.api.PlaybackState
 import com.hamzalabs.maktaba.core.api.Segment
 import com.hamzalabs.maktaba.core.api.SeriesName
 import com.hamzalabs.maktaba.core.api.VideoDetail
+import com.hamzalabs.maktaba.core.api.PanelView
 import com.hamzalabs.maktaba.core.api.chapters
+import com.hamzalabs.maktaba.core.api.panels
 import com.hamzalabs.maktaba.core.api.markWatched
 import com.hamzalabs.maktaba.core.api.myVideo
 import com.hamzalabs.maktaba.core.api.segments
@@ -78,6 +80,7 @@ import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.FeatureOffNote
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.MaktabaTokens
+import com.hamzalabs.maktaba.core.ui.PluginPanels
 import com.hamzalabs.maktaba.core.ui.Message
 import com.hamzalabs.maktaba.core.ui.Revalidating
 import com.hamzalabs.maktaba.core.ui.sentence
@@ -133,6 +136,9 @@ class VideoPage(private val client: ApiClient, val id: String) {
     var transcript by mutableStateOf<List<Segment>>(emptyList())
         private set
     var nextEpisodes by mutableStateOf<List<Episode>>(emptyList())
+        private set
+    /** Installed plugins' panels for this video (story 54.20); empty unless the home serves them. */
+    var panels by mutableStateOf<List<PanelView>>(emptyList())
         private set
     var favorite by mutableStateOf(false)
         private set
@@ -192,6 +198,11 @@ class VideoPage(private val client: ApiClient, val id: String) {
         } finally {
             loading = false
         }
+    }
+
+    /** The panels of installed plugins, only while the home answers `plugin_panels: on`; a failure is none. */
+    suspend fun loadPanels(features: Capabilities, lang: String) {
+        panels = if (features.panels) optional { client.panels("video", id, lang) }.orEmpty() else emptyList()
     }
 
     /** Favorite on or off (`POST /api/me/favorites`); false when the home did not take it (the toggle goes back). */
@@ -260,6 +271,11 @@ fun VideoScreen(id: String, nav: PlayerNavigator) {
     val snackbar = remember { SnackbarHostState() }
     val saveFailed = stringResource(R.string.video_save_failed)
     LaunchedEffect(page) { page.load() }
+    // story 54.20: installed plugins' panels, while the home serves them
+    val features = home.features()
+    LaunchedEffect(page, features.panels) {
+        page.loadPanels(features, if (java.util.Locale.getDefault().language == "ar") "ar" else "en")
+    }
     // a read again that failed keeps the page: a snackbar says why
     val resources = LocalResources.current
     val refreshProblem = page.problem.takeIf { page.video != null }
@@ -442,6 +458,13 @@ private fun VideoDetails(
                     }
                 }
             }
+
+            // story 54.20: "From plugins", collapsed, below Maktaba's own sections
+            PluginPanels(
+                page.panels,
+                Modifier.padding(horizontal = gutter),
+                onSeek = { onOpen(Route.Watch(video.id, it.toInt())) },
+            )
 
             if (page.nextEpisodes.isNotEmpty()) {
                 Rail(stringResource(R.string.video_next_episodes), Modifier.testTag("video-next")) {

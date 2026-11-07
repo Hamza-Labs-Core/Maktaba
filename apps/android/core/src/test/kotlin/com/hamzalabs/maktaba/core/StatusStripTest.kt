@@ -5,6 +5,8 @@ import com.hamzalabs.maktaba.core.api.HomeStatusDoc
 import com.hamzalabs.maktaba.core.api.StatusStripRules
 import com.hamzalabs.maktaba.core.api.StripKey
 import com.hamzalabs.maktaba.core.api.StripLine
+import com.hamzalabs.maktaba.core.ui.localWhen
+import com.hamzalabs.maktaba.core.ui.stripText
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -75,5 +77,15 @@ class StatusStripTest {
             "status_close", "status_player")) {
             assertTrue(name, ar.contains("name=\"$name\""))
         }
+    }
+
+    /** Epic 50 story 50.11: the cloud's keys have their words; the maintenance window formats. */
+    @Test
+    fun `every line has its words, the cloud's too`() {
+        val ids = StripKey.entries.map { stripText(it) }
+        assertEquals("one string per key", StripKey.entries.size, ids.toSet().size)
+        assertEquals(R.string.banner_maintenance, stripText(StripKey.MAINTENANCE))
+        val (date, time) = localWhen(java.time.Instant.parse("2026-11-04T02:00:00Z").toEpochMilli())
+        assertTrue(date.isNotBlank() && time.isNotBlank())
     }
 }
