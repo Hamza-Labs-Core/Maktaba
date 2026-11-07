@@ -49,7 +49,7 @@ type Meter struct {
 	PAYG interface {
 		ForServer(ctx context.Context, serverID string, now time.Time) (PAYG, error)
 	}
-	now       func() time.Time
+	now func() time.Time
 	// writer writes a flush batch (nil: the database; tests fail it)
 	writer func(ctx context.Context, id string, batch map[bucketKey]counter) error
 	// inflight is the batch a failed flush tried to write: retried as it is, under its

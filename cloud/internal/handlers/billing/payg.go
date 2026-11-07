@@ -12,17 +12,17 @@ import (
 
 // Story 50.19 §5, §6: the account owner's pay-as-you-go and extra streams (Pro only).
 //
-//	GET /v1/billing/payg            {enabled, cap_cents, spent_cents, price_per_gb_cents}
-//	PUT /v1/billing/payg            {enabled, cap_cents}: on needs a cap; item 2 at the provider
-//	PUT /v1/billing/extra-streams   {count}: item 3's quantity at the provider (prorated); the
-//	                                webhook then sets the relay's limit
+//	GET   /v1/billing/payg          {enabled, cap_cents, spent_cents, price_per_gb_cents}
+//	PATCH /v1/billing/payg          {enabled, cap_cents}: on needs a cap; item 2 at the provider
+//	PATCH /v1/billing/extra-streams   {count}: item 3's quantity at the provider (prorated); the
+//	                                  webhook then sets the relay's limit
 func mountPAYG(r interface {
 	Get(string, http.HandlerFunc)
-	Put(string, http.HandlerFunc)
+	Patch(string, http.HandlerFunc)
 }, d *Deps) {
 	r.Get("/v1/billing/payg", d.GetPAYG)
-	r.Put("/v1/billing/payg", d.PutPAYG)
-	r.Put("/v1/billing/extra-streams", d.PutExtraStreams)
+	r.Patch("/v1/billing/payg", d.PutPAYG)
+	r.Patch("/v1/billing/extra-streams", d.PutExtraStreams)
 }
 
 type paygView struct {
