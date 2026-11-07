@@ -111,8 +111,7 @@ async def test_classify_wave_1_is_identical(template: str, monkeypatch: pytest.M
             perf=False,
         )
         assert rows == [], "\n".join(rows[:20])
-        await p.bench(selected())
-        problems = await p.compare(
+        problems = await p.compare_n16(
             [(t, KEYS[t]) for t in cfg.tables],
             ignore={k: list(v) for k, v in cfg.ignore.items()},
             stages=selected(),

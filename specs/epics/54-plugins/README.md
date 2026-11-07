@@ -1789,7 +1789,12 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   in turns, and the p50 and p95 ratios are taken over those runs; a difference under 25 ms is
   the plugin path's fixed cost of one job (its token and the hop to the runner) and does not
   count. Every statement runs on a connection already set to the plugin's role and origin, so
-  a statement outside a transaction is one round trip to Postgres.
+  a statement outside a transaction is one round trip to Postgres. A failure that is only the timing is
+  measured once more and counts when the second run fails too: with 11 runs a side, p95 is
+  about the slowest run, and one stall of a shared CI machine is not the plugin's cost.
+- **A runner never judges an update.** Like a TV slot, a plugin runner that does not run (it
+  crash loops, or its sandbox is unavailable) is left out of the update's health rules, before
+  and after: its stages run in the worker meanwhile, and the Components page shows it.
 - **A first-party plugin's role may be missing.** A Postgres where the migrations may not
   create roles, or where another database's owner made the role, gets a notice from the roles
   migration instead of a failure; the worker then runs those stages in-process
@@ -1810,8 +1815,6 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   (a folder added since the runner started, before it restarts on the new areas) comes back as
   `sandbox_refused`, and the worker runs that job itself, as for an unregistered statement. A
   write the plugin may never make is `plugin_scope`, never a fallback.
-- **A runner never blocks an update.** Like a TV slot, a plugin runner that does not run is
-  left out of the update's health rule: its stages run in the worker meanwhile.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

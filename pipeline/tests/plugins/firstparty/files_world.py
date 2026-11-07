@@ -174,7 +174,6 @@ async def prove(
             base = files_tree(p.tmp / "files-base" / area)
             made = files_tree(p.tmp / "files-a" / area)
             assert set(made) - set(base), f"{area}: the stages wrote no file to compare"
-        await p.bench(stages)
-        problems = await p.compare(tables, ignore=ignore, stages=stages, perf=cfg.perf)
+        problems = await p.compare_n16(tables, ignore=ignore, stages=stages, perf=cfg.perf)
         slowest = p.slowest()
     assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
