@@ -2047,6 +2047,13 @@ build fails when the two differ.
   downloads from each home directly, never through the relay. The cloud's name server now
   starts: its role was refused as unknown.
 
+- **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
+  queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
+  admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
+  Apple, Android and Android TV) carries the id of the call that opened the session (`rid`), and streaming logs it on a failed
+  playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
+  lines for the same action. Streaming's failure lines also carried no request id until now.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

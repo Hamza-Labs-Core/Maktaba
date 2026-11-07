@@ -33,6 +33,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -202,25 +203,17 @@ func (h *Handler) FollowPlan(w http.ResponseWriter, r *http.Request) {
 
 // enqueueWriteChannels queues a forced write_channels run on the catalog
 // through the same SQL function every enqueue goes through (best-effort: the
-// next lineup run picks the channel up anyway).
+// next lineup run picks the channel up anyway). queues.Enqueue also names the
+// request that queued it (origin_request_id, Epic 53 story 53.08).
 func (h *Handler) enqueueWriteChannels(ctx context.Context, p *principal.Principal) bool {
-	reason, _ := json.Marshal(map[string]any{"why": "follow-plan", "by": "user:" + p.UserID})
-	var jobID sql.NullInt64
-	var outcome string
-	err := h.DB.QueryRowContext(ctx, `SELECT job_id, outcome FROM processing_jobs_enqueue(
-		$1::text, $2::uuid, $3::text, $4::int, $5::boolean, $6::boolean,
-		$7::jsonb, $8::bigint, $9::jsonb, $10::int)`,
-		"catalog", catalogSubjectID, "write_channels", nil, true, false,
-		string(reason), nil, nil, nil,
-	).Scan(&jobID, &outcome)
-	if err != nil {
-		return false
-	}
-	switch outcome {
-	case "inserted", "coalesced", "rerun_requested":
-		return true
-	}
-	return false
+	res, err := queues.Enqueue(ctx, h.DB, queues.EnqueueParams{
+		SubjectKind: "catalog",
+		SubjectID:   catalogSubjectID,
+		Stage:       "write_channels",
+		Force:       true,
+		Reason:      map[string]any{"why": "follow-plan", "by": "user:" + p.UserID},
+	})
+	return err == nil && res.Accepted()
 }
 
 // ─── sources ─────────────────────────────────────────────────────────
