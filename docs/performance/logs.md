@@ -104,6 +104,10 @@ the write.
 
 ## Every night on a Mac
 
+The Go logger's p99 is judged the same way as the Python one: the best of three rounds, every
+round in the report (`p99_ns_rounds`). On the nightly macOS runner a single round's p99 was 6
+to 10 times its p50 for both loggers (issue #807): the runner's tail, not the logger's.
+
 `.github/workflows/nightly-perf.yml` runs the Go and Python benches at 04:17 UTC on a
 macOS arm64 runner (the reference class), keeps the numbers for 90 days (`logbench-nightly`),
 and compares them with the last successful night's (`tools/logbench/compare.py`). Each run is

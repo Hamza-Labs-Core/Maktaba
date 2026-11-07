@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
@@ -32,6 +33,8 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 
 	go cleanupExpired(ctx, logger, pool)
 	go purgeDeletedAccounts(ctx, logger, pool)
+	// story 50.19: relayed streams silent for 2 minutes stop counting against their plan
+	go sweepStreams(ctx, logger, &billingpkg.Streams{DB: pool.DB}, time.Minute)
 	// direct remote access (story 50.15): certificates and the outside checks
 	if j := directJobs(cfg, pool, logger); j != nil {
 		go j.Run(ctx)
@@ -89,6 +92,27 @@ func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, pool *db.Poo
 			}
 			if res.Purged > 0 {
 				logger.Info("worker: purged deleted accounts", "accounts", res.Purged, "push_log_rows", res.PushRows)
+			}
+		}
+	}
+}
+
+// sweepStreams deletes the relayed streams silent for billing.StreamSilence, every interval
+// (story 50.19 §3: a stream that ended or a relay that crashed frees its slot).
+func sweepStreams(ctx context.Context, logger *slog.Logger, st interface {
+	Sweep(context.Context) (int64, error)
+}, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if n, err := st.Sweep(ctx); err != nil {
+				logger.Warn("worker: relayed streams sweep", "err", err)
+			} else if n > 0 {
+				logger.Info("worker: relayed streams ended", "streams", n, "event", "relay_streams_swept")
 			}
 		}
 	}

@@ -180,6 +180,28 @@ describe("Browse", () => {
     expect(screen.queryByText("plugin:dev.example.silences/silences.found")).toBeNull();
   });
 
+  it("#757: opened from the store's listing (?store=<id>), the plugin's page shows; an unknown id leaves the list", async () => {
+    get.mockResolvedValue(view());
+    const { unmount } = render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.tagger" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("button", { name: EN["plugins.browse.back"] })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Tagger/ })).toBeInTheDocument();
+    unmount();
+    render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.absent" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("heading", { name: EN["plugins.browse.title"] })
+    ).toBeInTheDocument();
+  });
+
   it("a plugin with no flow shows no chart", async () => {
     get.mockResolvedValue(view());
     show();
@@ -197,6 +219,34 @@ describe("Browse", () => {
     await act(async () => fireEvent.click(open[0]!));
     expect(screen.getByRole("button", { name: EN["plugins.browse.install"] })).toBeDisabled();
     expect(screen.getAllByRole("alert")[0]).toHaveTextContent(EN["plugins.browse.expired"]);
+  });
+
+  it("#758: a report of an installed plugin can attach its logs; one not installed cannot", async () => {
+    get.mockResolvedValue(view({ plugins: [entry({ installed: "1.1.0" })] }));
+    post.mockResolvedValue({ status: "filed" });
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    fireEvent.change(screen.getByLabelText(EN["plugins.browse.report_reason"]), {
+      target: { value: "does_not_work" },
+    });
+    await act(async () => fireEvent.click(screen.getByLabelText(EN["plugins.browse.report_logs"])));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: EN["plugins.browse.send_report"] }))
+    );
+    expect(post).toHaveBeenCalledWith("/api/plugins/dev.example.tagger/report", {
+      reason: "does_not_work",
+      details: "",
+      attach_logs: true,
+    });
+  });
+
+  it("#758: no logs box for a plugin not installed here", async () => {
+    get.mockResolvedValue(view());
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.queryByLabelText(EN["plugins.browse.report_logs"])).toBeNull();
   });
 
   it("install and a rating too early (the store's words)", async () => {

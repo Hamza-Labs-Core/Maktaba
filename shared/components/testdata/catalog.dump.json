@@ -2009,6 +2009,54 @@
       "wants": []
     },
     {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.reports.share.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "reports.share",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:reports_forwarder"
+      ],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "cloud.link"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.94",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.reports.share.title",
+      "wants": []
+    },
+    {
       "bundles": [
         "full",
         "core"
@@ -3336,6 +3384,7 @@
     "queue_health",
     "analytics",
     "telemetry",
+    "reports.share",
     "backups",
     "updates.auto",
     "model.cohere-arabic",

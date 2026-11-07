@@ -122,6 +122,23 @@ export async function reportRating(ctx: Ctx, id: string): Promise<Response> {
   return json({ status: "reported" });
 }
 
+/** At most 200 lines and 256 KB of a report's attached log lines (the home caps them too). */
+export const REPORT_LINES_MAX = 200;
+export const REPORT_LINES_BYTES = 256 * 1024;
+
+function reportLines(raw: unknown[]): unknown[] {
+  const out: unknown[] = [];
+  let size = 0;
+  for (const l of raw.slice(0, REPORT_LINES_MAX)) {
+    if (l === null || (typeof l !== "object" && typeof l !== "string")) continue;
+    const n = JSON.stringify(l).length;
+    if (size + n > REPORT_LINES_BYTES) break;
+    out.push(l);
+    size += n;
+  }
+  return out;
+}
+
 async function file(env: Env, plugin: string, b: Record<string, unknown>, who: { account?: string; home?: string }): Promise<Response> {
   const reason = str(b.reason, "reason", 20);
   if (!(REASONS as readonly string[]).includes(reason)) refuse(400, "reason_invalid", { allowed: REASONS });
@@ -129,8 +146,16 @@ async function file(env: Env, plugin: string, b: Record<string, unknown>, who: {
   if (!p) refuse(404, "not_found");
   const id = newId("rp");
   const urgent = URGENT.has(reason);
-  await env.DB_CATALOG.prepare("INSERT INTO reports (id, plugin, version, reason, details, account, home, urgent, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .bind(id, plugin, (optStr(b.version, "version", 64) ?? "").slice(0, 64), reason, plain(optStr(b.details, "details", 6000) ?? "", 4000), who.account ?? "", who.home ?? "", urgent ? 1 : 0, iso(now()))
+  // #758: a home's report may carry the plugin's own recent lines (the admin ticked it; the
+  // home scrubbed and capped them): kept apart, in the private bucket, for the reviewers
+  let logsKey = "";
+  if (who.home && Array.isArray(b.logs) && b.logs.length > 0) {
+    const lines = reportLines(b.logs);
+    logsKey = `report-logs/${id}.json`;
+    await env.PRIVATE.put(logsKey, JSON.stringify({ plugin, home: who.home, lines }), { httpMetadata: { contentType: "application/json" } });
+  }
+  await env.DB_CATALOG.prepare("INSERT INTO reports (id, plugin, version, reason, details, account, home, urgent, created, logs_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id, plugin, (optStr(b.version, "version", 64) ?? "").slice(0, 64), reason, plain(optStr(b.details, "details", 6000) ?? "", 4000), who.account ?? "", who.home ?? "", urgent ? 1 : 0, iso(now()), logsKey)
     .run();
   if (urgent) {
     // the store's own on-call: its admins, by email (54.16 §5), never cloud monitoring
@@ -162,6 +187,17 @@ export async function moderationQueue(ctx: Ctx): Promise<Response> {
   const r = await ctx.env.DB_CATALOG.prepare("SELECT * FROM reports WHERE status = 'open' ORDER BY urgent DESC, created ASC LIMIT 200").all();
   const reviews = await ctx.env.DB_CATALOG.prepare("SELECT id, plugin, author, stars, text, reported FROM ratings WHERE reported > 0 AND hidden_at IS NULL ORDER BY reported DESC LIMIT 100").all();
   return json({ reports: r.results, reviews: reviews.results });
+}
+
+/** GET /v1/admin/reports/{id}/logs: the plugin's lines a home attached to its report (#758),
+ * for the store's reviewers; each read is audited. */
+export async function reportLogs(ctx: Ctx, id: string): Promise<Response> {
+  const a = staff(ctx, "store_reviewer");
+  const r = await ctx.env.DB_CATALOG.prepare("SELECT logs_key FROM reports WHERE id = ?").bind(id).first<{ logs_key: string }>();
+  const obj = r?.logs_key ? await ctx.env.PRIVATE.get(r.logs_key) : null;
+  if (!obj) refuse(404, "not_found");
+  await audit(ctx, a.id, "report.logs", id);
+  return new Response(obj!.body, { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
 }
 
 /** POST /v1/admin/reports/{id}/resolve {outcome}: the reporter is told the outcome in general terms. */

@@ -658,6 +658,21 @@ bundles   = []
 since     = "0.3.66"
 
 [[component]]
+id        = "reports.share"
+kind      = "loop"
+group     = "system"
+title_key = "components.reports.share.title"
+desc_key  = "components.reports.share.desc"
+# on as the admin's "send problem reports to Maktaba" setting says (53.16), like telemetry;
+# nothing else turns it on
+loops     = ["api:reports_forwarder"]
+requires  = ["cloud.link"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "0.3.94"
+
+[[component]]
 id        = "backups"
 kind      = "loop"
 group     = "system"

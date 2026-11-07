@@ -301,8 +301,9 @@ export const pluginsApi = {
     api.post<InstallResult>("/api/plugins/install", { store: { id, version } }),
   rate: (id: string, stars: number, text: string) =>
     api.post(`/api/plugins/${enc(id)}/rate`, { stars, text }),
-  report: (id: string, reason: string, details: string) =>
-    api.post(`/api/plugins/${enc(id)}/report`, { reason, details }),
+  /** attachLogs: the plugin's own recent lines, scrubbed, go with the report (#758) */
+  report: (id: string, reason: string, details: string, attachLogs = false) =>
+    api.post(`/api/plugins/${enc(id)}/report`, { reason, details, attach_logs: attachLogs }),
   setAutoUpdate: (id: string, on: boolean) =>
     api.put<PluginDetail>(`/api/plugins/${enc(id)}/auto-update`, { on }),
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),

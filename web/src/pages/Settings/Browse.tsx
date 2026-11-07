@@ -10,6 +10,7 @@ import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { Toggle } from "@ds/components/Choice/Toggle";
+import { Checkbox } from "@ds/components/Choice/Checkbox";
 import { fold } from "../../help/search";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { pluginsApi, type CatalogEntry, type CatalogView } from "../../lib/pluginsApi";
@@ -65,7 +66,14 @@ export function filterEntries(
   );
 }
 
-export function Browse({ onInstalled }: { onInstalled: (id: string) => void }) {
+export function Browse({
+  onInstalled,
+  initial = "",
+}: {
+  onInstalled: (id: string) => void;
+  /** a plugin to open once the catalog is here (?store=<id> from the store's listing) */
+  initial?: string;
+}) {
   const { t, locale, n } = useI18n();
   const [all, setAll] = useState(false);
   const [view, setView] = useState<CatalogView | null>(null);
@@ -74,10 +82,19 @@ export function Browse({ onInstalled }: { onInstalled: (id: string) => void }) {
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState<Sort>("rating");
   const [open, setOpen] = useState<CatalogEntry | null>(null);
+  const [opened, setOpened] = useState(false);
 
   useEffect(() => {
     pluginsApi.catalog(all).then(setView, (e) => setError(refusalWords(t, e)));
   }, [all, t]);
+
+  // the plugin the listing page sent us to, once (an id not in the catalog: the list shows)
+  useEffect(() => {
+    if (!view || opened || !initial) return;
+    setOpened(true);
+    const p = view.plugins.find((x) => x.id === initial);
+    if (p) setOpen(p);
+  }, [view, initial, opened]);
 
   const shown = useMemo(
     () => (view ? filterEntries(view.plugins, query, category, sort) : []),
@@ -189,6 +206,7 @@ function StorePlugin({
   const [text, setText] = useState("");
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
+  const [attachLogs, setAttachLogs] = useState(false);
   const v = p.newest;
   const flow = flowOf(p);
   // the plugin's own published events and the subscriptions into its stages
@@ -352,11 +370,21 @@ function StorePlugin({
         value={details}
         onChange={(e) => setDetails(e.target.value)}
       />
+      {p.installed && (
+        <Checkbox
+          label={t("plugins.browse.report_logs")}
+          checked={attachLogs}
+          onChange={(e) => setAttachLogs(e.target.checked)}
+        />
+      )}
       <Button
         variant="ghost"
         disabled={!reason}
         onClick={() =>
-          void run(() => pluginsApi.report(p.id, reason, details), t("plugins.browse.reported"))
+          void run(
+            () => pluginsApi.report(p.id, reason, details, attachLogs && !!p.installed),
+            t("plugins.browse.reported")
+          )
         }
       >
         {t("plugins.browse.send_report")}

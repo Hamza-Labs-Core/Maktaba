@@ -155,13 +155,19 @@ while the catalog has expired or the store's signing is not trusted.
 From the same page an admin rates the plugin (1 to 5 stars and optional text, sent to the
 store signed by this home, counted against the home's linked store account once the plugin has
 been installed for 24 hours) or reports it for malware, data misuse, not working, being
-misleading, offensive content, copyright or another reason. The routes: `POST
-/api/plugins/{id}/rate {stars, text}` and `POST /api/plugins/{id}/report {reason, details}`;
-a home that is not linked gets `409 store_not_linked`, and an offline one `409 store_offline`.
+misleading, offensive content, copyright or another reason. A report of a plugin installed here
+can attach its log lines from the last day, when the admin ticks it: only the plugin's own
+lines, with passwords, tokens and keys removed by the same rules as problem reports, at most
+200 lines and 256 KB, read only by the store's reviewers. The routes: `POST
+/api/plugins/{id}/rate {stars, text}` and `POST /api/plugins/{id}/report {reason, details,
+attach_logs}`; a home that is not linked gets `409 store_not_linked`, and an offline one `409
+store_offline`.
 
 The same catalog is public at plugins.maktaba.tv (and /ar, right to left): a page per plugin
 at `/p/<id>` with Open in my Maktaba (`maktaba://plugins/<id>`, which the installed apps open)
-and Download file for an offline install from a file.
+and Download file for an offline install from a file. Where no Maktaba app is installed, the
+page asks for the home's own address once (remembered in that browser only, never sent to the
+store) and opens `<address>/settings/plugins?store=<id>`: Browse on that plugin.
 The page of a plugin in a flow draws the whole flow (its plugins' stages, the Maktaba events
 they start from and the events between them, this plugin outlined) and lists the events the
 plugin publishes and the ones it listens to.

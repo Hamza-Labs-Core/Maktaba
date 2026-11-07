@@ -69,18 +69,27 @@ func (fakeLookup) BySlug(_ context.Context, slug string) (stores.Server, error) 
 }
 
 type fakeMeter struct {
-	mu    sync.Mutex
-	calls int
-	out   int64
+	mu       sync.Mutex
+	calls    int
+	out      int64
+	decision *billing.Decision // nil: full
+	modes    map[string]int64  // bytes recorded by mode
 }
 
 func (m *fakeMeter) Decide(context.Context, stores.Server) billing.Decision {
+	if m.decision != nil {
+		return *m.decision
+	}
 	return billing.Decision{Mode: billing.ModeFull}
 }
-func (m *fakeMeter) Record(_ context.Context, _ stores.Server, _ billing.Decision, _, out int64) {
+func (m *fakeMeter) Record(_ context.Context, _ stores.Server, d billing.Decision, _, out int64) {
 	m.mu.Lock()
 	m.calls++
 	m.out += out
+	if m.modes == nil {
+		m.modes = map[string]int64{}
+	}
+	m.modes[d.Mode] += out
 	m.mu.Unlock()
 }
 
@@ -115,12 +124,15 @@ type e2e struct {
 	stop     func()
 }
 
-func newE2E(t *testing.T) *e2e {
+func newE2E(t *testing.T) *e2e { t.Helper(); return newE2EWith(t, nil, nil) }
+
+// newE2EWith is newE2E with the meter's decision (nil: full) and the relay's plans (nil: none).
+func newE2EWith(t *testing.T, decision *billing.Decision, plans *Plans) *e2e {
 	t.Helper()
 	e := &e2e{
 		reg:      relaypkg.NewRegistry(),
 		store:    &fakeTunnelStore{},
-		meter:    &fakeMeter{},
+		meter:    &fakeMeter{decision: decision},
 		big:      bigBody(),
 		canceled: make(chan struct{}),
 		authSeen: make(chan string, 4),
@@ -157,6 +169,17 @@ func newE2E(t *testing.T) *e2e {
 			time.Sleep(100 * time.Millisecond)
 		}
 	})
+	// story 50.19: media and its playlist; each says the cap it was asked to fit
+	homeMux.HandleFunc("/stream/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Seen-Cap", r.Header.Get(CapHeader))
+		if strings.HasSuffix(r.URL.Path, ".m3u8") {
+			w.Header().Set("Content-Type", "application/vnd.apple.mpegurl")
+			_, _ = io.WriteString(w, "#EXTM3U\n")
+			return
+		}
+		w.Header().Set("Content-Type", "video/mp2t")
+		_, _ = w.Write(bytes.Repeat([]byte("m"), 3_600_000))
+	})
 	homeMux.HandleFunc("/whoami", func(w http.ResponseWriter, r *http.Request) {
 		e.authSeen <- r.Header.Get("Authorization")
 		w.Header().Set("X-Seen-Via", r.Header.Get("X-Maktaba-Via"))
@@ -169,6 +192,7 @@ func newE2E(t *testing.T) *e2e {
 		Registry:    e.reg,
 		Lookup:      fakeLookup{},
 		Meter:       e.meter,
+		Plans:       plans,
 		PublicHost:  "relay.test",
 		HeadTimeout: 300 * time.Millisecond,
 	}).Handler()
