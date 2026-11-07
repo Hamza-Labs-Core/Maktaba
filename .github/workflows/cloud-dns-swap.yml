@@ -1,0 +1,45 @@
+# Runbook action: Cloud DNS swap (Epic 50 story 50.12, docs/runbooks/cloud/hetzner-api-down.md).
+# When the Floating IP can't follow the leader (the Hetzner API down), relay.maktaba.tv and
+# *.relay.maktaba.tv point at the leader's own address through the Cloudflare API (TTL 60 s);
+# "floating" puts them back once the Hetzner API answers. Proven against the rehearsal pair
+# and a stand-in Cloudflare first (runbook-dns-swap). Runs in the production environment.
+name: Cloud DNS swap
+
+on:
+  workflow_dispatch:
+    inputs:
+      to:
+        description: Point the relay's names at the leader's own address, or back at the Floating IP
+        type: choice
+        options: [leader, floating]
+        default: leader
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-ops
+  cancel-in-progress: false
+
+jobs:
+  swap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: Swap the relay's DNS
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_DNS_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          FLOATING_IP: ${{ secrets.FLOATING_IP }}
+          PUBLIC_IP_A: ${{ secrets.PUBLIC_IP_A }}
+          PUBLIC_IP_B: ${{ secrets.PUBLIC_IP_B }}
+          RELAY_HOST_A: ${{ secrets.RELAY_HOST_A }}
+          RELAY_HOST_B: ${{ secrets.RELAY_HOST_B }}
+          RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          TO: ${{ inputs.to }}
+        run: bash deploy/cloud-ha/runbook/dns-swap.sh --to "${TO}"

@@ -66,7 +66,7 @@ move_ip() {
     local waited=0 delay=1
     while ! assign_once; do
         if [ "${waited}" -ge "${retry_for}" ]; then
-            alert fip_assign_failed "the Floating IP did not move to ${HOSTNAME:-this node} after ${retry_for} s: see the DNS-swap runbook (docs/runbooks/cloud-dns-swap.md)"
+            alert fip_assign_failed "the Floating IP did not move to ${HOSTNAME:-this node} after ${retry_for} s: see the DNS-swap runbook (docs/runbooks/cloud/hetzner-api-down.md)"
             # keep trying in the background; the cloud processes start anyway (the IP is
             # what reaches them, and the runbook can point DNS at this node meanwhile)
             ( while ! assign_once; do sleep "${retry_every}"; done; log "the Floating IP moved after all" ) &

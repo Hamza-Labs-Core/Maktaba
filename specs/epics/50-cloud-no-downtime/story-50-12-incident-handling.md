@@ -150,7 +150,9 @@ decision 1). No credit job, no payment provider balance entries, no credit setti
 |---|---|
 | `docs/runbooks/cloud/` (new) | The eleven runbooks above, `templates/` (EN/AR), `postmortem-template.md`, `README.md` (severities, on-call). |
 | `.github/workflows/cloud-switchover.yml`, `cloud-failover.yml`, `cloud-dns-swap.yml` (new) | One-click actions, `production` environment, required reviewer = owner. |
-| `deploy/cloud-ha/alerts/*.yml` (from 50.10) | `severity` and `runbook` labels on every rule. |
+| `deploy/cloud-ha/monitoring/alerts.yml`, `backup-rules.yml` (from 50.10) | `severity` (`sev1`–`sev3`) and `runbook_url` on every rule; Alertmanager routes by severity. |
+| `deploy/cloud-ha/runbook/` (new) | The scripts the one-click workflows run (switchover, failover, DNS swap), reaching the nodes by SSH or, in the rehearsal, `docker exec`. |
+| `tools/runbooks/postmortems.py`, `.github/workflows/postmortem-reminder.yml` (new) | The SEV3 reminder for a SEV1 without a postmortem after 5 days (`severity: sev1` on the incident's file; postmortems in `docs/postmortems/`). |
 | `tools/runbooks/lint.py` (new) | T01–T03; runs in CI on changes to `docs/runbooks/**` or the alert rules. |
 | `web/cloud/src/pages/` (Billing page), `web/cloud/src/i18n/en.json`, `ar.json` | Show the uptime target and `uptime.policy` (no credit). |
 

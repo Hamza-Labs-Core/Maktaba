@@ -69,3 +69,36 @@ func TestAssignMovesTheIP(t *testing.T) {
 		t.Errorf("no server: %d", st)
 	}
 }
+
+// Story 50.12 (runbook-dns-swap): an outage answers 503 to every API call, and moves nothing.
+func TestOutageAnswers503(t *testing.T) {
+	m := &recMover{}
+	api := New(m, 0)
+	api.Token = "t"
+	srv := httptest.NewServer(api)
+	defer srv.Close()
+	post := func(path, body string) int {
+		req, _ := http.NewRequest("POST", srv.URL+path, bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "Bearer t")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return resp.StatusCode
+	}
+	if st := post("/fake/outage", `{"down":true}`); st != 200 {
+		t.Fatalf("outage: %d", st)
+	}
+	if st := post("/v1/floating_ips/7/actions/assign", `{"server":2}`); st != 503 {
+		t.Fatalf("assign during the outage: %d, want 503", st)
+	}
+	api.Wait()
+	if len(m.moves) != 0 || api.Holder(7) != 0 {
+		t.Fatalf("an outage moved the IP: %v", m.moves)
+	}
+	post("/fake/outage", `{"down":false}`)
+	if st := post("/v1/floating_ips/7/actions/assign", `{"server":2}`); st != 201 {
+		t.Fatalf("assign after the outage: %d", st)
+	}
+}

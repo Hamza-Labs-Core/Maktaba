@@ -1,13 +1,28 @@
 # Runbook: the status page (status.maktaba.tv)
 
-> Epic 50 story 50.11. The page is built from [`status/`](../../status/) and the `status-data`
+> Epic 50 story 50.11. The page is built from [`status/`](../../../status/) and the `status-data`
 > branch, published on GitHub Pages (off Hetzner) by
-> [`status-page.yml`](../../.github/workflows/status-page.yml). Component states come from the
+> [`status-page.yml`](../../../.github/workflows/status-page.yml). Component states come from the
 > probe, never by hand; people write only the posts.
 
-## Post an incident
+## When
 
-Once an outage has lasted 5 minutes (`docs/runbooks/cloud-canary-down.md`, step 6), add
+Posting an incident (a SEV1 within 15 minutes, a SEV2 when users notice) or a maintenance
+notice (48 hours ahead).
+
+## Check
+
+The page and its probe: `https://status.maktaba.tv` shows the state the alerts say; the latest
+**Cloud probe** run in Actions is green.
+
+## Do
+
+Start from a template in [templates/](templates/): copy it to
+`status/data/incidents/<yyyy-mm-dd>-<slug>.md`, fill in the times and the component.
+
+### Post an incident
+
+Once an outage has lasted 5 minutes (`docs/runbooks/cloud/canary-down.md`, step 6), add
 `status/data/incidents/<yyyy-mm-dd>-<slug>.md` in a pull request and merge it. The page
 rebuilds within a minute or two of the merge.
 
@@ -41,7 +56,7 @@ Remote access through Maktaba Cloud is down. Playback at home is not affected.
   name (the pull request's `Status page` check shows it before the merge).
 - Write plainly; never offer a credit or refund: the uptime policy is a target (`uptime.policy`).
 
-## Post a maintenance notice
+### Post a maintenance notice
 
 At least **48 hours** ahead. The apps show it from 24 hours before the start until the end;
 the page shows it from the merge until the end.
@@ -69,20 +84,20 @@ We're upgrading the database. Remote play may pause for a few seconds.
 During the window the components read **maintenance**; after `ends` the notice moves to the
 past. Set `state: completed` if it ends early; to cancel, delete the file.
 
-## Fix a wrong state
+### Fix a wrong state
 
 The state follows the probe: two rounds in a row (30 s apart) change it. If the page is wrong,
 check the probe first (`Cloud probe` runs in Actions; the witness's
 `systemctl status maktaba-status-export.timer`). A wrong post is fixed by another commit.
 
-## When GitHub Pages is down
+### When GitHub Pages is down
 
 The apps read `summary.json`; with the page gone they show nothing, which is safe. To move the
 page to Cloudflare Pages: build it (`node status/build.mjs --checks <status-data checkout>
 --out site`), deploy `site/` to a Cloudflare Pages project (it reads `_headers`), and point
 the `status` CNAME at the project (DNS only). Move it back the same way.
 
-## Setup (once, by the owner)
+### Setup (once, by the owner)
 
 1. Settings → Pages: Source **GitHub Actions**; custom domain `status.maktaba.tv`; enforce HTTPS.
 2. Cloudflare DNS: `status` CNAME `hamza-labs-core.github.io`, DNS only.
@@ -92,3 +107,12 @@ the `status` CNAME at the project (DNS only). Move it back the same way.
    the witness's `/etc/maktaba/witness.token`.
 5. Repository variables: `CLOUD_PROBE` = `true` (the probe) and `STATUS_PAGE` = `true` (the page
    and the `status-data` branch).
+
+## Done when
+
+The page shows the post in English and Arabic (within 5 minutes of the merge), and the apps'
+banner follows it.
+
+## Tell users
+
+This is how users are told.
