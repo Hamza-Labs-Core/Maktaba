@@ -24,6 +24,9 @@ on:
       - 'deploy/caddy/**'
       - 'tools/rehearsal-cloud/**'
       - 'tools/release/cloud-guard*.sh'
+      # the direct-remote scenario's home (Dockerfile.home)
+      - 'api/cmd/rehearsal-direct-home/**'
+      - 'api/internal/directaccess/**'
       - '.github/workflows/cloud-rehearsal.yml'
   push:
     branches: [main, 'release/**']
@@ -61,8 +64,10 @@ jobs:
           # a machine of the Phase 1 pair (deploy/cloud-ha, story 50.07) for the failover scenarios
           docker build -f tools/rehearsal-cloud/Dockerfile.node -t maktaba-node:rehearsal \
             --build-arg CLOUD_IMAGE=maktaba-cloud:rehearsal --build-arg CADDY_IMAGE=maktaba-caddy:rehearsal .
+          # a home with direct remote access behind a NAT-PMP router (story 50.15, direct-remote)
+          docker build -f tools/rehearsal-cloud/Dockerfile.home -t maktaba-home:rehearsal .
       - name: Save
-        run: docker save maktaba-cloud:rehearsal maktaba-cloud:rehearsal-new maktaba-cloud:rehearsal-bad maktaba-cloud:rehearsal-plans maktaba-caddy:rehearsal maktaba-node:rehearsal | gzip -1 > /tmp/image.tar.gz
+        run: docker save maktaba-cloud:rehearsal maktaba-cloud:rehearsal-new maktaba-cloud:rehearsal-bad maktaba-cloud:rehearsal-plans maktaba-caddy:rehearsal maktaba-node:rehearsal maktaba-home:rehearsal | gzip -1 > /tmp/image.tar.gz
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: rehearsal-image
@@ -100,6 +105,7 @@ jobs:
           - runbook-dns-swap
           - load-small
           - relay-plans
+          - direct-remote
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0

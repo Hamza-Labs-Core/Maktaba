@@ -13,6 +13,8 @@ const (
 	RoleAPI    Role = "api"
 	RoleRelay  Role = "relay"
 	RoleWorker Role = "worker"
+	// RoleDNS is the direct-name domains' name server (Epic 50 story 50.15).
+	RoleDNS Role = "dns"
 )
 
 // Validate applies role-specific required-field checks. The api role is
@@ -44,6 +46,15 @@ func Validate(c Config, role Role) error {
 		}
 	case RoleWorker:
 		// Worker uses control port only; no public listener required.
+	case RoleDNS:
+		if len(c.Direct.Domains) == 0 {
+			return fmt.Errorf("%w: [direct].domains (the dns role answers them)", ErrMissing)
+		}
+		for _, ns := range []struct{ key, v string }{{"ns1", c.Direct.NS1}, {"ns2", c.Direct.NS2}} {
+			if net.ParseIP(ns.v) == nil {
+				return fmt.Errorf("config: [direct].%s %q: the node's IP address", ns.key, ns.v)
+			}
+		}
 	default:
 		return fmt.Errorf("config: unknown role %q", role)
 	}

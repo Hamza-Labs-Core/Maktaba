@@ -11,47 +11,74 @@ import (
 	neturl "net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 )
 
-// The worker role run for real, in its own process: `serve --role worker`
-// (config load, Validate, migrations, runWorker) against a scratch
-// database. Every unit test drove the worker's jobs directly, so none saw
-// that the role itself exited 1 at start (two listeners on its control
-// port, from c15649f76 until this test's PR) and no job had ever run.
+// The roles run for real, each in its own process: `serve --role <role>`
+// (config load, Validate, migrations, the role) against a scratch
+// database. Every unit test drove the roles' jobs directly, so none saw
+// that the worker exited 1 at start (two listeners on its control port,
+// from c15649f76 until #882) or that Validate refused the dns role, and
+// neither role had ever run.
 
-// childRoleEnv names the role the re-run test binary starts; childAddrEnv
-// its control port.
+// The child's role, control port and config file.
 const (
-	childRoleEnv = "MAKTABA_TEST_CHILD_ROLE"
-	childAddrEnv = "MAKTABA_TEST_CHILD_ADDR"
+	childRoleEnv   = "MAKTABA_TEST_CHILD_ROLE"
+	childAddrEnv   = "MAKTABA_TEST_CHILD_ADDR"
+	childConfigEnv = "MAKTABA_TEST_CHILD_CONFIG"
 )
 
-// TestRoleChildProcess is not a test on its own: the parent re-runs the
+// TestRoleChildProcess is not a test on its own: startRole re-runs the
 // test binary with only this test selected and childRoleEnv set, and this
 // becomes the role's process. It returns when the role does (SIGTERM).
 func TestRoleChildProcess(t *testing.T) {
 	role := os.Getenv(childRoleEnv)
 	if role == "" {
-		t.Skip("only runs as the child of TestWorkerRoleStaysUp")
+		t.Skip("only runs as the child of startRole")
 	}
 	if a := os.Getenv(childAddrEnv); a != "" {
-		workerControlAddr = a
+		workerControlAddr, dnsControlAddr = a, a
 	}
-	runServe([]string{"--role", role})
+	args := []string{"--role", role}
+	if c := os.Getenv(childConfigEnv); c != "" {
+		args = append(args, "--config", c)
+	}
+	runServe(args)
 }
 
 func TestWorkerRoleStaysUp(t *testing.T) {
+	p := startRole(t, "worker", "")
+	if !strings.Contains(p.health, `"role":"worker"`) {
+		t.Fatalf("healthz body %q, want the worker's", p.health)
+	}
+	p.staysUpThenStops(t)
+}
+
+// roleProc is a role's process started by startRole.
+type roleProc struct {
+	cmd    *exec.Cmd
+	addr   string // its control port
+	health string // its first /healthz body
+	exited chan error
+	out    *syncBuffer
+}
+
+// startRole runs `serve --role <role>` in a child process, with config
+// (TOML, may be empty) and a scratch database the role migrates itself,
+// as on a node, and returns once its control port answers. The child
+// exiting first fails the test with its output.
+func startRole(t *testing.T, role, config string) *roleProc {
+	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
 		t.Skip("MAKTABA_CLOUD_DB_URL not set")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	// The worker migrates its own database at start, as on a node.
 	scratch := scratchDB(ctx, t, url)
 	var name string
 	if err := scratch.DB.QueryRowContext(ctx, `SELECT current_database()`).Scan(&name); err != nil {
@@ -63,50 +90,69 @@ func TestWorkerRoleStaysUp(t *testing.T) {
 	}
 	u.Path = "/" + name
 
-	addr := freeLoopbackAddr(t)
-	out := &syncBuffer{}
-	cmd := exec.Command(os.Args[0], "-test.run=^TestRoleChildProcess$", "-test.count=1")
-	cmd.Env = append(os.Environ(), childRoleEnv+"=worker", childAddrEnv+"="+addr, "MAKTABA_CLOUD_DB_URL="+u.String())
-	cmd.Stdout, cmd.Stderr = out, out
-	if err := cmd.Start(); err != nil {
+	p := &roleProc{addr: freeLoopbackAddr(t), exited: make(chan error, 1), out: &syncBuffer{}}
+	env := append(os.Environ(), childRoleEnv+"="+role, childAddrEnv+"="+p.addr, "MAKTABA_CLOUD_DB_URL="+u.String())
+	if config != "" {
+		path := filepath.Join(t.TempDir(), "cloud.toml")
+		if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		env = append(env, childConfigEnv+"="+path)
+	}
+	p.cmd = exec.Command(os.Args[0], "-test.run=^TestRoleChildProcess$", "-test.count=1")
+	p.cmd.Env = env
+	p.cmd.Stdout, p.cmd.Stderr = p.out, p.out
+	if err := p.cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
+	go func() { p.exited <- p.cmd.Wait() }()
 	t.Cleanup(func() {
-		if cmd.ProcessState == nil {
-			_ = cmd.Process.Kill()
-			<-exited
+		if p.cmd.ProcessState == nil {
+			_ = p.cmd.Process.Kill()
+			<-p.exited
 		}
 	})
 
-	// It answers on its control port...
-	body := waitHealthy(t, "http://"+addr+"/healthz", exited, out)
-	if !strings.Contains(body, `"role":"worker"`) {
-		t.Fatalf("healthz body %q, want the worker's", body)
+	deadline := time.Now().Add(45 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-p.exited:
+			t.Fatalf("the %s role exited (%v) before answering; its output:\n%s", role, err, p.out.String())
+		default:
+		}
+		if body, err := httpGet("http://" + p.addr + "/healthz"); err == nil {
+			p.health = body
+			return p
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	// ...and is still up a while later: the old bug failed the second listen
-	// right after the first came up.
+	t.Fatalf("the %s role never answered on %s; output:\n%s", role, p.addr, p.out.String())
+	return nil
+}
+
+// staysUpThenStops checks the role is still up and answering 3 s after
+// its first answer (the worker's bug failed its second listen right after
+// the first came up), then that SIGTERM stops it with exit 0.
+func (p *roleProc) staysUpThenStops(t *testing.T) {
+	t.Helper()
 	select {
-	case err := <-exited:
-		t.Fatalf("the worker exited (%v) after answering; its output:\n%s", err, out.String())
+	case err := <-p.exited:
+		t.Fatalf("the role exited (%v) after answering; its output:\n%s", err, p.out.String())
 	case <-time.After(3 * time.Second):
 	}
-	if _, err := httpGet("http://" + addr + "/healthz"); err != nil {
-		t.Fatalf("healthz after 3 s: %v; output:\n%s", err, out.String())
+	if _, err := httpGet("http://" + p.addr + "/healthz"); err != nil {
+		t.Fatalf("healthz after 3 s: %v; output:\n%s", err, p.out.String())
 	}
-
-	// SIGTERM stops it cleanly, inside the shutdown grace.
-	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+	if err := p.cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
 	select {
-	case err := <-exited:
+	case err := <-p.exited:
 		if err != nil {
-			t.Fatalf("the worker exited %v on SIGTERM, want 0; output:\n%s", err, out.String())
+			t.Fatalf("the role exited %v on SIGTERM, want 0; output:\n%s", err, p.out.String())
 		}
 	case <-time.After(30 * time.Second):
-		t.Fatalf("the worker did not stop within 30 s of SIGTERM; output:\n%s", out.String())
+		t.Fatalf("the role did not stop within 30 s of SIGTERM; output:\n%s", p.out.String())
 	}
 }
 
@@ -120,26 +166,6 @@ func freeLoopbackAddr(t *testing.T) string {
 	}
 	defer func() { _ = l.Close() }()
 	return l.Addr().String()
-}
-
-// waitHealthy polls url until it answers 200 and returns the body. The
-// child exiting first fails the test with its output.
-func waitHealthy(t *testing.T, url string, exited <-chan error, out *syncBuffer) string {
-	t.Helper()
-	deadline := time.Now().Add(45 * time.Second)
-	for time.Now().Before(deadline) {
-		select {
-		case err := <-exited:
-			t.Fatalf("the worker exited (%v) before answering; its output:\n%s", err, out.String())
-		default:
-		}
-		if body, err := httpGet(url); err == nil {
-			return body
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatalf("the worker never answered %s; output:\n%s", url, out.String())
-	return ""
 }
 
 func httpGet(url string) (string, error) {

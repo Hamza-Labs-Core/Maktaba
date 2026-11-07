@@ -2021,6 +2021,14 @@ build fails when the two differ.
   of it. Every line is still in the log segments, the Logs page and the recovery console.
   `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
 
+- **The cloud rehearsal proves direct remote access end to end (Epic 50 story 50.15, T06,
+  T10, T12).** Its `direct-remote` scenario puts two homes behind a router that maps ports,
+  with the cloud's relay, worker and name server and two certificate authorities on the other
+  side. Each home gets its certificate through the cloud, the second from the overflow
+  authority once the week's budget is used, and passes the outside check, and an app outside
+  downloads from each home directly, never through the relay. The cloud's name server now
+  starts: its role was refused as unknown.
+
 - **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
   queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
   admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
@@ -2503,6 +2511,29 @@ build fails when the two differ.
   `plugin_compile_timeout`), and the host compiles every installed plugin in the background
   when it starts, so an update that changes the plugin engine recompiles each one before its
   first job. maktaba.dev: Testing and packaging.
+
+- **The Queue and Processing dashboards show the queue (Epic 53 story 53.12).** Both boards were
+  empty: they kept series that nothing exported. The home's metrics now carry the jobs waiting or
+  running by stage, the jobs finished in the last hour by stage and outcome, the audio
+  transcribed in the last hour and the transcription speed, read from the queue once a minute.
+
+- **The Streaming dashboard shows the TV (Epic 53 story 53.12).** The dashboards read only the
+  API's metrics, so the TV's channels on air, switches, failovers and viewers never reached the
+  Streaming board. They read streaming's too now; a series both processes have is kept from the
+  API's.
+
+- **The Overview dashboard shows the API's requests per minute and its p95 response time (Epic 53
+  story 53.12).** The response-time histogram is kept as two lines over all routes at once: the
+  requests in each minute, and the time 95 % of them were answered within.
+
+- **The Overview dashboard shows each machine's memory, disk and load (Epic 53 story 53.12).** The
+  supervisor now reports its machine's memory and how much is free, the free space on the disk
+  that holds the data folder, the one-minute load average and the number of CPUs. A reading the
+  system doesn't give (Windows keeps no load average) is left out rather than shown as 0.
+
+- **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
+  refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
+  read, so they never showed. They do now, and no family is listed twice.
 
 ## [0.2.0] - 2026-10-19
 

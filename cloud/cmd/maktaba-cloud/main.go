@@ -74,12 +74,12 @@ func runVersion() {
 
 func runServe(args []string) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	role := fs.String("role", "", "process role: api|relay|worker (required)")
+	role := fs.String("role", "", "process role: api|relay|worker|dns (required)")
 	cfgPath := fs.String("config", "", "path to cloud.toml")
 	_ = fs.Parse(args)
 
 	if *role == "" {
-		fmt.Fprintln(os.Stderr, "--role required (api|relay|worker)")
+		fmt.Fprintln(os.Stderr, "--role required (api|relay|worker|dns)")
 		os.Exit(2)
 	}
 

@@ -30,3 +30,19 @@ func TestFipfrontAddrs(t *testing.T) {
 		t.Errorf("target %s", tg)
 	}
 }
+
+func TestFakeGatewayConfig(t *testing.T) {
+	if _, _, _, err := fakeGatewayConfig(); err == nil {
+		t.Error("no FAKEGW_WAN passed")
+	}
+	t.Setenv("FAKEGW_WAN", "198.51.100.2")
+	t.Setenv("FAKEGW_LAN", "192.168.77.20")
+	if _, _, _, err := fakeGatewayConfig(); err == nil {
+		t.Error("a bare address passed as FAKEGW_LAN")
+	}
+	t.Setenv("FAKEGW_LAN", "192.168.77.0/24")
+	wan, lan, listen, err := fakeGatewayConfig()
+	if err != nil || wan.String() != "198.51.100.2" || lan.String() != "192.168.77.0/24" || listen != ":5351" {
+		t.Errorf("%v %v %q %v", wan, lan, listen, err)
+	}
+}

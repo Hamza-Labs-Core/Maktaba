@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -49,5 +50,24 @@ eab_kid = "kid-1"
 	}
 	if got := parseList(`direct-a.example", "direct-b.example`); len(got) != 2 || got[1] != "direct-b.example" {
 		t.Fatalf("the parser's trimmed list: %v", got)
+	}
+}
+
+// Story 50.15: `serve --role dns` is a role Validate knows (it refused it as unknown, so the
+// name server never started), and it needs the domains and both name servers' addresses.
+func TestValidateTheDNSRole(t *testing.T) {
+	c := defaultConfig()
+	c.Database.URL = "postgres://x"
+	if err := Validate(c, RoleDNS); err == nil {
+		t.Fatal("no domains passed")
+	}
+	c.Direct.Domains = []string{"direct-a.example"}
+	c.Direct.NS1, c.Direct.NS2 = "203.0.113.11", "ns2.example"
+	if err := Validate(c, RoleDNS); err == nil || !strings.Contains(err.Error(), "ns2") {
+		t.Fatalf("a name for ns2: %v", err)
+	}
+	c.Direct.NS2 = "203.0.113.12"
+	if err := Validate(c, Role("dns")); err != nil {
+		t.Fatal(err)
 	}
 }
