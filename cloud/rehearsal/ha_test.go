@@ -23,15 +23,30 @@ import (
 // The Phase 1 pair (story 50.07): tools/rehearsal-cloud/compose-ha.yml.
 
 // ha is one scenario's pair.
+type haExtra struct {
+	profiles []string
+	env      []string
+	before   func(*ha) // after the old project is gone, before up
+}
+
 type ha struct {
 	*cluster
-	pg  map[string]int // node -> host port of its Postgres
-	api map[string]int // node -> host port of its Patroni REST API
+	extra *haExtra
+	pg    map[string]int // node -> host port of its Postgres
+	api   map[string]int // node -> host port of its Patroni REST API
 }
 
 func (h *ha) composeHA(args ...string) (string, error) {
-	cmd := exec.Command("docker", append([]string{"compose", "-p", h.project, "-f", filepath.Join(h.dir, "compose-ha.yml")}, args...)...)
-	cmd.Env = append(os.Environ(), h.envHA()...)
+	base := []string{"compose", "-p", h.project, "-f", filepath.Join(h.dir, "compose-ha.yml")}
+	var env []string
+	if h.extra != nil {
+		for _, p := range h.extra.profiles {
+			base = append(base, "--profile", p)
+		}
+		env = h.extra.env
+	}
+	cmd := exec.Command("docker", append(base, args...)...)
+	cmd.Env = append(append(os.Environ(), h.envHA()...), env...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }
@@ -62,7 +77,10 @@ func (h *ha) envHA() []string {
 }
 
 // upHA starts the pair and waits for a leader with a streaming sync standby.
-func upHA(t *testing.T, scenario string) *ha {
+func upHA(t *testing.T, scenario string) *ha { return upHAWith(t, scenario, nil) }
+
+// upHAWith is upHA with extra compose arguments before "up" (a profile) and env.
+func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 	t.Helper()
 	c := &cluster{t: t, project: "mr-" + scenario, dir: filepath.Join(repoRoot(t), "tools/rehearsal-cloud")}
 	p := portsFor(c.project)
@@ -81,7 +99,11 @@ func upHA(t *testing.T, scenario string) *ha {
 	if err := os.Symlink("pki-"+scenario, filepath.Join(c.dir, ".work", "pki")); err != nil {
 		t.Fatal(err)
 	}
+	h.extra = extra
 	_, _ = h.composeHA("down", "-v", "--remove-orphans")
+	if extra != nil && extra.before != nil {
+		extra.before(h)
+	}
 	t.Cleanup(func() {
 		h.stopHomes()
 		if c.api != nil {

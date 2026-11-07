@@ -142,8 +142,41 @@ for port in 2379 2380 5432 8008 8081 8444 8454; do
 done
 ufw --force enable >/dev/null
 
+# ---------------------------------------------------------------------------------------
+# pgBackRest (story 50.09): both repositories, on A and B (backups, the WAL archive) and W
+# (the weekly restore drill)
+# ---------------------------------------------------------------------------------------
+setup_pgbackrest() {
+	apt-get install -y -qq pgbackrest >/dev/null
+	install -d -o postgres -g postgres -m 0750 /etc/pgbackrest /var/log/pgbackrest /var/lib/pgbackrest
+	PG_DATA=/var/lib/postgresql/16/maktaba REPO_VERIFY_TLS="${REPO_VERIFY_TLS:-y}" \
+		envsubst <"${here}/pgbackrest/pgbackrest.conf" >/etc/pgbackrest/pgbackrest.conf
+	chown postgres:postgres /etc/pgbackrest/pgbackrest.conf && chmod 0600 /etc/pgbackrest/pgbackrest.conf
+	install -m 0755 "${here}/bin/backup" /usr/local/bin/maktaba-backup
+	install -m 0755 "${here}/bin/restore" /usr/local/bin/maktaba-restore
+	install -m 0755 "${here}/bin/drill-checks" /usr/local/bin/drill-checks
+	install -m 0755 "${here}/bin/restore-drill" /usr/local/bin/maktaba-restore-drill
+	install -d -o postgres -g postgres -m 0755 /var/lib/node_exporter/textfile
+}
+if [ -n "${REPO1_ENDPOINT:-}" ]; then setup_pgbackrest; fi
+
 if [ "${role}" = witness ]; then
-	log "witness ${NODE_NAME} is up: etcd only (50.10 adds its guests)"
+	if [ -n "${REPO1_ENDPOINT:-}" ]; then
+		# the drill restores with the same Postgres major
+		if [ ! -f /etc/apt/sources.list.d/pgdg.list ]; then
+			curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+			codename="$(sed -n 's/^VERSION_CODENAME=//p' /etc/os-release)"
+			echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt ${codename}-pgdg main" \
+				>/etc/apt/sources.list.d/pgdg.list
+			apt-get update -qq
+		fi
+		apt-get install -y -qq postgresql-16 >/dev/null
+		systemctl disable --now postgresql >/dev/null 2>&1 || true
+		install -m 0644 "${here}/systemd/maktaba-restore-drill.service" "${here}/systemd/maktaba-restore-drill.timer" /etc/systemd/system/
+		systemctl daemon-reload
+		systemctl enable --now maktaba-restore-drill.timer
+	fi
+	log "witness ${NODE_NAME} is up: etcd (and the restore drill, a guest)"
 	exit 0
 fi
 
@@ -219,7 +252,7 @@ UNIT
 # 7. The cloud's units (started on the leader only) and Caddy (on both, always)
 # ---------------------------------------------------------------------------------------
 id maktaba >/dev/null 2>&1 || useradd --system --home /var/lib/maktaba --shell /usr/sbin/nologin maktaba
-install -m 0644 "${here}/systemd/"*.service "${here}/systemd/"*.target /etc/systemd/system/
+install -m 0644 "${here}/systemd/"*.service "${here}/systemd/"*.target "${here}/systemd/"*.timer /etc/systemd/system/
 [ -s /etc/maktaba/cloudflare.token ] || die "/etc/maktaba/cloudflare.token is missing (the DNS-edit token for the wildcard, 50.02)"
 install -d -m 0755 /etc/caddy
 install -m 0644 "${here}/caddy/Caddyfile" /etc/caddy/Caddyfile
@@ -249,4 +282,5 @@ command -v docker >/dev/null || apt-get install -y -qq docker.io >/dev/null
 systemctl daemon-reload
 grep -q '^PATRONI_URL=' "${ENV_FILE}" || echo "PATRONI_URL=http://${NODE_ADDR}:8008" >>"${ENV_FILE}"
 systemctl enable --now patroni maktaba-caddy maktaba-leader-guard
+if [ -n "${REPO1_ENDPOINT:-}" ]; then systemctl enable --now maktaba-backup.timer; fi
 log "${NODE_NAME} is up: Patroni decides whether it leads (patronictl -c /etc/patroni/patroni.yml list)"

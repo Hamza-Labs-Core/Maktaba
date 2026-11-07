@@ -35,6 +35,20 @@ x-machine-env: &machine-env
   HCLOUD_TOKEN: rehearsal-hcloud-token
   FLOATING_IP_ID: "7"
   FIP_RETRY_FOR: ${FIP_RETRY_FOR:-60}
+  # pgBackRest (story 50.09): the restore-pitr scenario gives the two MinIO repositories
+  ARCHIVE_COMMAND: ${ARCHIVE_COMMAND:-/bin/true}
+  REPO1_ENDPOINT: ${REPO1_ENDPOINT:-}
+  REPO1_REGION: us-east-1
+  REPO1_BUCKET: maktaba-prod-pg
+  REPO1_KEY: rehearsal
+  REPO1_SECRET: rehearsal-secret
+  REPO1_CIPHER_PASS: rehearsal-cipher-one
+  REPO2_ENDPOINT: ${REPO2_ENDPOINT:-}
+  REPO2_REGION: us-east-1
+  REPO2_BUCKET: maktaba-prod-pg-r2
+  REPO2_KEY: rehearsal
+  REPO2_SECRET: rehearsal-secret
+  REPO2_CIPHER_PASS: rehearsal-cipher-two
 
 x-node: &node
   image: ${NODE_IMAGE:-maktaba-node:rehearsal}
@@ -116,3 +130,32 @@ services:
         ipv4_address: 10.61.0.31
     ports:
       - "127.0.0.1:${EDGE_PORT:-28081}:80"
+
+  # the two backup repositories (story 50.09), standing in for Hetzner Object Storage and
+  # Cloudflare R2: SeaweedFS's S3 API with TLS (pgBackRest speaks S3 over TLS only), the test
+  # certificate the scenario makes into .work/s3-pki
+  s3-repo1:
+    profiles: [backup]
+    image: chrislusf/seaweedfs:3.97
+    command: ["server", "-dir=/data", "-s3", "-s3.port=9000", "-s3.config=/s3/s3.json",
+              "-s3.cert.file=/s3/public.crt", "-s3.key.file=/s3/private.key", "-master.volumeSizeLimitMB=256"]
+    volumes:
+      - ./.work/s3-pki:/s3:ro
+    networks:
+      private:
+        ipv4_address: 10.60.0.21
+    ports:
+      - "127.0.0.1:${S3_REPO1_PORT:-29001}:9000"
+
+  s3-repo2:
+    profiles: [backup]
+    image: chrislusf/seaweedfs:3.97
+    command: ["server", "-dir=/data", "-s3", "-s3.port=9000", "-s3.config=/s3/s3.json",
+              "-s3.cert.file=/s3/public.crt", "-s3.key.file=/s3/private.key", "-master.volumeSizeLimitMB=256"]
+    volumes:
+      - ./.work/s3-pki:/s3:ro
+    networks:
+      private:
+        ipv4_address: 10.60.0.22
+    ports:
+      - "127.0.0.1:${S3_REPO2_PORT:-29002}:9000"

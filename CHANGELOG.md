@@ -296,6 +296,15 @@ build fails when the two differ.
   it exits; a 10-minute watch rolls back by itself. In the cloud rehearsal a deploy under 1,000
   homes and 100 streams failed no request, and a release that breaks 20 s after it starts is
   stopped before anything changes for users. One deploy runs at a time.
+- **The cloud's database is backed up twice and restored every week (Epic 50, story 50.09).**
+  pgBackRest sends the write-ahead log at least every minute and a nightly backup (full on
+  Sunday) to Hetzner Object Storage and to Cloudflare R2, each encrypted with its own
+  passphrase, keeping 30 days to restore to any second; only the current leader backs up, so
+  it follows a failover. The witness restores last week's data to 5 minutes ago every Monday
+  and checks it against the live database, and an alert pages when a backup is a day late,
+  the log stops reaching the buckets, or a drill fails. A runbook covers losing the whole
+  zone. In the cloud rehearsal both nodes are destroyed and the database comes back on a new
+  machine with exactly the rows committed up to the chosen second, from either copy.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

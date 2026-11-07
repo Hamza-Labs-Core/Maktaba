@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Restores the cloud's database from a pgBackRest repository into a data directory and starts
+# it (Epic 50 story 50.09): the weekly drill's first half, and the disaster runbook's restore
+# on a fresh machine (docs/runbooks/cloud-disaster-restore.md).
+#
+#   restore --pgdata <dir> [--repo 1|2] [--target <timestamp>|latest] [--port 5499] [--start|--no-start]
+#
+# A timestamp restores to that point (PITR) and promotes; latest replays every WAL segment the
+# repository has. With --start (the default) Postgres is started on --port and waited for until
+# it takes writes. Env: PGBACKREST (pgbackrest), STANZA (cloud), PG_BIN (/usr/lib/postgresql/16/bin).
+set -euo pipefail
+pgbr="${PGBACKREST:-pgbackrest}" stanza="${STANZA:-cloud}" bin="${PG_BIN:-/usr/lib/postgresql/16/bin}"
+pgdata="" repo=1 target=latest port=5499 start=yes
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --pgdata) pgdata="$2"; shift ;;
+        --repo) repo="$2"; shift ;;
+        --target) target="$2"; shift ;;
+        --port) port="$2"; shift ;;
+        --start) start=yes ;;
+        --no-start) start=no ;;
+        *) echo "restore: unknown argument $1" >&2; exit 2 ;;
+    esac
+    shift
+done
+[ -n "${pgdata}" ] || { echo "restore: --pgdata is required" >&2; exit 2; }
+case "${repo}" in 1|2) ;; *) echo "restore: --repo is 1 (Object Storage) or 2 (R2)" >&2; exit 2 ;; esac
+if [ -e "${pgdata}" ] && [ -n "$(ls -A "${pgdata}" 2>/dev/null)" ]; then
+    echo "restore: ${pgdata} is not empty; restore into an empty directory" >&2; exit 1
+fi
+mkdir -p "${pgdata}"; chmod 0700 "${pgdata}"
+
+args=(--stanza="${stanza}" --repo="${repo}" --pg1-path="${pgdata}" --archive-mode=off)
+if [ "${target}" != latest ]; then
+    args+=(--type=time "--target=${target}" --target-action=promote)
+else
+    args+=(--type=default)
+fi
+started=$(date +%s)
+echo "restore: from repo${repo} to ${target} into ${pgdata}" >&2
+${pgbr} "${args[@]}" restore
+
+if [ "${start}" = yes ]; then
+    # Patroni's postgresql.conf names its node's hba and ident files; the restored copy runs
+    # on loopback only, for the drill's checks or until Patroni takes it over
+    printf 'local all all trust\nhost all all 127.0.0.1/32 trust\n' >"${pgdata}/pg_hba.restore.conf"
+    : >"${pgdata}/pg_ident.restore.conf"
+    "${bin}/pg_ctl" -D "${pgdata}" -l "${pgdata}/restore.log" -w -t 300 \
+        -o "-p ${port} -k /tmp -c listen_addresses=127.0.0.1 -c archive_mode=off -c hot_standby=on -c hba_file=${pgdata}/pg_hba.restore.conf -c ident_file=${pgdata}/pg_ident.restore.conf" start >&2 \
+        || { echo "restore: Postgres did not start:" >&2; tail -30 "${pgdata}/restore.log" >&2; exit 1; }
+    for _ in $(seq 1 300); do
+        r="$("${bin}/psql" -h /tmp -p "${port}" -U postgres -Atqc 'SELECT pg_is_in_recovery()' postgres 2>/dev/null || true)"
+        [ "${r}" = f ] && break
+        sleep 1
+    done
+    [ "${r:-}" = f ] || { echo "restore: Postgres did not finish recovery" >&2; tail -20 "${pgdata}/restore.log" >&2; exit 1; }
+fi
+echo "restore: done in $(( $(date +%s) - started )) s" >&2

@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# The cloud's database backup (Epic 50 story 50.09): on the current Patroni leader only, so it
+# moves with a failover. A replica's timer does nothing and exits 0.
+#
+#   backup [full|diff]    (default: full on Sunday, diff on the other days)
+#
+# The first run makes the stanza. A failed backup exits 1 (systemd's OnFailure pages through
+# 50.10's alert), and the time of the last good one is written for Prometheus
+# (backup_last_success_timestamp_seconds; backup_stale fires at 26 h).
+# Env: PATRONI_URL (http://<this node>:8008), PGBACKREST (pgbackrest), STANZA (cloud), REPOS ("1 2"),
+# TEXTFILE_DIR (/var/lib/node_exporter/textfile), DOW (today's day, 1-7, for tests).
+set -uo pipefail
+env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
+# shellcheck disable=SC1090
+[ -r "${env_file}" ] && . "${env_file}"
+pgbr="${PGBACKREST:-pgbackrest}" stanza="${STANZA:-cloud}"
+log() { logger -t maktaba-backup -- "$*" 2>/dev/null; echo "backup: $*" >&2; }
+
+code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 "${PATRONI_URL:-http://127.0.0.1:8008}/primary" || echo 000)"
+if [ "${code}" != 200 ]; then
+    log "this node is not the leader (Patroni /primary: ${code}): nothing to do"
+    exit 0
+fi
+
+type="${1:-}"
+if [ -z "${type}" ]; then
+    if [ "${DOW:-$(date -u +%u)}" = 7 ]; then type="full"; else type="diff"; fi
+fi
+case "${type}" in full|diff|incr) ;; *) log "unknown backup type ${type}"; exit 2 ;; esac
+
+# the stanza on every repository (once; a repository that has it says so and goes on)
+${pgbr} --stanza="${stanza}" stanza-create || log "stanza-create did not finish: the backup will say why"
+# a backup goes to one repository at a time: each in turn (the WAL archive already goes to both)
+failed=""
+for repo in ${REPOS:-1 2}; do
+    log "${type} backup to repo${repo}"
+    ${pgbr} --stanza="${stanza}" --repo="${repo}" --type="${type}" backup || failed="${failed} repo${repo}"
+done
+if [ -n "${failed}" ]; then
+    log "the ${type} backup FAILED on${failed}"
+    exit 1
+fi
+dir="${TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+if mkdir -p "${dir}" 2>/dev/null; then
+    printf '# HELP backup_last_success_timestamp_seconds When the last database backup finished.\n# TYPE backup_last_success_timestamp_seconds gauge\nbackup_last_success_timestamp_seconds{type="%s"} %s\n' \
+        "${type}" "$(date +%s)" >"${dir}/maktaba_backup.prom.tmp" && mv "${dir}/maktaba_backup.prom.tmp" "${dir}/maktaba_backup.prom"
+fi
+log "the ${type} backup is done"

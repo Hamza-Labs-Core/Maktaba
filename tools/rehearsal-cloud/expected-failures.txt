@@ -2,4 +2,3 @@
 # "<scenario> <the story that builds it> <why>". A scenario listed here is reported and
 # not counted; the story that builds it removes its line in the same pull request.
 migration-n-minus-1         50.08  needs a published maktaba-cloud release to run against the new schema (none yet); tools/lint/cloud-expand-only.sh guards the rule meanwhile
-restore-pitr                50.09  needs pgBackRest and MinIO

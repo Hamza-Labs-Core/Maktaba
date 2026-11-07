@@ -94,6 +94,25 @@ GitHub `production` environment secrets for it: `RELAY_HOST_A`, `RELAY_HOST_B` (
 addresses), `RELAY_SSH_USER`, `RELAY_SSH_KEY` (the `deploy` user's key, which works only for
 that user).
 
+## Backups and restore (story 50.09)
+
+pgBackRest writes the WAL archive (at least every minute) and every backup to **two
+repositories**, each encrypted with its own passphrase: Hetzner Object Storage in HEL1 (repo1)
+and Cloudflare R2 (repo2, the copy off Hetzner). `maktaba-backup.timer` runs on both nodes daily
+at 03:00 UTC; only the leader backs up (full on Sunday, differential otherwise), so it follows a
+failover. 30 days of point-in-time restore. The witness restores the latest backup to 5 minutes
+ago every Monday (`maktaba-restore-drill.timer`, from R2 on the first Monday of a month) and
+checks it against the live replica; `backup_stale`, `wal_archive_failing` and
+`restore_drill_failed` page (`prometheus/backup-rules.yml`, tested by promtool in relay.yml).
+A whole-zone loss: [docs/runbooks/cloud-disaster-restore.md](../../docs/runbooks/cloud-disaster-restore.md).
+The secrets: `bin/backup-secrets` (age, the owner's key) puts an encrypted copy in both
+repositories; the password manager keeps the originals.
+
+What the owner creates for it: an Object Storage bucket `maktaba-prod-pg` in **HEL1** and an R2
+bucket `maktaba-prod-pg-r2`, each with an access key limited to it, and the two passphrases
+(`openssl rand -base64 48`) in the password manager; they go in `cloud-ha.env` (`REPO1_*`,
+`REPO2_*`).
+
 ## Day to day
 
 | What | How |
