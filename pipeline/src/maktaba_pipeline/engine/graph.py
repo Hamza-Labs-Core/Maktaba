@@ -499,18 +499,8 @@ GRAPH: tuple[StageDef, ...] = (
         version=STYLE_VERSION,
         edges=(Edge("rate_style", "payload_seasons"),),
     ),
-    StageDef(
-        name="thumb_small",
-        label="Small thumbnail",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="episodes",
-        lane_order=6,
-        version=THUMB_SMALL_VERSION,
-        edges=(Edge("review_pages", "library_of"),),
-        entry_for=("video",),
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.thumbnails's manifest
+    _fp("thumb_small"),
     # ---- seasons and libraries lane ------------------------------------
     StageDef(
         name="detect",
@@ -811,16 +801,8 @@ GRAPH: tuple[StageDef, ...] = (
         # it decodes the video's audio off the share again
         storage="read",
     ),
-    StageDef(
-        name="subtitle_gen",
-        label="Subtitle files",
-        subject_kinds=("video",),
-        pool="nas_write",
-        lane="speech",
-        lane_order=4,
-        version=SUBTITLE_VERSION,
-        external_write=True,
-    ),
+    # Epic 54: defined by tv.maktaba.subtitles's manifest
+    _fp("subtitle_gen"),
     # Epic 52 (stories 52.6, 52.15): the transcript's suspect words, saved for a home
     # admin to review (the review.words component). CPU only, re-runnable without the GPU
     # whenever a language pack, the vocabulary or the library's settings change. On a
@@ -862,17 +844,8 @@ GRAPH: tuple[StageDef, ...] = (
         edges=(Edge("chapter_thumbs", "same"), Edge("topic_assign", "same")),
         placement="home",
     ),
-    StageDef(
-        name="chapter_thumbs",
-        label="Chapter frames",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="speech",
-        lane_order=7,
-        version=CHAPTER_THUMBS_VERSION,
-        # the frames go to the thumbnail cache of the machine that serves them
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.thumbnails's manifest
+    _fp("chapter_thumbs"),
     StageDef(
         name="topic_assign",
         label="Topics",

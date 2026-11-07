@@ -1,0 +1,53 @@
+# tv.maktaba.thumbnails: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2
+# (story 54.29): the first stages that read library files and write files.
+schema     = 1
+id         = "tv.maktaba.thumbnails"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.thumbnails.name"
+summary = "fp.thumbnails.summary"
+
+[trusted]
+runner    = "light"
+component = "media.thumbnails"
+db.read   = ["chapters", "processing_jobs", "videos"]
+db.write  = []
+files.read  = ["library"]
+files.write = ["data.thumbnails"]
+exec      = ["ffmpeg"]
+
+[[stage]]
+name         = "thumb_small"
+subject      = "video"
+export       = "thumb-small"
+version      = 1
+label        = "Small thumbnail"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "episodes"
+lane_order   = 6
+entry_for    = ["video"]
+placement    = "home"
+edges        = [{ to = "review_pages", map = "library_of" }]
+entry        = "maktaba_fp_thumbnails.stages.thumb_small:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "chapter_thumbs"
+subject      = "video"
+export       = "chapter-thumbs"
+version      = 1
+label        = "Chapter frames"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "speech"
+lane_order   = 7
+placement    = "home"
+entry        = "maktaba_fp_thumbnails.stages.chapter_thumbs:IMPL"
+fingerprint  = { input = true, output = false }
+

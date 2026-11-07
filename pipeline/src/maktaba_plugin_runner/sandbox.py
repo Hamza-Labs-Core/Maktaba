@@ -23,11 +23,14 @@ import ctypes
 import ctypes.util
 import os
 import platform
+import re
 import shutil
 import struct
 import sys
 import sysconfig
 from dataclasses import dataclass, field
+
+from maktaba_plugin_sdk.native.stmtdb import PluginRefused
 
 __all__ = ["Applied", "Policy", "SandboxUnavailable", "apply", "seatbelt_profile"]
 
@@ -53,6 +56,58 @@ class Policy:
     api_socket: str = ""
     own_socket: str = ""
     run_dir: str = ""
+    #: library.subtitles (story 54.29 §3): folders where only a subtitle file Maktaba writes
+    #: (SUBTITLE_NAME) may be written: Seatbelt matches the name; Landlock cannot, so the
+    #: runner's own guard (guard_names) refuses any other name there, on both systems
+    write_named: list[str] = field(default_factory=list)
+
+
+#: a subtitle file Maktaba writes next to a video, ``<video stem>.<lang>.srt|vtt``, and its
+#: temporary file while it is written (one pattern for Python and Seatbelt, whose bracket
+#: expressions need the ``-`` first and which has no ``{m,n}``)
+SUBTITLE_NAME = r"[^/]+\.[-A-Za-z0-9_]{1,35}\.(srt|vtt)(\.maktaba-tmp)?"
+
+
+def _rx(path: str) -> str:
+    """A path as a literal in a Seatbelt regex."""
+    return "".join("\\" + c if c in ".^$*+?()[]{}|\\" else c for c in path)
+
+
+def guard_names(roots: list[str]) -> None:
+    """Refuse (``plugin_scope``) a write under ``roots`` to any name but SUBTITLE_NAME: an
+    audit hook on every open for writing, rename, remove and link (story 54.29 §3)."""
+    if not roots:
+        return
+    name = re.compile("^" + SUBTITLE_NAME + "$")
+    real = [os.path.realpath(r) for r in roots]
+    writes = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+
+    def check(path: object) -> None:
+        if path is None or isinstance(path, int):
+            return
+        try:
+            a = os.path.abspath(os.fsdecode(path))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return
+        if any(a == r or a.startswith(r + os.sep) for r in real) and not name.match(
+            os.path.basename(a)
+        ):
+            raise PluginRefused(403, "plugin_scope", f"{a}: only subtitle files are written here")
+
+    def hook(event: str, args: tuple[object, ...]) -> None:
+        if event == "open":
+            path, mode, flags = args
+            if (isinstance(mode, str) and any(c in mode for c in "wax+")) or (
+                isinstance(flags, int) and flags & writes
+            ):
+                check(path)
+        elif event in ("os.rename", "os.link", "os.symlink"):
+            check(args[0] if event == "os.rename" else None)
+            check(args[1])
+        elif event in ("os.remove", "os.rmdir", "os.mkdir", "os.truncate", "os.utime"):
+            check(args[0])
+
+    sys.addaudithook(hook)
 
 
 @dataclass(frozen=True)
@@ -84,6 +139,22 @@ class _ignore:
 
     def __exit__(self, *exc: object) -> bool:
         return True
+
+
+#: package managers whose tools load libraries from elsewhere in their prefix
+_TOOL_PREFIXES = ("/opt/homebrew", "/usr/local", "/opt/local")
+
+
+def tool_prefixes(tool: str) -> list[str]:
+    """What a tool reads to start: its installation (the folder above its ``bin``), or the
+    whole prefix of a package manager that links its libraries from other packages."""
+    real = os.path.realpath(tool)
+    for pm in _TOOL_PREFIXES:
+        if real.startswith(pm + "/"):
+            return [pm]
+    here = os.path.dirname(real)
+    up = os.path.dirname(here) if os.path.basename(here) == "bin" else here
+    return [up] if up not in ("/", "/usr", "") else [real]
 
 
 def tool_path(name: str) -> str | None:
@@ -127,11 +198,20 @@ def seatbelt_profile(p: Policy) -> str:
     for path in [p.run_dir, *p.write]:
         if path:
             lines.append(f"(allow file-read* file-write* (subpath {_q(path)}))")
+    for path in p.write_named:
+        # Seatbelt's regex has no bounded repeat: the guard checks the language's length
+        rx = "^" + _rx(path.rstrip("/")) + "/(.*/)?" + SUBTITLE_NAME.replace("{1,35}", "+") + "$"
+        lines.append(f'(allow file-write* (regex #"{rx}"))')
     if p.exec:
         lines.append("(allow process-fork)")
+        # a child's loader reads the root folder's entry (not what is under it) and maps the
+        # system's libraries; a tool's own libraries are in its installation
+        lines.append('(allow file-read-data (literal "/"))')
+        lines.append('(allow file-map-executable (subpath "/usr/lib") (subpath "/System"))')
         for tool in p.exec:
             lines.append(f"(allow process-exec (literal {_q(tool)}))")
-            lines.append(f"(allow file-read* (literal {_q(tool)}))")
+            for prefix in tool_prefixes(tool):
+                lines.append(f"(allow file-read* file-map-executable (subpath {_q(prefix)}))")
     else:
         lines.append("(deny process-fork)")
     if p.gpu:
@@ -267,12 +347,15 @@ def _landlock(p: Policy) -> tuple[bool, list[str]]:
             rule(os.path.realpath(ld), _FS_EXECUTE | _FS_READ_FILE)
     for path in ["/dev/null", "/dev/urandom"]:
         rule(path, _FS_READ_FILE | _FS_WRITE)
-    for path in [x for x in (p.run_dir, *p.write) if x]:
+    # Landlock matches folders, not names: guard_names keeps library.subtitles to its names
+    for path in [x for x in (p.run_dir, *p.write, *p.write_named) if x]:
         rule(
             path,
             _READ | _WRITE | (_FS_REFER if abi >= 2 else 0) | (_FS_TRUNCATE if abi >= 3 else 0),
         )
     for path in p.exec:
+        for prefix in tool_prefixes(path):
+            rule(prefix, _READ)  # its own libraries (a tool outside /usr)
         rule(path, _FS_EXECUTE | _FS_READ_FILE)
     if p.gpu:
         for d in ("/dev/dri", "/dev/nvidiactl", "/dev/nvidia-uvm", "/dev/nvidia0"):
@@ -363,7 +446,10 @@ def policy_for(
         for a in files.get("read") or ():
             p.read += paths(str(a))
         for a in files.get("write") or ():
-            p.write += paths(str(a))
+            if str(a) == "library.subtitles":
+                p.write_named += paths("library")
+            else:
+                p.write += paths(str(a))
         for tool in t.get("exec") or ():  # type: ignore[attr-defined]
             found = tool_path(str(tool))
             if found:
@@ -371,4 +457,10 @@ def policy_for(
         p.net |= bool(t.get("net"))
         p.gpu |= str(t.get("gpu") or "none") != "none"
     p.read, p.write, p.exec = sorted(set(p.read)), sorted(set(p.write)), sorted(set(p.exec))
+    # a folder the group may write in full needs no name rule
+    p.write_named = sorted(
+        x
+        for x in set(p.write_named)
+        if not any(x == w or x.startswith(w.rstrip("/") + "/") for w in p.write)
+    )
     return p

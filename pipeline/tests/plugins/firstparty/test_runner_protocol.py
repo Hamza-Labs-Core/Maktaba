@@ -184,6 +184,62 @@ async def test_an_unregistered_statement_runs_the_job_in_process(
             )
 
 
+@pytest.mark.parametrize("wrapped", [False, True])
+async def test_a_file_the_sandbox_refused_runs_the_job_in_process(
+    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch, wrapped: bool
+) -> None:
+    """A folder added since the runner started (its sandbox allows the old areas until it
+    restarts): the refusal, raised bare or as a StageFailure's cause, comes back as
+    sandbox_refused and the worker runs the job itself (engine/run.py)."""
+    from fp_toy import stage
+
+    from maktaba_pipeline.engine.context import StageFailure
+    from maktaba_pipeline.plugins import native
+
+    job, rt, _ = await toy_job(db)
+    ctx = await rt.context_for(db, job)
+
+    async def refused(db: Any, job: Any, ctx: Any) -> Any:
+        try:
+            raise PermissionError(1, "Operation not permitted", "/new/library/video.mkv")
+        except PermissionError as exc:
+            if wrapped:
+                raise StageFailure("share_unreadable", str(exc), retryable=True) from exc
+            raise
+
+    async def mint(_job_id: int) -> dict[str, Any]:
+        return {"plugin_id": "tv.maktaba.toy", "invocation_id": "inv_1", "token": "t"}
+
+    monkeypatch.setattr(native, "_mint", mint)
+    monkeypatch.setattr(native, "_end", lambda _i: asyncio.sleep(0))
+    from dataclasses import replace
+
+    monkeypatch.setattr(stage, "IMPL", replace(stage.IMPL, run=refused))
+    async with runner(db) as sock:
+        with pytest.raises(native.SandboxRefused):
+            await native.run_native(
+                db, job, ctx, connect=lambda: asyncio.open_unix_connection(str(sock))
+            )
+
+
+async def test_a_refusal_is_found_through_the_chain() -> None:
+    import errno
+
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    assert sandbox_refused(PermissionError("x"))
+    assert sandbox_refused(OSError(errno.EPERM, "x"))
+    assert not sandbox_refused(OSError(errno.ENOENT, "x"))
+    try:
+        try:
+            raise PermissionError("deep")
+        except PermissionError as inner:
+            raise RuntimeError("outer") from inner
+    except RuntimeError as outer:
+        assert sandbox_refused(outer)
+    assert not sandbox_refused(ValueError("x"))
+
+
 async def test_a_runner_that_died_gives_the_job_back(
     db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch
 ) -> None:

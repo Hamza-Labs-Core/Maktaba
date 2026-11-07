@@ -133,3 +133,157 @@ def test_a_runner_refuses_to_start_with_secrets_in_its_environment() -> None:
     )
     assert out.returncode == 72, out.stderr
     assert "plugin_runner_env_refused" in out.stderr
+
+
+FILES_PROBE = textwrap.dedent(
+    """
+    import json, os, subprocess, sys
+    from maktaba_plugin_runner import sandbox
+    library, cache, run_dir, tool = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+    policy = sandbox.Policy(read=[library], write=[cache], run_dir=run_dir, exec=[tool])
+    out = {}
+    try:
+        out["applied"] = sandbox.apply(policy).level
+    except sandbox.SandboxUnavailable as exc:
+        out["applied"] = "unavailable:" + exc.step
+    def probe(name, fn):
+        try:
+            fn()
+            out[name] = "allowed"
+        except Exception as exc:
+            out[name] = "denied:" + type(exc).__name__
+    probe("read_library", lambda: open(os.path.join(library, "ep1.mp4"), "rb").read())
+    probe("write_library", lambda: open(os.path.join(library, "ep1.ar.srt"), "w").write("x"))
+    probe("write_cache", lambda: open(os.path.join(cache, "small.jpg"), "wb").write(b"x"))
+    probe("exec_tool", lambda: subprocess.run([tool], check=True))
+    probe("shell", lambda: subprocess.run(["/bin/sh", "-c", "true"], check=True))
+    print(json.dumps(out))
+    """
+)
+
+
+def test_a_files_group_writes_only_its_write_areas_and_runs_only_its_tools(
+    tmp_path: Path,
+) -> None:
+    """Wave 2 (story 54.29): the thumbnails group reads the library, writes the thumbnail
+    cache and runs ffmpeg; a write to a read-only area is a PermissionError (the worker then
+    runs that job itself: sandbox_refused)."""
+    library, cache, run_dir = tmp_path / "lib", tmp_path / "cache", tmp_path / "run"
+    for d in (library, cache, run_dir):
+        d.mkdir()
+    (library / "ep1.mp4").write_bytes(b"video")
+    tool = "/usr/bin/true" if os.path.exists("/usr/bin/true") else "/bin/true"
+    out = subprocess.run(
+        [sys.executable, "-c", FILES_PROBE, str(library.resolve()), str(cache.resolve()),
+         str(run_dir.resolve()), tool],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    if str(got["applied"]).startswith("unavailable"):
+        pytest.skip(f"this machine cannot apply the sandbox: {got['applied']}")
+    if got["applied"] == "partial" and sys.platform.startswith("linux"):
+        pytest.skip("no Landlock on this kernel: files are not limited (Degraded sandbox_partial)")
+    assert got["read_library"] == "allowed", got
+    assert got["write_cache"] == "allowed", got
+    assert got["write_library"] == "denied:PermissionError", got
+    assert got["exec_tool"] == "allowed", got
+    assert got["shell"].startswith("denied"), got
+
+
+def test_a_tool_reads_its_own_installation(tmp_path: Path) -> None:
+    from maktaba_plugin_runner.sandbox import tool_prefixes
+
+    bundled = tmp_path / "Maktaba.app" / "Resources" / "ffmpeg" / "bin" / "ffmpeg"
+    bundled.parent.mkdir(parents=True)
+    bundled.write_bytes(b"")
+    assert tool_prefixes(str(bundled)) == [str(bundled.parent.parent.resolve())]
+    assert tool_prefixes("/opt/homebrew/Cellar/ffmpeg/8.1/bin/ffmpeg") == ["/opt/homebrew"]
+    assert tool_prefixes("/usr/bin/ffmpeg") == ["/usr/bin/ffmpeg"]  # never all of /usr
+
+
+NAMES_PROBE = textwrap.dedent(
+    """
+    import json, os, sys
+    from maktaba_plugin_runner import sandbox
+    library, run_dir, guarded = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+    policy = sandbox.Policy(read=[library], write_named=[library], run_dir=run_dir)
+    out = {}
+    try:
+        out["applied"] = sandbox.apply(policy).level
+    except sandbox.SandboxUnavailable as exc:
+        out["applied"] = "unavailable:" + exc.step
+    if guarded:
+        sandbox.guard_names(policy.write_named)
+    def probe(name, fn):
+        try:
+            fn()
+            out[name] = "allowed"
+        except Exception as exc:
+            out[name] = "denied:" + type(exc).__name__ + ":" + getattr(exc, "code", "")
+    show = os.path.join(library, "show")
+    def subtitle():
+        tmp = os.path.join(show, "ep1.ar.srt.maktaba-tmp")
+        with open(tmp, "w") as f:
+            f.write("1")
+        os.replace(tmp, os.path.join(show, "ep1.ar.srt"))
+    probe("subtitle", subtitle)
+    probe("vtt", lambda: open(os.path.join(show, "ep1.en-GB.vtt"), "w").write("x"))
+    probe("evil", lambda: open(os.path.join(show, "evil.sh"), "w").write("x"))
+    probe("over_video", lambda: open(os.path.join(show, "ep1.mp4"), "w").write("x"))
+    probe("read_video", lambda: open(os.path.join(show, "ep1.mp4"), "rb").read())
+    print(json.dumps(out))
+    """
+)
+
+
+@pytest.mark.parametrize("guarded", [True, False])
+def test_subtitles_write_only_subtitle_names_next_to_a_video(tmp_path: Path, guarded: bool) -> None:
+    """Story 54.29 T04: library.subtitles. With the runner's guard any other name is
+    plugin_scope (both systems); without it, Seatbelt alone refuses it on macOS."""
+    library, run_dir = tmp_path / "lib", tmp_path / "run"
+    (library / "show").mkdir(parents=True)
+    run_dir.mkdir()
+    (library / "show" / "ep1.mp4").write_bytes(b"video")
+    out = subprocess.run(
+        [sys.executable, "-c", NAMES_PROBE, str(library.resolve()), str(run_dir.resolve()),
+         "1" if guarded else "0"],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    if str(got["applied"]).startswith("unavailable"):
+        pytest.skip(f"this machine cannot apply the sandbox: {got['applied']}")
+    assert got["subtitle"] == got["vtt"] == got["read_video"] == "allowed", got
+    assert (library / "show" / "ep1.ar.srt").read_text() == "1"
+    if guarded:
+        assert got["evil"] == got["over_video"] == "denied:PluginRefused:plugin_scope", got
+    elif sys.platform == "darwin":
+        assert got["evil"].startswith("denied:PermissionError"), got
+        assert got["over_video"].startswith("denied:PermissionError"), got
+    else:
+        # Landlock matches folders, never names: without the guard any name is writable,
+        # which is why the runner always installs it (sandbox.guard_names)
+        assert got["evil"] == got["over_video"] == "allowed", got
+        return
+    assert (library / "show" / "ep1.mp4").read_bytes() == b"video"
+
+
+def test_the_light_group_writes_subtitles_by_name_and_thumbnails_in_full() -> None:
+    from maktaba_pipeline.plugins import firstparty
+    from maktaba_plugin_runner.sandbox import policy_for, seatbelt_profile
+
+    light = [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == "light"]
+    p = policy_for(
+        light,
+        areas={"library": "/media/a;/media/b", "data.thumbnails": "/data/thumbnails"},
+        api_socket="/run/api.sock",
+        own_socket="/run/runner-light.sock",
+        run_dir="/run",
+    )
+    assert p.read[:2] == ["/media/a", "/media/b"]
+    assert p.write == ["/data/thumbnails"]
+    assert p.write_named == ["/media/a", "/media/b"]
+    profile = seatbelt_profile(p)
+    assert '(allow file-read* file-write* (subpath "/media/a"))' not in profile
+    assert '(regex #"^/media/a/(.*/)?' in profile

@@ -238,7 +238,8 @@ async def _execute(
 async def _native_impl(db: Any, name: str, inproc: Any) -> Any:
     """The plugin runner's implementation of a first-party stage whose ``job_stages.impl``
     is ``plugin`` and whose runner serves on this machine (Epic 54, story 54.25 §3); None:
-    in-process. A statement the plugin did not register runs that job in-process."""
+    in-process. A statement the plugin did not register, or a file the runner's sandbox
+    refused, runs that job in-process."""
     from ..plugins import firstparty
 
     if firstparty.by_stage(name) is None:
@@ -254,8 +255,13 @@ async def _native_impl(db: Any, name: str, inproc: Any) -> Any:
     async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         try:
             return await native.run_native(db, job, ctx)
-        except native.Unregistered as exc:
-            _log.error("plugin_statement_unregistered", job_id=job.id, stage=name, error=str(exc))
+        except (native.Unregistered, native.SandboxRefused) as exc:
+            if isinstance(exc, native.Unregistered):
+                _log.error(
+                    "plugin_statement_unregistered", job_id=job.id, stage=name, error=str(exc)
+                )
+            else:
+                _log.warning("plugin_sandbox_refused", job_id=job.id, stage=name, error=str(exc))
             if inproc is None or inproc.run is None:
                 raise
             result: StageResult = await inproc.run(db, job, ctx)

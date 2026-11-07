@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **Thumbnails and subtitle files are made by Maktaba's built-in plugins (Epic 54 wave 2).**
+  The small thumbnail and the chapter frames run in `tv.maktaba.thumbnails`, and subtitle
+  files in `tv.maktaba.subtitles`, in the sandboxed `light` runner: it reads the library,
+  writes only the thumbnail cache and, next to a video, only subtitle files
+  (`<name>.<lang>.srt|vtt`), and runs only ffmpeg. They write the same files byte for byte
+  (the parity proof compares both ways). A runner that cannot start never blocks an update,
+  and a home whose database cannot hold a plugin's role runs the stage in the worker. The
+  chapter frames now follow `MAKTABA_THUMBNAIL_ROOT`, where the server already looked for them.
 - **Four classify stages run as Maktaba's built-in plugin (Epic 54 wave 1).** Promo links,
   clip groups, topic collections and season styles run in `tv.maktaba.classify`, in the
   sandboxed `light` runner with no database password, through its named statements under its
@@ -63,6 +71,19 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **An update no longer rolls back because the transcription pipeline is busy.** The update's
+  watch asked every pipeline process for its version on every check, with three seconds to
+  answer; on a busy home the answer sometimes came late, the watch never saw ten healthy
+  minutes in a row, and it rolled the release back (0.3.90 on 2026-11-07). Each process's
+  version is now confirmed once (a restarted process is asked again); its liveness stays the
+  supervisor's. The word check also runs off the pipeline's event loop and writes a
+  transcript's flags in one batch, so it no longer holds its transaction open for minutes.
+
+- **The Mac app no longer says a part keeps stopping when that part is only turned off.** A
+  process whose component is off (the supervisor's `held` state, as the plugin host is with
+  no plugin installed) made the menu bar and the starting screen say "Some parts keep stopping:
+  plugins". The app now counts it as off, as the server does.
 
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
   A quality or audio change that finished after the video was closed, or after another video

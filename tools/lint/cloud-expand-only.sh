@@ -39,5 +39,5 @@ else
     while IFS= read -r f; do files+=("$f"); done < <(git diff --name-only --diff-filter=A "${base}" HEAD -- 'cloud/migrations/*.sql')
 fi
 rc=0
-for f in "${files[@]}"; do check "$f" || rc=1; done
+for f in ${files[@]+"${files[@]}"}; do check "$f" || rc=1; done
 exit "${rc}"
