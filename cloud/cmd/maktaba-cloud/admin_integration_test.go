@@ -55,7 +55,7 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 	admin := e.serviceAdmin("ops@example.test")
 	anon := e.client()
 
-	routes := adminRoutes(t, e.router)
+	routes := adminRoutes(t, e.admin)
 	// the problem reports homes sent (53.16): a home admin's cloud token reads none of them
 	if !slices.ContainsFunc(routes, func(rt [2]string) bool { return rt[1] == "/v1/admin/reports" }) {
 		t.Fatalf("the walk missed /v1/admin/reports: %v", routes)

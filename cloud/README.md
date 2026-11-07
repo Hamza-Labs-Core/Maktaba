@@ -63,9 +63,9 @@ curl http://localhost:8090/healthz
 pnpm -C ../web dev:cloud
 
 # The operator console, its own bundle (web/admin, story 50.32), on :5175. It proxies /v1 to
-# the api role's admin listener (:8091, story 50.32 §1); until that listener is in, point it
-# at the user listener:
-CLOUD_ADMIN_API_URL=http://localhost:8090 pnpm -C ../web dev:admin
+# the api role's admin listener (admin_listen_addr, :8091 in cloud.example.toml) with
+# Host: admin.localhost; the console's routes are on no other listener:
+pnpm -C ../web dev:admin
 
 # Make an account a service admin (after it verified its email; the
 # verification link is in the api log — mail.driver is "log"):

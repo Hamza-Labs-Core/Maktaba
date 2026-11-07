@@ -82,8 +82,18 @@ type ServerConfig struct {
 	// or CI run. Production refuses a public listener and an empty TrustedProxies (50.31).
 	Env string
 	// AdminListenAddr is the operator console's own listener (server.admin_listen_addr,
-	// served by Epic 50 story 50.32); empty means none.
+	// Epic 50 story 50.32): /v1/admin/* and /v1/staff/* only. Empty means none, and the
+	// console has no address at all.
 	AdminListenAddr string
+	// AdminHost is the one Host the admin listener answers (server.admin_host,
+	// admin.maktaba.tv); any other is 404. Required with AdminListenAddr.
+	AdminHost string
+	// AdminOrigin is the Origin a state-changing admin request must carry
+	// (server.admin_origin); empty means "https://" + AdminHost. Dev sets the Vite server's.
+	AdminOrigin string
+	// UserHosts are the Hosts the user listener answers (server.user_hosts: api.maktaba.tv,
+	// app.maktaba.tv, maktaba.tv); any other is 404. Empty means any (development).
+	UserHosts []string
 	// TrustedProxies are the peers whose CF-Connecting-IP is believed (server.trusted_proxies,
 	// CIDRs): the local cloudflared, or Caddy after its origin checks. Empty means the client
 	// IP is always the TCP peer. It replaces server.trust_proxy_headers (Epic 50 story 50.31).
@@ -480,6 +490,14 @@ func assign(c *Config, section, key, val string) error {
 		c.Server.Env = val
 	case "server.admin_listen_addr":
 		c.Server.AdminListenAddr = val
+	case "server.admin_host":
+		c.Server.AdminHost = strings.ToLower(val)
+	case "server.admin_origin":
+		c.Server.AdminOrigin = strings.TrimSuffix(val, "/")
+	case "server.user_hosts":
+		for _, h := range parseList(val) {
+			c.Server.UserHosts = append(c.Server.UserHosts, strings.ToLower(h))
+		}
 	case "server.origin_mode":
 		c.Server.OriginMode = val
 	case "server.aop_ca_file":
@@ -594,6 +612,14 @@ const (
 	OriginTunnel = "tunnel"
 	OriginAOP    = "aop"
 )
+
+// AdminOriginOrDefault is the Origin state-changing admin requests must carry.
+func (s ServerConfig) AdminOriginOrDefault() string {
+	if s.AdminOrigin != "" {
+		return s.AdminOrigin
+	}
+	return "https://" + s.AdminHost
+}
 
 // ParsePrefixes reads CIDRs; a bare address is refused, so a list says what it means.
 func ParsePrefixes(vs []string) ([]netip.Prefix, error) {

@@ -340,6 +340,14 @@ build fails when the two differ.
 
 ### Security
 
+- **The cloud's operator console has its own listener and name (Epic 50 story 50.32).** Every
+  `/v1/admin/*` route is served only by the api role's admin listener, for `admin.maktaba.tv`
+  alone: on the user names each one is the same 404 as a route that doesn't exist. The console
+  listener allows no cross-origin call, and a change from it must carry the console's own
+  Origin and header, or it is refused before anything runs. The user API answers only its own
+  names, and the sign-in cookie is now `__Host-maktaba_refresh`, which a browser never shares
+  with another name. The relay's access log records the visitor's address instead of the
+  proxy's.
 - **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
   network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
   a channel listing and a download and fails on one the plugin's reviewed `net` list does not

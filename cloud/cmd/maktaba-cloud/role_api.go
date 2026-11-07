@@ -48,16 +48,22 @@ import (
 )
 
 func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo) {
-	r, stop, err := newAPI(logger, cfg, pool, mig, build, apiOverrides{})
+	a, stop, err := newAPI(logger, cfg, pool, mig, build, apiOverrides{})
 	if err != nil {
 		logger.Error("api setup", "err", err)
 		os.Exit(2)
 	}
 	defer stop()
-	srv := httpServer(cfg.Server.ListenAddr, r, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
+	srvs := []*http.Server{httpServer(cfg.Server.ListenAddr, a.User, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)}
+	// the operator console's own listener (story 50.32): without it the console has no address
+	if cfg.Server.AdminListenAddr != "" {
+		srvs = append(srvs, httpServer(cfg.Server.AdminListenAddr, a.Admin, cfg.Server.ReadTimeout, cfg.Server.WriteTimeout))
+	} else {
+		logger.Warn("server.admin_listen_addr is not set: the operator console is not served")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {
+	if err := server.RunAll(ctx, logger, cfg.Server.ShutdownGrace, srvs...); err != nil {
 		logger.Error("server exited with error", "err", err)
 		os.Exit(1)
 	}
@@ -74,15 +80,22 @@ type apiOverrides struct {
 	Turnstile       turnstile.Verifier // replaces siteverify (story 50.30)
 }
 
-// newAPI builds the api role's router. stop releases its background
+// apiRouters are the api role's two listeners (Epic 50 story 50.32 §1): User for api, app and
+// maktaba.tv, with no admin route at all; Admin for admin.maktaba.tv, with /v1/admin/* only.
+type apiRouters struct {
+	User  *chi.Mux
+	Admin *chi.Mux
+}
+
+// newAPI builds the api role's routers. stop releases its background
 // goroutines.
-func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo, o apiOverrides) (*chi.Mux, func(), error) {
+func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo, o apiOverrides) (apiRouters, func(), error) {
 	// Token signer for access tokens. The secret is required: the api
 	// role can't function without it. config.Load layers
 	// MAKTABA_CLOUD_TOKEN_SECRET into cfg.Auth.
 	secret, err := token.SecretFromEnv(cfg.Auth.TokenSecret)
 	if err != nil {
-		return nil, nil, err
+		return apiRouters{}, nil, err
 	}
 	signer := token.NewSigner(secret)
 
@@ -90,13 +103,13 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// refuses to start rather than sign people in unchecked.
 	tsGuard, err := turnstileGuard(cfg, o.Turnstile)
 	if err != nil {
-		return nil, nil, err
+		return apiRouters{}, nil, err
 	}
 
 	// The payment provider is not chosen yet; "none" takes no payments.
 	payments, err := billingpkg.New(cfg.Billing.Provider)
 	if err != nil {
-		return nil, nil, err
+		return apiRouters{}, nil, err
 	}
 	if o.BillingProvider != nil {
 		payments = o.BillingProvider
@@ -121,7 +134,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		if err != nil {
 			logger.Warn("entitlement signing disabled", "path", cfg.Entitlement.PrivateKeyPath, "err", err)
 		} else if err := entitlement.RegisterKey(context.Background(), pool.DB, s); err != nil {
-			return nil, nil, err
+			return apiRouters{}, nil, err
 		} else {
 			entSigner = s
 		}
@@ -209,13 +222,38 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		appleFlow = oauth.NewAppleFlow(ac)
 	}
 
+	// The account routes, shared by both listeners until 50.33 (ConsoleSignIn).
+	authDeps := &authh.Deps{
+		Users:     users,
+		Sessions:  sess,
+		Signer:    signer,
+		Tokens:    stores.NewMailTokens(pool.DB),
+		Mailer:    mailer,
+		Templates: templates,
+		Abuse:     detector,
+		Audit:     auditLog,
+		Logger:    logger,
+		Google:    googleFlow,
+		Apple:     appleFlow,
+		WebURL:    cfg.Server.WebURL,
+		// Host-only: a Domain=.maktaba.tv cookie would also go to
+		// every home server behind *.relay.maktaba.tv.
+		CookieDomain:     "",
+		Secure:           true,
+		Turnstile:        tsGuard,
+		TurnstileSiteKey: cfg.Turnstile.SiteKey,
+	}
+	accountDeps := &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger}
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.
 	// The client IP is resolved first, the access log included: CF-Connecting-IP only from a
 	// peer in server.trusted_proxies (Epic 50 story 50.31).
+	// The user listener answers server.user_hosts only and has no admin route (story 50.32).
 	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
-		server.WithTrustedProxies(cfg.Server.TrustedProxies))
+		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts))
+	adminR := server.NewAdminRouter(logger, pool, mig, build, cfg.Server.AdminHost,
+		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies)
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
@@ -242,26 +280,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// The address is read for the rate limit only, never stored.
 		telemetry.Mount(app, telemetry.NewHandler(telemetryStore, logger))
 
-		authh.Mount(app, &authh.Deps{
-			Users:     users,
-			Sessions:  sess,
-			Signer:    signer,
-			Tokens:    stores.NewMailTokens(pool.DB),
-			Mailer:    mailer,
-			Templates: templates,
-			Abuse:     detector,
-			Audit:     auditLog,
-			Logger:    logger,
-			Google:    googleFlow,
-			Apple:     appleFlow,
-			WebURL:    cfg.Server.WebURL,
-			// Host-only: a Domain=.maktaba.tv cookie would also go to
-			// every home server behind *.relay.maktaba.tv.
-			CookieDomain:     "",
-			Secure:           true,
-			Turnstile:        tsGuard,
-			TurnstileSiteKey: cfg.Turnstile.SiteKey,
-		})
+		authh.Mount(app, authDeps)
 
 		billing := &billingh.Deps{
 			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
@@ -272,44 +291,16 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// payment-provider webhook (verified by the provider, not our token).
 		billingh.MountPublic(app, billing)
 
-		adminGate := middleware.RequireServiceAdmin(users, auditLog, logger)
-		live := metricsh.LiveFromStore(metricsStore, time.Now)
-
 		// Authenticated group.
 		app.Group(func(g chi.Router) {
 			g.Use(middleware.RequireUser(signer, middleware.UserStatus(pool.DB)))
-			accounth.Mount(g, &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger})
+			accounth.Mount(g, accountDeps)
 			serversh.MountUser(g, serversDeps)
 			homesh.MountUser(g, homes)
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
 
-			// Service-admin console: every /v1/admin/* route checks the cloud
-			// role in the database (never an email domain or a home role).
-			adminh.Mount(g, &adminh.Deps{
-				DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
-				Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
-				// the cloud's log index on W (53.17), as the forwarder reaches it
-				Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
-			})
-
-			// the problem reports homes sent, for the service admin only (53.16)
-			reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate})
-
-			// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
-			// Reads the relay_metrics_* tables the relay role writes (same DB);
-			// the api role owns auth, so the operator-gated surface lives here.
-			metricsh.Mount(g, metricsh.Deps{
-				DB:    pool.DB,
-				Gate:  adminGate,
-				Audit: auditLog,
-				Store: metricsStore,
-				// the relay's registry lives in the relay role's process; read
-				// the gauges it flushes each minute
-				Live:     live,
-				Deletion: privacy.NewDataSubjectService(pool.DB),
-			})
 		})
 	})
 
@@ -317,7 +308,60 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// the relay's /metrics).
 	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
 
-	return r, stopMetrics, nil
+	// The operator console's listener (story 50.32): every /v1/admin/* route, behind a signed-in
+	// user whose cloud role in the database is service_admin (50.33 replaces this with staff
+	// sign-in on /v1/staff/*). Nothing else is mounted here.
+	adminGate := middleware.RequireServiceAdmin(users, auditLog, logger)
+	live := metricsh.LiveFromStore(metricsStore, time.Now)
+	// Until 50.33's staff sign-in exists, the console signs in with the account routes it has
+	// always used, and only those (ConsoleSignIn), on its own host: the refresh cookie is
+	// host-only, so a console session is never a session on the user names, and the console
+	// listener's Origin rule covers these POSTs too. 50.33 replaces them with /v1/staff/*.
+	adminR.Group(func(g chi.Router) {
+		g.Use(authRateLimit(ratelimit.NewLimiter(30, 5), authh.RateLimitedPaths))
+		g.Use(blockedIPs(detector, logger))
+		g.Post("/v1/auth/login", authDeps.Login)
+		g.Post("/v1/auth/refresh", authDeps.Refresh)
+		g.Post("/v1/auth/logout", authDeps.Logout)
+	})
+	adminR.Group(func(g chi.Router) {
+		g.Use(middleware.RequireUser(signer, middleware.UserStatus(pool.DB)))
+		g.Get("/v1/account/me", accountDeps.Me)
+		// Service-admin console: every /v1/admin/* route checks the cloud
+		// role in the database (never an email domain or a home role).
+		adminh.Mount(g, &adminh.Deps{
+			DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
+			Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
+			// the cloud's log index on W (53.17), as the forwarder reaches it
+			Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
+		})
+
+		// the problem reports homes sent, for the service admin only (53.16)
+		reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate})
+
+		// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
+		// Reads the relay_metrics_* tables the relay role writes (same DB);
+		// the api role owns auth, so the operator-gated surface lives here.
+		metricsh.Mount(g, metricsh.Deps{
+			DB:    pool.DB,
+			Gate:  adminGate,
+			Audit: auditLog,
+			Store: metricsStore,
+			// the relay's registry lives in the relay role's process; read
+			// the gauges it flushes each minute
+			Live:     live,
+			Deletion: privacy.NewDataSubjectService(pool.DB),
+		})
+	})
+
+	return apiRouters{User: r, Admin: adminR}, stopMetrics, nil
+}
+
+// ConsoleSignIn are the account routes the console listener also serves until 50.33's staff
+// sign-in replaces them: sign in, refresh, sign out, and who is signed in.
+var ConsoleSignIn = map[string]bool{
+	"POST /v1/auth/login": true, "POST /v1/auth/refresh": true, "POST /v1/auth/logout": true,
+	"GET /v1/account/me": true,
 }
 
 // authRateLimit applies l, keyed by client IP, to the given paths only.
