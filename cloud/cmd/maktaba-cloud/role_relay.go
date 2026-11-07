@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -87,25 +88,62 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	if cfg.Relay.TicketsEnabled {
 		tickets = relaypkg.NewTickets([]byte(cfg.Auth.TokenSecret))
 	}
+	// Story 50.04: with a peer address, this process records its tunnels in the
+	// directory and forwards a request for a home whose tunnel is on another
+	// process there (and serves its peers' forwards on the peer listener).
+	relayID := relayIDOf(cfg)
+	var directory relaypkg.Directory
+	var peerAuth *relaypkg.PeerAuth
+	if cfg.Relay.PeerAddr != "" {
+		pg := relaypkg.NewPGDirectory(pool.DB, relayID, cfg.Relay.PeerAddr)
+		pg.Draining = registry.Closing
+		if err := pg.Start(ctx); err != nil {
+			logger.Error("relay: the tunnel directory did not start", "err", err)
+			os.Exit(1)
+		}
+		directory = pg
+		peerAuth = relaypkg.NewPeerAuth([]byte(cfg.Auth.TokenSecret))
+	}
 	r.Get("/v1/relay/ws", (&relaypkg.TunnelServer{
-		Registry: registry,
-		Store:    relaypkg.NewTunnelStore(serversStore),
-		Logger:   logger,
-		Tickets:  tickets,
-		Drain:    cfg.Relay.DrainEnabled,
+		Registry:  registry,
+		Store:     relaypkg.NewTunnelStore(serversStore),
+		Logger:    logger,
+		Tickets:   tickets,
+		Drain:     cfg.Relay.DrainEnabled,
+		Directory: directory,
 	}).ServeHTTP)
 
 	// All non-control paths fall through to the proxy. We deliberately
 	// don't restrict by route prefix — the proxied server's URL space
 	// is opaque to us.
-	proxy := (&relayh.Deps{
+	deps := relayh.Deps{
 		Registry:   registry,
 		Servers:    serversStore,
 		Meter:      meter,
 		PublicHost: cfg.Relay.PublicHost,
 		Collector:  collector,
 		Editions:   editions(logger, cfg.Relay.EditionsDir),
-	}).Handler()
+		RelayID:    relayID,
+		Directory:  directory,
+		PeerAuth:   peerAuth,
+		HoldMax:    holdMax(cfg.Relay.HoldMax),
+		HoldRecent: cfg.Relay.HoldRecent,
+		Logger:     logger,
+	}
+	proxy := (&deps).Handler()
+	if cfg.Relay.PeerAddr != "" {
+		peerDeps := deps
+		peerDeps.PeerMode = true
+		peer := httpServer(cfg.Relay.PeerAddr, peerDeps.Handler(), cfg.Server.ReadTimeout, cfg.Server.WriteTimeout)
+		go func() {
+			logger.Info("relay: peer listener", "addr", cfg.Relay.PeerAddr, "relay_id", relayID)
+			if err := peer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logger.Error("relay: the peer listener failed", "err", err)
+				os.Exit(1)
+			}
+		}()
+		defer func() { _ = peer.Close() }()
+	}
 
 	// Observability + transparency endpoints, mounted BEFORE the proxy
 	// catch-all so chi matches them first. Both are intentionally
@@ -123,7 +161,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics)))
+	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
@@ -138,6 +176,27 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		logger.Error("relay exited", "err", err)
 		os.Exit(1)
 	}
+}
+
+// relayIDOf names this relay process in the tunnel directory: relay.id, or
+// the host name.
+func relayIDOf(cfg config.Config) string {
+	if cfg.Relay.ID != "" {
+		return cfg.Relay.ID
+	}
+	if h, err := os.Hostname(); err == nil && h != "" {
+		return h
+	}
+	return "relay"
+}
+
+// holdMax maps relay.hold_max to the handler's: 0 in the config turns
+// holding off (the handler's 0 is its default).
+func holdMax(d time.Duration) time.Duration {
+	if d <= 0 {
+		return -1
+	}
+	return d
 }
 
 // relayGrace is how long a stopping relay waits for its homes to move: the

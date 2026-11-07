@@ -99,6 +99,7 @@ func (r *Registry) Shutdown(ctx context.Context, o DrainOptions, rate int, mint 
 		rate = 100
 	}
 	gap := time.Second / time.Duration(rate)
+	start := time.Now()
 	for _, t := range r.All() {
 		if ctx.Err() != nil {
 			break
@@ -107,7 +108,13 @@ func (r *Registry) Shutdown(ctx context.Context, o DrainOptions, rate int, mint 
 		if mint != nil && t.canTicket {
 			ticket = mint(t.ServerID)
 		}
-		t.Drain(o, ticket)
+		// the window each home spreads its reconnect over shrinks as the drain
+		// goes on (never below 1 s), so the last home sent DRAIN moves about
+		// as soon as the first: 1,000 homes at 100 a second are all moved in
+		// about 11 s, not 15 (the rehearsal's drain-1k measured 15.9 s)
+		each := o
+		each.Within = max(time.Second, o.Within-time.Since(start))
+		t.Drain(each, ticket)
 		select {
 		case <-ctx.Done():
 		case <-time.After(gap):

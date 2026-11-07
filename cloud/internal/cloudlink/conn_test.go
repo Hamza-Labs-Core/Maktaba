@@ -185,3 +185,31 @@ func (c *codeConn) CloseCode(code int, _ string) error {
 	c.code = code
 	return c.Close()
 }
+
+// A drained tunnel closes only after a quiet spell with no stream and no new
+// request (the relay may still send one until the new tunnel is registered).
+func TestFinishDrainedWaitsForQuiet(t *testing.T) {
+	old := drainQuiet
+	drainQuiet = 300 * time.Millisecond
+	defer func() { drainQuiet = old }()
+	clientEnd, cloudEnd := newPipe()
+	c := &codeConn{FrameConn: clientEnd}
+	m := NewMultiplexer(c, &LocalProxy{BaseURL: "http://127.0.0.1:1"})
+	sup := &Supervisor{}
+	start := time.Now()
+	done := make(chan struct{})
+	go func() { sup.finishDrained(m, time.Now().Add(10*time.Second)); close(done) }()
+	// a request head arrives 200 ms in: the quiet spell starts again
+	time.Sleep(200 * time.Millisecond)
+	_ = cloudEnd.WriteFrame(Frame{Kind: KindRequestHead, StreamID: 1, Payload: []byte("GET / HTTP/1.1\r\n\r\n")})
+	<-done
+	if took := time.Since(start); took < 480*time.Millisecond {
+		t.Errorf("closed after %s, inside the quiet spell after the request", took)
+	}
+	if c.code != 4000 {
+		t.Errorf("close code %d", c.code)
+	}
+	if m.LastRequest().IsZero() {
+		t.Error("LastRequest not recorded")
+	}
+}
