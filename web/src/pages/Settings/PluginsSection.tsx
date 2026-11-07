@@ -43,6 +43,7 @@ import { Browse } from "./Browse";
 import { PluginFlowChart } from "./PluginFlowChart";
 import type { FlowFinding, FlowGraph, PluginFlow } from "../../lib/pluginsApi";
 import { StoreAccount } from "./StoreAccount";
+import { PanelOrder } from "./PanelOrder";
 import "./plugins.css";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -176,6 +177,7 @@ function PluginsInner() {
       </ul>
       {builtIn.length > 0 && <BuiltInSection plugins={builtIn} />}
       <PolicySection policy={policy} onChange={setPolicy} />
+      <PanelOrder />
       <StoreAccount />
       {installing && (
         <InstallDialog

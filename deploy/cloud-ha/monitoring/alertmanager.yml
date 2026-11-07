@@ -1,6 +1,7 @@
-# The witness's Alertmanager (story 50.10). Pages go to the owner's phone through ntfy (or
-# Telegram: the owner chooses; fill one), repeated every 15 min until silenced; warnings go
-# by email. ${...} rendered by setup.sh from the secrets in cloud-ha.env.
+# The witness's Alertmanager (stories 50.10, 50.12; docs/runbooks/cloud/README.md). SEV1 pages
+# the owner's phone through ntfy (or Telegram: the owner chooses; fill one) and repeats every
+# 5 minutes until acknowledged (silenced); SEV2 pages once; SEV3 is a daily email digest.
+# ${...} rendered by setup.sh from the secrets in cloud-ha.env.
 route:
   receiver: email
   group_by: [alertname, node]
@@ -8,9 +9,18 @@ route:
   group_interval: 1m
   repeat_interval: 4h
   routes:
-    - matchers: [severity = "page"]
+    - matchers: [severity = "sev1"]
       receiver: phone
-      repeat_interval: 15m
+      repeat_interval: 5m
+    - matchers: [severity = "sev2"]
+      receiver: phone
+      repeat_interval: 7d
+    - matchers: [severity = "sev3"]
+      receiver: email
+      group_by: [severity]
+      group_wait: 1h
+      group_interval: 24h
+      repeat_interval: 7d
 receivers:
   - name: phone
     webhook_configs:

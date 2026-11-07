@@ -104,7 +104,7 @@ failover. 30 days of point-in-time restore. The witness restores the latest back
 ago every Monday (`maktaba-restore-drill.timer`, from R2 on the first Monday of a month) and
 checks it against the live replica; `backup_stale`, `wal_archive_failing` and
 `restore_drill_failed` page (`monitoring/backup-rules.yml`, tested by promtool in relay.yml).
-A whole-zone loss: [docs/runbooks/cloud-disaster-restore.md](../../docs/runbooks/cloud-disaster-restore.md).
+A whole-zone loss: [docs/runbooks/cloud/restore.md](../../docs/runbooks/cloud/restore.md).
 The secrets: `bin/backup-secrets` (age, the owner's key) puts an encrypted copy in both
 repositories; the password manager keeps the originals.
 
@@ -148,13 +148,28 @@ public site, `monitoring/Caddyfile.witness`, behind the token), goes to the `sta
 branch, and a component changing state (two rounds in a row) starts the page's build at once.
 Both networks failing is an outage, one alone is degraded; the witness unreachable leaves the
 outside network to decide. The apps read `summary.json`. Posting an incident or a maintenance
-notice: [`docs/runbooks/cloud-status-page.md`](../../docs/runbooks/cloud-status-page.md).
+notice: [`docs/runbooks/cloud/status-page.md`](../../docs/runbooks/cloud/status-page.md).
 
 What the owner sets up for it: GitHub Pages with the source **GitHub Actions** and the custom
 domain `status.maktaba.tv`; the DNS-only records `status` (CNAME `hamza-labs-core.github.io`)
 and `witness` (A, the witness's IPv4); `WITNESS_DOMAIN` in `cloud-ha.env`; the secret
 `PUSHGATEWAY_URL=https://witness.maktaba.tv` with `PUSHGATEWAY_TOKEN` from the witness's
 `/etc/maktaba/witness.token`; and the variable `STATUS_PAGE=true`.
+
+## Incidents (story 50.12)
+
+Every alert carries a severity (`sev1`, `sev2`, `sev3`) and a runbook in
+[`docs/runbooks/cloud/`](../../docs/runbooks/cloud/README.md); Alertmanager pages SEV1 every 5
+minutes until acknowledged, SEV2 once, and emails SEV3 daily. Three one-click workflows run
+[`runbook/`](runbook/): **Cloud switchover** (`switchover.sh`), **Cloud failover**
+(`failover.sh`) and **Cloud DNS swap** (`dns-swap.sh`, when the Hetzner API is down). The cloud
+rehearsal runs the same scripts first against its own pair.
+
+What the owner sets up for it: a required reviewer (the owner) on the `production` environment;
+the secrets the deploy already uses (`RELAY_HOST_A`, `RELAY_HOST_B`, `RELAY_SSH_USER`,
+`RELAY_SSH_KEY`) and, for the DNS swap, `CF_DNS_TOKEN` (a Cloudflare token with Zone → DNS →
+Edit on maktaba.tv only), `CF_ZONE_ID`, `FLOATING_IP`, `PUBLIC_IP_A` and `PUBLIC_IP_B` (the
+nodes' own public IPv4 addresses).
 
 ## Day to day
 

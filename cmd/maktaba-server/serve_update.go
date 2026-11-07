@@ -845,7 +845,13 @@ type machineHealth struct {
 	// flaps, does not wait anew); offTold: its wait ended and was logged
 	offSince map[string]time.Time
 	offTold  map[string]bool
-	now      func() time.Time
+	// versionSeen: each pipeline process (its name and pid) that already answered with the
+	// version a watch wants (the key carries it). Its version cannot change while it runs, so it is not
+	// asked again: its liveness is the supervisor's (its state), and asking every round made
+	// a busy home's watch flap (2026-11-07: /healthz past its 3 s on a loaded Mac, the watch
+	// ran out its bound and rolled 0.3.90 back)
+	versionSeen map[string]bool
+	now         func() time.Time
 }
 
 // machinesWait is how long a home's watch waits for its machines to follow its database
@@ -1057,6 +1063,14 @@ func (h *machineHealth) pipelineVersion(ctx context.Context, procs []supervisor.
 		if p.Role != supervisor.RolePipeline || p.ProbeURL == "" {
 			continue
 		}
+		// the same process (a restart is a new pid) answered with this version already
+		seen := ""
+		if p.PID != 0 {
+			seen = fmt.Sprintf("%s %d %s", childName(p), p.PID, want)
+			if h.versionSeen[seen] {
+				continue
+			}
+		}
 		var hz struct {
 			Version string `json:"version"`
 		}
@@ -1065,6 +1079,12 @@ func (h *machineHealth) pipelineVersion(ctx context.Context, procs []supervisor.
 		}
 		if hz.Version != "" && hz.Version != want {
 			return updater.Verdict{Fatal: true, Why: fmt.Sprintf("%s runs the pipeline %s, not %s", childName(p), hz.Version, want)}
+		}
+		if seen != "" {
+			if h.versionSeen == nil {
+				h.versionSeen = map[string]bool{}
+			}
+			h.versionSeen[seen] = true
 		}
 	}
 	return updater.Verdict{}

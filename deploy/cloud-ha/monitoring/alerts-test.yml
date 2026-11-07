@@ -15,10 +15,10 @@ tests:
       - eval_time: 4m
         alertname: canary_down
         exp_alerts:
-          - exp_labels: {severity: page, instance: w}
+          - exp_labels: {severity: sev1, instance: w}
             exp_annotations:
               summary: "Remote play is down: the canary home does not answer through the relay"
-              runbook_url: docs/runbooks/cloud-canary-down.md
+              runbook_url: docs/runbooks/cloud/canary-down.md
   # 2 minutes down in an hour burns fast
   - interval: 30s
     input_series:
@@ -31,10 +31,10 @@ tests:
       - eval_time: 59m
         alertname: slo_burn_fast
         exp_alerts:
-          - exp_labels: {severity: page}
+          - exp_labels: {severity: sev1}
             exp_annotations:
               summary: "The month's downtime budget burns fast: 4.202% of the last hour down"
-              runbook_url: docs/runbooks/cloud-canary-down.md
+              runbook_url: docs/runbooks/cloud/canary-down.md
   # no streaming replica for 2 minutes
   - interval: 30s
     input_series:
@@ -47,10 +47,10 @@ tests:
       - eval_time: 3m30s
         alertname: replica_missing
         exp_alerts:
-          - exp_labels: {severity: page}
+          - exp_labels: {severity: sev2}
             exp_annotations:
               summary: "No streaming replica: RPO is not 0 until it is back"
-              runbook_url: docs/runbooks/cloud-failover.md
+              runbook_url: docs/runbooks/cloud/failover-check.md
   # the Floating IP on node-a while node-b leads
   - interval: 30s
     input_series:
@@ -66,11 +66,11 @@ tests:
       - eval_time: 3m
         alertname: fip_mismatch
         exp_alerts:
-          - exp_labels: {severity: page, node: node-a}
+          - exp_labels: {severity: sev1, node: node-a}
             exp_annotations:
               summary: "The Floating IP is not on the leader (node-a)"
-              runbook_url: docs/runbooks/cloud-dns-swap.md
-          - exp_labels: {severity: page, node: node-b}
+              runbook_url: docs/runbooks/cloud/hetzner-api-down.md
+          - exp_labels: {severity: sev1, node: node-b}
             exp_annotations:
               summary: "The Floating IP is not on the leader (node-b)"
-              runbook_url: docs/runbooks/cloud-dns-swap.md
+              runbook_url: docs/runbooks/cloud/hetzner-api-down.md
