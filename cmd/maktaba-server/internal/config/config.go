@@ -47,6 +47,7 @@ type Config struct {
 	Telemetry     TelemetrySection     `toml:"telemetry"`
 	Backups       BackupsSection       `toml:"backups"`
 	Components    ComponentsSection    `toml:"components,omitempty"`
+	Plugins       PluginsSection       `toml:"plugins,omitempty"`
 	Logs          LogsSection          `toml:"logs,omitempty"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
@@ -332,6 +333,23 @@ type ComponentsSection struct {
 	// component is off and GET /api/capabilities as the desired state says; "off" turns
 	// the check into a no-op and answers every feature on (story 51.09).
 	CapabilitiesGate string `toml:"capabilities_gate,omitempty"`
+}
+
+// PluginsSection is [plugins] (Epic 54).
+type PluginsSection struct {
+	// Install: "on" (default) lets an admin install plugins on this home (story 54.10);
+	// "off" refuses every install (plugins_install_off), and what is installed keeps
+	// running and can be turned off or removed.
+	Install string `toml:"install,omitempty"`
+}
+
+// InstallOn reports whether plugins may be installed (anything but off/false/no/0).
+func (p PluginsSection) InstallOn() bool {
+	switch strings.ToLower(strings.TrimSpace(p.Install)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // PacksOn reports whether packs may be installed (anything but off/false/no/0).

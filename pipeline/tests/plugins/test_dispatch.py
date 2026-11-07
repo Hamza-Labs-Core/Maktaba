@@ -247,6 +247,65 @@ async def test_cancel_goes_back_to_the_queue(monkeypatch: pytest.MonkeyPatch, ap
     assert any("plugin_checkpoint" in sql for sql, _ in db.executed)
 
 
+async def test_each_outcome_reaches_the_breaker(monkeypatch: pytest.MonkeyPatch, api: Any) -> None:
+    """54.09 §2: the breaker hears every result (its cause, "" for ok) and the refusals the
+    API counted when the token ended; a job given back unrun is not counted."""
+    from maktaba_pipeline.plugins import breaker
+
+    heard: list[tuple[str, str, int]] = []
+
+    async def record(db: Any, pid: str, cause: str, **kw: Any) -> str:
+        heard.append((pid, cause, int(kw.get("refusals", 0))))
+        return ""
+
+    monkeypatch.setattr(breaker, "record", record)
+    _host(monkeypatch, [_result("trap", error_code="plugin_trap")], [])
+    with pytest.raises(StageFailure):
+        await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+    _host(monkeypatch, [_result("ok", output_hash="h", summary="{}")], [])
+    await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+    _no_host(monkeypatch)
+    with pytest.raises(JobDeferred):
+        await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
+    assert heard == [(PID, "plugin_trap", 0), (PID, "", 0)]
+
+
+async def test_a_drain_cancels_the_job_in_the_host(
+    monkeypatch: pytest.MonkeyPatch, api: Any
+) -> None:
+    """54.07 §1: past the drain's grace the job's task is cancelled; the host is sent
+    Cancel for its invocation (it keeps the checkpoint) and the token ends."""
+    sent: list[dict[str, Any]] = []
+    first = True
+
+    async def connect(path: str) -> tuple[Any, Any]:
+        nonlocal first
+        r = asyncio.StreamReader()
+        if not first:
+            body = json.dumps({"type": "ack", "ok": True}).encode()
+            r.feed_data(struct.pack(">I", len(body)) + body)
+        first = False
+
+        class W(FakeWriter):
+            def write(self, b: bytes) -> None:
+                sent.append(json.loads(b[4:]))
+
+        return r, W()  # the run's reader never answers: the job runs until cancelled
+
+    monkeypatch.setattr(dispatch, "_connect", connect)
+    task = asyncio.ensure_future(dispatch.run_plugin_stage(FakeDB(), Job(), Ctx()))
+    for _ in range(50):
+        await asyncio.sleep(0.01)
+        if sent:
+            break
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert [m["type"] for m in sent] == ["run", "cancel"]
+    assert sent[1]["invocation_id"] == "inv_1"
+    assert api[-1] == ("DELETE", "/internal/plugins/invocations/inv_1")
+
+
 def test_frames_are_length_prefixed_json() -> None:
     body = json.dumps({"type": "health"}).encode()
     assert len(body) < dispatch.MAX_FRAME

@@ -478,3 +478,27 @@ func TestSetLimitsAppliesAtTheNextPass(t *testing.T) {
 		t.Fatalf("over the new 2 days it goes: %v", fs)
 	}
 }
+
+// Epic 54 (story 54.09 §3): the plugin host's lines of a plugin (service plugin.<id>) go to
+// that plugin's own segments with its component; the host's own lines stay the host's,
+// and another role cannot claim a plugin's segments.
+func TestPluginLinesHaveSegmentsOfTheirOwn(t *testing.T) {
+	k, _, _ := newKeeper(t, -1)
+	host, _ := k.Spool("plugins", "")
+	fmt.Fprintln(host, `{"level":"info","msg":"hello","service":"plugin.dev.example.a","version":"1.0.0","job_id":"7"}`)
+	fmt.Fprintln(host, `{"level":"info","msg":"started","service":"plugins.host"}`)
+	fmt.Fprintln(host, `{"level":"info","msg":"sneaky","service":"plugin.../../x"}`)
+	api, _ := k.Spool("api", "")
+	fmt.Fprintln(api, `{"level":"info","msg":"forged","service":"plugin.dev.example.a"}`)
+	_ = host.Close()
+	_ = api.Close()
+	k.Flush()
+	since := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
+	got := lines(t, k, Query{Services: []string{"plugin.dev.example.a"}, Since: since, Limit: 10})
+	if len(got) != 1 || got[0]["msg"] != "hello" || got[0]["component"] != "plugin.dev.example.a" {
+		t.Fatalf("the plugin's segments: %v", got)
+	}
+	if own := lines(t, k, Query{Services: []string{"plugins"}, Since: since, Limit: 10}); len(own) != 2 {
+		t.Fatalf("the host's own lines: %v", own)
+	}
+}

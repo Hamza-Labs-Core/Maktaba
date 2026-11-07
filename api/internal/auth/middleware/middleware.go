@@ -258,6 +258,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// (403 to a signed-in user, 401 to no one).
 		"/internal/plugins/invocations":   {},
 		"/internal/plugins/invocations/*": {},
+		// Epic 54 story 54.09 — the pipeline's circuit breaker asks the API to hold a
+		// plugin: the same per-boot local token only
+		"/internal/plugins/breaker": {},
 	}
 }
 

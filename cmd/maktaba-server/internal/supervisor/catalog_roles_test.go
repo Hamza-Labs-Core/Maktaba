@@ -27,6 +27,7 @@ var catalogInstances = map[Role][]string{
 	RoleRelay:     {""},
 	RoleCopy:      {""},
 	RoleLogs:      {""},
+	RolePlugins:   {""},
 	RoleTVSlot:    SlotNames,
 	RolePipeline:  pipelineInstances(),
 }

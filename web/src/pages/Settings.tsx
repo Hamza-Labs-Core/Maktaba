@@ -11,6 +11,8 @@
 //   Privacy     — tracking switch, recent history, activity timeline (29.4)
 //   Components  — every part of the home: on/off, stop until started, what it is
 //                 doing and why (admins; Epic 51, story 51.10)
+//   Plugins     — installed plugins, their permissions, health, settings and what they
+//                 wrote; install from a file (admins; Epic 54, story 54.13)
 //   Advanced    — Experiments: beta cohorts the user may join (16.6)
 //   Storage & discovery — server.toml's path map, roots, mdns, addresses,
 //                 public URLs and a restart (admins; Epic 45)
@@ -24,6 +26,7 @@ import { useI18n } from "../lib/i18n";
 import { ModelsSection } from "./Settings/ModelsSection";
 import { RulesSection } from "./Settings/RulesSection";
 import { ComponentsSection } from "./Settings/ComponentsSection";
+import { PluginsSection } from "./Settings/PluginsSection";
 import { AppUpdateSettings } from "./Settings/AppUpdateSettings";
 import { AboutPanel } from "./Settings/AboutPanel";
 import { HomeNameSettings } from "./Settings/HomeNameSettings";
@@ -59,6 +62,9 @@ export function Settings() {
         {user?.is_admin && (
           <NavLink to="/settings/components">{t("settings.section.components")}</NavLink>
         )}
+        {user?.is_admin && (
+          <NavLink to="/settings/plugins">{t("settings.section.plugins")}</NavLink>
+        )}
         <NavLink to="/settings/advanced">{t("settings.section.advanced")}</NavLink>
         {user?.is_admin && (
           <NavLink to="/settings/storage">{t("settings.section.storage")}</NavLink>
@@ -88,6 +94,7 @@ export function Settings() {
         <Route path="models" element={<ModelsSection />} />
         <Route path="rules" element={<RulesSection />} />
         <Route path="components" element={<ComponentsSection />} />
+        <Route path="plugins" element={<PluginsSection />} />
         <Route path="advanced" element={<AdvancedTab />} />
         <Route path="storage" element={<StorageSettings />} />
         <Route path="subscription" element={<SubscriptionSettings />} />

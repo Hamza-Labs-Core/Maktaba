@@ -47,6 +47,9 @@ from . import store
 from .catalog import DEFAULT_STOP_GRACE_S, Catalog, default
 from .stages import (
     HELD,
+    KEPT_OFF,
+    PLUGIN_CRASH_LOOP,
+    PLUGIN_WAITING,
     SETTINGS_INVALID,
     Gate,
     extension_name,
@@ -223,6 +226,9 @@ class ComponentRunner:
         #: None until the first read, which is only remembered
         self._restart_seen: dict[str, int] | None = None
         self._graph_names = {s.name for s in self.graph}
+        #: Epic 54 (story 54.37 §3): each plugin entry's gate beyond its desired row, read
+        #: at each pass that acts (:func:`.plugingate.read`)
+        self.plugin_reasons: dict[str, tuple[str, dict[str, Any]]] = {}
 
     # -- declaring -------------------------------------------------------------
 
@@ -266,6 +272,19 @@ class ComponentRunner:
             )
         return True
 
+    async def _read_plugins(self) -> None:
+        """Read the plugin entries' gates (story 54.37 §3) when the catalog has any; a
+        read that fails keeps the last answer."""
+        if not any(c.kind == "plugin" for c in self.catalog.components()):
+            self.plugin_reasons = {}
+            return
+        from . import plugingate
+
+        try:
+            self.plugin_reasons = await plugingate.read(self.db, self.version)
+        except Exception as exc:  # noqa: BLE001 - the last answer stands
+            _log.warning("components_plugins_unreadable", error=f"{type(exc).__name__}: {exc}")
+
     async def prime(self) -> dict[str, str] | None:
         """Before the worker's first selection and graph sync: read desired state, set
         this machine's stage gates on the selector, and answer the home's stage gates for
@@ -280,7 +299,8 @@ class ComponentRunner:
             return None
         self.revision = rev
         await self._read_settings()
-        self.gates = gates(desired, self.catalog, self.settings_blocked)
+        await self._read_plugins()
+        self.gates = gates(desired, self.catalog, self.settings_blocked, self.plugin_reasons)
         self.home_gates = self.gates if self.machine == HOME else {}
         if not self.reconcile:
             return None
@@ -382,7 +402,8 @@ class ComponentRunner:
         self.revision = rev
         if not settings_read:
             await self._read_settings()
-        self.gates = gates(desired, self.catalog, self.settings_blocked)
+        await self._read_plugins()
+        self.gates = gates(desired, self.catalog, self.settings_blocked, self.plugin_reasons)
         if self.machine == HOME:
             self.home_gates = self.gates
         await self._read_extensions()
@@ -788,6 +809,17 @@ class ComponentRunner:
                 conds.append(
                     Condition("RequirementsMet", "false", "dependency_off", dict(g.params))
                 )
+            elif g.reason in PLUGIN_WAITING:
+                # a plugin's own gate (story 54.37 §3): it waits, its queue kept
+                phase = "waiting"
+                conds.append(Condition("Ready", "false", g.reason, dict(g.params)))
+            elif g.reason == PLUGIN_CRASH_LOOP:
+                # held by its circuit breaker (54.09 §2): an Epic 51 hold has no reason
+                phase = "stopped"
+                conds.append(Condition("Ready", "false", PLUGIN_CRASH_LOOP))
+            elif g.reason == KEPT_OFF:
+                phase = "off"
+                conds.append(Condition("Ready", "false", KEPT_OFF))
             elif g.state == HELD:
                 phase = "stopped"
                 conds.append(Condition("Ready", "false", "held"))

@@ -5,12 +5,14 @@
 #                    audit, the compile cache and the dispatch protocol (a library, so the
 #                    SDK's harness runs the same code, story 54.12)
 #   crates/plugind   the maktaba-plugind binary: flags, the OS sandbox, the dispatch socket
+#   crates/mkp       the plugin SDK's CLI (story 54.12): new, check, pack, test (the harness
+#                    runs plugind-core against a mock plugin API from fixtures)
 #
 # Wasmtime is pinned; a Wasmtime security advisory is patched within 14 days through the
 # normal release path (README §5.2). Caches recompile when the version changes (54.02 §6).
 [workspace]
 resolver = "2"
-members = ["crates/pluginmanifest", "crates/core", "crates/plugind"]
+members = ["crates/pluginmanifest", "crates/core", "crates/plugind", "crates/mkp"]
 
 [workspace.package]
 edition = "2021"
