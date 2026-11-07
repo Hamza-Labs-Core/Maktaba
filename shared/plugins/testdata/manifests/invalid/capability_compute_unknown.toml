@@ -1,4 +1,4 @@
-# expect: plugin_trusted_field
+# expect: manifest_bad_capability
 schema = 1
 id = "dev.example.silence-chapters"
 version = "1.4.0"
@@ -11,7 +11,11 @@ name = "plugin.name"
 summary = "plugin.summary"
 
 [[stage]]
-name = "transcribe"
+name = "find_silences"
 subject = "video"
 export = "run-find-silences"
 version = 3
+
+
+[capabilities]
+optional = ["compute.gpu"]

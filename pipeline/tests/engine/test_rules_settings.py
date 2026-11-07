@@ -71,6 +71,21 @@ def test_the_api_schema_is_current() -> None:
     )
 
 
+def test_plugin_compute_is_a_section_of_plugins_host() -> None:
+    """Story 54.21: the model plugins ask and their daily share, on the Rules page with the
+    plugin host (empty url and model: the tag check's)."""
+    cfg, bad = rules.config("plugin_compute", {"generate_per_day": 10, "url": ""})
+    assert not bad
+    assert (cfg.url, cfg.model, cfg.generate_per_day, cfg.embed_texts_per_day) == (
+        "",
+        "",
+        10,
+        50000,
+    )
+    _, bad = rules.config("plugin_compute", {"generate_per_day": -1})
+    assert "generate_per_day" in bad
+
+
 class _Failing:
     def __init__(self, exc: Exception) -> None:
         self.exc = exc

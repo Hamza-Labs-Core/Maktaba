@@ -349,8 +349,9 @@ def _rules(m: dict[str, Any], files: Files | None, trusted: bool = False) -> lis
         if st["name"] in subjects:
             errs.append(ManifestError(CODE_DUPLICATE_STAGE, f"stage/{i}/name", st["name"]))
         subjects[st["name"]] = st["subject"]
-        # R5a: a core stage's name and the dup_group subject are Maktaba's own (54.22 §1)
-        if not trusted and (st["name"] in reserved_stages() or st["subject"] == "dup_group"):
+        # R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
+        # reserved (a third-party stage's queue is p_<hash>_<name>)
+        if not trusted and st["subject"] == "dup_group":
             errs.append(ManifestError(CODE_TRUSTED_FIELD, f"stage/{i}/name", st["name"]))
     evs = events()
     for i, st in enumerate(m["stage"]):

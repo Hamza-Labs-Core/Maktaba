@@ -187,7 +187,7 @@ func sleep(ctx context.Context, d time.Duration) bool {
 }
 
 // fillImpl sets each stage's impl and first-party plugin (the Queues page's badge). One
-// small query beside the stage rows; a database before slot 0197 leaves every stage
+// small query beside the stage rows; a database before slot 0198 leaves every stage
 // in-process.
 func (h *Handler) fillImpl(ctx context.Context, stages []StageInfo) {
 	impl := map[string]string{}

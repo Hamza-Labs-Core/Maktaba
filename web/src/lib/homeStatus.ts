@@ -99,6 +99,10 @@ export interface StripLine {
   text: string;
   /** admins get a Details link: the recovery page when the API is down, else System health */
   details?: string;
+  /** the text's values (the cloud's maintenance window) */
+  vars?: Record<string, string>;
+  /** an outside Details link for everyone (the cloud's status page, story 50.11) */
+  href?: string;
 }
 
 /**
@@ -109,11 +113,20 @@ export interface StripLine {
  */
 export function stripLines(
   s: HomeStatus | null,
-  opts: { online: boolean; admin: boolean; liveTvOff?: boolean }
+  opts: {
+    online: boolean;
+    admin: boolean;
+    liveTvOff?: boolean;
+    /** the cloud's line (story 50.11), when the app reaches the home through the cloud */
+    cloud?: { key: string; text: string; vars?: Record<string, string>; href: string } | null;
+  }
 ): StripLine[] {
   const out: StripLine[] = [];
   if (!opts.online) out.push({ key: "offline", text: "error.offlineBanner" });
-  if (!s) return out;
+  const cloud = opts.cloud
+    ? [{ key: opts.cloud.key, text: opts.cloud.text, vars: opts.cloud.vars, href: opts.cloud.href }]
+    : [];
+  if (!s) return [...out, ...cloud];
   const g = s.components;
   const bad = (st?: GroupState) => st === "degraded" || st === "restarting" || st === "down";
   const admin = (link: string) => (opts.admin ? link : undefined);
@@ -133,6 +146,8 @@ export function stripLines(
   }
   if (bad(g.search))
     out.push({ key: "search", text: "status.search", details: admin("/admin/health") });
+  // 6: Maktaba Cloud (story 50.11), after the home's own lines, before the admin-only ones
+  out.push(...cloud);
   if (opts.admin && bad(g.processing)) {
     out.push({ key: "processing", text: "status.processing", details: "/admin/health" });
   }
@@ -143,5 +158,5 @@ export function stripLines(
 
 /** What the strip shows now, so a closed strip comes back when it changes. */
 export function stripSignature(lines: StripLine[]): string {
-  return lines.map((l) => l.key + ":" + l.text).join("|");
+  return lines.map((l) => l.key + ":" + l.text + (l.vars ? JSON.stringify(l.vars) : "")).join("|");
 }

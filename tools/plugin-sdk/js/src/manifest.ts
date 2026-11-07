@@ -379,8 +379,9 @@ function rules(m: Obj, files?: Files): ManifestError[] {
   stages.forEach((st, i) => {
     if (subjects.has(st.name as string)) push(CODES.duplicateStage, `stage/${i}/name`, st.name as string);
     subjects.set(st.name as string, st.subject as string);
-    // R5a: a core stage's name and the dup_group subject are Maktaba's own (54.22 §1)
-    if (reservedStage(st.name as string) || st.subject === "dup_group") {
+    // R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
+    // reserved (a third-party stage's queue is p_<hash>_<name>)
+    if (st.subject === "dup_group") {
       push(CODES.trustedField, `stage/${i}/name`, st.name as string);
     }
   });

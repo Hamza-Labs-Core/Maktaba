@@ -17,7 +17,7 @@ export class CanonicalError extends Error {
 }
 
 const enc = new TextEncoder();
-const dec = new TextDecoder("utf-8", { fatal: true });
+const dec = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
 
 /** Reads one JSON value strictly (no key twice, integers only, nothing after it). */
 export function parseJSON(input: string | Uint8Array): JSONValue {

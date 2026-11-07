@@ -14,7 +14,7 @@ prs: [683, 693, 707, 717]
   - the bundle of first-party manifests and statements embedded in the server and carried in the pipeline wheel;
   - `maktaba-plugin-runner`, sandboxed with Seatbelt on macOS and Landlock plus seccomp on Linux;
   - named statements run by the plugin API under per-plugin roles;
-  - the golden graph, `_fp()` stages and the per-stage switch (`job_stages.impl`, migration 0197, `PUT /api/queues/{stage}/impl`, `maktaba-server stages impl`);
+  - the golden graph, `_fp()` stages and the per-stage switch (`job_stages.impl`, migration 0198, `PUT /api/queues/{stage}/impl`, `maktaba-server stages impl`);
   - the parity harness with the real Go plugin API (`api/tools/plugin-api-dev`).
 - No stage moved: every stage is still `inproc`.
 

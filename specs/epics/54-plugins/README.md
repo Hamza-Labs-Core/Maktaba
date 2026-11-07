@@ -1790,3 +1790,8 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   the plugin path's fixed cost of one job (its token and the hop to the runner) and does not
   count. Every statement runs on a connection already set to the plugin's role and origin, so
   a statement outside a transaction is one round trip to Postgres.
+- **A core stage's name is not reserved.** A third-party stage's queue is always
+  `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
+  `tag`; refusing the name would only break existing plugins. The trusted-only keys and the
+  `dup_group` subject stay refused (`plugin_trusted_field`). `reserved_stages.txt` stays as
+  the golden graph's list of names.

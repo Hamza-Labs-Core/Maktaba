@@ -532,8 +532,9 @@ fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError
             errs.push(ManifestError::new(CODE_DUPLICATE_STAGE, &format!("stage/{i}/name"), name));
         }
         subjects.insert(name.into(), s(st, "subject").into());
-        // R5a: a core stage's name and the dup_group subject are Maktaba's own (54.22 §1)
-        if reserved_stage(name) || s(st, "subject") == "dup_group" {
+        // R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
+        // reserved (a third-party stage's queue is p_<hash>_<name>)
+        if s(st, "subject") == "dup_group" {
             errs.push(ManifestError::new(CODE_TRUSTED_FIELD, &format!("stage/{i}/name"), name));
         }
     }

@@ -60,3 +60,31 @@ func TestQueryCSV_DedupesAndTrims(t *testing.T) {
 		}
 	}
 }
+
+// TestWritePassthroughNeverHTML: a captured body that echoes a script is relayed as
+// text/plain with nosniff, and a JSON or problem+json body keeps its type (CodeQL
+// go/reflected-xss, alerts 37 and 150).
+func TestWritePassthroughNeverHTML(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"", "text/plain; charset=utf-8"},
+		{"text/html; charset=utf-8", "text/plain; charset=utf-8"},
+		{"application/json; charset=utf-8", "application/json"},
+		{"application/problem+json", "application/problem+json"},
+	} {
+		h := http.Header{"X-Request-Id": {"r1"}}
+		if tc.in != "" {
+			h.Set("Content-Type", tc.in)
+		}
+		rec := httptest.NewRecorder()
+		WritePassthrough(rec, 0, h, []byte("<script>alert(1)</script>"))
+		if got := rec.Header().Get("Content-Type"); got != tc.want {
+			t.Errorf("%q: Content-Type = %q, want %q", tc.in, got, tc.want)
+		}
+		if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("X-Request-Id") != "r1" {
+			t.Errorf("%q: headers = %v", tc.in, rec.Header())
+		}
+		if rec.Code != http.StatusOK || rec.Body.String() != "<script>alert(1)</script>" {
+			t.Errorf("%q: %d %q", tc.in, rec.Code, rec.Body.String())
+		}
+	}
+}
