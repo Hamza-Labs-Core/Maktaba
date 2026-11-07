@@ -8,6 +8,8 @@
 }
 
 :80 {
+	# the address the edge saw, for the scenario's check that sources are not rewritten
+	header X-Edge-Saw {remote_host}
 	reverse_proxy https://relay.test:443 {
 		header_up Host api.maktaba.tv
 		header_up CF-Connecting-IP {remote_host}

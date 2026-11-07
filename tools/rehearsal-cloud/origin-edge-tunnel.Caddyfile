@@ -8,6 +8,8 @@
 }
 
 :80 {
+	# the address the edge saw, for the scenario's check that sources are not rewritten
+	header X-Edge-Saw {remote_host}
 	reverse_proxy 10.60.0.11:7844 10.60.0.12:7844 {
 		header_up CF-Connecting-IP {remote_host}
 		lb_policy first

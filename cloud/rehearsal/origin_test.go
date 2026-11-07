@@ -147,7 +147,8 @@ func (h *ha) openPorts(t *testing.T, ip string) []int {
 
 // connector reports whether node runs the stand-in connector.
 func (h *ha) connector(node string) bool {
-	_, err := h.in(node, `pgrep -f "TCP-LISTEN:7844" >/dev/null`)
+	// [T]: the pattern must not match the bash -c running it (its command line holds the text)
+	_, err := h.in(node, `pgrep -f "[T]CP-LISTEN:7844" >/dev/null`)
 	return err == nil
 }
 
@@ -173,6 +174,21 @@ func (h *ha) replica(node string) bool {
 	return resp.StatusCode == 200
 }
 
+// netDiag logs who is where on the Floating IP's network, and what the edge saw as the
+// attacker's address (X-Edge-Saw): the source checks mean something only if they agree.
+func (h *ha) netDiag(t *testing.T) {
+	t.Helper()
+	for _, c := range []string{"attacker", "edge"} {
+		out, _ := h.in(c, "ip -4 -o addr; ip -4 route")
+		t.Logf("%s:\n%s", c, out)
+	}
+	out, _ := h.in("attacker", "curl -s -D- -o /dev/null --max-time 5 http://"+edgeAddr+"/readyz")
+	t.Logf("the edge's answer to the attacker:\n%s", out)
+	inspect, _ := exec.Command("docker", "network", "inspect", h.project+"_fip", "--format",
+		"{{json .Options}} {{range .Containers}}{{.Name}}={{.IPv4Address}} {{end}}").CombinedOutput()
+	t.Logf("fip network: %s", inspect)
+}
+
 func (h *ha) edgeReady() bool { return h.status("attacker", "http://"+edgeAddr+"/readyz") == "200" }
 
 // checkForgedThroughEdge: a CF-Connecting-IP the attacker writes is replaced by the edge, and
@@ -193,6 +209,7 @@ func originOnlyViaEdge(t *testing.T, _ *cluster) Result {
 	h := upOrigin(t, "origin-only-via-edge", "tunnel")
 	lead := h.leader()
 	waitFor(t, 2*time.Minute, "the api through the edge and the leader's connector", h.edgeReady)
+	h.netDiag(t)
 	if !h.connector(lead) || h.connector(other(lead)) {
 		t.Errorf("the connector runs on the leader only: %s %v, %s %v", lead, h.connector(lead), other(lead), h.connector(other(lead)))
 	}
@@ -274,6 +291,7 @@ func originAOP(t *testing.T, _ *cluster) Result {
 	h := upOrigin(t, "origin-aop", "aop")
 	lead := h.leader()
 	waitFor(t, 2*time.Minute, "the api through the edge's AOP connection", h.edgeReady)
+	h.netDiag(t)
 	ip := h.fip(t)
 	resolve := "--resolve api.maktaba.tv:443:" + ip + " https://api.maktaba.tv/readyz"
 	cert := "--cert /origin/client.crt --key /origin/client.key "
