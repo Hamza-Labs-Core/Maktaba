@@ -200,3 +200,57 @@ def test_the_user_hash_is_added_after_the_scrub(monkeypatch: pytest.MonkeyPatch)
     out = mlog._redact_in_place({"event": "e", "user_id": "u-1"}, rs, {})
     assert "user_id" not in out and out["user_h"] == redact.hash_user("u-1")
     assert out["user_h"] not in calls, "its own hash is never scrubbed"
+
+
+def test_the_context_merge_gives_what_structlogs_gives() -> None:
+    # issue #744: it reads structlog's own variables only, with the same answer
+    import contextvars as cv
+
+    import maktaba_pipeline.log as mlog
+
+    structlog.contextvars.clear_contextvars()
+    others: list[cv.ContextVar[int]] = [cv.ContextVar(f"lib{i}") for i in range(20)]
+    for v in others:
+        v.set(1)
+    structlog.contextvars.bind_contextvars(service="api", node="home", gone="x")
+    structlog.contextvars.unbind_contextvars("gone")
+    token = structlog.contextvars.bind_contextvars(job_id="j1")
+    structlog.contextvars.reset_contextvars(**token)
+    structlog.contextvars.bind_contextvars(ellipsis=...)
+
+    def both(ed: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        a = mlog.merge_contextvars(None, "info", dict(ed))
+        b = structlog.contextvars.merge_contextvars(None, "info", dict(ed))
+        return dict(a), dict(b)
+
+    a, b = both({"event": "e", "node": "set by the call"})
+    assert a == b == {"event": "e", "node": "set by the call", "service": "api"}
+    # another context sees what was bound there only
+    ctx = cv.Context()
+    a2, b2 = ctx.run(both, {"event": "e"})
+    assert a2 == b2
+
+
+def test_the_tail_renders_an_exception_only_when_there_is_one() -> None:
+    import maktaba_pipeline.log as mlog
+
+    try:
+        raise RuntimeError("open postgres://u:pw@db/x failed")
+    except RuntimeError:
+        ed = mlog._tail(None, "error", {"event": "boom", "exc_info": True})
+    assert "pw@" not in ed["exception"] and "RuntimeError" in ed["exception"]
+    plain = mlog._tail(None, "info", {"event": "fine"})
+    assert "exception" not in plain and "stack_info" not in plain
+
+
+def test_a_sink_can_still_drop_a_line_below_the_console_level(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import logging
+
+    import maktaba_pipeline.log as mlog
+
+    monkeypatch.setattr(mlog, "_sink_level", logging.DEBUG)
+    monkeypatch.setattr(mlog, "_console_level", logging.INFO)
+    with pytest.raises(structlog.DropEvent):
+        mlog._tail(None, "debug", {"event": "quiet", "level": "debug"})
