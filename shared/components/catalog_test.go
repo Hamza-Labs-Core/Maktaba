@@ -327,3 +327,20 @@ func TestSafeModeComponentsAreInTheCatalog(t *testing.T) {
 		t.Error("unset is no safe mode")
 	}
 }
+
+// Story 54.27 §3: a component with stages names the first-party plugin that implements
+// them; a plugin field elsewhere, or a third-party id, is an error.
+func TestPluginField(t *testing.T) {
+	err := load(t, "plugin_field.toml")
+	if err == nil || !strings.Contains(err.Error(), "livetv.inprocess: plugin names a first-party plugin") {
+		t.Fatalf("got %v", err)
+	}
+	if strings.Contains(err.Error(), "classify:") {
+		t.Fatalf("a valid plugin field refused: %v", err)
+	}
+	for _, c := range Default().Components() {
+		if c.Plugin != "" && !strings.HasPrefix(c.Plugin, "tv.maktaba.") {
+			t.Fatalf("%s: plugin %s", c.ID, c.Plugin)
+		}
+	}
+}
