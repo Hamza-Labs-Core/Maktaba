@@ -1045,6 +1045,10 @@ build fails when the two differ.
   switch). It sends a kept crash at the next sign-in when on, and has **Report a problem…** and
   **My reports** in its Help menu.
 
+- **The admin orders plugin panels (Epic 54, story 54.20).** Settings → Plugins → Panel order
+  lists the plugins that declare panels; pages show at most three, in that order, then in
+  install order. `GET`/`PUT /api/plugins/panel-order` (admin only, audited).
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

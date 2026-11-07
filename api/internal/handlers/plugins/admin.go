@@ -72,6 +72,8 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Get("/api/plugins/graph", h.graph)
 		r.Put("/api/plugins/policy", h.putPolicy)
 		r.Post("/api/plugins/install", h.install)
+		r.Get("/api/plugins/panel-order", h.getPanelOrder)
+		r.Put("/api/plugins/panel-order", h.putPanelOrder)
 		r.Get("/api/plugins/store-account", h.storeStatus)
 		r.Post("/api/plugins/store-account/link", h.storeLink)
 		r.Post("/api/plugins/store-account/poll", h.storePoll)
@@ -521,4 +523,32 @@ func (h *Admin) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, out)
+}
+
+// GET /api/plugins/panel-order: the plugins with panels, in the order pages show them
+// (story 54.20 §1), and the stored order.
+func (h *Admin) getPanelOrder(w http.ResponseWriter, r *http.Request) {
+	list, order, err := h.L.PanelPlugins(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": list, "order": order})
+}
+
+// PUT /api/plugins/panel-order {"order": [plugin ids]}.
+func (h *Admin) putPanelOrder(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Order []string `json:"order"`
+	}
+	if e := common.ReadJSON(r, &body, 16<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	order, err := h.L.SetPanelOrder(r.Context(), body.Order, h.actor(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"order": order})
 }
