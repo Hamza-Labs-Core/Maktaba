@@ -85,6 +85,9 @@ type Handler struct {
 	IndexAddr string
 	// Supervisor keeps the diagnostics' settings (retention.go; nil: from the environment).
 	Supervisor *serversettings.Supervisor
+	// LogsRoot is <data>/logs, where crash reports and problem reports are kept
+	// ("": MAKTABA_DATA_DIR/logs).
+	LogsRoot string
 }
 
 // Mount wires the routes. Admin routes are gated with RequireAdmin; the
@@ -110,6 +113,14 @@ func (h *Handler) Mount(r chi.Router) {
 	// the dashboards (story 53.12)
 	r.With(authmw.RequireAdmin).Get("/api/admin/dashboards/{board}", h.dashboard)
 	r.With(authmw.RequireAuth).Get("/api/diagnostics/export", h.UserExport)
+	// crash reports and problem reports (stories 53.14, 53.15)
+	r.With(authmw.RequireAuth).Post("/api/diagnostics/envelope", h.envelope)
+	r.With(authmw.RequireAuth).Post("/api/reports", h.createReport)
+	r.With(authmw.RequireAuth).Get("/api/reports", h.listReports)
+	r.With(authmw.RequireAuth).Get("/api/reports/{id}", h.getReport)
+	r.With(authmw.RequireAdmin).Post("/api/reports/{id}/status", h.changeReport("status"))
+	r.With(authmw.RequireAdmin).Post("/api/reports/{id}/reply", h.changeReport("reply"))
+	r.With(authmw.RequireAdmin).Get("/api/reports/{id}/bundle", h.reportBundle)
 }
 
 func (h *Handler) client() *http.Client {

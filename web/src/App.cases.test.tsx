@@ -123,6 +123,22 @@ describe("App routes (test-cases/app-shell.md)", () => {
   });
 });
 
+describe("Epic 53 story 53.15 routes", () => {
+  it("routes /account/report and /account/reports for anyone signed in", async () => {
+    signedIn = true;
+    const a = open("/account/report");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: en["report.title"] }, { timeout: 3000 })
+    ).toBeInTheDocument();
+    a.unmount();
+    const b = open("/account/reports");
+    expect(
+      await screen.findByRole("heading", { level: 1, name: en["report.mine"] }, { timeout: 3000 })
+    ).toBeInTheDocument();
+    b.unmount();
+  });
+});
+
 describe("Epic 53 story 53.11 routes", () => {
   it("routes /admin/errors and /admin/logs/settings: admins see them, members are refused", async () => {
     signedIn = true;
@@ -151,6 +167,8 @@ describe("Epic 53 story 53.11 routes", () => {
       "/admin/errors/ab12",
       "/admin/logs/settings",
       "/admin/dashboards",
+      "/admin/reports",
+      "/admin/reports/1",
     ]) {
       const { unmount } = open(path);
       expect(

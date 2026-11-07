@@ -37,6 +37,11 @@ export function setLogAppVersion(v: string | undefined): void {
   appVersion = v || undefined;
 }
 
+/** The version the lines carry ("unknown" before the server said). */
+export function logAppVersion(): string {
+  return appVersion ?? "unknown";
+}
+
 /** Adds a line to the ring. `msg` is a snake_case event name, never runtime data. */
 export function appLog(
   level: LogLevel,
