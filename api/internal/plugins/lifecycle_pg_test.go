@@ -17,6 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
 )
 
@@ -555,4 +556,63 @@ func TestReportLogsOptIn(t *testing.T) {
 	if err := f.l.SetReportLogs(ctx, "dev.example.absent", true, admin); asProblem(err) == nil || asProblem(err).Code != CodeNotInstalled {
 		t.Fatalf("not installed: %v", err)
 	}
+}
+
+// Story 54.07 §8 (#708): a plugin's state on the home is its parts rolled up worst first.
+// The supervisor's part (its gate: running, waiting with the reason, stopped when held)
+// stands when the pipeline is down; a refusal or a hold outranks the pipeline's running;
+// when the gate passes, the pipeline's own phase (starting, failed) wins.
+func TestPluginStateMergesTheParts(t *testing.T) {
+	f := newLC(t)
+	ctx := context.Background()
+	f.allowUnreviewed(t)
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Enable: true,
+		Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin); err != nil {
+		t.Fatal(err)
+	}
+	st := store.New(f.db)
+	cid := components.PluginPrefix + lcPlugin
+	part := func(name, phase, reason string) {
+		t.Helper()
+		var rows []store.Status
+		if phase != "" {
+			c := store.Condition{Type: components.CondRequirementsMet, Status: "true"}
+			if reason != "" {
+				c = store.Condition{Type: components.CondRequirementsMet, Status: "false", Reason: reason}
+			}
+			rows = []store.Status{{ID: cid, Phase: phase, Conditions: []store.Condition{c}}}
+		}
+		if err := st.ReportStatus(ctx, store.Home, name, rows); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(what, phase, reason string) {
+		t.Helper()
+		v, err := f.l.Show(ctx, lcPlugin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.Phase != phase || v.Reason != reason {
+			t.Errorf("%s: %s %q, want %s %q", what, v.Phase, v.Reason, phase, reason)
+		}
+	}
+	// the pipeline down (no report of it): the supervisor's decision is the state
+	part("plugins", components.PhaseRunning, "")
+	part("pipeline", "", "")
+	check("pipeline down, gate passes", components.PhaseRunning, "")
+	part("plugins", components.PhaseWaiting, components.ReasonIncompatible)
+	check("pipeline down, out of range", components.PhaseWaiting, components.ReasonIncompatible)
+	// the pipeline runs its stages, but the gate refuses: the refusal wins
+	part("pipeline", components.PhaseRunning, "")
+	check("gate refuses, pipeline running", components.PhaseWaiting, components.ReasonIncompatible)
+	part("plugins", components.PhaseStopped, "held")
+	check("held, pipeline running", components.PhaseStopped, "held")
+	// the gate passes: the pipeline's own phase
+	part("plugins", components.PhaseRunning, "")
+	part("pipeline", components.PhaseStarting, "")
+	check("gate passes, pipeline starting", components.PhaseStarting, "")
+	part("pipeline", components.PhaseFailed, "plugin_crash_loop")
+	check("gate passes, pipeline failed", components.PhaseFailed, "plugin_crash_loop")
+	part("pipeline", components.PhaseRunning, "")
+	check("both running", components.PhaseRunning, "")
 }

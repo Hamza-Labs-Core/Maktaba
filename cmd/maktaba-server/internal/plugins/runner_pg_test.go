@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -243,4 +244,61 @@ func TestFirstPassRestartsForAnInstallAfterTheWorkerStarted(t *testing.T) {
 	if restarts != 1 {
 		t.Fatalf("restarts %d after a second pass, want 1", restarts)
 	}
+}
+
+// reasonOf is the first false condition's reason of this machine's plugins part.
+func reasonOf(t *testing.T, db *sql.DB, id string) string {
+	t.Helper()
+	var raw []byte
+	if err := db.QueryRow(`SELECT conditions FROM component_status WHERE machine = 'home' AND id = $1 AND part = $2`, id, Part).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var conds []store.Condition
+	_ = json.Unmarshal(raw, &conds)
+	for _, c := range conds {
+		if c.Status == "false" && c.Reason != "" {
+			return c.Reason
+		}
+	}
+	return ""
+}
+
+// Story 54.07 §8 (#708): the supervisor's part says what the home decides of each plugin,
+// whatever the pipeline reports: refused by its gate (waiting, with the reason), held
+// (stopped), running when its gate passes, off when it is not wanted on.
+func TestRunnerReportsTheGate(t *testing.T) {
+	db := scratchDB(t)
+	ctx := context.Background()
+	f, _ := newFiles(t)
+	st := store.New(db)
+	r := &Runner{Files: f, DB: db, Machine: store.Home, Version: "0.3.83", Catalog: &sink{}, Status: st, Log: os.Stderr}
+	cid := components.PluginPrefix + testID
+	in, err := f.Install(ctx, bytes.NewReader(pkg(t, testID, "1.0.0")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record(t, db, in, nil)
+	step := func(want string, hold bool, phase, reason string) {
+		t.Helper()
+		d := store.Desired{ID: cid, Want: want, Generation: 1}
+		if hold {
+			d.Hold = &store.Hold{By: "admin:ci"}
+		}
+		r.Desired(map[string]store.Desired{cid: d})
+		r.Pass(ctx)
+		if got, why := statusOf(t, db, cid), reasonOf(t, db, cid); got != phase || why != reason {
+			t.Fatalf("want %s, hold %v: %s %q, want %s %q", want, hold, got, why, phase, reason)
+		}
+	}
+	// unreviewed, and the home does not allow it
+	step(components.WantEnabled, false, components.PhaseWaiting, components.ReasonUnreviewedDisallow)
+	if _, err := db.Exec(`INSERT INTO app_settings (key, value) VALUES ('plugins.policy', '{"allow_unreviewed":true}')`); err != nil {
+		t.Fatal(err)
+	}
+	step(components.WantEnabled, false, components.PhaseRunning, "")
+	step(components.WantEnabled, true, components.PhaseStopped, reasonHeld)
+	step(components.WantInstalled, false, components.PhaseOff, "")
+	// a server version outside its range (>=0.1.0): incompatible, never failed
+	r.Version = "0.0.9"
+	step(components.WantEnabled, false, components.PhaseWaiting, components.ReasonIncompatible)
 }

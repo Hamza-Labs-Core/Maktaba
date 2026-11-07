@@ -74,7 +74,11 @@ with your words in the admin's language. The home checks every value on save. Se
 ## Health and logs
 
 The plugin's page shows its phase and why, jobs done and failed, its last error, its data use
-against its quota, and each stage's queue. Your log lines (`log.write`) are kept in a log
+against its quota, and each stage's queue. The phase is the home's decision even while the
+pipeline is down: *Waiting* with the reason when its gate refuses it (a Maktaba version
+outside your range, a capability not granted, unreviewed while the home does not allow it),
+*Stopped* while held, *Running* when it may run. While the pipeline runs, its own state of
+your stages (starting, failed) shows when the gate lets the plugin run. Your log lines (`log.write`) are kept in a log
 segment of their own and open from **Its logs**. Your plugin's queues are the **Plugins** lane
 on the Queues page.
 

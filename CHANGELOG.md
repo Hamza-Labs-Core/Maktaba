@@ -1082,6 +1082,14 @@ build fails when the two differ.
   problem reports** on the plugin's page (audited); the plugin host's own lines stay.
   maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
 
+- **A plugin's state shows while the pipeline is down (Epic 54, story 54.07 §8).** The
+  supervisor reports what the home decides of each plugin: waiting with the reason when its
+  gate refuses it (a Maktaba version outside its range, a grant missing, unreviewed while not
+  allowed), stopped while held, running when it may run. Before, a plugin read *Off* until the
+  pipeline reported its stages. While the pipeline runs, its own state of the stages
+  (starting, failed) shows when the gate lets the plugin run. maktaba.dev: Installing a
+  plugin, *Health and logs*.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
