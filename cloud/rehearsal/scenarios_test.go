@@ -101,6 +101,9 @@ func TestScenario(t *testing.T) {
 		{"restore-pitr", restorePITR},
 		{"cert-on-standby", certOnStandby},
 		{"status-feed", statusFeed},
+		{"runbook-switchover", runbookSwitchover},
+		{"runbook-forced-failover", runbookForcedFailover},
+		{"runbook-dns-swap", runbookDNSSwap},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -111,7 +114,8 @@ func TestScenario(t *testing.T) {
 			switch s.name {
 			case "cert-on-standby":
 				c = upOnly(t, s.name)
-			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr":
+			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
+				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap":
 				// the pair's own cluster (compose-ha.yml), started by the scenario
 			default:
 				c = up(t, s.name)

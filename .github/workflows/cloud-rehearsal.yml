@@ -92,6 +92,9 @@ jobs:
           - restore-pitr
           - cert-on-standby
           - status-feed
+          - runbook-switchover
+          - runbook-forced-failover
+          - runbook-dns-swap
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0
