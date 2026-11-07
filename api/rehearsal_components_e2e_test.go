@@ -234,7 +234,13 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	cat := components.Default()
 	var waitLoops []string
 	for _, c := range cat.Components() {
-		if !c.Switchable || strings.Fields(compBefore[c.ID] + " ")[0] != components.WantEnabled {
+		// a component the previous release has no row for (this release adds it) is not one
+		// of the previous release's loops
+		row, had := compBefore[c.ID]
+		if !c.Switchable || !had {
+			continue
+		}
+		if want, _, _ := strings.Cut(row, " "); want != components.WantEnabled {
 			continue
 		}
 		for _, l := range c.Loops {
