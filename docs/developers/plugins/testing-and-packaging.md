@@ -3,10 +3,12 @@
 > **Status: built for Rust (Phase 1).** `mkp` (in `plugind/crates/mkp`) makes a Rust project
 > (`mkp new rust <id> <folder>`), checks a package the way the home does (`mkp check`), runs a
 > stage in the harness, the host's own code against a mock plugin API answering from a fixtures
-> file (`mkp test --stage <name> --fixtures api.json`), and packs the `.mkplugin` (`mkp pack`).
-> An admin installs the file from Settings, Plugins, with Allow unreviewed plugins on. The
-> TypeScript, Python and Go templates, signing (`mkp pack --sign`, `mkp keys`), `mkp run` and
-> developer mode are not built yet. The manifest is in [manifest](manifest.md), the WIT and the
+> file (`mkp test --stage <name> --fixtures api.json`), packs the `.mkplugin` (`mkp pack`),
+> signs it with your key (`mkp keys new`, `mkp pack <folder> <out> --key <id>`), and installs a
+> folder on a home in developer mode (`mkp run`). An admin installs the file from Settings,
+> Plugins, or with `maktaba-server plugins`, with Allow unreviewed plugins on; `maktaba-server
+> plugins dev <folder>` reloads a folder on every save. The TypeScript, Python and Go templates
+> are not built yet. The manifest is in [manifest](manifest.md), the WIT and the
 > API in the [plugin reference](reference.md). The rest of this page is the design in
 > [story 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > and
@@ -38,8 +40,8 @@ One CLI for every language:
 | `mkp build` | runs your toolchain, then the same manifest validation and import audit as the home and the store |
 | `mkp test` | runs your plugin in the local harness against its fixtures |
 | `mkp keys new`, `list`, `export-public` | your Ed25519 signing key |
-| `mkp pack --sign` | writes `files.json`, signs it and makes the `.mkplugin` |
-| `mkp run --home <url>` | installs to a home in developer mode over the admin API |
+| `mkp pack <folder> <out.mkplugin> --key <id>` | writes `files.json`, signs it with your key and makes the `.mkplugin` (without `--key`: unsigned) |
+| `mkp run <folder> --home <http://home:port> --user <admin>` | installs the folder on a home in developer mode (Development, turned on) over the admin API; run it again after a change to update it. The password comes from `MKP_HOME_PASSWORD` or the terminal; it speaks HTTP to the home's address on your network (over HTTPS, use developer mode on the home) |
 | `mkp submit` | uploads to the store (Phase 2) |
 
 The SDK version matches the plugin API it targets: `mkp 1.2.x` builds for
@@ -90,8 +92,9 @@ representative.
 ## Building and packing
 
 1. `mkp build` produces `plugin.wasm` and fails on any manifest error or forbidden import.
-2. `mkp pack --sign` writes `files.json` (path, sha256 and size of every file), signs it with
-   your developer key into `signatures/developer.sig`, and makes a `tar` + zstd `.mkplugin`.
+2. `mkp pack <folder> <out.mkplugin> --key <id>` writes `files.json` (path, sha256 and size of
+   every file), signs it with your developer key into `signatures/developer.sig`, and makes a
+   `tar` + zstd `.mkplugin`.
 3. Check the size: at most 50 MB. The Python hello-world template targets 25 MB or less.
 
 ## Installing from a file
@@ -100,7 +103,7 @@ A home installs a package from a file, offline, from Settings, Plugins, **Instal
 file**, or with the CLI:
 
 ```sh
-maktaba-server plugins install silence-chapters-1.4.0.mkplugin
+maktaba-server plugins install silence-chapters-1.4.0.mkplugin --name "Silence chapters" --enable
 ```
 
 | The file carries | Installs | Badge |
@@ -127,7 +130,19 @@ Development, and removes it when the command stops unless you pass `--keep`. It 
 same host and sandbox as any plugin.
 
 The CLI also has `list`, `show`, `enable`, `disable`, `start`, `stop`, `update`, `rollback`,
-`remove`, `grants` and `policy`, for homes without a browser.
+`remove`, `grants` and `policy`, for homes without a browser:
+
+```sh
+maktaba-server plugins policy --allow-unreviewed=on
+maktaba-server plugins grants dev.example.silence-chapters --grant media.read,chapters.write --all-libraries
+maktaba-server plugins remove dev.example.silence-chapters --purge
+```
+
+They call the same admin routes as Settings, Plugins, with the components CLI's flags and exit
+codes: every write shows what it changes and asks `Continue? [y/N]` unless `--yes`; `--json`
+on `list` and `show`; `--dsn` overrides `DATABASE_URL`. Exit codes: 0 done, 1 refused (the
+plugin code is printed), 2 a write with no terminal to ask on and no `--yes`, 3 the server is
+not running. An unreviewed install asks for the plugin's name (`--name`), as the dialog does.
 
 ## Updating your plugin on a home
 

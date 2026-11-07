@@ -33,7 +33,6 @@ on:
 
 permissions:
   contents: read
-  actions: read # load-small reads main's last baseline (its artifact)
 
 concurrency:
   group: cloud-rehearsal-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
@@ -153,6 +152,7 @@ jobs:
       - name: Pull the cluster's other images
         run: docker compose -f tools/rehearsal-cloud/compose.yml --profile certs pull --ignore-buildable --quiet postgres edge pebble
       - name: Run ${{ matrix.scenario }}
+        if: matrix.scenario != 'load-small'
         env:
           REHEARSAL_OUT: ${{ runner.temp }}/rehearsal
         working-directory: cloud
@@ -160,22 +160,48 @@ jobs:
           ulimit -n 65536 || true
           CGO_ENABLED=0 go test -tags cloudrehearsal -run "TestScenario/${{ matrix.scenario }}$" -timeout 28m -v ./rehearsal/ 2>&1 | tee "${RUNNER_TEMP}/scenario.log"
           exit "${PIPESTATUS[0]}"
-      # load-small (story 50.14): this run's CPU per Mbit and memory per tunnel against main's
-      # last; more than 20 % worse fails. Main's run becomes the next baseline (its artifact).
-      - name: load-small against main's last run
+      # load-small (story 50.14) compares the relay with its base on the same runner: a figure
+      # from another run is another machine (the same code measured 0.00045 to 0.00087
+      # CPU-seconds per Mbit across runners, #832). The base is the commit this one is compared
+      # with: the pull request's base, or main before this push. Its relay image is built here,
+      # and both run this commit's scenario (3 one-minute rounds each); more than 20 % worse
+      # CPU per Mbit, or memory per tunnel, fails. A base that can't run fails too: a gate that
+      # can't measure doesn't pass.
+      - name: Build the base commit's relay (load-small)
         if: matrix.scenario == 'load-small'
         env:
-          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          base="${BASE_SHA}"
+          if [ -z "${base}" ] || [ "${base}" = 0000000000000000000000000000000000000000 ]; then
+            git fetch --no-tags --depth=2 origin "${GITHUB_SHA}"
+            base="$(git rev-parse "${GITHUB_SHA}^")"
+          fi
+          git fetch --no-tags --depth=1 origin "${base}"
+          git worktree add --detach "${RUNNER_TEMP}/base" "${base}"
+          echo "base: ${base}"
+          docker build -q -f tools/rehearsal-cloud/Dockerfile -t maktaba-cloud:rehearsal-base "${RUNNER_TEMP}/base"
+      - name: Run load-small, the base's relay then this commit's
+        if: matrix.scenario == 'load-small'
+        env:
           OUT: ${{ runner.temp }}/rehearsal
         working-directory: cloud
         run: |
-          base="${RUNNER_TEMP}/main-baseline"
-          mkdir -p "${base}"
-          run_id="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow cloud-rehearsal.yml --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
-          if [ -n "${run_id}" ]; then
-            gh run download "${run_id}" --repo "${GITHUB_REPOSITORY}" --name load-small-baseline --dir "${base}" || echo "main's last run has no load-small baseline yet"
-          fi
-          CGO_ENABLED=0 go run ./cmd/maktaba-loadtest compare --baseline "${base}/load-small-baseline.json" --current "${OUT}/load-small-baseline.json"
+          ulimit -n 65536 || true
+          docker tag maktaba-cloud:rehearsal maktaba-cloud:rehearsal-this
+          run() { # run <image> <out>: this commit's load-small against that relay image
+            docker tag "$1" maktaba-cloud:rehearsal
+            REHEARSAL_OUT="$2" REHEARSAL_LOAD_SECONDS=180 REHEARSAL_LOAD_ROUNDS=3 CGO_ENABLED=0 \
+              go test -tags cloudrehearsal -run 'TestScenario/load-small$' -timeout 13m -v ./rehearsal/ 2>&1 | tee -a "${RUNNER_TEMP}/scenario.log"
+            return "${PIPESTATUS[0]}"
+          }
+          run maktaba-cloud:rehearsal-base "${OUT}/base"
+          run maktaba-cloud:rehearsal-this "${OUT}"
+          docker tag maktaba-cloud:rehearsal-this maktaba-cloud:rehearsal
+          for f in "${OUT}/base/load-small-baseline.json" "${OUT}/load-small-baseline.json"; do
+            [ -s "${f}" ] || { echo "::error::${f} is missing: load-small measured nothing to compare"; exit 1; }
+          done
+          CGO_ENABLED=0 go run ./cmd/maktaba-loadtest compare --baseline "${OUT}/base/load-small-baseline.json" --current "${OUT}/load-small-baseline.json"
       - uses: actions/upload-artifact@v7.0.1
         if: matrix.scenario == 'load-small'
         with:

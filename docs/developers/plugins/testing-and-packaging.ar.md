@@ -3,10 +3,12 @@
 > **الحالة: مبنيّ للغة Rust (المرحلة 1).** تصنع أداة `mkp` (في `plugind/crates/mkp`) مشروع Rust
 > (`mkp new rust <id> <folder>`)، وتفحص الحزمة كما يفحصها الجهاز الرئيسي (`mkp check`)، وتشغّل
 > مرحلة في بيئة الاختبار، أي شيفرة المضيف نفسها مع واجهة إضافات وهمية تجيب من ملف بيانات
-> (`mkp test --stage <name> --fixtures api.json`)، وتحزّم ملف `.mkplugin` (`mkp pack`). ويثبّت
-> المسؤول الملف من الإعدادات، الإضافات، مع تفعيل «السماح بالإضافات غير المراجَعة». ولم تُبنَ بعد
-> قوالب TypeScript وPython وGo، ولا التوقيع (`mkp pack --sign`، `mkp keys`)، ولا `mkp run`، ولا
-> وضع المطوّر. والبيان في [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في
+> (`mkp test --stage <name> --fixtures api.json`)، وتحزّم ملف `.mkplugin` (`mkp pack`)، وتوقّعه
+> بمفتاحك (`mkp keys new`، `mkp pack <folder> <out> --key <id>`)، وتثبّت مجلدًا على جهاز رئيسي في
+> وضع المطوّر (`mkp run`). ويثبّت المسؤول الملف من الإعدادات، الإضافات، أو بالأمر
+> `maktaba-server plugins`، مع تفعيل «السماح بالإضافات غير المراجَعة»؛ ويعيد
+> `maktaba-server plugins dev <folder>` تحميل المجلد عند كل حفظ. ولم تُبنَ بعد قوالب TypeScript
+> وPython وGo. والبيان في [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في
 > [مرجع الإضافات](reference.ar.md). وبقية هذه الصفحة هي التصميم الوارد في
 > [القصة 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > و
@@ -38,8 +40,8 @@
 | `mkp build` | يشغّل سلسلة أدواتك، ثم التحقق نفسه من البيان وتدقيق الواردات اللذين يجريهما الخادم المنزلي والمتجر |
 | `mkp test` | يشغّل إضافتك في بيئة الاختبار المحلية على بيانات الاختبار الثابتة الخاصة بها |
 | `mkp keys new`، `list`، `export-public` | مفتاح التوقيع Ed25519 الخاص بك |
-| `mkp pack --sign` | يكتب `files.json` ويوقّعه ويصنع ملف `.mkplugin` |
-| `mkp run --home <url>` | يثبّت على خادم منزلي في وضع المطوّر عبر الواجهة البرمجية للمشرف |
+| `mkp pack <folder> <out.mkplugin> --key <id>` | يكتب `files.json` ويوقّعه بمفتاحك ويصنع ملف `.mkplugin` (بلا `--key`: غير موقّع) |
+| `mkp run <folder> --home <http://home:port> --user <admin>` | يثبّت المجلد على جهاز رئيسي في وضع المطوّر («قيد التطوير»، مشغّلة) عبر الواجهة البرمجية للمسؤول؛ شغّله مرة أخرى بعد أي تغيير لتحديثها. تأتي كلمة المرور من `MKP_HOME_PASSWORD` أو من الطرفية؛ ويخاطب عنوان الجهاز الرئيسي على شبكتك عبر HTTP (وعبر HTTPS استعمل وضع المطوّر على الجهاز الرئيسي نفسه) |
 | `mkp submit` | يرفع إلى المتجر (المرحلة 2) |
 
 يطابق إصدار حزمة التطوير إصدار الواجهة البرمجية للإضافات التي يستهدفها: `mkp 1.2.x` يبني لـ
@@ -89,7 +91,7 @@ mkp test
 ## البناء والتحزيم
 
 1. يُنتج `mkp build` الملف `plugin.wasm`، ويفشل عند أي خطأ في البيان أو أي استيراد محظور.
-2. يكتب `mkp pack --sign` الملف `files.json` (المسار وبصمة sha256 والحجم لكل ملف)، ويوقّعه
+2. يكتب `mkp pack <folder> <out.mkplugin> --key <id>` الملف `files.json` (المسار وبصمة sha256 والحجم لكل ملف)، ويوقّعه
    بمفتاح المطوّر الخاص بك في `signatures/developer.sig`، ويصنع ملف `.mkplugin` بصيغة `tar` +
    zstd.
 3. تحقق من الحجم: 50 MB على الأكثر. يستهدف قالب «مرحبًا بالعالم» للغة Python حجمًا لا يتجاوز 25 MB.
@@ -100,7 +102,7 @@ mkp test
 أو بأداة سطر الأوامر:
 
 ```sh
-maktaba-server plugins install silence-chapters-1.4.0.mkplugin
+maktaba-server plugins install silence-chapters-1.4.0.mkplugin --name "Silence chapters" --enable
 ```
 
 | يحمل الملف | يُثبَّت | الشارة |
@@ -126,7 +128,19 @@ maktaba-server plugins dev ./silence-chapters
 عند توقف الأمر إلا إذا مرّرت `--keep`. يعمل في المضيف نفسه وبيئة العزل نفسها كأي إضافة.
 
 تضم أداة سطر الأوامر أيضًا `list` و`show` و`enable` و`disable` و`start` و`stop` و`update`
-و`rollback` و`remove` و`grants` و`policy`، للخوادم المنزلية التي لا متصفح فيها.
+و`rollback` و`remove` و`grants` و`policy`، للخوادم المنزلية التي لا متصفح فيها:
+
+```sh
+maktaba-server plugins policy --allow-unreviewed=on
+maktaba-server plugins grants dev.example.silence-chapters --grant media.read,chapters.write --all-libraries
+maktaba-server plugins remove dev.example.silence-chapters --purge
+```
+
+وهي تستدعي الواجهات البرمجية للمسؤول نفسها التي تستدعيها الإعدادات، الإضافات، بخيارات أداة المكوّنات
+ورموز خروجها: كل كتابة تعرض ما ستغيّره وتسأل `Continue? [y/N]` إلا مع `--yes`؛ و`--json` مع `list`
+و`show`؛ و`--dsn` بدل `DATABASE_URL`. ورموز الخروج: 0 تمّ، و1 رُفض (ويُطبع رمز الإضافة)، و2 كتابة
+بلا طرفية للسؤال ولا `--yes`، و3 الخادم لا يعمل. ويطلب التثبيت غير المراجَع اسم الإضافة (`--name`)
+كما يطلبه مربع الحوار.
 
 ## تحديث إضافتك على خادم منزلي
 

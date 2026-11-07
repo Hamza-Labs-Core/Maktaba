@@ -111,16 +111,14 @@ def init(
     fields = redacted_fields if redacted_fields is not None else DEFAULT_REDACTED_FIELDS
     redact_set = frozenset(f.lower() for f in fields)
 
+    # the same steps as before, in the same order, folded into a head and a tail around the
+    # redaction (issue #744: a processor call each cost more than most of them do on a line
+    # with no stack and no exception): merge the context, the level, the time; redact;
+    # truncate, render a stack or an exception when there is one, scrub it, the sinks
     processors: list[structlog.types.Processor] = [
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        stamp_ts,
+        _head,
         _make_redact_processor(redact_set),
-        truncate_msg,
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        _scrub_exception,
-        _sinks_processor,
+        _tail,
     ]
 
     # Ring sink for the diagnostics export. Installed unless explicitly
@@ -382,6 +380,60 @@ def stamp_ts(
     us = ns // 1000
     event_dict["ts"] = f"{kept[1]}.{us:06d}Z" if us else f"{kept[1]}Z"
     return event_dict
+
+
+def merge_contextvars(
+    logger: Any,
+    method_name: str,
+    event_dict: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
+    """structlog's ``merge_contextvars``, reading only structlog's own context variables: it
+    copied every variable of the context (asyncio's, the libraries') on every line, ~2 µs of a
+    log call with a few dozen around (issue #744). The same fields, by the same rules: a
+    variable not set in this context, or set to ``...``, is left out; a key the call has wins.
+    Falls back to structlog's when its registry is not there (a structlog that moved it)."""
+    registry = _STRUCTLOG_VARS
+    if registry is None:
+        return structlog.contextvars.merge_contextvars(logger, method_name, event_dict)
+    for name, var in tuple(registry.items()):
+        value = var.get()
+        if value is not Ellipsis:
+            event_dict.setdefault(name[_STRUCTLOG_PREFIX_LEN:], value)
+    return event_dict
+
+
+_STRUCTLOG_VARS: dict[str, Any] | None = getattr(structlog.contextvars, "_CONTEXT_VARS", None)
+_STRUCTLOG_PREFIX_LEN = len(getattr(structlog.contextvars, "STRUCTLOG_KEY_PREFIX", "structlog_"))
+
+
+_stack_info = structlog.processors.StackInfoRenderer()
+
+
+def _head(
+    logger: Any,
+    method_name: str,
+    event_dict: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
+    """merge_contextvars, add_log_level and stamp_ts, in that order."""
+    event_dict = merge_contextvars(logger, method_name, event_dict)
+    event_dict = structlog.processors.add_log_level(logger, method_name, event_dict)
+    return stamp_ts(logger, method_name, event_dict)
+
+
+def _tail(
+    logger: Any,
+    method_name: str,
+    event_dict: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
+    """truncate_msg; the stack and the exception rendered and scrubbed, only when the line has
+    them; the sinks (which may drop the line: DropEvent passes through)."""
+    event_dict = truncate_msg(logger, method_name, event_dict)
+    if "stack_info" in event_dict:
+        event_dict = _stack_info(logger, method_name, event_dict)
+    if "exc_info" in event_dict or "exception" in event_dict:
+        event_dict = structlog.processors.format_exc_info(logger, method_name, event_dict)
+        event_dict = _scrub_exception(logger, method_name, event_dict)
+    return _sinks_processor(logger, method_name, event_dict)
 
 
 def _rename_event_to_msg(

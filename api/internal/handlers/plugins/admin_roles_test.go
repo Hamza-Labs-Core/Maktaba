@@ -1,6 +1,7 @@
 package plugins
 
 import (
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -32,6 +33,8 @@ var adminRoutes = []string{
 	"POST /api/plugins/store-account/link",
 	"POST /api/plugins/store-account/poll",
 	"DELETE /api/plugins/store-account",
+	"GET /api/plugins/store-account/entitlements",
+	"POST /api/plugins/store-account/entitlements/refresh",
 	"GET /api/plugins/dev.example.x",
 	"PUT /api/plugins/dev.example.x/grants",
 	"PUT /api/plugins/dev.example.x/report-logs",
@@ -104,5 +107,41 @@ func TestBuiltInListsTheFirstPartyPlugins(t *testing.T) {
 	if len(got) != 1 || got[0].ID != "tv.maktaba.toy" || got[0].Name != "Toy" || got[0].NameAr != "لعبة" ||
 		got[0].Component != "classify" || len(got[0].Stages) != 1 || len(got[0].Capabilities) == 0 {
 		t.Fatalf("built_in %+v", got)
+	}
+}
+
+// Story 54.12 (#719): `mkp run --home` sends development=true; the install is marked
+// Development (an unreviewed level, gated by the same policy); the dialog's form, without
+// the field, keeps the package's own level.
+func TestInstallFormDevelopment(t *testing.T) {
+	form := func(dev bool) *http.Request {
+		var body strings.Builder
+		w := multipart.NewWriter(&body)
+		_ = w.WriteField("confirm_name", "Notes")
+		_ = w.WriteField("enable", "true")
+		if dev {
+			_ = w.WriteField("development", "true")
+		}
+		part, _ := w.CreateFormFile("file", "p.mkplugin")
+		_, _ = part.Write([]byte("package"))
+		_ = w.Close()
+		r := httptest.NewRequest(http.MethodPost, "/api/plugins/install", strings.NewReader(body.String()))
+		r.Header.Set("Content-Type", w.FormDataContentType())
+		return r
+	}
+	h := &Admin{}
+	for _, dev := range []bool{true, false} {
+		req, done, ok := h.installForm(httptest.NewRecorder(), form(dev), "")
+		if !ok {
+			t.Fatalf("development %v: refused", dev)
+		}
+		want := ""
+		if dev {
+			want = "development"
+		}
+		if req.ReviewLevel != want || req.ConfirmName != "Notes" || !req.Enable {
+			t.Fatalf("development %v: %+v", dev, req)
+		}
+		done()
 	}
 }

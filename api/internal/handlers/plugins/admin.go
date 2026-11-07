@@ -67,6 +67,8 @@ type Admin struct {
 	VerifyPassword func(ctx context.Context, userID, password string) error
 	// Store links this home to a plugin store account (story 54.15 §5; nil: 503).
 	Store *storelink.Link
+	// Entitlements keeps the paid plugins' entitlements (story 54.19 §6; nil: 503).
+	Entitlements *pl.Entitlements
 	// Catalog is the store's catalog and the kill switch (story 54.17; nil: 503).
 	Catalog *catalog.Service
 	// Server and Platform are this server's version and platform (Browse's filter).
@@ -94,6 +96,8 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/store-account/link", h.storeLink)
 		r.Post("/api/plugins/store-account/poll", h.storePoll)
 		r.Delete("/api/plugins/store-account", h.storeUnlink)
+		r.Get("/api/plugins/store-account/entitlements", h.entitlements)
+		r.Post("/api/plugins/store-account/entitlements/refresh", h.refreshEntitlements)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
 		r.Put("/api/plugins/{id}/report-logs", h.reportLogs)
@@ -367,6 +371,12 @@ func (h *Admin) installForm(w http.ResponseWriter, r *http.Request, expect strin
 			req.Enable, _ = strconv.ParseBool(v)
 		case "confirm_name":
 			req.ConfirmName = v
+		case "development":
+			// `mkp run --home` (story 54.12): marked Development, an unreviewed level, so
+			// the home's Allow unreviewed plugins gates it as any unreviewed file
+			if dev, _ := strconv.ParseBool(v); dev {
+				req.ReviewLevel = "development"
+			}
 		}
 		_ = part.Close()
 	}
