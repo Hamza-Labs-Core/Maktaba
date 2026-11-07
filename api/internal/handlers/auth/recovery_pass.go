@@ -121,7 +121,13 @@ func (h *Handler) RecoveryPass(w http.ResponseWriter, r *http.Request) {
 		Secure:   h.SecureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"expires_at": exp.UTC().Format(time.RFC3339)})
+	out := map[string]any{"expires_at": exp.UTC().Format(time.RFC3339)}
+	// a native app (a Remote) keeps the pass itself and sends it as a bearer to the
+	// console; the web's stays in the HttpOnly cookie, out of reach of its scripts
+	if isNativeClient(r) {
+		out["pass"] = tok
+	}
+	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
 // clearRecoveryCookie ends this browser's pass (a sign-out).

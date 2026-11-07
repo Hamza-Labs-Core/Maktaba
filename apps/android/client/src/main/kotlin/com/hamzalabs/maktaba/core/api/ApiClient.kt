@@ -9,6 +9,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import okhttp3.Call
 import okhttp3.Callback
@@ -133,6 +137,67 @@ class ApiClient(
 
     /** `GET /api/auth/me` with the home's name. */
     suspend fun whoami(): Me = get("/api/auth/me")
+
+    // ---------- the recovery console (Epic 53 stories 53.04, 53.05; Recovery.kt) ----------
+
+    /**
+     * Asks the API for a recovery pass and keeps it (admins only, while the API is up). Best
+     * effort: false when there is none (a viewer, the API down, an older home).
+     */
+    suspend fun refreshRecoveryPass(): Boolean = try {
+        val pass = decode<RecoveryPassAnswer>(send(request("POST", "/api/auth/recovery-pass"))).pass
+        if (pass.isNullOrEmpty()) false else {
+            tokens.recoveryPass = pass
+            true
+        }
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        false
+    }
+
+    /**
+     * Sends [r] to the recovery console with the pass, else the access token (refreshed once).
+     * A credential the console turns down is never a sign-out: a pass it refuses is dropped (each
+     * refusal counts toward its lockout), and the screen says only admins get in.
+     */
+    internal suspend fun recoveryCall(r: Request): ByteArray {
+        val credentials = ArrayDeque(listOfNotNull(tokens.recoveryPass, tokens.access))
+        var refreshed = false
+        while (credentials.isNotEmpty()) {
+            val credential = credentials.removeFirst()
+            val a = try {
+                exchange(r, credential)
+            } catch (_: ApiException.Transport) {
+                throw RecoveryException.Unreachable()
+            }
+            when (a.code) {
+                in 200..299 -> return a.body
+                401 -> if (credential == tokens.recoveryPass) {
+                    tokens.recoveryPass = null
+                } else if (credentials.isEmpty() && !refreshed && tokens.refresh != null) {
+                    // an access token that expired: one refresh, while the API answers
+                    refreshed = true
+                    try {
+                        credentials.add(refreshAfter(credential))
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                    }
+                }
+                403 -> throw RecoveryException.Denied()
+                404 -> throw RecoveryException.NotHere()
+                428 -> throw RecoveryException.Confirm(
+                    runCatching { json.parseToJsonElement(String(a.body)).jsonObject["confirm"]?.jsonPrimitive?.intOrNull }.getOrNull() ?: 2,
+                )
+                else -> throw RecoveryException.Refused(
+                    runCatching { json.parseToJsonElement(String(a.body)).jsonObject["error"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+                        ?: "HTTP ${a.code}",
+                )
+            }
+        }
+        throw RecoveryException.Denied()
+    }
 
     /** Keeps tokens a sign-in by code collected (`DeviceSignIn`). */
     fun keep(t: AuthTokens) = tokens.save(t)

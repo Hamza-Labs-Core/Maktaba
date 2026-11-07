@@ -59,7 +59,7 @@ struct HomeStatusView: View {
                     Label(held.summary, systemImage: "tv").foregroundStyle(Color.brass)
                 }
             }
-            // Epic 53: what went wrong on the home, its lines, its charts, people's reports
+            // Epic 53: what went wrong on the home, its lines, its charts, people's reports, recovery
             Section("Diagnostics") {
                 NavigationLink {
                     ErrorsView()
@@ -86,6 +86,13 @@ struct HomeStatusView: View {
                     Label("Problem reports", systemImage: "tray")
                 }
                 .accessibilityIdentifier("home.reports")
+                // the supervisor's console, which answers with the API or the database down (53.04)
+                NavigationLink {
+                    RecoveryView()
+                } label: {
+                    Label("Recovery", systemImage: "cross.case")
+                }
+                .accessibilityIdentifier("home.recovery")
             }
             Section("This device") {
                 CrashReportsToggle(session: model.session)

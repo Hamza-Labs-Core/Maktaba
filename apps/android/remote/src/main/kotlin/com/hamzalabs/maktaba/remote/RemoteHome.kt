@@ -31,6 +31,7 @@ import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScope
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -111,6 +112,13 @@ class Remote(
 
     /** The diagnostics are open over the places (Epic 53, from the account menu). */
     var diagnostics by mutableStateOf(false)
+
+    /**
+     * The recovery screen is open over the places (Epic 53 story 53.04): from the account menu,
+     * or the status strip's Details when the home is restarting, its database is down or it is
+     * in safe mode.
+     */
+    var recovery by mutableStateOf(false)
 
     /**
      * A place's state under [key], kept for as long as this home is signed in: another place
@@ -200,10 +208,17 @@ data class ActionProblem(val what: String?, val failure: Failure)
 @Composable
 fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: ThemeStore) {
     val remote = remember(client) { Remote(client, session, isAdmin = user.isAdmin) }
+    // an admin's recovery pass, while the API answers: the recovery screen signs in with it
+    // when the API is down (53.04)
+    LaunchedEffect(client) { if (user.isAdmin) client.refreshRecoveryPass() }
     // a TV waiting to sign in: a banner above every place, and a notification
     PendingSignInsHost(session, user, client) {
         // what is down on the home, on top (Epic 53 story 53.06)
-        HomeStatusHost(client, admin = user.isAdmin) {
+        // its Details for the home restarting, its database or safe mode: the recovery screen
+        // here, not the web page
+        HomeStatusHost(client, admin = user.isAdmin, onDetails = { path ->
+            (path == "/recovery" && user.isAdmin).also { if (it) remote.recovery = true }
+        }) {
             // crash reports to the home (asked once, off until yes) and Report a problem (Epic 53)
             DiagnosticsHost(client, session.current.collectAsState().value) {
                 RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client, remote) })
@@ -220,7 +235,8 @@ fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: Theme
 fun RemoteAccount(session: AppSession, user: User, themes: ThemeStore, client: ApiClient, remote: Remote? = null) {
     ApproveTvButton(session, user, client)
     AccountMenu(session, user, themes, extra = { close ->
-        if (remote != null) DiagnosticsMenuItem { close(); remote.diagnostics = true }
+        if (remote != null) DiagnosticsMenuItem { close(); remote.recovery = false; remote.diagnostics = true }
+        if (remote != null && user.isAdmin) RecoveryMenuItem { close(); remote.diagnostics = false; remote.recovery = true }
     })
 }
 
@@ -267,6 +283,10 @@ internal fun RemoteFrame(
 
 @Composable
 private fun PlaceScreen(place: Place, remote: Remote, account: @Composable () -> Unit) {
+    if (remote.recovery) {
+        RecoveryScreen(remote, onBack = { remote.recovery = false })
+        return
+    }
     if (remote.diagnostics) {
         DiagnosticsScreen(remote, onBack = { remote.diagnostics = false })
         return

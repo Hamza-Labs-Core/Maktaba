@@ -74,6 +74,7 @@
 		0E65328F29BB2ACD904A595E /* video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 99C953845F9EC74084F7444A /* video-v12.json */; };
 		0F12E1D7996209AFE5BA4B53 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		0F56BA2404B89AEDD315B9A9 /* videos.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FC50884BA24F8F3AA96B863 /* videos.json */; };
+		0F9ECA846F7FBD95074C8932 /* RecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9CF72B139DB11542017A77F /* RecoveryView.swift */; };
 		0FB50F7BF97AE2031E325951 /* me-video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A5789D0242D82200492ECE4 /* me-video-v8.json */; };
 		0FC79E78C8ED23A4B86754DE /* series-episodes-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E06311531E13E074B9CCD7E /* series-episodes-seerah.json */; };
 		0FC959F93DAD804DC2836560 /* series-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A2EF4528458BE561D5D5E3D /* series-seerah.json */; };
@@ -382,6 +383,7 @@
 		66E80A28A8DCE5DFEF525AE6 /* LiveGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761A341C59A1EF4C1E7A366B /* LiveGuide.swift */; };
 		673AD63AC4A3A763C879EF55 /* LiveModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE5070ECDAE67A10C38C6B42 /* LiveModel.swift */; };
 		674935557616161DD2F7054B /* PlayerShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73C4DBC658F8C407859F34C6 /* PlayerShellTests.swift */; };
+		6769D8CC2688750FC655449E /* RecoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9CF72B139DB11542017A77F /* RecoveryView.swift */; };
 		676D599F8129B51DD231B3F2 /* QueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7CF3F653F8E0BF0DCFD0D63 /* QueueView.swift */; };
 		677A79E96299875AF826D4EF /* auth-me.json in Resources */ = {isa = PBXBuildFile; fileRef = 5BDF18B38D8C81A79BEA1702 /* auth-me.json */; };
 		682FF47D55F1952EE706A68D /* channels-guide.json in Resources */ = {isa = PBXBuildFile; fileRef = CD5FB1070CB4B8044FE2E02E /* channels-guide.json */; };
@@ -1213,6 +1215,7 @@
 		C8181B1E47B9309AD90DB519 /* video-v7.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "video-v7.json"; sourceTree = "<group>"; };
 		C8FB3DD8C7BC6D1057F2AAAE /* LibrariesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrariesView.swift; sourceTree = "<group>"; };
 		C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerApp.swift; sourceTree = "<group>"; };
+		C9CF72B139DB11542017A77F /* RecoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecoveryView.swift; sourceTree = "<group>"; };
 		CAA1815F933BFB3F631165D9 /* PageSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSnapshotTests.swift; sourceTree = "<group>"; };
 		CBD16C2619B376327A3B02C2 /* Live.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Live.xcstrings; sourceTree = "<group>"; };
 		CC934BAB64968FD138262148 /* audio-ar-0.ts */ = {isa = PBXFileReference; path = "audio-ar-0.ts"; sourceTree = "<group>"; };
@@ -1549,6 +1552,7 @@
 				31F751DD280EC1E10E13F594 /* MachinesView.swift */,
 				A2CFA6753C3C4451A4B46020 /* ProcessesView.swift */,
 				C7CF3F653F8E0BF0DCFD0D63 /* QueueView.swift */,
+				C9CF72B139DB11542017A77F /* RecoveryView.swift */,
 				5E7C782FE57543EEFC505FBD /* RemoteApp.swift */,
 				3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */,
 				076EC6D65DD5EDF1384D61B0 /* ReportsInboxView.swift */,
@@ -2950,6 +2954,7 @@
 				69E90340F2DA4313C4D3B2FE /* MachinesView.swift in Sources */,
 				3206DDDCA854C841C9CBE022 /* ProcessesView.swift in Sources */,
 				2638E1C13AA0226C38DBF50E /* QueueView.swift in Sources */,
+				0F9ECA846F7FBD95074C8932 /* RecoveryView.swift in Sources */,
 				1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */,
 				C4B017ECF5FFC90DD08793B2 /* RemoteRoot.swift in Sources */,
 				D481F52F1772418EB4FD8BC5 /* ReportsInboxView.swift in Sources */,
@@ -2995,6 +3000,7 @@
 				310830BF1D07DE66F5C42E41 /* MachinesView.swift in Sources */,
 				7ABE7A5C9902484ABCD0AD1F /* ProcessesView.swift in Sources */,
 				676D599F8129B51DD231B3F2 /* QueueView.swift in Sources */,
+				6769D8CC2688750FC655449E /* RecoveryView.swift in Sources */,
 				80E256576FD19547D635B132 /* RemoteApp.swift in Sources */,
 				9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */,
 				2CE52515B34EDD95A443649A /* ReportsInboxView.swift in Sources */,

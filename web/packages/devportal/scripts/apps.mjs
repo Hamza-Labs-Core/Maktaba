@@ -661,8 +661,12 @@ export const APPS = [
                 "**التشخيص** (آيفون، في تبويب **الجهاز الرئيسي**؛ وأندرويد، في قائمة الحساب)، عبر مسارات صفحات الإدارة في الويب نفسها: **الأخطاء** (ما يتكرر فشله، مجمّعًا، بأيامه الأربعة عشر الأخيرة؛ ومخطط المجموعة وأسطرها الأخيرة، و**التعليم كمرئي** و**الحل** و**الكتم**)، و**السجلات** (البحث بالكلمات والمستوى والوقت؛ والمرجع من شاشة خطأ لدى شخص ما يفتح **تتبّع طلب**، أي كل أسطر ذلك الطلب بترتيبها الزمني)، و**لوحات المتابعة** (النظرة العامة والتخزين، للقراءة فقط)، و**بلاغات المشكلات** (بلاغات الناس: الجهاز وما كتبوه وخط زمني واحد لأسطر التطبيق والجهاز الرئيسي؛ وتعيين الحالة والرد)."
               ),
               t(
-                "**The status strip**: what is down on the home, at the top of every screen.",
-                "**شريط الحالة**: ما توقف في الجهاز الرئيسي، أعلى كل شاشة."
+                "**Recovery** (iPhone, on the **Home** tab; Android, in the account menu): the home's recovery page, in the app. The supervisor answers it with the database or the API down, and the app signs in with a recovery pass it keeps while the API is up. It shows each part's state, restarts and last error, the warnings and errors of the last minutes and the free disk space; an admin can restart a part or everything, start or leave **safe mode**, and go back to the previous version (asked twice). Restoring a backup and downloading diagnostics stay on the web page, linked at the end. Anyone but an admin is told only admins can open it.",
+                "**الاستعادة** (آيفون، في تبويب **الجهاز الرئيسي**؛ وأندرويد، في قائمة الحساب): صفحة الاستعادة في الجهاز الرئيسي، داخل التطبيق. يجيب عنها المشرف حتى حين تتوقف قاعدة البيانات أو الواجهة البرمجية، ويسجّل التطبيق الدخول إليها بتصريح استعادة يحفظه ما دامت الواجهة البرمجية تعمل. وتعرض حالة كل جزء ومرات إعادة تشغيله وآخر خطأ فيه، والتحذيرات والأخطاء في الدقائق الأخيرة، والمساحة الحرة على القرص؛ ويستطيع المدير إعادة تشغيل جزء أو الكل، والدخول إلى **الوضع الآمن** أو الخروج منه، والرجوع إلى الإصدار السابق (بعد تأكيدين). وتبقى استعادة نسخة احتياطية وتنزيل ملف التشخيص في صفحة الويب، برابط في آخرها. ومن ليس مديرًا يُقال له إن فتحها للمدراء فقط."
+              ),
+              t(
+                "**The status strip**: what is down on the home, at the top of every screen. For an admin, **Details** on the home restarting, its database or safe mode opens **Recovery**.",
+                "**شريط الحالة**: ما توقف في الجهاز الرئيسي، أعلى كل شاشة. وللمدير، يفتح **التفاصيل** في سطر إعادة تشغيل الجهاز الرئيسي أو قاعدة بياناته أو الوضع الآمن صفحةَ **الاستعادة**."
               ),
               t(
                 "**Approve a TV or device** on every screen, and a banner with **Enter code** while a TV waits to sign in.",
@@ -745,6 +749,12 @@ export const APPS = [
                 "phone",
                 "The Remote's Overview dashboard on an Android phone: errors per hour and the components up over 24 hours",
                 "لوحة النظرة العامة في تطبيق الإدارة عن بُعد على هاتف أندرويد: الأخطاء في الساعة والمكوّنات العاملة خلال 24 ساعة"
+              ),
+              shot(
+                "android-remote-recovery",
+                "phone",
+                "The Remote's Recovery on an Android phone, in safe mode: the database stopped, each part's last error and Restart, made-up data",
+                "الاستعادة في تطبيق الإدارة عن بُعد على هاتف أندرويد، في الوضع الآمن: قاعدة البيانات متوقفة، وآخر خطأ لكل جزء وزر إعادة التشغيل، على بيانات مختلَقة"
               ),
               shot(
                 "android-remote-attention",

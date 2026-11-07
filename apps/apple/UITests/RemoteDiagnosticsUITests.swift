@@ -2,7 +2,8 @@ import XCTest
 
 /// The Remote's diagnostics (Epic 53 stories 53.11 §4, 53.12 §4, 53.15 §5) against
 /// `MockHome`'s made-up answers: Errors (a group's page and Resolve), Logs (a search, and a
-/// reference followed), the Overview and Storage dashboards, and the problem-report inbox.
+/// reference followed), the Overview and Storage dashboards, the problem-report inbox, and the
+/// recovery screen (53.04, 53.05).
 /// MAKTABA_SHOTS, when set, is a folder the screenshots are written to as well (CI's Remote
 /// UI tests job keeps them; the maktaba.dev Apps pages take theirs from it).
 ///
@@ -125,7 +126,86 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         shot("ar-dashboards")
     }
 
+    /// The recovery screen (Epic 53 stories 53.04, 53.05): the supervisor's state from
+    /// `/recovery/api/state`, a part restarted after its confirmation, the pass asked of the API.
+    func testRecovery() throws {
+        stubRecovery()
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: "Home")
+        let part = element("recovery.part.core.postgres")
+        XCTAssertTrue(part.waitForExistence(timeout: 15), "the parts")
+        XCTAssertTrue(element("recovery.safe").exists, "safe mode is said")
+        XCTAssertTrue(home.seen.contains("GET /recovery/api/state") && home.seen.contains("GET /recovery/api/logs"))
+        XCTAssertTrue(home.seen.contains("POST /api/auth/recovery-pass"), "a fresh pass while the API answers")
+        shot("recovery")
+        let restart = element("recovery.restart.core.postgres")
+        XCTAssertTrue(restart.waitForExistence(timeout: 5))
+        restart.tap()
+        let confirm = app.alerts.buttons["Restart"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "asked to confirm")
+        confirm.tap()
+        let posted = { self.home.requests.contains { $0.method == "POST" && $0.path == "/recovery/api/action" } }
+        let end = Date().addingTimeInterval(10)
+        while !posted(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(posted(), "Restart went to the home")
+        let sent = home.requests.last { $0.path == "/recovery/api/action" }
+        let body = sent.flatMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+        XCTAssertEqual(body?["action"] as? String, "restart")
+        XCTAssertEqual(body?["component"] as? String, "core.postgres")
+        XCTAssertTrue(element("recovery.done").waitForExistence(timeout: 10), "Done is said")
+    }
+
+    func testRecoveryInArabic() throws {
+        stubRecovery()
+        launch("ar", locale: "ar_JO")
+        let homeTab = "الجهاز الرئيسي"
+        try XCTSkipUnless(app.buttons[homeTab].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: homeTab)
+        XCTAssertTrue(element("recovery.part.core.postgres").waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["قاعدة البيانات"].exists, "the groups in Arabic")
+        shot("ar-recovery")
+    }
+
+    /// A viewer's token (or a revoked pass): the console says 401, the screen says only
+    /// admins get in, and the app stays signed in.
+    func testRecoveryRefused() throws {
+        home.stub("GET", "/recovery/api/state", status: 401, body: #"{"error":"unauthorized"}"#)
+        home.stub("POST", "/api/auth/recovery-pass", status: 403, body: #"{"title":"forbidden"}"#)
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: "Home")
+        XCTAssertTrue(element("recovery.denied").waitForExistence(timeout: 15), "only admins")
+        back()
+        XCTAssertTrue(app.buttons["Queue"].firstMatch.exists, "still signed in")
+    }
+
     // MARK: made-up answers
+
+    private func stubRecovery() {
+        let now = Date()
+        func t(_ s: TimeInterval) -> String { ISO8601DateFormatter().string(from: now.addingTimeInterval(s)) }
+        home.stub("POST", "/api/auth/recovery-pass", body: #"{"expires_at":"\#(t(7 * 86400))","pass":"p-ui"}"#)
+        home.stub("GET", "/recovery/api/state", body: """
+        {"status":{"v":1,"mode":"safe","overall":"down","components":{"database":"down","api":"restarting","streaming":"off","processing":"off","search":"ok","logs":"ok"}},
+         "components":[
+          {"id":"core.postgres","group":"database","phase":"failed","reason":"crash_loop","state":"down","restarts":3,"cut_off":true,
+           "last_exit":"\(t(-240))","last_code":1,"last_error":"FATAL: could not open file pg_wal/000000010000000000000002","can_restart":true},
+          {"id":"core.api","group":"api","phase":"running","state":"restarting","restarts":5,"last_exit":"\(t(-60))","last_code":2,
+           "last_error":"db_connect: connection refused","can_restart":true},
+          {"id":"search.index","group":"search","phase":"running","state":"ok","restarts":0,"can_restart":true},
+          {"id":"logs.index","group":"logs","phase":"running","state":"ok","restarts":0,"can_restart":true}],
+         "disk_free":214748364800,"logs_bytes":52428800,"rollback":"0.3.44","safe_mode":true}
+        """)
+        home.stub("GET", "/recovery/api/logs", body: """
+        {"lines":[
+          {"ts":"\(t(-240))","level":"error","service":"postgres","component":"core.postgres","msg":"raw_line","attrs":{"text":"FATAL: could not open file pg_wal/000000010000000000000002"}},
+          {"ts":"\(t(-60))","level":"error","service":"api","component":"core.api","msg":"db_connect","err":"connection refused"},
+          {"ts":"\(t(-30))","level":"warn","service":"supervisor","msg":"child_backoff"}],"truncated":false}
+        """)
+        home.stub("POST", "/recovery/api/action", body: #"{"result":"ok"}"#)
+    }
+
 
     private func stubDiagnostics() {
         let now = Date()
