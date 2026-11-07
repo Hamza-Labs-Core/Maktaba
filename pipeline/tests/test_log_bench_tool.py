@@ -84,3 +84,65 @@ def test_the_best_of_its_rounds_is_judged(monkeypatch: pytest.MonkeyPatch) -> No
     assert got["rounds"] == 3 and len(got["p99_ns_rounds"]) == 3
     assert got["p99_ns"] == min(got["p99_ns_rounds"])
     assert 0 < got["p50_ns"] <= got["p99_ns"]
+
+
+def _vs(ratio: float, base: int = 50_000) -> dict[str, object]:
+    return {
+        "base_p99_ns": base,
+        "head_p99_ns": int(base * ratio),
+        "base_p99_ns_rounds": [base],
+        "head_p99_ns_rounds": [int(base * ratio)],
+        "ratio": ratio,
+    }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("p99", "vs_ratio", "code", "says"),
+    [
+        # #806 on a 7763: over the budget, and so is its base on that runner: not the change
+        (55_700, 1.01, 0, "the runner, not this change"),
+        # over the budget and 20 % slower than its base: the change
+        (55_700, 1.20, 1, "1.20 times it"),
+        # over the budget with no base to compare with: the budget alone, as before
+        (55_700, None, 1, "budget 55.3"),
+        # within the budget but 20 % slower than the base: a warning
+        (40_000, 1.20, 0, "slower than the base, within the budget"),
+        (40_000, None, 0, ""),
+    ],
+)
+def test_the_base_on_the_same_runner_tells_the_runner_from_the_change(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    p99: int,
+    vs_ratio: float | None,
+    code: int,
+    says: str,
+) -> None:
+    lb = _tool()
+    monkeypatch.setenv("LOGBENCH_PY_STRICT", "1")
+    vs = None if vs_ratio is None else _vs(vs_ratio)
+    assert lb.verdict(p99, 55_341, 2.77, vs) == code
+    err = capsys.readouterr().err
+    assert says in err if says else err == ""
+    if code:
+        assert err.startswith("::error::")
+
+
+@pytest.mark.integration  # fresh processes, past the unit tier's cap
+def test_compare_runs_the_base_logger_round_for_round() -> None:
+    # this checkout's own logger as the base: the same code, so near one another
+    lb = _tool()
+    src = str(TOOL.parents[1] / "src")
+    got = lb.compare(src, 2_000, rounds=2)
+    assert len(got["base_p99_ns_rounds"]) == 2 and len(got["head_p99_ns_rounds"]) == 2
+    assert got["base_p99_ns"] == min(got["base_p99_ns_rounds"])
+    assert 0.2 < got["ratio"] < 5
+
+
+@pytest.mark.integration  # fresh processes, past the unit tier's cap
+def test_a_base_without_the_logger_is_refused(tmp_path: Path) -> None:
+    # a base folder with no maktaba_pipeline imports the installed one: never compared
+    lb = _tool()
+    with pytest.raises(RuntimeError, match="not the logger in"):
+        lb.compare(str(tmp_path), 500, rounds=1)
