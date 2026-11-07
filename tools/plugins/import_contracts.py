@@ -52,7 +52,9 @@ def check() -> list[str]:
     for name, folder in pkgs.items():
         for f in sorted(folder.rglob("*.py")):
             for other in sorted(imported(f) & set(pkgs) - {name, "maktaba_fp_lib"}):
-                problems.append(f"{f.relative_to(ROOT)}: {name} imports {other} (another first-party plugin)")
+                problems.append(
+                    f"{f.relative_to(ROOT)}: {name} imports {other} (another first-party plugin)"
+                )
     for f in sorted(PIPELINE.rglob("*.py")):
         rel = f.relative_to(PIPELINE).with_suffix("")
         mod = ".".join(rel.parts)
