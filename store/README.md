@@ -8,12 +8,12 @@ hostname, all on Cloudflare, no VPS. Nothing here imports `cloud/` or calls `api
 | Folder                      | What                                                                                                                                                                                                     |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `signing/`                  | The signer and verifier (story 54.14): canonical JSON, Ed25519 on WebCrypto, the chain of trust. The same rules as the home's Go (`shared/plugins/pluginsig`) and the SDK's Rust (`plugind/crates/sig`). |
-| `scripts/gen-vectors.ts`    | Writes `shared/plugins/testdata/signatures/`, the vectors all three check (`pnpm vectors`; CI runs `--check`).                                                                                           |
+| `scripts/gen-vectors.ts`    | Writes `shared/plugins/testdata/signatures/`, the vectors all three check (`npm run vectors`; CI runs `--check`).                                                                                           |
 | `scripts/drill-rotation.ts` | The online key rotation drill (54.14 §5, T06), run by the `store` CI job against the Go verifier.                                                                                                        |
 
 ```sh
-pnpm install
-pnpm test        # vectors current, typecheck, vitest
+npm ci
+npm run vectors:check && npm run typecheck && npm test
 ```
 
 Every key the tests and vectors use is a **test key** made from a public label: anyone can
@@ -28,15 +28,15 @@ every plugin file is Unreviewed until these steps are done.
 ### 1. The two plugin root keys (offline, once)
 
 The root keys sign only `store-keys.json`, a few times a year. They never touch a network.
-`scripts/keys.ts` (Node 20 or newer, `pnpm install` done beforehand) makes and uses them.
+`scripts/keys.ts` (Node 20 or newer, `npm ci` done beforehand) makes and uses them.
 
 1. On an offline machine (networking off, ideally booted from a live USB), with two encrypted
    USB sticks mounted:
 
    ```sh
-   pnpm exec tsx scripts/keys.ts new /Volumes/KEY-A r1
-   pnpm exec tsx scripts/keys.ts new /Volumes/KEY-B r2
-   pnpm exec tsx scripts/keys.ts root --version 1 --key /Volumes/KEY-A/r1.key --key /Volumes/KEY-B/r2.key > plugins-root.json
+   npx tsx scripts/keys.ts new /Volumes/KEY-A r1
+   npx tsx scripts/keys.ts new /Volumes/KEY-B r2
+   npx tsx scripts/keys.ts root --version 1 --key /Volumes/KEY-A/r1.key --key /Volumes/KEY-B/r2.key > plugins-root.json
    ```
 
 2. Keep the two sticks **in two different places** (for example a home safe and a bank deposit
@@ -51,8 +51,8 @@ The root keys sign only `store-keys.json`, a few times a year. They never touch 
    the key list with either root key:
 
    ```sh
-   pnpm exec tsx scripts/keys.ts new /Volumes/KEY-S s-2027
-   pnpm exec tsx scripts/keys.ts store-keys --version 1 --root /Volumes/KEY-A/r1.key \
+   npx tsx scripts/keys.ts new /Volumes/KEY-S s-2027
+   npx tsx scripts/keys.ts store-keys --version 1 --root /Volumes/KEY-A/r1.key \
        --store /Volumes/KEY-S/s-2027.pub --months 13 > store-keys.json
    ```
 

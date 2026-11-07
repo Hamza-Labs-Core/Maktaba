@@ -67,6 +67,7 @@ const GUIDES = {
     "testing-and-packaging.md",
     "trust.md",
     "publishing.md",
+    "selling.md",
   ],
   contributing: [
     "README.md",
@@ -77,6 +78,7 @@ const GUIDES = {
     "conventions.md",
     "ci.md",
     "pull-requests.md",
+    "cloud.md",
   ],
   security: ["conformance.md"],
 };

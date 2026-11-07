@@ -1,14 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "ES2022",
     "moduleResolution": "Bundler",
     "lib": ["ES2022", "DOM"],
+    "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "noEmit": true,
-    "types": ["node"],
-    "skipLibCheck": true
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+    "skipLibCheck": true,
+    "noEmit": true
   },
-  "include": ["signing/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
 }

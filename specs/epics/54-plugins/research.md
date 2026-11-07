@@ -299,7 +299,13 @@ host process as the second, an escape needs two independent bugs.
   people's software, which many merchant-of-record services restrict in their seller terms
   (Paddle among them), so each candidate has to confirm in writing that it accepts plugin
   resale before it is chosen.
-- **Candidates to evaluate at Phase 3:** Paddle as seller with Maktaba paying developers
+- **Decided 2026-11-06: providers are pluggable** (README §6.5, §14 item 2): the store runs
+  any of these behind one interface, several at once, per buyer country and currency, each
+  live only after its written resale confirmation. Adyen for Platforms is the first real
+  module (the store as seller, split payments to developer balance accounts, local
+  acquiring in the UAE and Saudi Arabia, SAR, AED and EGP among its currencies); a Gulf or
+  Egypt provider is a further module.
+- **Candidates evaluated at Phase 3:** Paddle as seller with Maktaba paying developers
   monthly; Maktaba as seller with a marketplace payment provider such as Adyen for Platforms
   (split payments to developer sub-accounts, Maktaba files tax); developers selling directly
   with Maktaba verifying their licence keys offline.

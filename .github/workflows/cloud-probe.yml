@@ -1,0 +1,74 @@
+# Network 2 of the outside probes (Epic 50 story 50.10): from GitHub's runners, outside
+# Hetzner, so a Hetzner-wide outage still pages. Every 5 minutes (Actions' minimum), each run
+# probing every 30 s for 5 minutes (deploy/cloud-ha/monitoring/probe.sh): the canary home
+# through the relay, the API and the status page; results to the witness's Pushgateway.
+# Two failed probes in a row fail the run, and GitHub mails the owner. Off until the pair
+# runs: set the repository variable CLOUD_PROBE to 'true'.
+#
+# The status page (story 50.11): with STATUS_PAGE 'true', each round (beside network 1's view,
+# read from the witness) is folded into the status-data branch (status/publish-data.sh). A
+# component changing state is pushed at once and starts the page's build (status-page.yml);
+# the rest is pushed at the run's end, and the page's 5-minute build picks it up.
+name: Cloud probe
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: vars.CLOUD_PROBE == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    permissions:
+      contents: write # the status-data branch only (status/publish-data.sh pushes nothing else)
+      actions: write  # start status-page.yml when a component changes state
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6.4.0
+        if: vars.STATUS_PAGE == 'true'
+        with:
+          node-version: 24
+      - name: The status data (the status-data branch)
+        if: vars.STATUS_PAGE == 'true'
+        env:
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir status-data && cd status-data
+          git init -q
+          git remote add origin "https://x-access-token:${TOKEN}@github.com/${REPO}.git"
+          if git fetch -q --depth 20 origin status-data; then
+            git checkout -q -b status-data FETCH_HEAD
+          else
+            git checkout -q --orphan status-data
+            echo "the status page's probe results (Epic 50 story 50.11); written by cloud-probe.yml" >README.md
+            git add README.md
+          fi
+      - name: Probe from outside Hetzner
+        env:
+          CANARY_URL: https://canary.relay.maktaba.tv/api/health
+          API_URL: https://api.maktaba.tv/readyz
+          STATUS_URL: https://status.maktaba.tv
+          FILE_URL: https://canary.relay.maktaba.tv/canary/10mb.bin
+          PUSHGATEWAY_URL: ${{ secrets.PUSHGATEWAY_URL }}
+          PUSHGATEWAY_TOKEN: ${{ secrets.PUSHGATEWAY_TOKEN }}
+          NETWORK1_URL: ${{ secrets.PUSHGATEWAY_URL && format('{0}/status/network1.json', secrets.PUSHGATEWAY_URL) || '' }}
+          ROUNDS_FILE: ${{ vars.STATUS_PAGE == 'true' && format('{0}/rounds', runner.temp) || '' }}
+          ROUND_CMD: ${{ vars.STATUS_PAGE == 'true' && format('bash status/publish-data.sh status-data {0}/rounds --if-changed', runner.temp) || '' }}
+          PUBLISH_CMD: gh workflow run status-page.yml --ref main
+          GH_TOKEN: ${{ github.token }}
+        run: bash deploy/cloud-ha/monitoring/probe.sh
+      - name: The run's rounds to the status data
+        if: always() && vars.STATUS_PAGE == 'true'
+        run: bash status/publish-data.sh status-data "${RUNNER_TEMP}/rounds"
