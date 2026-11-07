@@ -6,10 +6,11 @@
 > passkeys) and re-authentication, the developer console, signing keys, id prefixes,
 > submissions, linking a home, store admin, the signed catalog and revocation list. The store
 > is built but **not open yet**: sign-up and submissions are closed until its keys, hosting and
-> reviewers are in place, and until then every file is Unreviewed. Automated checks and
-> review, the home's catalog and kill switch, and the store browser follow in the next changes
-> of Phase 2; paid plugins are Phase 3 ([Selling a plugin](selling.md) says what of them is on
-> `main`). This page describes the design in
+> reviewers are in place, and until then every file is Unreviewed. The automated checks and
+> the review queue are built too ([Review guidelines](guidelines.md)). The home's catalog and
+> kill switch, and the store browser follow in the next changes of Phase 2; paid plugins are
+> Phase 3 ([Selling a plugin](selling.md) says what of them is on `main`). This page
+> describes the design in
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
 > section 6, which can change.
 
@@ -132,6 +133,20 @@ They report within about 30 minutes:
 | Sandbox run of your fixtures and generated events with strict limits | a trap, memory over 80 % of declared, or outputs breaking the rules |
 | Diff against your previous version | routes to human review on new capabilities, panels, exports or large jumps |
 | Source archive present and, for reproducible toolchains (Rust, TinyGo), builds to the same hash | missing source blocks; otherwise a badge |
+| The flow ([Flows](flows.md)): `flow.toml`'s schema, each manifest matching its member exactly, the leaf rule (no edge into a core stage or another plugin's stage), events that exist with payload schemas, every plugin it names in the store at a version it accepts, no cycle through it and the published flows it subscribes to, chains within 16 hops | any refusal, named with its cycle path or bad edge, in English and Arabic |
+
+### Submitting a flow
+
+A flow of several plugins is submitted together: `POST /v1/flow-submissions {flow_id,
+flow_version, members}` names the members you upload, then each member's package goes up as
+any submission with `flow_submission` set to its id. Every member package carries the same
+`flow.toml` (your signature covers it, as every file). The flow check runs once every member
+has passed its own checks, and the flow is decided as a whole: one refusal refuses all of it,
+and nothing in it is countersigned. Members you don't upload must already be in the store at a
+version the flow accepts. A new flow, or a version that adds a member, an event or a
+subscription, goes to a person, who sees the whole flow drawn. A plugin alone is a flow of
+one: its own graph is checked the same way. `GET /v1/flow-submissions/{id}` shows where it
+is and the check's findings.
 
 ## Human review
 

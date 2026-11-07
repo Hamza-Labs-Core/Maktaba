@@ -963,6 +963,26 @@ build fails when the two differ.
   every app escapes again and makes no request from one. `GET /api/panels` and the
   capability `plugin_panels`, which apps read missing as off.
 
+- **Automated checks and human review in the plugin store (Epic 54, story 54.16).** Every
+  submitted version is checked by the home's own rules, compiled to WebAssembly for the store's
+  Worker: the package format and limits (C1), the developer's signature, key and prefix (C2),
+  the manifest and its upper bound (C3), the host's import audit (C4, now a crate the host and
+  the store share), the capability audit (C5), both languages and no reserved word in names
+  (C6), malware rules (C7), the diff against the last version (C9) and the rating (C11). An
+  isolated runner with no secrets and its network cut (a GitHub Actions workflow, the fallback
+  of Cloudflare Containers) runs ClamAV, the plugin in the harness on its fixtures and on
+  generated events (C8) and the reproducible build (C10), and posts its report on a single-use
+  URL. A first version, a new capability, panel or `plugin-data.read`, any flag and a 5 %
+  sample go to a person; other updates are approved automatically and countersigned
+  `automated`. Reviewers (passkey required, re-confirmed within 5 minutes) see the queue and
+  the evidence on the store's own admin pages, and approve, reject with reasons from a fixed
+  list, or ask the developer; the review targets alert the store admins. maktaba.dev has the
+  review guidelines.
+  The flow check (C12) runs at the same step, with the shared flow checker of story 54.39:
+  a flow's members are submitted together and refused, reviewed or approved as a whole
+  (nothing in a refused flow is countersigned), with the cycle path or bad edge in English and
+  Arabic; cycles through the published flows it subscribes to count; the review pages draw the
+  whole flow.
 - **The Android apps send crash reports to the home, report problems, and the Remote reads the
   home's diagnostics.** Maktaba Remote for Android has **Diagnostics** in its account menu:
   Errors (a group's chart and lines, Mark seen, Resolve and Mute), Logs (search, and Follow a

@@ -71,6 +71,7 @@ const GUIDES = {
     "testing-and-packaging.md",
     "trust.md",
     "publishing.md",
+    "guidelines.md",
     "selling.md",
     "first-party.md",
   ],

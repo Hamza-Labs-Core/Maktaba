@@ -11,10 +11,12 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.workers.json --noEmit && tsc -p tsconfig.console.json --noEmit",
     "vectors": "tsx scripts/gen-vectors.ts",
     "vectors:check": "tsx scripts/gen-vectors.ts --check",
-    "test": "tsx scripts/gen-vectors.ts --check && npm run typecheck && vitest run",
+    "test": "tsx scripts/gen-vectors.ts --check && tsx scripts/gen-data.ts --check && npm run typecheck && vitest run",
     "build:wasm": "bash scripts/build-wasm.sh",
     "build:console": "vite build console",
-    "build": "bash scripts/build-wasm.sh && vite build console"
+    "build": "bash scripts/build-wasm.sh && vite build console",
+    "data": "tsx scripts/gen-data.ts",
+    "data:check": "tsx scripts/gen-data.ts --check"
   },
   "dependencies": {
     "argon2id": "1.0.1",
@@ -32,6 +34,7 @@
     "@vitejs/plugin-react": "4.7.0",
     "aws4fetch": "1.0.20",
     "jsdom": "25.0.1",
+    "smol-toml": "1.9.1",
     "tsx": "4.23.15",
     "typescript": "5.7.3",
     "vite": "6.4.5",

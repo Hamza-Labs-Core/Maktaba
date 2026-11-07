@@ -1,0 +1,9 @@
+{
+  "_comment": "Story 54.16 C7, the static half: byte patterns of known WebAssembly cryptominers and of tools no plugin carries, matched in plugin.wasm in the Worker (case-insensitive ASCII). The isolated runner also scans the package and the source archive with ClamAV. A reviewer adds a rule in a pull request.",
+  "rules": [
+    { "id": "miner.cryptonight", "patterns": ["cryptonight", "cn/r", "cn-heavy"], "all": false },
+    { "id": "miner.randomx", "patterns": ["randomx_init", "randomx_calculate_hash"], "all": false },
+    { "id": "miner.stratum", "patterns": ["stratum+tcp://", "stratum+ssl://", "mining.submit", "mining.subscribe"], "all": false },
+    { "id": "miner.known", "patterns": ["coinhive", "xmrig", "cryptoloot", "webminepool"], "all": false }
+  ]
+}

@@ -1,0 +1,15 @@
+[package]
+name = "maktaba-plugin-audit"
+version = "1.0.0"
+description = "The plugin import audit (Epic 54, stories 54.02 §6, 54.16 C4): the host's and the store's"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+maktaba-plugin-manifest = { path = "../pluginmanifest" }
+wasmparser = { version = "=0.261.0", default-features = false, features = ["std", "component-model", "validate"] }
+
+[dev-dependencies]
+wat = "1"

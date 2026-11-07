@@ -277,15 +277,17 @@ store:
   - *ci
   - 'store/**'
   - 'shared/plugins/**'
-  # the flow check the store's verification runs (story 54.39, 54.16 C12): the SDK's checker
-  - 'tools/plugin-sdk/js/src/**'
   # the Worker's WebAssembly is built from the home's package reader and manifest validator
   - 'plugind/Cargo.toml'
   - 'plugind/Cargo.lock'
   - 'plugind/crates/storewasm/**'
   - 'plugind/crates/pluginmanifest/**'
+  - 'plugind/crates/audit/**'
+  # the flow check the store's verification runs (story 54.39, 54.16 C12): the SDK's checker
+  - 'tools/plugin-sdk/js/src/**'
   - 'tools/ci/payment_provider_allowlist.py'
   - '.github/workflows/_store.yml'
+  - '.github/workflows/store-check-runner.yml'
   - '.github/workflows/store-deploy.yml'
   - '.github/workflows/store-weekly.yml'
 

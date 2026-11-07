@@ -134,6 +134,24 @@ fn base64_decode(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// One file of a package (after the package's checks), by its path.
+///
+/// # Safety
+/// Both pairs are buffers of this module's memory.
+#[no_mangle]
+pub unsafe extern "C" fn extract(ptr: *const u8, len: usize, path: *const u8, path_len: usize) -> *mut u8 {
+    answer((|| {
+        let name = std::str::from_utf8(slice(path, path_len))
+            .map_err(|_| pack::Refusal { code: "bad_input".into(), detail: "not UTF-8".into() })?;
+        let i = pack::inspect(slice(ptr, len))?;
+        i.entries
+            .into_iter()
+            .find(|e| e.name == name)
+            .map(|e| e.body)
+            .ok_or(pack::Refusal { code: "package_missing_file".into(), detail: name.to_string() })
+    })())
+}
+
 /// The package with signatures/store.sig set to sig.
 ///
 /// # Safety

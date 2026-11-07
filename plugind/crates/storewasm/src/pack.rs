@@ -200,6 +200,14 @@ fn sha_hex(b: &[u8]) -> String {
 
 /// A package as read.
 pub struct Inspected {
+    /// The component's import and export names and the host's import audit (54.16 C4):
+    /// None when it passed, else the refusal.
+    pub imports: Vec<String>,
+    pub exports: Vec<String>,
+    pub audit: Option<Refusal>,
+    /// The package's i18n words by language (54.16 C6).
+    pub strings: BTreeMap<String, Value>,
+    pub wasm_size: u64,
     pub manifest: serde_json::Map<String, Value>,
     pub manifest_text: Vec<u8>,
     pub files_json: Vec<u8>,
@@ -219,6 +227,11 @@ impl Inspected {
             "store_sig": text(&self.store_sig),
             "files": self.files.iter().map(|(p, s, n)| json!({"path": p, "sha256": s, "size": n})).collect::<Vec<_>>(),
             "unpacked_bytes": self.files.iter().map(|f| f.2).sum::<u64>(),
+            "imports": self.imports,
+            "exports": self.exports,
+            "audit": self.audit.as_ref().map(|r| json!({"code": r.code, "detail": r.detail})),
+            "strings": self.strings,
+            "wasm_size": self.wasm_size,
         })
         .to_string()
     }
@@ -342,7 +355,43 @@ pub fn inspect(packed: &[u8]) -> Result<Inspected, Refusal> {
         detail: errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; "),
     })?;
     let files = listed.into_iter().map(|(p, (s, n))| (p, s, n)).collect();
-    Ok(Inspected { manifest, manifest_text, files_json, developer_sig, store_sig, files, entries })
+    // C4: the host's own audit on the component's names
+    let wasm = bodies.get("plugin.wasm").cloned().unwrap_or_default();
+    let declared: Vec<String> = ["required", "optional"]
+        .iter()
+        .flat_map(|k| manifest["capabilities"][*k].as_array().cloned().unwrap_or_default())
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    let (imports, exports, audit) = match maktaba_plugin_audit::component_names(&wasm) {
+        Ok((i, e)) => {
+            let a = maktaba_plugin_audit::audit(&i, &e, &declared)
+                .err()
+                .map(|e| Refusal { code: e.code.into(), detail: e.detail });
+            (i, e, a)
+        }
+        Err(e) => (vec![], vec![], Some(Refusal { code: e.code.into(), detail: e.detail })),
+    };
+    let mut strings = BTreeMap::new();
+    for lang in ["en", "ar"] {
+        if let Some(b) = bodies.get(&format!("i18n/{lang}.json")) {
+            strings.insert(lang.to_string(), serde_json::from_slice(b).unwrap_or(Value::Null));
+        }
+    }
+    let wasm_size = wasm.len() as u64;
+    Ok(Inspected {
+        imports,
+        exports,
+        audit,
+        strings,
+        wasm_size,
+        manifest,
+        manifest_text,
+        files_json,
+        developer_sig,
+        store_sig,
+        files,
+        entries,
+    })
 }
 
 /// The package with signatures/store.sig set: manifest.toml, files.json, developer.sig, the
