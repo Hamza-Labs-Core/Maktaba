@@ -66,6 +66,7 @@ const GUIDES = {
     "flows.md",
     "installing.md",
     "testing-and-packaging.md",
+    "trust.md",
     "publishing.md",
     "selling.md",
   ],

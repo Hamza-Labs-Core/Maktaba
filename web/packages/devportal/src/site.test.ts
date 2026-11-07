@@ -227,6 +227,7 @@ describe("the allow-list", () => {
       "plugins/flows/index.html",
       "plugins/installing/index.html",
       "plugins/testing-and-packaging/index.html",
+      "plugins/trust/index.html",
       "plugins/publishing/index.html",
       "plugins/selling/index.html",
       "contributing/index.html",

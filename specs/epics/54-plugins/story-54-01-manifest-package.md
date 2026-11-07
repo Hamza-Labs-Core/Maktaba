@@ -56,6 +56,7 @@ The fields and their meaning are in the README §4.6. This story pins the rules:
 | `resources.*` | integers within the README §4.7 max; missing means default |
 | `stage[]` | 1–20 stages; `name` `[a-z][a-z0-9_]{0,39}` unique; `subject` in `video, series, season, library, catalog`; `export` names a function the component exports (checked in 54.02's audit); `version` ≥ 1; `may_request` names this plugin's stages only |
 | `stage.trigger[]` | `event` from `shared/plugins/events.toml` whose subject matches the stage's |
+| graph fields (story 54.39) | `stage.emits`, a trigger's `stage` or `plugin:<id>/<event>`, `event[]`, `depends[]`, `placement`, and `flow.toml` beside the manifest, which the manifest must match exactly |
 | `schedule[]` | `stage` is a catalog stage; `every_minutes_setting` names an integer field in the settings schema with `minimum` ≥ 15 |
 | `settings.schema` | a path in `ui/`; JSON Schema subset (54.11) |
 | `panel[]` | Phase 3 (54.20); accepted and ignored before |
