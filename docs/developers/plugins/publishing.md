@@ -192,6 +192,12 @@ Moderation is done by the store's reviewers, on store accounts, never by home ad
 data misuse, not working, being misleading, offensive content or copyright. Malware and data
 misuse reports are triaged within 24 hours.
 
+Ratings show on your listing page once a plugin has 5 of them. Reviews are plain text: links
+and markup show as typed, never as links. A report's reporter hears the outcome by email.
+Your listing's words come from your package's string tables at countersign, the keys your
+manifest names under `strings` (`name`, `summary`, `description`); when the version's release
+notes say the Arabic is machine translated, the Arabic page shows a badge saying so.
+
 ## Paid plugins (Phase 3)
 
 - Publishing free plugins is free. Selling needs a one-time $25 developer fee and active

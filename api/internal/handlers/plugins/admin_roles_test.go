@@ -21,6 +21,8 @@ var adminRoutes = []string{
 	"GET /api/plugins/catalog",
 	"GET /api/plugins/trust",
 	"PUT /api/plugins/dev.example.x/auto-update",
+	"POST /api/plugins/dev.example.x/rate",
+	"POST /api/plugins/dev.example.x/report",
 	"GET /api/plugins/store-account",
 	"POST /api/plugins/store-account/link",
 	"POST /api/plugins/store-account/poll",

@@ -14,6 +14,8 @@ const PUBLIC = new Set([
   "POST /v1/sessions/passkey",
   "POST /v1/homes/pair",
   "POST /v1/homes/pair/poll",
+  // reading ratings is public (54.18 §5)
+  "GET /v1/plugins/abc/ratings",
 ]);
 
 const sample = (re: string) =>

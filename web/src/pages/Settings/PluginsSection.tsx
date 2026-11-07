@@ -38,6 +38,7 @@ import {
 import { ApiError } from "../../lib/api";
 import { logsPageLink } from "../../lib/logIndex";
 import { phaseTone, phaseWord, reasonText } from "./componentWords";
+import { Browse } from "./Browse";
 import { StoreAccount } from "./StoreAccount";
 import "./plugins.css";
 
@@ -90,6 +91,7 @@ function PluginsInner() {
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -106,6 +108,21 @@ function PluginsInner() {
     void reload();
   }, [reload]);
 
+  if (browsing && !open) {
+    return (
+      <div className="mkt-settings__panel mkt-plugins">
+        <Button variant="link" onClick={() => setBrowsing(false)}>
+          {t("plugins.page.back")}
+        </Button>
+        <Browse
+          onInstalled={(id) => {
+            setBrowsing(false);
+            setOpen(id);
+          }}
+        />
+      </div>
+    );
+  }
   if (open) {
     return (
       <PluginPage
@@ -121,7 +138,12 @@ function PluginsInner() {
     <div className="mkt-settings__panel mkt-plugins">
       <div className="mkt-plugins__head">
         <h2>{t("plugins.page.title")}</h2>
-        <Button onClick={() => setInstalling(true)}>{t("plugins.install.button")}</Button>
+        <div>
+          <Button variant="ghost" onClick={() => setBrowsing(true)}>
+            {t("plugins.browse.button")}
+          </Button>
+          <Button onClick={() => setInstalling(true)}>{t("plugins.install.button")}</Button>
+        </div>
       </div>
       <p className="mkt-plugins__lead">{t("plugins.page.lead")}</p>
       <TrustBanner />

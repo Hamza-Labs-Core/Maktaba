@@ -64,6 +64,46 @@ export interface Plugin {
   auto_update?: boolean;
 }
 
+/** One version in the store's catalog. */
+export interface CatalogVersion {
+  version: string;
+  sha256: string;
+  size: number;
+  maktaba: string;
+  plugin_api: string;
+  platforms: string[];
+  capabilities: string[];
+  review_level: "automated" | "reviewed";
+  released: string;
+}
+
+/** A plugin as Browse shows it (GET /api/plugins/catalog, story 54.18 §1). */
+export interface CatalogEntry {
+  id: string;
+  developer: string;
+  names: Record<string, string>;
+  summaries: Record<string, string>;
+  category: string;
+  tags: string[];
+  rating_avg_x100: number;
+  rating_count: number;
+  installs: number;
+  machine_translated: string[];
+  versions: CatalogVersion[];
+  extra?: Record<string, unknown>;
+  newest: CatalogVersion | null;
+  installed?: string;
+  update?: string;
+  auto_update: boolean;
+  withdrawn?: { action: string; reason_code: string } | null;
+}
+
+export interface CatalogView {
+  plugins: CatalogEntry[];
+  trust: TrustStatus;
+  opening: boolean;
+}
+
 /** The store's signed lists on this home (GET /api/plugins/trust). */
 export interface TrustStatus {
   revoked_version: number;
@@ -184,6 +224,13 @@ export interface StoreLinkStatus {
 
 export const pluginsApi = {
   trust: () => api.get<TrustStatus>("/api/plugins/trust"),
+  catalog: (all = false) => api.get<CatalogView>(`/api/plugins/catalog${all ? "?all=true" : ""}`),
+  installFromStore: (id: string, version: string) =>
+    api.post<InstallResult>("/api/plugins/install", { store: { id, version } }),
+  rate: (id: string, stars: number, text: string) =>
+    api.post(`/api/plugins/${enc(id)}/rate`, { stars, text }),
+  report: (id: string, reason: string, details: string) =>
+    api.post(`/api/plugins/${enc(id)}/report`, { reason, details }),
   setAutoUpdate: (id: string, on: boolean) =>
     api.put<PluginDetail>(`/api/plugins/${enc(id)}/auto-update`, { on }),
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),

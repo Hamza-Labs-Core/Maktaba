@@ -14,7 +14,8 @@ export type Template =
   | "prefix_lapsed"
   | "review_backlog"
   | "report_urgent"
-  | "submission_decided";
+  | "submission_decided"
+  | "report_resolved";
 
 export interface Mail {
   to: string;
@@ -84,6 +85,10 @@ const WORDS: Record<Template, { en: [string, string]; ar: [string, string] }> = 
   report_urgent: {
     en: ["A plugin was reported: {reason}", "A {reason} report on {plugin} waits for triage (target: 24 hours)."],
     ar: ["أُبلغ عن إضافة: {reason}", "بلاغ {reason} عن {plugin} ينتظر الفرز (الهدف: 24 ساعة)."],
+  },
+  report_resolved: {
+    en: ["Your report was looked at", "Thank you for your report. The store looked at it: {outcome}."],
+    ar: ["نُظر في بلاغك", "شكرًا على بلاغك. نظر فيه المتجر: {outcome}."],
   },
   submission_decided: {
     en: ["{plugin} {version}: {decision}", "Your submission was {decision}. See the developer console for details."],

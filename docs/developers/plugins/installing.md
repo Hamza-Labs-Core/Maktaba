@@ -120,6 +120,28 @@ package comes from the CDN by its sha256 and is checked like any file.
 The routes, admin only (a viewer never makes the home fetch): `GET /api/plugins/catalog`,
 `GET /api/plugins/trust`, `PUT /api/plugins/{id}/auto-update {on}`.
 
+## Browsing the store
+
+Settings → Plugins → Browse the store (admins only) reads the catalog this home already keeps:
+opening it makes no store call of its own. It shows each plugin's newest version that this
+server's version, plugin API and platform can run; the switch "Show plugins that need a newer
+Maktaba" adds the rest, marked. Search matches names, summaries and tags in English and Arabic
+(letter forms and diacritics folded); filter by category, sort by rating, installs or newest.
+A plugin's page shows its description, what it can do in Maktaba's own words, its review
+level, the rating (shown from 5 ratings), its versions and Install (or Update). Install waits
+while the catalog has expired or the store's signing is not trusted.
+
+From the same page an admin rates the plugin (1 to 5 stars and optional text, sent to the
+store signed by this home, counted against the home's linked store account once the plugin has
+been installed for 24 hours) or reports it for malware, data misuse, not working, being
+misleading, offensive content, copyright or another reason. The routes: `POST
+/api/plugins/{id}/rate {stars, text}` and `POST /api/plugins/{id}/report {reason, details}`;
+a home that is not linked gets `409 store_not_linked`.
+
+The same catalog is public at plugins.maktaba.tv (and /ar, right to left): a page per plugin
+at `/p/<id>` with Open in my Maktaba (`maktaba://plugins/<id>`, which the installed apps open)
+and Download file for an offline install from a file.
+
 ## Linking a home to a store account
 
 A home needs a **plugin store account** only to rate plugins (and, in Phase 3, to buy them).

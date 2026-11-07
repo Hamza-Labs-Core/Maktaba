@@ -1,89 +1,145 @@
 {
-  "_comment": "Made by store/scripts/gen-data.ts from shared/plugins/capabilities.toml. Do not edit.",
+  "_comment": "Made by store/scripts/gen-data.ts from shared/plugins/capabilities.toml and web/src/i18n. Do not edit.",
   "capabilities": [
     {
       "name": "library.read",
       "risk": "low",
       "interface": "library",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Read your libraries",
+        "ar": "قراءة مكتباتك"
+      }
     },
     {
       "name": "transcript.read",
       "risk": "medium",
       "interface": "transcript",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Read transcripts",
+        "ar": "قراءة النصوص المفرّغة"
+      }
     },
     {
       "name": "media.read",
       "risk": "medium",
       "interface": "media",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Read video files",
+        "ar": "قراءة ملفات الفيديو"
+      }
     },
     {
       "name": "media.frames",
       "risk": "medium",
       "interface": "media",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "See still frames",
+        "ar": "رؤية لقطات ثابتة"
+      }
     },
     {
       "name": "media.audio",
       "risk": "medium",
       "interface": "media",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Hear audio",
+        "ar": "سماع الصوت"
+      }
     },
     {
       "name": "metadata.write",
       "risk": "medium",
       "interface": "write",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Change details",
+        "ar": "تعديل التفاصيل"
+      }
     },
     {
       "name": "tags.write",
       "risk": "low",
       "interface": "write",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Add tags",
+        "ar": "إضافة وسوم"
+      }
     },
     {
       "name": "chapters.write",
       "risk": "low",
       "interface": "write",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Add chapters",
+        "ar": "إضافة فصول"
+      }
     },
     {
       "name": "subtitles.write",
       "risk": "low",
       "interface": "write",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Add subtitles",
+        "ar": "إضافة ترجمات"
+      }
     },
     {
       "name": "artwork.write",
       "risk": "low",
       "interface": "write",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Set artwork",
+        "ar": "تعيين الصور"
+      }
     },
     {
       "name": "suggest",
       "risk": "low",
       "interface": "suggest",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Suggest changes",
+        "ar": "اقتراح تغييرات"
+      }
     },
     {
       "name": "jobs.enqueue",
       "risk": "low",
       "interface": "queue",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Queue its own work",
+        "ar": "جدولة عمله الخاص"
+      }
     },
     {
       "name": "notify.admin",
       "risk": "low",
       "interface": "notify",
-      "param": ""
+      "param": "",
+      "words": {
+        "en": "Notify admins",
+        "ar": "تنبيه المسؤولين"
+      }
     },
     {
       "name": "plugin-data.read",
       "risk": "medium",
       "interface": "exports",
-      "param": "plugin_id"
+      "param": "plugin_id",
+      "words": {
+        "en": "Read another plugin's data",
+        "ar": "قراءة بيانات إضافة أخرى"
+      }
     }
   ]
 }
