@@ -74,6 +74,20 @@ class ApproveTvTest {
         }
     }
 
+    /** Beside Approve a TV, the account menu opens the home's Diagnostics over every place (Epic 53). */
+    @Test @Config(qualifiers = "w393dp-h916dp-440dpi")
+    fun theAccountMenuOpensDiagnosticsOverThePlaces() {
+        compose.setContent { RemoteForTest(home, RemoteWindow.RazrFoldCover.info) }
+        compose.settledUntil { compose.has("approve-tv") }
+        compose.onNode(androidx.compose.ui.test.hasContentDescription(compose.activity.getString(CoreR.string.account))).performClick()
+        compose.settledUntil { compose.has("account-diagnostics") }
+        compose.onNode(hasTestTag("account-diagnostics")).performClick()
+        compose.settledUntil { compose.has("diagnostics") }
+        assertTrue(home.remote.diagnostics)
+        compose.onNode(hasTestTag("diag-back")).performClick()
+        compose.settledUntil { !compose.has("diagnostics") && compose.has("approve-tv") }
+    }
+
     private fun shoot(window: RemoteWindow, name: String, fontScale: Float = 1f) {
         compose.setContent { RemoteForTest(home, window.info, fontScale) }
         compose.settledUntil { compose.has("group-fingerprint:nas_partial_read") }

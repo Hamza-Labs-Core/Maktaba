@@ -141,12 +141,26 @@ fun ApproveTvButton(session: AppSession, user: User, client: ApiClient? = sessio
  * theme, switch home, sign out.
  */
 @Composable
-fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
+fun AccountMenu(
+    session: AppSession,
+    user: User,
+    themes: ThemeStore,
+    /** An app's own items (the Remote's Diagnostics), above the theme; given what closes the menu. */
+    extra: @Composable (close: () -> Unit) -> Unit = {},
+) {
     var open by remember { mutableStateOf(false) }
     var approving by rememberSaveable { mutableStateOf(false) }
     val home by session.current.collectAsState()
     val mode by themes.mode.collectAsState()
     ApproveSignInDialog(session, user, approving) { approving = false }
+    // Epic 53: crash reports to this home (off until turned on), Report a problem, My reports
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val consent = remember { com.hamzalabs.maktaba.core.diagnostics.CrashConsent(context) }
+    val client = signedInClient(session)
+    val report = LocalReportProblem.current
+    var crashesOn by remember(home) { mutableStateOf(home?.let(consent::isOn) == true) }
+    var mine by remember { mutableStateOf(false) }
+    if (mine && client != null) MyReportsDialog(client) { mine = false }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.account)) }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -159,6 +173,7 @@ fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
                 onClick = { open = false; approving = true },
                 modifier = Modifier.testTag("account-approve"),
             )
+            extra { open = false }
             HorizontalDivider()
             ThemeMode.entries.forEach { m ->
                 DropdownMenuItem(
@@ -166,6 +181,27 @@ fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
                     leadingIcon = { if (m == mode) Icon(Icons.Filled.Check, null) else Box(Modifier.size(24.dp)) },
                     onClick = { themes.set(m); open = false },
                 )
+            }
+            HorizontalDivider()
+            home?.let { h ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.crash_setting, h.label)) },
+                    leadingIcon = { if (crashesOn) Icon(Icons.Filled.Check, null) else Box(Modifier.size(24.dp)) },
+                    onClick = {
+                        crashesOn = !crashesOn
+                        consent.set(crashesOn, h)
+                        open = false
+                    },
+                    modifier = Modifier.testTag("account-crash-reports"),
+                )
+            }
+            if (report != null) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.report_title)) }, onClick = { open = false; report(null) },
+                    modifier = Modifier.testTag("account-report"))
+            }
+            if (client != null) {
+                DropdownMenuItem(text = { Text(stringResource(R.string.report_mine)) }, onClick = { open = false; mine = true },
+                    modifier = Modifier.testTag("account-my-reports"))
             }
             HorizontalDivider()
             DropdownMenuItem(text = { Text(stringResource(R.string.switch_home)) }, onClick = { open = false; session.switchHome() })
