@@ -537,7 +537,9 @@ func TestUnknownComponentLoggedOnce(t *testing.T) {
 	var buf bytes.Buffer
 	logger := slog.New(slog.NewTextHandler(lockedWriter{&mu, &buf}, nil))
 	r := newRunner(t, newClock(), func(o *Options) { o.Logger = logger })
-	desired := map[string]store.Desired{"livetv": enabled("livetv"), "from.the.future": enabled("from.the.future")}
+	desired := map[string]store.Desired{"livetv": enabled("livetv"), "from.the.future": enabled("from.the.future"),
+		// an installed plugin's entry (Epic 54): no loop of this host, ignored quietly
+		"plugin.dev.example.x": enabled("plugin.dev.example.x")}
 	for i := 0; i < 3; i++ {
 		r.Apply(desired)
 	}
@@ -548,7 +550,8 @@ func TestUnknownComponentLoggedOnce(t *testing.T) {
 	if n := strings.Count(out, "component=from.the.future event=component_unknown"); n != 1 {
 		t.Fatalf("from.the.future logged %d times:\n%s", n, out)
 	}
-	if !strings.Contains(out, "also.new") || strings.Contains(out, "component=livetv event=component_unknown") {
+	if !strings.Contains(out, "also.new") || strings.Contains(out, "component=livetv event=component_unknown") ||
+		strings.Contains(out, "plugin.dev.example.x") {
 		t.Fatalf("log:\n%s", out)
 	}
 }

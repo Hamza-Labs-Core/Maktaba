@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -149,8 +150,19 @@ type Reconciler struct {
 	// RSS reads the resident memory of running pids, in bytes (hostinfo.ProcessRSS; nil:
 	// not measured): sampled every rssEvery for the rows' rss_mb (story 51.14).
 	RSS func(pids []int) map[int]uint64
+	// PluginGate, when set, is a plugin entry's gate beyond its desired row (Epic 54,
+	// story 54.37 §3: incompatible, grants_needed, unreviewed_disallowed …): "" when it
+	// passes. An on-demand component (plugins.host) runs its process only while one of
+	// the plugins it serves is enabled, not held and passes (nil: every plugin passes).
+	PluginGate func(id string) string
+	// Overlay, when set, adjusts each status row before it is written (the plugins
+	// runner: plugins.host's sandbox_partial and the step of a sandbox_unavailable).
+	Overlay func(row *store.Status)
 
 	table gateTable
+	// plugins is the catalog with the installed plugins' entries (SetPluginCatalog);
+	// nil: Catalog
+	plugins atomic.Pointer[components.Catalog]
 
 	mu       sync.Mutex
 	desired  map[string]store.Desired
@@ -264,6 +276,21 @@ type loopRun struct {
 func NewReconciler(sup *Supervisor) *Reconciler {
 	return &Reconciler{table: sup, Catalog: sup.catalog, Machine: defaultReconcileMach, Bundle: "full"}
 }
+
+// cat is the catalog a pass reads: the plugins' merged one once set, else Catalog.
+func (r *Reconciler) cat() *components.Catalog {
+	if c := r.plugins.Load(); c != nil {
+		return c
+	}
+	if r.Catalog == nil {
+		return components.Default()
+	}
+	return r.Catalog
+}
+
+// SetPluginCatalog swaps in the catalog with the installed plugins' entries (story 54.37
+// §2): a pass reads it whole. nil goes back to Catalog.
+func (r *Reconciler) SetPluginCatalog(c *components.Catalog) { r.plugins.Store(c) }
 
 func (r *Reconciler) defaults() {
 	if r.Catalog == nil {
@@ -472,6 +499,9 @@ type decision struct {
 	conds    []store.Condition
 	gen      int64
 	evalReqs bool
+	// idle: an on-demand component that may run but serves nothing on now (story 54.37
+	// §4): its process is kept stopped, and it reads running with detail idle
+	idle bool
 }
 
 func cond(typ, status, reason string, params map[string]any) store.Condition {
@@ -514,10 +544,13 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 		dec.phase = components.PhaseOff
 		dec.conds = append(dec.conds, cond(CondReconciled, condFalse, loop.Forced, loop.ForcedParams))
 		return dec
-	case !has:
+	case !has && !comp.OnDemand:
 		dec.open = byDefault
 		dec.phase = components.PhaseOff
 		return dec
+	case !has:
+		// an on-demand process with no row follows its catalog default (on): whether it
+		// runs is the plugins' to say
 	case d.Want == components.WantAbsent:
 		dec.phase = components.PhaseNotInstalled
 		return dec
@@ -570,8 +603,32 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 			return dec
 		}
 	}
+	if comp.OnDemand && !r.needed(comp.ID, desired) {
+		dec.idle, dec.phase = true, components.PhaseRunning
+		return dec
+	}
 	dec.open = true
 	return dec
+}
+
+// needed reports whether an on-demand component serves a component that is on now: a
+// plugin entry that requires it, enabled, not held and passing its gates (PluginGate).
+func (r *Reconciler) needed(id string, desired map[string]store.Desired) bool {
+	for _, dep := range r.cat().Dependents(id) {
+		c, ok := r.cat().Get(dep)
+		if !ok || c.Kind != components.KindPlugin {
+			continue
+		}
+		d, has := desired[dep]
+		if !has || d.Want != components.WantEnabled || d.Hold != nil {
+			continue
+		}
+		if r.PluginGate != nil && r.PluginGate(dep) != "" {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func allMissing(ps []procView) bool {
@@ -600,10 +657,10 @@ func allDormant(ps []procView) bool {
 // a model, or any asset when Assets is nil, is not checked.
 func (r *Reconciler) requirements(id string, procs map[string][]procView, desired map[string]store.Desired) (met bool, unknown, off string) {
 	met = true
-	for _, req := range r.Catalog.Requires(id) {
+	for _, req := range r.cat().Requires(id) {
 		groupMet, groupUnknown, groupOff := false, "", ""
 		for _, alt := range req.AnyOf {
-			comp, ok := r.Catalog.Get(alt)
+			comp, ok := r.cat().Get(alt)
 			d, has := desired[alt]
 			if ok && comp.Kind == components.KindAsset && r.Assets != nil && has &&
 				strings.HasPrefix(comp.SourceFor(r.Platform), "pack:") && !r.Assets.Installed(alt) {
@@ -662,11 +719,11 @@ func (r *Reconciler) modelWait(id string) (store.Condition, bool) {
 	if r.Assets == nil {
 		return store.Condition{}, false
 	}
-	for _, req := range r.Catalog.Requires(id) {
+	for _, req := range r.cat().Requires(id) {
 		var models []string
 		have := false
 		for _, alt := range req.AnyOf {
-			comp, ok := r.Catalog.Get(alt)
+			comp, ok := r.cat().Get(alt)
 			if !ok || comp.Kind != components.KindAsset || !components.IsModelSource(comp.SourceFor(r.Platform)) {
 				continue
 			}
@@ -733,8 +790,8 @@ func phaseOfProcs(ps []procView) string {
 // reconciled is the components the supervisor has something of here, in Order().
 func (r *Reconciler) reconciled(procs map[string][]procView) []*components.Component {
 	var out []*components.Component
-	for _, id := range r.Catalog.Order() {
-		comp, _ := r.Catalog.Get(id)
+	for _, id := range r.cat().Order() {
+		comp, _ := r.cat().Get(id)
 		if len(procs[id]) > 0 || r.loopOf(id) != nil {
 			out = append(out, comp)
 		}
@@ -903,7 +960,7 @@ func (r *Reconciler) applyLoops(ctx context.Context, decs map[string]decision) i
 			r.logf("%s: its component %s is off: its loop is stopped", l.Name, l.component)
 			moved++
 		case run != nil && run.stopping && !run.warned:
-			comp, _ := r.Catalog.Get(l.component)
+			comp, _ := r.cat().Get(l.component)
 			grace := time.Duration(components.DefaultStopGraceS) * time.Second
 			if comp != nil && comp.StopGraceS > 0 {
 				grace = time.Duration(comp.StopGraceS) * time.Second
@@ -962,6 +1019,15 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		if !dec.open && phase != components.PhaseDraining && (comp.Switchable || r.SafeMode) && !r.Off {
 			phase = dec.phase
 		}
+		// an on-demand process that serves nothing on now: it would run (story 54.37 §4),
+		// and reads running, idle; a failed one (a sandbox that cannot start) says so
+		if dec.idle && phase == components.PhaseRunning {
+			for _, p := range own {
+				if p.FailReason != "" {
+					phase, reason = components.PhaseFailed, p.FailReason
+				}
+			}
+		}
 		// open and running, but a model it needs is not on this machine (or its install
 		// failed): it can do nothing yet, and says what it waits on
 		if dec.open && (phase == components.PhaseRunning || phase == components.PhaseDegraded ||
@@ -990,8 +1056,14 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		if mb, ok := r.rssOf(comp.ID, own); ok {
 			detail["rss_mb"] = mb
 		}
+		if dec.idle && phase == components.PhaseRunning {
+			detail["idle"] = true
+		}
 		if len(detail) > 0 {
 			row.Detail = detail
+		}
+		if r.Overlay != nil {
+			r.Overlay(&row)
 		}
 		out = append(out, row)
 	}

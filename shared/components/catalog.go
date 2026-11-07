@@ -85,7 +85,7 @@ const (
 var (
 	Platforms = []string{"darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"}
 	Groups    = []string{"core", "media", "library", "processing", "livetv", "integrations",
-		"cluster", "system", "runtimes", "models", "tools", "languages"}
+		"cluster", "system", "runtimes", "models", "tools", "languages", "plugins"}
 	Bundles   = []string{"full", "core", "worker"}
 	LoopHosts = []string{"supervisor", "api", "streaming", "pipeline"}
 )
@@ -112,7 +112,7 @@ var topKeys = []string{"schema", "phases", "reasons", "features", "component"}
 var componentKeys = []string{"id", "kind", "switchable", "group", "title_key", "desc_key",
 	"stages", "processes", "loops", "requires", "wants", "conflicts", "settings", "platforms",
 	"placement", "resources", "drain", "stop_grace_s", "licence", "features", "bundles", "since",
-	"source", "sources", "files", "in_payload", "gated"}
+	"source", "sources", "files", "in_payload", "gated", "on_demand"}
 
 // Drain is how a component with stages stops (README §4.5).
 type Drain struct {
@@ -178,6 +178,9 @@ type Component struct {
 	InPayload  bool
 	// Gated: a model whose download needs the owner's Hugging Face login (Cohere).
 	Gated bool
+	// OnDemand: a process component whose process runs only while a component it serves
+	// is enabled and passes its gates (Epic 54, story 54.37 §4: plugins.host).
+	OnDemand bool
 }
 
 // HasPart reports whether the kind includes part (stages, process or loop).
@@ -259,6 +262,7 @@ type rawComponent struct {
 	Files      []File            `toml:"files"`
 	InPayload  *bool             `toml:"in_payload"`
 	Gated      bool              `toml:"gated"`
+	OnDemand   bool              `toml:"on_demand"`
 }
 
 type rawCatalog struct {
@@ -410,7 +414,7 @@ func build(r rawComponent) *Component {
 		Wants: nonNil(r.Wants), Conflicts: nonNil(r.Conflicts), Settings: nonNil(r.Settings),
 		Platforms: nonNil(r.Platforms), Placement: r.Placement, Licence: r.Licence,
 		Features: nonNil(r.Features), Bundles: nonNil(r.Bundles), Since: r.Since, Source: r.Source,
-		Sources: r.Sources, Files: r.Files, Gated: r.Gated, Drain: Drain{GraceS: DefaultDrainGraceS}}
+		Sources: r.Sources, Files: r.Files, Gated: r.Gated, OnDemand: r.OnDemand, Drain: Drain{GraceS: DefaultDrainGraceS}}
 	if r.Switchable != nil {
 		comp.Switchable = *r.Switchable
 	}
@@ -441,6 +445,14 @@ func build(r rawComponent) *Component {
 }
 
 func validate(c *Component, where string, features []string, bad func(string, ...any)) {
+	// a plugin's entry exists only at run time (Epic 54, story 54.37 §1): a release never
+	// ships one by mistake
+	if c.Kind == KindPlugin || strings.HasPrefix(c.ID, PluginPrefix) {
+		bad("%s: kind plugin and ids starting %q are run-time plugin entries, never in the catalog", where, PluginPrefix)
+	}
+	if c.OnDemand && !c.HasPart(KindProcess) {
+		bad("%s: on_demand is for a component with a process", where)
+	}
 	core := strings.HasPrefix(c.ID, "core.")
 	if core && c.Switchable {
 		bad("%s: core.* components must have switchable = false", where)
@@ -852,6 +864,7 @@ func (c *Catalog) Dump() ([]byte, error) {
 			"drain":     map[string]any{"grace_s": comp.Drain.GraceS, "checkpoint": comp.Drain.Checkpoint},
 			"resources": map[string]any{"ram_mb": comp.Resources.RAMMB, "disk_mb": comp.Resources.DiskMB, "gpu": comp.Resources.GPU},
 			"source":    comp.Source, "sources": comp.Sources, "in_payload": comp.InPayload, "gated": comp.Gated,
+			"on_demand": comp.OnDemand,
 		})
 	}
 	doc := map[string]any{"schema": c.Schema, "phases": c.Phases, "reasons": c.Reasons,

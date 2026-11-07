@@ -162,7 +162,38 @@ fn a_failed_sandbox_step_exits_78() {
         assert_eq!(out.status.code(), Some(78), "{step}");
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(err.contains(&format!("sandbox_unavailable:{step}")), "{step}: {err}");
+        // the supervisor reads the step from the run folder (its status params)
+        let file = std::fs::read_to_string(h.data.join("run/plugins/sandbox_unavailable")).unwrap();
+        assert_eq!(file, *step);
     }
+}
+
+/// 54.07 §4 step 4: --preload checks a package in the sandbox and answers on stdout,
+/// binding no socket; a package that names another plugin is refused.
+#[test]
+#[cfg_attr(windows, ignore = "the host runs only inside an AppContainer: covered by plugins-sandbox")]
+fn preload_checks_a_package_and_exits() {
+    let h = home();
+    let pkg = h.data.join("plugins").join(ID).join("1.0.0_test");
+    let run = |id: &str| {
+        Command::new(env!("CARGO_BIN_EXE_maktaba-plugind"))
+            .arg("--data")
+            .arg(&h.data)
+            .arg("--preload")
+            .arg(&pkg)
+            .args(["--plugin-id", id, "--plugin-version", "1.0.0"])
+            .output()
+            .unwrap()
+    };
+    let ok = run(ID);
+    let line = String::from_utf8_lossy(&ok.stdout);
+    assert_eq!(ok.status.code(), Some(0), "{line} {}", String::from_utf8_lossy(&ok.stderr));
+    assert!(line.contains(r#""ok":true"#), "{line}");
+    assert!(!h.data.join("run/plugins/plugind.sock").exists(), "a preload bound the socket");
+    let bad = run("dev.example.other");
+    let line = String::from_utf8_lossy(&bad.stdout);
+    assert_eq!(bad.status.code(), Some(1), "{line}");
+    assert!(line.contains(r#""ok":false"#) && line.contains("error_code"), "{line}");
 }
 
 /// On Windows outside an AppContainer the host refuses to run at all.

@@ -1,9 +1,13 @@
 # Testing and packaging
 
-> **Status: coming in the next release.** The SDK, the `mkp` tool, the templates, the local
-> test harness and installing from a file are the last part of Phase 1. What a plugin builds
-> against is on `main` already: the [manifest](manifest.md), the WIT and the API in the
-> [plugin reference](reference.md). This page describes the design in
+> **Status: built for Rust (Phase 1).** `mkp` (in `plugind/crates/mkp`) makes a Rust project
+> (`mkp new rust <id> <folder>`), checks a package the way the home does (`mkp check`), runs a
+> stage in the harness, the host's own code against a mock plugin API answering from a fixtures
+> file (`mkp test --stage <name> --fixtures api.json`), and packs the `.mkplugin` (`mkp pack`).
+> An admin installs the file from Settings, Plugins, with Allow unreviewed plugins on. The
+> TypeScript, Python and Go templates, signing (`mkp pack --sign`, `mkp keys`), `mkp run` and
+> developer mode are not built yet. The manifest is in [manifest](manifest.md), the WIT and the
+> API in the [plugin reference](reference.md). The rest of this page is the design in
 > [story 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > and
 > [story 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md).

@@ -150,6 +150,28 @@ pipeline reads, with `rev_<revision12>/model.json` as their record. A crash is
 tidied at the next boot (staging deleted, `current` repointed). Status rows are
 part `packs`. `packs = "off"` installs nothing new and reports what is on disk.
 
+**Plugins (Epic 54).** On a whole home on Postgres (not Windows yet), the supervisor
+builds the plugin host, `maktaba-plugind` (role `plugins`, the catalog's `plugins.host`),
+dormant: the reconciler starts it only while a plugin is enabled, not held and passing its
+gates, and reports `plugins.host` running with `idle` otherwise. Exit 78 (its OS sandbox
+could not be applied) is not restarted: `plugins.host` reads failed, `sandbox_unavailable`,
+with the failed step; a partial sandbox reads degraded, `sandbox_partial`. The API gets the
+plugin API's unix socket (`MAKTABA_PLUGIN_API_SOCKET`), the pipeline the host's dispatch
+socket (`MAKTABA_PLUGIND_SOCKET`), both in `<data>/run` (or `/tmp/maktaba-<hash>/` when that
+path is too long for a unix socket). The API streams a package to `POST /plugins/install` on
+the loopback admin (per-boot token): it is unpacked by the safe reader, validated, checked
+in the sandboxed host (`maktaba-plugind --preload`) and put in
+`<state>/plugins/<id>/<version>_<sha12>/`. The plugins runner then follows `plugin_installs`
+(the `current` pointer, one previous version kept), removes a plugin whose want is `absent`
+once its jobs drained (its queued jobs dropped, its data kept), reports part `plugins`, and
+restarts the main pipeline worker when the installed set changes (it loads plugin stages at
+its start). Each plugin's log lines go to `<data>/logs/segments/plugin.<id>/`.
+
+```toml
+[plugins]
+install = "on"           # on (default) | off: refuse every install (plugins_install_off)
+```
+
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve
 --role streaming` runs the streaming service as a cluster node: the home's

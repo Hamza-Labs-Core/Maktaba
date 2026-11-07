@@ -47,9 +47,11 @@ export type FlowLanesProps = Pick<QueuesSnapshot, "stages" | "queues" | "pools" 
   extensions?: Extension[] | null;
 };
 
-type ViewLane = Lane | "extensions";
-/** Extension-owned queues form their own lane, whatever lane the graph says. */
-const viewLane = (s: StageInfo): ViewLane => (s.extension ? "extensions" : s.lane);
+type ViewLane = Lane | "extensions" | "plugins";
+/** Extension-owned queues form their own lane, whatever lane the graph says; a plugin's
+ *  (extension plugin:<id>, Epic 54 story 54.13) are the Plugins lane. */
+const viewLane = (s: StageInfo): ViewLane =>
+  s.extension?.startsWith("plugin:") ? "plugins" : s.extension ? "extensions" : s.lane;
 
 export function FlowLanes({ stages, queues, pools, flows, extensions, live }: FlowLanesProps) {
   const { t, n } = useI18n();
@@ -107,7 +109,7 @@ export function FlowLanes({ stages, queues, pools, flows, extensions, live }: Fl
     return c.pending + c.running + c.failed_open > 0;
   });
   const [mediaOpen, setMediaOpen] = useState<boolean | null>(null);
-  const lanes: ViewLane[] = ["episodes", "speech", "seasons", "channels", "extensions"];
+  const lanes: ViewLane[] = ["episodes", "speech", "seasons", "channels", "extensions", "plugins"];
 
   return (
     <div className="mkt-q-flow">

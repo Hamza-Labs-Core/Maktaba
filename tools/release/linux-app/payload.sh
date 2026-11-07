@@ -4,6 +4,7 @@
 # ffmpeg.
 #
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
+#              maktaba-plugind (Epic 54: the plugin host, Rust; cargo builds it for this machine)
 #   postgres/  bin/ lib/ share/          PostgreSQL 16 with pgvector, and the libraries it
 #                                        links that a minimal system can lack, all on an
 #                                        $ORIGIN rpath
@@ -64,7 +65,7 @@ case "$(uname -m)" in
     *)             die "unsupported architecture $(uname -m) (x86_64 or aarch64)" ;;
 esac
 tools=(curl sha256sum)
-[ "$FETCH_ONLY" = 1 ] || tools+=(go uv pnpm tar patchelf make gcc)
+[ "$FETCH_ONLY" = 1 ] || tools+=(go cargo uv pnpm tar patchelf make gcc)
 for t in "${tools[@]}"; do
     command -v "$t" >/dev/null 2>&1 || die "$t is required"
 done
@@ -148,6 +149,13 @@ cp "$REPO_ROOT/cmd/maktaba-server/bin/linux-$GOARCH/maktaba-server" \
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=linux GOARCH="$GOARCH" CGO_ENABLED=0 \
     go build -trimpath -ldflags "-buildid= -s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)
+
+# --- the plugin host (Epic 54, story 54.03: plugins.host; Wasmtime, seccomp and Landlock) -------
+# built on this architecture's own runner: the payload of an architecture is built there
+log "building maktaba-plugind for linux/$GOARCH"
+RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$REPO_ROOT=." \
+    cargo build --locked --release --quiet --manifest-path "$REPO_ROOT/plugind/Cargo.toml" -p maktaba-plugind
+install -m 0755 "$REPO_ROOT/plugind/target/release/maktaba-plugind" "$OUT/bin/"
 
 # --- PostgreSQL ----------------------------------------------------------------------------------
 log "PostgreSQL $POSTGRES_VERSION"
