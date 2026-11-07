@@ -224,6 +224,11 @@ provider's own fees are shown to developers as the provider states them.
   home needs no change: it replaces `plugin_entitlements` with what the store returns, so the
   old home drops the plugin at its next refresh. The console's Account page has a Purchases
   section with Move, in English and Arabic.
+- **As built: Buy on plugins.maktaba.tv.** A paid plugin's listing page (the catalog's
+  `price` not `free`) links to `/buy/<plugin>/home`: the signed-in buyer chooses one of the
+  account's linked homes in a scriptless form, whose POST (the store's own Origin only,
+  rate-limited, a home linked to this account now) makes the same purchase intent the home's
+  Buy asks for and continues on the same price and pay pages.
 
 ### 7. Refunds, disputes and tax: owned by the store
 
