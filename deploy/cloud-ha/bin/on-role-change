@@ -77,7 +77,7 @@ case "${role}" in
         log "${cluster}: ${action}: this node leads"
         move_ip
         if [ "${FIP_ADD_ADDR:-1}" = 1 ] && [ -n "${FLOATING_IP:-}" ]; then
-            ip addr show dev "${FIP_DEV:-eth0}" | grep -qw "${FLOATING_IP}" \
+            [[ " $(ip -o addr show dev "${FIP_DEV:-eth0}") " == *" ${FLOATING_IP}/"* ]] \
                 || sudo -n ip addr add "${FLOATING_IP}/32" dev "${FIP_DEV:-eth0}" || log "could not add ${FLOATING_IP}"
         fi
         active start

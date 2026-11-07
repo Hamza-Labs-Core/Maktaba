@@ -186,7 +186,7 @@ func (h *ha) homesOnHA(n int) []string {
 		_, _, slug := simhome.Creds(i)
 		hm := simhome.Start(i, ws, h.cluster.api.URL, simhome.Options{ServerID: ids[slug], BaseWait: time.Second, MaxWait: 10 * time.Second, PingEvery: 10 * time.Second})
 		h.mu.Lock()
-		h.cluster.homes = append(h.cluster.homes, hm)
+		h.homes = append(h.homes, hm)
 		h.mu.Unlock()
 		slugs[i] = slug
 	}

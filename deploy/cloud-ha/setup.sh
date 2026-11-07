@@ -50,7 +50,7 @@ apt-get install -y -qq chrony ufw curl ca-certificates gnupg jq gettext-base pyt
 systemctl enable --now chrony >/dev/null
 
 install_etcd() {
-	if command -v etcd >/dev/null && etcd --version | grep -q "${ETCD_VERSION#v}"; then return; fi
+	if command -v etcd >/dev/null && [[ "$(etcd --version)" == *"${ETCD_VERSION#v}"* ]]; then return; fi
 	local arch tar url
 	arch="$(dpkg --print-architecture)"
 	tar="etcd-${ETCD_VERSION}-linux-${arch}.tar.gz"
@@ -78,7 +78,7 @@ if [ "${role}" != witness ]; then
 	apt-get install -y -qq postgresql-16 redis-server >/dev/null
 	# Patroni runs the cluster, not the distribution's unit
 	systemctl disable --now postgresql >/dev/null 2>&1 || true
-	if [ ! -x /opt/patroni/bin/patroni ] || ! /opt/patroni/bin/patroni --version | grep -q "${PATRONI_VERSION}"; then
+	if [ ! -x /opt/patroni/bin/patroni ] || [[ "$(/opt/patroni/bin/patroni --version)" != *"${PATRONI_VERSION}"* ]]; then
 		python3 -m venv /opt/patroni
 		/opt/patroni/bin/pip install -q "patroni[psycopg3,etcd3]==${PATRONI_VERSION}"
 	fi
