@@ -98,7 +98,7 @@ var (
 func TestPanelKeysHoldPlainText(t *testing.T) {
 	f := newPanelFixture(t)
 	tok := f.mint(t).Token
-	for _, v := range []string{`[{"label":"x","value":"https://evil.example/x.png"}]`, `[{"label":"<b>x</b>","value":"1"}]`, `[{"label":"a‮b","value":"1"}]`} {
+	for _, v := range []string{`[{"label":"x","value":"https://evil.example/x.png"}]`, `[{"label":"<b>x</b>","value":"1"}]`, `[{"label":"a\u202eb","value":"1"}]`} {
 		if code, c := f.put(t, tok, "loudness", v); code != 400 || c != CodeTextForbidden {
 			t.Fatalf("%s: %d %s", v, code, c)
 		}

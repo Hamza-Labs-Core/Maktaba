@@ -245,7 +245,7 @@ func (h *Panels) subject(w http.ResponseWriter, r *http.Request) (kind, id strin
 		return "", "", false
 	}
 	// a subject the user cannot see is 404, as its own page is
-	if lib == "" || !(p.AccessAllLibraries || p.HasLibrary(lib)) {
+	if lib == "" || (!p.AccessAllLibraries && !p.HasLibrary(lib)) {
 		panelError(w, http.StatusNotFound, "not_found")
 		return "", "", false
 	}
