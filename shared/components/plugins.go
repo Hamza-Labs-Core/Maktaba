@@ -158,7 +158,7 @@ func IsPlugin(id string) bool { return strings.HasPrefix(id, PluginPrefix) }
 // Requires, Dependents and Components answer for both. An entry must be a plugin entry
 // whose requirements exist and whose stages no other component owns.
 func With(static *Catalog, entries []*Component) (*Catalog, error) {
-	c := &Catalog{Schema: static.Schema, Phases: static.Phases, Reasons: static.Reasons, Features: static.Features,
+	c := &Catalog{Schema: static.Schema, Phases: static.Phases, Reasons: static.Reasons, Features: static.Features, FeatureAny: static.FeatureAny,
 		components: slices.Clone(static.components), byID: map[string]*Component{}, byStage: map[string]*Component{},
 		byLoop: map[string]*Component{}}
 	for k, v := range static.byID {
