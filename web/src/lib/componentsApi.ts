@@ -142,6 +142,8 @@ export interface ComponentView {
   reason_params?: Record<string, unknown> | null;
   /** this machine's last or running install or removal of an asset (story 51.16) */
   progress?: InstallProgress | null;
+  /** a plugin entry's own name and summary by language (Epic 54) */
+  names?: Record<string, Record<string, string>> | null;
 }
 
 export interface AuditRow {
