@@ -94,6 +94,7 @@ async def test_convert_wave_5_is_identical(
         template,
         bundle=firstparty._raw(),
         stages=STAGES,
+        group="files",
         seed=seeder(root, media),
         files={"library": root, "thumbs": tmp_path / "thumbs"},
         monkeypatch=monkeypatch,
