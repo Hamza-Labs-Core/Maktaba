@@ -189,6 +189,9 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, provider string, ev b
 		if n, _ := res.RowsAffected(); n == 0 {
 			return nil, nil // an older event delivered late
 		}
+		if err := setExtraStreams(ctx, tx, uid, effective, ev.ExtraStreams); err != nil {
+			return nil, err
+		}
 		return nil, SetEffectivePlan(ctx, tx, uid, effective)
 
 	case billingpkg.EventPaymentSucceeded, billingpkg.EventPaymentFailed:
@@ -322,4 +325,22 @@ func firstNonEmpty(xs ...string) string {
 		}
 	}
 	return ""
+}
+
+// setExtraStreams keeps the extra streams the subscription carries (item 3, story 50.19 §6) on
+// the account and each of its homes, where the relay's cached home reads them: the trigger
+// sends tier_changed, so the relay allows them within a second. A plan without the add-on, or
+// no live plan, has none.
+func setExtraStreams(ctx context.Context, tx *sql.Tx, uid, plan string, extra int) error {
+	if t, ok := billingpkg.Tiers[plan]; !ok || !t.ExtraStreamsAddOn || extra < 0 {
+		extra = 0
+	}
+	if extra > 100 {
+		extra = 100
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET extra_streams = $2 WHERE user_id = $1`, uid, extra); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `UPDATE servers SET extra_streams = $2 WHERE owner_user_id = $1 AND extra_streams <> $2`, uid, extra)
+	return err
 }

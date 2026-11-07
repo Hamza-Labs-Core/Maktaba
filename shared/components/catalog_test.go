@@ -366,8 +366,9 @@ func TestFeatureAny(t *testing.T) {
 			t.Errorf("%s: got %v, want %q", file, err, want)
 		}
 	}
-	if len(Default().FeatureAny) != 0 {
-		t.Errorf("the embedded catalog's feature_any is %v; story 50.15 adds remote_access with cloud.direct", Default().FeatureAny)
+	// story 50.15: remote_access is the relay or direct access
+	if g := Default().FeatureAny["remote_access"]; len(g) != 1 || !slices.Equal(g[0], []string{"cloud.relay", "cloud.direct"}) {
+		t.Errorf("the embedded catalog's feature_any is %v", Default().FeatureAny)
 	}
 }
 

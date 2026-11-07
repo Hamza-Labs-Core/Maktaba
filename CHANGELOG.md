@@ -14,13 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
-- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
-  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
-  lists only what fits; on the home's network and over direct access nothing is capped. A
-  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
-  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
-  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
-  too many devices playing, or the home too busy to prepare the video.
+- **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
+  keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
+  (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
+  month's relayed use by quality, the limit and what was spent, and says at 80 % and 100 %; the
+  account is emailed too. Usage goes to the payment provider hourly, queued through an outage and
+  never billed twice or past the limit. Prices are not set yet, so it stays off.
 - **The relay enforces each plan (Epic 50 story 50.19, part 2).** A home on Free (no relay)
   gets `402 relay_needs_plan` through the relay, and keeps its tunnel for direct access. With
   `relay.plans.enforce` on, Basic's relayed requests carry `X-Maktaba-Relay-Cap-Kbps` (3000,
@@ -1772,6 +1771,15 @@ build fails when the two differ.
   http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
   developer's machine. maktaba.dev: Testing and packaging.
 
+- **Direct access from the internet, the home's side (Epic 50 story 50.15, part 2).** In
+  Settings → Storage & discovery an admin turns it on: the home opens a port on its router
+  (UPnP-IGD, NAT-PMP or PCP, renewed every 20 minutes, or a port forwarded by hand), notices a
+  shared address (CGNAT), makes its own key and asks Maktaba Cloud for a certificate for
+  `*.<home id>.<domain>` (the key never leaves it), and serves the same pages and API over HTTPS
+  on port 8444. The page shows the cloud's outside check, with Check now. Free on every plan:
+  `remote_access` is on with either the relay or direct access (`feature_any`). Off by default;
+  the `cloud.direct` component is on in the Full bundle where the home is linked to the cloud.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -1850,6 +1858,14 @@ build fails when the two differ.
   been copied.
 - On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
+
+- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
+  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
+  lists only what fits; on the home's network and over direct access nothing is capped. A
+  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
+  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
+  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
+  too many devices playing, or the home too busy to prepare the video.
 
 ### Fixed
 

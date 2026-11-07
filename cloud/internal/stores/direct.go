@@ -72,15 +72,13 @@ type Cert struct {
 	Error                        string
 }
 
-// PutCSR takes a home's CSR. A home's first gets its domain and CA chosen by pick (the most room
-// this week); a renewal keeps them, so its names never change. overflow says the week's budgets
-// were all used (an alert).
-func (d *Direct) PutCSR(ctx context.Context, serverID string, csr []byte, pick func([]direct.DomainUse) (string, string, bool), now time.Time) (Cert, bool, error) {
+// Assign gives a home its domain and CA: a home's first ask has them chosen by pick (the most
+// room this week); later asks get the same ones, so its names never change. overflow says the
+// week's budgets were all used (an alert). The home makes its CSR for the name it is given.
+func (d *Direct) Assign(ctx context.Context, serverID string, pick func([]direct.DomainUse) (string, string, bool), now time.Time) (Cert, bool, error) {
 	c, err := d.Cert(ctx, serverID)
 	if err == nil {
-		_, err = d.DB.ExecContext(ctx, `UPDATE direct_certs SET csr = $2, error = NULL, updated_at = now() WHERE server_id = $1`, serverID, csr)
-		c.CSR = csr
-		return c, false, err
+		return c, false, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return Cert{}, false, err
@@ -93,11 +91,26 @@ func (d *Direct) PutCSR(ctx context.Context, serverID string, csr []byte, pick f
 	if domain == "" {
 		return Cert{}, false, errors.New("no direct-name domain is configured")
 	}
-	c = Cert{ServerID: serverID, HomeID: direct.HomeID(serverID), Domain: domain, CA: ca, CSR: csr}
+	c = Cert{ServerID: serverID, HomeID: direct.HomeID(serverID), Domain: domain, CA: ca}
 	_, err = d.DB.ExecContext(ctx, `
-        INSERT INTO direct_certs (server_id, home_id, domain, ca, csr) VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (server_id) DO UPDATE SET csr = EXCLUDED.csr, updated_at = now()`,
-		serverID, c.HomeID, domain, ca, csr)
+        INSERT INTO direct_certs (server_id, home_id, domain, ca) VALUES ($1, $2, $3, $4)
+        ON CONFLICT (server_id) DO NOTHING`, serverID, c.HomeID, domain, ca)
+	if err != nil {
+		return Cert{}, false, err
+	}
+	// a concurrent ask may have won: the row is the answer
+	c, err = d.Cert(ctx, serverID)
+	return c, overflow, err
+}
+
+// PutCSR queues a home's CSR for the worker, assigning its domain first if it has none (Assign).
+func (d *Direct) PutCSR(ctx context.Context, serverID string, csr []byte, pick func([]direct.DomainUse) (string, string, bool), now time.Time) (Cert, bool, error) {
+	c, overflow, err := d.Assign(ctx, serverID, pick, now)
+	if err != nil {
+		return Cert{}, false, err
+	}
+	_, err = d.DB.ExecContext(ctx, `UPDATE direct_certs SET csr = $2, error = NULL, updated_at = now() WHERE server_id = $1`, serverID, csr)
+	c.CSR = csr
 	return c, overflow, err
 }
 
