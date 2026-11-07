@@ -403,6 +403,14 @@ func overlayXY(position string, margin int) (string, string) {
 // -copyts keeps the blocks' channel-timeline timestamps, so a restarted
 // muxer continues the same timeline; restart also marks an HLS
 // discontinuity.
+//
+// -correct_ts_overflow 0: the timestamps are the wall clock's modulo 2^33 (story
+// 33.4), so they pass through as they are. ffmpeg's demuxer otherwise "corrects" a
+// stream whose first timestamp falls within 60 s before the 33-bit wrap by taking
+// 2^33 off; the output then started at zero, 30-40 s ahead of the wall clock, for
+// as long as that muxer ran (a muxer restart or a failover in that minute, issue
+// #790). A muxer running across the wrap needs no correction: its HLS and TS
+// outputs write timestamps modulo 2^33 as well.
 func MuxerArgs(p OutputProfile, outDir string, restart bool) []string {
 	p = p.normalised()
 	dir := filepath.ToSlash(outDir)
@@ -414,6 +422,7 @@ func MuxerArgs(p OutputProfile, outDir string, restart bool) []string {
 		"-hide_banner", "-nostats", "-loglevel", "warning",
 		"-fflags", "+genpts", "-copyts",
 		"-probesize", "1000000", "-analyzeduration", "1500000",
+		"-correct_ts_overflow", "0",
 		"-f", "mpegts", "-i", "pipe:0",
 		"-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
 		"-f", "hls",
