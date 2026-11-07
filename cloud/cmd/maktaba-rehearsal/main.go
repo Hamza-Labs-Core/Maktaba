@@ -5,6 +5,8 @@
 //	maktaba-rehearsal fakeacmedns  the DNS-01 provider for Pebble (fakeacmedns)
 //	maktaba-rehearsal fipfront     the internet's side of the Floating IP (fipfront):
 //	                               FIPFRONT_LISTEN (:80) -> FIPFRONT_TARGET (relay.test:80)
+//	maktaba-rehearsal fakegateway  a home's router (fakegateway): NAT for FAKEGW_LAN and NAT-PMP
+//	                               on FAKEGW_LISTEN (:5351), its ports opened on FAKEGW_WAN
 //
 // fakehcloud reads: FAKEHCLOUD_ADDR (:8080), FAKEHCLOUD_DELAY (5s),
 // FAKEHCLOUD_TOKEN, DOCKER_SOCKET (/var/run/docker.sock), FAKEHCLOUD_NETWORK,
@@ -15,16 +17,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakeacmedns"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakegateway"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakehcloud"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fipfront"
 )
@@ -38,7 +43,7 @@ func env(k, def string) string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns|fipfront")
+		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns|fipfront|fakegateway")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -46,6 +51,8 @@ func main() {
 		runFakeHCloud()
 	case "fakeacmedns":
 		runFakeACMEDNS()
+	case "fakegateway":
+		runFakeGateway()
 	case "fipfront":
 		listen, target := fipfrontAddrs()
 		ln, err := net.Listen("tcp", listen)
@@ -122,4 +129,25 @@ func parseServers(s string) (map[int64]string, map[int64]string, error) {
 		names[n], ips[n] = name, ip
 	}
 	return names, ips, nil
+}
+
+func runFakeGateway() {
+	wan, err := netip.ParseAddr(env("FAKEGW_WAN", ""))
+	if err != nil {
+		log.Fatalf("fakegateway: FAKEGW_WAN: %v", err)
+	}
+	lan, err := netip.ParsePrefix(env("FAKEGW_LAN", ""))
+	if err != nil {
+		log.Fatalf("fakegateway: FAKEGW_LAN: %v", err)
+	}
+	if err := fakegateway.Masquerade(lan); err != nil {
+		log.Fatal(err)
+	}
+	pc, err := net.ListenPacket("udp", env("FAKEGW_LISTEN", ":5351"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("fakegateway: NAT for %s out of %s; NAT-PMP on %s", lan, wan, pc.LocalAddr())
+	g := &fakegateway.Gateway{WAN: wan, Rules: fakegateway.IPTables{WAN: wan}}
+	log.Fatal(g.Serve(context.Background(), pc))
 }
