@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 
 	"net/http"
@@ -57,6 +58,9 @@ func main() {
 		runAdmin(os.Args[2:])
 	case "license":
 		runLicense(os.Args[2:])
+	case "logs":
+		// W's role (53.17): every node's lines, kept and indexed
+		runLogs(os.Args[2:])
 	case "version":
 		runVersion()
 	default:
@@ -184,6 +188,17 @@ func runMigrate(args []string) {
 func newLogger(role string) *slog.Logger {
 	opts := logOptions(role)
 	obs.SetService(opts.Service)
+	// this node's keeper and the forwarding to W (53.17 §2), when the environment sets them;
+	// W's own role keeps no second copy in the folder it serves
+	if role != "logs" {
+		node := opts.Node
+		if node == "" {
+			node, _ = os.Hostname()
+		}
+		if tee := logPath(opts.Service, node); tee != nil {
+			opts.Output = io.MultiWriter(os.Stdout, tee)
+		}
+	}
 	l := slog.New(obs.Handler(mlog.Init(opts).Handler(), opts.Service, obs.Default))
 	slog.SetDefault(l)
 	return l

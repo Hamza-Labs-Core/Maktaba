@@ -11,6 +11,7 @@ WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux
 COPY cloud/go.mod cloud/go.sum ./cloud/
 COPY shared/log/go ./shared/log/go
+COPY shared/logkeeper/go ./shared/logkeeper/go
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go mod download
