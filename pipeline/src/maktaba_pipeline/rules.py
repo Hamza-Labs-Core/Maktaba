@@ -55,6 +55,7 @@ from .schedule.tv_settings import (
     RepairConfig,
     TvStripConfig,
 )
+from .direct_settings import DirectConfig
 from .search_settings import SearchConfig
 from .sharepath.auto import StorageConfig
 from .stt.placement import TranscriptionConfig
@@ -225,6 +226,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                "searches each user keeps"),
     "plugin_compute": (PluginComputeConfig, "Plugin models", "which language model plugins "
                        "ask, and how much of the home's models each plugin may use a day"),
+    "direct": (DirectConfig, "Direct access", "apps outside the home reach it directly over "
+               "HTTPS, without the relay, when the router allows it: the port on the router "
+               "and a port forwarded by hand"),
 }  # fmt: skip
 
 

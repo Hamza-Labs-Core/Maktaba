@@ -54,6 +54,15 @@ func TestDirectState(t *testing.T) {
 	if err != nil || again.Domain != "direct-a.example" {
 		t.Fatalf("renewal: %+v %v", again, err)
 	}
+	// a home asks its name before its CSR: assigned once, the same on the next ask, not pending
+	c := home()
+	n1, _, err := d.Assign(ctx, c, pick, now)
+	if err != nil || n1.Domain == "" || n1.HomeID != direct.HomeID(c) || n1.CSR != nil {
+		t.Fatalf("a name: %+v %v", n1, err)
+	}
+	if n2, _, err := d.Assign(ctx, c, pick, now); err != nil || n2.Domain != n1.Domain {
+		t.Fatalf("asked again: %+v %v", n2, err)
+	}
 	pend, _ := d.PendingCSRs(ctx, 10)
 	if len(pend) != 2 {
 		t.Fatalf("pending: %d", len(pend))

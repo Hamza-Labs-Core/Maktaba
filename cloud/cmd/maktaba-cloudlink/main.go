@@ -81,10 +81,12 @@ func main() {
 			Secret:   creds.Secret,
 		},
 		Proxy: &cloudlink.LocalProxy{BaseURL: cfg.localAPI},
+		// direct remote access (story 50.15): the home's API says when to use it
+		Direct: &cloudlink.Direct{},
 	}
 
 	// Local admin surface: GET /admin/cloud-link, POST /admin/cloud-link/links,
-	// GET /admin/cloud-link/license.
+	// GET /admin/cloud-link/license, GET and POST /admin/cloud-link/direct.
 	rep := &cloudlink.LinkReporter{CloudAPI: cfg.cloudAPI, Creds: creds}
 	adminSrv := &http.Server{
 		Addr:              cfg.adminAddr,
@@ -115,6 +117,7 @@ func adminMux(sup *cloudlink.Supervisor, rep *cloudlink.LinkReporter) http.Handl
 	mux.Handle("/admin/cloud-link", cloudlink.AdminHandler(sup))
 	mux.Handle("/admin/cloud-link/links", cloudlink.LinksHandler(rep))
 	mux.Handle("/admin/cloud-link/license", cloudlink.LicenseHandler(rep))
+	mux.Handle("/admin/cloud-link/direct", cloudlink.DirectHandler(sup.Direct))
 	return mux
 }
 

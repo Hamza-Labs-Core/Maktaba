@@ -1764,6 +1764,62 @@
     {
       "bundles": [
         "full",
+        "core"
+      ],
+      "conflicts": [],
+      "desc_key": "components.cloud.direct.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "cloud.direct",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:direct_listener",
+        "api:direct_portmap",
+        "api:direct_cert"
+      ],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "cloud.link"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.direct",
+        "toml:direct.listen"
+      ],
+      "since": "0.3.93",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.cloud.direct.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
         "worker"
       ],
       "conflicts": [],
@@ -3328,6 +3384,7 @@
     "logs.index",
     "cloud.link",
     "cloud.relay",
+    "cloud.direct",
     "cluster",
     "discovery.mdns",
     "queue_health",
