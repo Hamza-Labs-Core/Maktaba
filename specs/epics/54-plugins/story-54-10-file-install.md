@@ -55,6 +55,12 @@ Before Phase 2 ships, every file is unreviewed. The dialog says so.
 installs from an unpacked folder, watches it, and on change re-validates, re-preloads and
 reloads (drain, switch) within 5 s. Only with Allow unreviewed plugins on; marked Development;
 never kept after the CLI stops unless `--keep`. The dev loop uses the same host and sandbox.
+As built (`api/plugins_cli.go`): it packs the folder as `mkp pack` does (hidden files and a
+`target` or `node_modules` folder left out), installs it turned on with review level
+`development` and the plugin's English name as the confirmation, reads the folder every 0.5 s,
+and installs a changed one as the same plugin's update (the supervisor's runner drains the old
+folder and switches); a package the home refuses leaves the running version. On Ctrl-C it
+sets the plugin's component `absent`, unless `--keep`.
 
 ### 5. CLI parity
 
@@ -63,7 +69,10 @@ call the same admin routes, for headless homes, the way `maktaba-server componen
 through to `maktaba-api components …` (`api/components_cli.go`, Epic 51 F16): the same flags
 (`--yes`, `--json`, `--dsn`), the preview and `Continue? [y/N]` before a write, and the same
 exit codes (0 ok, 1 refusal, 2 a write with no terminal and no `--yes`, 3 no database).
-`maktaba-server components enable plugin.<id>` works too.
+`maktaba-server components enable plugin.<id>` works too. As built: `maktaba-api plugins`
+calls the plugins lifecycle and the components service directly (the routes' own code, the same
+audit), with the supervisor `maktaba-server` names in the environment for an install's unpack;
+an unreviewed install takes the plugin's name as `--name`, as the dialog asks for it.
 
 ## Acceptance criteria
 

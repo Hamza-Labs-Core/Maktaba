@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.94
-up_to_commit: 2f242fd0a
-built_from: v0.3.93
+tag: v0.3.95
+up_to_commit: 169f92521
+built_from: v0.3.94
 ---
 
-# Trail snapshot: v0.3.94
+# Trail snapshot: v0.3.95
 
 ## Keep doing
 
@@ -14,7 +14,7 @@ built_from: v0.3.93
 - Verify every claim yourself before acting on it, and check a spec's claims against the code. (d20261014-pc-dizquetv-origin-and-rules, d20261031-standing-rules, #587)
 - Build tools for the work instead of doing it by hand; a recurring manual step becomes a feature; rules are settings with a UI, not code. (d20261014-pc-dizquetv-origin-and-rules, d20261020-pc-coordinator-merge-rules)
 - No placeholder features: a feature is built or it is not shown. (#128, d20261014-pc-dizquetv-origin-and-rules)
-- Review every PR yourself; the Copilot reviewer check and its quota comment are noise. Merge with a merge commit on the reviewed head, every check present and green (main has no branch protection). (d20261031-standing-rules, d20261020-pc-coordinator-merge-rules, #314, #212)
+- Review every PR yourself; the Copilot reviewer check and its quota comment are noise. Merge with a merge commit on the reviewed head, every check present and green (main has no branch protection). Watchers only report: merge by hand after reading `gh pr checks`, and count a check that could not be read as not green. (d20261031-standing-rules, d20261020-pc-coordinator-merge-rules, #314, #212, d20261107-watcher-merged-early)
 - Fold small Apple fixes into one integration PR; fix agents push branches, not PRs. (#539)
 - Reuse the home's own code where another service must agree with it: the plugin store reads packages with the home's Rust reader built to wasm, runs the import audit as a crate shared with the host (`plugind/crates/audit`) and the flow check as #759's checker. A wrapper that walks the graph again is a second implementation; the store only loads data. Build a store check from the shared corpus's own cases, not hand-made fixtures. (#753, #770)
 - Keep worktrees under `.claude/worktrees/`, never `$TMPDIR`; remove merged worktrees and branches. (d20261031-standing-rules, d20261102-worktree-cleanup)
@@ -31,15 +31,16 @@ built_from: v0.3.93
 - Tags are pushed by the scheduled release session with a person's credentials (`next_tag.py --green`): the newest main commit whose CI and rehearsal both concluded `success`, as the next patch; no workflow tags (`auto-tag.yml` is removed). Trail-only commits are never tagged; check remote tags before picking a version. A tag workflow missing a leg is re-run (release.yml) or dispatched by hand on its tag (the others); release.yml is never dispatched. (#730, #725, #699, #563, #553, d20261031-release-history-to-v0344, d20261020-pc-coordinator-merge-rules)
 - Keep the Plex token on the home only; nodes go through the home. Keep secrets out of output, commits and exports; only the owner types credentials. (#78, d20261031-standing-rules, d20261020-pc-coordinator-merge-rules)
 - Use live data only for justified recovery: tests use scratch Postgres; pause stages through `POST /api/queues/{stage}/pause`, never raw SQL. (d20261031-standing-rules, #524)
+- During a long restore watch `pg_stat_progress_create_index` (blocks_done against blocks_total) for the estimate. (d20261107-restore-vector-index)
 - On the PC: restart services only through their sign-in tasks; check an installer's sha256, then the owner runs it. Prove Windows behaviour on CI's runner, not the owner's PC. (d20261025-pc-windows-app-node, #457)
 - Prefer keyless federation over downloaded service-account keys. (#557)
 - No Stripe or Stripe-owned services for any payment, in specs or code; payment providers are pluggable (`PaymentProvider`, each in its own folder), Adyen for Platforms the first real one. Check a brief's suggestion against the trail before building it. (#591, #593, #735)
 
 **Tests and CI**
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
-- Fix flaky tests at the root; read the log first, a flaky-looking test is often a real bug (in Epic 53's series as many failures were real as were flakes; a flaky TempDir cleanup was a shutdown bug). A UI failure is the change's only if the same code fails the shard elsewhere and the failing test does not move between runs. Before calling a UI test a flake, read what it waits for: a self-dismissing element checked after slower queries races a loaded simulator; fix the order, not the timeout. Meet test budgets at the cause, never by raising caps or splitting tests. (d20261031-standing-rules, #364, #635, #271, #716, d20261106-epic53-ci-flakes, #673)
+- Fix flaky tests at the root; read the log first, a flaky-looking test is often a real bug (in Epic 53's series as many failures were real as were flakes; a flaky TempDir cleanup was a shutdown bug). A UI failure is the change's only if the same code fails the shard elsewhere and the failing test does not move between runs. Before calling a UI test a flake, read what it waits for: a self-dismissing element checked after slower queries races a loaded simulator; fix the order, not the timeout. Read the xcresult's activity times (`xcresulttool get test-results activities`) and the job log's `t = …` lines before touching a timeout: they tell a slow runner from a state that never came. Meet test budgets at the cause, never by raising caps or splitting tests. (d20261031-standing-rules, #364, #635, #271, #716, d20261106-epic53-ci-flakes, #673, #803)
 - Turn a "should never happen" rule into a test-time error and run the whole suite under it. (#662)
-- Verify each new test fails without its fix (origin/main's sources on a WIP commit); a security alert is fixed only once a test fails on main for it. Latch tests that hold a read's answer reproduce read/write races every time. (#679, #613, #667, #734)
+- Verify each new test fails without its fix (origin/main's sources on a WIP commit); a security alert is fixed only once a test fails on main for it. Latch tests that hold a read's answer reproduce read/write races every time. A test of running without an optional dependency hides that dependency itself; `uv sync --all-extras` locally finds the ones that do not. (#679, #613, #667, #734, #811)
 - Jobs run only when their code changes; run the same check on every PR that the release tag runs. (#528, #519)
 - Tests get a server's ports from the server once open; tests bind 127.0.0.1. (#571, #451, #127)
 - Test SQLite runs with `synchronous=OFF` and a memory journal, set in the DSN. Scratch Postgres uses `initdb -E UTF8` and `-k ''`. (#521, #540, #467, #543, d20261031-tooling-local-gotchas)
@@ -65,13 +66,14 @@ built_from: v0.3.93
 - Check a guide written before its code against the code (the WIT, `capabilityOf`), not the spec. (#704)
 - A PR that ships user-facing work updates maktaba.dev in the same PR, in English and Arabic (`devportal_follows.py` warns; `No-Portal-Change:` says it needs nothing); run `npm run build`, `npm run scan` and `npm test` in `web/packages/devportal` before pushing. (#703, #723)
 - Before changing a log format or adding a fixed loopback port, grep the e2e tests: they match `key=value` output and template `server.toml` for two machines on one host. (#673, #686)
-- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. A timing assertion times only the thing it is about (the runaway-job test counted guest compile time). On a loaded Mac hold the median and log the tail: a p95 assertion is a flake source, and local absolute timings are unusable (profile call counts still are). (#690, #738, #694, #696, #742, #740)
+- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. A timing assertion times only the thing it is about (the runaway-job test counted guest compile time). On a loaded Mac hold the median and log the tail: a p95 assertion is a flake source, and local absolute timings are unusable (profile call counts still are). Measure a calibration constant and report its raw times: a clamp at 1 hid a reference 3.6 times off. Measure with `timeit` before putting a regex in a hot path. (#690, #738, #694, #696, #742, #740, #802)
 - Measure a flaky suite under real load before and after (three concurrent full copies on the Mac reproduce CI's web failures every time) and report both counts; profile a slow test (`--pool=forks --execArgv=--cpu-prof`): most of its time was page code. (#746)
 - Web: window key handlers that read render state use `useWindowKeydown`; formatters made in render come from `lib/intl`. (#746, #698)
-- Write a cross-language check once as an algorithm with a deterministic output, and share test vectors across Go, Rust and TypeScript (Ed25519 is deterministic, so a fixed seed suffices). Write the algorithm down to its tie-breaks first, generate the corpus with a script, write the goldens from one language, review them by hand and hold the other languages to them. (#751, #733, #743, #759)
+- Write a cross-language check once as an algorithm with a deterministic output, and share test vectors across Go, Rust and TypeScript (Ed25519 is deterministic, so a fixed seed suffices). Write the algorithm down to its tie-breaks first, generate the corpus with a script, write the goldens from one language, review them by hand and hold the other languages to them. Run every hostile case through the code a home runs (the loop), not only the verifier. (#751, #733, #743, #759, #778)
 - Chain a workflow that must agree with CI on a commit after CI (`workflow_run` on success) rather than running both beside each other on main. (#737)
 - After editing a workflow, load every workflow with PyYAML (`tools/ci/tests`): actionlint passes a step `name:` containing ": ". (#727)
 - A rehearsal check reads the previous release's state before the update instead of keeping a hand list or comparing versions, which break each time the previous release moves. (#748)
+- Run one real UI test for each new native page, not only a compile; run `:player:testDebugUnitTest :player:verifyRoborazziDebug` before pushing an Android layout change (only `verifyRoborazziDebug` compares screenshots). Judge a build by its exit status. (#787)
 - Look at every recorded screenshot reference: the first Roborazzi shots showed overflowing chips and a clipped tab row that no assertion caught. (#745)
 - When an earlier PR says something is reachable, check that something actually serves it. On an RTL page check the Arabic at phone width before pushing. (#739)
 
@@ -96,6 +98,9 @@ built_from: v0.3.93
 - `git reset --soft origin/main` to squash after a fetch: a moved origin/main silently reverted three merged PRs. Reset to the branch's own base sha. (#701)
 - Naming a stale host in backticks in prose (CHANGELOG, docs): the foreign-domain lint flags it; write the name out of the text. (#700)
 - Cleaning up background load with `kill $(jobs -p)` (each agent command runs in a new shell, so the job table is empty) or hiding a cleanup's errors with `2>/dev/null`: sixteen orphaned `yes` loops held the Mac for three days and WindowServer crashed, ending the login session and every session's watchers. (d20261107-orphaned-cpu-load)
+- Loosening a failing check on main inside an unrelated PR: look for the PR that fixes it (a lowered floor would have hidden moved stages with no titles). (#787)
+- Filtering Gradle output through `grep "^e:"` with `-q` to judge a compile: it hid a failed build. (#787)
+- Letting a watcher merge: its `grep -P` errored on macOS's BSD grep, matched nothing, and four PRs merged with their checks still running. (d20261107-watcher-merged-early)
 
 ## What we learned
 
@@ -112,6 +117,7 @@ built_from: v0.3.93
 - Plugins on joined machines: a manifest's `placement` (`home`, `any`, `gpu`) says where stages run; a machine fetches packages from the home and checks digest, names and signatures before writing anything; it serves reads and media itself and sends every write, quota, lineage and compute call to the home's API, so `plugin_tables_guard` stays and off, hold and revocation reach it at its next call. (#767)
 - An admin order kept as a list of ids, the rest after it in install order, needs no row per plugin and no migration, and keeps a plugin's place through a reinstall (`plugins.panel_order`). (#783)
 - Plugin job metrics come from the breaker's `plugin_health` rows read at each scrape (job time is a gauge per quantile over the last 20, not a histogram); only the home registers the collector, or every joined machine exports the same rows again. A new plugin admin route goes into `TestEveryPluginRouteIsAdminOnly`'s list. (#801)
+- The home's catalog loop (`api:plugins_catalog`) reads the revocation head every 5 minutes and the list and catalog when they change, from the store's CDN, each verified by the chain of trust, the newest seen winning. A store `disable` holds the plugin within one poll and refuses start, enable, install, update and rollback (`409 plugin_revoked`). Offline the kept lists age into a warning that stops no plugin. The trust state keeps each catalog's sha256, so a catalog repeating the newest version with other bytes is refused. (#778)
 - Store flows are one upload of their members, refused, reviewed or approved as a whole; what a flow records is its own members, events and subscriptions, not the upstream plugins the checker pulled in. (#770)
 
 **CI and releases**
@@ -121,8 +127,8 @@ built_from: v0.3.93
 - CodeQL reads test code too (a `<script>`-stripping regexp is a high finding), and a flagged line in a PR's diff is fixed in that PR. (#739)
 - CodeQL's models: its Go path query does not follow `CanonicalUnder`'s prefix check but recognises a `strings.Contains(x, "..")` refusal; clear-text logging matches variable names (credential file paths named `passwords`); a wrapper relaying a captured response must set its own non-HTML content type. Teach it with such changes before dismissing; dismissal comments are capped at 280 characters. (#734)
 - A run green except for the ignored iPhone/iPad shards is not tagged; web-release.yml is not a tag workflow. (#699)
-- Any `https://host` string in the servers' Go code (a CSP included) trips `TestOutboundHostsAreListed` in lint, unit and integration at once: a browser-only host goes in `notCalled` with its reason, a called one in `ports.Outbound` with its off switch. A rehearsal failure about loops or components the PR never touched usually means main moved: merge origin/main first. (#752)
-- The Python logger costs ~50 µs p50 / 80 µs p99 on CI against 4.6 / 10 µs for Go; its bench warns (`LOGBENCH_PY_STRICT=1` fails). The `event` field is still scrubbed: `make lint-log` covers the pipeline's sources, not every caller. An `lru_cache` on a function taking a large frozen dataclass hashes it on every call. (#740)
+- Any `https://host` string in the servers' Go code (a CSP included) trips `TestOutboundHostsAreListed` in lint, unit and integration at once: a browser-only host goes in `notCalled` with its reason, a called one in `ports.Outbound` with its off switch. Gate a new outbound host once, in the one place that makes the request. A rehearsal failure about loops or components the PR never touched usually means main moved: merge origin/main first. (#752, #778)
+- The Python logger's redaction (a case-insensitive regex alternation per value) and the ring's second JSON encoding were most of its cost; with plain `in` checks and the console line reused, CI went from p50 55 / p99 82 µs to 12.4 / 18.0 µs and its `log-bench` is strict. On the nightly Mac a p99 is 6-10 times its p50 for Go and Python alike, so there it stays a warning; the nightly runs the Python bench even when a Go bench fails. In CPython `any()` over a generator costs twice a plain loop. An `lru_cache` on a function taking a large frozen dataclass hashes it on every call. (#740, #802)
 - CI builds the Desktop Player on x64 only, so arm-only native-library gaps show first at release; reproduce with `docker --platform linux/arm64 ubuntu:22.04` and `ldd -r`. (#725)
 - A public repository cannot use an Action from a private one; GitHub shows a workflow that does not parse by its path and starts no run. (#702)
 - With one concurrency group GitHub keeps one running and one pending run; cancel-in-progress on busy main starved tagging, so it is PR-only. (#547, #563)
@@ -132,7 +138,7 @@ built_from: v0.3.93
 - PR caches can evict main's from the 10 GB Actions cache. (#615, #618)
 - A plain CI re-run reuses the old merge ref; merge main and push. (#166)
 - promtool unit tests compare annotations too; a missing sample (`_`) is not a failed scrape (`stale` is); an SLO over several probes takes the best probe before the burn rate. A `mktemp -d` folder is 0700 and unreadable to an image running as `nobody` on Linux CI, hidden by Docker Desktop; chmod it before mounting. (#727)
-- macOS bash 3.2 treats an empty `"${arr[@]}"` as unbound under `set -u`; use `${arr[@]+"${arr[@]}"}`. (#739)
+- macOS bash 3.2 treats an empty `"${arr[@]}"` as unbound under `set -u`; use `${arr[@]+"${arr[@]}"}`. macOS's `/usr/bin/grep` has no `-P`: match a tab with `grep -E "$(printf '\t')x"`; a script that passed in zsh with a GNU grep on PATH says nothing about bash. (#739, d20261107-watcher-merged-early)
 - A recovery script reaches a node through a hook (`NODE_EXEC`), so the workflow uses SSH, the rehearsal `docker exec` and a shell test a stand-in. The fake Hetzner API checks its token before any path, its own controls included. A status incident template keeps its comment after the front matter. Runbooks name real commands only. Shell tests stop stand-in servers by saved PID with errors visible. (#780)
 - Release fixtures built for an old state owner break on the next push after the change ships; drive state the way the owner does. (#656)
 - An update watch that polled every pipeline's version with a 3 s timeout under load about 90 never saw ten healthy minutes, and a hand-stopped pipeline ran it to `watch_timeout`: 0.3.90 rolled back. Liveness is the supervisor's job; a watch confirms each process's version once per pid. (d20261107-update-watch-rollback)
@@ -143,7 +149,7 @@ built_from: v0.3.93
 - Android: names live in `res/values*/strings.xml`, not `resValue`; App Store names must be unique ("Maktaba Remote"). (#564, #560)
 
 **Database and migrations**
-- Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start. (#669, #692, #678, #672, #657, #693, #762, #767)
+- Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start; at each renumber rebuild `cluster_copy_excluded()` on the newest definition (Up adds, Down restores that one) and raise the three SchemaRev constants together. (#669, #692, #678, #672, #657, #693, #762, #767, #778)
 - A new table keeps `maktaba_worker`'s default grants (compat-prev) and refuses joined machines' writes with a `BEFORE` trigger; it must be decided for the node copy (`copyReviewed` or `cluster_copy_excluded()`). A new failure cause needs its label and help; a new pool needs its `worker_pools` seed. (#663, #692, #693)
 - migration-lint refuses a plain `CREATE INDEX` even on a new empty table: `CONCURRENTLY`, in its own statement block of a NO TRANSACTION file. (#731)
 - The SQLite migration runner rewrites `ADD COLUMN IF NOT EXISTS` only when it is the one statement of its `StatementBegin` block. (#733)
@@ -162,6 +168,7 @@ built_from: v0.3.93
 - pgBackRest `backup` writes one repository per run (loop `--repo=1`, `--repo=2`); `archive-push` writes all. MinIO images are gone; SeaweedFS's S3 gateway stands in once a round trip proves it warm. (#724)
 - Tests sharing a Postgres must not terminate each other's LISTEN connections; tag them with `application_name`. One connection hears notices in commit order. (#608, #471)
 - A stage version bump re-queues every subject; to fix a subset change only their fingerprint and add a self-ending sweep. (#525)
+- A restore builds the HNSW vector index (`segment_embeddings_hnsw`, 28 M rows) after the other indexes, alone, with a third of RAM (at most 32 GB) and up to 7 workers through PGOPTIONS, falling back to no workers and then the server's settings; with the server's 64 MB it was 9% done after two hours while the home was down. Building it in the background after the swap was rejected: a rollback's older release would not know to build it. (d20261107-restore-vector-index)
 - Restores raced the PC's node-copy grant; after a hand recovery check vectors, post-data and ACLs. (#395, #433)
 
 **Platforms**
@@ -186,7 +193,7 @@ built_from: v0.3.93
 - Signed-list versions never go below the copy already on the CDN, or a restored database publishes a list homes refuse as a rollback. Split an `Authorization` value on its first separator only: splitting on `=` cuts base64 padding. (#753)
 - A feed on another origin needs a CSP change (`connect-src` was `'self'`) in the home's headers and in the cloud's player and remote editions, which copy them (`cloud/internal/handlers/relay/editions.go`). "Through the cloud" is the home's address under `relay.maktaba.tv`: match the suffix with its dot, or `evilrelay.maktaba.tv` passes. (#752)
 - A WIT variant gains no case without breaking 1.0 guests; a plugin loop refusal reuses `scope` with the API code `plugin_loop`. (#751, #762)
-- Wasmtime's component linker matches a guest's `maktaba:plugin/x@1.0.0` import against the host's `@1.1.0` by semver (old guests keep working while no shared type changes) and links a newer minor too, so the import audit (`plugin_api_newer`) alone refuses it, and a WIT minor bump moves only the audit's version check. `cargo build` of the guests misses a WIT change (`generate!` does not track the file): touch the guest sources, check with `strings x.wasm | grep maktaba:plugin`. (#731, #762)
+- Wasmtime's component linker matches a guest's `maktaba:plugin/x@1.0.0` import against the host's `@1.1.0` by semver (old guests keep working while no shared type changes) and links a newer minor too, so the import audit (`plugin_api_newer`) alone refuses it, and a WIT minor bump moves only the audit's version check. `cargo build` of the guests misses a WIT change (`generate!` does not track the file): touch the guest sources, check with `strings x.wasm | grep maktaba:plugin`. A host test running prebuilt guests (`plugind/guests`) fails with a missing stage when they are stale: `make plugind-guests` before `cargo test`. (#731, #762, #778)
 - Go's `rules.Effective` does not apply the pipeline's `ENV_DEFAULTS` (`MAKTABA_OLLAMA_URL`); Go code reading those rules applies the variable itself. (#731)
 - `propagate.finish` refuses any request outside a stage's `may_request`: a cross-plugin event needs its own allowance (`plugin-event:`), never a `may_request` entry. The engine's graph validation refuses request cycles through non-monotone stages with a GraphError that stops every graph build, so the home's flow check refuses a self-requesting plugin before it is enabled. (#759, #762)
 - First-party plugins: moved stage code stays unchanged when the runner's database maps each SQL text to its registered name, run under `SET LOCAL ROLE maktaba_fp_<plugin>`; their code in the pipeline wheel needs a hatch build hook (`force-include` also applies to editable installs, and its stale copy shadows the tree); `display_title` calls the language model, so it moves with `compute.generate` (wave 4). (#750)
@@ -203,10 +210,10 @@ built_from: v0.3.93
 - Under Robolectric a bare `waitUntil` only polls; the v1 compose rule runs effects unconfined. Use settling waits and v2 rules. (#508)
 - Lazy grids anchor on the first visible key, so out-of-order answers open a page scrolled. A BackHandler always composed keeps its old order. (#529, #523)
 - A read that started before a write must not overwrite it on screen: one `ReadOrder` per platform. (#613, #616, #624)
-- SwiftUI: an identifier on a wrapping Section replaces its children's; a `LazyHStack` in a horizontal scroll can stay 0 pt; not every `INFOPLIST_KEY_*` is generated (check the built Info.plist). (#541, #569, #579)
+- SwiftUI: an identifier on a wrapping Section replaces its children's; a `LazyHStack` in a horizontal scroll can stay 0 pt; not every `INFOPLIST_KEY_*` is generated (check the built Info.plist); a `.task` on a view that draws nothing never starts, so put it on a container that always exists. On Android an empty lazy-list or grid item still takes the list's spacing. (#541, #569, #579, #787)
 - Apple localization: `LocalizedStringKey` lookups with values need `String(format: localized(key), args)` and positional `%1$@` in both languages; a line's values belong in its close signature so a new value reopens a closed strip. Edit `.xcstrings` and the wiki's Arabic JSON in place, inserting entries as text: a JSON round trip that re-sorts rewrites hundreds of lines (Python's sort is not Xcode's, and MaktabaKit's catalog is not fully sorted). (#752, #732, #742)
 - Android unit tests use OkHttp 5's `mockwebserver3` (`MockResponse.Builder()`, `server.close()`); local gradle needs `JAVA_HOME` (Homebrew openjdk@17) and `ANDROID_HOME=~/Library/Android/sdk`. The `client` module is plain JVM (`:client:test`), `core` and `player` are Android (`testDebugUnitTest`); `home.features()` in the Player is composable, so read it in the screen body and key the effect on it. A Kotlin backticked test name cannot contain a period. (#752, #742)
-- XCUITest does not close the app after a test; settings leak between tests; the `.textClipped` audit relays at 12 text sizes; the simulator can drop taps. (#539, #582, #580, #626, #661)
+- XCUITest does not close the app after a test; settings leak between tests; the `.textClipped` audit relays at 12 text sizes; the simulator can drop taps. On a loaded runner one look at the app's tree can take 4 s, so `waitUntil` takes at least three looks as well as its seconds; a long-press waits for Home to go quiet (`waitUntilHomeIsQuiet`); a looped test's failing variant is the one whose screenshot is missing. A mock's delay is no hold when the client has its own timeout (`ImageCache` gives a fetch 15 s): make the app never ask. (#539, #582, #580, #626, #661, #803)
 - Apple crash reports: a one-time question after sign-in would block every signing-in UI test, so a UI-test launch shows it only with `-maktaba-crash-question`; MetricKit's call tree puts the crashing frame at the root (Sentry frames are oldest first, so the walk is reversed); `#require` cannot nest; Swift Testing suites run in parallel even when each is `.serialized`, so suites sharing a URLProtocol stub go under one serialized parent. The shared redaction masks `token=` only in a URL query. (#732)
 - Android crash reports: `InputStream.readNBytes` needs API 33; a native crash's `traceInputStream` is a binary tombstone, so only an ANR's trace is kept; the crash question stays off under Robolectric (`Build.FINGERPRINT == "robolectric"`). (#745)
 - Desktop crash reports: Maktaba's shell has no user token, so it hands its scrubbed panics to the web app in its window, which has the session and the consent switch. `File.renameTo` does not replace a file on Windows (`Files.move(REPLACE_EXISTING)`). Two Gradle builds at once in one checkout can fail one silently. (#774)
@@ -247,10 +254,8 @@ built_from: v0.3.93
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
 - Epic 54: TypeScript, Python and Go templates (issue #718); signing, `mkp run`, developer mode and the plugins CLI (issue #719); the migrate job (issue #712), rehearsal scenario 15 (issue #708), the updater's pre-update list (issue #709), Windows (issue #710). (#683, #693, #704, #707, #717)
-- Epic 54 Phase 2 (signing ships dark, no root keys): the store service is built but not deployed (its go-live list, the email provider and the Cloudflare resources, DNS and secrets, are in `store/README.md`); checks, the flow check C12 and human review are built (54.16); next are the home's catalog loop and kill switch (54.17), the store browser (54.18), the isolated runner on Cloudflare Containers (issue #756); release-time embedding of the revocation list and store keys; the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. (#733, #735, #743, #751, #753, #770)
+- Epic 54 Phase 2 (signing ships dark, no root keys): the store service is built but not deployed (its go-live list, the email provider and the Cloudflare resources, DNS and secrets, are in `store/README.md`); checks, the flow check C12 and human review are built (54.16); the home's catalog loop and kill switch (54.17) are in; next are the store browser (54.18), the isolated runner on Cloudflare Containers (issue #756); release-time embedding of the revocation list and store keys (issue #755); the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. (#733, #735, #743, #751, #753, #770, #778)
 - Epic 54 Phase 4: waves 1-3 are in; the legacy `extract` and `thumbnail` stages with their hand chaining turned into edges (54.29), waves 4-9 (54.31-54.36; `display_title` moves with wave 4), a runner call for a stage's `refresh` (still run from the worker), and removal of the in-process path; per-plugin `.mkplugin` packages in `checksums.txt` wait for a release-workflow change. (#731, #750, #760, #773, #789)
-- `language_packs/ar/test_pack.py::test_without_the_analyser_nothing_is_unknown` fails wherever camel_tools is installed. (#789)
-- Epic 54 plugin panels: the TV apps, Android chip search and the T05 snapshots (issue #741); the series and library pages and the admin order are done. (#742, #765, #783)
 - Epic 54 joined machines: a machine's plugin compute always asks the home's models; its own GPU models are not offered to plugins. (#767)
 - Epic 50: the cloud status line is in every app's strip, but Apple and Android read the feed only at start and every 5 minutes, not at once after a failed request; the Android TV app has no status strip (53.06's TV part); series that 53.17 emits for the monitoring alerts and status page; 50.15, 50.19, 50.30 to 50.35 and 53.16 to 53.18 follow (50.12 to 50.14 are in). 50.13's T09 waits for a home stack in the cloud rehearsal; 50.14's absolute numbers, the epic's sizing figures and `RELAY_MEASURED_*` wait for a `loadtest.yml` run on the staging pair. 50.12's incident handling is in; `tunnel_connections_low` and the `staff_*` alerts come with 50.31 and 50.33, and the game day waits for the real pair. (#727, #739, #752, #780, #791, #798)
 - Rare web test races of one shape (a check one render too early), listed on issue #697; BigScreen still re-attaches its key listener. (#746)
@@ -258,7 +263,7 @@ built_from: v0.3.93
 - The tag guard requires the cloud rehearsal once 50.07's scenarios are live. (#715)
 - agent-trail's PyPI publishing waits for its trusted publisher; the CLI runs from git. (#702)
 - Epic 53: native crash capture for the TV (Apple, Android, the desktop Player and the shell are done); the desktop Player offers no screenshot (needs screen recording); 53.14 T09 (the simulator does not deliver MetricKit on demand) and the Apple dSYMs as a release asset; 53.16's "Also send to Maktaba" box (needs the home's sharing switch), `docs/app-privacy.md`; native Remote Errors, Logs, Overview and Storage screens; pipeline queue series, API latency histograms and per-machine host metrics on `/metrics`. (#688, #689, #691, #732, #745, #774, #782)
-- Epic 53 log bench: bring the Python logger under its budget and make its bench strict (issue #744); the `logs` role's CPU and memory on a live home; the log pipeline's numbers on the live Overview. (#690, #740)
+- Epic 53 log bench: how the nightly judges a p99 on the noisy macOS runner (issue #807); the `logs` role's CPU and memory on a live home; the log pipeline's numbers on the live Overview. (#690, #740, #802)
 - maktaba.dev shots of the Remote's word review and the phone Players' queue. (#703)
 - DASH top-level segments are not on the stream gate's allow-list. (#474)
 - `tests/engine/fixtures_db.py` drops the URL's query when it names the template database; harmless under asyncpg's default today. (#769)
@@ -269,6 +274,7 @@ built_from: v0.3.93
 | PR | Merged | Title |
 | --- | --- | --- |
 | #784 | 2026-11-07 | fix(update): a busy pipeline no longer rolls an update back |
+| #812 | 2026-11-07 | fix(restore): the vector index is built alone, with memory of its own |
 
 ## Index
 
@@ -626,11 +632,13 @@ built_from: v0.3.93
 | 0773-wave2-thumbnails-subtitles | 2026-11-07 | pr | Thumbnails and subtitle files run as Maktaba's built-in plugins (Epic 54 wave 2, 54.29) |
 | 0774-epic53-desktop-native | 2026-11-07 | pr | Epic 53 on the desktop — crash reports to the home and Report a problem (Maktaba's shell, the desktop Player) |
 | 0777-desktop-held-is-off | 2026-11-07 | pr | The Mac app counts a held process as off, not one that keeps stopping |
+| 0778-plugin-catalog-kill-switch | 2026-11-07 | pr | Plugins Phase 2 part 4, the store's catalog, updates and the kill switch on the home (Epic 54, 54.17) |
 | 0780-incident-handling | 2026-11-07 | pr | Incident handling, runbooks and one-click recovery |
 | 0782-epic53-native-followups | 2026-11-07 | pr | Epic 53 native follow-ups — Report this in the desktop Player, the last-crash notice, the phone screenshots |
 | 0783-panel-order | 2026-11-07 | pr | The admin orders plugin panels (Epic 54, story 54.20 §1) |
 | 0785-lint-bash3-empty-array | 2026-11-07 | pr | cloud-expand-only passes with no new migrations under macOS's bash 3.2 |
 | 0786-stage-titles-manifests | 2026-11-07 | pr | Stage titles cover the stages first-party plugin manifests declare (main red since #760) |
+| 0787-native-panel-pages | 2026-11-07 | pr | Plugin panels on the native series, library and TV pages (Epic 54, story 54.20) |
 | 0788-tv-library-test-race | 2026-11-07 | pr | The Android TV library test's request list is safe to read while the fake server writes |
 | 0789-wave3-transcription-search | 2026-11-07 | pr | Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3, 54.30) |
 | 0791-apps-ride-out | 2026-11-07 | pr | The apps ride out a Maktaba Cloud outage |
@@ -640,6 +648,11 @@ built_from: v0.3.93
 | 0797-pts-wrap-muxer | 2026-11-07 | pr | A muxer started just before the PTS wrap keeps the wall clock's timestamps |
 | 0798-load-test | 2026-11-07 | pr | Load test and sizing |
 | 0801-plugins-metrics-report-logs | 2026-11-07 | pr | Plugin job metrics, and problem reports keep plugin logs out (Epic 54, 54.09 §3, §4) |
+| 0802-python-logger-cost | 2026-11-07 | pr | A Python log call from 19.5 to 11.5 µs, and the bench's runner factor measured |
+| 0803-ipad-waits | 2026-11-07 | pr | iPad Player UI waits count looks as well as seconds, and wait for Home to settle |
+| 0811-ar-pack-no-analyser | 2026-11-07 | pr | The Arabic pack's "no analyser" test hides CAMeL Tools itself |
 | d20261107-orphaned-cpu-load | 2026-11-07 | incident | Sixteen orphaned `yes` processes held the owner's Mac for three days and crashed WindowServer |
+| d20261107-restore-vector-index | 2026-11-07 | decision | A restore builds the vector index alone, with memory of its own |
 | d20261107-update-watch-rollback | 2026-11-07 | incident | 0.3.90 rolled back — the update watch timed out on a busy pipeline |
+| d20261107-watcher-merged-early | 2026-11-07 | incident | A merge-on-green watcher merged four PRs with their checks still running |
 

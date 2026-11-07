@@ -118,6 +118,8 @@ func main() {
 			return
 		case "components":
 			os.Exit(runComponents(os.Args[2:]))
+		case "plugins":
+			os.Exit(runPlugins(os.Args[2:]))
 		case "hash-password":
 			if err := runHashPassword(os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "hash-password: %v\n", err)

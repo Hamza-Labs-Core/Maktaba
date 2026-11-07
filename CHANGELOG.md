@@ -279,6 +279,12 @@ build fails when the two differ.
   for one refresh. The tray now reads the record again for a moment before it treats it as
   gone.
 
+- **Maktaba's built-in plugins run in their runners again (Epic 54, story 54.23).** Since
+  0.3.93 every first-party runner (light, fp, ml, index) exited about 0.2 s after it
+  started, on a circular import, and was marked failed after five restarts; the worker ran
+  the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
+  runner. The runners start again, and a test imports each entry point in a fresh process.
+
 ### Security
 
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
@@ -1075,6 +1081,15 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Paid plugins wait for their purchase (Epic 54, story 54.19).** A home linked to a store
+  account fetches its entitlements from the store daily, signed with its own home store key
+  (and every 15 seconds for 15 minutes after a Buy), checks each offline against the store
+  keys it verified (an entitlement key, this home and its key, valid now with a 72-hour grace),
+  and keeps the ones that hold. A plugin whose manifest names a price waits ("This plugin needs
+  a purchase") without one: its queue and data are kept, and it comes back by itself when a
+  purchase arrives. A refund ends it at the next check; a store outage changes nothing for 31
+  days, a Maktaba Cloud outage nothing at all. Settings → Plugins → Store account lists the
+  purchases held, with **Check for purchases now**. Migration 0204.
 
 - **The desktop apps report problems and send crash reports to the home.** Maktaba's tray and
   Help menu have **Report a problem…**, which opens the web app's form. A panic of the app
@@ -1710,6 +1725,15 @@ build fails when the two differ.
   Resume and Stop server work from the tray, or from the window's Server menu where the desktop
   shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
   app's dialogs follow the session's language (English or Arabic).
+
+- **Plugins from the command line, developer mode and `mkp run` (Epic 54, stories 54.10 §4,
+  §5 and 54.12).** `maktaba-server plugins list|show|install|update|enable|disable|start|stop|
+  rollback|remove|grants|policy` does what Settings → Plugins does, for a home without a
+  browser, with the components CLI's `--yes`, `--json`, `--dsn` and exit codes.
+  `maktaba-server plugins dev <folder>` installs a plugin folder as Development and reloads it
+  on every save (removed when it stops, unless `--keep`). `mkp run <folder> --home
+  http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
+  developer's machine. maktaba.dev: Testing and packaging.
 
 ### Changed
 
