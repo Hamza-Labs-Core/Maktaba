@@ -252,7 +252,22 @@ jobs:
 
       - name: The SDK, the runner, its sandbox and protocol, and plugins-parity (54.23-54.26)
         working-directory: pipeline
+        env:
+          MAKTABA_PARITY_REPORT_DIR: ${{ runner.temp }}/parity-report
         run: uv run --with pglast==8.7 pytest -q -p no:cacheprovider tests/plugins/firstparty $(ls -d ../plugins/first-party/*/tests 2>/dev/null)
+
+      # N16's timings on every run, passing or failing: where a plugin job spends its time
+      - name: The parity timing report (N16)
+        if: always()
+        run: cat "$RUNNER_TEMP"/parity-report/*.txt 2>/dev/null || echo "no parity report"
+
+      - name: Keep the parity report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: parity-report
+          path: ${{ runner.temp }}/parity-report
+          if-no-files-found: ignore
 
       - name: The plugin API's statements, trusted tokens and the flip (54.22, 54.24, 54.25)
         working-directory: api

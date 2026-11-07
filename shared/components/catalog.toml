@@ -310,6 +310,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "classify"
+plugin    = "tv.maktaba.classify"
 kind      = "stages"
 group     = "processing"
 title_key = "components.classify.title"

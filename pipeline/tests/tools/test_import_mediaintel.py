@@ -621,3 +621,21 @@ async def test_a_shared_channel_and_a_folder_without_one_are_recorded(db: Databa
     assert [str(r["library_id"]) for r in libs] == [str(second)]
     assert rep.youtube_shared == ["Y:/b (UCshared)"] and rep.youtube_no_channel == ["Y:/c"]
     assert "1 folders name no channel" in rep.render()
+
+
+@pytest.mark.asyncio
+async def test_a_moved_stages_fingerprint_comes_from_the_registry(db: Database) -> None:
+    """Epic 54 wave 1: rate_style moved into tv.maktaba.classify; the import reaches its
+    fingerprint by the stage registry's entry, not by importing the module."""
+    from maktaba_pipeline.engine.graph import Subject
+    from maktaba_pipeline.engine.stages.registry import get_impl
+    from maktaba_pipeline.tools import import_mediaintel as im
+
+    impl = get_impl("rate_style")
+    assert impl is not None and impl.input_fingerprint is not None
+    assert impl.run is not None
+    assert impl.run.__module__ == "maktaba_fp_classify.stages.rate_style"
+    season = Subject("season", __import__("uuid").uuid4())
+    assert await im._fingerprint("rate_style", db, season) == await impl.input_fingerprint(
+        db, season
+    )

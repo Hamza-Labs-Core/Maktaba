@@ -1787,6 +1787,33 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   no `seed.sql` is committed. The runner runs in the test's process without its OS sandbox,
   which has its own escape tests; the plugin API, its statements and its roles are the
   release's (`api/tools/plugin-api-dev`).
+- **The flip at update is the graph sync.** Each worker's graph sync sets a first-party stage
+  to `impl = 'plugin'` on a Postgres home once the release that moved it runs, unless the
+  stage's impl was set by hand (`impl_changed_at`: an admin's flip back, which every later
+  update keeps). A fresh install and an update then behave the same, and no wave needs a
+  migration of its own for the flip; each wave's migration is the roles of its plugins
+  (`NNNN_fp_roles`, written by `tools/plugins/roles.py`).
+- **`display_title` moves with wave 4, not wave 1.** It asks the language model at
+  `rules.tagcheck.url` when the model is on, so it waits for `compute.generate` (story 54.21,
+  wave 4) instead of running in the `light` runner, which has no network. Wave 1 is
+  `promo_links`, `clip_groups`, `topic_collections` and `rate_style`.
+- **N16 counts a job's own work.** Each moved stage's job is run several times on both copies,
+  in turns, and the p50 and p95 ratios are taken over those runs; a difference under 25 ms is
+  the plugin path's fixed cost of one job (its token and the hop to the runner) and does not
+  count. Every statement runs on a connection already set to the plugin's role and origin, so
+  a statement outside a transaction is one round trip to Postgres. p50 is taken over the whole job's wall time
+  and p95 over the CPU each job cost (the worker's process and the plugin API's, from
+  `/proc/<pid>/schedstat` on Linux; Postgres is left out, as both sides run the same
+  queries). On CI a job's wall time stalls now and then for 30-250 ms, on either side and in
+  any span, with the CPU flat (a round trip waiting on the shared Postgres); with eleven runs
+  a side p95 is about the slowest run, so one stall decided it. The median is not moved by a
+  stall and keeps the plugin path's round trips in the gate; the tail is judged by work. A
+  failure that is only the timing is measured once more and counts when the second run fails
+  too. Each run writes its timings (both sides' wall time, CPU, the plugin API's CPU and the
+  run's spans) to the `parity-report` artifact.
+- **A runner never judges an update.** Like a TV slot, a plugin runner that does not run (it
+  crash loops, or its sandbox is unavailable) is left out of the update's health rules, before
+  and after: its stages run in the worker meanwhile, and the Components page shows it.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the
