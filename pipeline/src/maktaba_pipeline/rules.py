@@ -36,6 +36,7 @@ from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
 from .cluster.machines_settings import ClusterMachinesConfig
+from .direct_settings import DirectConfig
 from .engine.failure_classes import QueueHealthConfig
 from .enrich.config import EnrichConfig
 from .plugins.compute_settings import PluginComputeConfig
@@ -55,7 +56,6 @@ from .schedule.tv_settings import (
     RepairConfig,
     TvStripConfig,
 )
-from .direct_settings import DirectConfig
 from .search_settings import SearchConfig
 from .sharepath.auto import StorageConfig
 from .stt.placement import TranscriptionConfig
