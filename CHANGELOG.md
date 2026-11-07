@@ -209,6 +209,12 @@ build fails when the two differ.
   the whole time off again (or all history). A worker that loses the lead also stops reporting
   the component as off once it is on again, so Admin > Components no longer shows it off.
 
+- **The desktop app's tray keeps offering the can't-start choices while the launcher writes
+  its record (Epic 53, story 53.05).** On Windows, opening `start-failed.json` at the moment the
+  launcher replaced it could fail, and the tray then dropped Try again, Safe mode and Roll back
+  for one refresh. The tray now reads the record again for a moment before it treats it as
+  gone.
+
 ### Security
 
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
@@ -660,6 +666,14 @@ build fails when the two differ.
   people per day and the most played videos: counts only). The range runs from 1 hour to 90
   days, each chart shows its values under the pointer and a sentence for screen readers, and
   Open in Logs opens the same time. `GET /api/admin/dashboards/{board}` is admin only.
+
+- **A performance budget for logging (Epic 53, story 53.13).** A new CI job, `log-bench`, runs on
+  every change to the log path. It measures the keeper's cost per line under a burst (and that
+  no line, and no warning or error, is lost), the index's catch-up and lag, search with
+  filters, full text and by request over a seeded 7-day corpus, the dashboards' 30 days, the
+  Go logger's cost per call and the disk caps through a day. A bench over its budget fails
+  with its numbers. The budgets follow the runner's speed, and the numbers are kept as the
+  job's artifact (`docs/performance/logs.md`).
 
 ### Fixed
 

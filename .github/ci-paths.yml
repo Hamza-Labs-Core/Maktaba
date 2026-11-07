@@ -201,6 +201,19 @@ unit_tokens:
 # the mDNS announcement for real: on Windows (DnsServiceRegister through dnsapi.dll) and on
 # Linux through systemd-resolved (mdns-windows, mdns-linux): both copies of it, the modules
 # they build in, the check that the copies stay the same and the runner setup
+# Epic 53 story 53.13: the log path's performance budget (the log-bench job)
+log_bench:
+  - *ci
+  - 'shared/log/**'
+  - 'cmd/maktaba-server/internal/logkeeper/**'
+  - 'cmd/maktaba-server/internal/logindex/**'
+  - 'cmd/maktaba-server/internal/logbench/**'
+  - 'cmd/maktaba-server/internal/supervisor/**'
+  - 'cmd/maktaba-server/go.mod'
+  - 'cmd/maktaba-server/go.sum'
+  - 'pipeline/src/maktaba_pipeline/log/**'
+  - '.github/workflows/_unit.yml'
+
 mdns:
   - *ci
   - 'api/internal/discovery/**'

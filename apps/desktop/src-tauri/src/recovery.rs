@@ -33,8 +33,36 @@ fn updates(state_root: &Path) -> PathBuf {
 
 /// The record, when the launcher has cut the server off.
 pub fn cant_start(state_root: &Path) -> Option<CantStart> {
-    let raw = std::fs::read(updates(state_root).join("start-failed.json")).ok()?;
-    serde_json::from_slice(&raw).ok()
+    read_record(
+        &updates(state_root).join("start-failed.json"),
+        5,
+        Duration::from_millis(20),
+    )
+}
+
+/// Reads a record the launcher replaces whole (a rename). On Windows an open can meet the
+/// file while its rename lands (a sharing violation, a scan): a file that is there but cannot
+/// be read or parsed yet is tried again a few times before it reads as no record.
+fn read_record<T: serde::de::DeserializeOwned>(
+    path: &Path,
+    tries: u32,
+    wait: Duration,
+) -> Option<T> {
+    for i in 0..tries {
+        match std::fs::read(path) {
+            Ok(raw) => {
+                if let Ok(v) = serde_json::from_slice(&raw) {
+                    return Some(v);
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(_) => {}
+        }
+        if i + 1 < tries {
+            std::thread::sleep(wait);
+        }
+    }
+    None
 }
 
 /// Leaves a choice for the launcher: "retry", "safe" or "rollback".
@@ -136,5 +164,33 @@ mod tests {
     #[test]
     fn no_supervisor_no_link() {
         assert_eq!(link("127.0.0.1:1"), None);
+    }
+
+    // Epic 53 story 53.05: a record caught while the launcher writes it (empty, or not whole
+    // yet) is read once it is whole; a record that is not there answers at once.
+    #[test]
+    fn a_record_caught_mid_write_is_read_once_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("start-failed.json");
+        std::fs::write(&p, "").unwrap();
+        let q = p.clone();
+        let writer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(30));
+            std::fs::write(&q, r#"{"version":"2.0.0","exits":[]}"#).unwrap();
+        });
+        let got: Option<serde_json::Value> = read_record(&p, 20, Duration::from_millis(10));
+        writer.join().unwrap();
+        assert_eq!(got.unwrap()["version"], "2.0.0");
+        let start = std::time::Instant::now();
+        let none: Option<serde_json::Value> =
+            read_record(&dir.path().join("none.json"), 20, Duration::from_millis(50));
+        assert!(none.is_none());
+        assert!(
+            start.elapsed() < Duration::from_millis(40),
+            "a missing record is not waited for"
+        );
+        std::fs::write(&p, "{not json").unwrap();
+        let bad: Option<serde_json::Value> = read_record(&p, 3, Duration::from_millis(1));
+        assert!(bad.is_none());
     }
 }

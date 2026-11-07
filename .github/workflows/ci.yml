@@ -96,6 +96,7 @@ jobs:
       desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
       plugins: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.plugins == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
+      log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.compat_prev == 'true' }}
       replica: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.replica == 'true' }}
@@ -208,6 +209,7 @@ jobs:
       || needs.changes.outputs.unit_tokens == 'true'
       || needs.changes.outputs.desktop_shell == 'true'
       || needs.changes.outputs.mdns == 'true'
+      || needs.changes.outputs.log_bench == 'true'
     uses: ./.github/workflows/_unit.yml
     with:
       go: ${{ needs.changes.outputs.unit_go == 'true' }}
@@ -216,6 +218,7 @@ jobs:
       tokens: ${{ needs.changes.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ needs.changes.outputs.desktop_shell == 'true' }}
       mdns: ${{ needs.changes.outputs.mdns == 'true' }}
+      log_bench: ${{ needs.changes.outputs.log_bench == 'true' }}
 
   integration:
     needs: [changes]
