@@ -2,9 +2,10 @@
 //!
 //! - Rust: no_std (Rust std on wasm32-wasip2 imports stdin and the terminal, which the host
 //!   never links: #683), with wit-bindgen from the WIT the SDK ships beside it.
-//! - Python (componentize-py) and JavaScript (jco componentize): `mkp build` makes the
-//!   component, against a world narrowed to the manifest (crate::world), with WASI stubbed
-//!   (Python) or turned off (JS), so it imports only what the home links.
+//! - Python (componentize-py), JavaScript (jco componentize) and Go (TinyGo): `mkp build`
+//!   makes the component, against a world narrowed to the manifest (crate::world), with WASI
+//!   stubbed (Python), turned off (JS) or never linked (Go's wasm-unknown target), so it
+//!   imports only what the home links.
 
 use std::path::Path;
 
@@ -19,6 +20,10 @@ const PY_APP: &str = include_str!("../template/python/app.py");
 const PY_README: &str = include_str!("../template/python/README.md.in");
 const JS_PLUGIN: &str = include_str!("../template/js/plugin.js");
 const JS_README: &str = include_str!("../template/js/README.md.in");
+const GO_MAIN: &str = include_str!("../template/go/main.go.in");
+const GO_REALLOC: &str = include_str!("../template/go/realloc.go");
+const GO_MOD: &str = include_str!("../template/go/go.mod.in");
+const GO_README: &str = include_str!("../template/go/README.md.in");
 
 pub fn new_rust(id: &str, dir: &Path) -> Result<(), String> {
     if !maktaba_plugin_manifest::valid_id(id) {
@@ -47,8 +52,8 @@ pub fn new_rust(id: &str, dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// A project for `lang` (python, js): its source, the package and README, and its world
-/// narrowed to the template's manifest.
+/// A project for `lang` (python, js, go): its source, the package and README, and its world
+/// narrowed to the template's manifest. A Go module is named by the plugin id.
 pub fn new_lang(lang: &str, id: &str, dir: &Path) -> Result<(), String> {
     if !maktaba_plugin_manifest::valid_id(id) {
         return Err(format!("{id:?} is not a plugin id (reverse DNS, at least three labels: dev.example.hello)"));
@@ -56,19 +61,20 @@ pub fn new_lang(lang: &str, id: &str, dir: &Path) -> Result<(), String> {
     if dir.exists() {
         return Err(format!("{} exists", dir.display()));
     }
-    let fill = |s: &str| s.replace("{{id}}", id);
-    let (source, body, readme, name) = match lang {
-        "python" => ("app.py", PY_APP, PY_README, "Python"),
-        "js" => ("plugin.js", JS_PLUGIN, JS_README, "JavaScript"),
-        other => return Err(format!("no template for {other:?} (rust, python, js)")),
+    let fill = |s: &str| s.replace("{{id}}", id).replace("{{module}}", id);
+    let (sources, readme, name): (Vec<(&str, &str)>, &str, &str) = match lang {
+        "python" => (vec![("app.py", PY_APP)], PY_README, "Python"),
+        "js" => (vec![("plugin.js", JS_PLUGIN)], JS_README, "JavaScript"),
+        "go" => (vec![("main.go", GO_MAIN), ("realloc.go", GO_REALLOC), ("go.mod", GO_MOD)], GO_README, "Go"),
+        other => return Err(format!("no template for {other:?} (rust, python, js, go)")),
     };
-    let files: [(&str, String); 5] = [
-        (source, fill(body)),
+    let mut files: Vec<(&str, String)> = sources.into_iter().map(|(rel, body)| (rel, fill(body))).collect();
+    files.extend([
         ("package/manifest.toml", fill(MANIFEST)),
         ("package/i18n/en.json", EN.to_string()),
         ("package/i18n/ar.json", AR.to_string()),
         ("README.md", fill(readme)),
-    ];
+    ]);
     for (rel, body) in files {
         let p = dir.join(rel);
         std::fs::create_dir_all(p.parent().unwrap()).map_err(|e| e.to_string())?;

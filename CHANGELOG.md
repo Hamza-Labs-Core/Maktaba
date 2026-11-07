@@ -1848,7 +1848,13 @@ build fails when the two differ.
   interfaces its manifest's capabilities cover, so a call it did not declare does not build;
   `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
   up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
-  maktaba.dev: Testing and packaging, *Python and JavaScript*.
+  maktaba.dev: Testing and packaging, *Python, JavaScript and Go*.
+
+- **Plugins in Go (Epic 54, story 54.12, tier 2).** `mkp new go` makes a TinyGo project, and
+  `mkp build` turns it into a component built for TinyGo's `wasm-unknown` target, which links
+  no WASI: file, stdin and network calls always fail. The build fails if the component
+  imports anything the home refuses. maktaba.dev: Testing and packaging, *Python, JavaScript
+  and Go*.
 
 - **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
   a **Purchases** section: each plugin bought with the account, the home it is on, and

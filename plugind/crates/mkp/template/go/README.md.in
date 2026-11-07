@@ -1,0 +1,26 @@
+# {{id}}
+
+A Maktaba plugin made with `mkp new go` (Epic 54; Go is tier 2: a template and a smoke test,
+best effort). It runs in maktaba-plugind's sandbox: no network, no files, only the plugin API
+calls its manifest asks for and the admin grants.
+
+```sh
+brew install tinygo-org/tools/tinygo          # or tinygo.org/getting-started
+go install go.bytecodealliance.org/cmd/wit-bindgen-go@v0.7.0
+cargo install --locked wasm-tools
+mkp build .                                    # bindings, TinyGo, the component, the home's checks
+mkp test package --stage hello                 # run it in the harness
+mkp pack package {{id}}.mkplugin               # the file to install (Settings, Plugins)
+```
+
+- **No WASI.** The plugin is built for TinyGo's `wasm-unknown` target, which links no WASI:
+  file, stdin and network calls always fail, and `fmt.Print` writes nowhere. Log with
+  `log.Write`. `mkp build` fails if the component imports anything the home refuses.
+- **The world follows the manifest.** `mkp build` (or `mkp world .`) writes `wit/` so the
+  plugin imports only the interfaces its capabilities cover, then regenerates the bindings in
+  `internal/`; add a capability to `package/manifest.toml`, then build again to use its
+  interface.
+- `realloc.go` is the allocator the host calls to pass strings in; keep it.
+
+`mkp test --fixtures api.json` answers the plugin API from a file:
+`{"library/video": {"id": "v1", "title": "A film"}}` (each key is `interface/function`).
