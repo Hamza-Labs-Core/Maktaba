@@ -423,6 +423,13 @@ build fails when the two differ.
   rehearsal against its own pair. Status updates come from English and Arabic templates; a SEV1
   without a postmortem after 5 days opens a reminder; the Billing page states the 99.9 % target
   and that no credit is given, and CI keeps any template or string from offering one.
+- **What one relay node carries is measured (Epic 50, story 50.14).** `maktaba-loadtest` ramps
+  simulated homes and players at a bitrate against a relay until a stop rule (CPU 70 %, 20 ms
+  added latency, 0.5 % stalls, a dropped tunnel, memory 75 %) holds for 2 minutes, and turns the
+  last good step into a row of `docs/cloud-sizing.md`; it refuses any target under maktaba.tv.
+  The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
+  CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
+  measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

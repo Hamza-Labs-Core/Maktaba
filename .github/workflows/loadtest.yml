@@ -1,0 +1,84 @@
+# Load test (Epic 50 story 50.14 §3): ramps simulated homes and players against the owner's
+# staging pair (staging.relay.maktaba.dev, never a maktaba.tv name: the tool refuses one) until a
+# stop rule holds for 2 minutes, and turns the last good step into a row of docs/cloud-sizing.md.
+# By hand, before launch, after a relay change that moves load-small's numbers more than 10 %,
+# and before every Phase 2 resize. The load is generated here, on GitHub's runner, never on the
+# relay's machine. Runs in the staging environment (its secrets; none exist until the owner
+# creates the staging pair).
+name: Load test
+
+on:
+  workflow_dispatch:
+    inputs:
+      plan:
+        description: The staging nodes' Hetzner plan (CPX22, CPX32 …)
+        required: true
+      machine:
+        description: Its vCPU / RAM ("2 / 4 GB")
+        required: true
+      bitrate:
+        description: Each player's bitrate
+        type: choice
+        options: ['5M', '2.5M', '8M']
+        default: '5M'
+      homes_step:
+        description: Homes added each step
+        default: '1000'
+      players_step:
+        description: Players added each step
+        default: '50'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: loadtest
+  cancel-in-progress: false
+
+jobs:
+  ramp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    environment: staging
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cloud/go.mod
+          cache: false
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
+      - name: Ramp until a stop rule holds
+        working-directory: cloud
+        env:
+          LOADTEST_DB: ${{ secrets.STAGING_DB_URL }}
+          TARGET: ${{ vars.STAGING_RELAY_URL || 'https://staging.relay.maktaba.dev' }}
+          NODE_EXPORTER: ${{ secrets.STAGING_NODE_EXPORTER_URL }}
+          RELAY_METRICS: ${{ secrets.STAGING_RELAY_METRICS_URL }}
+          PLAN: ${{ inputs.plan }}
+          MACHINE: ${{ inputs.machine }}
+          BITRATE: ${{ inputs.bitrate }}
+          HOMES_STEP: ${{ inputs.homes_step }}
+          PLAYERS_STEP: ${{ inputs.players_step }}
+        run: |
+          ulimit -n 65536 || true
+          CGO_ENABLED=0 go run ./cmd/maktaba-loadtest run --target "${TARGET}" \
+            --homes "${HOMES_STEP}" --homes-step "${HOMES_STEP}" --players "${PLAYERS_STEP}" --players-step "${PLAYERS_STEP}" \
+            --bitrate "${BITRATE}" --node-exporter "${NODE_EXPORTER}" --relay-metrics "${RELAY_METRICS}" \
+            --plan "${PLAN}" --machine "${MACHINE}" --out "${RUNNER_TEMP}/loadtest-report.json" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: The sizing table's row
+        working-directory: cloud
+        run: |
+          CGO_ENABLED=0 go run ./cmd/maktaba-loadtest sizing --report "${RUNNER_TEMP}/loadtest-report.json" --doc ../docs/cloud-sizing.md
+          git diff --stat
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: loadtest-${{ inputs.plan }}
+          path: |
+            ${{ runner.temp }}/loadtest-report.json
+            docs/cloud-sizing.md
+          retention-days: 90

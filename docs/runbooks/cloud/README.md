@@ -38,6 +38,7 @@ probe (GitHub Actions) mails on its own, so a broken witness doesn't silence a S
 | [tunnel-down.md](tunnel-down.md) | the API's Tunnel is down |
 | [staff-security.md](staff-security.md) | a staff account's security alert |
 | [status-page.md](status-page.md) | posting an incident or a maintenance notice |
+| [capacity.md](capacity.md) | the relay is filling its node: resize, or start Phase 2 |
 
 The one-click actions (**Cloud switchover**, **Cloud failover**, **Cloud DNS swap**) run
 `deploy/cloud-ha/runbook/`, which the cloud rehearsal runs first against its own pair

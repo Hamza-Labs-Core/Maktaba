@@ -29,9 +29,31 @@ type Gen struct {
 	HTTPClient *http.Client
 
 	ok, failed, bytes atomic.Int64
-	mu                sync.Mutex
-	failures          []Failure
+	// stalls: segments that arrived after the next one was due (story 50.14)
+	stalls   atomic.Int64
+	mu       sync.Mutex
+	failures []Failure
+	ttfb     []time.Duration // a sample of times to first byte (the first 10,000)
 }
+
+// Profile is a player's stream (story 50.14): its bitrate and segment length, which set a
+// segment's size and how often one is asked for.
+type Profile struct {
+	BitsPerSecond int           // 2.5, 5 or 8 Mbit/s
+	Segment       time.Duration // 4 s
+}
+
+// Apply sets the generator's segment size and interval from p; the home sends a segment
+// over a tenth of its length (a home faster than real time, as a real one is).
+func (g *Gen) Apply(p Profile) {
+	g.Every = p.Segment
+	g.Segment = int(int64(p.BitsPerSecond) * int64(p.Segment) / int64(time.Second) / 8)
+	g.SegmentMS = int(p.Segment / 10 / time.Millisecond)
+}
+
+// Stalled says whether a segment asked for at start and finished at end came after the next
+// one was due (start + every): the player would have stalled.
+func Stalled(start, end time.Time, every time.Duration) bool { return end.Sub(start) > every }
 
 // Failure is one failed or late request.
 type Failure struct {
@@ -46,7 +68,20 @@ type Stats struct {
 	OK       int64     `json:"ok"`
 	Failed   int64     `json:"failed"`
 	Bytes    int64     `json:"bytes"`
+	Stalls   int64     `json:"stalls"`
+	TTFBP95  string    `json:"ttfb_p95"`
 	Failures []Failure `json:"failures,omitempty"`
+	// TTFB is the sample of times to first byte (not in the JSON).
+	TTFB []time.Duration `json:"-"`
+}
+
+// StallRate is the share of segments that stalled or failed.
+func (s Stats) StallRate() float64 {
+	n := s.OK + s.Failed
+	if n == 0 {
+		return 0
+	}
+	return float64(s.Stalls+s.Failed) / float64(n)
 }
 
 func (g *Gen) defaults() {
@@ -102,9 +137,16 @@ func (g *Gen) segment(ctx context.Context, slug string) {
 	start := time.Now()
 	rctx, cancel := context.WithTimeout(ctx, g.Late)
 	defer cancel()
-	n, err := Get(rctx, g.HTTPClient, g.Edge, slug+"."+g.Domain, fmt.Sprintf("/stream?bytes=%d&ms=%d", g.Segment, g.SegmentMS))
+	n, first, err := GetTimed(rctx, g.HTTPClient, g.Edge, slug+"."+g.Domain, fmt.Sprintf("/stream?bytes=%d&ms=%d", g.Segment, g.SegmentMS))
 	if ctx.Err() != nil {
 		return // the run ended mid-request: not a failure
+	}
+	if first > 0 {
+		g.mu.Lock()
+		if len(g.ttfb) < 10000 {
+			g.ttfb = append(g.ttfb, first)
+		}
+		g.mu.Unlock()
 	}
 	if err == nil && n != int64(g.Segment) {
 		err = fmt.Errorf("short segment: %d of %d bytes", n, g.Segment)
@@ -120,13 +162,59 @@ func (g *Gen) segment(ctx context.Context, slug string) {
 	}
 	g.ok.Add(1)
 	g.bytes.Add(n)
+	if Stalled(start, time.Now(), g.Every) {
+		g.stalls.Add(1)
+	}
+}
+
+// Client is the generator's HTTP client (its default when none was given).
+func (g *Gen) Client() *http.Client {
+	g.defaults()
+	return g.HTTPClient
 }
 
 // Stats snapshots the counters.
 func (g *Gen) Stats() Stats {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return Stats{OK: g.ok.Load(), Failed: g.failed.Load(), Bytes: g.bytes.Load(), Failures: append([]Failure(nil), g.failures...)}
+	ttfb := append([]time.Duration(nil), g.ttfb...)
+	return Stats{OK: g.ok.Load(), Failed: g.failed.Load(), Bytes: g.bytes.Load(), Stalls: g.stalls.Load(),
+		TTFBP95: Percentile(ttfb, 0.95).String(), TTFB: ttfb, Failures: append([]Failure(nil), g.failures...)}
+}
+
+// GetTimed is Get with the time to the first byte of the body (0 when none came).
+func GetTimed(ctx context.Context, c *http.Client, edge, host, path string) (int64, time.Duration, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, edge+path, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	req.Host = host
+	start := time.Now()
+	resp, err := c.Do(req)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var first time.Duration
+	buf := make([]byte, 32<<10)
+	var n int64
+	for {
+		k, rerr := resp.Body.Read(buf)
+		if k > 0 && first == 0 {
+			first = time.Since(start)
+		}
+		n += int64(k)
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return n, first, rerr
+		}
+	}
+	if resp.StatusCode != http.StatusOK {
+		return n, first, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return n, first, nil
 }
 
 // Get requests path on host through the edge and reads the body; a status

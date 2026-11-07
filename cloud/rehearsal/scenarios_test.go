@@ -104,6 +104,7 @@ func TestScenario(t *testing.T) {
 		{"runbook-switchover", runbookSwitchover},
 		{"runbook-forced-failover", runbookForcedFailover},
 		{"runbook-dns-swap", runbookDNSSwap},
+		{"load-small", loadSmall},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {

@@ -86,6 +86,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/cloud-dns-swap.yml": "a one-click runbook action, dispatched by hand (Epic 50 story 50.12); its script's test runs in relay.yml",
     ".github/workflows/postmortem-reminder.yml": "its own scheduled workflow (Epic 50 story 50.12)",
     "tools/runbooks/**": "the runbook lint and the postmortem reminder: their tests (tools/ci/tests) run on every pull request",
+    ".github/workflows/loadtest.yml": "dispatched by hand against the staging pair (Epic 50 story 50.14)",
     ".github/workflows/status-page.yml": "its own workflow and path filter (the status page, Epic 50 story 50.11)",
     "status/**": "the status page: status-page.yml tests and builds it on every pull request that touches it",
     ".github/workflows/cloud-rehearsal.yml": "its own workflow and path filter (the cloud rehearsal, Epic 50 story 50.06)",

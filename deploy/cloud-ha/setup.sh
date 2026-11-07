@@ -182,6 +182,16 @@ setup_monitoring() {
 	(umask 077 && printf 'WITNESS_DOMAIN=%s\nACME_EMAIL=%s\nWITNESS_TOKEN=%s\n' "${WITNESS_DOMAIN:?}" "${ACME_EMAIL:?}" \
 		"$(cat /etc/maktaba/witness.token)" >/etc/maktaba/monitoring/front.env)
 	install -d -m 0755 /var/lib/maktaba/status/status
+	# one node's measured capacity (story 50.14, docs/cloud-sizing.md) for the Phase 2 rules: the
+	# planning figures until a staging run measures the pair's plan
+	cat >/var/lib/node_exporter/textfile/relay_capacity.prom <<PROM
+# HELP relay_measured_mbit_per_second What one node relays at the load test stop.
+# TYPE relay_measured_mbit_per_second gauge
+relay_measured_mbit_per_second ${RELAY_MEASURED_MBIT:-300}
+# HELP relay_measured_tunnels Idle tunnels one node holds at the load test stop.
+# TYPE relay_measured_tunnels gauge
+relay_measured_tunnels ${RELAY_MEASURED_TUNNELS:-5000}
+PROM
 	docker compose -f "${here}/monitoring/compose.yml" up -d
 	# network 1's view for the status page (story 50.11), every 30 s
 	install -m 0755 "${here}/bin/status-export" /usr/local/bin/maktaba-status-export

@@ -33,6 +33,7 @@ on:
 
 permissions:
   contents: read
+  actions: read # load-small reads main's last baseline (its artifact)
 
 concurrency:
   group: cloud-rehearsal-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
@@ -95,6 +96,7 @@ jobs:
           - runbook-switchover
           - runbook-forced-failover
           - runbook-dns-swap
+          - load-small
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0
@@ -158,6 +160,28 @@ jobs:
           ulimit -n 65536 || true
           CGO_ENABLED=0 go test -tags cloudrehearsal -run "TestScenario/${{ matrix.scenario }}$" -timeout 28m -v ./rehearsal/ 2>&1 | tee "${RUNNER_TEMP}/scenario.log"
           exit "${PIPESTATUS[0]}"
+      # load-small (story 50.14): this run's CPU per Mbit and memory per tunnel against main's
+      # last; more than 20 % worse fails. Main's run becomes the next baseline (its artifact).
+      - name: load-small against main's last run
+        if: matrix.scenario == 'load-small'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUT: ${{ runner.temp }}/rehearsal
+        working-directory: cloud
+        run: |
+          base="${RUNNER_TEMP}/main-baseline"
+          mkdir -p "${base}"
+          run_id="$(gh run list --repo "${GITHUB_REPOSITORY}" --workflow cloud-rehearsal.yml --branch main --status success --limit 1 --json databaseId -q '.[0].databaseId')"
+          if [ -n "${run_id}" ]; then
+            gh run download "${run_id}" --repo "${GITHUB_REPOSITORY}" --name load-small-baseline --dir "${base}" || echo "main's last run has no load-small baseline yet"
+          fi
+          CGO_ENABLED=0 go run ./cmd/maktaba-loadtest compare --baseline "${base}/load-small-baseline.json" --current "${OUT}/load-small-baseline.json"
+      - uses: actions/upload-artifact@v7.0.1
+        if: matrix.scenario == 'load-small'
+        with:
+          name: load-small-baseline
+          path: ${{ runner.temp }}/rehearsal/load-small-baseline.json
+          retention-days: 90
       - name: Summary
         if: always()
         env:
