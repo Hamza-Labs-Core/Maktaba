@@ -182,7 +182,7 @@ def test_in_a_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     assert choose(repo, [], monkeypatch, capsys)["tag"] == ""
 
 
-# --- the workflows it dispatches --------------------------------------------------------------
+# --- the workflows its tag push starts -----------------------------------------------------------
 
 
 def tag_workflows() -> set[str]:
@@ -194,20 +194,50 @@ def tag_workflows() -> set[str]:
     return out
 
 
-def dispatched() -> set[str]:
+def watched() -> set[str]:
     env = load("auto-tag.yml")["jobs"]["tag"]["env"]
     return set(env["RELEASE_WORKFLOWS"].split())
 
 
-def test_auto_tag_dispatches_every_tag_workflow() -> None:
-    assert dispatched() == tag_workflows()
-    assert "release.yml" in dispatched()
+def auto_tag_steps() -> list[dict]:
+    return load("auto-tag.yml")["jobs"]["tag"]["steps"]
 
 
-@pytest.mark.parametrize("workflow", sorted(tag_workflows()))
-def test_each_tag_workflow_takes_a_tag_by_dispatch(workflow: str) -> None:
+def test_auto_tag_checks_every_tag_workflow_started() -> None:
+    assert watched() == tag_workflows()
+    assert "release.yml" in watched()
+
+
+def test_auto_tag_pushes_the_tag_with_the_deploy_key() -> None:
+    # a tag pushed with GITHUB_TOKEN starts no workflow; the deploy key's push does
+    steps = auto_tag_steps()
+    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
+    assert checkout["with"]["ssh-key"] == "${{ secrets.RELEASE_TAG_DEPLOY_KEY }}"
+    first = steps[0]
+    assert "secrets.RELEASE_TAG_DEPLOY_KEY" in str(first.get("env")), "no key, no tag: checked first"
+    assert "exit 1" in first["run"]
+    perms = load("auto-tag.yml")["jobs"]["tag"]["permissions"]
+    assert perms.get("contents") == "read", "the tag is not pushed with GITHUB_TOKEN"
+    assert perms.get("actions") != "write", "auto-tag dispatches nothing"
+
+
+def test_auto_tag_never_dispatches_a_tag_workflow() -> None:
+    # a dispatched release.yml is signed as `workflow_dispatch`, which releaseverify refuses
+    for step in auto_tag_steps():
+        assert "gh workflow run" not in str(step.get("run", "")), step.get("name")
+
+
+def test_release_is_never_dispatched() -> None:
+    # shared/go/releaseverify pins BuildTrigger "push" (identity.go): homes refuse anything else
+    assert "workflow_dispatch" not in on(load("release.yml"))
+    identity = (ROOT / "shared/go/releaseverify/identity.go").read_text()
+    assert 'BuildTrigger = "push"' in identity
+
+
+@pytest.mark.parametrize("workflow", sorted(tag_workflows() - {"release.yml"}))
+def test_each_other_tag_workflow_takes_a_tag_by_hand(workflow: str) -> None:
     inputs = (on(load(workflow)).get("workflow_dispatch") or {}).get("inputs") or {}
-    assert "tag" in inputs, f"{workflow}: workflow_dispatch needs a `tag` input (auto-tag.yml passes it)"
+    assert "tag" in inputs, f"{workflow}: workflow_dispatch needs a `tag` input (a tag's run by hand)"
 
 
 def test_auto_tag_follows_ci_and_the_rehearsal_on_main() -> None:

@@ -45,8 +45,8 @@ on:
       - '.github/workflows/relay.yml'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
   # run the deploy job against the `production` environment.
-  # Or a tag's run, as a pushed tag's: auto-tag.yml dispatches it on each tag it makes
-  # (`--ref vX.Y.Z -f tag=vX.Y.Z`; a tag pushed with GITHUB_TOKEN starts no push run).
+  # Or a tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
+  # is missing (auto-tag.yml's tag push starts the push run).
   # "A tag's run" below is a pushed tag, or a dispatch with `tag` on that tag's ref.
   workflow_dispatch:
     inputs:
