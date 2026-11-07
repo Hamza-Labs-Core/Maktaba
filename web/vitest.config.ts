@@ -16,6 +16,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
       "@ds": path.resolve(__dirname, "design-system"),
       "@maktaba/tvplayer": path.resolve(__dirname, "packages/tvplayer/src"),
+      "@cloud-shared": path.resolve(__dirname, "cloud/src/shared"),
       "@maktaba/flowchart": path.resolve(__dirname, "../tools/plugin-sdk/js/src/flowchart.ts"),
     },
   },
@@ -26,6 +27,7 @@ export default defineConfig({
     include: [
       "src/**/*.test.{ts,tsx}",
       "cloud/src/**/*.test.{ts,tsx}",
+      "admin/src/**/*.test.{ts,tsx}",
       "design-system/**/*.test.{ts,tsx}",
       "packages/**/*.test.{ts,tsx}",
     ],

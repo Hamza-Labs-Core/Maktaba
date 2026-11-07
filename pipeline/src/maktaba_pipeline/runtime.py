@@ -31,6 +31,7 @@ import contextlib
 import contextvars
 import os
 import re
+import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -149,6 +150,8 @@ _TX_CONN: contextvars.ContextVar[Any] = contextvars.ContextVar("maktaba_tx_conn"
 PG_POOL_MAX = 10
 #: an unused pooled connection closes after this long (asyncpg keeps one for 300 s)
 PG_POOL_IDLE_SEC = 60.0
+#: how long a closed SQLite database waits for aiosqlite's worker thread to end
+_SQLITE_THREAD_END_SEC = 5.0
 
 
 class Database:
@@ -367,6 +370,12 @@ class Database:
                 await self._pool.close()
             elif self._conn is not None:
                 await self._conn.close()
+        # aiosqlite's close returns once its worker thread said it stops, a moment before
+        # the thread has ended: the worker's exit counted it as still running and left with
+        # os._exit (issue #862). Its end is waited for here, off the loop.
+        thread = getattr(self._conn, "_thread", None)
+        if isinstance(thread, threading.Thread) and thread.is_alive():
+            await asyncio.to_thread(thread.join, _SQLITE_THREAD_END_SEC)
 
 
 def connect(url: str) -> Awaitable[Database]:

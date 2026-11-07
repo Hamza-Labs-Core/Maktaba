@@ -42,8 +42,17 @@ the same probes unsandboxed as the positive control. Those probes run only in CI
   (`subject` and `list` clash with a type and a keyword).
 - **Default fuel is the story's 2×10⁹ per 60 s of timeout.** A plugin that needs more CPU
   declares `resources.fuel`.
-- **Instances, memories and tables per store are 16, 4 and 16**, not 1: a component holds
-  several core instances (its module and shims).
+- **A compile is never a job's time** (54.02 §6): a job's limit counts from its store, after
+  any compile of its package and any wait for a slot (`compile_ms`, `wait_ms` in the result).
+  A compile has its own cap (180 s, `plugin_compile_timeout`, the package refused after) on 2
+  workers; the cache is named by the component's sha256, the Wasmtime version and the
+  engine's settings hash, and warms in the background at start.
+- **Instances, memories and tables per store are 64, 4 and 16**, not 1: a component holds
+  several core instances (its module and shims), and a Python one (componentize-py) one per
+  module of its runtime: 38 measured, so 64 (it was 16 until the Python template, 54.12).
+  An instance owns no memory beyond the 4 counted memories, each capped at the job's
+  `memory_mb`, so memory and fuel stay the bounds (`instances_are_capped`,
+  `memories_are_capped_whatever_the_instances`).
 - **The Linux seccomp filter denies by name** (EPERM) rather than allowing by name: an
   allow-list breaks with each libc that adopts a new syscall, and the network rule (the
   socket-family check) is exact either way. Namespaces are tried in a forked child first, so

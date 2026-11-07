@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     from maktaba_pipeline.plugins import firstparty
 
     from . import sandbox, trust
-    from .server import Runner, load_impl
+    from .server import Runner, library_roots, load_impl
 
     served = members(group)
     packages = sorted({entry.split(".", 1)[0] for entry, _ in served.values()})
@@ -109,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))
         return EXIT_SANDBOX
     sandbox.guard_names(policy.write_named)
+    sandbox.guard_scope()  # a file stage's job changes only its subject's files (54.32 §2)
     unavailable: dict[str, str] = {}
     entries: dict[str, str] = {}
     for stage, (entry, _) in served.items():
@@ -131,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         bundle=firstparty.bundle_digest(),
         unavailable=unavailable,
         areas=areas_digest,
+        library_roots=library_roots(areas),
     )
     log(
         "plugin_runner_serving",
@@ -146,10 +148,26 @@ def main(argv: list[str] | None = None) -> int:
     return EXIT_AREAS_CHANGED if runner.areas_changed else 0
 
 
+def idle_seconds() -> float:
+    """``MAKTABA_RUNNER_IDLE_SEC``: how long a runner the supervisor starts on demand waits
+    for work before it exits (0 or unset: it never does)."""
+    try:
+        return max(0.0, float(os.environ.get("MAKTABA_RUNNER_IDLE_SEC", "0") or 0))
+    except ValueError:
+        return 0.0
+
+
 async def _serve(runner: Any, own: Any, areas_file: Any, digest: str) -> None:
-    """Serve until the areas the sandbox was built from change on disk."""
+    """Serve until the areas the sandbox was built from change on disk, or, when the
+    supervisor started it on demand (``MAKTABA_RUNNER_IDLE_SEC``), until it has had nothing
+    to do for that long: it then exits 0 and is started again for the next job."""
     serving = asyncio.ensure_future(runner.serve(own))
+    idle = idle_seconds()
     while not serving.done():
+        if idle > 0 and runner.idle_for() >= idle:
+            log("plugin_runner_idle", group=runner.group, idle_sec=idle)
+            serving.cancel()
+            break
         await asyncio.sleep(AREAS_POLL_S)
         try:
             now = str(json.loads(areas_file.read_text()).get("digest") or "")

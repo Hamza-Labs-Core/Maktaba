@@ -14,6 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pluginrelay"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
@@ -368,6 +369,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// per-boot local token the dispatcher mints a plugin job's token with (54.04 §2)
 		if PluginsHere(cfg) {
 			add(EnvPluginDSocket, PluginsPaths(cfg).Dispatch)
+			// on Windows the pipeline cannot open the host's AF_UNIX socket: the
+			// supervisor's named pipe relay to it (#710)
+			if pipe := PluginsPipe(cfg); pipe != "" {
+				add(pluginrelay.EnvPipe, pipe)
+			}
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
 			// on a joined machine the packages are its own copies (story 54.42 §2): the
 			// dispatcher names this folder to the host, and sends outcomes to the home
@@ -381,6 +387,8 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		if RunnersHere(cfg) {
 			add("MAKTABA_RUNNER_DIR", RunnerDir(cfg))
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+			// where it asks for a shared runner group that is not up (it starts on demand)
+			add("MAKTABA_SUPERVISOR_URL", StateURL(cfg))
 		}
 		// Recent-logs HTTP endpoint drained by the api's diagnostics
 		// export proxy (see MAKTABA_LOG_PEERS on the api role).

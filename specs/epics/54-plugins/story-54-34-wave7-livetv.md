@@ -94,3 +94,15 @@ Per stage switch; per release Epic 51 rollback.
 ### Dependencies
 
 54.33; Epic 33 (slots and swap).
+
+## Built (2026-11-07)
+
+Wave 7 moved `plan_channels` and `write_channels` into `tv.maktaba.livetv` and `tv_stage`,
+`tv_swap`, `tv_rollback` and `tv_gc` into `tv.maktaba.livetv-slots` (runner group `light`;
+roles in the wave's `NNNN_fp_roles` migration). The plugins read the channels' art
+(`data.channels`) and write the plan's page (`data.review`); no stage writes channel files
+(README §15.12). The swap commit and the rollback are the worker's, relayed for the job's
+own change. The TV release code's statements are fixed texts. Parity (T01) plans a library
+into channels with staging off and on, and takes a change through stage, swap, rollback and
+clean-up with the TV clock frozen; N16 is measured on `plan_channels`, `write_channels` and
+`tv_gc`. The update rehearsal scenario 16.7 (T02) follows with issue #804.

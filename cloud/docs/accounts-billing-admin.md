@@ -39,7 +39,7 @@ All bodies are JSON. Errors are `{"error": "<code>", "message": "…"}`.
 | `GET /v1/auth/oauth/google/callback` | — | `302` to `{web_url}/signed-in` with the refresh cookie set | `302` to `{web_url}/sign-in?error=<code>` |
 | `GET /v1/auth/oauth/apple` | — | `302` to Apple (`response_mode=form_post`) | `501 apple_disabled` |
 | `POST /v1/auth/oauth/apple/callback` | form `code, state` | as Google | as Google |
-| `GET /v1/auth/providers` | — | `200 {"google":bool,"apple":bool}` | — |
+| `GET /v1/auth/providers` | — | `200 {"google":bool,"apple":bool}`, plus `turnstile_site_key` while Turnstile is on | — |
 
 `user` is `{id, email, email_verified, display_name?, plan, role}`.
 Access tokens last 15 minutes; refresh sessions 30 days. The refresh
@@ -62,6 +62,21 @@ blocked`. The client IP is `CF-Connecting-IP` only when the TCP peer is in
 the TCP peer. `X-Forwarded-For` is never read. The rate limits, the blocklist,
 the lockout, the audit log and the access log all use it (Epic 50 story 50.31).
 The old `server.trust_proxy_headers` is refused at start.
+
+**Turnstile (Epic 50 story 50.30).** With `[turnstile] enabled = true`, register, login and
+`password/forgot` need a `turnstile_token` in the body when the request comes from the web app
+(its `Origin` is one of `turnstile.web_origins`, by default `web_url`). The api checks it with
+Cloudflare's siteverify (3 s timeout), with the client IP and the expected hostname. A missing,
+used or wrong token gets `403 turnstile_failed`; siteverify down gets `503
+turnstile_unavailable` with `Retry-After: 30`. Native apps send no `Origin` and are not asked.
+`GET /v1/auth/providers` adds `turnstile_site_key` while it is on. The secret comes only from
+`MAKTABA_CLOUD_TURNSTILE_SECRET` (a `turnstile.secret` in the file is refused); on with no secret,
+the api refuses to start. Off by default.
+
+**At the edge (50.30).** In production Cloudflare also rate-limits the auth routes per IP
+(20 a minute) and the API (1,200 a minute), answering `429 {"error":"rate_limited"}` itself.
+Both rules start in `log` mode (counted, not blocked) and are switched to `block` in the zone
+file after a week of traffic; `deploy/cloudflare/zone.maktaba.tv.json` holds the rules.
 
 ## Account — `/v1/account/*` (bearer token)
 
@@ -199,6 +214,11 @@ maktaba-cloud license unrevoke --id lic_… --reason "…" --config cloud.toml
 ```
 
 ## Service admin — `/v1/admin/*` (bearer token + `service_admin`)
+
+The console that calls these is its own web bundle, `web/admin` (`pnpm dev:admin`,
+`pnpm build:admin` → `dist-admin/`), for `admin.maktaba.tv` only (Epic 50 story 50.32). The
+user app (`web/cloud`) has no admin route, link, string or module, and CI fails a user build
+that carries one (`tools/lint/no-admin-in-user-bundle.mjs`).
 
 | Method & path | Body | Success |
 |---|---|---|

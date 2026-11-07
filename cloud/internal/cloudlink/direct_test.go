@@ -146,11 +146,18 @@ func TestTheAgentCarriesTheDirectFrames(t *testing.T) {
 		st := status()
 		return st.Online && st.Domain == "direct-a.example" && st.HomeID == "0123abcd"
 	})
+	// the endpoints frame can arrive after the name: wait for it too (it raced, #861's CI)
+	waitFor(t, "the endpoints", func() bool {
+		cloud.mu.Lock()
+		defer cloud.mu.Unlock()
+		return len(cloud.endpoints) == 1
+	})
 	cloud.mu.Lock()
-	if len(cloud.endpoints) != 1 || cloud.endpoints[0].Port != 32443 || cloud.from != netip.MustParseAddr("81.2.3.4") {
-		t.Fatalf("endpoints %+v from %v", cloud.endpoints, cloud.from)
-	}
+	eps, from := append([]EndpointsPayload(nil), cloud.endpoints...), cloud.from
 	cloud.mu.Unlock()
+	if eps[0].Port != 32443 || from != netip.MustParseAddr("81.2.3.4") {
+		t.Fatalf("endpoints %+v from %v", eps, from)
+	}
 
 	if code := post(DirectRequest{CSR: []byte("DER")}); code != http.StatusNoContent {
 		t.Fatalf("csr: %d", code)

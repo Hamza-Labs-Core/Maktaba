@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import MaktabaKit
 
@@ -51,5 +52,13 @@ struct PluginPanelTests {
         #expect(try Capabilities.parse(Data(#"{"features":{"plugin_panels":"off"}}"#.utf8)).0.panels == false)
         #expect(try Capabilities.parse(Data(#"{"features":{"plugin_panels":"on"}}"#.utf8)).0.panels == true)
         #expect(Capabilities.allOn.panels == false)
+    }
+
+    /// "From plugins" is collapsed on every page; only the page snapshots (issue #876) open it.
+    @Test func panelsStartCollapsed() {
+        #expect(EnvironmentValues().pluginPanelsOpenAtFirst == false)
+        var open = EnvironmentValues()
+        open.pluginPanelsOpenAtFirst = true
+        #expect(open.pluginPanelsOpenAtFirst)
     }
 }

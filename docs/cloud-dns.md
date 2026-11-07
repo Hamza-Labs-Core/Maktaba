@@ -88,6 +88,11 @@ under no configured domain (it is no open resolver) and rate-limits each source.
 **Adding a domain** is configuration only: register it, add the two `NS` records and the glue,
 append it to `direct.domains` on A and B and restart the roles. New homes start using it at once.
 
+**On the nodes** (`deploy/cloud-ha`):
+- **The service.** The name server is `maktaba-cloud-dns.service` on A and B, always (not only on the leader): each node is one of the two `NS`. It needs `[direct] domains`, `ns1` and `ns2` in `/etc/maktaba/cloud.toml`, and `DIRECT_DNS=yes` in `cloud-ha.env`, before `setup.sh` runs.
+- **What `setup.sh` changes.** It opens 53/udp and 53/tcp, and turns off systemd-resolved's stub listener, which would otherwise hold port 53. The node then resolves through resolved's upstream servers.
+- **Deploys.** Each deploy (`deploy.sh` step 5, `bin/dns-update`) updates the standby's name server, then the leader's, so one always answers. A release whose name server doesn't stay up goes back to the previous binary on that node, and the deploy stops before the other node.
+
 ## Who changes what
 
 | What | Who | Where |

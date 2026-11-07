@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { T0, fakeConfig, fakeWebhook, registry, signedOf, testDB, testSigner } from "../testing/harness.js";
 import { handlePaymentWebhook } from "../web/payments_webhook.js";
-import { homeEntitlements } from "./entitlements.js";
+import { holds, homeEntitlements } from "./entitlements.js";
 import { KIND, verifySig } from "../signing/sig.js";
 import { balances } from "./ledger.js";
 import { SaleRefused, approvePayout, requestRefund, runPayouts, setPrice, startPurchase, startSellerFee } from "./sales.js";
@@ -115,6 +115,31 @@ describe("paid plugins on the fake provider", () => {
     expect(await balances(db, "developer:dev-1")).toEqual([{ provider_id: "fake", currency: "USD", minor: 850 }]);
     const { signer } = await testSigner();
     expect((await homeEntitlements(db, "home-1", "ab".repeat(32), signer, T0)).map((e) => signedOf(e).purchase_id)).toEqual(["pur-6"]);
+  });
+
+  it("holds: a paid purchase's entitlement, until a refund, its end, or a yearly term's end", async () => {
+    const { db, reg, hook } = await store();
+    await startPurchase(db, reg, {
+      purchaseId: "pur-h", buyer, homeId: "home-h", pluginId: "dev.example.loudness",
+      kind: "one_time", currency: "USD", returnUrl: "https://plugins.maktaba.tv/buy/x/done", now: T0,
+    });
+    // pending: not yet
+    expect(await holds(db, "home-h", "dev.example.loudness", T0)).toBe(false);
+    await hook([paid("pur-h")]);
+    expect(await holds(db, "home-h", "dev.example.loudness", T0)).toBe(true);
+    // another home, another plugin
+    expect(await holds(db, "home-other", "dev.example.loudness", T0)).toBe(false);
+    expect(await holds(db, "home-h", "dev.example.other", T0)).toBe(false);
+    // a yearly term that ended
+    await db.prepare(`UPDATE entitlements SET product = 'yearly', period_end = ? WHERE purchase_id = 'pur-h'`).bind(T0.toISOString()).run();
+    expect(await holds(db, "home-h", "dev.example.loudness", T0)).toBe(false);
+    await db.prepare(`UPDATE entitlements SET product = 'one_time', period_end = NULL WHERE purchase_id = 'pur-h'`).run();
+    // refunded, or ended
+    await db.prepare(`UPDATE purchases SET status = 'refunded' WHERE id = 'pur-h'`).run();
+    expect(await holds(db, "home-h", "dev.example.loudness", T0)).toBe(false);
+    await db.prepare(`UPDATE purchases SET status = 'paid' WHERE id = 'pur-h'`).run();
+    await db.prepare(`UPDATE entitlements SET ended_at = ? WHERE purchase_id = 'pur-h'`).bind(T0.toISOString()).run();
+    expect(await holds(db, "home-h", "dev.example.loudness", T0)).toBe(false);
   });
 
   it("pricing needs the seller fee and active payouts; a free plugin stays free", async () => {

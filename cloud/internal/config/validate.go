@@ -15,6 +15,8 @@ const (
 	RoleAPI    Role = "api"
 	RoleRelay  Role = "relay"
 	RoleWorker Role = "worker"
+	// RoleDNS is the direct-name domains' name server (Epic 50 story 50.15).
+	RoleDNS Role = "dns"
 )
 
 // Validate applies role-specific required-field checks. The api role is
@@ -37,6 +39,10 @@ func Validate(c Config, role Role) error {
 		if err := validateOrigin(c.Server); err != nil {
 			return err
 		}
+		// the auth pages' bot check (story 50.30 §4) is never on without its secret
+		if c.Turnstile.Enabled && c.Turnstile.Secret == "" {
+			return fmt.Errorf("%w: turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set", ErrMissing)
+		}
 	case RoleRelay:
 		if c.Server.ListenAddr == "" {
 			return fmt.Errorf("%w: [server].listen_addr", ErrMissing)
@@ -49,6 +55,15 @@ func Validate(c Config, role Role) error {
 		}
 	case RoleWorker:
 		// Worker uses control port only; no public listener required.
+	case RoleDNS:
+		if len(c.Direct.Domains) == 0 {
+			return fmt.Errorf("%w: [direct].domains (the dns role answers them)", ErrMissing)
+		}
+		for _, ns := range []struct{ key, v string }{{"ns1", c.Direct.NS1}, {"ns2", c.Direct.NS2}} {
+			if net.ParseIP(ns.v) == nil {
+				return fmt.Errorf("config: [direct].%s %q: the node's IP address", ns.key, ns.v)
+			}
+		}
 	default:
 		return fmt.Errorf("config: unknown role %q", role)
 	}

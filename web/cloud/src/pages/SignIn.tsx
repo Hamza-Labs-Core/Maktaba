@@ -1,20 +1,17 @@
 // /sign-in — email + password, plus Google / Apple when the cloud has them on.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Input } from "@ds/components/Input/Input";
-import { api, apiUrl, CloudApiError } from "../api";
-import { useI18n } from "../i18n";
+import { api, apiUrl, CloudApiError } from "../shared/api";
+import { useI18n } from "../shared/i18n";
 import { navigateExternal } from "../nav";
-import { useSession } from "../session";
-import { Banner, useErrorMessage } from "../ui";
-
-interface Providers {
-  google: boolean;
-  apple: boolean;
-}
+import { useProviders } from "../providers";
+import { useSession } from "../shared/session";
+import { Turnstile } from "../Turnstile";
+import { Banner, useErrorMessage } from "../shared/ui";
 
 export function SignIn() {
   const { t, has } = useI18n();
@@ -28,14 +25,9 @@ export function SignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<CloudApiError | Error | null>(null);
   const [resent, setResent] = useState(false);
-  const [providers, setProviders] = useState<Providers>({ google: false, apple: false });
-
-  useEffect(() => {
-    api
-      .get<Providers>("/v1/auth/providers", { auth: false })
-      .then((p) => setProviders({ google: !!p?.google, apple: !!p?.apple }))
-      .catch(() => setProviders({ google: false, apple: false }));
-  }, []);
+  const providers = useProviders();
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReset, setTurnstileReset] = useState(0);
 
   const oauthError = params.get("error");
   const notice = params.get("notice");
@@ -47,10 +39,12 @@ export function SignIn() {
     setError(null);
     setResent(false);
     try {
-      await signIn(email.trim(), password);
+      await signIn(email.trim(), password, turnstileToken || undefined);
       navigate(from && from.startsWith("/") ? from : "/account", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err : new Error(String(err)));
+      // a Turnstile token is good once: the next try needs a fresh one
+      setTurnstileReset((n) => n + 1);
     } finally {
       setBusy(false);
     }
@@ -111,7 +105,18 @@ export function SignIn() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
-          <Button type="submit" loading={busy} disabled={!email.trim() || !password}>
+          <Turnstile
+            siteKey={providers.turnstileSiteKey}
+            onToken={setTurnstileToken}
+            resetKey={turnstileReset}
+          />
+          <Button
+            type="submit"
+            loading={busy}
+            disabled={
+              !email.trim() || !password || (!!providers.turnstileSiteKey && !turnstileToken)
+            }
+          >
             {t("signIn.submit")}
           </Button>
         </form>

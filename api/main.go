@@ -38,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/directaccess"
@@ -736,12 +737,19 @@ func runServe() error {
 			componentsSvc := router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
 				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
+			// Epic 53 story 53.12: the queue's numbers on the home's /metrics, for the Queue
+			// and Processing dashboards (the home only: a joined machine reads the same table)
+			queues.RegisterMetrics(appDB)
 			// Epic 54 (stories 54.04-54.09): the plugins' admin routes on the components
 			// service, the plugin API's invocation and breaker routes, and the plugin API
 			// on its unix socket when the supervisor names one
 			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
 				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets, Loops: loops,
-				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient)})
+				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient),
+				// story 54.35: the first-party Plex plugin reaches Plex through the home's
+				// service door, which adds the token and scrubs it out of every answer
+				Service: relay.New(relay.Config{Settings: relay.DBSettings(appDB),
+					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv), Logger: logger})})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

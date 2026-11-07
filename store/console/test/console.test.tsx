@@ -117,3 +117,95 @@ describe("pages", () => {
     expect(await screen.findByText("ABC")).toBeTruthy();
   });
 });
+
+describe("purchases on the account page (54.19 §6)", () => {
+  const HOMES = [
+    { id: "h_den", name: "Den", server_version: "0.3.96", platform: "macos", linked_at: "2026-11-01T00:00:00Z" },
+    { id: "h_cabin", name: "Cabin", server_version: "0.3.96", platform: "linux", linked_at: "2026-11-02T00:00:00Z" },
+  ];
+  const purchase = (over: Record<string, unknown> = {}) => ({
+    id: "pur_1",
+    plugin_id: "dev.example.loudness",
+    product: "one_time",
+    home_id: "h_den",
+    home_name: "Den",
+    home_linked: true,
+    status: "paid",
+    moves_left: 2,
+    next_move_at: null,
+    ...over,
+  });
+
+  for (const lang of ["en", "ar"] as const) {
+    it(`${lang}: a purchase moves to the other linked home after confirming it's you`, async () => {
+      localStorage.setItem("mks:lang", lang);
+      let confirmed = false;
+      let movedTo = "";
+      vi.stubGlobal(
+        "fetch",
+        server({
+          "GET /v1/me": () => [200, ME],
+          "GET /v1/homes": () => [200, { homes: HOMES }],
+          "GET /v1/purchases": () => [200, { purchases: [movedTo ? purchase({ home_id: movedTo, home_name: "Cabin", moves_left: 1 }) : purchase()] }],
+          "POST /v1/purchases/pur_1/move": (b) =>
+            confirmed
+              ? ((movedTo = (b as { home_id: string }).home_id), [200, { status: "moved", moves_left: 1 }])
+              : [401, { error: "reauth_required" }],
+          "POST /v1/reauth": () => ((confirmed = true), [200, { status: "confirmed" }]),
+        }),
+      );
+      render(<App path="/account" />);
+      expect(await screen.findByRole("heading", { name: WORDS[lang]["account.purchases"] })).toBeTruthy();
+      expect(await screen.findByText(WORDS[lang]["account.purchase.moves_left"].replace("{n}", "2"), { exact: false })).toBeTruthy();
+      // only the other home is offered
+      const select = screen.getByLabelText(WORDS[lang]["account.purchase.move_to"]) as HTMLSelectElement;
+      expect([...select.options].map((o) => o.value)).toEqual(["h_cabin"]);
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: WORDS[lang]["account.purchase.move"] })));
+      expect(await screen.findByRole("dialog", { name: WORDS[lang]["reauth.title"] })).toBeTruthy();
+      fireEvent.change(screen.getByLabelText(WORDS[lang]["reauth.code"]), { target: { value: "123456" } });
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: WORDS[lang]["reauth.confirm"] })));
+      expect(await screen.findByText(WORDS[lang]["account.purchase.moved"])).toBeTruthy();
+      expect(movedTo).toBe("h_cabin");
+      expect(await screen.findByText(WORDS[lang]["account.purchase.on"].replace("{home}", "Cabin"), { exact: false })).toBeTruthy();
+    });
+  }
+
+  it("no move offered once both moves are used: it says when the next one is free; a refusal shows its words", async () => {
+    vi.stubGlobal(
+      "fetch",
+      server({
+        "GET /v1/me": () => [200, ME],
+        "GET /v1/homes": () => [200, { homes: HOMES }],
+        "GET /v1/purchases": () => [
+          200,
+          {
+            purchases: [
+              purchase({ moves_left: 0, next_move_at: "2027-06-01T00:00:00Z" }),
+              purchase({ id: "pur_2", status: "refunded", moves_left: 0 }),
+              purchase({ id: "pur_3", home_id: "h_gone", home_name: "Gone", home_linked: false, moves_left: 1 }),
+            ],
+          },
+        ],
+        "POST /v1/purchases/pur_3/move": () => [409, { error: "too_many_moves", max: 2 }],
+      }),
+    );
+    render(<App path="/account" />);
+    expect(await screen.findByText(WORDS.en["account.purchase.next_move"].split("{date}")[0]!, { exact: false })).toBeTruthy();
+    expect(screen.getByText(WORDS.en["account.purchase.status.refunded"], { exact: false })).toBeTruthy();
+    expect(screen.getByText(WORDS.en["account.purchase.unlinked"], { exact: false })).toBeTruthy();
+    // only the unlinked home's purchase still has a move
+    const moves = screen.getAllByRole("button", { name: WORDS.en["account.purchase.move"] });
+    expect(moves).toHaveLength(1);
+    await act(async () => fireEvent.click(moves[0]!));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", WORDS.en["error.too_many_moves"]);
+  });
+
+  it("no purchases: says so", async () => {
+    vi.stubGlobal(
+      "fetch",
+      server({ "GET /v1/me": () => [200, ME], "GET /v1/homes": () => [200, { homes: [] }], "GET /v1/purchases": () => [200, { purchases: [] }] }),
+    );
+    render(<App path="/account" />);
+    expect(await screen.findByText(WORDS.en["account.purchases.none"])).toBeTruthy();
+  });
+});

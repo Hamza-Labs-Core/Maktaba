@@ -6,10 +6,12 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Input } from "@ds/components/Input/Input";
-import { api } from "../api";
-import { useI18n } from "../i18n";
-import { useSession } from "../session";
-import { Banner, Loading, passwordProblem, useErrorMessage } from "../ui";
+import { api, CloudApiError } from "../shared/api";
+import { useI18n } from "../shared/i18n";
+import { useProviders } from "../providers";
+import { useSession } from "../shared/session";
+import { Turnstile } from "../Turnstile";
+import { Banner, Loading, passwordProblem, useErrorMessage } from "../shared/ui";
 
 function AuthCard({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -48,6 +50,9 @@ export function Register() {
   const [error, setError] = useState<unknown>(null);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const hint = usePasswordHint(password);
+  const { turnstileSiteKey } = useProviders();
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReset, setTurnstileReset] = useState(0);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -57,10 +62,12 @@ export function Register() {
     try {
       const body: Record<string, string> = { email: email.trim(), password };
       if (displayName.trim()) body.display_name = displayName.trim();
+      if (turnstileToken) body.turnstile_token = turnstileToken;
       await api.post("/v1/auth/register", body, { auth: false });
       setSentTo(email.trim());
     } catch (err) {
       setError(err);
+      setTurnstileReset((n) => n + 1);
     } finally {
       setBusy(false);
     }
@@ -104,10 +111,19 @@ export function Register() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        <Turnstile
+          siteKey={turnstileSiteKey}
+          onToken={setTurnstileToken}
+          resetKey={turnstileReset}
+        />
         <Button
           type="submit"
           loading={busy}
-          disabled={!email.trim() || passwordProblem(password) !== null}
+          disabled={
+            !email.trim() ||
+            passwordProblem(password) !== null ||
+            (!!turnstileSiteKey && !turnstileToken)
+          }
         >
           {t("register.submit")}
         </Button>
@@ -153,20 +169,35 @@ export function VerifyEmail() {
 
 export function ForgotPassword() {
   const { t } = useI18n();
+  const message = useErrorMessage();
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<unknown>(null);
+  const { turnstileSiteKey } = useProviders();
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileReset, setTurnstileReset] = useState(0);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
+    setError(null);
     try {
-      await api.post("/v1/auth/password/forgot", { email: email.trim() }, { auth: false });
-    } catch {
-      // the answer is the same 202 for every address; show the same state
+      const body: Record<string, string> = { email: email.trim() };
+      if (turnstileToken) body.turnstile_token = turnstileToken;
+      await api.post("/v1/auth/password/forgot", body, { auth: false });
+      setSent(true);
+    } catch (err) {
+      // the bot check's refusal is the page's own, shown so the person can try again; any
+      // other answer is the same 202 for every address, so it shows the same state
+      if (err instanceof CloudApiError && err.code.startsWith("turnstile_")) {
+        setError(err);
+        setTurnstileReset((n) => n + 1);
+      } else {
+        setSent(true);
+      }
     } finally {
       setBusy(false);
-      setSent(true);
     }
   }
 
@@ -176,6 +207,7 @@ export function ForgotPassword() {
         <Banner tone="info">{t("forgot.sent")}</Banner>
       ) : (
         <form className="mkc-form" onSubmit={submit} noValidate>
+          {error != null && <Banner tone="error">{message(error)}</Banner>}
           <p className="mkc-muted">{t("forgot.body")}</p>
           <Input
             label={t("field.email")}
@@ -185,7 +217,16 @@ export function ForgotPassword() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
-          <Button type="submit" loading={busy} disabled={!email.trim()}>
+          <Turnstile
+            siteKey={turnstileSiteKey}
+            onToken={setTurnstileToken}
+            resetKey={turnstileReset}
+          />
+          <Button
+            type="submit"
+            loading={busy}
+            disabled={!email.trim() || (!!turnstileSiteKey && !turnstileToken)}
+          >
             {t("forgot.submit")}
           </Button>
         </form>

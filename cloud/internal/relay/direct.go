@@ -208,7 +208,17 @@ func (d *DBDirect) Endpoints(ctx context.Context, serverID string, from netip.Ad
 	if state == "on" && (p.Port <= 0 || p.Port > 65535 || !from.IsValid() || direct.Shared(from)) {
 		state = "off"
 	}
-	return d.Store.SetEndpoints(ctx, serverID, from, p.Port, state)
+	if err := d.Store.SetEndpoints(ctx, serverID, from, p.Port, state); err != nil {
+		return err
+	}
+	// the listener's LAN addresses (story 50.15 §3): the store keeps the private ones
+	lan := make([]netip.AddrPort, 0, len(p.LAN))
+	for _, s := range p.LAN {
+		if a, err := netip.ParseAddrPort(s); err == nil {
+			lan = append(lan, a)
+		}
+	}
+	return d.Store.SetLAN(ctx, serverID, lan)
 }
 
 // pick chooses a new home's domain and CA (the most room this week).

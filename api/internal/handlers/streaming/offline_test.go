@@ -58,9 +58,13 @@ func (f *fakeOffline) Video(id string) (string, float64, bool) {
 type fakeService struct {
 	mu     sync.Mutex
 	closed []string
+	opened []OpenSessionRequest
 }
 
 func (s *fakeService) Open(_ context.Context, req OpenSessionRequest) (OpenSessionResponse, error) {
+	s.mu.Lock()
+	s.opened = append(s.opened, req)
+	s.mu.Unlock()
 	switch req.VideoID {
 	case vNoProbe:
 		return OpenSessionResponse{}, errors.New("streaming: not-found")

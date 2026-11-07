@@ -19,20 +19,33 @@ A runner that cannot apply its sandbox does not run (:class:`SandboxUnavailable`
 
 from __future__ import annotations
 
+import contextvars
 import ctypes
 import ctypes.util
+import importlib.util
 import os
 import platform
 import re
+import shlex
 import shutil
 import struct
 import sys
 import sysconfig
+import threading
 from dataclasses import dataclass, field
+from typing import Any
 
 from maktaba_plugin_sdk.native.stmtdb import PluginRefused
 
-__all__ = ["Applied", "Policy", "SandboxUnavailable", "apply", "seatbelt_profile"]
+__all__ = [
+    "JOB_SCOPE",
+    "Applied",
+    "Policy",
+    "SandboxUnavailable",
+    "apply",
+    "guard_scope",
+    "seatbelt_profile",
+]
 
 
 class SandboxUnavailable(RuntimeError):
@@ -110,6 +123,74 @@ def guard_names(roots: list[str]) -> None:
     sys.addaudithook(hook)
 
 
+#: the running job's :class:`~maktaba_pipeline.library_mgmt.scope.JobScope`, or None: set
+#: by the runner around a job of a scoped stage (asyncio tasks and ``to_thread`` copy it)
+JOB_SCOPE: contextvars.ContextVar[Any] = contextvars.ContextVar("maktaba_job_scope", default=None)
+
+_in_scope_hook = threading.local()
+_scope_guarded: list[bool] = []
+
+
+def guard_scope() -> None:
+    """Refuse (``plugin_scope``) a change to a library file that the running job's scope
+    (:data:`JOB_SCOPE`) does not allow: an audit hook on every open for writing, rename,
+    remove, link, truncate, chmod, utime and tree removal (story 54.32 §2). A job with no
+    scope is not checked, nor a path outside the scope's library roots or in their trash.
+    Each refusal is also kept on the scope, so the job is refused even when its code caught
+    the error. Installed once per process (an audit hook is for good)."""
+    if _scope_guarded:
+        return
+    _scope_guarded.append(True)
+    writes = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+
+    def check(path: object, dir_fd: object = None) -> None:
+        scope = JOB_SCOPE.get()
+        if scope is None or path is None or isinstance(path, int):
+            return
+        try:
+            p = os.fsdecode(path)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return
+        if dir_fd is not None and not os.path.isabs(p):
+            return  # relative to an open folder: shutil.rmtree's own steps, checked whole
+        if getattr(_in_scope_hook, "on", False):
+            return
+        _in_scope_hook.on = True
+        try:
+            from maktaba_pipeline.library_mgmt.scope import key
+
+            k = key(p)
+            if not scope.governs(k) or scope.allows(k):
+                return
+            scope.refused.append(k)
+        finally:
+            _in_scope_hook.on = False
+        raise PluginRefused(
+            403, "plugin_scope", f"{k}: not a file of this {scope.stage} job's subject"
+        )
+
+    def hook(event: str, args: tuple[object, ...]) -> None:
+        if event == "open":
+            path, mode, flags = args
+            if (isinstance(mode, str) and any(c in mode for c in "wax+")) or (
+                isinstance(flags, int) and flags & writes
+            ):
+                check(path)
+        elif event == "os.rename":
+            check(args[0], args[2])
+            check(args[1], args[3])
+        elif event in ("os.link", "os.symlink"):
+            check(args[1], args[-1])
+        elif event in ("os.remove", "os.chmod", "os.utime"):
+            check(args[0], args[-1])
+        elif event == "os.truncate":
+            check(args[0])
+        elif event == "shutil.rmtree":
+            check(args[0], args[1])
+
+    sys.addaudithook(hook)
+
+
 @dataclass(frozen=True)
 class Applied:
     level: str  # "full" | "partial"
@@ -166,6 +247,19 @@ def tool_path(name: str) -> str | None:
         "yt-dlp": "MAKTABA_YTDLP",
     }
     explicit = os.environ.get(env.get(name, ""), "").strip()
+    if name == "yt-dlp":
+        # what the stages run (integrations.youtube_download.ytdlp_command): MAKTABA_YTDLP
+        # is a command line, else this Python's yt_dlp module (``python -m yt_dlp``), so the
+        # tool is the command's program, else this interpreter when the module is there; a
+        # yt-dlp on PATH only when neither is. Its children keep this sandbox.
+        if explicit:
+            argv = shlex.split(explicit)
+            found = (shutil.which(argv[0]) or argv[0]) if argv else None
+        elif importlib.util.find_spec("yt_dlp") is not None:
+            found = sys.executable
+        else:
+            found = shutil.which(name)
+        return os.path.realpath(found) if found else None
     found = explicit or shutil.which(name)
     return os.path.realpath(found) if found else None
 
