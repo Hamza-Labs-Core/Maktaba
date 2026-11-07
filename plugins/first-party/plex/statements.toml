@@ -1,0 +1,12 @@
+# The shared pipeline modules whose statements tv.maktaba.plex's stages run (story 54.24 §1):
+# the Plex extension's domain code (its stages wrap it), and the rules.
+modules = [
+    "maktaba_pipeline.rules:read",
+    "maktaba_pipeline.extensions.links",
+    "maktaba_pipeline.extensions.plex_items",
+    "maktaba_pipeline.extensions.plex.index",
+    "maktaba_pipeline.extensions.plex.collection",
+    "maktaba_pipeline.extensions.plex.collections_import",
+    "maktaba_pipeline.extensions.plex.groups",
+    "maktaba_pipeline.extensions.plex.livetv",
+]

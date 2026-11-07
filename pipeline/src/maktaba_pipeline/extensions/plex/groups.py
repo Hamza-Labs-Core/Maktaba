@@ -57,13 +57,24 @@ CLIP_TARGET = "plex_clip_group"
 RETIRE_SHARE = 0.8
 
 
+#: a topic's or a clip group's members, a fixed text each (story 54.35)
+_TOPIC_MEMBERS_SQL = (
+    "SELECT v.id AS id, v.path AS path, COALESCE(v.title, v.filename) AS title"
+    " FROM topic_items t JOIN videos v ON v.id = t.video_id"
+    " WHERE t.topic_id = $1 AND v.deleted_at IS NULL ORDER BY t.position"
+)
+_CLIP_MEMBERS_SQL = (
+    "SELECT v.id AS id, v.path AS path, COALESCE(v.title, v.filename) AS title"
+    " FROM clip_group_items t JOIN videos v ON v.id = t.video_id"
+    " WHERE t.group_id = $1 AND v.deleted_at IS NULL ORDER BY t.position"
+)
+
+
 async def _members(db: Any, table: str, key: str, owner: str) -> list[Member]:
-    rows = await db.fetch(
-        f"SELECT v.id AS id, v.path AS path, COALESCE(v.title, v.filename) AS title"  # noqa: S608
-        f" FROM {table} t JOIN videos v ON v.id = t.video_id"
-        f" WHERE t.{key} = $1 AND v.deleted_at IS NULL ORDER BY t.position",
-        owner,
-    )
+    if table == "topic_items":
+        rows = await db.fetch(_TOPIC_MEMBERS_SQL, owner)
+    else:
+        rows = await db.fetch(_CLIP_MEMBERS_SQL, owner)
     return [Member(UUID(str(r["id"])), str(r["path"]), str(r["title"])) for r in rows]
 
 

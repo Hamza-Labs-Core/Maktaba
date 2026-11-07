@@ -1,5 +1,5 @@
 {
- "digest": "d30cdb62c85a7182a37e75bafa2eb589573765c4a699ac5578669a543f456029",
+ "digest": "811b2ea8e1ca19de730043ad9de9e6d097925f66437b790284ed641729d300dd",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -4184,6 +4184,454 @@
     "en": {
      "fp.livetv-slots.name": "Live TV changes",
      "fp.livetv-slots.summary": "Stages a TV change, puts it on the air, rolls it back and cleans up old ones."
+    }
+   }
+  },
+  {
+   "digest": "4365857f02f60c176f7f17ac7859d8dab4b986ee2e28b4b8312099319302c2ba",
+   "folder": "plex",
+   "id": "tv.maktaba.plex",
+   "manifest": "# tv.maktaba.plex: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 8\n# (story 54.35): Plex through the home's service door. The plugin holds neither the Plex token\n# nor Plex's address; every call goes through the door, which adds the token and scrubs it.\nschema     = 1\nid         = \"tv.maktaba.plex\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.plex.name\"\nsummary = \"fp.plex.summary\"\n\n[trusted]\nrunner    = \"service\"\ncomponent = \"ext.plex\"\ndb.read   = [\"app_settings\", \"channel_schedule_state\", \"channels\", \"clip_group_items\", \"clip_groups\", \"hdhr_device\", \"job_stages\", \"libraries\", \"series\", \"series_episodes\", \"series_seasons\", \"topic_collections\", \"topic_items\"]\ndb.write  = [\"external_links\", \"plex_items\", \"plex_livetv_state\", \"videos\"]\nsettings  = [\"plexlive\"]\nservice   = [\"plex\"]\n\n[[stage]]\nname         = \"plex_index\"\nsubject      = \"library\"\nexport       = \"plex-index\"\nversion      = 1\nlabel        = \"Plex index\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"sources\"\nlane_order   = 1\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nedges        = [{ to = \"plex_collection\", map = \"seasons_changed\" }, { to = \"plex_collections_import\", map = \"same\" }, { to = \"plex_groups\", map = \"same\" }]\nentry        = \"maktaba_fp_plex.stages.plex_index:IMPL\"\n\n[[stage]]\nname         = \"plex_collections_import\"\nsubject      = \"library\"\nexport       = \"plex-collections-import\"\nversion      = 1\nlabel        = \"Read Plex collections\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"sources\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_collections_import:IMPL\"\n\n[[stage]]\nname         = \"plex_collection\"\nsubject      = \"season\"\nexport       = \"plex-collection\"\nversion      = 1\nlabel        = \"Plex collection\"\nsubject_kinds = [\"season\"]\npool         = \"network_plex\"\nlane         = \"seasons\"\nlane_order   = 4\nexternal_write = true\nentry_for    = [\"season\"]\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_collection:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"plex_groups\"\nsubject      = \"library\"\nexport       = \"plex-groups\"\nversion      = 1\nlabel        = \"Plex topic and clip collections\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"seasons\"\nlane_order   = 4\nexternal_write = true\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_groups:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"plex_livetv\"\nsubject      = \"catalog\"\nexport       = \"plex-livetv\"\nversion      = 2\nlabel        = \"Plex Live TV\"\nsubject_kinds = [\"catalog\"]\npool         = \"network_plex\"\nlane         = \"channels\"\nlane_order   = 3\nexternal_write = true\nentry_for    = [\"catalog\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nplacement    = \"home\"\nafter_topup  = true\nevery_minutes_rule = [\"plexlive\", \"drift_check_minutes\"]\nentry        = \"maktaba_fp_plex.stages.plex_livetv:IMPL\"\n",
+   "statements": [
+    {
+     "mode": "write",
+     "name": "collection.apply",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "369633167f33b01f068a1dc10894c6d0d59cf9c286d3d8354b25842f0938c328",
+     "text": "DELETE FROM external_links WHERE target = $1 AND subject_kind = 'video' AND subject_id IN (SELECT CAST(e.video_id AS TEXT) FROM series_episodes e  JOIN series_seasons ss ON ss.series_id = e.series_id   AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.id = $2)",
+     "writes": [
+      "external_links"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "collections_import.plan_plex_collections",
+     "reads": [
+      "plex_items",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "a52e2e7d90880667eb6dbab87d4a66325d552a59f254020f951ab6409a6a44b8",
+     "text": "SELECT p.rating_key AS rk, p.video_id AS vid FROM plex_items p JOIN videos v ON v.id = p.video_id WHERE p.server = $1 AND p.library_id = $2 AND v.deleted_at IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "collections_import.run_collections_import",
+     "reads": [
+      "plex_items"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "47b8b5d3d8982e108151d3f79e8e447c2c2a90f9a8dd48737ea6a28180c28640",
+     "text": "SELECT DISTINCT section_key FROM plex_items WHERE library_id = $1 ORDER BY section_key",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "collections_import.run_collections_import.2",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "66e5d4e3bdbaf322984b7f77b4af4a12845112bf78e86ea9f36eca2ec34097bf",
+     "text": "SELECT external_id FROM external_links WHERE target IN ($1, $2, $3)",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "groups.members",
+     "reads": [
+      "topic_items",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "48733fabddbe11760e9a299489feb90617513c5697565e1a247703e8bb2d111d",
+     "text": "SELECT v.id AS id, v.path AS path, COALESCE(v.title, v.filename) AS title FROM topic_items t JOIN videos v ON v.id = t.video_id WHERE t.topic_id = $1 AND v.deleted_at IS NULL ORDER BY t.position",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "groups.members.2",
+     "reads": [
+      "clip_group_items",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9b0d1a2f0bb5c75acc6f2c4dbdad29a72e8f692c052bdb6b356d4df3aa6d9167",
+     "text": "SELECT v.id AS id, v.path AS path, COALESCE(v.title, v.filename) AS title FROM clip_group_items t JOIN videos v ON v.id = t.video_id WHERE t.group_id = $1 AND v.deleted_at IS NULL ORDER BY t.position",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "groups.our_links",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "8f121951dc650ba4b1aff0fd1ca507e28cf235de1faafcf8d420986a64ccd265",
+     "text": "SELECT target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool FROM external_links WHERE target IN ($1, $2) AND content_hash LIKE $3",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "groups.planned",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e2b8ba9a12b59b9fcbf51a5681b50a64a3ff47ea53020b0173054a97acce4a29",
+     "text": "SELECT name FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "groups.planned.2",
+     "reads": [
+      "topic_collections"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "17baca657fc5fa16adfa94363b4a13ccaa929c9eb2d439aa1f20a21e22afe70a",
+     "text": "SELECT id, name FROM topic_collections WHERE library_id = $1 ORDER BY name, id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "groups.planned.3",
+     "reads": [
+      "clip_groups"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "2c8d54b0c60019471b267f73b40d4a794256d6967a4e862ae84dfbfea5a0b43f",
+     "text": "SELECT id, title FROM clip_groups WHERE library_id = $1 ORDER BY kind, title, id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "groups.season_keys",
+     "reads": [
+      "external_links",
+      "series",
+      "series_episodes"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "228a6e2ce2ac2d5a6b449ff8a22a513a25c68ef490afb0b9361981311cf04156",
+     "text": "SELECT l.external_id AS rk FROM external_links l JOIN series_episodes e ON CAST(e.video_id AS TEXT) = l.subject_id JOIN series s ON s.id = e.series_id WHERE l.target = 'plex_item' AND l.subject_kind = 'video' AND s.library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.library",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "7f8c27f0a8dd449063cb357c2f8d9d972c694bde23399d76e37a4bef6ab54fde",
+     "text": "SELECT name, roots FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "index.run_index",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "8b8a1fb3b972685f36e6041217278163fe845ef0875fff9328092cf565449460",
+     "text": "UPDATE videos SET duration_sec = $2 WHERE id = $1 AND duration_sec IS NULL",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "index.seasons_of",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6d61bca6ffae739395a04c2b885b04b26115989e59e8cc3da774465900eae7c9",
+     "text": "SELECT DISTINCT ss.id AS id FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE e.video_id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.seasons_of.2",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "37e5d981006cc493c6de9f37c8da0c2c24de27504b3e9b2ada489bf25ffcf0f8",
+     "text": "SELECT DISTINCT ss.id AS id FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE e.video_id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.videos",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4c40ae085f59dba88cbab6a20c7c3582176ee9aff4a98e69ff1d986cbfc6ab0d",
+     "text": "SELECT id, path, duration_sec FROM videos WHERE library_id = $1 AND deleted_at IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "links.delete_link",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "36bed7d2d051cc365870b9fd7d8fd3b8e5eea5a492a854e3b2d00efcffa2b2d4",
+     "text": "DELETE FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id = $3",
+     "writes": [
+      "external_links"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "links.get_link",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c6f1815f2d2c70f8f30d6b706144d1d194347493e4a0a0a90d15d26f2606c549",
+     "text": "SELECT target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id = $3",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "links.get_links",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "0058aa58c075d2b92184d8db0bddd3beeec4f7a3796da02cf097bf0757657251",
+     "text": "SELECT target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id = ANY($3::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "links.get_links.2",
+     "reads": [
+      "external_links"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b17f0dea9db85af6793f36e8eae42a412e71a303b15cb75afb76787381d52ad6",
+     "text": "SELECT target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool FROM external_links WHERE target = $1 AND subject_kind = $2 AND subject_id IN (SELECT value FROM json_each($3))",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "links.put_link",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "4a7f1c15d0418e42deeaaa564e89d1cdd1aeac76b603eb4da01fd5b32fd53c74",
+     "text": "INSERT INTO external_links (target, subject_kind, subject_id, external_id, title, content_hash, created_by_tool, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (target, subject_kind, subject_id) DO UPDATE SET external_id = EXCLUDED.external_id, title = EXCLUDED.title, content_hash = EXCLUDED.content_hash, created_by_tool = EXCLUDED.created_by_tool, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "external_links"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "livetv.device",
+     "reads": [
+      "hdhr_device"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "54ccacf869e2c6fa58c1d3db79b6c1f9e856293b5f154504492ec8aff800eca7",
+     "text": "SELECT device_id, friendly_name, enabled FROM hdhr_device WHERE id = 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "livetv.guide_version",
+     "reads": [
+      "channel_schedule_state"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "3b385688aae26b53aa7d6fec9a9cba07c6d3f34e23910a9a3a36f59cc8fb68cc",
+     "text": "SELECT max(last_generated_at) FROM channel_schedule_state",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "livetv.lineup",
+     "reads": [
+      "channels"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "f0b05bf50ad29e6c7079bf700d55727a6b0381c0d08b5261016d04860166a557",
+     "text": "SELECT number FROM channels WHERE enabled = true ORDER BY sort_order ASC, number ASC",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "livetv.load_state",
+     "reads": [
+      "plex_livetv_state"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "3ab300e03366490eb767ecd7fe31a41f17cf130c368bedd56e0758f3f02df84d",
+     "text": "SELECT * FROM plex_livetv_state WHERE id = 1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "livetv.save",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "5c8f5551a31bef2d74350a5a93cf83789146d125c8cd6d5e3ed2c58556097c1a",
+     "text": "INSERT INTO plex_livetv_state (id, status, checked_at, guide_reloaded_at, guide_version, channelmap_at, channelmap_hash, last_error, last_error_at, updated_at) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $2) ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, checked_at = EXCLUDED.checked_at, guide_reloaded_at = EXCLUDED.guide_reloaded_at, guide_version = EXCLUDED.guide_version, channelmap_at = EXCLUDED.channelmap_at, channelmap_hash = EXCLUDED.channelmap_hash, last_error = EXCLUDED.last_error, last_error_at = COALESCE(EXCLUDED.last_error_at, plex_livetv_state.last_error_at), updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "plex_livetv_state"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "livetv.save.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6b090292684bba615cc1892904f5c5dea8c51453a77b3dea5da691a669c71253",
+     "text": "UPDATE plex_livetv_state SET register_requested_at = NULL WHERE id = 1 AND register_requested_at <= $1",
+     "writes": [
+      "plex_livetv_state"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "plex_collection.input_fingerprint",
+     "reads": [
+      "job_stages"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "f4287bdd3e0dd0bdc88931e039cd78978b4592ed9b91cdfd907da20b3d9fac52",
+     "text": "SELECT write_mode FROM job_stages WHERE stage = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "plex_items.details_for",
+     "reads": [
+      "plex_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "24ece599e15346f8ccf3e0778d43615619fa694067fc03f2ec6579ba69f52018",
+     "text": "SELECT rating_key, detail FROM plex_items WHERE rating_key = ANY($1::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "plex_items.details_for.2",
+     "reads": [
+      "plex_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "a3386287da6ee619187a08ff869e7f68c1dc490e81f05aeaabdb64067a43fa82",
+     "text": "SELECT rating_key, detail FROM plex_items WHERE rating_key IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "plex_items.items_for_videos",
+     "reads": [
+      "plex_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c6828d179cbd0139171df14b5595d592707ffca6ad3e4ae638d2ac0b6e3f09b7",
+     "text": "SELECT rating_key, section_key, file, duration_ms, video_id FROM plex_items WHERE video_id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "plex_items.items_for_videos.2",
+     "reads": [
+      "plex_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "a230bac199d881432cf04bac05ea183d07ff82f30f91b63046c503e0a67286a1",
+     "text": "SELECT rating_key, section_key, file, duration_ms, video_id FROM plex_items WHERE video_id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "plex_items.replace_section",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "dfdab75cd3f9f7d8bab75892d2421ba13348c97d0f2f557ac12650ceec22ab7f",
+     "text": "DELETE FROM plex_items WHERE server = $1 AND section_key = $2",
+     "writes": [
+      "plex_items"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "plex_items.replace_section.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 6,
+     "sha256": "fcfc7f3f81509c329d877838e3edd4ed9608944c76333d1a696ed76a737593da",
+     "text": "INSERT INTO plex_items (server, rating_key, section_key, section_title, library_id, video_id, file, duration_ms, plex_updated_at, detail, seen_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
+     "writes": [
+      "plex_items"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.plex.name": "Plex",
+     "fp.plex.summary": "يبقي Plex متوافقًا مع مكتبة: المكتبات والمجموعات والبث المباشر، عبر باب الخدمات في المنزل."
+    },
+    "en": {
+     "fp.plex.name": "Plex",
+     "fp.plex.summary": "Keeps Plex in step with Maktaba: libraries, collections and Live TV, through the home's service door."
     }
    }
   },

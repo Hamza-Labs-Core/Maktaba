@@ -467,6 +467,8 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             return await _relayed_dedup_commit(db, ctx, {k: decode_any(v) for k, v in a.items()})
         if op in ("tv_commit", "tv_rollback"):
             return await _relayed_tv(db, ctx, op)
+        if op == "service_request":
+            return await _relayed_service(ctx, a)
         raise ValueError(f"engine op {op!r}")
 
     return handle
@@ -623,6 +625,52 @@ async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[st
     return {"moved": moved}
 
 
+def _services_of(stage: str) -> tuple[str, ...]:
+    p = firstparty.by_stage(stage)
+    return tuple(str(s) for s in (p.trusted.get("service") or ())) if p is not None else ()
+
+
+def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
+    """What a plugin's job gets for the services it reaches (story 54.35): the extensions'
+    settings with no secret and no service address, and ``service_via``: ``api`` on the home
+    (the plugin API's door), ``worker`` on a joined machine (this worker's channel to the
+    home's door, as for its own Plex stages)."""
+    from .. import relay
+    from .service import plugin_settings
+
+    services = _services_of(stage)
+    settings = getattr(ctx, "settings", None) or {}
+    via = "worker" if any(relay.relayed(settings.get(s, {})) for s in services) else "api"
+    return {"extension_settings": plugin_settings(settings, services), "service_via": via}
+
+
+async def _relayed_service(ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """A plugin's service call on a joined machine (story 54.35): through this worker's
+    channel to the home's door, which checks it against the allow-list and adds the secret.
+    Only a service the stage's plugin lists."""
+    import base64
+
+    from .. import relay
+
+    service = str(a.get("service") or "")
+    if service not in _services_of(str(ctx.job.stage)):
+        raise EnqueueRefused(f"plugin_capability: {ctx.job.stage} does not reach {service}")
+    t = relay.RelayTransport(service)
+    headers = {
+        "Accept": str(a.get("accept") or ""),
+        "Content-Type": str(a.get("content_type") or ""),
+    }
+    status, data = await asyncio.to_thread(
+        t.request,
+        str(a.get("method") or "GET"),
+        relay.RELAY_BASE + service + str(a.get("target") or "/"),
+        {k: v for k, v in headers.items() if v},
+        base64.b64decode(str(a.get("body") or "")) or None,
+        float(a.get("timeout_ms") or 30000) / 1000.0,
+    )
+    return {"status": int(status), "body": base64.b64encode(data).decode()}
+
+
 def _plan_exporter_names() -> list[str]:
     """The plan exporters the worker's extensions registered (story 54.34): a runner loads
     no extension, so it resolves these names itself (schedule.plan_inputs)."""
@@ -661,6 +709,9 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
                     "job": job_to_wire(job),
                     "write_mode": getattr(ctx, "write_mode", "auto"),
                     "plan_exporters": _plan_exporter_names(),
+                    # story 54.35: the extensions' settings without secrets or a service's
+                    # address, and which way the job's service calls go
+                    **_service_frame(stage, ctx),
                     "path_map": [
                         list(e) for e in getattr(getattr(ctx, "path_map", None), "entries", ())
                     ],

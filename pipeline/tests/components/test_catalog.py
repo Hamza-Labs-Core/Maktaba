@@ -111,7 +111,9 @@ def source_stages(root: Path = _PACKAGE) -> tuple[dict[str, str], list[str]]:
     bad: list[str] = []
     for path in sorted(root.rglob("*.py")):
         src = path.read_text(encoding="utf-8")
-        if "StageDef(" not in src:
+        # a module that only takes its stages from first-party manifests (_fp: the Plex
+        # extension, story 54.35) names them all the same
+        if "StageDef(" not in src and "_fp(" not in src:
             continue
         # Epic 54: a plugin's stages are named at run time from its manifest (p_<hash>_*)
         # and belong to its run-time catalog entry (story 54.37), never to catalog.toml

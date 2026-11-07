@@ -425,6 +425,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "ext.plex"
+plugin    = "tv.maktaba.plex"
 kind      = "extension"
 group     = "integrations"
 title_key = "components.ext.plex.title"

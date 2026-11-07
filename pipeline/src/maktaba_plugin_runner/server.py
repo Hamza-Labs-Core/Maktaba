@@ -167,6 +167,16 @@ def runner_context(
     return ctx
 
 
+def with_services(ctx: Any, msg: dict[str, Any]) -> Any:
+    """The job's extension settings (no secret, no service address) and the way its service
+    calls go (story 54.35), from the worker's run frame."""
+    settings = msg.get("extension_settings")
+    if isinstance(settings, dict):
+        ctx.settings = {str(k): dict(v) for k, v in settings.items() if isinstance(v, dict)}
+    ctx.service_via = str(msg.get("service_via") or "api")
+    return ctx
+
+
 @dataclass
 class Runner:
     group: str
@@ -252,6 +262,7 @@ class Runner:
         sdef = get_stage(stage)
         path_map = PathMap(tuple((str(a), str(b)) for a, b in msg.get("path_map") or ()))
         ctx = runner_context(db, job, sdef, relay, str(msg.get("write_mode") or "auto"), path_map)
+        with_services(ctx, msg)
         impl = load_impl(self.stages[stage])
         task = asyncio.ensure_future(impl.run(db, job, ctx))
         self.running[job.id] = task

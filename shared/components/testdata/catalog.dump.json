@@ -1254,7 +1254,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.plex",
       "processes": [],
       "requires": [],
       "resources": {
