@@ -1,4 +1,4 @@
-// /admin/accounts — search and filter every cloud account.
+// /accounts — search and filter every cloud account.
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -7,9 +7,9 @@ import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
-import { api, withQuery } from "../../api";
-import { useI18n } from "../../i18n";
-import { LoadError, Loading, Page, useLoad } from "../../ui";
+import { api, withQuery } from "@cloud-shared/api";
+import { useI18n } from "@cloud-shared/i18n";
+import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 import { Pager, statusTone } from "./shared";
 
 export interface AdminAccount {
@@ -117,7 +117,7 @@ export function AdminAccounts() {
               {data.data.accounts.map((a) => (
                 <tr key={a.id}>
                   <td>
-                    <Link to={`/admin/accounts/${encodeURIComponent(a.id)}`}>{a.email}</Link>
+                    <Link to={`/accounts/${encodeURIComponent(a.id)}`}>{a.email}</Link>
                     {a.role === "service_admin" && (
                       <>
                         {" "}

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "../api";
-import { ME, renderAt, session, stubFetch, user } from "../test/harness";
+import { setAccessToken } from "@cloud-shared/api";
+import { renderAt, session, stubFetch, user } from "../test/harness";
 
 beforeEach(() => setAccessToken(null));
 afterEach(() => vi.unstubAllGlobals());
@@ -10,37 +10,13 @@ afterEach(() => vi.unstubAllGlobals());
 const DENIED: [number, unknown] = [403, { error: "admin_access_denied", message: "denied" }];
 
 describe("admin console", () => {
-  it("hides the Admin nav link from a normal account", async () => {
-    stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "user" })),
-      "GET /v1/account/me": [200, ME],
-      "GET /v1/account/sessions": [200, { sessions: [] }],
-    });
-    renderAt("/account");
-    const nav = await screen.findByRole("navigation", { name: "Main" });
-    expect(within(nav).getByRole("link", { name: "Account" })).toBeInTheDocument();
-    expect(within(nav).getByRole("link", { name: "Billing" })).toBeInTheDocument();
-    expect(within(nav).queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
-  });
-
-  it("shows the Admin nav link to a service admin", async () => {
-    stubFetch({
-      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
-      "GET /v1/account/me": [200, { ...ME, role: "service_admin" }],
-      "GET /v1/account/sessions": [200, { sessions: [] }],
-    });
-    renderAt("/account");
-    const nav = await screen.findByRole("navigation", { name: "Main" });
-    expect(within(nav).getByRole("link", { name: "Admin" })).toHaveAttribute("href", "/admin");
-  });
-
   it("renders Access denied when the API answers 403", async () => {
     // the URL is reachable by anyone; the API is the authority
     stubFetch({
       "POST /v1/auth/refresh": session(user({ role: "user" })),
       "GET /v1/admin/accounts": DENIED,
     });
-    renderAt("/admin/accounts");
+    renderAt("/accounts");
     expect(await screen.findByText("Access denied")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -51,7 +27,7 @@ describe("admin console", () => {
       "GET /v1/admin/fleet": DENIED,
       "GET /v1/admin/revenue": DENIED,
     });
-    renderAt("/admin");
+    renderAt("/");
     expect(await screen.findByText("Access denied")).toBeInTheDocument();
   });
 
@@ -76,10 +52,10 @@ describe("admin console", () => {
         },
       ],
     });
-    renderAt("/admin/accounts?status=active&page=2");
+    renderAt("/accounts?status=active&page=2");
     expect(await screen.findByRole("link", { name: "bad@example.com" })).toHaveAttribute(
       "href",
-      "/admin/accounts/u2"
+      "/accounts/u2"
     );
     const first = f.find("GET", "/v1/admin/accounts")[0].path;
     expect(first).toContain("status=active");
@@ -125,7 +101,7 @@ describe("admin console", () => {
         return new Response(null, { status: 204 });
       },
     });
-    renderAt("/admin/accounts/u2");
+    renderAt("/accounts/u2");
     const u = userEvent.setup();
     await u.click(await screen.findByRole("button", { name: "Suspend" }));
     const dialog = await screen.findByRole("dialog");
@@ -175,7 +151,7 @@ describe("admin console", () => {
         return new Response(null, { status: 204 });
       },
     });
-    renderAt("/admin/accounts/u4");
+    renderAt("/accounts/u4");
     const u = userEvent.setup();
     await u.click(await screen.findByRole("button", { name: "Set plan" }));
     const dialog = await screen.findByRole("dialog");
@@ -219,7 +195,7 @@ describe("admin console", () => {
       ],
       "POST /v1/admin/accounts/u3/suspend": [409, { error: "cannot_suspend_admin", message: "no" }],
     });
-    renderAt("/admin/accounts/u3");
+    renderAt("/accounts/u3");
     const u = userEvent.setup();
     await u.click(await screen.findByRole("button", { name: "Suspend" }));
     const dialog = await screen.findByRole("dialog");
@@ -233,7 +209,7 @@ describe("admin console", () => {
       "POST /v1/auth/refresh": session(user({ role: "user" })),
       "GET /v1/admin/usage": DENIED,
     });
-    renderAt("/admin/usage");
+    renderAt("/usage");
     expect(await screen.findByText("Access denied")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
@@ -270,7 +246,7 @@ describe("admin console", () => {
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
       "GET /v1/admin/usage": [200, usage],
     });
-    renderAt("/admin/usage");
+    renderAt("/usage");
     expect(await screen.findByText("db timeout")).toBeInTheDocument();
     expect(screen.getByText("Homes", { selector: ".mkc-muted" })).toBeInTheDocument();
     expect(screen.getByText("0.3.26, 0.3.25")).toBeInTheDocument();
@@ -288,11 +264,8 @@ describe("admin console", () => {
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
       "GET /v1/admin/usage": DENIED,
     });
-    renderAt("/admin/usage");
+    renderAt("/usage");
     const nav = await screen.findByRole("navigation", { name: "Admin" });
-    expect(within(nav).getByRole("link", { name: "Usage" })).toHaveAttribute(
-      "href",
-      "/admin/usage"
-    );
+    expect(within(nav).getByRole("link", { name: "Usage" })).toHaveAttribute("href", "/usage");
   });
 });

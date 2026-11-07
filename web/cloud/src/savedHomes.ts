@@ -2,7 +2,7 @@
 // per cloud account in localStorage (names and addresses only, never a token), and shown when
 // the cloud can't be reached: a network failure, a 5xx, or an answer that isn't the API's JSON
 // (a captive portal). Kept 30 days, then still shown but marked old. Removed at sign-out.
-import { CloudApiError } from "./api";
+import { CloudApiError } from "./shared/api";
 
 export type ConnectionKind = "local" | "direct" | "relay_hint" | "relay";
 export interface Connection {

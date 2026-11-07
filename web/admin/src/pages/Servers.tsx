@@ -1,11 +1,11 @@
-// /admin/servers — every linked home server, filterable by online / offline.
+// /servers — every linked home server, filterable by online / offline.
 import { useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Select } from "@ds/components/Select/Select";
-import { api, withQuery } from "../../api";
-import { useI18n } from "../../i18n";
-import { LoadError, Loading, Page, useLoad } from "../../ui";
+import { api, withQuery } from "@cloud-shared/api";
+import { useI18n } from "@cloud-shared/i18n";
+import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 import { Pager } from "./shared";
 
 interface FleetServer {

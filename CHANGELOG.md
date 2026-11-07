@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
+  runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
+  and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
+  standby's name server, then the leader's, and puts the previous release back on a node whose
+  name server doesn't stay up.
 - **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
   `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
   enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
@@ -1230,6 +1235,12 @@ build fails when the two differ.
   day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
   reviewers alone and deleted after 90 days.
 
+- **Plugins on Windows (Epic 54, #710).** A home with Postgres on Windows now runs plugins.
+  The plugin host runs inside a Windows AppContainer with no network capability, granted only
+  its own folders, and Maktaba reaches it through a named pipe that only the user it runs as
+  can open; a plugin still gets no network, no files and no sockets of its own. maktaba.dev:
+  Building Maktaba plugins, Installing and managing plugins, The sandbox.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -1904,6 +1915,12 @@ build fails when the two differ.
   calls Basic, and on Basic the subscription settings say that relayed videos are converted on
   this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
   too many devices playing, or the home too busy to prepare the video.
+
+- **The operator console is its own web app (Epic 50 story 50.32, part 1).** Maktaba Cloud's
+  console moved out of the account web app into `web/admin` (`pnpm dev:admin`, `pnpm build:admin`),
+  for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
+  new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
+  or staff API path, an admin string or a console module.
 
 ### Fixed
 

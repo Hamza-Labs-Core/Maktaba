@@ -1,13 +1,13 @@
-// /admin/audit — the audit log, newest first, 50 per page.
+// /audit — the audit log, newest first, 50 per page.
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Input } from "@ds/components/Input/Input";
-import { api, withQuery } from "../../api";
-import { useI18n } from "../../i18n";
-import { LoadError, Loading, Page, useLoad } from "../../ui";
+import { api, withQuery } from "@cloud-shared/api";
+import { useI18n } from "@cloud-shared/i18n";
+import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 import { detailText } from "./AccountDetail";
 import { Pager } from "./shared";
 

@@ -4,7 +4,7 @@
 // never blocks: no answer, no line. Closed, it stays closed for that incident.
 import { useState } from "react";
 import { cloudLine, useCloudStatus } from "../../src/lib/cloudStatus";
-import { useI18n } from "./i18n";
+import { useI18n } from "./shared/i18n";
 
 export function StatusStrip() {
   const { t, locale } = useI18n();
