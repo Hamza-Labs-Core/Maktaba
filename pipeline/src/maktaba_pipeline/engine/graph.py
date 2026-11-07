@@ -24,7 +24,6 @@ from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
-from ..schedule.channel_planner import PLANNER_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -607,86 +606,26 @@ GRAPH: tuple[StageDef, ...] = (
         placement="home",
     ),
     # ---- channels lane -------------------------------------------------
-    StageDef(
-        name="plan_channels",
-        label="Plan channels",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=1,
-        version=PLANNER_VERSION,
-        edges=(Edge("write_channels", "same"),),
-        entry_for=("catalog",),
-        debounce_sec=300,
-        debounce_max_sec=3600,
-        # the logo / watermark / loading pictures are files on the home (dz_logo_dir,
-        # dz_watermark_*), and the plan page is written there
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.livetv's manifest
+    _fp("plan_channels"),
     # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
     # the dizqueTV channel export is the dizquetv extension's own stage.
-    StageDef(
-        name="write_channels",
-        label="Write channels",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=2,
-        version=CH_WRITE_VERSION,
-        # the art it stores is looked up as files on the home (dz_logo_dir,
-        # dz_watermark_*): on a node the paths would not exist
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.livetv's manifest
+    _fp("write_channels"),
     # Epic 33: TV changes. The API's change controller enqueues them (payload
     # {"change_id"}): build a change's release and schedule generation, put an approved
     # change on the air (the swap commit; the front door switches the streams), the daily
     # GC.
-    StageDef(
-        name="tv_stage",
-        label="Stage TV change",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=3,
-        version=1,
-        # the art checksums of a release are read from the files on the home
-        placement="home",
-        max_attempts=2,
-    ),
-    StageDef(
-        name="tv_swap",
-        label="Swap TV change",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=4,
-        version=1,
-        placement="home",
-        max_attempts=1,
-    ),
-    StageDef(
-        name="tv_gc",
-        label="TV staging clean-up",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=5,
-        version=1,
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_stage"),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_swap"),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_gc"),
     # story 33.9: the reverse commit of a rollback (warm: the front door switches the
     # streams back; the API or the controller enqueues it)
-    StageDef(
-        name="tv_rollback",
-        label="Roll back TV change",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=6,
-        version=1,
-        placement="home",
-        max_attempts=2,
-    ),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_rollback"),
     # ---- media lane (legacy) -------------------------------------------
     _legacy(
         "scan",

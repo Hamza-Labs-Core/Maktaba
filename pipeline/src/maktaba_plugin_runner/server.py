@@ -62,6 +62,21 @@ def load_impl(entry: str) -> Any:
     return getattr(importlib.import_module(module), attr)
 
 
+def _use_plan_exporters(msg: dict[str, Any]) -> str:
+    """The worker's plan exporters for this job (story 54.34): its extensions add data to
+    the channel plan, and this process loads none, so the names it sent are resolved here
+    from the extensions it discovers (the same code). Every job of one worker sends the same
+    names, so concurrent jobs agree. Answers why it could not (the job then runs in the
+    worker, as for an unregistered statement), else ""."""
+    names = msg.get("plan_exporters")
+    if names is None:
+        return ""
+    from maktaba_pipeline.schedule.plan_inputs import use_plan_exporters
+
+    missing = use_plan_exporters(str(n) for n in names)
+    return f"plan exporters this runner cannot load: {', '.join(missing)}" if missing else ""
+
+
 class Relay:
     """The engine relay of one ``run``: asks the worker on the run's connection."""
 
@@ -226,6 +241,11 @@ class Runner:
             )
             return
         job = job_from_wire(msg["job"])
+        missing = _use_plan_exporters(msg)
+        if missing:
+            # the plan would lack what those extensions add: the worker runs the job itself
+            await write_frame(w, {"type": "result", "status": "unregistered", "message": missing})
+            return
         relay = Relay(r, w)
         transport = self._transport(str(msg["token"]))
         db = StatementDB(firstparty.registry(self.plugin_of[stage]), transport, engine_relay=relay)
@@ -273,6 +293,9 @@ class Runner:
         if stage not in self.stages:
             return {"type": "error", "message": f"{stage} is not served by {self.group}"}
         impl = load_impl(self.stages[stage])
+        missing = _use_plan_exporters(msg)
+        if missing:
+            return {"type": "error", "status": "unregistered", "message": missing}
         fn = impl.input_fingerprint if msg.get("kind") == "input" else impl.output_fingerprint
         if fn is None:
             return {"type": "fingerprints", "hashes": [None for _ in msg.get("subjects") or []]}

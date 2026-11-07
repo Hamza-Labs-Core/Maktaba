@@ -1,0 +1,18 @@
+# The shared pipeline modules whose statements tv.maktaba.livetv-slots' stages run (story
+# 54.24 §1): Epic 33's TV release code. The swap commit and the rollback write the stored TV
+# settings, the engine's: the worker runs them for the job (tvrelease.for_job, relayed
+# tv_commit / tv_rollback), so commit and rollback are not listed; plex_livetv after a swap
+# is queued there too.
+modules = [
+    "maktaba_pipeline.rules:read",
+    "maktaba_pipeline.channels.repo",
+    "maktaba_pipeline.channels.pass_",
+    "maktaba_pipeline.channels.display",
+    "maktaba_pipeline.tvrelease.build",
+    "maktaba_pipeline.tvrelease.gc",
+    "maktaba_pipeline.tvrelease.generation",
+    "maktaba_pipeline.tvrelease.merge",
+    "maktaba_pipeline.tvrelease.snapshot",
+    "maktaba_pipeline.tvrelease.stage",
+    "maktaba_pipeline.tvrelease.store",
+]

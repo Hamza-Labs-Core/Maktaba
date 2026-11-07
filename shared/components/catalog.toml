@@ -465,6 +465,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "livetv"
+plugin    = "tv.maktaba.livetv"
 kind      = "stages+loop"
 group     = "livetv"
 title_key = "components.livetv.title"
@@ -485,6 +486,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "livetv.slots"
+plugin    = "tv.maktaba.livetv-slots"
 kind      = "stages+process+loop"
 group     = "livetv"
 title_key = "components.livetv.slots.title"

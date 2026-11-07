@@ -465,6 +465,8 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             return await _relayed_unsupersede(db, ctx, {k: decode_any(v) for k, v in a.items()})
         if op == "dedup_commit":
             return await _relayed_dedup_commit(db, ctx, {k: decode_any(v) for k, v in a.items()})
+        if op in ("tv_commit", "tv_rollback"):
+            return await _relayed_tv(db, ctx, op)
         raise ValueError(f"engine op {op!r}")
 
     return handle
@@ -574,6 +576,24 @@ async def _relayed_unsupersede(db: Any, ctx: Any, a: dict[str, Any]) -> None:
     await unsupersede(db, vid, str(a["state"]))
 
 
+#: the TV commits the worker runs for a stage in its runner (story 54.34): the op, the stage
+#: that may ask for it, and what tvrelease.for_job runs
+_TV_OPS = {"tv_commit": ("tv_swap", "commit"), "tv_rollback": ("tv_rollback", "rollback")}
+
+
+async def _relayed_tv(db: Any, ctx: Any, op: str) -> dict[str, Any]:
+    """A TV change's swap commit or rollback, by the worker for ``tv_swap`` / ``tv_rollback``
+    in its runner: only for that stage's job, and only for the change in the job's own
+    payload (nothing the plugin sends is used)."""
+    from ..tvrelease.for_job import run_for_job
+
+    stage, kind = _TV_OPS[op]
+    if ctx.job.stage != stage:
+        raise EnqueueRefused(f"plugin_scope: {op} is {stage}'s, not {ctx.job.stage}'s")
+    got = await run_for_job(db, kind, int(ctx.job.id), ctx.job.payload)
+    return {k: encode_any(v) for k, v in got.items()}
+
+
 async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
     """A duplicate group's merge, committed by the worker for ``dedup_apply`` in its runner:
     only this job's group (its subject), and only the group's own members."""
@@ -601,6 +621,14 @@ async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[st
     except MergeRefused as exc:
         return {"refused": [list(x) for x in exc.uncovered]}
     return {"moved": moved}
+
+
+def _plan_exporter_names() -> list[str]:
+    """The plan exporters the worker's extensions registered (story 54.34): a runner loads
+    no extension, so it resolves these names itself (schedule.plan_inputs)."""
+    from ..schedule.plan_inputs import plan_exporters
+
+    return sorted(plan_exporters())
 
 
 async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> StageResult:
@@ -632,6 +660,7 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
                     "token": minted["token"],
                     "job": job_to_wire(job),
                     "write_mode": getattr(ctx, "write_mode", "auto"),
+                    "plan_exporters": _plan_exporter_names(),
                     "path_map": [
                         list(e) for e in getattr(getattr(ctx, "path_map", None), "entries", ())
                     ],
@@ -719,6 +748,7 @@ async def fingerprints(
                 "stage": stage,
                 "kind": kind,
                 "token": token,
+                "plan_exporters": _plan_exporter_names(),
                 "subjects": [
                     [s.kind, str(s.id), str(s.library_id) if s.library_id else None]
                     for s in subjects
@@ -761,6 +791,7 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
     library roots through this machine's share-path mapping, and the data folders the
     stages' own settings name. A runner applies its sandbox from them."""
+    from ..engine.stages.review_pages import reviews_dir
     from ..thumbnail import small
     from ..thumbnail.generator import thumbnail_dir_for
 
@@ -797,7 +828,31 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
         "data.index": os.path.realpath(
             os.path.expanduser(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma")
         ),
+        # the reports folder (Reports: the channel plan's page, engine.plan_page)
+        "data.review": os.path.realpath(str(reviews_dir())),
+        # the channels' art: what an admin uploaded (<data dir>/channel-art, the API's
+        # channels.ArtDirName) and the folders the planner's rules name (schedule.tv_channel)
+        "data.channels": ";".join(await _channel_art_folders(db)),
     }
+
+
+async def _channel_art_folders(db: Any) -> list[str]:
+    from ..rules import read as read_rules
+
+    out: set[str] = set()
+    data = (os.environ.get("MAKTABA_DATA_DIR") or "").strip()
+    if data:
+        out.add(os.path.join(data, "channel-art"))
+    try:
+        cfg = (await read_rules(db, "planner"))[0]
+    except Exception:  # noqa: BLE001 - no rules table yet: only the uploads
+        cfg = None
+    for key in ("dz_logo_dir", "dz_watermark_dir"):
+        if folder := str(getattr(cfg, key, "") or "").strip():
+            out.add(folder)
+    if wm := str(getattr(cfg, "dz_watermark_file", "") or "").strip():
+        out.add(os.path.dirname(wm))
+    return sorted(os.path.realpath(os.path.expanduser(x)) for x in out if x)
 
 
 def _model_folders() -> list[str]:

@@ -1,0 +1,13 @@
+# The shared pipeline modules whose statements tv.maktaba.livetv's stages run (story 54.24 §1):
+# the planner's inputs, and with staging on, write_channels' TV change (tvrelease).
+modules = [
+    "maktaba_pipeline.rules:read",
+    "maktaba_pipeline.schedule.plan_inputs",
+    "maktaba_pipeline.channels.repo",
+    "maktaba_pipeline.tvrelease.build",
+    "maktaba_pipeline.tvrelease.generation",
+    "maktaba_pipeline.tvrelease.merge",
+    "maktaba_pipeline.tvrelease.snapshot",
+    "maktaba_pipeline.tvrelease.stage",
+    "maktaba_pipeline.tvrelease.store",
+]

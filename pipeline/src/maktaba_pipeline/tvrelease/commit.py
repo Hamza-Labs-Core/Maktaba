@@ -38,7 +38,6 @@ from .store import event, get_change, transition, update_change
 __all__ = ["BaseMovedError", "commit_change", "readback", "slots_runtime", "write_swap_op"]
 
 _log = get_logger()
-_ART_TABLE = "channel_art_overrides"
 #: the advisory lock every swap / rollback commit takes (design 8.3)
 SWAP_LOCK = "tv_swap"
 
@@ -127,15 +126,12 @@ async def _apply_lineup(
 
 
 async def _apply_art(db: Any, rel: Release, stamp: Any) -> None:
-    from .snapshot import _has_table  # noqa: PLC0415
-
-    if not await _has_table(db, _ART_TABLE):
-        return
     for cid in sorted(rel.defs):
-        await db.execute(f"DELETE FROM {_ART_TABLE} WHERE channel_id = $1", cid)
+        await db.execute("DELETE FROM channel_art_overrides WHERE channel_id = $1", cid)
         for kind, o in sorted((rel.art.get(cid) or {}).items()):
             await db.execute(
-                f"INSERT INTO {_ART_TABLE} (channel_id, kind, path, settings, base, updated_at)"
+                "INSERT INTO channel_art_overrides"
+                " (channel_id, kind, path, settings, base, updated_at)"
                 " VALUES ($1,$2,$3,$4,$5,$6)",
                 cid,
                 kind,
@@ -172,7 +168,7 @@ async def _apply_settings(db: Any, rel: Release, stamp: Any) -> list[str]:
 
 async def _apply_bookkeeping(db: Any, pending: dict[str, Any], stamp: Any) -> None:
     """``write_channels``' links and filler pools, the editor's edited marks."""
-    from ..engine.stages.write_channels import SUBJECT_KIND, TARGET
+    from ..channels.plan_link import SUBJECT_KIND, TARGET
 
     for key in pending.get("unlinks") or []:
         await db.execute(

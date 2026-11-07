@@ -1416,7 +1416,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.livetv",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1478,7 +1478,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.livetv-slots",
       "processes": [
         "tv-slot/*"
       ],
