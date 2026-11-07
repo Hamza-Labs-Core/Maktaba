@@ -48,6 +48,19 @@ async function workers() {
             ]),
           ),
         ),
+        // two cases of the shared flow corpus (shared/plugins/testdata/flows, story 54.39) for
+        // C12 at verification: their flow.toml and member manifests
+        TEST_FLOWS: JSON.stringify(
+          Object.fromEntries(
+            ["cycle_three_store", "chain_two_store"].map((c) => {
+              const dir = `../shared/plugins/testdata/flows/${c}`;
+              const plugins = Object.fromEntries(
+                readdirSync(`${dir}/plugins`).map((f) => [f.replace(/\.toml$/, ""), readFileSync(`${dir}/plugins/${f}`, "utf8")]),
+              );
+              return [c, { flow: readFileSync(`${dir}/flow.toml`, "utf8"), plugins }];
+            }),
+          ),
+        ),
         RUNNER: "none",
         // the tests run the checks themselves (runChecks)
         CHECKS_FROM_QUEUE: "false",
