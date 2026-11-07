@@ -10,12 +10,12 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from maktaba_fp_semantic_search.stages import index as stage
 
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import is_pg, to_ts
-from maktaba_pipeline.engine.stages import index as stage
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.search.pgstore import StoreState
 from maktaba_pipeline.search.semantic import SemanticIndex, SemanticUnavailable

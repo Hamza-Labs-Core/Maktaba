@@ -8,9 +8,9 @@ import sys
 from typing import Any
 
 import pytest
+from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.engine.context import StageFailure
-from maktaba_pipeline.engine.stages import transcribe as tr
 
 pytestmark = pytest.mark.integration
 

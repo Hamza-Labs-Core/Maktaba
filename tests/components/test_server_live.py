@@ -31,7 +31,7 @@ from typing import Any
 
 import pytest
 
-from tests.components import rig as R
+from components import rig as R
 
 #: the folder holding maktaba-server, maktaba-api and maktaba-streaming built from the commit
 BIN_DIR = os.environ.get("MAKTABA_COMPONENTS_SERVER_BIN", "")

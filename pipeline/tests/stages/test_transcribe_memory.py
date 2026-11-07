@@ -7,9 +7,9 @@ import sys
 from typing import Any
 
 import pytest
+from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.engine import health
-from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 
 
@@ -99,8 +99,9 @@ async def test_the_final_readings_at_shutdown() -> None:
 async def test_a_long_memory_shortage_gives_the_job_back_without_using_an_attempt(
     db: Database, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from maktaba_fp_transcription.stages import transcribe as tr
+
     from maktaba_pipeline.engine.enqueue import enqueue_job
-    from maktaba_pipeline.engine.stages import transcribe as tr
     from tests.stages.world import core_runtime, drain_core, make_show
 
     monkeypatch.setattr(tr, "system_memory", lambda: (100.0, 5.0))  # 5% free

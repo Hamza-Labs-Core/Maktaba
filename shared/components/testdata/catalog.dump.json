@@ -679,9 +679,11 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.transcription",
       "processes": [
-        "pipeline/stt-*"
+        "pipeline/stt-*",
+        "plugin-runner/ml",
+        "plugin-runner/ml-*"
       ],
       "requires": [
         [
@@ -856,9 +858,10 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.semantic-search",
       "processes": [
-        "pipeline/index"
+        "pipeline/index",
+        "plugin-runner/index"
       ],
       "requires": [
         [
