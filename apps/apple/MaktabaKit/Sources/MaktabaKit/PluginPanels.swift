@@ -290,42 +290,39 @@ public struct PluginPanelsSection<Route: Hashable>: View {
 }
 
 /// A series' or library's panels (story 54.20 §1): asked for `<kind>:<id>` only while the
-/// home answers `plugin_panels: on`, then drawn as [PluginPanelsSection]. A failure is no
+/// home answers `plugin_panels: on`, into the page's own state, so the page adds its
+/// [PluginPanelsSection] only when there is a panel (an empty view would still take the
+/// page's spacing, and a task on a view that draws nothing never starts). A failure is no
 /// panels: they are extras, never the page.
-public struct SubjectPanels<Route: Hashable>: View {
+public struct SubjectPanelsLoader: ViewModifier {
     let client: APIClient
     let caps: Capabilities
     let kind: String
     let id: String
-    let search: ((String) -> Route)?
-    @State private var panels: [PanelView] = []
+    @Binding var panels: [PanelView]
 
-    public init(client: APIClient, caps: Capabilities, kind: String, id: String, search: ((String) -> Route)? = nil) {
-        self.client = client
-        self.caps = caps
-        self.kind = kind
-        self.id = id
-        self.search = search
+    public func body(content: Content) -> some View {
+        content.task(id: "\(kind):\(id):\(caps.panels)") {
+            guard caps.panels else {
+                panels = []
+                return
+            }
+            panels = (try? await client.panels(kind: kind, id: id, language: SubjectPanels.language)) ?? []
+        }
     }
+}
 
+public enum SubjectPanels {
     /// The language the home words a panel in: Arabic when the app is in Arabic.
     public static var language: String {
         AppLanguage.locale.language.languageCode?.identifier == "ar" ? "ar" : "en"
     }
+}
 
-    public var body: some View {
-        // a stack that is always there: the section draws nothing until it has a panel, and a
-        // task on nothing never starts
-        VStack(alignment: .leading, spacing: 0) {
-            PluginPanelsSection<Route>(panels: panels, search: search)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: "\(kind):\(id):\(caps.panels)") {
-                guard caps.panels else {
-                    panels = []
-                    return
-                }
-                panels = (try? await client.panels(kind: kind, id: id, language: Self.language)) ?? []
-            }
+extension View {
+    /// Loads a series' or library's plugin panels into `panels` (see [SubjectPanelsLoader]).
+    public func subjectPanels(client: APIClient, caps: Capabilities, kind: String, id: String,
+                              into panels: Binding<[PanelView]>) -> some View {
+        modifier(SubjectPanelsLoader(client: client, caps: caps, kind: kind, id: id, panels: panels))
     }
 }

@@ -332,6 +332,8 @@ jobs:
         working-directory: pipeline
         env:
           LOGBENCH_PY_OUT: ${{ runner.temp }}/logbench-python.json
+          # over budget fails here (issue #744 brought it under: p99 18 µs on this runner)
+          LOGBENCH_PY_STRICT: "1"
         run: |
           uv sync --frozen
           uv run --frozen python tools/log_bench.py

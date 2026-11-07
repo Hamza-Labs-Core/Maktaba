@@ -1,6 +1,8 @@
 package pgbundle
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +64,7 @@ func TestParseTOC(t *testing.T) {
 // item in the main one (what is commented out stays so in both).
 func TestRestoreListsSplitTheGrants(t *testing.T) {
 	dump := filepath.Join(t.TempDir(), "d.dump")
-	main, acls, err := writeRestoreLists(dump, outageTOC)
+	main, _, acls, err := writeRestoreLists(dump, outageTOC)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,5 +123,82 @@ func TestMissingSaysWhat(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("%q lacks %q", s, want)
 		}
+	}
+}
+
+// The vector index leaves the main list for one of its own (built alone, with memory of
+// its own: the rollback of 2026-11-07); another index stays in the main one.
+func TestRestoreListsSetTheVectorIndexApart(t *testing.T) {
+	toc := outageTOC + "4705; 1259 768702 INDEX public segment_embeddings_hnsw maktaba\n" +
+		"4706; 1259 768703 INDEX public segment_embeddings_video maktaba\n"
+	main, vectors, acls, err := writeRestoreLists(filepath.Join(t.TempDir(), "d.dump"), toc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(p string) string {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var kept []string
+		for _, l := range strings.Split(string(b), "\n") {
+			if l != "" && !strings.HasPrefix(l, ";") {
+				kept = append(kept, l)
+			}
+		}
+		return strings.Join(kept, "\n")
+	}
+	if v := read(vectors); v != "4705; 1259 768702 INDEX public segment_embeddings_hnsw maktaba" {
+		t.Fatalf("vector list:\n%s", v)
+	}
+	m := read(main)
+	if strings.Contains(m, "segment_embeddings_hnsw") || !strings.Contains(m, "segment_embeddings_video") {
+		t.Fatalf("main list:\n%s", m)
+	}
+	if strings.Contains(read(acls), "segment_embeddings") {
+		t.Fatal("an index in the grants' list")
+	}
+	if !hasItems(vectors) {
+		t.Fatal("the vector list has its index")
+	}
+	_, none, _, err := writeRestoreLists(filepath.Join(t.TempDir(), "d.dump"), outageTOC)
+	if err != nil || hasItems(none) {
+		t.Fatalf("a dump without the vector index has an empty vector list (%v)", err)
+	}
+}
+
+// The vector index is built with a third of the RAM (at most 32 GB) and parallel workers
+// first, then without workers, then as the server is set: a rollback never fails on a
+// setting meant only to speed it.
+func TestIndexBuildsFastestFirstThenTheServersOwn(t *testing.T) {
+	got := indexBuilds(96<<30, 28)
+	want := []string{
+		"-c maintenance_work_mem=32768MB -c max_parallel_maintenance_workers=7",
+		"-c maintenance_work_mem=32768MB -c max_parallel_maintenance_workers=0",
+		"",
+	}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("96 GB, 28 cpus: %q", got)
+	}
+	if got := indexBuilds(16<<30, 4); got[0] != "-c maintenance_work_mem=5461MB -c max_parallel_maintenance_workers=2" {
+		t.Fatalf("16 GB, 4 cpus: %q", got)
+	}
+	if got := indexBuilds(0, 8); len(got) != 1 || got[0] != "" {
+		t.Fatalf("RAM unknown: the server's own settings only, %q", got)
+	}
+	var tried []string
+	var log strings.Builder
+	err := buildVectorIndexes(&log, func(opts string) error {
+		tried = append(tried, opts)
+		if opts != "" {
+			return errors.New("could not resize shared memory segment")
+		}
+		return nil
+	})
+	if err != nil || tried[len(tried)-1] != "" || !strings.Contains(log.String(), "the vector index is built") {
+		t.Fatalf("falls back to the server's settings: err %v, tried %q, log %s", err, tried, log.String())
+	}
+	if err := buildVectorIndexes(io.Discard, func(string) error { return errors.New("no") }); err == nil {
+		t.Fatal("every build failing fails the restore")
 	}
 }

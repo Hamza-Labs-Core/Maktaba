@@ -92,8 +92,10 @@ final class PlayerHomeUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
         XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١١"].waitForExistence(timeout: 10), "v2's page")
         app.navigationBars.buttons.firstMatch.tap()
-        let back = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: card)
-        XCTAssertEqual(XCTWaiter.wait(for: [back], timeout: 5), .completed, "v2's card, back on Home")
+        // looks, not only seconds: one look took 4.2 s on a loaded iPad, taken mid-pop (#761)
+        XCTAssertTrue(waitUntil { card.isHittable }, "v2's card, back on Home")
+        // Home reads itself again as it shows: pressed during that redraw, the touch is lost
+        waitUntilHomeIsQuiet()
 
         // held long enough for a loaded runner: at 1.2 s the menu had not opened when the touch
         // lifted, and the lift was a tap that opened v2's page again (CI, iPad)
@@ -109,7 +111,10 @@ final class PlayerHomeUITests: PlayerUITestCase {
         openHome()
         let card = row("rec-for_you").descendants(matching: .any)["home.card.v6"].firstMatch
         scrollTo(card)
-        card.press(forDuration: 1.2)
+        // the recommendations and each card's title come after Home shows: a press during
+        // their redraw opened no menu (#695's iPad, 2026-11-07)
+        waitUntilHomeIsQuiet()
+        card.press(forDuration: 2.5)
         let item = app.buttons["home.menu.notInterested"].firstMatch
         XCTAssertTrue(item.waitForExistence(timeout: 5), "Not interested in the context menu")
         item.tap()

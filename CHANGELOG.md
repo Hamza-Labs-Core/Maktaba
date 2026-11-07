@@ -80,6 +80,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A rollback no longer keeps the home down for half a day building the search index.**
+  Putting a backup back rebuilt semantic search's vector index among the other indexes with
+  64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
+  down all the while (the rollback of 0.3.90 on 2026-11-07). The vector index is now built
+  in a step of its own, with a third of the machine's memory (at most 32 GB) and parallel
+  workers; if that is refused it is built again with less, so a rollback never fails on it.
+
 - **An update no longer rolls back because the transcription pipeline is busy.** The update's
   watch asked every pipeline process for its version on every check, with three seconds to
   answer; on a busy home the answer sometimes came late, the watch never saw ten healthy
@@ -1097,6 +1104,14 @@ build fails when the two differ.
   wait). Store installs by `{store: {id, version}}`, with the download checked against its
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
   home sends its daily `seen` report when telemetry is on. Migration 0203.
+
+- **A plugin's state shows while the pipeline is down (Epic 54, story 54.07 §8).** The
+  supervisor reports what the home decides of each plugin: waiting with the reason when its
+  gate refuses it (a Maktaba version outside its range, a grant missing, unreviewed while not
+  allowed), stopped while held, running when it may run. Before, a plugin read *Off* until the
+  pipeline reported its stages. While the pipeline runs, its own state of the stages
+  (starting, failed) shows when the gate lets the plugin run. maktaba.dev: Installing a
+  plugin, *Health and logs*.
 
 - **The Updates page names the plugins an update will pause (Epic 54, story 54.07 §3).**
   Under the release it is about to install, the page lists each installed plugin whose

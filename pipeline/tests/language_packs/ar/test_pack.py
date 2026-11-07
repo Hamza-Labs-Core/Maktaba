@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from maktaba_pipeline.language_packs.ar import ArabicPack
+import pytest
+
+from maktaba_pipeline.language_packs.ar import ArabicPack, morphology
 from maktaba_pipeline.language_packs.base import Known
 from maktaba_pipeline.text.arabic import ARABIC_VERSION, fold
 
@@ -51,7 +53,10 @@ def test_the_honorific_ligature_is_a_symbol() -> None:
     assert [(t.text, t.kind) for t in toks if t.text == "ﷺ"] == [("ﷺ", "symbol")]
 
 
-def test_without_the_analyser_nothing_is_unknown() -> None:
+def test_without_the_analyser_nothing_is_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the pack falls back to CAMeL Tools when it is installed: hidden here, so the test
+    # means the same on a machine with it as on CI without it
+    monkeypatch.setattr(morphology, "available", lambda: False)
     p = _pack(analyser=False)
     assert p.analyser == "unavailable" and "unavailable" in p.version
     assert p.known("كتسبلمن")[0] is Known.UNSURE
