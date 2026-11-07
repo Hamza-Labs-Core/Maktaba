@@ -32,6 +32,10 @@ func Validate(c Config, role Role) error {
 		if err := validateBilling(c.Billing); err != nil {
 			return err
 		}
+		// the auth pages' bot check (story 50.30 §4) is never on without its secret
+		if c.Turnstile.Enabled && c.Turnstile.Secret == "" {
+			return fmt.Errorf("%w: turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set", ErrMissing)
+		}
 	case RoleRelay:
 		if c.Server.ListenAddr == "" {
 			return fmt.Errorf("%w: [server].listen_addr", ErrMissing)

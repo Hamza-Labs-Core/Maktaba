@@ -1319,7 +1319,11 @@ and fakes. When the owner is ready:
    `CLOUDFLARE_TUNNEL_TOKEN`. CI writes the ingress and the DNS records from the repo (50.34).
 4. **Turnstile.** Create one widget (managed mode) for `maktaba.tv`, `app.maktaba.tv` and
    `admin.maktaba.tv`. Put the site key in the `production` config and the secret key in the
-   `production` environment as `TURNSTILE_SECRET_KEY`.
+   `production` environment as `TURNSTILE_SECRET_KEY`. On each api node that means
+   `[turnstile] enabled = true` and `site_key = "…"` in `/etc/maktaba/cloud.toml`, and
+   `MAKTABA_CLOUD_TURNSTILE_SECRET=…` in `/etc/maktaba/cloud.env` (the api refuses to start
+   with Turnstile on and no secret; the file never holds the secret). Turnstile is off until
+   then (50.30).
 5. **Staff accounts.** On the leader, over SSH: `maktaba-cloud staff add --email … --role
    service_admin`. It prints a one-time enrolment link (valid 24 h). Open it on
    `admin.maktaba.tv`, set a password, register a passkey and a TOTP app, and keep the 10

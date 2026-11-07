@@ -19,7 +19,7 @@ interface SessionState {
   status: SessionStatus;
   user: CloudUser | null;
   /** POST /v1/auth/login; throws CloudApiError. */
-  signIn: (email: string, password: string) => Promise<CloudUser>;
+  signIn: (email: string, password: string, turnstileToken?: string) => Promise<CloudUser>;
   /** POST /v1/auth/logout and forget the session. */
   signOut: () => Promise<void>;
   /** Forget the session locally (the server already revoked it). */
@@ -58,8 +58,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [restore]);
 
   const signIn = useCallback(
-    async (email: string, password: string) => {
-      const r = await api.post<AuthResult>("/v1/auth/login", { email, password }, { auth: false });
+    async (email: string, password: string, turnstileToken?: string) => {
+      const body = turnstileToken
+        ? { email, password, turnstile_token: turnstileToken }
+        : { email, password };
+      const r = await api.post<AuthResult>("/v1/auth/login", body, { auth: false });
       setAccessToken(r.access_token);
       apply(r);
       return r.user;

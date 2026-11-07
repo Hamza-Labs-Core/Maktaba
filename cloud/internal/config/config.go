@@ -31,6 +31,20 @@ type Config struct {
 	Relay       RelayConfig
 	Auth        AuthConfig
 	Direct      DirectConfig
+	Turnstile   TurnstileConfig
+}
+
+// TurnstileConfig is the bot check on the auth pages (Epic 50 story 50.30 §4): off by default
+// (dev and CI); production turns it on with the widget's site key, and the secret comes from
+// the environment only (MAKTABA_CLOUD_TURNSTILE_SECRET). On without a secret, the api role
+// refuses to start.
+type TurnstileConfig struct {
+	Enabled bool   // turnstile.enabled
+	SiteKey string // turnstile.site_key: public, served to the web pages
+	Secret  string // env MAKTABA_CLOUD_TURNSTILE_SECRET only
+	// WebOrigins are the origins asked for a token (turnstile.web_origins; default the web
+	// app's, server.web_url). Native apps send no Origin and are never asked.
+	WebOrigins []string
 }
 
 // DirectConfig is direct remote access (Epic 50 story 50.15): the direct-name domains (never
@@ -248,6 +262,9 @@ func Load(path string) (Config, error) {
 	if cfg.Server.WebURL == "" {
 		cfg.Server.WebURL = cfg.Server.PublicURL
 	}
+	if len(cfg.Turnstile.WebOrigins) == 0 && cfg.Server.WebURL != "" {
+		cfg.Turnstile.WebOrigins = []string{strings.TrimSuffix(cfg.Server.WebURL, "/")}
+	}
 	return cfg, nil
 }
 
@@ -275,6 +292,9 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_TURNSTILE_SECRET"); v != "" {
+		c.Turnstile.Secret = v
 	}
 	// the direct CAs' EAB secrets (story 50.15) are never in the file
 	for name, a := range c.Direct.ACME {
@@ -437,6 +457,15 @@ func assign(c *Config, section, key, val string) error {
 		c.Server.WebURL = val
 	case "server.trust_proxy_headers":
 		return setBool(&c.Server.TrustProxyHeaders, val)
+	case "turnstile.enabled":
+		return setBool(&c.Turnstile.Enabled, val)
+	case "turnstile.site_key":
+		c.Turnstile.SiteKey = val
+	case "turnstile.web_origins":
+		c.Turnstile.WebOrigins = parseList(val)
+	case "turnstile.secret":
+		// the secret is never in a file: MAKTABA_CLOUD_TURNSTILE_SECRET only
+		return fmt.Errorf("turnstile.secret: the secret is not read from the file; set MAKTABA_CLOUD_TURNSTILE_SECRET")
 	case "billing.provider":
 		c.Billing.Provider = val
 	case "mail.driver":
