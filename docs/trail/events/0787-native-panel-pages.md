@@ -18,8 +18,11 @@ issue: 741
 - In SwiftUI, a `.task` on a view that draws nothing (an `if` with no content yet) never starts. `SubjectPanels` loaded nothing until its task moved to a stack that always exists. Only the iPhone UI test showed it: the build and `swift test` passed.
 - When main fails a test because another epic moved things (Phase 4 moved stages into plugins), the fix is to follow them, not to loosen the check. A lower floor would have hidden moved stages with no titles.
 
+- An empty lazy-list or grid item still takes the list's spacing: the first push moved every library layout golden. A plain `testDebugUnitTest` run does not compare screenshots; `verifyRoborazziDebug` does, and only it showed the change locally.
+
 ## Keep doing
 - Run one real UI test for each new native page, not only a compile.
+- Run `:player:testDebugUnitTest :player:verifyRoborazziDebug` before pushing an Android layout change.
 
 ## Stop doing
 - Loosening a failing check on main inside an unrelated PR. Look for the PR that fixes it first.
