@@ -21,6 +21,9 @@ tunnels it back over a persistent WebSocket to the origin server (see
                   self-hosted server (origin)
 ```
 
+Production names (which records exist, what they point at, their TTLs and Cloudflare proxy
+flags, the CAA records) are listed once, in [`docs/cloud-dns.md`](../../docs/cloud-dns.md).
+
 ## Prerequisites
 
 - A VPS running **Ubuntu 22.04 or 24.04** with a public IPv4 address.

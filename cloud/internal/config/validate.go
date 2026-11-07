@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 )
 
 // Role identifies which set of features this process is providing.
@@ -38,6 +39,9 @@ func Validate(c Config, role Role) error {
 		if c.Relay.PublicHost == "" {
 			return fmt.Errorf("%w: [relay].public_host", ErrMissing)
 		}
+		if err := ValidatePeerAddr(c.Relay.PeerAddr); err != nil {
+			return err
+		}
 	case RoleWorker:
 		// Worker uses control port only; no public listener required.
 	default:
@@ -65,4 +69,26 @@ func validateBilling(b BillingConfig) error {
 		}
 	}
 	return fmt.Errorf("%w %q: the only provider is \"none\"", ErrUnknownBillingProvider, b.Provider)
+}
+
+// ErrPublicPeerAddr: [relay].peer_addr would listen where the internet can
+// reach it. The peer port trusts a signed forward, so it binds only to
+// loopback or a private address (story 50.04).
+var ErrPublicPeerAddr = errors.New("config: [relay].peer_addr must be a loopback or private address")
+
+// ValidatePeerAddr accepts "" (no peer listener) or host:port with a
+// loopback or private IP host; never a wildcard or a public address.
+func ValidatePeerAddr(addr string) error {
+	if addr == "" {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("config: [relay].peer_addr %q: %w", addr, err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || ip.IsUnspecified() || !ip.IsLoopback() && !ip.IsPrivate() {
+		return fmt.Errorf("%w (got %q)", ErrPublicPeerAddr, addr)
+	}
+	return nil
 }

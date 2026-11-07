@@ -76,6 +76,16 @@ type Multiplexer struct {
 	// the supervisor closes a tunnel silent for PongWait.
 	lastRead atomic.Int64
 
+	// inflight counts requests being served (handed to handle, not yet done):
+	// a drained tunnel closes when it reaches zero (story 50.03)
+	inflight atomic.Int64
+	// control receives DRAIN and TICKET frames (the supervisor's)
+	control func(Frame)
+	// lastRequest is when the cloud last sent a request (unix nanos): a
+	// drained tunnel closes only after a quiet spell, so a request the relay
+	// sent just before the new tunnel took over is not cut off
+	lastRequest atomic.Int64
+
 	// counters surfaced via Stats() for the admin state endpoint.
 	bytesIn  atomic.Int64
 	bytesOut atomic.Int64
@@ -95,6 +105,33 @@ type MuxOption func(*Multiplexer)
 
 // WithFlowControl windows response bodies (the cloud agreed at AUTH).
 func WithFlowControl() MuxOption { return func(m *Multiplexer) { m.flow = true } }
+
+// WithControl hands DRAIN and TICKET frames to fn (story 50.03). It runs on
+// the read loop: fn must not block.
+func WithControl(fn func(Frame)) MuxOption { return func(m *Multiplexer) { m.control = fn } }
+
+// Active is how many requests the tunnel is serving right now.
+func (m *Multiplexer) Active() int64 { return m.inflight.Load() }
+
+// LastRequest is when the cloud last sent a request on this tunnel (zero:
+// never).
+func (m *Multiplexer) LastRequest() time.Time {
+	if n := m.lastRequest.Load(); n != 0 {
+		return time.Unix(0, n)
+	}
+	return time.Time{}
+}
+
+// CloseNormal ends a drained tunnel with 4000 normal_closure (when the
+// connection can send a close code), then tears it down as Close does.
+func (m *Multiplexer) CloseNormal() {
+	if cc, ok := m.conn.(closeCoder); ok && !m.closed.Load() {
+		m.writeMu.Lock()
+		_ = cc.CloseCode(4000, "drained")
+		m.writeMu.Unlock()
+	}
+	m.Close()
+}
 
 // NewMultiplexer wires the read loop and returns immediately.
 func NewMultiplexer(conn FrameConn, proxy *LocalProxy, opts ...MuxOption) *Multiplexer {
@@ -204,6 +241,7 @@ func (m *Multiplexer) dispatch(f Frame) {
 		// Reply to our own keepalive PING (health.go); readLoop already
 		// noted the frame's arrival (lastRead).
 	case KindRequestHead:
+		m.lastRequest.Store(time.Now().UnixNano())
 		m.mu.Lock()
 		m.streams[f.StreamID] = &reqAssembly{head: append([]byte(nil), f.Payload...)}
 		m.mu.Unlock()
@@ -224,7 +262,11 @@ func (m *Multiplexer) dispatch(f Frame) {
 			}
 			m.mu.Unlock()
 			m.reqs.Add(1)
-			go m.handle(f.StreamID, asm, cr)
+			m.inflight.Add(1)
+			go func() {
+				defer m.inflight.Add(-1)
+				m.handle(f.StreamID, asm, cr)
+			}()
 			return
 		}
 		if asm.body.Len()+len(f.Payload) > MaxRequestBody {
@@ -246,6 +288,10 @@ func (m *Multiplexer) dispatch(f Frame) {
 		m.mu.Unlock()
 		if cr != nil {
 			cr.add(int64(binary.BigEndian.Uint32(f.Payload)))
+		}
+	case KindDrain, KindTicket:
+		if m.control != nil {
+			m.control(f)
 		}
 	case KindCloseStream:
 		// The cloud aborted this stream (its client left). Drop any

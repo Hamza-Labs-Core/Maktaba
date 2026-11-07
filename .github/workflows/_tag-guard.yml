@@ -46,6 +46,27 @@ jobs:
       published: ${{ steps.guard.outputs.published }}
       latest: ${{ steps.guard.outputs.latest }}
     steps:
+      # A dispatched run (auto-tag.yml starts each tag workflow so: a tag it pushes with
+      # GITHUB_TOKEN starts none) releases its ref, so the ref must be the tag itself, and the
+      # `tag` input, when given, that same tag. The guard below is then the same as a push's.
+      - name: A dispatched run is on its tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          REF: ${{ github.ref }}
+          REF_TYPE: ${{ github.ref_type }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${REF_TYPE}" != tag ]; then
+            echo "::error::tag guard: a dispatched release runs on its tag (gh workflow run <workflow> --ref vX.Y.Z -f tag=vX.Y.Z), not ${REF}"
+            exit 1
+          fi
+          if [ -n "${INPUT_TAG}" ] && [ "refs/tags/${INPUT_TAG}" != "${REF}" ]; then
+            echo "::error::tag guard: the tag input (${INPUT_TAG}) is not the run's ref (${REF}): dispatch with --ref ${INPUT_TAG}"
+            exit 1
+          fi
+          echo "tag guard: dispatched on ${REF}"
+
       - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0

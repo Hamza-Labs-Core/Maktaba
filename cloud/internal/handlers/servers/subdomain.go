@@ -89,6 +89,15 @@ func (d *SubdomainDeps) Claim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 422, "bad_slug", "")
 		return
 	}
+	var reserved int
+	if err := d.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM reserved_slugs WHERE slug = $1`, slug).Scan(&reserved); err != nil {
+		writeErr(w, 500, "lookup_failed", "")
+		return
+	}
+	if reserved > 0 {
+		writeErr(w, 409, "subdomain_reserved", "")
+		return
+	}
 	tx, err := d.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		writeErr(w, 500, "txn_failed", err.Error())

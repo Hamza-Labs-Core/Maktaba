@@ -89,9 +89,10 @@ func TestEditionsAreReadOnly(t *testing.T) {
 
 func TestOtherPathsStillGoToTheHome(t *testing.T) {
 	h := editionRelay()
-	// no manage/ build here, and the home's own paths: through the tunnel (offline: 502)
+	// no manage/ build here, and the home's own paths: through the tunnel (offline,
+	// never seen: 503 server_offline at once, story 50.04)
 	for _, path := range []string{"/manage/", "/api/auth/me", "/", "/playlists"} {
-		if rec := editionGet(t, h, http.MethodGet, path); rec.Code != http.StatusBadGateway {
+		if rec := editionGet(t, h, http.MethodGet, path); rec.Code != http.StatusServiceUnavailable {
 			t.Errorf("%s: %d (want the home's answer: offline)", path, rec.Code)
 		}
 	}

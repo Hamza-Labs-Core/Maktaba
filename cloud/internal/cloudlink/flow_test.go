@@ -205,7 +205,7 @@ func TestAuthenticate_NegotiatesFlow(t *testing.T) {
 			ok, _ := json.Marshal(authOKPayload{Slug: "acme", Flow: cloudFlow})
 			_ = cloudEnd.WriteFrame(Frame{Kind: KindAuthOK, Payload: ok})
 		}()
-		res, err := authenticate(clientEnd, "srv-1", "sek")
+		res, err := authenticate(clientEnd, "srv-1", "sek", "")
 		if err != nil {
 			t.Fatal(err)
 		}

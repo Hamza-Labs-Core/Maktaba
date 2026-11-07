@@ -1,10 +1,9 @@
 # Queue stages and the plugin API
 
-> **Status: planned.** Queue stages, the plugin API, media handles, grants and settings are
-> Phase 1; panels and local compute are Phase 3. None of it is built yet. This page describes
-> the design in
-> [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md),
-> which can change.
+> **Status:** plugin stages in the queue, the plugin API and media handles are **on `main`**.
+> Grants and roles and settings are **coming in the next release**; panels and local compute
+> are planned for Phase 3. The exact functions, capabilities, events and refusal codes are in
+> the [plugin reference](reference.md), generated from the WIT and the API's code.
 
 ## Stages and events
 
@@ -62,20 +61,22 @@ One WIT package, `maktaba:plugin@1.x`, versioned with semver. A minor version on
 functions, so a plugin built for 1.2 runs on any 1.x host from 1.2 up. Maktaba supports the
 current and previous major for at least 12 months after a new major.
 
-| Interface | Functions (sketch) | Capability |
+| Interface | Functions | Capability |
 |---|---|---|
-| `job` | `subject()`, `payload()`, `settings()`, `grants()`, `progress(pct)`, `checkpoint(bytes)` | none |
-| `log` | `log(level, code, fields)` | none |
-| `data` | `get`, `put`, `delete`, `list` in your own namespace | none (quota applies) |
-| `library` | `video(id)`, `series(id)`, `list(library, filter, page)` | `library.read` |
+| `job` | `job-subject`, `payload`, `settings`, `grants`, `progress`, `checkpoint`, `last-checkpoint`, `scratch-put`, `scratch-get` | none |
+| `log` | `write(level, code, fields)` | none |
+| `data` | `get`, `put` (optionally `exported`), `delete` in your own namespace | none (quota applies) |
+| `library` | `video(id)`, `series(id)` | `library.read` |
 | `transcript` | `segments(video)`, `words(video)` | `transcript.read` |
-| `media` | `open(video)`, `frame(video, t, size)`, `audio(video, t0, t1, rate)` | `media.read`, `media.frames`, `media.audio` |
+| `media` | `open`, `read`, `size`, `close`; `frame`; `audio`; `info` | `media.read`; `media.frames`; `media.audio`; `library.read` |
 | `write` | `set-field`, `add-tags`, `set-chapters`, `add-subtitle`, `set-artwork` | `metadata.write`, `tags.write`, `chapters.write`, `subtitles.write`, `artwork.write` |
-| `suggest` | `suggest(subject, field, value, reason)` into the admin's review queue | `suggest` |
+| `suggest` | `add(subject, field, value, reason)` into the admin's review queue | `suggest` |
 | `queue` | `request(stage, subject, payload)` for your own stages | `jobs.enqueue` |
 | `notify` | `admin(code, params)`, a notice from your strings | `notify.admin` |
 | `exports` | `read(plugin, subject, key)` of data another plugin exported | `plugin-data.read:<id>` |
 | `compute` (Phase 3) | `embed(texts)`, `generate(prompt, opts)` | `compute.embed`, `compute.llm` |
+
+Every signature is in the [plugin reference](reference.md#the-plugin-api).
 
 Interfaces you were not granted are still linked, so you can degrade gracefully, but each call
 answers a capability error.
@@ -101,7 +102,7 @@ Other refusals: `plugin_field`, `plugin_quota`, `plugin_rate`, `413 plugin_too_l
 
 | Call | Capability | You get |
 |---|---|---|
-| `media.open(video)`, then `stream.read(offset, len)` and `stream.size()` | `media.read` | raw bytes, up to 8 MB per read |
+| `media.open(video)`, then `media.read(handle, offset, len)`, `media.size(handle)` and `media.close(handle)` | `media.read` | raw bytes, up to 8 MB per read |
 | `media.frame(video, t-ms, max-edge)` | `media.frames` | one decoded frame, longest edge up to 1,280 px |
 | `media.audio(video, t0-ms, t1-ms, rate)` | `media.audio` | mono 16-bit PCM at 8, 16 or 22.05 kHz, up to 10 minutes per call |
 | `media.info(video)` | `library.read` | duration, streams, codecs |
@@ -112,6 +113,8 @@ size, 2,000 frames, audio up to four times the duration. You never see paths, sh
 other files in the folder.
 
 ## Grants and roles
+
+> **Coming in the next release.** Until then, the API already checks every call against the grants it stores (`plugin_grants`), but there is no screen to grant them.
 
 At install the admin sees your capabilities in Maktaba's own words, in English or Arabic,
 unticks optional ones, and ticks each library you may use. **No library is ticked by
@@ -129,6 +132,8 @@ Only admins can install, configure or see plugins. Viewers see plugin outputs as
 (tags, chapters, subtitles) and panels, only on subjects their library access allows.
 
 ## Settings
+
+> **Coming in the next release.**
 
 Declare an admin form as `ui/settings.schema.json`, a JSON Schema subset:
 

@@ -3,6 +3,8 @@ package relay
 import (
 	"errors"
 	"sync"
+	"sync/atomic"
+	"time"
 )
 
 // Registry tracks live server connections. The HTTP proxy looks up a
@@ -12,7 +14,15 @@ import (
 // writes only on connect/disconnect — we use sync.RWMutex.
 type Registry struct {
 	mu    sync.RWMutex
-	conns map[string]*Tunnel // keyed by server slug
+	conns map[string]*Tunnel // keyed by server slug: the tunnel new requests take
+	// open is every tunnel not yet closed, a draining one a newer tunnel
+	// replaced included (story 50.03): Shutdown waits for them all
+	open map[*Tunnel]struct{}
+	// closing: the process is shutting down; new tunnels are refused
+	closing atomic.Bool
+	// seen is when each slug last had a tunnel here (registered or gone):
+	// a request for a home seen a moment ago is held while it reconnects
+	seen map[string]time.Time
 
 	// slugLocks serialize a slug's tunnel coming and going with the recording of it
 	// (Up, Down), apart from mu: the recording is a database write, and Lookup is the
@@ -29,7 +39,7 @@ type slugLock struct {
 var ErrNoTunnel = errors.New("relay: no live tunnel for slug")
 
 func NewRegistry() *Registry {
-	return &Registry{conns: make(map[string]*Tunnel), slugLocks: make(map[string]*slugLock)}
+	return &Registry{conns: make(map[string]*Tunnel), open: make(map[*Tunnel]struct{}), seen: make(map[string]time.Time), slugLocks: make(map[string]*slugLock)}
 }
 
 // lockSlug holds slug's lock until the returned func is called (dropped once no one
@@ -93,16 +103,31 @@ func (r *Registry) Down(slug string, t *Tunnel, record func()) bool {
 	return true
 }
 
-// Register installs a tunnel. If the slug already has a tunnel we
-// close the old one — the new connection wins, on the assumption that
-// the server agent reconnected after a network blip.
+// Register installs a tunnel: new requests for the slug take it. If the
+// slug already has a tunnel the new connection wins: the old one is closed
+// (4003 superseded: the agent reconnected after a blip or a restart) unless
+// it is draining, when it keeps serving the streams it has until the home
+// closes it or its deadline (story 50.03).
 func (r *Registry) Register(slug string, t *Tunnel) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if old, ok := r.conns[slug]; ok && old != t {
+	if old, ok := r.conns[slug]; ok && old != t && !old.Draining() {
 		old.Close()
 	}
 	r.conns[slug] = t
+	r.seen[slug] = time.Now()
+	r.track(t)
+}
+
+// LastSeen is when slug last had a tunnel here (up or going down).
+func (r *Registry) LastSeen(slug string) (time.Time, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if _, up := r.conns[slug]; up {
+		return time.Now(), true
+	}
+	at, ok := r.seen[slug]
+	return at, ok
 }
 
 // Unregister removes a tunnel ONLY if it matches the one we know
@@ -113,6 +138,7 @@ func (r *Registry) Unregister(slug string, t *Tunnel) bool {
 	defer r.mu.Unlock()
 	if cur, ok := r.conns[slug]; ok && cur == t {
 		delete(r.conns, slug)
+		r.seen[slug] = time.Now()
 		return true
 	}
 	return false

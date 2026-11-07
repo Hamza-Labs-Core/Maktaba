@@ -1,0 +1,141 @@
+# Releases are automatic: the newest commit on main that CI and the update rehearsal both
+# passed on is tagged as the next patch version (vX.Y.Z+1, an annotated tag), and the tag
+# workflows are started for it.
+#
+# WHEN: each time a CI run or an update rehearsal finishes green on main (a push, or the
+# rehearsal's nightly run). The commit, and whether it is tagged, is tools/release/next_tag.py's
+# choice: the newest commit of main both passed on (not only this event's: main's runs replace
+# a pending one, so an event can be lost, and a commit with no run of its own is carried by the
+# next green one's tag); never a commit that has a v* tag, nor one older than a tagged commit,
+# nor one whose change since the highest tag is only the Claude trail (a trail-only push starts
+# neither workflow either: their paths-ignore).
+#
+# THE TAG WORKFLOWS: a tag pushed with GITHUB_TOKEN starts no `on: push: tags` workflow, but a
+# dispatch sent with it does. So each tag workflow (RELEASE_WORKFLOWS below; every one with
+# `push: tags`, kept so by tools/ci/tests/test_next_tag.py) is dispatched on the tag
+# (`--ref vX.Y.Z`: github.ref is the tag, the checkout is the tag's), with `tag` as input. Its
+# tag guard (_tag-guard.yml) still runs first, as strictly as for a pushed tag, and refuses a
+# dispatched run whose ref is not that tag. A workflow that already has a run for the tag (it
+# was pushed with a token that starts workflows) is not dispatched again; two runs of one tag
+# would wait on each other anyway (each workflow's concurrency group is per tag) and the second
+# builds nothing again once the release is published.
+#
+# web-release.yml is not dispatched: release.yml attaches the web bundle to every release (see
+# web-release.yml's header). packages.yml follows Release and Desktop Release (workflow_run),
+# dispatched runs included.
+#
+# RACES: both workflows' completions can fire for one commit, so one run at a time
+# (concurrency, never cancelled), the choice is made again on freshly fetched tags just before
+# the push, and the push never overwrites a tag (one made meanwhile fails it, and nothing is
+# dispatched).
+
+name: Auto tag
+
+on:
+  workflow_run:
+    workflows: [CI, Update rehearsal]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: tag the newest green commit
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the tag
+      actions: write # dispatch the tag workflows
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_WORKFLOWS: >-
+        release.yml
+        desktop-release.yml
+        mobile-release.yml
+        tv-release.yml
+        play-bundles.yml
+        testflight.yml
+        relay.yml
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+
+      # the commits of main that CI and the rehearsal both finished green on (push and nightly
+      # runs: the tag guard counts any finished green run on the commit)
+      - name: The green commits
+        run: |
+          set -euo pipefail
+          green() {
+            gh run list --workflow "$1" --branch main --status success --limit 50 \
+              --json headSha,event --jq '.[] | select(.event == "push" or .event == "schedule") | .headSha' |
+              sort -u
+          }
+          comm -12 <(green ci.yml) <(green update-rehearsal.yml) >"${RUNNER_TEMP}/green.txt"
+          echo "green on both: $(wc -l <"${RUNNER_TEMP}/green.txt") commit(s)"
+
+      - name: Choose
+        id: choose
+        run: |
+          set -euo pipefail
+          python3 tools/release/next_tag.py --green "${RUNNER_TEMP}/green.txt" | tee -a "${GITHUB_OUTPUT}"
+
+      - name: Tag
+        id: tag
+        if: steps.choose.outputs.tag != ''
+        env:
+          TAG: ${{ steps.choose.outputs.tag }}
+          SHA: ${{ steps.choose.outputs.sha }}
+        run: |
+          set -euo pipefail
+          # once more on the remote's tags, just before the push (a session may have tagged)
+          git fetch --quiet --force --tags origin +refs/heads/main:refs/remotes/origin/main
+          again="$(python3 tools/release/next_tag.py --green "${RUNNER_TEMP}/green.txt")"
+          if [ "$(sed -n 's/^tag=//p' <<<"${again}")" != "${TAG}" ] || [ "$(sed -n 's/^sha=//p' <<<"${again}")" != "${SHA}" ]; then
+            echo "::notice::not tagging ${TAG}: the tags changed meanwhile ($(sed -n 's/^reason=//p' <<<"${again}"))"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # the message is the tag's name: play-bundles.yml then gives Play testers no notes of
+          # their own (tools/ci/play_release.py)
+          git tag -a "${TAG}" -m "${TAG}" "${SHA}"
+          git push origin "refs/tags/${TAG}"
+          echo "pushed=true" >>"${GITHUB_OUTPUT}"
+          echo "::notice::tagged ${SHA} ${TAG}"
+
+      - name: Start the tag workflows
+        if: steps.tag.outputs.pushed == 'true'
+        env:
+          TAG: ${{ steps.choose.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # a token that starts workflows would have started them already: give them a moment
+          sleep 20
+          failed=""
+          for wf in ${RELEASE_WORKFLOWS}; do
+            runs="$(gh run list --workflow "${wf}" --branch "${TAG}" --limit 5 --json databaseId --jq 'length')"
+            if [ "${runs}" != 0 ]; then
+              echo "${wf}: already has a run for ${TAG}: not dispatched again"
+              continue
+            fi
+            if gh workflow run "${wf}" --ref "${TAG}" -f tag="${TAG}"; then
+              echo "${wf}: dispatched on ${TAG}"
+            else
+              echo "::error::${wf}: the dispatch on ${TAG} failed (run it by hand: gh workflow run ${wf} --ref ${TAG} -f tag=${TAG})"
+              failed="${failed} ${wf}"
+            fi
+          done
+          [ -z "${failed}" ]
