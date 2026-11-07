@@ -1,0 +1,4 @@
+{
+  "plugin.name": "Hello",
+  "plugin.summary": "Says hello in the log."
+}

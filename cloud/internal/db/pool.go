@@ -11,6 +11,8 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,7 +33,7 @@ func Open(url string, maxOpen, maxIdle int, lifetime time.Duration) (*Pool, erro
 	if url == "" {
 		return nil, errors.New("db: empty url")
 	}
-	d, err := sql.Open("postgres", url)
+	d, err := sql.Open("postgres", WithConnectTimeout(url, 2))
 	if err != nil {
 		return nil, fmt.Errorf("db: open: %w", err)
 	}
@@ -39,6 +41,25 @@ func Open(url string, maxOpen, maxIdle int, lifetime time.Duration) (*Pool, erro
 	d.SetMaxIdleConns(maxIdle)
 	d.SetConnMaxLifetime(lifetime)
 	return &Pool{DB: d}, nil
+}
+
+// WithConnectTimeout adds connect_timeout=secs to a postgres:// URL that
+// has none. lib/pq does not stop a connection's startup when a context ends,
+// so without it a request waits on a database that vanished (a failover's
+// old address: connects hang) until the kernel gives up, minutes later. The
+// rehearsal's db-blip found it. A key=value DSN is left as it is.
+func WithConnectTimeout(url string, secs int) string {
+	if !strings.HasPrefix(url, "postgres://") && !strings.HasPrefix(url, "postgresql://") {
+		return url
+	}
+	if strings.Contains(url, "connect_timeout=") {
+		return url
+	}
+	sep := "?"
+	if strings.Contains(url, "?") {
+		sep = "&"
+	}
+	return url + sep + "connect_timeout=" + strconv.Itoa(secs)
 }
 
 // Ping verifies that the configured database is reachable. Used by the
@@ -79,15 +100,29 @@ func NewMigrator(p *Pool, dir embed.FS, root string) *Migrator {
 	return &Migrator{pool: p, dir: dir, root: root}
 }
 
-// Up applies all pending migrations.
+// Up applies all pending migrations, including one numbered below the
+// database's version: files are numbered by epic slot (README), so an
+// epic's migration can land after a later slot's (Epic 50's 0050 after
+// Epic 51's 0051) and must still be applied.
 func (m *Migrator) Up(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// two processes migrating at once (blue and green starting together, 50.08)
+	// serialize here, as the README says; the second finds the schema at head
+	conn, err := m.pool.DB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("migrator: lock connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(8472612)`); err != nil {
+		return fmt.Errorf("migrator: lock: %w", err)
+	}
+	defer func() { _, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(8472612)`) }()
 	goose.SetBaseFS(m.dir)
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrator: dialect: %w", err)
 	}
-	return goose.UpContext(ctx, m.pool.DB, m.root)
+	return goose.UpContext(ctx, m.pool.DB, m.root, goose.WithAllowMissing())
 }
 
 // Down rolls back the most recent N migrations. Mainly used in dev /

@@ -121,6 +121,39 @@ type RelayConfig struct {
 	// /play/ and /manage/ on each home's address (Epic 42.9): play/ and manage/, each a
 	// build of web/ (`pnpm build:player:cloud`, `build:remote:cloud`). Empty: none.
 	EditionsDir string
+
+	// Tunnel handover (Epic 50 story 50.03). DrainEnabled: on SIGTERM the relay
+	// sends every home DRAIN and waits for it to move (false: today's close on
+	// shutdown). TicketsEnabled: homes reconnect with a resume ticket instead of
+	// their bearer secret (false: every handshake checks the bearer).
+	DrainEnabled   bool          // relay.drain.enabled, default true
+	TicketsEnabled bool          // relay.ticket.enabled, default true
+	DrainWithin    time.Duration // relay.drain.within, default 5s: open the new tunnel within this
+	DrainDeadline  time.Duration // relay.drain.deadline, default 120s: the old tunnel closes after this
+	DrainRate      int           // relay.drain.rate, default 100: homes sent DRAIN a second
+	// ShutdownGrace replaces server.shutdown_grace for the relay role, which
+	// waits for its homes to move (relay.shutdown_grace, default 150s).
+	ShutdownGrace time.Duration
+
+	// The tunnel directory (story 50.04). ID names this relay process
+	// (relay.id, env MAKTABA_CLOUD_RELAY_ID; default the host name), and
+	// PeerAddr is where its peers forward requests to it (relay.peer_addr,
+	// env MAKTABA_CLOUD_RELAY_PEER_ADDR): loopback or a private address only.
+	// Empty PeerAddr: no directory, no forwarding (holding still works).
+	ID       string
+	PeerAddr string
+	// HoldMax: how long a request waits for a home that is reconnecting
+	// (relay.hold_max, default 15s; 0s turns holding off); HoldRecent: how
+	// recently it must have been seen (relay.hold_recent, default 2m).
+	HoldMax    time.Duration
+	HoldRecent time.Duration
+
+	// Riding out a database blip (story 50.05). CacheEnabled: home lookups
+	// come from a cache that outlives a failover (relay.cache.enabled,
+	// default true). ReadyzStrict: /readyz fails as soon as the database
+	// does, as the api role's (relay.readyz_strict, default false).
+	CacheEnabled bool
+	ReadyzStrict bool
 }
 
 // Default values per the bootstrap plan; the loader fills these for any
@@ -146,7 +179,18 @@ func defaultConfig() Config {
 			Sample2xxAfterDays: 7,
 			Sample2xxRate:      0.10,
 		},
-		Relay: RelayConfig{PublicHost: "relay.maktaba.tv"},
+		Relay: RelayConfig{
+			PublicHost:     "relay.maktaba.tv",
+			DrainEnabled:   true,
+			TicketsEnabled: true,
+			DrainWithin:    5 * time.Second,
+			DrainDeadline:  120 * time.Second,
+			DrainRate:      100,
+			ShutdownGrace:  150 * time.Second,
+			HoldMax:        15 * time.Second,
+			CacheEnabled:   true,
+			HoldRecent:     2 * time.Minute,
+		},
 	}
 }
 
@@ -203,6 +247,13 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_RELAY_EDITIONS_DIR"); v != "" {
 		c.Relay.EditionsDir = v
+	}
+	// the blue/green units (story 50.08) name each process and its peer port
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_ID"); v != "" {
+		c.Relay.ID = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RELAY_PEER_ADDR"); v != "" {
+		c.Relay.PeerAddr = v
 	}
 }
 
@@ -311,6 +362,30 @@ func assign(c *Config, section, key, val string) error {
 		return setFloat(&c.Telemetry.Sample2xxRate, val)
 	case "relay.public_host":
 		c.Relay.PublicHost = val
+	case "relay.drain.enabled":
+		return setBool(&c.Relay.DrainEnabled, val)
+	case "relay.ticket.enabled":
+		return setBool(&c.Relay.TicketsEnabled, val)
+	case "relay.drain.within":
+		return setDur(&c.Relay.DrainWithin, val)
+	case "relay.drain.deadline":
+		return setDur(&c.Relay.DrainDeadline, val)
+	case "relay.drain.rate":
+		return setInt(&c.Relay.DrainRate, val)
+	case "relay.id":
+		c.Relay.ID = val
+	case "relay.peer_addr":
+		c.Relay.PeerAddr = val
+	case "relay.cache.enabled":
+		return setBool(&c.Relay.CacheEnabled, val)
+	case "relay.readyz_strict":
+		return setBool(&c.Relay.ReadyzStrict, val)
+	case "relay.hold_max":
+		return setDur(&c.Relay.HoldMax, val)
+	case "relay.hold_recent":
+		return setDur(&c.Relay.HoldRecent, val)
+	case "relay.shutdown_grace":
+		return setDur(&c.Relay.ShutdownGrace, val)
 	case "relay.editions_dir":
 		c.Relay.EditionsDir = val
 	}

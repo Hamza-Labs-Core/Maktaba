@@ -436,7 +436,7 @@ maybe_install_systemd() {
     # from a copy it can read; then the unit that runs the launcher, as root.
     stage="${SYS_ROOT}/.install-$$"
     sudo install -d -o maktaba -g maktaba -m 0755 "${stage}"
-    for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming; do
+    for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming maktaba-plugind; do
         if [ -f "${dir}/${b}" ]; then
             sudo install -o maktaba -g maktaba -m 0755 "${dir}/${b}" "${stage}/${b}"
         fi

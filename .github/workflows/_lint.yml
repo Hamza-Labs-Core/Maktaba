@@ -80,6 +80,13 @@ jobs:
           done < <(git diff --name-only --diff-filter=AM "$base" HEAD)
           exit $bad
 
+      # Story 50.01: no host name under a domain that is not ours (maktaba.app), on the lines
+      # the pull request adds; app identifiers (com.maktaba.app) pass.
+      - name: No foreign domains (tools/lint/no-foreign-domains.sh)
+        run: |
+          bash tools/lint/no-foreign-domains-test.sh
+          bash tools/lint/no-foreign-domains.sh
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -97,11 +104,11 @@ jobs:
           pytest tools/ci/tests -q -p no:cacheprovider
 
       # docs/trail: every event and snapshot (front matter, sections, citations, no secrets,
-      # the computed Index and Missing events), by the claude-trail Action
-      # (github.com/Hamza-Labs-Core/claude-trail) with this repository's .trail.toml. It
+      # the computed Index and Missing events), by the agent-trail Action
+      # (github.com/Hamza-Labs-Core/agent-trail) with this repository's .trail.toml. It
       # fetches the tags first, for the snapshots' up_to_commit.
-      - name: The Claude trail checks (claude-trail)
-        uses: Hamza-Labs-Core/claude-trail@v0.1.0
+      - name: The agent trail checks (agent-trail)
+        uses: Hamza-Labs-Core/agent-trail@v0
 
   lint:
     if: inputs.go || inputs.pipeline || inputs.web

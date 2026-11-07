@@ -1,11 +1,16 @@
 # الاختبار والتحزيم
 
-> **الحالة: مُخطَّط (لم يُبنَ بعد، المرحلة 1).** حزمة تطوير البرمجيات (SDK)، وأداة `mkp`،
-> والقوالب، وبيئة الاختبار، والتثبيت من ملف، كلها لم تُبنَ بعد. تصف هذه الصفحة التصميم الوارد في
+> **الحالة: مبنيّ للغة Rust (المرحلة 1).** تصنع أداة `mkp` (في `plugind/crates/mkp`) مشروع Rust
+> (`mkp new rust <id> <folder>`)، وتفحص الحزمة كما يفحصها الجهاز الرئيسي (`mkp check`)، وتشغّل
+> مرحلة في بيئة الاختبار، أي شيفرة المضيف نفسها مع واجهة إضافات وهمية تجيب من ملف بيانات
+> (`mkp test --stage <name> --fixtures api.json`)، وتحزّم ملف `.mkplugin` (`mkp pack`). ويثبّت
+> المسؤول الملف من الإعدادات، الإضافات، مع تفعيل «السماح بالإضافات غير المراجَعة». ولم تُبنَ بعد
+> قوالب TypeScript وPython وGo، ولا التوقيع (`mkp pack --sign`، `mkp keys`)، ولا `mkp run`، ولا
+> وضع المطوّر. والبيان في [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في
+> [مرجع الإضافات](reference.ar.md). وبقية هذه الصفحة هي التصميم الوارد في
 > [القصة 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > و
-> [القصة 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md)،
-> وهو قابل للتغيير.
+> [القصة 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md).
 
 ## اللغات
 

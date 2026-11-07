@@ -26,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
 import { STRINGS } from "./strings.mjs";
 import { APPS, appShots } from "./apps.mjs";
+import { pluginFindings, pluginReference, readPluginSources } from "./plugins.mjs";
 import { scanDir } from "./scan.mjs";
 import { ORIGIN, isSafeUrl } from "./urls.mjs";
 import {
@@ -62,6 +63,7 @@ const GUIDES = {
     "manifest.md",
     "sandbox.md",
     "queue-and-api.md",
+    "installing.md",
     "testing-and-packaging.md",
     "publishing.md",
   ],
@@ -86,6 +88,15 @@ export const DOCS = [
       group,
     }))
   ),
+  // generated from the plugin system's own files (scripts/plugins.mjs), after the guides
+  {
+    src: "generated:plugins/reference",
+    ar: "generated:plugins/reference.ar",
+    out: "plugins/reference/",
+    group: "plugins",
+    gen: (lang) => pluginReference(readPluginSources(REPO), lang),
+    source: "shared/plugins",
+  },
   {
     src: "CHANGELOG.md",
     ar: "CHANGELOG.ar.md",
@@ -159,6 +170,8 @@ export function wikiAlternates(html, here) {
 // Repo files copied as they are: repo path -> site path.
 const FILES = [
   ["shared/api/openapi.json", "api/openapi.json"],
+  // the manifest schema at its own $id (https://maktaba.dev/plugins/manifest.schema.json)
+  ["shared/plugins/manifest.schema.json", "plugins/manifest.schema.json"],
   // ar/api/openapi.json is written by the build: openapi.json with openapi.ar.json's prose
   [
     "web/packages/devportal/node_modules/redoc/bundles/redoc.standalone.js",
@@ -596,15 +609,19 @@ export function markdownToHtml(md, fromSrc, published) {
 /** The markdown a doc is in, in one language. */
 const docSrc = (doc, lang) => (lang === "ar" ? doc.ar : doc.src);
 
+/** A doc's markdown in one language: its file, or what generates it. */
+const docMarkdown = (doc, lang) =>
+  doc.gen ? doc.gen(lang) : fs.readFileSync(path.join(REPO, docSrc(doc, lang)), "utf8");
+
 function renderDoc(doc, lang, published, groups) {
   const t = (k) => tr(lang, k);
   const srcPath = docSrc(doc, lang);
-  const md = scrubMarkdown(fs.readFileSync(path.join(REPO, srcPath), "utf8"));
+  const md = scrubMarkdown(docMarkdown(doc, lang));
   const html = markdownToHtml(md, srcPath, published);
   const title = doc.titleKey
     ? t(doc.titleKey)
     : (md.match(/^# (.+)$/m)?.[1] ?? srcPath).replace(/[*`]/g, "");
-  const src = `${GITHUB}/blob/main/${srcPath}`;
+  const src = doc.gen ? `${GITHUB}/tree/main/${doc.source}` : `${GITHUB}/blob/main/${srcPath}`;
   const article = `<article class="doc">\n${html}\n<p class="note"><a href="${src}">${esc(t("doc.source"))}</a></p>\n</article>`;
   const group = groups.get(doc.group) ?? [];
   let body = article;
@@ -737,9 +754,11 @@ export function checkSources() {
   const guides = DOCS.filter((d) => d.src.startsWith("docs/developers/")).map((d) => d.src);
   const findings = checkGuides(REPO, "docs/developers", guides);
   for (const d of DOCS) {
-    if (fs.existsSync(path.join(REPO, d.ar)))
+    if (d.gen) findings.push(...checkArabicMarkdown(d.ar, d.gen("ar")));
+    else if (fs.existsSync(path.join(REPO, d.ar)))
       findings.push(...checkArabicMarkdown(d.ar, read(d.ar)));
   }
+  findings.push(...pluginFindings(readPluginSources(REPO)));
   findings.push(...checkApps(APPS, appShots(), appImage));
   findings.push(...checkChangelog(read("CHANGELOG.md"), read("CHANGELOG.ar.md")));
   findings.push(
@@ -765,7 +784,10 @@ const fail = (what, findings) => {
 };
 
 export function build() {
-  for (const d of [...DOCS.flatMap((d) => [d.src, d.ar]), ...FILES.map((f) => f[0])]) {
+  for (const d of [
+    ...DOCS.filter((d) => !d.gen).flatMap((d) => [d.src, d.ar]),
+    ...FILES.map((f) => f[0]),
+  ]) {
     if (NEVER.some((re) => re.test(d))) throw new Error(`build: ${d} is never published`);
   }
   const drift = checkSources();
@@ -789,12 +811,15 @@ export function build() {
   const published = new Map([
     ...DOCS.map((d) => [d.src, d.out]),
     ...DOCS.map((d) => [d.ar, siteUrl(d.out, "ar")]),
+    // a guide links the generated reference as if it were a file beside it
+    ["docs/developers/plugins/reference.md", "plugins/reference/"],
+    ["docs/developers/plugins/reference.ar.md", siteUrl("plugins/reference/", "ar")],
   ]);
   const groups = new Map();
   for (const d of DOCS) {
     const h1 = (lang) => {
       if (d.titleKey) return tr(lang, d.titleKey);
-      const md = fs.readFileSync(path.join(REPO, docSrc(d, lang)), "utf8");
+      const md = docMarkdown(d, lang);
       return (md.match(/^# (.+)$/m)?.[1] ?? d.src).replace(/[*`]/g, "");
     };
     d.navTitle = { en: h1("en"), ar: h1("ar") };

@@ -139,8 +139,11 @@ func (d *Deps) RedeemClaim(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, stores.ErrClaimInvalid):
 		writeErr(w, 404, "claim_invalid", "code expired or already used")
 		return
+	case errors.Is(err, stores.ErrSlugReserved):
+		writeErr(w, 409, "subdomain_reserved", "that subdomain is reserved; the code is still valid")
+		return
 	case errors.Is(err, stores.ErrSlugTaken):
-		writeErr(w, 409, "slug_taken", "that subdomain is reserved or taken; the code is still valid")
+		writeErr(w, 409, "slug_taken", "that subdomain is taken; the code is still valid")
 		return
 	case err != nil:
 		writeErr(w, 500, "claim_failed", "")

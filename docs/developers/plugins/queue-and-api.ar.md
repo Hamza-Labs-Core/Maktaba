@@ -1,10 +1,9 @@
 # مراحل طابور المهام والواجهة البرمجية للإضافات
 
-> **الحالة: مُخطَّط (لم يُبنَ بعد).** مراحل طابور المهام، والواجهة البرمجية للإضافات، ومقابض
-> الوسائط، والصلاحيات الممنوحة، والإعدادات جزء من المرحلة 1؛ أما اللوحات والحوسبة المحلية فمن
-> المرحلة 3. لم يُبنَ شيء من ذلك بعد. تصف هذه الصفحة التصميم الوارد في
-> [الملحمة 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)،
-> وهو قابل للتغيير.
+> **الحالة:** مراحل الإضافات في الطابور، والواجهة البرمجية للإضافات، ومقابض الوسائط **في `main`**.
+> وكذلك المنح والأدوار والإعدادات **في `main`**، واللوحات والحوسبة المحلية مُخطَّط لها في
+> المرحلة 3. والدوال والصلاحيات والأحداث ورموز الرفض بدقة في [مرجع الإضافات](reference.ar.md)،
+> المولَّد من ملف WIT ومن شيفرة الواجهة البرمجية.
 
 ## المراحل والأحداث
 
@@ -62,20 +61,22 @@
 لذا تعمل إضافة مبنية للإصدار 1.2 على أي مضيف 1.x بدءًا من 1.2 فما فوق. تدعم مكتبة الإصدار
 الرئيسي الحالي والسابق مدة 12 شهرًا على الأقل بعد صدور إصدار رئيسي جديد.
 
-| الواجهة | الدوال (مخطط أولي) | القدرة |
+| الواجهة | الدوال | القدرة |
 |---|---|---|
-| `job` | `subject()`، `payload()`، `settings()`، `grants()`، `progress(pct)`، `checkpoint(bytes)` | لا شيء |
-| `log` | `log(level, code, fields)` | لا شيء |
-| `data` | `get` و`put` و`delete` و`list` في نطاق أسمائك الخاص | لا شيء (تنطبق الحصة) |
-| `library` | `video(id)`، `series(id)`، `list(library, filter, page)` | `library.read` |
+| `job` | `job-subject`، `payload`، `settings`، `grants`، `progress`، `checkpoint`، `last-checkpoint`، `scratch-put`، `scratch-get` | لا شيء |
+| `log` | `write(level, code, fields)` | لا شيء |
+| `data` | `get` و`put` (مع `exported` اختياريًا) و`delete` في نطاق أسمائك الخاص | لا شيء (تنطبق الحصة) |
+| `library` | `video(id)`، `series(id)` | `library.read` |
 | `transcript` | `segments(video)`، `words(video)` | `transcript.read` |
-| `media` | `open(video)`، `frame(video, t, size)`، `audio(video, t0, t1, rate)` | `media.read`، `media.frames`، `media.audio` |
+| `media` | `open` و`read` و`size` و`close`؛ `frame`؛ `audio`؛ `info` | `media.read`؛ `media.frames`؛ `media.audio`؛ `library.read` |
 | `write` | `set-field`، `add-tags`، `set-chapters`، `add-subtitle`، `set-artwork` | `metadata.write`، `tags.write`، `chapters.write`، `subtitles.write`، `artwork.write` |
-| `suggest` | `suggest(subject, field, value, reason)` إلى طابور مراجعة المشرف | `suggest` |
+| `suggest` | `add(subject, field, value, reason)` إلى طابور مراجعة المشرف | `suggest` |
 | `queue` | `request(stage, subject, payload)` لمراحلك الخاصة | `jobs.enqueue` |
 | `notify` | `admin(code, params)`، إشعار من نصوصك | `notify.admin` |
 | `exports` | `read(plugin, subject, key)` لبيانات صدّرتها إضافة أخرى | `plugin-data.read:<id>` |
 | `compute` (المرحلة 3) | `embed(texts)`، `generate(prompt, opts)` | `compute.embed`، `compute.llm` |
+
+وكل التواقيع في [مرجع الإضافات](reference.ar.md#الواجهة-البرمجية-للإضافات).
 
 تبقى الواجهات التي لم تُمنح لك مربوطة، كي تتمكن من التراجع بسلاسة، لكن كل استدعاء لها يُجاب
 بخطأ قدرة.
@@ -101,7 +102,7 @@
 
 | الاستدعاء | القدرة | ما تحصل عليه |
 |---|---|---|
-| `media.open(video)`، ثم `stream.read(offset, len)` و`stream.size()` | `media.read` | بايتات خام، حتى 8 MB في كل قراءة |
+| `media.open(video)`، ثم `media.read(handle, offset, len)` و`media.size(handle)` و`media.close(handle)` | `media.read` | بايتات خام، حتى 8 MB في كل قراءة |
 | `media.frame(video, t-ms, max-edge)` | `media.frames` | إطار واحد مفكوك الترميز، أطول ضلع فيه حتى 1,280 بكسل |
 | `media.audio(video, t0-ms, t1-ms, rate)` | `media.audio` | صوت أحادي PCM بدقة 16 بت بتردد 8 أو 16 أو 22.05 kHz، حتى 10 دقائق لكل استدعاء |
 | `media.info(video)` | `library.read` | المدة، والمسارات، والترميزات |
@@ -118,7 +119,8 @@
 تُحدَّد أي مكتبة، تُثبَّت إضافتك وتعمل، لكن كل استدعاء ضمن نطاق مكتبة يُجاب بـ `plugin_scope`.
 افحص `job.grants()` لتعرف ما لديك.
 
-- التحديث الذي يضيف قدرة **إلزامية** ينتظر المشرف؛ ويستمر الإصدار القديم في العمل.
+- التحديث الذي يضيف قدرة **إلزامية** لا يُثبَّت إلا إذا منحها المشرف في الخطوة نفسها؛ وحتى ذلك
+  يستمر الإصدار القديم في العمل.
 - تبقى القدرات الاختيارية الجديدة معطّلة حتى يحددها المشرف.
 - يسري سحب الصلاحية من استدعائك التالي.
 - يُعرض عند التثبيت **تقييم** من 1 إلى 6: يبدأ من 6 وينخفض مع كل قدرة متوسطة الخطورة، ومع غياب
@@ -141,7 +143,10 @@
 
 لا حقول سرية: لا `format: password`، ولا حقل باسم `token` أو `password` أو `api_key` أو
 `secret`. الإضافة التي لا تتصل بالإنترنت ليس لديها ما تسجّل الدخول إليه. اقرأ القيم بـ
-`job.settings()`. يعيد تغيير الإعدادات تشغيل المراحل التي تعتمد مدخلاتها عليه.
+`job.settings()`. يعيد تغيير الإعدادات تشغيل المراحل التي تعتمد مدخلاتها عليه. ويفحص الجهاز
+الرئيسي المخطط عند التثبيت (`settings_secret_forbidden`، `settings_schema_invalid`) وكل قيمة عند
+الحفظ (`settings_invalid`)؛ وبعد التحديث يعود الحقل الذي تغيّر نوعه إلى قيمته الافتراضية. وجرّب
+قيم النموذج بـ `mkp test --settings '{"threshold": 3}'`.
 
 ## اللوحات (المرحلة 3)
 

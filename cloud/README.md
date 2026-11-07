@@ -92,7 +92,20 @@ MAKTABA_CLOUD_DB_URL=postgres://… go test -tags integration ./...
 Each role shares the migrator, pool, config validator, and `/healthz`
 + `/readyz` probes. The `/readyz` probe gates on both DB ping AND
 `migrations_at_head` so an LB doesn't route to a pod whose schema is
-behind its binary.
+behind its binary. The **relay** role is lenient (Epic 50 story 50.05):
+while it knows homes it can serve from its cache, a database that has
+been away for under 5 minutes answers `200 degraded` (`"db":"unreachable"`),
+so a failover does not take the relay out of rotation;
+`relay.readyz_strict = true` restores the strict check.
+
+### Redis is a cache
+
+**Redis is a cache.** Anything in it can vanish at any time without losing
+a user's data or a byte of metering. Durable state lives in Postgres. Each
+node runs its own Redis; there is no Redis replication or Sentinel. (Today
+no cloud code connects to Redis at all: the rate limiter is in memory and
+the meter is in memory plus Postgres. The compose stack runs it without
+persistence, for the rate limiter's later move.)
 
 ## Deployment
 

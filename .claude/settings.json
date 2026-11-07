@@ -1,14 +1,14 @@
 {
   "extraKnownMarketplaces": {
-    "claude-trail": {
+    "agent-trail": {
       "source": {
         "source": "github",
-        "repo": "Hamza-Labs-Core/claude-trail",
+        "repo": "Hamza-Labs-Core/agent-trail",
         "ref": "v0"
       }
     }
   },
   "enabledPlugins": {
-    "trail@claude-trail": true
+    "trail@agent-trail": true
   }
 }

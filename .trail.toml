@@ -1,5 +1,6 @@
-# The Claude trail's settings: https://github.com/Hamza-Labs-Core/claude-trail
-# (the `trail` plugin, CLI and Action). The format is in docs/trail/README.md.
+# The agent trail's settings: https://github.com/Hamza-Labs-Core/agent-trail (the `trail` CLI,
+# the Claude Code plugin, the AGENTS.md block and the Action). The format is in
+# docs/trail/README.md.
 
 [paths]
 events = "docs/trail/events"

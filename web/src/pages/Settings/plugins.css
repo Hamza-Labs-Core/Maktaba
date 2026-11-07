@@ -1,0 +1,126 @@
+/* Settings → Plugins (Epic 54, story 54.13). Tokens only (tokens.css), so light and dark
+   follow data-theme; logical properties only, so the page mirrors under dir="rtl". */
+.mkt-plugins {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.mkt-plugins h2,
+.mkt-plugins h3,
+.mkt-plugins h4 {
+  margin: 0;
+}
+.mkt-plugins section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-plugins__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.mkt-plugins__lead,
+.mkt-plugins__hint {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-plugins__warn {
+  margin: 0;
+  color: var(--color-warn);
+}
+.mkt-plugins__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-plugins__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+.mkt-plugins__card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.mkt-plugins__name {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mkt-plugins__version,
+.mkt-plugins__rating,
+.mkt-plugins__counts {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-plugins__summary,
+.mkt-plugins__status,
+.mkt-plugins__counts {
+  margin: 0;
+}
+.mkt-plugins__badges,
+.mkt-plugins__actions,
+.mkt-plugins__card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-plugins__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+}
+.mkt-plugins__facts dd {
+  margin: 0;
+}
+.mkt-plugins__caps,
+.mkt-plugins__libs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-plugins__stages,
+.mkt-plugins__writes {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: start;
+}
+.mkt-plugins__stages th,
+.mkt-plugins__stages td,
+.mkt-plugins__writes th,
+.mkt-plugins__writes td {
+  padding-block: var(--space-1);
+  padding-inline-end: var(--space-3);
+  text-align: start;
+}
+.mkt-plugins__file,
+.mkt-plugins__update label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-plugins__danger {
+  border-block-start: 1px solid var(--color-border);
+  padding-block-start: var(--space-3);
+}

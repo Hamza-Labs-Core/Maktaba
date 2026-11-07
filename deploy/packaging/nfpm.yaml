@@ -65,6 +65,11 @@ contents:
     dst: /usr/lib/maktaba/release/maktaba-streaming
     file_info:
       mode: 0755
+  # Epic 54: the plugin host (plugins.host), started by the supervisor while a plugin is on
+  - src: ./pkgroot/maktaba-plugind
+    dst: /usr/lib/maktaba/release/maktaba-plugind
+    file_info:
+      mode: 0755
   - src: ./pkgroot/maktaba-launcher
     dst: /usr/lib/maktaba/release/maktaba-launcher
     file_info:

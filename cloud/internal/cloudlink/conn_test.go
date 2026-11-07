@@ -36,7 +36,7 @@ func TestAuthenticate_OK(t *testing.T) {
 		_ = cloudEnd.WriteFrame(Frame{Kind: KindAuthOK, Payload: ok})
 	}()
 
-	res, err := authenticate(clientEnd, "srv-1", "sek")
+	res, err := authenticate(clientEnd, "srv-1", "sek", "")
 	if err != nil {
 		t.Fatalf("authenticate: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestAuthenticate_Rejected(t *testing.T) {
 		_, _ = cloudEnd.ReadFrame()
 		_ = cloudEnd.WriteFrame(Frame{Kind: KindAuthFail, Payload: []byte(`{"error":"unauthorized"}`)})
 	}()
-	_, err := authenticate(clientEnd, "x", "y")
+	_, err := authenticate(clientEnd, "x", "y", "")
 	if !errors.Is(err, ErrAuthRejected) {
 		t.Fatalf("err = %v, want ErrAuthRejected", err)
 	}
@@ -64,7 +64,7 @@ func TestAuthenticate_ProtocolViolation(t *testing.T) {
 		// Cloud sends a non-AUTH frame first — protocol error.
 		_ = cloudEnd.WriteFrame(Frame{Kind: KindResponseHead})
 	}()
-	_, err := authenticate(clientEnd, "x", "y")
+	_, err := authenticate(clientEnd, "x", "y", "")
 	if !errors.Is(err, ErrAuthProtocol) {
 		t.Fatalf("err = %v, want ErrAuthProtocol", err)
 	}
@@ -126,5 +126,90 @@ func TestHTTPEndpointFromWS(t *testing.T) {
 		if got := httpEndpointFromWS(in); got != want {
 			t.Errorf("httpEndpointFromWS(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// Story 50.03: the agent announces drain and ticket; with a ticket it sends
+// no secret; a refused ticket is ErrTicketRefused (the dialer then retries
+// with the bearer); AUTH_OK's ticket comes back in the result.
+func TestAuthenticate_TicketAndFeatures(t *testing.T) {
+	clientEnd, cloudEnd := newPipe()
+	go func() {
+		f, _ := cloudEnd.ReadFrame()
+		var ap authPayload
+		_ = json.Unmarshal(f.Payload, &ap)
+		if ap.Secret != "" || ap.Ticket != "tk" || len(ap.Features) != 2 {
+			t.Errorf("AUTH with a ticket: %+v", ap)
+		}
+		_ = cloudEnd.WriteFrame(Frame{Kind: KindAuthFail, Payload: []byte(`{"error":"ticket_invalid"}`)})
+	}()
+	if _, err := authenticate(clientEnd, "srv-1", "sek", "tk"); !errors.Is(err, ErrTicketRefused) {
+		t.Fatalf("refused ticket: %v", err)
+	}
+
+	clientEnd, cloudEnd = newPipe()
+	go func() {
+		f, _ := cloudEnd.ReadFrame()
+		var ap authPayload
+		_ = json.Unmarshal(f.Payload, &ap)
+		if ap.Secret != "sek" || ap.Ticket != "" {
+			t.Errorf("AUTH with the bearer: %+v", ap)
+		}
+		_ = cloudEnd.WriteFrame(Frame{Kind: KindAuthOK, Payload: []byte(`{"slug":"acme","ticket":"fresh"}`)})
+	}()
+	res, err := authenticate(clientEnd, "srv-1", "sek", "")
+	if err != nil || res.Ticket != "fresh" {
+		t.Fatalf("bearer: %+v %v", res, err)
+	}
+}
+
+// A drained tunnel closes with 4000 normal_closure.
+func TestMultiplexer_CloseNormalSends4000(t *testing.T) {
+	c := &codeConn{}
+	clientEnd, _ := newPipe()
+	c.FrameConn = clientEnd
+	m := NewMultiplexer(c, &LocalProxy{BaseURL: "http://127.0.0.1:1"})
+	m.CloseNormal()
+	<-m.Done()
+	if c.code != 4000 {
+		t.Errorf("close code %d, want 4000", c.code)
+	}
+}
+
+type codeConn struct {
+	FrameConn
+	code int
+}
+
+func (c *codeConn) CloseCode(code int, _ string) error {
+	c.code = code
+	return c.Close()
+}
+
+// A drained tunnel closes only after a quiet spell with no stream and no new
+// request (the relay may still send one until the new tunnel is registered).
+func TestFinishDrainedWaitsForQuiet(t *testing.T) {
+	old := drainQuiet
+	drainQuiet = 300 * time.Millisecond
+	defer func() { drainQuiet = old }()
+	clientEnd, cloudEnd := newPipe()
+	c := &codeConn{FrameConn: clientEnd}
+	m := NewMultiplexer(c, &LocalProxy{BaseURL: "http://127.0.0.1:1"})
+	sup := &Supervisor{}
+	start := time.Now()
+	done := make(chan struct{})
+	go func() { sup.finishDrained(m, time.Now().Add(10*time.Second)); close(done) }()
+	// a request head arrives 200 ms in: the quiet spell starts again
+	time.Sleep(200 * time.Millisecond)
+	_ = cloudEnd.WriteFrame(Frame{Kind: KindRequestHead, StreamID: 1, Payload: []byte("GET / HTTP/1.1\r\n\r\n")})
+	<-done
+	if took := time.Since(start); took < 480*time.Millisecond {
+		t.Errorf("closed after %s, inside the quiet spell after the request", took)
+	}
+	if c.code != 4000 {
+		t.Errorf("close code %d", c.code)
+	}
+	if m.LastRequest().IsZero() {
+		t.Error("LastRequest not recorded")
 	}
 }

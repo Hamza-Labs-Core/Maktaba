@@ -201,6 +201,19 @@ unit_tokens:
 # the mDNS announcement for real: on Windows (DnsServiceRegister through dnsapi.dll) and on
 # Linux through systemd-resolved (mdns-windows, mdns-linux): both copies of it, the modules
 # they build in, the check that the copies stay the same and the runner setup
+# Epic 53 story 53.13: the log path's performance budget (the log-bench job)
+log_bench:
+  - *ci
+  - 'shared/log/**'
+  - 'cmd/maktaba-server/internal/logkeeper/**'
+  - 'cmd/maktaba-server/internal/logindex/**'
+  - 'cmd/maktaba-server/internal/logbench/**'
+  - 'cmd/maktaba-server/internal/supervisor/**'
+  - 'cmd/maktaba-server/go.mod'
+  - 'cmd/maktaba-server/go.sum'
+  - 'pipeline/src/maktaba_pipeline/log/**'
+  - '.github/workflows/_unit.yml'
+
 mdns:
   - *ci
   - 'api/internal/discovery/**'
@@ -299,6 +312,20 @@ components:
   - 'cmd/maktaba-server/internal/supervisor/reconcile*.go'
   - 'cmd/maktaba-server/serve_reconcile.go'
   - 'cmd/maktaba-server/cmd_serve.go'
+  # Epic 54's end to end (test_plugins_live.py): the plugin host and its guests, the
+  # supervisor's plugins role and runner, the API's plugin routes, the pipeline's plugin
+  # stages, the package format and the plugin tables
+  - 'plugind/**'
+  - 'cmd/maktaba-server/internal/supervisor/plugins.go'
+  - 'cmd/maktaba-server/internal/plugins/**'
+  - 'cmd/maktaba-server/internal/logkeeper/**'
+  - 'api/internal/plugins/**'
+  - 'api/internal/handlers/plugins/**'
+  - 'api/internal/router/p54_plugins.go'
+  - 'pipeline/src/maktaba_pipeline/plugins/**'
+  - 'shared/plugins/**'
+  - 'shared/go/componentpack/**'
+  - 'shared/db/migrations/*plugins*'
 
 # components-chaos on a pull request: the runner, the drain and the claims it stops
 components_chaos:
@@ -553,6 +580,10 @@ devportal:
   - 'CHANGELOG.ar.md'
   - 'shared/api/openapi.json'
   - 'shared/api/openapi.ar.json'
+  - 'shared/plugins/**'
+  - 'api/internal/plugins/**'
+  - 'shared/go/componentpack/plugin.go'
+  - 'api/internal/handlers/queues/causes.go'
   - 'api/internal/security/disclosure.go'
   - 'web/public/icons/**'
   - '.github/workflows/_devportal.yml'

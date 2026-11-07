@@ -1,0 +1,11 @@
+# The cloud rehearsal's scenarios not built yet (Epic 50 story 50.06): one per line,
+# "<scenario> <the story that builds it> <why>". A scenario listed here is reported and
+# not counted; the story that builds it removes its line in the same pull request.
+failover-kill-leader        50.07  needs the Patroni pair, etcd and the fake Floating IP
+failover-network-partition  50.07  needs the Patroni pair and etcd
+switchover                  50.07  needs Patroni's switchover
+deploy-blue-green           50.08  needs deploy/cloud-ha/deploy.sh
+deploy-bad-release-rollback 50.08  needs deploy/cloud-ha/deploy.sh and a rehearsalbad build
+migration-n-minus-1         50.08  needs the previous release's image and the expand/contract rule
+restore-pitr                50.09  needs pgBackRest and MinIO
+cert-on-standby             50.02  needs Pebble, acme-dns and the wildcard certificate

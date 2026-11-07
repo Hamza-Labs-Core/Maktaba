@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import os
 import struct
@@ -111,11 +112,34 @@ async def _mint(job_id: int) -> dict[str, Any]:
     return body
 
 
-async def _end(invocation_id: str) -> None:
+async def _end(invocation_id: str) -> int:
+    """End the token; the plugin API refusals the job met (the breaker counts them)."""
     try:
-        await asyncio.to_thread(_api, "DELETE", f"/internal/plugins/invocations/{invocation_id}")
+        _, body = await asyncio.to_thread(
+            _api, "DELETE", f"/internal/plugins/invocations/{invocation_id}"
+        )
     except Exception:  # noqa: BLE001 - the token expires on its own anyway
         _log.warning("plugin_invocation_end_failed", invocation=invocation_id)
+        return 0
+    try:
+        return int(body.get("refusals") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def _cancel(invocation_id: str) -> None:
+    """Ask the host to stop a job (a drain's deadline: 54.07 §1); it answers with the
+    checkpoint on the run's own connection, which is gone by then, so this one is ignored."""
+    try:
+        r, w = await _connect(plugind_socket())
+    except OSError:
+        return
+    try:
+        await write_frame(w, {"type": "cancel", "invocation_id": invocation_id})
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(read_frame(r), 5)
+    finally:
+        w.close()
 
 
 async def write_frame(w: asyncio.StreamWriter, msg: dict[str, Any]) -> None:
@@ -228,6 +252,8 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
     if plugin_id is None:
         raise StageFailure("plugin_failed", f"{job.stage} is not a plugin stage", retryable=False)
     minted = await _mint(int(job.id))
+    cause: str | None = None
+    res_msg: dict[str, Any] = {}
     try:
         from .loader import load_installed
 
@@ -280,14 +306,37 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
                 if msg.get("type") == "result":
                     if msg.get("checkpoint"):
                         await _save_checkpoint(db, int(job.id), str(msg["checkpoint"]))
-                    return result_to_stage(msg, plugin_id)
+                    res_msg = msg
+                    try:
+                        out = result_to_stage(msg, plugin_id)
+                    except StageFailure as f:
+                        cause = f.kind
+                        raise
+                    cause = ""
+                    return out
                 raise StageFailure(
                     "plugin_failed", f"host answered {msg.get('type')}", retryable=True
                 )
+        except asyncio.CancelledError:
+            # drained (its component off or held, past the grace): the host stops the job
+            # and keeps its checkpoint; the job goes back to the queue
+            await asyncio.shield(_cancel(minted["invocation_id"]))
+            raise
         finally:
             w.close()
     finally:
-        await _end(minted["invocation_id"])
+        refused = await _end(minted["invocation_id"])
+        if cause is not None or refused:
+            from . import breaker
+
+            await breaker.record(
+                db,
+                plugin_id,
+                cause or "",
+                ms=int(res_msg.get("wall_ms") or 0),
+                memory=int(res_msg.get("peak_memory") or 0),
+                refusals=refused,
+            )
 
 
 async def _settings(db: Any, plugin_id: str) -> str:

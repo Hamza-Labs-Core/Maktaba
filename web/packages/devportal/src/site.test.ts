@@ -32,6 +32,13 @@ import {
 } from "../scripts/build.mjs";
 import { isSafeUrl } from "../scripts/urls.mjs";
 import {
+  goConsts,
+  parseTables,
+  pluginFindings,
+  pluginReference,
+  readPluginSources,
+} from "../scripts/plugins.mjs";
+import {
   MAX_LATIN_SHARE,
   applyOverlay,
   changelogOutline,
@@ -123,11 +130,16 @@ describe("the allow-list", () => {
     expect(all.some((f) => /claude-trail|audits|advisories|\.md$/.test(f))).toBe(false);
   });
 
-  it("publishes only the docs it names: the developer guides and the changelog", () => {
+  it("publishes only the docs it names: the developer guides, the changelog and the plugin reference", () => {
     const srcs = DOCS.map((d: { src: string }) => d.src);
     expect(srcs).toContain("CHANGELOG.md");
     expect(
-      srcs.every((s: string) => s === "CHANGELOG.md" || s.startsWith("docs/developers/"))
+      srcs.every(
+        (s: string) =>
+          s === "CHANGELOG.md" ||
+          s.startsWith("docs/developers/") ||
+          s === "generated:plugins/reference"
+      )
     ).toBe(true);
     for (const d of DOCS) expect(fs.existsSync(path.join(DIST, d.out, "index.html"))).toBe(true);
   });
@@ -212,6 +224,7 @@ describe("the allow-list", () => {
       "plugins/manifest/index.html",
       "plugins/sandbox/index.html",
       "plugins/queue-and-api/index.html",
+      "plugins/installing/index.html",
       "plugins/testing-and-packaging/index.html",
       "plugins/publishing/index.html",
       "contributing/index.html",
@@ -976,5 +989,72 @@ describe("the public-safety scan: images and file names", () => {
       expect(meta.blocks, f).toEqual([]);
       if (f.startsWith("assets/apps/")) expect(meta.text, f).toBe("");
     }
+  });
+});
+
+describe("the plugin reference (scripts/plugins.mjs)", () => {
+  const src = readPluginSources(REPO);
+
+  it("explains every source on main: no finding", () => {
+    expect(pluginFindings(src)).toEqual([]);
+  });
+
+  it("fails when the API gains a refusal code, a WIT comment changes or a limit goes", () => {
+    const api = { ...src.api, CodeNew: "plugin_new_code" };
+    delete (api as Record<string, unknown>).MaxFrames;
+    const variants = src.wit.variants.map((v: { name: string; doc: string }) =>
+      v.name === "rate" ? { ...v, doc: "too many calls, said otherwise" } : v
+    );
+    const found = pluginFindings({ ...src, api, wit: { ...src.wit, variants } });
+    expect(found.some((f: string) => f.includes("plugin_new_code"))).toBe(true);
+    expect(found.some((f: string) => f.includes("call-error rate changed"))).toBe(true);
+    expect(found.some((f: string) => f.includes("MaxFrames"))).toBe(true);
+  });
+
+  it("fails when a capability has no words in one language", () => {
+    const ar = { ...src.i18n.ar };
+    delete ar["plugins.capability.library_read.title"];
+    const found = pluginFindings({ ...src, i18n: { ...src.i18n, ar } });
+    expect(found).toEqual([
+      "plugins.mjs: web/src/i18n/ar.json has no plugins.capability.library_read.title (capability library.read)",
+    ]);
+  });
+
+  it("reads the TOML lists and the Go constants it is given, and refuses other TOML", () => {
+    expect(parseTables('schema = 1\n[[event]]\nname = "a.b"  # x\ntrigger = false\n', "t")).toEqual(
+      {
+        event: [{ name: "a.b", trigger: false }],
+      }
+    );
+    expect(() => parseTables("[event]\n", "t")).toThrow(/not read/);
+    expect(
+      goConsts(
+        'const (\n\tA = 8 << 20\n\tB = 10 * 60 * 1000\n\tC = "c_word" // x\n\tD = 2 * time.Minute\n)'
+      )
+    ).toEqual({
+      A: 8 << 20,
+      B: 600000,
+      C: "c_word",
+    });
+  });
+
+  it("lists every capability, event, interface and refusal code, in both languages", () => {
+    for (const lang of ["en", "ar"] as const) {
+      const md = pluginReference(src, lang);
+      for (const c of src.capabilities) expect(md).toContain("`" + c.name + "`");
+      for (const e of src.events) expect(md).toContain("`" + e.name + "`");
+      for (const i of src.wit.ifaces) expect(md).toContain("`" + i.name + "`");
+      expect(md).toContain("`plugin_scope`");
+      expect(md).toContain(src.i18n[lang]["plugins.capability.media_audio.title"]);
+    }
+    // media.info answers to library.read (server.go), not to a media capability
+    expect(pluginReference(src, "en")).toMatch(/`media` \| `info: func[^|]*\| `library\.read`/);
+  });
+
+  it("is published in both languages, with the schema at its $id", () => {
+    expect(read("plugins/reference/index.html")).toContain("Plugin reference");
+    expect(read("ar/plugins/reference/index.html")).toContain("مرجع الإضافات");
+    const schema = JSON.parse(read("plugins/manifest.schema.json"));
+    expect(schema.$id).toBe("https://maktaba.dev/plugins/manifest.schema.json");
   });
 });

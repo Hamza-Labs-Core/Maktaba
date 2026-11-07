@@ -287,6 +287,12 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 			h.fail(w, r, err)
 			return
 		}
+		// Epic 54 (story 54.07 §7): a plugin's purge also deletes its data and artifacts
+		// and reverts its writes no one changed since
+		if _, err := h.Service.PurgePlugin(r.Context(), id, h.actor(r)); err != nil {
+			h.fail(w, r, err)
+			return
+		}
 		h.show(w, r)
 		return
 	}
@@ -301,6 +307,10 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 // generation): the supervisor's packs runner hears the change and installs it, or tries
 // the failed install again. Anything else is answered as it is.
 func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
+	if components.IsPlugin(chi.URLParam(r, "id")) {
+		h.pluginInstallRoute(w, r)
+		return
+	}
 	id, ok := h.known(w, r)
 	if !ok {
 		return
@@ -454,4 +464,13 @@ func (h *Handler) apply(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, res)
+}
+
+// CodePluginInstallRoute refuses a plugin through the packs' install routes (story 54.37
+// §5): packs carry first-party assets only; a plugin installs at POST /api/plugins/install.
+const CodePluginInstallRoute = "plugin_install_route"
+
+func (h *Handler) pluginInstallRoute(w http.ResponseWriter, r *http.Request) {
+	httperror.Write(w, r, problem(http.StatusConflict, CodePluginInstallRoute, "plugins install elsewhere",
+		"a plugin is installed with POST /api/plugins/install"))
 }

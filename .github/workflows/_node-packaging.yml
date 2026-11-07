@@ -202,7 +202,8 @@ jobs:
             deploy/packaging/scripts/preremove.sh tools/release/tag-guard.sh tools/release/release-assets.sh \
             tools/release/trusted-root-age.sh tools/release/tag-guard-test.sh tools/release/release-assets-test.sh \
             tools/release/pkg-repo.sh tools/release/pkg-repo-test.sh tools/release/homebrew-tap.sh \
-            tools/release/homebrew-tap-test.sh tools/release/play-version.sh tools/release/play-version-test.sh
+            tools/release/homebrew-tap-test.sh tools/release/play-version.sh tools/release/play-version-test.sh \
+            tools/release/cloud-guard.sh tools/release/cloud-guard-test.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,
@@ -225,6 +226,11 @@ jobs:
       - name: tag guard
         if: runner.os == 'Linux'
         run: bash tools/release/tag-guard-test.sh
+      # The cloud deploy guard (tools/release/cloud-guard.sh, Epic 50 story 50.06): relay.yml's
+      # deploy waits for the cloud rehearsal on its commit and refuses a failed one.
+      - name: cloud deploy guard
+        if: runner.os == 'Linux'
+        run: bash tools/release/cloud-guard-test.sh
       - name: release assets adopt (a bundle and its signature together)
         if: runner.os == 'Linux'
         run: bash tools/release/release-assets-test.sh

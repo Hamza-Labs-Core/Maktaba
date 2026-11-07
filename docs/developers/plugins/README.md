@@ -1,9 +1,11 @@
 # Building Maktaba plugins
 
-> **Status: planned.** The plugin system is designed but not built yet. There is no plugin
-> host, plugin API, SDK, `mkp` tool or store today. These guides describe the design in
-> [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md),
-> and the details can change before it ships.
+> **Status: Phase 1 is on `main`.** The manifest and the `.mkplugin` package, the plugin host
+> with its OS sandbox, the plugin API with media handles, plugin stages in the queue, install
+> from a file, grants, the lifecycle, health and the circuit breaker, settings, the admin's
+> Plugins page, and `mkp` with its test harness (Rust). Plugins run on a home with Postgres, on
+> macOS and Linux (not Windows yet). Phases 2 and 3 are planned. The [plugin reference](reference.md) is generated from
+> the code when this site is built, so it always matches `main`.
 
 ## What a plugin is
 
@@ -43,7 +45,8 @@ The design ships in phases. Each guide marks which phase a feature belongs to.
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | Manifest and package, plugin host and sandbox, plugin API, queue stages, lifecycle, grants, install from a file, settings, SDK and test harness | Planned |
+| 1 | Manifest and package, plugin host and sandbox, plugin API and media handles, queue stages | On `main` |
+| 1 | Lifecycle, grants and roles, health, install from a file, settings, the Plugins page, SDK and test harness | On `main` (the SDK for Rust only) |
 | 2 | Signing and trust, the Maktaba store, automated checks and review, catalog, updates and the kill switch | Planned |
 | 3 | Paid plugins, panels in every app, local compute (embeddings and the home's language model) | Planned |
 
@@ -52,10 +55,16 @@ plugin API as first-party plugins. That work does not change what third-party pl
 
 ## What exists today
 
-Maktaba's pipeline can load Python packages registered under the `maktaba.extensions` entry
-point group. That is a developer feature for Maktaba's own integrations: such a package runs
-inside the pipeline worker with full access. It is not the plugin system and is not meant for
-code from other people.
+On `main`, you can write a plugin in Rust with `mkp`, test it in the harness, pack it, and an
+admin can install it from a file on Settings, Plugins. The supervisor starts the host
+`maktaba-plugind` only while a plugin is on; the pipeline runs each job in a fresh sandbox, and
+the plugin API answers it on a unix socket. See [Installing and managing plugins](installing.md)
+for what the admin does.
+
+Separately, Maktaba's pipeline loads Python packages registered under the `maktaba.extensions`
+entry point group. That is a developer feature for Maktaba's own integrations: such a package
+runs inside the pipeline worker with full access. It is not the plugin system and is not meant
+for code from other people.
 
 ## The guides
 
@@ -65,10 +74,15 @@ code from other people.
   health.
 - [Queue stages and the plugin API](queue-and-api.md): events, schedules, how a job runs, the
   API interfaces, media handles, grants, settings, panels and local compute.
+- [Installing and managing plugins](installing.md): install from a file, grants and
+  libraries, turning a plugin on and off, updates and rollback, removing it, settings, health
+  and the Plugins page.
 - [Testing and packaging](testing-and-packaging.md): the SDK, templates, the local test
   harness, building, packing and installing from a file.
 - [Publishing](publishing.md): signing keys, the Maktaba store, review, the catalog, the kill
   switch and paid plugins.
+- [Plugin reference](reference.md), generated from the code: every manifest key, capability,
+  event, API function, refusal code and limit.
 
 ## A plugin in one picture
 

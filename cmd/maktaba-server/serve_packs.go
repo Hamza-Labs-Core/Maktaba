@@ -38,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -311,6 +312,10 @@ type packsAdmin struct {
 	// reconciler, so none is restarted.
 	loops loopRestarter
 
+	// plugins are the supervisor's loopback plugin routes (Epic 54, story 54.38 §4); nil
+	// on a machine that runs no plugins
+	plugins *plugins.Routes
+
 	mu      sync.Mutex
 	offline map[string]*offlineJob
 }
@@ -343,6 +348,10 @@ type loopRestarter interface {
 
 // adminHandler adds /components/ to base.
 func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
+	if a.plugins != nil {
+		a.plugins.Token = func() string { return a.token }
+		base = a.plugins.Handler(base)
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
 	mux.HandleFunc("/components/", func(w http.ResponseWriter, r *http.Request) {

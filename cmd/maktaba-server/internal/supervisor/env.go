@@ -252,6 +252,10 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// the supervisor's switchover endpoints take its per-boot local token (the home's
 		// API runs a switch of the home: specs/epics/37-node-replica)
 		add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+		// Epic 54: the plugin API's unix socket, on a home that runs plugins (54.04 §1)
+		if PluginsHere(cfg) {
+			add(EnvPluginAPISocket, PluginsPaths(cfg).API)
+		}
 		// the cloud relay agent's state (a switch checks it moved with the home)
 		if relayWanted(cfg, n) {
 			add("MAKTABA_CLOUDLINK_STATUS_URL", RelayStatusURL(cfg))
@@ -353,6 +357,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	case RolePipeline:
 		// The pipeline exposes its gRPC server so the api can call it.
 		add("MAKTABA_PIPELINE_GRPC_ADDR", pipelineGRPC(cfg))
+		// Epic 54: the plugin host's dispatch socket, for plugin stages (54.06 §3), and the
+		// per-boot local token the dispatcher mints a plugin job's token with (54.04 §2)
+		if PluginsHere(cfg) {
+			add(EnvPluginDSocket, PluginsPaths(cfg).Dispatch)
+			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+		}
 		// Recent-logs HTTP endpoint drained by the api's diagnostics
 		// export proxy (see MAKTABA_LOG_PEERS on the api role).
 		// Its /healthz (event-loop heartbeat) is the pipeline's liveness

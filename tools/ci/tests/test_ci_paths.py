@@ -114,7 +114,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {"unit", "integration", "replica", "launcher", "node-packaging"},
         {
             "lint": {"go", "catalog"},
-            "unit": {"go"},
+            # the supervisor captures the logs: its change runs the log benches (53.13)
+            "unit": {"go", "log_bench"},
             "integration": {"integration"},
             "node-packaging": {"release_venv"},
         },
@@ -329,12 +330,12 @@ def test_a_push_of_only_trail_events_and_snapshots_starts_no_run() -> None:
 
 
 def test_a_pull_request_of_trail_events_runs_the_repository_checks() -> None:
-    # unlike the frozen file, events are checked: the lint job runs the claude-trail Action
+    # unlike the frozen file, events are checked: the lint job runs the agent-trail Action
     assert ran(run("docs/trail/events/0654-x.md")) == ALWAYS
 
 
 def test_push_ignore_is_the_trails_own_trail_only_list() -> None:
-    # .trail.toml's [trail_only] paths are what the claude-trail tools call trail-only (never
+    # .trail.toml's [trail_only] paths are what the agent-trail tools call trail-only (never
     # Missing an event, never tagged: `trail is-trail-only`); a push of only those starts no run
     import tomllib
 

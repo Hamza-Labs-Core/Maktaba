@@ -71,7 +71,7 @@ def test_trail_paths_are_the_workflows_paths_ignore(workflow: str) -> None:
 
 
 def test_trail_paths_are_the_trails_own_trail_only_list() -> None:
-    # .trail.toml's [trail_only]: what `trail is-trail-only` (claude-trail) calls trail-only
+    # .trail.toml's [trail_only]: what `trail is-trail-only` (agent-trail) calls trail-only
     import tomllib
 
     conf = tomllib.loads((ROOT / ".trail.toml").read_text(encoding="utf-8"))

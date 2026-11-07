@@ -554,7 +554,7 @@ func runServe() error {
 			notifyHub := notify.NewHub(appDB, logger)
 			// Epic 53 story 53.10: new and returning error groups reach the admins (a loop
 			// of logs.index: off with the log index)
-			loops.Declare("errors_notifier", runner.Func(logs.NewErrorNotifier(notifyHub, logger).Run))
+			wireLogNotices(loops, notifyHub, logger)
 			var mountRemote func(r chi.Router)
 			var remoteCtl *tvremote.Controller
 			// BusDSN: the event bus's pq.Listener takes a connection string (lib/pq
@@ -720,12 +720,14 @@ func runServe() error {
 			// Epic 51 story 51.08: the components' admin routes (desired state, holds,
 			// preview and apply), the same service the `components` CLI uses
 			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
-			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
+			componentsSvc := router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
 				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
-			// Epic 54 (stories 54.04-54.05): the plugin API's invocation routes, and the
-			// plugin API on its unix socket when the supervisor names one
-			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir})
+			// Epic 54 (stories 54.04-54.09): the plugins' admin routes on the components
+			// service, the plugin API's invocation and breaker routes, and the plugin API
+			// on its unix socket when the supervisor names one
+			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
+				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

@@ -2,8 +2,10 @@ package cloudlink
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"math"
+	"math/rand/v2"
 	"sync"
 	"time"
 )
@@ -41,6 +43,17 @@ func Backoff(attempt int, base, maxDelay time.Duration) time.Duration {
 	return time.Duration(d)
 }
 
+// Jitter is full-jitter backoff (story 50.03): a random wait in
+// [0, Backoff(attempt, base, maxDelay)], so homes that lost their tunnels at
+// the same instant do not all retry at the same instants. rnd draws in
+// [0, 1); nil uses the package's random source.
+func Jitter(attempt int, base, maxDelay time.Duration, rnd func() float64) time.Duration {
+	if rnd == nil {
+		rnd = rand.Float64
+	}
+	return time.Duration(rnd() * float64(Backoff(attempt, base, maxDelay)+1))
+}
+
 // Supervisor owns the connect → serve → reconnect lifecycle. It is the
 // process-level state machine behind cmd/maktaba-cloudlink.
 type Supervisor struct {
@@ -60,9 +73,41 @@ type Supervisor struct {
 	// Dialer.Dial". Tests inject an in-memory dial to exercise the
 	// reconnect loop without a network.
 	dial func(context.Context) (DialResult, error)
+	// rnd draws in [0, 1) for jitter; nil: math/rand/v2 (tests seed it)
+	rnd func() float64
+	// legacy: behave as an agent from before story 50.03 (LegacyAgent)
+	legacy bool
 
 	mu    sync.Mutex
 	state LinkState
+}
+
+// LegacyAgent makes s behave as an agent from before story 50.03: it
+// announces no features, so the relay sends it no DRAIN and no tickets. The
+// simulated homes of the rehearsal use it to prove the relay's fallback.
+func LegacyAgent(s *Supervisor) {
+	s.legacy = true
+	if s.Dialer != nil {
+		s.Dialer.legacy = true
+	}
+}
+
+func (s *Supervisor) jitter(attempt int, base, maxW time.Duration) time.Duration {
+	return Jitter(attempt, base, maxW, s.rnd)
+}
+
+// rand01 is a draw in [0, 1).
+func (s *Supervisor) rand01() float64 {
+	if s.rnd != nil {
+		return s.rnd()
+	}
+	return rand.Float64()
+}
+
+func (s *Supervisor) setTicket(t string) {
+	if t != "" && s.Dialer != nil {
+		s.Dialer.SetTicket(t)
+	}
 }
 
 // runSupervisorWithDial drives sup.Run with an injected dial function.
@@ -113,7 +158,9 @@ func (s *Supervisor) setCounters(st Stats) {
 }
 
 // Run blocks until ctx is cancelled, maintaining a single live tunnel
-// and reconnecting with exponential backoff on every drop.
+// and reconnecting with jittered exponential backoff on every drop. A
+// tunnel the cloud drains (DRAIN) is replaced by a new one before it
+// closes (serveTunnel), with no backoff.
 func (s *Supervisor) Run(ctx context.Context) error {
 	base := s.BaseWait
 	if base <= 0 {
@@ -138,15 +185,23 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		res, err := dial(ctx)
 		if err != nil {
 			s.setStatus("reconnecting", err.Error(), attempt)
-			if !sleepCtx(ctx, Backoff(attempt, base, maxW)) {
+			if !sleepCtx(ctx, s.jitter(attempt, base, maxW)) {
 				s.setStatus("stopped", err.Error(), attempt)
 				return ctx.Err()
 			}
 			continue
 		}
-		s.setOnline(res.Slug)
 		connectedAt := time.Now()
-		s.serveTunnel(ctx, res.Conn, res.Flow)
+		for {
+			s.setOnline(res.Slug)
+			s.setTicket(res.Ticket)
+			next := s.serveTunnel(ctx, res.Conn, res.Flow, dial)
+			if next == nil {
+				break
+			}
+			// drained: the new tunnel is up; serve it at once
+			res, connectedAt, attempt = *next, time.Now(), 0
+		}
 		// Tunnel dropped. Only treat this as a "fresh start" (reset the
 		// backoff counter) if the tunnel actually stayed up for a
 		// meaningful period. A server that accepts then instantly drops
@@ -154,9 +209,15 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		// exponential-backoff counter climbing in that case.
 		if time.Since(connectedAt) >= stableThreshold {
 			attempt = 0
+			// the first try after a drop waits a random [0, 2×base): every
+			// home of a dead relay does not knock on the next at once
+			if !sleepCtx(ctx, time.Duration(s.rand01()*float64(2*base))) {
+				s.setStatus("stopped", "", attempt)
+				return ctx.Err()
+			}
 		} else {
 			s.setStatus("reconnecting", "tunnel dropped immediately", attempt)
-			if !sleepCtx(ctx, Backoff(attempt, base, maxW)) {
+			if !sleepCtx(ctx, s.jitter(attempt, base, maxW)) {
 				s.setStatus("stopped", "", attempt)
 				return ctx.Err()
 			}
@@ -177,15 +238,48 @@ var ErrTunnelSilent = errors.New("cloudlink: no word from the cloud; reconnectin
 // a client-side PING keepalive and a liveness check, until the tunnel
 // errors, goes silent for PongWait, or ctx ends. flow: the cloud agreed
 // to window response bodies.
-func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn, flow bool) {
+//
+// On DRAIN (story 50.03) it dials a new tunnel after a random wait in
+// [0, within_ms), presenting the ticket, and returns it once it is up: the
+// cloud sends new requests there, and this tunnel is left to finish the
+// streams it has and closes with 4000 when it has none, or at deadline_ms. A
+// new tunnel that fails to open is retried with jitter while the old one
+// keeps serving. It returns nil when the tunnel simply ended.
+func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn, flow bool, dial func(context.Context) (DialResult, error)) *DialResult {
+	drains := make(chan DrainPayload, 1)
+	control := func(f Frame) {
+		switch f.Kind {
+		case KindTicket:
+			var p TicketPayload
+			if json.Unmarshal(f.Payload, &p) == nil {
+				s.setTicket(p.Ticket)
+			}
+		case KindDrain:
+			var p DrainPayload
+			if json.Unmarshal(f.Payload, &p) != nil {
+				return
+			}
+			s.setTicket(p.Ticket)
+			select {
+			case drains <- p: // a second DRAIN while moving is ignored
+			default:
+			}
+		}
+	}
 	var opts []MuxOption
+	if !s.legacy {
+		opts = append(opts, WithControl(control))
+	}
 	if flow {
 		opts = append(opts, WithFlowControl())
 	}
 	mux := NewMultiplexer(conn, s.Proxy, opts...)
+	handedOff := false
 	defer func() {
-		mux.Close()
-		s.setCounters(mux.Stats())
+		if !handedOff {
+			mux.Close()
+			s.setCounters(mux.Stats())
+		}
 	}()
 
 	pingEvery := s.PingEvery
@@ -201,28 +295,118 @@ func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn, flow bool)
 	check := time.NewTicker(max(pongWait/4, time.Millisecond))
 	defer check.Stop()
 
+	moveCtx, stopMove := context.WithCancel(ctx)
+	defer stopMove()
+	moved := make(chan DialResult)
+	var deadline time.Time
+	moving := false
+
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-mux.Done():
 			if err := mux.Err(); err != nil {
 				s.setStatus("reconnecting", err.Error(), 1)
 			}
-			return
+			return nil
+		case p := <-drains:
+			if moving {
+				continue
+			}
+			moving = true
+			deadline = time.Now().Add(time.Duration(p.DeadlineMS) * time.Millisecond)
+			go s.move(moveCtx, p, dial, moved)
+		case next := <-moved:
+			handedOff = true
+			go s.finishDrained(mux, deadline)
+			return &next
 		case <-check.C:
 			if time.Since(mux.LastRead()) > pongWait {
 				mux.fatal(ErrTunnelSilent)
 				s.setStatus("reconnecting", ErrTunnelSilent.Error(), 1)
-				return
+				return nil
 			}
 		case <-t.C:
 			// Client-initiated keepalive. The cloud's tunnel.go
 			// dispatch answers KindPing with KindPong; a write failure
 			// here means the socket is dead and Done() will fire.
 			if err := mux.writeFrame(Frame{Kind: KindPing}); err != nil {
-				return
+				return nil
 			}
+		}
+	}
+}
+
+// move opens the tunnel that replaces a drained one: a random wait in
+// [0, within_ms), then dials (with the ticket the dialer holds) until one is
+// up or ctx ends, and hands it over on out.
+func (s *Supervisor) move(ctx context.Context, p DrainPayload, dial func(context.Context) (DialResult, error), out chan<- DialResult) {
+	if !sleepCtx(ctx, time.Duration(s.rand01()*float64(time.Duration(p.WithinMS)*time.Millisecond))) {
+		return
+	}
+	base := s.BaseWait
+	if base <= 0 {
+		base = time.Second
+	}
+	maxW := s.MaxWait
+	if maxW <= 0 {
+		maxW = 30 * time.Second
+	}
+	for attempt := 1; ; attempt++ {
+		res, err := dial(ctx)
+		if err == nil {
+			select {
+			case out <- res:
+			case <-ctx.Done():
+				_ = res.Conn.Close()
+			}
+			return
+		}
+		if !sleepCtx(ctx, s.jitter(attempt, base, maxW)) {
+			return
+		}
+	}
+}
+
+// drainPoll is how often a drained tunnel is checked for its last stream;
+// drainQuiet how long it must have had no stream and no new request before it
+// closes: the relay may send a request on it until it has registered the new
+// tunnel, and one cut off by the close fails (found by the rehearsal's
+// drain-1k).
+var (
+	drainPoll  = 50 * time.Millisecond
+	drainQuiet = time.Second
+)
+
+// finishDrained lets the old tunnel finish its streams, then closes it with
+// 4000: when it has had none (and no new request) for drainQuiet, or at the
+// deadline, whichever comes first.
+func (s *Supervisor) finishDrained(mux *Multiplexer, deadline time.Time) {
+	defer s.setCounters(mux.Stats())
+	moved := time.Now()
+	tk := time.NewTicker(drainPoll)
+	defer tk.Stop()
+	idleSince := time.Time{}
+	for {
+		now := time.Now()
+		if mux.Active() == 0 {
+			if idleSince.IsZero() {
+				idleSince = now
+			}
+		} else {
+			idleSince = time.Time{}
+		}
+		quiet := !idleSince.IsZero() && now.Sub(idleSince) >= drainQuiet &&
+			now.Sub(mux.LastRequest()) >= drainQuiet && now.Sub(moved) >= drainQuiet
+		if quiet || !now.Before(deadline) {
+			mux.CloseNormal()
+			return
+		}
+		select {
+		case <-mux.Done():
+			return
+		case <-tk.C:
 		}
 	}
 }

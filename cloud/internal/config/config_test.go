@@ -146,3 +146,75 @@ func TestValidate_RoleWorkerLooser(t *testing.T) {
 		t.Errorf("Validate(worker) only needs DB: %v", err)
 	}
 }
+
+// Story 50.03: the relay's handover switches and timings, with their defaults.
+func TestLoad_RelayDrain(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := c.Relay
+	if !r.DrainEnabled || !r.TicketsEnabled || r.DrainWithin.Seconds() != 5 || r.DrainDeadline.Seconds() != 120 || r.DrainRate != 100 || r.ShutdownGrace.Seconds() != 150 {
+		t.Errorf("defaults: %+v", r)
+	}
+	p := filepath.Join(t.TempDir(), "cloud.toml")
+	if err := os.WriteFile(p, []byte(`
+[relay]
+shutdown_grace = "30s"
+
+[relay.drain]
+enabled = false
+within = "2s"
+deadline = "10s"
+rate = 50
+
+[relay.ticket]
+enabled = false
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r = c.Relay
+	if r.DrainEnabled || r.TicketsEnabled || r.DrainWithin.Seconds() != 2 || r.DrainDeadline.Seconds() != 10 || r.DrainRate != 50 || r.ShutdownGrace.Seconds() != 30 {
+		t.Errorf("from the file: %+v", r)
+	}
+}
+
+// Story 50.04: the directory's keys, the env names the blue/green units set,
+// and a peer address that is never public.
+func TestRelayDirectoryConfig(t *testing.T) {
+	t.Setenv("MAKTABA_CLOUD_RELAY_ID", "a-green")
+	t.Setenv("MAKTABA_CLOUD_RELAY_PEER_ADDR", "127.0.0.1:8445")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Relay.ID != "a-green" || c.Relay.PeerAddr != "127.0.0.1:8445" || c.Relay.HoldMax.Seconds() != 15 || c.Relay.HoldRecent.Minutes() != 2 {
+		t.Errorf("relay: %+v", c.Relay)
+	}
+	for addr, ok := range map[string]bool{"": true, "127.0.0.1:8444": true, "10.0.1.3:8443": true, "[::1]:9": true,
+		"0.0.0.0:8444": false, ":8444": false, "203.0.113.5:8444": false, "relay.example:1": false, "nonsense": false} {
+		if err := ValidatePeerAddr(addr); (err == nil) != ok {
+			t.Errorf("ValidatePeerAddr(%q) = %v", addr, err)
+		}
+	}
+}
+
+// Story 50.05: the cache and the lenient readiness, on by default.
+func TestRelayBlipConfig(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Relay.CacheEnabled || c.Relay.ReadyzStrict {
+		t.Errorf("defaults: cache %v strict %v", c.Relay.CacheEnabled, c.Relay.ReadyzStrict)
+	}
+	p := filepath.Join(t.TempDir(), "c.toml")
+	_ = os.WriteFile(p, []byte("[relay]\nreadyz_strict = true\n\n[relay.cache]\nenabled = false\n"), 0644)
+	if c, err = Load(p); err != nil || c.Relay.CacheEnabled || !c.Relay.ReadyzStrict {
+		t.Errorf("from the file: %+v %v", c.Relay, err)
+	}
+}

@@ -2,7 +2,8 @@
 #
 #   maktaba-cloud (relay)  the relay binary, role=relay, listens :8443
 #   postgres 16            durable state (server registry, billing meter)
-#   redis 7                rate-limit + ephemeral coordination
+#   redis 7                a cache only, no persistence (nothing uses it yet;
+#                          cloud/README.md "Redis is a cache", story 50.05)
 #   caddy 2                reverse proxy + automatic Let's Encrypt TLS
 #
 # Bring up:  docker compose --env-file .env up -d
@@ -40,10 +41,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: *restart
-    # appendonly => rate-limit / coordination state survives restarts.
-    command: ["redis-server", "--appendonly", "yes"]
-    volumes:
-      - redis_data:/data
+    # A cache: nothing in it may matter after a restart (story 50.05), so no
+    # AOF and no snapshots.
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -55,6 +55,10 @@ services:
     image: ghcr.io/hamza-labs-core/maktaba-cloud:${MAKTABA_CLOUD_TAG:-latest}
     restart: *restart
     command: ["serve", "--role", "relay"]
+    # SIGTERM drains the homes' tunnels for up to relay.shutdown_grace (150 s,
+    # Epic 50 story 50.03) before the relay exits; Docker's default 10 s would
+    # SIGKILL it mid-drain and drop every tunnel.
+    stop_grace_period: 160s
     depends_on:
       postgres:
         condition: service_healthy
@@ -121,6 +125,5 @@ services:
 
 volumes:
   pg_data:
-  redis_data:
   caddy_data:
   caddy_config:

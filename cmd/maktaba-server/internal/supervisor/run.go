@@ -85,6 +85,7 @@ type child struct {
 	restartAt  []time.Time  // its restarts of the last 24 h (the health's restarts_24h)
 	killReason string       // set before the supervisor kills the child
 	failed     bool         // in a crash loop (state failed or retrying from it)
+	fatal      string       // the reason of its last exit with one of its FatalExits ("" none)
 	slowFails  int          // slow retries of the crash loop that failed (the cut-off, story 53.05)
 	onceFails  int          // a job's (Process.Once) failed runs in a row
 	wanted     bool         // run it (an on-demand process is not until asked for)
@@ -675,6 +676,9 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	if c.proc.Once && s.onceEnded(c, info) {
 		return true
 	}
+	if why, ok := c.proc.FatalExits[info.Code]; ok && info.Reason != ReasonStartFailed {
+		return s.fatalExit(ctx, c, info, why)
+	}
 
 	// Decide what happens next.
 	switch {
@@ -791,6 +795,35 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	s.mu.Unlock()
 	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),
 		Message: fmt.Sprintf("restart #%d", n)})
+	return false
+}
+
+// fatalExit leaves a child that exited with one of its FatalExits failed with that
+// reason, not restarted (a restart would fail the same way: maktaba-plugind's sandbox),
+// until it is woken: its gate opened again or a person's restart. false: start it again.
+func (s *Supervisor) fatalExit(ctx context.Context, c *child, info ExitInfo, why string) bool {
+	s.mu.Lock()
+	c.fatal = why
+	c.status.State = StateFailed
+	c.status.NextRestartAt = nil
+	// a reason code, not one of the start steps' detail codes (detail_codes.json): the
+	// component's status carries it (procView.FailReason)
+	c.status.Detail, c.status.DetailCode, c.status.DetailParams = why, "", nil
+	s.mu.Unlock()
+	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventFailed, Reason: info.Reason,
+		Message: why + ": not restarted"})
+	s.errorf("%s exited (pid %d, %s): %s; it is not restarted until it is asked to start again",
+		c.proc.Name(), info.PID, describeExit(info), why)
+	select {
+	case <-ctx.Done():
+		s.setState(c, StateStopped)
+		return true
+	case <-c.wake:
+	}
+	s.mu.Lock()
+	c.fatal = ""
+	c.status.Detail, c.status.DetailCode, c.status.DetailParams = "", "", nil
+	s.mu.Unlock()
 	return false
 }
 
@@ -1090,8 +1123,9 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 		return fmt.Errorf("no %s process %q", role, instance)
 	}
 	cmd, tree := c.cmd, c.tree
-	if c.status.CutOff && !s.stopping {
-		// cut off after its crash loop (Epic 53 story 53.05): a person's restart starts it
+	if (c.status.CutOff || c.fatal != "") && !s.stopping {
+		// cut off after its crash loop (Epic 53 story 53.05), or left failed by a fatal
+		// exit (FatalExits): a person's restart starts it
 		s.mu.Unlock()
 		select {
 		case c.wake <- struct{}{}:
