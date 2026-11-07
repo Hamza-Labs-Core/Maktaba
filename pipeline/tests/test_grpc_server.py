@@ -52,7 +52,13 @@ async def test_embed_texts_answers_the_model_and_one_vector_per_text(
     svc = PipelineService(embed_texts=passages_fn(Embedder()))
     out = await svc.embed_texts({"texts": ["ab", "c"]})
     assert out == {"model": "intfloat/multilingual-e5-small", "vectors": [[2.0, 0.5], [1.0, 0.5]]}
-    for bad in ({"texts": []}, {"texts": "x"}, {"texts": ["x"] * 65}, {"texts": ["x" * 2001]}):
+    bads: list[dict[str, object]] = [
+        {"texts": []},
+        {"texts": "x"},
+        {"texts": ["x"] * 65},
+        {"texts": ["x" * 2001]},
+    ]
+    for bad in bads:
         with pytest.raises(ValueError):
             await svc.embed_texts(bad)
     monkeypatch.setattr(grpc_server, "_semantic_on", lambda: False)
