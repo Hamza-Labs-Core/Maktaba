@@ -1148,6 +1148,11 @@ build fails when the two differ.
   Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
   review is plain text.
 
+- **The store browser draws a plugin's flow (Epic 54, stories 54.18 and 54.41).** Settings →
+  Plugins → Browse the store shows, for a plugin in a flow, the whole flow drawn with the events
+  it publishes and the ones it listens to, from the store's signed catalog. The store's review
+  and listing pages now draw flows with the same chart as the home.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
