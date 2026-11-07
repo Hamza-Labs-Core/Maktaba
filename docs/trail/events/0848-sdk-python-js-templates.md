@@ -23,8 +23,13 @@ agent: claude-code
 - TinyGo's wasip2 runtime imports `wasi:cli/stdin` and `wasi:filesystem` even without `fmt` or `os`. The Go template needs a stub component composed in (the next PR).
 - A negative test can pass for the wrong reason: the first undeclared-import test called `setTags`, which does not exist. It now calls `addTags`, and a positive control declares `tags.write` and builds.
 
+- CI found that a job's time limit started before the host compiled a package it had not loaded and before the job waited for a slot. The Python hello (compile 15 s in a debug build, over 30 s on a 2-vCPU runner) timed out at 89 fuel.
+  - The fix: the job's clock starts at its store; a compile has its own cap (180 s, the package refused after) on 2 workers; the cache is named by Wasmtime version and engine settings, and warms at start.
+- Wasmtime checks a store's deadline only at epoch ticks (100 ms here). A guest that ends inside its first tick passes even with its deadline gone, so a test of the deadline needs guest work spanning ticks. The tests time the machine first.
+
 ## Keep doing
 - Pair every "does not build" test with the same code building once the thing it lacks is added.
+- Before raising a limit a test hits, measure which phase uses the time.
 
 ## Open
 - The Go template, with a composed stub for stdin and the filesystem, and `mkp build go` failing if anything refused is left (#718).
