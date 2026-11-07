@@ -69,6 +69,17 @@ def _instrument() -> None:
     native._mint = timed("mint", native._mint)
     server.Relay.ask = timed("relay", server.Relay.ask)  # type: ignore[method-assign]
     native.run_native = timed("run_native", native.run_native)
+    inner = native.run_native
+
+    async def spans(*a: Any, **kw: Any) -> Any:
+        # where in the job the plugin's run starts and ends (the breakdown's before/after)
+        marks.append(("@start", time.perf_counter()))
+        try:
+            return await inner(*a, **kw)
+        finally:
+            marks.append(("@end", time.perf_counter()))
+
+    native.run_native = spans
     native.choose = timed("choose", native.choose)
     native.serving_group = timed("serving_fp", native.serving_group)
     run._native_impl = timed("native_impl", run._native_impl)
@@ -249,10 +260,26 @@ class Parity:
                     t0 = time.perf_counter()
                     marks.clear()
                     await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
-                    took = time.perf_counter() - t0
+                    t1 = time.perf_counter()
+                    took = t1 - t0
                     side.times[st].append(took)
                     if side is self.b:
-                        self.breakdowns.append((took, st, list(marks)))
+                        at = {k: v for k, v in marks if k.startswith("@")}
+                        steps = [(k, v) for k, v in marks if not k.startswith("@")]
+                        if "@start" in at and "@end" in at:
+                            steps = [
+                                ("before", at["@start"] - t0),
+                                ("after", t1 - at["@end"]),
+                                (
+                                    "unnamed",
+                                    (at["@end"] - at["@start"])
+                                    - sum(
+                                        v for k, v in steps if k.startswith("api ") or k == "relay"
+                                    ),
+                                ),
+                                *steps,
+                            ]
+                        self.breakdowns.append((took, st, steps))
 
     async def compare_n16(
         self,
