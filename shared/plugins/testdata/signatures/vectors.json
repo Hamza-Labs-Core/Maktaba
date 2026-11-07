@@ -1,0 +1,1138 @@
+{
+  "_comment": "Story 54.14 T05: made by store/scripts/gen-vectors.ts (npm run vectors), verified by Go (shared/plugins/pluginsig), Rust (plugind/crates/sig) and TypeScript (store/signing). Every key is a TEST key from a public label; no real build trusts one.",
+  "now": "2026-11-06T12:00:00Z",
+  "keys": {
+    "root1": {
+      "id": "03481d41e1ecf2cda1adc74b60d65a39",
+      "public": "FkD/xObX/nSXEBt+lhGdfXtTimQrg37OWzlYq3SdoUQ="
+    },
+    "root2": {
+      "id": "b68930d8cfb8217b412e5091ca7421fb",
+      "public": "6nftUy1bk9qypsDCUYUAA5PE7klOpcZPL8fLYp7oycM="
+    },
+    "root3": {
+      "id": "d76302e1e6c12c37bb418d61c3125b83",
+      "public": "WkNo1Qx9ifJuIIWgKAjI7B7aXNHf92pcidwVAXWCkwI="
+    },
+    "rootX": {
+      "id": "7dd9d1a44ad7ae3ef6e5b0038d812720",
+      "public": "9uMHB/dIFwu5FVqxVG0psZlwluGcg71OzZUcrsFFwmI="
+    },
+    "store1": {
+      "id": "4c9016bd109e2a2b01c8f12e84e5eef8",
+      "public": "3buj8F5Fij9wBx5dsjg1e/H7OO5vxooysGF6mRN2i2w="
+    },
+    "store2": {
+      "id": "3f5f1f3f83bf486cdc74c8b00c6af168",
+      "public": "5aR+JtPOcaVCB9rEptCbsKfmJlgZlDSFETgFxMpUiV0="
+    },
+    "ent1": {
+      "id": "67bb58b22c5bb30e3837e2f39f8e96cb",
+      "public": "p2wCoh9LuAlXU8x6yVHm9JOsA2DcHpj8lpmP5ESY2SQ="
+    },
+    "dev1": {
+      "id": "851b5ea684e43b55fe2da1b07588c215",
+      "public": "d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg="
+    },
+    "dev2": {
+      "id": "a85b46c31f7c7e7255b69e1e729ce709",
+      "public": "Dr0heguIqavZrFA4eQxgq0+Hnhb06T3VhFpfEB+/kAI="
+    }
+  },
+  "roots": {
+    "v1": "{\"signatures\":[{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"Px8lwO5o+y1O9+lpJFI2JNaR2CNXmQd9VCisZKWR+Gbg+z8ek7TaSSDJLMXmGk3cdkCrcbanjN3yuT+7DCsPCA==\"},{\"key_id\":\"b68930d8cfb8217b412e5091ca7421fb\",\"sig\":\"GREUELso6EPYN6YQWkZYyJGNuhhK8oWkF1si6UX2YTHTOWBkBj8p3cCuoXJ7G3swDPsfDL5Empq86W6RPGgHBA==\"}],\"signed\":{\"keys\":[{\"id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"public\":\"FkD/xObX/nSXEBt+lhGdfXtTimQrg37OWzlYq3SdoUQ=\"},{\"id\":\"b68930d8cfb8217b412e5091ca7421fb\",\"public\":\"6nftUy1bk9qypsDCUYUAA5PE7klOpcZPL8fLYp7oycM=\"}],\"threshold\":1,\"version\":1}}",
+    "v2_chained": "{\"signatures\":[{\"key_id\":\"b68930d8cfb8217b412e5091ca7421fb\",\"sig\":\"LrSgrT7MyRv3/FVPbj8UdZIl3cgFHhOAdrjiB5/Lq65vqc7n7GNcgxwS5xaV6HVbyKS3VunQHqKLMTflTCAxDQ==\"},{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"8K97I7S6X95eMZ0mcH73U2GGrZHxEJpkCjzQXtqPftOHYbH+pxA9x25HcaofedievVf389jLWFrWWNbKrsTGAg==\"},{\"key_id\":\"d76302e1e6c12c37bb418d61c3125b83\",\"sig\":\"uEQ/uV7xPi9pZxGvy7Vl86RFvl1vBiVQQ4OelPyi3Othk4/ASSozoqbNMf32u36+Ouo/P8XBIX/nDBxi/1hvAw==\"}],\"signed\":{\"keys\":[{\"id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"public\":\"FkD/xObX/nSXEBt+lhGdfXtTimQrg37OWzlYq3SdoUQ=\"},{\"id\":\"d76302e1e6c12c37bb418d61c3125b83\",\"public\":\"WkNo1Qx9ifJuIIWgKAjI7B7aXNHf92pcidwVAXWCkwI=\"}],\"threshold\":1,\"version\":2}}",
+    "v2_unchained": "{\"signatures\":[{\"key_id\":\"d76302e1e6c12c37bb418d61c3125b83\",\"sig\":\"dk6dUS3Ow2cHZ2NASomPj6v3eSfhsPojC9vIWy+AQ1QP552ivwtxvEb138atwztvUpkbifoVmMeZE9zoJBJNDw==\"}],\"signed\":{\"keys\":[{\"id\":\"d76302e1e6c12c37bb418d61c3125b83\",\"public\":\"WkNo1Qx9ifJuIIWgKAjI7B7aXNHf92pcidwVAXWCkwI=\"}],\"threshold\":1,\"version\":2}}",
+    "v3_skips": "{\"signatures\":[{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"LoeBepnBRC/rhUK7ezswx9h5moIWqwKMGywmz9JSro7fN0eHYcPldOg4nWhtHYXbr1rd5KAqKX+tRP9yYXFrCQ==\"},{\"key_id\":\"d76302e1e6c12c37bb418d61c3125b83\",\"sig\":\"E50J75AX47cEDue2MrAkHXrt2lP5WgN5uNqVw23wFv/LEppfn81RAy53rLpu3Eya7QdMZ3U3X2VKqYwLs1/hBw==\"}],\"signed\":{\"keys\":[{\"id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"public\":\"FkD/xObX/nSXEBt+lhGdfXtTimQrg37OWzlYq3SdoUQ=\"},{\"id\":\"d76302e1e6c12c37bb418d61c3125b83\",\"public\":\"WkNo1Qx9ifJuIIWgKAjI7B7aXNHf92pcidwVAXWCkwI=\"}],\"threshold\":1,\"version\":3}}",
+    "empty": "{\"signatures\":[],\"signed\":{\"keys\":[],\"threshold\":1,\"version\":0}}"
+  },
+  "store_keys": {
+    "v3": "{\"signatures\":[{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"M7X7kIapxJrTuWuKWTuUiE3XnCciOdI/ZAQHCwLWHZ8KM/SOr1WqwOKkA+zgW5ZE/zBCHoI/BiVp2ljuRF5zAw==\"}],\"signed\":{\"expires\":\"2027-09-02T12:00:00Z\",\"keys\":[{\"id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"3buj8F5Fij9wBx5dsjg1e/H7OO5vxooysGF6mRN2i2w=\",\"use\":\"store\"},{\"id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"p2wCoh9LuAlXU8x6yVHm9JOsA2DcHpj8lpmP5ESY2SQ=\",\"use\":\"entitlement\"}],\"version\":3}}",
+    "v3_by_root2": "{\"signatures\":[{\"key_id\":\"b68930d8cfb8217b412e5091ca7421fb\",\"sig\":\"aOe2vXpwcFzRR5/lYlpPPdM9ngKd+5GwcbH4N+fXQlsfuSOw2nzsG+VOxuoe2aD0W9Vb8YMCXZ+FZ1xLJEHTAw==\"}],\"signed\":{\"expires\":\"2027-09-02T12:00:00Z\",\"keys\":[{\"id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"3buj8F5Fij9wBx5dsjg1e/H7OO5vxooysGF6mRN2i2w=\",\"use\":\"store\"},{\"id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"p2wCoh9LuAlXU8x6yVHm9JOsA2DcHpj8lpmP5ESY2SQ=\",\"use\":\"entitlement\"}],\"version\":3}}",
+    "v3_other": "{\"signatures\":[{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"2UgGS+DFkb5OeHdwO103dOivlxcKy6ZV+plIueRhHE9RIaBLdgQwQLwYMlnFnGY55L5u5jsoX/YyjkLBOERTBA==\"}],\"signed\":{\"expires\":\"2027-09-02T12:00:00Z\",\"keys\":[{\"id\":\"3f5f1f3f83bf486cdc74c8b00c6af168\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"5aR+JtPOcaVCB9rEptCbsKfmJlgZlDSFETgFxMpUiV0=\",\"use\":\"store\"}],\"version\":3}}",
+    "v4_rotated": "{\"signatures\":[{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"Jaatl3k3GT1TVkadgXrbiBry0zepC9MyxI+WL1lEiuxSem5PJY7oe/g65xIP1CxE5niX+LDJfhrGh6XyvVWgDg==\"}],\"signed\":{\"expires\":\"2027-09-02T12:00:00Z\",\"keys\":[{\"id\":\"3f5f1f3f83bf486cdc74c8b00c6af168\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"5aR+JtPOcaVCB9rEptCbsKfmJlgZlDSFETgFxMpUiV0=\",\"use\":\"store\"},{\"id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"p2wCoh9LuAlXU8x6yVHm9JOsA2DcHpj8lpmP5ESY2SQ=\",\"use\":\"entitlement\"}],\"version\":4}}",
+    "bad_root": "{\"signatures\":[{\"key_id\":\"7dd9d1a44ad7ae3ef6e5b0038d812720\",\"sig\":\"JjQhrxJuaWNOPxHc5xRebaacFtWLsE6PYQQCFFjWYMCh+kZ0Y+bVXBiYgOaXQimy7w+aizhRJUlaPHqWQ3WCDw==\"}],\"signed\":{\"expires\":\"2027-09-02T12:00:00Z\",\"keys\":[{\"id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"3buj8F5Fij9wBx5dsjg1e/H7OO5vxooysGF6mRN2i2w=\",\"use\":\"store\"},{\"id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"p2wCoh9LuAlXU8x6yVHm9JOsA2DcHpj8lpmP5ESY2SQ=\",\"use\":\"entitlement\"}],\"version\":3}}",
+    "expired": "{\"signatures\":[{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"jivXgAvZHt8VP9WtE2s1kcNUWx3EJ6+giq2Z0iVQKkIA45DqhaxWI8zwEoaTMcIfeaCEoxFDZtkMcIfoX3YkDg==\"}],\"signed\":{\"expires\":\"2026-11-06T11:00:00Z\",\"keys\":[{\"id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"not_after\":\"2027-11-06T12:00:00Z\",\"not_before\":\"2026-10-07T12:00:00Z\",\"public\":\"3buj8F5Fij9wBx5dsjg1e/H7OO5vxooysGF6mRN2i2w=\",\"use\":\"store\"}],\"version\":5}}",
+    "short_window": "{\"signatures\":[{\"key_id\":\"03481d41e1ecf2cda1adc74b60d65a39\",\"sig\":\"1hflSO4/CrnSNSABsOGmcJme/q/5/hAaQU7roqtCHA3Qv9gq4jwVZdVZ2HNpMehjX+i1C74LvPRHjP+rfY+mBQ==\"}],\"signed\":{\"expires\":\"2027-09-02T12:00:00Z\",\"keys\":[{\"id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"not_after\":\"2026-11-05T12:00:00Z\",\"not_before\":\"2026-11-04T12:00:00Z\",\"public\":\"3buj8F5Fij9wBx5dsjg1e/H7OO5vxooysGF6mRN2i2w=\",\"use\":\"store\"}],\"version\":3}}"
+  },
+  "package_cases": [
+    {
+      "name": "developer and store, reviewed",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": true,
+        "level": "reviewed",
+        "developer_key_id": "851b5ea684e43b55fe2da1b07588c215"
+      }
+    },
+    {
+      "name": "developer and store, automated",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"hZYYYlekFudjDm8It37+d24OwTTCUAbKfdBUg1ZzyDqK2CIKCFqS5KSl+09RlT8NOZpXc2EbSGqg+DZYJKyuDA==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"automated\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": true,
+        "level": "automated"
+      }
+    },
+    {
+      "name": "developer only",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": null,
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": true,
+        "level": "developer"
+      }
+    },
+    {
+      "name": "no signature",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": null,
+        "store_sig": null,
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": true,
+        "level": "none"
+      }
+    },
+    {
+      "name": "one byte of plugin.wasm changed",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkM=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "digest"
+      }
+    },
+    {
+      "name": "files.json changed under the signatures",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":62},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "files.json changed, developer only",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":62},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": null,
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "developer_sig"
+      }
+    },
+    {
+      "name": "store.sig copied onto another developer's package",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"a85b46c31f7c7e7255b69e1e729ce709\",\"public\":\"Dr0heguIqavZrFA4eQxgq0+Hnhb06T3VhFpfEB+/kAI=\",\"sig\":\"XPOSAWC9YR/5QRTmQmqdiQiO/1m7L4asoglXBDpcx5+hppOvw8SfWKbNMSUGJORPOjWrA1xj2tSXHIZ1OUqlDw==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "developer_key_mismatch",
+        "step": "developer_sig"
+      }
+    },
+    {
+      "name": "store.sig by a key not in store-keys.json",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"3f5f1f3f83bf486cdc74c8b00c6af168\",\"sig\":\"RrK+AVHqNcuQt9GAFokGjpXBWIS8x7oJZl41hnjoyWhCGRfZu9fi77IH9+D9U+wI33PSk7FxP0v2UQVOTlRVBg==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "store.sig by an entitlement key",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"KwWKZGcZKAGd/5v2Le9owLQRcgubk4Jugy5wuW51IzdNr1+tikrG3I/LlYog9/n0FhQ2ddHqMiQ5EALEFKi0Bg==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "key_use_mismatch",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "reviewed_at outside the key's window",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"5ZAW1zhFNg0+MCS/d6O1nrSa3qNOycV76oDh1wJe8OUf8mPbSLHJD+hceotq+ggjOO4T8FYDaZ1QcDedL4iSDQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2025-10-02T12:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "the store key's window has ended, signed inside it",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"L9T27S2xFsXkgQi1TcXWO/hnTTudXNaaibJqsuo90LQw+RD0G6Cgh3ag08LfpUbhrFNu1+zazqJFtQf5UKO+Ag==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-05T06:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "short_window"
+      },
+      "expect": {
+        "ok": true,
+        "level": "reviewed"
+      }
+    },
+    {
+      "name": "a bad developer signature",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"9nEigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "developer_sig"
+      }
+    },
+    {
+      "name": "a bad store signature",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tF0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "developer.sig's public key is not its key id",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"Dr0heguIqavZrFA4eQxgq0+Hnhb06T3VhFpfEB+/kAI=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": null,
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "developer_sig"
+      }
+    },
+    {
+      "name": "store.sig without developer.sig",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": null,
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "developer_sig"
+      }
+    },
+    {
+      "name": "store.sig and no store-keys.json",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": null
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_keys"
+      }
+    },
+    {
+      "name": "store.sig for another plugin",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"Qja2OlvPesMxDbqnInUb00asB2xfUG78nr70/2USO64/PQX/lIGmlZIVMvUSffGucI0r723STH5hh1GQZBUqBA==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.other\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.other",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "capabilities differ from those reviewed",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "23e773136bbc0d76ca2b36847c88780de9e724dc20ac27b4bc0226b6d1adde5b",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "an unknown field in store.sig",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"extra\":\"x\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "a store key's signature made for another kind",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"DTWKgeM46fA/GzbeT2o1Eai+3Xr9MzNrfSOiAO3rCAL1smiCiC2yVI7AQYrPlUtZiKTJsn7M97tpYqo/xn5pAA==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "a bad review level",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"YlnEQ5nhYL5E9gVeiv3SB//3lTKUEipwSP+g5A6zdX+0qt2UFnNZEdLK/dmCx6vv7MMU+xYi+Oeex12iM4M6BQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"developer\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v3"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "rotation: the old key under the new store-keys.json",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"tV0VX3t95AAJDwvKdU4GaVA0x6uuuVZnN2OHE6mElHN0sbY1IembhPvIE8Y+w/ouLD6yyuO8dGj4JLeCc45bCQ==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v4_rotated"
+      },
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_sig"
+      }
+    },
+    {
+      "name": "rotation: re-signed with the new key",
+      "package": {
+        "files": {
+          "manifest.toml": "c2NoZW1hID0gMQppZCA9ICJkZXYuZXhhbXBsZS5zaWduZWQiCnZlcnNpb24gPSAiMS4wLjAiCnBsdWdpbl9hcGkgPSAiMS4wIgptYWt0YWJhID0gIj49MC42LjAsIDwwLjkuMCIKbGljZW5jZSA9ICJNSVQiCgpbc3RyaW5nc10KbmFtZSA9ICJwbHVnaW4ubmFtZSIKc3VtbWFyeSA9ICJwbHVnaW4uc3VtbWFyeSIKCltjYXBhYmlsaXRpZXNdCnJlcXVpcmVkID0gWyJsaWJyYXJ5LnJlYWQiXQoKW1tzdGFnZV1dCm5hbWUgPSAidGFnIgpzdWJqZWN0ID0gInZpZGVvIgpleHBvcnQgPSAicnVuLXRhZyIKdmVyc2lvbiA9IDEK",
+          "plugin.wasm": "AGFzbQ0AAQBCQkI=",
+          "i18n/en.json": "eyJwbHVnaW4ubmFtZSI6IlNpZ25lZCIsInBsdWdpbi5zdW1tYXJ5IjoiQSBzaWduZWQgcGx1Z2luLiJ9Cg==",
+          "i18n/ar.json": "eyJwbHVnaW4ubmFtZSI6ItmF2YjZgtmR2LkiLCJwbHVnaW4uc3VtbWFyeSI6Itil2LbYp9mB2Kkg2YXZiNmC2ZHYudipLiJ9Cg=="
+        },
+        "files_json": "[{\"path\":\"i18n/ar.json\",\"sha256\":\"d19da5f2de85ebaee70b69dec587b3b7a5cfe681be93848943cecfa9f493141f\",\"size\":73},{\"path\":\"i18n/en.json\",\"sha256\":\"56f30d939a73ac0b9b7bf6253259ffafb2d441a3fc5eed246e037b9c1b3be1fa\",\"size\":61},{\"path\":\"manifest.toml\",\"sha256\":\"a444351a7fe1bb210e4ce38e92814205f011657aa2ec62a6dfb1a0a2a01cfc9c\",\"size\":294},{\"path\":\"plugin.wasm\",\"sha256\":\"6d01b76a2c1bd5e593aad6ee7c024a1925b9202fc46daaaf0da46f64eaf7ac4f\",\"size\":11}]",
+        "developer_sig": "{\"key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"public\":\"d4sT2jIMMCF/t2dkuyDUrQ4io8OUGQXlmfyJsAGg2gg=\",\"sig\":\"93Eigu1SYPkLB1dX/5DdBCzApNNVW490gwaMma/ZCw0Me8LQRd16suGJiLw9EuDts9YOVz7rjLjSvrD5E39rAg==\",\"signed\":{\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"version\":\"1.0.0\"}}",
+        "store_sig": "{\"key_id\":\"3f5f1f3f83bf486cdc74c8b00c6af168\",\"sig\":\"RrK+AVHqNcuQt9GAFokGjpXBWIS8x7oJZl41hnjoyWhCGRfZu9fi77IH9+D9U+wI33PSk7FxP0v2UQVOTlRVBg==\",\"signed\":{\"capabilities_sha256\":\"813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66\",\"developer_key_id\":\"851b5ea684e43b55fe2da1b07588c215\",\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"plugin_id\":\"dev.example.signed\",\"review_level\":\"reviewed\",\"reviewed_at\":\"2026-11-06T10:00:00Z\",\"version\":\"1.0.0\"}}",
+        "plugin_id": "dev.example.signed",
+        "version": "1.0.0",
+        "capabilities_sha256": "813804a7fc38fbc1e20ab969126a41423a8a5e15b306dbcb33f684e2d1880e66",
+        "store_keys": "v4_rotated"
+      },
+      "expect": {
+        "ok": true,
+        "level": "reviewed"
+      }
+    }
+  ],
+  "store_keys_cases": [
+    {
+      "name": "signed by root 1",
+      "raw": "v3",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 3
+      }
+    },
+    {
+      "name": "signed by root 2 (threshold 1)",
+      "raw": "v3_by_root2",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 3
+      }
+    },
+    {
+      "name": "signed by a key not in the root",
+      "raw": "bad_root",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "store_keys"
+      }
+    },
+    {
+      "name": "expired",
+      "raw": "expired",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "store_keys_expired",
+        "step": "store_keys"
+      }
+    },
+    {
+      "name": "older than the newest seen",
+      "raw": "v3",
+      "state": {
+        "store_keys_version": 4,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "store_keys_rollback_refused",
+        "step": "store_keys"
+      }
+    },
+    {
+      "name": "the same version with other content",
+      "raw": "v3_other",
+      "state": {
+        "store_keys_version": 3,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "store_keys_sha256": "2796c1a7fd7c7be262a3747f0f774844425ece9916cd06e72f1bbdaccf81f453"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "store_keys_rollback_refused",
+        "step": "store_keys"
+      }
+    },
+    {
+      "name": "the same version seen before",
+      "raw": "v3",
+      "state": {
+        "store_keys_version": 3,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "store_keys_sha256": "2796c1a7fd7c7be262a3747f0f774844425ece9916cd06e72f1bbdaccf81f453"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 3
+      }
+    },
+    {
+      "name": "a clock in the past does not make it fresh",
+      "raw": "expired",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "2026-11-06T11:30:00Z"
+      },
+      "now": "2026-10-07T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "store_keys_expired",
+        "step": "store_keys"
+      }
+    },
+    {
+      "name": "rotation: the new list",
+      "raw": "v4_rotated",
+      "state": {
+        "store_keys_version": 3,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 4
+      }
+    }
+  ],
+  "revoked": {
+    "v120": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"bQJZvy/IRAeWMwexntXZZJckB0mQn0iinAVdNhAYz6AvRi7TVG6/Fsc2dSLSKcn7wQgBSvTS2bX1mSzF4kwpCA==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"version\":120}}",
+    "v119": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"/vy0Aqj8V81m3yTKg3Dq3noDrF30/zKo+GW2YGeeaf7vfw+jedDFiXW3hwd8A4I7xhd3thob/5RgAGz1wTHzDg==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T10:00:00Z\",\"issued\":\"2026-11-06T10:00:00Z\",\"version\":119}}",
+    "v120_other": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"DMWlp1w5vH3VGjd0u0tnPk1Uhe+lIUT2tiHts1VFMJ4XeWblFveWLJI5mp61qn+UZhSkSqrDJx7aCQ8rB/z1Aw==\"}],\"signed\":{\"entries\":[{\"action\":\"warn\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"version\":120}}",
+    "v121": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"BetxCIIkBkvSzuZTwLX5jErnQJYcAk5EMR7yF5Rk0Jf1lTrBqAx93xXzvP57M0HlxDSVPpqFyu0mk0wdZeJ2CQ==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"},{\"action\":\"warn\",\"developer_key_id\":\"a85b46c31f7c7e7255b69e1e729ce709\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.other\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T11:30:00Z\",\"issued\":\"2026-11-06T11:30:00Z\",\"version\":121}}",
+    "expired": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"9xfeEShLG0PSfyGojEIow3a8IjBPqwc01+M3IjyCS+61HmdjEuVPFvd0Rta9lz/z6AJcQnCXFuvGgL+xl2UdCw==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-03T12:00:00Z\",\"issued\":\"2026-11-01T12:00:00Z\",\"version\":122}}",
+    "too_long": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"E052LQkSDogctq08rDAQVac84z6uiATEPlvhaVgDJdKaIe6Oox1ctSHjDAHDFtPrHPG4wgZ2OPuk/+FeN09kBg==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T12:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"version\":123}}",
+    "by_entitlement_key": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"cyB4Fkngf6GKQyyh5ipdtkXqRvZ6SG4WU+6mnqwBybrymNUYghZzzJPbDUyQaT923otUOyb+mEAVCk1TFlabDA==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"version\":124}}",
+    "by_unlisted_key": "{\"signatures\":[{\"key_id\":\"3f5f1f3f83bf486cdc74c8b00c6af168\",\"sig\":\"c6ach4R+unqvo133DJp9QP7Jo8osFXH2NL9Y3fMKJhSSPJdWam+G9LmT4YHZ7XQ+kZi0BNtprQf94fY9dOHdBw==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"version\":124}}",
+    "as_catalog_kind": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"t4Eyg17oGQVN5DKO7oXtGMRWII+/yY2Z/eXTmLLasVHZUT0i6a1RqQiloUrF+MVABWkwL4SMTK6/ZyY8KMvVBw==\"}],\"signed\":{\"entries\":[{\"action\":\"disable\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"version\":124}}",
+    "bad_action": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"uM0spVYn7AzUDMOequfuDPdYIpwsIHZxhTl+smsOjIgxYvi06e4rlfcFSf8w26bk+JM6N5aTnhKZQna0A76uAQ==\"}],\"signed\":{\"entries\":[{\"action\":\"delete\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"reason_code\":\"malware\",\"versions\":\"<1.3.0\"}],\"expires\":\"2026-11-08T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"version\":125}}"
+  },
+  "revoked_cases": [
+    {
+      "name": "a fresh list",
+      "raw": "v120",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 120
+      }
+    },
+    {
+      "name": "older than the newest seen",
+      "raw": "v119",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 120,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "revoked_sha256": "7e9d428c84d91d8872e91f1fad93eadf6e481ad0c6a712472642c467289bb326"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "revocation_rollback_refused",
+        "step": "list"
+      }
+    },
+    {
+      "name": "the same version with other entries",
+      "raw": "v120_other",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 120,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "revoked_sha256": "7e9d428c84d91d8872e91f1fad93eadf6e481ad0c6a712472642c467289bb326"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "revocation_rollback_refused",
+        "step": "list"
+      }
+    },
+    {
+      "name": "the same list again",
+      "raw": "v120",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 120,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "revoked_sha256": "7e9d428c84d91d8872e91f1fad93eadf6e481ad0c6a712472642c467289bb326"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 120
+      }
+    },
+    {
+      "name": "newer",
+      "raw": "v121",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 120,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 121
+      }
+    },
+    {
+      "name": "expired three days ago",
+      "raw": "expired",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "revocation_expired",
+        "step": "list"
+      }
+    },
+    {
+      "name": "a clock in the past does not make an expired list fresh",
+      "raw": "expired",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "2026-11-06T11:00:00Z"
+      },
+      "now": "2026-11-02T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "revocation_expired",
+        "step": "list"
+      }
+    },
+    {
+      "name": "claims more than 48 hours",
+      "raw": "too_long",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "list"
+      }
+    },
+    {
+      "name": "signed by an entitlement key",
+      "raw": "by_entitlement_key",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "key_use_mismatch",
+        "step": "list"
+      }
+    },
+    {
+      "name": "signed by a key not listed",
+      "raw": "by_unlisted_key",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "list"
+      }
+    },
+    {
+      "name": "a signature made for a catalog",
+      "raw": "as_catalog_kind",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "list"
+      }
+    },
+    {
+      "name": "an unknown action",
+      "raw": "bad_action",
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "list"
+      }
+    }
+  ],
+  "revoked_stored_cases": [
+    {
+      "name": "the embedded list is newer",
+      "stored": "v120",
+      "embedded": "v121",
+      "expect_version": 121
+    },
+    {
+      "name": "the stored list is newer",
+      "stored": "v121",
+      "embedded": "v119",
+      "expect_version": 121
+    },
+    {
+      "name": "only the embedded list",
+      "stored": null,
+      "embedded": "v119",
+      "expect_version": 119
+    },
+    {
+      "name": "an expired stored list still loads, and says so",
+      "stored": "expired",
+      "embedded": null,
+      "expect_version": 122,
+      "expect_expired": true
+    }
+  ],
+  "heads": {
+    "v121": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"E1blin2wlh/yChnnhIRcr0K/hPqjWmeBEsGbD1VALJL3qHzc+s960ZIRWKE0pXt1FppHRpjsQftTXKjDRX5mBA==\"}],\"signed\":{\"issued\":\"2026-11-06T11:30:00Z\",\"sha256\":\"15cedea2a17e904c3fb2b259af3fb008cfabbb136c9a193c5be6fa169b8d080b\",\"version\":121}}",
+    "v121_wrong_sha": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"trQ72/gZufIXdlASZASsgsNtrNaA2q8Rk95wQRfdQNtvUeuUAIJx59r9MflTvUfClaYFGrG516wHo/QTbpgpCA==\"}],\"signed\":{\"issued\":\"2026-11-06T11:30:00Z\",\"sha256\":\"7e9d428c84d91d8872e91f1fad93eadf6e481ad0c6a712472642c467289bb326\",\"version\":121}}",
+    "unsigned": "{\"signatures\":[],\"signed\":{\"issued\":\"2026-11-06T11:30:00Z\",\"sha256\":\"15cedea2a17e904c3fb2b259af3fb008cfabbb136c9a193c5be6fa169b8d080b\",\"version\":121}}"
+  },
+  "head_cases": [
+    {
+      "name": "the head names the list",
+      "raw": "v121",
+      "list": "v121",
+      "expect": {
+        "ok": true,
+        "matches": true
+      }
+    },
+    {
+      "name": "the head names another list",
+      "raw": "v121_wrong_sha",
+      "list": "v121",
+      "expect": {
+        "ok": true,
+        "matches": false
+      }
+    },
+    {
+      "name": "an unsigned head",
+      "raw": "unsigned",
+      "list": "v121",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "list"
+      }
+    }
+  ],
+  "catalogs": {
+    "v10": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"38jNoh0KTYIOvKuDxX8vDLumqcrBkhQ3+gADbzUb8w6JUCpUOQemZw4g9g4Z/aqfjana+Lr/O+0crmhQnNJOBw==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-13T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":10}}",
+    "v9": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"akrpqzFBTKHnyWmJ3wp2Qn5JpvfY2cEgffJn7tvC0C6bZEdAId3Ais/SDB3DMaYOxP8kHho8ornyNChXRDTYCQ==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-12T12:00:00Z\",\"issued\":\"2026-11-06T10:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":9}}",
+    "expired": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"Hzs9Jg0dMxD7zVYrON2437CZLjtlww1OUIFPhEXqhUmMDpRXHNcfeWFfVhnHoiRZ1oPYXoAKkTylO9In8gwPAA==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-04T12:00:00Z\",\"issued\":\"2026-10-28T12:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":11}}",
+    "major2": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"SCCRdYfIu8B/BMxkEefLMa7/1nzOhM1Qv4nQJAVq4q+qen+h5ndQ8jcefWmuPeNt2YkPFsFCuo24uaSCT84QDw==\"}],\"signed\":{\"api_major\":2,\"expires\":\"2026-11-12T12:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":12}}",
+    "too_long": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"7107OpWqKIfrwy2jgOsNqqjfXTseFUDQuijWF+Fz4e7jrqBoABgEsB8xKDGf7FnAJEF9ZfUGtAw+N5tY2QmTAg==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-13T12:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":13}}"
+  },
+  "catalog_cases": [
+    {
+      "name": "a fresh catalog",
+      "raw": "v10",
+      "api_major": 1,
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 10
+      }
+    },
+    {
+      "name": "older than the newest seen",
+      "raw": "v9",
+      "api_major": 1,
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "catalog_versions": {
+          "1": 10
+        }
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "catalog_rollback_refused",
+        "step": "list"
+      }
+    },
+    {
+      "name": "expired",
+      "raw": "expired",
+      "api_major": 1,
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "catalog_expired",
+        "step": "list"
+      }
+    },
+    {
+      "name": "another plugin API major",
+      "raw": "major2",
+      "api_major": 1,
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "list"
+      }
+    },
+    {
+      "name": "claims more than 7 days",
+      "raw": "too_long",
+      "api_major": 1,
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z"
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "list"
+      }
+    }
+  ],
+  "entitlement_cases": [
+    {
+      "name": "signed by the entitlement key",
+      "raw": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"3jZev1wFIbM6FjKVzFPC677s0IcI358TYFQOhsVvVkxMxgGCOHXvnKCV8gPVZVoTW140RNrVI9otoVUjm+L3Cw==\"}],\"signed\":{\"home_id\":\"h_test\",\"plugin_id\":\"dev.example.signed\",\"valid_until\":\"2026-12-07T12:00:00Z\"}}",
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "signed by a store key",
+      "raw": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"l5ZUQ8gNJLRM5bGVKo71XpxH5sHtOk+6+pDg7NpcFnPAcwk1Ybou3YC1NH4f/sXVyLEvKoH0/9Jqh79/P9I+BA==\"}],\"signed\":{\"home_id\":\"h_test\",\"plugin_id\":\"dev.example.signed\",\"valid_until\":\"2026-12-07T12:00:00Z\"}}",
+      "expect": {
+        "ok": false,
+        "code": "key_use_mismatch",
+        "step": "list"
+      }
+    }
+  ],
+  "root_cases": [
+    {
+      "name": "a new root signed by the old root's key",
+      "old": "v1",
+      "next": "v2_chained",
+      "expect": {
+        "ok": true,
+        "version": 2
+      }
+    },
+    {
+      "name": "a new root signed only by its own keys",
+      "old": "v1",
+      "next": "v2_unchained",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "root"
+      }
+    },
+    {
+      "name": "a root that skips a version",
+      "old": "v1",
+      "next": "v3_skips",
+      "expect": {
+        "ok": false,
+        "code": "plugin_signature_invalid",
+        "step": "root"
+      }
+    }
+  ]
+}

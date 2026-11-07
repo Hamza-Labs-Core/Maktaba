@@ -66,3 +66,14 @@ func TestLiveCatalogSwapsWhole(t *testing.T) {
 		t.Fatal("SetLive(nil) kept the plugin")
 	}
 }
+
+// Story 54.14 §2: only a store countersignature (automated or reviewed; "store" is Phase
+// 1's name for it) needs no opt-in.
+func TestUnreviewedLevels(t *testing.T) {
+	for level, want := range map[string]bool{"none": true, "developer": true, "development": true,
+		"automated": false, "reviewed": false, "store": false, "": true} {
+		if Unreviewed(level) != want {
+			t.Errorf("Unreviewed(%q) = %v", level, !want)
+		}
+	}
+}

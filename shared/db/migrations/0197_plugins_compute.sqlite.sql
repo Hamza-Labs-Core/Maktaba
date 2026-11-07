@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0196 (plugins: local compute). Plugins run on a Postgres
+-- SQLite parity sibling for slot 0197 (plugins: local compute). Plugins run on a Postgres
 -- home only (slot 0194); this keeps the schema in step.
 --
 CREATE TABLE IF NOT EXISTS plugin_compute_usage (

@@ -17,6 +17,9 @@
     {"name": "development is unreviewed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "development", "allow_unreviewed": false}, "reason": "unreviewed_disallowed"},
     {"name": "store-reviewed needs no opt-in", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "store", "allow_unreviewed": false}, "reason": ""},
     {"name": "a required capability not granted", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": ["media.read", "transcript.read"], "granted": ["media.read"], "review_level": "store"}, "reason": "grants_needed", "params": {"capabilities": "transcript.read"}},
-    {"name": "an optional one not granted passes", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": [], "granted": [], "review_level": "store"}, "reason": ""}
+    {"name": "an optional one not granted passes", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "required": [], "granted": [], "review_level": "store"}, "reason": ""},
+    {"name": "store countersigned, automated: no opt-in needed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "automated", "allow_unreviewed": false}, "reason": ""},
+    {"name": "store countersigned, reviewed: no opt-in needed", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "reviewed", "allow_unreviewed": false}, "reason": ""},
+    {"name": "developer signed only needs the opt-in", "in": {"server_version": "0.7.0", "range": ">=0.6.0", "plugin_api": "1.0", "review_level": "developer", "allow_unreviewed": false}, "reason": "unreviewed_disallowed"}
   ]
 }

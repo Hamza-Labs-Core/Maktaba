@@ -9,7 +9,7 @@ prs: [717]
 ---
 
 ## What happened
-- Plugin API 1.1 adds the WIT interface `compute`: `compute.embed` through a new pipeline RPC `EmbedTexts` (the semantic search model, as passages), `compute.llm` through Ollama with the model in a new rules section `plugin_compute` (the tag check's by default). A model server off the home and the LAN is refused, checked on every connection. Questions share the `lookup` pool through `compute_leases` rows the claim counts as busy, and core keeps at least 2 of every 3 slots (`claim_shares` owner `plugin_share:lookup`). Migration 0196.
+- Plugin API 1.1 adds the WIT interface `compute`: `compute.embed` through a new pipeline RPC `EmbedTexts` (the semantic search model, as passages), `compute.llm` through Ollama with the model in a new rules section `plugin_compute` (the tag check's by default). A model server off the home and the LAN is refused, checked on every connection. Questions share the `lookup` pool through `compute_leases` rows the claim counts as busy, and core keeps at least 2 of every 3 slots (`claim_shares` owner `plugin_share:lookup`). Migration 0197 (renumbered from 0196 when #733 took that slot first).
 
 ## What we learned
 - Wasmtime's component linker matches `maktaba:plugin/x@1.0.0` imports against the host's `@1.1.0` by semver, so a minor bump keeps old guests working as long as no shared type (such as `call-error`) changes. It also links a `@1.2.0` import, so the import audit (`plugin_api_newer`) is the only thing that refuses a newer minor.

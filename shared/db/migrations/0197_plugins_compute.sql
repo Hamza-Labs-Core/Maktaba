@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0196 - plugins: local compute (Epic 54, story 54.21).
+-- Slot 0197 - plugins: local compute (Epic 54, story 54.21).
 --
 --   plugin_compute_usage  each plugin's use of the home's models per day (UTC): language
 --                         model questions and texts embedded, against rules.plugin_compute's
@@ -105,7 +105,7 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0195): an admin's keep-off and each plugin's health and breaker,
         -- the home's API and its pipeline alone read and write them
         'plugin_keep_off', 'plugin_health',
-        -- plugins (slot 0196): each plugin's daily use of the home's models and the
+        -- plugins (slot 0197): each plugin's daily use of the home's models and the
         -- lookup slots its questions hold; the home's API alone writes them
         'plugin_compute_usage', 'compute_leases'
     ]::text[]

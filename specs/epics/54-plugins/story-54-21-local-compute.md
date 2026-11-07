@@ -65,7 +65,7 @@ Generated text written to fields or panels goes through the same rules as any pl
   `embed_texts_per_day` and `timeout_s`. The server's address is checked on every connection
   (resolved, then dialled by address), not only by name: loopback, RFC 1918, IPv6
   unique-local and link-local count as local.
-- **The share of `lookup`.** A question holds a `compute_leases` row (migration 0196) while it
+- **The share of `lookup`.** A question holds a `compute_leases` row (migration 0197) while it
   runs, which the claim counts as busy; each core claim of `lookup` counts in `claim_shares`
   (`plugin_share:lookup`), and while core work waits a plugin takes a slot only after two of
   them. Daily use is `plugin_compute_usage`, per plugin and UTC day.

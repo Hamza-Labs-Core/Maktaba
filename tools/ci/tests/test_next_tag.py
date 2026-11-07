@@ -140,6 +140,56 @@ def test_newest_green_is_main_order() -> None:
     assert nt.newest_green(newest_first, {"x"}) is None
 
 
+# --- the green commits: main's runs of both workflows -------------------------------------------
+
+SHA_A, SHA_B, SHA_C, SHA_D = ("a" * 40, "b" * 40, "c" * 40, "d" * 40)
+
+
+def ci_run(sha: str, conclusion: str = "success") -> dict[str, str]:
+    return {"headSha": sha, "event": "push", "conclusion": conclusion, "displayTitle": "Merge pull request"}
+
+
+def main_rehearsal(rehearsed: str, head: str, conclusion: str = "success") -> dict[str, str]:
+    # a workflow_run's headSha is main's head when it started: not the commit it rehearsed
+    return {"headSha": head, "event": "workflow_run", "conclusion": conclusion, "displayTitle": nt.REHEARSAL_TITLE + rehearsed}
+
+
+def test_main_rehearsal_counts_for_the_commit_in_its_name_not_its_head_sha() -> None:
+    green = nt.green_commits([ci_run(SHA_A), ci_run(SHA_B)], [main_rehearsal(SHA_A, head=SHA_B)])
+    assert green == {SHA_A}
+
+
+def test_a_failed_or_not_run_rehearsal_is_not_green() -> None:
+    skipped = {"headSha": SHA_B, "event": "workflow_run", "conclusion": "skipped", "displayTitle": "Update rehearsal not run (CI cancelled)"}
+    runs = [main_rehearsal(SHA_A, head=SHA_B, conclusion="failure"), skipped]
+    assert nt.green_commits([ci_run(SHA_A), ci_run(SHA_B)], runs) == set()
+
+
+def test_a_push_rehearsal_counts_for_its_head_sha_and_other_events_never() -> None:
+    rehearsals = [
+        {"headSha": SHA_A, "event": "push", "displayTitle": "x"},  # main's, before 2026-11-07
+        {"headSha": SHA_B, "event": "pull_request", "displayTitle": "x"},
+        {"headSha": SHA_C, "event": "schedule", "displayTitle": "x"},
+    ]
+    ci = [ci_run(SHA_A), ci_run(SHA_B), ci_run(SHA_C), ci_run(SHA_D, "cancelled")]
+    assert nt.green_commits(ci, rehearsals + [main_rehearsal(SHA_D, head=SHA_D)]) == {SHA_A}
+
+
+def test_a_name_that_is_not_a_full_sha_is_no_commit() -> None:
+    assert nt.rehearsed_commit({"event": "workflow_run", "headSha": SHA_A, "displayTitle": nt.REHEARSAL_TITLE + SHA_B[:12]}) is None
+    assert nt.rehearsed_commit({"event": "workflow_run", "headSha": SHA_A, "displayTitle": nt.REHEARSAL_TITLE + SHA_B + "x"}) is None
+
+
+def test_the_rehearsal_names_its_main_run_after_the_commit_it_rehearsed() -> None:
+    doc = load("update-rehearsal.yml")
+    name = doc["run-name"]
+    assert f"format('{nt.REHEARSAL_TITLE}{{0}}', github.event.workflow_run.head_sha)" in name
+    # and main's run is the one CI's passed push run starts
+    trigger = on(doc)["workflow_run"]
+    assert trigger == {"workflows": ["CI"], "types": ["completed"], "branches": ["main"]}
+    assert load("ci.yml")["name"] == "CI"
+
+
 # --- against a real repository ----------------------------------------------------------------
 
 
@@ -189,6 +239,27 @@ def test_in_a_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     run(repo, "tag", "-a", "v0.3.83", "-m", "v0.3.83", c)
     assert choose(repo, [c], monkeypatch, capsys)["tag"] == ""
     assert choose(repo, [], monkeypatch, capsys)["tag"] == ""
+
+
+def test_in_a_repository_from_both_run_lists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import json
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    run(repo, "init", "-q", "-b", "main")
+    a = commit(repo, "api/main.go")
+    run(repo, "tag", "-a", "v0.3.82", "-m", "v0.3.82", a)
+    b = commit(repo, "web/app.ts")
+    c = commit(repo, "web/app.ts")
+    # CI passed on b and c; the rehearsal CI's run on b started (its headSha: c, main's head) passed
+    (repo / ".ci.json").write_text(json.dumps([ci_run(c), ci_run(b)]))
+    (repo / ".rh.json").write_text(json.dumps([main_rehearsal(b, head=c)]))
+    monkeypatch.chdir(repo)
+    assert nt.main(["--ci-runs", ".ci.json", "--rehearsal-runs", ".rh.json", "--main", "HEAD"]) == 0
+    out = dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
+    assert (out["tag"], out["sha"]) == ("v0.3.83", b)
+    with pytest.raises(SystemExit):
+        nt.main(["--ci-runs", ".ci.json", "--main", "HEAD"])
 
 
 # --- the workflows its tag push starts -----------------------------------------------------------

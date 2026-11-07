@@ -34,7 +34,10 @@ store's `store-web` Worker (54.15) for search engines, in English and Arabic (`/
 `maktaba://plugins/<id>` link in the installed Maktaba apps, or, in a browser, at the home's
 address, asked once and remembered on that device only (no cloud hop), and a
 **Download file** / «نزّل الملف» button for offline install (54.10). No sign-in to read; a
-store account (not a Maktaba Cloud account) to rate or report.
+store account (not a Maktaba Cloud account) to rate or report. Each listing draws the
+plugin's flow (54.41): the whole set of plugins it works with, this plugin highlighted, with
+links to the other members' listings; Browse inside the home draws it too, marking the
+members this home has not installed.
 
 ### 3. Ratings
 

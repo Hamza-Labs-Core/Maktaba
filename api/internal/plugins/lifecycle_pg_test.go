@@ -29,6 +29,11 @@ type fakeSup struct {
 	root      string
 	discarded []string
 	schema    string
+	// level is the review level the supervisor's signature check answers ("" none), and
+	// key the developer key; by version when levels names one
+	level  string
+	levels map[string]string
+	key    string
 }
 
 func (s *fakeSup) InstallPackage(_ context.Context, r io.Reader) (*Installed, error) {
@@ -50,8 +55,12 @@ func (s *fakeSup) InstallPackage(_ context.Context, r io.Reader) (*Installed, er
 	_ = os.WriteFile(filepath.Join(dir, "i18n", "ar.json"), []byte(`{"plugin.name":"دورة","plugin.summary":"اختبار.","s.t":"العتبة"}`), 0o644)
 	_ = os.MkdirAll(filepath.Join(dir, "ui"), 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "ui", "settings.schema.json"), []byte(s.schema), 0o644)
+	level := s.level
+	if l, ok := s.levels[version]; ok {
+		level = l
+	}
 	return &Installed{PluginID: id, Version: version, Digest: strings.Repeat("d", 60) + version[:1] + version[2:3] + "00",
-		Folder: folder, Path: dir, Manifest: pluginmanifest.Normalised(m)}, nil
+		Folder: folder, Path: dir, Manifest: pluginmanifest.Normalised(m), ReviewLevel: level, DeveloperKeyID: s.key}, nil
 }
 
 func (s *fakeSup) Discard(_ context.Context, id, folder string) error {
@@ -158,7 +167,9 @@ func TestInstallWritesTheRows(t *testing.T) {
 		t.Fatalf("a grant not asked for: %v", err)
 	}
 	if n := f.count(t, `SELECT (SELECT count(*) FROM plugin_installs) + (SELECT count(*) FROM plugin_grants) +
-		(SELECT count(*) FROM components WHERE id LIKE 'plugin.%')`); n != 0 || len(f.sup.discarded) != 1 {
+		(SELECT count(*) FROM components WHERE id LIKE 'plugin.%')`); n != 0 || len(f.sup.discarded) != 2 {
+		// both refusals discard the folder the supervisor placed: the policy is checked
+		// after the supervisor read the package's signatures (story 54.14)
 		t.Fatalf("a refused install left %d rows (discarded %v)", n, f.sup.discarded)
 	}
 	res, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(pkg)}, admin)
@@ -466,5 +477,41 @@ func TestSettingsAreCheckedAndCarried(t *testing.T) {
 	got, _ = f.l.GetSettings(ctx, lcPlugin)
 	if got.Values["threshold"] != "x" || len(got.Reset) != 1 {
 		t.Fatalf("carried %+v", got)
+	}
+}
+
+// 54.14 §2, §3: the level the supervisor's signature check proved is what the install
+// records: a store-countersigned package needs no opt-in and no typed name, its developer
+// key is kept, and a rollback takes the previous version's own level back with it.
+func TestStoreSignedInstallRecordsItsLevel(t *testing.T) {
+	f := newLC(t)
+	ctx := context.Background()
+	f.sup.levels = map[string]string{"1.0.0": "none", "1.1.0": "reviewed"}
+	f.sup.key = "0123456789abcdef0123456789abcdef"
+	if _, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.1.0", nil, nil, 1))}, admin); err != nil {
+		t.Fatalf("a reviewed package with the policy off and no typed name: %v", err)
+	}
+	var level, key string
+	_ = f.db.QueryRow(`SELECT review_level, developer_key_id FROM plugin_installs WHERE plugin_id = $1`, lcPlugin).Scan(&level, &key)
+	if level != "reviewed" || key != f.sup.key {
+		t.Fatalf("recorded %q %q", level, key)
+	}
+	// an unsigned file of the same plugin still needs the opt-in
+	_, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1)), ExpectID: lcPlugin}, admin)
+	if p := asProblem(err); p == nil || p.Code != CodeUnreviewed {
+		t.Fatalf("an unsigned update with the policy off: %v", err)
+	}
+	f.allowUnreviewed(t)
+	f.sup.key = ""
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1)), ExpectID: lcPlugin}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.l.Rollback(ctx, lcPlugin, false, admin); err != nil {
+		t.Fatal(err)
+	}
+	var version string
+	_ = f.db.QueryRow(`SELECT version, review_level, developer_key_id FROM plugin_installs WHERE plugin_id = $1`, lcPlugin).Scan(&version, &level, &key)
+	if version != "1.1.0" || level != "reviewed" || key != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("after the rollback: %s %s %q", version, level, key)
 	}
 }

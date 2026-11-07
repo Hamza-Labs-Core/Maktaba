@@ -143,8 +143,11 @@ func (c *countingReader) Read(p []byte) (int, error) {
 
 // UnpackPlugin writes a .mkplugin's files into dest, which must not exist yet (its parent
 // must). Every rule holds or nothing stays: dest is removed on any failure, and the error
-// carries a code (PluginCode). Signatures are checked by the caller before (54.14); this
-// reader only checks files.json's digest against want.
+// carries a code (PluginCode). Signatures are checked by the caller (54.14,
+// shared/plugins/pluginsig); this reader only checks files.json's digest against want. On
+// a file that does not match files.json (package_digest_mismatch) it also answers the head
+// it read (manifest, files.json and the signatures before the files), so the caller can
+// report a signed package's failure as the chain's digest step.
 func UnpackPlugin(r io.Reader, dest string, want PluginExpect) (pkg *PluginPackage, err error) {
 	if err := os.Mkdir(dest, 0o755); err != nil {
 		return nil, err
@@ -226,7 +229,7 @@ func UnpackPlugin(r io.Reader, dest string, want PluginExpect) (pkg *PluginPacka
 		return nil, pluginErr(CodePackageMissingFile, "files.json does not list %s", PluginManifestName)
 	}
 	if sha256Hex(pkg.Manifest) != mf.SHA256 || int64(len(pkg.Manifest)) != mf.Size {
-		return nil, pluginErr(CodePackageDigestMismatch, "%s does not match files.json", PluginManifestName)
+		return pkg, pluginErr(CodePackageDigestMismatch, "%s does not match files.json", PluginManifestName)
 	}
 	if err := os.WriteFile(filepath.Join(dest, PluginManifestName), pkg.Manifest, 0o644); err != nil {
 		return nil, err
@@ -287,11 +290,11 @@ func UnpackPlugin(r io.Reader, dest string, want PluginExpect) (pkg *PluginPacka
 		}
 		done[name] = true
 		if h.Size != f.Size {
-			return nil, pluginErr(CodePackageDigestMismatch, "%s: %d bytes, files.json lists %d", name, h.Size, f.Size)
+			return pkg, pluginErr(CodePackageDigestMismatch, "%s: %d bytes, files.json lists %d", name, h.Size, f.Size)
 		}
 		if err := writeFile(dest, Entry{Kind: 'f', Mode: 0o644, Size: f.Size, SHA256: f.SHA256, Path: name}, tr); err != nil {
 			if errors.Is(err, ErrInvalid) && PluginCode(err) == "" {
-				return nil, pluginErr(CodePackageDigestMismatch, "%v", err)
+				return pkg, pluginErr(CodePackageDigestMismatch, "%v", err)
 			}
 			return nil, err
 		}
@@ -322,7 +325,7 @@ func BuildPlugin(w io.Writer, files map[string][]byte, sigs map[string][]byte) (
 		sum := sha256.Sum256(files[p])
 		list = append(list, PluginFile{Path: p, SHA256: hex.EncodeToString(sum[:]), Size: int64(len(files[p]))})
 	}
-	fj, err := json.Marshal(list)
+	fj, err := canonicalFiles(list)
 	if err != nil {
 		return "", err
 	}
@@ -366,4 +369,22 @@ func BuildPlugin(w io.Writer, files map[string][]byte, sigs map[string][]byte) (
 		return "", err
 	}
 	return sha256Hex(fj), nil
+}
+
+// canonicalFiles writes files.json in canonical JSON (story 54.14 §2: sorted keys, no
+// spaces, nothing escaped but quotes, backslashes and control characters), the form the
+// signatures and the SDK's writer (mkp pack) use.
+func canonicalFiles(list []PluginFile) ([]byte, error) {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(list); err != nil {
+		return nil, err
+	}
+	out := bytes.TrimSuffix(b.Bytes(), []byte("\n"))
+	// encoding/json escapes U+2028 and U+2029 even without HTML escaping; a path holds no
+	// backslash (SafePluginPath), so each escape here is one of those two
+	out = bytes.ReplaceAll(out, []byte(`\u2028`), []byte("\u2028"))
+	out = bytes.ReplaceAll(out, []byte(`\u2029`), []byte("\u2029"))
+	return out, nil
 }
