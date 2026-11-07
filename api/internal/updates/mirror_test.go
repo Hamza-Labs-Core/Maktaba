@@ -766,7 +766,11 @@ func TestMirrorTUFCacheIsCheckedBeforeUse(t *testing.T) {
 	body := `{"trusted":"root"}`
 	target := "targets/" + hexSum([]byte(body)) + ".trusted_root.json"
 	hits := 0
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/"+target) { // a stray request: not the mirror's read
+			http.NotFound(w, r)
+			return
+		}
 		hits++
 		_, _ = io.WriteString(w, body)
 	}))

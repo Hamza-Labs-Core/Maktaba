@@ -271,6 +271,10 @@ func TestMoveAndStopForwarded(t *testing.T) {
 	var calls atomic.Int32
 	var lastBody, lastSig, lastPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/internal/tv/") { // a stray request: not streaming's
+			http.NotFound(w, r)
+			return
+		}
 		calls.Add(1)
 		b, _ := io.ReadAll(r.Body)
 		lastBody, lastSig, lastPath = string(b), r.Header.Get("X-Maktaba-Front"), r.URL.Path
