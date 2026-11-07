@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Any, Literal, get_args
 from uuid import UUID
 
-from ..engine.sql import dumps, loads, now, parse_ts, to_ts, uid
+from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts, uid
 
 __all__ = [
     "KINDS",
@@ -80,6 +80,73 @@ _FIELDS = frozenset(
         "purge_after",
         "purged_at",
     }
+)
+
+
+#: the writable fields in the order of the fixed statements below: each is set when given,
+#: else kept (``CASE WHEN $flag THEN $value ELSE field END``), so the statement's text is the
+#: same whatever is written (Epic 54 wave 5: a first-party plugin runs named statements)
+FIELD_ORDER: tuple[str, ...] = tuple(sorted(_FIELDS))
+
+_ADVANCE_SQL = (
+    "UPDATE file_actions SET state = $3, updated_at = $4, "
+    "error = CASE WHEN $5 THEN $6 ELSE error END, "
+    "new_hash = CASE WHEN $7 THEN $8 ELSE new_hash END, "
+    "new_path = CASE WHEN $9 THEN $10 ELSE new_path END, "
+    "new_size = CASE WHEN $11 THEN $12 ELSE new_size END, "
+    "old_hash = CASE WHEN $13 THEN $14 ELSE old_hash END, "
+    "old_path = CASE WHEN $15 THEN $16 ELSE old_path END, "
+    "old_size = CASE WHEN $17 THEN $18 ELSE old_size END, "
+    "purge_after = CASE WHEN $19 THEN $20 ELSE purge_after END, "
+    "purged_at = CASE WHEN $21 THEN $22 ELSE purged_at END, "
+    "trash_path = CASE WHEN $23 THEN $24 ELSE trash_path END, "
+    "verify = CASE WHEN $25 THEN $26 ELSE verify END, "
+    "video_id = CASE WHEN $27 THEN $28 ELSE video_id END WHERE id = $1 AND state = $2 RETURNING id"
+)
+
+_UPDATE_SQL = (
+    "UPDATE file_actions SET updated_at = $2, "
+    "error = CASE WHEN $3 THEN $4 ELSE error END, "
+    "new_hash = CASE WHEN $5 THEN $6 ELSE new_hash END, "
+    "new_path = CASE WHEN $7 THEN $8 ELSE new_path END, "
+    "new_size = CASE WHEN $9 THEN $10 ELSE new_size END, "
+    "old_hash = CASE WHEN $11 THEN $12 ELSE old_hash END, "
+    "old_path = CASE WHEN $13 THEN $14 ELSE old_path END, "
+    "old_size = CASE WHEN $15 THEN $16 ELSE old_size END, "
+    "purge_after = CASE WHEN $17 THEN $18 ELSE purge_after END, "
+    "purged_at = CASE WHEN $19 THEN $20 ELSE purged_at END, "
+    "trash_path = CASE WHEN $21 THEN $22 ELSE trash_path END, "
+    "verify = CASE WHEN $23 THEN $24 ELSE verify END, "
+    "video_id = CASE WHEN $25 THEN $26 ELSE video_id END WHERE id = $1"
+)
+
+
+def _field_args(db: Any, fields: dict[str, Any]) -> list[Any]:
+    out: list[Any] = []
+    for name in FIELD_ORDER:
+        out += [name in fields, _param(db, name, fields.get(name))]
+    return out
+
+
+#: the open rows, optionally of one library or video, and unless $3 not those whose job may
+#: still work on them (OPEN_STATES, LIVE_JOB_STATES as fixed text; a test checks they agree)
+_OPEN_ACTIONS_SQL = (
+    "SELECT fa.* FROM file_actions fa"
+    " WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped')"
+    " AND ($1::uuid IS NULL OR fa.library_id = $1::uuid)"
+    " AND ($2::uuid IS NULL OR fa.video_id = $2::uuid)"
+    " AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id"
+    " AND pj.state IN ('claimed', 'running', 'resuming')))"
+    " ORDER BY fa.created_at, fa.id"
+)
+#: the same on SQLite (no casts)
+_OPEN_ACTIONS_LITE = (
+    "SELECT fa.* FROM file_actions fa"
+    " WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped')"
+    " AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2)"
+    " AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id"
+    " AND pj.state IN ('claimed', 'running', 'resuming')))"
+    " ORDER BY fa.created_at, fa.id"
 )
 
 
@@ -243,15 +310,8 @@ async def advance(
     bad = set(fields) - _FIELDS
     if bad:
         raise LedgerError(f"file action fields not writable: {sorted(bad)}")
-    sets = ["state = $3", "updated_at = $4"]
     args: list[Any] = [uid(action_id), cur.state, state, to_ts(db, now())]
-    for name, value in fields.items():
-        args.append(_param(db, name, value))
-        sets.append(f"{name} = ${len(args)}")
-    hit = await db.fetchval(
-        f"UPDATE file_actions SET {', '.join(sets)} WHERE id = $1 AND state = $2 RETURNING id",
-        *args,
-    )
+    hit = await db.fetchval(_ADVANCE_SQL, *args, *_field_args(db, fields))
     if hit is None:
         raise LedgerError(f"file action {action_id} changed under us (was {cur.state})")
     got = await get_action(db, action_id)
@@ -266,12 +326,7 @@ async def update_fields(db: Any, action_id: UUID | str, **fields: Any) -> None:
         raise LedgerError(f"file action fields not writable: {sorted(bad)}")
     if not fields:
         return
-    args: list[Any] = [uid(action_id), to_ts(db, now())]
-    sets = ["updated_at = $2"]
-    for name, value in fields.items():
-        args.append(_param(db, name, value))
-        sets.append(f"{name} = ${len(args)}")
-    await db.execute(f"UPDATE file_actions SET {', '.join(sets)} WHERE id = $1", *args)
+    await db.execute(_UPDATE_SQL, uid(action_id), to_ts(db, now()), *_field_args(db, fields))
 
 
 async def open_actions(
@@ -286,24 +341,23 @@ async def open_actions(
     Unless ``include_live``, a row whose job is still claimed or running is left out: that
     job may be mid-swap on another worker.
     """
-    where = [f"fa.state IN ({', '.join(repr(s) for s in OPEN_STATES)})"]
-    args: list[Any] = []
-    if library_id is not None:
-        args.append(uid(library_id))
-        where.append(f"fa.library_id = ${len(args)}")
-    if video_id is not None:
-        args.append(uid(video_id))
-        where.append(f"fa.video_id = ${len(args)}")
-    if not include_live:
-        live = ", ".join(repr(s) for s in LIVE_JOB_STATES)
-        where.append(
-            "NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id"
-            f" AND pj.state IN ({live}))"
-        )
+    sql = _OPEN_ACTIONS_SQL if is_pg(db) else _OPEN_ACTIONS_LITE
     rows = await db.fetch(
-        f"SELECT fa.* FROM file_actions fa WHERE {' AND '.join(where)}"
-        " ORDER BY fa.created_at, fa.id",
-        *args,
+        sql,
+        None if library_id is None else uid(library_id),
+        None if video_id is None else uid(video_id),
+        bool(include_live) if is_pg(db) else int(bool(include_live)),
+    )
+    return [action_from_row(r) for r in rows]
+
+
+async def failed_actions(db: Any, kind: ActionKind, *, limit: int = 10_000) -> list[FileAction]:
+    """The newest ``failed`` rows of one kind (a group's file moves to try again)."""
+    rows = await db.fetch(
+        "SELECT * FROM file_actions WHERE kind = $1 AND state = 'failed'"
+        " ORDER BY created_at DESC, id DESC LIMIT $2",
+        kind,
+        int(limit),
     )
     return [action_from_row(r) for r in rows]
 

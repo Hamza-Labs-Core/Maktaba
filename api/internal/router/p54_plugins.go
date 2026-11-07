@@ -61,6 +61,9 @@ type P54Deps struct {
 	// Loops is the API's Epic 51 loop runner: api:plugins_catalog runs on it while
 	// plugins.host is on (story 54.17 §1). nil: the loop runs as a plain goroutine.
 	Loops *runner.Runner
+	// Service is the home's service door for the first-party plugins' trusted/service
+	// (story 54.35); nil: none.
+	Service plugins.ServiceDoor
 	// Capabilities says whether llm and search.semantic are on (nil: both are taken as on).
 	Capabilities *components.Capabilities
 	// Embedder is the pipeline worker holding the embedder (54.21; nil: compute.embed is
@@ -200,6 +203,9 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		s.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 	}
 	s.Compute = computeOf(d)
+	if d.Service != nil {
+		s.Service = d.Service
+	}
 	if lc != nil {
 		// the joined machines' tokens, forwarded writes, outcomes and package files
 		(&pluginsh.Cluster{L: lc, Tokens: tokens, Server: s}).Mount(r)

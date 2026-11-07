@@ -1,0 +1,14 @@
+# The parity proof of tv.maktaba.repair (story 54.33): a library's broken downloads read again
+# and fetched again (a fake yt-dlp and ffprobe, the same on both sides), the library's files
+# compared byte for byte (the good copies and the broken ones kept beside them), and the rows,
+# only the columns that hold a time masked.
+tables = ["video_repairs", "item_requests", "videos"]
+files  = ["library"]
+
+[ignore]
+video_repairs = ["updated_at"]
+item_requests = ["id", "requested_at", "done_at"]
+videos = ["created_at", "updated_at", "mtime", "last_seen_at"]
+
+[[cases]]
+name = "five files: repaired, readable after all, no YouTube id, gone from YouTube, and an admin's re-download"

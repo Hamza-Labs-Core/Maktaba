@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..engine.sql import dumps, loads, now, to_ts, uid
+from ..engine.sql import dumps, is_pg, loads, now, to_ts, uid
 
 __all__ = [
     "DETAIL_KEYS",
@@ -23,7 +23,6 @@ __all__ = [
     "replace_section",
 ]
 
-_CHUNK = 400
 
 #: the item fields kept in ``plex_items.detail``: what a dizqueTV programme is built from
 DETAIL_KEYS = (
@@ -124,38 +123,47 @@ async def replace_section(
 
 async def details_for(db: Any, keys: Sequence[str]) -> dict[str, dict[str, Any]]:
     """Saved Plex records for these rating keys (any server), keyed by rating key."""
-    out: dict[str, dict[str, Any]] = {}
     ids = list(dict.fromkeys(str(k) for k in keys))
-    for i in range(0, len(ids), _CHUNK):
-        chunk = ids[i : i + _CHUNK]
-        marks = ",".join(f"${n + 1}" for n in range(len(chunk)))
+    if not ids:
+        return {}
+    if is_pg(db):
         rows = await db.fetch(
-            f"SELECT rating_key, detail FROM plex_items WHERE rating_key IN ({marks})",  # noqa: S608
-            *chunk,
+            "SELECT rating_key, detail FROM plex_items WHERE rating_key = ANY($1::text[])", ids
         )
-        out.update({str(r["rating_key"]): dict(loads(r["detail"]) or {}) for r in rows})
-    return out
+    else:
+        rows = await db.fetch(
+            "SELECT rating_key, detail FROM plex_items"
+            " WHERE rating_key IN (SELECT value FROM json_each($1))",
+            dumps(ids),
+        )
+    return {str(r["rating_key"]): dict(loads(r["detail"]) or {}) for r in rows}
 
 
 async def items_for_videos(db: Any, video_ids: Sequence[str]) -> dict[str, IndexedItem]:
     """The saved Plex item of each video (by ``plex_items.video_id``)."""
     out: dict[str, IndexedItem] = {}
     ids = list(dict.fromkeys(str(v) for v in video_ids))
-    for i in range(0, len(ids), _CHUNK):
-        chunk = ids[i : i + _CHUNK]
-        marks = ",".join(f"${n + 1}" for n in range(len(chunk)))
+    if not ids:
+        return out
+    if is_pg(db):
         rows = await db.fetch(
             "SELECT rating_key, section_key, file, duration_ms, video_id FROM plex_items"
-            f" WHERE video_id IN ({marks})",  # noqa: S608
-            *chunk,
+            " WHERE video_id = ANY($1::uuid[])",
+            ids,
         )
-        for r in rows:
-            vid = str(r["video_id"])
-            out[vid] = IndexedItem(
-                str(r["rating_key"]),
-                str(r["section_key"]),
-                None if r["file"] is None else str(r["file"]),
-                None if r["duration_ms"] is None else int(r["duration_ms"]),
-                vid,
-            )
+    else:
+        rows = await db.fetch(
+            "SELECT rating_key, section_key, file, duration_ms, video_id FROM plex_items"
+            " WHERE video_id IN (SELECT value FROM json_each($1))",
+            dumps(ids),
+        )
+    for r in rows:
+        vid = str(r["video_id"])
+        out[vid] = IndexedItem(
+            str(r["rating_key"]),
+            str(r["section_key"]),
+            None if r["file"] is None else str(r["file"]),
+            None if r["duration_ms"] is None else int(r["duration_ms"]),
+            vid,
+        )
     return out

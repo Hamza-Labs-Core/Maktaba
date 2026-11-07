@@ -6842,6 +6842,12 @@
   "dash.series.maktaba_tv_remote_viewers": "Viewers away from home",
   "dash.series.maktaba_tv_failovers_total": "TV failovers per minute",
   "dash.series.maktaba_update_backup_bytes": "Update backups",
+  "dash.series.maktaba_pipeline_queue_depth": "Jobs waiting or running",
+  "dash.series.maktaba_pipeline_jobs_last_hour": "Jobs finished in the last hour",
+  "dash.series.maktaba_pipeline_audio_seconds_last_hour": "Audio transcribed in the last hour (seconds)",
+  "dash.series.maktaba_pipeline_realtime_factor": "Speed (× real time)",
+  "dash.series.http_request_duration_seconds_count": "API requests per minute",
+  "dash.series.http_request_duration_seconds_p95": "API response time, p95 (seconds)",
   "dash.series.maktaba_logs_segments_bytes": "Log files",
   "dash.series.maktaba_logs_index_bytes": "Log search index",
   "dash.series.maktaba_plays_per_day": "Plays per day",
@@ -7595,5 +7601,6 @@
   "direct.state.checking": "Checking from outside. This takes a minute or two.",
   "direct.manual": "I forwarded a port by hand",
   "direct.manualPort": "Public port",
-  "direct.checkNow": "Check now"
+  "direct.checkNow": "Check now",
+  "direct.rebinding": "Apps on this network can't use the home's secure name: your router blocks it (DNS rebinding protection). Apps will use its address instead."
 }

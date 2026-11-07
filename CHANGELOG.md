@@ -14,11 +14,10 @@ build fails when the two differ.
 
 ### Changed
 
-- **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
-  Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request
-  through the relay gets no answer or a 502, 503 or 504 (at most once every 10 seconds), instead of
-  at the next 5-minute read, so the status strip says an outage as it starts. Android TV's strip,
-  the same shared one, now has a test of its own.
+- **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
+  Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
+  home's secure LAN names from the browser, and when none answers it explains that the router
+  blocks them (DNS rebinding protection) and apps will use the home's address instead.
 - **Apps can reach a home on its own network by address when the router blocks its name
   (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
   network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
@@ -1873,6 +1872,16 @@ build fails when the two differ.
   **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
   queue and data.
 
+- **The cloud keeps and searches its own logs (Epic 53 story 53.17).** Each Maktaba Cloud node
+  keeps its processes' lines for 14 days and sends them to the witness: warnings within a
+  second, the rest every 10 seconds, with no gap or duplicate when the network drops. The
+  witness indexes every node's lines, so the service admin's **Logs** and **Errors** pages
+  search the whole cloud even while a node is down. Errors shows the cloud's own groups beside
+  the homes' anonymous ones, with the problem reports that name each. A line names a home only
+  by a hash, never its address, and never logs an email or a token. Every process serves its
+  error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
+  each runbook's Check step links to a saved search.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -1965,6 +1974,58 @@ build fails when the two differ.
   for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
   new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
   or staff API path, an admin string or a console module.
+
+- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
+  none of them: a runner starts when the first job of its kind arrives (that job runs in the
+  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
+  processes and its memory budget at rest.
+
+- **Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave
+  8).** Indexing Plex, writing collections, reading Plex's own collections back and keeping
+  Maktaba's channels in Plex Live TV run in `tv.maktaba.plex`, in a runner with no network:
+  every call to Plex goes through the home's service door, which adds the Plex token and
+  removes it from every answer, so the plugin never holds the token or Plex's address. The
+  dizqueTV stages stay in the worker for now. The parity proof compares the calls Plex receives
+  on both paths.
+
+- **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
+  wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
+  swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
+  sandboxed `light` runner. A swap and a rollback still put the TV settings on the air in
+  one step with the lineup: the worker does that part for the plugin's job. The dizqueTV
+  export's additions to the plan keep working there. The parity proof compares the plan,
+  the channels, the TV change and its schedule through a stage, a swap, a rollback and the
+  clean-up.
+
+- **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
+  wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
+  fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download
+  again in `tv.maktaba.repair`, in the sandboxed `net` runner, the only one that reaches the
+  network. Each reads only the rules it lists, a new download's first job is queued once its
+  video is saved, and the parity proof compares the downloaded files, the rows and the queue
+  with the recorded yt-dlp.
+
+- **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
+  wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
+  duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the
+  sandboxed `files` runner, a new runner group of their own (in `light` their library writes
+  would have covered the subtitles' name-only rule): they write only the library's folders and their trash, and what
+  only the engine may change (queuing jobs, a merge's re-pointing of everything that refers
+  to a video, a restored video's state) the worker does for them, checked against the job.
+  The parity proof compares the library and its trash byte for byte, through a merge, a
+  restore and a purge.
+
+- **`server.log` keeps the warnings and errors (Epic 53 story 53.02).** After one release with
+  both written, the server's parts send only their warnings and errors to `server.log`, beside
+  the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
+  of it. Every line is still in the log segments, the Logs page and the recovery console.
+  `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
+
+- **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
+  Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request
+  through the relay gets no answer or a 502, 503 or 504 (at most once every 10 seconds), instead of
+  at the next 5-minute read, so the status strip says an outage as it starts. Android TV's strip,
+  the same shared one, now has a test of its own.
 
 ### Fixed
 
@@ -2441,6 +2502,24 @@ build fails when the two differ.
   `plugin_compile_timeout`), and the host compiles every installed plugin in the background
   when it starts, so an update that changes the plugin engine recompiles each one before its
   first job. maktaba.dev: Testing and packaging.
+
+- **The Queue and Processing dashboards show the queue (Epic 53 story 53.12).** Both boards were
+  empty: they kept series that nothing exported. The home's metrics now carry the jobs waiting or
+  running by stage, the jobs finished in the last hour by stage and outcome, the audio
+  transcribed in the last hour and the transcription speed, read from the queue once a minute.
+
+- **The Streaming dashboard shows the TV (Epic 53 story 53.12).** The dashboards read only the
+  API's metrics, so the TV's channels on air, switches, failovers and viewers never reached the
+  Streaming board. They read streaming's too now; a series both processes have is kept from the
+  API's.
+
+- **The Overview dashboard shows the API's requests per minute and its p95 response time (Epic 53
+  story 53.12).** The response-time histogram is kept as two lines over all routes at once: the
+  requests in each minute, and the time 95 % of them were answered within.
+
+- **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
+  refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
+  read, so they never showed. They do now, and no family is listed twice.
 
 ## [0.2.0] - 2026-10-19
 

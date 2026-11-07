@@ -1,0 +1,112 @@
+# tv.maktaba.plex: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 8
+# (story 54.35): Plex through the home's service door. The plugin holds neither the Plex token
+# nor Plex's address; every call goes through the door, which adds the token and scrubs it.
+schema     = 1
+id         = "tv.maktaba.plex"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.plex.name"
+summary = "fp.plex.summary"
+
+[trusted]
+runner    = "service"
+component = "ext.plex"
+db.read   = ["app_settings", "channel_schedule_state", "channels", "clip_group_items", "clip_groups", "hdhr_device", "job_stages", "libraries", "series", "series_episodes", "series_seasons", "topic_collections", "topic_items"]
+db.write  = ["collection_items", "collections", "external_links", "plex_items", "plex_livetv_state", "videos"]
+settings  = ["plexlive"]
+service   = ["plex"]
+
+[[stage]]
+name         = "plex_index"
+subject      = "library"
+export       = "plex-index"
+version      = 1
+label        = "Plex index"
+subject_kinds = ["library"]
+pool         = "network_plex"
+lane         = "sources"
+lane_order   = 1
+entry_for    = ["library"]
+debounce_sec = 60
+debounce_max_sec = 600
+placement    = "home"
+relay        = "plex"
+edges        = [{ to = "plex_collection", map = "seasons_changed" }, { to = "plex_collections_import", map = "same" }, { to = "plex_groups", map = "same" }]
+entry        = "maktaba_fp_plex.stages.plex_index:IMPL"
+
+[[stage]]
+name         = "plex_collections_import"
+subject      = "library"
+export       = "plex-collections-import"
+version      = 1
+label        = "Read Plex collections"
+subject_kinds = ["library"]
+pool         = "network_plex"
+lane         = "sources"
+lane_order   = 2
+entry_for    = ["library"]
+debounce_sec = 60
+debounce_max_sec = 600
+placement    = "home"
+relay        = "plex"
+entry        = "maktaba_fp_plex.stages.plex_collections_import:IMPL"
+
+[[stage]]
+name         = "plex_collection"
+subject      = "season"
+export       = "plex-collection"
+version      = 1
+label        = "Plex collection"
+subject_kinds = ["season"]
+pool         = "network_plex"
+lane         = "seasons"
+lane_order   = 4
+external_write = true
+entry_for    = ["season"]
+placement    = "home"
+relay        = "plex"
+entry        = "maktaba_fp_plex.stages.plex_collection:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "plex_groups"
+subject      = "library"
+export       = "plex-groups"
+version      = 1
+label        = "Plex topic and clip collections"
+subject_kinds = ["library"]
+pool         = "network_plex"
+lane         = "seasons"
+lane_order   = 4
+external_write = true
+entry_for    = ["library"]
+debounce_sec = 60
+debounce_max_sec = 600
+placement    = "home"
+relay        = "plex"
+entry        = "maktaba_fp_plex.stages.plex_groups:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "plex_livetv"
+subject      = "catalog"
+export       = "plex-livetv"
+version      = 2
+label        = "Plex Live TV"
+subject_kinds = ["catalog"]
+pool         = "network_plex"
+lane         = "channels"
+lane_order   = 3
+external_write = true
+entry_for    = ["catalog"]
+debounce_sec = 30
+debounce_max_sec = 300
+placement    = "home"
+after_topup  = true
+every_minutes_rule = ["plexlive", "drift_check_minutes"]
+entry        = "maktaba_fp_plex.stages.plex_livetv:IMPL"

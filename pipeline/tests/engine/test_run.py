@@ -471,6 +471,12 @@ async def test_a_first_party_stage_runs_in_process_unless_its_runner_serves_here
 
         return {"bundle": firstparty.bundle_digest(), "stages": {"fp_toy": None}}
 
+    async def role_usable(_db: object, _stage: str) -> bool:
+        return True
+
     monkeypatch.setattr(native, "hello", serving)
+    # the toy's Postgres role is cluster-wide and made only by tests/plugins, which run after
+    # this file: on a fresh cluster it is missing here (test_native_choose covers the role)
+    monkeypatch.setattr(native, "role_usable", role_usable)
     chosen = await run._native_impl(db, "fp_toy", impl)
     assert chosen is not None and chosen.run is not impl.run
