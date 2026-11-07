@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -65,6 +66,8 @@ func tiny(t *testing.T) []byte {
 	t.Helper()
 	raw := string(components.Raw())
 	head := raw[:strings.Index(raw, "[[component]]")]
+	// the real feature groups name components this tiny catalog doesn't have
+	head = regexp.MustCompile(`(?m)^feature_any = .*$`).ReplaceAllString(head, "feature_any = {}")
 	return []byte(head + `
 [[component]]
 id         = "model.whisper-medium"
