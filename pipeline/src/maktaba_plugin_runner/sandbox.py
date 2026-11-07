@@ -257,7 +257,14 @@ def _landlock(p: Policy) -> tuple[bool, list[str]]:
         *python_paths(),
         *p.read,
     ]:
-        rule(path, _READ | _FS_EXECUTE if path in ("/usr", "/lib", "/lib64") else _READ)
+        # read, never run: only the group's own tools (and the dynamic loader they need)
+        # may be executed, so a plugin cannot start a shell
+        rule(path, _READ)
+    if p.exec:
+        import glob
+
+        for ld in sorted(set(glob.glob("/lib*/ld-linux*") + glob.glob("/usr/lib*/ld-linux*"))):
+            rule(os.path.realpath(ld), _FS_EXECUTE | _FS_READ_FILE)
     for path in ["/dev/null", "/dev/urandom"]:
         rule(path, _FS_READ_FILE | _FS_WRITE)
     for path in [x for x in (p.run_dir, *p.write) if x]:

@@ -94,6 +94,9 @@ def test_the_sandbox_denies_network_keys_and_shells_and_allows_its_files(tmp_pat
     got = run_probe(tmp_path, sandboxed=True)
     if str(got["applied"]).startswith("unavailable"):
         pytest.skip(f"this machine cannot apply the sandbox: {got['applied']}")
+    assert got["tcp"].startswith("denied"), got  # seccomp or Seatbelt: always in force
+    if got["applied"] == "partial" and sys.platform.startswith("linux"):
+        pytest.skip("no Landlock on this kernel: files are not limited (Degraded sandbox_partial)")
     assert got["read_granted"] == "allowed", got
     assert got["write_run"] == "allowed", got
     assert got["read_secret"].startswith("denied"), got

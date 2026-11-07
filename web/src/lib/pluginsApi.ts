@@ -75,6 +75,20 @@ export interface PluginDetail extends Plugin {
   data_mb: number;
 }
 
+/** One of Maktaba's own built-in (first-party) plugins (Epic 54, story 54.22 §4). Its
+ * component's switch on the Components page is its switch: there is no grants dialog. */
+export interface BuiltInPlugin {
+  id: string;
+  name: string;
+  name_ar: string;
+  summary: string;
+  summary_ar: string;
+  component: string;
+  stages: string[];
+  /** fp.trusted.<capability> (and plugins.cap.<name>) words, each with its parameter */
+  capabilities: { key: string; param: string }[];
+}
+
 export interface Policy {
   allow_unreviewed: boolean;
 }
@@ -152,7 +166,8 @@ function installBody(f: InstallForm): FormData {
 }
 
 export const pluginsApi = {
-  list: () => api.get<{ plugins: Plugin[]; policy: Policy }>("/api/plugins"),
+  list: () =>
+    api.get<{ plugins: Plugin[]; policy: Policy; built_in?: BuiltInPlugin[] }>("/api/plugins"),
   show: (id: string) => api.get<PluginDetail>(`/api/plugins/${enc(id)}`),
   install: (f: InstallForm, onProgress?: (fraction: number) => void) =>
     uploadWithProgress<InstallResult>("/api/plugins/install", installBody(f), onProgress),
