@@ -246,6 +246,7 @@ struct PlayerDestination: View {
         case let .library(id): LibraryScreen(context: context, id: id)
         case let .channel(id): ChannelScreen(context: context, id: id)
         case let .watch(id, at): WatchScreen(context: context, videoID: id, at: at)
+        case let .search(q): SearchScreen(context: context, query: q)
         }
     }
 }

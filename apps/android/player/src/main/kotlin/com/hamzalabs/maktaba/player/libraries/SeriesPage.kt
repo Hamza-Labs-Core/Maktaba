@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import com.hamzalabs.maktaba.player.plugins.SubjectPanels
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -112,6 +113,10 @@ internal fun SeriesPage(id: String, nav: PlayerNavigator, embedded: Boolean) {
                             onOpen = { open(e.videoId) },
                             onMark = { scope.launch { state.mark(listOf(e.videoId), !e.watched) } },
                         )
+                    }
+                    // story 54.20: installed plugins' panels, below the series' own sections
+                    item(key = "plugin-panels") {
+                        SubjectPanels("series", id, nav, Modifier.padding(horizontal = MaktabaTokens.Spacing.s4))
                     }
                 }
             }

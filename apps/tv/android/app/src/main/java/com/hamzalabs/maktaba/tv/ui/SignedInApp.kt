@@ -252,6 +252,7 @@ fun SignedInApp(
                     signedOut = signedOut,
                     onBack = ::back,
                     onSeries = { open(Place.Series(it)) },
+                    panels = features.panels,
                 )
                 is Place.Player -> PlayerScreen(
                     app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut,

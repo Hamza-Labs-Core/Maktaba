@@ -968,7 +968,10 @@ build fails when the two differ.
   turned off shows none. Every value is plain text: the plugin API refuses a URL, HTML,
   markdown or a control character in a value a panel shows (`plugin_text_forbidden`), and
   every app escapes again and makes no request from one. `GET /api/panels` and the
-  capability `plugin_panels`, which apps read missing as off.
+  capability `plugin_panels`, which apps read missing as off. Series and library pages show
+  panels too, in every app; a chip opens Search with its text on Android and Apple as on the
+  web. The Apple TV and Android TV video pages show `kv`, `badges` and `markers`, open, and a
+  marker plays from its time.
 
 - **Automated checks and human review in the plugin store (Epic 54, story 54.16).** Every
   submitted version is checked by the home's own rules, compiled to WebAssembly for the store's

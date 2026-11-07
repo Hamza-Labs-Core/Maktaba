@@ -193,7 +193,12 @@ your own data, unchecked.
   panels a page. A plugin turned off, held or withdrawn shows no panel.
 - **When it shows**: only for a subject with data for at least one of its keys. Markers
   written before the video's file last changed are not shown.
-- **Apple TV and Android TV** show `kv`, `badges` and `markers` only.
+- **Where**: a video's page, a series' page and a library's page, in the web app, the iPhone,
+  iPad and Mac apps, and the Android apps; the video's page on Apple TV and Android TV.
+- **Apple TV and Android TV** show `kv`, `badges` and `markers` only, open rather than
+  collapsed.
+- **What a tap does**: a marker plays the video from its time; a chip searches Maktaba for its
+  text. Nothing in a panel opens a link or leaves the app.
 - **Apps learn** from `GET /api/capabilities`: `plugin_panels: "on"` while the plugin host
   runs. An app reads a missing key as off, so it never asks an older server.
 - The store gives every first version, and every version that adds a panel, a human review.

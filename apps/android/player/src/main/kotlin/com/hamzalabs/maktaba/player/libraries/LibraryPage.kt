@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import com.hamzalabs.maktaba.player.plugins.SubjectPanels
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
@@ -130,6 +131,8 @@ internal fun LibraryPage(id: String, nav: PlayerNavigator, embedded: Boolean, in
                     hubRows(state, home.client)
                     // Epic 56 story 56.12: Play and Shuffle the grid's view, through the server queue
                     full("play") { PlayShuffleRow(home.client, QueueSource("library", id, state.queueFilters()), Modifier.padding(horizontal = sidePadding)) }
+                    // story 54.20: installed plugins' panels, below the library's own rows
+                    full("plugin-panels") { SubjectPanels("library", id, nav, Modifier.padding(horizontal = sidePadding)) }
                     full("tabs") {
                         PrimaryScrollableTabRow(selectedTabIndex = state.tab.ordinal, edgePadding = sidePadding) {
                             Tab(state.tab == LibraryTab.Videos, onClick = { state.tab = LibraryTab.Videos }, modifier = Modifier.testTag("library-tab-videos"), text = { Text(stringResource(R.string.library_tab_videos)) })

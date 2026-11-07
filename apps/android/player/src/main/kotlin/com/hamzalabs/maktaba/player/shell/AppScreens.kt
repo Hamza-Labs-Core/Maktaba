@@ -8,6 +8,7 @@ import com.hamzalabs.maktaba.player.live.ChannelScreen
 import com.hamzalabs.maktaba.player.live.LiveGate
 import com.hamzalabs.maktaba.player.live.LiveTvScreen
 import com.hamzalabs.maktaba.player.profile.ProfileScreen
+import com.hamzalabs.maktaba.player.search.SearchForScreen
 import com.hamzalabs.maktaba.player.search.SearchScreen
 import com.hamzalabs.maktaba.player.video.VideoScreen
 import com.hamzalabs.maktaba.player.watch.WatchRouteScreen
@@ -23,6 +24,7 @@ val AppScreens: PlayerScreens = { route, nav ->
         Route.Libraries -> LibrariesScreen(nav)
         Route.LiveTv -> LiveTvScreen(nav)
         Route.Search -> SearchScreen(nav)
+        is Route.SearchFor -> SearchForScreen(route.q, nav)
         Route.Profile -> ProfileScreen(nav)
         is Route.Video -> VideoScreen(route.id, nav)
         is Route.Series -> SeriesScreen(route.id, nav)

@@ -188,7 +188,7 @@ final class PlayerShellTests: XCTestCase {
     func testRoutesRoundTripThroughTheirPaths() {
         let routes: [PlayerRoute] = [.video(id: "v1"), .series(id: "s-seerah"), .library(id: "lib-docs"),
                                      .channel(id: "ch-1"), .watch(videoID: "v1"), .watch(videoID: "v1", at: 90),
-                                     .watch(videoID: "v1", at: 12.5)]
+                                     .watch(videoID: "v1", at: 12.5), .search(query: "تاريخ الأندلس / 711")]
         for r in routes {
             XCTAssertEqual(PlayerRoute(path: r.path), r, r.path)
         }
@@ -196,7 +196,7 @@ final class PlayerShellTests: XCTestCase {
     }
 
     func testABadPathIsNoRoute() {
-        for bad in ["", "video", "video/", "video/a/b", "movie/v1", "watch/@9", "watch/v1@-3", "watch/v1@soon"] {
+        for bad in ["", "video", "video/", "video/a/b", "movie/v1", "watch/@9", "watch/v1@-3", "watch/v1@soon", "search/"] {
             XCTAssertNil(PlayerRoute(path: bad), bad)
         }
     }
