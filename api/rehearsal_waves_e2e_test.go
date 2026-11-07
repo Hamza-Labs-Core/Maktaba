@@ -318,7 +318,8 @@ func (r *rehearsal) checkWaveJobs(what string, jobs []waveJob, queued map[int64]
 		}
 		// on a release with the plugin a job claimed before its runners said Hello runs
 		// in-process (story 54.25 §3: until then the stage stays inproc)
-		if j.impl != impl && !(impl == "plugin" && j.impl == "inproc") {
+		early := impl == "plugin" && j.impl == "inproc"
+		if j.impl != impl && !early {
 			t.Errorf("%s: job %d (%s) ran %s on %s, which runs it %s", what, j.id, j.stage, j.impl, j.release, impl)
 		}
 		where[j.release+"/"+j.impl]++
