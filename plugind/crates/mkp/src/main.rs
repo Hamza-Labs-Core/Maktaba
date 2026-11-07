@@ -52,7 +52,7 @@ fn main() {
         Some("test") if args.len() >= 2 => test(&args[1..]),
         Some("flow") if args.len() >= 2 => flow_cmd(&args[1..]),
         Some("--version") => {
-            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 0);
+            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 1);
             Ok(())
         }
         _ => usage(),

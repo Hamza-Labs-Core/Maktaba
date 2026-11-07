@@ -18,4 +18,4 @@ version = 3
 
 
 [capabilities]
-optional = ["compute.llm"]
+optional = ["compute.gpu"]

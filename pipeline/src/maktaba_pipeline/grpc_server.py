@@ -4,6 +4,9 @@ The API talks to the pipeline over a small gRPC surface:
 
 - ``Embed(EmbedRequest) -> EmbedResponse`` — embed a text snippet for
   semantic search (Story 5.4), as an e5 query (``"query: "`` prefix).
+- ``EmbedTexts({texts}) -> {model, vectors}`` — embed up to 64 texts as e5 passages for
+  a plugin's ``compute.embed`` (Epic 54, story 54.21), with the same model semantic search
+  uses. Never logs the texts.
 - ``SemanticSearch({q, k, library_ids}) -> {hits: [...]}`` — embed the
   query and return the top-k transcript segments from the Chroma index
   the engine ``index`` stage writes (segment_id, video_id, start_sec,
@@ -65,6 +68,14 @@ SemanticSearchFn = Callable[[str, int, list[str], list[str]], Awaitable[list[dic
 
 #: most hits one SemanticSearch call returns
 MAX_SEMANTIC_K = 200
+
+#: a plugin's compute.embed call (story 54.21 §1): at most this many texts of at most this
+#: many characters (the API checks first; this side holds the same line)
+MAX_EMBED_TEXTS = 64
+MAX_EMBED_CHARS = 2000
+
+#: ``texts -> (model id, vectors)``: passages embedded with semantic search's model
+EmbedTextsFn = Callable[[list[str]], Awaitable[tuple[str, list[list[float]]]]]
 
 
 #: the in-band error of Embed and SemanticSearch while ``search.semantic`` is off (Epic 51,
@@ -159,8 +170,10 @@ class PipelineService:
         model_service: ModelService | None = None,
         plan_preview: Any | None = None,
         semantic: SemanticSearchFn | None = None,
+        embed_texts: EmbedTextsFn | None = None,
     ) -> None:
         self._embedder = embedder
+        self._embed_texts = embed_texts
         self._semantic = semantic
         self._stt_registry = stt_registry if stt_registry is not None else BackendRegistry()
         self._subtitle_extractor = subtitle_extractor
@@ -184,6 +197,19 @@ class PipelineService:
             raise RuntimeError("embedder backend not configured")
         vector = await self._embedder(text)
         return {"vector": list(vector)}
+
+    async def embed_texts(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not _semantic_on():
+            return {"error": SEMANTIC_OFF}
+        texts = payload.get("texts")
+        if not isinstance(texts, list) or not texts or not all(isinstance(t, str) for t in texts):
+            raise ValueError("embed_texts: texts is a list of strings")
+        if len(texts) > MAX_EMBED_TEXTS or any(len(t) > MAX_EMBED_CHARS for t in texts):
+            raise ValueError("embed_texts: at most 64 texts of at most 2000 characters")
+        if self._embed_texts is None:
+            raise RuntimeError("embedder backend not configured")
+        model, vectors = await self._embed_texts(list(texts))
+        return {"model": model, "vectors": [list(v) for v in vectors]}
 
     async def semantic_search(self, payload: dict[str, Any]) -> dict[str, Any]:
         if not _semantic_on():
@@ -382,6 +408,9 @@ def _build_generic_handler(service: PipelineService) -> Any:
     async def _embed(request: bytes, ctx: Any) -> bytes:
         return await _dispatch(request, service.embed, ctx)
 
+    async def _embed_texts(request: bytes, ctx: Any) -> bytes:
+        return await _dispatch(request, service.embed_texts, ctx)
+
     async def _semantic_search(request: bytes, ctx: Any) -> bytes:
         return await _dispatch(request, service.semantic_search, ctx)
 
@@ -430,6 +459,7 @@ def _build_generic_handler(service: PipelineService) -> Any:
 
     handlers = {
         "Embed": _h(_embed),
+        "EmbedTexts": _h(_embed_texts),
         "SemanticSearch": _h(_semantic_search),
         "ListBackends": _h(_list_backends),
         "ExtractEmbeddedSubtitle": _h(_extract),
@@ -508,6 +538,16 @@ async def _dispatch_bound(
         _log.exception("grpc_call_raised", method=method)
         raise
     return json.dumps(result).encode("utf-8")
+
+
+def passages_fn(embedder: Any) -> EmbedTextsFn:
+    """``EmbedTexts``'s backend: ``embedder``'s passages (the semantic search model, so a
+    plugin's vectors compare with the index's) and its model id."""
+
+    async def embed_texts(texts: list[str]) -> tuple[str, list[list[float]]]:
+        return embedder.model_name, await asyncio.to_thread(embedder.embed_passages, texts)
+
+    return embed_texts
 
 
 def default_search_backends(
@@ -604,7 +644,12 @@ async def serve_grpc(
             embed, search, warm = default_search_backends(database)
             if embed is None:
                 _log.info("pipeline_grpc_semantic_disabled", reason="search extra not installed")
-        service = PipelineService(embedder=embed, semantic=search, plan_preview=plan_preview)
+        service = PipelineService(
+            embedder=embed,
+            semantic=search,
+            plan_preview=plan_preview,
+            embed_texts=passages_fn(warm) if warm is not None else None,
+        )
 
     server = grpc.aio.server()
     server.add_generic_rpc_handlers((_build_generic_handler(service),))

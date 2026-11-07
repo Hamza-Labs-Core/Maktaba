@@ -293,7 +293,7 @@ export function validate(src: Uint8Array | string, files?: Files): Obj {
   const { schema } = load();
   let raw: Obj;
   try {
-    const text = typeof src === "string" ? src : new TextDecoder("utf-8", { fatal: true }).decode(src);
+    const text = typeof src === "string" ? src : new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(src);
     if (text.length > 1 << 20) throw new Error("over 1 MB");
     raw = plain(parseToml(text, { integersAsBigInt: true })) as Obj;
   } catch (e) {
@@ -327,7 +327,7 @@ export function validateFlowDoc(src: Uint8Array | string): { doc?: Obj; errors?:
   flowRoot ??= JSON.parse(flowSchema) as SchemaNode;
   let raw: Obj;
   try {
-    const text = typeof src === "string" ? src : new TextDecoder("utf-8", { fatal: true }).decode(src);
+    const text = typeof src === "string" ? src : new TextDecoder("utf-8", { fatal: true, ignoreBOM: false }).decode(src);
     if (text.length > 1 << 20) throw new Error("over 1 MB");
     raw = plain(parseToml(text, { integersAsBigInt: true })) as Obj;
   } catch {

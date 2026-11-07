@@ -866,3 +866,47 @@ func Downstream(g Graph, id string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// Lookup answers the plugin a store or a home holds under id, at the newest version a
+// range accepts ("" any): false when it holds none.
+type Lookup func(id, rng string) (Member, bool)
+
+// ResolveDepends adds to members every plugin they subscribe to that they do not hold,
+// from lookup, and then the plugins those subscribe to, and so on: a cycle or a missing
+// upstream two or more plugins away is then in the graph Check walks. A publisher lookup
+// does not hold stays out (Check reports it missing). It stops at MaxStages stages.
+func ResolveDepends(members []Member, lookup Lookup) []Member {
+	out := append([]Member(nil), members...)
+	have := map[string]bool{}
+	stages := 0
+	for _, m := range out {
+		have[m.ID] = true
+		stages += len(m.Stages)
+	}
+	asked := map[string]bool{}
+	for i := 0; i < len(out); i++ {
+		m := out[i]
+		var want []string
+		for _, s := range m.Stages {
+			for _, t := range s.Triggers {
+				if p, _, ok := subscription(t); ok && !have[p] && !asked[p] {
+					want = append(want, p)
+					asked[p] = true
+				}
+			}
+		}
+		sort.Strings(want)
+		for _, p := range want {
+			if stages > MaxStages {
+				return out
+			}
+			if up, ok := lookup(p, m.Depends[p]); ok {
+				up.State = ""
+				out = append(out, up)
+				have[p] = true
+				stages += len(up.Stages)
+			}
+		}
+	}
+	return out
+}

@@ -2,7 +2,7 @@
 
 > **Status:** the flow format, the manifest's graph fields and the flow check are **on
 > `main`**: the home checks every install, enable, update and rollback, and the store's
-> verification uses the same check. Emitting events (plugin API 1.1) and run-time lineage
+> verification uses the same check. Emitting events (plugin API 1.2) and run-time lineage
 > are **on `main`** too; the drawn chart and plugins on joined machines follow in the next
 > releases of Epic 54. The exact fields and codes are in the [plugin reference](reference.md).
 
@@ -159,7 +159,7 @@ ends well: a job that fails sends nothing. The subscriber reads it with `job::pa
 {"event": "silences.found", "from": "dev.example.silences", "payload": {"silences": 4}}
 ```
 
-Requests and events share one budget of 1,000 a job. Emitting needs plugin API 1.1:
+Requests and events share one budget of 1,000 a job. Emitting needs plugin API 1.2:
 declare `plugin_api = "1.1"`; a 1.0 plugin keeps running unchanged.
 
 ## Loops at run time

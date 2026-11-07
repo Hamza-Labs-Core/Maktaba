@@ -78,9 +78,9 @@ CASES: dict[str, dict] = {}
 
 
 def case(name: str, mode: str, about: str, members: list[dict], flow_members: list[dict] | None = None,
-         states: dict | None = None, package: str | None = None) -> None:
+         states: dict | None = None, package: str | None = None, catalog: list[dict] | None = None) -> None:
     CASES[name] = dict(mode=mode, about=about, members=members, flow=flow_members, states=states or {},
-                       package=package)
+                       package=package, catalog=catalog or [])
 
 
 A, B, C = "dev.example.alpha", "dev.example.beta", "dev.example.gamma"
@@ -165,6 +165,30 @@ case("version_out_of_range_home", "home", "an installed upstream at a version th
      [dict(silences, version="2.0.0"), writer])
 
 
+X, Y, Z = "dev.example.xray", "dev.example.yankee", "dev.example.zulu"
+fa = {"id": A, "stages": [{"name": "one", "triggers": ["audio.ready", f"plugin:{X}/x.done"], "emits": ["a.done"]}],
+      "events": [{"name": "a.done"}]}
+cx = {"id": X, "stages": [{"name": "x", "triggers": [f"plugin:{Y}/y.done"], "emits": ["x.done"]}],
+      "events": [{"name": "x.done"}]}
+cy = {"id": Y, "stages": [{"name": "y", "triggers": [f"plugin:{A}/a.done"], "emits": ["y.done"]}],
+      "events": [{"name": "y.done"}]}
+case("cycle_through_store_plugins", "store",
+     "a one-plugin flow that loops through two store plugins found only by walking publishers",
+     [fa], flow_members=[fa], catalog=[cx, cy])
+cz = {"id": X, "stages": [{"name": "x", "triggers": [f"plugin:{Z}/z.done"], "emits": ["x.done"]}],
+      "events": [{"name": "x.done"}]}
+case("transitive_missing_store", "store",
+     "a flow whose store upstream depends on a plugin not in the store: refused",
+     [dict(fa, stages=[{"name": "one", "triggers": [f"plugin:{X}/x.done"], "emits": ["a.done"]}])],
+     flow_members=[dict(fa, stages=[{"name": "one", "triggers": [f"plugin:{X}/x.done"], "emits": ["a.done"]}])],
+     catalog=[cz])
+case("transitive_chain_store", "store", "a flow over a two-deep chain of store plugins: allowed",
+     [dict(fa, stages=[{"name": "one", "triggers": [f"plugin:{X}/x.done"], "emits": ["a.done"]}])],
+     flow_members=[dict(fa, stages=[{"name": "one", "triggers": [f"plugin:{X}/x.done"], "emits": ["a.done"]}])],
+     catalog=[dict(cx, stages=[{"name": "x", "triggers": ["audio.ready", f"plugin:{Y}/y.done"], "emits": ["x.done"]}]),
+              dict(cy, stages=[{"name": "y", "triggers": ["audio.ready"], "emits": ["y.done"]}])])
+
+
 def main() -> None:
     if OUT.exists():
         keep = {p.name: (p / "expect.json").read_bytes() for p in OUT.iterdir() if (p / "expect.json").exists()}
@@ -178,6 +202,13 @@ def main() -> None:
             deps = depends_of(m["stages"])
             (d / "plugins" / f'{m["id"]}.toml').write_text(
                 manifest(m["id"], m["stages"], m.get("events", []), deps, m.get("version", "1.0.0")))
+        if c["catalog"]:
+            # the store's other plugins: found only by walking the flow's publishers
+            (d / "catalog").mkdir()
+            for m in c["catalog"]:
+                deps = depends_of(m["stages"])
+                (d / "catalog" / f'{m["id"]}.toml').write_text(
+                    manifest(m["id"], m["stages"], m.get("events", []), deps, m.get("version", "1.0.0")))
         if c["flow"] is not None:
             (d / "flow.toml").write_text(flow("dev.example.flow", c["flow"]))
         meta = {"about": c["about"], "mode": c["mode"], "states": c["states"]}

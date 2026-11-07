@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0197 - plugins: the lineage a plugin's write leaves on its subject (Epic 54,
+-- Slot 0198 - plugins: the lineage a plugin's write leaves on its subject (Epic 54,
 -- story 54.40 §3).
 --
 --   plugin_write_lineage  for each subject a plugin wrote (a tag, a field, chapters,
@@ -16,7 +16,7 @@
 --
 -- As slot 0194's tables: the default grants, plugin_tables_guard() refuses writes by a
 -- joined machine (maktaba_worker), and a machine's copy leaves it out
--- (cluster_copy_excluded() is slot 0195's list and this one). Additive.
+-- (cluster_copy_excluded() is slot 0197's list and this one). Additive.
 --
 CREATE TABLE IF NOT EXISTS plugin_write_lineage (
     subject_kind text        NOT NULL,
@@ -35,7 +35,7 @@ CREATE OR REPLACE TRIGGER plugin_write_lineage_guard_trg BEFORE INSERT OR UPDATE
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- slot 0195's exclusion, with the write lineage
+-- slot 0197's exclusion, with the write lineage
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -87,7 +87,10 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0195): an admin's keep-off and each plugin's health and breaker,
         -- the home's API and its pipeline alone read and write them
         'plugin_keep_off', 'plugin_health',
-        -- plugins (slot 0197): the lineage a plugin write leaves on its subject, the home's
+        -- plugins (slot 0197): each plugin's daily use of the home's models and the
+        -- lookup slots its questions hold; the home's API alone writes them
+        'plugin_compute_usage', 'compute_leases',
+        -- plugins (slot 0198): the lineage a plugin write leaves on its subject, the home's
         -- API alone reads and writes it
         'plugin_write_lineage'
     ]::text[]
@@ -96,7 +99,7 @@ $f$;
 
 -- +goose Down
 -- +goose StatementBegin
--- slot 0195's exclusion again
+-- slot 0197's exclusion again
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -147,7 +150,10 @@ LANGUAGE sql IMMUTABLE AS $f$
         'plugin_writes', 'plugin_suggestions',
         -- plugins (slot 0195): an admin's keep-off and each plugin's health and breaker,
         -- the home's API and its pipeline alone read and write them
-        'plugin_keep_off', 'plugin_health'
+        'plugin_keep_off', 'plugin_health',
+        -- plugins (slot 0197): each plugin's daily use of the home's models and the
+        -- lookup slots its questions hold; the home's API alone writes them
+        'plugin_compute_usage', 'compute_leases'
     ]::text[]
 $f$;
 DROP TABLE IF EXISTS plugin_write_lineage;
