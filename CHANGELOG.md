@@ -80,6 +80,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A rollback undoes only what the release changed.** When an update rolled back and its
+  migrations could not simply be kept, the whole database was put back from the dump taken
+  before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
+  on 2026-11-07, most of a day with the home down) and everything written since the dump
+  lost, though that release had only added two columns and two checks. A rollback now runs
+  the release's own Down scripts back to the previous schema when its migrations lose no
+  data on the way up: only the tables they touched change, every other table, index and
+  row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
+  or recast data, or a Down script fails.
+
 - **A rollback no longer keeps the home down for half a day building the search index.**
   Putting a backup back rebuilt semantic search's vector index among the other indexes with
   64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home

@@ -530,6 +530,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	sw.set(pg, cp, stopCopy, token, func(r supervisor.Role, on bool) error { return sup.Want(r, "", on) })
 	if u := upd.Load(); u != nil {
 		u.setSupervisor(sup)
+		u.setAPI(procs)
 	}
 	admin := recoveryAdmin(sw.adminHandler(node.adminHandler(sup.Handler())), recoveryLink)
 	if u := upd.Load(); u != nil {
