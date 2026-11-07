@@ -514,6 +514,7 @@ export async function build(): Promise<{ canonical: string; vectors: string }> {
   const catalogs = {
     v10: await signEnvelope("catalog", catalogSigned(10, at(-1), at(24 * 7 - 1)), k.store1),
     v9: await signEnvelope("catalog", catalogSigned(9, at(-2), at(24 * 6)), k.store1),
+    v10_other: await signEnvelope("catalog", catalogSigned(10, at(-2), at(24 * 6)), k.store1),
     expired: await signEnvelope("catalog", catalogSigned(11, at(-24 * 9), at(-24 * 2)), k.store1),
     major2: await signEnvelope("catalog", catalogSigned(12, at(-1), at(24 * 6), 2), k.store1),
     too_long: await signEnvelope("catalog", catalogSigned(13, at(-1), at(24 * 7)), k.store1),
@@ -527,6 +528,22 @@ export async function build(): Promise<{ canonical: string; vectors: string }> {
       state: state({ catalog_versions: { "1": 10 } }),
       now: NOW,
       expect: no("catalog_rollback_refused", "list"),
+    },
+    {
+      name: "the newest seen version with other content",
+      raw: "v10_other",
+      api_major: 1,
+      state: state({ catalog_versions: { "1": 10 }, catalog_sha256: { "1": await sha(catalogs.v10) } }),
+      now: NOW,
+      expect: no("catalog_rollback_refused", "list"),
+    },
+    {
+      name: "the newest seen version again, the same bytes",
+      raw: "v10",
+      api_major: 1,
+      state: state({ catalog_versions: { "1": 10 }, catalog_sha256: { "1": await sha(catalogs.v10) } }),
+      now: NOW,
+      expect: { ok: true, version: 10 },
     },
     { name: "expired", raw: "expired", api_major: 1, state: state(), now: NOW, expect: no("catalog_expired", "list") },
     {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -426,5 +427,79 @@ func TestSeenOnceADay(t *testing.T) {
 	k.svc.Tick(ctx)
 	if len(sent) != 2 {
 		t.Fatalf("sent %d times", len(sent))
+	}
+}
+
+// catalogBy signs a one-plugin catalog of the given version with the given key.
+func (k *kit) catalogBy(by pluginsig.Signer, version int64, name string) []byte {
+	k.t.Helper()
+	raw, err := pluginsig.SignEnvelope(pluginsig.KindCatalog, pluginsig.CatalogSigned{Version: version, Issued: pluginsig.FormatTime(k.now.Add(-time.Minute)),
+		Expires: pluginsig.FormatTime(k.now.Add(6 * 24 * time.Hour)), APIMajor: 1, Plugins: []pluginsig.CatalogPlugin{{
+			ID: "dev.example.p", Developer: "Dev", Names: map[string]string{"en": name, "ar": name}, Summaries: map[string]string{"en": "", "ar": ""},
+			Tags: []string{}, Price: "free", Machine: []string{}, Versions: []pluginsig.CatalogVersion{}}}}, by)
+	if err != nil {
+		k.t.Fatal(err)
+	}
+	return raw
+}
+
+// The hostile catalogs (54.14's list, through the home's loop): unsigned, signed by a key the
+// store never had, signed by a store key the root has since removed, an older version and the
+// same version with other content are each refused; the kept catalog stays the good one.
+func TestHostileCatalogsAreRefused(t *testing.T) {
+	k := newKit(t)
+	ctx := context.Background()
+	k.install("dev.example.p", "1.0.0", "")
+	k.publish()
+	_ = k.svc.Load(ctx)
+	k.svc.Tick(ctx)
+	k.cdn.files["catalog-1.json"] = k.catalogBy(k.store, 5, "good")
+	if err := k.svc.FetchCatalog(ctx); err != nil {
+		t.Fatal(err)
+	}
+	kept := func() {
+		t.Helper()
+		if c := k.svc.Catalog(); c == nil || c.Version != 5 || c.Plugins[0].Names["en"] != "good" {
+			t.Fatalf("the kept catalog changed: %+v", c)
+		}
+		if st := k.svc.State(ctx); st.CatalogVersion(1) != 5 {
+			t.Fatalf("the newest-seen catalog moved: %+v", st)
+		}
+	}
+	refused := func(what string, raw []byte, want string) {
+		t.Helper()
+		k.cdn.files["catalog-1.json"] = raw
+		err := k.svc.FetchCatalog(ctx)
+		if err == nil {
+			t.Fatalf("%s: accepted", what)
+		}
+		if code, _ := pluginsig.CodeOf(err); want != "" && code != want {
+			t.Fatalf("%s: %v", what, err)
+		}
+		kept()
+	}
+
+	var env map[string]any
+	if err := json.Unmarshal(k.catalogBy(k.store, 6, "unsigned"), &env); err != nil {
+		t.Fatal(err)
+	}
+	env["signatures"] = []any{}
+	unsigned, _ := json.Marshal(env)
+	refused("an unsigned catalog", unsigned, pluginsig.CodeSignatureInvalid)
+	refused("a catalog signed by a stranger", k.catalogBy(signer("evil"), 6, "evil"), pluginsig.CodeSignatureInvalid)
+	refused("an older catalog", k.catalogBy(k.store, 4, "old"), pluginsig.CodeCatalogRollback)
+	refused("the same version, other content", k.catalogBy(k.store, 5, "swapped"), pluginsig.CodeCatalogRollback)
+
+	// the root rotates the store's key: store-1 is gone, store-2 signs
+	s2 := signer("store-2")
+	keys, _ := pluginsig.SignEnvelope(pluginsig.KindStoreKeys, pluginsig.StoreKeysSigned{Version: 2,
+		Expires: pluginsig.FormatTime(k.now.Add(300 * 24 * time.Hour)), Keys: []pluginsig.StoreKey{{ID: s2.ID,
+			Public: s2.Public(), Use: pluginsig.UseStore, NotBefore: pluginsig.FormatTime(k.now.Add(-time.Hour)),
+			NotAfter: pluginsig.FormatTime(k.now.Add(365 * 24 * time.Hour))}}}, k.root)
+	k.cdn.files["store-keys.json"] = keys
+	refused("a catalog signed by the removed store key", k.catalogBy(k.store, 7, "removed"), pluginsig.CodeSignatureInvalid)
+	k.cdn.files["catalog-1.json"] = k.catalogBy(s2, 7, "rotated")
+	if err := k.svc.FetchCatalog(ctx); err != nil {
+		t.Fatalf("the new key's catalog: %v", err)
 	}
 }

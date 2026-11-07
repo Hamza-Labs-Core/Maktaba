@@ -15,12 +15,13 @@ import (
 // <data>/state/plugins-trust.json and in Postgres, and uses the newer of the two (Merge),
 // so restoring an old copy of either cannot lower it.
 type State struct {
-	StoreKeysVersion int64            `json:"store_keys_version"`
-	StoreKeysSHA256  string           `json:"store_keys_sha256,omitempty"`
-	RevokedVersion   int64            `json:"revoked_version"`
-	RevokedSHA256    string           `json:"revoked_sha256,omitempty"`
-	CatalogVersions  map[string]int64 `json:"catalog_versions,omitempty"`
-	NewestIssued     time.Time        `json:"newest_issued"`
+	StoreKeysVersion int64             `json:"store_keys_version"`
+	StoreKeysSHA256  string            `json:"store_keys_sha256,omitempty"`
+	RevokedVersion   int64             `json:"revoked_version"`
+	RevokedSHA256    string            `json:"revoked_sha256,omitempty"`
+	CatalogVersions  map[string]int64  `json:"catalog_versions,omitempty"`
+	CatalogSHA256s   map[string]string `json:"catalog_sha256,omitempty"`
+	NewestIssued     time.Time         `json:"newest_issued"`
 }
 
 // Now is the home's time for expiry: the newest of the clock and the newest issue time
@@ -30,6 +31,11 @@ func (s State) Now(clock time.Time) time.Time {
 		return s.NewestIssued
 	}
 	return clock
+}
+
+// CatalogSHA256 is the sha256 of the newest catalog seen for an API major ("" before one).
+func (s State) CatalogSHA256(apiMajor int64) string {
+	return s.CatalogSHA256s[strconv.FormatInt(apiMajor, 10)]
 }
 
 // CatalogVersion is the newest catalog version seen for an API major.
@@ -67,8 +73,11 @@ func (s *State) AcceptCatalog(c *Catalog) {
 		s.CatalogVersions = map[string]int64{}
 	}
 	key := strconv.FormatInt(c.APIMajor, 10)
-	if c.Version > s.CatalogVersions[key] {
-		s.CatalogVersions[key] = c.Version
+	if s.CatalogSHA256s == nil {
+		s.CatalogSHA256s = map[string]string{}
+	}
+	if c.Version >= s.CatalogVersions[key] {
+		s.CatalogVersions[key], s.CatalogSHA256s[key] = c.Version, c.SHA256
 	}
 	s.issued(c.IssuedAt)
 }
@@ -89,8 +98,13 @@ func (s *State) Merge(o State) {
 		if s.CatalogVersions == nil {
 			s.CatalogVersions = map[string]int64{}
 		}
+		if s.CatalogSHA256s == nil {
+			s.CatalogSHA256s = map[string]string{}
+		}
 		if v > s.CatalogVersions[k] {
-			s.CatalogVersions[k] = v
+			s.CatalogVersions[k], s.CatalogSHA256s[k] = v, o.CatalogSHA256s[k]
+		} else if v == s.CatalogVersions[k] && s.CatalogSHA256s[k] == "" && o.CatalogSHA256s[k] != "" {
+			s.CatalogSHA256s[k] = o.CatalogSHA256s[k]
 		}
 	}
 	s.issued(o.NewestIssued)

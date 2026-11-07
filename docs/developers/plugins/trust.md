@@ -93,6 +93,11 @@ expired list never stops a plugin: the Plugins page warns, and installs from the
 until a fresh list arrives. Applying the entries (holding a plugin, the warnings) is the
 catalog's job, described in [Publishing](publishing.md).
 
+The same holds for `store-keys.json` and the catalog: a home refuses an older version
+(`store_keys_rollback_refused`, `catalog_rollback_refused`), and also the newest version it has
+seen when its bytes differ from the copy it accepted, since the store never signs two lists with
+one version.
+
 Time on a home is the newest of its clock and the newest issue time it has seen, so a clock
 set in the past cannot make an old list look fresh.
 

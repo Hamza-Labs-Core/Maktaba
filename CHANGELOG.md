@@ -862,7 +862,8 @@ build fails when the two differ.
   Maktaba Cloud, and only while a plugin is installed or Browse was opened in the last 7 days):
   the revocation list's head every 5 minutes, the list when it changes and every hour, the
   catalog every 6 hours. Each is verified by the chain of trust and kept on disk and in
-  Postgres, the newest seen winning; an older or mismatched copy is refused and logged. A store
+  Postgres, the newest seen winning; an older or mismatched copy (or a catalog of the version already seen
+  with other bytes) is refused and logged. A store
   `disable` holds the plugin within one poll (the `revoked` gate and an Epic 51 hold), tells
   the admins, and refuses Start, enable, install, update and rollback to a covered version
   (`409 plugin_revoked`); `warn` shows a warning; `delist` changes nothing installed; a lifted
