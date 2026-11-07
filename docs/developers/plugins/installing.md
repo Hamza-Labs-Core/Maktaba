@@ -82,6 +82,17 @@ The **circuit breaker** stops a plugin that keeps failing: 5 traps, timeouts or 
 10 minutes, more than half of its last 20 jobs failing, or 50 refused API calls in 10 minutes.
 It is held, the admins get one notice, and its jobs stay queued until an admin presses Start.
 
+**Problem reports** leave your log lines out: they are your plugin's own text, and a report
+goes to whoever reads it. An admin who wants them in ticks **Include its logs in problem
+reports** on your plugin's page. Maktaba's host lines about your plugin (`plugins.host`) are
+always included.
+
+**Metrics.** The home's `/metrics` has, for each plugin: `maktaba_plugin_jobs_total{plugin,
+outcome}` (`ok`, `failed`), `maktaba_plugin_job_seconds{plugin, quantile}` (0.5 and 0.95 over
+its last 20 jobs), `maktaba_plugin_memory_peak_bytes{plugin}` (the highest of those jobs), and
+`maktaba_plugin_refusals_total{plugin, code}` and `maktaba_plugin_api_calls_total{plugin,
+route}` from the plugin API.
+
 ## What it wrote
 
 Every change your plugin makes to the library (a field, a tag, chapters, subtitles, artwork) is
@@ -118,6 +129,7 @@ All admin-only (no sign-in 401; a viewer or a cloud-linked play sign-in 403):
 | `GET /api/plugins`, `GET /api/plugins/{id}` | the plugins, one plugin's detail |
 | `POST /api/plugins/install`, `POST /api/plugins/{id}/update` | install or update from a file |
 | `PUT /api/plugins/{id}/grants` | capabilities, libraries, all libraries |
+| `PUT /api/plugins/{id}/report-logs` | `{"include": true}`: problem reports carry its log lines |
 | `POST /api/plugins/{id}/enable`, `/disable`, `/start`, `/stop` | the switches |
 | `POST /api/plugins/{id}/rollback` | to the kept version (`?clear_data=true`) |
 | `DELETE /api/plugins/{id}` | remove (`?purge=true`: and clear what it wrote) |

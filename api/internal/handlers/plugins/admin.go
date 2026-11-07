@@ -80,6 +80,7 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Delete("/api/plugins/store-account", h.storeUnlink)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
+		r.Put("/api/plugins/{id}/report-logs", h.reportLogs)
 		r.Post("/api/plugins/{id}/enable", h.switchTo(components.WantEnabled))
 		r.Post("/api/plugins/{id}/disable", h.switchTo(components.WantInstalled))
 		r.Post("/api/plugins/{id}/start", h.hold(false))
@@ -386,6 +387,28 @@ func (h *Admin) installAs(w http.ResponseWriter, r *http.Request, expect string)
 		status = http.StatusOK
 	}
 	common.WriteJSON(w, r, status, map[string]any{"result": res, "plugin": d})
+}
+
+// reportLogs is PUT /api/plugins/{id}/report-logs {include}: whether problem reports carry
+// the plugin's log lines (story 54.09 §3).
+func (h *Admin) reportLogs(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Include *bool `json:"include"`
+	}
+	if e := common.ReadJSON(r, &body, 1<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	if body.Include == nil {
+		httperror.Write(w, r, problem(http.StatusBadRequest, "plugin_invalid", "include is required"))
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := h.L.SetReportLogs(r.Context(), id, *body.Include, h.actor(r)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugin_id": id, "report_logs": *body.Include})
 }
 
 func (h *Admin) grants(w http.ResponseWriter, r *http.Request) {

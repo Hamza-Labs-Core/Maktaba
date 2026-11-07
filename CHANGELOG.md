@@ -1064,6 +1064,14 @@ build fails when the two differ.
   lists the plugins that declare panels; pages show at most three, in that order, then in
   install order. `GET`/`PUT /api/plugins/panel-order` (admin only, audited).
 
+- **Plugin job metrics, and problem reports keep plugin logs out (Epic 54, story 54.09 §3,
+  §4).** The home's `/metrics` has each plugin's `maktaba_plugin_jobs_total{plugin,outcome}`,
+  `maktaba_plugin_job_seconds{plugin,quantile}` (p50 and p95 of its last 20 jobs) and
+  `maktaba_plugin_memory_peak_bytes{plugin}`, read from its health row at each scrape. A
+  problem report leaves out a plugin's log lines unless an admin ticks **Include its logs in
+  problem reports** on the plugin's page (audited); the plugin host's own lines stay.
+  maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
