@@ -101,6 +101,11 @@ in the same process.
   them with stored goldens.
 - It uses your manifest's limits. `--limits strict` uses the store's review limits; run with
   it before you submit.
+- Your time limit counts only your plugin's work, as at home: compiling the component (the
+  first run of a new build, which for a Python plugin can take several seconds) and waiting
+  for a free slot come first and are reported apart (`compile_ms`, `wait_ms`). Compiled
+  components are kept between runs in your cache folder (`MKP_CACHE_DIR` to choose another),
+  named by the component, the Wasmtime version and its settings.
 
 The store's automated checks run your fixtures through the same harness, so keep them
 representative.
