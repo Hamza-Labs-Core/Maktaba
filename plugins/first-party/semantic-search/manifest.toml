@@ -1,0 +1,80 @@
+# tv.maktaba.semantic-search: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3
+# (story 54.30): the search index, chapters and topics, in the index runner.
+schema     = 1
+id         = "tv.maktaba.semantic-search"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.semantic-search.name"
+summary = "fp.semantic-search.summary"
+
+[trusted]
+runner    = "index"
+component = "search.semantic"
+db.read   = ["libraries", "semantic_store_state", "transcript_segments", "transcripts", "videos"]
+db.write  = ["chapters", "library_topics", "segment_embeddings", "video_embeddings", "video_topics"]
+files.read  = ["models"]
+files.write = ["data.index"]
+
+[[stage]]
+name         = "index"
+subject      = "video"
+export       = "index"
+version      = 2
+label        = "Search index"
+subject_kinds = ["video"]
+pool         = "cpu"
+lane         = "speech"
+lane_order   = 5
+placement    = "home"
+edges        = [{ to = "chapter_infer", map = "same" }]
+entry        = "maktaba_fp_semantic_search.stages.index:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "chapter_infer"
+subject      = "video"
+export       = "chapter-infer"
+version      = 1
+label        = "Chapters"
+subject_kinds = ["video"]
+pool         = "cpu"
+lane         = "speech"
+lane_order   = 6
+placement    = "home"
+edges        = [{ to = "chapter_thumbs", map = "same" }, { to = "topic_assign", map = "same" }]
+entry        = "maktaba_fp_semantic_search.stages.chapter_infer:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "topic_assign"
+subject      = "video"
+export       = "topic-assign"
+version      = 1
+label        = "Topics"
+subject_kinds = ["video"]
+pool         = "cpu"
+lane         = "speech"
+lane_order   = 8
+edges        = [{ to = "topic_recluster", map = "library_of", when = "always" }]
+entry        = "maktaba_fp_semantic_search.stages.topic_assign:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "topic_recluster"
+subject      = "library"
+export       = "topic-recluster"
+version      = 1
+label        = "Library topics"
+subject_kinds = ["library"]
+pool         = "cpu"
+lane         = "speech"
+lane_order   = 9
+debounce_sec = 1800
+debounce_max_sec = 21600
+entry        = "maktaba_fp_semantic_search.stages.topic_recluster:IMPL"
+fingerprint  = { input = true, output = false }

@@ -27,6 +27,7 @@ from __future__ import annotations
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from .settings import NO_PROB, QURAN, Word
 
@@ -222,3 +223,18 @@ def edit(
         + [Slot(s.char_start + delta, *_rest(s)) for s in slots[hit[-1] + 1 :]]
     )
     return new_text, encode(out)
+
+
+def stored_words(row: Any, meta: Any) -> list[Word] | None:
+    """A stored sentence's words: its ``word_data`` (Epic 52, story 52.1), else the
+    ``metadata.words`` of a transcript stored before it, else None."""
+    data = row["word_data"]
+    if data:
+        try:
+            return unpack(str(row["text"] or ""), bytes(data), float(row["start_sec"])) or None
+        except ValueError:
+            return None
+    words = meta.get("words") if isinstance(meta, dict) else None
+    if not words:
+        return None
+    return [Word(float(a), float(b), str(w)) for a, b, w in words]

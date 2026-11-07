@@ -19,6 +19,8 @@ from uuid import UUID
 
 import pytest
 import pytest_asyncio
+from maktaba_fp_semantic_search.stages import chapter_infer
+from maktaba_fp_semantic_search.stages import index as stage
 
 from maktaba_pipeline import grpc_server
 from maktaba_pipeline.db.jobs import Job
@@ -26,8 +28,6 @@ from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, Subject
 from maktaba_pipeline.engine.reconcile import _semantic_sweep
-from maktaba_pipeline.engine.stages import chapter_infer
-from maktaba_pipeline.engine.stages import index as stage
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.search import pgstore, semantic
 from maktaba_pipeline.search.pgstore import (

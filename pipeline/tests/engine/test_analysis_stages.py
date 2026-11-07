@@ -15,6 +15,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from maktaba_fp_semantic_search.stages import chapter_infer, topic_assign, topic_recluster
 from maktaba_fp_thumbnails.stages import chapter_thumbs
 
 from maktaba_pipeline.db.jobs import Job
@@ -24,11 +25,6 @@ from maktaba_pipeline.engine.dispatch import dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, StageDef, Subject, get_stage
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads, to_ts
-from maktaba_pipeline.engine.stages import (
-    chapter_infer,
-    topic_assign,
-    topic_recluster,
-)
 from maktaba_pipeline.engine.stages._analysis import (
     VideoEmbedding,
     load_embedding,

@@ -6,6 +6,7 @@ from collections.abc import Coroutine
 from typing import Any, Literal, cast
 
 import pytest
+from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.cluster.stages import (
     StageSelector,
@@ -15,7 +16,6 @@ from maktaba_pipeline.cluster.stages import (
 )
 from maktaba_pipeline.engine.graph import GRAPH as REAL_GRAPH
 from maktaba_pipeline.engine.graph import StageDef
-from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.stt import engine
 from maktaba_pipeline.stt.placement import TranscriptionConfig
 
