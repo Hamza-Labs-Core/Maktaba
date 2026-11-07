@@ -411,6 +411,26 @@ describe("Settings → Plugins", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("في حلقة: a/x → a/x");
   });
 
+  it("54.09 §3: problem reports leave its logs out until the admin ticks it on its page", async () => {
+    routes();
+    put.mockResolvedValue({ plugin_id: "dev.example.tagger", report_logs: true });
+    open();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    const box = await screen
+      .findByRole("switch", { name: EN["plugins.report_logs.label"] })
+      .catch(() => screen.getByRole("checkbox", { name: EN["plugins.report_logs.label"] }));
+    expect(box).not.toBeChecked();
+    expect(screen.getByText(EN["plugins.report_logs.hint"])).toBeInTheDocument();
+    await user.click(box);
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith("/api/plugins/dev.example.tagger/report-logs", {
+        include: true,
+      })
+    );
+    expect(await screen.findByText(EN["plugins.report_logs.on"])).toBeInTheDocument();
+  });
+
   it("T07: every word the page uses is in English and Arabic", () => {
     for (const k of Object.keys(EN).filter(
       (k) => k.startsWith("plugins.") || k === "settings.section.plugins"
