@@ -1,6 +1,6 @@
 # Story 54.16 — Automated checks and human review
 
-> Epic 54 · Phase 2 · Depends on: 54.03, 54.12, 54.15 · Needed by: —
+> Epic 54 · Phase 2 · Depends on: 54.03, 54.12, 54.15, 54.39 · Needed by: —
 
 ## Why
 
@@ -54,14 +54,25 @@ touch the cloud.
 | C9 | **Diff vs previous version**: new capabilities, new panels, new exports, size jump > 3×, call pattern change > 5× | — (routes to human review) |
 | C10 | Source archive present (**required for every version**, kept private to reviewers; decided 2026-11-03; missing → blocked) and builds (`mkp build` in the language's container) to a component whose sha256 matches, when the language toolchain is reproducible (Rust, TinyGo); otherwise "not reproducible" noted | — (badge only) |
 | C11 | Rating (54.08's shared function) | — |
+| C12 | **Flow check** (README §4.12, 54.39), with the SDK's TypeScript checker on 54.39's corpus: `flow.toml` present and valid; the package's manifest matches its member entry exactly; the leaf rule (no edge, request or event into a core stage or another plugin's stage); every payload schema valid; every referenced plugin and event exists in the store, or in the same submission, at a compatible version; no cycle in the flow plus everything it depends on; the longest chain within the 16-hop lineage cap | any refusal: the report names the code and the cycle path or the bad edge, in English and Arabic |
 
 Target: report ≤ 30 minutes p95 (N11). The report is shown to the developer and reviewers.
+
+**Flows are submitted with their plugins.** A developer or a publisher submits a flow
+together with the packages of the members that change in it (one upload of several
+packages); the members not in the upload must already be in the store at a version the
+flow's ranges accept. C1 to C11 run per package, C12 once for the flow, and a flow is
+approved or refused as a whole: no member of a refused flow is countersigned. The same check
+runs again on each home at install and enable (54.39 §6), because a home can combine flows
+the store never saw together, and file installs skip the store.
 
 ### 2. When a human reviews
 
 - every **first** version of a plugin;
 - any version adding a **capability**, a **panel** (panels are shown to every user of the
   home, viewers included, so a person always reviews them), or a **`plugin-data.read`**;
+- any new flow, and any flow version that adds a member, a published event or a
+  subscription;
 - any version C5, C6, C9 or C10 flagged;
 - any version of a plugin with an open malware or data-misuse report;
 - a random 5 % sample of the rest.
@@ -74,7 +85,8 @@ Other versions are approved automatically and countersigned with review level `a
 with a store account, passkey required): oldest first, first submissions before
 updates, flagged ones marked. A reviewer sees the manifest, capabilities and their stated
 reasons, the check report, the call trace (which API calls with which arguments, summarised),
-outputs on the sample set, the diff, and the source (browsable). Decisions: **approve**
+outputs on the sample set, the diff, the source (browsable), and the flow drawn as a chart
+(54.41) with the submitted plugin highlighted and its members' versions. Decisions: **approve**
 (countersign `reviewed`), **reject** (reasons from a fixed list: misleading, does not work,
 asks for more than it needs, harmful outputs, malware, policy, strings; plus notes), **ask**
 (question to the developer; the clock pauses).
@@ -121,6 +133,13 @@ alert (a Cron Trigger checks queue age and sends `store_review_backlog` by email
 - **Given** a reviewer whose last passkey check was 6 minutes ago,
   **when** they approve,
   **then** `401 reauth_required` («أكّد أنّك أنت»), and nothing is signed.
+- **Given** a flow of three plugins where A's event starts B, B's starts C and C's starts A,
+  **when** it is submitted,
+  **then** C12 refuses the whole flow with `flow_cycle` and the path through all three, in
+  English and Arabic, and no member is countersigned.
+- **Given** a flow whose member subscribes to an event of a plugin that is not in the store,
+  **when** checked,
+  **then** C12 refuses it with `flow_missing_plugin` naming the plugin and the range.
 - **Given** a plugin whose C8 run tries to open a socket or resolve a name,
   **when** the isolated runner runs it,
   **then** the attempt fails inside the sandbox and the report records it; the runner's
@@ -138,6 +157,8 @@ alert (a Cron Trigger checks queue age and sends `store_review_backlog` by email
 | T06 | role test (ts) | review routes | no one / buyer / developer / reviewer (TOTP only) / reviewer (passkey) / store admin | 401 / 403 / 403 / 403 / 200 / 200 |
 | T08 | integration | isolated runner image (Container or the CI fallback) with an escape-probe plugin | run C8 | every probe fails; zero connections at the canary; no secret in the environment |
 | T07 | CI (`store`) | timing | full pipeline on the corpus | p95 ≤ 30 min (scaled) |
+| T09 | integration (ts, Miniflare) | a three-plugin flow with a cycle, submitted as one upload | check | refused at C12 with `flow_cycle` and the three-plugin path; nothing countersigned |
+| T10 | integration (ts) | 54.39's flow corpus through C12 | check | the same code and path as the Go checker for every case |
 
 ## Edge cases
 
@@ -159,10 +180,11 @@ alert (a Cron Trigger checks queue age and sends `store_review_backlog` by email
 | `store/web/` admin pages | Review pages at `/admin`, en + ar. |
 | `docs/plugins/guidelines.md` (new) | Guidelines, en + ar. |
 | `store/checks/testdata/` | Bad-package corpus. |
+| `store/checks/flow.ts` (new) | C12 on the SDK's `flow.ts` (54.39), with the store's catalog as the source of dependencies. |
 
 ### Tests
 
-- Integration T01, T02, T04, T05, T08; unit T03; role T06; CI T07.
+- Integration T01, T02, T04, T05, T08, T09, T10; unit T03; role T06; CI T07.
 
 ### Rollout
 
@@ -176,4 +198,5 @@ runner can switch between Containers and the CI fallback by configuration.
 
 ### Dependencies
 
-54.03 (sandbox profile reused by the check runner), 54.12 (harness), 54.15 (store).
+54.03 (sandbox profile reused by the check runner), 54.12 (harness), 54.15 (store), 54.39
+(the flow format, the TypeScript checker and its corpus).

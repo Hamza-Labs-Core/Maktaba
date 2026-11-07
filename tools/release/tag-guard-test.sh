@@ -26,16 +26,20 @@ fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 # the stubbed gh: the published releases (PUBLISHED, one tag per line), the CI runs (CI_RUNS:
 # "status conclusion id" per line, default one passed run; CI_RUNS_LATER, when set, is what
 # every call after the first returns: a run that finishes while the guard waits), a CI run's
-# jobs (the file ${JOBS_DIR}/<id>: "conclusion<TAB>name" per line) and an update rehearsal
-# run (REHEARSAL: its status and conclusion, default passed)
+# jobs (the file ${JOBS_DIR}/<id>: "conclusion<TAB>name" per line), the update rehearsal's
+# runs with the commit's head_sha (REHEARSAL: "status conclusion [id event]" per line, default
+# one passed push run) and its workflow_run runs of main (REHEARSAL_MAIN: "status conclusion id
+# title" per line, default none)
 mkdir -p "${work}/stubs" "${work}/jobs"
 cat >"${work}/stubs/gh" <<'EOF'
 #!/usr/bin/env bash
 case "$1 $2" in
     "release list") printf '%s\n' "${PUBLISHED}" ;;
     "run list")
-        if [[ "$*" == *update-rehearsal* ]]; then
-            r="${REHEARSAL-completed success}"; [ -z "${r}" ] || sed 's/$/ 900/' <<<"${r}"
+        if [[ "$*" == *update-rehearsal* && "$*" == *"--event workflow_run"* ]]; then
+            [ -z "${REHEARSAL_MAIN:-}" ] || printf '%s\n' "${REHEARSAL_MAIN}"
+        elif [[ "$*" == *update-rehearsal* ]]; then
+            r="${REHEARSAL-completed success}"; [ -z "${r}" ] || awk 'NF == 2 { $0 = $0 " 900 push" } { print }' <<<"${r}"
         else
             n="$(cat "${JOBS_DIR}/.calls" 2>/dev/null || echo 0)"; echo $((n + 1)) >"${JOBS_DIR}/.calls"
             if [ "${n}" -gt 0 ] && [ -n "${CI_RUNS_LATER:-}" ]; then echo "${CI_RUNS_LATER}"; else echo "${CI_RUNS-completed success 1}"; fi
@@ -118,6 +122,17 @@ REHEARSAL="" expect_refused "a commit the update rehearsal never ran on" v0.3.2 
     "no finished run of the update rehearsal"
 REHEARSAL=$'completed failure\ncompleted success' expect_pass "a commit the update rehearsal passed on at its re-run" \
     v0.3.2 "${c3}" "" false true false
+# main's rehearsal runs after CI (a workflow_run): found by its name, never by its head_sha,
+# which is main's head when it started
+REHEARSAL="" REHEARSAL_MAIN="completed success 901 Update rehearsal of ${c3}" expect_pass \
+    "a commit main's rehearsal (after CI) passed on" v0.3.2 "${c3}" "" false true false
+REHEARSAL="completed success 902 workflow_run" REHEARSAL_MAIN="completed success 902 Update rehearsal of ${c2}" \
+    expect_refused "a workflow_run run whose head_sha is the commit but that rehearsed another" v0.3.2 "${c3}" "" \
+    "no finished run of the update rehearsal"
+REHEARSAL="" REHEARSAL_MAIN=$'completed failure 903 Update rehearsal of '"${c3}"$'\ncompleted skipped 904 Update rehearsal not run (CI cancelled)' \
+    expect_refused "a commit main's rehearsal failed on" v0.3.2 "${c3}" "" "the update rehearsal did not pass"
+REHEARSAL="" REHEARSAL_MAIN="completed success 905 Update rehearsal of ${c3}x" expect_refused \
+    "a run named after a longer sha is not the commit's" v0.3.2 "${c3}" "" "no finished run of the update rehearsal"
 
 # CI judged by its jobs: a failed run passes when its only failed jobs are the iPhone/iPad
 # Player UI shards (a tag does not wait on them, since 2026-11-02) and the ci-success rollup

@@ -4,7 +4,7 @@
 > with its OS sandbox, the plugin API with media handles, plugin stages in the queue, install
 > from a file, grants, the lifecycle, health and the circuit breaker, settings, the admin's
 > Plugins page, and `mkp` with its test harness (Rust). Plugins run on a home with Postgres, on
-> macOS and Linux (not Windows yet). Phases 2 and 3 are planned. The [plugin reference](reference.md) is generated from
+> macOS and Linux (not Windows yet). Phase 2 is being built: signing is on `main`. Phase 3 is planned. The [plugin reference](reference.md) is generated from
 > the code when this site is built, so it always matches `main`.
 
 ## What a plugin is
@@ -47,7 +47,8 @@ The design ships in phases. Each guide marks which phase a feature belongs to.
 |---|---|---|
 | 1 | Manifest and package, plugin host and sandbox, plugin API and media handles, queue stages | On `main` |
 | 1 | Lifecycle, grants and roles, health, install from a file, settings, the Plugins page, SDK and test harness | On `main` (the SDK for Rust only) |
-| 2 | Signing and trust, the Maktaba store, automated checks and review, catalog, updates and the kill switch | Planned |
+| 2 | Signing and trust | On `main` ([Signing and the chain of trust](trust.md)) |
+| 2 | The Maktaba store, automated checks and review, catalog, updates and the kill switch | Being built |
 | 3 | Paid plugins, panels in every app, local compute (embeddings and the home's language model) | Planned |
 
 Maktaba's own queue stages are also planned to move behind the same manifest, dispatch and

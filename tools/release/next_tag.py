@@ -2,13 +2,20 @@
 """Which commit the release session tags, and with which tag.
 
 The release session (a scheduled agent session, not a workflow: docs/updates.md, "How a release
-is made") runs this. It hands this script the commits on main whose ci.yml and
-update-rehearsal.yml push runs both succeeded (`--green FILE`, one SHA a line) and it prints
-(key=value lines, as for $GITHUB_OUTPUT):
+is made") runs this. It hands this script main's green runs of both workflows, as `gh run list
+--json headSha,event,displayTitle` writes them (`--ci-runs FILE --rehearsal-runs FILE`), or the
+commits both passed on (`--green FILE`, one SHA a line), and it prints (key=value lines, as for
+$GITHUB_OUTPUT):
 
     tag=vX.Y.Z      the next patch tag ('' when nothing is tagged)
     sha=<commit>    the commit it goes on
     reason=<text>   why nothing is tagged (or what is)
+
+A commit is green when a ci.yml push run passed on it and an update-rehearsal.yml run of main
+passed on it. Since 2026-11-07 main's rehearsal is a workflow_run started by CI's green push
+run, and such a run's headSha is main's head when it started, not the commit it rehearsed: it
+is named "Update rehearsal of <sha>" (REHEARSAL_TITLE), and that sha is its commit. A rehearsal
+push run (main's before 2026-11-07) counts for its headSha.
 
 The commit is the newest green one on main (first-parent order: main's own commits, newest
 first). It is tagged only when:
@@ -26,11 +33,13 @@ Run from a checkout with main and the tags fetched (`--main REF`, default origin
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 # The paths a push to main may change without a CI run or a rehearsal: ci.yml's and
 # update-rehearsal.yml's push paths-ignore and .trail.toml's [trail_only] paths, which `trail
@@ -38,6 +47,11 @@ from dataclasses import dataclass
 TRAIL_ONLY: tuple[str, ...] = ("docs/claude-trail.md", "docs/trail/**")
 
 STABLE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+
+# update-rehearsal.yml's run-name for main's run: the commit it rehearsed (a workflow_run's own
+# headSha is main's head when it started). test_next_tag.py keeps the workflow's the same.
+REHEARSAL_TITLE = "Update rehearsal of "
+_TITLED = re.compile("^" + re.escape(REHEARSAL_TITLE) + r"([0-9a-f]{40})$")
 
 
 def trail_only(path: str) -> bool:
@@ -70,6 +84,32 @@ class Decision:
     tag: str  # '' when nothing is tagged
     sha: str
     reason: str
+
+
+def rehearsed_commit(run: Mapping[str, Any]) -> str | None:
+    """The commit an update-rehearsal.yml run of main rehearsed: a workflow_run's is in its
+    name; a push run's is its headSha; any other run (a pull request's, the nightly one, a hand
+    run) is not main's."""
+    event = run.get("event")
+    if event == "workflow_run":
+        m = _TITLED.match(str(run.get("displayTitle", "")))
+        return m[1] if m else None
+    if event == "push":
+        return str(run["headSha"])
+    return None
+
+
+def green_commits(ci_runs: Iterable[Mapping[str, Any]], rehearsal_runs: Iterable[Mapping[str, Any]]) -> set[str]:
+    """The commits a passed ci.yml push run and a passed rehearsal of main share (runs as `gh
+    run list --json headSha,event,conclusion,displayTitle` gives them; a run with no conclusion
+    field counts as passed: the list is of `--status success` runs)."""
+
+    def passed(run: Mapping[str, Any]) -> bool:
+        return run.get("conclusion", "success") == "success"
+
+    ci = {str(r["headSha"]) for r in ci_runs if passed(r) and r.get("event", "push") == "push"}
+    rehearsed = {c for r in rehearsal_runs if passed(r) and (c := rehearsed_commit(r))}
+    return ci & rehearsed
 
 
 def newest_green(main_order: Sequence[str], green: Iterable[str]) -> str | None:
@@ -139,13 +179,24 @@ def git_changed(a: str, b: str) -> list[str]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--green", required=True, help="a file: the commits CI and the rehearsal both passed on")
+    ap.add_argument("--green", help="a file: the commits CI and the rehearsal both passed on")
+    ap.add_argument("--ci-runs", help="a file: ci.yml's passed push runs on main (gh run list --json)")
+    ap.add_argument("--rehearsal-runs", help="a file: update-rehearsal.yml's passed runs of main (gh run list --json)")
     ap.add_argument("--main", default="origin/main", help="main's ref (default origin/main)")
     ap.add_argument("--depth", type=int, default=200, help="how many of main's commits to look through")
     args = ap.parse_args(argv)
 
-    with open(args.green, encoding="utf-8") as f:
-        green = [line.strip() for line in f if line.strip()]
+    if args.green and not (args.ci_runs or args.rehearsal_runs):
+        with open(args.green, encoding="utf-8") as f:
+            green: Iterable[str] = [line.strip() for line in f if line.strip()]
+    elif args.ci_runs and args.rehearsal_runs and not args.green:
+        with open(args.ci_runs, encoding="utf-8") as f:
+            ci_runs = json.load(f)
+        with open(args.rehearsal_runs, encoding="utf-8") as f:
+            rehearsal_runs = json.load(f)
+        green = green_commits(ci_runs, rehearsal_runs)
+    else:
+        ap.error("give --green, or both --ci-runs and --rehearsal-runs")
     order = git("rev-list", "--first-parent", f"--max-count={args.depth}", args.main).split()
     sha = newest_green(order, green)
     if sha is None:

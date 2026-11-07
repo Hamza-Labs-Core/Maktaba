@@ -3,6 +3,7 @@
 // names), plus the reason-code wording the Machines page shares.
 import { useCallback, useMemo } from "react";
 import { useI18n } from "../../lib/i18n";
+import { dateTimeFormat, numberFormat } from "../../lib/intl";
 import type { FilesTarget } from "../../lib/clusterApi";
 
 const UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const;
@@ -94,7 +95,7 @@ export function useClusterFmt(): ClusterFmt {
   const reason = useCallback((code: string) => reasonWords(code, t), [t]);
   return useMemo(() => {
     const unit = (v: number, u: string, digits: number) =>
-      new Intl.NumberFormat(loc, {
+      numberFormat(loc, {
         style: "unit",
         unit: u,
         unitDisplay: "short",
@@ -115,14 +116,12 @@ export function useClusterFmt(): ClusterFmt {
       },
       pct: (v) =>
         ok(v)
-          ? new Intl.NumberFormat(loc, { style: "percent", maximumFractionDigits: 0 }).format(
-              v / 100
-            )
+          ? numberFormat(loc, { style: "percent", maximumFractionDigits: 0 }).format(v / 100)
           : "–",
       num: (v, digits = 1) =>
-        ok(v) ? new Intl.NumberFormat(loc, { maximumFractionDigits: digits }).format(v) : "–",
+        ok(v) ? numberFormat(loc, { maximumFractionDigits: digits }).format(v) : "–",
       time: (ms) =>
-        new Intl.DateTimeFormat(loc, {
+        dateTimeFormat(loc, {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",

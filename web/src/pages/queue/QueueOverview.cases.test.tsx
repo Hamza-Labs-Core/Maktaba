@@ -1,7 +1,7 @@
 // Cases from web/test-cases/queue-overview.md (QOV-*), rendered through the
 // shared page harness (RequireAuth + route error boundary + signed-in user).
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
+import { act, configure, getConfig, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 
@@ -122,6 +122,16 @@ function withField(path: string, mode: "null" | "missing") {
 }
 
 describe("QueueOverview (test-cases/queue-overview.md)", () => {
+  // The overview is the heaviest page in the suite (a dozen panels, each its own read):
+  // on a loaded machine its first render alone outlasted findBy's default 1 s (#697).
+  // A wait that finds its text returns at once, so only a failure waits longer.
+  let asyncUtilTimeout = 1000;
+  beforeAll(() => {
+    asyncUtilTimeout = getConfig().asyncUtilTimeout;
+    configure({ asyncUtilTimeout: 3000 });
+  });
+  afterAll(() => configure({ asyncUtilTimeout }));
+
   beforeEach(() => {
     get.mockReset();
     post.mockReset();

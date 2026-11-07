@@ -496,10 +496,24 @@ release's tag guard refuses a commit the rehearsal did not pass on.
 ## How a release is made
 
 A session pushes each tag. A scheduled release session on the owner's machine runs every 30
-minutes. It collects the commits of main whose `ci.yml` and `update-rehearsal.yml` push runs
-both succeeded, and hands them to
-[`tools/release/next_tag.py`](../tools/release/next_tag.py) (`--green FILE`, one SHA a line),
-which chooses the commit and the tag: the newest commit of main that both passed on, tagged as
+minutes. On main the update rehearsal runs after CI, on each commit CI's push run passed on
+(a `workflow_run`, since 2026-11-07, [update-rehearsal.md](update-rehearsal.md#when-it-runs)),
+so a green rehearsal is a commit both passed on. The session lists main's passed runs of
+both workflows and hands them to
+[`tools/release/next_tag.py`](../tools/release/next_tag.py):
+
+```sh
+gh run list --branch main --workflow ci.yml --event push --status success --limit 300 \
+  --json headSha,event,conclusion,displayTitle >ci.json
+gh run list --workflow update-rehearsal.yml --event workflow_run --status success --limit 300 \
+  --json headSha,event,conclusion,displayTitle >rehearsal.json
+python3 tools/release/next_tag.py --ci-runs ci.json --rehearsal-runs rehearsal.json
+```
+
+A rehearsal run of main is named `Update rehearsal of <sha>`, after the commit it rehearsed:
+its own `headSha` is main's head at the moment it started, so `next_tag.py` reads the commit
+from the name. (`--green FILE`, one SHA a line, still takes the commits directly.) It
+chooses the commit and the tag: the newest commit of main that both passed on, tagged as
 the next patch version (the highest `vX.Y.Z` plus one). The session pushes it as an annotated
 tag whose message is its name. A commit is not tagged when:
 
