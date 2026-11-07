@@ -25,6 +25,8 @@ class MaktabaTVApp : Application() {
         super.onCreate()
         CrashLog.install(this) // an uncaught exception is kept on the device, without anything personal
         AppLog.install(this, tv = true) // its log lines too, in the shared shape (Epic 53 story 53.01)
+        // what crashed since the last start (and, on Android 11+, its ANRs and native crashes) is kept (53.14)
+        com.hamzalabs.maktaba.core.diagnostics.CrashReports.collect(this)
         ClientHeader.init(this) // X-Maktaba-Client names this app (Epic 44)
     }
 

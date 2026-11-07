@@ -794,6 +794,17 @@ build fails when the two differ.
   store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
   adding a provider).
 
+- **The Android apps send crash reports to the home, report problems, and the Remote reads the
+  home's diagnostics.** Maktaba Remote for Android has **Diagnostics** in its account menu:
+  Errors (a group's chart and lines, Mark seen, Resolve and Mute), Logs (search, and Follow a
+  request from a reference), Dashboards (Overview and Storage) and the problem-report inbox
+  (status and reply). The Player, the Remote and the Android TV app ask once after signing in
+  whether to **send crash reports** to the home, off until the person says yes. When on, the
+  last crash and, on Android 11 and later, an ANR (with its trace), a native crash or a
+  low-memory kill go to the home at the next start as scrubbed envelopes with the app's log.
+  **Report a problem** (the account menu, the TV's Account, and **Report this** on error
+  screens) shows what it sends first; **My reports** shows the admin's reply.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
