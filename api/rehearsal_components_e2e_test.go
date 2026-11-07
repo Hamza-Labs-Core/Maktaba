@@ -234,7 +234,7 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	cat := components.Default()
 	var waitLoops []string
 	for _, c := range cat.Components() {
-		if !c.Switchable || strings.Fields(compBefore[c.ID]+" ")[0] != components.WantEnabled {
+		if !c.Switchable || strings.Fields(compBefore[c.ID] + " ")[0] != components.WantEnabled {
 			continue
 		}
 		for _, l := range c.Loops {
