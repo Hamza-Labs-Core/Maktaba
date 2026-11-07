@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.perf.ci_subset import Budget, ci_pr_budgets
+from perf.ci_subset import Budget, ci_pr_budgets
 
 _VALID_SURFACES = {"rest", "graphql", "ws", "hls"}
 _VALID_CACHE = {"warm", "cold"}

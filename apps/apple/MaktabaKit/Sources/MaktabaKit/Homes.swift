@@ -168,6 +168,14 @@ public final class AppSession {
     public private(set) var cloudUser: CloudUser?
     /// The homes that account reaches, as the cloud last said.
     public private(set) var cloudHomes: [CloudHome] = []
+    /// When `cloudHomes` is the saved list because Maktaba Cloud can't be reached (story 50.13):
+    /// the time it was saved. nil: the list is the cloud's answer.
+    public private(set) var cloudHomesSavedAt: Date?
+    /// The saved list is over 30 days old: some addresses may have changed.
+    public var cloudHomesOld: Bool { cloudHomesSavedAt.map { Date.now.timeIntervalSince($0) > SavedCloudHomes.oldAfter } ?? false }
+    /// Shown from the saved list after a sign-in the cloud couldn't answer: picking a home
+    /// goes to its own sign-in (no assertion can be had).
+    public private(set) var cloudOffline = false
     /// The "Through Maktaba Cloud" sheet is up (the home picker opens it; it stays up while
     /// the chosen home is reached and signed in to).
     public var choosingThroughCloud = false
@@ -638,29 +646,56 @@ public final class AppSession {
     /// Signs in to Maktaba Cloud and lists the homes the account reaches.
     public func cloudSignIn(email: String, password: String) async throws {
         let client = cloud
-        let user = try await client.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+        let user: CloudUser
+        do {
+            user = try await client.signIn(email: email.trimmingCharacters(in: .whitespacesAndNewlines), password: password)
+        } catch let e as CloudError where e.isOutage {
+            // story 50.13: the cloud can't be reached; this account's saved list, if there is one
+            guard client === cloud, let saved = SavedCloudHomes.load(email: email, from: defaults) else { throw e }
+            cloudUser = CloudUser(id: saved.user.id, email: saved.user.email)
+            cloudHomes = saved.homes
+            cloudHomesSavedAt = saved.savedAt
+            cloudOffline = true
+            return
+        }
         guard client === cloud else { return }
         cloudUser = user
         cloudHomes = []
+        cloudHomesSavedAt = nil
+        cloudOffline = false
         try await loadCloudHomes()
     }
 
-    /// Asks the cloud for its homes again. Not signed in any more: signed out here too.
+    /// Asks the cloud for its homes again, and keeps the answer (story 50.13). Not signed in
+    /// any more: signed out here too. The cloud unreachable: the saved list, marked with its
+    /// time.
     public func loadCloudHomes() async throws {
         do {
-            cloudHomes = try await cloud.homes()
+            let list = try await cloud.homes()
+            cloudHomes = list
+            cloudHomesSavedAt = nil
+            cloudOffline = false
+            if let user = cloudUser { SavedCloudHomes.save(list, for: user, in: defaults) }
         } catch CloudError.signedOut {
             cloudSignOut()
             throw CloudError.signedOut
+        } catch let e as CloudError where e.isOutage {
+            guard let user = cloudUser, let saved = SavedCloudHomes.load(email: user.email, from: defaults) else { throw e }
+            cloudHomes = saved.homes
+            cloudHomesSavedAt = saved.savedAt
         }
     }
 
-    /// Forgets the cloud's token (every home's own sign-in stays).
-    public func cloudSignOut() {
+    /// Forgets the cloud's token (every home's own sign-in stays). `forgetSaved`: the person
+    /// signed out, so the saved home list goes too (story 50.13); a sign-in that ended keeps it.
+    public func cloudSignOut(forgetSaved: Bool = false) {
         let client = cloud
         Task { await client.signOut() }
         cloudUser = nil
         cloudHomes = []
+        cloudHomesSavedAt = nil
+        cloudOffline = false
+        if forgetSaved { SavedCloudHomes.forgetAll(in: defaults) }
     }
 
     /// Picks a home from the cloud's list and signs in to it with a new assertion: at the
@@ -691,6 +726,8 @@ public final class AppSession {
             signedIn(me)
             return
         }
+        // the cloud can't vouch now (story 50.13): the home's own sign-in is showing
+        if cloudOffline { throw CloudError.cloudDown }
         try await signInWithAssertion(serverID: home.serverID, client: client)
     }
 
@@ -719,6 +756,9 @@ public final class AppSession {
         } catch CloudError.signedOut {
             cloudSignOut()
             throw CloudError.signedOut
+        } catch let e as CloudError where e.isOutage {
+            // story 50.13: no assertion while the cloud is down; the home signs in on its own
+            throw CloudError.cloudDown
         }
         // the person moved on to another home meanwhile
         guard self.client?.home == client.home else { return }

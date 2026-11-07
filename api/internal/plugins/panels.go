@@ -272,6 +272,10 @@ func (h *Panels) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	_ = rows.Close()
+	// the admin's order (54.20 §1), then install order
+	if order, err := LoadPanelOrder(ctx, h.L.DB); err == nil {
+		ids = orderBy(ids, order)
+	}
 	var fileChanged *time.Time
 	if kind == "video" {
 		var mt sql.NullTime

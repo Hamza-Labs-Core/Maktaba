@@ -53,6 +53,8 @@ export function kindOfStatus(status: number, slug = "", code = ""): AppErrorKind
   if (UNREACHABLE_SLUGS.has(slug)) return "unreachable";
   if (status === 409 && code === "component_off") return "off";
   if (status === 503 && code === "home_unreachable") return "unreachable";
+  // the relay's hold and retries ran out: the home is offline for now (Epic 50 story 50.13)
+  if (status === 503 && code === "home_reconnecting") return "unreachable";
   if (status === 504 && code === "home_timeout") return "unreachable";
   if (status === 401) return "signedOut";
   if (status === 403) return "noAccess";
@@ -81,7 +83,13 @@ export function isNoAnswer(e: unknown): e is TypeError {
 export function classifyError(e: unknown): ClassifiedError {
   if (e instanceof ApiError) {
     const slug = problemSlug(e.problem.type);
-    const kind = kindOfStatus(e.status, slug, e.problem.code ?? "");
+    // the relay names its reason in `error` ({"error": "home_reconnecting"}), the home in `code`
+    const relayReason = (e.problem as { error?: unknown }).error;
+    const kind = kindOfStatus(
+      e.status,
+      slug,
+      e.problem.code ?? (typeof relayReason === "string" ? relayReason : "")
+    );
     return {
       kind,
       status: e.status,

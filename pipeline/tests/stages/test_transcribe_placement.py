@@ -16,14 +16,14 @@ from typing import Any
 
 import numpy as np
 import pytest
+from maktaba_fp_transcription.stages import second_listen as sl
+from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.cluster.stages import StageSelector, refresh_stages
 from maktaba_pipeline.engine.context import StageFailure
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, Subject
 from maktaba_pipeline.engine.sql import dumps, now, parse_ts, to_ts
-from maktaba_pipeline.engine.stages import second_listen as sl
-from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import cohere, engine, model_share
 from maktaba_pipeline.stt.batched import Sentence, Transcript

@@ -81,10 +81,15 @@ def role_sql(m: dict[str, object]) -> str:
     ]
     if reads:
         lines.append(f"    FOREACH t IN ARRAY ARRAY[{', '.join(repr(x) for x in reads)}] LOOP")
+        lines.append(
+            "        -- a table made later (segment_embeddings, with pgvector) is granted then"
+        )
+        lines.append("        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;")
         lines.append(f"        EXECUTE format('GRANT SELECT ON %I TO {role}', t);")
         lines.append("    END LOOP;")
     if writes:
         lines.append(f"    FOREACH t IN ARRAY ARRAY[{', '.join(repr(x) for x in writes)}] LOOP")
+        lines.append("        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;")
         lines.append(
             f"        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO {role}', t);"
         )

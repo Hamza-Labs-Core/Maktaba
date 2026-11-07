@@ -13,12 +13,12 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.components import packs as component_packs
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, Subject
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads
-from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.engine.stages import word_check as wc
 from maktaba_pipeline.language_packs import registry
 from maktaba_pipeline.language_packs.ar import morphology
@@ -456,9 +456,8 @@ async def test_vocabulary_does_not_change_the_transcribe_fingerprint(db: Databas
 
 @pytest.mark.asyncio
 async def test_a_fix_s_revision_moves_the_subtitles_and_the_index(db: Database) -> None:
+    from maktaba_fp_semantic_search.stages import index
     from maktaba_fp_subtitles.stages import subtitle_gen
-
-    from maktaba_pipeline.engine.stages import index
 
     vid, tid, _ = await _transcript(db, [("قال الشيخ", None, None)])
     subs = await subtitle_gen.input_fingerprint(db, Subject("video", vid))

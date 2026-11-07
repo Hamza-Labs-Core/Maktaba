@@ -235,3 +235,55 @@ func TestCheckPanels(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Story 54.20 §1: pages show panels in the admin's order, then install order; the order is
+// audited and refuses a plugin named twice.
+func TestPanelOrder(t *testing.T) {
+	f := newPanelFixture(t)
+	tok := f.mint(t).Token
+	f.put(t, tok, "summary", `"From the first."`)
+	// a second plugin with a panel on videos, installed later, with data for the video
+	const second = "dev.example.second"
+	f.exec(t, `INSERT INTO plugin_installs (plugin_id, version, digest, path, manifest, installed_at)
+		SELECT $1, version, 'panels-2', path, manifest, installed_at + interval '1 minute' FROM plugin_installs WHERE plugin_id = $2`,
+		second, testPlugin)
+	f.exec(t, `INSERT INTO plugin_data (plugin_id, subject_kind, subject_id, key, value, bytes) VALUES ($1, 'video', $2, 'summary', '"From the second."', 18)`,
+		second, f.videoA)
+	f.on[second] = true
+	ids := func() []string {
+		var out []string
+		for _, p := range f.panels(t, adminP, "en") {
+			out = append(out, p.PluginID)
+		}
+		return out
+	}
+	if got := ids(); len(got) != 2 || got[0] != testPlugin {
+		t.Fatalf("install order: %v", got)
+	}
+	l := f.h.L
+	if _, err := l.SetPanelOrder(context.Background(), []string{second, testPlugin}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if got := ids(); got[0] != second || got[1] != testPlugin {
+		t.Fatalf("the admin's order: %v", got)
+	}
+	list, order, err := l.PanelPlugins(context.Background())
+	if err != nil || len(list) != 2 || list[0].ID != second || len(order) != 2 || list[0].On[0] != "video" {
+		t.Fatalf("panel plugins %+v %v %v", list, order, err)
+	}
+	if _, err := l.SetPanelOrder(context.Background(), []string{second, second}, admin); err == nil {
+		t.Fatal("a plugin named twice")
+	}
+	var n int
+	_ = f.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'plugin.panel_order'`).Scan(&n)
+	if n != 1 {
+		t.Fatalf("audit rows %d", n)
+	}
+}
+
+func TestOrderBy(t *testing.T) {
+	got := orderBy([]string{"a", "b", "c", "d"}, []string{"c", "gone", "a"})
+	if want := "c,a,b,d"; strings.Join(got, ",") != want {
+		t.Fatalf("%v, want %s", got, want)
+	}
+}

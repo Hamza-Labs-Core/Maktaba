@@ -250,12 +250,17 @@ async def _native_impl(db: Any, name: str, inproc: Any) -> Any:
 
     choice = await native.choose(db, name)
     if choice.impl != "plugin":
+        if choice.why:
+            native.note_fallback(name, choice.why)
         return None
 
     async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         try:
             return await native.run_native(db, job, ctx)
         except (native.Unregistered, native.SandboxRefused) as exc:
+            native.note_fallback(
+                name, "unregistered" if isinstance(exc, native.Unregistered) else "sandbox_refused"
+            )
             if isinstance(exc, native.Unregistered):
                 _log.error(
                     "plugin_statement_unregistered", job_id=job.id, stage=name, error=str(exc)

@@ -146,7 +146,7 @@ packages = ["src/maktaba_pipeline", "src/maktaba_plugin_runner"]
 path = "hatch_build.py"
 
 [tool.hatch.build]
-dev-mode-dirs = ["src", "../plugins/sdk/python", "../plugins/first-party/classify/src", "../plugins/first-party/thumbnails/src", "../plugins/first-party/subtitles/src"]
+dev-mode-dirs = ["src", "../plugins/sdk/python", "../plugins/first-party/classify/src", "../plugins/first-party/thumbnails/src", "../plugins/first-party/subtitles/src", "../plugins/first-party/transcription/src", "../plugins/first-party/semantic-search/src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -176,7 +176,7 @@ select = ["E", "F", "I", "B", "UP", "SIM", "T20"]
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src/maktaba_pipeline", "src/maktaba_plugin_runner", "../plugins/sdk/python/maktaba_plugin_sdk", "../plugins/first-party/classify/src", "../plugins/first-party/thumbnails/src", "../plugins/first-party/subtitles/src", "tests"]
+files = ["src/maktaba_pipeline", "src/maktaba_plugin_runner", "../plugins/sdk/python/maktaba_plugin_sdk", "../plugins/first-party/classify/src", "../plugins/first-party/thumbnails/src", "../plugins/first-party/subtitles/src", "../plugins/first-party/transcription/src", "../plugins/first-party/semantic-search/src", "tests"]
 # The shared test-tier plugin lives outside this package's source
 # tree (Story 20.1 — common across future Python services). Point
 # mypy at it so `import maktaba_testtier` resolves the same way it

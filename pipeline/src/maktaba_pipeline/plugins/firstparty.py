@@ -155,6 +155,30 @@ def impl_entry(name: str) -> str | None:
     return str(p.stages[name].get("entry") or "") or None
 
 
+#: the groups with one runner per transcription slot (``ml-<n>`` beside ``pipeline/stt-<n>``)
+SLOTTED_GROUPS = frozenset({"ml"})
+
+
+def group_of_instance(instance: str) -> str:
+    """The group a runner instance serves: ``ml-3`` is the ``ml`` group's third."""
+    base, _, n = instance.rpartition("-")
+    return base if base in SLOTTED_GROUPS and n.isdigit() else instance
+
+
+def runner_instance(name: str) -> str | None:
+    """The runner this worker asks for a stage: its group's, and for a group with one runner
+    per transcription slot, the one paired with this worker's ``MAKTABA_STT_SLOT``
+    (``stt-3`` -> ``ml-3``; a worker with no slot, the main one, asks ``ml``)."""
+    import os
+
+    group = runner_group(name)
+    if group not in SLOTTED_GROUPS:
+        return group
+    slot = os.environ.get("MAKTABA_STT_SLOT", "")
+    n = slot.removeprefix("stt-")
+    return f"{group}-{n}" if slot.startswith("stt-") and n.isdigit() else group
+
+
 def runner_group(name: str) -> str | None:
     """The runner group a first-party stage runs in: the stage's own ``runner``, else its
     plugin's ``[trusted] runner`` (``own`` is a group named after the plugin)."""

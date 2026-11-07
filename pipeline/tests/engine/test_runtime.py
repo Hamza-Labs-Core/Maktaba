@@ -100,7 +100,8 @@ def test_explicit_stage_list_and_version_ahead() -> None:
 
 
 def test_a_stage_this_worker_cannot_run_is_never_claimed(monkeypatch: pytest.MonkeyPatch) -> None:
-    from maktaba_pipeline.engine.stages import index, transcribe
+    from maktaba_fp_semantic_search.stages import index
+    from maktaba_fp_transcription.stages import transcribe
 
     monkeypatch.setattr(transcribe, "unavailable", lambda: "MLX-Whisper needs Apple Silicon")
     monkeypatch.setattr(
@@ -129,7 +130,7 @@ def test_the_transcribe_stage_imports_without_numpy() -> None:
 
     code = (
         "import sys; sys.modules['numpy'] = None; sys.modules['mlx'] = None\n"
-        "from maktaba_pipeline.engine.stages import transcribe as t\n"
+        "from maktaba_fp_transcription.stages import transcribe as t\n"
         "assert t.IMPL.input_fingerprint is not None\n"
         "assert t.settings_from_env().language == 'ar'\n"
     )

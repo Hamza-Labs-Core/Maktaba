@@ -12,12 +12,12 @@ from typing import Any
 
 import numpy as np
 import pytest
+from maktaba_fp_transcription.stages import second_listen as sl
+from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, Subject
 from maktaba_pipeline.engine.sql import now, to_ts
-from maktaba_pipeline.engine.stages import second_listen as sl
-from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import gpu_turns, model_share
 from maktaba_pipeline.stt.batched import Sentence, Transcript

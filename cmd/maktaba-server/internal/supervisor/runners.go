@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -33,6 +34,13 @@ const PluginRunnersComponent = "core.plugin_runners"
 
 // RunnerGroups are core.plugin_runners' instances (the catalog's processes).
 var RunnerGroups = []string{"light", "net", "service", "fp"}
+
+// The runner groups of their own components (story 54.30): ml, one per transcription
+// worker (transcription's plugin-runner/ml-*), and index (search.semantic's).
+const (
+	GroupML    = "ml"
+	GroupIndex = "index"
+)
 
 // The runner's exit codes that are not a crash (maktaba_plugin_runner/__main__.py).
 const (
@@ -101,6 +109,10 @@ func RunnerEnv(cfg config.Config, base []string) []string {
 	out = setEnv(out, EnvPluginAPISocket, PluginsPaths(cfg).API)
 	out = setEnv(out, "MAKTABA_DATA_DIR", cfg.Server.DataDir)
 	out = setEnv(out, "MAKTABA_RUNNER_AREAS", string(areas))
+	// a runner has no network for a model (its sandbox refuses it): it loads what the
+	// cache has, and a stage whose model is missing runs in the worker, which fetches it
+	out = setEnv(out, "HF_HUB_OFFLINE", "1")
+	out = setEnv(out, "TRANSFORMERS_OFFLINE", "1")
 	return out
 }
 
@@ -135,16 +147,13 @@ func BuildPluginRunners(opts Options) ([]Process, error) {
 	dir := RunnerDir(opts.Config)
 	api := PluginsPaths(opts.Config).API
 	var out []Process
-	for _, g := range sharedplugins.FirstPartyGroups() {
-		if !containsString(RunnerGroups, g) {
-			continue // ml-* and index belong to their own components (wave 3)
-		}
-		sock := filepath.Join(dir, "runner-"+g+".sock")
-		cmd := exec.Command(pythonFor(opts), "-m", "maktaba_plugin_runner", "--group", g, "--api-socket", api, "--run-dir", dir)
+	runner := func(instance string, env []string, dormant bool) Process {
+		sock := filepath.Join(dir, "runner-"+instance+".sock")
+		cmd := exec.Command(pythonFor(opts), "-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", dir)
 		cmd.Env = env
 		wire(cmd)
-		out = append(out, Process{
-			Role: RolePluginRunner, Instance: g, Cmd: cmd, Dormant: true,
+		return Process{
+			Role: RolePluginRunner, Instance: instance, Cmd: cmd, Dormant: dormant,
 			Probe: "unix:" + sock, ProbeTimeout: PythonProbeTimeout,
 			Check: func(ctx context.Context) error { return askRunnerHello(ctx, sock) },
 			BeforeStart: func() {
@@ -152,7 +161,33 @@ func BuildPluginRunners(opts Options) ([]Process, error) {
 			},
 			FatalExits: map[int]string{RunnerSandboxExit: ReasonSandboxUnavailable,
 				RunnerUntrustedExit: ReasonTrustedUnsigned, RunnerEnvExit: ReasonRunnerEnv},
-		})
+		}
+	}
+	for _, g := range sharedplugins.FirstPartyGroups() {
+		switch {
+		case containsString(RunnerGroups, g):
+			// the shared groups: core.plugin_runners, started while a component they serve
+			// is on (dormant until then)
+			out = append(out, runner(g, env, true))
+		case g == GroupML:
+			// wave 3 (story 54.30): one ml runner beside each transcription worker, with its
+			// knobs and its slot (the worker pipeline/stt-<i> asks ml-<i>); with none, the
+			// main worker transcribes and asks ml. The transcription component's processes.
+			plan := PlanFor(opts)
+			if plan.Workers <= 0 {
+				out = append(out, runner(GroupML, append(append([]string{}, env...), plan.knobEnv()...), false))
+				continue
+			}
+			for i := 1; i <= plan.Workers && i <= MaxPipelineInstances; i++ {
+				e := append(append([]string{}, env...), plan.knobEnv()...)
+				e = setEnv(e, "MAKTABA_STT_SLOT", "stt-"+strconv.Itoa(i))
+				out = append(out, runner(GroupML+"-"+strconv.Itoa(i), e, false))
+			}
+		case g == GroupIndex:
+			// the search index's stages (search.semantic's process beside pipeline/index,
+			// which keeps the query server)
+			out = append(out, runner(GroupIndex, env, false))
+		}
 	}
 	return out, nil
 }

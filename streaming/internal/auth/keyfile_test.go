@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -83,10 +84,16 @@ func TestARequestWaitsForTheReadUnderWay(t *testing.T) {
 	kid := writeStreamKey(t, path)
 	release := make(chan struct{})
 	started := make(chan struct{})
+	var reads atomic.Int32
 	c := &JWKSCache{keys: map[string]*rsa.PublicKey{}}
 	c.reload = func() bool {
-		close(started)
+		if reads.Add(1) == 1 {
+			close(started)
+		}
 		<-release
+		// a read slower than reloadEvery (a loaded runner parsing the RSA key took that long,
+		// issue #681): the request that waited for it must use it, not read again
+		time.Sleep(reloadEvery + 50*time.Millisecond)
 		k, pub, err := ReadKeyFile(path)
 		if err != nil {
 			return false
@@ -103,6 +110,9 @@ func TestARequestWaitsForTheReadUnderWay(t *testing.T) {
 	close(release)
 	if <-first == nil || <-second == nil {
 		t.Fatal("a request during the read was refused")
+	}
+	if n := reads.Load(); n != 1 {
+		t.Fatalf("%d reads: the waiting request read again instead of using the read it waited for", n)
 	}
 }
 

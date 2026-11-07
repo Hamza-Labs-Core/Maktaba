@@ -46,7 +46,7 @@ def members(group: str) -> dict[str, tuple[str, str]]:
             if (
                 group == "fp"
                 and (fp.get("input") or fp.get("output"))
-                or firstparty.runner_group(name) == group
+                or firstparty.runner_group(name) == firstparty.group_of_instance(group)
             ):  # noqa: E501
                 out[name] = (entry, p.id)
     return out

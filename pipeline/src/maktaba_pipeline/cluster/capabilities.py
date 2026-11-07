@@ -133,9 +133,9 @@ def second_listen_sharing(backend: str | None) -> str | None:
     if backend != STT_CT2_CUDA:
         return None
     try:
-        from ..engine.stages.transcribe import refine_model, settings_from_env
         from ..stt import cohere_cuda
         from ..stt.cohere import DEFAULT_MODEL
+        from ..stt.env import refine_model, settings_from_env
 
         settings = settings_from_env()
         if cohere_cuda.problem(settings.device) is not None:

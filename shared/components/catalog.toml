@@ -248,6 +248,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "transcription"
+plugin    = "tv.maktaba.transcription"
 kind      = "stages+process"
 group     = "processing"
 title_key = "components.transcription.title"
@@ -255,7 +256,9 @@ desc_key  = "components.transcription.desc"
 # refine and word merge run inside transcribe; the second listen (Cohere, the wanted
 # model) is a stage of its own since slot 0174
 stages    = ["extract", "transcribe", "second_listen"]
-processes = ["pipeline/stt-*"]
+# each transcription worker claims the GPU stages and runs them in its own ml runner (Epic 54
+# wave 3: the model is in the runner); the legacy extract stays in the worker for now
+processes = ["pipeline/stt-*", "plugin-runner/ml", "plugin-runner/ml-*"]
 requires  = ["runtime.ml", "any:model.whisper-turbo|model.whisper-large-v3|model.whisper-medium"]
 wants     = ["model.cohere-arabic"]
 settings  = ["rules.transcription", "toml:transcription.workers"]
@@ -299,12 +302,14 @@ since     = "0.3.86"
 
 [[component]]
 id        = "search.semantic"
+plugin    = "tv.maktaba.semantic-search"
 kind      = "stages+process"
 group     = "processing"
 title_key = "components.search.semantic.title"
 desc_key  = "components.search.semantic.desc"
 stages    = ["index", "chapter_infer", "topic_assign", "topic_recluster"]
-processes = ["pipeline/index"]
+# pipeline/index keeps the query server; the index's stages run in plugin-runner/index
+processes = ["pipeline/index", "plugin-runner/index"]
 requires  = ["runtime.ml", "model.embedder"]
 settings  = ["toml:pipeline.index_worker"]
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]

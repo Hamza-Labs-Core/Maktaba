@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -78,7 +79,9 @@ func makeClip(t *testing.T, path string, withAudio bool, secs int) {
 
 func probeStartTime(t *testing.T, path string) (float64, int) {
 	t.Helper()
-	out, err := exec.Command("ffprobe", "-v", "error", "-show_entries", "format=start_time,nb_streams",
+	// the raw timestamps: ffprobe's own wrap correction would show a segment that starts within
+	// 60 s before the 33-bit wrap 2^33 earlier, as a negative time (issue #790)
+	out, err := exec.Command("ffprobe", "-v", "error", "-correct_ts_overflow", "0", "-show_entries", "format=start_time,nb_streams",
 		"-of", "default=nw=1", path).Output()
 	if err != nil {
 		return -1, 0
@@ -490,10 +493,11 @@ func TestStation_RealFFmpeg_MuxerRestart(t *testing.T) {
 		t.Fatalf("restarted playlist: %s", pl)
 	}
 	stNew, _ := probeStartTime(t, filepath.Join(dir, names[len(names)-2]))
-	// story 33.4: the timestamps are the wall clock's (modulo the 33-bit wrap)
+	// story 33.4: the timestamps are the wall clock's (modulo the 33-bit wrap: compared
+	// across it, issue #790)
 	elapsed := float64(WallTicks(time.Now())%PTSWrapTicks) / 90000
-	if stNew < elapsed-8 || stNew > elapsed+5 {
-		t.Errorf("after restart pts=%.2f but %.2fs of channel time elapsed", stNew, elapsed)
+	if d := wrapDelta(stNew, elapsed); d < -8 || d > 5 {
+		t.Errorf("after restart pts=%.2f but %.2fs of channel time elapsed (%.2fs apart)", stNew, elapsed, d)
 	}
 	logs, _ := os.ReadFile(filepath.Join(dir, "mux.log"))
 	if !strings.Contains(string(logs), "muxer restart") {
@@ -561,4 +565,90 @@ func abs(v float64) float64 {
 		return -v
 	}
 	return v
+}
+
+// wrapDelta is a-b in seconds across the 33-bit wrap: the difference folded into
+// (-wrap/2, wrap/2], so a timestamp just past a wrap and one just before it are close.
+func wrapDelta(a, b float64) float64 {
+	wrap := float64(PTSWrapTicks) / 90000
+	d := math.Mod(a-b, wrap)
+	if d > wrap/2 {
+		d -= wrap
+	} else if d <= -wrap/2 {
+		d += wrap
+	}
+	return d
+}
+
+// Issue #790: a station whose muxer starts, and restarts, in the minute before the 33-bit
+// PTS wrap keeps the wall clock's timestamps, and carries them across the wrap. A fake
+// clock (ptsShiftTicks, the deliberately misbuilt binary's timestamp shift) puts every
+// timestamp the station stamps 30 s before a wrap, a whole number of IDR intervals away
+// from the real clock, so the grid stays. Before the fix the muxer's demuxer, seeing its
+// first timestamp within 60 s of the wrap, took 2^33 off and the output ran 30-40 s ahead.
+func TestStation_RealFFmpeg_AtTheWrap(t *testing.T) {
+	needFFmpeg(t)
+	const lead = 30
+	now := time.Now()
+	shift := (PTSWrapTicks - lead*90000 - WallTicks(now)%PTSWrapTicks) % PTSWrapTicks
+	if shift < 0 {
+		shift += PTSWrapTicks
+	}
+	shift -= shift % (2 * 90000)
+	was := ptsShiftTicks
+	ptsShiftTicks = shift
+	t.Cleanup(func() { ptsShiftTicks = was })
+	expected := func() float64 { return float64((WallTicks(time.Now())+shift)%PTSWrapTicks) / 90000 }
+
+	tmp := t.TempDir()
+	clip := filepath.Join(tmp, "clip.mp4")
+	makeClip(t, clip, true, 60)
+	repo := &syncRepo{blocks: []ProgramBlock{{Seq: 1, Kind: KindProgram, VideoID: uuid.New(), Path: clip,
+		StartAt: now, EndAt: now.Add(60 * time.Second), SourceDurationMS: 60_000}}}
+	prof := OutputProfile{Width: 320, Height: 180, FPS: 30, VideoKbps: 400, Encoder: EncoderSoftware,
+		SegmentSeconds: 2, HLSListSize: 6}
+	dir := filepath.Join(tmp, "hls")
+	st, err := StartStation(StationConfig{FFmpeg: "ffmpeg", Profile: prof, Repo: repo, Prober: NewFFprobe("ffprobe"),
+		Resolver: NewYtDlp(""), Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))},
+		uuid.New(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { st.Stop(); <-st.Done() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := st.WaitReady(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// a finished segment (the newest but one) starts a few seconds before now, on the
+	// station's clock, whichever side of the wrap that is
+	check := func(when string) {
+		t.Helper()
+		pl, _ := readShared(filepath.Join(dir, "index.m3u8"))
+		names, _ := parsePlaylist(string(pl))
+		if len(names) < 2 {
+			t.Fatalf("%s: playlist %s", when, pl)
+		}
+		got, _ := probeStartTime(t, filepath.Join(dir, names[len(names)-2]))
+		want := expected()
+		if d := wrapDelta(got, want); d < -10 || d > 3 {
+			t.Errorf("%s: a segment starts at %.2f but the station's clock says %.2f (%.2fs apart)", when, got, want, d)
+		} else {
+			t.Logf("%s: segment at %.2f, clock %.2f", when, got, want)
+		}
+	}
+	time.Sleep(6 * time.Second)
+	check("started 30 s before the wrap")
+
+	// the muxer dies and restarts, still before the wrap
+	st.muxMu.Lock()
+	_ = st.mux.cmd.Process.Kill()
+	st.muxMu.Unlock()
+	waitForT(t, 5*time.Second, func() bool { return st.MuxerRestarts() == 1 && st.PID() != 0 })
+	time.Sleep(6 * time.Second)
+	check("restarted before the wrap")
+
+	// past the wrap, from the restarted muxer
+	time.Sleep(time.Duration(lead)*time.Second - time.Since(now) + 8*time.Second)
+	check("past the wrap")
 }

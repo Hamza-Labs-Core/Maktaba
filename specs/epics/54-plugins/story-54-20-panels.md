@@ -89,8 +89,8 @@ override characters) and asserts plain text, truncation and no network request.
   panel uses: `plugin_text_forbidden`, `plugin_invalid` or `plugin_too_large`.
 - `GET /api/panels?subject=<kind>:<id>&lang=` answers `{panels: [{plugin_id, plugin, title,
   blocks: [{type, label, columns, value, image}]}]}`: the plugin's words in the user's
-  language (English when missing), plugins in install order (an admin order is not built yet),
-  at most 3. The subject's library decides access (404 for a subject the user cannot see).
+  language (English when missing), plugins in the admin's order (`plugins.panel_order`, set in
+  Settings → Plugins → Panel order, `PUT /api/plugins/panel-order`), then install order, at most 3. The subject's library decides access (404 for a subject the user cannot see).
   A marker is "written after the change" when its data row is newer than the video's file
   `mtime`.
 - Renderers: web `PluginPanel` (on the video page), MaktabaKit `PluginPanelView` and

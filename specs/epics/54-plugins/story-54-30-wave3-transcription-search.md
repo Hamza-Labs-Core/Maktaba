@@ -129,3 +129,15 @@ role comes back); per release Epic 51 rollback.
 ### Dependencies
 
 54.29.
+
+## Built (2026-11-07)
+
+Wave 3 moved `transcribe` and `second_listen` into `tv.maktaba.transcription` (runner group
+`ml`, one `plugin-runner/ml-<i>` beside each `pipeline/stt-<i>`) and `index`,
+`chapter_infer`, `topic_assign` and `topic_recluster` into `tv.maktaba.semantic-search`
+(runner group `index`, beside `pipeline/index`, which keeps the query server). Roles: the
+wave's `NNNN_fp_roles` migration. The settings and the audio decode moved to
+`maktaba_pipeline.stt.env` and `stored_words` to `maktaba_pipeline.stt.word_data`, which the
+pipeline reads too. The legacy `extract` follows with its §4 conversion. The decisions (the
+worker keeps claiming, the index's stages with the Postgres vector store only, no network
+for a model, worker-side upkeep, fallbacks fail parity) are in README §15.12.

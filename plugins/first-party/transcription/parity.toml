@@ -1,0 +1,15 @@
+# The parity proof of tv.maktaba.transcription (story 54.30): what Whisper and the second
+# listen store, keyed, with the run-time ids the same on both sides (SameIds) and only the
+# columns that hold the time of the write masked.
+tables = ["transcripts", "transcript_segments", "audio_tracks", "transcribe_checkpoints", "relisten_attempts"]
+
+[ignore]
+# superseded_at is when the second listen's transcript replaced Whisper's; metadata.refine.rtf
+# is how fast the second listen ran
+transcripts = ["created_at", "updated_at", "superseded_at", "metadata.refine.rtf"]
+transcript_segments = ["created_at"]
+# topic_recluster (downstream, in-process on both sides) fingerprints the newest embedding's time
+processing_jobs = ["input_hash@topic_recluster"]
+
+[[cases]]
+name = "two episodes transcribed, then listened to a second time (a fake Whisper and a fake second listen)"

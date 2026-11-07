@@ -27,7 +27,7 @@ from typing import Any
 
 import pytest
 
-from tests.components import rig as R
+from components import rig as R
 
 #: on CI a missing API binary fails (start_api says so) rather than skipping unseen
 pytestmark = pytest.mark.skipif(

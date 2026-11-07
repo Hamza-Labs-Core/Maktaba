@@ -27,8 +27,8 @@ from typing import Any
 
 import pytest
 
-from tests.components import rig as R
-from tests.components import test_server_live as live
+from components import rig as R
+from components import test_server_live as live
 
 BIN_DIR = os.environ.get("MAKTABA_COMPONENTS_SERVER_BIN", "")
 GUEST = Path(

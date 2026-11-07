@@ -1,0 +1,15 @@
+# The parity proof of tv.maktaba.semantic-search (story 54.30): the vectors, chapters and
+# topics its stages store, keyed, with only the columns that hold the time of the write
+# masked. The Postgres vector store is on (with Chroma the index's stages stay in the
+# worker beside the query server: index_store_chroma).
+tables = ["video_embeddings", "segment_embeddings", "chapters", "video_topics", "library_topics"]
+
+[ignore]
+video_embeddings = ["updated_at"]
+chapters = ["id", "created_at"]
+library_topics = ["computed_at"]
+# topic_recluster fingerprints its library's newest embedding's time
+processing_jobs = ["input_hash@topic_recluster"]
+
+[[cases]]
+name = "a library of three transcribed lessons on two subjects, indexed, chaptered and grouped into topics"

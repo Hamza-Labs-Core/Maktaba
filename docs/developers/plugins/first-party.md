@@ -7,7 +7,9 @@
 > `tv.maktaba.classify` ([its folder](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/plugins/first-party/classify)).
 > **Wave 2 has moved**: `thumb_small` and `chapter_thumbs` run in `tv.maktaba.thumbnails`, and
 > `subtitle_gen` in `tv.maktaba.subtitles`, the first stages that read media, run ffmpeg and
-> write files. The other stages move wave by wave.
+> write files. **Wave 3 has moved**: `transcribe` and `second_listen` run in
+> `tv.maktaba.transcription`, and the search index, chapters and topics in
+> `tv.maktaba.semantic-search`. The other stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -159,6 +161,26 @@ exec        = ["ffmpeg"]
 The parity proof of a file-writing plugin gives each side the same files to start from, and
 compares the files each side leaves (`files` in `parity.toml`, a sha256 per file), along with
 the rows, jobs and log lines.
+
+## Heavy work: the ml and index runners
+
+`tv.maktaba.transcription` (Whisper and the second listen) and `tv.maktaba.semantic-search`
+(the embedder) load large models, so they run in runners of their own rather than the
+shared ones:
+
+- **`ml`**, one per transcription worker. A machine's `pipeline/stt-<i>` claims the GPU jobs
+  and runs them in its own `plugin-runner/ml-<i>`, which holds the model and has the
+  worker's slot and settings. With `gpu = "preferred"` its sandbox opens the GPU (Metal on
+  macOS, the NVIDIA devices on Linux).
+- **`index`**, beside `pipeline/index`, which keeps answering search. While the home's
+  vectors are in Chroma (one process may open its folder), the index and chapter stages
+  stay in the worker; once they are in Postgres, the runner writes them like any table.
+- **No network.** A runner reads the model caches (`files.read = ["models"]`) with the
+  Hugging Face libraries offline; a stage whose model is not downloaded yet runs in the
+  worker, which fetches it.
+- **Upkeep stays in the worker.** A stage's `refresh` (rules read and jobs queued before
+  each selection) runs in the worker; `statements.toml` names such functions under `worker`
+  so their statements are not registered.
 
 ## The repo layout
 

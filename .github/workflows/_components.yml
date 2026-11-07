@@ -108,7 +108,7 @@ jobs:
       - name: components-live
         working-directory: pipeline
         run: >-
-          uv run --extra dev pytest ../tests/components/test_rig_logs.py
+          uv run --extra dev pytest ../tests/components/test_rig_logs.py ../tests/components/test_collect_together.py
           ../tests/components/test_live.py ../tests/components/test_api_live.py
           ../tests/components/test_server_live.py ../tests/components/test_plugins_live.py
           -q -p no:cacheprovider -rsx

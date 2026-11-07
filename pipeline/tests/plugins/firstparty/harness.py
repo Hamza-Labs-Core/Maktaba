@@ -131,6 +131,9 @@ def plugin_api_dev() -> str | None:
 #: the keys of the queue's JSON columns that hold when something happened (an enqueue's
 #: reason): two runs a moment apart differ there and nowhere else
 _TIME_KEYS = frozenset({"at", "ts", "enqueued_at", "started_at", "finished_at"})
+#: the keys that hold how long a step took, measured: two runs differ there and nowhere else
+#: (the second listen's real-time factor, the index's timings, a check's CPU time)
+_TIME_KEYS |= frozenset({"rtf", "embed_sec", "read_sec", "write_sec", "cpu_s", "took_s"})
 
 
 def _untimed(v: Any) -> Any:
@@ -213,6 +216,8 @@ class Parity:
     api_pid: int = 0
     #: every benched job, both sides: wall, CPU and spans (report())
     jobs: list[dict[str, Any]] = field(default_factory=list)
+    #: the stages under test (their plugin path: a fallback to the worker is a failure)
+    stages: tuple[str, ...] = ()
 
     async def drain(self, side: Side, *, limit: int = 500) -> None:
         """Run every claimable job of the graph on one side, timing each."""
@@ -249,16 +254,36 @@ class Parity:
             side.ran.append(job.stage)
         raise AssertionError(f"parity: no quiet after {limit} jobs")
 
-    async def run(self) -> None:
+    def fallbacks(self, stages: Sequence[str]) -> list[str]:
+        """Each time one of ``stages`` ran in the worker though it is set to its plugin (a
+        statement not registered, a file the sandbox refused, the runner not serving): the
+        rows would still match, so parity names them instead."""
+        from maktaba_pipeline.plugins import native
+
+        return [
+            f"{st}: {n} job(s) ran in the worker instead of the plugin ({why})"
+            for (st, why), n in sorted(native.FALLBACKS.items())
+            if st in stages
+        ]
+
+    async def run(self, before_side: Callable[[], None] | None = None) -> None:
+        """Drain A, then B. ``before_side`` runs before each (a test that gives both sides
+        the same run-time ids resets its sequence there)."""
         if not self.files:
-            await self.drain(self.a)
-            await self.drain(self.b)
+            for side in (self.a, self.b):
+                if before_side is not None:
+                    before_side()
+                await self.drain(side)
             return
         base = self.tmp / "files-base"
         self._keep(base)
+        if before_side is not None:
+            before_side()
         await self.drain(self.a)
         self._keep(self.tmp / "files-a")
         self._restore(base)
+        if before_side is not None:
+            before_side()
         await self.drain(self.b)
         self._keep(self.tmp / "files-b")
 
@@ -448,18 +473,43 @@ class Parity:
         ignore: dict[str, Sequence[str]] | None = None,
         stages: Sequence[str],
         perf: bool = True,
+        timing_only: bool = False,
     ) -> list[str]:
         """N16's samples (``bench``) and every difference. A failure that is only the timing
         is measured once more and counts only when the second run fails too: with 11 runs a
         side, p95 is about the slowest run, and one stall of a shared CI machine (on either
-        side's turn) is not the plugin's cost."""
+        side's turn) is not the plugin's cost.
+
+        ``timing_only``: only N16 is judged after the bench (the rows and the queue were
+        compared after the drain): for stages that make run-time ids, which the bench's
+        reruns, taking turns, give the two sides in a different order."""
+
+        async def judge() -> list[str]:
+            if timing_only:
+                return self.perf_problems(stages) if perf else []
+            return await self.compare(tables, ignore=ignore, stages=stages, perf=perf)
+
         await self.bench(stages)
-        problems = await self.compare(tables, ignore=ignore, stages=stages, perf=perf)
+        problems = await judge()
         if problems and all(_PERF_LINE.search(p) for p in problems):
             self.breakdowns.clear()
             await self.bench(stages)
-            problems = await self.compare(tables, ignore=ignore, stages=stages, perf=perf)
+            problems = await judge()
         return problems
+
+    def perf_problems(self, stages: Sequence[str]) -> list[str]:
+        """N16 alone, over the bench's samples."""
+        out: list[str] = []
+        for s in stages:
+            out += perf_check(
+                s,
+                self.a.times.get(s, []),
+                self.b.times.get(s, []),
+                floor_s=PERF_FLOOR_S,
+                inproc_p95=self.a.cpu_times.get(s),
+                plugin_p95=self.b.cpu_times.get(s),
+            )
+        return out
 
     async def compare(
         self,
@@ -484,8 +534,14 @@ class Parity:
         def keyed(rows: Sequence[Any]) -> list[dict[str, Any]]:
             seen: dict[tuple[Any, ...], int] = {}
             res = []
+            # [ignore] processing_jobs = ["<column>@<stage>"]: that stage's column masked (a
+            # fingerprint that holds a time, as topic_recluster's newest embedding's)
+            per_stage = [x.split("@", 1) for x in ignore.get("processing_jobs", ()) if "@" in x]
             for r in rows:
                 d = {c: _untimed(v) for c, v in r.items()}
+                for col, st in per_stage:
+                    if d.get("stage") == st and col in d:
+                        d[col] = "<ignored>"
                 k = (d["stage"], d["subject_kind"], str(d["subject_id"]))
                 seen[k] = seen.get(k, 0) + 1
                 d["n"] = seen[k]
@@ -495,6 +551,7 @@ class Parity:
         out += diff_rows(
             "processing_jobs", keyed(ja), keyed(jb), ("stage", "subject_kind", "subject_id", "n")
         )
+        out += self.fallbacks(self.stages)
         q = (
             "SELECT j.stage, e.kind, e.level, e.message FROM job_events e JOIN processing_jobs j ON j.id = e.job_id"  # noqa: E501
             " WHERE e.kind NOT IN ('claimed') ORDER BY e.id"
@@ -649,8 +706,15 @@ async def parity(
         native.forget_hello()
         native._FP_TOKENS.clear()
         _instrument()
+        native.FALLBACKS.clear()
         yield Parity(
-            a=Side(a), b=Side(b), graph=graph, tmp=tmp, files=dict(files or {}), api_pid=proc.pid
+            a=Side(a),
+            b=Side(b),
+            graph=graph,
+            tmp=tmp,
+            files=dict(files or {}),
+            api_pid=proc.pid,
+            stages=tuple(stages),
         )
     finally:
         native.forget_hello()
@@ -671,3 +735,22 @@ async def parity(
             await admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
         await admin.close()
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+class SameIds:
+    """``uuid4`` for the stages' own modules, the same sequence on each side: rows a stage
+    makes at run time get the same ids, so they compare by key (reset before each side)."""
+
+    def __init__(self, seed: int = 54) -> None:
+        import random
+
+        self.seed = seed
+        self.rng = random.Random(seed)
+
+    def reset(self) -> None:
+        import random
+
+        self.rng = random.Random(self.seed)
+
+    def __call__(self) -> uuid.UUID:
+        return uuid.UUID(int=self.rng.getrandbits(128), version=4)

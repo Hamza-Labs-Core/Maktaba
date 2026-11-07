@@ -65,18 +65,26 @@ class SignInKeyboardTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val asked: MutableList<String> = Collections.synchronizedList(mutableListOf())
     private lateinit var session: AppSession
+    private val store = MapStore()
+
+    /** The cloud answers 503 (story 50.13: Maktaba Cloud can't be reached). */
+    @Volatile private var cloudDown = false
 
     @Before
     fun start() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 asked += "${request.method} ${request.url.encodedPath}"
+                if (cloudDown && request.url.encodedPath.startsWith("/v1/")) {
+                    return MockResponse.Builder().code(503).setHeader("Content-Type", "application/json")
+                        .body("""{"error":"unavailable","message":""}""").build()
+                }
                 return MockResponse.Builder().code(401).setHeader("Content-Type", "application/json")
                     .body("""{"title":"invalid credentials","status":401}""").build()
             }
         }
         server.start()
-        session = AppSession(MapStore(), scope, { MemoryTokens() }, { _, tokens -> ApiClient(server.url("/"), tokens) })
+        session = AppSession(store, scope, { MemoryTokens() }, { _, tokens -> ApiClient(server.url("/"), tokens) })
     }
 
     @After
@@ -153,6 +161,25 @@ class SignInKeyboardTest {
         compose.onNodeWithTag("cloud-address").assertIsFocused()
         compose.onNodeWithTag("cloud-address").performImeAction()
         sent("POST /v1/auth/login")
+    }
+
+    /** Story 50.13: a sign-in the cloud can't answer shows that account's saved homes. */
+    @Test
+    fun aCloudSignInTheCloudCantAnswerShowsTheSavedHomes() {
+        cloudDown = true
+        com.hamzalabs.maktaba.core.session.SavedCloudHomes.save(
+            store,
+            com.hamzalabs.maktaba.core.session.CloudUser("c1", "tester@example.com"),
+            listOf(com.hamzalabs.maktaba.core.session.CloudHome("s1", "Kitchen", "kitchen", relayUrl = "https://kitchen.relay.example", linked = true)),
+        )
+        cloud()
+        shows("cloud-email")
+        compose.onNodeWithTag("cloud-email").performTextInput("tester@example.com")
+        compose.onNodeWithTag("cloud-password").performTextInput("pw")
+        compose.onNodeWithTag("cloud-password").performImeAction()
+        sent("POST /v1/auth/login")
+        shows("cloud-saved")
+        shows("cloud-home-kitchen")
     }
 
     // MARK: above the keyboard

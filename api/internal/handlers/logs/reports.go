@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -214,6 +215,7 @@ func (h *Handler) createReport(w http.ResponseWriter, r *http.Request) {
 		rep.Crashes = append(rep.Crashes, scrubRaw(c))
 	}
 	rep.Server = h.homeSide(r.Context(), rep)
+	rep.Server = withoutPluginLines(rep.Server, h.reportPlugins(r.Context()))
 	if h.DB != nil {
 		_ = h.DB.QueryRowContext(r.Context(), `SELECT username FROM users WHERE id = $1`, p.UserID).Scan(&rep.Name)
 	}
@@ -483,4 +485,48 @@ func (h *Handler) reportBundle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="maktaba-report-%d.tar.gz"`, rep.ID))
 	_, _ = w.Write(buf.Bytes())
+}
+
+// PluginReportLogsKey is the app setting naming the plugins whose lines a report may
+// carry (a JSON list of plugin ids; plugins.ReportLogsKey, written from each plugin's page).
+const PluginReportLogsKey = "plugins_report_logs"
+
+// reportPlugins are the plugins an admin allowed in problem reports (story 54.09 §3).
+func (h *Handler) reportPlugins(ctx context.Context) map[string]bool {
+	out := map[string]bool{}
+	if h.DB == nil {
+		return out
+	}
+	var raw sql.NullString
+	if h.DB.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = $1`, PluginReportLogsKey).Scan(&raw) != nil || !raw.Valid {
+		return out
+	}
+	var ids []string
+	_ = json.Unmarshal([]byte(raw.String), &ids)
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out
+}
+
+// withoutPluginLines leaves out the lines of every plugin not allowed in reports (story
+// 54.09 §3, README §9 T2): a plugin's lines are its own text, which a report sends to
+// whoever reads it. The host's own lines (plugins.host) stay.
+func withoutPluginLines(lines []json.RawMessage, allowed map[string]bool) []json.RawMessage {
+	out := lines[:0:0]
+	for _, l := range lines {
+		var head struct {
+			Service string `json:"service"`
+			Origin  string `json:"origin"`
+		}
+		_ = json.Unmarshal(l, &head)
+		if id, ok := strings.CutPrefix(head.Service, "plugin."); ok && !allowed[id] {
+			continue
+		}
+		if head.Origin == "plugin" && !strings.HasPrefix(head.Service, "plugin.") {
+			continue // a plugin's line under another name: never carried
+		}
+		out = append(out, l)
+	}
+	return out
 }

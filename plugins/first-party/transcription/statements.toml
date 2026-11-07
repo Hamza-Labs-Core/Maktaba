@@ -1,0 +1,17 @@
+# The shared pipeline modules whose statements tv.maktaba.transcription's stages run (story 54.24 §1)
+modules = [
+    "maktaba_pipeline.engine.stages._common:load_video,require_video",
+    "maktaba_pipeline.engine.stages._analysis:library_setting",
+    "maktaba_pipeline.rules:read",
+    # the share's models folder (the second listen's model copied from it)
+    "maktaba_pipeline.cluster.share:load_library_roots",
+    # imported where they are used, so the scan of the stages' code does not see them
+    "maktaba_pipeline.audio.extract:release_audio_cache",
+    "maktaba_pipeline.transcript.edits:carry_over",
+    "maktaba_pipeline.word_review.vocabulary:load,derived_prompt,prompt_terms",
+]
+
+# The functions that run in the worker, never in the runner: the second listen's sweep, which
+# the stage's refresh runs before each stage selection (its statements use the worker's own
+# connection)
+worker = ["relisten", "_settle_tries", "_stop_relistens", "_reset_relistens"]

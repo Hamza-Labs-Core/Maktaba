@@ -87,6 +87,8 @@ class ApiClient(
     private val tokens: TokenStore,
     private val http: OkHttpClient = defaultHttp,
     private val now: () -> Long = System::currentTimeMillis,
+    /** How a request waits between tries while the relay says the home is reconnecting. */
+    private val pause: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
 ) {
     private val refreshLock = Mutex()
 
@@ -438,7 +440,23 @@ class ApiClient(
      * Sends [r] and reads the whole answer on OkHttp's own thread: the caller may be the main
      * thread, where Android forbids network reads (a chunked body is read as it comes).
      */
-    private suspend fun execute(r: Request): HttpAnswer = http.exchange(r)
+    private suspend fun execute(r: Request): HttpAnswer {
+        // a home reconnecting behind the relay is waited for (Epic 50 story 50.13): the relay
+        // never handed the request to the home, so it is safe to send again whatever its method
+        var answer = http.exchange(r)
+        var waited = 0
+        try {
+            while (HomeReconnect.isReconnecting(answer) && waited < HomeReconnect.WAITS_MS.size) {
+                if (waited == 0) HomeReconnect.started()
+                pause(HomeReconnect.WAITS_MS[waited])
+                waited++
+                answer = http.exchange(r)
+            }
+        } finally {
+            if (waited > 0) HomeReconnect.stopped()
+        }
+        return answer
+    }
 
     /**
      * An OkHttp client for the player: this home's `/stream/` requests carry the token. Its own

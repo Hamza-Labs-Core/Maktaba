@@ -86,7 +86,7 @@ class FasterWhisperBackend:
             }
             src: Any = path
             if hints.audio_stream is not None:
-                from ..engine.stages.transcribe import decode_audio
+                from .env import decode_audio
 
                 src = await decode_audio(path, stream=hints.audio_stream)
             raw = await asyncio.get_running_loop().run_in_executor(None, lambda: fn(src, kwargs))
@@ -130,9 +130,9 @@ class FasterWhisperBackend:
     ) -> Transcript:
         """The file through the stage's engine (:mod:`.ct2`), with this backend's model,
         device and precision over the machine's other settings."""
-        from ..engine.stages.transcribe import decode_audio, settings_from_env
         from . import engine
         from .ct2 import get_transcriber
+        from .env import decode_audio, settings_from_env
 
         base = settings_from_env()
         settings = dataclasses.replace(

@@ -82,7 +82,7 @@ class WhisperMLXBackend:
         path = await _audio_to_path(audio)
         src: Any = path
         if hints.audio_stream is not None:
-            from ..engine.stages.transcribe import decode_audio
+            from .env import decode_audio
 
             src = await decode_audio(path, stream=hints.audio_stream)
 

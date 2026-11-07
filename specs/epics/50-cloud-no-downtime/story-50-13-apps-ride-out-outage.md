@@ -39,7 +39,9 @@ After every successful `GET /v1/homes` the app saves, per cloud account, on disk
   neither works the app shows `relay.needsPlan` (50.19) instead of a connection error.
 - The API grows a `connections` array (keeping `direct_url` and `relay_url` for older apps).
   Until 50.15 and 50.16 ship, it holds only what exists today: `direct_url` (plain HTTP) and
-  `relay_url`.
+  `relay_url`. Whether a home lists the relay follows its plan's tier (`billing.RelayIncluded`:
+  a tier whose relay is `none`), so the Free plan drops its relay entries when 50.19 makes its
+  relay `none`, and no home loses remote access before plans launch.
 - Stored with the platform's normal app storage: Apple `UserDefaults` (beside the saved homes
   in `Homes.swift`), Android the `TokenStore` key-value store, web `localStorage` in the cloud
   web app. No tokens in it.
@@ -61,15 +63,18 @@ minutes or until a network change, as today.
 
 - A home session the app already has keeps working; the app never asks the cloud to renew it.
 - A **new** sign-in with a Maktaba Cloud account needs the cloud's assertion
-  (`POST /v1/homes/{id}/assertion`). If the cloud doesn't answer, the app says so and offers the
-  home's own sign-in (username and password, or a code), which works without the cloud.
+  (`POST /v1/homes/{id}/assertion`). If the cloud doesn't answer, the app says so
+  (`cloud.signIn.cloudDown`) and the home's own sign-in (username and password, or a code) is on
+  screen, which works without the cloud. A cloud sign-in the cloud can't answer shows that
+  account's saved list (Apple and Android keep the cloud's token in memory only).
 
 ### 4. A home that is reconnecting
 
 The relay answers, after 50.04's 15-second hold, `503 home_reconnecting` with `Retry-After`.
 Players and lists treat it like a short blip: retry with backoff (2 s, 4 s, 8 s, cap 15 s, up to
-60 s in all), show "Reconnecting to your home…" after the first retry, and only then the
-offline message. `502 server_offline` (home not connected at all) keeps today's
+60 s in all), show "Reconnecting to your home…" (a line of 53.06's status strip) after the first
+retry, and only then the home-offline message. The relay never handed such a request to the
+home, so it is retried whatever its method. `502 server_offline` (home not connected at all) keeps today's
 home-offline screen.
 
 ### 5. The status banner
@@ -117,9 +122,9 @@ looking at the "can't reach Maktaba Cloud" message also sees it is a known outag
 | T06 | unit (all) | assertion call times out | cloud sign-in | message + home sign-in offered |
 | T07 | unit (cloud) | `GET /v1/homes` | response | has `connections`, `direct_url`, `relay_url` |
 | T08 | integration (CI) | home stack + an app client library (Android `client`, MaktabaKit), cloud host blackholed | sign in with home password, start playback | plays; zero requests to the cloud host |
-| T09 | rehearsal (CI, 50.06 `apps-cloud-down`) | rehearsal pair stopped, home running | client library run as T08 | as T08 |
+| T09 | rehearsal (CI, 50.06 `apps-cloud-down`) | rehearsal pair stopped, home running | client library run as T08 | as T08 — **open**: the cloud rehearsal has no home stack yet (its homes are simulated); T08 runs in the client libraries until it has one |
 | T10 | Arabic | new keys | strings check | Arabic present in web, cloud web, Android `values-ar`, Apple catalog |
-| T11 | UI (CI only) | Player shards, mocked cloud down | launch | saved homes visible, banner shown |
+| T11 | UI (CI only) | mocked cloud down: the cloud web app in Chromium (Playwright, `web-ui.yml`, every `/v1` call answered by the test), the Apple UI tests (`ConnectUITests`, MockHome answering the cloud's sign-in 503, the saved list given at launch), Android (Robolectric, the player's `SignInKeyboardTest`) | launch | saved homes visible with their time |
 | T12 | unit (cloud) | `GET /v1/homes` for a Free and a Basic home | list | Free: no `relay` / `relay_hint`; Basic: all four kinds |
 
 ## Edge cases
@@ -147,9 +152,7 @@ looking at the "can't reach Maktaba Cloud" message also sees it is a known outag
 | `cloud.homes.saved` | Maktaba Cloud can't be reached. Showing your homes from {time}. | تعذّر الوصول إلى سحابة مكتبة. نعرض أجهزتك الرئيسية كما كانت في {time}. |
 | `cloud.homes.savedOld` | This list is more than 30 days old. Some addresses may have changed. | عمر هذه القائمة أكثر من 30 يومًا، وقد تكون بعض العناوين تغيّرت. |
 | `cloud.signIn.cloudDown` | Signing in with Maktaba Cloud isn't working right now. Sign in to your home with its username and password, or with a code. | تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. سجّل الدخول إلى الجهاز الرئيسي باسم المستخدم وكلمة المرور، أو برمز. |
-| `cloud.signIn.useHome` | Sign in with the home's password | تسجيل الدخول بكلمة مرور الجهاز الرئيسي |
 | `home.reconnecting` | Reconnecting to your home… | جارٍ إعادة الاتصال بالجهاز الرئيسي… |
-| `home.reconnectFailed` | Your home didn't come back in time. It may be restarting. Try again in a moment. | لم يعد الجهاز الرئيسي في الوقت المحدد، وربما يُعاد تشغيله. حاول مجددًا بعد قليل. |
 
 ## Build plan
 

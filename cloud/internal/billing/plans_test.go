@@ -21,3 +21,19 @@ func TestMonthStart(t *testing.T) {
 		t.Errorf("MonthStart(%v) = %v, want %v", in, got, want)
 	}
 }
+
+// Epic 50 story 50.13: whether a plan lists the relay follows its tier; today's tiers all
+// include it (50.19 makes Free's relay "none"), and a plan this build doesn't know keeps it.
+func TestRelayIncluded(t *testing.T) {
+	for _, p := range []string{PlanFree, PlanPro, PlanFamily, "a-plan-from-the-future"} {
+		if !RelayIncluded(p) {
+			t.Errorf("%s: relay not included", p)
+		}
+	}
+	old := Tiers
+	defer func() { Tiers = old }()
+	Tiers = map[string]Tier{PlanFree: {ID: PlanFree, RelayQoS: RelayNone}}
+	if RelayIncluded(PlanFree) {
+		t.Error("a tier whose relay is none still lists it")
+	}
+}

@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from tests.components import rig as R
+from components import rig as R
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:  # noqa: ARG001 - pytest's hook

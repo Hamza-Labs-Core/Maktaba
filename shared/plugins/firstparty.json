@@ -1,5 +1,5 @@
 {
- "digest": "647450d3ea34e3efa65ac80d445cf54709df1418e1cb13f474127fae60c58e90",
+ "digest": "4b9df4f14949638af685a376fb4a70ec86b6ddf9d8b5debd16afb832348b700d",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -464,6 +464,391 @@
    }
   },
   {
+   "digest": "8a08f8bf2554c0259ff2af62f71cdd0353d0fa05f0c6aa6dd8833bbc3e34517f",
+   "folder": "semantic-search",
+   "id": "tv.maktaba.semantic-search",
+   "manifest": "# tv.maktaba.semantic-search: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3\n# (story 54.30): the search index, chapters and topics, in the index runner.\nschema     = 1\nid         = \"tv.maktaba.semantic-search\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.semantic-search.name\"\nsummary = \"fp.semantic-search.summary\"\n\n[trusted]\nrunner    = \"index\"\ncomponent = \"search.semantic\"\ndb.read   = [\"libraries\", \"semantic_store_state\", \"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"chapters\", \"library_topics\", \"segment_embeddings\", \"video_embeddings\", \"video_topics\"]\nfiles.read  = [\"models\"]\nfiles.write = [\"data.index\"]\n\n[[stage]]\nname         = \"index\"\nsubject      = \"video\"\nexport       = \"index\"\nversion      = 2\nlabel        = \"Search index\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 5\nplacement    = \"home\"\nedges        = [{ to = \"chapter_infer\", map = \"same\" }]\nentry        = \"maktaba_fp_semantic_search.stages.index:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"chapter_infer\"\nsubject      = \"video\"\nexport       = \"chapter-infer\"\nversion      = 1\nlabel        = \"Chapters\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 6\nplacement    = \"home\"\nedges        = [{ to = \"chapter_thumbs\", map = \"same\" }, { to = \"topic_assign\", map = \"same\" }]\nentry        = \"maktaba_fp_semantic_search.stages.chapter_infer:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_assign\"\nsubject      = \"video\"\nexport       = \"topic-assign\"\nversion      = 1\nlabel        = \"Topics\"\nsubject_kinds = [\"video\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 8\nedges        = [{ to = \"topic_recluster\", map = \"library_of\", when = \"always\" }]\nentry        = \"maktaba_fp_semantic_search.stages.topic_assign:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_recluster\"\nsubject      = \"library\"\nexport       = \"topic-recluster\"\nversion      = 1\nlabel        = \"Library topics\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"speech\"\nlane_order   = 9\ndebounce_sec = 1800\ndebounce_max_sec = 21600\nentry        = \"maktaba_fp_semantic_search.stages.topic_recluster:IMPL\"\nfingerprint  = { input = true, output = false }\n",
+   "statements": [
+    {
+     "mode": "write",
+     "name": "analysis.drop_embedding",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "86184732a704d88601d7ff22198aa6d90a41b3ad1619826e60162c350626120d",
+     "text": "DELETE FROM video_embeddings WHERE video_id = $1",
+     "writes": [
+      "video_embeddings"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "analysis.library_setting",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
+     "text": "SELECT settings FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "analysis.load_embedding",
+     "reads": [
+      "video_embeddings"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "f1e0edb3a0c854b64df21486af68ba9f473e89ad44f4be851a36b4f52d021e72",
+     "text": "SELECT video_id, library_id, transcript_id, model, dim, segments, vec FROM video_embeddings WHERE video_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "analysis.store_embedding",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "5496d9675afe21f126501b1aa4470c7464b98cd128aafc9d7aae34ccc43b1cbe",
+     "text": "INSERT INTO video_embeddings (video_id, library_id, transcript_id, model, dim, segments, vec, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (video_id) DO UPDATE SET library_id = EXCLUDED.library_id, transcript_id = EXCLUDED.transcript_id, model = EXCLUDED.model, dim = EXCLUDED.dim, segments = EXCLUDED.segments, vec = EXCLUDED.vec, updated_at = EXCLUDED.updated_at WHERE video_embeddings.library_id <> EXCLUDED.library_id OR video_embeddings.transcript_id <> EXCLUDED.transcript_id OR video_embeddings.model <> EXCLUDED.model OR video_embeddings.segments <> EXCLUDED.segments OR video_embeddings.vec <> EXCLUDED.vec",
+     "writes": [
+      "video_embeddings"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "chapter_infer.authored",
+     "reads": [
+      "chapters"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "eddea25e26a221f388b78b982a16fe81ae52e511c56c150a998e6c5e7700a816",
+     "text": "SELECT COUNT(*) FROM chapters WHERE video_id = $1 AND source IN ('embedded', 'manual')",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "chapter_infer.replace_inferred",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "4297b7e973e3696ce1e94d7d5e2d7a71b5f3a8ae67643386a5d2262bac921461",
+     "text": "DELETE FROM chapters WHERE video_id = $1 AND source = 'inferred'",
+     "writes": [
+      "chapters"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "chapter_infer.replace_inferred.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "37014fb46d2be5fcec74cc1813c89211dd830450808065579575fa9c0481f2a1",
+     "text": "INSERT INTO chapters (video_id, seq, start_sec, end_sec, title, source, metadata) VALUES ($1, $2, $3, $4, $5, 'inferred', $6)",
+     "writes": [
+      "chapters"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "chapter_infer.video_vectors",
+     "reads": [
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "883493b4904e38c57b2cd4c72bc8738f286f16980987d49515948863d12dbfd6",
+     "text": "SELECT seq, text FROM transcript_segments WHERE transcript_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "common.load_video",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
+     "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.active_transcript",
+     "reads": [
+      "transcript_segments",
+      "transcripts"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "45c72c614bfa82f13bf40a1f547d96aeb886b5b890ced5f223dc118d3f85a21f",
+     "text": "SELECT t.id AS id, COALESCE(t.revision, 0) AS revision, (SELECT COUNT(*) FROM transcript_segments s WHERE s.transcript_id = t.id) AS n FROM transcripts t WHERE t.video_id = $1 AND t.is_active ORDER BY t.created_at DESC, t.id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.revision",
+     "reads": [
+      "transcripts"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "95dfae63d8194a567b52bd095793a922c13aa0520e8d09247c7bd9f1e3334e72",
+     "text": "SELECT COALESCE(revision, 0) FROM transcripts WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.run",
+     "reads": [
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "2224240464378bc2f2d15a54d8a5497ea93762f217a34035a1f6618ee7aaf274",
+     "text": "SELECT id, seq, start_sec, end_sec, text FROM transcript_segments WHERE transcript_id = $1 ORDER BY seq",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.run.2",
+     "reads": [
+      "transcript_segments",
+      "transcripts"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "67337baff200e4c73a821af4ab341c127c6ee28b089f0df9f4c8db682942e921",
+     "text": "SELECT s.transcript_id AS transcript_id, s.seq AS seq FROM transcript_segments s JOIN transcripts t ON t.id = s.transcript_id WHERE t.video_id = $1 AND t.id <> $2",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "index.video_language",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "8f101c9e6513ef84a307db1ce43a9db28450c4a0884f0c0744045bf4a0494ed4",
+     "text": "SELECT detected_language FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "pgstore.delete_video",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "116327ccd3055c733e5fbd952f58d83d5bc23a885c8e82ae113ea3c1537e6d70",
+     "text": "DELETE FROM segment_embeddings WHERE video_id = $1::uuid",
+     "writes": [
+      "segment_embeddings"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "pgstore.has_vectors",
+     "reads": [
+      "segment_embeddings"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d8fc0c97571e5046d8e2897f88264cbcec50d8923fec59aa1cb71d7443e78608",
+     "text": "SELECT 1 FROM segment_embeddings WHERE video_id = $1::uuid LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "pgstore.keep_only",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1d893d8ae4d30d4dda35c84c47dbdbf4f46f152d61ef002a9b48d91ceba45551",
+     "text": "DELETE FROM segment_embeddings WHERE video_id = $1::uuid AND segment_id <> ALL($2::bigint[])",
+     "writes": [
+      "segment_embeddings"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "pgstore.store_state",
+     "reads": [
+      "semantic_store_state"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "87ecca1050440ed08aa76643b74e53b80dff7cd758e13f651d1c5a7eff82c596",
+     "text": "SELECT semantic_store_ready() AS ready, (SELECT store FROM semantic_store_state LIMIT 1) AS store",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "pgstore.video_vectors",
+     "reads": [
+      "segment_embeddings",
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "0bfeed079aceecf7d1f4c77d8da6e05a998ff574fc18278bc16fcfa0b1510034",
+     "text": "SELECT e.segment_id, s.transcript_id, s.seq, s.start_sec, s.end_sec, s.text, e.embedding::text AS embedding FROM segment_embeddings e JOIN transcript_segments s ON s.id = e.segment_id WHERE e.video_id = $1::uuid ORDER BY s.seq",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "pgstore.video_vectors.2",
+     "reads": [
+      "segment_embeddings",
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b8d7a41f265c960d39971e1eec628bb30d175d57af14ffe0d1cfb271fb5a9546",
+     "text": "SELECT e.segment_id, s.transcript_id, s.seq, s.start_sec, s.end_sec, s.text, e.embedding::text AS embedding FROM segment_embeddings e JOIN transcript_segments s ON s.id = e.segment_id WHERE e.video_id = $1::uuid AND s.transcript_id = $2::uuid ORDER BY s.seq",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "pgstore.write_vectors",
+     "reads": [
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "77d9aad7df7e5ba09ed6c8444baa34bbaec4dc046d1774c1f3def19615585ca3",
+     "text": "INSERT INTO segment_embeddings (segment_id, video_id, library_id, language, model, embedding) SELECT u.segment_id, $1::uuid, $2::uuid, $3, $4, u.embedding::halfvec FROM unnest($5::bigint[], $6::text[]) AS u(segment_id, embedding) JOIN transcript_segments s ON s.id = u.segment_id ON CONFLICT (segment_id) DO UPDATE SET video_id = EXCLUDED.video_id, library_id = EXCLUDED.library_id, language = EXCLUDED.language, model = EXCLUDED.model, embedding = EXCLUDED.embedding",
+     "writes": [
+      "segment_embeddings"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "topic_assign.centroids",
+     "reads": [
+      "library_topics"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "cbe73fe11ff6e93b2031ba15d94dbf6fbd90d5a9634965e9c6146430bc41362e",
+     "text": "SELECT topic_id, centroid_vec FROM library_topics WHERE library_id = $1 AND model = $2 ORDER BY topic_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "topic_assign.library_topics_signature",
+     "reads": [
+      "library_topics"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "89298ac49fc2261447f91514fb00e5d1a91a315de49a2e757df32110521f600b",
+     "text": "SELECT COUNT(*) AS n, MAX(computed_at) AS at FROM library_topics WHERE library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "topic_assign.run",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "062770eb970de256794b55d6d59941ebb3833ba17cf52943688df343167b424f",
+     "text": "DELETE FROM video_topics WHERE video_id = $1",
+     "writes": [
+      "video_topics"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "topic_assign.run.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "cff63fe8c320a8e4533648b9ae8f32a95ec4898e4e3495387277d0fce696b4de",
+     "text": "INSERT INTO video_topics (video_id, library_id, topic_id, score) VALUES ($1, $2, $3, $4)",
+     "writes": [
+      "video_topics"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "topic_recluster.input_fingerprint",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d1b987a6fa001c5949c91eac2b876c6a2d79d1c456d32997b0afb116b8f5d0a4",
+     "text": "SELECT 1 FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "topic_recluster.input_fingerprint.2",
+     "reads": [
+      "video_embeddings"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "ce6094abe5ebdd67f13b832f64f8297a01881b9a6ff0970d82fccdc876cd2326",
+     "text": "SELECT COUNT(*) AS n, MAX(updated_at) AS at FROM video_embeddings WHERE library_id = $1 AND model = $2",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "topic_recluster.run",
+     "reads": [
+      "video_embeddings",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "501451b816b2b8611892168ee6e9cda6daf7858ed8dd285760385dba64aafd25",
+     "text": "SELECT e.video_id, e.dim, e.vec, COALESCE(v.title, v.filename) AS title FROM video_embeddings e JOIN videos v ON v.id = e.video_id WHERE e.library_id = $1 AND e.model = $2 AND v.deleted_at IS NULL ORDER BY e.video_id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "topic_recluster.run.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "8949386094e5e67dd20e45452eb6fd07c49456e15af8c2b7e474ca2118a94c92",
+     "text": "DELETE FROM library_topics WHERE library_id = $1",
+     "writes": [
+      "library_topics"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "topic_recluster.run.3",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "2c86fd7f0bd759a6713434c427012de01fe2e3b36771f624da11da93d2d54e29",
+     "text": "INSERT INTO library_topics (library_id, topic_id, label, centroid_vec, video_count, computed_at, model) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+     "writes": [
+      "library_topics"
+     ]
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.semantic-search.name": "البحث الدلالي",
+     "fp.semantic-search.summary": "يفهرس ما يُقال ليُبحث عنه بمعناه، ويقسّم الفيديو فصولًا ويجمعه في مواضيع."
+    },
+    "en": {
+     "fp.semantic-search.name": "Semantic search",
+     "fp.semantic-search.summary": "Indexes what is said so it can be searched by meaning, and finds chapters and topics."
+    }
+   }
+  },
+  {
    "digest": "8cf1440b944d43ae1619fc3a01c0b705b739bca709913702e9a9b904885e3c28",
    "folder": "subtitles",
    "id": "tv.maktaba.subtitles",
@@ -628,6 +1013,523 @@
     "en": {
      "fp.thumbnails.name": "Thumbnails",
      "fp.thumbnails.summary": "Makes each video's small picture and its chapters' frames."
+    }
+   }
+  },
+  {
+   "digest": "ccc13f733b5332e2e110404dbc453f8a1609cd6376b2dcf596b3b8e23881c974",
+   "folder": "transcription",
+   "id": "tv.maktaba.transcription",
+   "manifest": "# tv.maktaba.transcription: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3\n# (story 54.30): Whisper and the second listen, on the GPU, in the ml runner of each\n# transcription worker.\nschema     = 1\nid         = \"tv.maktaba.transcription\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.transcription.name\"\nsummary = \"fp.transcription.summary\"\n\n[trusted]\nrunner    = \"ml\"\ncomponent = \"transcription\"\ndb.read   = [\"app_settings\", \"libraries\", \"library_roots\", \"media_info\", \"processing_jobs\", \"vocab_pairs\", \"vocabulary\"]\ndb.write  = [\"audio_cache\", \"audio_tracks\", \"relisten_attempts\", \"transcribe_checkpoints\", \"transcript_edits\", \"transcript_segments\", \"transcripts\", \"videos\", \"word_flags\"]\nsettings  = [\"transcription\"]\nfiles.read  = [\"library\", \"models\"]\nfiles.write = [\"models\"]\nexec      = [\"ffmpeg\"]\ngpu       = \"preferred\"\n\n[[stage]]\nname         = \"transcribe\"\nsubject      = \"video\"\nexport       = \"transcribe\"\nversion      = 1\nlabel        = \"Transcribe\"\nsubject_kinds = [\"video\"]\npool         = \"gpu\"\nlane         = \"speech\"\nlane_order   = 2\nmay_request  = [\"extract\"]\nstorage      = \"read\"\nedges        = [{ to = \"second_listen\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.transcribe:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"second_listen\"\nsubject      = \"video\"\nexport       = \"second-listen\"\nversion      = 1\nlabel        = \"Second listen\"\nsubject_kinds = [\"video\"]\npool         = \"listen\"\nlane         = \"speech\"\nlane_order   = 3\nstorage      = \"read\"\nedges        = [{ to = \"subtitle_gen\", map = \"same\" }, { to = \"index\", map = \"same\" }, { to = \"tag\", map = \"season_of\" }, { to = \"tag\", map = \"loose_library_of\" }, { to = \"word_check\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.second_listen:IMPL\"\nfingerprint  = { input = true, output = false }\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "analysis.library_setting",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
+     "text": "SELECT settings FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "common.load_video",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
+     "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "edits.carry_over",
+     "reads": [
+      "transcript_edits",
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "213a0f367f8b90be842d6ef1a2644c1fd4631225c9696b3875ce9933ea9c8a70",
+     "text": "SELECT e.id, e.segment_seq, e.before, e.after, e.user_id, s.start_sec FROM transcript_edits e JOIN transcript_segments s   ON s.transcript_id = e.transcript_id AND s.seq = e.segment_seq WHERE e.transcript_id = $1 AND e.undone_at IS NULL ORDER BY e.created_at, e.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "edits.carry_over.2",
+     "reads": [
+      "transcripts",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e12eb832ef4d06e46f5607290f372e39be205c1f8d4bc8fed42b429a72b3fac6",
+     "text": "SELECT t.video_id, t.audio_track_id, v.library_id FROM transcripts t JOIN videos v ON v.id = t.video_id WHERE t.id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "edits.carry_over.3",
+     "reads": [
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "dbb5198b1f85ecb73f6ac2d782c7b6137033bea66462bc88b55d7722fb8fcac6",
+     "text": "SELECT seq, start_sec, end_sec, text, word_data FROM transcript_segments WHERE transcript_id = $1 AND end_sec >= $2 AND start_sec <= $3 ORDER BY seq",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "edits.carry_over.4",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c2cf6dd2596162ba191df4b68a899d0aba5c60af3941b5ad767872571e71b3d8",
+     "text": "UPDATE transcript_segments SET text = $3, word_data = $4 WHERE transcript_id = $1 AND seq = $2",
+     "writes": [
+      "transcript_segments"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "edits.carry_over.5",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6c56669ef10cce5580f1e72bf5401ed027f089311a635d659bca0fccd28d7436",
+     "text": "INSERT INTO transcript_edits (id, transcript_id, segment_seq, char_start, char_len, before, after, user_id, carried_from) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+     "writes": [
+      "transcript_edits"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "edits.carry_over.6",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "0dc14cc271d970c5788cc8fdd8dd5823d415b9da1ade5939b03811a32b574020",
+     "text": "UPDATE transcripts SET revision = revision + 1 WHERE id = $1",
+     "writes": [
+      "transcripts"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "edits.carry_over.7",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 3,
+     "sha256": "1133ed9b4cdec1320a9df60e5425c9063204dcb1c87e046315a688a447b10064",
+     "text": "INSERT INTO word_flags (id, kind, transcript_id, video_id, library_id, audio_track_id, segment_seq, char_start, char_len, start_sec, end_sec, original, context, reasons, scores, priority, candidates, key, status) VALUES ($1, 'word', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'open') ON CONFLICT (transcript_id, segment_seq, char_start) DO NOTHING",
+     "writes": [
+      "word_flags"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "extract.release_audio_cache",
+     "reads": [
+      "audio_cache"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "47a288bb3509d3676cf0f1c56ad2da37fca133d4a6678df679a9df0414808024",
+     "text": "SELECT path FROM audio_cache WHERE content_hash = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "extract.release_audio_cache.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9a5ecb893cfd445cd5d45e39177949a610961c7a69a7cec200129bae7396165d",
+     "text": "DELETE FROM audio_cache WHERE content_hash = $1",
+     "writes": [
+      "audio_cache"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "second_listen.active",
+     "reads": [
+      "transcripts"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "fb146e0398fbe7d898e76ca9032ab497efa7e8ba54597a965847ab415c02b59f",
+     "text": "SELECT id, audio_track_id, language, detected_language, backend, model, backend_version, word_level, diarized, metadata FROM transcripts WHERE video_id = $1 AND is_active",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "second_listen.segments",
+     "reads": [
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9809d7975b4f5e11609dd9ca0bbe083fb8586a1d74800b0226bd09b62e33a42a",
+     "text": "SELECT seq, start_sec, end_sec, text, confidence, metadata, word_data FROM transcript_segments WHERE transcript_id = $1 ORDER BY seq",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.skipped",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1b7ad14cc98606b89448f4cba160e731d8d13429f87abeb616d6985b28811a9b",
+     "text": "UPDATE transcripts SET metadata = $2 WHERE id = $1",
+     "writes": [
+      "transcripts"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.skipped.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "b08a1d74e2cc04b9e363588b92d58167531d26b2e0449aaccbd3c497f33f1f50",
+     "text": "DELETE FROM relisten_attempts WHERE video_id = $1",
+     "writes": [
+      "relisten_attempts"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.store",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "ad97af34a59b9bcdca4b787009c1cb38518060f10178c2b42f568a7f36499950",
+     "text": "INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,\n                                     backend, model, backend_version, word_level, diarized,\n                                     is_active, metadata)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, false, $11)",
+     "writes": [
+      "transcripts"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.store.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "cb5c39da6e283961e945a82d27852006304c1b3c2675d1560ae22194c7de0db4",
+     "text": "UPDATE transcripts SET is_active = false, superseded_at = $3 WHERE video_id = $1 AND is_active AND id <> $2",
+     "writes": [
+      "transcripts"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.store.3",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "606ce75ab960b4712225bd2db6e834067bd256c42675056bfe4d84a541ee21d1",
+     "text": "UPDATE transcripts SET is_active = true WHERE id = $1",
+     "writes": [
+      "transcripts"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.store.4",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d7b5ea334127905e4bb7a059abdfd8048e1e88686d9045de3bab6d66e2513ffd",
+     "text": "UPDATE transcript_segments SET metadata = metadata - 'words' WHERE transcript_id = $1 AND metadata ? 'words'",
+     "writes": [
+      "transcript_segments"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.store.5",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "53426b7ef2bbb2520d3c768670dc200f4ab16bf821ca070707d1b1ead68383fd",
+     "text": "UPDATE transcript_segments SET metadata = json_remove(metadata, '$.words') WHERE transcript_id = $1 AND json_extract(metadata, '$.words') IS NOT NULL",
+     "writes": [
+      "transcript_segments"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "second_listen.store.6",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "3a1f96eecb94f057c63dddec09c1ea721fda02c561fc5983a373e3caf661bf31",
+     "text": "UPDATE transcript_segments SET word_data = NULL WHERE transcript_id = $1 AND word_data IS NOT NULL",
+     "writes": [
+      "transcript_segments"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "share.load_library_roots",
+     "reads": [
+      "libraries",
+      "library_roots",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "03582a32c5392e481a6ac8fbb2d0e17903145c1d12c6a3215073ca36e4d79b1a",
+     "text": "SELECT l.id AS library_id, lr.path AS path, (SELECT count(*) FROM videos v WHERE v.library_id = l.id AND v.deleted_at IS NULL) AS videos FROM library_roots lr JOIN libraries l ON l.id = lr.library_id WHERE l.deleted_at IS NULL ORDER BY l.id, lr.path",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "transcribe.cached_wav",
+     "reads": [
+      "audio_cache",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "2ba186323c9ad8673aa3f9b2229283516181be7f9a1ce4153009eadc065a5773",
+     "text": "SELECT a.path, a.audio_track_id FROM audio_cache a JOIN videos v ON v.content_hash = a.content_hash WHERE v.id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "transcribe.carry_over_edits",
+     "reads": [
+      "transcripts"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "beb4bf9c469e9d7290f43ebca427b797e751d73718c352394d114c24cfd08f94",
+     "text": "SELECT id FROM transcripts WHERE video_id = $1 AND is_active AND id <> $2",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "transcribe.chosen_track",
+     "reads": [
+      "audio_tracks"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "7846139b006ae1ae6e3c6c6ec7b70ad248474953539e6db183d6e828b5d94d99",
+     "text": "SELECT id FROM audio_tracks WHERE video_id = $1 AND track_index = $2",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.first_audio_track",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "27d58623d08c8dc6600a0c6f403a589e1ed1a953b5f4290e5c3f5c3974c21244",
+     "text": "INSERT INTO audio_tracks (video_id, track_index, codec, channels, sample_rate,                          language, title, disposition, is_default) VALUES ($1, 0, $2, $3, $4, $5, $6, $7, NOT EXISTS (SELECT 1 FROM audio_tracks  WHERE video_id = $1 AND is_default)) ON CONFLICT (video_id, track_index) DO UPDATE SET  codec = COALESCE(NULLIF(audio_tracks.codec, ''), EXCLUDED.codec),  channels = COALESCE(audio_tracks.channels, EXCLUDED.channels),  sample_rate = COALESCE(audio_tracks.sample_rate, EXCLUDED.sample_rate) RETURNING id",
+     "writes": [
+      "audio_tracks"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.forget_gone",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "33984b6a3d2c9402255bf0e8b67b0b918b19e7739c0a49be2d7069bb3f934a71",
+     "text": "DELETE FROM relisten_attempts WHERE video_id IN (SELECT v.id FROM videos v WHERE (v.deleted_at IS NOT NULL OR v.missing_confirmed_at IS NOT NULL OR v.state IN ('missing', 'superseded'))) RETURNING video_id",
+     "writes": [
+      "relisten_attempts"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "transcribe.input_fingerprint",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "412c577c04684b85e42de37340901937bc3e6902f98448ce91f92ad934a3519e",
+     "text": "SELECT content_hash FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.insert_segments",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1a0806a79069e4b5a4508f13f44e7e9b410fc36a995df8524e6f17948d1d56ef",
+     "text": "INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text, confidence, metadata, word_data) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+     "writes": [
+      "transcript_segments"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "transcribe.last_try",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "364d5c61745eb2646089b38f2a60b1f80b04305f2b29c0ca2d7b7067c89d7eaf",
+     "text": "SELECT state, error_cause, error FROM processing_jobs WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "transcribe.load_checkpoint",
+     "reads": [
+      "transcribe_checkpoints"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "b3eb56b1046d53f79740f5a67be9154d0976a9696302a6042099898ea48c6dd0",
+     "text": "SELECT fingerprint, seek_frames, last_speech, language, segments FROM transcribe_checkpoints WHERE video_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "transcribe.probed_audio",
+     "reads": [
+      "media_info"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "632f31e3fb9a393d3f3d54472836538669fbae710f962982d138f5d0da82eba5",
+     "text": "SELECT raw_ffprobe FROM media_info WHERE video_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.save_checkpoint",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "9143238ae46a9a670a29cbd1e71ff90de8cad2cd690845edb2ac77b4071aa539",
+     "text": "INSERT INTO transcribe_checkpoints (video_id, fingerprint, seek_frames, last_speech, language, segments, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (video_id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, seek_frames = EXCLUDED.seek_frames, last_speech = EXCLUDED.last_speech, language = EXCLUDED.language, segments = CASE WHEN transcribe_checkpoints.fingerprint = EXCLUDED.fingerprint THEN transcribe_checkpoints.segments || EXCLUDED.segments ELSE EXCLUDED.segments END, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "transcribe_checkpoints"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.save_checkpoint.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "9f2f7c79f4332457b9e0450f80aa86457900fe1a2368d2bb4306cd8b4e35a8de",
+     "text": "INSERT INTO transcribe_checkpoints (video_id, fingerprint, seek_frames, last_speech, language, segments, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (video_id) DO UPDATE SET fingerprint = EXCLUDED.fingerprint, seek_frames = EXCLUDED.seek_frames, last_speech = EXCLUDED.last_speech, language = EXCLUDED.language, segments = EXCLUDED.segments, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "transcribe_checkpoints"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.store",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "77c35015aa2dabb0eca884704fb5aa10fee9fa9b31ea4e0a9197dc4b90b303e2",
+     "text": "INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,\n                                     backend, model, backend_version, word_level, diarized,\n                                     is_active, metadata)\n            VALUES ($8, $1, $7, $2, $9, $10, $3, $4, $5, false, false, $6)\n            RETURNING id",
+     "writes": [
+      "transcripts"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.store.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "d7e42235ca73ee95ecefcb6f0723c077b88d7f69971bd1fad925685d1cc2f1c4",
+     "text": "DELETE FROM transcribe_checkpoints WHERE video_id = $1",
+     "writes": [
+      "transcribe_checkpoints"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "transcribe.store.3",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b6683bcf4a40d482c3157be3b8d21f68a8b9bd15dbb8f3cd89b49d77e342b6e5",
+     "text": "UPDATE videos SET detected_language = $2 WHERE id = $1 AND detected_language IS NULL",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "vocabulary.load",
+     "reads": [
+      "vocabulary"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "737404e50d59173376629ddbe6731573a9b9ace4c123ff8a67df42e0f9f5cbbd",
+     "text": "SELECT language, term, key, kind, variants FROM vocabulary WHERE scope = 'home' OR library_id = $1 ORDER BY scope, term",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "vocabulary.load.2",
+     "reads": [
+      "vocab_pairs"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "9283f4d41ddbb779572303ba4e1d11fba0eb5d356c24d25c6e5f3a44b43ec7f8",
+     "text": "SELECT language, heard_key, meant, uses FROM vocab_pairs WHERE library_id = $1 OR library_id IS NULL ORDER BY uses DESC, meant",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "vocabulary.prompt_terms",
+     "reads": [
+      "vocabulary"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "c5d319afd1d24525b88a5e77188adbe113e1101f4f604b1b35871d88837e7cd3",
+     "text": "SELECT term FROM vocabulary WHERE kind IN ('name', 'term') AND (scope = 'home' OR library_id = $1) ORDER BY uses DESC, term LIMIT $2",
+     "writes": []
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.transcription.name": "التفريغ",
+     "fp.transcription.summary": "يكتب ما يُقال في كل فيديو، ثم يستمع مرة ثانية ليتحقق من الكلمات."
+    },
+    "en": {
+     "fp.transcription.name": "Transcription",
+     "fp.transcription.summary": "Writes down what is said in each video, then listens a second time to check the words."
     }
    }
   }

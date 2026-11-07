@@ -43,13 +43,7 @@ class StageImpl:
 CORE_MODULES: dict[str, str] = {
     "content_hash": "maktaba_pipeline.engine.stages.content_hash",
     "component_catchup": "maktaba_pipeline.engine.stages.component_catchup",
-    "transcribe": "maktaba_pipeline.engine.stages.transcribe",
-    "second_listen": "maktaba_pipeline.engine.stages.second_listen",
     "word_check": "maktaba_pipeline.engine.stages.word_check",
-    "index": "maktaba_pipeline.engine.stages.index",
-    "chapter_infer": "maktaba_pipeline.engine.stages.chapter_infer",
-    "topic_assign": "maktaba_pipeline.engine.stages.topic_assign",
-    "topic_recluster": "maktaba_pipeline.engine.stages.topic_recluster",
     "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
     "review_pages": "maktaba_pipeline.engine.stages.review_pages",
     "youtube_collections": "maktaba_pipeline.engine.stages.youtube_collections",

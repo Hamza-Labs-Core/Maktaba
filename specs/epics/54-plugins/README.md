@@ -1834,6 +1834,34 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   (a folder added since the runner started, before it restarts on the new areas) comes back as
   `sandbox_refused`, and the worker runs that job itself, as for an unregistered statement. A
   write the plugin may never make is `plugin_scope`, never a fallback.
+- **A transcription worker keeps claiming; its ml runner holds the model.** Each
+  `pipeline/stt-<i>` still claims the GPU stages (the worker claims, the runner runs, as in
+  every wave) and runs them in its own `plugin-runner/ml-<i>`, which has the worker's slot
+  (`MAKTABA_STT_SLOT`, so the `stt.*` series keep their history) and its knobs. The
+  transcription component's processes are both (`pipeline/stt-*`, `plugin-runner/ml-*`);
+  a machine with no transcription worker has one `plugin-runner/ml` beside its main worker.
+- **`second_listen` moves with `transcribe`.** It is newer than story 54.30's table, runs on
+  the same workers (`GPUStages`) and loads the same models, so it is
+  `tv.maktaba.transcription`'s second stage. The legacy `extract` moves later with its §4
+  conversion, as wave 2's `thumbnail`.
+- **The search index's stages use the plugin only with the Postgres vector store.** While
+  search reads Chroma (a folder one process may open), `index` and `chapter_infer` stay in
+  the worker beside the query server (`index_store_chroma`); once `semantic_store_state`
+  says Postgres, the index runner writes the vectors like any table. `topic_assign` and
+  `topic_recluster` use the plugin either way.
+- **No network for a model.** Runners start with `HF_HUB_OFFLINE=1` and
+  `TRANSFORMERS_OFFLINE=1`; they read and write the model caches (`models`: `HF_HOME`, CAMeL
+  Tools' data, the share's models folder), and a stage whose model is not there yet runs in
+  the worker, which fetches it. The engine's `transcribe` never calls a remote STT backend
+  (only the legacy handler's registry has the OpenAI one), so the ml runner has no `net`.
+- **A stage's worker-side upkeep is not registered.** `statements.toml` may list `worker`
+  functions (a stage's `refresh`: the second listen's relisten sweep) that run in the worker
+  on its own connection; their statements are neither registered nor checked. The removal
+  pull request gives `refresh` a runner call before the worker stops importing stage code.
+- **A fallback fails parity.** The worker counts each job of a plugin stage that ran
+  in-process instead (`native.FALLBACKS`: an unregistered statement, a sandbox refusal,
+  `choose()` declining); the parity harness fails on any for the stages under test, since
+  the in-process rerun writes the same rows and the comparison alone would pass.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

@@ -12,11 +12,11 @@ from typing import Any
 
 import huggingface_hub.errors  # noqa: F401 - imported once here, not inside a timed test
 import pytest
+from maktaba_fp_transcription.stages import transcribe  # noqa: F401 - imported once here
 from tqdm.std import tqdm  # type: ignore[import-untyped,unused-ignore]
 
 from maktaba_pipeline import __main__ as cli
 from maktaba_pipeline import model_dirs
-from maktaba_pipeline.engine.stages import transcribe  # noqa: F401 - imported once here
 from maktaba_pipeline.models import fetch_cli
 from maktaba_pipeline.stt import model_share
 

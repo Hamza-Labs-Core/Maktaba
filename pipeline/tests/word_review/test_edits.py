@@ -6,9 +6,9 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.engine.sql import dumps
-from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt.settings import Word
 from maktaba_pipeline.stt.word_data import decode, pack

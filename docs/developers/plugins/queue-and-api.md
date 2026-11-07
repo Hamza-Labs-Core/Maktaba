@@ -190,7 +190,8 @@ your own data, unchecked.
 
 - **Who sees it**: everyone in the home who can see the subject, viewers included, in their
   language, under **From plugins** (collapsed) below Maktaba's own sections. At most three
-  panels a page. A plugin turned off, held or withdrawn shows no panel.
+  panels a page, in the order the admin sets (Settings → Plugins → Panel order), then install
+  order. A plugin turned off, held or withdrawn shows no panel.
 - **When it shows**: only for a subject with data for at least one of its keys. Markers
   written before the video's file last changed are not shown.
 - **Where**: a video's page, a series' page and a library's page, in the web app, the iPhone,

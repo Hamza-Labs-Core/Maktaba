@@ -27,6 +27,7 @@ from ...db.jobs import Job
 from ...language_packs import registry as packs
 from ...language_packs.registry import DEFAULT_FOR_SCRIPT, script_of_language
 from ...log import get_logger
+from ...stt.word_data import stored_words
 from ...word_review import gazetteer, signals, vocabulary
 from ...word_review import store as flag_store
 from ...word_review.settings import Effective, WordReviewConfig, effective
@@ -36,7 +37,6 @@ from ..hashing import canonical_hash
 from ..sql import is_pg, loads, now, to_ts, uid
 from ._analysis import library_setting
 from .registry import StageImpl
-from .second_listen import stored_words
 
 __all__ = [
     "BACKFILL",
