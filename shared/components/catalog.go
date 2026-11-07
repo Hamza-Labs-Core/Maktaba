@@ -107,7 +107,7 @@ var (
 	sha256Re  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-var topKeys = []string{"schema", "phases", "reasons", "features", "component"}
+var topKeys = []string{"schema", "phases", "reasons", "features", "feature_any", "component"}
 
 var componentKeys = []string{"id", "kind", "switchable", "group", "title_key", "desc_key",
 	"stages", "processes", "loops", "requires", "wants", "conflicts", "settings", "platforms",
@@ -208,10 +208,13 @@ type Requirement struct {
 
 // Catalog is a loaded, validated catalog. It is read-only.
 type Catalog struct {
-	Schema     int
-	Phases     []string
-	Reasons    []string
-	Features   []string
+	Schema   int
+	Phases   []string
+	Reasons  []string
+	Features []string
+	// FeatureAny are the feature groups (story 50.35): for a feature, groups of components that
+	// count as one, on when any member is on (cloud.relay or cloud.direct for remote_access).
+	FeatureAny map[string][][]string
 	components []*Component
 	byID       map[string]*Component
 	byStage    map[string]*Component
@@ -271,11 +274,12 @@ type rawComponent struct {
 }
 
 type rawCatalog struct {
-	Schema    int            `toml:"schema"`
-	Phases    []string       `toml:"phases"`
-	Reasons   []string       `toml:"reasons"`
-	Features  []string       `toml:"features"`
-	Component []rawComponent `toml:"component"`
+	Schema     int                   `toml:"schema"`
+	Phases     []string              `toml:"phases"`
+	Reasons    []string              `toml:"reasons"`
+	Features   []string              `toml:"features"`
+	FeatureAny map[string][][]string `toml:"feature_any"`
+	Component  []rawComponent        `toml:"component"`
 }
 
 // Load parses and validates a catalog. Every problem found is in the error, one per line.
@@ -309,8 +313,8 @@ func Load(data []byte) (*Catalog, error) {
 		return nil, fmt.Errorf("catalog: %w", err)
 	}
 	c := &Catalog{Schema: raw.Schema, Phases: nonNil(raw.Phases), Reasons: nonNil(raw.Reasons),
-		Features: nonNil(raw.Features), byID: map[string]*Component{}, byStage: map[string]*Component{},
-		byLoop: map[string]*Component{}}
+		Features: nonNil(raw.Features), FeatureAny: map[string][][]string{}, byID: map[string]*Component{},
+		byStage: map[string]*Component{}, byLoop: map[string]*Component{}}
 	if raw.Schema != 1 {
 		bad("schema = %d: this code reads schema 1", raw.Schema)
 	}
@@ -371,6 +375,35 @@ func Load(data []byte) (*Catalog, error) {
 			}
 			c.byLoop[l] = comp
 		}
+	}
+	// feature groups (story 50.35): a known feature, known ids that list it, each id in one
+	// group of a feature
+	for _, f := range sortedKeys(raw.FeatureAny) {
+		if !slices.Contains(c.Features, f) {
+			bad("feature_any: %q is not a feature", f)
+			continue
+		}
+		in := map[string]bool{}
+		var groups [][]string
+		for _, g := range raw.FeatureAny[f] {
+			if len(g) < 2 {
+				bad("feature_any.%s: a group needs two members or more, got %v", f, g)
+			}
+			for _, id := range g {
+				comp, ok := c.byID[id]
+				switch {
+				case !ok:
+					bad("feature_any.%s: unknown component %q", f, id)
+				case !slices.Contains(comp.Features, f):
+					bad("feature_any.%s: component %s does not list the feature %s", f, id, f)
+				case in[id]:
+					bad("feature_any.%s: component %s is in two groups", f, id)
+				}
+				in[id] = true
+			}
+			groups = append(groups, append([]string(nil), g...))
+		}
+		c.FeatureAny[f] = groups
 	}
 	// references between components
 	for _, comp := range c.components {
@@ -458,7 +491,10 @@ func validate(c *Component, where string, features []string, bad func(string, ..
 	if c.OnDemand && !c.HasPart(KindProcess) {
 		bad("%s: on_demand is for a component with a process", where)
 	}
-	if c.Plugin != "" && (!strings.HasPrefix(c.Plugin, "tv.maktaba.") || !c.HasPart(KindStages)) {
+	// an extension component with stages (ext.plex) keeps its kind and names its plugin
+	// too (story 54.27 §3)
+	ownsStages := c.HasPart(KindStages) || (c.Kind == KindExtension && len(c.Stages) > 0)
+	if c.Plugin != "" && (!strings.HasPrefix(c.Plugin, "tv.maktaba.") || !ownsStages) {
 		bad("%s: plugin names a first-party plugin (tv.maktaba.*) of a component with stages", where)
 	}
 	core := strings.HasPrefix(c.ID, "core.")
@@ -876,7 +912,7 @@ func (c *Catalog) Dump() ([]byte, error) {
 		})
 	}
 	doc := map[string]any{"schema": c.Schema, "phases": c.Phases, "reasons": c.Reasons,
-		"features": c.Features, "components": comps, "order": c.order}
+		"features": c.Features, "feature_any": c.FeatureAny, "components": comps, "order": c.order}
 	var buf bytes.Buffer
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
@@ -894,7 +930,7 @@ func nonNil(s []string) []string {
 	return s
 }
 
-func sortedKeys(m map[string]any) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

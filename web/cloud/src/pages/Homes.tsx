@@ -11,8 +11,8 @@ import { useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
-import { api } from "../api";
-import { useI18n } from "../i18n";
+import { api } from "../shared/api";
+import { useI18n } from "../shared/i18n";
 import {
   cloudUnreachable,
   connectionsOf,
@@ -22,9 +22,9 @@ import {
   type Connection,
   type SavedList,
 } from "../savedHomes";
-import { useSession } from "../session";
+import { useSession } from "../shared/session";
 import { navigateExternal } from "../nav";
-import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "../ui";
+import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "../shared/ui";
 
 export interface CloudHome {
   server_id: string;

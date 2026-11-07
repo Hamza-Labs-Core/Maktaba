@@ -1,12 +1,13 @@
 # الاختبار والتحزيم
 
-> **الحالة: مبنيّ للغة Rust (المرحلة 1).** تصنع أداة `mkp` (في `plugind/crates/mkp`) مشروع Rust
-> (`mkp new rust <id> <folder>`)، وتفحص الحزمة كما يفحصها الجهاز الرئيسي (`mkp check`)، وتشغّل
+> **الحالة: مبنيّ للغات Rust وPython وJavaScript وGo.** تصنع أداة `mkp` (في `plugind/crates/mkp`)
+> مشروعًا (`mkp new rust|python|js|go <id> <folder>`)، وتبنيه مكوّنًا وتفحصه (`mkp build`)، وتفحص الحزمة كما يفحصها الجهاز الرئيسي (`mkp check`)، وتشغّل
 > مرحلة في بيئة الاختبار، أي شيفرة المضيف نفسها مع واجهة إضافات وهمية تجيب من ملف بيانات
-> (`mkp test --stage <name> --fixtures api.json`)، وتحزّم ملف `.mkplugin` (`mkp pack`). ويثبّت
-> المسؤول الملف من الإعدادات، الإضافات، مع تفعيل «السماح بالإضافات غير المراجَعة». ولم تُبنَ بعد
-> قوالب TypeScript وPython وGo، ولا التوقيع (`mkp pack --sign`، `mkp keys`)، ولا `mkp run`، ولا
-> وضع المطوّر. والبيان في [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في
+> (`mkp test --stage <name> --fixtures api.json`)، وتحزّم ملف `.mkplugin` (`mkp pack`)، وتوقّعه
+> بمفتاحك (`mkp keys new`، `mkp pack <folder> <out> --key <id>`)، وتثبّت مجلدًا على جهاز رئيسي في
+> وضع المطوّر (`mkp run`). ويثبّت المسؤول الملف من الإعدادات، الإضافات، أو بالأمر
+> `maktaba-server plugins`، مع تفعيل «السماح بالإضافات غير المراجَعة»؛ ويعيد
+> `maktaba-server plugins dev <folder>` تحميل المجلد عند كل حفظ. والبيان في [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في
 > [مرجع الإضافات](reference.ar.md). وبقية هذه الصفحة هي التصميم الوارد في
 > [القصة 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > و
@@ -34,12 +35,13 @@
 
 | الأمر | ما يفعله |
 |---|---|
-| `mkp new <template> <id>` | مشروع يضم `manifest.toml` و`i18n/en.json` و`i18n/ar.json` وعنصرًا نائبًا للأيقونة ومرحلة نموذجية وبيانات اختبار ثابتة واختبارًا |
-| `mkp build` | يشغّل سلسلة أدواتك، ثم التحقق نفسه من البيان وتدقيق الواردات اللذين يجريهما الخادم المنزلي والمتجر |
+| `mkp new <rust\|python\|js\|go> <id> <folder>` | مشروع يضم `package/manifest.toml` و`package/i18n/en.json` و`package/i18n/ar.json` ومرحلة نموذجية ومصدرها |
+| `mkp build <project> [--entry <file.js>]` | يشغّل سلسلة أدواتك فيكتب `package/plugin.wasm`، ثم التحقق نفسه من البيان وتدقيق الواردات اللذين يجريهما الخادم المنزلي والمتجر |
+| `mkp world <project>` | يكتب مجلد `wit/` في مشروعك وعالم الإضافة مقصور على ما يجيز بيانك استيراده (Python وJavaScript وGo؛ ويبدأ به `mkp build`) |
 | `mkp test` | يشغّل إضافتك في بيئة الاختبار المحلية على بيانات الاختبار الثابتة الخاصة بها |
 | `mkp keys new`، `list`، `export-public` | مفتاح التوقيع Ed25519 الخاص بك |
-| `mkp pack --sign` | يكتب `files.json` ويوقّعه ويصنع ملف `.mkplugin` |
-| `mkp run --home <url>` | يثبّت على خادم منزلي في وضع المطوّر عبر الواجهة البرمجية للمشرف |
+| `mkp pack <folder> <out.mkplugin> --key <id>` | يكتب `files.json` ويوقّعه بمفتاحك ويصنع ملف `.mkplugin` (بلا `--key`: غير موقّع) |
+| `mkp run <folder> --home <http://home:port> --user <admin>` | يثبّت المجلد على جهاز رئيسي في وضع المطوّر («قيد التطوير»، مشغّلة) عبر الواجهة البرمجية للمسؤول؛ شغّله مرة أخرى بعد أي تغيير لتحديثها. تأتي كلمة المرور من `MKP_HOME_PASSWORD` أو من الطرفية؛ ويخاطب عنوان الجهاز الرئيسي على شبكتك عبر HTTP (وعبر HTTPS استعمل وضع المطوّر على الجهاز الرئيسي نفسه) |
 | `mkp submit` | يرفع إلى المتجر (المرحلة 2) |
 
 يطابق إصدار حزمة التطوير إصدار الواجهة البرمجية للإضافات التي يستهدفها: `mkp 1.2.x` يبني لـ
@@ -51,14 +53,44 @@
 ## البدء
 
 ```sh
-mkp new rust dev.example.silence-chapters
-cd silence-chapters
-mkp build
-mkp test
+mkp new python dev.example.silence-chapters silence-chapters   # أو rust أو js
+mkp build silence-chapters
+mkp test silence-chapters/package --stage hello
 ```
 
 ثم عدّل `manifest.toml` (راجع [البيان والحزمة](manifest.ar.md))، وصرّح فقط عن القدرات التي
 تستخدمها، وأضف النصوص بالإنجليزية والعربية معًا.
+
+## Python وJavaScript وGo
+
+يشغّل الخادم المنزلي مكوّنك بلا نظام ملفات ولا شبكة ولا مدخل قياسي: لا يربط إلا واجهة الإضافات
+والساعات والأرقام العشوائية والمخرج القياسي ومخرج الأخطاء والبيئة. وسلاسل أدوات Python
+وJavaScript وGo تستورد أكثر من ذلك افتراضيًا، فيبنيها `mkp build` بحيث لا تفعل:
+
+- **Python** (`componentize-py`، في بيئة افتراضية خاصة بها): يُستبدل بكل استيراد من WASI بديلٌ
+  يفشل عند استدعائه. فتفشل `print` و`open` والمقابس والمدخل القياسي، وتُبذَر `random` عند بناء
+  الإضافة، فلا تستعملها لأي شيء سرّي أبدًا. وسجّل بـ`log.write`. وPython الخالصة فقط: لا تُبنى حزمة
+  فيها امتداد مكتوب بلغة C.
+- **JavaScript** (`jco componentize` مع `@bytecodealliance/componentize-js`): تُبنى وكل ميزة
+  اختيارية معطّلة (`--disable all`): لا `fetch` ولا مخرجات للطرفية ولا ساعات ولا أرقام عشوائية من
+  WASI. ولـTypeScript، حوّل الشيفرة أولًا إلى وحدة ES واحدة ثم شغّل
+  `mkp build <project> --entry dist/plugin.js`.
+- **العالم يتبع بيانك.** تستورد هذه الأدوات كل واجهة في العالم الذي تُبنى عليه، ويرفض الخادم
+  المنزلي واجهةً لا تغطيها قدرة مصرّح بها. لذا يكتب `mkp build` (أو `mkp world`) مجلد `wit/`
+  في مشروعك بالواجهات التي تغطيها قدراتك وحدها، مع الواجهات المتاحة لكل إضافة (`job` و`log`
+  و`data` و`events`). صرّح بقدرة في `package/manifest.toml` ثم ابنِ من جديد لتستعمل واجهتها؛
+  واستدعاء واجهة لم تصرّح بها لا يُبنى.
+
+- **Go** (TinyGo و`wit-bindgen-go` و`wasm-tools`؛ المستوى 2، بأفضل جهد): تُبنى لهدف
+  `wasm-unknown` في TinyGo، الذي لا يربط شيئًا من WASI. فتفشل دائمًا استدعاءات الملفات والمدخل
+  القياسي والشبكة، ولا تكتب `fmt.Print` إلى أي مكان: سجّل بـ`log.Write`. ولا يُستعمل هدف `wasip2`
+  في TinyGo: فبيئة تشغيله تطلب المدخل القياسي عند كل بدء، ولا يعطيه الخادم المنزلي أبدًا. أبقِ
+  ملف `realloc.go` في القالب: فهو المخصِّص الذي يستدعيه الخادم المنزلي ليمرّر النصوص. ويفشل
+  `mkp build` إن استورد المكوّن شيئًا يرفضه الخادم المنزلي.
+
+تُوجَد سلاسل الأدوات في `PATH`، أو تُسمّى بالمتغيّرات `MKP_COMPONENTIZE_PY` و`MKP_JCO`
+و`MKP_TINYGO` و`MKP_WIT_BINDGEN_GO` و`MKP_WASM_TOOLS` و`MKP_GO`. ويبلغ حجم
+مثال «مرحبًا» بلغة Python نحو 18 ميغابايت، دون حدّ 25 ميغابايت الذي يستهدفه قالبه.
 
 ## بيئة الاختبار
 
@@ -73,6 +105,10 @@ mkp test
   المخزّنة.
 - تستخدم حدود البيان الخاص بك. يستخدم `--limits strict` حدود المراجعة في المتجر؛ شغّل الاختبار
   به قبل الإرسال.
+- لا تحسب مهلتك إلا عمل إضافتك، كما في الخادم المنزلي: فترجمة المكوّن (في أول تشغيل لبناء جديد،
+  وقد تستغرق عدة ثوانٍ لإضافة Python) وانتظار مكان شاغر يسبقانها ويُذكران على حدة (`compile_ms`
+  و`wait_ms`). وتُحفَظ المكوّنات المترجمة بين التشغيلات في مجلد ذاكرتك المؤقتة (`MKP_CACHE_DIR`
+  لاختيار غيره)، مسمّاةً بالمكوّن وإصدار Wasmtime وإعداداته.
 
 تشغّل الفحوص الآلية في المتجر بيانات الاختبار الثابتة الخاصة بك عبر بيئة الاختبار نفسها، فاحرص
 على أن تكون ممثِّلة.
@@ -89,7 +125,7 @@ mkp test
 ## البناء والتحزيم
 
 1. يُنتج `mkp build` الملف `plugin.wasm`، ويفشل عند أي خطأ في البيان أو أي استيراد محظور.
-2. يكتب `mkp pack --sign` الملف `files.json` (المسار وبصمة sha256 والحجم لكل ملف)، ويوقّعه
+2. يكتب `mkp pack <folder> <out.mkplugin> --key <id>` الملف `files.json` (المسار وبصمة sha256 والحجم لكل ملف)، ويوقّعه
    بمفتاح المطوّر الخاص بك في `signatures/developer.sig`، ويصنع ملف `.mkplugin` بصيغة `tar` +
    zstd.
 3. تحقق من الحجم: 50 MB على الأكثر. يستهدف قالب «مرحبًا بالعالم» للغة Python حجمًا لا يتجاوز 25 MB.
@@ -100,7 +136,7 @@ mkp test
 أو بأداة سطر الأوامر:
 
 ```sh
-maktaba-server plugins install silence-chapters-1.4.0.mkplugin
+maktaba-server plugins install silence-chapters-1.4.0.mkplugin --name "Silence chapters" --enable
 ```
 
 | يحمل الملف | يُثبَّت | الشارة |
@@ -126,7 +162,19 @@ maktaba-server plugins dev ./silence-chapters
 عند توقف الأمر إلا إذا مرّرت `--keep`. يعمل في المضيف نفسه وبيئة العزل نفسها كأي إضافة.
 
 تضم أداة سطر الأوامر أيضًا `list` و`show` و`enable` و`disable` و`start` و`stop` و`update`
-و`rollback` و`remove` و`grants` و`policy`، للخوادم المنزلية التي لا متصفح فيها.
+و`rollback` و`remove` و`grants` و`policy`، للخوادم المنزلية التي لا متصفح فيها:
+
+```sh
+maktaba-server plugins policy --allow-unreviewed=on
+maktaba-server plugins grants dev.example.silence-chapters --grant media.read,chapters.write --all-libraries
+maktaba-server plugins remove dev.example.silence-chapters --purge
+```
+
+وهي تستدعي الواجهات البرمجية للمسؤول نفسها التي تستدعيها الإعدادات، الإضافات، بخيارات أداة المكوّنات
+ورموز خروجها: كل كتابة تعرض ما ستغيّره وتسأل `Continue? [y/N]` إلا مع `--yes`؛ و`--json` مع `list`
+و`show`؛ و`--dsn` بدل `DATABASE_URL`. ورموز الخروج: 0 تمّ، و1 رُفض (ويُطبع رمز الإضافة)، و2 كتابة
+بلا طرفية للسؤال ولا `--yes`، و3 الخادم لا يعمل. ويطلب التثبيت غير المراجَع اسم الإضافة (`--name`)
+كما يطلبه مربع الحوار.
 
 ## تحديث إضافتك على خادم منزلي
 

@@ -357,3 +357,26 @@ actor Waits {
         }
     }
 }
+
+/// Epic 50 story 50.19: the relay's refusals of a plan's play, read from its answers and told
+/// in English and Arabic, with what a screen offers.
+@Suite struct RelayPlans {
+    @Test func theRelaysRefusals() {
+        let needs = #"{"error":"relay_needs_plan","message":"remote play through the relay needs a Basic or Pro plan"}"#
+        let limit = #"{"error":"stream_limit","message":"2 devices are already playing through the relay, the most this plan allows"}"#
+        let busy = #"{"type":"https://maktaba.tv/problems/home-busy","title":"busy","status":503,"code":"home_busy"}"#
+        #expect(APIError.status(402, needs).kind == .relay(.needsPlan))
+        #expect(APIError.status(429, limit).kind == .relay(.streamLimit(2)))
+        #expect(APIError.status(503, busy).kind == .relay(.homeBusy))
+        // other 429s and 503s stay busy
+        #expect(APIError.status(429, #"{"error":"rate_limited"}"#, retryAfter: 4).kind == .busy(retryAfter: 4))
+        let en = ErrorStrings(.en), ar = ErrorStrings(.ar)
+        #expect(en.sentence(.relay(.needsPlan)).hasPrefix("Remote play through the relay needs a Basic or Pro plan."))
+        #expect(en.sentence(.relay(.streamLimit(2))).hasPrefix("2 devices are already playing through the relay"))
+        #expect(ar.sentence(.relay(.homeBusy)).hasPrefix("جهازك الرئيسي مشغول جدًا"))
+        #expect(!ar.sentence(.relay(.needsPlan)).isEmpty && ar.sentence(.relay(.needsPlan)) != en.sentence(.relay(.needsPlan)))
+        #expect(HomeFailure(kind: .relay(.needsPlan)).actions == [.back])
+        #expect(HomeFailure(kind: .relay(.streamLimit(2))).actions == [.tryAgain, .back])
+        #expect(HomeFailure(kind: .relay(.homeBusy)).actions == [.tryAgain, .back])
+    }
+}

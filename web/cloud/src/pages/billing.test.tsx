@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "../api";
+import { setAccessToken } from "../shared/api";
 import { renderAt, session, stubFetch, user } from "../test/harness";
 
 const { navigateExternal } = vi.hoisted(() => ({ navigateExternal: vi.fn() }));
@@ -13,16 +13,18 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-const plan = (id: string, name: string, price: number, purchasable = true) => ({
+const plan = (id: string, name: string, price: number | null, purchasable = true) => ({
   id,
   name,
   price_cents: price,
-  bandwidth_bytes_per_month: 100e9,
+  relay: id !== "free",
+  relay_cap_kbps: id === "basic" ? 3000 : 0,
+  max_relay_streams: id === "basic" ? 2 : null,
+  fair_use_bytes_per_month: id === "free" ? 0 : 500e9,
+  allowance_bytes_per_month: null,
+  pay_as_you_go: id === "pro",
+  extra_streams: id === "pro",
   max_servers: 1,
-  max_concurrent_streams: 2,
-  relay_qos: "standard",
-  includes_transcoding: false,
-  family_seats: 0,
   purchasable,
 });
 
@@ -35,8 +37,8 @@ function routes(me: Record<string, unknown> = {}, paymentsEnabled = true) {
         payments_enabled: paymentsEnabled,
         plans: [
           plan("free", "Free", 0, false),
-          plan("pro", "Pro", 500, paymentsEnabled),
-          plan("family", "Family", 900, paymentsEnabled),
+          plan("basic", "Basic", 500, paymentsEnabled),
+          plan("pro", "Pro", 900, paymentsEnabled),
         ],
       },
     ] as [number, unknown],
@@ -60,10 +62,10 @@ describe("billing", () => {
       await screen.findByText("Paid plans are coming soon: payments are not set up yet.")
     ).toBeInTheDocument();
     expect(screen.getByText("Inactive")).toBeInTheDocument();
+    const basic = screen.getByRole("button", { name: "Payments for Basic are coming soon" });
     const pro = screen.getByRole("button", { name: "Payments for Pro are coming soon" });
-    const family = screen.getByRole("button", { name: "Payments for Family are coming soon" });
     expect(pro).toBeDisabled();
-    expect(family).toBeDisabled();
+    expect(basic).toBeDisabled();
     expect(pro).toHaveTextContent("Payments coming soon");
     expect(screen.queryByRole("button", { name: /Upgrade/ })).not.toBeInTheDocument();
     // the current (free) plan has no button at all
@@ -81,7 +83,7 @@ describe("billing", () => {
       expect(
         await screen.findByText("الخطط المدفوعة قريبًا: لم يُفعَّل الدفع بعد.")
       ).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "الدفع لخطة Pro قريبًا" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "الدفع لخطة Basic قريبًا" })).toBeDisabled();
       expect(screen.getAllByText("الدفع قريبًا")).toHaveLength(2);
     } finally {
       localStorage.removeItem("mkt:cloud:locale");
@@ -89,15 +91,13 @@ describe("billing", () => {
   });
 
   it("shows the current plan set by hand, with no manage button", async () => {
-    stubFetch(routes({ plan: "pro", status: "active" }, false));
+    stubFetch(routes({ plan: "basic", status: "active" }, false));
     renderAt("/billing");
     expect(await screen.findByText("Current plan")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Manage billing" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Payments for Pro are coming soon" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Payments for Family are coming soon" })
-    ).toBeDisabled();
-    expect(
-      screen.queryByRole("button", { name: "Payments for Pro are coming soon" })
+      screen.queryByRole("button", { name: "Payments for Basic are coming soon" })
     ).not.toBeInTheDocument();
   });
 
@@ -107,7 +107,7 @@ describe("billing", () => {
       "POST /v1/billing/checkout": [503, { error: "payments_not_set_up", message: "x" }],
     });
     renderAt("/billing");
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Upgrade to Pro" }));
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Upgrade to Basic" }));
     expect(await screen.findByText(/Payments are not set up yet/)).toBeInTheDocument();
     expect(navigateExternal).not.toHaveBeenCalled();
   });
@@ -122,11 +122,11 @@ describe("billing", () => {
     });
     renderAt("/billing");
     const u = userEvent.setup();
-    await u.click(await screen.findByRole("button", { name: "Upgrade to Pro" }));
+    await u.click(await screen.findByRole("button", { name: "Upgrade to Basic" }));
     await waitFor(() =>
       expect(navigateExternal).toHaveBeenCalledWith("https://pay.example.test/checkout/1")
     );
-    expect(f.find("POST", "/v1/billing/checkout")[0].body).toEqual({ plan: "pro" });
+    expect(f.find("POST", "/v1/billing/checkout")[0].body).toEqual({ plan: "basic" });
     // the current (free) plan has no Upgrade button
     expect(screen.queryByRole("button", { name: "Upgrade to Free" })).not.toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25");
@@ -138,14 +138,14 @@ describe("billing", () => {
       "POST /v1/billing/checkout": [409, { error: "already_subscribed", message: "x" }],
     });
     renderAt("/billing");
-    await userEvent.setup().click(await screen.findByRole("button", { name: "Upgrade to Family" }));
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Upgrade to Pro" }));
     expect(await screen.findByText(/Use Manage billing/)).toBeInTheDocument();
     expect(navigateExternal).not.toHaveBeenCalled();
   });
 
   it("opens the portal with Manage billing", async () => {
     stubFetch({
-      ...routes({ plan: "pro", has_customer: true, current_period_end: "2026-11-01T00:00:00Z" }),
+      ...routes({ plan: "basic", has_customer: true, current_period_end: "2026-11-01T00:00:00Z" }),
       "POST /v1/billing/portal": [200, { portal_url: "https://pay.example.test/portal/1" }],
     });
     renderAt("/billing");
@@ -153,6 +153,88 @@ describe("billing", () => {
     await waitFor(() =>
       expect(navigateExternal).toHaveBeenCalledWith("https://pay.example.test/portal/1")
     );
+  });
+
+  // Epic 50 story 50.19: the three plans' sentences; a price not set yet is "coming soon", and
+  // Pro's sentence names its allowance and devices only once they are set.
+  it("describes Free, Basic and Pro, with prices not set yet", async () => {
+    stubFetch({
+      ...routes({}, false),
+      "GET /v1/billing/plans": [
+        200,
+        {
+          payments_enabled: false,
+          plans: [
+            plan("free", "Free", 0, false),
+            plan("basic", "Basic", null, false),
+            plan("pro", "Pro", null, false),
+          ],
+        },
+      ],
+    });
+    renderAt("/billing");
+    expect(await screen.findByText(/Play at home, and from anywhere directly/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/at up to about 3 Mbps \(good 720p\), on up to 2 devices/)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Fair use: after 500 GB in a month/)).toBeInTheDocument();
+    expect(screen.getByText(/at full quality\. After its monthly allowance/)).toBeInTheDocument();
+    expect(screen.getAllByText("Price coming soon")).toHaveLength(2);
+  });
+
+  // Epic 50 story 50.19 §4–§6: use by quality; Pro's pay-as-you-go needs a limit, shows what
+  // it spent and says when 80 % is used.
+  it("lets a Pro owner turn on pay as you go with a monthly limit", async () => {
+    const f = stubFetch({
+      ...routes({ plan: "pro", status: "active" }),
+      "GET /v1/billing/usage": [
+        200,
+        {
+          month: "2026-11",
+          plan: "pro",
+          limit_bytes: 0,
+          used_bytes: 9e9,
+          servers: [],
+          by_mode: { full: 4e9, payg: 1e9, capped: 4e9, capped_slow: 0 },
+        },
+      ],
+      "GET /v1/billing/payg": [
+        200,
+        { enabled: true, cap_cents: 1000, spent_cents: 850, price_per_gb_cents: 10 },
+      ],
+      "PATCH /v1/billing/payg": [
+        200,
+        { enabled: false, cap_cents: 1000, spent_cents: 850, price_per_gb_cents: 10 },
+      ],
+    });
+    renderAt("/billing");
+    expect(await screen.findByText("Pay as you go")).toBeInTheDocument();
+    expect(screen.getByText(/Full quality: /)).toBeInTheDocument();
+    expect(screen.getByText(/Capped quality \(about 3 Mbps\): /)).toBeInTheDocument();
+    expect(
+      screen.getByText("You've used 80% of your pay-as-you-go limit this month.")
+    ).toBeInTheDocument();
+    expect(screen.getByText(/\$8\.50 of \$10\.00 spent this month/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Turn off" }));
+    await waitFor(() =>
+      expect(f.find("PATCH", "/v1/billing/payg")[0].body).toEqual({
+        enabled: false,
+        cap_cents: 1000,
+      })
+    );
+  });
+
+  it("has no pay as you go before its price is set", async () => {
+    stubFetch({
+      ...routes({ plan: "pro", status: "active" }),
+      "GET /v1/billing/payg": [
+        200,
+        { enabled: false, cap_cents: 0, spent_cents: 0, price_per_gb_cents: null },
+      ],
+    });
+    renderAt("/billing");
+    expect(await screen.findByText("Current plan")).toBeInTheDocument();
+    expect(screen.queryByText("Pay as you go")).not.toBeInTheDocument();
   });
 
   it("shows the return banners", async () => {

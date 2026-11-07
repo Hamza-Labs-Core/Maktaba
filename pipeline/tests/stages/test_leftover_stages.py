@@ -13,8 +13,8 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import loads
-from maktaba_pipeline.engine.stages.plan_channels import load_inputs
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.schedule.plan_inputs import load_inputs
 from tests.engine.factory import make_library
 from tests.stages.world import (
     add_channel,

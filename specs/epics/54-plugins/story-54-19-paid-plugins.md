@@ -136,6 +136,21 @@ files or CI logs.
    home): after a Buy it started it checks every 15 s for up to 15 minutes, otherwise daily.
    Then it downloads the package.
 
+**As built.** The catalog's `price` names a paid plugin's active product (`one_time` first,
+else `yearly`) and `extra.prices` its amounts in minor units by currency, from
+`store-commerce`. The home's `POST /api/plugins/store-account/buy` asks the store, signed with
+its home store key, for a purchase intent (`POST /v1/homes/{id}/purchase-intents`: the plugin
+id and the admin's language only; one use, 10 minutes, only its sha256 kept, migration
+`commerce/0002`), starts the 15-second entitlement checks, and the admin's browser posts the
+intent to `/buy/<plugin id>` in the tab the click opened. The store keeps it in a same-site
+cookie, sends a signed-out buyer to `/signin?next=` (the console follows `next` only to
+`/buy/…` or `/admin` on the store's own origin), shows the price in the first currency an
+enabled provider sells to the buyer's country (theirs, then USD, EUR, GBP, SAR, AED, EGP),
+and its pay step (same origin only) redirects to the provider's checkout. The pages run no
+script. The Worker builds the provider registry from `payment_providers` and the Worker
+secrets, and routes `POST /v1/payments/webhook/{provider}` to the provider's module. Buy on
+`plugins.maktaba.tv` itself (picking a linked home) is not built.
+
 **Split:** `maktaba_share = 15 %` of the price, `developer_share = 85 %`, computed by one
 function with a shared test table (rounding: Maktaba's share is rounded down to the cent, the
 developer gets the rest). Nothing else is taken from the developer's share by the store; the
@@ -151,7 +166,7 @@ provider's own fees are shown to developers as the provider states them.
 - The home verifies it **offline**: embedded `plugins-root.json` → `store-keys.json` → E →
   the entitlement, and that `home_id` and `home_key_fp` are its own. No call to Maktaba Cloud,
   its licence issuer or its licence verifier; the grace rules (31 days plus `SkewGrace`) are
-  the same numbers as Epic 16's, in the home's own `api/internal/plugins/entitlements.go`.
+  the same numbers as Epic 16's, in `shared/plugins/pluginsig` (`CheckEntitlement`).
 - The home refreshes entitlements daily with a signed request to the store. A store outage
   shorter than 31 days changes nothing for a paying home; a cloud outage of any length changes
   nothing at all.
@@ -174,6 +189,46 @@ provider's own fees are shown to developers as the provider states them.
 - **Moving to a new home:** the buyer's store account can move a purchase to another of its
   linked homes (twice a year, re-auth), which ends the old home's entitlement at its next
   refresh.
+- **As built.** An entitlement is a signed envelope of kind `entitlement` (54.14's format and
+  message), times in RFC 3339 without fractions, `home_key_fp` the sha256 (hex) of the home
+  store key's raw public key. The store answers `GET /v1/homes/{id}/entitlements` to the home's
+  own MKS-Home signature, from `store-commerce`, signed with `STORE_ENTITLEMENT_KEY`. On the
+  home, the API's refresher (`api/internal/plugins/entitlements.go`) fetches daily (an hour of
+  jitter) and, after a Buy, every 15 s for 15 minutes; the supervisor checks each envelope
+  against the store keys it verified (`POST /plugins/entitlements/verify`, `pluginsig.
+  CheckEntitlement`); the ones that hold replace `plugin_entitlements` (migration 0204), and
+  any failure keeps the rows. Both gates (the supervisor's runner, the pipeline's
+  `plugingate`) read only `valid_until`: a manifest whose `price` is not `free` waits
+  `entitlement_missing` without a row valid now (72-hour grace). Settings → Plugins → Store
+  account lists the purchases held and has **Check for purchases now**.
+- **As built: paid packages.** A plugin with an active product has its package kept only in
+  the private bucket (`paid/<sha256>.mkplugin`), and the catalog names
+  `plugins-cdn.maktaba.tv/paid/<sha256>`. A home asks `POST /v1/homes/{id}/downloads`
+  (`{plugin_id, sha256}`, signed by the home) and gets a URL only while it holds a valid
+  entitlement (`entitlement_missing` otherwise). Its `t` is an HMAC under the Worker secret
+  `PAID_URL_KEY` of the home id, the sha256 and an expiry 10 minutes ahead. There is no
+  separate `store-cdn` Worker: `store-web` serves `plugins-cdn.maktaba.tv/paid/*` on a zone
+  route (the rest of that host stays the public bucket). It checks `t`, the path's sha256 and
+  the home's `X-Maktaba-Home`, then streams the file uncached; an expired, forged or another
+  home's `t` is 403. The home's store install of a paid plugin downloads through it
+  (`storelink.PaidPackage`, checking the URL is the CDN's `/paid/<sha256>`) and checks the
+  sha256 as for any package.
+- **As built: moving a purchase.** store-commerce migration `0003_purchase_moves` keeps one row
+  per move. `GET /v1/purchases` lists the account's plugin purchases (each with its home,
+  moves left and when the next move is free), and `POST /v1/purchases/{id}/move {home_id}`
+  (a verified account, re-authenticated, rate-limited, audited) moves one to a home linked to
+  the same account now: at most 2 moves per purchase in any 365 days, only while it is paid or
+  disputed. One D1 batch writes the move row only while the purchase is still on its home,
+  in a movable state and under the limit, and rewrites `purchases.home_id` and
+  `entitlements.home_id` only if that row exists, so two moves at once cannot both pass. The
+  home needs no change: it replaces `plugin_entitlements` with what the store returns, so the
+  old home drops the plugin at its next refresh. The console's Account page has a Purchases
+  section with Move, in English and Arabic.
+- **As built: Buy on plugins.maktaba.tv.** A paid plugin's listing page (the catalog's
+  `price` not `free`) links to `/buy/<plugin>/home`: the signed-in buyer chooses one of the
+  account's linked homes in a scriptless form, whose POST (the store's own Origin only,
+  rate-limited, a home linked to this account now) makes the same purchase intent the home's
+  Buy asks for and continues on the same price and pay pages.
 
 ### 7. Refunds, disputes and tax: owned by the store
 
@@ -283,9 +338,11 @@ All payment tests use the fake provider and recorded fixtures; no live payment c
 | `store/web/payments_webhook.ts` (new) | Provider events. |
 | `store/cdn/paid.ts` (new) | Signed URLs for paid packages. |
 | `store/migrations/commerce/0001_payments.sql` (new) | Providers, provider accounts, seller fees, products, prices, purchases, the ledger, provider events, payouts, entitlements. |
-| `api/internal/plugins/entitlements.go` (new) | Home refresh and offline checks; the `entitlement_missing` gate (54.37). |
+| `api/internal/plugins/entitlements.go` (new) | The home's refresh (store → supervisor check → `plugin_entitlements`). |
+| `cmd/maktaba-server/internal/plugins/routes.go`, `runner.go` | The supervisor's check route and the `entitlement_missing` gate (54.37); `pipeline/.../components/plugingate.py` the same gate. |
+| `shared/db/migrations/0204_plugins_entitlements.sql` (new) | `plugin_entitlements`. |
 | `shared/components/catalog.toml`, `web/src/i18n/{en,ar}.json` | `entitlement_missing` in `reasons`, with its words (if 54.37 has not added it). |
-| `shared/go/pluginsig/` | Entitlement verification with `use: "entitlement"` keys. |
+| `shared/plugins/pluginsig/` | Entitlement verification with `use: "entitlement"` keys (`VerifyEntitlement`, `CheckEntitlement`). |
 | `tools/ci/payment_provider_allowlist.py` (new) | T07. |
 | `store/web/` pages | Seller fee, checkout, account purchases, payouts in the console; en + ar. |
 | `web/src/pages/Admin/Plugins/StorePlugin.tsx` | Buy / Link this home to buy; en + ar. |

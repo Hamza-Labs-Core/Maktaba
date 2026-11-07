@@ -123,6 +123,10 @@ func (l *Link) base() string {
 	return DefaultStore
 }
 
+// Base is the store's origin (MAKTABA_PLUGIN_STORE_URL, or plugins.maktaba.tv): the only
+// place a buy page may be.
+func (l *Link) Base() string { return l.base() }
+
 // key loads the home store key, making it on the first link.
 func (l *Link) key(ctx context.Context, create bool) (ed25519.PrivateKey, error) {
 	seed, err := l.Secrets.Get(ctx, KeyName)
@@ -143,6 +147,17 @@ func (l *Link) key(ctx context.Context, create bool) (ed25519.PrivateKey, error)
 		return nil, err
 	}
 	return ed25519.NewKeyFromSeed(seed), nil
+}
+
+// KeyFingerprint is the sha256 (hex) of the home store key's raw public key: what an
+// entitlement names (story 54.19 §6) so a copy for another home's key is refused.
+func (l *Link) KeyFingerprint(ctx context.Context) (string, error) {
+	k, err := l.key(ctx, false)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(k.Public().(ed25519.PublicKey))
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // LoadState reads the link (nil when not linked).
@@ -376,4 +391,58 @@ func (s *signer) headerWith(method, path string, body []byte, at time.Time, nonc
 	msg := "MKS-Home\n" + method + "\n" + path + "\n" + ts + "\n" + nonce + "\n" + hex.EncodeToString(sum[:])
 	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(s.key, []byte(msg)))
 	return fmt.Sprintf("MKS-Home id=%s, ts=%s, nonce=%s, sig=%s", s.homeID, ts, nonce, sig)
+}
+
+// PaidHomeHeader names this home to the CDN when it downloads a paid package (bound in the
+// signed URL).
+const PaidHomeHeader = "X-Maktaba-Home"
+
+// PaidPackage downloads a paid plugin's package (54.19 §6): it asks the store, signed with
+// the home store key, for a download URL (issued only against a valid entitlement, for 10
+// minutes), checks the URL is the CDN's /paid/<sha256>, and fetches it naming this home. At
+// most maxBytes.
+func (l *Link) PaidPackage(ctx context.Context, cdnBase, pluginID, sha string, maxBytes int64) ([]byte, error) {
+	s, err := l.LoadState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, &Error{Status: http.StatusConflict, Code: CodeNotLinked, Msg: "this home is not linked"}
+	}
+	body, _ := json.Marshal(map[string]string{"plugin_id": pluginID, "sha256": sha})
+	resp, b, err := l.Signed(ctx, http.MethodPost, "/v1/homes/"+s.HomeID+"/downloads", body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, storeError(resp, b)
+	}
+	var ans struct {
+		URL string `json:"url"`
+	}
+	want := strings.TrimRight(cdnBase, "/") + "/paid/" + sha + "?t="
+	if err := json.Unmarshal(b, &ans); err != nil || !strings.HasPrefix(ans.URL, want) || strings.ContainsAny(ans.URL, " \r\n") {
+		return nil, &Error{Status: http.StatusBadGateway, Code: CodeUnreachable, Msg: "the store's answer was not a download URL for this file"}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ans.URL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(PaidHomeHeader, s.HomeID)
+	if l.Version != "" {
+		req.Header.Set("User-Agent", "Maktaba/"+l.Version)
+	}
+	c := l.HTTP
+	if c == nil {
+		c = &http.Client{Timeout: 2 * time.Minute}
+	}
+	r, err := c.Do(req)
+	if err != nil {
+		return nil, &Error{Status: http.StatusBadGateway, Code: CodeUnreachable, Msg: err.Error()}
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		return nil, &Error{Status: http.StatusBadGateway, Code: CodeUnreachable, Msg: fmt.Sprintf("the CDN answered %d", r.StatusCode)}
+	}
+	return io.ReadAll(io.LimitReader(r.Body, maxBytes))
 }

@@ -265,5 +265,103 @@ else
     fail "fip-check: $(cat "${work}/fip/pushed" 2>/dev/null)"
 fi
 
+# dns-update (story 50.15): the release's binary under the dns role, the old one kept; a role
+# that doesn't stay up gets the old one back and fails; a node without the role only installs
+mkdir -p "${work}/dnsbin"
+cat >"${work}/dnsbin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"${STATE}/systemctl"
+case "$1" in
+    is-enabled) [ "${DNS_ENABLED:-yes}" = yes ] ;;
+    is-active) [ "$(cat "${BIN}")" != broken ] ;;
+    *) exit 0 ;;
+esac
+STUB
+printf '#!/usr/bin/env bash\nexit 0\n' >"${work}/dnsbin/sleep"
+chmod +x "${work}/dnsbin/"*
+dnsupdate() { # dnsupdate <case> <new binary's text> [env...]: old binary "v1", then dns-update v2
+    local name=$1 text=$2; shift 2
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}/releases/v2"
+    printf '%s' "${text}" >"${work}/${name}/releases/v2/maktaba-cloud"; chmod +x "${work}/${name}/releases/v2/maktaba-cloud"
+    printf v1 >"${work}/${name}/bin"
+    env PATH="${work}/dnsbin:${PATH}" STATE="${work}/${name}" RELEASES="${work}/${name}/releases" BIN="${work}/${name}/bin" \
+        "$@" bash "${here}/bin/dns-update" v2 >/dev/null 2>&1
+    echo $?
+}
+rc="$(dnsupdate dnsgood good)"
+if [ "${rc}" = 0 ] && [ "$(cat "${work}/dnsgood/bin")" = good ] && [ "$(cat "${work}/dnsgood/bin.prev")" = v1 ] \
+    && grep -q "restart maktaba-cloud-dns.service" "${work}/dnsgood/systemctl"; then
+    ok "dns-update: the new binary runs, the old one kept"
+else
+    fail "dns-update good: rc=${rc} $(cat "${work}/dnsgood/systemctl" 2>/dev/null)"
+fi
+rc="$(dnsupdate dnsbad broken)"
+if [ "${rc}" = 1 ] && [ "$(cat "${work}/dnsbad/bin")" = v1 ]; then
+    ok "dns-update: a role that doesn't stay up gets the old binary back and fails"
+else
+    fail "dns-update bad: rc=${rc} bin=$(cat "${work}/dnsbad/bin")"
+fi
+rc="$(dnsupdate dnsoff good DNS_ENABLED=no)"
+if [ "${rc}" = 0 ] && [ "$(cat "${work}/dnsoff/bin")" = good ] && ! grep -q restart "${work}/dnsoff/systemctl"; then
+    ok "dns-update: without the role enabled, it installs and restarts nothing"
+else
+    fail "dns-update off: rc=${rc} $(cat "${work}/dnsoff/systemctl" 2>/dev/null)"
+fi
+rm -rf "${work:?}/dnsmissing"; mkdir -p "${work}/dnsmissing"
+env PATH="${work}/dnsbin:${PATH}" STATE="${work}/dnsmissing" RELEASES="${work}/dnsmissing" BIN="${work}/dnsmissing/bin" \
+    bash "${here}/bin/dns-update" v9 >/dev/null 2>&1; rc=$?
+if [ "${rc}" = 2 ] && [ ! -e "${work}/dnsmissing/bin" ]; then ok "dns-update: a missing release changes nothing"; else fail "dns-update missing: rc=${rc}"; fi
+
+# app-update: the release's binary under the api and worker, the old one kept; on the leader
+# the running units restart (the worker first) and one that doesn't stay up gets the old
+# binary back and fails; on the standby (nothing running) it only installs
+mkdir -p "${work}/appbin"
+cat >"${work}/appbin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"${STATE}/systemctl"
+case "$1" in
+    is-active)
+        if [ -e "${STATE}/restarted" ]; then [ "$(cat "${BIN}")" != broken ]; else [ "${RUNNING:-yes}" = yes ]; fi ;;
+    restart) touch "${STATE}/restarted" ;;
+    *) exit 0 ;;
+esac
+STUB
+printf '#!/usr/bin/env bash\nexit 0\n' >"${work}/appbin/sleep"
+chmod +x "${work}/appbin/"*
+appupdate() { # appupdate <case> <new binary's text> [env...]: old binary "v1", then app-update v2
+    local name=$1 text=$2; shift 2
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}/releases/v2"
+    printf '%s' "${text}" >"${work}/${name}/releases/v2/maktaba-cloud"; chmod +x "${work}/${name}/releases/v2/maktaba-cloud"
+    printf v1 >"${work}/${name}/bin"
+    env PATH="${work}/appbin:${PATH}" STATE="${work}/${name}" RELEASES="${work}/${name}/releases" BIN="${work}/${name}/bin" \
+        "$@" bash "${here}/bin/app-update" v2 >/dev/null 2>&1
+    echo $?
+}
+rc="$(appupdate appgood good)"
+restarts="$(grep '^restart' "${work}/appgood/systemctl" 2>/dev/null | tr '\n' ' ')"
+if [ "${rc}" = 0 ] && [ "$(cat "${work}/appgood/bin")" = good ] && [ "$(cat "${work}/appgood/bin.prev")" = v1 ] \
+    && [ "${restarts}" = "restart maktaba-cloud-worker.service restart maktaba-cloud-api.service " ]; then
+    ok "app-update: the leader runs the new binary, worker then api restarted, the old one kept"
+else
+    fail "app-update good: rc=${rc} restarts=${restarts}"
+fi
+rc="$(appupdate appbad broken)"
+if [ "${rc}" = 1 ] && [ "$(cat "${work}/appbad/bin")" = v1 ] \
+    && [ "$(grep -c '^restart maktaba-cloud-api.service' "${work}/appbad/systemctl")" = 2 ]; then
+    ok "app-update: an api or worker that doesn't stay up gets the old binary back, restarted, and fails"
+else
+    fail "app-update bad: rc=${rc} bin=$(cat "${work}/appbad/bin") $(cat "${work}/appbad/systemctl" 2>/dev/null)"
+fi
+rc="$(appupdate appstandby good RUNNING=no)"
+if [ "${rc}" = 0 ] && [ "$(cat "${work}/appstandby/bin")" = good ] && ! grep -q restart "${work}/appstandby/systemctl"; then
+    ok "app-update: on the standby it installs and restarts nothing"
+else
+    fail "app-update standby: rc=${rc} $(cat "${work}/appstandby/systemctl" 2>/dev/null)"
+fi
+rm -rf "${work:?}/appmissing"; mkdir -p "${work}/appmissing"
+env PATH="${work}/appbin:${PATH}" STATE="${work}/appmissing" RELEASES="${work}/appmissing" BIN="${work}/appmissing/bin" \
+    bash "${here}/bin/app-update" v9 >/dev/null 2>&1; rc=$?
+if [ "${rc}" = 2 ] && [ ! -e "${work}/appmissing/bin" ]; then ok "app-update: a missing release changes nothing"; else fail "app-update missing: rc=${rc}"; fi
+
 if [ "${fails}" -ne 0 ]; then echo "${fails} failed"; exit 1; fi
 echo "all passed"

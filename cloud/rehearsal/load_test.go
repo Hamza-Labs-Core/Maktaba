@@ -38,12 +38,19 @@ func (s sumLooker) Look(ctx context.Context) (loadtest.Machine, error) {
 // load-small (story 50.14 §3, T04): 1,000 homes holding their tunnels and 50 players at
 // 5 Mbit/s for 5 minutes through the one-node cluster. CI can't measure a Hetzner machine, so
 // this measures what regresses: the relay's CPU-seconds per Mbit relayed and its memory per
-// tunnel, written as load-small-baseline.json; the workflow compares it with main's last
-// (maktaba-loadtest compare) and fails at 20 % worse.
+// tunnel, written as load-small-baseline.json. The workflow runs it twice on one runner, with
+// the base commit's relay and with this commit's, compares the two (maktaba-loadtest compare)
+// and fails at 20 % worse: a figure from another run is another machine (#832).
+//
+// The CPU is the relay containers' own CPU time (their cgroups' counters, read at each round's
+// ends), per Mbit relayed in that round, over REHEARSAL_LOAD_ROUNDS rounds; the median is the
+// figure. A single figure integrated from docker stats' instants swung 1.8 times between runs
+// of the same code on one runner shared with the cluster (#808).
 func loadSmall(t *testing.T, c *cluster) Result {
 	n := envInt("REHEARSAL_HOMES", 1000)
 	players := envInt("REHEARSAL_STREAMS", 50)
 	secs := envInt("REHEARSAL_LOAD_SECONDS", 300)
+	rounds := max(envInt("REHEARSAL_LOAD_ROUNDS", 5), 1)
 	slugs := c.homesOnline(n)
 
 	out, err := exec.Command("docker", "info", "--format", "{{.NCPU}}").Output()
@@ -51,10 +58,22 @@ func loadSmall(t *testing.T, c *cluster) Result {
 		t.Fatal(err)
 	}
 	cpus, _ := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	relays := []string{c.project + "-relay-blue-1", c.project + "-relay-green-1"}
+	// memory: docker stats' peak, as before
 	meter := loadtest.Meter{CPUs: cpus, Looker: sumLooker{
-		&loadtest.Docker{Container: c.project + "-relay-blue-1"},
-		&loadtest.Docker{Container: c.project + "-relay-green-1"},
+		&loadtest.Docker{Container: relays[0]}, &loadtest.Docker{Container: relays[1]},
 	}}
+	relayCPU := func() float64 {
+		var sum float64
+		for _, r := range relays {
+			s, err := loadtest.CgroupCPU{Container: r}.Seconds(context.Background())
+			if err != nil {
+				t.Fatalf("the relay's CPU time: %v", err)
+			}
+			sum += s
+		}
+		return sum
+	}
 	g := &streamgen.Gen{Edge: c.edge, Domain: "relay.test", Slugs: shuffled(slugs), Clients: players}
 	g.Apply(streamgen.Profile{BitsPerSecond: 5_000_000, Segment: 4 * time.Second})
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(secs)*time.Second)
@@ -67,6 +86,17 @@ func loadSmall(t *testing.T, c *cluster) Result {
 	if _, err := meter.Tick(ctx, start); err != nil {
 		t.Fatalf("docker stats: %v", err)
 	}
+	roundLen := time.Duration(secs) * time.Second / time.Duration(rounds)
+	nextRound := start.Add(roundLen)
+	cpu0, bytes0 := relayCPU(), g.Stats().Bytes
+	var perRound []float64
+	endRound := func() {
+		cpu1, bytes1 := relayCPU(), g.Stats().Bytes
+		if mb := float64(bytes1-bytes0) * 8 / 1e6; mb > 0 {
+			perRound = append(perRound, (cpu1-cpu0)/mb)
+		}
+		cpu0, bytes0 = cpu1, bytes1
+	}
 loop:
 	for {
 		select {
@@ -76,21 +106,29 @@ loop:
 			if _, err := meter.Tick(ctx, now); err != nil && ctx.Err() == nil {
 				t.Logf("docker stats: %v", err)
 			}
+			if !now.Before(nextRound) && len(perRound) < rounds-1 {
+				endRound()
+				nextRound = nextRound.Add(roundLen)
+			}
 		}
 	}
 	<-done
+	endRound()
 	took := time.Since(start)
 	st := g.Stats()
 	mbit := float64(st.Bytes) * 8 / 1e6
-	if mbit == 0 {
+	if mbit == 0 || len(perRound) == 0 {
 		t.Fatalf("nothing was relayed: %+v", st)
 	}
-	base := loadtest.Baseline{Sha: os.Getenv("GITHUB_SHA"), CPUSecondsPerMbit: meter.CPUSeconds() / mbit,
+	base := loadtest.Baseline{Sha: os.Getenv("GITHUB_SHA"), Method: loadtest.Method,
+		CPUSecondsPerMbit: loadtest.Median(perRound), CPURounds: perRound,
 		MemBytesPerTunnel: meter.PeakMem() / float64(n), Mbit: mbit, Tunnels: n}
 	b, _ := json.MarshalIndent(base, "", "  ")
 	if err := os.WriteFile(filepath.Join(outDir(t), "load-small-baseline.json"), b, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("CPU-seconds per Mbit by round: %.4g (median %.4g; docker stats' sampled estimate %.4g)",
+		perRound, base.CPUSecondsPerMbit, meter.CPUSeconds()/mbit)
 	rate := mbit / took.Seconds()
 	t.Logf("%d homes, %d players: %.1f Mbit/s relayed for %s; %.4f CPU-seconds per Mbit, %.0f bytes per tunnel; stalls %.2f%%, TTFB p95 %s",
 		n, players, rate, took.Round(time.Second), base.CPUSecondsPerMbit, base.MemBytesPerTunnel, st.StallRate()*100, st.TTFBP95)

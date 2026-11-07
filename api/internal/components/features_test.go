@@ -3,6 +3,7 @@ package components
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"sort"
 	"testing"
@@ -115,9 +116,13 @@ func TestFeatureDependencyAndLicence(t *testing.T) {
 	if !Resolve(components.Default(), d, func(string) bool { return true }, false).Features["remote_access"] {
 		t.Fatal("remote_access off with the relay on and licensed")
 	}
-	r = Resolve(components.Default(), d, func(string) bool { return false }, false)
+	// story 50.15: direct access is enough without the relay's licence (a Free home)
+	if !Resolve(components.Default(), d, func(string) bool { return false }, false).Features["remote_access"] {
+		t.Fatal("remote_access off on a Free home with direct access on")
+	}
+	r = Resolve(components.Default(), setWant(d, "cloud.direct", components.WantInstalled, false), func(string) bool { return false }, false)
 	if r.Features["remote_access"] || r.Off["remote_access"].Reason != ReasonLicenceMissing {
-		t.Fatalf("unlicensed relay: %+v", r.Off["remote_access"])
+		t.Fatalf("unlicensed relay, direct off: %+v", r.Off["remote_access"])
 	}
 	// the kill switch: all on
 	if r := Resolve(components.Default(), d, func(string) bool { return false }, true); len(r.Off) != 0 || len(r.Components) != 0 {
@@ -254,5 +259,72 @@ func BenchmarkCapabilities(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		s := c.Snapshot()
 		_ = s.Body(i%2 == 0)
+	}
+}
+
+// withDirect is the embedded catalog: story 50.15 added cloud.direct and its remote_access
+// group (story 50.35).
+func withDirect(t *testing.T) *components.Catalog {
+	t.Helper()
+	cat := components.Default()
+	if _, ok := cat.Get("cloud.direct"); !ok {
+		t.Fatal("no cloud.direct in the catalog")
+	}
+	return cat
+}
+
+// Story 50.35 T01: remote_access is on when cloud.link is on and either cloud.relay or
+// cloud.direct is; off, an admin sees both members, with the first one's reason.
+func TestRemoteAccessIsOnWhenAnyPathIs(t *testing.T) {
+	cat := withDirect(t)
+	for _, c := range []struct {
+		link   bool
+		relay  string // on, off, licence (on, no cloud_relay flag)
+		direct bool
+		on     bool
+		reason string
+	}{
+		{true, "on", true, true, ""},
+		{true, "on", false, true, ""},
+		{true, "off", true, true, ""},
+		{true, "licence", true, true, ""}, // a Free home with direct access
+		{true, "off", false, false, ReasonSwitchedOff},
+		{true, "licence", false, false, ReasonLicenceMissing},
+		{false, "on", true, false, ReasonSwitchedOff},
+		{false, "licence", true, false, ReasonSwitchedOff},
+		{false, "off", false, false, ReasonSwitchedOff},
+	} {
+		d := map[string]store.Desired{}
+		for _, comp := range cat.Components() {
+			if comp.Switchable {
+				d[comp.ID] = store.Desired{ID: comp.ID, Want: components.WantEnabled, Generation: 1}
+			}
+		}
+		want := func(on bool) string {
+			if on {
+				return components.WantEnabled
+			}
+			return components.WantInstalled
+		}
+		setWant(d, "cloud.link", want(c.link), false)
+		setWant(d, "cloud.relay", want(c.relay != "off"), false)
+		setWant(d, "cloud.direct", want(c.direct), false)
+		licensed := func(flag string) bool { return flag != "cloud_relay" || c.relay != "licence" }
+		r := Resolve(cat, d, licensed, false)
+		name := fmt.Sprintf("link %v relay %s direct %v", c.link, c.relay, c.direct)
+		if r.Features["remote_access"] != c.on {
+			t.Errorf("%s: remote_access %v, want %v", name, r.Features["remote_access"], c.on)
+			continue
+		}
+		if c.on {
+			continue
+		}
+		by := r.Off["remote_access"]
+		if by.Reason != c.reason {
+			t.Errorf("%s: reason %q, want %q", name, by.Reason, c.reason)
+		}
+		if c.link && !slices.Equal(by.Components, []string{"cloud.relay", "cloud.direct"}) {
+			t.Errorf("%s: off by %v, want both members", name, by.Components)
+		}
 	}
 }

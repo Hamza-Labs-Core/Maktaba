@@ -79,6 +79,7 @@ func newRootCmd() *cobra.Command {
 		newKeysCmd(),
 		newLicenseCmd(),
 		newComponentsCmd(),
+		newPluginsCmd(),
 		newMigrateFromDevCmd(),
 		newAdoptCmd(),
 		newServiceCmd(),
@@ -87,6 +88,7 @@ func newRootCmd() *cobra.Command {
 		newContainerCmd(),
 		newReleaseOfflineCmd(),
 		newLogsCmd(),
+		newPluginsSandboxRunCmd(),
 	)
 	return root
 }

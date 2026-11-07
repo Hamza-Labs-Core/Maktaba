@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -60,6 +61,9 @@ type P54Deps struct {
 	// Loops is the API's Epic 51 loop runner: api:plugins_catalog runs on it while
 	// plugins.host is on (story 54.17 §1). nil: the loop runs as a plain goroutine.
 	Loops *runner.Runner
+	// Service is the home's service door for the first-party plugins' trusted/service
+	// (story 54.35); nil: none.
+	Service plugins.ServiceDoor
 	// Capabilities says whether llm and search.semantic are on (nil: both are taken as on).
 	Capabilities *components.Capabilities
 	// Embedder is the pipeline worker holding the embedder (54.21; nil: compute.embed is
@@ -105,6 +109,17 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			link = &storelink.Link{DB: d.DB, Secrets: d.Secrets, StoreURL: os.Getenv("MAKTABA_PLUGIN_STORE_URL"),
 				Version: d.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH, Name: host}
 		}
+		// story 54.19 §6: a linked home's entitlements, fetched with its signature and checked
+		// offline by this machine's supervisor
+		var ents *plugins.Entitlements
+		if sup := plugins.SupervisorFromEnv(); link != nil && sup != nil {
+			ents = &plugins.Entitlements{DB: d.DB, Link: link, Verifier: sup, Logger: logger}
+			ectx := d.Ctx
+			if ectx == nil {
+				ectx = context.Background()
+			}
+			go ents.Run(ectx)
+		}
 		stateDir := os.Getenv("MAKTABA_STATE_DIR")
 		if stateDir == "" && d.DataDir != "" {
 			stateDir = filepath.Join(d.DataDir, "state")
@@ -121,6 +136,18 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 				return err
 			}}
 		platform := catalog.Platform(runtime.GOOS + "-" + runtime.GOARCH)
+		if link != nil {
+			// 54.19 §6: a paid plugin's package, by a URL the store signs against this home's
+			// entitlement
+			cat.Paid = func(ctx context.Context, id, sha string) ([]byte, error) {
+				b, err := link.PaidPackage(ctx, cdn, id, sha, 60<<20)
+				var e *storelink.Error
+				if errors.As(err, &e) {
+					return nil, &catalog.Problem{Status: e.Status, Code: e.Code, Msg: e.Msg}
+				}
+				return b, err
+			}
+		}
 		if link != nil {
 			// 54.15 §10: only a linked home, and only with telemetry on
 			cat.Seen = func(ctx context.Context, list []catalog.SeenPlugin) error {
@@ -155,7 +182,7 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			ctxLoop = context.Background()
 		}
 		d.Loops.Declare("plugins_catalog", runner.Bound(ctxLoop, runner.Func(cat.Run)))
-		(&pluginsh.Admin{L: l, Logger: logger, Store: link, Catalog: cat, Server: d.Version, Platform: platform,
+		(&pluginsh.Admin{L: l, Logger: logger, Store: link, Entitlements: ents, Catalog: cat, Server: d.Version, Platform: platform,
 			VerifyPassword: func(ctx context.Context, id, pw string) error {
 				u, err := accounts.GetByID(ctx, id)
 				if err != nil {
@@ -176,6 +203,9 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		s.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 	}
 	s.Compute = computeOf(d)
+	if d.Service != nil {
+		s.Service = d.Service
+	}
 	if lc != nil {
 		// the joined machines' tokens, forwarded writes, outcomes and package files
 		(&pluginsh.Cluster{L: lc, Tokens: tokens, Server: s}).Mount(r)

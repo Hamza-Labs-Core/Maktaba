@@ -34,9 +34,11 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/reports"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/telemetry"
@@ -133,6 +135,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		ManageURL: strings.TrimRight(cfg.Server.WebURL, "/") + "/billing"}
 	homes := &homesh.Deps{Servers: servers, Users: users, Signer: assertions, RelayHost: cfg.Relay.PublicHost,
 		WebURL: cfg.Server.WebURL}
+	if cfg.Direct.Enabled {
+		homes.Direct = stores.NewDirect(pool.DB) // story 50.15: a direct entry once its check passed
+	}
 
 	// Push dispatcher — both drivers may be nil in non-prod; the
 	// dispatcher will log no-driver and skip those rows safely.
@@ -163,6 +168,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// deletes; several api pods sweeping is harmless).
 	telemetryStore := &telemetry.Store{DB: pool.DB}
 	go telemetry.RunSweeper(metricsCtx, telemetryStore, telemetry.DefaultRetention, logger)
+
+	// Problem reports homes chose to send (Epic 53 story 53.16): this role owns the table and
+	// sweeps it past 90 days. MAKTABA_CLOUD_REPORTS=off answers 503 to new ones (the
+	// rollback: homes keep them in their outbox).
+	reportStore := &reports.Store{DB: pool.DB}
+	go reports.RunSweeper(metricsCtx, reportStore, logger)
 
 	// OAuth flows — each is on only when its client id is configured.
 	var googleFlow *oauth.GoogleFlow
@@ -211,6 +222,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// A home's agent: the claim code or the server's own secret is its
 		// credential, never a user token.
 		serversh.MountAgent(app, serversDeps)
+		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
+			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
 		homesh.MountPublic(app, homes)
 
 		// Anonymous usage data from homes: no account, no server secret.
@@ -263,7 +276,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			adminh.Mount(g, &adminh.Deps{
 				DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 				Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
+				// the cloud's log index on W (53.17), as the forwarder reaches it
+				Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
 			})
+
+			// the problem reports homes sent, for the service admin only (53.16)
+			reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate})
 
 			// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
 			// Reads the relay_metrics_* tables the relay role writes (same DB);
@@ -283,7 +301,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 	// Prometheus scrape of this role's push counters (aggregate only, like
 	// the relay's /metrics).
-	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics))
+	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
 
 	return r, stopMetrics, nil
 }

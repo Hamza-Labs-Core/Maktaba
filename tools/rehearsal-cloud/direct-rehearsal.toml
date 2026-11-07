@@ -1,0 +1,19 @@
+# The direct-remote scenario's cloud config (compose-direct.yml; story 50.15): direct access
+# on, one direct-name domain with a weekly budget of one new certificate, so the second home's
+# first certificate comes from the overflow CA (T12). The rest comes from the environment.
+[direct]
+enabled = true
+domains = ["direct-a.test"]
+ns1 = "198.51.100.53"
+ns2 = "198.51.100.53"
+dns_listen = ":53"
+weekly_budget = 1
+check_every = "10s"
+
+[direct.acme.letsencrypt]
+directory = "https://pebble:14000/dir"
+account_key = "/tmp/acme-letsencrypt.key"
+
+[direct.acme.zerossl]
+directory = "https://pebble-zs:14000/dir"
+account_key = "/tmp/acme-zerossl.key"

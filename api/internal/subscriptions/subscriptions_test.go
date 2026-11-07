@@ -100,3 +100,41 @@ func TestStoreSetAndGet(t *testing.T) {
 		t.Fatal("Set(nil) should revert to free tier")
 	}
 }
+
+// Epic 50 story 50.19 §7: a license naming Maktaba Cloud's "basic" plan is this home's home
+// tier (4 seats, the relay), so the cloud can name it once homes from this release are out; an
+// unknown tier is still refused.
+func TestABasicLicenseIsTheHomeTier(t *testing.T) {
+	pub, priv := newKeys(t)
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	sign := func(tier Tier) *License {
+		lic, err := Sign(priv, LicenseInner{LicenseID: "lic-" + string(tier), Tier: tier, Seats: 4,
+			IssuedAt: now, ExpiresAt: now.Add(31 * 24 * time.Hour)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return lic
+	}
+	v := &Verifier{PublicKey: pub}
+	basic := sign(TierBasic)
+	ent, err := v.Verify(basic, now)
+	if err != nil {
+		t.Fatalf("basic: %v", err)
+	}
+	// the license stays as signed: it verifies again (as it does when read back from storage)
+	if basic.License.Tier != TierBasic {
+		t.Fatalf("Verify changed the signed license's tier to %q", basic.License.Tier)
+	}
+	if _, err := v.Verify(basic, now); err != nil {
+		t.Fatalf("basic verified a second time: %v", err)
+	}
+	if ent.Tier != TierHome || !ent.Allows(FeatureCloudRelay) || ent.Allows(FeatureFederation) || ent.SeatLimit() != 4 {
+		t.Fatalf("basic read as %q", ent.Tier)
+	}
+	if _, err := v.Verify(sign("gold"), now); err == nil {
+		t.Fatal("an unknown tier verified")
+	}
+	if TierLabel(string(TierHome)) != "Basic" {
+		t.Fatalf("home's label: %q", TierLabel(string(TierHome)))
+	}
+}

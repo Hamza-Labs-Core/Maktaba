@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/argon2id"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // upgrader is configured generously — server agents may have small
@@ -232,6 +233,10 @@ type TunnelServer struct {
 	// Directory records which process holds each tunnel (story 50.04); nil:
 	// none (one process, no forwarding).
 	Directory Directory
+	// Direct handles direct remote access's frames (story 50.15) for homes that announce
+	// it; nil: off. DirectEvery is how often a home is given what it is owed (default 1m).
+	Direct      DirectHandler
+	DirectEvery time.Duration
 }
 
 // ServeHTTP upgrades and authenticates one home's tunnel. The agent must
@@ -282,14 +287,14 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			stats.ticketRefused.Add(1)
 			// the reason stays in the log, never the ticket
-			logger.Info("relay: resume ticket refused", "server_id", ap.ServerID, "err", err, "event", "tunnel_ticket_refused")
+			logger.Info("relay: resume ticket refused", "home_h", mlog.HashHome(ap.ServerID), "err", err, "event", "tunnel_ticket_refused")
 			fail("ticket_invalid")
 			return
 		}
 	} else {
 		sv, err = store.Authenticate(r.Context(), ap.ServerID, ap.Secret)
 		if err != nil {
-			logger.Warn("relay: tunnel auth refused", "server_id", ap.ServerID, "err", err, "event", "tunnel_auth_refused")
+			logger.Warn("relay: tunnel auth refused", "home_h", mlog.HashHome(ap.ServerID), "err", err, "event", "tunnel_auth_refused")
 			fail("unauthorized")
 			return
 		}
@@ -301,6 +306,7 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flow := ap.Flow >= FlowVersion
 	canTicket := ts.Tickets != nil && ap.has(FeatureTicket)
 	canDrain := ts.Drain && ap.has(FeatureDrain)
+	canDirect := ts.Direct != nil && ap.has(FeatureDirect)
 	okp := AuthOKPayload{Slug: sv.Slug, IssuedAt: time.Now().UTC()}
 	opts := []TunnelOption{WithFeatures(canDrain, canTicket)}
 	if flow {
@@ -313,6 +319,10 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if canTicket {
 		okp.Features = append(okp.Features, FeatureTicket)
 		okp.Ticket = ts.Tickets.Mint(sv.ID)
+	}
+	if canDirect {
+		okp.Features = append(okp.Features, FeatureDirect)
+		opts = append(opts, WithDirect(ts.Direct, tunnelSource(r), logger))
 	}
 	ok, _ := json.Marshal(okp)
 	_ = c.SetWriteDeadline(time.Now().Add(writeWait))
@@ -334,12 +344,19 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}) {
 		// gone while it waited its turn, or a newer connection is in: nothing to record
 		t.Close()
-		logger.Info("relay: a stale tunnel attempt dropped", "server_id", sv.ID, "slug", sv.Slug, "event", "tunnel_stale")
+		logger.Info("relay: a stale tunnel attempt dropped", "home_h", mlog.HashHome(sv.ID), "event", "tunnel_stale")
 		return
 	}
-	logger.Info("relay: tunnel up", "server_id", sv.ID, "slug", sv.Slug, "flow", flow, "method", method, "event", "tunnel_up")
+	logger.Info("relay: tunnel up", "home_h", mlog.HashHome(sv.ID), "flow", flow, "method", method, "event", "tunnel_up")
 	if canTicket {
 		go ts.refreshTickets(t)
+	}
+	if canDirect {
+		every := ts.DirectEvery
+		if every <= 0 {
+			every = time.Minute
+		}
+		go t.keepDelivering(every)
 	}
 	go func() {
 		<-t.Done()
@@ -348,7 +365,7 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		// Down deletes it only when it is still this tunnel's
 		ts.directory(logger, func(ctx context.Context, d Directory) error { return d.Down(ctx, sv.Slug, t.Seq()) })
 		if reg.Down(sv.Slug, t, func() { markOnline(logger, store, sv.ID, false) }) {
-			logger.Info("relay: tunnel down", "server_id", sv.ID, "slug", sv.Slug, "event", "tunnel_down")
+			logger.Info("relay: tunnel down", "home_h", mlog.HashHome(sv.ID), "event", "tunnel_down")
 		}
 	}()
 }
@@ -408,6 +425,6 @@ func markOnline(logger *slog.Logger, store TunnelStore, serverID string, online 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := store.SetOnline(ctx, serverID, online); err != nil {
-		logger.Warn("relay: recording the tunnel state failed", "server_id", serverID, "online", online, "err", err)
+		logger.Warn("relay: recording the tunnel state failed", "home_h", mlog.HashHome(serverID), "online", online, "err", err)
 	}
 }

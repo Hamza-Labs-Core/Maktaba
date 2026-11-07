@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 )
 
 // FrameConn is the transport the multiplexer drives. A test fake
@@ -82,6 +85,8 @@ type authOKPayload struct {
 	Flow int `json:"flow,omitempty"`
 	// Ticket is a first resume ticket (the cloud agreed to tickets).
 	Ticket string `json:"ticket,omitempty"`
+	// Features are the ones the cloud agreed to (direct: story 50.15).
+	Features []string `json:"features,omitempty"`
 }
 
 var (
@@ -124,6 +129,8 @@ type DialResult struct {
 	Flow bool
 	// Ticket: a first resume ticket from AUTH_OK, if the cloud sent one.
 	Ticket string
+	// Direct: the cloud agreed to direct remote access's frames (story 50.15).
+	Direct bool
 }
 
 // Dialer opens a WSS tunnel to the cloud relay and performs the AUTH
@@ -150,6 +157,8 @@ type Dialer struct {
 	tickets ticketJar
 	// legacy: announce no features (LegacyAgent)
 	legacy bool
+	// direct: announce direct remote access too (the supervisor has a Direct)
+	direct bool
 }
 
 // Ticket is the resume ticket the agent holds ("" none).
@@ -181,6 +190,8 @@ func (d *Dialer) Dial(ctx context.Context) (DialResult, error) {
 		features := agentFeatures
 		if d.legacy {
 			features = nil
+		} else if d.direct {
+			features = append(append([]string(nil), agentFeatures...), relay.FeatureDirect)
 		}
 		res, err := authenticateWith(conn, d.ServerID, d.Secret, ticket, features)
 		if err != nil {
@@ -231,7 +242,8 @@ func authenticateWith(conn FrameConn, serverID, secret, ticket string, features 
 		if err := json.Unmarshal(reply.Payload, &ok); err != nil {
 			return DialResult{}, fmt.Errorf("%w: bad AUTH_OK json: %v", ErrAuthProtocol, err)
 		}
-		return DialResult{Conn: conn, Slug: ok.Slug, Flow: ok.Flow >= FlowVersion, Ticket: ok.Ticket}, nil
+		return DialResult{Conn: conn, Slug: ok.Slug, Flow: ok.Flow >= FlowVersion, Ticket: ok.Ticket,
+			Direct: slices.Contains(ok.Features, relay.FeatureDirect)}, nil
 	case KindAuthFail:
 		if ticket != "" && bytes.Contains(reply.Payload, []byte("ticket_invalid")) {
 			return DialResult{}, fmt.Errorf("%w: %s", ErrTicketRefused, string(reply.Payload))

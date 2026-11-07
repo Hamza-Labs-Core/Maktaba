@@ -75,7 +75,8 @@ a copy for 10 minutes. The page's source, its tests and the posts are in
 Failover and alerts handle the failures that were planned for; the rest need a person. Every
 alert carries a severity and links to a runbook in
 [docs/runbooks/cloud](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/docs/runbooks/cloud),
-each laid out the same way: **When**, **Check**, **Do**, **Done when**, **Tell users**.
+each laid out the same way: **When**, **Check**, **Do**, **Done when**, **Tell users**. A
+runbook's **Check** step links to a saved search in the cloud's log view, never to SSH.
 
 | Severity | Means | Response | Users hear |
 |---|---|---|---|
@@ -102,6 +103,7 @@ for downtime, and a check in CI keeps any page or template from offering one.
 | One wildcard certificate per node | `*.relay.maktaba.tv`, issued by a DNS challenge, so the standby node already has it before it is needed. |
 | Backups | The database's log and a nightly backup go to Hetzner Object Storage and to Cloudflare R2, encrypted, with 30 days of point-in-time restore. A restore is tried every week. |
 | Monitoring | The witness probes a canary home through the relay every 30 seconds; GitHub's runners probe it from outside Hetzner too. Alerts page the owner and link to a runbook, and the same probes set the status page. |
+| Logs | Each process writes the same log lines as a home, and the node keeps them for 14 days. Warnings reach the witness within a second and the rest every 10 seconds, so a node that dies leaves its last lines there. The witness indexes every node's lines: the service admin searches the whole cloud and sees its error groups beside the homes' anonymous ones, even while a node is down. A line names a home only by a hash. Each process also serves its error, request and log metrics (`shared/metrics/cloud-series.md`). |
 
 The files are in
 [deploy/cloud-ha](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/deploy/cloud-ha)
@@ -131,7 +133,8 @@ breaks them on purpose:
 | `cert-on-standby` | fresh nodes | each holds its own wildcard certificate before any traffic |
 | `status-feed` | stops every relay process | the status page's `summary.json` says remote access is down within two probe rounds, and working again after two passing ones |
 | `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | runs the one-click recovery workflows' scripts; for the DNS swap, with the Hetzner API down | each does what its runbook says against the real pair: a new leader, the old one fenced, the relay's names on the new leader |
-| `load-small` | 1,000 homes and 50 players at 5 Mbit/s for 5 minutes | the relay's CPU per Mbit and memory per tunnel no more than 20 % worse than main's |
+| `load-small` | 1,000 homes and 50 players at 5 Mbit/s, with the base commit's relay and then this commit's, on one runner | the relay's CPU per Mbit (its own CPU time, the median of three rounds) and memory per tunnel no more than 20 % worse than the base's |
+| `relay-plans` | homes on Free, Basic and Pro behind the relay with the plans enforced; a test build sets the plans' numbers not chosen yet, and the payment provider is a fake | Free is refused with its tunnel kept; Basic is asked to fit 3 Mbit/s, paced to it, and a third stream is refused while two play on; Pro past its allowance plays at Basic's quality; pay-as-you-go plays in full and its gigabyte reaches the provider once, through an outage |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,
 Cloudflare or Let's Encrypt host is ever contacted: a fake Hetzner API moves the address,

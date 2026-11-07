@@ -170,6 +170,10 @@
     <string name="error_server">حدث خطأ في الجهاز الرئيسي. حاول مجددًا بعد قليل.</string>
     <!-- a part of the home that is off (Epic 51 story 51.09) and the features' names -->
     <string name="error_off">هذه الميزة متوقفة على الجهاز الرئيسي.</string>
+    <!-- رفض وسيط سحابة مكتبة تشغيلَ خطة (الملحمة 50، القصة 50.19) -->
+    <string name="error_relay_needs_plan">التشغيل عن بُعد عبر الوسيط يتطلب الخطة الأساسية أو الاحترافية. الوصول المباشر من الإنترنت مجاني: فعّله من إعدادات هذا الجهاز الرئيسي.</string>
+    <string name="error_relay_stream_limit">يشغّل عبر الوسيط أكبر عدد من الأجهزة تسمح به خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر.</string>
+    <string name="error_relay_home_busy">جهازك الرئيسي مشغول جدًا لتجهيز هذا الفيديو للتشغيل عن بُعد الآن. حاول بعد قليل.</string>
     <string name="error_off_admin">%1$s شغّل من صفحة المكوّنات.</string>
     <string name="feature_live_tv">البث المباشر</string>
     <string name="feature_transcripts">نصوص الفيديو</string>
@@ -310,6 +314,16 @@
     <string name="report_mine">بلاغاتي</string>
     <string name="report_none">لم ترسل أي بلاغ بعد.</string>
     <string name="report_reply">الرد: %1$s</string>
+    <string name="report_to_maktaba">الإرسال إلى مكتبة أيضًا ليطّلع عليه المطوّرون</string>
+    <string name="report_to_maktaba_note">تتلقى مكتبة التقرير نفسه، دون اسمك أو عناوين الفيديوهات أو أسماء الملفات، وتحتفظ به 90 يومًا.</string>
+    <string name="report_maktaba_sent">أُرسل إلى مكتبة أيضًا</string>
+    <string name="report_maktaba_queued">بانتظار الإرسال إلى مكتبة</string>
+    <string name="report_maktaba_expired">لم يُرسل إلى مكتبة: تعذّر الوصول إلى السحابة طوال 7 أيام</string>
+    <string name="report_maktaba_refused">تعذّر على مكتبة استلام هذا البلاغ</string>
+    <string name="report_maktaba_cancelled">لم يُرسل إلى مكتبة: أُوقف الإرسال</string>
+    <string name="report_maktaba_deleted">أُرسل إلى مكتبة ثم حُذف منها</string>
+    <string name="report_maktaba_replied">ردّت مكتبة: %1$s</string>
+    <string name="report_maktaba_fixed_in">أُصلح في الإصدار %1$s</string>
     <string name="report_this">الإبلاغ عن هذا</string>
     <string name="report_status_new">جديد</string>
     <string name="report_status_looking">قيد المتابعة</string>

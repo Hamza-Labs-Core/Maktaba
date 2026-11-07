@@ -68,6 +68,12 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
 features = ["live_tv", "transcripts", "subtitles", "semantic_search", "chapters", "youtube",
             "plex", "remote_access", "recommendations", "plugin_panels"]
 
+# Feature groups (story 50.35): for a feature, components that count as one, on when any member
+# is on, beside the rule that every component listing a feature is on. Each member lists the
+# feature itself. remote_access: the relay or direct access is enough (story 50.15), with the
+# cloud link always needed.
+feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }
+
 # ---- core: always on, shown for their health -----------------------------------------
 
 [[component]]
@@ -146,7 +152,7 @@ switchable = false
 group      = "core"
 title_key  = "components.core.plugin_runners.title"
 desc_key   = "components.core.plugin_runners.desc"
-processes  = ["plugin-runner/light", "plugin-runner/net", "plugin-runner/service", "plugin-runner/fp"]
+processes  = ["plugin-runner/light", "plugin-runner/files", "plugin-runner/net", "plugin-runner/service", "plugin-runner/fp"]
 platforms  = ["darwin-arm64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
 on_demand  = true
@@ -213,6 +219,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "library.convert"
+plugin    = "tv.maktaba.convert"
 kind      = "stages"
 group     = "library"
 title_key = "components.library.convert.title"
@@ -225,6 +232,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "library.dedup"
+plugin    = "tv.maktaba.dedup"
 kind      = "stages"
 group     = "library"
 title_key = "components.library.dedup.title"
@@ -236,6 +244,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "library.repair"
+plugin    = "tv.maktaba.repair"
 kind      = "stages"
 group     = "library"
 title_key = "components.library.repair.title"
@@ -407,6 +416,7 @@ since     = "0.3.86"
 
 [[component]]
 id        = "youtube"
+plugin    = "tv.maktaba.youtube"
 kind      = "stages"
 group     = "integrations"
 title_key = "components.youtube.title"
@@ -421,6 +431,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "ext.plex"
+plugin    = "tv.maktaba.plex"
 kind      = "extension"
 group     = "integrations"
 title_key = "components.ext.plex.title"
@@ -464,6 +475,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "livetv"
+plugin    = "tv.maktaba.livetv"
 kind      = "stages+loop"
 group     = "livetv"
 title_key = "components.livetv.title"
@@ -484,6 +496,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "livetv.slots"
+plugin    = "tv.maktaba.livetv-slots"
 kind      = "stages+process+loop"
 group     = "livetv"
 title_key = "components.livetv.slots.title"
@@ -581,6 +594,27 @@ bundles   = []
 features  = ["remote_access"]
 since     = "0.3.66"
 
+# Direct remote access (Epic 50 story 50.15): the port on the router, the TLS listener and its
+# certificate. Free on every plan (no licence). It serves remote_access as either-is-enough with
+# cloud.relay (feature_any, story 50.35). In full only: core turns on no process (N9), and without the
+# cloud.link process direct access does nothing. A custom bundle choosing it brings cloud.link;
+# turned on where the link is off, it waits (dependency_off).
+[[component]]
+id        = "cloud.direct"
+kind      = "loop"
+group     = "system"
+title_key = "components.cloud.direct.title"
+desc_key  = "components.cloud.direct.desc"
+# the direct listener serves the same API and web as the LAN port
+loops     = ["api:direct_listener", "api:direct_portmap", "api:direct_cert"]
+requires  = ["cloud.link"]
+settings  = ["rules.direct", "toml:direct.listen"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+features  = ["remote_access"]
+since     = "0.3.95"
+
 [[component]]
 id        = "cluster"
 kind      = "loop"
@@ -643,6 +677,21 @@ platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 # on as the owner's opt-in says (unchanged), in no bundle by default
 bundles   = []
 since     = "0.3.66"
+
+[[component]]
+id        = "reports.share"
+kind      = "loop"
+group     = "system"
+title_key = "components.reports.share.title"
+desc_key  = "components.reports.share.desc"
+# on as the admin's "send problem reports to Maktaba" setting says (53.16), like telemetry;
+# nothing else turns it on
+loops     = ["api:reports_forwarder"]
+requires  = ["cloud.link"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "0.3.94"
 
 [[component]]
 id        = "backups"

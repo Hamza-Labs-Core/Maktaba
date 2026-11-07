@@ -93,7 +93,31 @@ export function componentOffText(e: unknown, t: T, opts: { admin?: boolean } = {
   return off;
 }
 
+/**
+ * Maktaba Cloud's relay refusing a plan's play (Epic 50 story 50.19) in the app's words: 402
+ * `relay_needs_plan` (no relay on Free; direct access is free), 429 `stream_limit` (the most
+ * devices the plan allows already play; the count from the relay's message), and the home's 503
+ * `home_busy` (it can't prepare a capped stream now). null for any other error.
+ */
+export function relayPlanText(e: unknown, t: T): string | null {
+  if (!(e instanceof ApiError)) return null;
+  const p = e.problem as { error?: unknown; code?: unknown; message?: unknown };
+  const code = typeof p.code === "string" ? p.code : typeof p.error === "string" ? p.error : "";
+  if (e.status === 402 && code === "relay_needs_plan") return t("relay.needsPlan");
+  if (e.status === 429 && code === "stream_limit") {
+    const n = typeof p.message === "string" ? /^\d+/.exec(p.message)?.[0] : undefined;
+    return t("relay.streamLimit", { count: n ?? "" });
+  }
+  if (e.status === 503 && code === "home_busy") return t("relay.homeBusy");
+  return null;
+}
+
 /** The sentence a screen shows for a failed call (admin: component_off says where to turn it on). */
 export function errorText(e: unknown, t: T, opts: { admin?: boolean } = {}): string {
-  return componentOffText(e, t, opts) ?? inputDetail(e) ?? t(`error.kind.${userErrorKind(e)}`);
+  return (
+    relayPlanText(e, t) ??
+    componentOffText(e, t, opts) ??
+    inputDetail(e) ??
+    t(`error.kind.${userErrorKind(e)}`)
+  );
 }

@@ -63,6 +63,36 @@ maktaba.tv.  CAA 0 issue "sectigo.com"
 
 (`sectigo.com` is ZeroSSL's CA, the fallback.)
 
+## The direct-name domains (story 50.15)
+
+Direct remote access gives each home its own HTTPS names under one of several **separate
+registered domains, never `maktaba.tv`** (`direct.domains` in `cloud.toml`): each domain has its
+own Let's Encrypt allowance of 50 new certificates a week, and `maktaba.tv`'s certificates are
+never at risk. A home's names are `<ip as a label>.<home id>.<direct domain>`
+(`81-2-3-4.<home id>.direct-a.example`, `2001-db8--1.<home id>.direct-a.example`), answered by
+the cloud's own name server (`maktaba-cloud serve --role dns` on nodes A and B), which computes
+the address from the name: an address change needs no record anywhere.
+
+For each direct-name domain, at its registrar:
+
+| Record | Value | Why |
+|---|---|---|
+| `NS` | `ns1.<domain>`, `ns2.<domain>` | the domain is answered by the cloud's name server |
+| glue `A` for `ns1` / `ns2` | node A's and node B's primary IPv4 | the delegation's own names |
+
+The name server answers the apex's `NS`, `SOA` and `CAA` itself (`CAA 0 issue` for
+`letsencrypt.org`, `sectigo.com` for ZeroSSL and `pki.goog` for Google Trust Services), each
+home's `A` / `AAAA`, and the ACME `_acme-challenge` TXT values from Postgres. It refuses any name
+under no configured domain (it is no open resolver) and rate-limits each source.
+
+**Adding a domain** is configuration only: register it, add the two `NS` records and the glue,
+append it to `direct.domains` on A and B and restart the roles. New homes start using it at once.
+
+**On the nodes** (`deploy/cloud-ha`):
+- **The service.** The name server is `maktaba-cloud-dns.service` on A and B, always (not only on the leader): each node is one of the two `NS`. It needs `[direct] domains`, `ns1` and `ns2` in `/etc/maktaba/cloud.toml`, and `DIRECT_DNS=yes` in `cloud-ha.env`, before `setup.sh` runs.
+- **What `setup.sh` changes.** It opens 53/udp and 53/tcp, and turns off systemd-resolved's stub listener, which would otherwise hold port 53. The node then resolves through resolved's upstream servers.
+- **Deploys.** Each deploy (`deploy.sh` step 5, `bin/dns-update`) updates the standby's name server, then the leader's, so one always answers. A release whose name server doesn't stay up goes back to the previous binary on that node, and the deploy stops before the other node.
+
 ## Who changes what
 
 | What | Who | Where |

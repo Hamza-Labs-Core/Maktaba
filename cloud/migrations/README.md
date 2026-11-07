@@ -46,3 +46,4 @@ first runs, the second observes `current = head` and exits cleanly.
 | 0016 | billing provider-neutral | renames the provider-named billing columns and event ledger (`provider_customer_id`, `provider_subscription_id`, `provider_price_id`, `provider_invoice_id`, `provider_events`) and adds a `provider` column; the payment provider is TBD |
 | 0050 | 50 cloud with no downtime | reserved infrastructure slugs (50.01: canary, r1…r99, direct, staging, plugins) |
 | 0051 | 51.14 usage data components | telemetry_server_reports.bundle and .components (a home's bundle and enabled component ids) |
+| 0053 | 53.16 problem reports | problem_reports (the reports homes chose to send, scrubbed; 90 days) |

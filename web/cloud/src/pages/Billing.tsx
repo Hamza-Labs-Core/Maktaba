@@ -9,9 +9,10 @@ import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "../api";
-import { useI18n } from "../i18n";
+import { api } from "../shared/api";
+import { useI18n, type I18nState } from "../shared/i18n";
 import { navigateExternal } from "../nav";
+import { ProExtras, UsageByModePanel, type UsageByMode } from "./BillingPayg";
 import {
   Banner,
   LoadError,
@@ -21,20 +22,27 @@ import {
   useErrorMessage,
   useLoad,
   useMoney,
-} from "../ui";
+} from "../shared/ui";
 
+/** A plan of the catalog (Epic 50 story 50.19): free, basic and pro. A null number is a value
+ * not set yet (the price, Pro's allowance and device count): "Price coming soon". */
 export interface Plan {
   id: string;
   name: string;
-  price_cents: number;
-  bandwidth_bytes_per_month: number;
+  price_cents: number | null;
+  relay: boolean;
+  /** The relayed streams' cap in kbps (0: full quality). */
+  relay_cap_kbps: number;
+  max_relay_streams: number | null;
+  fair_use_bytes_per_month: number;
+  allowance_bytes_per_month: number | null;
+  pay_as_you_go: boolean;
+  payg_price_per_gb_cents?: number | null;
+  extra_streams: boolean;
+  extra_stream_price_cents?: number | null;
   max_servers: number;
-  max_concurrent_streams: number;
-  relay_qos: string;
-  includes_transcoding: boolean;
-  family_seats: number;
   purchasable: boolean;
-  /** The plan the license gives this account's homes: "home", "pro" or "" (Epic 16). */
+  /** The tier the license gives this account's homes ("" for free). */
   home_tier?: string;
 }
 
@@ -53,6 +61,8 @@ export interface Usage {
   limit_bytes: number;
   used_bytes: number;
   servers: { id: string; name: string; bytes_in: number; bytes_out: number }[];
+  /** story 50.19: this month's relayed bytes by quality */
+  by_mode?: UsageByMode;
 }
 
 interface BillingData {
@@ -113,6 +123,7 @@ function BillingBody({ data }: { data: BillingData }) {
   const [busy, setBusy] = useState<string | null>(null);
   const { me, plans, usage, paymentsEnabled } = data;
   const planName = (id: string) => plans.find((p) => p.id === id)?.name ?? id;
+  const proPlan = plans.find((p) => p.id === "pro");
 
   async function upgrade(plan: string) {
     setBusy(plan);
@@ -199,6 +210,9 @@ function BillingBody({ data }: { data: BillingData }) {
 
       {usage && <UsagePanel usage={usage} />}
 
+      {/* Epic 50 story 50.19: Pro's pay-as-you-go and extra streams */}
+      {me.plan === "pro" && paymentsEnabled && proPlan && <ProExtras pro={proPlan} />}
+
       {/* Epic 50 story 50.12: the uptime target, a target with no credit (uptime.policy) */}
       <Card header={<h2>{t("billing.uptime.title")}</h2>}>
         <p>{t("uptime.policy")}</p>
@@ -226,7 +240,6 @@ function PlanCard({
   onUpgrade: () => void;
 }) {
   const { t, n } = useI18n();
-  const bytes = useBytes();
   const money = useMoney();
   return (
     <Card
@@ -246,7 +259,7 @@ function PlanCard({
           >
             {t("billing.plans.upgrade")}
           </Button>
-        ) : plan.price_cents > 0 ? (
+        ) : plan.id !== "free" ? (
           <Button disabled aria-label={t("billing.plans.comingSoonFor", { plan: plan.name })}>
             {t("billing.plans.comingSoon")}
           </Button>
@@ -254,28 +267,38 @@ function PlanCard({
       }
     >
       <p className="mkc-price">
-        {plan.price_cents > 0
-          ? t("billing.plans.perMonth", { price: money(plan.price_cents) })
-          : t("billing.plans.free")}
+        {plan.id === "free"
+          ? t("billing.plans.free")
+          : plan.price_cents == null
+            ? t("billing.plan.priceTbd")
+            : t("billing.plans.perMonth", { price: money(plan.price_cents) })}
       </p>
+      <p>{planDescription(plan, t, n)}</p>
       <ul className="mkc-features">
-        <li>
-          {plan.bandwidth_bytes_per_month > 0
-            ? t("billing.plans.bandwidth", { amount: bytes(plan.bandwidth_bytes_per_month) })
-            : t("billing.plans.bandwidthUnlimited")}
-        </li>
+        {plan.id === "basic" && <li>{t("billing.plan.basic.fairUse")}</li>}
         <li>{t("billing.plans.servers", { count: n(plan.max_servers) })}</li>
-        <li>{t("billing.plans.streams", { count: n(plan.max_concurrent_streams) })}</li>
-        {plan.includes_transcoding && <li>{t("billing.plans.transcoding")}</li>}
-        {plan.family_seats > 0 && (
-          <li>{t("billing.plans.seats", { count: n(plan.family_seats) })}</li>
-        )}
-        {(plan.home_tier === "home" || plan.home_tier === "pro") && (
-          <li>{t(`billing.plans.homeTier.${plan.home_tier}`)}</li>
-        )}
       </ul>
     </Card>
   );
+}
+
+/** A plan's sentence (story 50.19's strings); Pro's names its allowance and devices once set. */
+function planDescription(plan: Plan, t: I18nState["t"], n: I18nState["n"]): string {
+  switch (plan.id) {
+    case "free":
+      return t("billing.plan.free.desc");
+    case "basic":
+      return t("billing.plan.basic.desc");
+    case "pro":
+      if (plan.allowance_bytes_per_month != null && plan.max_relay_streams != null) {
+        return t("billing.plan.pro.desc", {
+          gb: n(Math.round(plan.allowance_bytes_per_month / 1e9)),
+          streams: n(plan.max_relay_streams),
+        });
+      }
+      return t("billing.plan.pro.descSoon");
+  }
+  return plan.name;
 }
 
 function UsagePanel({ usage }: { usage: Usage }) {
@@ -294,6 +317,7 @@ function UsagePanel({ usage }: { usage: Usage }) {
           : t("billing.usage.unlimited", { used: bytes(usage.used_bytes) })}
       </p>
       {limited && <ProgressBar label={t("billing.usage.bar")} value={pct} />}
+      {usage.by_mode && <UsageByModePanel by={usage.by_mode} />}
       {usage.servers.length > 0 && (
         <table className="mkc-table">
           <thead>

@@ -37,6 +37,12 @@ type RedactRules struct {
 	IPv6 struct {
 		Pattern string `json:"pattern"`
 	} `json:"ipv6"`
+	// ExportOnly is applied when anything leaves the home (story 53.16), never at home.
+	ExportOnly struct {
+		RemoveKeys  []string `json:"remove_keys"`
+		LibraryMask string   `json:"library_mask"`
+		IPMask      string   `json:"ip_mask"`
+	} `json:"export_only"`
 
 	values []compiledRule
 	cards  *regexp.Regexp

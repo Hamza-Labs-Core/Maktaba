@@ -8,12 +8,17 @@
   "compatibility_date": "2026-08-15",
   "compatibility_flags": ["nodejs_compat"],
   "rules": [{ "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }],
-  "routes": [{ "pattern": "plugins.maktaba.tv", "custom_domain": true }],
+  // plugins.maktaba.tv, and paid packages on the CDN's host (story 54.19 §6): the rest of
+  // plugins-cdn.maktaba.tv is the public bucket's custom domain
+  "routes": [
+    { "pattern": "plugins.maktaba.tv", "custom_domain": true },
+    { "pattern": "plugins-cdn.maktaba.tv/paid/*", "zone_name": "maktaba.tv" }
+  ],
   "assets": {
     "directory": "console/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/v1/*", "/admin", "/admin/*"],
+    "run_worker_first": ["/v1/*", "/admin", "/admin/*", "/", "/p/*", "/ar", "/ar/*"],
   },
   "limits": { "cpu_ms": 1000 },
   "vars": {
@@ -47,6 +52,12 @@
       "database_name": "store-installs",
       "database_id": "00000000-0000-0000-0000-000000000003",
       "migrations_dir": "migrations/installs",
+    },
+    {
+      "binding": "DB_COMMERCE",
+      "database_name": "store-commerce",
+      "database_id": "00000000-0000-0000-0000-000000000004",
+      "migrations_dir": "migrations/commerce",
     },
   ],
   "r2_buckets": [

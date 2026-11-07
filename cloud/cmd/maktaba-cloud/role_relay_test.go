@@ -3,15 +3,20 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
@@ -152,5 +157,67 @@ func TestBadAfterFailsReadiness(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 	if !strings.Contains(probe(), "draining") {
 		t.Error("not failing after badAfter")
+	}
+}
+
+// Story 50.15: with direct access off nothing is built; on, the relay's handler and the
+// worker's jobs are, each CA's account key made on first use.
+func TestDirectIsBuiltOnlyWhenOn(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var cfg config.Config
+	if directHandler(cfg, nil, logger) != nil || directJobs(cfg, nil, logger) != nil {
+		t.Fatal("built while off")
+	}
+	dir := t.TempDir()
+	cfg.Direct = config.DirectConfig{Enabled: true, Domains: []string{"direct-a.example"}, Budget: 45,
+		ACME: map[string]config.DirectACME{
+			"letsencrypt": {Directory: "https://acme.test/directory", AccountKey: filepath.Join(dir, "le.key")},
+			"zerossl":     {Directory: ""}, // not configured: left out
+		}}
+	pool := &db.Pool{}
+	if directHandler(cfg, pool, logger) == nil {
+		t.Fatal("no relay handler while on")
+	}
+	j := directJobs(cfg, pool, logger)
+	if j == nil {
+		t.Fatal("no worker jobs while on")
+	}
+	if st, err := os.Stat(filepath.Join(dir, "le.key")); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("the account key: %v %v", st, err)
+	}
+}
+
+// Story 50.19: the relay's plans follow relay.plans.enforce and relay.stream_limit.enabled,
+// and count streams under this relay's id.
+func TestRelayPlansFollowTheConfig(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Relay.PlansEnforce, cfg.Relay.StreamLimitEnabled = true, false
+	p := relayPlans(cfg, nil, "blue")
+	if !p.Enforce || p.StreamLimit || p.Streams == nil {
+		t.Fatalf("%+v", p)
+	}
+}
+
+type countingSweeper struct{ n atomic.Int32 }
+
+func (c *countingSweeper) Sweep(context.Context) (int64, error) { c.n.Add(1); return 1, nil }
+
+// Story 50.19: the worker sweeps silent relayed streams on its interval until it stops.
+func TestTheWorkerSweepsStreams(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &countingSweeper{}
+	done := make(chan struct{})
+	go func() {
+		sweepStreams(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), s, 5*time.Millisecond)
+		close(done)
+	}()
+	deadline := time.Now().Add(2 * time.Second)
+	for s.n.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if s.n.Load() < 2 {
+		t.Fatalf("swept %d times", s.n.Load())
 	}
 }

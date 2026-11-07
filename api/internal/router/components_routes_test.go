@@ -86,6 +86,33 @@ func TestComponentOffAnswer(t *testing.T) {
 	}
 }
 
+// Epic 53 story 53.16: an admin's send of a report to Maktaba needs reports.share (off by
+// default); a viewer gets 403 before anything names the component; the report routes
+// themselves stay core.
+func TestReportsShareRouteNeedsItsComponent(t *testing.T) {
+	if c, ok := ComponentOf("POST", "/api/reports/{id}/share"); !ok || c != "reports.share" {
+		t.Fatalf("POST /api/reports/{id}/share: %q %v", c, ok)
+	}
+	for _, rt := range [][2]string{{"POST", "/api/reports"}, {"GET", "/api/reports/maktaba"}, {"PUT", "/api/reports/maktaba"}} {
+		if c, ok := ComponentOf(rt[0], rt[1]); !ok || c != "" {
+			t.Errorf("%s %s should be core: %q %v", rt[0], rt[1], c, ok)
+		}
+	}
+	caps := components.NewCapabilities(components.CapabilitiesOptions{})
+	caps.Apply(map[string]store.Desired{"reports.share": {ID: "reports.share", Want: catalog.WantInstalled, Generation: 2}}, 9)
+	r := gated(caps, "POST /api/reports/{id}/share")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, as(httptest.NewRequest("POST", "/api/reports/3/share", nil), adminP()))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"component":"reports.share"`) {
+		t.Fatalf("an admin, off: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, as(httptest.NewRequest("POST", "/api/reports/3/share", nil), viewerP()))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("a viewer: %d", rec.Code)
+	}
+}
+
 // T10: with livetv off, its settings stay reachable: the TV rules and the channel list.
 func TestComponentOffLeavesSettings(t *testing.T) {
 	r := gated(livetvOff(), "PATCH /api/rules/{section}", "GET /api/channels", "PATCH /api/channels/{id}")

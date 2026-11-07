@@ -37,6 +37,7 @@ import contextlib
 import json
 import os
 import struct
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -62,7 +63,13 @@ LOCAL_TOKEN_HEADER = "X-Maktaba-Local-Token"
 
 
 async def _connect(path: str) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
-    """The host's dispatch socket (a seam: tests give in-memory streams)."""
+    """The host's dispatch socket (a seam: tests give in-memory streams). On Windows, where
+    Python has no AF_UNIX, the supervisor's relay pipe instead (``pipe.py``, #710): its
+    failures raise the same OSErrors a unix socket's do."""
+    if sys.platform == "win32":
+        from .pipe import open_pipe, pipe_name
+
+        return await open_pipe(pipe_name())
     return await asyncio.open_unix_connection(path)
 
 

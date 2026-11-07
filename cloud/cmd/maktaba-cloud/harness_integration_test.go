@@ -354,12 +354,26 @@ type fakeProvider struct {
 	checkouts []billingpkg.CheckoutParams
 	portals   []string
 	seq       int
+	// items 2 and 3 and usage reports (story 50.19): the billing package's fake
+	billing billingpkg.Fake
+}
+
+func (p *fakeProvider) ReportUsage(ctx context.Context, r billingpkg.UsageReport) error {
+	return p.billing.ReportUsage(ctx, r)
+}
+
+func (p *fakeProvider) SetItems(ctx context.Context, sub string, payg bool, extra int) error {
+	return p.billing.SetItems(ctx, sub, payg, extra)
+}
+
+func (p *fakeProvider) ReportedUsage(ctx context.Context, sub string, month time.Time) (int64, error) {
+	return p.billing.ReportedUsage(ctx, sub, month)
 }
 
 func (*fakeProvider) Name() string  { return "testpay" }
 func (*fakeProvider) Enabled() bool { return true }
 func (*fakeProvider) Sells(plan string) bool {
-	return plan == billingpkg.PlanPro || plan == billingpkg.PlanFamily
+	return plan == billingpkg.PlanBasic || plan == billingpkg.PlanPro
 }
 
 func (f *fakeProvider) CreateCheckout(_ context.Context, p billingpkg.CheckoutParams) (billingpkg.CheckoutSession, error) {
@@ -412,6 +426,8 @@ type testEvent struct {
 	AmountCents    int64     `json:"amount_cents,omitempty"`
 	Currency       string    `json:"currency,omitempty"`
 	DisputeID      string    `json:"dispute_id,omitempty"`
+	ExtraStreams   int       `json:"extra_streams,omitempty"`
+	PAYG           bool      `json:"payg,omitempty"`
 }
 
 func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Header) (billingpkg.Event, error) {
@@ -427,6 +443,7 @@ func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Head
 		UserID: te.UserID, CustomerID: te.CustomerID, SubscriptionID: te.SubscriptionID,
 		Plan: te.Plan, PriceID: "price_" + te.Plan, Interval: te.Interval, Status: te.Status, PeriodEnd: te.PeriodEnd,
 		InvoiceID: te.InvoiceID, AmountCents: te.AmountCents, Currency: te.Currency, DisputeID: te.DisputeID,
+		ExtraStreams: te.ExtraStreams, PAYG: te.PAYG,
 		Payload: payload,
 	}, nil
 }
@@ -538,3 +555,20 @@ func (f *fakeIDP) authorize(t *testing.T, location string, sub, email string, ve
 }
 
 func auditLogFor(e *env) *audit.Log { return audit.New(e.pool.DB) }
+
+// withPrices sets the paid plans' prices for the test (story 50.19: they are TBD until the
+// owner sets them, and a plan without a price can't be bought), as they will be after launch.
+func withPrices(t *testing.T) {
+	t.Helper()
+	old := billingpkg.Tiers
+	set := map[string]billingpkg.Tier{}
+	for k, v := range old {
+		set[k] = v
+	}
+	basic, pro := set[billingpkg.PlanBasic], set[billingpkg.PlanPro]
+	p500, p900 := 500, 900
+	basic.PriceCents, pro.PriceCents = &p500, &p900
+	set[billingpkg.PlanBasic], set[billingpkg.PlanPro] = basic, pro
+	billingpkg.Tiers = set
+	t.Cleanup(func() { billingpkg.Tiers = old })
+}

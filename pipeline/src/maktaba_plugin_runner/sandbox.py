@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import importlib.util
 import os
 import platform
 import re
+import shlex
 import shutil
 import struct
 import sys
@@ -166,6 +168,19 @@ def tool_path(name: str) -> str | None:
         "yt-dlp": "MAKTABA_YTDLP",
     }
     explicit = os.environ.get(env.get(name, ""), "").strip()
+    if name == "yt-dlp":
+        # what the stages run (integrations.youtube_download.ytdlp_command): MAKTABA_YTDLP
+        # is a command line, else this Python's yt_dlp module (``python -m yt_dlp``), so the
+        # tool is the command's program, else this interpreter when the module is there; a
+        # yt-dlp on PATH only when neither is. Its children keep this sandbox.
+        if explicit:
+            argv = shlex.split(explicit)
+            found = (shutil.which(argv[0]) or argv[0]) if argv else None
+        elif importlib.util.find_spec("yt_dlp") is not None:
+            found = sys.executable
+        else:
+            found = shutil.which(name)
+        return os.path.realpath(found) if found else None
     found = explicit or shutil.which(name)
     return os.path.realpath(found) if found else None
 
@@ -434,8 +449,17 @@ def policy_for(
     run_dir: str,
 ) -> Policy:
     """The union of a group's ``[trusted]`` tables; ``areas`` maps an area name
-    (``library``, ``data.thumbnails`` …) to this machine's folders (``;``-separated)."""
-    p = Policy(api_socket=api_socket, own_socket=own_socket, run_dir=run_dir)
+    (``library``, ``data.thumbnails`` …) to this machine's folders (``;``-separated).
+
+    The sockets and the run folder are named by their real paths, as the areas are: a
+    runner's socket outside a long data folder is under ``/tmp``, which is ``/private/tmp``
+    on macOS, and Seatbelt matches the real path (a bind there was refused, so the runner
+    exited 1)."""
+
+    def real(path: str) -> str:
+        return os.path.realpath(path) if path else path
+
+    p = Policy(api_socket=real(api_socket), own_socket=real(own_socket), run_dir=real(run_dir))
 
     def paths(area: str) -> list[str]:
         return [x for x in areas.get(area, "").split(";") if x]

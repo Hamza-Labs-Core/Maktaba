@@ -124,6 +124,16 @@ func PlanChoice(cat *components.Catalog, f Facts, c Choice) map[string]string {
 	out := cat.SetupWants(c.Set(cat, platform))
 	today := Plan(cat, Facts{Config: f.Config, Slots: f.Slots, LLMProcess: f.LLMProcess, Relay: f.Relay,
 		Assets: f.Assets, OperatorOff: f.OperatorOff, Extensions: f.Extensions, HDHR: f.HDHR})
+	// the cloud link follows the relay (today's rule) unless the admin ticked it: a set holds
+	// it when it holds direct access (a requirement), and direct access is on only where the
+	// relay is (Epic 50 story 50.15); something else ticked that needs the link brings it
+	// back (keepRequirementsOn)
+	if !slices.Contains(c.Enable, "cloud.link") {
+		out["cloud.link"] = today["cloud.link"]
+	}
+	if today["cloud.link"] != components.WantEnabled && out["cloud.direct"] == components.WantEnabled {
+		out["cloud.direct"] = components.WantInstalled
+	}
 	for _, comp := range cat.Components() {
 		switch {
 		case comp.Kind == components.KindExtension, comp.ID == "telemetry", comp.ID == "cloud.link", comp.ID == "cloud.relay":

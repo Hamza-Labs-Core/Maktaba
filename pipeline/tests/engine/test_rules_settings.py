@@ -10,11 +10,12 @@ from typing import Any
 
 import pytest
 from maktaba_fp_classify.stages import clip_groups, promo_links
+from maktaba_fp_livetv.stages import plan_channels
 
 from maktaba_pipeline import rules
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import dumps, now, to_ts
-from maktaba_pipeline.engine.stages import detect, plan_channels
+from maktaba_pipeline.engine.stages import detect
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library
 
@@ -108,3 +109,16 @@ async def test_only_a_missing_table_falls_back_to_the_defaults() -> None:
     )
     with pytest.raises(ConnectionResetError):
         await rules.read(_Failing(ConnectionResetError("server closed the connection")), "planner")
+
+
+def test_direct_is_a_section_of_cloud_direct() -> None:
+    """Story 50.15: direct access's switch, mapping and manual port are the rules section
+    ``direct``, off by default (the rollout), owned by the cloud.direct component."""
+    from maktaba_pipeline.direct_settings import DirectConfig
+
+    assert rules.SECTIONS["direct"][0] is DirectConfig
+    d = DirectConfig()
+    assert (d.enabled, d.map_port, d.manual_port) == (False, True, 0)
+    schema = {s["key"]: s for s in rules.schema()["sections"]}
+    fields = {f["name"]: f for f in schema["direct"]["fields"]}
+    assert fields["manual_port"]["maximum"] == 65535

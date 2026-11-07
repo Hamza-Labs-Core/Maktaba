@@ -316,8 +316,13 @@ type rehearsal struct {
 	trust  string // the fake Sigstore's trusted_root.json
 	gh     *fakeGitHub
 	python string // the pipeline's interpreter (a venv of the e2e wheel)
-	shim   string // a PATH folder whose open and xdg-open do nothing
-	start  time.Time
+	// buildPython is the Python an update builds a release's environment with
+	// (MAKTABA_PIPELINE_PYTHON): python, or this machine's when python is realPipeline's
+	buildPython string
+	// pipelineEnv: what realPipeline adds to every machine's environment (the sleepy stages)
+	pipelineEnv []string
+	shim        string // a PATH folder whose open and xdg-open do nothing
+	start       time.Time
 	// story 51.18: packs, a release published carries the kit's packs of its version
 	// and its signed components index; corruptPack: the versions whose pack has one byte
 	// changed after the release was signed (the pack fails its verification)
@@ -360,6 +365,7 @@ func newRehearsal(t *testing.T) *rehearsal {
 	venv := filepath.Join(work, "pipeline-venv")
 	makeVenv(t, py, fakeWheel(t, k.cur), venv)
 	r.python = filepath.Join(venv, "bin", "python")
+	r.buildPython = r.python
 	r.shim = filepath.Join(work, "shim")
 	_ = os.MkdirAll(r.shim, 0o755)
 	for _, n := range []string{"open", "xdg-open"} {
@@ -552,6 +558,8 @@ admin_addr = "127.0.0.1:%d"
 
 [logs]
 addr = "127.0.0.1:%d"
+# every line on the output the checks read (53.02: server.log is warn+ by default)
+server_log = "all"
 
 [tv]
 slots = "%s"
@@ -591,13 +599,14 @@ func (m *appMachine) environ() []string {
 		"MAKTABA_CLUSTER_DIR="+filepath.Join(m.root, "clusterfiles"),
 		"MAKTABA_ARCHIVE_DIR="+filepath.Join(m.root, "archive"),
 		"HF_HOME="+filepath.Join(m.root, "hf"),
-		"MAKTABA_PYTHON="+r.python, "MAKTABA_PIPELINE_PYTHON="+r.python,
+		"MAKTABA_PYTHON="+r.python, "MAKTABA_PIPELINE_PYTHON="+r.buildPython,
 		"MAKTABA_DISCOVERY_MDNS=0", "MAKTABA_HSTS=0", "MAKTABA_HEALTH_WARM=0s",
 		"MAKTABA_E2E_TRUSTED_ROOT="+r.trust, "MAKTABA_E2E_GITHUB_API="+r.gh.srv.URL,
 		// a short watch, as the update e2e has: healthy 30 s commits, 90 s unhealthy rolls back
 		"MAKTABA_UPDATE_WATCH_SECONDS=30", "MAKTABA_UPDATE_NODE_WATCH_SECONDS=15", "MAKTABA_UPDATE_HEALTH_SECONDS=90",
 		"MAKTABA_UPDATE_INTERVAL_SEC=0", "MAKTABA_UPDATE_DISABLE=", "MAKTABA_MIGRATIONS_DIR=",
 		"MAKTABA_TRANSCODE_MAX_CONCURRENT=2")
+	env = append(env, r.pipelineEnv...)
 	return append(env, m.env...)
 }
 

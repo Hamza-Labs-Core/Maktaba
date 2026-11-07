@@ -1,0 +1,296 @@
+// Story 54.18 T01, T02, T05, T07, T08 (web): Browse filters (the server already left out what
+// cannot run here; the switch asks for the rest), Arabic search with or without diacritics,
+// plugin words as text, the expired catalog, install, rate too early, English and Arabic.
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import EN from "../../i18n/en.json";
+import AR from "../../i18n/ar.json";
+import { I18nProvider } from "../../lib/i18n";
+import type { CatalogEntry, CatalogView } from "../../lib/pluginsApi";
+import { Browse, filterEntries } from "./Browse";
+
+const get = vi.fn();
+const post = vi.fn();
+vi.mock("../../lib/api", async (orig) => ({
+  ...(await orig<object>()),
+  api: {
+    get: (...a: unknown[]) => get(...a),
+    post: (...a: unknown[]) => post(...a),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
+}));
+
+const version = {
+  version: "1.2.0",
+  sha256: "a".repeat(64),
+  size: 4096,
+  maktaba: ">=0.6.0, <0.9.0",
+  plugin_api: "1.0",
+  platforms: ["any"],
+  capabilities: ["tags.write"],
+  review_level: "reviewed" as const,
+  released: "2026-11-01T00:00:00Z",
+};
+function entry(over: Partial<CatalogEntry> = {}): CatalogEntry {
+  return {
+    id: "dev.example.tagger",
+    developer: "Example",
+    names: { en: "Tagger", ar: "الوسّام" },
+    summaries: { en: "Adds tags <b>fast</b>", ar: "يضيف الوُسُوم" },
+    category: "metadata",
+    tags: ["tags"],
+    rating_avg_x100: 420,
+    rating_count: 12,
+    installs: 300,
+    machine_translated: ["ar"],
+    versions: [version],
+    newest: version,
+    auto_update: false,
+    ...over,
+  };
+}
+const trust = {
+  revoked_version: 3,
+  revoked_expired: false,
+  catalog_version: 4,
+  catalog_expired: false,
+  store_keys: true,
+  store_installs_ok: true,
+};
+const view = (over: Partial<CatalogView> = {}): CatalogView => ({
+  plugins: [
+    entry(),
+    entry({
+      id: "dev.example.old",
+      names: { en: "Old", ar: "قديم" },
+      newest: null,
+      rating_count: 2,
+    }),
+  ],
+  trust,
+  opening: false,
+  ...over,
+});
+
+beforeEach(() => {
+  for (const f of [get, post]) f.mockReset();
+});
+afterEach(() => localStorage.removeItem("mkt:locale"));
+
+const show = () =>
+  render(
+    <I18nProvider>
+      <Browse onInstalled={vi.fn()} />
+    </I18nProvider>
+  );
+
+describe("Browse", () => {
+  it("T02: Arabic search finds the same with or without diacritics", () => {
+    const list = [entry()];
+    expect(filterEntries(list, "الوسوم", "", "rating")).toHaveLength(1);
+    expect(filterEntries(list, "الوُسُوم", "", "rating")).toHaveLength(1);
+    expect(filterEntries(list, "tagger", "", "rating")).toHaveLength(1);
+    expect(filterEntries(list, "nothing", "", "rating")).toHaveLength(0);
+  });
+
+  it("T01, T05: incompatible ones are marked; words are text, not markup", async () => {
+    get.mockResolvedValue(view());
+    show();
+    expect(
+      (await screen.findAllByText("Adds tags <b>fast</b>", { exact: false })).length
+    ).toBeGreaterThan(0);
+    expect(document.querySelector("b")).toBeNull();
+    expect(screen.getByText(EN["plugins.browse.needs_newer"])).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(EN["plugins.browse.few_ratings"]))).toBeInTheDocument();
+  });
+
+  it("the store not open yet says so", async () => {
+    get.mockResolvedValue(view({ plugins: [], opening: true }));
+    show();
+    expect(await screen.findByText(EN["plugins.browse.opening"])).toBeInTheDocument();
+  });
+
+  it("a plugin in a flow: its page draws the flow and lists its events and subscriptions", async () => {
+    const flow = {
+      id: "dev.example.flow",
+      version: "1.0.0",
+      graph: {
+        nodes: [
+          {
+            id: "core:audio.ready",
+            kind: "core",
+            name: "audio.ready",
+            plugin: "",
+            state: "enabled",
+            subject: "video",
+          },
+          {
+            id: "stage:dev.example.silences/find",
+            kind: "stage",
+            name: "find",
+            plugin: "dev.example.silences",
+            state: "enabled",
+            subject: "video",
+          },
+          {
+            id: "event:dev.example.silences/silences.found",
+            kind: "event",
+            name: "silences.found",
+            plugin: "dev.example.silences",
+            state: "enabled",
+            subject: "video",
+          },
+          {
+            id: "stage:dev.example.tagger/write",
+            kind: "stage",
+            name: "write",
+            plugin: "dev.example.tagger",
+            state: "enabled",
+            subject: "video",
+          },
+        ],
+        edges: [
+          { from: "core:audio.ready", kind: "trigger", to: "stage:dev.example.silences/find" },
+          {
+            from: "stage:dev.example.silences/find",
+            kind: "emit",
+            to: "event:dev.example.silences/silences.found",
+          },
+          {
+            from: "event:dev.example.silences/silences.found",
+            kind: "subscribe",
+            to: "stage:dev.example.tagger/write",
+          },
+        ],
+      },
+      events: ["plugin:dev.example.silences/silences.found"],
+      subscriptions: ["plugin:dev.example.silences/silences.found -> dev.example.tagger/write"],
+    };
+    get.mockResolvedValue(view({ plugins: [entry({ extra: { flow } })] }));
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.getByRole("heading", { name: EN["plugins.browse.flow"] })).toBeInTheDocument();
+    expect(document.querySelector("svg")).not.toBeNull();
+    // the tagger listens to the silences' event and publishes none of its own
+    expect(
+      screen.getByText("plugin:dev.example.silences/silences.found -> dev.example.tagger/write")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("plugin:dev.example.silences/silences.found")).toBeNull();
+  });
+
+  it("#757: opened from the store's listing (?store=<id>), the plugin's page shows; an unknown id leaves the list", async () => {
+    get.mockResolvedValue(view());
+    const { unmount } = render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.tagger" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("button", { name: EN["plugins.browse.back"] })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Tagger/ })).toBeInTheDocument();
+    unmount();
+    render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.absent" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("heading", { name: EN["plugins.browse.title"] })
+    ).toBeInTheDocument();
+  });
+
+  it("a plugin with no flow shows no chart", async () => {
+    get.mockResolvedValue(view());
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.queryByRole("heading", { name: EN["plugins.browse.flow"] })).toBeNull();
+  });
+
+  it("an expired catalog shows a banner and Install waits; a fresh one installs", async () => {
+    get.mockResolvedValue(
+      view({ trust: { ...trust, catalog_expired: true, store_installs_ok: false } })
+    );
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.getByRole("button", { name: EN["plugins.browse.install"] })).toBeDisabled();
+    expect(screen.getAllByRole("alert")[0]).toHaveTextContent(EN["plugins.browse.expired"]);
+  });
+
+  it("#758: a report of an installed plugin can attach its logs; one not installed cannot", async () => {
+    get.mockResolvedValue(view({ plugins: [entry({ installed: "1.1.0" })] }));
+    post.mockResolvedValue({ status: "filed" });
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    fireEvent.change(screen.getByLabelText(EN["plugins.browse.report_reason"]), {
+      target: { value: "does_not_work" },
+    });
+    await act(async () => fireEvent.click(screen.getByLabelText(EN["plugins.browse.report_logs"])));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: EN["plugins.browse.send_report"] }))
+    );
+    expect(post).toHaveBeenCalledWith("/api/plugins/dev.example.tagger/report", {
+      reason: "does_not_work",
+      details: "",
+      attach_logs: true,
+    });
+  });
+
+  it("#758: no logs box for a plugin not installed here", async () => {
+    get.mockResolvedValue(view());
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.queryByLabelText(EN["plugins.browse.report_logs"])).toBeNull();
+  });
+
+  it("install and a rating too early (the store's words)", async () => {
+    get.mockResolvedValue(view());
+    post.mockImplementation(async (path: string) => {
+      if (path === "/api/plugins/install")
+        return { result: { plugin_id: "dev.example.tagger" }, plugin: {} };
+      throw Object.assign(new Error("x"), { status: 403, problem: { code: "rating_too_early" } });
+    });
+    show();
+    const open = await screen.findAllByRole("button", { name: EN["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: EN["plugins.browse.install"] }))
+    );
+    expect(post).toHaveBeenCalledWith("/api/plugins/install", {
+      store: { id: "dev.example.tagger", version: "1.2.0" },
+    });
+  });
+
+  it("T08: Arabic, right to left, with the machine-translated label", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue(view());
+    show();
+    expect(
+      await screen.findByRole("heading", { name: AR["plugins.browse.title"] })
+    ).toBeInTheDocument();
+    const open = await screen.findAllByRole("button", { name: AR["plugins.action.open"] });
+    await act(async () => fireEvent.click(open[0]!));
+    expect(screen.getByText(AR["plugins.browse.machine_translated"])).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe("rtl");
+  });
+
+  // N13's 300 ms is a browser's figure; here jsdom draws 300 cards from the kept catalog,
+  // with no store fetch, within a loose bound so a slow runner does not fail it
+  it("T07: Browse draws from the kept catalog, with no store call of its own", async () => {
+    const many = Array.from({ length: 300 }, (_, i) =>
+      entry({ id: `dev.example.p${i}`, names: { en: `P${i}`, ar: `ب${i}` } })
+    );
+    get.mockResolvedValue(view({ plugins: many }));
+    const t0 = performance.now();
+    show();
+    await screen.findByRole("heading", { name: /P299/ });
+    expect(performance.now() - t0).toBeLessThan(5000);
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+});

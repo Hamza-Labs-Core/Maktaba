@@ -46,6 +46,9 @@ var ComponentRoutes = componentTable{
 	{Exact: "POST /api/tv/remote/tune", Component: "livetv"},
 	// YouTube: the search's "From YouTube" (yt-dlp)
 	{Exact: "GET /api/search/youtube", Component: "youtube"},
+	// an admin sending a home's problem report to Maktaba (53.16); a new report with the
+	// Maktaba box ticked (POST /api/reports, core) is refused by its handler
+	{Exact: "POST /api/reports/{id}/share", Component: "reports.share", Admin: true},
 }
 
 // CoreRoutes never answer component_off: every other route family. A route family

@@ -107,3 +107,41 @@ func TestCapabilitiesETag(t *testing.T) {
 		t.Fatalf("after a change: %d %s", rec.Code, rec.Header().Get("ETag"))
 	}
 }
+
+// Story 50.35 T04: a Free home (no cloud_relay) with direct access on reads remote_access on,
+// for a viewer too; with direct access off it is off, and an admin sees both members of the
+// group with the first one's reason.
+func TestRemoteAccessGroupInCapabilities(t *testing.T) {
+	cat := components.Default() // cloud.direct and its remote_access group (story 50.15)
+	caps := svc.NewCapabilities(svc.CapabilitiesOptions{Catalog: cat})
+	caps.SetLicensed(func(flag string) bool { return flag != "cloud_relay" })
+	d := map[string]store.Desired{}
+	for _, c := range cat.Components() {
+		if c.Switchable {
+			d[c.ID] = store.Desired{ID: c.ID, Want: components.WantEnabled, Generation: 1}
+		}
+	}
+	d["livetv.inprocess"] = store.Desired{ID: "livetv.inprocess", Want: components.WantInstalled, Generation: 1}
+	caps.Apply(d, 7)
+	r := chi.NewRouter()
+	(&Capabilities{Caps: caps}).Mount(r)
+
+	var b capsBody
+	decode(t, getCaps(r, viewer(), ""), http.StatusOK, &b)
+	if b.Features["remote_access"] != "on" {
+		t.Fatalf("a Free home with direct access: remote_access %q", b.Features["remote_access"])
+	}
+
+	d["cloud.direct"] = store.Desired{ID: "cloud.direct", Want: components.WantInstalled, Generation: 2}
+	caps.Apply(d, 8)
+	decode(t, getCaps(r, viewer(), ""), http.StatusOK, &b)
+	if b.Features["remote_access"] != "off" || b.Admin != nil {
+		t.Fatalf("viewer, direct off: %+v", b)
+	}
+	var a capsBody
+	decode(t, getCaps(r, admin(), ""), http.StatusOK, &a)
+	off := a.Admin.Off["remote_access"]
+	if len(off.Components) != 2 || off.Components[0] != "cloud.relay" || off.Components[1] != "cloud.direct" || off.Reason != "licence_missing" {
+		t.Fatalf("admin off %+v", off)
+	}
+}

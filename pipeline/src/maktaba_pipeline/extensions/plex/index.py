@@ -22,15 +22,13 @@ from ...engine.context import StageContext, StageFailure
 from ...engine.graph import StageResult, SubjectKind
 from ...engine.hashing import canonical_hash
 from ...engine.paths import PathMap
-from ...engine.sql import loads, uid
+from ...engine.sql import dumps, is_pg, loads, uid
 from ...integrations.plex import PlexClient, PlexError, PlexSection, TransportError
 from ..links import Link, delete_link, get_links, put_link
 from ..plex_items import replace_section
 from .collection import ITEM_TARGET, PlexService, item_content_hash, path_map_of
 
 __all__ = ["run_index", "sections_for"]
-
-_CHUNK = 400
 
 
 def _norm(path: str) -> str:
@@ -83,20 +81,24 @@ async def _videos(db: Any, library_id: UUID) -> list[tuple[str, str, Any]]:
 
 
 async def _seasons_of(db: Any, video_ids: Sequence[str]) -> list[UUID]:
-    out: set[UUID] = set()
-    ids = list(dict.fromkeys(video_ids))
-    for i in range(0, len(ids), _CHUNK):
-        chunk = ids[i : i + _CHUNK]
-        marks = ",".join(f"${n + 1}" for n in range(len(chunk)))
+    ids = list(dict.fromkeys(str(v) for v in video_ids))
+    if not ids:
+        return []
+    if is_pg(db):
+        rows = await db.fetch(_SEASONS_OF_SQL + " WHERE e.video_id = ANY($1::uuid[])", ids)
+    else:
         rows = await db.fetch(
-            "SELECT DISTINCT ss.id AS id FROM series_episodes e"
-            " JOIN series_seasons ss ON ss.series_id = e.series_id"
-            "  AND ss.season = COALESCE(e.season_override, e.season)"
-            f" WHERE e.video_id IN ({marks})",  # noqa: S608
-            *chunk,
+            _SEASONS_OF_SQL + " WHERE e.video_id IN (SELECT value FROM json_each($1))", dumps(ids)
         )
-        out.update(UUID(str(r["id"])) for r in rows)
-    return sorted(out)
+    return sorted({UUID(str(r["id"])) for r in rows})
+
+
+#: the seasons of some videos (each dialect's WHERE added: a fixed text each, story 54.35)
+_SEASONS_OF_SQL = (
+    "SELECT DISTINCT ss.id AS id FROM series_episodes e"
+    " JOIN series_seasons ss ON ss.series_id = e.series_id"
+    "  AND ss.season = COALESCE(e.season_override, e.season)"
+)
 
 
 async def run_index(db: Any, job: Any, ctx: StageContext, service: PlexService) -> StageResult:

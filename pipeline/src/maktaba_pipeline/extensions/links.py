@@ -11,11 +11,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..engine.sql import now, to_ts
+from ..engine.sql import dumps, is_pg, now, to_ts
 
 __all__ = ["Link", "delete_link", "get_link", "get_links", "put_link"]
-
-_CHUNK = 400
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,20 +57,26 @@ async def get_links(
     db: Any, target: str, subject_kind: str, subject_ids: Sequence[str]
 ) -> dict[str, Link]:
     """Links of one target for many subjects, keyed by subject id."""
-    out: dict[str, Link] = {}
     ids = [str(i) for i in dict.fromkeys(subject_ids)]
-    for i in range(0, len(ids), _CHUNK):
-        chunk = ids[i : i + _CHUNK]
-        marks = ",".join(f"${n + 3}" for n in range(len(chunk)))
+    if not ids:
+        return {}
+    if is_pg(db):
         rows = await db.fetch(
             f"SELECT {_COLS} FROM external_links WHERE target = $1 AND subject_kind = $2"
-            f" AND subject_id IN ({marks})",
+            " AND subject_id = ANY($3::text[])",
             target,
             subject_kind,
-            *chunk,
+            ids,
         )
-        out.update({str(r["subject_id"]): _link(r) for r in rows})
-    return out
+    else:
+        rows = await db.fetch(
+            f"SELECT {_COLS} FROM external_links WHERE target = $1 AND subject_kind = $2"
+            " AND subject_id IN (SELECT value FROM json_each($3))",
+            target,
+            subject_kind,
+            dumps(ids),
+        )
+    return {str(r["subject_id"]): _link(r) for r in rows}
 
 
 async def put_link(db: Any, link: Link) -> None:

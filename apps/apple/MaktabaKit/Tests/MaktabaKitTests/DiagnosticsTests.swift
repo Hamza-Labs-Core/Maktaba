@@ -462,6 +462,34 @@ extension DiagnosticsOverHTTP {
         #expect(body.range(of: shot) != nil)
     }
 
+    // Epic 53 story 53.16: the Maktaba box is offered only while the home allows it, is
+    // unticked, and a ticked box goes in the report; My reports reads Maktaba's reply
+    @Test func theMaktabaBoxIsOfferedOnlyWhileTheHomeAllowsIt() async throws {
+        // the stub answers in order
+        DiagStub.on("GET /api/reports/maktaba", 200, #"{"available":true,"enabled":false}"#)
+        DiagStub.on("GET /api/reports/maktaba", 200, #"{"available":true,"enabled":true}"#)
+        DiagStub.on("GET /api/reports/maktaba", 404, "")
+        #expect(await DiagStub.client().reportsToMaktaba() == false)
+        #expect(await DiagStub.client().reportsToMaktaba() == true)
+        #expect(await DiagStub.client().reportsToMaktaba() == false, "an older home: no box")
+        var d = ReportDraft(category: .playback)
+        #expect(!d.toMaktaba, "unticked when the form opens")
+        d.toMaktaba = true
+        let part = ReportProblem.part(d, lines: [], crashes: [], header: CrashEnvelopes.header, requests: [], screenshotPreviewed: false)
+        let j = try #require(try JSONSerialization.jsonObject(with: part) as? [String: Any])
+        #expect(j["share_with_maktaba"] as? Bool == true)
+    }
+
+    @Test func myReportsReadMaktabasReply() throws {
+        let json = #"[{"id":3,"app":"apple.player","category":"playback","status":"new","shared_with_maktaba":true,"#
+            + #""maktaba":{"state":"sent","reply":"Fixed, thank you","fixed_in":"0.3.96"}},"#
+            + #"{"id":4,"app":"apple.player","category":"search","status":"new","shared_with_maktaba":false}]"#
+        let list = try JSONDecoder.home.decode([ReportSummary].self, from: Data(json.utf8))
+        #expect(list[0].maktaba == ToMaktaba(state: "sent", reply: "Fixed, thank you", fixedIn: "0.3.96"))
+        #expect(list[1].maktaba == nil)
+        #expect(ReportWords.maktaba("sent") == "Also sent to Maktaba" && ReportWords.maktaba("queued") == "Waiting to be sent to Maktaba")
+    }
+
     @Test func theDailyLimitIsA429() async throws {
         DiagStub.on("POST /api/reports", 429, #"{"type":"about:blank","title":"too many reports from this device today","status":429}"#,
                     headers: ["Retry-After": "3600"])

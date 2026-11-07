@@ -38,8 +38,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/directaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -118,6 +120,8 @@ func main() {
 			return
 		case "components":
 			os.Exit(runComponents(os.Args[2:]))
+		case "plugins":
+			os.Exit(runPlugins(os.Args[2:]))
 		case "hash-password":
 			if err := runHashPassword(os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "hash-password: %v\n", err)
@@ -384,7 +388,7 @@ func runServe() error {
 	// it never contends with handler traffic. Peer log URLs let the
 	// bundle proxy the streaming + pipeline ring buffers.
 	hubRef := &router.HubRef{} // Epic 35: the update driver's cluster channel (and a machine's log files)
-	router.MountLogs(r, router.LogsDeps{
+	forwarder := router.MountLogs(r, router.LogsDeps{
 		DB:                 statsDB,
 		DataDir:            statsDataDir,
 		SchemaRev:          envIntDefault("MAKTABA_SCHEMA_REV", schemaguard.SchemaRev),
@@ -395,7 +399,10 @@ func runServe() error {
 		// this machine's server.log, app.log and launcher.log from its supervisor, and a
 		// machine's over the machine channel: where an update's story is
 		Files: router.LogFiles(os.Getenv("MAKTABA_SUPERVISOR_URL"), os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE"), hubRef, nil),
+		// Epic 53 story 53.16: whether reports.share is on
+		Switches: loops,
 	})
+	wireReportsForwarder(loops, forwarder, logger)
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Process supervision (Story 22.9): the supervisor's per-process
@@ -653,6 +660,13 @@ func runServe() error {
 					rep := cloudlink.NewReporter(agent, p9.Cloud.Store, logger)
 					p9.Cloud.Store.Changed = rep.Kick
 					loops.Declare("cloudlink_reporter", runner.Func(func(ctx context.Context) { rep.Run(ctx, 30*time.Minute) }))
+					// Epic 50 story 50.15: direct remote access (cloud.direct), through the same agent
+					if direct := directService(appDB, agent, logger); direct != nil {
+						loops.Declare("direct_listener", runner.Func(direct.RunListener))
+						loops.Declare("direct_portmap", runner.Func(direct.RunPortmap))
+						loops.Declare("direct_cert", runner.Func(direct.RunCert))
+						(&directaccess.Routes{Service: direct}).Mount(r)
+					}
 				}
 				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
@@ -723,12 +737,19 @@ func runServe() error {
 			componentsSvc := router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
 				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
+			// Epic 53 story 53.12: the queue's numbers on the home's /metrics, for the Queue
+			// and Processing dashboards (the home only: a joined machine reads the same table)
+			queues.RegisterMetrics(appDB)
 			// Epic 54 (stories 54.04-54.09): the plugins' admin routes on the components
 			// service, the plugin API's invocation and breaker routes, and the plugin API
 			// on its unix socket when the supervisor names one
 			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
 				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets, Loops: loops,
-				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient)})
+				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient),
+				// story 54.35: the first-party Plex plugin reaches Plex through the home's
+				// service door, which adds the token and scrubs it out of every answer
+				Service: relay.New(relay.Config{Settings: relay.DBSettings(appDB),
+					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv), Logger: logger})})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

@@ -79,7 +79,7 @@ type Multiplexer struct {
 	// inflight counts requests being served (handed to handle, not yet done):
 	// a drained tunnel closes when it reaches zero (story 50.03)
 	inflight atomic.Int64
-	// control receives DRAIN and TICKET frames (the supervisor's)
+	// control receives DRAIN, TICKET and the cloud's direct frames (the supervisor's)
 	control func(Frame)
 	// lastRequest is when the cloud last sent a request (unix nanos): a
 	// drained tunnel closes only after a quiet spell, so a request the relay
@@ -289,7 +289,7 @@ func (m *Multiplexer) dispatch(f Frame) {
 		if cr != nil {
 			cr.add(int64(binary.BigEndian.Uint32(f.Payload)))
 		}
-	case KindDrain, KindTicket:
+	case KindDrain, KindTicket, KindDirectName, KindDirectCert, KindDirectCheck:
 		if m.control != nil {
 			m.control(f)
 		}

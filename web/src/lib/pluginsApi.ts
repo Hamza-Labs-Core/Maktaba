@@ -64,6 +64,49 @@ export interface Plugin {
   auto_update?: boolean;
 }
 
+/** One version in the store's catalog. */
+export interface CatalogVersion {
+  version: string;
+  sha256: string;
+  size: number;
+  maktaba: string;
+  plugin_api: string;
+  platforms: string[];
+  capabilities: string[];
+  review_level: "automated" | "reviewed";
+  released: string;
+}
+
+/** A plugin as Browse shows it (GET /api/plugins/catalog, story 54.18 §1). */
+export interface CatalogEntry {
+  id: string;
+  developer: string;
+  names: Record<string, string>;
+  summaries: Record<string, string>;
+  category: string;
+  tags: string[];
+  rating_avg_x100: number;
+  rating_count: number;
+  installs: number;
+  machine_translated: string[];
+  /** "free", or the product the store sells ("one_time" or "yearly", story 54.19 §4) */
+  price?: string;
+  versions: CatalogVersion[];
+  /** the listing's other words; a paid plugin's prices in minor units by currency (prices) */
+  extra?: Record<string, unknown>;
+  newest: CatalogVersion | null;
+  installed?: string;
+  update?: string;
+  auto_update: boolean;
+  withdrawn?: { action: string; reason_code: string } | null;
+}
+
+export interface CatalogView {
+  plugins: CatalogEntry[];
+  trust: TrustStatus;
+  opening: boolean;
+}
+
 /** The store's signed lists on this home (GET /api/plugins/trust). */
 export interface TrustStatus {
   revoked_version: number;
@@ -234,6 +277,15 @@ export interface StoreLinkStatus {
   pending?: { user_code: string; verification_uri: string; expires_at: string; interval: number };
 }
 
+/** A paid plugin's entitlement this home holds (story 54.19 §6), checked offline. */
+export interface HeldEntitlement {
+  plugin_id: string;
+  product: "one_time" | "yearly";
+  purchase_id: string;
+  valid_until: string;
+  refreshed_at: string;
+}
+
 /** A plugin that declares panels, in the order pages show them (story 54.20 §1). */
 export interface PanelPlugin {
   id: string;
@@ -247,13 +299,36 @@ export const pluginsApi = {
   setPanelOrder: (order: string[]) =>
     api.put<{ order: string[] }>("/api/plugins/panel-order", { order }),
   trust: () => api.get<TrustStatus>("/api/plugins/trust"),
+  catalog: (all = false) => api.get<CatalogView>(`/api/plugins/catalog${all ? "?all=true" : ""}`),
+  installFromStore: (id: string, version: string) =>
+    api.post<InstallResult>("/api/plugins/install", { store: { id, version } }),
+  rate: (id: string, stars: number, text: string) =>
+    api.post(`/api/plugins/${enc(id)}/rate`, { stars, text }),
+  /** attachLogs: the plugin's own recent lines, scrubbed, go with the report (#758) */
+  report: (id: string, reason: string, details: string, attachLogs = false) =>
+    api.post(`/api/plugins/${enc(id)}/report`, { reason, details, attach_logs: attachLogs }),
   setAutoUpdate: (id: string, on: boolean) =>
     api.put<PluginDetail>(`/api/plugins/${enc(id)}/auto-update`, { on }),
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),
+  /** A one-time purchase intent for the store's buy page (story 54.19 §5). */
+  buy: (pluginId: string, lang: "en" | "ar") =>
+    api.post<{ buy_url: string; intent: string; product: string; expires_at: string }>(
+      "/api/plugins/store-account/buy",
+      { plugin_id: pluginId, lang }
+    ),
   storeLink: () =>
     api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),
   storePoll: () => api.post<StoreLinkStatus>("/api/plugins/store-account/poll"),
   storeUnlink: () => api.delete<{ linked: boolean }>("/api/plugins/store-account"),
+  entitlements: () =>
+    api.get<{ entitlements: HeldEntitlement[] }>("/api/plugins/store-account/entitlements"),
+  refreshEntitlements: (afterBuy = false) =>
+    api.post<{ linked: boolean; valid: number }>(
+      "/api/plugins/store-account/entitlements/refresh",
+      {
+        after_buy: afterBuy,
+      }
+    ),
   list: () =>
     api.get<{ plugins: Plugin[]; policy: Policy; built_in?: BuiltInPlugin[] }>("/api/plugins"),
   graph: () => api.get<{ graph: FlowGraph; findings: FlowFinding[] | null }>("/api/plugins/graph"),

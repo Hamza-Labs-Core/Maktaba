@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -27,6 +28,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/direct"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
@@ -45,6 +47,9 @@ type Deps struct {
 	// WebURL is the cloud web app's origin, where a person confirms a link
 	// (its /link-home page).
 	WebURL string
+	// Direct lists a home's HTTPS direct name once its outside check passed (story 50.15);
+	// nil: direct access off.
+	Direct *stores.Direct
 }
 
 // MountUser registers the routes behind the user auth group.
@@ -120,7 +125,7 @@ type homeView struct {
 	RelayURL  string `json:"relay_url"`
 	DirectURL string `json:"direct_url,omitempty"`
 	// Connections is every way to reach the home, in the order apps try them (story 50.13):
-	// local, direct, relay hint, relay. Apps save it and use it while the cloud is down. Until
+	// local, local_ip (50.15 §3), direct, relay hint, relay. Apps save it and use it while the cloud is down. Until
 	// 50.15 and 50.16 it holds the direct address and the relay; a home whose plan has no relay
 	// lists no relay (50.19). DirectURL and RelayURL stay for apps from before it.
 	Connections []connection `json:"connections"`
@@ -132,15 +137,41 @@ type homeView struct {
 	Owned  bool `json:"owned"`
 }
 
-// connection is one way to reach a home: kind is local, direct, relay_hint or relay.
+// connection is one way to reach a home: kind is local, local_ip, direct, relay_hint or relay.
+// A local_ip entry is a LAN address by its IP (story 50.15 §3: a router blocking DNS rebinding
+// refuses the LAN name); TLSName is the name its certificate is checked against there, one of
+// the home's own names, so the app still proves it reached this home.
 type connection struct {
-	URL  string `json:"url"`
-	Kind string `json:"kind"`
+	URL     string `json:"url"`
+	Kind    string `json:"kind"`
+	TLSName string `json:"tls_name,omitempty"`
 }
 
-// connectionsFor is a home's connections in the order apps try them (story 50.13 §2).
-func connectionsFor(directURL, relayURL string, relay bool) []connection {
+// localConnections are a home's LAN entries (story 50.15 §3): each address's name under the
+// home's certificate first, then each raw address pinned to that name. Apps from before
+// local_ip leave it out (a kind they don't know).
+func localConnections(h stores.LANHome) []connection {
+	names := make([]connection, 0, len(h.LAN))
+	raw := make([]connection, 0, len(h.LAN))
+	for _, a := range h.LAN {
+		name := direct.Name(a.Addr(), h.HomeID, h.Domain)
+		port := strconv.Itoa(int(a.Port()))
+		names = append(names, connection{URL: "https://" + net.JoinHostPort(name, port), Kind: "local"})
+		raw = append(raw, connection{URL: "https://" + net.JoinHostPort(a.Addr().String(), port), Kind: "local_ip", TLSName: name})
+	}
+	return append(names, raw...)
+}
+
+// connectionsFor is a home's connections in the order apps try them (story 50.13 §2). secure is
+// its HTTPS direct name (story 50.15), listed first when its outside check passed; the plain
+// HTTP direct address stays for older apps.
+func connectionsFor(directURL, relayURL string, relay bool, secure ...string) []connection {
 	out := []connection{}
+	for _, u := range secure {
+		if u != "" {
+			out = append(out, connection{URL: u, Kind: "direct"})
+		}
+	}
 	if directURL != "" {
 		out = append(out, connection{URL: directURL, Kind: "direct"})
 	}
@@ -162,6 +193,22 @@ func (d *Deps) List(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "list_failed", "")
 		return
 	}
+	// story 50.15: the homes whose direct name passed its outside check
+	reach := map[string]stores.Reachable{}
+	lan := map[string]stores.LANHome{}
+	if d.Direct != nil {
+		ids := make([]string, 0, len(hs))
+		for _, h := range hs {
+			ids = append(ids, h.ID)
+		}
+		if found, err := d.Direct.ReachableFor(r.Context(), ids); err == nil {
+			reach = found
+		}
+		// and their LAN entries (50.15 §3)
+		if found, err := d.Direct.LANFor(r.Context(), ids); err == nil {
+			lan = found
+		}
+	}
 	out := make([]homeView, 0, len(hs))
 	for _, h := range hs {
 		v := homeView{ServerID: h.ID, Name: h.Name, Slug: h.Slug, Online: h.Online, Linked: h.Linked, Owned: h.Owned}
@@ -175,7 +222,14 @@ func (d *Deps) List(w http.ResponseWriter, r *http.Request) {
 			}
 			v.DirectURL = "http://" + host + ":" + strconv.FormatInt(h.DirectPort.Int64, 10)
 		}
-		v.Connections = connectionsFor(v.DirectURL, v.RelayURL, billing.RelayIncluded(h.Plan))
+		secure := ""
+		if rc, ok := reach[h.ID]; ok {
+			secure = "https://" + net.JoinHostPort(direct.Name(rc.IP, rc.HomeID, rc.Domain), strconv.Itoa(rc.Port))
+		}
+		v.Connections = connectionsFor(v.DirectURL, v.RelayURL, billing.RelayIncluded(h.Plan), secure)
+		if l, ok := lan[h.ID]; ok {
+			v.Connections = append(localConnections(l), v.Connections...)
+		}
 		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"homes": out})

@@ -36,6 +36,16 @@ async function workers() {
         MAIL_PROVIDER: "outbox",
         PLUGINS_ROOT: rootText,
         STORE_SIGNING_KEY: toB64(seed),
+        // the entitlement key E (story 54.19 §6), a TEST seed from a public label
+        STORE_ENTITLEMENT_KEY: toB64(
+          new Uint8Array(
+            await crypto.subtle.digest("SHA-256", new TextEncoder().encode("maktaba-plugins TEST KEY, never for production: entitlement-1")),
+          ),
+        ),
+        // the fake payment provider's webhook secret (story 54.19 §2), a TEST value
+        PAYMENTS_FAKE_WEBHOOK_SECRET: "test-webhook-secret",
+        // the key of paid packages' download URLs (story 54.19 §6), a TEST value
+        PAID_URL_KEY: "dGVzdC1wYWlkLXVybC1rZXktbmV2ZXItZm9yLXByb2R1Y3Rpb24",
         MFA_ENC_KEY: toB64(crypto.getRandomValues(new Uint8Array(32))),
         BOOTSTRAP_ADMIN_TOKEN: "test-bootstrap-token-0123456789abcdef",
         TEST_STORE_KEYS: storeKeys,
@@ -69,6 +79,7 @@ async function workers() {
           accounts: await readD1Migrations("./migrations/accounts"),
           catalog: await readD1Migrations("./migrations/catalog"),
           installs: await readD1Migrations("./migrations/installs"),
+          commerce: await readD1Migrations("./migrations/commerce"),
         }),
       },
     },
