@@ -100,3 +100,45 @@ def test_the_key_is_read_from_the_supervisors_file(
     monkeypatch.setenv(redact.LOG_KEY_ENV, str(p))
     monkeypatch.setattr(redact, "_user_key_loaded", False)
     assert redact.hash_user(42) == CASES["user_hash"][0]["user_h"]
+
+
+# --- the cost per call (Epic 53 story 53.13's Python logger bench) -----------------------
+
+
+def test_a_clean_value_is_returned_as_is_and_a_secret_still_scrubbed() -> None:
+    clean = "http_request"
+    assert redact.RULES.needs_re is not None, (
+        "every value rule has literal needs: the fast path is on"
+    )
+    assert redact.scrub(clean) is clean
+    assert "abc123" not in redact.scrub("/api/videos/1?token=abc123")
+    # a card number has no literal need: the digits still send it through the rules
+    assert redact.scrub("card 4111 1111 1111 1111") != "card 4111 1111 1111 1111"
+    assert redact.scrub("from 192.168.1.23") == "from 192.168.1.0"
+
+
+def test_a_keys_answer_is_kept_on_the_rules_not_hashed_from_them() -> None:
+    redact.RULES._keys_seen.clear()
+    assert redact.RULES.key_sensitive("Password", True)
+    assert not redact.RULES.key_sensitive("path", True)
+    assert redact.RULES._keys_seen[("password", True)] is True
+    assert redact.RULES._keys_seen[("path", True)] is False
+
+
+def test_the_loggers_own_fields_are_left_alone_and_the_callers_scrubbed() -> None:
+    import maktaba_pipeline.log as mlog
+
+    rs = frozenset(f.lower() for f in mlog.DEFAULT_REDACTED_FIELDS)
+    ev = {
+        "event": "fetch failed: /x?token=s3cr3t",
+        "ts": "2026-11-07T03:00:00.123456Z",
+        "service": "api",
+        "path": "/x?token=abc123",
+        "password": "hunter2",
+    }
+    out = mlog._redact_in_place(dict(ev), rs)
+    assert out["ts"] == ev["ts"] and out["service"] == "api"
+    # the event's name is a caller's text: still scrubbed
+    assert "s3cr3t" not in out["event"]
+    assert "abc123" not in out["path"]
+    assert out["password"] != "hunter2"

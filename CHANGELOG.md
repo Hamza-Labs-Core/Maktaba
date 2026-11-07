@@ -48,6 +48,13 @@ build fails when the two differ.
   stored words) that lack their second listen are transcribed again by a machine that runs
   it, a few at a time.
 
+- **The pipeline's logger costs less per line, and the log benches run every night on a Mac.**
+  The shared redaction no longer hashes its whole rule set for every field of every line, and
+  it leaves the logger's own fields (time, level, service, version, node, the event's name)
+  alone. A value that cannot hold a secret is returned at once. A new Python logger bench sits
+  beside the Go benches in CI's `log-bench` job. A nightly macOS run keeps the numbers for 90
+  days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
+
 ### Fixed
 
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
