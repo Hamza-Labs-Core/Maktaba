@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 )
 
 // Enqueue outcomes returned by processing_jobs_enqueue (plan-06-11 §4.2).
@@ -72,6 +75,7 @@ var ErrNoEnqueueRow = errors.New("processing_jobs_enqueue returned no row")
 
 // Enqueue calls processing_jobs_enqueue.
 func Enqueue(ctx context.Context, q Querier, p EnqueueParams) (EnqueueResult, error) {
+	p.Payload = withOriginRequestID(ctx, p.Payload)
 	reason, err := json.Marshal(nonNil(p.Reason))
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("marshal reason: %w", err)
@@ -132,5 +136,29 @@ func ReasonFor(ctx context.Context, why string, extra map[string]any) map[string
 	for k, v := range extra {
 		out[k] = v
 	}
+	return out
+}
+
+// OriginRequestIDKey is the payload key that names the request which queued a job (Epic 53
+// story 53.08): the worker binds it on the job's lines, so searching the request's id finds them.
+const OriginRequestIDKey = "origin_request_id"
+
+// withOriginRequestID returns payload with the context's request id under OriginRequestIDKey,
+// as a copy (the caller's map is not changed). Work queued outside a request (no id on the
+// context) and a payload that already names an origin are returned as they are. A job that
+// coalesces into a live one keeps that job's payload: the first request that queued it.
+func withOriginRequestID(ctx context.Context, payload map[string]any) map[string]any {
+	id := reqid.FromContext(ctx)
+	if id == uuid.Nil {
+		return payload
+	}
+	if _, ok := payload[OriginRequestIDKey]; ok {
+		return payload
+	}
+	out := make(map[string]any, len(payload)+1)
+	for k, v := range payload {
+		out[k] = v
+	}
+	out[OriginRequestIDKey] = id.String()
 	return out
 }

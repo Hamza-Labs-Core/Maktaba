@@ -20,6 +20,8 @@ vi.mock("../lib/api", async () => {
 
 import { STALL_REPORT_MS, VideoPlayer, nearEnd } from "./VideoPlayer";
 import { I18nProvider } from "../lib/i18n";
+import { withRid } from "../test/ridMatcher";
+import { actionRequestId } from "../lib/requestIds";
 
 function renderPlayer(videoId = "11111111-1111-1111-1111-111111111111") {
   return render(
@@ -71,9 +73,33 @@ describe("VideoPlayer", () => {
 
     // the src is set by an effect that runs after the element is committed
     const video = await screen.findByTestId("mkt-video");
-    await waitFor(() => expect(video).toHaveAttribute("src", "/stream/sess-abc/manifest.m3u8"));
+    await waitFor(() =>
+      expect(video).toHaveAttribute("src", withRid("/stream/sess-abc/manifest.m3u8"))
+    );
     // the video's picture shows until it plays
     expect(video.getAttribute("poster")).toMatch(/^\/api\/videos\/vid-uuid-1\/poster/);
+  });
+
+  // Epic 53 story 53.08: the playlist carries the open call's request id as rid (the API
+  // client sends the action's id, read when the call is made), so streaming's lines for the
+  // playback share the id of the API's and the pipeline's.
+  it("loads the playlist with the session-open request's id as rid", async () => {
+    let sent = "";
+    post.mockImplementation((path: string) => {
+      if (path === "/api/stream/sessions") sent = actionRequestId();
+      return Promise.resolve({
+        session_id: "sess-rid",
+        mode: "transcode",
+        manifest_url: "/stream/sess-rid/manifest.m3u8?sig=t",
+        direct_url: "",
+        expires_at: "2099-01-01T00:00:00Z",
+      });
+    });
+    renderPlayer("vid-rid");
+    const video = await screen.findByTestId("mkt-video");
+    await waitFor(() => expect(video.getAttribute("src")).toMatch(/&rid=/));
+    expect(sent).not.toBe("");
+    expect(video.getAttribute("src")).toBe(`/stream/sess-rid/manifest.m3u8?sig=t&rid=${sent}`);
   });
 
   it("uses direct_url when the server picks direct mode", async () => {
@@ -187,7 +213,9 @@ describe("VideoPlayer", () => {
     renderPlayer();
     const video = (await screen.findByTestId("mkt-video")) as HTMLVideoElement;
     // The progress listeners are added by the same effects that set the src.
-    await waitFor(() => expect(video).toHaveAttribute("src", "/stream/sess-prog/manifest.m3u8"));
+    await waitFor(() =>
+      expect(video).toHaveAttribute("src", withRid("/stream/sess-prog/manifest.m3u8"))
+    );
 
     // Simulate playback time advancing.
     Object.defineProperty(video, "currentTime", { value: 30, configurable: true });
@@ -300,7 +328,7 @@ describe("VideoPlayer", () => {
 
     await waitFor(() => {
       const video = screen.getByTestId("mkt-video");
-      expect(video).toHaveAttribute("src", "/stream/sess-first/manifest.m3u8");
+      expect(video).toHaveAttribute("src", withRid("/stream/sess-first/manifest.m3u8"));
     });
 
     screen.getByTestId("go-next").click();

@@ -9,9 +9,17 @@ listen_addr   = "0.0.0.0:8080"
 public_url    = "https://api.maktaba.tv"
 # Origin of the cloud web app (mail links, OAuth landings). Defaults to public_url.
 web_url       = "https://app.maktaba.tv"
-# Read the client IP from CF-Connecting-IP / X-Forwarded-For. Only behind a
-# proxy that overwrites those headers.
-trust_proxy_headers = false
+# "production" on the cloud's nodes: the api's listeners must then be loopback (or
+# private) and trusted_proxies set (Epic 50 story 50.31). Production uses
+# listen_addr = "127.0.0.1:8090" and admin_listen_addr = "127.0.0.1:8091" (50.32).
+# env = "production"
+# The peers whose CF-Connecting-IP is believed (CIDRs): the local cloudflared in
+# production, ["127.0.0.1/32", "::1/128"]. Empty: the client IP is the TCP peer.
+# X-Forwarded-For is never read. (Replaces trust_proxy_headers, which is refused.)
+trusted_proxies = []
+# How Cloudflare reaches the api: "tunnel" (default), or "aop" (the fallback: Caddy
+# checks Cloudflare's client certificate against aop_ca_file and Cloudflare's ranges).
+origin_mode = "tunnel"
 read_timeout  = "30s"
 write_timeout = "60s"
 shutdown_grace = "20s"
@@ -145,3 +153,13 @@ eab_kid = ""
 directory = "https://dv.acme-v02.api.pki.goog/directory"
 account_key = "/etc/maktaba/acme-google.key"
 eab_kid = ""
+
+[turnstile]
+# The bot check on the web auth pages (Epic 50 story 50.30): Cloudflare Turnstile, verified by
+# the api on register, login and forgot-password for requests from the web origins below.
+# Native apps (no Origin) are never asked. Off by default; production turns it on. The secret
+# is env-only: MAKTABA_CLOUD_TURNSTILE_SECRET (on without it, the api role refuses to start).
+enabled     = false
+site_key    = ""
+# Defaults to server.web_url.
+web_origins = ["https://app.maktaba.tv"]

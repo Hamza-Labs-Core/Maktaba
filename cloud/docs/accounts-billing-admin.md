@@ -39,7 +39,7 @@ All bodies are JSON. Errors are `{"error": "<code>", "message": "…"}`.
 | `GET /v1/auth/oauth/google/callback` | — | `302` to `{web_url}/signed-in` with the refresh cookie set | `302` to `{web_url}/sign-in?error=<code>` |
 | `GET /v1/auth/oauth/apple` | — | `302` to Apple (`response_mode=form_post`) | `501 apple_disabled` |
 | `POST /v1/auth/oauth/apple/callback` | form `code, state` | as Google | as Google |
-| `GET /v1/auth/providers` | — | `200 {"google":bool,"apple":bool}` | — |
+| `GET /v1/auth/providers` | — | `200 {"google":bool,"apple":bool}`, plus `turnstile_site_key` while Turnstile is on | — |
 
 `user` is `{id, email, email_verified, display_name?, plan, role}`.
 Access tokens last 15 minutes; refresh sessions 30 days. The refresh
@@ -56,9 +56,27 @@ Rate limits: register, login, refresh, verify, resend, forgot, reset and
 the OAuth starts are limited per client IP (burst 30, 5/s; the mail-sending
 ones burst 5, 1 per 12 s). Ten failed logins for one account in 15
 minutes lock it for 30 minutes. A blocklisted IP or account gets `403
-blocked`. The client IP is the TCP peer unless `server.trust_proxy_headers`
-is on (then `CF-Connecting-IP`, else the right-most `X-Forwarded-For` entry,
-the one the proxy appended).
+blocked`. The client IP is `CF-Connecting-IP` only when the TCP peer is in
+`server.trusted_proxies` (CIDRs: in production the local `cloudflared`,
+`127.0.0.1/32` and `::1/128`) and the header holds one valid IP; otherwise it is
+the TCP peer. `X-Forwarded-For` is never read. The rate limits, the blocklist,
+the lockout, the audit log and the access log all use it (Epic 50 story 50.31).
+The old `server.trust_proxy_headers` is refused at start.
+
+**Turnstile (Epic 50 story 50.30).** With `[turnstile] enabled = true`, register, login and
+`password/forgot` need a `turnstile_token` in the body when the request comes from the web app
+(its `Origin` is one of `turnstile.web_origins`, by default `web_url`). The api checks it with
+Cloudflare's siteverify (3 s timeout), with the client IP and the expected hostname. A missing,
+used or wrong token gets `403 turnstile_failed`; siteverify down gets `503
+turnstile_unavailable` with `Retry-After: 30`. Native apps send no `Origin` and are not asked.
+`GET /v1/auth/providers` adds `turnstile_site_key` while it is on. The secret comes only from
+`MAKTABA_CLOUD_TURNSTILE_SECRET` (a `turnstile.secret` in the file is refused); on with no secret,
+the api refuses to start. Off by default.
+
+**At the edge (50.30).** In production Cloudflare also rate-limits the auth routes per IP
+(20 a minute) and the API (1,200 a minute), answering `429 {"error":"rate_limited"}` itself.
+Both rules start in `log` mode (counted, not blocked) and are switched to `block` in the zone
+file after a week of traffic; `deploy/cloudflare/zone.maktaba.tv.json` holds the rules.
 
 ## Account — `/v1/account/*` (bearer token)
 
@@ -267,7 +285,7 @@ What the account side had before this change, and what it has now.
 | Apple `id_token` decoded without any check; no `state` on the Apple callback; `email_verified` parsed as bool (Apple sends a string) | login CSRF; parse failures | same verifier, state + nonce cookies (`SameSite=None` for Apple's form_post) |
 | OAuth callbacks answered JSON to a browser redirect | the browser showed a JSON blob | callbacks set the refresh cookie and redirect to the web app |
 | Refresh cookie was scoped to `.maktaba.tv` (found in review) | every home server behind `*.relay.maktaba.tv` received it: account takeover | host-only cookie |
-| Rate-limit key was `X-Forwarded-For` or `RemoteAddr` with its port | a client picked its own key; every new connection was a new bucket | TCP peer without port, proxy headers only when `trust_proxy_headers` |
+| Rate-limit key was `X-Forwarded-For` or `RemoteAddr` with its port | a client picked its own key; every new connection was a new bucket | TCP peer without port, proxy headers only when `trust_proxy_headers` (since 50.31: only from a peer in `trusted_proxies`) |
 | Webhook: `checkout.session.completed` mapped to plan `free`; subscription events carried no user id; duplicate events re-applied; no ordering | a successful checkout downgraded the payer; later events were dropped | metadata `user_id` on the subscription, customer-id fallback, event + apply in one transaction, `last_event_at` ordering |
 | Suspension (`status`) was never checked | an account the old `BlockUser` blocked could sign straight back in | login, refresh, OAuth and every bearer request check it |
 | CORS did not allow `PATCH` | the profile update failed cross-origin | added |

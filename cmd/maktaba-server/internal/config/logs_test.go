@@ -22,3 +22,14 @@ func TestLogsResolved(t *testing.T) {
 		t.Fatalf("out of range: %+v", o)
 	}
 }
+
+// Epic 53 story 53.02: after one release with both written, server.log gets the supervised
+// processes' warnings and errors only; "all" (any case) brings every line back, anything else
+// is the default.
+func TestServerLogIsWarnUnlessAll(t *testing.T) {
+	for v, all := range map[string]bool{"": false, "warn": false, "WARN": false, "bogus": false, "all": true, " All ": true} {
+		if got := (LogsSection{ServerLog: v}).Resolved().ServerLogAll; got != all {
+			t.Errorf("server_log = %q: every line %v, want %v", v, got, all)
+		}
+	}
+}

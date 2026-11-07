@@ -7,8 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues/queuestest"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/reqid"
 )
 
 func TestEnqueue_ArgsAndOutcomes(t *testing.T) {
@@ -76,6 +79,41 @@ func TestEnqueue_ArgsAndOutcomes(t *testing.T) {
 }
 
 func i64(v int64) *int64 { return &v }
+
+// Epic 53 story 53.08: a job queued by a request carries that request's id in its payload, so
+// the worker logs it as origin_request_id; work queued outside a request carries none.
+func TestEnqueue_CarriesTheRequestsID(t *testing.T) {
+	id := uuid.Must(uuid.NewV7())
+	ctx := reqid.WithID(context.Background(), id)
+	run := func(ctx context.Context, p EnqueueParams) any {
+		t.Helper()
+		db := queuestest.New(&queuestest.Rule{Match: "from processing_jobs_enqueue(", Cols: []string{"job_id", "outcome"}, Rows: [][]driver.Value{{int64(1), "inserted"}}})
+		if _, err := Enqueue(ctx, db.DB, p); err != nil {
+			t.Fatal(err)
+		}
+		return db.Calls()[0].Args[8]
+	}
+	base := EnqueueParams{SubjectKind: "library", SubjectID: uidA, Stage: "scan"}
+	if got, want := run(ctx, base), `{"origin_request_id":"`+id.String()+`"}`; got != want {
+		t.Errorf("payload = %#v want %#v", got, want)
+	}
+	withSeasons := base
+	withSeasons.Payload = map[string]any{"seasons": []string{"a"}}
+	if got, want := run(ctx, withSeasons), `{"origin_request_id":"`+id.String()+`","seasons":["a"]}`; got != want {
+		t.Errorf("payload = %#v want %#v", got, want)
+	}
+	if _, ok := withSeasons.Payload[OriginRequestIDKey]; ok {
+		t.Error("the caller's payload map was changed")
+	}
+	named := base
+	named.Payload = map[string]any{OriginRequestIDKey: "earlier"}
+	if got, want := run(ctx, named), `{"origin_request_id":"earlier"}`; got != want {
+		t.Errorf("an origin the caller set was replaced: %#v", got)
+	}
+	if got := run(context.Background(), base); got != nil {
+		t.Errorf("work outside a request got a payload: %#v", got)
+	}
+}
 
 func TestEnqueue_SQLShape(t *testing.T) {
 	n := queuestest.Norm(EnqueueSQL)

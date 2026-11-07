@@ -1,0 +1,121 @@
+# Deploys the cloud's Cloudflare zone settings and the Tunnel's ingress from the repository
+# (Epic 50, stories 50.30, 50.31, 50.34). Pull requests never come here: ci.yml's `cloudflare`
+# job checks the same files offline. On a push to main that changes them, or by hand, the
+# checks run again, then the token check, the zone's plan and apply, the Tunnel's plan and
+# apply, each read back, then a smoke check of the live edge.
+#
+# Needs CLOUDFLARE_API_TOKEN (or CLOUDFLARE_API_TOKEN_ZONE / _TUNNEL) and CLOUDFLARE_ACCOUNT_ID.
+# Without them the deploy job says so and passes, and main stays green
+# (deploy/cloudflare/README.md, the token table; README §15.7).
+
+name: Cloudflare zone
+
+on:
+  push:
+    branches: [main]
+    # the cloudflare filter of .github/ci-paths.yml, less the tools' tests' own changes
+    paths:
+      - 'deploy/cloudflare/**'
+      - 'tools/cloudflare/**'
+      - '.github/workflows/_cloudflare.yml'
+      - '.github/workflows/cloudflare-zone.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# one deploy at a time; a newer run waits for the running one, never cancels it
+concurrency:
+  group: cloudflare-zone
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/_cloudflare.yml
+
+  deploy:
+    needs: [check]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Cloudflare secrets
+        id: secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ZONE: ${{ secrets.CLOUDFLARE_API_TOKEN_ZONE }}
+          CLOUDFLARE_API_TOKEN_TUNNEL: ${{ secrets.CLOUDFLARE_API_TOKEN_TUNNEL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if { [ -z "$CLOUDFLARE_API_TOKEN" ] && [ -z "$CLOUDFLARE_API_TOKEN_ZONE" ] && [ -z "$CLOUDFLARE_API_TOKEN_TUNNEL" ]; } || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice title=Cloudflare zone not deployed::Cloudflare secrets not set: skipping (CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, see deploy/cloudflare/README.md and Epic 50 README §15.7)"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::add-mask::$CLOUDFLARE_ACCOUNT_ID"
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6.0.2
+        if: steps.secrets.outputs.ok == 'true'
+
+      - uses: actions/setup-node@v6.4.0
+        if: steps.secrets.outputs.ok == 'true'
+        with:
+          node-version-file: tools/cloudflare/.nvmrc
+          package-manager-cache: false
+
+      - name: What this run deploys
+        id: pieces
+        if: steps.secrets.outputs.ok == 'true'
+        run: |
+          pieces=""
+          [ -f tools/cloudflare/zone.mjs ] && pieces="zone"
+          [ -f tools/cloudflare/tunnel.mjs ] && pieces="${pieces:+$pieces,}tunnel"
+          echo "pieces=$pieces" >> "$GITHUB_OUTPUT"
+          if [ -z "$pieces" ]; then echo "::notice::nothing to deploy yet (stories 50.30, 50.31)"; fi
+
+      # before any write: each piece's token can do what it needs (50.34 §2)
+      - name: Token check (zone)
+        if: steps.secrets.outputs.ok == 'true' && contains(steps.pieces.outputs.pieces, 'zone')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_ZONE || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node tools/cloudflare/token-check.mjs --pieces zone --zone maktaba.tv
+
+      - name: Token check (tunnel)
+        if: steps.secrets.outputs.ok == 'true' && contains(steps.pieces.outputs.pieces, 'tunnel')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_TUNNEL || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # the aop fallback (50.31 §3) also uploads its client certificate
+        run: |
+          pieces=tunnel
+          if jq -e '.mode == "aop"' deploy/cloudflare/tunnel.maktaba.tv.json >/dev/null; then pieces=tunnel,aop; fi
+          node tools/cloudflare/token-check.mjs --pieces "$pieces" --zone maktaba.tv
+
+      - name: Zone settings and rules (plan, apply, read back)
+        if: steps.secrets.outputs.ok == 'true' && contains(steps.pieces.outputs.pieces, 'zone')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_ZONE || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node tools/cloudflare/zone.mjs plan
+          node tools/cloudflare/zone.mjs apply
+
+      # the ingress and the hostnames' DNS records (before any Worker route needs them)
+      - name: Tunnel ingress and DNS (plan, apply, read back)
+        if: steps.secrets.outputs.ok == 'true' && contains(steps.pieces.outputs.pieces, 'tunnel')
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_TUNNEL || secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # read by tunnel.mjs only in mode "aop" (the fallback's own client certificate)
+          CLOUDFLARE_AOP_CERT: ${{ secrets.CLOUDFLARE_AOP_CERT }}
+          CLOUDFLARE_AOP_KEY: ${{ secrets.CLOUDFLARE_AOP_KEY }}
+        run: |
+          node tools/cloudflare/tunnel.mjs plan
+          node tools/cloudflare/tunnel.mjs apply
+
+      # the edge answers an admin path on the API's name itself (50.30 §5)
+      - name: Smoke check the edge
+        if: steps.secrets.outputs.ok == 'true' && contains(steps.pieces.outputs.pieces, 'zone')
+        run: node tools/cloudflare/smoke.mjs zone

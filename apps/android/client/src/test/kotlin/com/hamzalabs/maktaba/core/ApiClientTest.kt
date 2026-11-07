@@ -16,6 +16,7 @@ import okhttp3.Request
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -119,6 +120,23 @@ class ApiClientTest {
         // Auto sends no cap
         c.openStream("v1")
         assertFalse(seen.last().body!!.utf8().contains("max_bitrate_kbps"))
+    }
+
+    /** Epic 53 story 53.08: an HLS playlist carries the open call's own id as rid; a direct file none. */
+    @Test
+    fun thePlaylistCarriesTheOpenCallsId() = runBlocking {
+        route = { json(201, """{"session_id":"s1","mode":"transcode","manifest_url":"/stream/s1/master.m3u8?sig=x"}""") }
+        val c = client(MemoryTokens(fresh, "r1"))
+        val s = c.openStream("v1")
+        val sent = seen.last().headers["X-Request-Id"]
+        assertNotNull(sent)
+        assertEquals(sent, s.requestId)
+        val url = s.playbackUrl(c.home)!!
+        assertEquals("x", url.queryParameter("sig"))
+        assertEquals(sent, url.queryParameter("rid"))
+        route = { json(201, """{"session_id":"s2","mode":"direct","direct_url":"/stream/direct/v1?sig=y"}""") }
+        val d = c.openStream("v1")
+        assertNull(d.playbackUrl(c.home)!!.queryParameter("rid"))
     }
 
     @Test

@@ -10,7 +10,9 @@ FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux
 COPY cloud/go.mod cloud/go.sum ./cloud/
-COPY shared/log/go ./shared/log/go
+# the shared modules cloud/go.mod replaces (the logger, the log keeper): the whole folder, so
+# this Dockerfile also builds main's tree for load-small's baseline, which may lack one of them
+COPY shared ./shared
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go mod download
@@ -24,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     && go build -trimpath -ldflags "-s -w" -o /out/maktaba-rehearsal ./cmd/maktaba-rehearsal
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl iptables \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/maktaba-cloud /out/maktaba-rehearsal /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/maktaba-cloud"]

@@ -1,0 +1,26 @@
+{
+  "zone": "maktaba.tv",
+  "tunnel": "maktaba-cloud-production",
+  "mode": "tunnel",
+  "ingress": [
+    {
+      "hostname": "api.maktaba.tv",
+      "service": "http://127.0.0.1:8090",
+      "reason": "The API: the api role's user listener on the leader's loopback."
+    },
+    {
+      "hostname": "app.maktaba.tv",
+      "service": "http://127.0.0.1:8090",
+      "reason": "The web app's Worker passes /v1/* through to the same user listener."
+    },
+    {
+      "hostname": "admin.maktaba.tv",
+      "service": "http://127.0.0.1:8091",
+      "reason": "The console's Worker passes /v1/* through to the admin listener (story 50.32)."
+    }
+  ],
+  "aop": {
+    "origin_ipv4": null,
+    "reason": "The fallback (mode aop): proxied A records to the Floating IP, set here when the owner has it, and Maktaba's own AOP client certificate from CLOUDFLARE_AOP_CERT and CLOUDFLARE_AOP_KEY."
+  }
+}

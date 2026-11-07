@@ -5,6 +5,8 @@ T01  every alert rule has a severity (sev1, sev2, sev3) and a runbook_url that e
      docs/runbooks/cloud/
 T02  every runbook has When, Check, Do, Done when and Tell users, in that order
 T03  every template for users has an English and an Arabic title and text
+T08  every runbook's Check step links to a saved search in the cloud's log view (Epic 53
+     story 53.17 §5): admin.maktaba.tv/logs?… rather than SSH and journalctl
 T07  no template or user-facing string offers a credit, refund or compensation (only the
      uptime.policy string may say there is none), and uptime.policy exists in English and
      Arabic for the status page and the cloud web app
@@ -71,6 +73,18 @@ def check_runbooks(root: Path) -> list[str]:
         hs = [h for h in headings(p.read_text()) if h in SECTIONS]
         if hs != SECTIONS:
             errs.append(f"{p.relative_to(root)}: sections {hs}, want {SECTIONS} in that order")
+    return errs
+
+
+# a saved search in the service admin's cloud log view
+SAVED_SEARCH = re.compile(r"\(https://admin\.maktaba\.tv/logs\?[^)\s]+\)")
+
+
+def check_check_links(root: Path) -> list[str]:
+    errs = []
+    for p in sorted(p for p in (root / RUNBOOKS).glob("*.md") if p.name not in NOT_RUNBOOKS):
+        if not SAVED_SEARCH.search(section(p.read_text(), "Check")):
+            errs.append(f"{p.relative_to(root)}: its Check step links to no saved search in the cloud's log view")
     return errs
 
 
@@ -145,7 +159,13 @@ def check_credit(root: Path) -> list[str]:
 
 
 def lint(root: Path) -> list[str]:
-    return check_rules(root) + check_runbooks(root) + check_templates(root) + check_credit(root)
+    return (
+        check_rules(root)
+        + check_runbooks(root)
+        + check_check_links(root)
+        + check_templates(root)
+        + check_credit(root)
+    )
 
 
 def main(argv: list[str]) -> int:
