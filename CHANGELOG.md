@@ -14,6 +14,10 @@ build fails when the two differ.
 
 ### Changed
 
+- **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
+  Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
+  home's secure LAN names from the browser, and when none answers it explains that the router
+  blocks them (DNS rebinding protection) and apps will use the home's address instead.
 - **Apps can reach a home on its own network by address when the router blocks its name
   (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
   network (DNS rebinding protection), which broke the home's secure LAN name. The home list now

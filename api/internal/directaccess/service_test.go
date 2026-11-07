@@ -144,7 +144,11 @@ func TestTheCertificateAndTheListener(t *testing.T) {
 		Upstream: up,
 		ServerID: func() string { return "srv-1" },
 		Settings: func(context.Context) (Settings, error) { return Settings{Enabled: true, MapPort: false}, nil },
+		LAN:      func(port int) []string { return []string{"192.168.1.20:" + itoa(port)} },
 		Poll:     20 * time.Millisecond,
+	}
+	if st := s.Status(); st.LANURLs != nil {
+		t.Fatalf("LAN names before a certificate: %v", st.LANURLs)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
@@ -157,6 +161,10 @@ func TestTheCertificateAndTheListener(t *testing.T) {
 	st := s.Status()
 	if st.Name != "*."+HomeID("srv-1")+".direct-a.example" {
 		t.Fatalf("name %q", st.Name)
+	}
+	// story 50.15 §3: the LAN names the settings page tries from the viewer's browser
+	if want := "https://192-168-1-20." + HomeID("srv-1") + ".direct-a.example:" + itoa(st.Internal); len(st.LANURLs) != 1 || st.LANURLs[0] != want {
+		t.Fatalf("lan_urls %v, want [%s]", st.LANURLs, want)
 	}
 	if fi, err := os.Stat(filepath.Join(dir, "direct", "key.pem")); err != nil || (fi.Mode().Perm()&0o077 != 0 && os.PathSeparator == '/') {
 		t.Fatalf("key file: %v %v", fi, err)
@@ -214,6 +222,20 @@ func TestTheCertificateAndTheListener(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// The LAN names are the cloud's (direct.EncodeIP): dashes for dots or colons; zoned or
+// malformed addresses are skipped.
+func TestLANURLs(t *testing.T) {
+	got := lanURLs([]string{"192.168.1.20:8444", "[fd00::7]:8444", "[fe80::1%en0]:8444", "nope", "[::ffff:10.0.0.7]:9"}, ".hid.direct-a.example")
+	want := []string{
+		"https://192-168-1-20.hid.direct-a.example:8444",
+		"https://fd00--7.hid.direct-a.example:8444",
+		"https://10-0-0-7.hid.direct-a.example:9",
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("got %v\nwant %v", got, want)
+	}
+}
 
 // A chain for another key, or another name, is refused and the last good one stays.
 func TestAChainForAnotherKeyIsRefused(t *testing.T) {
