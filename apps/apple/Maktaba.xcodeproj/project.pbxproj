@@ -11,6 +11,7 @@
 		00908155161C1794B96B5493 /* WatchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED2153F678D93EFC83A9A24 /* WatchScreen.swift */; };
 		009EB212A25259F69764DD19 /* search-results.json in Resources */ = {isa = PBXBuildFile; fileRef = 490E14DE48F36E33CD099CAB /* search-results.json */; };
 		00C82ECF7100ED959F059E36 /* pinned-libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = B8F40A31A58629458B396F20 /* pinned-libraries.json */; };
+		00E7A45484D56C16D38D0FC4 /* hub-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D58352638B6EE276D0813FBB /* hub-lectures.json */; };
 		00ED9E45C004055BAE685443 /* facets.json in Resources */ = {isa = PBXBuildFile; fileRef = 04EB31B36EACFCAD4E26EEC6 /* facets.json */; };
 		00EEBE6CABEE60F948F57CE3 /* master-two-audio.m3u8 in Resources */ = {isa = PBXBuildFile; fileRef = 9D26FDDC4C4DB2C957554190 /* master-two-audio.m3u8 */; };
 		0160B4BA634197E0EF3F0959 /* video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = C8181B1E47B9309AD90DB519 /* video-v7.json */; };
@@ -32,6 +33,7 @@
 		05128EC7B7EEF9ADA24AB3A0 /* ComponentGallery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A75445ACA0DAD476BD941AA /* ComponentGallery.swift */; };
 		05AD2CF2902781A368F19613 /* marks-updated.json in Resources */ = {isa = PBXBuildFile; fileRef = 5664E87D159DD72DA8148B1B /* marks-updated.json */; };
 		05ADC960DDE8B48DAC03A918 /* PlayerRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6087ECDFB23E3D4828BDED83 /* PlayerRoute.swift */; };
+		068F8E6639DCFE2FB29455E9 /* tv-remote-tune.json in Resources */ = {isa = PBXBuildFile; fileRef = 7CD7D879F38888F970BCAF0F /* tv-remote-tune.json */; };
 		06A5479EDDD2400B41D222BE /* tv-remote-heartbeat.json in Resources */ = {isa = PBXBuildFile; fileRef = 136F5B08E9086201B88A8B60 /* tv-remote-heartbeat.json */; };
 		06D6F2530294246FF1AD64D2 /* hub-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 633B3246975AC1D193FF79CB /* hub-docs.json */; };
 		06E99AADDAFCDC29F03A2FDB /* videos.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FC50884BA24F8F3AA96B863 /* videos.json */; };
@@ -50,9 +52,12 @@
 		08FC672F6F0FA8B90D1A9D17 /* CachedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B33B1848E746CEBB7D5E19 /* CachedImage.swift */; };
 		090BCDAE9625A4DF362699A5 /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A393205A7EEE149BDDD305 /* PermissionsUITests.swift */; };
 		09C0247734957C02B984EACC /* ChannelScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D63AF1B0CF5FCA57085067 /* ChannelScreen.swift */; };
+		09D8F02A486C333813EC00FC /* me-playlists.json in Resources */ = {isa = PBXBuildFile; fileRef = 37E5377E1A68AD45AE2A777E /* me-playlists.json */; };
 		0A3E588C25882A6BE5C15450 /* channel-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = A191553C5553CBCD35BDA7E8 /* channel-ch-2.json */; };
 		0A994255D08907B6C6FB8A84 /* me-sessions.json in Resources */ = {isa = PBXBuildFile; fileRef = 1C9AFB96C1B7B76E48217886 /* me-sessions.json */; };
 		0ABEB297A476BC136D674E26 /* picture-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 79346C140CC8552FC36E366E /* picture-1.ts */; };
+		0AE5E60E6CAC2680A5261923 /* channels-now.json in Resources */ = {isa = PBXBuildFile; fileRef = F2AAF6514EB46D3CBD9DCA24 /* channels-now.json */; };
+		0AED0FDE404D6219AA303CAC /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		0AFD2ECB1B943FBA2F37BFF4 /* me-video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = 747990C071BEB9C6D01E2A25 /* me-video-v5.json */; };
 		0B444F8A6F096000BE411471 /* hub-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 633B3246975AC1D193FF79CB /* hub-docs.json */; };
 		0BAB6E11EF75BBD4B93F8C2A /* me-video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = EC72337275DE887837858996 /* me-video-v9.json */; };
@@ -70,18 +75,22 @@
 		0F12E1D7996209AFE5BA4B53 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		0F56BA2404B89AEDD315B9A9 /* videos.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FC50884BA24F8F3AA96B863 /* videos.json */; };
 		0FB50F7BF97AE2031E325951 /* me-video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A5789D0242D82200492ECE4 /* me-video-v8.json */; };
+		0FC79E78C8ED23A4B86754DE /* series-episodes-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E06311531E13E074B9CCD7E /* series-episodes-seerah.json */; };
 		0FC959F93DAD804DC2836560 /* series-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A2EF4528458BE561D5D5E3D /* series-seerah.json */; };
 		0FEF5E7E9FF48F2EBFCE2B8D /* me-video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = EC72337275DE887837858996 /* me-video-v9.json */; };
 		1041FCA639CA3B5FF05E1C8A /* PlayerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */; };
+		106334EE7674C5FAD8A33E0A /* me-video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = D88C16A21B9816C4F3F79A9C /* me-video-v11.json */; };
 		107D29786A58F0AC0364A1A6 /* audio-ar-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = CC934BAB64968FD138262148 /* audio-ar-0.ts */; };
 		111E867F9B304F87B530D4D4 /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3033581386E66EA372B7CC00 /* LibraryBrowser.swift */; };
 		112BB58C08D64646B47AE3FD /* me-video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 2E57DFFB5A7EE1113A046038 /* me-video-v2.json */; };
 		115BE8CF537A51FE7B63B04B /* Profile.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 34F665DFFB5361707B79EDDA /* Profile.xcstrings */; };
 		123CB268BC70559C7D55DDA1 /* library-collections.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F54871DF7C6E8E2F483C707 /* library-collections.json */; };
 		125D79DD4F287F1E66CA0659 /* audio-en-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 1D89D51A7457C7862A31927F /* audio-en-0.ts */; };
+		13A2322B69D6B46B3F5AF321 /* channel-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = A191553C5553CBCD35BDA7E8 /* channel-ch-2.json */; };
 		14434A07B2D0CD6D08C6788A /* PosterCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909FD41A1E6700554E679284 /* PosterCard.swift */; };
 		14FC54AACCEEEDDDBFBBFF23 /* video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 9C597463B3D151244BC108BB /* video-v3.json */; };
 		150BB964E0EAE6663588AAFF /* LibraryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5D6A3ACB307B21044B81895 /* LibraryScreen.swift */; };
+		15822E636502F7CDE2D7BAFC /* audio-ar-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = CC934BAB64968FD138262148 /* audio-ar-0.ts */; };
 		15C649B150009FB2F42AB846 /* ProfileScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FC6915C143C89F716FAE6FF /* ProfileScreen.swift */; };
 		15CA9B62ADB24D565D010F5F /* channel-guide-ch-1.json in Resources */ = {isa = PBXBuildFile; fileRef = D5DCAFCE2DF6240A07CA0D34 /* channel-guide-ch-1.json */; };
 		1618474006C67CA0D1F8996B /* hub-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D58352638B6EE276D0813FBB /* hub-lectures.json */; };
@@ -94,12 +103,17 @@
 		1808A21A0B0CBC5C97684333 /* RemoteDiagnosticsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1004CB73EF14C96A06ECAF68 /* RemoteDiagnosticsUITests.swift */; };
 		181327007D6FA552160550A2 /* stream-session.json in Resources */ = {isa = PBXBuildFile; fileRef = 3829504997E4728687756463 /* stream-session.json */; };
 		184EC2843942B836912BAFE9 /* me-video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 7740F056044421402AA41646 /* me-video-v3.json */; };
+		18F765E9AB1F71150628E7E0 /* videos-page2.json in Resources */ = {isa = PBXBuildFile; fileRef = 099A5FD71E3C9479CBB5EE0C /* videos-page2.json */; };
 		19401490E77511BB2482CD4F /* LibrariesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FB3DD8C7BC6D1057F2AAAE /* LibrariesView.swift */; };
+		199DDA5B1748ED0094D8C9DD /* video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = FC6C8ADDCCF8BA90EB3F6579 /* video-v5.json */; };
 		1A631F58132D11F7C37CD996 /* me-video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 0B1505FA1D7C0A36BE82F492 /* me-video-v10.json */; };
 		1AE72DBA9493E380E68FACF0 /* video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = 20CE1000626995CC9DA97C56 /* video-v11.json */; };
 		1B10F25BB6570AA50C4D7B03 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0C77824C36473EFAD01BAB9E /* MaktabaKit */; };
+		1B1DBDFD7257B6849ACF4BE8 /* stream-session.json in Resources */ = {isa = PBXBuildFile; fileRef = 3829504997E4728687756463 /* stream-session.json */; };
+		1B2CDB6ED01EB9048C8D0D93 /* library-collections.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F54871DF7C6E8E2F483C707 /* library-collections.json */; };
 		1B69568CE2F167655ABC6C6E /* LibraryTabsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C52919EC066F087CF6D172D /* LibraryTabsView.swift */; };
 		1B6C899ADBBD791AC323FBDB /* library-series-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 15376060DE47516866176397 /* library-series-docs.json */; };
+		1B6EB03149205ED0F1DD2A1A /* tv-info.json in Resources */ = {isa = PBXBuildFile; fileRef = 5F6660AB2A255BBDB8375FC7 /* tv-info.json */; };
 		1BC897333816A9217B0613AC /* me.json in Resources */ = {isa = PBXBuildFile; fileRef = 62E2346349591CD2A4C6303A /* me.json */; };
 		1C0C98EF88BB47BA89352DE6 /* VideoLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CAAE4E1630499CF593ECF8B /* VideoLink.swift */; };
 		1C33535269E26B7E658EC39B /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 407F09D429B7875D504C90A8 /* MaktabaKit */; };
@@ -111,12 +125,14 @@
 		1E3C1836BD2694D5C448AAC9 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D746B956CF705B862C9F1E /* HomeScreen.swift */; };
 		1EE18C31A37A6A3B0241C9D4 /* Video.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A525332F62424FB900584753 /* Video.xcstrings */; };
 		1F124BBE9EC9936F26FBA46B /* libraries-summary.json in Resources */ = {isa = PBXBuildFile; fileRef = DE03B499C6326913603D6C57 /* libraries-summary.json */; };
+		1F1912A82F818AEE6C10B494 /* video-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 889424E4EAD6D051DD5BFBFC /* video-1.ts */; };
 		1F56731E19D5F60D3963A2BB /* series-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 73249F4FC35BBFF61B8EB8D0 /* series-tafsir.json */; };
 		1FC0AF872B94C219377DB403 /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7C782FE57543EEFC505FBD /* RemoteApp.swift */; };
 		20A229512D396F728AAE6E7F /* LiveGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761A341C59A1EF4C1E7A366B /* LiveGuide.swift */; };
 		2126A636889192CEF1030522 /* PlayerTracks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01203F9703CCCFF47CFD15F1 /* PlayerTracks.swift */; };
 		21E7ED008727D6BE2B90C597 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4308B97DA9C3C82928D74F9 /* SearchView.swift */; };
+		21F83D08335DCD0DC6369EFB /* series-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 73249F4FC35BBFF61B8EB8D0 /* series-tafsir.json */; };
 		221AACE55D72C3B8CFA9D74A /* SeriesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7797D4BCE39BE93034371710 /* SeriesScreen.swift */; };
 		2225A5D636CB688109ECD441 /* LiveModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE5070ECDAE67A10C38C6B42 /* LiveModel.swift */; };
 		22E7A904786849F841C714E5 /* channel-ch-1.json in Resources */ = {isa = PBXBuildFile; fileRef = D2428AD6061216C528F02C3B /* channel-ch-1.json */; };
@@ -126,12 +142,14 @@
 		240A6164E313B26D1EAEC137 /* subs-ar.vtt in Resources */ = {isa = PBXBuildFile; fileRef = B798A69AADF29D63BE317902 /* subs-ar.vtt */; };
 		24396FA4404E6F052AFC9602 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = E471D886E5421B23D68BFE25 /* MaktabaKit */; };
 		244A73523281A83AA08131F7 /* Shimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B78CA303B4813EBD0141235 /* Shimmer.swift */; };
+		245B2DD3EA5021330AC601DA /* subs-ar.vtt in Resources */ = {isa = PBXBuildFile; fileRef = B798A69AADF29D63BE317902 /* subs-ar.vtt */; };
 		24B268CADFFCF64563D2E23C /* series.json in Resources */ = {isa = PBXBuildFile; fileRef = 20F53879910FA01F73F46FB5 /* series.json */; };
 		24C0F0CDEB57CA231CBBFFE5 /* series-episodes-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E06311531E13E074B9CCD7E /* series-episodes-seerah.json */; };
 		24FE7F3B04A0C352E822DF81 /* audio-en-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 1D89D51A7457C7862A31927F /* audio-en-0.ts */; };
 		252335700CE45B2B09082363 /* me-video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A5789D0242D82200492ECE4 /* me-video-v8.json */; };
 		253C9CBBB661D7A4A7669480 /* subs-ar.vtt in Resources */ = {isa = PBXBuildFile; fileRef = B798A69AADF29D63BE317902 /* subs-ar.vtt */; };
 		258E5CC54A284067C92C1EC0 /* Libraries.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 0AF5420DFA5978BDE908D101 /* Libraries.xcstrings */; };
+		25D2B3E25A07941DFE7CC232 /* master-two-audio.m3u8 in Resources */ = {isa = PBXBuildFile; fileRef = 9D26FDDC4C4DB2C957554190 /* master-two-audio.m3u8 */; };
 		25D6C4800E345E87BA2182AE /* IBMPlexSansArabic-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7CAA1421A20563AE4559E884 /* IBMPlexSansArabic-Medium.ttf */; };
 		2604BFCFB3551C41768D4849 /* facets.json in Resources */ = {isa = PBXBuildFile; fileRef = 04EB31B36EACFCAD4E26EEC6 /* facets.json */; };
 		2638E1C13AA0226C38DBF50E /* QueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7CF3F653F8E0BF0DCFD0D63 /* QueueView.swift */; };
@@ -139,6 +157,8 @@
 		277059824FC46F322106D74B /* pinned-libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = B8F40A31A58629458B396F20 /* pinned-libraries.json */; };
 		27847FF8942ED1B52AA74B0D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		27D9CD7ACB017DEC67C369B1 /* me-video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 315ECB314BA012B2C3405B40 /* me-video-v12.json */; };
+		282A36CBF858585440CA2E80 /* me-video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = 747990C071BEB9C6D01E2A25 /* me-video-v5.json */; };
+		29246000282B7AE615101159 /* video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 567979BC3286DC364F1D2E94 /* video-v2.json */; };
 		299EDF9A6E47936D289C4623 /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
 		2A5F5F2AE90D98A16A69FF68 /* video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = BC614FBB95936071AB95C6E8 /* video-v9.json */; };
 		2A89F6A3B456B1A666DE2BF5 /* PlayerMenuTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2647B7C7EC6ADAD1E11DFD /* PlayerMenuTarget.swift */; };
@@ -146,10 +166,13 @@
 		2AB3C639D3118A79974521F9 /* DashboardsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0879B0C6EFA91BFEACFD818C /* DashboardsView.swift */; };
 		2B0D19AF582D97AC32E70D66 /* video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = FC6C8ADDCCF8BA90EB3F6579 /* video-v5.json */; };
 		2B4B65D864A392A0F2278CF4 /* video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 676F16050AE53246574E41C7 /* video-v6.json */; };
+		2BEDDE9FCC0861778F7A6DC8 /* marks-updated.json in Resources */ = {isa = PBXBuildFile; fileRef = 5664E87D159DD72DA8148B1B /* marks-updated.json */; };
 		2C0B369E91386AA4886115B1 /* hub-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 633B3246975AC1D193FF79CB /* hub-docs.json */; };
+		2C8A95777FBDF766A071D596 /* video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = C8181B1E47B9309AD90DB519 /* video-v7.json */; };
 		2C94FF2405AC79BBD41634EF /* series-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A2EF4528458BE561D5D5E3D /* series-seerah.json */; };
 		2CE52515B34EDD95A443649A /* ReportsInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076EC6D65DD5EDF1384D61B0 /* ReportsInboxView.swift */; };
 		2D41AD6DEEE458BE4199C440 /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
+		2D5FE684B1D66F5DEA1201D5 /* home.json in Resources */ = {isa = PBXBuildFile; fileRef = 5EFFA92E7C6A2006B0D6623A /* home.json */; };
 		2D99A4436C514308FD60F36D /* Shell.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6BA42F40AC03D7A9DCFE3FF7 /* Shell.xcstrings */; };
 		2DB759F1284D52A1617C35D8 /* me-video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = 668F58D5C274795590DE0C27 /* me-video-v7.json */; };
 		2DEB4EBACCB56D2381A2A5A1 /* ShellLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFE65C7DEC2A1DEB40185CC /* ShellLaunch.swift */; };
@@ -161,6 +184,7 @@
 		2F73CF884D0FB68FC0906B0C /* VideoScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4BA7BDE12DA20703801AF7A /* VideoScreen.swift */; };
 		2FC06654C7F0C27D93AA6C68 /* libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = 519B7D18AEDA991A6B07ADA0 /* libraries.json */; };
 		2FC22227A700F198D872AF76 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 1A7D87B7DF1E612F19C81268 /* Localizable.xcstrings */; };
+		2FF0E4DE0665AE7177AC8FE2 /* tv-remote-heartbeat.json in Resources */ = {isa = PBXBuildFile; fileRef = 136F5B08E9086201B88A8B60 /* tv-remote-heartbeat.json */; };
 		2FFC027590DE231ABA58CEB9 /* PlayerReportProblemUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE1568FC47C145906554D99 /* PlayerReportProblemUITests.swift */; };
 		302CA7694447FDE32393F68A /* QueuePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C5F4A2291260AAAF5EE1029 /* QueuePlayer.swift */; };
 		30E924412EC902FF24BAD2EB /* channel-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8ED91FC6D9AA2D5272DD2F3E /* channel-ch-3.json */; };
@@ -171,13 +195,17 @@
 		31CF5596726D654E87498549 /* video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = E58ACCB8DFCBF5B43687757E /* video-v4.json */; };
 		3206DDDCA854C841C9CBE022 /* ProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CFA6753C3C4451A4B46020 /* ProcessesView.swift */; };
 		323E472661806B3DF8FEC923 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
+		32BD380794B8A7B74A08BAB5 /* library-series-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 15376060DE47516866176397 /* library-series-docs.json */; };
+		32CEA95B20339E0B2F630211 /* audio-en-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 1D89D51A7457C7862A31927F /* audio-en-0.ts */; };
 		32FA6B59CA4B4C4A55E2EE5A /* video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = BC614FBB95936071AB95C6E8 /* video-v9.json */; };
+		32FF2CB74209B0F1FAA41220 /* me-video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = 668F58D5C274795590DE0C27 /* me-video-v7.json */; };
 		330E12B29AEAC29699C3D280 /* play-queue.json in Resources */ = {isa = PBXBuildFile; fileRef = 0D6FF4D764A02D3AD472B450 /* play-queue.json */; };
 		332EC82BA1511AF9A108BA76 /* TVLiveUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B790041B9E119302365AAF2F /* TVLiveUITests.swift */; };
 		3388A5239DDCEF29F1336CF3 /* videos-page2.json in Resources */ = {isa = PBXBuildFile; fileRef = 099A5FD71E3C9479CBB5EE0C /* videos-page2.json */; };
 		3388CD3C65A8560DCBCFF6FA /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		33DDDCF5D900F624B251EE8A /* routes.json in Resources */ = {isa = PBXBuildFile; fileRef = A66B35B9C56E3162884CE164 /* routes.json */; };
 		349DEE9CB5FCFC0849FC8B9D /* video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 676F16050AE53246574E41C7 /* video-v6.json */; };
+		34CB64C8D74FD9C075B5A050 /* channels-guide.json in Resources */ = {isa = PBXBuildFile; fileRef = CD5FB1070CB4B8044FE2E02E /* channels-guide.json */; };
 		351675CD7DD91EADA75C54FC /* WatchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B255CF92445B9A4965F4D26 /* WatchLogic.swift */; };
 		35172B42869CF38212760F07 /* HomeStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C9394DEDD0E1D5ECA6E4E32 /* HomeStatusView.swift */; };
 		354E5F91C159E1DD8278D028 /* LiveSections.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B41C94D334C2DB4F3209B26 /* LiveSections.swift */; };
@@ -187,6 +215,7 @@
 		35C7207FBC12E9F15D969D5E /* LiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D166887D0132D01208C1F4B /* LiveView.swift */; };
 		363D8B8F606B5E44797056CE /* WatchControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A5844121CBBDD9EEF2B5AFB /* WatchControls.swift */; };
 		3669EE88B28CD4A8E802754B /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5255A0CC016A88186A34BE14 /* StatusUITests.swift */; };
+		36C2E6FC6A24092282E7155B /* facets.json in Resources */ = {isa = PBXBuildFile; fileRef = 04EB31B36EACFCAD4E26EEC6 /* facets.json */; };
 		36F0013C9D43BF0E500FB1EE /* segments.json in Resources */ = {isa = PBXBuildFile; fileRef = 04FE44A4268352AF7F418DE5 /* segments.json */; };
 		373FCF4CF3FC3F3966C6BBAF /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		376EBF384522F8AEF2AE04BC /* ChannelScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D63AF1B0CF5FCA57085067 /* ChannelScreen.swift */; };
@@ -208,9 +237,11 @@
 		3B6800784DE7F031E8905CF8 /* search-recent.json in Resources */ = {isa = PBXBuildFile; fileRef = E418ED44E4932ADB4657F0D0 /* search-recent.json */; };
 		3B6946E4D412AA6B1EB848C4 /* play-queue.json in Resources */ = {isa = PBXBuildFile; fileRef = 0D6FF4D764A02D3AD472B450 /* play-queue.json */; };
 		3B868CEB1159DA76F080A8B7 /* video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 567979BC3286DC364F1D2E94 /* video-v2.json */; };
+		3B86D2B1A8EAE99D2E1E049E /* me-video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = EC72337275DE887837858996 /* me-video-v9.json */; };
 		3B90478876E3B6CDB9470B35 /* video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = DD1C9BEDE6B31452CD3D668D /* video-v8.json */; };
 		3BD21E9CE3087ECDD6D892A6 /* master-two-audio.m3u8 in Resources */ = {isa = PBXBuildFile; fileRef = 9D26FDDC4C4DB2C957554190 /* master-two-audio.m3u8 */; };
 		3C015E23A13A2650DDACF8F7 /* channel-guide-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B5467B8A778208B086021E3 /* channel-guide-ch-2.json */; };
+		3C16ACE320E056F6CF7A922D /* channel-ch-1.json in Resources */ = {isa = PBXBuildFile; fileRef = D2428AD6061216C528F02C3B /* channel-ch-1.json */; };
 		3C5DEC19E4943A2A956A1A98 /* me-video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = 668F58D5C274795590DE0C27 /* me-video-v7.json */; };
 		3CA61E3BCF99AF14236F8D0C /* search.json in Resources */ = {isa = PBXBuildFile; fileRef = 4767E3AA21407672ACF27439 /* search.json */; };
 		3CC24F71C974A8148F3EE774 /* PlayerShellUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE2798DB8198289D13D968A /* PlayerShellUITests.swift */; };
@@ -250,12 +281,14 @@
 		4842BD54B7F7F480974F1B1C /* Info-Mac.plist in Resources */ = {isa = PBXBuildFile; fileRef = 4C1CBAB2A2706F209CE79B0E /* Info-Mac.plist */; };
 		48592038F104715852F19FFA /* LiveTVScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A719B348189FE001918FAC6 /* LiveTVScreen.swift */; };
 		48A9AE360A5C54E0D5914DCF /* PlayerLibrariesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 841AC7C74044CDB88BC663BF /* PlayerLibrariesUITests.swift */; };
+		499DBA350B3064A326439242 /* pinned-libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = B8F40A31A58629458B396F20 /* pinned-libraries.json */; };
 		4A1EC6A04911398B2B6F0BCE /* CrashCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D73EA6DFC36414A8EF016811 /* CrashCapture.swift */; };
 		4A36E0611678370A455D77BA /* video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 676F16050AE53246574E41C7 /* video-v6.json */; };
 		4A3EB40AD97B7A1A605186D9 /* routes.json in Resources */ = {isa = PBXBuildFile; fileRef = A66B35B9C56E3162884CE164 /* routes.json */; };
 		4A5CBB5D2F81873C18C9C55F /* PlayerTracks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01203F9703CCCFF47CFD15F1 /* PlayerTracks.swift */; };
 		4ACEEB0B95CCEF9A0EAD9412 /* PlayerMacMenuUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC2AC9683D83DEA85B35A9BE /* PlayerMacMenuUITests.swift */; };
 		4B1AAC24EFCE355037EB9DD2 /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
+		4B9BCBB2B02FEB37342B7212 /* libraries-summary.json in Resources */ = {isa = PBXBuildFile; fileRef = DE03B499C6326913603D6C57 /* libraries-summary.json */; };
 		4BD2A8C34980B0BA0D301642 /* me-video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = 4D42008504D68B05C07B686D /* me-video-v4.json */; };
 		4BDE027DF06B89F42E3BC4F9 /* Components.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 53837B9670C68C97101F9F9E /* Components.xcstrings */; };
 		4C6191BB5D5F91260E1D0BBF /* HomeRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED205B97C3ED5562E177BCDA /* HomeRows.swift */; };
@@ -264,7 +297,9 @@
 		4D9BD72B282765B08ADC328B /* SeriesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7797D4BCE39BE93034371710 /* SeriesScreen.swift */; };
 		4DD348656C3CC0741165C586 /* library-categories.json in Resources */ = {isa = PBXBuildFile; fileRef = D1892A153EF5A11DCEEC0C52 /* library-categories.json */; };
 		4DFB4099AEA5CB08069AAD21 /* UpNext.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB23121524971048DFC4FAAE /* UpNext.swift */; };
+		4E3350D668F7B82958084550 /* Snapshots in Resources */ = {isa = PBXBuildFile; fileRef = 43D9D006130D011CA3B5E0E0 /* Snapshots */; };
 		4E50A574988A06BEAABA5FB2 /* PlaybackSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16B822BB23E29B870CFE42F5 /* PlaybackSettings.swift */; };
+		4EB4A2BB3534A279A6733AE7 /* routes.json in Resources */ = {isa = PBXBuildFile; fileRef = A66B35B9C56E3162884CE164 /* routes.json */; };
 		4EF07FC54C3BE0566BD6054E /* video-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 889424E4EAD6D051DD5BFBFC /* video-1.ts */; };
 		4F02BE90BB495893C15FA85D /* video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 567979BC3286DC364F1D2E94 /* video-v2.json */; };
 		4F040A755E46452979DF1C58 /* LibrariesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD663EDC4E72A38253593822 /* LibrariesScreen.swift */; };
@@ -283,10 +318,12 @@
 		532CEA3D14CBAE22F9AE8C13 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 82FEF82284D142A8B84099D4 /* MaktabaKit */; };
 		53637E17D55A6A8DDE91C088 /* me-video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = EC72337275DE887837858996 /* me-video-v9.json */; };
 		536DB089891EF1D2E6EFD399 /* video-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 7155A0ABC39039D117575927 /* video-0.ts */; };
+		537C095D0307779B2A154638 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
 		53AD4B7B2EF1B4DFEBE1D4D8 /* videos-page2.json in Resources */ = {isa = PBXBuildFile; fileRef = 099A5FD71E3C9479CBB5EE0C /* videos-page2.json */; };
 		5418B8DF9A64F6A15C286D34 /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		543D833D1458A68405207F3D /* tv-remote-heartbeat.json in Resources */ = {isa = PBXBuildFile; fileRef = 136F5B08E9086201B88A8B60 /* tv-remote-heartbeat.json */; };
 		546CB2CE5628389A5720727B /* me-video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 2E57DFFB5A7EE1113A046038 /* me-video-v2.json */; };
+		554F3B38033EAE9270BECDEB /* video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 676F16050AE53246574E41C7 /* video-v6.json */; };
 		5567A595D38D7DF2C32765EC /* video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 567979BC3286DC364F1D2E94 /* video-v2.json */; };
 		55B0EE331CC0885ED547F7BC /* channel-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8ED91FC6D9AA2D5272DD2F3E /* channel-ch-3.json */; };
 		5691A79C5122AC97B6133EBE /* video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 79ADCCDAFF5E261DE4CB13EB /* video-v10.json */; };
@@ -305,6 +342,7 @@
 		59A49B26775EAE82C75C9FE4 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8A7CA2751CB178C26A15E94D /* MaktabaKit */; };
 		59D8C7DA4BD99590BEB3C8B7 /* auth-me.json in Resources */ = {isa = PBXBuildFile; fileRef = 5BDF18B38D8C81A79BEA1702 /* auth-me.json */; };
 		5A107864D82254C32D5EE190 /* channel-ch-1.json in Resources */ = {isa = PBXBuildFile; fileRef = D2428AD6061216C528F02C3B /* channel-ch-1.json */; };
+		5B170999689385804CE5DFF9 /* channel-guide-ch-1.json in Resources */ = {isa = PBXBuildFile; fileRef = D5DCAFCE2DF6240A07CA0D34 /* channel-guide-ch-1.json */; };
 		5B3CEF53F6B93BDACEC04AD1 /* Playback.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6629068B08CFDCF4BEA7DB9 /* Playback.swift */; };
 		5B40BF4FC7BF97CDC2C45573 /* series.json in Resources */ = {isa = PBXBuildFile; fileRef = 20F53879910FA01F73F46FB5 /* series.json */; };
 		5BFA1456DF5AFC9AB9735318 /* video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = 20CE1000626995CC9DA97C56 /* video-v11.json */; };
@@ -330,6 +368,7 @@
 		629161B598CC49A24777052E /* ShellLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFE65C7DEC2A1DEB40185CC /* ShellLaunch.swift */; };
 		62D52725DC60B7B815EC56D9 /* Rail.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD804F7D84EC3CE2E4A7B236 /* Rail.swift */; };
 		63518C39A79E81ADB49BA7EA /* me-video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = 747990C071BEB9C6D01E2A25 /* me-video-v5.json */; };
+		63BB522F1BE44D0E4583EE48 /* play-queue.json in Resources */ = {isa = PBXBuildFile; fileRef = 0D6FF4D764A02D3AD472B450 /* play-queue.json */; };
 		6474D940E336C9FF91363D8B /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
 		64A3C29494361EF1E69E7D68 /* facets.json in Resources */ = {isa = PBXBuildFile; fileRef = 04EB31B36EACFCAD4E26EEC6 /* facets.json */; };
 		64A55A4A14666113758336D5 /* ChannelLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F34386456EC5D928F4F05EE /* ChannelLogo.swift */; };
@@ -344,9 +383,11 @@
 		673AD63AC4A3A763C879EF55 /* LiveModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE5070ECDAE67A10C38C6B42 /* LiveModel.swift */; };
 		674935557616161DD2F7054B /* PlayerShellTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73C4DBC658F8C407859F34C6 /* PlayerShellTests.swift */; };
 		676D599F8129B51DD231B3F2 /* QueueView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7CF3F653F8E0BF0DCFD0D63 /* QueueView.swift */; };
+		677A79E96299875AF826D4EF /* auth-me.json in Resources */ = {isa = PBXBuildFile; fileRef = 5BDF18B38D8C81A79BEA1702 /* auth-me.json */; };
 		682FF47D55F1952EE706A68D /* channels-guide.json in Resources */ = {isa = PBXBuildFile; fileRef = CD5FB1070CB4B8044FE2E02E /* channels-guide.json */; };
 		683523F51F78E2CCD6E2610D /* video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = E58ACCB8DFCBF5B43687757E /* video-v4.json */; };
 		6860BDFF440F18E58E1D3D78 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 9DFA15E2382D382C6A16B1F4 /* InfoPlist.xcstrings */; };
+		690F5203F23E94D7742B0868 /* video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = DD1C9BEDE6B31452CD3D668D /* video-v8.json */; };
 		69239E310182133F06020674 /* search-results.json in Resources */ = {isa = PBXBuildFile; fileRef = 490E14DE48F36E33CD099CAB /* search-results.json */; };
 		6949F5DA32440786DA86756F /* me-video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = D88C16A21B9816C4F3F79A9C /* me-video-v11.json */; };
 		6978F9089679D96F475C6499 /* DetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC971F94FE93E45EC13D0C2 /* DetailViews.swift */; };
@@ -371,15 +412,18 @@
 		6E4B5C3471458961F1CA8C50 /* picture-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 79346C140CC8552FC36E366E /* picture-1.ts */; };
 		6E7E2D09036B71F4F70FEC4B /* channel-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = A191553C5553CBCD35BDA7E8 /* channel-ch-2.json */; };
 		6E8A2F469F555E9187F29DB6 /* me-video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 0B1505FA1D7C0A36BE82F492 /* me-video-v10.json */; };
+		6EBF9E39446239AA74ED9732 /* me-video-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = B59999EF22178CFC7B64E17D /* me-video-v1.json */; };
 		6F2F2D672C215B51D40D053C /* library-dark.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 8BBA9051D7E6532CD41D442B /* library-dark.jpg */; };
 		6F59DAA82933D07AE4C685B4 /* channels.json in Resources */ = {isa = PBXBuildFile; fileRef = 4F287B902E89FD65EC047515 /* channels.json */; };
 		6FB134339F06DA18594F7610 /* video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = E58ACCB8DFCBF5B43687757E /* video-v4.json */; };
+		6FB9725EECF4F8E21F4E4326 /* live-segment.ts in Resources */ = {isa = PBXBuildFile; fileRef = B95F80C00932C42124C51265 /* live-segment.ts */; };
 		6FF4FDAE30B27DB1A250BEB6 /* me-sessions.json in Resources */ = {isa = PBXBuildFile; fileRef = 1C9AFB96C1B7B76E48217886 /* me-sessions.json */; };
 		7004182A6B3CA36A46D9ADB1 /* subtitles.json in Resources */ = {isa = PBXBuildFile; fileRef = 51275735890B19E8D301D899 /* subtitles.json */; };
 		70E5F92617D67DAD04A3DD8E /* PlayerWatchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 862980C11283C1A3D22CEFEC /* PlayerWatchUITests.swift */; };
 		713254424BAE21BE0E6CFA7B /* live-segment.ts in Resources */ = {isa = PBXBuildFile; fileRef = B95F80C00932C42124C51265 /* live-segment.ts */; };
 		71E9F90E6544AAD894A4866D /* video-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F88FD71288707C5F1A65C14 /* video-v1.json */; };
 		7201F24E3D1190FA2E6F09CB /* Info-iPad.plist in Resources */ = {isa = PBXBuildFile; fileRef = E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */; };
+		7241FA5075237044DA07D1CA /* me-video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 2E57DFFB5A7EE1113A046038 /* me-video-v2.json */; };
 		72CA97E96831924D7BCE2D0B /* video-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 7155A0ABC39039D117575927 /* video-0.ts */; };
 		734F1DE5823302E7A7C6F546 /* VideoDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98AED34220C815DD101BEDF /* VideoDetail.swift */; };
 		73FB1723B381AEACEBDF5176 /* Components.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 53837B9670C68C97101F9F9E /* Components.xcstrings */; };
@@ -400,10 +444,12 @@
 		7748C2A270F27A4C23D8635F /* LiveTVScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A719B348189FE001918FAC6 /* LiveTVScreen.swift */; };
 		7753299B6C4CF4E9BACFCB89 /* PlaybackPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA9A15EABD7A951AC9FA56C /* PlaybackPreferences.swift */; };
 		776C6F04B494ED5E063332EB /* PlayerShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAF036BA96A97A53CDB7E7F /* PlayerShell.swift */; };
+		777DE26BF1EB9A20E9B69A5C /* subs-en.vtt in Resources */ = {isa = PBXBuildFile; fileRef = EE8C7CD8274259B846A82C11 /* subs-en.vtt */; };
 		7795E9D52C4C2DCC764F63B1 /* Hero.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDA7F1B5AF478D50DA5A2 /* Hero.swift */; };
 		77AFB50B80884457146B36D2 /* subs-ar.vtt in Resources */ = {isa = PBXBuildFile; fileRef = B798A69AADF29D63BE317902 /* subs-ar.vtt */; };
 		77B3511137E36067F10B6EC3 /* me-video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A5789D0242D82200492ECE4 /* me-video-v8.json */; };
 		77C06DE310A9506D13857EF3 /* me-video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 0B1505FA1D7C0A36BE82F492 /* me-video-v10.json */; };
+		77CEA66C5CDDAC725B2A7FDC /* video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 79ADCCDAFF5E261DE4CB13EB /* video-v10.json */; };
 		77DBE1D2EBC0622197D1EC25 /* LibrariesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8FB3DD8C7BC6D1057F2AAAE /* LibrariesView.swift */; };
 		77E2BADE16808B7DBE4D6D5C /* hub-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D58352638B6EE276D0813FBB /* hub-lectures.json */; };
 		77F807E6F9FAAF3643C3D136 /* ChannelLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F34386456EC5D928F4F05EE /* ChannelLogo.swift */; };
@@ -412,9 +458,11 @@
 		782FA870DAE4D6824C3779E2 /* me-video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FF4BA477197A8D0A5389913 /* me-video-v6.json */; };
 		783B7E264D1E8DF50A367901 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CED999F23DF99657A01AF7 /* SettingsView.swift */; };
 		783FA85BC92CDEF0D3CB1B1F /* PlayerSignInKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E01F680B099BBD13074CA2 /* PlayerSignInKeyboardUITests.swift */; };
+		78539B8EDE9FF654EC9E92B7 /* series.json in Resources */ = {isa = PBXBuildFile; fileRef = 20F53879910FA01F73F46FB5 /* series.json */; };
 		789267B6747084C931E198F8 /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		789BE979879A2F69B1BCB700 /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
 		7914FB89F725FE69A9817CD5 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
+		796B01BBA38C1FE0522D2B3C /* recommendations.json in Resources */ = {isa = PBXBuildFile; fileRef = 92323C1B857B017169B42F2B /* recommendations.json */; };
 		79B0325255669EDB50885F28 /* live-segment.ts in Resources */ = {isa = PBXBuildFile; fileRef = B95F80C00932C42124C51265 /* live-segment.ts */; };
 		7A1AD6E20EE5476361A804CC /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		7A24DEE522BBBF10BCFDA8CA /* video-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F88FD71288707C5F1A65C14 /* video-v1.json */; };
@@ -428,6 +476,7 @@
 		7B4D3077732AC14E5344AEA4 /* auth-me.json in Resources */ = {isa = PBXBuildFile; fileRef = 5BDF18B38D8C81A79BEA1702 /* auth-me.json */; };
 		7C2574B9C974C533F19533B3 /* LibrariesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F443C3CD0C085EB27F629687 /* LibrariesModels.swift */; };
 		7C311BAD1C896D3F80D2D3A7 /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
+		7C3A416063EBE5C696414ABF /* chapters.json in Resources */ = {isa = PBXBuildFile; fileRef = 5E3A970B4B2F9D35CFD60293 /* chapters.json */; };
 		7C874EA6DC3BEA7710430857 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		7CDABDB82A2C30EF8E6E7AB4 /* ErrorsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29EF4F5D4A2AC2343FA688DE /* ErrorsView.swift */; };
 		7D457960D3F22B389D9FB169 /* LivePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC8CA7A13A9418D0100F0C0 /* LivePlayback.swift */; };
@@ -443,6 +492,7 @@
 		80DF9A38E13B2EB2C96E8E3F /* audio-en-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = D7DEBB804F5F2D72F778A00F /* audio-en-1.ts */; };
 		80E256576FD19547D635B132 /* RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7C782FE57543EEFC505FBD /* RemoteApp.swift */; };
 		80FDAAC1B7EB81C79EE95ADC /* search.json in Resources */ = {isa = PBXBuildFile; fileRef = 4767E3AA21407672ACF27439 /* search.json */; };
+		815B996456164480E58EBA0F /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		8166E6838C26279C8ED68EF2 /* audio-ar-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = CC934BAB64968FD138262148 /* audio-ar-0.ts */; };
 		82122985256AB2A7C01E84D8 /* me-video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = 747990C071BEB9C6D01E2A25 /* me-video-v5.json */; };
 		824606263189ECD600B33B8E /* PlaceholderTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632E541BE1ADF68E2E656AF1 /* PlaceholderTiming.swift */; };
@@ -451,6 +501,7 @@
 		83560BDEB75643BDE96403B9 /* me-video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 7740F056044421402AA41646 /* me-video-v3.json */; };
 		836B4AEE1FA6EBDDC2B960C0 /* subtitles.json in Resources */ = {isa = PBXBuildFile; fileRef = 51275735890B19E8D301D899 /* subtitles.json */; };
 		83760077C67435EE16C1F374 /* videos.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FC50884BA24F8F3AA96B863 /* videos.json */; };
+		83DF2EA6C892CDBA4CBAA7A8 /* video-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F88FD71288707C5F1A65C14 /* video-v1.json */; };
 		83E0CD8043287408812D63EB /* audio-en-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = D7DEBB804F5F2D72F778A00F /* audio-en-1.ts */; };
 		8432D2D5B623CFE2B8C6E370 /* stream-session.json in Resources */ = {isa = PBXBuildFile; fileRef = 3829504997E4728687756463 /* stream-session.json */; };
 		84924572E39F2F9D4D268726 /* me-video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 2E57DFFB5A7EE1113A046038 /* me-video-v2.json */; };
@@ -463,12 +514,16 @@
 		8672C8C06C6AD58F8DE2FDE4 /* video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = BC614FBB95936071AB95C6E8 /* video-v9.json */; };
 		868B7404A5BE8E951B4F46C1 /* channel-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8ED91FC6D9AA2D5272DD2F3E /* channel-ch-3.json */; };
 		87180F5FD683A88A8D9CAA23 /* MacFullScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A7044588B28669A5A259C36 /* MacFullScreen.swift */; };
+		87950B7E11252DBB4B1A4961 /* channel-guide-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B5467B8A778208B086021E3 /* channel-guide-ch-2.json */; };
 		88D0D387B175CD54F770FE96 /* me-video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = 4D42008504D68B05C07B686D /* me-video-v4.json */; };
+		88D1F70FBD0B5C1386F0F925 /* me-sessions.json in Resources */ = {isa = PBXBuildFile; fileRef = 1C9AFB96C1B7B76E48217886 /* me-sessions.json */; };
 		8949E4A78D929E3FB539BBEF /* PosterCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 909FD41A1E6700554E679284 /* PosterCard.swift */; };
 		8A00422C98F087AED0758442 /* channels-guide.json in Resources */ = {isa = PBXBuildFile; fileRef = CD5FB1070CB4B8044FE2E02E /* channels-guide.json */; };
+		8A15CBB0003D3F56559518ED /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
 		8A25A9BFE1C739340522037E /* segments.json in Resources */ = {isa = PBXBuildFile; fileRef = 04FE44A4268352AF7F418DE5 /* segments.json */; };
 		8A35A4263A337407088D1742 /* Hero.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1ECDA7F1B5AF478D50DA5A2 /* Hero.swift */; };
 		8A6EF3A4418EBACB2302A656 /* search-results.json in Resources */ = {isa = PBXBuildFile; fileRef = 490E14DE48F36E33CD099CAB /* search-results.json */; };
+		8A886F450B156ED32C6E1834 /* series-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A2EF4528458BE561D5D5E3D /* series-seerah.json */; };
 		8A941085E915D7364AFC9CC0 /* hub-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D58352638B6EE276D0813FBB /* hub-lectures.json */; };
 		8ACFCDF5F629ACB5CAEDF815 /* master.m3u8 in Resources */ = {isa = PBXBuildFile; fileRef = 3C3D582EC21D3827C31F15A6 /* master.m3u8 */; };
 		8AFB0494901D32F0EAC608D8 /* video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 79ADCCDAFF5E261DE4CB13EB /* video-v10.json */; };
@@ -491,10 +546,12 @@
 		8F19992B8C5771816209355E /* me-video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = D88C16A21B9816C4F3F79A9C /* me-video-v11.json */; };
 		8F66ADE84E89FA7F0B7C334C /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
 		8F6A34DB32C630F75E5B2A4D /* Rail.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD804F7D84EC3CE2E4A7B236 /* Rail.swift */; };
+		8F7425CA486B12A73FD9B426 /* hub-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 633B3246975AC1D193FF79CB /* hub-docs.json */; };
 		8FCB3245A690D8F9CEBCC9AF /* chapters.json in Resources */ = {isa = PBXBuildFile; fileRef = 5E3A970B4B2F9D35CFD60293 /* chapters.json */; };
 		9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */; };
 		909340401D361D0F0AEED4F2 /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		90E5D5C8DDD477287D70C55D /* Components.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 53837B9670C68C97101F9F9E /* Components.xcstrings */; };
+		91BEF5D352586930BFBE3575 /* me-video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = 4D42008504D68B05C07B686D /* me-video-v4.json */; };
 		9258F90EE1154FE731C28200 /* recommendations.json in Resources */ = {isa = PBXBuildFile; fileRef = 92323C1B857B017169B42F2B /* recommendations.json */; };
 		9266F413F06AD14E52F0612E /* PageLocale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 917249213BD75F8579C07540 /* PageLocale.swift */; };
 		92A496A4E137EDE6FAAA7455 /* search-suggest.json in Resources */ = {isa = PBXBuildFile; fileRef = ADE6EBEB46958C8973F5C5AD /* search-suggest.json */; };
@@ -523,6 +580,7 @@
 		98E057030FF2F148C3BEBAE7 /* video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 9C597463B3D151244BC108BB /* video-v3.json */; };
 		98ED643C57336A3E7BAEBC45 /* me-video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = 668F58D5C274795590DE0C27 /* me-video-v7.json */; };
 		997D098A8F39252D4EE78EC5 /* TouchHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACC61EAC6C018F16191D6960 /* TouchHook.swift */; };
+		99F36357C958540B06B8853D /* search-suggest.json in Resources */ = {isa = PBXBuildFile; fileRef = ADE6EBEB46958C8973F5C5AD /* search-suggest.json */; };
 		9A3A7433E224848D17479C4F /* Video.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A525332F62424FB900584753 /* Video.xcstrings */; };
 		9A55250AE164203BA3D89967 /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
 		9A9F4494F01310C198A8DC30 /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5255A0CC016A88186A34BE14 /* StatusUITests.swift */; };
@@ -531,6 +589,7 @@
 		9AD9C00E870730204422ECC2 /* library-collections.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F54871DF7C6E8E2F483C707 /* library-collections.json */; };
 		9AEC843082B2DF2114B8A9AA /* PlaceholderTiming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 632E541BE1ADF68E2E656AF1 /* PlaceholderTiming.swift */; };
 		9AF4D01A44868E95268E1EEA /* CachedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B33B1848E746CEBB7D5E19 /* CachedImage.swift */; };
+		9B076DAF0418CE06953FD7C4 /* video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = 20CE1000626995CC9DA97C56 /* video-v11.json */; };
 		9B70D3DFCB660397A3C6FBED /* audio-ar-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = CC934BAB64968FD138262148 /* audio-ar-0.ts */; };
 		9BC81FE5C730931D582C09B8 /* channels-guide.json in Resources */ = {isa = PBXBuildFile; fileRef = CD5FB1070CB4B8044FE2E02E /* channels-guide.json */; };
 		9BDC9E16EBAA6A53D4D8A3B0 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CD42A40FE5CCA1A4E73C464A /* InfoPlist.xcstrings */; };
@@ -548,6 +607,7 @@
 		9F66F8A150788159FCE80048 /* me-sessions.json in Resources */ = {isa = PBXBuildFile; fileRef = 1C9AFB96C1B7B76E48217886 /* me-sessions.json */; };
 		9FBD86DA3364E6D4EB4E5B31 /* routes.json in Resources */ = {isa = PBXBuildFile; fileRef = A66B35B9C56E3162884CE164 /* routes.json */; };
 		9FBEBD65864B07203853F652 /* PlayerReportProblemUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CE1568FC47C145906554D99 /* PlayerReportProblemUITests.swift */; };
+		A04A8A88340B07D303263EE8 /* search-results.json in Resources */ = {isa = PBXBuildFile; fileRef = 490E14DE48F36E33CD099CAB /* search-results.json */; };
 		A20EB600899D3C53EE72346D /* home.json in Resources */ = {isa = PBXBuildFile; fileRef = 5EFFA92E7C6A2006B0D6623A /* home.json */; };
 		A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
 		A26DDCCC4F57C979DD1CE883 /* stream-session.json in Resources */ = {isa = PBXBuildFile; fileRef = 3829504997E4728687756463 /* stream-session.json */; };
@@ -562,6 +622,7 @@
 		A60FE7308932BEE8359595FF /* TVConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */; };
 		A64196051841966D6C1EA13F /* LibrariesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD663EDC4E72A38253593822 /* LibrariesScreen.swift */; };
 		A6610A399B66F7B3C8F62546 /* PlayerCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9778F45864E9B7DB7CD1588C /* PlayerCommands.swift */; };
+		A6BCD1EF8DDD41C446DC6609 /* search-recent.json in Resources */ = {isa = PBXBuildFile; fileRef = E418ED44E4932ADB4657F0D0 /* search-recent.json */; };
 		A734FD80709DE36F7176B2DC /* channel-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = A191553C5553CBCD35BDA7E8 /* channel-ch-2.json */; };
 		A761907B9847FBA79DD54D85 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B177ADE5954C20DB4B13EAE /* InfoPlist.xcstrings */; };
 		A7709A4DA21403C041BA6CA9 /* me-video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = 4D42008504D68B05C07B686D /* me-video-v4.json */; };
@@ -573,6 +634,7 @@
 		A95AB48CDC263CBB54248701 /* LibrariesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F443C3CD0C085EB27F629687 /* LibrariesModels.swift */; };
 		A980902B562327DB20841C9B /* subs-en.vtt in Resources */ = {isa = PBXBuildFile; fileRef = EE8C7CD8274259B846A82C11 /* subs-en.vtt */; };
 		A9D2E31DEC5A169718641745 /* marks-updated.json in Resources */ = {isa = PBXBuildFile; fileRef = 5664E87D159DD72DA8148B1B /* marks-updated.json */; };
+		A9F22EBE4B68439787BCAF9C /* channels.json in Resources */ = {isa = PBXBuildFile; fileRef = 4F287B902E89FD65EC047515 /* channels.json */; };
 		AAA9E7B549C8459DF4EE5987 /* HomeScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84D746B956CF705B862C9F1E /* HomeScreen.swift */; };
 		AAE1A5D071AD64B75BC7147A /* video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = BC614FBB95936071AB95C6E8 /* video-v9.json */; };
 		AB169F8E18AC5144DCA28665 /* facets.json in Resources */ = {isa = PBXBuildFile; fileRef = 04EB31B36EACFCAD4E26EEC6 /* facets.json */; };
@@ -592,16 +654,21 @@
 		AF751E3791C0338B053435B3 /* series.json in Resources */ = {isa = PBXBuildFile; fileRef = 20F53879910FA01F73F46FB5 /* series.json */; };
 		AFCCAA0FC6487CC3036296D5 /* me-video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 7740F056044421402AA41646 /* me-video-v3.json */; };
 		B028CD5C13899CE84ABE5067 /* video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = 20CE1000626995CC9DA97C56 /* video-v11.json */; };
+		B03012FDEE31339F8DE484EF /* me-video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 315ECB314BA012B2C3405B40 /* me-video-v12.json */; };
 		B03A6CC72EBCA804B5A576BB /* video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = C8181B1E47B9309AD90DB519 /* video-v7.json */; };
 		B0409A42F30AA0C866CC595B /* PlayerRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6087ECDFB23E3D4828BDED83 /* PlayerRoute.swift */; };
 		B05CF1D466C71A9E40A8EDF0 /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D278F13E0FB225131B9188 /* PermissionsUITests.swift */; };
 		B0ABF01F091A6E62BFD6D94E /* TrackSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44FAE1C1F07E8DB187F9CCEE /* TrackSheets.swift */; };
 		B0DD276428353A7E3FBA8677 /* channels-now.json in Resources */ = {isa = PBXBuildFile; fileRef = F2AAF6514EB46D3CBD9DCA24 /* channels-now.json */; };
+		B0E7A871619FE2CE35B0592B /* library-categories.json in Resources */ = {isa = PBXBuildFile; fileRef = D1892A153EF5A11DCEEC0C52 /* library-categories.json */; };
 		B0FCB1AF4441A38E2EF8E47B /* video-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F88FD71288707C5F1A65C14 /* video-v1.json */; };
+		B1BF1A929609DB2AB95DFE9D /* master.m3u8 in Resources */ = {isa = PBXBuildFile; fileRef = 3C3D582EC21D3827C31F15A6 /* master.m3u8 */; };
 		B1F71B6407BD1528353E510E /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 1A7D87B7DF1E612F19C81268 /* Localizable.xcstrings */; };
+		B22553E7CDA3997AB342F94A /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
 		B28684EE5EC392777E07A710 /* video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 79ADCCDAFF5E261DE4CB13EB /* video-v10.json */; };
 		B28B604B3ECA18C826BEF753 /* PlayerComponentsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4A2C5F6C2E1E8113D137CD /* PlayerComponentsUITests.swift */; };
 		B2D28D5ED408776C819A0739 /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
+		B36FF703FC69F4DE77F3EAA0 /* me-video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FF4BA477197A8D0A5389913 /* me-video-v6.json */; };
 		B378DE3C14B962D4B6A01554 /* RemoteDiagnosticsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1004CB73EF14C96A06ECAF68 /* RemoteDiagnosticsUITests.swift */; };
 		B39DFE47608DB5615CEFA5FC /* PlayerSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FE6C4A65EA688B04B8FCF96 /* PlayerSection.swift */; };
 		B48DC5C99EA7F83BAC31F7A9 /* series-episodes-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E06311531E13E074B9CCD7E /* series-episodes-seerah.json */; };
@@ -611,6 +678,7 @@
 		B5491EE5D18F285DE5EB0AA3 /* CachedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B33B1848E746CEBB7D5E19 /* CachedImage.swift */; };
 		B550408BE486A83EDB38C104 /* channels.json in Resources */ = {isa = PBXBuildFile; fileRef = 4F287B902E89FD65EC047515 /* channels.json */; };
 		B57966415EC64E82B9B19D68 /* me-playlists.json in Resources */ = {isa = PBXBuildFile; fileRef = 37E5377E1A68AD45AE2A777E /* me-playlists.json */; };
+		B5A21E30AD66768B9F6E712F /* me.json in Resources */ = {isa = PBXBuildFile; fileRef = 62E2346349591CD2A4C6303A /* me.json */; };
 		B5B5B81C34A046D316FB37C4 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		B5CD4E8D9D05DC6CF61AE951 /* me-video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 2E57DFFB5A7EE1113A046038 /* me-video-v2.json */; };
 		B658824871C77B9B62484E30 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 7B3006348DE2B13098D7714E /* Localizable.xcstrings */; };
@@ -622,6 +690,7 @@
 		B77755E121835E863440AC2B /* video-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 7155A0ABC39039D117575927 /* video-0.ts */; };
 		B7A47A487A7E8C74B98D19E1 /* subs-en.vtt in Resources */ = {isa = PBXBuildFile; fileRef = EE8C7CD8274259B846A82C11 /* subs-en.vtt */; };
 		B7E5873676AE79EDD091F4F3 /* Profile.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 34F665DFFB5361707B79EDDA /* Profile.xcstrings */; };
+		B806429F3980CC178ACE9E15 /* video-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 7155A0ABC39039D117575927 /* video-0.ts */; };
 		B87E1FC4341A53460BFFBD6B /* Shell.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6BA42F40AC03D7A9DCFE3FF7 /* Shell.xcstrings */; };
 		B8D89A111AC4F8AE4766BB0D /* PlayerConnectProgressUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74EB55E9076F2CDC600C7C63 /* PlayerConnectProgressUITests.swift */; };
 		B95C8D2EB80530A25E861DEE /* me-video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 315ECB314BA012B2C3405B40 /* me-video-v12.json */; };
@@ -631,6 +700,7 @@
 		BA445206DA88B6689C51D8C0 /* video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = DD1C9BEDE6B31452CD3D668D /* video-v8.json */; };
 		BA54D879C433147922E25A36 /* ChannelLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F34386456EC5D928F4F05EE /* ChannelLogo.swift */; };
 		BA580386616F497401EA2062 /* PlayerVideoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB13F57BDEAC4243D3662270 /* PlayerVideoUITests.swift */; };
+		BA76EC31B290EE20D07C66B2 /* me-video-v10.json in Resources */ = {isa = PBXBuildFile; fileRef = 0B1505FA1D7C0A36BE82F492 /* me-video-v10.json */; };
 		BA95D5EE724C4A805E13BFA5 /* stream-session.json in Resources */ = {isa = PBXBuildFile; fileRef = 3829504997E4728687756463 /* stream-session.json */; };
 		BA9889D290666F469B04052C /* master-two-audio.m3u8 in Resources */ = {isa = PBXBuildFile; fileRef = 9D26FDDC4C4DB2C957554190 /* master-two-audio.m3u8 */; };
 		BAFD0D31D5576D4ED59AC358 /* SearchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3184D41DED31BB738DA554B /* SearchScreen.swift */; };
@@ -645,12 +715,14 @@
 		BD110330237B02B3548A1E7E /* PlayerSearchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5952E066C6861ACD8E2347 /* PlayerSearchUITests.swift */; };
 		BD9316BED7516B18FD4C7560 /* channel-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = A191553C5553CBCD35BDA7E8 /* channel-ch-2.json */; };
 		BDB4EF371443CAC20A627558 /* WatchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B255CF92445B9A4965F4D26 /* WatchLogic.swift */; };
+		BE2CB8DD1CEB722D6EC8AC88 /* channel-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8ED91FC6D9AA2D5272DD2F3E /* channel-ch-3.json */; };
 		BE5A5267D312F96A596D2DD2 /* tv-remote-tune.json in Resources */ = {isa = PBXBuildFile; fileRef = 7CD7D879F38888F970BCAF0F /* tv-remote-tune.json */; };
 		BEAB79A50A297265D4C3DC71 /* me.json in Resources */ = {isa = PBXBuildFile; fileRef = 62E2346349591CD2A4C6303A /* me.json */; };
 		BF542EC97A5593A15793A7E1 /* video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = FC6C8ADDCCF8BA90EB3F6579 /* video-v5.json */; };
 		BF9B4A54A894DC24ED1832E7 /* video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 567979BC3286DC364F1D2E94 /* video-v2.json */; };
 		BFCEB4549B1C6809B6A141D5 /* PlayerHomeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF104AF511A07AF97FB1B82 /* PlayerHomeUITests.swift */; };
 		C0226DC06DD1B2520091F174 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = BE61804399EA1F41409F80AD /* InfoPlist.xcstrings */; };
+		C02D0E56D7D8270BAB657ECD /* video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 99C953845F9EC74084F7444A /* video-v12.json */; };
 		C046ABA5EE05CEFF507A2FEF /* Shimmer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B78CA303B4813EBD0141235 /* Shimmer.swift */; };
 		C09CE67AB9253AB079F596D1 /* library-categories.json in Resources */ = {isa = PBXBuildFile; fileRef = D1892A153EF5A11DCEEC0C52 /* library-categories.json */; };
 		C16C4AC8969FD4372611DCFB /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D89C90BBF81F5E8E133A2AD5 /* Assets.xcassets */; };
@@ -663,6 +735,7 @@
 		C3439800E901BE370D0200EB /* tv-remote-heartbeat.json in Resources */ = {isa = PBXBuildFile; fileRef = 136F5B08E9086201B88A8B60 /* tv-remote-heartbeat.json */; };
 		C349A192D4C6988267E7D44B /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6EF9139DE50E1C308E4DB14 /* Theme.swift */; };
 		C37D5F7B9B039A8B9EB5A1F4 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
+		C3A226739FFEE59E1172654E /* video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = BC614FBB95936071AB95C6E8 /* video-v9.json */; };
 		C3E283934CF34B2316656EF1 /* me-video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = EC72337275DE887837858996 /* me-video-v9.json */; };
 		C3EE040F3111C9B806B4FF4A /* hub-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D58352638B6EE276D0813FBB /* hub-lectures.json */; };
 		C424E125C1E298C12B44676F /* PlayerProfileUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43A83E051C97587BB93ACED0 /* PlayerProfileUITests.swift */; };
@@ -672,6 +745,7 @@
 		C512BD3BE663A19D4C825B00 /* series-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 73249F4FC35BBFF61B8EB8D0 /* series-tafsir.json */; };
 		C59C96E465C864A83670459A /* channel-guide-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8CAB2480242420873FE19615 /* channel-guide-ch-3.json */; };
 		C5C2741F2E3C9737F97CC54F /* Mac.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = EE158B4C745F3A93A2D726B6 /* Mac.xcstrings */; };
+		C607AA04288FE6DCD2E25100 /* audio-en-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = D7DEBB804F5F2D72F778A00F /* audio-en-1.ts */; };
 		C62819FA4E1BE3CA7C1DD177 /* ChannelScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D63AF1B0CF5FCA57085067 /* ChannelScreen.swift */; };
 		C716E9408C1640A92C454B86 /* stream-session.json in Resources */ = {isa = PBXBuildFile; fileRef = 3829504997E4728687756463 /* stream-session.json */; };
 		C733528FB55DB086C905C807 /* MaktabaTVUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F4B5ABCCB67B2EADC26918 /* MaktabaTVUITests.swift */; };
@@ -690,6 +764,7 @@
 		CC2D749896499924C0FAE00F /* library-categories.json in Resources */ = {isa = PBXBuildFile; fileRef = D1892A153EF5A11DCEEC0C52 /* library-categories.json */; };
 		CC8F0DFFB82F60AFF4F05077 /* hub-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 633B3246975AC1D193FF79CB /* hub-docs.json */; };
 		CCC4B772B77A92262770A5E4 /* me-video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = 4D42008504D68B05C07B686D /* me-video-v4.json */; };
+		CCCF79CB335804DD4EE63179 /* me-video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 7740F056044421402AA41646 /* me-video-v3.json */; };
 		CCD68EE350B2420A1D2C8C96 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B722A47D46B320D8C9C4466E /* PlayerView.swift */; };
 		CD3C0AD06A84AAB1CE2F1954 /* routes.json in Resources */ = {isa = PBXBuildFile; fileRef = A66B35B9C56E3162884CE164 /* routes.json */; };
 		CD99DA986A7FC1C8110EAF53 /* video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = E58ACCB8DFCBF5B43687757E /* video-v4.json */; };
@@ -701,6 +776,7 @@
 		D00B1F8167F27DC41BA31B7B /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
 		D03BA6B7F41C1CCB724C7F9C /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
 		D0540A5C12C5BD9CEF83D933 /* video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = BC614FBB95936071AB95C6E8 /* video-v9.json */; };
+		D085E79E3F47C6C4A60271F6 /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
 		D18A916CBE8EB9AFCA321713 /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		D19F72760C95BF3E7E27E678 /* PageLocaleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4430BD923175592436B44A65 /* PageLocaleTests.swift */; };
 		D20222D8E836B406BCBA80E2 /* PlayerBrandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECB7FAA590AF03E7798BF3A /* PlayerBrandTests.swift */; };
@@ -710,10 +786,12 @@
 		D322AB140E9FDC5D202EAC2F /* library-categories.json in Resources */ = {isa = PBXBuildFile; fileRef = D1892A153EF5A11DCEEC0C52 /* library-categories.json */; };
 		D37D6697BF44C16D12BDB2F0 /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = A9EEAB3D015E479C9E4F8105 /* MaktabaKit */; };
 		D3F57F65EA89B3316B49CD39 /* hub-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 633B3246975AC1D193FF79CB /* hub-docs.json */; };
+		D468AB3F16015809ABFEFED5 /* search.json in Resources */ = {isa = PBXBuildFile; fileRef = 4767E3AA21407672ACF27439 /* search.json */; };
 		D481F52F1772418EB4FD8BC5 /* ReportsInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076EC6D65DD5EDF1384D61B0 /* ReportsInboxView.swift */; };
 		D4A876293764B15FC5727B47 /* audio-en-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = D7DEBB804F5F2D72F778A00F /* audio-en-1.ts */; };
 		D4AF4CFE2A01735B45FEE52D /* marks-updated.json in Resources */ = {isa = PBXBuildFile; fileRef = 5664E87D159DD72DA8148B1B /* marks-updated.json */; };
 		D4B1303B6B418815DF3EEFFB /* me.json in Resources */ = {isa = PBXBuildFile; fileRef = 62E2346349591CD2A4C6303A /* me.json */; };
+		D4DA61C7FA37C66DC941F3BB /* picture-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 79346C140CC8552FC36E366E /* picture-1.ts */; };
 		D52644845129E69A4FA0D975 /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5255A0CC016A88186A34BE14 /* StatusUITests.swift */; };
 		D53A93083C6900BD8E864629 /* ShellLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFE65C7DEC2A1DEB40185CC /* ShellLaunch.swift */; };
 		D5E0DC6D57AD1DE56477FFFB /* ProgressStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7955D35C69C104BE80F011F /* ProgressStrip.swift */; };
@@ -724,11 +802,14 @@
 		D6CAF2D6A2E826094DCEA348 /* ProgressStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7955D35C69C104BE80F011F /* ProgressStrip.swift */; };
 		D6E663D0A47D4249BD46D7D7 /* video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 99C953845F9EC74084F7444A /* video-v12.json */; };
 		D788E3DF05ABF5E991CED63C /* PlayerUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930E0B762FA8B0B99772F3F1 /* PlayerUITestCase.swift */; };
+		D7AFC0AACABE6FC51AB76D9D /* MockHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD93EAD5692107A496A1FDD3 /* MockHome.swift */; };
+		D7B326CE43FB25D0D279C5A0 /* channel-guide-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8CAB2480242420873FE19615 /* channel-guide-ch-3.json */; };
 		D7B62826A4FAE599AA4C8BBB /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
 		D7F6385B511A823C4C196B85 /* subs-ar.vtt in Resources */ = {isa = PBXBuildFile; fileRef = B798A69AADF29D63BE317902 /* subs-ar.vtt */; };
 		D8570D50872052F30D96EEFA /* video-v12.json in Resources */ = {isa = PBXBuildFile; fileRef = 99C953845F9EC74084F7444A /* video-v12.json */; };
 		D89F1496D8FBA86FDF5BC063 /* search-suggest.json in Resources */ = {isa = PBXBuildFile; fileRef = ADE6EBEB46958C8973F5C5AD /* search-suggest.json */; };
 		D8A6501CAD8C57C19D510C01 /* WatchLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B255CF92445B9A4965F4D26 /* WatchLogic.swift */; };
+		D8B4A82C13C610E7D5254FBB /* videos.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FC50884BA24F8F3AA96B863 /* videos.json */; };
 		D90EE9939B86560DB2B4B467 /* channels-now.json in Resources */ = {isa = PBXBuildFile; fileRef = F2AAF6514EB46D3CBD9DCA24 /* channels-now.json */; };
 		D94ECE7769C496094C7F6690 /* me-video-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = B59999EF22178CFC7B64E17D /* me-video-v1.json */; };
 		D9A89685B4C9E29C73828E26 /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
@@ -776,6 +857,8 @@
 		E3B09B98EAA2B2A3ECAC5928 /* TypingInFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 244F476719945F3486166FCC /* TypingInFields.swift */; };
 		E417BAC96476EAC5DFD77C83 /* video-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = 7155A0ABC39039D117575927 /* video-0.ts */; };
 		E4DCE1045F2B809C98A82341 /* subs-en.vtt in Resources */ = {isa = PBXBuildFile; fileRef = EE8C7CD8274259B846A82C11 /* subs-en.vtt */; };
+		E5976C369B263562BC204E2E /* segments.json in Resources */ = {isa = PBXBuildFile; fileRef = 04FE44A4268352AF7F418DE5 /* segments.json */; };
+		E61BB5A17D92629B256A384A /* me-video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A5789D0242D82200492ECE4 /* me-video-v8.json */; };
 		E63F969E402CBCD2A448A7E3 /* library-series-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 15376060DE47516866176397 /* library-series-docs.json */; };
 		E6ACAA757723DFD151C217A5 /* home.json in Resources */ = {isa = PBXBuildFile; fileRef = 5EFFA92E7C6A2006B0D6623A /* home.json */; };
 		E7049292D816F2682F316B2E /* recommendations.json in Resources */ = {isa = PBXBuildFile; fileRef = 92323C1B857B017169B42F2B /* recommendations.json */; };
@@ -784,6 +867,7 @@
 		E7420B7E621C0D7C555BD742 /* pinned-libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = B8F40A31A58629458B396F20 /* pinned-libraries.json */; };
 		E74308BD12FDD7720D3E80C6 /* search-results.json in Resources */ = {isa = PBXBuildFile; fileRef = 490E14DE48F36E33CD099CAB /* search-results.json */; };
 		E76426B810323B152A38D6F8 /* PlayerShellUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FE2798DB8198289D13D968A /* PlayerShellUITests.swift */; };
+		E7E5FCDF357B123C15C3616C /* video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 9C597463B3D151244BC108BB /* video-v3.json */; };
 		E7EBAA5E3F8A9BA93E0C25C1 /* picture-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 79346C140CC8552FC36E366E /* picture-1.ts */; };
 		E800067EBFC0DDEBD84B938E /* me-video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 7740F056044421402AA41646 /* me-video-v3.json */; };
 		E814ADD47F047D932A98FA1F /* library-series-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 15376060DE47516866176397 /* library-series-docs.json */; };
@@ -793,6 +877,7 @@
 		E91EF9BB0082BACB13E84403 /* MaktabaTVApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */; };
 		E941EB0FA578C3B56E07B6A5 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		E97F5ACDFD6C1008B5A37B71 /* chapters.json in Resources */ = {isa = PBXBuildFile; fileRef = 5E3A970B4B2F9D35CFD60293 /* chapters.json */; };
+		E9ABE4DC9AD06A4284958452 /* libraries.json in Resources */ = {isa = PBXBuildFile; fileRef = 519B7D18AEDA991A6B07ADA0 /* libraries.json */; };
 		E9B9FAECB6B786E02477808A /* hub-docs.json in Resources */ = {isa = PBXBuildFile; fileRef = 633B3246975AC1D193FF79CB /* hub-docs.json */; };
 		E9CBA1B928BD2DDD11BD0BE1 /* PlayerUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 930E0B762FA8B0B99772F3F1 /* PlayerUITestCase.swift */; };
 		E9CF751533E1D3950256A853 /* channel-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8ED91FC6D9AA2D5272DD2F3E /* channel-ch-3.json */; };
@@ -812,6 +897,7 @@
 		EE18356A3862FCCF3AC231A5 /* channel-guide-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8CAB2480242420873FE19615 /* channel-guide-ch-3.json */; };
 		EE60987193E4C0AAA0EDB219 /* series-episodes-seerah.json in Resources */ = {isa = PBXBuildFile; fileRef = 7E06311531E13E074B9CCD7E /* series-episodes-seerah.json */; };
 		EEA242FC629B08BE0BB32D07 /* play-queue.json in Resources */ = {isa = PBXBuildFile; fileRef = 0D6FF4D764A02D3AD472B450 /* play-queue.json */; };
+		EEAC316DD385F08712CEC6D5 /* video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = E58ACCB8DFCBF5B43687757E /* video-v4.json */; };
 		EEBFEB5ECE92363E48BAFC81 /* video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = E58ACCB8DFCBF5B43687757E /* video-v4.json */; };
 		EF3772033585258D1F137D2F /* video-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 889424E4EAD6D051DD5BFBFC /* video-1.ts */; };
 		EF8D7064490F588EDD3AF63C /* segments.json in Resources */ = {isa = PBXBuildFile; fileRef = 04FE44A4268352AF7F418DE5 /* segments.json */; };
@@ -845,6 +931,7 @@
 		F4B899CFA13816D209C0A393 /* video-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 889424E4EAD6D051DD5BFBFC /* video-1.ts */; };
 		F4DD9A8E576A3C0D4E0990D4 /* auth-me.json in Resources */ = {isa = PBXBuildFile; fileRef = 5BDF18B38D8C81A79BEA1702 /* auth-me.json */; };
 		F5B824D84BF0A7523029BA53 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBFFB4F003C12191E00C21A /* ImageCache.swift */; };
+		F5FC703F0CDABD3445BD01B1 /* PageSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAA1815F933BFB3F631165D9 /* PageSnapshotTests.swift */; };
 		F667AA834D789AEFEDFA2C4C /* PlayerVideoUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB13F57BDEAC4243D3662270 /* PlayerVideoUITests.swift */; };
 		F6B6D5D72316D1B3F74BD540 /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
 		F6D3591588C9C65C381E8337 /* VideoScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4BA7BDE12DA20703801AF7A /* VideoScreen.swift */; };
@@ -861,6 +948,7 @@
 		FB1FE4D62972E3F2358248E3 /* PlayerSurfaceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30EA3603E36B3BB4C0350807 /* PlayerSurfaceTests.swift */; };
 		FBCFB9883DF7B05B34BBD213 /* ConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */; };
 		FBE200078A7DEAD22A609FD7 /* LivePlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC8CA7A13A9418D0100F0C0 /* LivePlayback.swift */; };
+		FC1F3BFE4DFF9FD79DCDA429 /* subtitles.json in Resources */ = {isa = PBXBuildFile; fileRef = 51275735890B19E8D301D899 /* subtitles.json */; };
 		FC58B9763E8F4FDCF266BFAB /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D278F13E0FB225131B9188 /* PermissionsUITests.swift */; };
 		FCB4B67061EACD680187C4EC /* facets.json in Resources */ = {isa = PBXBuildFile; fileRef = 04EB31B36EACFCAD4E26EEC6 /* facets.json */; };
 		FD64E0AC1400AF813BB6FF16 /* recommendations.json in Resources */ = {isa = PBXBuildFile; fileRef = 92323C1B857B017169B42F2B /* recommendations.json */; };
@@ -996,6 +1084,7 @@
 		417287D5058D2F24320D219E /* Maktaba Player Mac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Maktaba Player Mac.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		421935020FD51F16B047EBB2 /* Maktaba Remote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Remote.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		43A83E051C97587BB93ACED0 /* PlayerProfileUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerProfileUITests.swift; sourceTree = "<group>"; };
+		43D9D006130D011CA3B5E0E0 /* Snapshots */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Snapshots; path = PlayerMacTests/Snapshots; sourceTree = SOURCE_ROOT; };
 		4430BD923175592436B44A65 /* PageLocaleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageLocaleTests.swift; sourceTree = "<group>"; };
 		44FAE1C1F07E8DB187F9CCEE /* TrackSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackSheets.swift; sourceTree = "<group>"; };
 		4767E3AA21407672ACF27439 /* search.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = search.json; sourceTree = "<group>"; };
@@ -1130,6 +1219,7 @@
 		C8181B1E47B9309AD90DB519 /* video-v7.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "video-v7.json"; sourceTree = "<group>"; };
 		C8FB3DD8C7BC6D1057F2AAAE /* LibrariesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrariesView.swift; sourceTree = "<group>"; };
 		C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerApp.swift; sourceTree = "<group>"; };
+		CAA1815F933BFB3F631165D9 /* PageSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageSnapshotTests.swift; sourceTree = "<group>"; };
 		CBD16C2619B376327A3B02C2 /* Live.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Live.xcstrings; sourceTree = "<group>"; };
 		CC934BAB64968FD138262148 /* audio-ar-0.ts */ = {isa = PBXFileReference; path = "audio-ar-0.ts"; sourceTree = "<group>"; };
 		CD42A40FE5CCA1A4E73C464A /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -1408,8 +1498,10 @@
 				DBC4D522881166FE73E94BA1 /* UI */,
 				4A77E2E5208591C8EF02AE1D /* KeychainTests.swift */,
 				4430BD923175592436B44A65 /* PageLocaleTests.swift */,
+				CAA1815F933BFB3F631165D9 /* PageSnapshotTests.swift */,
 				ABCF89194469D01EE34A5BB4 /* PlayerMenuTests.swift */,
 				30EA3603E36B3BB4C0350807 /* PlayerSurfaceTests.swift */,
+				43D9D006130D011CA3B5E0E0 /* Snapshots */,
 			);
 			path = PlayerMacTests;
 			sourceTree = "<group>";
@@ -1984,6 +2076,7 @@
 			buildConfigurationList = FFB719F284BA0217F0F2B288 /* Build configuration list for PBXNativeTarget "Maktaba Player Mac Tests" */;
 			buildPhases = (
 				9E841EB5310BDF41BDF22D7C /* Sources */,
+				D12BE7D67E66CD83AC6DF08B /* Resources */,
 				8446BDB7F0447F95641F7DE6 /* Frameworks */,
 			);
 			buildRules = (
@@ -2622,6 +2715,99 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D12BE7D67E66CD83AC6DF08B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4E3350D668F7B82958084550 /* Snapshots in Resources */,
+				15822E636502F7CDE2D7BAFC /* audio-ar-0.ts in Resources */,
+				D085E79E3F47C6C4A60271F6 /* audio-ar-1.ts in Resources */,
+				32CEA95B20339E0B2F630211 /* audio-en-0.ts in Resources */,
+				C607AA04288FE6DCD2E25100 /* audio-en-1.ts in Resources */,
+				677A79E96299875AF826D4EF /* auth-me.json in Resources */,
+				3C16ACE320E056F6CF7A922D /* channel-ch-1.json in Resources */,
+				13A2322B69D6B46B3F5AF321 /* channel-ch-2.json in Resources */,
+				BE2CB8DD1CEB722D6EC8AC88 /* channel-ch-3.json in Resources */,
+				5B170999689385804CE5DFF9 /* channel-guide-ch-1.json in Resources */,
+				87950B7E11252DBB4B1A4961 /* channel-guide-ch-2.json in Resources */,
+				D7B326CE43FB25D0D279C5A0 /* channel-guide-ch-3.json in Resources */,
+				34CB64C8D74FD9C075B5A050 /* channels-guide.json in Resources */,
+				0AE5E60E6CAC2680A5261923 /* channels-now.json in Resources */,
+				A9F22EBE4B68439787BCAF9C /* channels.json in Resources */,
+				7C3A416063EBE5C696414ABF /* chapters.json in Resources */,
+				36C2E6FC6A24092282E7155B /* facets.json in Resources */,
+				2D5FE684B1D66F5DEA1201D5 /* home.json in Resources */,
+				8F7425CA486B12A73FD9B426 /* hub-docs.json in Resources */,
+				00E7A45484D56C16D38D0FC4 /* hub-lectures.json in Resources */,
+				4B9BCBB2B02FEB37342B7212 /* libraries-summary.json in Resources */,
+				E9ABE4DC9AD06A4284958452 /* libraries.json in Resources */,
+				B0E7A871619FE2CE35B0592B /* library-categories.json in Resources */,
+				1B2CDB6ED01EB9048C8D0D93 /* library-collections.json in Resources */,
+				32BD380794B8A7B74A08BAB5 /* library-series-docs.json in Resources */,
+				537C095D0307779B2A154638 /* library-series-lectures.json in Resources */,
+				6FB9725EECF4F8E21F4E4326 /* live-segment.ts in Resources */,
+				2BEDDE9FCC0861778F7A6DC8 /* marks-updated.json in Resources */,
+				25D2B3E25A07941DFE7CC232 /* master-two-audio.m3u8 in Resources */,
+				B1BF1A929609DB2AB95DFE9D /* master.m3u8 in Resources */,
+				0AED0FDE404D6219AA303CAC /* me-history.json in Resources */,
+				09D8F02A486C333813EC00FC /* me-playlists.json in Resources */,
+				88D1F70FBD0B5C1386F0F925 /* me-sessions.json in Resources */,
+				6EBF9E39446239AA74ED9732 /* me-video-v1.json in Resources */,
+				BA76EC31B290EE20D07C66B2 /* me-video-v10.json in Resources */,
+				106334EE7674C5FAD8A33E0A /* me-video-v11.json in Resources */,
+				B03012FDEE31339F8DE484EF /* me-video-v12.json in Resources */,
+				7241FA5075237044DA07D1CA /* me-video-v2.json in Resources */,
+				CCCF79CB335804DD4EE63179 /* me-video-v3.json in Resources */,
+				91BEF5D352586930BFBE3575 /* me-video-v4.json in Resources */,
+				282A36CBF858585440CA2E80 /* me-video-v5.json in Resources */,
+				B36FF703FC69F4DE77F3EAA0 /* me-video-v6.json in Resources */,
+				32FF2CB74209B0F1FAA41220 /* me-video-v7.json in Resources */,
+				E61BB5A17D92629B256A384A /* me-video-v8.json in Resources */,
+				3B86D2B1A8EAE99D2E1E049E /* me-video-v9.json in Resources */,
+				B5A21E30AD66768B9F6E712F /* me.json in Resources */,
+				B22553E7CDA3997AB342F94A /* picture-0.ts in Resources */,
+				D4DA61C7FA37C66DC941F3BB /* picture-1.ts in Resources */,
+				499DBA350B3064A326439242 /* pinned-libraries.json in Resources */,
+				63BB522F1BE44D0E4583EE48 /* play-queue.json in Resources */,
+				796B01BBA38C1FE0522D2B3C /* recommendations.json in Resources */,
+				4EB4A2BB3534A279A6733AE7 /* routes.json in Resources */,
+				815B996456164480E58EBA0F /* search-empty.json in Resources */,
+				A6BCD1EF8DDD41C446DC6609 /* search-recent.json in Resources */,
+				A04A8A88340B07D303263EE8 /* search-results.json in Resources */,
+				99F36357C958540B06B8853D /* search-suggest.json in Resources */,
+				D468AB3F16015809ABFEFED5 /* search.json in Resources */,
+				E5976C369B263562BC204E2E /* segments.json in Resources */,
+				0FC79E78C8ED23A4B86754DE /* series-episodes-seerah.json in Resources */,
+				8A15CBB0003D3F56559518ED /* series-episodes-tafsir.json in Resources */,
+				8A886F450B156ED32C6E1834 /* series-seerah.json in Resources */,
+				21F83D08335DCD0DC6369EFB /* series-tafsir.json in Resources */,
+				78539B8EDE9FF654EC9E92B7 /* series.json in Resources */,
+				1B1DBDFD7257B6849ACF4BE8 /* stream-session.json in Resources */,
+				245B2DD3EA5021330AC601DA /* subs-ar.vtt in Resources */,
+				777DE26BF1EB9A20E9B69A5C /* subs-en.vtt in Resources */,
+				FC1F3BFE4DFF9FD79DCDA429 /* subtitles.json in Resources */,
+				1B6EB03149205ED0F1DD2A1A /* tv-info.json in Resources */,
+				2FF0E4DE0665AE7177AC8FE2 /* tv-remote-heartbeat.json in Resources */,
+				068F8E6639DCFE2FB29455E9 /* tv-remote-tune.json in Resources */,
+				B806429F3980CC178ACE9E15 /* video-0.ts in Resources */,
+				1F1912A82F818AEE6C10B494 /* video-1.ts in Resources */,
+				83DF2EA6C892CDBA4CBAA7A8 /* video-v1.json in Resources */,
+				77CEA66C5CDDAC725B2A7FDC /* video-v10.json in Resources */,
+				9B076DAF0418CE06953FD7C4 /* video-v11.json in Resources */,
+				C02D0E56D7D8270BAB657ECD /* video-v12.json in Resources */,
+				29246000282B7AE615101159 /* video-v2.json in Resources */,
+				E7E5FCDF357B123C15C3616C /* video-v3.json in Resources */,
+				EEAC316DD385F08712CEC6D5 /* video-v4.json in Resources */,
+				199DDA5B1748ED0094D8C9DD /* video-v5.json in Resources */,
+				554F3B38033EAE9270BECDEB /* video-v6.json in Resources */,
+				2C8A95777FBDF766A071D596 /* video-v7.json in Resources */,
+				690F5203F23E94D7742B0868 /* video-v8.json in Resources */,
+				C3A226739FFEE59E1172654E /* video-v9.json in Resources */,
+				18F765E9AB1F71150628E7E0 /* videos-page2.json in Resources */,
+				D8B4A82C13C610E7D5254FBB /* videos.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F005288A517A3ADE0012AD11 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -2965,7 +3151,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				7DFA2B5C4FAFA9F7ED3A279A /* KeychainTests.swift in Sources */,
+				D7AFC0AACABE6FC51AB76D9D /* MockHome.swift in Sources */,
 				D19F72760C95BF3E7E27E678 /* PageLocaleTests.swift in Sources */,
+				F5FC703F0CDABD3445BD01B1 /* PageSnapshotTests.swift in Sources */,
 				039ED92A22460B74CBDF3705 /* PlayerMenuTests.swift in Sources */,
 				FB1FE4D62972E3F2358248E3 /* PlayerSurfaceTests.swift in Sources */,
 			);

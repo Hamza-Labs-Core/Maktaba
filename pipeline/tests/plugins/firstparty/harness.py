@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import re
 import shutil
@@ -699,6 +700,9 @@ async def parity(
         # the worker's areas (the runner's sandbox folders), as refresh_stages writes them
         native._AREAS_WRITTEN.clear()
         areas = await native.write_areas(b)
+        from maktaba_plugin_runner.server import library_roots
+
+        area_dirs = json.loads((run_dir / native.AREAS_FILE).read_text()).get("areas") or {}
         runner = Runner(
             group=group,
             api_socket=str(api_sock),
@@ -706,6 +710,7 @@ async def parity(
             plugin_of={s: firstparty.by_stage(s).id for s in stages},  # type: ignore[union-attr]
             bundle=firstparty.bundle_digest(),
             areas=areas,
+            library_roots=library_roots(area_dirs),
         )
         sock = run_dir / f"runner-{group}.sock"
         task = asyncio.create_task(runner.serve(sock))

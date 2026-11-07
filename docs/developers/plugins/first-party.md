@@ -212,6 +212,15 @@ The same code runs in-process, where these calls write directly. Writes go only 
 library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
 in the file-action journal first.
 
+Within those folders a runner job is narrower still. Before a job of `convert_mp4` (for a
+video), `dedup_apply` or `file_restore` starts, the runner reads its subject's files through
+the plugin's statements: the video's file and its MP4, the duplicate group's members, or the
+journal rows the restore names. Its audit hook then refuses, as `plugin_scope`, any write,
+rename or removal of another library file; the swap's staged copy and the subtitle files
+beside the job's own files are allowed, and the trash (`.maktaba/`) is not checked, since a
+file enters or leaves it only by a checked move. The job fails, not retried, even when its
+code caught the error, and the file stays where it is. In-process jobs keep no such scope.
+
 ## The network: `tv.maktaba.youtube` and `tv.maktaba.repair`
 
 Wave 6 moves the stages that reach YouTube: `youtube_sync` lists a channel or playlist,
@@ -233,6 +242,12 @@ net         = ["www.youtube.com", "youtube.com", "*.googlevideo.com", "www.googl
   The sandbox opens outbound connections for it as a whole; it does not filter by host
   (YouTube's media hosts change from one download to the next). The `net` list is what the
   plugin is meant to reach: reviewed with the manifest and shown on the Plugins page.
+  Every night, `.github/workflows/youtube-hosts-nightly.yml` runs the real yt-dlp with the
+  command lines the stages build (a channel listing, one public video with its thumbnail and
+  subtitles) through a proxy that notes each host it contacts (`tools/ci/youtube_hosts.py`);
+  a host outside the list fails the run. The fix is a reviewed edit of the manifest, never a
+  wider sandbox. When YouTube refuses the CI runner (its bot check), that step is a warning
+  for the night, and the hosts reached before it are still checked.
 - **A download starts a new video's pipeline.** The video row is written in the plugin's own
   transaction, which the worker cannot see yet, so the worker holds the `probe` the download
   asks for and queues it once the job's writes are committed, after the same checks.

@@ -78,6 +78,10 @@ def _job_log_context(job: Job) -> Iterator[None]:
         # the catalog component that owns the stage (Epic 53 story 53.01)
         if component := _stage_component(str(job.stage)):
             stack.enter_context(bind_component(component))
+        # the request that queued the job (Epic 53 story 53.08): the API puts its id in the
+        # payload, so the admin's search for that id finds this job's lines too
+        if origin := _origin_request_id(job):
+            stack.enter_context(structlog.contextvars.bound_contextvars(origin_request_id=origin))
         if job.video_id is not None:
             stack.enter_context(bind_video_id(str(job.video_id)))
         if job.subject_id is not None and job.subject_id != job.video_id:
@@ -87,6 +91,15 @@ def _job_log_context(job: Job) -> Iterator[None]:
                 )
             )
         yield
+
+
+def _origin_request_id(job: Job) -> str:
+    """The id of the request that queued ``job`` ("" when none did, or it is not a string)."""
+    payload = getattr(job, "payload", None)
+    if not isinstance(payload, Mapping):
+        return ""
+    origin = payload.get("origin_request_id")
+    return origin if isinstance(origin, str) else ""
 
 
 def _stage_component(stage: str) -> str:

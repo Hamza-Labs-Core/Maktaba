@@ -345,6 +345,10 @@ build fails when the two differ.
 
 ### Security
 
+- **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
+  network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
+  a channel listing and a download and fails on one the plugin's reviewed `net` list does not
+  name (story 54.33 T02, issue 805).
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
   field that saved what was typed into the browser's storage in plain text and never used it
   (the server reads `OPENAI_API_KEY`). The field is gone, the page says where the key is set,
@@ -363,6 +367,12 @@ build fails when the two differ.
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
+- **A file job in a plugin's runner moves only its own subject's files (Epic 54 wave 5, story
+  54.32 §2).** The runner's sandbox lets the file plugins write anywhere in the library, so a
+  merge, a conversion or a restore could move a file that is not its own. Now, before such a
+  job starts, the runner reads its subject's files (a duplicate group's members, a video's file
+  and its MP4, the ledger rows a restore names), and refuses any other library file with
+  `plugin_scope`: the job fails, not retried, and the file stays where it is.
 
 ### Added
 
@@ -1887,6 +1897,14 @@ build fails when the two differ.
   error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
   each runbook's Check step links to a saved search.
 
+- **Cloudflare deploys from CI only (Epic 50, story 50.34).** The cloud's Cloudflare
+  configuration (the zone's rules, the Tunnel's ingress, the two web Workers) has its own
+  workflows. Pull requests only check the files offline. A push to `main` deploys, after a
+  token check that names any missing permission before anything is written, and a smoke check
+  of the live hosts follows. Each job skips with a notice until its secrets are set. A weekly job
+  proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
+  each piece's token permissions.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -2025,6 +2043,21 @@ build fails when the two differ.
   the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
   of it. Every line is still in the log segments, the Logs page and the recovery console.
   `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
+
+- **The cloud rehearsal proves direct remote access end to end (Epic 50 story 50.15, T06,
+  T10, T12).** Its `direct-remote` scenario puts two homes behind a router that maps ports,
+  with the cloud's relay, worker and name server and two certificate authorities on the other
+  side. Each home gets its certificate through the cloud, the second from the overflow
+  authority once the week's budget is used, and passes the outside check, and an app outside
+  downloads from each home directly, never through the relay. The cloud's name server now
+  starts: its role was refused as unknown.
+
+- **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
+  queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
+  admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
+  Apple, Android and Android TV) carries the id of the call that opened the session (`rid`), and streaming logs it on a failed
+  playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
+  lines for the same action. Streaming's failure lines also carried no request id until now.
 
 ### Fixed
 
@@ -2501,6 +2534,29 @@ build fails when the two differ.
   `plugin_compile_timeout`), and the host compiles every installed plugin in the background
   when it starts, so an update that changes the plugin engine recompiles each one before its
   first job. maktaba.dev: Testing and packaging.
+
+- **The Queue and Processing dashboards show the queue (Epic 53 story 53.12).** Both boards were
+  empty: they kept series that nothing exported. The home's metrics now carry the jobs waiting or
+  running by stage, the jobs finished in the last hour by stage and outcome, the audio
+  transcribed in the last hour and the transcription speed, read from the queue once a minute.
+
+- **The Streaming dashboard shows the TV (Epic 53 story 53.12).** The dashboards read only the
+  API's metrics, so the TV's channels on air, switches, failovers and viewers never reached the
+  Streaming board. They read streaming's too now; a series both processes have is kept from the
+  API's.
+
+- **The Overview dashboard shows the API's requests per minute and its p95 response time (Epic 53
+  story 53.12).** The response-time histogram is kept as two lines over all routes at once: the
+  requests in each minute, and the time 95 % of them were answered within.
+
+- **The Overview dashboard shows each machine's memory, disk and load (Epic 53 story 53.12).** The
+  supervisor now reports its machine's memory and how much is free, the free space on the disk
+  that holds the data folder, the one-minute load average and the number of CPUs. A reading the
+  system doesn't give (Windows keeps no load average) is left out rather than shown as 0.
+
+- **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
+  refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
+  read, so they never showed. They do now, and no family is listed twice.
 
 ## [0.2.0] - 2026-10-19
 
