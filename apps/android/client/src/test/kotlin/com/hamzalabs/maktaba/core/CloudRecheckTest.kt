@@ -15,7 +15,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -24,13 +23,10 @@ import org.junit.Test
 import java.net.InetAddress
 
 /**
- * Epic 50 story 50.11 §4: the app reads Maktaba Cloud's status at once when a request fails as
- * the relay fails (no answer, 502, 503, 504), only for a home reached through the cloud, and
- * at most once every 10 s however many requests fail in an outage.
+ * Epic 50 story 50.11 §4: a request through the relay that gets no answer or a 502 asks for
+ * Maktaba Cloud's status at once (the rules themselves: core's CloudStatusTest).
  */
 class CloudRecheckTest {
-    private val relayHome = "https://h1.relay.maktaba.tv/".toHttpUrl()
-    private val lanHome = "http://192.168.1.20:8088/".toHttpUrl()
     private lateinit var server: MockWebServer
 
     @Before
@@ -44,23 +40,6 @@ class CloudRecheckTest {
     fun tearDown() {
         server.close()
         CloudStatusRules.resetRecheck()
-    }
-
-    @Test
-    fun `only the relay failing a home reached through the cloud asks`() {
-        for (code in listOf(200, 400, 401, 404, 429, 500)) {
-            assertFalse("$code", CloudStatusRules.noteRequestFailed(relayHome, code, 0))
-        }
-        assertFalse("a home on the LAN", CloudStatusRules.noteRequestFailed(lanHome, 502, 0))
-        assertTrue(CloudStatusRules.noteRequestFailed(relayHome, 502, 0))
-    }
-
-    @Test
-    fun `at most once every 10 s`() {
-        assertTrue(CloudStatusRules.noteRequestFailed(relayHome, 0, 1_000))
-        assertFalse(CloudStatusRules.noteRequestFailed(relayHome, 503, 5_000))
-        assertFalse(CloudStatusRules.noteRequestFailed(relayHome, 504, 10_999))
-        assertTrue(CloudStatusRules.noteRequestFailed(relayHome, 504, 11_000))
     }
 
     /** A client whose home is under relay.maktaba.tv, answered by [server]. */
