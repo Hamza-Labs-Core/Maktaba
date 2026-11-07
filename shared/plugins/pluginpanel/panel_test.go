@@ -47,7 +47,7 @@ func TestForbidden(t *testing.T) {
 	for _, s := range []string{
 		"https://evil.example/x.png", "see HTTP://x", "www.example.com", "evil.example/x.png", "host.test:8080",
 		"mailto:a@b", "javascript:alert(1)", "data:image/png;base64,AA", "<img src=x>", "</b>", "a &amp; b", "&#106;",
-		"[click](x)", "![i](x)", "line\nbreak", "tab\there", "‮reversed", "⁧isolate", "\x00", "\uFEFFbom",
+		"[click](x)", "![i](x)", "line\nbreak", "tab\there", "\u202ereversed", "\u2067isolate", "\x00", "\uFEFFbom",
 	} {
 		if Forbidden(s) == "" {
 			t.Errorf("%q: allowed", s)
