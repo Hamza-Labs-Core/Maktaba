@@ -98,6 +98,7 @@ async def test_dedup_wave_5_is_identical(
         template,
         bundle=firstparty._raw(),
         stages=STAGES,
+        group="files",
         seed=seeder(root, lec),
         files={"library": root},
         monkeypatch=monkeypatch,
@@ -128,3 +129,8 @@ async def test_dedup_wave_5_is_identical(
             "SELECT count(*) FROM plugin_invocations WHERE plugin_id = 'tv.maktaba.dedup'"
         )
         assert n >= len(STAGES), f"only {n} jobs went through the plugin"
+        problems = await p.compare_n16(
+            [], ignore=ignore, stages=STAGES, perf=cfg.perf, timing_only=True
+        )
+        slowest = p.report("tv.maktaba.dedup")
+    assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
