@@ -126,6 +126,20 @@ describe("C12 at verification", () => {
     expect(JSON.parse(flow!.members).sort()).toEqual([...f.ids].sort());
     expect(JSON.parse(flow!.events)).toContain(`plugin:${f.ids.find((i) => i.endsWith("silences"))}/silences.found`);
     expect(JSON.parse(flow!.subscriptions).length).toBe(1);
+    // the listing draws the whole flow and lists the plugin's own events and subscriptions
+    await E.CATALOG_WRITER.get(E.CATALOG_WRITER.idFromName("main")).regenerate();
+    const { exports } = await import("cloudflare:workers");
+    const page = (path: string) => (exports as unknown as { default: Fetcher }).default.fetch(`https://plugins.maktaba.tv${path}`).then((r) => r.text());
+    const silences = f.ids.find((i) => i.endsWith("silences"))!;
+    const writer = f.ids.find((i) => i.endsWith("chapter-writer"))!;
+    const en = await page(`/p/${writer}`);
+    expect(en).toContain("<svg");
+    expect(en).toContain("How it works with Maktaba and other plugins");
+    expect(en).toContain(`plugin:${silences}/silences.found -&gt; ${writer}/write_chapters`);
+    expect(await page(`/p/${silences}`)).toContain(`plugin:${silences}/silences.found`);
+    const ar = await page(`/ar/p/${writer}`);
+    expect(ar).toContain("كيف تعمل مع مكتبة ومع إضافات أخرى");
+    expect(ar).toContain("<svg");
   });
 
   it("the signatures cover the flow: a flow.toml changed after signing is refused at C2", async () => {

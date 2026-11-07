@@ -205,3 +205,87 @@ fn flow_and_a_two_plugin_chain() {
         serde_json::json!({"event": "hostile.done", "from": "dev.example.first", "payload": {"n": 1}})
     );
 }
+
+/// A home that answers a sign-in with its session and CSRF cookies, then records the
+/// install it is sent (the request's head and body) and answers 201.
+fn fake_home() -> (String, std::thread::JoinHandle<Vec<String>>) {
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = l.local_addr().unwrap().to_string();
+    let h = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for (n, conn) in l.incoming().take(2).enumerate() {
+            let mut c = conn.unwrap();
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 65536];
+            // read the head, then the body to its Content-Length
+            loop {
+                let k = c.read(&mut chunk).unwrap();
+                buf.extend_from_slice(&chunk[..k]);
+                if let Some(end) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let head = String::from_utf8_lossy(&buf[..end]).to_lowercase();
+                    let len: usize = head
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length:"))
+                        .map(|v| v.trim().parse().unwrap())
+                        .unwrap_or(0);
+                    if buf.len() >= end + 4 + len {
+                        break;
+                    }
+                }
+                if k == 0 {
+                    break;
+                }
+            }
+            seen.push(String::from_utf8_lossy(&buf).to_string());
+            let answer = if n == 0 {
+                "HTTP/1.1 200 OK\r\nSet-Cookie: mkt_session=s3cret; Path=/; HttpOnly\r\nSet-Cookie: mkt_csrf=tok42; Path=/\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_string()
+            } else {
+                let body = r#"{"result":{"plugin_id":"dev.example.runner","version":"0.1.0","updated":false}}"#;
+                format!("HTTP/1.1 201 Created\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len())
+            };
+            std::io::Write::write_all(&mut c, answer.as_bytes()).unwrap();
+        }
+        seen
+    });
+    (addr, h)
+}
+
+// Story 54.12 §2 (#719): mkp run signs in as the admin and installs the folder in developer
+// mode, its name typed for the unreviewed install, over the admin API; HTTPS is refused.
+#[test]
+fn run_installs_on_a_home_in_developer_mode() {
+    let dir = tempfile::tempdir().unwrap();
+    let proj = dir.path().join("runner");
+    assert!(mkp(&["new", "rust", "dev.example.runner", proj.to_str().unwrap()]).status.success());
+    let pkg = proj.join("package");
+    std::fs::write(pkg.join("plugin.wasm"), b"\0asm-not-really").unwrap();
+    let (addr, home) = fake_home();
+    let out = Command::new(env!("CARGO_BIN_EXE_mkp"))
+        .args(["run", pkg.to_str().unwrap(), "--home", &format!("http://{addr}"), "--user", "owner"])
+        .env("MKP_HOME_PASSWORD", "pw-1")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("dev.example.runner 0.1.0 installed on"));
+    let seen = home.join().unwrap();
+    assert!(
+        seen[0].starts_with("POST /api/auth/login ")
+            && seen[0].contains(r#""username":"owner""#)
+            && seen[0].contains("pw-1")
+    );
+    let install = &seen[1];
+    assert!(install.starts_with("POST /api/plugins/install "), "{install:.200}");
+    assert!(
+        install.contains("Cookie: mkt_session=s3cret; mkt_csrf=tok42") && install.contains("X-Maktaba-CSRF: tok42")
+    );
+    assert!(install.contains("name=\"development\"\r\n\r\ntrue") && install.contains("name=\"enable\"\r\n\r\ntrue"));
+    let name: serde_json::Value = serde_json::from_slice(&std::fs::read(pkg.join("i18n/en.json")).unwrap()).unwrap();
+    let want = name["plugin.name"].as_str().unwrap();
+    assert!(install.contains(&format!("name=\"confirm_name\"\r\n\r\n{want}")), "the name {want} is not typed");
+    // the package itself (compressed) is the file part, after the fields
+    let file = install.split("filename=\"plugin.mkplugin\"").nth(1).expect("the package part");
+    assert!(file.len() > 200, "no package in the file part");
+
+    let out = mkp(&["run", pkg.to_str().unwrap(), "--home", "https://home.example", "--user", "owner"]);
+    assert!(!out.status.success() && String::from_utf8_lossy(&out.stderr).contains("plugins dev"));
+}

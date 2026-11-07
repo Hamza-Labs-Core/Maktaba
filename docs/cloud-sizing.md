@@ -29,17 +29,23 @@ over **75 %**.
 
 ## In CI
 
-The cloud rehearsal's `load-small` (1,000 homes, 50 players at 5 Mbit/s for 5 minutes, one node
-on the runner) can't measure a Hetzner machine, so it checks regressions: the relay's
-CPU-seconds per Mbit relayed and its memory per tunnel, against main's last run. More than 20 %
-worse fails the pull request.
+The cloud rehearsal's `load-small` (1,000 homes, 50 players at 5 Mbit/s, one node on the
+runner) can't measure a Hetzner machine, so it checks regressions: the relay's CPU-seconds per
+Mbit relayed and its memory per tunnel. The job builds the base commit's relay (the pull
+request's base, or main before the push) and runs `load-small` with it and then with this
+commit's, on the same runner, each for three one-minute rounds. More than 20 % worse than the
+base fails.
 
 The CPU figure is the relay containers' own CPU time, read from their cgroups' counters
-(`cpu.stat` `usage_usec`) at the ends of five one-minute rounds, divided by the Mbit relayed in
-each round; the median of the five is compared, and only with a baseline measured the same way.
-The first version integrated `docker stats` CPU shares sampled every 5 s over one 5-minute run:
-on a runner that shares its CPUs with the cluster, the same relay code measured anywhere from
-0.00048 to 0.00085 CPU-seconds per Mbit (#808).
+(`cpu.stat` `usage_usec`) at the ends of the rounds, divided by the Mbit relayed in each round;
+the median is compared. Two lessons shaped it:
+
+- **Samples swing; a counter doesn't.** The first version integrated `docker stats` CPU shares
+  sampled every 5 s over one 5-minute run, and the same relay code measured anywhere from 0.00048
+  to 0.00085 CPU-seconds per Mbit (#808). The cgroup counter's rounds agree within about 1 %.
+- **Another run is another machine.** Compared with main's last run, the same code still
+  measured 0.00045 to 0.00087 across runners (#832): the figure depends on the CPU the job lands
+  on. Only a comparison on one runner holds.
 
 ## The Phase 2 trigger
 
