@@ -278,13 +278,19 @@ def test_the_light_group_writes_subtitles_by_name_and_thumbnails_in_full() -> No
     light = [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == "light"]
     p = policy_for(
         light,
-        areas={"library": "/media/a;/media/b", "data.thumbnails": "/data/thumbnails"},
+        areas={
+            "library": "/media/a;/media/b",
+            "data.thumbnails": "/data/thumbnails",
+            "data.review": "/data/reviews",
+        },
         api_socket="/run/api.sock",
         own_socket="/run/runner-light.sock",
         run_dir="/run",
     )
-    assert p.read[:2] == ["/media/a", "/media/b"]
-    assert p.write == ["/data/thumbnails"]
+    assert {"/media/a", "/media/b"} <= set(p.read)
+    # tv.maktaba.classify (wave 4) reads the small thumbnails for review_pages and writes
+    # that page in the reports folder
+    assert p.write == ["/data/reviews", "/data/thumbnails"]
     assert p.write_named == ["/media/a", "/media/b"]
     profile = seatbelt_profile(p)
     assert '(allow file-read* file-write* (subpath "/media/a"))' not in profile

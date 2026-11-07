@@ -75,11 +75,11 @@ from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
 from ..engine.stages import _check_clips as check_clips_stage
 from ..engine.stages import _check_tags as check_tags_stage
 from ..engine.stages import _detect as detect_stage
+from ..engine.stages import _tag as tag_stage
 from ..engine.stages import books as books_stage
 from ..engine.stages import fingerprint as fingerprint_stage
 from ..engine.stages import link as link_stage
 from ..engine.stages import style_sample as style_sample_stage
-from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
 from ..engine.stages._leftovers import library_name
 from ..engine.stages._tagging import season_tags_digest, video_tags_digest

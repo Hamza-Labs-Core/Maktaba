@@ -22,8 +22,8 @@ required = ["compute.llm"]
 [trusted]
 runner    = "light"
 component = "classify"
-db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "video_signals", "videos", "youtube_channels", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
-db.write  = ["clip_checks", "clip_group_items", "clip_groups", "promo_links", "season_style", "season_tags", "series", "series_episodes", "series_seasons", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
+db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "transcript_segments", "transcripts", "video_signals", "videos", "youtube_channels", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
+db.write  = ["clip_checks", "clip_group_items", "clip_groups", "episode_tags", "promo_links", "season_style", "season_tags", "series", "series_episodes", "series_seasons", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
 settings  = ["groups", "detect", "tagcheck"]
 compute   = ["llm"]
 # review_pages: reads the small thumbnails, writes the library's page in the reports folder
@@ -173,4 +173,24 @@ debounce_sec = 30
 debounce_max_sec = 300
 edges        = [{ to = "tag", map = "seasons_changed" }, { to = "rate_style", map = "seasons_changed" }, { to = "tag", map = "same" }, { to = "plan_channels", map = "catalog" }, { to = "review_pages", map = "same" }, { to = "topic_collections", map = "same" }, { to = "promo_links", map = "same" }, { to = "display_title", map = "same" }]
 entry        = "maktaba_fp_classify.stages.detect:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "tag"
+subject      = "season"
+export       = "tag"
+version      = 7
+label        = "Tag topics"
+subject_kinds = ["season", "library"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 2
+entry_for    = ["season"]
+# transcripts arrive one video at a time: a season's are tagged together
+debounce_sec = 300
+debounce_max_sec = 3600
+# a new run rewrites the tags, so the model's and the book's corrections are applied again
+# (from their cached answers) before a clip group or a channel reads them
+edges        = [{ to = "plan_channels", map = "catalog" }, { to = "check_tags", map = "same" }, { to = "check_clips", map = "library_of" }]
+entry        = "maktaba_fp_classify.stages.tag:IMPL"
 fingerprint  = { input = true, output = false }

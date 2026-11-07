@@ -5,6 +5,7 @@ modules = [
     "maktaba_pipeline.engine.stages._leftovers",
     "maktaba_pipeline.engine.stages._check_clips",
     "maktaba_pipeline.engine.stages._check_tags",
+    "maktaba_pipeline.engine.stages._tag",
     "maktaba_pipeline.engine.stages._review_pages:episodes,input_fingerprint,seasons",
     "maktaba_pipeline.engine.stages._common:load_season,season_episode_ids",
     "maktaba_pipeline.engine.stages._detect",

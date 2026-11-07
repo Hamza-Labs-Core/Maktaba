@@ -21,7 +21,6 @@ from ..audio.chromaprint import AUDIO_FP_VERSION
 from ..classify.books import BOOKS_VERSION
 from ..classify.display_title import DISPLAY_TITLE_VERSION
 from ..classify.production_style import STYLE_VERSION
-from ..classify.topic_tags import TAGGER_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -463,27 +462,8 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_max_sec=120,
         hidden=True,
     ),
-    StageDef(
-        name="tag",
-        label="Tag topics",
-        subject_kinds=("season", "library"),
-        pool="cpu",
-        lane="seasons",
-        lane_order=2,
-        version=TAGGER_VERSION,
-        # a new run rewrites the tags, so the model's and the book's corrections are
-        # applied again (from their cached answers) before a clip group or a channel
-        # reads them
-        edges=(
-            Edge("plan_channels", "catalog"),
-            Edge("check_tags", "same"),
-            Edge("check_clips", "library_of"),
-        ),
-        entry_for=("season",),
-        # transcripts arrive one video at a time: a season's are tagged together
-        debounce_sec=300,
-        debounce_max_sec=3600,
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("tag"),
     # ---- what a language model and the book behind a series say about the tags ----
     # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
     _fp("check_tags"),
