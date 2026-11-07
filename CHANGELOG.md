@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
+  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
+  lists only what fits; on the home's network and over direct access nothing is capped. A
+  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
+  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
+  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
+  too many devices playing, or the home too busy to prepare the video.
 - **The relay enforces each plan (Epic 50 story 50.19, part 2).** A home on Free (no relay)
   gets `402 relay_needs_plan` through the relay, and keeps its tunnel for direct access. With
   `relay.plans.enforce` on, Basic's relayed requests carry `X-Maktaba-Relay-Cap-Kbps` (3000,
