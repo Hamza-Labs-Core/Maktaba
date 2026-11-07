@@ -5,6 +5,7 @@ another plugin's stage."""
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
@@ -146,9 +147,11 @@ def test_a_joined_machine_sends_its_outcomes_to_the_home(monkeypatch: pytest.Mon
     """54.42 §4: the breaker on a joined machine posts the outcome; the home records it."""
     from maktaba_pipeline.plugins import breaker
 
-    sent: list[tuple[str, str, dict]] = []
+    sent: list[tuple[str, str, dict[str, Any]]] = []
 
-    def fake(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+    def fake(
+        method: str, path: str, body: dict[str, Any] | None = None
+    ) -> tuple[int, dict[str, Any]]:
         sent.append((method, path, body or {}))
         return 200, {"tripped": "crashes"}
 
@@ -164,7 +167,8 @@ def test_a_joined_machine_sends_its_outcomes_to_the_home(monkeypatch: pytest.Mon
     async def direct(fn, *a, **k):  # type: ignore[no-untyped-def]
         return fn(*a, **k)
 
-    monkeypatch.setattr(breaker.asyncio, "to_thread", direct)
+    # breaker calls asyncio.to_thread through the module: patch the real one
+    monkeypatch.setattr(asyncio, "to_thread", direct)
     coro = breaker.record(NoDB(), "dev.example.a", "plugin_trap", ms=5, refusals=2)
     # nothing suspends: one step runs it (a unit test opens no event loop)
     with pytest.raises(StopIteration) as done:
