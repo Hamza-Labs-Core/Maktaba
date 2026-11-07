@@ -812,6 +812,35 @@ build fails when the two differ.
   store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
   adding a provider).
 
+- **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
+  two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)
+  and, once the store opens, the store's (`signatures/store.sig`, which names the developer's
+  key, the review level and the capabilities it reviewed). The home checks them offline at
+  install against a root built into the server (`plugins-root.json`, two root keys held
+  offline, none committed yet), the store's key list it signs (`store-keys.json`, refused when
+  older than the newest seen or expired) and every file's checksum, and records the level:
+  none, developer, automated or reviewed. A store-countersigned plugin needs no "Allow
+  unreviewed plugins" and shows Reviewed or Automated checks on its card; a file whose
+  signature does not check out is refused, naming the step (`plugin_signature_invalid`,
+  `developer_key_mismatch`). The same rules verify the revocation list, its head and the
+  catalog (anti-rollback, 48-hour and 7-day expiry, a clock in the past cannot make an old
+  list fresh). For developers, `mkp keys new`, `mkp keys export-public` and
+  `mkp pack --key` sign a package. Go (the home), Rust (the SDK) and TypeScript (the store's
+  signer, `store/signing`) agree on one set of vectors, and a new `store` CI job runs the online
+  key rotation drill with test keys. maktaba.dev has a new page, Signing and the chain of
+  trust. Migration 0196.
+
+- **Plugins can ask the home's own models (Epic 54, story 54.21).** Plugin API 1.1 adds
+  `compute`: `compute.embed` turns up to 64 texts into vectors with the model semantic search
+  uses (with its id), and `compute.llm` asks the language model chosen for plugins (Settings →
+  Rules → Plugin models; the tag check's model by default), up to 1,024 tokens, optionally held
+  to a JSON schema. Only a model on the home or the local network is ever asked: a server on the
+  internet is refused (`compute_remote`), checked on every connection. Plugins share the
+  `lookup` slot with Maktaba's own model stages, one question at a time, and get at most one
+  slot in three while Maktaba's work waits; each plugin may ask 2,000 questions and embed
+  50,000 texts a day by default. Prompts, texts and answers are never logged. Plugins built
+  for 1.0 keep running. Migration 0197 (`plugin_compute_usage`, `compute_leases`).
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

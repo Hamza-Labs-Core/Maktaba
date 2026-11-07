@@ -251,6 +251,16 @@ plugins:
   - 'web/src/i18n/**'
   - '.github/workflows/_plugins.yml'
 
+# the plugin store (Epic 54): its own folder, the shared signature and entitlement vectors
+# and the home's verifier that checks them, paid plugins' payment providers and the check
+# that keeps each provider in its module (_store.yml)
+store:
+  - *ci
+  - 'store/**'
+  - 'shared/plugins/**'
+  - 'tools/ci/payment_provider_allowlist.py'
+  - '.github/workflows/_store.yml'
+
 # ---- the server's tiers ---------------------------------------------------------------
 
 # Postgres + Chroma: the Go modules' and the pipeline's integration tiers, cloud's, and the
@@ -570,15 +580,6 @@ apple_player_ui:
 # English and Arabic database and the diagrams it shows, the developer guides in
 # docs/developers, the changelog, the OpenAPI description, the disclosure policy
 # security.txt is built from, the icons). devportal-deploy.yml deploys on the same paths.
-# the plugin store's Workers (Epic 54): paid plugins, the payment providers and the
-# provider-neutral ledger (store/), and the check that keeps each provider in its module
-store:
-  - *ci
-  - 'store/**'
-  - 'tools/ci/payment_provider_allowlist.py'
-  # the entitlement vectors the store's signer and the home's verifier share
-  - 'shared/plugins/testdata/entitlements/**'
-
 devportal:
   - *ci
   - 'web/packages/devportal/**'

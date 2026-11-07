@@ -27,6 +27,10 @@ func TestPluginGatesTable(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
+	// story 54.21: this release serves plugin API 1.1 (compute), as the host's audit does
+	if fmt.Sprintf("%d.%d", PluginAPIMajor, PluginAPIMinor) != "1.1" {
+		t.Fatalf("serves %d.%d", PluginAPIMajor, PluginAPIMinor)
+	}
 	if len(doc.Cases) < 10 {
 		t.Fatalf("only %d cases", len(doc.Cases))
 	}
@@ -60,5 +64,16 @@ func TestLiveCatalogSwapsWhole(t *testing.T) {
 	SetLive(nil)
 	if _, ok := Live().Get("plugin.dev.example.live"); ok {
 		t.Fatal("SetLive(nil) kept the plugin")
+	}
+}
+
+// Story 54.14 §2: only a store countersignature (automated or reviewed; "store" is Phase
+// 1's name for it) needs no opt-in.
+func TestUnreviewedLevels(t *testing.T) {
+	for level, want := range map[string]bool{"none": true, "developer": true, "development": true,
+		"automated": false, "reviewed": false, "store": false, "": true} {
+		if Unreviewed(level) != want {
+			t.Errorf("Unreviewed(%q) = %v", level, !want)
+		}
 	}
 }

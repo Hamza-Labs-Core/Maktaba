@@ -1,8 +1,10 @@
 # Publishing
 
-> **Status: planned.** Signing, the store, review, the catalog and the kill switch are
-> Phase 2, and not built yet; paid plugins are Phase 3 ([Selling a plugin](selling.md) says
-> what of them is on `main`). This page describes the design in
+> **Status: Phase 2 is being built.** Signing is on `main`: `mkp keys`, `mkp pack --key` and
+> the home's checks of both signatures ([Signing and the chain of trust](trust.md)). The store,
+> review, the catalog and the kill switch follow in the next changes of Phase 2; paid plugins
+> are Phase 3 ([Selling a plugin](selling.md) says what of them is on `main`). Until the store
+> opens, every file is Unreviewed. This page describes the design in
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
 > section 6, which can change.
 
@@ -42,10 +44,12 @@ with the cloud, and keeps working when the cloud is down.
 ```sh
 mkp keys new
 mkp keys export-public
+mkp pack package/ my.mkplugin --key <id>
 ```
 
 Your key is Ed25519, and the private half never leaves your machine. Register the public half
 in the console. You can rotate keys; old signatures stay valid until you revoke the old key.
+[Signing and the chain of trust](trust.md) has the formats and every check a home makes.
 
 A package carries two signatures over the same `files.json`:
 
