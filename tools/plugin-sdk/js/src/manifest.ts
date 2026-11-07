@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { parse as parseToml } from "smol-toml";
 
-import { capabilitiesToml, eventsToml, flowSchema, manifestSchema } from "./data.generated.js";
+import { capabilitiesToml, eventsToml, flowSchema, manifestSchema, reservedStagesTxt } from "./data.generated.js";
 
 export const CODES = {
   invalid: "manifest_invalid",
@@ -32,6 +32,9 @@ export const CODES = {
   badTrigger: "manifest_bad_trigger",
   badEvent: "manifest_bad_event",
   badDepends: "manifest_bad_depends",
+  // a key, a stage name or a subject only Maktaba's own release-signed plugins may use
+  // (story 54.22 §1)
+  trustedField: "plugin_trusted_field",
 } as const;
 
 const SCHEMA_VERSION = 1;
@@ -78,12 +81,13 @@ interface SchemaNode {
   uniqueItems?: boolean;
   default?: Json;
   "x-code"?: string;
+  "x-trusted-only"?: boolean;
 }
 
 const KEYWORDS = new Set([
   "$schema", "$id", "title", "description", "type", "properties", "additionalProperties",
   "required", "enum", "pattern", "minLength", "maxLength", "minimum", "maximum", "items",
-  "minItems", "maxItems", "uniqueItems", "default", "x-code", "x-unknown-code",
+  "minItems", "maxItems", "uniqueItems", "default", "x-code", "x-unknown-code", "x-trusted-only",
 ]);
 
 interface Capability {
@@ -254,6 +258,10 @@ function check(n: SchemaNode, v: Json, path: string, parent: string, errs: Manif
         if (n.additionalProperties === false) errs.push({ code: CODES.unknownKey, path: join(path, k), detail: "" });
         continue;
       }
+      if (c["x-trusted-only"]) {
+        errs.push({ code: CODES.trustedField, path: join(path, k), detail: "" });
+        continue;
+      }
       check(c, o[k] as Json, join(path, k), code, errs);
     }
   }
@@ -358,6 +366,18 @@ function lowerBound(r: string): boolean {
   return r.split(", ").some((p) => p.startsWith(">") || p.startsWith("="));
 }
 
+const RESERVED_STAGES = new Set(
+  reservedStagesTxt
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#")),
+);
+
+/** Whether `name` is a stage of Maktaba's own graph, which only its own plugins define. */
+export function reservedStage(name: string): boolean {
+  return RESERVED_STAGES.has(name);
+}
+
 function reserved(id: string): boolean {
   let labels = id.split(".");
   if (id.startsWith("tv.maktaba.community.")) labels = labels.slice(3);
@@ -401,6 +421,11 @@ function rules(m: Obj, files?: Files): ManifestError[] {
   stages.forEach((st, i) => {
     if (subjects.has(st.name as string)) push(CODES.duplicateStage, `stage/${i}/name`, st.name as string);
     subjects.set(st.name as string, st.subject as string);
+    // R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
+    // reserved (a third-party stage's queue is p_<hash>_<name>)
+    if (st.subject === "dup_group") {
+      push(CODES.trustedField, `stage/${i}/name`, st.name as string);
+    }
   });
   // the graph fields (54.39): published events, dependencies on other plugins' events
   const published = new Map<string, string>();

@@ -163,7 +163,7 @@ func TestMessages(t *testing.T) {
 }
 
 // T09 (go): N22, the check over 100 plugins of 20 stages each in at most 50 ms.
-func TestBudget(t *testing.T) {
+func budgetMembers() []Member {
 	var members []Member
 	for p := 0; p < 100; p++ {
 		id := fmt.Sprintf("dev.example.p%03d", p)
@@ -188,15 +188,25 @@ func TestBudget(t *testing.T) {
 		m.Events = []Event{{Name: "p.done", Subject: "video", Payload: "events/p.json"}}
 		members = append(members, m)
 	}
-	// N22 is the check's own time on a home: warm (not the first read of events.toml) and
-	// the best of five, so a runner busy with other jobs does not time its own queue
+	return members
+}
+
+func TestBudget(t *testing.T) {
+	members := budgetMembers()
+	// N22 is the check's own time on a home: warm (not the first read of events.toml), the
+	// best of five, and counted as this process's CPU time where the system gives it, so a
+	// runner busy with other jobs does not time its own queue
 	Check(members, Options{})
 	best := time.Hour
 	var fs []Finding
 	for i := 0; i < 5; i++ {
-		start := time.Now()
+		wall, cpu := time.Now(), cpuTime()
 		_, fs = Check(members, Options{})
-		best = min(best, time.Since(start))
+		took := time.Since(wall)
+		if c := cpuTime(); c > 0 {
+			took = c - cpu
+		}
+		best = min(best, took)
 	}
 	if best > 50*time.Millisecond {
 		t.Fatalf("took %s", best)

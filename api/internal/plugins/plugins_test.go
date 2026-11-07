@@ -83,7 +83,9 @@ func TestEveryWITFunctionHasARoute(t *testing.T) {
 		}
 	}
 	for r := range s.routes {
-		if !want[r] && r != "log/write" {
+		// trusted/* is Maktaba's own first-party plugins' interface (story 54.24), native
+		// only: no WebAssembly guest imports it, and a third-party token never reaches it
+		if !want[r] && r != "log/write" && !strings.HasPrefix(r, "trusted/") {
 			t.Errorf("route %s is no WIT function", r)
 		}
 	}

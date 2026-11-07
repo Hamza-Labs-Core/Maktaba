@@ -112,6 +112,10 @@ type StageInfo struct {
 	GraphSyncedAt *time.Time `json:"graph_synced_at"`
 	// Extension names the optional extension owning this stage (nil = core).
 	Extension *string `json:"extension"`
+	// Plugin is the first-party plugin that defines the stage (Epic 54, story 54.25 §4;
+	// nil: the core's own), Impl where it runs: inproc or plugin.
+	Plugin *string `json:"plugin"`
+	Impl   string  `json:"impl"`
 }
 
 // WaitingReason explains why a queue with nothing running is idle.

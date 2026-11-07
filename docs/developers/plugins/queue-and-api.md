@@ -1,8 +1,8 @@
 # Queue stages and the plugin API
 
 > **Status:** plugin stages in the queue, the plugin API and media handles are **on `main`**.
-> Grants and roles and settings are **on `main`** too, and so is local compute (plugin API
-> 1.1, coming in the next release); panels are planned for Phase 3. The exact functions, capabilities, events and refusal codes are in
+> Grants and roles and settings are **on `main`** too, and so are local compute (plugin API
+> 1.1) and panels, both coming in the next release. The exact functions, capabilities, events and refusal codes are in
 > the [plugin reference](reference.md), generated from the WIT and the API's code.
 
 ## Stages and events
@@ -147,14 +147,56 @@ the schema at install (`settings_secret_forbidden`, `settings_schema_invalid`) a
 on save (`settings_invalid`); after an update, a field whose type changed goes back to its
 default. Try the form's values with `mkp test --settings '{"threshold": 3}'`.
 
-## Panels (Phase 3)
+## Panels
 
-`[[panel]]` with `on = "video"` (or `series`, `library`) and a `ui/panel.json` schema declares
-read-only blocks drawn natively by every app: `kv`, `badges`, `chips`, `table` (up to 50
-rows), `markers` on the timeline, one `image` artifact, and `text`. Values come from your
-`data` for the subject. Everything is plain text: no URLs, HTML or markdown. Panels are shown
-to everyone in the home who can see the subject, and every panel addition gets a human review
-in the store.
+A panel is a read-only view of a video, series, season or library that every app draws
+natively (web, iPhone, iPad, Mac, Apple TV, Android phone, tablet and TV) from data you
+declare. It is never code: the apps never run anything of yours.
+
+```toml
+[[panel]]
+on = "video"               # or series, season, library
+schema = "ui/panel.json"
+```
+
+`ui/panel.json` (schema [`panel.schema.json`](https://maktaba.dev/plugins/panel.schema.json), `ui@1`):
+
+```json
+{"ui": 1, "title": "panel.title", "blocks": [
+  {"type": "kv", "key": "loudness", "label": "panel.levels"},
+  {"type": "markers", "key": "silences", "label": "panel.silences"},
+  {"type": "text", "key": "summary"}
+]}
+```
+
+`title`, `label` and a table's `columns` are keys of your `i18n` files. Each block's `key` is
+a key of your `data` for the subject (`data.put`); the value it holds:
+
+| Block | Value | Limit |
+|---|---|---|
+| `kv` | `[{"label": text, "value": text or number}]` | 20 rows |
+| `badges` | `[{"text": text, "tone": "neutral" \| "good" \| "warning"}]` | 10 |
+| `chips` | `[text]`; tapping one searches Maktaba for it | 20 |
+| `table` | `[[cell, …]]`, at most one cell per column (`columns`, up to 6) | 50 rows |
+| `markers` | `[{"t_ms": integer, "label": text}]`; tapping one plays from there | 200 |
+| `image` | no key: the PNG or JPEG you set with `artwork.write`, kind `panel` | 1 MB |
+| `text` | text | 1,000 characters |
+
+Other text is at most 200 characters. **Everything is plain text**: when you write a key a
+panel uses, the plugin API refuses a URL, HTML, markdown, a control or direction character
+(`plugin_text_forbidden`), a value of the wrong shape (`plugin_invalid`) or one over its
+limit (`plugin_too_large`), and every app escapes again when it draws. A key no panel uses is
+your own data, unchecked.
+
+- **Who sees it**: everyone in the home who can see the subject, viewers included, in their
+  language, under **From plugins** (collapsed) below Maktaba's own sections. At most three
+  panels a page. A plugin turned off, held or withdrawn shows no panel.
+- **When it shows**: only for a subject with data for at least one of its keys. Markers
+  written before the video's file last changed are not shown.
+- **Apple TV and Android TV** show `kv`, `badges` and `markers` only.
+- **Apps learn** from `GET /api/capabilities`: `plugin_panels: "on"` while the plugin host
+  runs. An app reads a missing key as off, so it never asks an older server.
+- The store gives every first version, and every version that adds a panel, a human review.
 
 ## Local compute (plugin API 1.1)
 

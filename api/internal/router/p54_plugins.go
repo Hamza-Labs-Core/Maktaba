@@ -86,6 +86,8 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		}
 		d.Components.Plugins = l
 		lc = l
+		// story 54.20: the panels of installed plugins, for everyone who can see the subject
+		(&plugins.Panels{L: l}).Mount(r)
 		inv.Trip = func(r *http.Request, id, reason string) (bool, error) { return l.Trip(r.Context(), id, reason) }
 		accounts := users.New(d.DB)
 		var link *storelink.Link

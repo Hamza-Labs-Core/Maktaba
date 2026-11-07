@@ -330,6 +330,16 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 			pluginsHost = h
 		}
 	}
+	// Epic 54 Phase 4: Maktaba's own plugin runners (core.plugin_runners), built dormant
+	// on every machine that runs the pipeline; the reconciler starts them while a
+	// component with a first-party plugin is on (story 54.23 §1)
+	if containsRole(roles, supervisor.RolePipeline) {
+		if ps, err := supervisor.BuildPluginRunners(sopts); err != nil {
+			fmt.Fprintf(os.Stderr, "[serve] level=warn the plugin runners do not run: %v\n", err)
+		} else {
+			procs = append(procs, ps...)
+		}
+	}
 	// the cloud relay agent runs on the home (its credentials moved with it, Epic 37)
 	if wholeMachine && supervisor.RelayWanted(cfg) {
 		if p, err := supervisor.BuildRelay(sopts); err != nil {

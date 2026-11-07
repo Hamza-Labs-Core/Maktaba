@@ -27,6 +27,7 @@ import { useI18n } from "../lib/i18n";
 import { LoadError } from "../components/LoadError";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
+import { PluginPanels } from "../components/PluginPanel/PluginPanel";
 import { useAuth } from "../lib/auth";
 import { FeatureOffNote, useFeatureGate } from "../lib/capabilities";
 import { DisplayTitle, type DisplayTitleVideo } from "./DisplayTitle";
@@ -337,6 +338,8 @@ export function VideoDetail() {
         <VideoActions videoId={videoId} />
       </header>
       <Tabs label={video.title || video.filename} items={items} value={tab} onChange={selectTab} />
+      {/* story 54.20: installed plugins' panels, below Maktaba's own sections */}
+      <PluginPanels subject={{ kind: "video", id: video.id }} />
     </section>
   );
 }

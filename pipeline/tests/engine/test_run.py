@@ -388,3 +388,89 @@ async def test_a_retry_carries_a_force_that_arrived_mid_run(db: Database) -> Non
     row = (await rows(db, "t_a"))[0]
     assert row["state"] == "pending"  # the retry
     assert bool(row["force"]) is True and bool(row["rerun_force"]) is False
+
+
+# --- Epic 54 Phase 4: a first-party stage's implementation, and the engine relay ---------
+
+from tests.plugins.firstparty.conftest import toy  # noqa: E402,F401
+
+
+class _Relay:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict[str, object]]] = []
+
+    async def log_event(self, **kw: object) -> None:
+        self.calls.append(("log_event", kw))
+
+    async def publish(self, type_: str, payload: dict[str, object]) -> None:
+        self.calls.append(("publish", {"type": type_}))
+
+    async def job_ref(self, job_id: int) -> dict[str, object] | None:
+        self.calls.append(("job_ref", {"job_id": job_id}))
+        return {"id": job_id}
+
+
+@pytest.mark.asyncio
+async def test_a_plugins_job_log_goes_to_the_worker() -> None:
+    """In a runner (a database with an engine relay) the job's events are the worker's to
+    write: log_event, publish and job_ref ask the relay and run no statement."""
+    from maktaba_pipeline.engine import events
+
+    class RelayDB:
+        dialect = "postgres"
+        engine_relay = _Relay()
+
+        async def execute(self, *a: object) -> None:
+            raise AssertionError("a plugin wrote an engine table")
+
+    db = RelayDB()
+    await events.log_event(
+        db,
+        job_id=1,
+        subject_kind="video",
+        subject_id=None,
+        library_id=None,
+        stage="s",
+        level="info",
+        kind="step",
+        message="m",
+    )
+    await events.publish(db, "job.log", {})
+    assert await events.job_ref(db, 7) == {"id": 7}
+    assert [c[0] for c in db.engine_relay.calls] == ["log_event", "publish", "job_ref"]
+
+
+@pytest.mark.asyncio
+async def test_a_first_party_stage_runs_in_process_unless_its_runner_serves_here(
+    toy: bytes,  # noqa: F811
+    db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Story 54.25 §3: impl = plugin runs in the runner only when it serves the stage on
+    this machine; otherwise (and always on SQLite) the stage runs in the worker."""
+    from maktaba_pipeline.engine import run
+    from maktaba_pipeline.engine.graph import _fp
+    from maktaba_pipeline.engine.stages.registry import get_impl
+    from maktaba_pipeline.engine.sync import sync_graph
+    from maktaba_pipeline.plugins import native
+
+    s = _fp("fp_toy")
+    assert (s.name, s.pool, s.lane) == ("fp_toy", "cpu", "seasons")
+    impl = get_impl("fp_toy")
+    assert impl is not None and impl.run is not None
+    await sync_graph(db, [s])
+    assert await run._native_impl(db, "probe", get_impl("probe")) is None
+    assert await run._native_impl(db, "fp_toy", impl) is None  # impl is inproc
+    if db.dialect != "postgres":
+        return
+    await db.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = 'fp_toy'")
+    assert await run._native_impl(db, "fp_toy", impl) is None  # no runner here
+
+    async def serving(_group: str) -> dict[str, object]:
+        from maktaba_pipeline.plugins import firstparty
+
+        return {"bundle": firstparty.bundle_digest(), "stages": {"fp_toy": None}}
+
+    monkeypatch.setattr(native, "hello", serving)
+    chosen = await run._native_impl(db, "fp_toy", impl)
+    assert chosen is not None and chosen.run is not impl.run

@@ -74,6 +74,9 @@ type Handler struct {
 	// CPUCount feeds the "auto" size of the cpu pool; default
 	// runtime.NumCPU.
 	CPUCount func() int
+	// FlipGrace is how long PUT /api/queues/{stage}/impl waits for running jobs
+	// (DefaultFlipGrace when 0).
+	FlipGrace time.Duration
 	// LocalPath turns a path in the database's form into this machine's
 	// (libpaths.ToLocal, which this package cannot import); nil: as it is.
 	LocalPath func(string) string
@@ -180,6 +183,7 @@ func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues/{stage}/failures", h.StageFailures)
 	r.Post("/api/queues/{stage}/pause", h.PauseStage)
 	r.Post("/api/queues/{stage}/resume", h.ResumeStage)
+	r.Put("/api/queues/{stage}/impl", h.PutImpl)
 	r.Post("/api/queues/{stage}/retry", h.Retry)
 	r.Post("/api/queues/{stage}/apply", h.Apply)
 	r.Get("/api/workers", h.Workers)
@@ -320,6 +324,7 @@ func (h *Handler) loadStages(ctx context.Context) ([]StageInfo, error) {
 	sortStages(out)
 	fillFedBy(out)
 	h.fillPausedByNames(ctx, out)
+	h.fillImpl(ctx, out)
 	return out, nil
 }
 
@@ -354,6 +359,7 @@ func (h *Handler) loadStage(ctx context.Context, stage string) (StageInfo, error
 	}
 	one := []StageInfo{s}
 	h.fillPausedByNames(ctx, one)
+	h.fillImpl(ctx, one)
 	s = one[0]
 	// FedBy needs the whole graph.
 	all, err := h.loadStages(ctx)
