@@ -14,6 +14,10 @@ build fails when the two differ.
 
 ### Changed
 
+- **A folder scan is a queue stage like the others (Epic 54, story 54.36).** The scan reports
+  the new videos it found, and the queue starts each one's checks from that, instead of the
+  scanner queuing them itself. What a scan finds and what runs after it are unchanged; a scan
+  that finds nothing new starts nothing.
 - **Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3).**
   Whisper and the second listen run in `tv.maktaba.transcription`, in an `ml` runner beside
   each transcription worker that holds the model and opens the GPU; the search index,
