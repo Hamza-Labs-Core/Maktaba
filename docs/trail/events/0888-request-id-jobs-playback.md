@@ -10,7 +10,7 @@ prs: [686, 839, 852]
 
 ## What happened
 - A job queued by a request carries the request's id in its payload (`origin_request_id`, set by `queues.Enqueue`; the channel builder's `write_channels` run, which had its own copy of the statement, now goes through it too). The worker binds it on the job's lines, and the log index files a line without its own `request_id` under it, so the admin's search for one id finds the API's line and then the job's.
-- Streaming takes `X-Request-Id`, or `rid` on a playlist URL (a UUID only), for its `stream_request_failed` line and its handlers' context. The web player puts the session-open call's id on the playlist as `rid`.
+- Streaming takes `X-Request-Id`, or `rid` on a playlist URL (a UUID only), for its `stream_request_failed` line and its handlers' context. The players (web, Apple, Android, Android TV, desktop Player) put the session-open call's id on the playlist as `rid`; the native clients keep the id they sent on the session.
 - **Bug found on the way:** `LogFailures` read chi's request id from `r.Context()`, but it wraps the router, and chi's `RequestID` middleware runs inside it. So no streaming failure line ever carried a request id. Its test sent no id, so it never noticed.
 - Issue #830 (load-small failing about half the time) was closed without a new PR: #839 had already fixed it by comparing on one runner, and all 34 `load-small` runs since passed, within about 1 %.
 - #852 (53.17) has only the Core bundle red (6 processes, 721.9 MB) and the `ci-success` umbrella that reports it. It waits for #859.
@@ -22,4 +22,4 @@ prs: [686, 839, 852]
 - mlog's context handler adds the context's ids to a record. A line that also passes the id as an attribute must log with a context that doesn't carry it, or the id is written twice.
 
 ## Open
-- The native players (Apple's `StreamProxy`, Android's and the TV's) don't send the session's id on stream fetches yet.
+- None for 53.08.
