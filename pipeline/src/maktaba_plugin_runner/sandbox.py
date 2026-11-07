@@ -538,7 +538,10 @@ def policy_for(
 
     With ``group`` named, the network is the ``net`` group's alone: a plugin that declares
     hosts for one stage in ``net`` (classify's ``books``, story 54.31) gives its other
-    groups no socket, so a classify stage in ``light`` is still refused one."""
+    groups no socket, so a classify stage in ``light`` is still refused one. And a plugin
+    whose stage runs outside its own ``[trusted] runner`` group (that stage's ``runner``)
+    brings only its network there: its files, tools and GPU stay with its own group, so
+    ``books`` does not give the ``net`` runner classify's thumbnails or reports folder."""
 
     def real(path: str) -> str:
         return os.path.realpath(path) if path else path
@@ -549,6 +552,10 @@ def policy_for(
         return [x for x in areas.get(area, "").split(";") if x]
 
     for t in trusted:
+        own = str(t.get("runner") or "")
+        if group is not None and own not in (group, "own"):
+            p.net |= bool(t.get("net"))
+            continue
         files = t.get("files") or {}
         assert isinstance(files, dict)
         for a in files.get("read") or ():
