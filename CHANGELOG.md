@@ -57,6 +57,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Mac app no longer says a part keeps stopping when that part is only turned off.** A
+  process whose component is off (the supervisor's `held` state, as the plugin host is with
+  no plugin installed) made the menu bar and the starting screen say "Some parts keep stopping:
+  plugins". The app now counts it as off, as the server does.
+
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
   A quality or audio change that finished after the video was closed, or after another video
   started, no longer leaves an unseen player playing or replaces the new video (its stream
