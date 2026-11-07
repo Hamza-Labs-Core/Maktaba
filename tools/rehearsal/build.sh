@@ -14,6 +14,9 @@
 #           database it migrated, the rehearsal's injected health failure)
 #   after/  this commit as the release after that (version PREV+4, the same API: a release
 #           that passes after a rollback, scenario 13)
+#   prev/pipeline/, cur/pipeline/   each release's real pipeline wheel (its version stamped,
+#           as the release's packaging stamps it) and its tree's runtime pins: scenarios
+#           16.x run them (tools/rehearsal/venvs.sh); next and after run cur's
 #   packs/<version>/   this commit's tool.yt-dlp pack of each of cur, next and after for
 #           this machine's platform, and its components-<version>.json (story 51.18)
 #   versions.env   PREV, FAILED (PREV+1: the newer release the scenario of the live Mac's
@@ -96,6 +99,34 @@ build "$cur_src" "$out/next" "$next" $((rev + 1))
 # story 51.18 (scenario 13): a release after the failing one that passes. It carries the
 # failing release's migration too (rev+2, kept by the rollback: afterSpec), so it knows it
 build "$cur_src" "$out/after" "$after" $((rev + 2))
+
+# wheel SRC DST VERSION: the release's real pipeline wheel, stamped with its version as the
+# release's packaging stamps it (deploy/packaging/node/build-release.sh: the copy of
+# pipeline/ with plugins/ beside it, which hatch_build.py bundles), in DST/pipeline/, with
+# its tree's runtime pins (uv.lock, no extra: no ML). The per-wave scenarios (16.x) run it:
+# tools/rehearsal/venvs.sh makes one environment of each.
+wheel() {
+    local src="$1" dst="$2" version="$3" tmp
+    tmp="$(mktemp -d)"
+    tar -C "$src" --exclude=.venv --exclude=__pycache__ --exclude=.mypy_cache --exclude=.pytest_cache \
+        --exclude=.ruff_cache --exclude=target --exclude=node_modules -cf - pipeline plugins | tar -C "$tmp" -xf -
+    sed -i.bak -e "s/^version = \".*\"/version = \"$version\"/" "$tmp/pipeline/pyproject.toml"
+    sed -i.bak -e "s/^__version__ = \".*\"/__version__ = \"$version\"/" "$tmp/pipeline/src/maktaba_pipeline/__init__.py"
+    if ! grep -q "^version = \"$version\"" "$tmp/pipeline/pyproject.toml" ||
+        ! grep -q "^__version__ = \"$version\"" "$tmp/pipeline/src/maktaba_pipeline/__init__.py"; then
+        echo "build.sh: could not stamp $version into $src's pipeline" >&2
+        exit 1
+    fi
+    echo "build.sh: the pipeline wheel $version (from $src)"
+    mkdir -p "$dst/pipeline"
+    uv build --wheel --project "$tmp/pipeline" --out-dir "$dst/pipeline" --quiet
+    (cd "$tmp/pipeline" && uv export --frozen --no-dev --no-emit-project --no-hashes --format requirements-txt \
+        --quiet) >"$dst/pipeline/constraints.txt"
+    rm -rf "$tmp"
+}
+# next and after are this commit too: their pipeline is cur's, as their binaries are
+wheel "$prev_src" "$out/prev" "$prev_version"
+wheel "$cur_src" "$out/cur" "$cur"
 
 # story 51.18 (scenarios 13, 14): this commit's tool.yt-dlp pack for this machine's
 # platform, built by the release's own pack build for each of this commit's versions,
