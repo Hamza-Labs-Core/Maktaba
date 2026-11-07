@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1.7
+# A machine of the cloud rehearsal's Phase 1 pair (Epic 50 story 50.07): node A, node B or the
+# witness W, from the same deploy/cloud-ha files production runs (Patroni's template, the etcd
+# config, on-role-change, switchover, post-bootstrap). Postgres 16, Patroni, etcd, this
+# repository's Caddy and this commit's maktaba-cloud. Never published.
+#
+#   docker build -f tools/rehearsal-cloud/Dockerfile.node -t maktaba-node:rehearsal \
+#     --build-arg CLOUD_IMAGE=maktaba-cloud:rehearsal --build-arg CADDY_IMAGE=maktaba-caddy:rehearsal .
+ARG CLOUD_IMAGE=maktaba-cloud:rehearsal
+ARG CADDY_IMAGE=maktaba-caddy:rehearsal
+FROM ${CLOUD_IMAGE} AS cloud
+FROM ${CADDY_IMAGE} AS caddy
+FROM gcr.io/etcd-development/etcd:v3.6.5 AS etcd
+
+FROM postgres:16-bookworm
+ARG PATRONI_VERSION=4.1.5
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-venv curl jq iproute2 procps gettext-base ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /opt/patroni \
+    && /opt/patroni/bin/pip install --no-cache-dir "patroni[psycopg3,etcd3]==${PATRONI_VERSION}" \
+    && ln -s /opt/patroni/bin/patroni /opt/patroni/bin/patronictl /usr/local/bin/
+COPY --from=etcd /usr/local/bin/etcd /usr/local/bin/etcdctl /usr/local/bin/
+COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
+COPY --from=cloud /usr/local/bin/maktaba-cloud /usr/local/bin/maktaba-rehearsal /usr/local/bin/
+COPY deploy/cloud-ha /opt/cloud-ha
+COPY tools/rehearsal-cloud/node /opt/rehearsal-node
+RUN install -m 0755 /opt/cloud-ha/bin/on-role-change /opt/cloud-ha/bin/switchover /opt/cloud-ha/bin/leader-guard /usr/local/bin/ \
+    && install -m 0755 /opt/cloud-ha/bin/post-bootstrap /usr/local/bin/maktaba-post-bootstrap \
+    && chmod 0755 /opt/rehearsal-node/*.sh
+ENTRYPOINT ["/opt/rehearsal-node/entrypoint.sh"]

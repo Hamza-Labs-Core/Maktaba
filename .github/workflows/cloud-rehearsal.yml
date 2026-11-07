@@ -52,8 +52,11 @@ jobs:
           docker build -f tools/rehearsal-cloud/Dockerfile -t maktaba-cloud:rehearsal .
           # Maktaba's Caddy (deploy/caddy, story 50.02) for the cert-on-standby scenario
           docker build -t maktaba-caddy:rehearsal deploy/caddy
+          # a machine of the Phase 1 pair (deploy/cloud-ha, story 50.07) for the failover scenarios
+          docker build -f tools/rehearsal-cloud/Dockerfile.node -t maktaba-node:rehearsal \
+            --build-arg CLOUD_IMAGE=maktaba-cloud:rehearsal --build-arg CADDY_IMAGE=maktaba-caddy:rehearsal .
       - name: Save
-        run: docker save maktaba-cloud:rehearsal maktaba-caddy:rehearsal | gzip -1 > /tmp/image.tar.gz
+        run: docker save maktaba-cloud:rehearsal maktaba-caddy:rehearsal maktaba-node:rehearsal | gzip -1 > /tmp/image.tar.gz
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: rehearsal-image

@@ -1,0 +1,14 @@
+# Stops the cloud processes when this node's Patroni stops being the primary, without waiting
+# for the end of a demotion (deploy/cloud-ha/bin/leader-guard, Epic 50 story 50.07).
+[Unit]
+Description=Maktaba Cloud: the leader guard
+After=patroni.service
+
+[Service]
+User=postgres
+ExecStart=/usr/local/bin/leader-guard
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

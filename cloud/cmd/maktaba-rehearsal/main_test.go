@@ -20,3 +20,13 @@ func TestNewFakeACMEDNS(t *testing.T) {
 		t.Errorf("%+v", s)
 	}
 }
+
+func TestFipfrontAddrs(t *testing.T) {
+	if l, tg := fipfrontAddrs(); l != ":80" || tg != "relay.test:80" {
+		t.Errorf("defaults %s %s", l, tg)
+	}
+	t.Setenv("FIPFRONT_TARGET", "x:1")
+	if _, tg := fipfrontAddrs(); tg != "x:1" {
+		t.Errorf("target %s", tg)
+	}
+}

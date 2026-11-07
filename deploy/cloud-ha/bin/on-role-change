@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Patroni's role-change callback (Epic 50 story 50.07): everything follows the database leader.
+#
+#   on-role-change <action> <role> <cluster>     (Patroni's callback arguments)
+#
+# primary (or Patroni's older name, master):
+#   1. move the Floating IP to this node (Hetzner API, retried 1, 2, 4, 8 s up to 60 s; then
+#      the fip_assign_failed alert, and a try every 30 s until it moves)
+#   2. make sure the Floating IP is on the interface
+#   3. start the cloud processes (maktaba-cloud-active.target)
+# replica, standby, demoted: stop the cloud processes. The IP is never moved away: the new
+# leader takes it.
+#
+# Env (/etc/maktaba/cloud-ha.env): HCLOUD_TOKEN_FILE (/etc/maktaba/hcloud-token), HCLOUD_ENDPOINT
+# (https://api.hetzner.cloud/v1), FLOATING_IP_ID, FLOATING_IP, SERVER_ID (this node's Hetzner
+# server id), FIP_DEV (eth0), MAKTABA_ACTIVE_CMD (how the processes start and stop, given
+# start|stop; default `sudo -n systemctl <start|stop> maktaba-cloud-active.target`),
+# ALERT_CMD (run with the alert's name and text; default: log only), FIP_RETRY_FOR (60),
+# FIP_RETRY_EVERY (30), FIP_ADD_ADDR (1: ip addr add the Floating IP; 0 in the rehearsal).
+set -uo pipefail
+
+env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
+# shellcheck disable=SC1090  # the node's own settings
+[ -r "${env_file}" ] && . "${env_file}"
+
+action="${1:-}" role="${2:-}" cluster="${3:-}"
+log() { logger -t on-role-change -- "$*" 2>/dev/null; echo "on-role-change: $*" >&2; }
+
+endpoint="${HCLOUD_ENDPOINT:-https://api.hetzner.cloud/v1}"
+retry_for="${FIP_RETRY_FOR:-60}"
+retry_every="${FIP_RETRY_EVERY:-30}"
+
+active() { # active start|stop
+    if [ -n "${MAKTABA_ACTIVE_CMD:-}" ]; then
+        ${MAKTABA_ACTIVE_CMD} "$1"
+    else
+        sudo -n systemctl "$1" maktaba-cloud-active.target
+    fi
+}
+
+alert() { # alert <name> <text>
+    log "ALERT $1: $2"
+    if [ -n "${ALERT_CMD:-}" ]; then ${ALERT_CMD} "$1" "$2" || true; fi
+}
+
+# assign_once: one assign call; 0 when Hetzner took it (201)
+assign_once() {
+    local token code
+    token="$(cat "${HCLOUD_TOKEN_FILE:-/etc/maktaba/hcloud-token}" 2>/dev/null)" || token=""
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST \
+        -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' \
+        -d "{\"server\": ${SERVER_ID:?SERVER_ID is required}}" \
+        "${endpoint}/floating_ips/${FLOATING_IP_ID:?FLOATING_IP_ID is required}/actions/assign" || echo 000)"
+    log "assign floating ip ${FLOATING_IP_ID} to server ${SERVER_ID}: HTTP ${code}"
+    [ "${code}" = 201 ] || [ "${code}" = 200 ]
+}
+
+move_ip() {
+    local waited=0 delay=1
+    while ! assign_once; do
+        if [ "${waited}" -ge "${retry_for}" ]; then
+            alert fip_assign_failed "the Floating IP did not move to ${HOSTNAME:-this node} after ${retry_for} s: see the DNS-swap runbook (docs/runbooks/cloud-dns-swap.md)"
+            # keep trying in the background; the cloud processes start anyway (the IP is
+            # what reaches them, and the runbook can point DNS at this node meanwhile)
+            ( while ! assign_once; do sleep "${retry_every}"; done; log "the Floating IP moved after all" ) &
+            return 1
+        fi
+        sleep "${delay}"
+        waited=$((waited + delay))
+        delay=$((delay < 8 ? delay * 2 : 8))
+    done
+    return 0
+}
+
+case "${role}" in
+    primary|master)
+        log "${cluster}: ${action}: this node leads"
+        move_ip
+        if [ "${FIP_ADD_ADDR:-1}" = 1 ] && [ -n "${FLOATING_IP:-}" ]; then
+            [[ " $(ip -o addr show dev "${FIP_DEV:-eth0}") " == *" ${FLOATING_IP}/"* ]] \
+                || sudo -n ip addr add "${FLOATING_IP}/32" dev "${FIP_DEV:-eth0}" || log "could not add ${FLOATING_IP}"
+        fi
+        active start
+        ;;
+    replica|standby|demoted|standby_leader|uninitialized)
+        log "${cluster}: ${action}: this node is ${role}: the cloud processes stop"
+        active stop
+        ;;
+    *)
+        log "${cluster}: ${action}: role ${role}: nothing to do"
+        ;;
+esac
+exit 0

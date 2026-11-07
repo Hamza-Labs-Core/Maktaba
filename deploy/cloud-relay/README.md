@@ -1,5 +1,10 @@
 # Maktaba Cloud Relay — VPS deployment
 
+> **The single-VPS setup**, for development and a first demo. Production runs the Phase 1
+> pair in [`deploy/cloud-ha/`](../cloud-ha/README.md) (two nodes that cover for each other and
+> a witness, Epic 50 story 50.07): one machine here means every reboot or deploy stops
+> remote play.
+
 Deploy `maktaba-cloud --role relay` to a single VPS: the relay binary,
 Postgres, Redis, and Caddy (reverse proxy + automatic Let's Encrypt
 TLS), wired together with Docker Compose and managed by systemd.

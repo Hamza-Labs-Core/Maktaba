@@ -3,6 +3,8 @@
 //
 //	maktaba-rehearsal fakehcloud   the fake Hetzner Floating IP API (fakehcloud)
 //	maktaba-rehearsal fakeacmedns  the DNS-01 provider for Pebble (fakeacmedns)
+//	maktaba-rehearsal fipfront     the internet's side of the Floating IP (fipfront):
+//	                               FIPFRONT_LISTEN (:80) -> FIPFRONT_TARGET (relay.test:80)
 //
 // fakehcloud reads: FAKEHCLOUD_ADDR (:8080), FAKEHCLOUD_DELAY (5s),
 // FAKEHCLOUD_TOKEN, DOCKER_SOCKET (/var/run/docker.sock), FAKEHCLOUD_NETWORK,
@@ -24,6 +26,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakeacmedns"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakehcloud"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fipfront"
 )
 
 func env(k, def string) string {
@@ -35,7 +38,7 @@ func env(k, def string) string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns")
+		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns|fipfront")
 		os.Exit(2)
 	}
 	switch os.Args[1] {
@@ -43,10 +46,22 @@ func main() {
 		runFakeHCloud()
 	case "fakeacmedns":
 		runFakeACMEDNS()
+	case "fipfront":
+		listen, target := fipfrontAddrs()
+		ln, err := net.Listen("tcp", listen)
+		if err != nil {
+			log.Fatal(err)
+		}
+		log.Fatal(fipfront.Serve(ln, target))
 	default:
 		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns")
 		os.Exit(2)
 	}
+}
+
+// fipfrontAddrs: where fipfront listens and the name it dials for each connection.
+func fipfrontAddrs() (listen, target string) {
+	return env("FIPFRONT_LISTEN", ":80"), env("FIPFRONT_TARGET", "relay.test:80")
 }
 
 // newFakeACMEDNS is the server the env describes.

@@ -10,7 +10,9 @@
 # The API, the web app and the console are not served here: they reach the leader only
 # through the Cloudflare Tunnel (50.31).
 #
-# Env: RELAY_DOMAIN, ACME_EMAIL, CF_API_TOKEN, RELAY_UPSTREAMS ("127.0.0.1:8443 127.0.0.1:8453").
+# Env: RELAY_DOMAIN, ACME_EMAIL, CF_API_TOKEN, RELAY_UPSTREAMS ("127.0.0.1:8443 127.0.0.1:8453"),
+# NODE_ADDR (the node's private address: the edge's own health check listens there, 50.07's
+# switchover asks it before it moves the lead).
 
 {
 	email {$ACME_EMAIL}
@@ -45,4 +47,11 @@
 	}
 	encode zstd gzip
 	import relay
+}
+
+# The edge's own health, on the private address only (UFW opens 8081 to the private network):
+# Caddy answers it itself, whatever the relay processes behind it are doing (a standby's are
+# stopped).
+http://{$NODE_ADDR}:8081 {
+	respond "edge ok" 200
 }

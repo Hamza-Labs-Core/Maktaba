@@ -91,9 +91,9 @@ func TestScenario(t *testing.T) {
 		run  func(*testing.T, *cluster) Result
 	}{
 		{"drain-1k", drain1k},
-		{"failover-kill-leader", nil},
-		{"failover-network-partition", nil},
-		{"switchover", nil},
+		{"failover-kill-leader", failoverKillLeader},
+		{"failover-network-partition", failoverNetworkPartition},
+		{"switchover", switchoverScenario},
 		{"deploy-blue-green", nil},
 		{"deploy-bad-release-rollback", nil},
 		{"migration-n-minus-1", nil},
@@ -107,9 +107,12 @@ func TestScenario(t *testing.T) {
 				t.Skipf("not built yet: %s", why)
 			}
 			var c *cluster
-			if s.name == "cert-on-standby" {
+			switch s.name {
+			case "cert-on-standby":
 				c = upOnly(t, s.name)
-			} else {
+			case "failover-kill-leader", "failover-network-partition", "switchover":
+				// the pair's own cluster (compose-ha.yml), started by the scenario
+			default:
 				c = up(t, s.name)
 			}
 			r := s.run(t, c)
@@ -512,3 +515,5 @@ func peerCert(port int, sni string) *x509.Certificate {
 	}
 	return certs[0]
 }
+
+func jsonDecode(resp *http.Response, v any) error { return json.NewDecoder(resp.Body).Decode(v) }

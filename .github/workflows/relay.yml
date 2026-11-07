@@ -365,9 +365,13 @@ jobs:
           tok=test0000000000000000000000000000000000ab
           for f in deploy/cloud-relay/Caddyfile deploy/cloud-ha/caddy/Caddyfile; do
             docker run --rm -v "$PWD/$f:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
-              -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
+              -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e NODE_ADDR=10.0.0.2 -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
               maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
           done
+      - name: The HA pair's scripts (Epic 50 story 50.07)
+        run: |
+          shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
+          bash deploy/cloud-ha/tests/scripts-test.sh
       - name: T05 the witness's certificate check
         run: |
           shellcheck deploy/cloud-ha/witness/check-certs.sh deploy/cloud-ha/witness/check-certs-test.sh
