@@ -63,6 +63,8 @@ public struct ConnectStrings: Sendable {
         case refresh, cloudSignOut, close, signingInTo
         case cloudWrongCredentials, cloudTooMany, cloudTooManyLater, cloudSignedOut, cloudNotLinked
         case cloudUnreachable, cloudRefused, cloudEmailNotVerified, cloudOther
+        // story 50.13: the cloud down
+        case cloudHomesSaved, cloudHomesSavedOld, cloudSignInCloudDown
         case homeRefusedCloud, homeLocked, homeMustChangePassword, homeNotInCloud, homeOther
     }
 
@@ -171,6 +173,9 @@ public struct ConnectStrings: Sendable {
         .cloudSignedOut: "Your Maktaba Cloud sign-in has ended. Sign in again.",
         .cloudNotLinked: "This home is not linked to your Maktaba Cloud account.",
         .cloudUnreachable: "Could not reach Maktaba Cloud: %@",
+        .cloudHomesSaved: "Maktaba Cloud can't be reached. Showing your homes from %@.",
+        .cloudHomesSavedOld: "This list is more than 30 days old. Some addresses may have changed.",
+        .cloudSignInCloudDown: "Signing in with Maktaba Cloud isn't working right now. Sign in to your home with its username and password, or with a code.",
         .cloudRefused: "Maktaba Cloud refused: %@",
         .cloudEmailNotVerified: "Confirm your email address first: Maktaba Cloud sent you a link.",
         .cloudOther: "Maktaba Cloud answered %@.",
@@ -286,6 +291,9 @@ public struct ConnectStrings: Sendable {
         .cloudSignedOut: "انتهى تسجيل دخولك إلى Maktaba Cloud. سجّل الدخول مرة أخرى.",
         .cloudNotLinked: "هذا الجهاز الرئيسي غير مرتبط بحسابك في Maktaba Cloud.",
         .cloudUnreachable: "تعذّر الوصول إلى Maktaba Cloud: %@",
+        .cloudHomesSaved: "تعذّر الوصول إلى سحابة مكتبة. نعرض أجهزتك الرئيسية كما كانت في %@.",
+        .cloudHomesSavedOld: "عمر هذه القائمة أكثر من 30 يومًا، وقد تكون بعض العناوين تغيّرت.",
+        .cloudSignInCloudDown: "تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. سجّل الدخول إلى الجهاز الرئيسي باسم المستخدم وكلمة المرور، أو برمز.",
         .cloudRefused: "رفض Maktaba Cloud: %@",
         .cloudEmailNotVerified: "أكّد بريدك الإلكتروني أولًا: أرسل إليك Maktaba Cloud رابطًا.",
         .cloudOther: "أجاب Maktaba Cloud بـ %@.",
@@ -321,6 +329,7 @@ public struct ConnectStrings: Sendable {
             case let .transport(why): text(.cloudUnreachable, why)
             case let .status(code, _): text(.cloudOther, String(code))
             case let .decoding(why): text(.cloudUnreachable, why)
+            case .cloudDown: text(.cloudSignInCloudDown)
             }
         case let f as ReachFailure:
             reach(f)

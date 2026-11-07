@@ -20,7 +20,9 @@ waves have proved the path, with the strictest file rules.
 | `trash_purge` | `tv.maktaba.dedup` | `nas_write` | any | `files.write:trash` |
 | `file_restore` | `tv.maktaba.dedup` | `nas_write` | any | `files.write:library`, `files.write:trash` |
 
-Runner group `light`. Epic 47's priorities (`EPIC47_PRIORITIES`) move into the manifests as
+Runner group `files`, a shared group of its own: the plugins that rewrite or move library
+files, so `light`'s library stays name-only for subtitles (a group's sandbox is the union of
+its plugins'). Epic 47's priorities (`EPIC47_PRIORITIES`) move into the manifests as
 each stage's default priority; the API routes that enqueue `convert_mp4` (`/api/libraries/{id}/convert`,
 "Convert now"), `dedup_scan`, `dedup_apply` and `file_restore` are unchanged (54.25 §4).
 
@@ -106,7 +108,7 @@ Per stage switch; per release Epic 51 rollback.
 ## Built (2026-11-07)
 
 Wave 5 moved `convert_mp4` into `tv.maktaba.convert` and `dedup_scan`, `dedup_apply`,
-`trash_purge` and `file_restore` into `tv.maktaba.dedup` (runner group `light`; roles in the
+`trash_purge` and `file_restore` into `tv.maktaba.dedup` (runner group `files`; roles in the
 wave's `NNNN_fp_roles` migration). Queuing jobs, the merge's re-pointing of every table that
 references a video, and bringing a superseded video back are the worker's, relayed and
 checked against the job (README §15.12). The library's statements are fixed texts per

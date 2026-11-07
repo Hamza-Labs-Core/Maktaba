@@ -1486,7 +1486,8 @@ that gives a plugin trusted rights, and no call that runs SQL text sent by the p
 
 **Runner groups.** One runner process per group of first-party plugins with the same sandbox
 profile, so a home does not run fifteen Python processes: `light` (core-media, thumbnails,
-classify's no-network stages, livetv, livetv-slots, subtitles, convert, dedup), `ml`
+classify's no-network stages, livetv, livetv-slots, subtitles), `files` (convert, dedup: they
+rewrite and move library files, which would widen `light`'s name-only library writes), `ml`
 (transcription, own process; it accepts up to the `gpu` pool's size of concurrent `Run`s and
 batches them into one Whisper, as the worker does today), `index` (semantic-search, own
 process, replacing `pipeline/index` for the queue part; the gRPC query server stays the
@@ -1500,8 +1501,8 @@ without spending an attempt (§4.9).
 
 Each runner is a supervisor process (role `plugin-runner`), so Epic 51 needs it in exactly one
 catalog component (`catalog_roles_test.go`): `plugin-runner/ml-*` belongs to `transcription`,
-`plugin-runner/index` to `search.semantic`, and the shared groups (`light`, `net`,
-`service`, `fp`) to a new core component, `core.plugin_runners` (`switchable = false`), whose
+`plugin-runner/index` to `search.semantic`, and the shared groups (`light`, `files`,
+`net`, `service`, `fp`) to a new core component, `core.plugin_runners` (`switchable = false`), whose
 processes run on demand: a group runs only while a component it serves is enabled (54.23,
 54.37 §4).
 
