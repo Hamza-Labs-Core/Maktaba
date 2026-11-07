@@ -9,7 +9,7 @@ prs: [789]
 ---
 
 ## What happened
-- `convert_mp4` moved into `tv.maktaba.convert`; `dedup_scan`, `dedup_apply`, `trash_purge` and `file_restore` moved into `tv.maktaba.dedup`. Both run in the `light` runner and write only the library and its trash. Roles: migration 0205 (0203 and 0204 are the store's).
+- `convert_mp4` moved into `tv.maktaba.convert`; `dedup_scan`, `dedup_apply`, `trash_purge` and `file_restore` moved into `tv.maktaba.dedup`. Both run in a new runner group, `files`, and write only the library and its trash (CI's sandbox test caught that in `light` their library writes covered the subtitles' name-only rule). Roles: migration 0205 (0203 and 0204 are the store's).
 - What only the engine may write, the worker writes for a plugin's job after checking it against the job: `enqueue`, a duplicate group's merge (`dedup_commit`) and a restored video's state (`unsupersede`).
 - `library_mgmt`'s run-time SQL (for SQLite's lack of arrays) became one fixed text per dialect.
 

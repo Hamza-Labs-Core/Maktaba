@@ -17,7 +17,8 @@ build fails when the two differ.
 - **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
   wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
   duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the
-  sandboxed `light` runner: they write only the library's folders and their trash, and what
+  sandboxed `files` runner, a new runner group of their own (in `light` their library writes
+  would have covered the subtitles' name-only rule): they write only the library's folders and their trash, and what
   only the engine may change (queuing jobs, a merge's re-pointing of everything that refers
   to a video, a restored video's state) the worker does for them, checked against the job.
   The parity proof compares the library and its trash byte for byte, through a merge, a

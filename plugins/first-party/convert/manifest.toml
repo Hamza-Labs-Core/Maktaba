@@ -13,7 +13,7 @@ name    = "fp.convert.name"
 summary = "fp.convert.summary"
 
 [trusted]
-runner    = "light"
+runner    = "files"
 component = "library.convert"
 db.read   = ["libraries", "media_info", "processing_jobs"]
 db.write  = ["audio_tracks", "file_actions", "video_copies", "videos"]

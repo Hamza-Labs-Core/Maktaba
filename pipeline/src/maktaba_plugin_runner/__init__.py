@@ -28,7 +28,7 @@ import os
 from pathlib import Path
 
 #: the runner groups (README §15.4); a manifest may also ask for its own (``own``)
-GROUPS = ("light", "ml", "index", "net", "service", "fp")
+GROUPS = ("light", "files", "ml", "index", "net", "service", "fp")
 
 #: the longest unix socket path macOS takes (sun_path is 104 bytes)
 _MAX_SOCKET = 100
