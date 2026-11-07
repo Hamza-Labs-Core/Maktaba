@@ -37,6 +37,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
@@ -101,6 +102,23 @@ func newPaidEnv(t *testing.T) *env {
 
 func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	t.Helper()
+	return newEnvFull(t, pay, nil, nil)
+}
+
+// newEnvOpts is newEnvWith with the auth pages' bot check on, checked by ts (story 50.30).
+func newEnvOpts(t *testing.T, pay *fakeProvider, ts turnstile.Verifier) *env {
+	t.Helper()
+	return newEnvFull(t, pay, ts, nil)
+}
+
+// newEnvCfg is newEnvWith with a hook that adjusts the config before it is validated (50.31).
+func newEnvCfg(t *testing.T, pay *fakeProvider, adjust func(*config.Config)) *env {
+	t.Helper()
+	return newEnvFull(t, pay, nil, adjust)
+}
+
+func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust func(*config.Config)) *env {
+	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
 		t.Skip("MAKTABA_CLOUD_DB_URL not set")
@@ -133,6 +151,15 @@ func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	cfg.OAuthGoogle.ClientID = "google-test-client"
 	cfg.OAuthGoogle.ClientSecret = "google-test-secret"
 	cfg.Entitlement.PrivateKeyPath = e.entPath
+	if ts != nil {
+		cfg.Turnstile.Enabled = true
+		cfg.Turnstile.Secret = "test-turnstile-secret"
+		cfg.Turnstile.SiteKey = "test-site-key"
+		cfg.Turnstile.WebOrigins = []string{strings.TrimSuffix(testWebURL, "/")}
+	}
+	if adjust != nil {
+		adjust(&cfg)
+	}
 	if err := config.Validate(cfg, config.RoleAPI); err != nil {
 		t.Fatal(err)
 	}
@@ -149,6 +176,7 @@ func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	if pay != nil {
 		o.BillingProvider = pay
 	}
+	o.Turnstile = ts
 	r, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, o)
 	if err != nil {
 		t.Fatal(err)
@@ -193,6 +221,9 @@ type client struct {
 	ip      string
 	token   string
 	cookies map[string]string
+	header  map[string]string // extra request headers
+	// origin is sent as Origin (a web page's request; empty: a native app)
+	origin string
 }
 
 func (e *env) client() *client {
@@ -243,6 +274,12 @@ func (c *client) do(method, path string, body any) resp {
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	for k, v := range c.header {
+		req.Header.Set(k, v)
+	}
+	if c.origin != "" {
+		req.Header.Set("Origin", c.origin)
 	}
 	for k, v := range c.cookies {
 		req.AddCookie(&http.Cookie{Name: k, Value: v})

@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -31,6 +32,20 @@ type Config struct {
 	Relay       RelayConfig
 	Auth        AuthConfig
 	Direct      DirectConfig
+	Turnstile   TurnstileConfig
+}
+
+// TurnstileConfig is the bot check on the auth pages (Epic 50 story 50.30 §4): off by default
+// (dev and CI); production turns it on with the widget's site key, and the secret comes from
+// the environment only (MAKTABA_CLOUD_TURNSTILE_SECRET). On without a secret, the api role
+// refuses to start.
+type TurnstileConfig struct {
+	Enabled bool   // turnstile.enabled
+	SiteKey string // turnstile.site_key: public, served to the web pages
+	Secret  string // env MAKTABA_CLOUD_TURNSTILE_SECRET only
+	// WebOrigins are the origins asked for a token (turnstile.web_origins; default the web
+	// app's, server.web_url). Native apps send no Origin and are never asked.
+	WebOrigins []string
 }
 
 // DirectConfig is direct remote access (Epic 50 story 50.15): the direct-name domains (never
@@ -63,13 +78,24 @@ type ServerConfig struct {
 	// WebURL is the cloud web app's origin (mail links and OAuth
 	// landings point there). Defaults to PublicURL.
 	WebURL string
-	// TrustProxyHeaders makes the client IP come from CF-Connecting-IP /
-	// X-Forwarded-For. Only turn it on behind a proxy that overwrites
-	// them; otherwise any client can pick its own rate-limit key.
-	TrustProxyHeaders bool
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	ShutdownGrace     time.Duration
+	// Env is "production" on the cloud's nodes (server.env); anything else is a development
+	// or CI run. Production refuses a public listener and an empty TrustedProxies (50.31).
+	Env string
+	// AdminListenAddr is the operator console's own listener (server.admin_listen_addr,
+	// served by Epic 50 story 50.32); empty means none.
+	AdminListenAddr string
+	// TrustedProxies are the peers whose CF-Connecting-IP is believed (server.trusted_proxies,
+	// CIDRs): the local cloudflared, or Caddy after its origin checks. Empty means the client
+	// IP is always the TCP peer. It replaces server.trust_proxy_headers (Epic 50 story 50.31).
+	TrustedProxies []netip.Prefix
+	// OriginMode is how Cloudflare reaches the api (server.origin_mode): "tunnel" (the
+	// default) or "aop", the fallback (authenticated origin pulls plus Cloudflare's ranges, at
+	// Caddy). AOPCAFile is the CA Caddy checks Cloudflare's client certificate against.
+	OriginMode    string
+	AOPCAFile     string
+	ReadTimeout   time.Duration
+	WriteTimeout  time.Duration
+	ShutdownGrace time.Duration
 }
 
 // AuthConfig holds the HMAC secret used to sign short-lived access
@@ -196,6 +222,7 @@ func defaultConfig() Config {
 		Direct: DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
 		Server: ServerConfig{
 			ListenAddr:    "0.0.0.0:8080",
+			OriginMode:    OriginTunnel,
 			ReadTimeout:   30 * time.Second,
 			WriteTimeout:  60 * time.Second,
 			ShutdownGrace: 20 * time.Second,
@@ -248,6 +275,9 @@ func Load(path string) (Config, error) {
 	if cfg.Server.WebURL == "" {
 		cfg.Server.WebURL = cfg.Server.PublicURL
 	}
+	if len(cfg.Turnstile.WebOrigins) == 0 && cfg.Server.WebURL != "" {
+		cfg.Turnstile.WebOrigins = []string{strings.TrimSuffix(cfg.Server.WebURL, "/")}
+	}
 	return cfg, nil
 }
 
@@ -275,6 +305,9 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_TURNSTILE_SECRET"); v != "" {
+		c.Turnstile.Secret = v
 	}
 	// the direct CAs' EAB secrets (story 50.15) are never in the file
 	for name, a := range c.Direct.ACME {
@@ -436,7 +469,30 @@ func assign(c *Config, section, key, val string) error {
 	case "server.web_url":
 		c.Server.WebURL = val
 	case "server.trust_proxy_headers":
-		return setBool(&c.Server.TrustProxyHeaders, val)
+		return ErrTrustProxyHeaders
+	case "server.trusted_proxies":
+		ps, err := ParsePrefixes(parseList(val))
+		if err != nil {
+			return fmt.Errorf("config: server.trusted_proxies: %w", err)
+		}
+		c.Server.TrustedProxies = ps
+	case "server.env":
+		c.Server.Env = val
+	case "server.admin_listen_addr":
+		c.Server.AdminListenAddr = val
+	case "server.origin_mode":
+		c.Server.OriginMode = val
+	case "server.aop_ca_file":
+		c.Server.AOPCAFile = val
+	case "turnstile.enabled":
+		return setBool(&c.Turnstile.Enabled, val)
+	case "turnstile.site_key":
+		c.Turnstile.SiteKey = val
+	case "turnstile.web_origins":
+		c.Turnstile.WebOrigins = parseList(val)
+	case "turnstile.secret":
+		// the secret is never in a file: MAKTABA_CLOUD_TURNSTILE_SECRET only
+		return fmt.Errorf("turnstile.secret: the secret is not read from the file; set MAKTABA_CLOUD_TURNSTILE_SECRET")
 	case "billing.provider":
 		c.Billing.Provider = val
 	case "mail.driver":
@@ -528,3 +584,26 @@ func setFloat(dst *float64, v string) error {
 
 // ErrMissing reports a required section that did not load.
 var ErrMissing = errors.New("config: missing required section")
+
+// ErrTrustProxyHeaders refuses the old switch: it believed CF-Connecting-IP from any peer.
+var ErrTrustProxyHeaders = errors.New("config: server.trust_proxy_headers was replaced by server.trusted_proxies " +
+	"(the CIDRs whose CF-Connecting-IP is believed, e.g. [\"127.0.0.1/32\", \"::1/128\"] behind the local cloudflared)")
+
+// The origin modes (server.origin_mode, Epic 50 story 50.31).
+const (
+	OriginTunnel = "tunnel"
+	OriginAOP    = "aop"
+)
+
+// ParsePrefixes reads CIDRs; a bare address is refused, so a list says what it means.
+func ParsePrefixes(vs []string) ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(vs))
+	for _, v := range vs {
+		p, err := netip.ParsePrefix(strings.TrimSpace(v))
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a CIDR", v)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
+}

@@ -63,6 +63,7 @@ vi.mock("../lib/api", async () => {
 
 import { VideoPlayer } from "./VideoPlayer";
 import { I18nProvider } from "../lib/i18n";
+import { withRid } from "../test/ridMatcher";
 
 const SID = "sess-hls";
 const SIGNED = `/stream/${SID}/manifest.m3u8?sig=tok.one`;
@@ -121,7 +122,7 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
     renderPlayer();
     const hls = await hlsReady();
     const video = screen.getByTestId("mkt-video");
-    expect(hls.loadSource).toHaveBeenCalledWith(SIGNED);
+    expect(hls.loadSource).toHaveBeenCalledWith(withRid(SIGNED));
     expect(hls.attachMedia).toHaveBeenCalledWith(video);
     // hls.js owns the element: no src attribute to fight it.
     expect(video.getAttribute("src")).toBeNull();
@@ -247,7 +248,7 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
       expect(opens()).toHaveLength(2);
       expect(opens()[1][1]).toMatchObject({ video_id: "vid-1" });
       expect(first.destroy).toHaveBeenCalled();
-      expect(second.loadSource).toHaveBeenCalledWith(RESIGNED);
+      expect(second.loadSource).toHaveBeenCalledWith(withRid(RESIGNED));
       expect(second.config.startPosition).toBe(1234.5);
       // Same session handed back: nothing to close.
       expect(del).not.toHaveBeenCalled();
@@ -402,7 +403,7 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
           expect(hls.loadSource).toHaveBeenCalledTimes(before + 1);
           expect(loadedAt.at(-1)! - failedAt).toBe(wait);
         }
-        expect(hls.loadSource).toHaveBeenLastCalledWith(SIGNED);
+        expect(hls.loadSource).toHaveBeenLastCalledWith(withRid(SIGNED));
         await act(async () => {
           await vi.advanceTimersByTimeAsync(60_000);
         });
@@ -572,7 +573,7 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
     post.mockResolvedValue(session());
     renderPlayer();
     const video = await screen.findByTestId("mkt-video");
-    await waitFor(() => expect(video).toHaveAttribute("src", SIGNED));
+    await waitFor(() => expect(video).toHaveAttribute("src", withRid(SIGNED)));
     expect(instances.length).toBe(0);
   });
 });

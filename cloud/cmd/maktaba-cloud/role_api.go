@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -34,6 +36,7 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
@@ -41,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/telemetry"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 )
 
 func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo) {
@@ -67,6 +71,7 @@ type apiOverrides struct {
 	BillingProvider billingpkg.Provider // replaces cfg.Billing.Provider
 	Google          *oauth.GoogleConfig // endpoints only; ids come from cfg
 	Apple           *oauth.AppleConfig
+	Turnstile       turnstile.Verifier // replaces siteverify (story 50.30)
 }
 
 // newAPI builds the api role's router. stop releases its background
@@ -80,6 +85,13 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		return nil, nil, err
 	}
 	signer := token.NewSigner(secret)
+
+	// The bot check on the auth pages (story 50.30 §4): on without its secret, the role
+	// refuses to start rather than sign people in unchecked.
+	tsGuard, err := turnstileGuard(cfg, o.Turnstile)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// The payment provider is not chosen yet; "none" takes no payments.
 	payments, err := billingpkg.New(cfg.Billing.Provider)
@@ -200,13 +212,14 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.
-	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg))
+	// The client IP is resolved first, the access log included: CF-Connecting-IP only from a
+	// peer in server.trusted_proxies (Epic 50 story 50.31).
+	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
+		server.WithTrustedProxies(cfg.Server.TrustedProxies))
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
 	r.Group(func(app chi.Router) {
-		app.Use(cmw.WithClientIP(cfg.Server.TrustProxyHeaders))
-
 		// Per-IP rate limits on the unauthenticated auth routes: burst 30,
 		// refill 5/s — plenty for the sign-in form, harsh for credential
 		// stuffing — and burst 5, one per 12 s for the routes that send mail.
@@ -244,8 +257,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			WebURL:    cfg.Server.WebURL,
 			// Host-only: a Domain=.maktaba.tv cookie would also go to
 			// every home server behind *.relay.maktaba.tv.
-			CookieDomain: "",
-			Secure:       true,
+			CookieDomain:     "",
+			Secure:           true,
+			Turnstile:        tsGuard,
+			TurnstileSiteKey: cfg.Turnstile.SiteKey,
 		})
 
 		billing := &billingh.Deps{
@@ -275,6 +290,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			adminh.Mount(g, &adminh.Deps{
 				DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 				Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
+				// the cloud's log index on W (53.17), as the forwarder reaches it
+				Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
 			})
 
 			// the problem reports homes sent, for the service admin only (53.16)
@@ -298,7 +315,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 	// Prometheus scrape of this role's push counters (aggregate only, like
 	// the relay's /metrics).
-	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics))
+	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
 
 	return r, stopMetrics, nil
 }
@@ -339,4 +356,33 @@ func blockedIPs(d *abuse.Detector, logger *slog.Logger) func(http.Handler) http.
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// turnstileGuard is the auth pages' bot check from the config (story 50.30 §4): nil when off;
+// refused when on without its secret, or without a web origin to ask.
+func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guard, error) {
+	t := cfg.Turnstile
+	if !t.Enabled {
+		return nil, nil
+	}
+	if t.Secret == "" && fake == nil {
+		return nil, fmt.Errorf("turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set")
+	}
+	if len(t.WebOrigins) == 0 {
+		return nil, fmt.Errorf("turnstile.enabled is on but turnstile.web_origins (or server.web_url) names no web origin")
+	}
+	hosts := make([]string, 0, len(t.WebOrigins))
+	for _, o := range t.WebOrigins {
+		u, err := url.Parse(o)
+		if err != nil || u.Host == "" {
+			return nil, fmt.Errorf("turnstile.web_origins: %q is not an origin", o)
+		}
+		hosts = append(hosts, u.Hostname())
+	}
+	var v turnstile.Verifier = &turnstile.Client{Secret: t.Secret, Hostnames: hosts}
+	if fake != nil {
+		v = fake
+	}
+	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: t.WebOrigins,
+		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
 }

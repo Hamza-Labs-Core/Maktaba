@@ -16,6 +16,7 @@ prs: [844]
 ## What we learned
 - A real local run reached only `www.youtube.com` for the listing; the download hit YouTube's bot check. A data-centre runner may get that most nights, so a bot wall is a warning, not a failure. Hosts reached before it still fail the night.
 - yt-dlp now warns that YouTube extraction without a JS runtime (deno by default) is deprecated. The plugin's `exec` list has no runtime: issue 900.
+- CodeQL's `py/clear-text-storage-sensitive-data` took the manifest's `[trusted]` table for a secret, because of its name, and failed the PR when the report copied its `net` patterns into a file. The report now names the manifest instead. Its test checked list membership with `"www.youtube.com" in net`, which `py/incomplete-url-substring-sanitization` flagged; it now compares sets. The SARIF's code flow (`code-scanning/analyses/<id>` with `Accept: application/sarif+json`, found by the PR's head ref) names the source line; the check's annotations do not.
 
 ## Open
 - Making the check conclusive may need a self-hosted runner or cookies.
