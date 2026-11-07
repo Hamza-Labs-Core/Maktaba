@@ -119,13 +119,59 @@ jobs:
     with:
       create_draft: true
 
+  # Epic 54 (#755): the plugin store's current store-keys.json and revoked.json, verified by
+  # the chain of trust, for every build below to embed (a home that never reaches the store
+  # still trusts store-signed files and knows withdrawn plugins). Fails closed: once the
+  # committed plugin root lists keys, an unreachable store or a list that does not verify,
+  # has expired or is older than the committed copy stops the release. While the root lists
+  # no keys (the store is not live) it embeds nothing and says so. Fetched once, so every
+  # build of a release embeds the same lists.
+  plugin-lists:
+    name: the plugin store's lists
+    needs: [guard]
+    if: needs.guard.outputs.published != 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      store_keys: ${{ steps.lists.outputs.store_keys }}
+      revoked: ${{ steps.lists.outputs.revoked }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: shared/plugins/go.mod
+          cache: false
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: shared/plugins
+
+      - name: Fetch and verify the lists
+        id: lists
+        working-directory: shared/plugins
+        run: |
+          set -euo pipefail
+          go run ./cmd/plugin-lists --dir .
+          for f in store_keys:store-keys-embedded.json revoked:revoked-embedded.json; do
+            out="${f%%:*}"; file="${f#*:}"
+            if [ "$(tr -d '[:space:]' < "$file")" = "null" ]; then
+              echo "${out}=" >> "$GITHUB_OUTPUT"
+            else
+              echo "${out}=$(base64 -w0 < "$file")" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
   # A re-run of a published tag (the guard's published) builds, pushes and signs nothing:
   # its signed files and its images stay as they were published (a re-run moved the images'
   # tags, :latest among them, before its upload was refused). Only a draft is rebuilt. Every
   # job below needs build-artifacts, package-node or package-linux-payload, so all skip.
   build-artifacts:
     name: build (${{ matrix.goos }}/${{ matrix.goarch }})
-    needs: [guard]
+    needs: [guard, plugin-lists]
     if: needs.guard.outputs.published != 'true'
     strategy:
       fail-fast: false
@@ -197,6 +243,18 @@ jobs:
         env:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
+
+      # Epic 54 (#755): the plugin store's lists the plugin-lists job verified, embedded by
+      # this job's builds (nothing while the store is not live: the committed files stay null)
+      - name: Embed the plugin store's lists
+        shell: bash
+        env:
+          STORE_KEYS: ${{ needs.plugin-lists.outputs.store_keys }}
+          REVOKED: ${{ needs.plugin-lists.outputs.revoked }}
+        run: |
+          set -euo pipefail
+          if [ -n "${STORE_KEYS}" ]; then printf '%s' "${STORE_KEYS}" | base64 -d > shared/plugins/store-keys-embedded.json; fi
+          if [ -n "${REVOKED}" ]; then printf '%s' "${REVOKED}" | base64 -d > shared/plugins/revoked-embedded.json; fi
 
       # VERSION comes from the tag, not `git describe`, so the artifact
       # version string is exactly the tag the maintainer pushed. The
@@ -313,7 +371,7 @@ jobs:
   # stamped from the tag) as the Makefile `server` target.
   build-server:
     name: build maktaba-server (all platforms)
-    needs: [build-artifacts]
+    needs: [build-artifacts, plugin-lists]
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -387,6 +445,18 @@ jobs:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
 
+      # Epic 54 (#755): the plugin store's lists the plugin-lists job verified, embedded by
+      # this job's builds (nothing while the store is not live: the committed files stay null)
+      - name: Embed the plugin store's lists
+        shell: bash
+        env:
+          STORE_KEYS: ${{ needs.plugin-lists.outputs.store_keys }}
+          REVOKED: ${{ needs.plugin-lists.outputs.revoked }}
+        run: |
+          set -euo pipefail
+          if [ -n "${STORE_KEYS}" ]; then printf '%s' "${STORE_KEYS}" | base64 -d > shared/plugins/store-keys-embedded.json; fi
+          if [ -n "${REVOKED}" ]; then printf '%s' "${REVOKED}" | base64 -d > shared/plugins/revoked-embedded.json; fi
+
       - name: Cross-compile maktaba-server
         env:
           VERSION: ${{ github.ref_name }}
@@ -438,7 +508,7 @@ jobs:
 
   build-images:
     name: image (${{ matrix.svc }})
-    needs: [guard, build-artifacts]
+    needs: [guard, build-artifacts, plugin-lists]
     runs-on: ubuntu-22.04
     # Multi-arch raises the ceiling: the Go images cross-compile via
     # TARGETARCH (cheap), but the web (node) and pipeline (python) images
@@ -509,6 +579,18 @@ jobs:
         env:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
+
+      # Epic 54 (#755): the plugin store's lists the plugin-lists job verified, embedded by
+      # this job's builds (nothing while the store is not live: the committed files stay null)
+      - name: Embed the plugin store's lists
+        shell: bash
+        env:
+          STORE_KEYS: ${{ needs.plugin-lists.outputs.store_keys }}
+          REVOKED: ${{ needs.plugin-lists.outputs.revoked }}
+        run: |
+          set -euo pipefail
+          if [ -n "${STORE_KEYS}" ]; then printf '%s' "${STORE_KEYS}" | base64 -d > shared/plugins/store-keys-embedded.json; fi
+          if [ -n "${REVOKED}" ]; then printf '%s' "${REVOKED}" | base64 -d > shared/plugins/revoked-embedded.json; fi
 
       # rewrite-timestamp: every layer's files carry the commit's time (SOURCE_DATE_EPOCH),
       # so a re-run builds the same layers (the attestations still record their build).
@@ -989,7 +1071,7 @@ jobs:
   # architecture: its Postgres libraries come from the runner.
   package-linux-payload:
     name: package Linux payload (${{ matrix.arch }})
-    needs: [guard]
+    needs: [guard, plugin-lists]
     if: needs.guard.outputs.published != 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
@@ -1063,6 +1145,18 @@ jobs:
         env:
           MAKTABA_LICENSE_PUBKEY: ${{ vars.MAKTABA_LICENSE_PUBKEY }}
         run: tools/release/license-key.sh --require
+
+      # Epic 54 (#755): the plugin store's lists the plugin-lists job verified, embedded by
+      # this job's builds (nothing while the store is not live: the committed files stay null)
+      - name: Embed the plugin store's lists
+        shell: bash
+        env:
+          STORE_KEYS: ${{ needs.plugin-lists.outputs.store_keys }}
+          REVOKED: ${{ needs.plugin-lists.outputs.revoked }}
+        run: |
+          set -euo pipefail
+          if [ -n "${STORE_KEYS}" ]; then printf '%s' "${STORE_KEYS}" | base64 -d > shared/plugins/store-keys-embedded.json; fi
+          if [ -n "${REVOKED}" ]; then printf '%s' "${REVOKED}" | base64 -d > shared/plugins/revoked-embedded.json; fi
 
       # check.sh: no ffmpeg in the payload, and the server takes the runner's
       # (Ubuntu 22.04's, as the app's users get theirs from their distribution)

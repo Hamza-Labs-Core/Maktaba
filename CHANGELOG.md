@@ -1098,6 +1098,13 @@ build fails when the two differ.
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
   home sends its daily `seen` report when telemetry is on. Migration 0203.
 
+- **Each release embeds the plugin store's current lists (Epic 54, #755).** The release run
+  fetches the store's key list and revocation list, verifies them by the chain of trust and
+  builds them into every binary of the release, so a home that never reaches the store still
+  trusts store-signed files and knows the plugins the store withdrew. It fails closed: a list
+  that cannot be fetched, does not verify, has expired or is older than the committed copy
+  stops the release. Until the plugin root keys exist it embeds nothing.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
