@@ -26,6 +26,7 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -117,6 +118,7 @@ type TxRequest struct {
 
 type openTx struct {
 	tx       *sql.Tx
+	conn     *sql.Conn
 	inv      string
 	mu       sync.Mutex
 	lastUsed time.Time
@@ -132,12 +134,23 @@ type Executor struct {
 	reg   map[string]map[string]*Statement
 	txs   map[string]*openTx
 	vlibs map[string]map[string]string // invocation -> video -> library
+	// idle holds connections already SET ROLE to a plugin's role with its origin, by
+	// plugin@version: a statement on one is one round trip (story 54.24 N18)
+	idle map[string][]*sql.Conn
+}
+
+// IdlePerPlugin is how many role connections a plugin keeps between calls.
+const IdlePerPlugin = 4
+
+type querier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
 // New answers an executor with no statements registered.
 func New(db *sql.DB) *Executor {
 	return &Executor{DB: db, Now: time.Now, reg: map[string]map[string]*Statement{},
-		txs: map[string]*openTx{}, vlibs: map[string]map[string]string{}}
+		txs: map[string]*openTx{}, vlibs: map[string]map[string]string{}, idle: map[string][]*sql.Conn{}}
 }
 
 var (
@@ -247,34 +260,84 @@ func (e *Executor) Stmt(ctx context.Context, sc Scope, req Request) (*Response, 
 		}
 		return run(ctx, ot.tx, st, req, decoded)
 	}
-	tx, err := e.DB.BeginTx(ctx, &sql.TxOptions{ReadOnly: st.Mode == "read"})
+	conn, err := e.acquire(ctx, sc)
 	if err != nil {
-		return nil, refuse(503, CodeDatabase, err.Error())
-	}
-	defer func() { _ = tx.Rollback() }()
-	if err := enter(ctx, tx, sc); err != nil {
 		return nil, dbError(err)
 	}
-	out, ref := run(ctx, tx, st, req, decoded)
-	if ref != nil {
-		return nil, ref
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, dbError(err)
-	}
-	return out, nil
+	out, ref := run(ctx, conn, st, req, decoded)
+	// a statement's own failure leaves the connection as it was; a lost one is not reused
+	e.release(sc, conn, ref != nil && ref.Status == 503)
+	return out, ref
 }
 
-// enter makes a transaction the plugin's: its role and its attribution (54.24 §2 step 4).
-func enter(ctx context.Context, tx *sql.Tx, sc Scope) error {
-	if _, err := tx.ExecContext(ctx, "SET LOCAL ROLE "+pq.QuoteIdentifier(Role(sc.PluginID))); err != nil {
-		return err
+func roleKey(sc Scope) string { return sc.PluginID + "@" + sc.Version }
+
+// acquire answers a connection that runs as the plugin's role with its origin (step 4),
+// set once per connection: SET ROLE and maktaba.origin at the session's level.
+func (e *Executor) acquire(ctx context.Context, sc Scope) (*sql.Conn, error) {
+	key := roleKey(sc)
+	e.mu.Lock()
+	if l := e.idle[key]; len(l) > 0 {
+		c := l[len(l)-1]
+		e.idle[key] = l[:len(l)-1]
+		e.mu.Unlock()
+		return c, nil
 	}
-	_, err := tx.ExecContext(ctx, "SELECT set_config('maktaba.origin', $1, true)", "plugin:"+sc.PluginID+"@"+sc.Version)
-	return err
+	e.mu.Unlock()
+	c, err := e.DB.Conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := c.ExecContext(ctx, "SET ROLE "+pq.QuoteIdentifier(Role(sc.PluginID))+
+		"; SET maktaba.origin = "+pq.QuoteLiteral("plugin:"+sc.PluginID+"@"+sc.Version)); err != nil {
+		discard(c)
+		return nil, err
+	}
+	return c, nil
 }
 
-func run(ctx context.Context, tx *sql.Tx, st *Statement, req Request, sets [][]any) (*Response, *Error) {
+// release keeps a role connection for the plugin's next call, or gives it back to the
+// API's pool as the API's own (RESET ROLE first; one that cannot be reset is closed, never
+// reused: it would run the API's queries as the plugin).
+func (e *Executor) release(sc Scope, c *sql.Conn, broken bool) {
+	key := roleKey(sc)
+	if !broken {
+		e.mu.Lock()
+		if len(e.idle[key]) < IdlePerPlugin {
+			e.idle[key] = append(e.idle[key], c)
+			e.mu.Unlock()
+			return
+		}
+		e.mu.Unlock()
+	}
+	discard(c)
+}
+
+// discard ends a role connection: reset to the API's own role and returned to the pool,
+// or marked bad (closed) when the reset fails.
+func discard(c *sql.Conn) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := c.ExecContext(ctx, "RESET ROLE; RESET maktaba.origin"); err != nil {
+		_ = c.Raw(func(any) error { return driver.ErrBadConn })
+	}
+	_ = c.Close()
+}
+
+// Close gives back every idle role connection (the API stopping, tests).
+func (e *Executor) Close() {
+	e.mu.Lock()
+	all := e.idle
+	e.idle = map[string][]*sql.Conn{}
+	e.mu.Unlock()
+	for _, l := range all {
+		for _, c := range l {
+			discard(c)
+		}
+	}
+}
+
+func run(ctx context.Context, tx querier, st *Statement, req Request, sets [][]any) (*Response, *Error) {
 	switch req.Op {
 	case "fetch":
 		rows, err := tx.QueryContext(ctx, st.Text, sets[0]...)
@@ -384,17 +447,18 @@ func (e *Executor) Tx(ctx context.Context, sc Scope, req TxRequest) (map[string]
 		e.reap()
 		// the transaction outlives this request: it is the invocation's, ended by its own
 		// commit or rollback, by EndInvocation, or by the idle reaper
-		tx, err := e.DB.BeginTx(context.WithoutCancel(ctx), &sql.TxOptions{ReadOnly: sc.ReadOnly})
+		conn, err := e.acquire(context.WithoutCancel(ctx), sc)
 		if err != nil {
 			return nil, refuse(503, CodeDatabase, err.Error())
 		}
-		if err := enter(ctx, tx, sc); err != nil {
-			_ = tx.Rollback()
-			return nil, dbError(err)
+		tx, err := conn.BeginTx(context.WithoutCancel(ctx), &sql.TxOptions{ReadOnly: sc.ReadOnly})
+		if err != nil {
+			discard(conn)
+			return nil, refuse(503, CodeDatabase, err.Error())
 		}
 		id := newID()
 		e.mu.Lock()
-		e.txs[id] = &openTx{tx: tx, inv: sc.Invocation, lastUsed: e.Now(), readOnly: sc.ReadOnly}
+		e.txs[id] = &openTx{tx: tx, conn: conn, inv: sc.Invocation, lastUsed: e.Now(), readOnly: sc.ReadOnly}
 		e.mu.Unlock()
 		return map[string]string{"tx": id}, nil
 	}
@@ -417,6 +481,7 @@ func (e *Executor) Tx(ctx context.Context, sc Scope, req TxRequest) (map[string]
 		} else {
 			err = ot.tx.Rollback()
 		}
+		e.release(sc, ot.conn, err != nil)
 	case "savepoint":
 		_, err = ot.tx.ExecContext(ctx, "SAVEPOINT "+sp)
 	case "release":
@@ -447,6 +512,7 @@ func (e *Executor) EndInvocation(id string) {
 	for _, ot := range open {
 		ot.mu.Lock()
 		_ = ot.tx.Rollback()
+		discard(ot.conn)
 		ot.mu.Unlock()
 	}
 }
@@ -465,6 +531,7 @@ func (e *Executor) reap() {
 	e.mu.Unlock()
 	for _, ot := range old {
 		_ = ot.tx.Rollback()
+		discard(ot.conn)
 		ot.mu.Unlock()
 	}
 }

@@ -24,6 +24,7 @@ import itertools
 import json
 import os
 import struct
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -233,6 +234,9 @@ class Runner:
         except asyncio.CancelledError:
             out = {"status": "deferred", "reason": "plugin_cancelled", "retry_after_sec": 0}
         except Exception as exc:  # noqa: BLE001 - every failure goes back to the worker as raised
+            import traceback
+
+            sys.stderr.write(traceback.format_exc())
             out = failure_to_wire(exc)
         else:
             out = {"status": "ok", "result": result_to_wire(result)}

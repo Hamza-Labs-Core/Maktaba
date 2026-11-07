@@ -146,3 +146,42 @@ async def test_a_refusal_reaches_the_code_as_an_error() -> None:
     with pytest.raises(PluginRefused) as e:
         await StatementDB(reg, Refusing()).fetch("SELECT 1")
     assert e.value.code == "plugin_scope"
+
+
+@asyncio_test
+async def test_the_transport_reads_chunked_answers_on_a_kept_alive_connection() -> None:
+    """Go streams an answer it did not size (a long read) chunked; the next call on the same
+    connection must start at its own status line."""
+    import asyncio
+    import tempfile
+    from pathlib import Path
+
+    from maktaba_plugin_sdk.native.transport import UnixTransport
+
+    async def serve(r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
+        for n in range(2):
+            head = await r.readuntil(b"\r\n\r\n")
+            length = int(
+                [h for h in head.split(b"\r\n") if h.lower().startswith(b"content-length")][
+                    0
+                ].split(b":")[1]
+            )
+            await r.readexactly(length)
+            body = b'{"rows": [[%d]], "columns": ["n"]}' % n
+            half = len(body) // 2
+            w.write(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+            w.write(
+                b"%x\r\n%s\r\n%x\r\n%s\r\n0\r\n\r\n"
+                % (half, body[:half], len(body) - half, body[half:])
+            )
+            await w.drain()
+        w.close()
+
+    with tempfile.TemporaryDirectory(dir="/tmp") as d:
+        sock = str(Path(d) / "api.sock")
+        server = await asyncio.start_unix_server(serve, path=sock)
+        async with server:
+            t = UnixTransport(sock, "tok")
+            assert (await t.call("trusted/stmt", {}))["rows"] == [[0]]
+            assert (await t.call("trusted/stmt", {}))["rows"] == [[1]]
+            await t.close()

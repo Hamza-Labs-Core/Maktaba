@@ -203,6 +203,13 @@ func TestStatementsRunAsThePluginRoleWithItsOrigin(t *testing.T) {
 	if got := out.Rows[0][1]; got != Role(w.a) {
 		t.Fatalf("ran as %v", got)
 	}
+	// a role connection never goes back to the API's pool as the plugin
+	w.e.Close()
+	w.db.SetMaxOpenConns(1)
+	var who string
+	if err := w.db.QueryRow(`SELECT current_user`).Scan(&who); err != nil || who == Role(w.a) {
+		t.Fatalf("the API's pool runs as %q (%v)", who, err)
+	}
 }
 
 func TestStatementsReadOnlyTokenRunsNoWrite(t *testing.T) {
