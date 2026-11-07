@@ -64,6 +64,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **An update no longer rolls back because the transcription pipeline is busy.** The update's
+  watch asked every pipeline process for its version on every check, with three seconds to
+  answer; on a busy home the answer sometimes came late, the watch never saw ten healthy
+  minutes in a row, and it rolled the release back (0.3.90 on 2026-11-07). Each process's
+  version is now confirmed once (a restarted process is asked again); its liveness stays the
+  supervisor's. The word check also runs off the pipeline's event loop and writes a
+  transcript's flags in one batch, so it no longer holds its transaction open for minutes.
+
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
   A quality or audio change that finished after the video was closed, or after another video
   started, no longer leaves an unseen player playing or replaces the new video (its stream
