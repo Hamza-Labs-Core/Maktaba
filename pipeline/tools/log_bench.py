@@ -17,7 +17,10 @@ JSON (and written to ``--out``) either way, and the nightly run compares them ni
 from __future__ import annotations
 
 import argparse
+import collections
+import contextvars
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -98,6 +101,74 @@ def _tail_p99_ns(chunks: int = 20_000) -> int:
     return best
 
 
+_CTX = contextvars.ContextVar("bench_request_id", default="0192f0c4-1111-7000-8000-000000000001")
+_KEY = b"bench-key-not-a-secret"
+_RING: collections.deque[str] = collections.deque(maxlen=1000)
+
+
+def _step_a(d: dict[str, object]) -> dict[str, object]:
+    d.setdefault("request_id", _CTX.get())
+    d["level"] = "info"
+    return d
+
+
+def _step_b(d: dict[str, object]) -> dict[str, object]:
+    sec, ns = divmod(time.time_ns(), 1_000_000_000)
+    d["ts"] = f"2026-11-07T10:00:{sec % 60:02d}.{ns // 1000:06d}Z"
+    return d
+
+
+def _step_c(d: dict[str, object], seen: dict[str, int]) -> dict[str, object]:
+    u = d.pop("user_id", None)
+    for k, v in d.items():
+        kind = seen.get(k)
+        if kind is None:
+            kind = seen[k] = 1 if k.lower() in ("password", "token") else 0
+        if kind and isinstance(v, str):
+            d[k] = "[redacted]"
+    if isinstance(u, str):
+        d["user_h"] = hmac.new(_KEY, u.encode(), "sha256").hexdigest()[:16]
+    return d
+
+
+def _interp_call(seen: dict[str, int], **kw: object) -> None:
+    """A log call's kind of work in plain Python: a chain of small calls over the line's
+    dict, a context variable, the time, a keyed hash, the JSON, a ring. None of it is the
+    logger's code, so a slower logger does not raise the factor; it runs where the logger's
+    own call spends its time, the interpreter, which the hashing and scrub loops (C code)
+    do not measure (CI, 2026-11-07: runners those loops called alike differed 1.6 times at
+    the logger's p50)."""
+    d: dict[str, object] = {"event": "http_request", **kw}
+    d = _step_c(_step_b(_step_a(d)), seen)
+    d["msg"] = d.pop("event")
+    _RING.append(json.dumps(d))
+
+
+def _interp_work() -> None:
+    seen: dict[str, int] = {}
+    for _ in range(10_000):
+        _interp_call(seen, path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
+
+
+def _interp_p99_ns(calls: int = 20_000) -> int:
+    """The p99 of `_interp_call`, timed call by call (the best of three rounds)."""
+    seen: dict[str, int] = {}
+    for _ in range(2_000):
+        _interp_call(seen, path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
+    clock = time.perf_counter_ns
+    best = 0
+    for _ in range(3):
+        times = [0] * calls
+        for i in range(calls):
+            start = clock()
+            _interp_call(seen, path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
+            times[i] = clock() - start
+        times.sort()
+        p99 = percentile(times, 0.99)
+        best = p99 if best == 0 else min(best, p99)
+    return best
+
+
 def calibrate() -> tuple[float, dict[str, float]]:
     """The runner's speed against the reference (the slowest of the three loops, 1–4) and the
     loops' times, which the report shows."""
@@ -105,6 +176,8 @@ def calibrate() -> tuple[float, dict[str, float]]:
         "hash_s": _best_of_three(_hash_work),
         "lines_s": _best_of_three(_lines_work),
         "tail_p99_ns": float(_tail_p99_ns()),
+        "interp_s": _best_of_three(_interp_work),
+        "interp_p99_ns": float(_interp_p99_ns()),
     }
     f = max(
         raw["hash_s"] / REFERENCE_HASH_S,
