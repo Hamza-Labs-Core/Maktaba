@@ -66,6 +66,8 @@ DEFAULT_TABLE: tuple[tuple[str, str], ...] = (
     ("plugin_quota", ITEM_PERMANENT),
     ("plugin_failed", ITEM_PERMANENT),
     ("plugin_held", "dependency:plugin"),
+    # a request or event that would loop between plugins (54.40): it would loop again
+    ("plugin_loop", ITEM_PERMANENT),
     ("model_unavailable", MODEL),
     # refined to dependency:share:<root> when the item's library root does not answer
     ("file_missing", ITEM_PERMANENT),

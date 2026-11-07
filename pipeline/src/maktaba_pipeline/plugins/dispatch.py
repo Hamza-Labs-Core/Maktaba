@@ -15,8 +15,14 @@ stage's handler does no work itself: it
    ``memory``                ``plugin_memory`` (item_permanent)
    ``refused``               ``plugin_capability`` / ``plugin_scope`` / ``plugin_quota``
    ``failed``                ``plugin_failed`` (the plugin's own error)
+   ``refused`` plugin_loop   ``plugin_loop`` (a request or event would loop, 54.40)
    cancelled, host gone      the job goes back to the queue, no attempt spent
    ========================  =============================================================
+
+   The requests and the published events (54.40) become jobs only when the job ended
+   well, each with the job's lineage extended by its own (stage, subject): its origin, its
+   hop count and its path. The API refused already what would pass the hop cap or re-enter
+   a pair; the same rule is checked here again, as the second line.
 
 4. ends the token in a ``finally``.
 
@@ -48,6 +54,10 @@ _log = get_logger()
 
 #: the largest frame either side accepts (plugind's protocol.rs MAX_FRAME)
 MAX_FRAME = 4 << 20
+#: the payload key that holds a job's lineage (the API's LineageKey); never the guest's
+LINEAGE_KEY = "_lineage"
+#: the lineage hop cap (README §4.7)
+MAX_HOPS = 16
 LOCAL_TOKEN_HEADER = "X-Maktaba-Local-Token"
 
 
@@ -105,6 +115,9 @@ async def _mint(job_id: int) -> dict[str, Any]:
         )
     except (OSError, urllib.error.URLError) as exc:
         raise JobDeferred(f"plugin_api_unavailable: {exc}", 30) from None
+    if status == 409 and body.get("code") == "plugin_loop":
+        # the job itself closes a loop through data (54.40 §3): not retried
+        raise StageFailure("plugin_loop", str(body.get("detail") or "")[:2000], retryable=False)
     if status != 200:
         # the plugin is off, held, not installed (any more), or its grants are waiting:
         # the job waits and spends no attempt (the runner stops claiming it, 54.07)
@@ -157,7 +170,22 @@ async def read_frame(r: asyncio.StreamReader) -> dict[str, Any]:
     return out
 
 
-def _requests(res: dict[str, Any], plugin_id: str) -> tuple[Request, ...]:
+def next_lineage(lineage: dict[str, Any] | None, stage: str, kind: str, sid: str) -> dict[str, Any]:
+    """The lineage of a job this one starts on (stage, kind:sid); StageFailure plugin_loop
+    when it would pass the hop cap or re-enter a pair already in the path."""
+    lin = lineage if isinstance(lineage, dict) and lineage.get("hops") else {}
+    path = [list(p) for p in lin.get("path") or []]
+    pair = [stage, f"{kind}:{sid}"]
+    hops = int(lin.get("hops") or 0) + 1
+    if hops > MAX_HOPS or pair in path:
+        raise StageFailure("plugin_loop", f"{stage} on {pair[1]} would loop", retryable=False)
+    origin = lin.get("origin") or {"kind": "plugin"}
+    return {"origin": origin, "hops": hops, "path": [*path, pair]}
+
+
+def _requests(
+    res: dict[str, Any], plugin_id: str, lineage: dict[str, Any] | None = None
+) -> tuple[Request, ...]:
     from . import manifest as pm
 
     out = []
@@ -167,24 +195,57 @@ def _requests(res: dict[str, Any], plugin_id: str) -> tuple[Request, ...]:
             sid = UUID(str(sub.get("id")))
         except ValueError:
             continue
-        payload = None
+        payload: dict[str, Any] = {}
         try:
-            payload = json.loads(r.get("payload") or "{}") or None
+            got = json.loads(r.get("payload") or "{}")
+            payload = got if isinstance(got, dict) else {"value": got}
         except ValueError:
-            payload = None
+            payload = {}
+        payload.pop(LINEAGE_KEY, None)
+        stage = pm.queue_name(plugin_id, str(r["stage"]))
+        kind = str(sub.get("kind", "video"))
+        payload[LINEAGE_KEY] = next_lineage(lineage, stage, kind, str(sid))
         out.append(
             Request(
-                stage=pm.queue_name(plugin_id, str(r["stage"])),
-                subject_kind=str(sub.get("kind", "video")),  # type: ignore[arg-type]
+                stage=stage,
+                subject_kind=kind,  # type: ignore[arg-type]
                 subject_id=sid,
                 reason=f"plugin:{plugin_id}",
                 payload=payload,
             )
         )
+    for ev in res.get("events") or []:
+        sub = ev.get("subject") or {}
+        try:
+            sid = UUID(str(sub.get("id")))
+        except ValueError:
+            continue
+        try:
+            data = json.loads(ev.get("payload") or "{}")
+        except ValueError:
+            data = {}
+        kind = str(sub.get("kind", "video"))
+        for stage in ev.get("stages") or []:
+            out.append(
+                Request(
+                    stage=str(stage),
+                    subject_kind=kind,  # type: ignore[arg-type]
+                    subject_id=sid,
+                    reason=f"plugin-event:{plugin_id}/{ev.get('name', '')}",
+                    payload={
+                        "event": str(ev.get("name", "")),
+                        "from": plugin_id,
+                        "payload": data,
+                        LINEAGE_KEY: next_lineage(lineage, str(stage), kind, str(sid)),
+                    },
+                )
+            )
     return tuple(out)
 
 
-def result_to_stage(res: dict[str, Any], plugin_id: str) -> StageResult:
+def result_to_stage(
+    res: dict[str, Any], plugin_id: str, lineage: dict[str, Any] | None = None
+) -> StageResult:
     """The host's ``result`` frame as a StageResult, or the classified failure."""
     outcome = res.get("outcome")
     code = str(res.get("error_code") or "")
@@ -204,7 +265,7 @@ def result_to_stage(res: dict[str, Any], plugin_id: str) -> StageResult:
         return StageResult(
             output_hash=str(res.get("output_hash") or ""),
             summary=summary,
-            requests=_requests(res, plugin_id),
+            requests=_requests(res, plugin_id, lineage),
         )
     if outcome == "trap":
         raise StageFailure("plugin_trap", detail, retryable=True)
@@ -214,7 +275,12 @@ def result_to_stage(res: dict[str, Any], plugin_id: str) -> StageResult:
         raise StageFailure("plugin_memory", detail, retryable=False)
     if outcome == "refused" and code == "cancelled":
         raise JobDeferred("plugin_cancelled", 5)
-    if outcome == "refused" and code in ("plugin_capability", "plugin_scope", "plugin_quota"):
+    if outcome == "refused" and code in (
+        "plugin_capability",
+        "plugin_scope",
+        "plugin_quota",
+        "plugin_loop",
+    ):
         raise StageFailure(code, detail, retryable=False)
     if outcome == "failed":
         raise StageFailure("plugin_failed", detail, retryable=False)
@@ -275,7 +341,10 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
                 "id": str(job.id),
                 "stage": sdoc.get("name", job.stage),
                 "subject": {"kind": str(subject.kind), "id": str(subject.id)},
-                "payload": json.dumps(job.payload or {}),
+                # the lineage is Maktaba's: the guest reads its payload without it
+                "payload": json.dumps(
+                    {k: v for k, v in (job.payload or {}).items() if k != LINEAGE_KEY}
+                ),
                 "attempt": int(job.attempts),
                 "checkpoint": await _last_checkpoint(db, int(job.id)),
             },
@@ -308,7 +377,7 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
                         await _save_checkpoint(db, int(job.id), str(msg["checkpoint"]))
                     res_msg = msg
                     try:
-                        out = result_to_stage(msg, plugin_id)
+                        out = result_to_stage(msg, plugin_id, minted.get("lineage"))
                     except StageFailure as f:
                         cause = f.kind
                         raise
