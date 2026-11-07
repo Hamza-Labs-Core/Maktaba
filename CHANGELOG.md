@@ -120,6 +120,10 @@ build fails when the two differ.
 - **The Overview dashboard shows the API's requests per minute and its p95 response time (Epic 53
   story 53.12).** The response-time histogram is kept as two lines over all routes at once: the
   requests in each minute, and the time 95 % of them were answered within.
+- **The Overview dashboard shows each machine's memory, disk and load (Epic 53 story 53.12).** The
+  supervisor now reports its machine's memory and how much is free, the free space on the disk
+  that holds the data folder, the one-minute load average and the number of CPUs. A reading the
+  system doesn't give (Windows keeps no load average) is left out rather than shown as 0.
 - **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
   refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
   read, so they never showed. They do now, and no family is listed twice.

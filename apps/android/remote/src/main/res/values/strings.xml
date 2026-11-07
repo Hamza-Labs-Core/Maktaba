@@ -733,6 +733,11 @@
     <string name="dash_errors_per_hour">Errors per hour</string>
     <string name="dash_api_memory">Memory of the API</string>
     <string name="dash_processes">Processes running</string>
+    <string name="dash_host_load">Load average (1 min)</string>
+    <string name="dash_host_cpus">CPUs</string>
+    <string name="dash_host_memory">Memory</string>
+    <string name="dash_host_memory_free">Memory free</string>
+    <string name="dash_host_disk_free">Disk free (data folder)</string>
     <string name="dash_api_requests">API requests per minute</string>
     <string name="dash_api_p95">API response time, p95 (seconds)</string>
     <string name="dash_log_files">Log files</string>

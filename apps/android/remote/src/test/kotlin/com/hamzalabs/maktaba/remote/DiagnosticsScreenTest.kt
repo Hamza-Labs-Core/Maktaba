@@ -136,7 +136,9 @@ class DiagnosticsScreenTest {
         home.answer("/api/admin/dashboards/overview") {
             FakeRemoteHome.json("""{"board":"overview","range":"24h","series":[
               {"name":"http_request_duration_seconds_p95","labels":"","kind":"gauge","points":[$pts]},
-              {"name":"http_request_duration_seconds_count","labels":"","kind":"counter","points":[$pts]}]}""")
+              {"name":"http_request_duration_seconds_count","labels":"","kind":"counter","points":[$pts]},
+              {"name":"maktaba_host_disk_free_bytes","labels":"machine=home","kind":"gauge","points":[$pts]},
+              {"name":"maktaba_host_load1","labels":"machine=home","kind":"gauge","points":[$pts]}]}""")
         }
     }
 
@@ -149,6 +151,9 @@ class DiagnosticsScreenTest {
         compose.settledUntil { compose.has("dash-panel-http_request_duration_seconds_p95") }
         assertTrue(shown("API response time, p95 (seconds)"))
         assertTrue(shown("API requests per minute"))
+        // the machine's disk and load (story 53.12's host metrics)
+        assertTrue(shown("Disk free (data folder)"))
+        assertTrue(shown("Load average (1 min)"))
     }
 
     @Test @Config(qualifiers = "ar-w411dp-h891dp-420dpi")
@@ -156,6 +161,7 @@ class DiagnosticsScreenTest {
         showLatency()
         compose.settledUntil { compose.has("dash-panel-http_request_duration_seconds_p95") }
         assertTrue(shown("زمن استجابة الواجهة البرمجية، p95 (ثوانٍ)"))
+        assertTrue(shown("المساحة الحرة على القرص (مجلد البيانات)"))
     }
 
     @Test
