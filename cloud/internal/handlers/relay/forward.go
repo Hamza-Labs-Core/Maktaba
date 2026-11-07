@@ -55,7 +55,7 @@ func (d *Deps) forward(w http.ResponseWriter, r *http.Request, slug string, p re
 	if rt == nil {
 		rt = defaultPeerTransport
 	}
-	cw := &countingWriter{ResponseWriter: w}
+	var forwarded atomic.Int64
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.Out.URL.Scheme = "http"
@@ -69,10 +69,14 @@ func (d *Deps) forward(w http.ResponseWriter, r *http.Request, slug string, p re
 		},
 		Transport:     rt,
 		FlushInterval: -1,
+		// count the bytes forwarded (capacity only: the owner meters them)
+		ModifyResponse: func(resp *http.Response) error {
+			resp.Body = &countingBody{ReadCloser: resp.Body, n: &forwarded}
+			return nil
+		},
+		// called before anything is written (a body that breaks mid-stream
+		// aborts the response instead)
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			if cw.wrote.Load() {
-				return // mid-stream: the client sees a broken response
-			}
 			if isDialError(err) {
 				unreachable.Store(true)
 				return
@@ -85,13 +89,13 @@ func (d *Deps) forward(w http.ResponseWriter, r *http.Request, slug string, p re
 			writeErr(w, r, http.StatusBadGateway, "tunnel_error", "")
 		},
 	}
-	rp.ServeHTTP(cw, r)
+	rp.ServeHTTP(w, r)
 	if unreachable.Load() {
 		d.logger().Warn("relay: the peer holding a tunnel did not answer", "peer", p.RelayID, "slug", slug, "event", "relay_peer_unreachable")
 		return false
 	}
 	peerStats.forwarded.Add(1)
-	peerStats.forwardedBytes.Add(cw.n.Load())
+	peerStats.forwardedBytes.Add(forwarded.Load())
 	return true
 }
 
@@ -100,31 +104,17 @@ func isDialError(err error) bool {
 	return errors.As(err, &op) && op.Op == "dial"
 }
 
-type countingWriter struct {
-	http.ResponseWriter
-	n     atomic.Int64
-	wrote atomic.Bool
+// countingBody counts the bytes read from a forwarded response.
+type countingBody struct {
+	io.ReadCloser
+	n *atomic.Int64
 }
 
-func (c *countingWriter) WriteHeader(code int) {
-	c.wrote.Store(true)
-	c.ResponseWriter.WriteHeader(code)
-}
-
-func (c *countingWriter) Write(b []byte) (int, error) {
-	c.wrote.Store(true)
-	n, err := c.ResponseWriter.Write(b)
-	c.n.Add(int64(n))
+func (b *countingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.n.Add(int64(n))
 	return n, err
 }
-
-func (c *countingWriter) Flush() {
-	if f, ok := c.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-func (c *countingWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
 
 // peerStats are the forwarding and holding counters served on /metrics.
 var peerStats = &struct {
