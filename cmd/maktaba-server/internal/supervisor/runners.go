@@ -32,6 +32,10 @@ const RolePluginRunner Role = "plugin-runner"
 // PluginRunnersComponent is the catalog's core component of the shared runner groups.
 const PluginRunnersComponent = "core.plugin_runners"
 
+// RunnerIdleSec is how long a shared group's runner, started on demand, waits for work
+// before it exits (a variable so tests can shorten it).
+var RunnerIdleSec = 600
+
 // RunnerGroups are core.plugin_runners' instances (the catalog's processes).
 var RunnerGroups = []string{"light", "files", "net", "service", "fp"}
 
@@ -148,12 +152,20 @@ func BuildPluginRunners(opts Options) ([]Process, error) {
 	api := PluginsPaths(opts.Config).API
 	var out []Process
 	runner := func(instance string, env []string, dormant bool) Process {
+		// a shared group's runner starts when the worker has a job for it (POST
+		// /runners/{group}/start) and stops itself when idle (exit 0): an idle home runs
+		// none (the Core budget: four processes). Until it is up the worker runs the job.
+		shared := containsString(RunnerGroups, instance)
+		if shared {
+			env = setEnv(append([]string{}, env...), "MAKTABA_RUNNER_IDLE_SEC", strconv.Itoa(RunnerIdleSec))
+		}
 		sock := filepath.Join(dir, "runner-"+instance+".sock")
 		cmd := exec.Command(pythonFor(opts), "-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", dir)
 		cmd.Env = env
 		wire(cmd)
 		return Process{
 			Role: RolePluginRunner, Instance: instance, Cmd: cmd, Dormant: dormant,
+			OnDemand: shared, IdleOnClean: shared,
 			Probe: "unix:" + sock, ProbeTimeout: PythonProbeTimeout,
 			Check: func(ctx context.Context) error { return askRunnerHello(ctx, sock) },
 			BeforeStart: func() {

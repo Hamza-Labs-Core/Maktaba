@@ -32,7 +32,7 @@ func TestCertRolesOnAMigratedHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := pgtest.Migrator(t, dir)(ctx, appURL); err != nil {
+	if err := pgtest.Migrator(t)(ctx, appURL); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	superURL, err := b.SuperURL()

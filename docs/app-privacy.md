@@ -22,8 +22,18 @@ what an app collects or sends changes this file in the same pull request.
     shows everything it will send first: the app and device, the app's log for the last 30
     minutes (readable in the preview, already scrubbed), the last request ids, the kept
     crashes (a tick box) and a screenshot only when the person ticks it and sees it.
-- **To Maktaba**: nothing from the apps themselves. Anything that leaves the home is the home
-  admin's choice and opt-in (Epic 53 story 53.16), never the app's.
+- **To Maktaba**: nothing from the apps directly. A problem report also goes to Maktaba, through
+  the home, only when both of these hold (Epic 53 story 53.16):
+  - the home's admin turned on **Let people send problem reports to Maktaba** (Settings →
+    Privacy, off by default, needing the home linked to Maktaba Cloud);
+  - the person ticked **Also send to Maktaba** on the form (unticked by default), or an admin
+    sent the report after seeing exactly what leaves the home.
+
+  Before it leaves the home, names, video titles, file names, library folders and network
+  addresses are removed, and the person shows as `user-1`. At Maktaba it names the home and
+  the cloud account that linked it, so Maktaba can answer, and never the person who sent it.
+  Maktaba keeps it for 90 days, and the home's admin can delete every report of the home there
+  (**Delete what Maktaba has**).
 - **No third party** receives crash or diagnostic data: no analytics or crash-reporting
   service is built in. The Apple TV app uses PLCrashReporter (MIT), a library that runs on the
   TV and sends nothing itself.
@@ -48,8 +58,9 @@ exception's class and its frames, never its message (it can name a path or a per
 | Diagnostics → **Other Diagnostic Data** | Yes, optional (a problem report the person sends) | No | No | App Functionality |
 | Everything else | No | | | |
 
-"Collected" here means sent off the device to a server the person chose (their home), as the
-form defines it. The data is not linked to an identity at Maktaba, which never receives it.
+"Collected" here means sent off the device: to a server the person chose (their home), and a
+problem report to Maktaba only as above. Neither is linked to the person's identity: a report at
+Maktaba names the home, not the person who sent it, and holds no name.
 
 ## Google Play: Data safety
 

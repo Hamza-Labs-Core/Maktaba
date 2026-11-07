@@ -102,7 +102,13 @@ const outageSession = "6f1d2c3b-0000-4000-8000-000000000002"
 
 func TestNodeOutageKeepsReadsAndPlayback(t *testing.T) {
 	home := &outageHome{}
-	home.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	// the requests the node sends the home are /api/; a stray one (another process probing a
+	// recycled 127.0.0.1 port) is not a try of the home
+	home.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
 		home.mu.Lock()
 		home.hits++
 		home.mu.Unlock()

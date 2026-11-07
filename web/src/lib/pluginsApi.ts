@@ -89,7 +89,10 @@ export interface CatalogEntry {
   rating_count: number;
   installs: number;
   machine_translated: string[];
+  /** "free", or the product the store sells ("one_time" or "yearly", story 54.19 §4) */
+  price?: string;
   versions: CatalogVersion[];
+  /** the listing's other words; a paid plugin's prices in minor units by currency (prices) */
   extra?: Record<string, unknown>;
   newest: CatalogVersion | null;
   installed?: string;
@@ -301,11 +304,18 @@ export const pluginsApi = {
     api.post<InstallResult>("/api/plugins/install", { store: { id, version } }),
   rate: (id: string, stars: number, text: string) =>
     api.post(`/api/plugins/${enc(id)}/rate`, { stars, text }),
-  report: (id: string, reason: string, details: string) =>
-    api.post(`/api/plugins/${enc(id)}/report`, { reason, details }),
+  /** attachLogs: the plugin's own recent lines, scrubbed, go with the report (#758) */
+  report: (id: string, reason: string, details: string, attachLogs = false) =>
+    api.post(`/api/plugins/${enc(id)}/report`, { reason, details, attach_logs: attachLogs }),
   setAutoUpdate: (id: string, on: boolean) =>
     api.put<PluginDetail>(`/api/plugins/${enc(id)}/auto-update`, { on }),
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),
+  /** A one-time purchase intent for the store's buy page (story 54.19 §5). */
+  buy: (pluginId: string, lang: "en" | "ar") =>
+    api.post<{ buy_url: string; intent: string; product: string; expires_at: string }>(
+      "/api/plugins/store-account/buy",
+      { plugin_id: pluginId, lang }
+    ),
   storeLink: () =>
     api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),
   storePoll: () => api.post<StoreLinkStatus>("/api/plugins/store-account/poll"),

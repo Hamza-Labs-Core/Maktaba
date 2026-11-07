@@ -69,7 +69,10 @@ The root keys sign only `store-keys.json`, a few times a year. They never touch 
    by the owner at the prompt, never in a file, a shell history or a log. The entitlement key E's
    seed is a separate secret, **`STORE_ENTITLEMENT_KEY`** (`wrangler secret put
    STORE_ENTITLEMENT_KEY`); without it a home's entitlements route answers
-   `entitlements_unavailable` and no paid plugin can be used.
+   `entitlements_unavailable` and no paid plugin can be used. Paid packages' download URLs
+   are signed with a third, **`PAID_URL_KEY`** (`openssl rand -base64 32`, then `wrangler
+   secret put PAID_URL_KEY`); without it a paid plugin cannot be downloaded
+   (`paid_downloads_unavailable`).
 3. Upload `store-keys.json` to the CDN bucket (story 54.15). From then on each release
    embeds the current `store-keys.json` and `revoked.json` by itself (`release.yml`'s
    `plugin-lists` job, #755), verified by the committed root: **the CDN must be up when a
@@ -94,7 +97,7 @@ on it). Create, then put each id in `store/wrangler.jsonc` in a pull request:
 | ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | D1 database         | `store-accounts`, `store-catalog`, `store-installs`, `store-commerce` (paid plugins, 54.19)                                               | `wrangler d1 create <name>`; their ids replace the `00000000-…` placeholders (the deploy refuses to run with a placeholder) |
 | R2 bucket           | `maktaba-plugins`                                                                                    | public, through the custom domain below; turn on object versioning                                                          |
-| R2 bucket           | `maktaba-plugins-private`                                                                            | never public; a lifecycle rule deleting `exports/` after 90 days                                                            |
+| R2 bucket           | `maktaba-plugins-private`                                                                            | never public; lifecycle rules deleting `exports/` and `report-logs/` after 90 days                                          |
 | Queues              | `store-checks`, `store-catalog`, `store-mail`                                                        | `wrangler queues create <name>`                                                                                             |
 | Durable Objects     | `AccountGuard`, `IpBucket`, `PairingCode`, `CatalogWriter`                                           | made by the first deploy (the `migrations` block)                                                                           |
 | R2 API token        | read and write on `maktaba-plugins-private` only                                                     | for the presigned upload URLs (secrets below)                                                                               |
@@ -111,6 +114,10 @@ server of ours:
 - **`plugins-cdn.maktaba.tv`**: the R2 bucket `maktaba-plugins`'s custom domain (R2, the bucket,
   Settings, Custom Domains). Cache everything; the store sets `Cache-Control` on each object
   (signed lists 60 s, packages a year, immutable).
+  Paid plugins' packages are not in that bucket: `store-web` serves
+  `plugins-cdn.maktaba.tv/paid/*` itself, through the second entry of `routes` in
+  `wrangler.jsonc` (a zone route on `maktaba.tv`, made by the deploy), from the private bucket
+  and only by a URL it signed for a home that bought the plugin (story 54.19 §6).
 - Optional: a zone API token with Cache Purge only, as the Worker secrets `CF_ZONE_ID` and
   `CF_PURGE_TOKEN`, so a new revocation list is purged from the edge at once (otherwise homes
   see it within the 60 s cache).
@@ -132,6 +139,7 @@ file, a log, a commit or a chat.
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `STORE_SIGNING_KEY`                                         | the online key S's seed (step 2)                                                                                                                                                                                                            |
 | `STORE_ENTITLEMENT_KEY`                                     | the entitlement key E's seed (step 2), for paid plugins; payment providers' own secrets are in `payments/README.md`                                                                                                                       |
+| `PAID_URL_KEY`                                              | the key of paid packages' download URLs (story 54.19 §6): 32 random bytes, `openssl rand -base64 32`; without it a paid plugin cannot be downloaded                                                                                       |
 | `MFA_ENC_KEY`                                               | 32 random bytes, base64 (`openssl rand -base64 32`): encrypts TOTP secrets at rest                                                                                                                                                          |
 | `BOOTSTRAP_ADMIN_TOKEN`                                     | a long random string, used once (step 8), then deleted (`wrangler secret delete`)                                                                                                                                                           |
 | `MAIL_API_KEY`                                              | the email provider's token                                                                                                                                                                                                                  |

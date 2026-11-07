@@ -394,9 +394,11 @@ public struct ReportSummary: Decodable, Identifiable, Hashable, Sendable {
     public let status: String
     public let sharedWithMaktaba: Bool
     public let reply: String?
+    /// Its way to Maktaba and Maktaba's reply (story 53.16); nil: not sent there.
+    public let maktaba: ToMaktaba?
 
     enum CodingKeys: String, CodingKey {
-        case id, at, name, app, category, status, reply
+        case id, at, name, app, category, status, reply, maktaba
         case sharedWithMaktaba = "shared_with_maktaba"
     }
 
@@ -410,7 +412,32 @@ public struct ReportSummary: Decodable, Identifiable, Hashable, Sendable {
         status = try c.decodeIfPresent(String.self, forKey: .status) ?? "new"
         sharedWithMaktaba = try c.decodeIfPresent(Bool.self, forKey: .sharedWithMaktaba) ?? false
         reply = try c.decodeIfPresent(String.self, forKey: .reply)
+        maktaba = try? c.decodeIfPresent(ToMaktaba.self, forKey: .maktaba)
     }
+}
+
+/// A report's way to Maktaba (story 53.16): queued, sent, expired (7 days without the
+/// cloud), refused, cancelled (sending turned off) or deleted there; Maktaba's reply.
+public struct ToMaktaba: Decodable, Hashable, Sendable {
+    public let state: String
+    public let reply: String?
+    public let fixedIn: String?
+
+    enum CodingKeys: String, CodingKey {
+        case state, reply
+        case fixedIn = "fixed_in"
+    }
+
+    public init(state: String, reply: String? = nil, fixedIn: String? = nil) {
+        self.state = state
+        self.reply = reply
+        self.fixedIn = fixedIn
+    }
+}
+
+/// Whether the home lets people send reports to Maktaba (GET /api/reports/maktaba).
+struct MaktabaSetting: Decodable {
+    let enabled: Bool?
 }
 
 /// One report as an admin reads it: the device, the text, the app's lines and the home's.
@@ -523,6 +550,13 @@ extension APIClient {
 
     public func replyToReport(_ id: Int, _ reply: String) async throws {
         _ = try await sendRaw(request("POST", "/api/reports/\(id)/reply", body: ["reply": reply]))
+    }
+
+    /// Whether the home lets people send problem reports to Maktaba (story 53.16): the form
+    /// offers "Also send to Maktaba" only then. Any failure reads as no.
+    public func reportsToMaktaba() async -> Bool {
+        let s: MaktabaSetting? = try? await get("/api/reports/maktaba")
+        return s?.enabled == true
     }
 
     /// Sends a problem report (`ReportProblem.multipart`); answers its number.

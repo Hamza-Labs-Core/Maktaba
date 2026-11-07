@@ -65,6 +65,7 @@ import com.hamzalabs.maktaba.core.api.REPORT_CATEGORIES
 import com.hamzalabs.maktaba.core.api.ReportSummary
 import com.hamzalabs.maktaba.core.api.RequestId
 import com.hamzalabs.maktaba.core.api.problemReports
+import com.hamzalabs.maktaba.core.api.reportsToMaktaba
 import com.hamzalabs.maktaba.core.api.sendProblemReport
 import com.hamzalabs.maktaba.core.crash.CrashOutbox
 import com.hamzalabs.maktaba.core.crash.ReportPart
@@ -98,6 +99,16 @@ fun reportStatus(s: String): Int = when (s) {
     "fixed" -> R.string.report_status_fixed
     "closed" -> R.string.report_status_closed
     else -> R.string.report_status_new
+}
+
+/** A report's way to Maktaba (53.16), in a line. */
+fun reportMaktaba(state: String): Int = when (state) {
+    "sent" -> R.string.report_maktaba_sent
+    "expired" -> R.string.report_maktaba_expired
+    "refused" -> R.string.report_maktaba_refused
+    "cancelled" -> R.string.report_maktaba_cancelled
+    "deleted" -> R.string.report_maktaba_deleted
+    else -> R.string.report_maktaba_queued
 }
 
 /**
@@ -228,6 +239,10 @@ fun ReportProblemForm(client: ApiClient, home: String, reference: String?, scree
     var earlier by remember { mutableStateOf(false) }
     var withCrashes by remember { mutableStateOf(true) }
     var withShot by remember { mutableStateOf(false) }
+    // 53.16: offered only while the home's admin allows it; unticked
+    var maktabaOn by remember { mutableStateOf(false) }
+    var toMaktaba by remember { mutableStateOf(false) }
+    LaunchedEffect(client) { maktabaOn = client.reportsToMaktaba() }
     var showLog by remember { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
     var number by remember { mutableStateOf<Int?>(null) }
@@ -315,6 +330,15 @@ fun ReportProblemForm(client: ApiClient, home: String, reference: String?, scree
         }
         HorizontalDivider()
         Text(stringResource(R.string.report_to_home, home))
+        if (maktabaOn) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = toMaktaba, onCheckedChange = { toMaktaba = it }, modifier = Modifier.testTag("report-maktaba"))
+                Column {
+                    Text(stringResource(R.string.report_to_maktaba))
+                    if (toMaktaba) Text(stringResource(R.string.report_to_maktaba_note), style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("report-problem")) }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
@@ -327,7 +351,7 @@ fun ReportProblemForm(client: ApiClient, home: String, reference: String?, scree
                             val now = System.currentTimeMillis()
                             val part = ReportPart.part(category, text, if (earlier) now - 3_600_000 else null, lines,
                                 if (withCrashes) outbox.events(Redact::scrub) else emptyList(), header, RequestId.recent(),
-                                reference, withShot && screenshot != null, Redact::scrub)
+                                reference, withShot && screenshot != null, Redact::scrub, maktabaOn && toMaktaba)
                             number = client.sendProblemReport(part, if (withShot) screenshot else null)
                         } catch (e: CancellationException) {
                             throw e
@@ -386,6 +410,12 @@ fun MyReports(client: ApiClient, onDone: () -> Unit) {
                     Text("#${r.id} · ${stringResource(reportCategory(r.category))} · ${stringResource(reportStatus(r.status))}",
                         style = MaterialTheme.typography.titleSmall)
                     r.reply?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.report_reply, it)) }
+                    r.maktaba?.let { m ->
+                        Text(stringResource(reportMaktaba(m.state)), style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("my-report-maktaba-${r.id}"))
+                        m.reply?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.report_maktaba_replied, it)) }
+                        m.fixedIn?.takeIf { it.isNotBlank() }?.let { Text(stringResource(R.string.report_maktaba_fixed_in, it)) }
+                    }
                 }
                 HorizontalDivider()
             }

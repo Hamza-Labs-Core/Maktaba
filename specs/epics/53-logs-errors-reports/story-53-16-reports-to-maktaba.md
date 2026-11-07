@@ -50,9 +50,10 @@ outbox. A forward while `reports.share` is not on answers `409 component_off` wi
 
 ### 4. In the cloud
 
-- Storage: a row in `problem_reports` (cloud migration at the next free slot) and the files in
-  the cloud's object storage (Epic 50.09's bucket, encrypted, under `reports/`), deleted at 90
-  days by the worker.
+- Storage: a row in `problem_reports` (cloud migration slot 0053) with its files (the report's
+  JSON and the screenshot, at most 8 MB) in the cloud's Postgres, replicated with it and in its
+  encrypted backups (Epic 50.09's buckets hold the database's backups only), deleted at 90 days
+  by the api role's sweep.
 - Each report's crash stacks are symbolicated with the release's dSYMs (53.14) and its error
   groups joined to the anonymous `telemetry_error_groups` by fingerprint (README D8), so a group
   page shows "3 reports" next to its anonymous counts.

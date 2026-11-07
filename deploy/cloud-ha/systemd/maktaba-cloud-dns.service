@@ -1,0 +1,27 @@
+# The direct-name domains' name server (Epic 50 story 50.15): the cloud's dns role on UDP and
+# TCP 53, on nodes A and B always (each is one of the domains' NS, ns1 and ns2), not only on
+# the leader. A and AAAA are computed from the name; the ACME challenges are read from
+# Postgres. It runs once a deploy has installed its binary (bin/dns-update) and setup.sh
+# enabled it (DIRECT_DNS=yes in cloud-ha.env).
+[Unit]
+Description=Maktaba Cloud direct-name DNS (both nodes, always)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/local/bin/maktaba-cloud-dns
+
+[Service]
+User=maktaba
+EnvironmentFile=/etc/maktaba/cloud.env
+ExecStart=/usr/local/bin/maktaba-cloud-dns serve --role dns --config /etc/maktaba/cloud.toml
+# port 53 without root: only this capability
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

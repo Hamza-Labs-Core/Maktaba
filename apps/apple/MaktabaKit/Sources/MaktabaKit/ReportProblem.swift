@@ -21,6 +21,8 @@ public struct ReportDraft: Sendable, Equatable {
     public var includeScreenshot = false
     /// The error screen's reference this was opened from (its request id, or its first 8).
     public var reference: String?
+    /// Also send it to Maktaba (story 53.16): offered only while the home allows it, unticked.
+    public var toMaktaba = false
 
     public init(category: ReportCategory = .other, text: String = "", reference: String? = nil) {
         self.category = category
@@ -60,7 +62,7 @@ public enum ReportProblem {
             "os_version": header.osVersion, "device_model": header.deviceModel, "install_id": header.installID,
             "request_ids": Array(reqs.suffix(20)),
             "screenshot_previewed": screenshotPreviewed,
-            "share_with_maktaba": false,
+            "share_with_maktaba": d.toMaktaba,
         ]
         if let e = d.earlier { body["when"] = wholeSeconds.string(from: e) }
         if d.includeCrashes, !crashes.isEmpty { body["crashes"] = crashes }

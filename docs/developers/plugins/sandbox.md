@@ -47,6 +47,12 @@ if it cannot.
 | Linux | user, network, mount, IPC and PID namespaces where allowed; always seccomp-bpf (only `AF_UNIX` sockets); Landlock for files | no interfaces; other socket families answer `EPERM` | Landlock: read plugins and cache, write run and scratch |
 | Windows | an AppContainer with no capabilities, inside a Job Object | outbound blocked for the AppContainer | only folders whose ACL grants the AppContainer |
 
+On Windows the host opens its own dispatch socket (AF_UNIX) through Winsock before it enters
+its AppContainer, so the sockets are the host's, never your plugin's: Maktaba links no
+`wasi:sockets` into a plugin, so a plugin that asks for one is refused at install and could not
+start anyway. Maktaba reaches the host through a named pipe its supervisor serves, which only
+the user Maktaba runs as can open.
+
 If a Linux kernel lacks some layers (no Landlock, no user namespaces), the host still runs only
 if seccomp is in force, and reports *Degraded* with `sandbox_partial`. Without seccomp on
 Linux, or without the Seatbelt profile or AppContainer, it does not run.

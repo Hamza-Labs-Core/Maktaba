@@ -104,6 +104,17 @@ rate     = 100
 # Homes reconnect with a 10-minute resume ticket instead of their secret.
 enabled = true
 
+[relay.plans]
+# Epic 50 story 50.19: a plan without the relay (Free) is always refused (402 relay_needs_plan).
+# true: paid homes are capped (X-Maktaba-Relay-Cap-Kbps, paced at the cap + 20 %) and limited
+# as their plan says; false: they are forwarded in full, and their bytes still counted.
+enforce = false
+
+[relay.stream_limit]
+# A new relayed stream past the plan's limit is refused (429 stream_limit) while the plans
+# are enforced; false: counted, never refused.
+enabled = true
+
 # Direct remote access (Epic 50 story 50.15): each home's own HTTPS names under one of several
 # direct-name domains (never maktaba.tv), answered by the dns role on nodes A and B, certificates
 # from Let's Encrypt within each domain's weekly budget, then ZeroSSL, then Google Trust

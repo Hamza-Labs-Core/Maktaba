@@ -3,6 +3,7 @@
 // (catalog-<api major>.json, revoked.json, revoked-head.json) that the CatalogWriter
 // regenerates on every change and on a timer. store-keys.json is the owner's, signed offline
 // with a root key, and uploaded beside them; the store only checks that its own key is in it.
+import { isPaidPlugin, paidKey } from "./paid";
 import { Root, StoreKeys, emptyState } from "../signing/verify";
 import { Signer, capabilitiesSHA256, filesSHA256, sha256Hex, signEnvelope, signFile } from "../signing/sig";
 import { parseJSON } from "../signing/canonical";
@@ -101,7 +102,13 @@ async function countersignPackage(
   });
   if (verified.level !== level) throw new PublishError("countersign_failed", "the re-packed file does not verify");
   const sha = await sha256Hex(out);
-  if (!(await env.BUCKET.head(`${sha}.mkplugin`))) {
+  // a paid plugin's package is never public (story 54.19 §6): the private bucket, served by
+  // signed URL only (paid.ts)
+  if (await isPaidPlugin(env, m.id)) {
+    if (!(await env.PRIVATE.head(paidKey(sha)))) {
+      await env.PRIVATE.put(paidKey(sha), out, { httpMetadata: { contentType: "application/vnd.maktaba.plugin" } });
+    }
+  } else if (!(await env.BUCKET.head(`${sha}.mkplugin`))) {
     await env.BUCKET.put(`${sha}.mkplugin`, out, {
       httpMetadata: { contentType: "application/vnd.maktaba.plugin", cacheControl: PACKAGE_CACHE },
     });
@@ -173,7 +180,7 @@ export async function resignPage(env: Env, after: string, page = 20): Promise<st
     .bind(signer.id, after, page)
     .all<{ plugin: string; version: string; sha256: string; review_level: "automated" | "reviewed"; developer: string }>();
   for (const r of rows.results) {
-    const obj = await env.BUCKET.get(`${r.sha256}.mkplugin`);
+    const obj = (await env.BUCKET.get(`${r.sha256}.mkplugin`)) ?? (await env.PRIVATE.get(paidKey(r.sha256)));
     if (!obj) continue;
     try {
       await countersignPackage(env, new Uint8Array(await obj.arrayBuffer()), r.plugin, r.version, r.developer, r.review_level);
@@ -259,6 +266,26 @@ interface PluginRow {
   machine_translated: string;
 }
 
+/** Each plugin's active product (one-time first) and its prices in minor units, by currency. */
+async function salesOf(env: Env): Promise<Map<string, { kind: "one_time" | "yearly"; prices: Record<string, number> }>> {
+  const out = new Map<string, { kind: "one_time" | "yearly"; prices: Record<string, number> }>();
+  if (!env.DB_COMMERCE) return out;
+  const rows = await env.DB_COMMERCE.prepare(
+    `SELECT p.plugin_id, p.kind, r.currency, r.amount_minor FROM products p
+       JOIN prices r ON r.plugin_id = p.plugin_id AND r.kind = p.kind
+      WHERE p.active = 1 ORDER BY p.plugin_id, p.kind = 'one_time' DESC, r.currency`,
+  )
+    .all<{ plugin_id: string; kind: "one_time" | "yearly"; currency: string; amount_minor: number }>()
+    .then((r) => r.results)
+    .catch(() => []);
+  for (const r of rows) {
+    const s = out.get(r.plugin_id) ?? { kind: r.kind, prices: {} };
+    if (s.kind === r.kind) s.prices[r.currency] = r.amount_minor;
+    out.set(r.plugin_id, s);
+  }
+  return out;
+}
+
 /** The catalog of plugin API major (only approved versions of listed plugins). */
 export async function buildCatalog(env: Env, apiMajor: number, version: number, at: Date): Promise<Record<string, unknown>> {
   const plugins = await env.DB_CATALOG.prepare("SELECT * FROM plugins WHERE status = 'listed' ORDER BY id").all<PluginRow>();
@@ -284,6 +311,9 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
     .then((r) => r.results)
     .catch(() => []);
   const flowOf = new Map(flows.map((f) => [f.plugin, f]));
+  // each paid plugin's product and prices (story 54.19 §4), from store-commerce: the catalog's
+  // price names the product ("one_time" or "yearly", one-time first), extra.prices its amounts
+  const sale = await salesOf(env);
   const out = [];
   for (const p of plugins.results) {
     const vs = versions.results
@@ -292,7 +322,8 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
         version: v.version,
         sha256: v.sha256,
         size: v.size,
-        url: `${env.CDN_ORIGIN}/${v.sha256}.mkplugin`,
+        // a paid plugin's package by signed URL only (story 54.19 §6)
+        url: sale.has(v.plugin) ? `${env.CDN_ORIGIN}/paid/${v.sha256}` : `${env.CDN_ORIGIN}/${v.sha256}.mkplugin`,
         maktaba: v.maktaba,
         plugin_api: v.plugin_api,
         platforms: JSON.parse(v.platforms) as string[],
@@ -314,11 +345,12 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
       rating_avg_x100: (rating.get(p.id)?.n ?? 0) >= 5 ? rating.get(p.id)!.avg : 0,
       rating_count: rating.get(p.id)?.n ?? 0,
       installs: roundInstalls(count.get(p.id) ?? 0),
-      price: "free",
+      price: sale.get(p.id)?.kind ?? "free",
       machine_translated: JSON.parse(p.machine_translated),
       versions: vs,
       extra: {
         descriptions: JSON.parse(p.descriptions),
+        ...(sale.has(p.id) ? { prices: sale.get(p.id)!.prices } : {}),
         ...(flowOf.has(p.id)
           ? {
               flow: {
