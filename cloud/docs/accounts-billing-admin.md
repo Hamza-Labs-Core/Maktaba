@@ -86,6 +86,9 @@ Signing in during the 30-day hold is allowed and the account page offers
 | `POST /v1/billing/checkout` | bearer | body `{plan:"basic"\|"pro"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 payments_not_set_up` |
 | `POST /v1/billing/portal` | bearer | `{portal_url}`; `409 no_customer`, `503 payments_not_set_up` |
 | `GET /v1/billing/usage` | bearer | `{month, plan, limit_bytes, used_bytes, servers:[{id, name, bytes_in, bytes_out}]}`: `limit_bytes` is Pro's full-quality allowance or Basic's fair use (0: none). Past it nothing stops; the relay slows (story 50.19) |
+| `GET /v1/billing/payg` | bearer | `{enabled, cap_cents, spent_cents, price_per_gb_cents}`: Pro's pay-as-you-go (story 50.19 §5); `price_per_gb_cents` null until the owner sets it |
+| `PATCH /v1/billing/payg` | bearer | body `{enabled, cap_cents}`: on needs a cap (`422 cap_required`); adds or removes item 2 at the provider; `409 needs_pro`, `409 price_not_set`, `503 payments_not_set_up` |
+| `PATCH /v1/billing/extra-streams` | bearer | body `{count}` (0–100) → `202`: item 3's quantity at the provider (prorated); its webhook puts the count on the account's homes, and the relay allows them within a second |
 | `GET /.well-known/maktaba-entitlement-key` | public | `{fingerprint, public_key}` (base64 Ed25519): the license-signing key, whose public half release builds of the home embed |
 | `POST /v1/billing/webhook/{provider}` | the provider's signature | `200`; `400 invalid_signature`; `404` unless `{provider}` is the configured provider and it takes payments |
 
@@ -137,6 +140,13 @@ mode (`billing.ModeFor`, `relay_usage_monthly`), and counts the request's bytes 
   streams) is `429 stream_limit`; the ones playing go on. Counted in `relay_streams` (both relay
   colours agree), touched once a minute, and swept by the worker after 2 minutes of silence. A
   counting error admits the stream.
+- **Pay-as-you-go.** Pro past its allowance plays at full quality while the account's
+  pay-as-you-go is on and its cost this month (every home's `bytes_payg` at the GB price) is
+  under the owner's cap; then capped. The worker queues each home's whole GB every hour in
+  `billing_usage_outbox` (id `<server_id>:<month>:<hour>`, the provider's idempotency key),
+  clamped to the cap's worth, and sends the queue; a provider outage leaves it queued. It
+  emails at 80 % and 100 % of the cap, and reconciles daily (`billing_usage_mismatch` over
+  1 GB).
 - **Switches.** `relay.plans.enforce` (default false): capping, pacing and the stream limit.
   `relay.stream_limit.enabled` (default true): the limit within them. Free is refused either
   way.
@@ -186,6 +196,11 @@ maktaba-cloud license unrevoke --id lic_… --reason "…" --config cloud.toml
 ```
 
 ## Service admin — `/v1/admin/*` (bearer token + `service_admin`)
+
+The console that calls these is its own web bundle, `web/admin` (`pnpm dev:admin`,
+`pnpm build:admin` → `dist-admin/`), for `admin.maktaba.tv` only (Epic 50 story 50.32). The
+user app (`web/cloud`) has no admin route, link, string or module, and CI fails a user build
+that carries one (`tools/lint/no-admin-in-user-bundle.mjs`).
 
 | Method & path | Body | Success |
 |---|---|---|

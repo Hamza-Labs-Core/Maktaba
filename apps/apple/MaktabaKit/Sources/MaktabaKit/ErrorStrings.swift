@@ -29,6 +29,8 @@ public struct ErrorStrings: Sendable {
         case tryAgain, back, signInAgain, chooseAnotherHome, details
         // the sign-in screen, when the saved sign-in could not be checked
         case restoreFailed
+        // Maktaba Cloud's relay refusing a plan's play (story 50.19); relayStreamLimit has %@
+        case relayNeedsPlan, relayStreamLimit, relayHomeBusy
     }
 
     /// The one sentence for `kind`; `video`: said about the video being played.
@@ -42,6 +44,10 @@ public struct ErrorStrings: Sendable {
         case .busy: text(.busy)
         case .server: text(.server)
         case .off: text(.off)
+        case .relay(.needsPlan): text(.relayNeedsPlan)
+        case let .relay(.streamLimit(n)):
+            text(.relayStreamLimit).replacingOccurrences(of: "%@", with: n.map { $0.formatted() } ?? "")
+        case .relay(.homeBusy): text(.relayHomeBusy)
         }
     }
 
@@ -103,6 +109,9 @@ public struct ErrorStrings: Sendable {
         .chooseAnotherHome: "Choose another home",
         .details: "Details",
         .restoreFailed: "You're still signed in, but your home couldn't be checked.",
+        .relayNeedsPlan: "Remote play through the relay needs a Basic or Pro plan. Direct access from the internet is free: turn it on in this home's settings.",
+        .relayStreamLimit: "%@ devices are already playing through the relay, the most your plan allows. Stop one, or play at home or over a direct connection.",
+        .relayHomeBusy: "Your home is too busy to prepare this video for remote play right now. Try again shortly.",
     ]
 
     static let ar: [Key: String] = [
@@ -124,5 +133,8 @@ public struct ErrorStrings: Sendable {
         .chooseAnotherHome: "اختيار جهاز رئيسي آخر",
         .details: "التفاصيل",
         .restoreFailed: "ما زلت مسجّل الدخول، لكن تعذّر التحقق من الجهاز الرئيسي.",
+        .relayNeedsPlan: "التشغيل عن بُعد عبر الوسيط يتطلب الخطة الأساسية أو الاحترافية. الوصول المباشر من الإنترنت مجاني: فعّله من إعدادات هذا الجهاز الرئيسي.",
+        .relayStreamLimit: "يوجد %@ أجهزة تشغّل عبر الوسيط، وهو الحد الأقصى في خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر.",
+        .relayHomeBusy: "جهازك الرئيسي مشغول جدًا لتجهيز هذا الفيديو للتشغيل عن بُعد الآن. حاول بعد قليل.",
     ]
 }

@@ -15,8 +15,15 @@ envsubst <"/opt/cloud-ha/etcd/etcd.conf.yml" >/etc/etcd/etcd.conf.yml
 mkdir -p /etc/etcd/pki && cp /pki/ca.crt "/pki/${NODE_NAME}.crt" "/pki/${NODE_NAME}.key" /etc/etcd/pki/
 etcd --config-file /etc/etcd/etcd.conf.yml >/var/log/etcd.log 2>&1 &
 
+# the cloud's logs (story 53.17): the token A, B and W share
+printf '%s\n' "${LOGS_TOKEN:-rehearsal-logs-token}" >/etc/maktaba/logs.token
+chmod 0644 /etc/maktaba/logs.token
+
 if [ "${ROLE:-node}" = witness ]; then
-    echo "witness ${NODE_NAME}: etcd"
+    echo "witness ${NODE_NAME}: etcd, and the cloud's logs"
+    MAKTABA_ENV=rehearsal MAKTABA_NODE_ID=witness MAKTABA_CLOUD_LOGS_DIR=/var/lib/maktaba-cloud/logs \
+    MAKTABA_CLOUD_LOGS_LISTEN="${NODE_ADDR}:9610" MAKTABA_CLOUD_LOGS_TOKEN_FILE=/etc/maktaba/logs.token \
+        maktaba-cloud logs >/var/log/logs.log 2>&1 &
     tail -F /var/log/etcd.log
 fi
 
@@ -72,6 +79,8 @@ while :; do
         MAKTABA_CLOUD_PUBLIC_URL=http://relay.test MAKTABA_CLOUD_RELAY_PUBLIC_HOST=relay.test \
         MAKTABA_CLOUD_TOKEN_SECRET="${TOKEN_SECRET}" MAKTABA_CLOUD_BILLING_PROVIDER=none \
         MAKTABA_CLOUD_RELAY_ID="${NODE_NAME}-blue" MAKTABA_CLOUD_RELAY_PEER_ADDR="${NODE_ADDR}:8444" \
+        MAKTABA_CLOUD_LOGS_DIR=/var/lib/maktaba-cloud/logs MAKTABA_CLOUD_LOGS_INSTANCE=blue \
+        MAKTABA_CLOUD_LOGS_URL="http://${LOGS_W_ADDR:-10.60.0.13:9610}" MAKTABA_CLOUD_LOGS_TOKEN_FILE=/etc/maktaba/logs.token \
             maktaba-cloud serve --role relay >>/var/log/relay.log 2>&1 &
         relay_pid=$!
     elif [ "${want}" = stop ] && [ -n "${relay_pid}" ] && kill -0 "${relay_pid}" 2>/dev/null; then

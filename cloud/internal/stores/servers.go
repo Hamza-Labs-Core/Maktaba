@@ -24,6 +24,8 @@ type Server struct {
 	DirectIP    sql.NullString
 	DirectPort  sql.NullInt64
 	CreatedAt   time.Time
+	// ExtraStreams are the relayed streams the owner bought beyond the plan's (story 50.19 §6).
+	ExtraStreams int
 }
 
 var (
@@ -133,7 +135,7 @@ func (s *Servers) HasSlug(ctx context.Context, slug string) (bool, error) {
 // ListByOwner returns the user's servers.
 func (s *Servers) ListByOwner(ctx context.Context, userID string) ([]Server, error) {
 	rows, err := s.DB.QueryContext(ctx, `
-        SELECT id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at
+        SELECT id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at, extra_streams
         FROM servers WHERE owner_user_id = $1 ORDER BY created_at DESC
     `, userID)
 	if err != nil {
@@ -143,7 +145,7 @@ func (s *Servers) ListByOwner(ctx context.Context, userID string) ([]Server, err
 	out := []Server{}
 	for rows.Next() {
 		var sv Server
-		if err := rows.Scan(&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt); err != nil {
+		if err := rows.Scan(&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt, &sv.ExtraStreams); err != nil {
 			return nil, err
 		}
 		out = append(out, sv)
@@ -156,9 +158,9 @@ func (s *Servers) ListByOwner(ctx context.Context, userID string) ([]Server, err
 func (s *Servers) ByID(ctx context.Context, id string) (Server, error) {
 	var sv Server
 	err := s.DB.QueryRowContext(ctx, `
-        SELECT id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at
+        SELECT id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at, extra_streams
         FROM servers WHERE id = $1
-    `, id).Scan(&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt)
+    `, id).Scan(&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt, &sv.ExtraStreams)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Server{}, ErrServerNotFound
 	}
@@ -197,9 +199,9 @@ func looksLikeUUID(s string) bool {
 func (s *Servers) BySlug(ctx context.Context, slug string) (Server, error) {
 	var sv Server
 	err := s.DB.QueryRowContext(ctx, `
-        SELECT id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at
+        SELECT id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at, extra_streams
         FROM servers WHERE slug = $1
-    `, slug).Scan(&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt)
+    `, slug).Scan(&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt, &sv.ExtraStreams)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Server{}, ErrServerNotFound
 	}

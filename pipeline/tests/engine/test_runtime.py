@@ -316,3 +316,30 @@ async def test_the_postgres_pool_is_capped_and_lets_idle_connections_go(
     assert seen["max_size"] == runtime_mod.PG_POOL_MAX
     assert seen["max_inactive_connection_lifetime"] == runtime_mod.PG_POOL_IDLE_SEC
     assert 0 < seen["min_size"] <= seen["max_size"]
+
+
+def test_a_closed_sqlite_database_leaves_no_thread(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # aiosqlite's worker thread, slow to end after its close said it stops (a loaded
+    # runner): Database.close waits for it, so the worker's exit never counts it
+    import time
+
+    import aiosqlite.core
+
+    real = aiosqlite.core._connection_worker_thread
+
+    def slow_to_end(tx: Any) -> None:
+        real(tx)
+        time.sleep(0.3)
+
+    monkeypatch.setattr(aiosqlite.core, "_connection_worker_thread", slow_to_end)
+
+    async def go() -> threading.Thread:
+        db = await Database.connect(f"sqlite:///{tmp_path / 'w.db'}")
+        thread: threading.Thread = db._conn._thread
+        await db.close()
+        return thread
+
+    thread = asyncio.run(go())
+    assert not thread.is_alive()

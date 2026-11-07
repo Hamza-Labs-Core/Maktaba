@@ -8,7 +8,12 @@
   "compatibility_date": "2026-08-15",
   "compatibility_flags": ["nodejs_compat"],
   "rules": [{ "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }],
-  "routes": [{ "pattern": "plugins.maktaba.tv", "custom_domain": true }],
+  // plugins.maktaba.tv, and paid packages on the CDN's host (story 54.19 §6): the rest of
+  // plugins-cdn.maktaba.tv is the public bucket's custom domain
+  "routes": [
+    { "pattern": "plugins.maktaba.tv", "custom_domain": true },
+    { "pattern": "plugins-cdn.maktaba.tv/paid/*", "zone_name": "maktaba.tv" }
+  ],
   "assets": {
     "directory": "console/dist",
     "binding": "ASSETS",

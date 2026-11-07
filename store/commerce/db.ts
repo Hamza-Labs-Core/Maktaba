@@ -10,5 +10,5 @@ export interface Stmt {
 
 export interface DB {
   prepare(sql: string): Stmt;
-  batch(stmts: Stmt[]): Promise<unknown[]>;
+  batch(stmts: Stmt[]): Promise<{ meta: { changes: number } }[]>;
 }

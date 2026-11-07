@@ -1,0 +1,30 @@
+// {{id}}: a Maktaba plugin in Go (TinyGo).
+//
+// It runs in maktaba-plugind's sandbox: no network, no files, only the plugin API calls its
+// manifest asks for and the admin grants. It is built for TinyGo's wasm-unknown target, which
+// links no WASI: file, stdin and network calls always fail, and fmt.Print writes nowhere.
+// Write to the job's log with log.Write.
+package main
+
+import (
+	"strconv"
+
+	"{{module}}/internal/maktaba/plugin/job"
+	"{{module}}/internal/maktaba/plugin/log"
+	"{{module}}/internal/maktaba/plugin/plugin"
+	"{{module}}/internal/maktaba/plugin/types"
+
+	"go.bytecodealliance.org/cm"
+)
+
+type result = cm.Result[plugin.RunOutputShape, plugin.RunOutput, plugin.RunError]
+
+func init() {
+	plugin.Exports.Run = func(stage string) result {
+		log.Write(types.LevelInfo, "hello", `{"stage":`+strconv.Quote(stage)+`}`)
+		subject := job.JobSubject()
+		return cm.OK[result](plugin.RunOutput{OutputHash: "h-" + subject.ID, Summary: "{}"})
+	}
+}
+
+func main() {}

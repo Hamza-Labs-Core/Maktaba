@@ -84,7 +84,9 @@ admin_addr = "127.0.0.1:%d"
 slots = "off"
 `, api, filepath.ToSlash(filepath.Join(dir, "data")), p(), p(), p(), p(), p(), p(), p(), extra, p())
 		// each machine's log index on a port of its own: two machines share this host (53.09)
-		body += fmt.Sprintf("\n[logs]\naddr = \"127.0.0.1:%d\"\n", p())
+		// server_log = "all": the checks read every line of the machine's output (53.02 makes
+		// server.log warnings and errors only by default)
+		body += fmt.Sprintf("\n[logs]\naddr = \"127.0.0.1:%d\"\nserver_log = \"all\"\n", p())
 		_ = os.WriteFile(path, []byte(body), 0o600)
 		return path
 	}

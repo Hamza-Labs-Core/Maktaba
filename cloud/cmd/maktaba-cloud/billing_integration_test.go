@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
@@ -382,4 +383,74 @@ func forge(sig string) string {
 		repl = '1'
 	}
 	return sig[:len(sig)-1] + string(repl)
+}
+
+// Story 50.19 §5, §6 (T08): a Pro owner turns pay-as-you-go on with a cap (item 2 at the
+// provider) and buys 2 extra streams (item 3); the webhook puts them on every home, where the
+// relay's cached home reads them; Basic can't; without a cap it can't be on.
+func TestPayAsYouGoAndExtraStreams(t *testing.T) {
+	e := newPaidEnv(t)
+	withPrices(t)
+	old := billingpkg.Tiers
+	set := map[string]billingpkg.Tier{}
+	for k, v := range old {
+		set[k] = v
+	}
+	pro := set[billingpkg.PlanPro]
+	ten, two := 10, 200
+	pro.PAYGPricePerGBCents, pro.ExtraStreamPriceCents = &ten, &two
+	set[billingpkg.PlanPro] = pro
+	billingpkg.Tiers = set
+	t.Cleanup(func() { billingpkg.Tiers = old })
+
+	const email = "pro@example.test"
+	c := e.registerVerified(email)
+	uid := e.userID(email)
+	e.exec(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1, 'Home', 'pro-home', 'x')`, uid)
+
+	// on Basic: Pro only
+	start := subEvent("evt_b", "subscription_started", "sub_p", "cus_p", uid, "active", "basic", time.Now(), time.Now().Add(720*time.Hour))
+	body, sig := signedEvent(start)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+	if r := c.do("PATCH", "/v1/billing/payg", map[string]any{"enabled": true, "cap_cents": 1000}); r.code != http.StatusConflict || r.errCode() != "needs_pro" {
+		t.Fatalf("payg on basic: %d %s", r.code, r.body)
+	}
+	up := subEvent("evt_p", "subscription_changed", "sub_p", "cus_p", uid, "active", "pro", time.Now().Add(time.Second), time.Now().Add(720*time.Hour))
+	body, sig = signedEvent(up)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+
+	if r := c.do("PATCH", "/v1/billing/payg", map[string]any{"enabled": true}); r.code != http.StatusUnprocessableEntity || r.errCode() != "cap_required" {
+		t.Fatalf("payg without a cap: %d %s", r.code, r.body)
+	}
+	got := c.mustStatus(c.do("PATCH", "/v1/billing/payg", map[string]any{"enabled": true, "cap_cents": 1000}), http.StatusOK).json(t)
+	if got["enabled"] != true || got["cap_cents"].(float64) != 1000 || got["price_per_gb_cents"].(float64) != 10 {
+		t.Fatalf("payg: %v", got)
+	}
+	if it := e.pay.billing.Items("sub_p"); !it.PAYG {
+		t.Fatalf("item 2 not at the provider: %+v", it)
+	}
+	c.mustStatus(c.do("PATCH", "/v1/billing/extra-streams", map[string]any{"count": 2}), http.StatusAccepted)
+	if it := e.pay.billing.Items("sub_p"); it.ExtraStreams != 2 || !it.PAYG {
+		t.Fatalf("item 3 not at the provider: %+v", it)
+	}
+	// the provider confirms: the home carries 2 extra streams
+	confirm := up
+	confirm.ID, confirm.At, confirm.ExtraStreams, confirm.PAYG = "evt_x", time.Now().Add(2*time.Second), 2, true
+	body, sig = signedEvent(confirm)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND extra_streams = 2`, uid) != 1 {
+		t.Fatal("the home doesn't carry the extra streams")
+	}
+	// back to Basic: the extra streams go
+	down := up
+	down.ID, down.At, down.Plan, down.ExtraStreams = "evt_d", time.Now().Add(3*time.Second), "basic", 2
+	body, sig = signedEvent(down)
+	c.mustStatus(c.webhook("testpay", body, sig), http.StatusOK)
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND extra_streams = 0`, uid) != 1 {
+		t.Fatal("Basic kept Pro's extra streams")
+	}
+	u := c.mustStatus(c.do("GET", "/v1/billing/usage", nil), http.StatusOK).json(t)
+	if _, ok := u["by_mode"].(map[string]any)["capped"]; !ok {
+		t.Fatalf("usage by mode: %v", u)
+	}
 }

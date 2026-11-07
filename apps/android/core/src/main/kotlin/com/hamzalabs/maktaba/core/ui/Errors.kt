@@ -56,6 +56,9 @@ fun ErrorKind.sentence(video: Boolean = false): Int = when (this) {
     ErrorKind.Busy -> R.string.error_busy
     ErrorKind.Server -> R.string.error_server
     ErrorKind.Off -> R.string.error_off
+    ErrorKind.RelayNeedsPlan -> R.string.error_relay_needs_plan
+    ErrorKind.RelayStreamLimit -> R.string.error_relay_stream_limit
+    ErrorKind.RelayHomeBusy -> R.string.error_relay_home_busy
 }
 
 /**
@@ -124,6 +127,9 @@ val ErrorKind.icon: ImageVector
         ErrorKind.Busy -> Icons.Outlined.Schedule
         ErrorKind.Server -> Icons.Outlined.ErrorOutline
         ErrorKind.Off -> Icons.Outlined.Block
+        ErrorKind.RelayNeedsPlan -> Icons.Outlined.CloudOff
+        ErrorKind.RelayStreamLimit -> Icons.Outlined.Block
+        ErrorKind.RelayHomeBusy -> Icons.Outlined.Schedule
     }
 
 /** What a person can do about a failure, the first being what most helps (a TV focuses it). */
@@ -141,7 +147,7 @@ fun errorActions(
     canGoBack: Boolean,
 ): List<ErrorAction> = buildList {
     val retryHelps = kind != ErrorKind.NotFound && kind != ErrorKind.NoAccess && kind != ErrorKind.SignedOut &&
-        kind != ErrorKind.Off
+        kind != ErrorKind.Off && kind != ErrorKind.RelayNeedsPlan
     if (kind == ErrorKind.SignedOut && canSignIn) add(ErrorAction.SignIn)
     if (retryHelps && canRetry) add(ErrorAction.TryAgain)
     if (kind == ErrorKind.Unreachable && canChooseHome) add(ErrorAction.OtherHome)

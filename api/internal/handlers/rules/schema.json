@@ -6254,6 +6254,43 @@
      "maximum": 600
     }
    ]
+  },
+  {
+   "key": "direct",
+   "title": "Direct access",
+   "what": "apps outside the home reach it directly over HTTPS, without the relay, when the router allows it: the port on the router and a port forwarded by hand",
+   "version": [
+    1,
+    0
+   ],
+   "fields": [
+    {
+     "name": "enabled",
+     "kind": "bool",
+     "group": "Direct access",
+     "label": "Let apps reach this home directly from outside, without the relay",
+     "help": "The home opens a port on the router, gets its own HTTPS certificate and is checked from outside; apps then play from it directly. Free on every plan.",
+     "default": false
+    },
+    {
+     "name": "map_port",
+     "kind": "bool",
+     "group": "Direct access",
+     "label": "Open the port on the router",
+     "help": "Asks the router (UPnP, NAT-PMP or PCP) to open a port to this home every 20 minutes. Off: forward a port by hand and give it below.",
+     "default": true
+    },
+    {
+     "name": "manual_port",
+     "kind": "int",
+     "group": "Direct access",
+     "label": "Public port",
+     "help": "The port forwarded by hand on the router to this home's direct port. 0: none.",
+     "default": 0,
+     "minimum": 0,
+     "maximum": 65535
+    }
+   ]
   }
  ]
 }

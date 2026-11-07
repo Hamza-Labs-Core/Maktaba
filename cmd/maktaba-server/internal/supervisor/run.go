@@ -175,6 +175,7 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 			wake: make(chan struct{}, 1),
 			done: make(chan struct{}),
 			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand,
+				StartMode: startMode(p),
 				Component: p.Component, Blocked: p.Dormant},
 		})
 	}
@@ -1253,4 +1254,12 @@ func (s *Supervisor) killRun(c *child, cmd *exec.Cmd, waited time.Duration) {
 		tree.kill()
 		_ = cmd.Process.Kill()
 	}
+}
+
+// startMode is a process's ChildStatus.StartMode.
+func startMode(p Process) string {
+	if p.OnDemand {
+		return StartOnDemand
+	}
+	return StartAlways
 }

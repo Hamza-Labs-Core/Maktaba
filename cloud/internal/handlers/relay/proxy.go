@@ -185,7 +185,7 @@ func (d *Deps) Handler() http.Handler {
 				return
 			}
 			// not here, or only a draining tunnel: a newer one on a peer wins
-			if !hopped && d.forwardIfElsewhere(w, r, slug, t) {
+			if !hopped && d.forwardIfElsewhere(w, r, slug, sv.ID, t) {
 				return
 			}
 			if t != nil {
@@ -201,7 +201,7 @@ func (d *Deps) Handler() http.Handler {
 			return
 		}
 		// the home was here a moment ago: hold the request while it reconnects
-		t, served := d.hold(w, r, slug, hopped)
+		t, served := d.hold(w, r, slug, sv.ID, hopped)
 		switch {
 		case served:
 		case t != nil:
@@ -241,11 +241,8 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 		media := mediaPath(r.URL.Path)
 		stream, isStream := streamKey(r.URL.Path, clientIP(r))
 		if isStream && d.Plans != nil && d.Plans.Enforce && d.Plans.StreamLimit && d.Plans.Streams != nil {
-			extra := 0
-			if d.Plans.Extra != nil {
-				extra = d.Plans.Extra(r.Context(), sv.ID)
-			}
-			if limit, ok := billing.StreamLimit(sv.Plan, extra); ok {
+			// the extra streams bought ride on the cached home (tier_changed refreshes it)
+			if limit, ok := billing.StreamLimit(sv.Plan, sv.ExtraStreams); ok {
 				if admitted, open := d.Plans.admit(r.Context(), sv.ID, stream, limit); !admitted {
 					writeErr(w, r, http.StatusTooManyRequests, "stream_limit",
 						fmt.Sprintf("%d devices are already playing through the relay, the most this plan allows", open))

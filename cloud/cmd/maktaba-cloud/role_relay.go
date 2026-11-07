@@ -15,6 +15,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
@@ -60,6 +61,8 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	serversStore := stores.NewServers(pool.DB)
 	meter := billingpkg.NewMeter(pool.DB)
 	meter.Logger = logger
+	// story 50.19 §5: Pro's pay-as-you-go up to its owner's cap
+	meter.PAYG = &billingpkg.PAYGStore{DB: pool.DB}
 	meter.Start(context.Background())
 	defer meter.Close()
 
@@ -176,7 +179,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, meter.WriteMetrics)))
+	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, meter.WriteMetrics, obs.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare

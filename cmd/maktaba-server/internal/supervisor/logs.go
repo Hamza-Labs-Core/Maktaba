@@ -45,9 +45,15 @@ func BuildLogs(cfg config.Config, root string) (Process, error) {
 	addr := LogsAddr(cfg)
 	cmd := exec.Command(exe, "logs", "--root", root, "--addr", addr)
 	cmd.Env = os.Environ()
-	// the dashboards scrape the API's admin /metrics, which merges the supervisor's (53.12)
-	if a := strings.TrimSpace(cfg.Server.AdminAddr); a != "" && os.Getenv("MAKTABA_METRICS_URLS") == "" {
-		cmd.Env = append(cmd.Env, "MAKTABA_METRICS_URLS=http://"+dialable(a)+"/metrics")
+	// the dashboards scrape the API's admin /metrics, which merges the supervisor's, and
+	// streaming's, which has the TV's series for the Streaming board (53.12)
+	if os.Getenv("MAKTABA_METRICS_URLS") == "" {
+		api := ports.APIAdmin.Local()
+		if a := strings.TrimSpace(cfg.Server.AdminAddr); a != "" {
+			api = dialable(a)
+		}
+		cmd.Env = append(cmd.Env, "MAKTABA_METRICS_URLS=http://"+api+"/metrics,http://"+
+			LocalAddr(streamingAdmin(cfg), ports.StreamingAdmin.PortString())+"/metrics")
 	}
 	wire(cmd)
 	return Process{

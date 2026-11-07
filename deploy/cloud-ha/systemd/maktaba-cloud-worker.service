@@ -10,6 +10,8 @@ ExecStart=/usr/local/bin/maktaba-cloud serve --role worker --config /etc/maktaba
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=yes
+# this node's log keeper (story 53.17): /var/lib/maktaba-cloud/logs, writable under ProtectSystem
+StateDirectory=maktaba-cloud
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
