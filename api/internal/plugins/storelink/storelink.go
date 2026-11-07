@@ -400,8 +400,8 @@ const PaidHomeHeader = "X-Maktaba-Home"
 // PaidPackage downloads a paid plugin's package (54.19 §6): it asks the store, signed with
 // the home store key, for a download URL (issued only against a valid entitlement, for 10
 // minutes), checks the URL is the CDN's /paid/<sha256>, and fetches it naming this home. At
-// most max bytes.
-func (l *Link) PaidPackage(ctx context.Context, cdnBase, pluginID, sha string, max int64) ([]byte, error) {
+// most maxBytes.
+func (l *Link) PaidPackage(ctx context.Context, cdnBase, pluginID, sha string, maxBytes int64) ([]byte, error) {
 	s, err := l.LoadState(ctx)
 	if err != nil {
 		return nil, err
@@ -444,5 +444,5 @@ func (l *Link) PaidPackage(ctx context.Context, cdnBase, pluginID, sha string, m
 	if r.StatusCode != http.StatusOK {
 		return nil, &Error{Status: http.StatusBadGateway, Code: CodeUnreachable, Msg: fmt.Sprintf("the CDN answered %d", r.StatusCode)}
 	}
-	return io.ReadAll(io.LimitReader(r.Body, max))
+	return io.ReadAll(io.LimitReader(r.Body, maxBytes))
 }
