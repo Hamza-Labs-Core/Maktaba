@@ -127,15 +127,16 @@ Grants are cached per plugin and invalidated by `NOTIFY plugin_grants_changed`. 
 | T09 | role test (go) | mint route | no one / viewer / admin / cloud-linked play / machine | 401 / 403 / 403 / 403 / 200 |
 | T10 | unit (go) | router | list TCP routes | no `/plugin-api/` |
 | T11 | bench (go) | `library/video` over UDS | 10k calls | p95 ≤ 2 ms |
-| T12 | integration (PG, go) | `queue/request` to another plugin's stage, to a core stage, to own stage not in `may_request` | call | 403 each; own allowed stage enqueued |
+| T12 | integration (PG, go) | `queue/request` to another plugin's stage, to a core stage, to own stage not in `may_request` | call | 403 each; own allowed stage enqueued (events and lineage: 54.40) |
 
 ## Edge cases
 
 - **A video moved to another library mid-job**: scope is checked per call against the current
   library; the next call is refused.
 - **The plugin uninstalled mid-job**: tokens are ended at drain (54.07); a late call gets 401.
-- **Multi-replica API** (cluster full nodes): only the home's API serves the plugin socket in
-  this epic (README H12).
+- **Joined machines**: each machine's API serves the plugin socket for its own jobs and mints
+  their tokens (README H12, story 54.42); a token minted on one machine is refused by every
+  other.
 - **Clock skew** does not matter: tokens are checked by the API that minted them.
 
 ## Build plan

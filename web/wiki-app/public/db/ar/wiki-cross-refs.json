@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 56,
-    "stories": 664,
+    "stories": 668,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -6899,6 +6899,42 @@
       "slug": "plugin-files",
       "title": "ملفات الإضافات على القرص، على شيفرة الحزم في الملحمة 51",
       "story_file": "specs/epics/54-plugins/story-54-38-plugin-files.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.39",
+      "epic": 54,
+      "num": "39",
+      "slug": "flows",
+      "title": "التدفّقات: الرسم البياني المُعلَن وقاعدة الأوراق وفحص الحلقات",
+      "story_file": "specs/epics/54-plugins/story-54-39-flows.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.40",
+      "epic": 54,
+      "num": "40",
+      "slug": "events-lineage",
+      "title": "الأحداث المنشورة والتشغيل بين الإضافات وسلالة المهام وقت التشغيل",
+      "story_file": "specs/epics/54-plugins/story-54-40-events-lineage.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.41",
+      "epic": 54,
+      "num": "41",
+      "slug": "flow-chart",
+      "title": "مخطط التدفّق",
+      "story_file": "specs/epics/54-plugins/story-54-41-flow-chart.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.42",
+      "epic": 54,
+      "num": "42",
+      "slug": "joined-machines",
+      "title": "إضافات الأطراف الثالثة على الأجهزة المنضمّة",
+      "story_file": "specs/epics/54-plugins/story-54-42-joined-machines.md",
       "plan_files": []
     },
     {
