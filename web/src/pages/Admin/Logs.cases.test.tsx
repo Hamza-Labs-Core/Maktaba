@@ -136,9 +136,8 @@ describe("AdminLogs (test-cases/admin-logs.md)", () => {
   ])("LOG-05: %s renders the empty state, no error", async (_, body) => {
     routeGet(get, { [STREAM]: body });
     open();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    await act(async () => {});
-    expect(screen.getByText(EMPTY)).toBeInTheDocument();
+    // the empty state follows the stream's read, not the page's first read (#697)
+    expect(await screen.findByText(EMPTY)).toBeInTheDocument();
     expect(screen.queryByText("Could not load logs.")).toBeNull();
     expect(screen.queryByText(CRASH)).toBeNull();
   });
