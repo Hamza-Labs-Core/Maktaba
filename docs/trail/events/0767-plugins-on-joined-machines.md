@@ -19,7 +19,7 @@ prs: [759, 762, 763]
 - `plugin_tables_guard` stays as it is: routing a machine's writes through the home's API keeps one place for capability, quota and lineage checks, and the previous release's tests still pass on the new schema.
 - The home's auth gate must list the machine routes (`/internal/cluster/plugins/`, `/internal/cluster/plugin-api/`) beside the delegation middleware, or a signed machine gets 401 before the handler runs.
 - Main moved twice while the stack waited (compute took plugin API 1.1 and slot 0197, first-party plugins slot 0198): events became 1.2 and the lineage migration 0199. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start.
-- `make compat-prev` writes `api/internal/compatprobe` while it runs; a run stopped part-way leaves it, and `git add -A` then commits it (lint refuses its `fmt.Printf`). Stage paths by name after stopping one.
+- `make compat-prev` writes `api/internal/compatprobe` while it runs; a run stopped part-way left it, and `git add -A` then committed it to #762 (lint refused its `fmt.Printf`). The directory is now in `.gitignore`, and `tools/compat-prev/run.sh` exits through its cleanup on INT and TERM too; only a SIGKILL can still leave it, and git ignores it then.
 - The flow check's N22 budget is timed as the process's own CPU time (getrusage, `process.cpuUsage`): the integration runner shares its cores, and its wall clock measured the queue.
 - The first-party parity self-test fails locally on plain main with a dev API binary built from this tree; CI is its judge.
 
