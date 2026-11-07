@@ -1867,7 +1867,10 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   the supervisor for the runner (`POST /runners/{group}/start`, at most once a minute per
   group), which then serves the next jobs. A runner with no work for ten minutes exits 0 and
   is not restarted until asked again. An idle home, Core's included, runs none (Core's budget
-  is four processes). `ml` and `index`, their own components' processes, run while those
+  is four processes). A group is held while none of the components its plugins serve is on,
+  and the supervisor never starts a held group for an ask. It reports each process's start
+  mode (`always`, `on_demand`), and nothing waits on an on-demand process nobody asked for
+  (story 54.37 §4). `ml` and `index`, their own components' processes, run while those
   components are on.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
