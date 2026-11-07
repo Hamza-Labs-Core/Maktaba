@@ -287,6 +287,12 @@ build fails when the two differ.
 
 ### Added
 
+- **The Player for Windows and Linux has Report this on its error screens and says what
+  happened to its last crash.** An error's **Report this** opens Report a problem with that
+  call's reference, and after signing in the player says once whether its last crash went to
+  the home or stays on the computer. maktaba.dev's Player page shows the crash-report question
+  and Report a problem on an iPhone and an Android phone.
+
 - **The Apple apps send crash reports to the home, report problems, and the Remote reads the
   home's diagnostics.** Maktaba Remote's Home tab has **Errors** (the error groups with their
   14 days, a group's chart and lines, Mark seen, Resolve and Mute), **Logs** (search, and
