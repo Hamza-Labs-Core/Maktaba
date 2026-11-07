@@ -1072,6 +1072,15 @@ build fails when the two differ.
   problem reports** on the plugin's page (audited); the plugin host's own lines stay.
   maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
 
+- **Plugins from the command line, developer mode and `mkp run` (Epic 54, stories 54.10 §4,
+  §5 and 54.12).** `maktaba-server plugins list|show|install|update|enable|disable|start|stop|
+  rollback|remove|grants|policy` does what Settings → Plugins does, for a home without a
+  browser, with the components CLI's `--yes`, `--json`, `--dsn` and exit codes.
+  `maktaba-server plugins dev <folder>` installs a plugin folder as Development and reloads it
+  on every save (removed when it stops, unless `--keep`). `mkp run <folder> --home
+  http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
+  developer's machine. maktaba.dev: Testing and packaging.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

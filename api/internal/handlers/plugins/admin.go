@@ -351,6 +351,12 @@ func (h *Admin) installForm(w http.ResponseWriter, r *http.Request, expect strin
 			req.Enable, _ = strconv.ParseBool(v)
 		case "confirm_name":
 			req.ConfirmName = v
+		case "development":
+			// `mkp run --home` (story 54.12): marked Development, an unreviewed level, so
+			// the home's Allow unreviewed plugins gates it as any unreviewed file
+			if dev, _ := strconv.ParseBool(v); dev {
+				req.ReviewLevel = "development"
+			}
 		}
 		_ = part.Close()
 	}

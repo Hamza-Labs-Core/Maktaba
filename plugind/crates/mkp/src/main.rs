@@ -5,6 +5,9 @@
 //!   mkp pack <folder> <out.mkplugin> [--key <id>]
 //!                                     files.json and the package, every file's sha256 listed;
 //!                                     with --key, signed (signatures/developer.sig, 54.14)
+//!   mkp run <folder> --home <http://home:port> --user <admin>
+//!                                     installs it on a home in developer mode (Development,
+//!                                     turned on) over the admin API; again to update it
 //!   mkp keys new | list | export-public [id]
 //!                                     the developer's Ed25519 signing key (54.14 §1)
 //!   mkp test <folder> --stage <name> [--subject kind:id] [--fixtures api.json] [--settings json]
@@ -20,6 +23,7 @@ mod flow;
 mod harness;
 mod keys;
 mod pack;
+mod run;
 mod template;
 
 use std::path::{Path, PathBuf};
@@ -29,6 +33,7 @@ fn usage() -> ! {
     eprintln!(
         "usage:\n  mkp new rust <id> <folder>\n  mkp check <folder>\n  mkp pack <folder> <out.mkplugin> [--key <id>]\n  \
          mkp keys new | list | export-public [id]\n  \
+         mkp run <folder> --home <http://home:port> --user <admin>\n  \
          mkp test <folder> --stage <name> [--subject kind:id] [--fixtures api.json] [--settings json] [--with <folder>]\n  \
          mkp flow <folder> [<folder>...]"
     );
@@ -50,9 +55,10 @@ fn main() {
             keys::export_public(args.get(2).map(String::as_str))
         }
         Some("test") if args.len() >= 2 => test(&args[1..]),
+        Some("run") if args.len() >= 2 => run_cmd(&args[1..]),
         Some("flow") if args.len() >= 2 => flow_cmd(&args[1..]),
         Some("--version") => {
-            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 1);
+            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 2);
             Ok(())
         }
         _ => usage(),
@@ -189,4 +195,23 @@ pub fn manifest_of(src: &[u8]) -> Result<(String, String), String> {
     })?;
     let s = |k: &str| m.get(k).and_then(|v| v.as_str()).map(str::to_string).ok_or(format!("the manifest has no {k}"));
     Ok((s("id")?, s("version")?))
+}
+
+/// `mkp run <folder> --home <url> [--user <admin>]` (story 54.12 §2).
+fn run_cmd(args: &[String]) -> Result<(), String> {
+    let mut home = String::new();
+    let mut user = std::env::var("MKP_HOME_USER").unwrap_or_default();
+    let mut i = 1;
+    while i < args.len() {
+        match (args[i].as_str(), args.get(i + 1)) {
+            ("--home", Some(v)) => home = v.clone(),
+            ("--user", Some(v)) => user = v.clone(),
+            _ => usage(),
+        }
+        i += 2;
+    }
+    if home.is_empty() || user.is_empty() {
+        return Err("mkp run needs --home <http://home:port> and --user <admin> (or MKP_HOME_USER)".into());
+    }
+    run::run(Path::new(&args[0]), &home, &user)
 }
