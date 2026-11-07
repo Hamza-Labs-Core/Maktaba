@@ -217,6 +217,21 @@ build fails when the two differ.
 
 ### Security
 
+- **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
+  field that saved what was typed into the browser's storage in plain text and never used it
+  (the server reads `OPENAI_API_KEY`). The field is gone, the page says where the key is set,
+  and a key an earlier build kept is removed when the page opens: see
+  `docs/security/advisories/2026-11-06-openai-key-in-browser.md` (English and Arabic).
+- **A processing node's own sign-in cookies are Secure over HTTPS.** They followed only
+  `MAKTABA_HSTS`/`MAKTABA_COOKIES_SECURE`, so a node reached over HTTPS without them set
+  cookies a plain-HTTP request could carry; a node reached over plain HTTP on the LAN keeps
+  working as before.
+- **The diagnostics export asks the streaming and pipeline logs for its filter only.** It
+  passed the caller's whole query string to those internal services; it now sends the level,
+  time window, services, search and limit it parsed, and nothing else.
+- **A status the update pages relay undecorated is never served as HTML.** The About page's
+  update status passed an error or non-JSON body through with whatever type it had; it now
+  goes out as JSON or plain text, with `nosniff`.
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
@@ -315,6 +330,16 @@ build fails when the two differ.
   a runbook; pages reach the owner's phone and repeat until acknowledged.
   maktaba.dev's new guide, Maktaba Cloud: how it stays up, says what an owner sees and how
   the cloud is built and rehearsed.
+- **status.maktaba.tv says whether remote access is working (Epic 50, story 50.11).** A
+  static page on GitHub Pages, off Hetzner, in English and Arabic: Remote access, Sign-in and
+  accounts and Notifications, each Working, Slow, Down or Maintenance with a 90-day uptime
+  bar; current incidents, maintenance notices and the past 90 days; and the 99.9 % monthly
+  target for remote access beside last month's figure, a target with no credit. Its states
+  come from the probes inside and outside Hetzner, never by hand: both failing twice in a row
+  is Down, one alone is Slow, and a change is published within minutes. `summary.json` gives
+  the apps the same states. The witness gets one public site, behind a token, for the outside
+  probe; the cloud rehearsal's `status-feed` proves an outage reaches the page within two
+  rounds. maktaba.dev's cloud guide describes the page and `summary.json`.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -779,6 +804,61 @@ build fails when the two differ.
   once. When it is on, an uncaught error is sent to `POST /api/diagnostics/envelope` (a Sentry
   envelope). The home refuses an envelope without that consent, scrubs it again, keeps it, and
   groups it on the Errors page.
+
+- **Paid plugins go through pluggable payment providers (Epic 54, story 54.19).** The plugin
+  store gets its payments side: one `PaymentProvider` interface (checkout, webhooks verified
+  with each provider's own secret, refunds, payouts to developers, tax and dispute hooks, and
+  a descriptor of what the provider can do) and a registry the store admin configures, with
+  several providers at once, chosen by the buyer's country, the currency and the admin's
+  order. Sales, refunds, disputes and payouts go into the store's own ledger whatever provider
+  took them; the 85/15 split rounds Maktaba's share down; homes get store-signed entitlements
+  and never see a provider. Two modules, neither connected to a live account: a test provider
+  for CI and Adyen for Platforms (split payments to each developer's balance account). A
+  provider is used live only after its written confirmation that it allows plugin resale.
+  CI's new `store` job runs the tests and keeps each provider's code in its own module; the
+  store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
+  adding a provider).
+
+- **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
+  two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)
+  and, once the store opens, the store's (`signatures/store.sig`, which names the developer's
+  key, the review level and the capabilities it reviewed). The home checks them offline at
+  install against a root built into the server (`plugins-root.json`, two root keys held
+  offline, none committed yet), the store's key list it signs (`store-keys.json`, refused when
+  older than the newest seen or expired) and every file's checksum, and records the level:
+  none, developer, automated or reviewed. A store-countersigned plugin needs no "Allow
+  unreviewed plugins" and shows Reviewed or Automated checks on its card; a file whose
+  signature does not check out is refused, naming the step (`plugin_signature_invalid`,
+  `developer_key_mismatch`). The same rules verify the revocation list, its head and the
+  catalog (anti-rollback, 48-hour and 7-day expiry, a clock in the past cannot make an old
+  list fresh). For developers, `mkp keys new`, `mkp keys export-public` and
+  `mkp pack --key` sign a package. Go (the home), Rust (the SDK) and TypeScript (the store's
+  signer, `store/signing`) agree on one set of vectors, and a new `store` CI job runs the online
+  key rotation drill with test keys. maktaba.dev has a new page, Signing and the chain of
+  trust. Migration 0196.
+
+- **Plugins can ask the home's own models (Epic 54, story 54.21).** Plugin API 1.1 adds
+  `compute`: `compute.embed` turns up to 64 texts into vectors with the model semantic search
+  uses (with its id), and `compute.llm` asks the language model chosen for plugins (Settings →
+  Rules → Plugin models; the tag check's model by default), up to 1,024 tokens, optionally held
+  to a JSON schema. Only a model on the home or the local network is ever asked: a server on the
+  internet is refused (`compute_remote`), checked on every connection. Plugins share the
+  `lookup` slot with Maktaba's own model stages, one question at a time, and get at most one
+  slot in three while Maktaba's work waits; each plugin may ask 2,000 questions and embed
+  50,000 texts a day by default. Prompts, texts and answers are never logged. Plugins built
+  for 1.0 keep running. Migration 0197 (`plugin_compute_usage`, `compute_leases`).
+
+- **The Apple apps send crash reports to the home, report problems, and the Remote reads the
+  home's diagnostics.** Maktaba Remote's Home tab has **Errors** (the error groups with their
+  14 days, a group's chart and lines, Mark seen, Resolve and Mute), **Logs** (search, and
+  Follow a request from a reference), **Dashboards** (Overview and Storage) and **Problem
+  reports** (the inbox: status and reply), through the web's routes. Every Apple app asks once
+  after signing in whether to **send crash reports** to the home, off until the person says
+  yes; when on, a kept crash (MetricKit on iPhone, iPad and Mac, PLCrashReporter on Apple TV)
+  goes to the home at the next launch as a scrubbed envelope with the app's log. **Report a
+  problem** (Profile, the Remote's Home tab, the TV's Settings, and **Report this** on error
+  screens) previews what it sends and says the report's number; **My reports** shows the
+  admin's reply. `docs/app-privacy.md` keeps the App Store and Play privacy answers.
 
 - **The Android apps send crash reports to the home, report problems, and the Remote reads the
   home's diagnostics.** Maktaba Remote for Android has **Diagnostics** in its account menu:

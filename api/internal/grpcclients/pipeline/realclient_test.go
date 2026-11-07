@@ -37,6 +37,7 @@ func newFakePipelineClient(t *testing.T, handlers map[string]func(map[string]any
 		HandlerType: (*any)(nil),
 		Methods: []grpc.MethodDesc{
 			{MethodName: "Embed", Handler: mk(handlers["Embed"])},
+			{MethodName: "EmbedTexts", Handler: mk(handlers["EmbedTexts"])},
 			{MethodName: "SemanticSearch", Handler: mk(handlers["SemanticSearch"])},
 			{MethodName: "ListBackends", Handler: mk(handlers["ListBackends"])},
 			{MethodName: "ExtractEmbeddedSubtitle", Handler: mk(handlers["ExtractEmbeddedSubtitle"])},
@@ -97,6 +98,28 @@ func TestRealClient_Embed(t *testing.T) {
 	}
 	if len(vec) != 3 || vec[0] != 0.1 {
 		t.Fatalf("vector=%v", vec)
+	}
+}
+
+// Story 54.21: a plugin's texts go to EmbedTexts and come back with the model id.
+func TestRealClient_EmbedTexts(t *testing.T) {
+	c := newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"EmbedTexts": func(req map[string]any) map[string]any {
+			if texts, _ := req["texts"].([]any); len(texts) != 2 {
+				t.Errorf("texts=%v", req["texts"])
+			}
+			return map[string]any{"model": "intfloat/multilingual-e5-small", "vectors": []any{[]any{0.5, 1.0}, []any{0.25, 0.0}}}
+		},
+	})
+	model, vecs, err := c.EmbedTexts(context.Background(), []string{"a", "b"})
+	if err != nil || model != "intfloat/multilingual-e5-small" || len(vecs) != 2 || vecs[1][0] != 0.25 {
+		t.Fatalf("EmbedTexts = %q %v %v", model, vecs, err)
+	}
+	c = newFakePipelineClient(t, map[string]func(map[string]any) map[string]any{
+		"EmbedTexts": func(map[string]any) map[string]any { return map[string]any{"vectors": []any{}} },
+	})
+	if _, _, err := c.EmbedTexts(context.Background(), []string{"a"}); err == nil {
+		t.Fatal("a short answer is an error")
 	}
 }
 

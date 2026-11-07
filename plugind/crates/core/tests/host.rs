@@ -216,8 +216,10 @@ fn forbidden_imports_cannot_link_without_the_audit() {
 fn runaway_jobs_end_and_the_host_serves_the_next() {
     let f = Fixture::new(false);
     let p = f.package("hostile", &guest("hostile"), ALL);
-    let t = Instant::now();
     f.host.preload(ID, VERSION, &p).unwrap();
+    // timed from the job's start: the preload (compiling the guest) is not part of how fast
+    // a runaway job ends, and on a slow runner it alone pushed this past the bound
+    let t = Instant::now();
     // fuel well above what a second of looping burns, so the wall deadline ends it
     let r = f.run(&p, "loop", &[], Limits { timeout_ms: 1_000, fuel: 1_000_000_000_000, ..Default::default() });
     let took = t.elapsed();
@@ -409,7 +411,7 @@ fn dispatch_over_the_socket() {
     protocol::write_frame(&mut c, &Request::Health).unwrap();
     let Response::Health(h) = protocol::read_frame(&mut c).unwrap() else { panic!() };
     assert!(h.ok && h.ready);
-    assert_eq!(h.plugin_api, "1.0");
+    assert_eq!(h.plugin_api, "1.1");
 
     let mut c = plugind_core::uds::connect(&sock).unwrap();
     protocol::write_frame(&mut c, &Request::Run(Box::new(req(&p, "progress", &[], Limits::default())))).unwrap();

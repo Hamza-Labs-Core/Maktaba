@@ -1,18 +1,21 @@
 # maktaba-plugind: the plugin host (Epic 54, stories 54.02 and 54.03).
 #
 #   crates/manifest  the manifest validator (story 54.01), the Rust reader of shared/plugins
+#   crates/sig       the chain of trust (story 54.14): canonical JSON, the root, store keys,
+#                    package signatures and the signed lists (the SDK's twin of the home's
+#                    shared/plugins/pluginsig), and the developer's signer for mkp
 #   crates/core      plugind-core: the Wasmtime engine, the WIT host, limits, the import
 #                    audit, the compile cache and the dispatch protocol (a library, so the
 #                    SDK's harness runs the same code, story 54.12)
 #   crates/plugind   the maktaba-plugind binary: flags, the OS sandbox, the dispatch socket
-#   crates/mkp       the plugin SDK's CLI (story 54.12): new, check, pack, test (the harness
+#   crates/mkp       the plugin SDK's CLI (story 54.12): new, check, pack, keys, test (the harness
 #                    runs plugind-core against a mock plugin API from fixtures)
 #
 # Wasmtime is pinned; a Wasmtime security advisory is patched within 14 days through the
 # normal release path (README §5.2). Caches recompile when the version changes (54.02 §6).
 [workspace]
 resolver = "2"
-members = ["crates/pluginmanifest", "crates/core", "crates/plugind", "crates/mkp"]
+members = ["crates/pluginmanifest", "crates/sig", "crates/core", "crates/plugind", "crates/mkp"]
 
 [workspace.package]
 edition = "2021"

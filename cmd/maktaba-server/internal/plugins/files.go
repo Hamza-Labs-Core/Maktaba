@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsettings"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
 // wordsOf are a package's i18n words by language.
@@ -70,6 +71,9 @@ type Refusal struct {
 	Detail string `json:"detail"`
 	// Reason is the status reason it maps to (unpack_refused, disk_space, busy).
 	Reason string `json:"reason"`
+	// Step is the chain's step a signature refusal names (54.14 §3: root, store_keys,
+	// store_sig, developer_sig, digest).
+	Step string `json:"step,omitempty"`
 }
 
 func (r *Refusal) Error() string { return r.Code + ": " + r.Detail }
@@ -89,8 +93,13 @@ type Installed struct {
 	Path   string `json:"path"`
 	// Manifest is the normalised manifest (the four validators' one text).
 	Manifest json.RawMessage `json:"manifest"`
-	// Signed: the package carries a developer signature (none is checked before 54.14).
+	// Signed: the package carries a developer signature.
 	Signed bool `json:"signed"`
+	// ReviewLevel is what its signatures prove (54.14 §2): none, developer, automated or
+	// reviewed; DeveloperKeyID the key that signed it, ReviewedAt the store's review time.
+	ReviewLevel    string     `json:"review_level"`
+	DeveloperKeyID string     `json:"developer_key_id,omitempty"`
+	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
 	// Already: this version and digest were on disk; nothing was written.
 	Already bool `json:"already"`
 }
@@ -100,6 +109,16 @@ type Files struct {
 	Layout packs.Layout
 	// Preload checks a package folder in the sandboxed host (nil: HostPreload's).
 	Preload func(ctx context.Context, id, version, dir string) *Refusal
+	// Trust checks the package's signatures (nil: the embedded root, with the state and
+	// lists beside Layout.Root).
+	Trust *Trust
+}
+
+func (f *Files) trust() *Trust {
+	if f.Trust != nil {
+		return f.Trust
+	}
+	return &Trust{StateDir: filepath.Dir(f.Layout.Root)}
 }
 
 // newStaging is a hidden folder name in the root for an unpack whose id is not known yet.
@@ -123,7 +142,15 @@ func (f *Files) Install(ctx context.Context, r io.Reader) (*Installed, error) {
 		if errors.Is(err, syscall.ENOSPC) {
 			return nil, refuse(ReasonDiskSpace, ReasonDiskSpace, "%v", err)
 		}
-		if code := componentpack.PluginCode(err); code != "" {
+		code := componentpack.PluginCode(err)
+		if code == componentpack.CodePackageDigestMismatch && pkg != nil && (len(pkg.DeveloperSig) > 0 || len(pkg.StoreSig) > 0) {
+			// a signed package whose file does not match the signed list: the chain's last
+			// step (54.14 §3)
+			ref := refuse(pluginsig.CodeSignatureInvalid, ReasonUnpackRefused, "%s: %v", pluginsig.StepDigest, err)
+			ref.Step = pluginsig.StepDigest
+			return nil, ref
+		}
+		if code != "" {
 			return nil, refuse(code, ReasonUnpackRefused, "%v", err)
 		}
 		return nil, err
@@ -158,9 +185,17 @@ func (f *Files) Install(ctx context.Context, r io.Reader) (*Installed, error) {
 	}
 	id, _ := m["id"].(string)
 	version, _ := m["version"].(string)
+	sig, ref := f.verify(pkg, m, id, version)
+	if ref != nil {
+		return nil, ref
+	}
 	out := &Installed{PluginID: id, Version: version, Digest: pkg.FilesSHA256,
 		Folder: packs.PackFolder(version, pkg.FilesSHA256), Manifest: pluginmanifest.Normalised(m),
-		Signed: len(pkg.DeveloperSig) > 0}
+		Signed: len(pkg.DeveloperSig) > 0, ReviewLevel: sig.Level, DeveloperKeyID: sig.DeveloperKeyID}
+	if !sig.ReviewedAt.IsZero() {
+		at := sig.ReviewedAt
+		out.ReviewedAt = &at
+	}
 	unlock, err := f.Layout.Lock(ctx, id)
 	if err != nil {
 		return nil, refuse(ReasonBusy, ReasonBusy, "%v", err)
@@ -187,6 +222,31 @@ func (f *Files) Install(ctx context.Context, r io.Reader) (*Installed, error) {
 		}
 	}
 	return out, nil
+}
+
+// verify checks the package's signatures (54.14 §3) after the safe reader checked every
+// file against files.json: no signature is level none; any signature present must verify.
+func (f *Files) verify(pkg *componentpack.PluginPackage, m map[string]any, id, version string) (*pluginsig.Result, *Refusal) {
+	caps, err := pluginsig.CapabilitiesSHA256(m["capabilities"])
+	if err != nil {
+		return nil, refuse(pluginsig.CodeSignatureInvalid, ReasonUnpackRefused, "capabilities: %v", err)
+	}
+	var keys *pluginsig.StoreKeys
+	if len(pkg.StoreSig) > 0 {
+		keys = f.trust().StoreKeys()
+	}
+	res, err := pluginsig.VerifyPackage(pluginsig.Package{FilesJSON: pkg.FilesJSON, DeveloperSig: pkg.DeveloperSig,
+		StoreSig: pkg.StoreSig, PluginID: id, Version: version, CapabilitiesSHA256: caps}, keys)
+	if err != nil {
+		code, step := pluginsig.CodeOf(err)
+		if code == "" {
+			code = pluginsig.CodeSignatureInvalid
+		}
+		ref := refuse(code, ReasonUnpackRefused, "%v", err)
+		ref.Step = step
+		return nil, ref
+	}
+	return res, nil
 }
 
 func (f *Files) preload(ctx context.Context, id, version, dir string) *Refusal {

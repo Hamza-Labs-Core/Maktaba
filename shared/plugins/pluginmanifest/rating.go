@@ -30,7 +30,7 @@ func Rating(capabilities []string, reviewLevel string) int {
 			r--
 		}
 	}
-	if reviewLevel != "store" {
+	if reviewLevel != "store" && reviewLevel != "automated" && reviewLevel != "reviewed" {
 		r--
 	}
 	if r < 1 {

@@ -251,6 +251,16 @@ plugins:
   - 'web/src/i18n/**'
   - '.github/workflows/_plugins.yml'
 
+# the plugin store (Epic 54): its own folder, the shared signature and entitlement vectors
+# and the home's verifier that checks them, paid plugins' payment providers and the check
+# that keeps each provider in its module (_store.yml)
+store:
+  - *ci
+  - 'store/**'
+  - 'shared/plugins/**'
+  - 'tools/ci/payment_provider_allowlist.py'
+  - '.github/workflows/_store.yml'
+
 # ---- the server's tiers ---------------------------------------------------------------
 
 # Postgres + Chroma: the Go modules' and the pipeline's integration tiers, cloud's, and the

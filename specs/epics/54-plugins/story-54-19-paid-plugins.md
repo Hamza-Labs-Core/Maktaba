@@ -1,14 +1,14 @@
 # Story 54.19 — Paid plugins
 
-> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, 54.37, the Phase 3 payment provider decision ·
+> Epic 54 · Phase 3 · Depends on: 54.14, 54.15, 54.18, 54.37 ·
 > Needed by: —
 
 ## Why
 
 Developers maintain what pays (Plex's plugins faded partly because nobody was paid to keep
 them working). Both free and paid plugins are required. The store sells them **on its own**:
-its own payment provider account and seller-of-record choice, its own payouts, tax records and
-refunds, and its own signed entitlements that homes check offline. Nothing here uses Maktaba
+its own payment provider accounts, its own payouts, tax records and refunds, and its own
+signed entitlements that homes check offline. Nothing here uses Maktaba
 Cloud's billing (Epic 50.19), its licence issuer or its accounts, and no home calls the cloud to
 use a paid plugin.
 
@@ -17,50 +17,79 @@ Decisions of 2026-11-03 that shape this story:
 - **The store is independent of Maktaba Cloud**, payments included (54.15 "Why independent").
 - **Split:** the developer gets 85 %, Maktaba keeps 15 % of the price.
 - **Developer fee:** free to publish free plugins; a one-time $25 to sell.
-- **Seller of record and payment processor: chosen at Phase 3.** This story is
-  written against a provider-agnostic `PaymentProvider` interface so the choice does not change
-  the rest of the design.
+- **Payment providers are pluggable** (decided 2026-11-06, README §14 item 2). No single
+  provider is chosen: the store runs providers behind one `PaymentProvider` interface, several
+  at once, and adding one is a module and its configuration.
 
 ## Description
 
-### 1. The Phase 3 decision this story waits for
+### 1. Pluggable payment providers
 
 The store resells third-party products, which many sellers of record restrict (Paddle among
-them), so a candidate is chosen only after it confirms in writing that it allows plugin resale.
-The provider account is the store's own, opened
-for the store and separate from any account used for cloud billing (separate merchant account,
-separate API keys, separate webhook secrets, separate payout bank details).
+them), and no one provider serves every region and currency the store sells in. So the
+store does not wait for one choice: payment providers are pluggable, and a provider is used
+live only after it confirms in writing that it allows plugin resale. Every provider account
+is the store's own, opened for the store and separate from any account used for cloud
+billing (separate merchant account, API keys, webhook secrets and payout bank details).
 
-| # | Model | Who sells | Who files VAT and sales tax | How developers are paid | Candidates to evaluate |
+A provider follows one of three models, named in its capability descriptor, and the store
+can run providers of different models at once:
+
+| # | Model | Who sells | Who files VAT and sales tax | How developers are paid | Candidates |
 |---|---|---|---|---|---|
-| A | **A merchant of record sells for the store** | the provider | the provider | the provider pays the store; the store pays each developer their 85 % monthly | Paddle, FastSpring, 2Checkout (Verifone) |
-| B | **The store is the seller** with a marketplace payment provider | the store's legal entity | the store | the provider splits each payment: 85 % to the developer's sub-account, 15 % to the store | Adyen for Platforms, PayPal (marketplace / Commerce Platform), Checkout.com; for the Gulf and Egypt, Tap Payments, PayTabs or Paymob |
-| C | **Developers sell directly** on their own checkout | the developer | the developer | directly; the store invoices its 15 % monthly, and verifies the developer's licence keys offline | none needed for sales; the store's 15 % invoices and the $25 fee still need one of A or B |
+| A | **A merchant of record sells for the store** (`merchant_of_record`) | the provider | the provider | the provider pays the store; the store pays each developer their 85 % monthly (`store_batches`) | Paddle, FastSpring, 2Checkout (Verifone) |
+| B | **The store is the seller** with a marketplace provider (`marketplace`) | the store's legal entity | the store | the provider splits each payment: 85 % to the developer's sub-account, 15 % to the store (`provider_splits`) | Adyen for Platforms, PayPal (marketplace), Checkout.com; for the Gulf and Egypt, Tap Payments, PayTabs or Paymob |
+| C | **Developers sell directly** (`developer_direct`) | the developer | the developer | directly; the store invoices its 15 % monthly and verifies the developer's licence keys offline | none needed for sales; the store's 15 % invoices and the $25 fee go through an A or B provider |
 
-Until one is chosen, everything in §3–§7 is built against fakes and stays off.
+The first two modules are `fake` (CI and staging; its configuration plays model A or B) and
+`adyen` (Adyen for Platforms, model B: hosted Checkout sessions with splits to each
+developer's balance account, HMAC-signed webhooks, the store files tax; local acquiring in
+the UAE and Saudi Arabia, SAR, AED and EGP among its currencies). Neither is wired to live
+keys. A further provider, a Gulf or Egypt one for example, is a module beside them.
 
-### 2. The `PaymentProvider` interface
+### 2. The `PaymentProvider` interface and the registry
 
 `store/payments/provider.ts`:
 
-| Method | What it does |
+| Member | What it does |
 |---|---|
-| `onboardDeveloper(dev) → URL` | starts the provider's identity and payout onboarding (A: the store's own payout details form; B: the provider's sub-account onboarding; C: registering the developer's licence-key public key) |
-| `payoutStatus(dev) → active / pending / restricted` | whether the developer can sell |
-| `checkout(buyer, home, product) → URL` | a hosted checkout for the price, tax included where the provider or the store is seller (A, B); C answers the developer's own checkout URL |
-| `parseEvent(request) → Event` | a verified webhook: paid, refunded, disputed, payout failed |
-| `refund(purchase)` | full refund, reversing the developer's share |
-| `payouts(period) → Payout[]` | for A, the store's monthly payout run (85 % of the month's net sales per developer, after refunds); for B and C, a report only |
+| `capabilities` | the descriptor: `id`, `model` (A, B or C above), `payouts` (`provider_splits`, `store_batches`, `none`), `subscriptions`, `refunds` (full or partial), `disputes`, `tax` (who calculates it), `regions` (buyer countries), `currencies` |
+| `onboardDeveloper(dev, returnUrl) → {url, accountRef}` | starts the provider's identity and payout onboarding (A: the store's own payout form; B: the provider's sub-account onboarding; C: registering the developer's licence-key public key) |
+| `payoutStatus(accountRef) → active / pending / restricted` | whether the developer can sell through this provider |
+| `createCheckout(request) → {providerRef, url, expiresAt}` | a hosted checkout for the price with its split, tax included where the provider or the store is seller |
+| `parseWebhook(request) → ProviderEvent[]` | verifies the webhook's signature with the provider's secret before reading it, and answers what it said in the store's words: payment succeeded or failed, refund succeeded or failed, dispute opened, won or lost, payout paid or failed, account updated; `webhookAck()` is the body the provider expects back |
+| `refund(request)` | a refund, reversing the developer's share |
+| `payout(instruction)` | one developer's monthly payout (`store_batches` providers only) |
+| `quoteTax?(price, country)` | the tax hook: the provider's tax on a price, when it calculates tax |
+| `submitDisputeEvidence?(ref, evidence)` | the dispute flow: the store's purchase, entitlement and download records |
 
-Implementations: `fake` (tests and staging), then exactly one real provider after the Phase 3
-decision. CI check T07 keeps it to that one: only the chosen provider's SDK and API hosts may
-appear under `store/`.
+A module (`store/payments/providers/<id>/`) exports its id, the Worker secrets it needs
+(`PAYMENTS_<ID>_<NAME>`), a parser for its settings and a factory; it also has a
+`provider.json` listing its markers (SDK packages, API hosts, key prefixes). Adding a
+provider is that folder, one line in `payments/providers/index.ts` and the store admin's
+configuration. Nothing outside the folder names a provider.
+
+**The registry** (`store/payments/registry.ts`) reads `payment_providers` (store-commerce):
+one row per provider with `enabled`, `priority`, `mode` (`test` or `live`), the buyer
+`regions` and `currencies` the store uses it for, `resale_confirmed_at` and its non-secret
+`settings`. A sale goes to the first enabled provider, in the admin's order, that sells to the
+buyer's country in the price's currency (and renews, for a yearly product, and, for a
+`provider_splits` provider, holds an active account for the developer). A `live` row without
+`resale_confirmed_at`, or without its secrets, is not used and the store admin page says why.
+A purchase, its refund, its disputes and its payouts stay with the provider that took it.
+
+**One ledger.** `purchases`, `ledger_entries` (every movement, signed, per party: `maktaba`
+or `developer:<id>`), `provider_events`, `payouts`, `entitlements`, `seller_fees`,
+`provider_accounts`, `products` and `prices` are the store's own (store-commerce migration
+`0001_payments.sql`); each provider's records are mapped into them as `ProviderEvent`s. The
+home never sees a provider: it sees only entitlements the store signs (§6).
 
 Webhooks go to the `store-web` Worker at `POST plugins.maktaba.tv/v1/payments/webhook/<provider>`:
-verified by `parseEvent` with the provider's signing secret (a Worker secret), idempotent on
-the provider's event id (`provider_events` unique key in D1 `store-commerce`), and answered
-`200` only after the D1 write commits, so the provider retries anything lost. Provider
-secrets are set by the owner as Worker secrets, never in files or CI logs.
+verified by the provider's module with its signing secret (a Worker secret), idempotent on
+the provider's event id (`provider_events` key `(provider_id, event_id)`), and answered `200`
+only after the D1 write commits, so the provider retries anything lost. A bad signature is
+`401` and nothing is stored. Provider secrets are set by the owner as Worker secrets, never in
+files or CI logs.
 
 ### 3. Developers get paid
 
@@ -80,8 +109,8 @@ secrets are set by the owner as Worker secrets, never in files or CI logs.
 ### 4. Products and prices
 
 - `products (plugin_id, kind ("one_time" | "yearly"), price per currency, active)` in
-  `store-commerce`. Prices in USD, EUR, GBP, SAR, AED, EGP where the chosen provider supports
-  them, set by the developer within store limits ($1–$200 or equivalent).
+  `store-commerce`. Prices in USD, EUR, GBP, SAR, AED, EGP where an enabled provider charges
+  in them, set by the developer within store limits ($1–$200 or equivalent).
 - A price change applies to new purchases; yearly renewals keep the old price for the current
   term.
 - Free plugins stay free: a listed free plugin cannot become paid (a new plugin id is needed),
@@ -96,7 +125,8 @@ secrets are set by the owner as Worker secrets, never in files or CI logs.
    `https://plugins.maktaba.tv/buy/<plugin id>` in the admin's browser with a one-time,
    home-signed purchase intent (posted, not in the URL); the buyer signs in to the store
    account linked to that home.
-3. The store calls `checkout`. With A and B the buyer pays on the provider's hosted page; with
+3. The registry picks the provider for the buyer's country and currency, and the store calls
+   its `createCheckout`. With A and B the buyer pays on the provider's hosted page; with
    C the buyer is sent to the developer's checkout with the store's home id attached.
 4. The provider's webhook records `purchases (account, home, plugin, product, amount, currency,
    maktaba_share, developer_share, provider_ref, status, period_end)`. With C, the developer's
@@ -147,15 +177,17 @@ provider's own fees are shown to developers as the provider states them.
 
 ### 7. Refunds, disputes and tax: owned by the store
 
-- **Refunds** within 14 days on request in the store account page, automatic through `refund`
+- **Refunds** within 14 days on request in the store account page, automatic through the
+  provider that took the sale (`refund`)
   (the developer's share is reversed, or for A deducted from the next monthly payout); the
   entitlement ends at the next refresh. Later refunds are a `store_admin` decision.
 - **Disputes:** a lost dispute ends the entitlement and reverses the developer's share the
   same way.
 - A plugin `disable`-revoked for malware: buyers are refunded automatically; the developer's
   share is reversed.
-- **Tax:** with A the merchant of record files; with B the store's entity registers and
-  files, using the provider's tax calculation; with C the developer does. In every model the
+- **Tax:** with an A provider the merchant of record files; with a B provider the store's
+  entity registers and files (the provider's tax calculation where it has one, through
+  `quoteTax`); with C the developer does. In every model the
   store keeps its own records (purchases, refunds, payouts, invoices for its 15 % and the $25
   fee) in D1 and as monthly exports in R2 for 10 years. The store never uses the cloud's
   billing records.
@@ -204,8 +236,8 @@ links).
 - **Given** any change under `store/`,
   **when** CI runs,
   **then** the payment-provider check finds no payment SDK import, payment API host or payment
-  key prefix other than those on its allowlist (empty until the Phase 3 choice; then the chosen
-  provider's only).
+  key prefix outside the module of a provider that declares it, and nothing names Stripe or a
+  Stripe-owned service anywhere.
 
 ## Test cases
 
@@ -217,7 +249,9 @@ links).
 | T04 | integration (PG, go home) | lapse past grace; cloud and store hosts blackholed | runner | runs while valid; Waiting `entitlement_missing` after; back on renew |
 | T05 | role tests (ts) | seller fee, pricing, purchase, refund, move, sales, payout approval routes | roles | developer of other plugin, buyer of another account, unlinked home, cloud token refused; payout approval needs `store_admin` + re-auth |
 | T06 | unit | strings en + ar | checkout, account, link-to-buy and console pages; `entitlement_missing` words | complete |
-| T07 | CI check (`tools/ci/payment_provider_allowlist.sh`) | `store/` tree and its lockfiles | grep against a list of known payment SDKs, hosts and key prefixes | none outside the allowlist |
+| T07 | CI check (`tools/ci/payment_provider_allowlist.py`) | `store/` tree and its lockfiles | each provider's `provider.json` markers and a list of known payment SDKs and hosts | each only inside its provider's module; Stripe nowhere |
+| T10 | unit (ts) | the registry: providers with regions, currencies, priorities, live without resale confirmation, missing secrets | choose | the admin's order per country and currency; unused rows say why |
+| T11 | unit (ts) | the Adyen module with recorded request and notification shapes | checkout, webhook HMAC, refund, onboarding | splits sum to the price; a changed field or another merchant account is refused |
 | T08 | integration (ts) | model A monthly payout run on the fake | `payouts(month)` | 85 % of net sales per developer after refunds; under $25 rolls over |
 | T09 | integration (ts) | `/paid/*` with an expired, a forged and another home's `t` | GET | 403 each; valid one streams |
 
@@ -226,13 +260,14 @@ All payment tests use the fake provider and recorded fixtures; no live payment c
 
 ## Edge cases
 
-- **A buyer's country the chosen provider can't sell to**: Buy is disabled with an explanation;
+- **A buyer's country no enabled provider sells to**: Buy is disabled with an explanation;
   free plugins are unaffected.
 - **A developer's payout account restricted** by the provider: new sales paused; existing
   entitlements continue.
-- **Price 0 promotional**: not supported; promotion codes only if the chosen provider has them.
-- **The provider is changed later**: existing entitlements are the store's own signatures and
-  keep working; only new purchases use the new provider.
+- **Price 0 promotional**: not supported; promotion codes only where the provider has them.
+- **A provider is added, reordered or turned off**: existing entitlements are the store's own
+  signatures and keep working; refunds and disputes of earlier sales stay with the provider
+  that took them while it is enabled; only new purchases follow the new order.
 - **The entitlement key E is rotated**: the new key is listed in `store-keys.json` first; homes
   get new entitlements at the next daily refresh; old ones stay valid to their `valid_until`.
 
@@ -242,28 +277,30 @@ All payment tests use the fake provider and recorded fixtures; no live payment c
 
 | File | Change |
 |---|---|
-| `store/payments/provider.ts`, `fake.ts` (new) | §2 interface and the fake. |
-| `store/payments/<provider>.ts` (new, after the Phase 3 decision) | The one real implementation. |
-| `store/commerce/products.ts`, `purchases.ts`, `split.ts`, `payouts.ts`, `entitlements.ts` (new) | §3–§7. |
+| `store/payments/provider.ts`, `registry.ts` (new) | §2 interface and the registry. |
+| `store/payments/providers/fake/`, `providers/adyen/` (new) | The fake and the Adyen for Platforms module, each with `provider.json`. |
+| `store/commerce/split.ts`, `ledger.ts`, `sales.ts`, `entitlements.ts` (new) | §3–§7. |
 | `store/web/payments_webhook.ts` (new) | Provider events. |
 | `store/cdn/paid.ts` (new) | Signed URLs for paid packages. |
-| `store/migrations/commerce/NNNN_payments.sql` (new) | Seller fees, products, purchases, entitlements, payouts, provider events. |
+| `store/migrations/commerce/0001_payments.sql` (new) | Providers, provider accounts, seller fees, products, prices, purchases, the ledger, provider events, payouts, entitlements. |
 | `api/internal/plugins/entitlements.go` (new) | Home refresh and offline checks; the `entitlement_missing` gate (54.37). |
 | `shared/components/catalog.toml`, `web/src/i18n/{en,ar}.json` | `entitlement_missing` in `reasons`, with its words (if 54.37 has not added it). |
 | `shared/go/pluginsig/` | Entitlement verification with `use: "entitlement"` keys. |
-| `tools/ci/payment_provider_allowlist.sh` (new) | T07. |
+| `tools/ci/payment_provider_allowlist.py` (new) | T07. |
 | `store/web/` pages | Seller fee, checkout, account purchases, payouts in the console; en + ar. |
 | `web/src/pages/Admin/Plugins/StorePlugin.tsx` | Buy / Link this home to buy; en + ar. |
 
 ### Tests
 
-- Unit T01, T03, T06; integration T02, T04, T08, T09; role T05; CI T07. `store` job.
+- Unit T01, T03, T06, T10, T11; integration T02, T04, T08, T09; role T05; CI T07. `store` job.
 
 ### Rollout
 
-Off until the payment provider and seller of record are chosen at Phase 3 (after written
-confirmation that the provider allows resale of third-party plugins) and the store's own
-provider account is opened (nothing in this epic calls a live payment API).
+Each provider is off until the store's own account with it is opened, its written
+confirmation that it allows the resale of third-party plugins is recorded
+(`resale_confirmed_at`), its Worker secrets are set and the store admin enables it (nothing
+in this epic calls a live payment API). The steps per provider are in
+`store/payments/README.md`.
 
 ### Rollback
 
@@ -272,5 +309,5 @@ deleted.
 
 ### Dependencies
 
-54.14 (entitlement key use), 54.15, 54.18; the Phase 3 payment provider decision (README §14
-item 2). No dependency on Epic 16's licence issuer or Epic 50's billing.
+54.14 (entitlement key use), 54.15, 54.18. No single payment provider (README §14 item 2:
+pluggable). No dependency on Epic 16's licence issuer or Epic 50's billing.

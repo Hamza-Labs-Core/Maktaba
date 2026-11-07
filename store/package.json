@@ -1,0 +1,22 @@
+{
+  "name": "@maktaba/store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The Maktaba plugin store (Epic 54): its signer and verifier (story 54.14) and paid plugins (story 54.19): the pluggable payment providers, the provider-neutral ledger, entitlements and payouts. Independent of Maktaba Cloud: nothing here imports cloud/.",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "vectors": "tsx scripts/gen-vectors.ts",
+    "vectors:check": "tsx scripts/gen-vectors.ts --check",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.1",
+    "tsx": "4.23.15",
+    "typescript": "5.7.3",
+    "vitest": "4.1.12"
+  }
+}

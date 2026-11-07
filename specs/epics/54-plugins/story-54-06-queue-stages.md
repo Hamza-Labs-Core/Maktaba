@@ -19,7 +19,8 @@ into a `PluginExtension` that satisfies the existing `Extension` protocol
 
 - `manifest`: name `plugin:<id>`, version, stage names (`p_<hash>_<name>`, 54.01 §4).
 - `register(graph)`: for each `[[stage]]` a `StageDef` with `extension = "plugin:<id>"`,
-  `pool = "plugins"`, `lane = "media"` (or `"sources"` for catalog stages), `placement = "home"`,
+  `pool = "plugins"`, `lane = "media"` (or `"sources"` for catalog stages), `placement` from
+  the manifest (`home` by default; `any` and `gpu`, story 54.42),
   `max_attempts = 2`, `version` from the manifest, `may_request` mapped to hashed names,
   `external_write = False`; for each trigger an `Edge` from the event's core stage
   (`shared/plugins/events.toml`) with `when = "output_changed"`; for each schedule

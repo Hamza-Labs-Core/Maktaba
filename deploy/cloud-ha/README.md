@@ -138,6 +138,24 @@ the Floating IP check on W; the hosted probe of network 1 (UptimeRobot or Better
 owner's choice) on the same three URLs; and, for network 2, the GitHub secrets
 `PUSHGATEWAY_URL` and `PUSHGATEWAY_TOKEN` and the variable `CLOUD_PROBE=true`.
 
+## The status page (story 50.11)
+
+`status.maktaba.tv` is a static site on GitHub Pages, off Hetzner, built from
+[`status/`](../../status/) by `.github/workflows/status-page.yml`. Its states come from the
+probe, never by hand: each of network 2's rounds, beside network 1's (the witness's own probes
+and series, written every 30 s by `bin/status-export` and read through the witness's one
+public site, `monitoring/Caddyfile.witness`, behind the token), goes to the `status-data`
+branch, and a component changing state (two rounds in a row) starts the page's build at once.
+Both networks failing is an outage, one alone is degraded; the witness unreachable leaves the
+outside network to decide. The apps read `summary.json`. Posting an incident or a maintenance
+notice: [`docs/runbooks/cloud-status-page.md`](../../docs/runbooks/cloud-status-page.md).
+
+What the owner sets up for it: GitHub Pages with the source **GitHub Actions** and the custom
+domain `status.maktaba.tv`; the DNS-only records `status` (CNAME `hamza-labs-core.github.io`)
+and `witness` (A, the witness's IPv4); `WITNESS_DOMAIN` in `cloud-ha.env`; the secret
+`PUSHGATEWAY_URL=https://witness.maktaba.tv` with `PUSHGATEWAY_TOKEN` from the witness's
+`/etc/maktaba/witness.token`; and the variable `STATUS_PAGE=true`.
+
 ## Day to day
 
 | What | How |

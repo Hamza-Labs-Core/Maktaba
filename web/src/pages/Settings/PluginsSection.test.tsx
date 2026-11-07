@@ -157,6 +157,22 @@ describe("Settings → Plugins", () => {
     expect(screen.getAllByRole("button", { name: EN["plugins.action.start"] })).toHaveLength(1);
   });
 
+  it("54.14 §2: a store-countersigned plugin shows its review level, not Unreviewed", async () => {
+    routes(detail(), [
+      plugin({ review_level: "reviewed" }),
+      plugin({
+        id: "dev.example.auto",
+        names: { name: { en: "Auto", ar: "آلي" }, summary: { en: "", ar: "" } },
+        review_level: "automated",
+      }),
+    ]);
+    open();
+    expect(await screen.findByRole("heading", { name: /Tagger/ })).toBeInTheDocument();
+    expect(screen.getByText(EN["plugins.badge.reviewed"])).toBeInTheDocument();
+    expect(screen.getByText(EN["plugins.badge.automated"])).toBeInTheDocument();
+    expect(screen.queryByText(EN["plugins.badge.unreviewed"])).not.toBeInTheDocument();
+  });
+
   it("T02: Arabic: Maktaba's words for each capability, the plugin's own name, RTL", async () => {
     localStorage.setItem("mkt:locale", "ar");
     routes();

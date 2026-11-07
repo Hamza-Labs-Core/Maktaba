@@ -1,0 +1,73 @@
+# status.maktaba.tv (Epic 50 story 50.11): a static site on GitHub Pages, off Hetzner, built
+# from status/ (the builder, the strings, the incident and maintenance posts) and the
+# status-data branch (the outside probe's results, written by cloud-probe.yml).
+#
+# Tests run on every pull request that touches it; the site is published on a push to main,
+# every 5 minutes (a maintenance window starts and ends on time), and when cloud-probe.yml
+# sees a component change state. Off until the page is set up: Settings → Pages → Source
+# "GitHub Actions", the custom domain status.maktaba.tv, and the repository variable
+# STATUS_PAGE set to 'true' (docs/runbooks/cloud/status-page.md).
+name: Status page
+
+on:
+  push:
+    branches: [main]
+    paths: ['status/**', '.github/workflows/status-page.yml']
+  pull_request:
+    paths: ['status/**', '.github/workflows/status-page.yml', 'deploy/cloud-ha/monitoring/probe.sh']
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: status-page-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+      - name: The builder's tests (T01–T04, T11)
+        run: node --test status/test/*.test.mjs
+      # every post on main must build: no Arabic title, or a time not in UTC, fails here
+      - name: Build with this commit's posts
+        run: node status/build.mjs --checks "${RUNNER_TEMP}/no-checks" --out "${RUNNER_TEMP}/site"
+
+  publish:
+    needs: test
+    if: github.event_name != 'pull_request' && vars.STATUS_PAGE == 'true' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6.0.2
+        id: data
+        continue-on-error: true # no probe results yet: the page says "No measurement yet"
+        with:
+          ref: status-data
+          path: status-data
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: 24
+      - name: Build
+        run: node status/build.mjs --checks status-data --out "${RUNNER_TEMP}/site"
+      - uses: actions/upload-pages-artifact@v5.0.0
+        with:
+          path: ${{ runner.temp }}/site
+      - id: deploy
+        uses: actions/deploy-pages@v5.0.1
