@@ -12,6 +12,8 @@ import (
 	"net/http/httputil"
 	"net/netip"
 	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,6 +57,11 @@ type Status struct {
 	Name       string    `json:"name,omitempty"` // *.<home id>.<domain>
 	NotAfter   time.Time `json:"not_after,omitzero"`
 	Check      *Check    `json:"check,omitempty"`
+	// LANURLs are the listener's LAN names, https://<ip label>.<home id>.<domain>:<port>, the
+	// first entries apps on this network try (story 50.15 §3). The settings page tries them
+	// from the viewer's browser: a name that doesn't answer while the page itself came over
+	// the LAN is a router blocking DNS rebinding. Set once the listener has a certificate.
+	LANURLs []string `json:"lan_urls,omitempty"`
 	// Online: the relay agent has a tunnel to a cloud with direct access.
 	Online bool `json:"online"`
 }
@@ -130,7 +137,30 @@ func (s *Service) Status() Status {
 		c := *st.Check
 		st.Check = &c
 	}
+	if st.Listening && !st.NotAfter.IsZero() && strings.HasPrefix(st.Name, "*.") && st.Internal > 0 {
+		st.LANURLs = lanURLs(s.lan(st.Internal), st.Name[1:])
+	}
 	return st
+}
+
+// lanURLs names each LAN address (ip:port) under suffix (".<home id>.<domain>") as the cloud
+// does (cloud direct.EncodeIP: 192.168.1.20 is "192-168-1-20", fd00::7 is "fd00--7").
+func lanURLs(addrs []string, suffix string) []string {
+	var out []string
+	for _, a := range addrs {
+		ap, err := netip.ParseAddrPort(a)
+		if err != nil || ap.Addr().Zone() != "" {
+			continue
+		}
+		ip := ap.Addr().Unmap()
+		sep := ":"
+		if ip.Is4() {
+			sep = "."
+		}
+		label := strings.ReplaceAll(ip.String(), sep, "-")
+		out = append(out, "https://"+net.JoinHostPort(label+suffix, strconv.Itoa(int(ap.Port()))))
+	}
+	return out
 }
 
 // internalPort is the direct listener's port as configured (direct.listen, host:port).

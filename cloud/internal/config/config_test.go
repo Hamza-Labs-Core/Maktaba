@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -239,5 +240,39 @@ func TestLoad_RelayPlans(t *testing.T) {
 	}
 	if !c.Relay.PlansEnforce || c.Relay.StreamLimitEnabled {
 		t.Errorf("from the file: enforce %v, stream limit %v", c.Relay.PlansEnforce, c.Relay.StreamLimitEnabled)
+	}
+}
+
+// Story 50.30 T06: the auth pages' bot check is never on without its secret; its keys parse,
+// the secret comes from the environment only, and the web origin defaults to the web app's.
+func TestTurnstileConfig(t *testing.T) {
+	c := defaultConfig()
+	if err := parseTOML("[turnstile]\nenabled = true\nsite_key = \"0x4AAA\"\nweb_origins = [\"https://app.maktaba.tv\", \"https://admin.maktaba.tv\"]\n", &c); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Turnstile.Enabled || c.Turnstile.SiteKey != "0x4AAA" || len(c.Turnstile.WebOrigins) != 2 {
+		t.Fatalf("%+v", c.Turnstile)
+	}
+	if err := parseTOML("[turnstile]\nsecret = \"in the file\"\n", &c); err == nil {
+		t.Fatal("a secret in the file was accepted")
+	}
+	c.Database.URL = "postgres://x"
+	c.Server.ListenAddr = "127.0.0.1:8090"
+	err := Validate(c, RoleAPI)
+	if err == nil || !strings.Contains(err.Error(), "MAKTABA_CLOUD_TURNSTILE_SECRET") || !strings.Contains(err.Error(), "turnstile.enabled") {
+		t.Fatalf("on without a secret: %v", err)
+	}
+	t.Setenv("MAKTABA_CLOUD_TURNSTILE_SECRET", "from-env")
+	applyEnvOverrides(&c)
+	if err := Validate(c, RoleAPI); err != nil {
+		t.Fatalf("with the secret: %v", err)
+	}
+	path := filepath.Join(t.TempDir(), "cloud.toml")
+	if err := os.WriteFile(path, []byte("[database]\nurl = \"postgres://x\"\n[server]\nweb_url = \"https://app.maktaba.tv/\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Load(path)
+	if err != nil || len(l.Turnstile.WebOrigins) != 1 || l.Turnstile.WebOrigins[0] != "https://app.maktaba.tv" || l.Turnstile.Enabled {
+		t.Fatalf("defaults: %+v %v", l.Turnstile, err)
 	}
 }

@@ -1,0 +1,31 @@
+# The fallback origin (Epic 50 story 50.31 §3), used only when the Tunnel can't be: setup.sh
+# copies this into /etc/caddy/origin.d/ when ORIGIN_MODE=aop in /etc/maktaba/cloud-ha.env,
+# with CLOUDFLARE_RANGES replaced by deploy/cloudflare/ips-v4.txt and ips-v6.txt.
+#
+# Two checks, never one: Cloudflare's client certificate for these names (per-hostname
+# Authenticated Origin Pulls, Maktaba's own certificate, never the zone-level one every
+# Cloudflare customer shares) AND a peer in Cloudflare's published ranges. A connection without
+# the certificate fails its TLS handshake; a request from outside the ranges gets 403 with no
+# body. Cloudflare writes CF-Connecting-IP itself, over any copy the client sent, and the api
+# believes it from Caddy on loopback (server.trusted_proxies).
+api.maktaba.tv, app.maktaba.tv, admin.maktaba.tv {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+		resolvers 1.1.1.1 9.9.9.9
+		client_auth {
+			mode require_and_verify
+			trust_pool file /etc/caddy/maktaba-aop-ca.pem
+		}
+	}
+	@outside not remote_ip CLOUDFLARE_RANGES
+	respond @outside 403
+	@admin host admin.maktaba.tv
+	handle @admin {
+		reverse_proxy 127.0.0.1:8091
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8090 {
+			flush_interval -1
+		}
+	}
+}

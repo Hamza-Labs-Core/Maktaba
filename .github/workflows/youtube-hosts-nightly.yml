@@ -1,0 +1,59 @@
+# Epic 54 story 54.33 T02: every night, the real yt-dlp runs the command lines
+# tv.maktaba.youtube's stages build (a channel listing; one public test video downloaded
+# with its thumbnail and subtitles) through a proxy that notes each host it contacts, and
+# the run fails when one is outside the plugin's [trusted] net list. The plugin's `net`
+# runner group may open any outbound connection (its sandbox cannot filter by host), so
+# this is what keeps the reviewed list true. The fix for a failure is a reviewed edit of
+# plugins/first-party/youtube/manifest.toml, never a wider sandbox.
+#
+# YouTube sometimes refuses a data-centre runner (its bot check): that step is then a
+# warning, inconclusive for the night, and the hosts reached before it are still checked.
+# tools/ci/youtube_hosts.py has the details; tools/ci/tests/test_youtube_hosts.py tests it.
+
+name: Nightly YouTube hosts
+
+on:
+  schedule:
+    - cron: '41 3 * * *' # nightly, 03:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: youtube-hosts-nightly
+  cancel-in-progress: false
+
+jobs:
+  hosts:
+    name: The hosts yt-dlp contacts (tv.maktaba.youtube)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      - name: Install ffmpeg
+        timeout-minutes: 15
+        env:
+          APT_INSTALL_TIMEOUT: "300"
+        run: |
+          tools/ci/apt-install.sh ffmpeg >/dev/null
+          ffmpeg -hide_banner -version | sed -n 1p
+
+      - name: Record and check the hosts
+        run: |
+          mkdir -p build
+          uv run --project pipeline --extra mediaintel python tools/ci/youtube_hosts.py \
+            --json build/youtube-hosts.json
+
+      - name: Keep what was seen
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: youtube-hosts
+          path: build/youtube-hosts.json
+          if-no-files-found: ignore
+          retention-days: 30

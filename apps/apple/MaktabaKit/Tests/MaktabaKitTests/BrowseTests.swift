@@ -24,6 +24,8 @@ final class BrowseStub: URLProtocol, @unchecked Sendable {
         let query: [String: String]
         let json: [String: Any]?
         let bearer: String?
+        /// The call's X-Request-Id (Epic 53 story 53.08).
+        var requestID: String? = nil
     }
 
     nonisolated(unsafe) private static var routes: [String: [(Int, String)]] = [:]
@@ -98,7 +100,8 @@ final class BrowseStub: URLProtocol, @unchecked Sendable {
         let json = body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
         let bearer = request.value(forHTTPHeaderField: "Authorization")
         let answer: (Int, String)? = Self.lock.withLock {
-            Self.seen.append(Seen(method: method, path: path, query: query, json: json, bearer: bearer))
+            Self.seen.append(Seen(method: method, path: path, query: query, json: json, bearer: bearer,
+                                   requestID: request.value(forHTTPHeaderField: "X-Request-Id")))
             let key = "\(method) \(path)"
             guard var list = Self.routes[key], !list.isEmpty else { return nil }
             let first = list.count > 1 ? list.removeFirst() : list[0]

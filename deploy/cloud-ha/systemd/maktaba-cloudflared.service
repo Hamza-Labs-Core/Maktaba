@@ -1,0 +1,37 @@
+# The Cloudflare Tunnel's connector (Epic 50 story 50.31): the only way in to the api, the web
+# app's /v1 and the console. Part of maktaba-cloud-active.target, so Patroni's role-change
+# callback starts it on the node that becomes leader and stops it on the one that loses the
+# lease: the standby never holds a connector, and Cloudflare never sends a request to a
+# stopped api. The ingress (each name to its loopback listener) is remotely managed, written by
+# CI from deploy/cloudflare/tunnel.maktaba.tv.json.
+#
+# The token lets one connector join this tunnel and nothing else. deploy.sh writes it from the
+# production environment's CLOUDFLARE_TUNNEL_TOKEN; without it the unit is skipped.
+[Unit]
+Description=Cloudflare Tunnel connector (the leading node only)
+PartOf=maktaba-cloud-active.target
+After=network-online.target maktaba-cloud-api.service
+Wants=network-online.target
+ConditionPathExists=/etc/maktaba/tunnel.token
+
+[Service]
+User=cloudflared
+Group=cloudflared
+ExecStart=/usr/bin/cloudflared tunnel --no-autoupdate --metrics 127.0.0.1:20241 run --token-file /etc/maktaba/tunnel.token
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes

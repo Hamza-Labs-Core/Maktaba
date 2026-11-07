@@ -90,7 +90,7 @@ func (d *Deps) recentlySeen(sv stores.Server) bool {
 // It returns the local tunnel when one came, or served = true when the
 // request was forwarded to a peer; neither means the wait ran out (or the
 // limits were reached), and the caller answers 503 home_reconnecting.
-func (d *Deps) hold(w http.ResponseWriter, r *http.Request, slug string, hopped bool) (t *relaypkg.Tunnel, served bool) {
+func (d *Deps) hold(w http.ResponseWriter, r *http.Request, slug, serverID string, hopped bool) (t *relaypkg.Tunnel, served bool) {
 	hs := d.holds()
 	if !hs.acquire(slug) {
 		countHeld(HeldRefused)
@@ -125,7 +125,7 @@ func (d *Deps) hold(w http.ResponseWriter, r *http.Request, slug string, hopped 
 				continue
 			}
 			if p, ok := d.Directory.Lookup(r.Context(), slug); ok {
-				if d.forward(w, r, slug, p) {
+				if d.forward(w, r, slug, serverID, p) {
 					countHeld(HeldFound)
 					return nil, true
 				}

@@ -271,6 +271,10 @@ public struct StreamSession: Codable, Sendable {
     public let ladder: [Rendition]?
     /// The quality this session plays at, when the home says.
     public let currentRendition: Rendition?
+    /// The id of the call that opened the session (this app's `X-Request-Id`, not the
+    /// home's answer; Epic 53 story 53.08): an HLS playlist's URL carries it as `rid`, so
+    /// streaming's lines for the playback share the id of the API's.
+    public var requestID: String?
 
     enum CodingKeys: String, CodingKey {
         case mode, ladder
@@ -296,7 +300,12 @@ public struct StreamSession: Codable, Sendable {
         if !base.isEmpty, path.hasPrefix("/"), !path.hasPrefix("//"), !path.hasPrefix(base + "/") {
             path = base + path
         }
-        return URL(string: path, relativeTo: home)?.absoluteURL
+        guard let url = URL(string: path, relativeTo: home)?.absoluteURL else { return nil }
+        guard directURL == nil, let requestID, !requestID.isEmpty,
+              var c = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              !(c.queryItems ?? []).contains(where: { $0.name == "rid" }) else { return url }
+        c.queryItems = (c.queryItems ?? []) + [URLQueryItem(name: "rid", value: requestID)]
+        return c.url ?? url
     }
 }
 

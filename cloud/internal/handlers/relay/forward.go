@@ -13,6 +13,7 @@ import (
 	"time"
 
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
 // Forwarding to the relay process that holds a home's tunnel (story 50.04).
@@ -31,7 +32,7 @@ var defaultPeerTransport = &http.Transport{
 // forwardIfElsewhere forwards r to the peer the directory names for slug,
 // when there is one newer than the local tunnel t (nil: none here). It
 // reports whether the request was answered.
-func (d *Deps) forwardIfElsewhere(w http.ResponseWriter, r *http.Request, slug string, t *relaypkg.Tunnel) bool {
+func (d *Deps) forwardIfElsewhere(w http.ResponseWriter, r *http.Request, slug, serverID string, t *relaypkg.Tunnel) bool {
 	if d.Directory == nil {
 		return false
 	}
@@ -39,7 +40,7 @@ func (d *Deps) forwardIfElsewhere(w http.ResponseWriter, r *http.Request, slug s
 	if !ok || t != nil && p.Seq <= t.Seq() {
 		return false
 	}
-	if d.forward(w, r, slug, p) {
+	if d.forward(w, r, slug, serverID, p) {
 		return true
 	}
 	d.Directory.Forget(slug)
@@ -49,7 +50,7 @@ func (d *Deps) forwardIfElsewhere(w http.ResponseWriter, r *http.Request, slug s
 // forward proxies r to peer p over its peer listener, signed and marked as
 // one hop, streaming both ways. It reports false, having written nothing,
 // when the peer could not be reached.
-func (d *Deps) forward(w http.ResponseWriter, r *http.Request, slug string, p relaypkg.Peer) bool {
+func (d *Deps) forward(w http.ResponseWriter, r *http.Request, slug, serverID string, p relaypkg.Peer) bool {
 	var unreachable atomic.Bool
 	rt := d.PeerTransport
 	if rt == nil {
@@ -85,13 +86,16 @@ func (d *Deps) forward(w http.ResponseWriter, r *http.Request, slug string, p re
 				return
 			}
 			// the error (it carries the request's URL) goes to the log, not the page
-			d.logger().Warn("relay: forwarding to the peer failed", "peer", p.RelayID, "slug", slug, "err", err, "event", "relay_forward_failed")
+			// the home by home_h, never its slug; the request's id from its context (53.17)
+			d.logger().WarnContext(r.Context(), "relay: forwarding to the peer failed", "peer", p.RelayID,
+				"home_h", mlog.HashHome(serverID), "err", err, "event", "relay_forward_failed")
 			writeErr(w, r, http.StatusBadGateway, "tunnel_error", "")
 		},
 	}
 	rp.ServeHTTP(w, r)
 	if unreachable.Load() {
-		d.logger().Warn("relay: the peer holding a tunnel did not answer", "peer", p.RelayID, "slug", slug, "event", "relay_peer_unreachable")
+		d.logger().WarnContext(r.Context(), "relay: the peer holding a tunnel did not answer", "peer", p.RelayID,
+			"home_h", mlog.HashHome(serverID), "event", "relay_peer_unreachable")
 		return false
 	}
 	peerStats.forwarded.Add(1)

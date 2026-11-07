@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logkeeper"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 )
 
 // The admin's Retention page and "Detailed logs for one hour" (Epic 53 story 53.11), on the

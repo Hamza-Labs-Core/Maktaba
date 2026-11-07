@@ -1,0 +1,101 @@
+{
+  "$schema": "./zone.schema.json",
+  "zone": "maktaba.tv",
+  "plan": "pro",
+  "settings": {
+    "ssl": "strict",
+    "min_tls_version": "1.2",
+    "tls_1_3": "on",
+    "always_use_https": "on",
+    "automatic_https_rewrites": "on",
+    "opportunistic_encryption": "on",
+    "browser_check": "on",
+    "security_level": "medium"
+  },
+  "super_bot_fight_mode": {
+    "value": "off",
+    "reason": "Off until a check on staging shows it can be kept off the API's paths: it would challenge homes and native apps on api.maktaba.tv (story 50.30 §4). Turnstile guards the auth pages instead."
+  },
+  "managed_rules": {
+    "cloudflare": { "enabled": true },
+    "owasp": {
+      "enabled": true,
+      "paranoia_level": 1,
+      "score_threshold": "medium",
+      "action": "block",
+      "owasp_block_from": "2026-11-21",
+      "reason": "Logs only for its first 14 days, so false positives (often on large JSON bodies) show in Security Events and get an exception before it blocks (story 50.30 rollout)."
+    }
+  },
+  "custom_rules": [
+    {
+      "id": "admin_paths_only_on_admin_host",
+      "description": "Admin paths only on the admin host",
+      "reason": "The operator API is never served on a user name; the origin refuses it too (50.32), so a mistake in one place is caught by the other.",
+      "expression": "http.host ne \"admin.maktaba.tv\" and (starts_with(http.request.uri.path, \"/v1/admin/\") or starts_with(http.request.uri.path, \"/v1/staff/\"))",
+      "action": "block",
+      "response": "not_found"
+    },
+    {
+      "id": "admin_host_only_its_paths",
+      "description": "Admin host serves only its own paths",
+      "reason": "admin.maktaba.tv answers the console's pages, the admin and staff API and health checks, nothing of the user API.",
+      "expression": "http.host eq \"admin.maktaba.tv\" and not (starts_with(http.request.uri.path, \"/v1/admin/\") or starts_with(http.request.uri.path, \"/v1/staff/\") or http.request.uri.path in {\"/healthz\" \"/readyz\"} or not starts_with(http.request.uri.path, \"/v1/\"))",
+      "action": "block",
+      "response": "not_found"
+    },
+    {
+      "id": "methods",
+      "description": "Methods no client uses",
+      "reason": "TRACE, CONNECT and TRACK have no use on these names and are probes.",
+      "expression": "http.request.method in {\"TRACE\" \"CONNECT\" \"TRACK\"}",
+      "action": "block"
+    },
+    {
+      "id": "oversized_auth_bodies",
+      "description": "Oversized auth bodies",
+      "reason": "No sign-in, sign-up or reset body comes near 16 KB; a larger one is an attack on the parser or the hash.",
+      "expression": "starts_with(http.request.uri.path, \"/v1/auth/\") and http.request.body.size gt 16384",
+      "action": "block"
+    }
+  ],
+  "rate_limits": [
+    {
+      "id": "r1_auth",
+      "description": "R1: sign-in, sign-up and reset",
+      "reason": "About four times what a person retyping a password sends, far below a credential-stuffing run; the API's per-account lockout stays behind it.",
+      "expression": "http.request.method eq \"POST\" and (http.request.uri.path in {\"/v1/auth/login\" \"/v1/auth/register\" \"/v1/auth/password/forgot\" \"/v1/auth/password/reset\" \"/v1/auth/verify-email/resend\"} or (http.host eq \"admin.maktaba.tv\" and (http.request.uri.path in {\"/v1/staff/login\" \"/v1/staff/reauth\"} or starts_with(http.request.uri.path, \"/v1/staff/mfa/\"))))",
+      "requests_per_period": 20,
+      "period": 60,
+      "mitigation_timeout": 600,
+      "action": "log",
+      "response": "rate_limited"
+    },
+    {
+      "id": "r2_api",
+      "description": "R2: the API",
+      "reason": "Generous: one public IP can carry a household or a carrier-grade NAT, and homes call the API every minute; the API's own per-account limits are tighter.",
+      "expression": "http.host eq \"api.maktaba.tv\" or (http.host eq \"app.maktaba.tv\" and starts_with(http.request.uri.path, \"/v1/\"))",
+      "requests_per_period": 1200,
+      "period": 60,
+      "mitigation_timeout": 60,
+      "action": "log",
+      "response": "rate_limited"
+    }
+  ],
+  "exceptions": [],
+  "responses": {
+    "not_found": {
+      "status": 404,
+      "body": { "error": "not_found", "message": "Not found.", "message_ar": "غير موجود." }
+    },
+    "rate_limited": {
+      "status": 429,
+      "body": {
+        "error": "rate_limited",
+        "message": "Too many requests. Wait a moment and try again.",
+        "message_ar": "طلبات كثيرة. انتظر قليلًا ثم حاول مجددًا."
+      }
+    }
+  }
+}
