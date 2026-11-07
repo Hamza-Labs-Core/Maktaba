@@ -30,7 +30,9 @@ const tFor = (locale: Locale) => (key: string) => lookupMessage(locale, key) ?? 
 describe("stage titles", () => {
   it("every stage of the graph has its title in English and Arabic", () => {
     const stages = graphStages();
-    expect(stages.size).toBeGreaterThan(50);
+    // a floor that catches a pattern that no longer matches, not the count itself: Epic 54's
+    // Phase 4 moves stages out of the graph into first-party plugins
+    expect(stages.size).toBeGreaterThan(30);
     expect(stages.get("thumb_small")).toBe("Small thumbnail");
     for (const [stage, label] of stages) {
       const key = `queue.stage.${stage}.title`;
