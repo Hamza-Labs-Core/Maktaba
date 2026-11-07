@@ -256,7 +256,14 @@ public struct PluginPanelsSection<Route: Hashable>: View {
     let search: ((String) -> Route)?
     let image: ((String) -> AnyView)?
     let play: ((Double) -> Void)?
-    @State private var open = false
+    /// Open at first only when the environment says so (the page snapshots, issue #876);
+    /// the person's own choice wins from then on.
+    @Environment(\.pluginPanelsOpenAtFirst) private var openAtFirst
+    @State private var chosen: Bool?
+
+    private var open: Binding<Bool> {
+        Binding(get: { chosen ?? openAtFirst }, set: { chosen = $0 })
+    }
 
     public init(panels: [PanelView], seek: ((Double) -> Route)? = nil, search: ((String) -> Route)? = nil,
                 image: ((String) -> AnyView)? = nil, play: ((Double) -> Void)? = nil) {
@@ -275,7 +282,7 @@ public struct PluginPanelsSection<Route: Hashable>: View {
                 ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, play: play) }
             }
             #else
-            DisclosureGroup(isExpanded: $open) {
+            DisclosureGroup(isExpanded: open) {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, search: search, image: image, play: play) }
                 }
@@ -287,6 +294,12 @@ public struct PluginPanelsSection<Route: Hashable>: View {
             #endif
         }
     }
+}
+
+extension EnvironmentValues {
+    /// "From plugins" starts open (false: collapsed, as every page shows it). The page
+    /// snapshots set it to draw a panel's contents; no screen of the apps does.
+    @Entry public var pluginPanelsOpenAtFirst = false
 }
 
 /// A series' or library's panels (story 54.20 §1): asked for `<kind>:<id>` only while the
