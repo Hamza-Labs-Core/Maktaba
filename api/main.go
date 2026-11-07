@@ -736,6 +736,9 @@ func runServe() error {
 			componentsSvc := router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
 				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
+			// Epic 53 story 53.12: the queue's numbers on the home's /metrics, for the Queue
+			// and Processing dashboards (the home only: a joined machine reads the same table)
+			queues.RegisterMetrics(appDB)
 			// Epic 54 (stories 54.04-54.09): the plugins' admin routes on the components
 			// service, the plugin API's invocation and breaker routes, and the plugin API
 			// on its unix socket when the supervisor names one

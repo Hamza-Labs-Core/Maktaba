@@ -216,3 +216,42 @@ func TestImportHours(t *testing.T) {
 	}
 	t.Fatal("no go_goroutines series")
 }
+
+// Story 53.12: the Queue and Processing boards keep the series the API exports from the
+// queue (queues.QueueCollector); the names the list had before matched nothing anyone
+// exported, so both boards stayed empty.
+func TestQueueAndProcessingBoards(t *testing.T) {
+	root, now := t.TempDir(), t0
+	ix := open(t, root, &now)
+	ctx := context.Background()
+	text := `maktaba_pipeline_queue_depth{stage="transcribe",state="pending"} 12
+maktaba_pipeline_jobs_last_hour{stage="thumbnail",outcome="done"} 40
+maktaba_pipeline_audio_seconds_last_hour 5400
+maktaba_pipeline_realtime_factor{stage="transcribe"} 3
+`
+	for i := 0; i < 3; i++ {
+		now = now.Add(time.Minute)
+		if err := ix.Record(ctx, parseMetrics(strings.NewReader(text)), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for board, want := range map[string][]string{
+		"queue":      {"maktaba_pipeline_jobs_last_hour", "maktaba_pipeline_queue_depth"},
+		"processing": {"maktaba_pipeline_audio_seconds_last_hour", "maktaba_pipeline_realtime_factor"},
+	} {
+		doc, err := ix.Board(ctx, board, "1h")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, s := range doc.Series {
+			if len(s.Points) == 0 || s.Points[len(s.Points)-1][1] == 0 {
+				t.Errorf("%s: %s has no value", board, s.Name)
+			}
+			got = append(got, s.Name)
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s: %v, want %v", board, got, want)
+		}
+	}
+}
