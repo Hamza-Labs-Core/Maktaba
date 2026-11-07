@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **A page's counts, dates and episode numbers follow the language it is drawn in (Apple apps,
+  Android).** On the Apple apps a series' episode count and year, a video's length and date, and
+  an episode's season and number now take the page's language, as its other words do, so a page
+  drawn in Arabic in a preview or a page snapshot says them in Arabic. On Android a series' year
+  is written in the same digits as its episode count.
 - **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
   Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
   home's secure LAN names from the browser, and when none answers it explains that the router
@@ -23,6 +28,9 @@ build fails when the two differ.
   network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
   carries each LAN address both by name and by address, the address checked against the home's
   own certificate, so an app on that network still proves it reached this home.
+- **Android and the Apple apps use those LAN addresses (Epic 50 story 50.15 §3).** They try a
+  home's `local_ip` entries after its LAN name and before the direct and relay paths, and accept
+  one only when its certificate holds the home's own name for that same address (`tls_name`).
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
@@ -340,6 +348,14 @@ build fails when the two differ.
 
 ### Security
 
+- **The cloud's operator console has its own listener and name (Epic 50 story 50.32).** Every
+  `/v1/admin/*` route is served only by the api role's admin listener, for `admin.maktaba.tv`
+  alone: on the user names each one is the same 404 as a route that doesn't exist. The console
+  listener allows no cross-origin call, and a change from it must carry the console's own
+  Origin and header, or it is refused before anything runs. The user API answers only its own
+  names, and the sign-in cookie is now `__Host-maktaba_refresh`, which a browser never shares
+  with another name. The relay's access log records the visitor's address instead of the
+  proxy's.
 - **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
   network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
   a channel listing and a download and fails on one the plugin's reviewed `net` list does not
@@ -371,6 +387,13 @@ build fails when the two differ.
 
 ### Added
 
+- **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
+  and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
+  (its functions and line table, keyed by the binary's UUID), uploaded with the new
+  `maktaba-symbols upload` command and a symbols token (`MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE`). The
+  operator console's report page shows each crash, top frame first, with the function, file and
+  line where a table is uploaded and names the binaries that have none; a new **Crash symbols**
+  page lists the uploaded tables. The cloud never receives the dSYM itself.
 - **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
   the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
   homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
@@ -2072,6 +2095,15 @@ build fails when the two differ.
   authority once the week's budget is used, and passes the outside check, and an app outside
   downloads from each home directly, never through the relay. The cloud's name server now
   starts: its role was refused as unknown.
+
+- **The cloud rehearsal proves the origin is reached only through Cloudflare (Epic 50 story
+  50.31, T06–T08).** Two new scenarios run the pair with production's Caddyfile and firewall,
+  the api behind the loopback, and a stand-in for Cloudflare's edge and its connector. In
+  `origin-only-via-edge`, the Floating IP answers only 80 and 443 from the internet, refuses
+  the api's name on 443, and a forged client address never reaches the api or the relay; with
+  the leader powered off, the connector moves to the new leader and the api is back within the
+  3-minute RTO. In `origin-aop`, the fallback origin answers only with the client certificate
+  and only from the test Cloudflare ranges.
 
 - **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
   queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the

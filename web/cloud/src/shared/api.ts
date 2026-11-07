@@ -1,8 +1,10 @@
 // HTTP client for the Maktaba Cloud API (cloud/docs/accounts-billing-admin.md).
 //
 //   - The access token (15 min) lives in memory only, never in storage.
-//   - The refresh session is the httpOnly `maktaba_refresh` cookie, so every
-//     call goes out with credentials: "include".
+//   - The refresh session is the httpOnly, host-only `__Host-maktaba_refresh`
+//     cookie, so every call goes out with credentials: "include".
+//   - A bundle can add headers to every state-changing call (setChangeHeaders):
+//     the operator console's listener refuses a change without its own.
 //   - A 401 on an authenticated call triggers one POST /v1/auth/refresh (shared
 //     by concurrent callers: the cookie rotates, and presenting a rotated one
 //     twice revokes every session) and the call is retried once.
@@ -55,6 +57,19 @@ export function onSessionChange(fn: SessionListener): () => void {
   return () => listeners.delete(fn);
 }
 
+let changeHeaders: Record<string, string> = {};
+
+/**
+ * Headers sent on every call that isn't a GET or HEAD, the refresh included.
+ * The operator console sets its CSRF header here (story 50.32 §4); the user
+ * app sets none.
+ */
+export function setChangeHeaders(headers: Record<string, string>): void {
+  changeHeaders = { ...headers };
+}
+
+const isChange = (method: string): boolean => !["GET", "HEAD"].includes(method.toUpperCase());
+
 export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
@@ -90,6 +105,7 @@ export function refreshSession(): Promise<AuthResult | null> {
       try {
         const res = await fetch(`${BASE}/v1/auth/refresh`, {
           method: "POST",
+          headers: { ...changeHeaders },
           credentials: "include",
         });
         if (!res.ok) {
@@ -126,7 +142,10 @@ export async function fetchApi(
 ): Promise<Response> {
   const auth = opts.auth ?? true;
   const send = () => {
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+      ...(isChange(method) ? changeHeaders : {}),
+    };
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";
     if (auth && accessToken) headers.Authorization = `Bearer ${accessToken}`;
     return fetch(`${BASE}${path}`, {

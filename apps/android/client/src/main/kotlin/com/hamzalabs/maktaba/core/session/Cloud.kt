@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.core.session
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.api.PinnedNames
 import com.hamzalabs.maktaba.core.api.exchange
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
@@ -16,12 +17,16 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
-/** One way to reach a home (story 50.13): `local`, `direct`, `relay_hint` or `relay`. */
+/**
+ * One way to reach a home (story 50.13): `local`, `local_ip`, `direct`, `relay_hint` or `relay`.
+ * A `local_ip` entry is a LAN address by its IP (story 50.15 §3, for a router blocking DNS
+ * rebinding); [tlsName] is the home's name its certificate is checked against there.
+ */
 @Serializable
-data class CloudConnection(val url: String, val kind: String) {
+data class CloudConnection(val url: String, val kind: String, @SerialName("tls_name") val tlsName: String? = null) {
     companion object {
-        /** The order apps try (story 50.13 §2): local, direct, relay hint, relay. */
-        val ORDER = listOf("local", "direct", "relay_hint", "relay")
+        /** The order apps try (story 50.13 §2): local, local by address, direct, relay hint, relay. */
+        val ORDER = listOf("local", "local_ip", "direct", "relay_hint", "relay")
 
         /** [cs] in that order; a kind this build doesn't know is left out. */
         fun ordered(cs: List<CloudConnection>): List<CloudConnection> =
@@ -61,6 +66,13 @@ data class CloudHome(
     /** Its addresses in the order apps try: local, its own, the relay hint, the relay. */
     val addresses: List<String>
         get() = ordered.mapNotNull { Home.normalizeWithPath(it.url) }.distinct()
+
+    /** Pins its `local_ip` entries to their names ([PinnedNames]), so the app can use them. */
+    fun pinNames() {
+        for (c in connections) {
+            if (c.kind == "local_ip" && c.tlsName != null) PinnedNames.pin(c.url, c.tlsName)
+        }
+    }
 }
 
 /**
@@ -80,6 +92,7 @@ data class SavedCloudHomes(val user: CloudUser, @SerialName("saved_at") val save
         private fun key(email: String) = PREFIX + email.trim().lowercase()
 
         fun save(store: KeyValueStore, user: CloudUser, homes: List<CloudHome>, nowMs: Long = System.currentTimeMillis()) {
+            homes.forEach(CloudHome::pinNames)
             store.put(key(user.email), ApiClient.json.encodeToString(serializer(), SavedCloudHomes(user, nowMs, homes)))
             val index = store.get(INDEX)?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
             if (key(user.email) !in index) store.put(INDEX, (index + key(user.email)).joinToString("\n"))
@@ -87,6 +100,18 @@ data class SavedCloudHomes(val user: CloudUser, @SerialName("saved_at") val save
 
         fun load(store: KeyValueStore, email: String): SavedCloudHomes? =
             store.get(key(email))?.let { runCatching { ApiClient.json.decodeFromString(serializer(), it) }.getOrNull() }
+                ?.also { saved -> saved.homes.forEach(CloudHome::pinNames) }
+
+        /**
+         * Pins every saved list's `local_ip` entries (story 50.15 §3) at start, so a home last
+         * reached by its LAN address is reached there again before the cloud answers.
+         */
+        fun pinAll(store: KeyValueStore) {
+            store.get(INDEX)?.split('\n')?.filter { it.isNotBlank() }?.forEach { k ->
+                store.get(k)?.let { runCatching { ApiClient.json.decodeFromString(serializer(), it) }.getOrNull() }
+                    ?.homes?.forEach(CloudHome::pinNames)
+            }
+        }
 
         /** Every account's list (sign-out). */
         fun forgetAll(store: KeyValueStore) {

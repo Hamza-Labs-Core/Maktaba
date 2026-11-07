@@ -210,7 +210,7 @@ public final class AppSession {
     private let clock: ConnectClock
 
     public init(app: String, defaults: UserDefaults = .standard, probe: HomeProbe = HomeProbe(), asksHomes: Bool = true,
-                homeSession: URLSession = .shared, cloudSession: URLSession? = nil, clock: ConnectClock = .system,
+                homeSession: URLSession = PinnedTrust.session, cloudSession: URLSession? = nil, clock: ConnectClock = .system,
                 discovery: (any HomeDiscovering)? = nil, capabilities: CapabilitiesStore? = nil) {
         self.app = app
         self.capabilities = capabilities ?? CapabilitiesStore()
@@ -221,6 +221,7 @@ public final class AppSession {
         self.asksHomes = asksHomes
         self.homeSession = homeSession
         self.cloudSession = cloudSession
+        SavedCloudHomes.pinAll(in: defaults) // the homes reached by LAN address (story 50.15 §3)
         cloud = CloudClient(base: CloudAddress.current(defaults), session: cloudSession)
         #if DEBUG
         // UI tests: start with no homes

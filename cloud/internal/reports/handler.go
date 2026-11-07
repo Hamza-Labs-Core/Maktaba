@@ -20,6 +20,7 @@ import (
 	authmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
 )
 
 // Limits of what a home sends.
@@ -217,6 +218,16 @@ type AdminDeps struct {
 	Logger *slog.Logger
 	// Gate admits service admins only (auth/middleware.RequireServiceAdmin); nil refuses everyone
 	Gate func(http.Handler) http.Handler
+	// Symbols has the release dSYMs' tables a report's Apple crashes are read against (nil:
+	// none, the frames stay as the apps sent them)
+	Symbols symbols.Finder
+}
+
+// View is one report as the service admin reads it: its crashes symbolicated with the
+// release's dSYMs where Maktaba has them (53.14, 53.16).
+type View struct {
+	Report
+	Crashes []symbols.Crash `json:"crashes,omitempty"`
 }
 
 // MountAdmin registers /v1/admin/reports behind the service admin's gate. A home admin's
@@ -283,7 +294,14 @@ func (d *AdminDeps) Get(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "audit", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, rep)
+	view := View{Report: rep}
+	var body struct {
+		Crashes []json.RawMessage `json:"crashes"`
+	}
+	if json.Unmarshal(rep.Body, &body) == nil && len(body.Crashes) > 0 {
+		view.Crashes = symbols.Symbolicate(r.Context(), body.Crashes, d.Symbols)
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 // Screenshot is a report's screenshot.

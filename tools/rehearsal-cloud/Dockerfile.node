@@ -15,7 +15,7 @@ FROM gcr.io/etcd-development/etcd:v3.6.5 AS etcd
 FROM postgres:16-bookworm
 ARG PATRONI_VERSION=4.1.5
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3-venv curl jq iproute2 procps gettext-base ca-certificates pgbackrest \
+        python3-venv curl jq iproute2 procps gettext-base ca-certificates pgbackrest iptables socat \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/patroni \
     && /opt/patroni/bin/pip install --no-cache-dir "patroni[psycopg3,etcd3]==${PATRONI_VERSION}" \

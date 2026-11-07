@@ -4,7 +4,9 @@
 // its text, device and merged timeline (the app's lines and the home's by time), status (New,
 // Triaged, Fixed in {version}, Closed), a link to a GitHub issue pasted by hand, and a reply
 // the home's admin and the report's sender see. A report holds no title, path, name or
-// address (the home's export scrub) and is kept 90 days.
+// address (the home's export scrub) and is kept 90 days. Its Apple crashes read as functions,
+// files and lines where the release's symbol tables are uploaded (/symbols, 53.14); the
+// binaries without one are named.
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -50,8 +52,22 @@ interface Line {
   [k: string]: unknown;
 }
 
+export interface CrashFrame {
+  raw: string;
+  in_app: boolean;
+  symbol?: { function: string; file?: string; line?: number };
+}
+
+export interface ReportCrash {
+  type: string;
+  value?: string;
+  frames: CrashFrame[];
+  missing?: { code_file: string; debug_id: string }[];
+}
+
 export interface CloudReportDoc extends CloudReport {
   owner_email?: string;
+  crashes?: ReportCrash[];
   body: {
     text?: string;
     os_version?: string;
@@ -202,6 +218,52 @@ export function cloudTimeline(d: CloudReportDoc): (Line & { side: "app" | "home"
   return all.sort((a, b) => (Date.parse(a.ts ?? "") || 0) - (Date.parse(b.ts ?? "") || 0));
 }
 
+// a frame's place in the code: the function, and the file's name and line when known
+function frameText(f: CrashFrame): string {
+  if (!f.symbol) return f.raw;
+  const file = f.symbol.file ? f.symbol.file.split("/").pop() : "";
+  return file
+    ? `${f.symbol.function} (${file}${f.symbol.line ? `:${f.symbol.line}` : ""})`
+    : f.symbol.function;
+}
+
+function Crashes({ crashes }: { crashes: ReportCrash[] }) {
+  const { t } = useI18n();
+  return (
+    <>
+      <h2>{t("admin.reports.crashes")}</h2>
+      {crashes.map((c, i) => (
+        <Card
+          key={i}
+          header={
+            <h3 className="mkc-mono" dir="ltr">
+              {c.type}
+              {c.value && c.value !== c.type ? ` · ${c.value}` : ""}
+            </h3>
+          }
+        >
+          <p className="mkc-muted">{t("admin.reports.crashFrames")}</p>
+          <ol className="mkc-list" data-testid="crash-frames" dir="ltr">
+            {c.frames.map((f, k) => (
+              <li key={k} className="mkc-list__row mkc-mono">
+                {f.in_app ? <strong>{frameText(f)}</strong> : frameText(f)}
+                {f.symbol && <span className="mkc-muted"> · {f.raw}</span>}
+              </li>
+            ))}
+          </ol>
+          {c.missing && c.missing.length > 0 && (
+            <p className="mkc-muted" data-testid="crash-missing">
+              {t("admin.reports.noSymbols", {
+                binaries: c.missing.map((m) => `${m.code_file} (${m.debug_id})`).join(", "),
+              })}
+            </p>
+          )}
+        </Card>
+      ))}
+    </>
+  );
+}
+
 export function AdminReportDetail() {
   const { id = "" } = useParams();
   const { t, formatDate } = useI18n();
@@ -295,6 +357,8 @@ export function AdminReportDetail() {
             {t("admin.reports.showScreenshot")}
           </Button>
         ))}
+
+      {d.crashes && d.crashes.length > 0 && <Crashes crashes={d.crashes} />}
 
       <Card header={<h2>{t("admin.reports.triage")}</h2>}>
         <div className="mkc-stack">
