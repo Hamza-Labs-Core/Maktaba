@@ -31,6 +31,7 @@ type supAnswer struct {
 	Error  string `json:"error"`
 	Detail string `json:"detail"`
 	Reason string `json:"reason"`
+	Step   string `json:"step"`
 }
 
 // InstallPackage streams a package to the supervisor; a refusal is a *Problem with the
@@ -60,8 +61,15 @@ func (s *SupervisorHTTP) InstallPackage(ctx context.Context, r io.Reader) (*Inst
 			return nil, problem(http.StatusServiceUnavailable, CodeNoSupervisor, "this machine runs no plugins")
 		}
 		p := problem(status, a.Error, "%s", a.Detail)
-		if a.Reason != "" {
-			p.Params = map[string]any{"reason": a.Reason}
+		if a.Reason != "" || a.Step != "" {
+			p.Params = map[string]any{}
+			if a.Reason != "" {
+				p.Params["reason"] = a.Reason
+			}
+			if a.Step != "" {
+				// the chain's step a signature refusal names (story 54.14 §3)
+				p.Params["step"] = a.Step
+			}
 		}
 		return nil, p
 	}

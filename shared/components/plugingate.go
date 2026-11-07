@@ -40,9 +40,12 @@ type PluginGateInput struct {
 	EntitlementMissing bool `json:"entitlement_missing"`
 }
 
-// Unreviewed reports whether a review level needs the home's opt-in (54.10): no store
-// review, and not a developer's own build on its development home.
-func Unreviewed(level string) bool { return level != "store" }
+// Unreviewed reports whether a review level needs the home's opt-in (54.10): anything the
+// store did not countersign (story 54.14 §2: automated or reviewed; "store" is the
+// Phase 1 name of the same, never written since).
+func Unreviewed(level string) bool {
+	return level != "store" && level != "automated" && level != "reviewed"
+}
 
 // PluginGate is the first gate that keeps the plugin waiting ("" when none does), with
 // the params its words take. The order is the story's: a revocation first, then what no

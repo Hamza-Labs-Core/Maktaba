@@ -5,7 +5,7 @@
 // whose words are plugins.error.<code>.
 import { ApiError, api, uploadWithProgress } from "./api";
 
-export type ReviewLevel = "none" | "developer" | "store" | "development";
+export type ReviewLevel = "none" | "developer" | "automated" | "reviewed" | "store" | "development";
 
 export interface PluginNames {
   name: Record<string, string>;

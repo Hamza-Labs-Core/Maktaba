@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 
@@ -106,28 +106,18 @@ describe("Review", () => {
     expect(await screen.findByLabelText("Spelling")).toHaveValue("الصلوة");
     // the sentence reads right to left; the word is marked
     expect(screen.getByLabelText(/الصلوة/, { selector: "mark" })).toBeInTheDocument();
-    // the key listener that knows the word is attached by an effect after the word shows;
-    // flush it, or a loaded runner presses the key into the previous listener (#697)
-    await act(async () => {});
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { code: "Digit2", key: "2" }));
     });
-    await waitFor(
-      () =>
-        expect(m.resolve).toHaveBeenCalledWith(
-          "a",
-          expect.objectContaining({ action: "correct", text: "الصلاة" })
-        ),
-      { timeout: 3000 }
+    expect(m.resolve).toHaveBeenCalledWith(
+      "a",
+      expect.objectContaining({ action: "correct", text: "الصلاة" })
     );
     expect(await screen.findByLabelText("Spelling")).toHaveValue("teh");
-    // the key listener that knows the word is attached by an effect after the word shows;
-    // flush it, or a loaded runner presses the key into the previous listener (#697)
-    await act(async () => {});
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyU", key: "u" }));
     });
-    await waitFor(() => expect(m.undoEdit).toHaveBeenCalledWith("e1"), { timeout: 3000 });
+    expect(m.undoEdit).toHaveBeenCalledWith("e1");
   });
 
   it("marks a name with the physical N key on an Arabic layout", async () => {
@@ -136,17 +126,12 @@ describe("Review", () => {
     m.resolve.mockResolvedValue({ status: "name", changed: 1, edit_id: null, batch_id: null });
     page();
     await screen.findByLabelText("Spelling");
-    // the key listener that knows the word is attached by an effect after the word shows;
-    // flush it, or a loaded runner presses the key into the previous listener (#697)
-    await act(async () => {});
+    // no flush before the key: the page's listener reads the word from the render on
+    // screen (#697), and the API call is made in the key's handler, so it is checked at once
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyN", key: "ى" }));
     });
-    await waitFor(
-      () =>
-        expect(m.resolve).toHaveBeenCalledWith("a", expect.objectContaining({ action: "name" })),
-      { timeout: 3000 }
-    );
+    expect(m.resolve).toHaveBeenCalledWith("a", expect.objectContaining({ action: "name" }));
   });
 
   it("shows the verse, its word and the Tanzil credit, and no dictionary button", async () => {
