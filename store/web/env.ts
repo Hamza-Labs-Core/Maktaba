@@ -19,7 +19,8 @@ export interface Env {
   MAIL_PROVIDER: "postmark" | "outbox";
   MAIL_FROM: string;
   /** The isolated runner (54.16 §1): "github" (the CI fallback, store-check-runner.yml) or "none". */
-  RUNNER?: "github" | "none";
+  /** the isolated runner: the CI fallback, Cloudflare Containers (#756) or none */
+  RUNNER?: "github" | "containers" | "none";
   RUNNER_REPOSITORY?: string;
   /** The share of plain updates sampled for a person's review (54.16 §2: 0.05). */
   REVIEW_SAMPLE?: string;
@@ -38,6 +39,8 @@ export interface Env {
   IP_BUCKET: DurableObjectNamespace<IpBucket>;
   PAIRING_CODE: DurableObjectNamespace<PairingCode>;
   CATALOG_WRITER: DurableObjectNamespace<CatalogWriter>;
+  /** the isolated runner's container, one per submission (RUNNER = "containers") */
+  CHECK_RUNNER?: DurableObjectNamespace<import("../objects/check-runner").CheckRunner>;
   Q_CHECKS: Queue;
   Q_CATALOG: Queue;
   Q_MAIL: Queue;
