@@ -16,8 +16,8 @@ export async function entitlements(env: Env, req: Request, id: string): Promise<
   if (raw.length > 0) refuse(400, "body_not_empty");
   const home = await signedHome(env, req, raw);
   if (!home || home.id !== id) refuse(401, "home_signature_invalid");
-  if (!env.ENTITLEMENT_SIGNING_KEY || !env.DB_COMMERCE) refuse(503, "entitlements_unavailable");
-  const signer = await Signer.fromSecret(env.ENTITLEMENT_SIGNING_KEY!);
+  if (!env.STORE_ENTITLEMENT_KEY || !env.DB_COMMERCE) refuse(503, "entitlements_unavailable");
+  const signer = await Signer.fromSecret(env.STORE_ENTITLEMENT_KEY!);
   const at = now();
   const list = await homeEntitlements(env.DB_COMMERCE as unknown as DB, home!.id, await homeKeyFingerprint(home!.public_key), signer, at);
   return json({ home_id: home!.id, issued_at: at.toISOString().replace(/\.\d{3}Z$/, "Z"), entitlements: list.map((e) => JSON.parse(e)) });

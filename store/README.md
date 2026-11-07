@@ -59,12 +59,17 @@ The root keys sign only `store-keys.json`, a few times a year. They never touch 
        --store /Volumes/KEY-S/s-2027.pub --months 13 > store-keys.json
    ```
 
-   (With Phase 3, add `--entitlement E.pub` for the entitlement key.)
+   For paid plugins (story 54.19), make the entitlement key E the same way on its own stick
+   (`npx tsx scripts/keys.ts new /Volumes/KEY-E e-2027`) and add `--entitlement
+   /Volumes/KEY-E/e-2027.pub`: the list then names it with `use: "entitlement"`, and a home
+   accepts an entitlement only from a key listed so.
 
 2. Set S's seed (the one line in `s-2027.key`) as the Worker secret **`STORE_SIGNING_KEY`** of
    the store's Workers (story 54.15): `wrangler secret put STORE_SIGNING_KEY`, typed or pasted
-   by the owner at the prompt, never in a file, a shell history or a log. The entitlement key
-   (Phase 3) is a separate secret, `STORE_ENTITLEMENT_KEY`.
+   by the owner at the prompt, never in a file, a shell history or a log. The entitlement key E's
+   seed is a separate secret, **`STORE_ENTITLEMENT_KEY`** (`wrangler secret put
+   STORE_ENTITLEMENT_KEY`); without it a home's entitlements route answers
+   `entitlements_unavailable` and no paid plugin can be used.
 3. Upload `store-keys.json` to the CDN bucket (story 54.15) and copy it to
    `shared/plugins/store-keys-embedded.json` so each release carries it.
 4. **Each year**: make the next S, sign a store-keys.json (version + 1) listing both while
@@ -84,7 +89,7 @@ on it). Create, then put each id in `store/wrangler.jsonc` in a pull request:
 
 | Resource            | Name                                                                                                 | Notes                                                                                                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| D1 database         | `store-accounts`, `store-catalog`, `store-installs`                                                  | `wrangler d1 create <name>`; their ids replace the `00000000-…` placeholders (the deploy refuses to run with a placeholder) |
+| D1 database         | `store-accounts`, `store-catalog`, `store-installs`, `store-commerce` (paid plugins, 54.19)                                               | `wrangler d1 create <name>`; their ids replace the `00000000-…` placeholders (the deploy refuses to run with a placeholder) |
 | R2 bucket           | `maktaba-plugins`                                                                                    | public, through the custom domain below; turn on object versioning                                                          |
 | R2 bucket           | `maktaba-plugins-private`                                                                            | never public; a lifecycle rule deleting `exports/` after 90 days                                                            |
 | Queues              | `store-checks`, `store-catalog`, `store-mail`                                                        | `wrangler queues create <name>`                                                                                             |
@@ -123,6 +128,7 @@ file, a log, a commit or a chat.
 | Secret                                                      | What                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `STORE_SIGNING_KEY`                                         | the online key S's seed (step 2)                                                                                                                                                                                                            |
+| `STORE_ENTITLEMENT_KEY`                                     | the entitlement key E's seed (step 2), for paid plugins; payment providers' own secrets are in `payments/README.md`                                                                                                                       |
 | `MFA_ENC_KEY`                                               | 32 random bytes, base64 (`openssl rand -base64 32`): encrypts TOTP secrets at rest                                                                                                                                                          |
 | `BOOTSTRAP_ADMIN_TOKEN`                                     | a long random string, used once (step 8), then deleted (`wrangler secret delete`)                                                                                                                                                           |
 | `MAIL_API_KEY`                                              | the email provider's token                                                                                                                                                                                                                  |

@@ -61,6 +61,8 @@ type Admin struct {
 	VerifyPassword func(ctx context.Context, userID, password string) error
 	// Store links this home to a plugin store account (story 54.15 §5; nil: 503).
 	Store *storelink.Link
+	// Entitlements keeps the paid plugins' entitlements (story 54.19 §6; nil: 503).
+	Entitlements *pl.Entitlements
 }
 
 // Mount adds the routes to r.
@@ -76,6 +78,8 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/store-account/link", h.storeLink)
 		r.Post("/api/plugins/store-account/poll", h.storePoll)
 		r.Delete("/api/plugins/store-account", h.storeUnlink)
+		r.Get("/api/plugins/store-account/entitlements", h.entitlements)
+		r.Post("/api/plugins/store-account/entitlements/refresh", h.refreshEntitlements)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
 		r.Post("/api/plugins/{id}/enable", h.switchTo(components.WantEnabled))

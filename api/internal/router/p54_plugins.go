@@ -96,7 +96,18 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			link = &storelink.Link{DB: d.DB, Secrets: d.Secrets, StoreURL: os.Getenv("MAKTABA_PLUGIN_STORE_URL"),
 				Version: d.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH, Name: host}
 		}
-		(&pluginsh.Admin{L: l, Logger: logger, Store: link, VerifyPassword: func(ctx context.Context, id, pw string) error {
+		// story 54.19 §6: a linked home's entitlements, fetched with its signature and checked
+		// offline by this machine's supervisor
+		var ents *plugins.Entitlements
+		if sup := plugins.SupervisorFromEnv(); link != nil && sup != nil {
+			ents = &plugins.Entitlements{DB: d.DB, Link: link, Verifier: sup, Logger: logger}
+			ectx := d.Ctx
+			if ectx == nil {
+				ectx = context.Background()
+			}
+			go ents.Run(ectx)
+		}
+		(&pluginsh.Admin{L: l, Logger: logger, Store: link, Entitlements: ents, VerifyPassword: func(ctx context.Context, id, pw string) error {
 			u, err := accounts.GetByID(ctx, id)
 			if err != nil {
 				return err

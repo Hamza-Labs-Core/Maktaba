@@ -61,7 +61,7 @@ describe("a home's entitlements", () => {
     const e = list[0]!;
     expect(e.signed).toMatchObject({ v: 1, home_id: homeId, home_key_fp: await sha256hex(hk.raw), product: "one_time" });
     expect(String(e.signed.valid_until)).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
-    const E = await Signer.fromSecret((env as unknown as { ENTITLEMENT_SIGNING_KEY: string }).ENTITLEMENT_SIGNING_KEY);
+    const E = await Signer.fromSecret((env as unknown as { STORE_ENTITLEMENT_KEY: string }).STORE_ENTITLEMENT_KEY);
     expect(e.signatures[0]!.key_id).toBe(E.id);
     expect(await verifySig(fromB64(E.public), KIND.entitlement, JSON.stringify(e.signed), e.signatures[0]!.sig)).toBe(true);
     expect(JSON.stringify(r.body)).not.toContain("fake");

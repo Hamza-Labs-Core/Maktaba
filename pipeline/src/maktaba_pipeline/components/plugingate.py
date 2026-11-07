@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 __all__ = [
@@ -108,6 +109,35 @@ def plugin_gate(g: GateInput) -> tuple[str, dict[str, Any]]:
 #: the home's plugin policy's app_settings key (the API's ``plugins.PolicyKey``)
 POLICY_KEY = "plugins.policy"
 
+#: an entitlement holds this long past its valid_until (story 54.19 §6: Epic 16's 72 hours,
+#: pluginsig.EntitlementGrace)
+ENTITLEMENT_GRACE = timedelta(hours=72)
+
+
+def paid(price: Any) -> bool:
+    """A manifest's price names a product: a paid plugin (story 54.19 §4)."""
+    return isinstance(price, str) and price not in ("", "free")
+
+
+async def _entitled_until(db: Any) -> dict[str, datetime]:
+    """Each plugin's latest entitlement valid_until (the API keeps only entitlements it
+    checked offline); an older schema without the table has none."""
+    try:
+        rows = await db.fetch(
+            "SELECT plugin_id, max(valid_until) AS until FROM plugin_entitlements"
+            " GROUP BY plugin_id"
+        )
+    except Exception:  # noqa: BLE001 - an older schema: no paid plugin runs
+        return {}
+    out: dict[str, datetime] = {}
+    for r in rows:
+        u = r["until"]
+        if isinstance(u, str):
+            u = datetime.fromisoformat(u.replace("Z", "+00:00"))
+        if isinstance(u, datetime):
+            out[str(r["plugin_id"])] = u if u.tzinfo else u.replace(tzinfo=UTC)
+    return out
+
 
 def _json(v: Any) -> Any:
     import json
@@ -120,7 +150,9 @@ def _json(v: Any) -> Any:
     return v
 
 
-async def read(db: Any, version: str) -> dict[str, tuple[str, dict[str, Any]]]:
+async def read(
+    db: Any, version: str, now: datetime | None = None
+) -> dict[str, tuple[str, dict[str, Any]]]:
     """Each installed plugin entry's gate reason ("" none), from the tables the API keeps
     (plugin_installs, plugin_grants, the policy, plugin_keep_off, plugin_health): the same
     inputs the supervisor's runner reads. A schema without them answers nothing."""
@@ -144,6 +176,8 @@ async def read(db: Any, version: str) -> dict[str, tuple[str, dict[str, Any]]]:
     except Exception:  # noqa: BLE001 - an older schema: no plugins
         return out
     allow = bool((_json(pol["value"]) or {}).get("allow_unreviewed")) if pol is not None else False
+    entitled = await _entitled_until(db)
+    at = now or datetime.now(UTC)
     for r in rows:
         pid = str(r["plugin_id"])
         m = _json(r["manifest"]) or {}
@@ -157,6 +191,8 @@ async def read(db: Any, version: str) -> dict[str, tuple[str, dict[str, Any]]]:
                 granted=tuple(grants.get(pid, ())),
                 review_level=str(r["review_level"]),
                 allow_unreviewed=allow,
+                entitlement_missing=paid(m.get("price"))
+                and not (pid in entitled and at < entitled[pid] + ENTITLEMENT_GRACE),
             )
         )
         if not reason and pid in tripped:

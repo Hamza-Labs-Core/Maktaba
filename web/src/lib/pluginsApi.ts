@@ -208,12 +208,30 @@ export interface StoreLinkStatus {
   pending?: { user_code: string; verification_uri: string; expires_at: string; interval: number };
 }
 
+/** A paid plugin's entitlement this home holds (story 54.19 §6), checked offline. */
+export interface HeldEntitlement {
+  plugin_id: string;
+  product: "one_time" | "yearly";
+  purchase_id: string;
+  valid_until: string;
+  refreshed_at: string;
+}
+
 export const pluginsApi = {
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),
   storeLink: () =>
     api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),
   storePoll: () => api.post<StoreLinkStatus>("/api/plugins/store-account/poll"),
   storeUnlink: () => api.delete<{ linked: boolean }>("/api/plugins/store-account"),
+  entitlements: () =>
+    api.get<{ entitlements: HeldEntitlement[] }>("/api/plugins/store-account/entitlements"),
+  refreshEntitlements: (afterBuy = false) =>
+    api.post<{ linked: boolean; valid: number }>(
+      "/api/plugins/store-account/entitlements/refresh",
+      {
+        after_buy: afterBuy,
+      }
+    ),
   list: () =>
     api.get<{ plugins: Plugin[]; policy: Policy; built_in?: BuiltInPlugin[] }>("/api/plugins"),
   graph: () => api.get<{ graph: FlowGraph; findings: FlowFinding[] | null }>("/api/plugins/graph"),

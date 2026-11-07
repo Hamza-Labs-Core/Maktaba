@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
 // Routes are the supervisor's loopback plugin routes (story 54.38 §4), behind its
@@ -15,6 +16,8 @@ import (
 //
 //	POST /plugins/install              the .mkplugin as the body: 200 Installed, or 4xx {error, detail, reason}
 //	POST /plugins/{id}/discard?folder= remove a folder the API refused (never current or kept)
+//	POST /plugins/entitlements/verify  check entitlements offline (story 54.19 §6) against
+//	                                   the store keys this machine verified: 200 {valid, refused}
 //
 // An install is answered when it is done (a package is at most 50 MB packed): no
 // progress route. [plugins] install = "off" (54.10) answers 409 plugins_install_off.
@@ -61,6 +64,8 @@ func (rt *Routes) Handler(base http.Handler) http.Handler {
 		switch {
 		case rest == "install" && r.Method == http.MethodPost:
 			rt.install(w, r)
+		case rest == "entitlements/verify" && r.Method == http.MethodPost:
+			rt.verifyEntitlements(w, r)
 		case strings.HasSuffix(rest, "/discard") && r.Method == http.MethodPost:
 			id := strings.TrimSuffix(rest, "/discard")
 			if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
@@ -108,4 +113,67 @@ func (rt *Routes) install(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, in)
 	}
+}
+
+// EntitlementsRequest is what the API asks the supervisor to check: the envelopes the store
+// answered, and this home's store id and key fingerprint.
+type EntitlementsRequest struct {
+	HomeID       string            `json:"home_id"`
+	HomeKeyFP    string            `json:"home_key_fp"`
+	Entitlements []json.RawMessage `json:"entitlements"`
+}
+
+// CheckedEntitlement is one entitlement that holds.
+type CheckedEntitlement struct {
+	PluginID   string          `json:"plugin_id"`
+	PurchaseID string          `json:"purchase_id"`
+	Product    string          `json:"product"`
+	ValidFrom  string          `json:"valid_from"`
+	ValidUntil string          `json:"valid_until"`
+	IssuedAt   string          `json:"issued_at"`
+	Envelope   json.RawMessage `json:"envelope"`
+}
+
+// RefusedEntitlement is one that does not, by its place in the request.
+type RefusedEntitlement struct {
+	Index int    `json:"index"`
+	Code  string `json:"code"`
+	Step  string `json:"step"`
+}
+
+// maxEntitlements is the most one request checks (a home holds one per paid plugin).
+const maxEntitlements = 1000
+
+func (rt *Routes) verifyEntitlements(w http.ResponseWriter, r *http.Request) {
+	var in EntitlementsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<20)).Decode(&in); err != nil ||
+		in.HomeID == "" || in.HomeKeyFP == "" || len(in.Entitlements) > maxEntitlements {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "entitlements_bad_request"})
+		return
+	}
+	t := rt.Files.trust()
+	keys := t.StoreKeys()
+	if keys == nil {
+		// no verified store-keys.json on this machine (a placeholder root, or none fetched):
+		// nothing can be checked, and the API keeps what it has
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "store_keys_unavailable"})
+		return
+	}
+	out := struct {
+		Valid   []CheckedEntitlement `json:"valid"`
+		Refused []RefusedEntitlement `json:"refused"`
+	}{Valid: []CheckedEntitlement{}, Refused: []RefusedEntitlement{}}
+	st, now := t.State(), t.now()
+	for i, raw := range in.Entitlements {
+		e, err := pluginsig.CheckEntitlement(raw, keys, st, now, in.HomeID, in.HomeKeyFP)
+		if err != nil {
+			code, step := pluginsig.CodeOf(err)
+			out.Refused = append(out.Refused, RefusedEntitlement{Index: i, Code: code, Step: step})
+			continue
+		}
+		out.Valid = append(out.Valid, CheckedEntitlement{PluginID: e.PluginID, PurchaseID: e.PurchaseID, Product: e.Product,
+			ValidFrom: pluginsig.FormatTime(e.ValidFrom), ValidUntil: pluginsig.FormatTime(e.ValidUntil),
+			IssuedAt: pluginsig.FormatTime(e.IssuedAt), Envelope: raw})
+	}
+	writeJSON(w, http.StatusOK, out)
 }

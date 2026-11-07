@@ -4,11 +4,13 @@ gated as the Go loader does (the shared goldens of ``shared/components/testdata`
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from maktaba_pipeline.components import catalog
+from maktaba_pipeline.components import catalog, plugingate
 from maktaba_pipeline.components.plugingate import GateInput, plugin_gate
 
 pytestmark = pytest.mark.unit
@@ -98,3 +100,58 @@ def test_only_a_store_countersignature_needs_no_opt_in() -> None:
 
     assert [unreviewed(lv) for lv in ("automated", "reviewed", "store")] == [False, False, False]
     assert all(unreviewed(lv) for lv in ("none", "developer", "development", ""))
+
+
+class _GateDB:
+    """The tables plugingate.read asks, in memory."""
+
+    def __init__(self, price: str, until: datetime | None) -> None:
+        self.manifest = {
+            "maktaba": ">=0.1.0",
+            "plugin_api": "1.0",
+            "price": price,
+            "capabilities": {},
+        }
+        self.until = until
+
+    async def fetch(self, q: str, *a: object) -> list[dict[str, object]]:
+        if "FROM plugin_installs" in q:
+            return [
+                {"plugin_id": "dev.example.pro", "manifest": self.manifest, "review_level": "store"}
+            ]
+        if "FROM plugin_entitlements" in q:
+            return (
+                []
+                if self.until is None
+                else [{"plugin_id": "dev.example.pro", "until": self.until}]
+            )
+        return []
+
+    async def fetchrow(self, q: str, *a: object) -> None:
+        return None
+
+
+def _run(coro: Any) -> Any:
+    """Runs a coroutine that never suspends (the fake answers at once): no event loop, whose
+    self-pipe is a socket the unit tier refuses."""
+    try:
+        coro.send(None)
+    except StopIteration as done:
+        return done.value
+    raise AssertionError("the coroutine suspended")
+
+
+def test_a_paid_plugin_waits_for_its_entitlement() -> None:
+    """Story 54.19 T04 (the pipeline's half): as the supervisor's runner, a paid plugin with
+    no entitlement valid now (72-hour grace) is entitlement_missing; a free one needs none."""
+    now = datetime(2026, 11, 20, 12, tzinfo=UTC)
+    until = now - timedelta(hours=71)
+    cases = [
+        ("dev.example.pro", None, "entitlement_missing"),
+        ("dev.example.pro", until, ""),
+        ("dev.example.pro", now - timedelta(hours=73), "entitlement_missing"),
+        ("free", None, ""),
+    ]
+    for price, u, want in cases:
+        got = _run(plugingate.read(_GateDB(price, u), "0.3.83", now=now))
+        assert got["plugin.dev.example.pro"][0] == want, (price, u)

@@ -1001,6 +1001,16 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Paid plugins wait for their purchase (Epic 54, story 54.19).** A home linked to a store
+  account fetches its entitlements from the store daily, signed with its own home store key
+  (and every 15 seconds for 15 minutes after a Buy), checks each offline against the store
+  keys it verified (an entitlement key, this home and its key, valid now with a 72-hour grace),
+  and keeps the ones that hold. A plugin whose manifest names a price waits ("This plugin needs
+  a purchase") without one: its queue and data are kept, and it comes back by itself when a
+  purchase arrives. A refund ends it at the next check; a store outage changes nothing for 31
+  days, a Maktaba Cloud outage nothing at all. Settings → Plugins → Store account lists the
+  purchases held, with **Check for purchases now**. Migration 0201.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

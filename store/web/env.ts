@@ -1,6 +1,6 @@
 // The store Worker's bindings (wrangler.jsonc). Secrets, set with `wrangler secret put` by
 // the owner and never in a file: STORE_SIGNING_KEY (the online key S, a base64 Ed25519
-// seed), ENTITLEMENT_SIGNING_KEY (the entitlement key E, a base64 seed), MFA_ENC_KEY (32 bytes base64, encrypts TOTP secrets), BOOTSTRAP_ADMIN_TOKEN (once),
+// seed), STORE_ENTITLEMENT_KEY (the entitlement key E, a base64 seed), MFA_ENC_KEY (32 bytes base64, encrypts TOTP secrets), BOOTSTRAP_ADMIN_TOKEN (once),
 // MAIL_API_KEY, R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_ACCOUNT_ID (presigned uploads),
 // EXPORT_PUBLIC_KEY (the owner's RSA public key for the nightly exports), and optionally
 // CF_ZONE_ID / CF_PURGE_TOKEN (purging the CDN's cache of the signed lists).
@@ -46,7 +46,7 @@ export interface Env {
 
   STORE_SIGNING_KEY?: string;
   /** The entitlement key E (54.14 `use: "entitlement"`), a base64 Ed25519 seed (story 54.19 §6). */
-  ENTITLEMENT_SIGNING_KEY?: string;
+  STORE_ENTITLEMENT_KEY?: string;
   MFA_ENC_KEY?: string;
   BOOTSTRAP_ADMIN_TOKEN?: string;
   MAIL_API_KEY?: string;
