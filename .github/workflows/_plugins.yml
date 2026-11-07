@@ -119,6 +119,39 @@ jobs:
         working-directory: plugind
         run: cargo test --locked --release -p maktaba-plugind
 
+      # #710: on Windows the pipeline reaches the host through the supervisor's named pipe
+      # relay (cmd/maktaba-server/internal/pluginrelay): bytes both ways unchanged, a squatted
+      # name not served, a closed client when the host is down, another local user refused,
+      # and the pipeline's own connect (pipe.py) through it. The second user is made here
+      # with a random password, never printed
+      - uses: actions/setup-python@v6.2.0
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+
+      - name: A second local user for the relay's refusal test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bytes = New-Object byte[] 24
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+          $pass = 'Aa1!' + [Convert]::ToBase64String($bytes)
+          Write-Output "::add-mask::$pass"
+          $secure = ConvertTo-SecureString $pass -AsPlainText -Force
+          New-LocalUser -Name 'mkrelayprobe' -Password $secure -PasswordNeverExpires | Out-Null
+          "MAKTABA_RELAY_TEST_USER=mkrelayprobe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_RELAY_TEST_PASS=$pass" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: The pipeline's relay to the host (#710)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_RELAY_TEST_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          MAKTABA_RELAY_TEST_PYTHON="$(command -v python)" go test -count=1 -v ./internal/pluginrelay/
+
       - name: The hostile components inside the sandboxed host (54.03 T07)
         if: runner.os != 'Windows'
         working-directory: plugind
