@@ -34,7 +34,7 @@ jobs:
           mkdir in
           curl --fail --silent --show-error --max-filesize 52428800 -o in/package.mkplugin "$PACKAGE_URL"
           curl --fail --silent --show-error --max-filesize 209715200 -o in/source.archive "$SOURCE_URL"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: inputs
           path: in
@@ -60,10 +60,46 @@ jobs:
           sudo freshclam --quiet || true
           (cd plugind && cargo build --locked --release -p mkp)
           sudo install plugind/target/release/mkp /usr/local/bin/mkp
-      - uses: actions/download-artifact@v4
+      - name: Download inputs
+        id: artifact-inputs
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: inputs
           path: in
+      - name: Wait 15s to retry the download of inputs
+        if: steps.artifact-inputs.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download inputs (attempt 2)
+        id: artifact-inputs-2
+        if: steps.artifact-inputs.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: inputs
+          path: in
+      - name: Wait 45s to retry the download of inputs
+        if: steps.artifact-inputs-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download inputs (attempt 3)
+        id: artifact-inputs-3
+        if: steps.artifact-inputs-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: inputs
+          path: in
+      - name: Check inputs downloaded
+        id: artifact-inputs-check
+        if: steps.artifact-inputs-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: inputs
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
       # from here on nothing leaves the machine: only loopback (as plugins-sandbox does, README §5.4)
       - name: Cut egress
         run: |
@@ -74,7 +110,7 @@ jobs:
           if curl --silent --max-time 5 https://example.com >/dev/null; then echo "::error::egress is still open"; exit 1; fi
       - name: Run the checks
         run: env -i PATH="$PATH" HOME="$RUNNER_TEMP/home" store/check-runner/run.sh in/package.mkplugin in/source.archive report.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: report
           path: report.json
@@ -86,10 +122,43 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download report
+        id: artifact-report
         if: needs.run.result == 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: report
+      - name: Wait 15s to retry the download of report
+        if: steps.artifact-report.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download report (attempt 2)
+        id: artifact-report-2
+        if: steps.artifact-report.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: report
+      - name: Wait 45s to retry the download of report
+        if: steps.artifact-report-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download report (attempt 3)
+        id: artifact-report-3
+        if: steps.artifact-report-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: report
+      - name: Check report downloaded
+        id: artifact-report-check
+        if: steps.artifact-report-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: report
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts; the report says the runner failed"
       - name: Post the report (the URL works once)
         env:
           REPORT_URL: ${{ inputs.report_url }}
