@@ -1127,6 +1127,13 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Paid plugins' packages stay private (Epic 54, story 54.19).** Once a plugin has a price,
+  its packages are kept out of the public CDN. A home that bought it downloads it from
+  `plugins-cdn.maktaba.tv/paid/` with a URL the store signs for that home for 10 minutes,
+  only while its purchase holds; an expired, forged or another home's URL is refused. A home
+  that has not bought it is told to buy it first. The store needs the new Worker secret
+  `PAID_URL_KEY`.
+
 - **Buying a paid plugin (Epic 54, story 54.19).** A paid plugin's page in Settings →
   Plugins → Browse shows its price and **Buy**, or **Link this home to buy** on a home not
   linked to a store account, which links it right there. Buy asks the store for a one-time
