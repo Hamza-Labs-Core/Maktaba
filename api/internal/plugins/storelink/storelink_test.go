@@ -1,6 +1,7 @@
 package storelink
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
@@ -197,5 +198,25 @@ func TestOfflineCallsNoStore(t *testing.T) {
 	}
 	if n := hits.Load(); n != 0 {
 		t.Fatalf("offline, the store got %d request(s)", n)
+	}
+}
+
+// Story 54.19 §6: an entitlement names the sha256 (hex) of the home store key's raw public
+// key; a home with no key yet has no fingerprint (store_not_linked).
+func TestKeyFingerprint(t *testing.T) {
+	ctx := context.Background()
+	sec := secrets.NewMemory()
+	l := &Link{Secrets: sec}
+	if _, err := l.KeyFingerprint(ctx); err == nil {
+		t.Fatal("a fingerprint before any key")
+	}
+	seed := bytes.Repeat([]byte{7}, ed25519.SeedSize)
+	if err := sec.Put(ctx, KeyName, seed, "test"); err != nil {
+		t.Fatal(err)
+	}
+	fp, err := l.KeyFingerprint(ctx)
+	sum := sha256.Sum256(ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey))
+	if err != nil || fp != hex.EncodeToString(sum[:]) {
+		t.Fatalf("fingerprint %q %v", fp, err)
 	}
 }
