@@ -12,8 +12,8 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
 // Close makes the last flush before it returns: the relay's shutdown must

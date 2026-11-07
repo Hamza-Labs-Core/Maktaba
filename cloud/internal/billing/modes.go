@@ -33,8 +33,8 @@ type PAYG struct {
 
 // Decision is a request's mode, and whether its bytes count as pay-as-you-go.
 type Decision struct {
-	Mode   string
-	PAYG   bool
+	Mode    string
+	PAYG    bool
 	CapKbps int // the cap the forwarded request carries (0: none)
 }
 

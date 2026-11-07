@@ -32,6 +32,7 @@ func TestBillingNoneProvider(t *testing.T) {
 	e.exec(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1, 'Home', 'member-home', 'x')`, uid)
 	admin := e.serviceAdmin("ops@example.test")
 
+	withPrices(t)
 	cat := c.mustStatus(c.do("GET", "/v1/billing/plans", nil), 200).json(t)
 	if cat["payments_enabled"] != false {
 		t.Fatalf("payments_enabled: %v", cat)
@@ -86,14 +87,14 @@ func TestBillingNoneProvider(t *testing.T) {
 	if me["plan"] != "basic" || me["status"] != "active" || me["has_customer"] != false {
 		t.Fatalf("after manual pro: %v", me)
 	}
-	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'basic'`, uid) != 1 {
 		t.Fatal("server plan did not follow the manual plan")
 	}
 	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider = 'manual'`, uid) != 1 {
 		t.Fatal("manual subscription not marked")
 	}
 	if e.count(`SELECT count(*) FROM audit_log WHERE action = 'admin.account.set_plan' AND target_id = $1
-        AND detail->>'plan' = 'pro' AND detail->>'previous_plan' = 'free' AND detail->>'reason' = 'early supporter'`, uid) != 1 {
+        AND detail->>'plan' = 'basic' AND detail->>'previous_plan' = 'free' AND detail->>'reason' = 'early supporter'`, uid) != 1 {
 		t.Fatal("manual plan change not audited")
 	}
 	detail := admin.mustStatus(admin.do("GET", "/v1/admin/accounts/"+uid, nil), 200).json(t)
@@ -129,6 +130,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	uid := e.userID(email)
 	e.exec(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1, 'Home', 'payer-home', 'x')`, uid)
 
+	withPrices(t)
 	cat := c.mustStatus(c.do("GET", "/v1/billing/plans", nil), 200).json(t)
 	plans := cat["plans"].([]any)
 	if cat["payments_enabled"] != true || len(plans) != 3 || plans[0].(map[string]any)["purchasable"] != false ||
@@ -180,10 +182,10 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	if me["plan"] != "basic" || me["status"] != "active" || me["interval"] != "monthly" || me["has_customer"] != true {
 		t.Fatalf("billing/me: %v", me)
 	}
-	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider = 'testpay' AND provider_price_id = 'price_pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider = 'testpay' AND provider_price_id = 'price_basic'`, uid) != 1 {
 		t.Fatal("subscription not stamped with its provider")
 	}
-	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM servers WHERE owner_user_id = $1 AND plan = 'basic'`, uid) != 1 {
 		t.Fatal("server plan did not follow the subscription")
 	}
 
@@ -270,7 +272,7 @@ func TestUsage(t *testing.T) {
 	const email = "ent@example.test"
 	c := e.registerVerified(email)
 	uid := e.userID(email)
-	e.exec(`UPDATE users SET plan = 'pro' WHERE id = $1`, uid)
+	e.exec(`UPDATE users SET plan = 'basic' WHERE id = $1`, uid)
 
 	var sid string
 	if err := e.pool.DB.QueryRow(`INSERT INTO servers (owner_user_id, name, slug, server_secret_hash) VALUES ($1,'NAS','ent-nas','x') RETURNING id`, uid).Scan(&sid); err != nil {
@@ -324,7 +326,7 @@ func TestMigrationBillingProviderNeutral(t *testing.T) {
 	c := e.registerVerified("mig@example.test")
 	_ = c
 	uid := e.userID("mig@example.test")
-	e.exec(`INSERT INTO subscriptions (user_id, provider, plan, status, provider_customer_id) VALUES ($1, 'testpay', 'pro', 'active', 'cus_m')`, uid)
+	e.exec(`INSERT INTO subscriptions (user_id, provider, plan, status, provider_customer_id) VALUES ($1, 'testpay', 'basic', 'active', 'cus_m')`, uid)
 	e.exec(`INSERT INTO provider_events (provider, provider_event_id, type, payload) VALUES ('testpay', 'evt_m', 't', '{}')`)
 	// The same event id from two providers is two events.
 	e.exec(`INSERT INTO provider_events (provider, provider_event_id, type, payload) VALUES ('otherpay', 'evt_m', 't', '{}')`)
@@ -343,7 +345,7 @@ func TestMigrationBillingProviderNeutral(t *testing.T) {
 	if err := mig.Up(ctx); err != nil {
 		t.Fatalf("up again: %v", err)
 	}
-	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider_customer_id = 'cus_m' AND plan = 'pro'`, uid) != 1 {
+	if e.count(`SELECT count(*) FROM subscriptions WHERE user_id = $1 AND provider_customer_id = 'cus_m' AND plan = 'basic'`, uid) != 1 {
 		t.Fatal("subscription row lost in the round trip")
 	}
 	if e.count(`SELECT count(*) FROM provider_events WHERE provider_event_id = 'evt_m' AND provider = 'legacy'`) != 1 {
