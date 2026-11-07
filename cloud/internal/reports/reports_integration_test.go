@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
@@ -184,6 +185,13 @@ func TestAHomeSendsAReportOnceAndOnlyWithItsSecret(t *testing.T) {
 	big, ct2 := form(t, sample(8), bytes.Repeat([]byte("x"), MaxScreenshot+1))
 	if rec := rg.do("POST", "/v1/homes/"+sid+"/reports", "good", big, ct2); rec.Code != 413 {
 		t.Fatalf("a 1 MB+ screenshot: %d", rec.Code)
+	}
+	// counted for the monitoring (53.17 §4): one created, one sent again
+	var mb strings.Builder
+	_ = obs.WriteMetrics(&mb)
+	if !strings.Contains(mb.String(), `maktaba_problem_reports_total{result="created"}`) ||
+		!strings.Contains(mb.String(), `maktaba_problem_reports_total{result="duplicate"}`) {
+		t.Fatalf("not counted:\n%s", mb.String())
 	}
 	// the rollback: 503 and the home keeps it
 	rg.agent.Refuse = true

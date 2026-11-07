@@ -8,6 +8,10 @@
 //   GET   /api/rules           the direct section's enabled, map_port, manual_port
 //   PATCH /api/rules/direct    { set, reset }
 //
+// lan_urls (story 50.15 §3) are the home's LAN names: viewed from the LAN, the page tries
+// them from the browser, and none answering means the router blocks DNS rebinding, so it says
+// apps will use the home's address instead (direct.rebinding).
+//
 // The routes exist only on a home linked to Maktaba Cloud whose cloud.direct component is
 // on: a 404 hides the card.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
@@ -37,7 +41,43 @@ export interface DirectStatus {
   name?: string;
   not_after?: string;
   check?: DirectCheck;
+  lan_urls?: string[];
   online: boolean;
+}
+
+/** How long one LAN name gets to answer. */
+export const LAN_PROBE_MS = 4_000;
+
+/**
+ * Whether the page was opened over the home's network: a private or loopback address, or a
+ * .local name. Only then does a LAN name that doesn't answer say something about this network.
+ */
+export function onLAN(hostname: string): boolean {
+  const h = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (h === "localhost" || h.endsWith(".local")) return true;
+  const v4 = h.split(".").map(Number);
+  if (v4.length === 4 && h.split(".").every((p) => /^\d{1,3}$/.test(p))) {
+    const [a, b] = v4;
+    return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+  }
+  return h === "::1" || /^f[cd][0-9a-f]{0,2}:/.test(h) || /^fe[89ab][0-9a-f]?:/.test(h);
+}
+
+/**
+ * Whether `url` (a LAN name) answers from this browser. no-cors: the opaque answer is enough;
+ * a name the router refuses to resolve, like any network failure, rejects.
+ */
+export async function nameAnswers(url: string, timeoutMs = LAN_PROBE_MS): Promise<boolean> {
+  const ctl = new AbortController();
+  const id = setTimeout(() => ctl.abort(), timeoutMs);
+  try {
+    await fetch(url + "/api/health", { mode: "no-cors", cache: "no-store", signal: ctl.signal });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(id);
+  }
 }
 
 interface DirectRules {
@@ -66,7 +106,15 @@ export function directStateKey(
   return s.enabled ? { key: "direct.state.checking" } : null;
 }
 
-export function DirectAccessSection({ pollMs = DIRECT_POLL_MS }: { pollMs?: number }) {
+export function DirectAccessSection({
+  pollMs = DIRECT_POLL_MS,
+  probe = nameAnswers,
+  here = window.location.hostname,
+}: {
+  pollMs?: number;
+  probe?: (url: string) => Promise<boolean>;
+  here?: string;
+}) {
   const { t, n, formatDate } = useI18n();
   const toast = useToast();
   const [status, setStatus] = useState<DirectStatus | null>(null);
@@ -74,6 +122,7 @@ export function DirectAccessSection({ pollMs = DIRECT_POLL_MS }: { pollMs?: numb
   const [absent, setAbsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [port, setPort] = useState("");
+  const [rebinding, setRebinding] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -100,6 +149,20 @@ export function DirectAccessSection({ pollMs = DIRECT_POLL_MS }: { pollMs?: numb
     const id = setInterval(() => void load(), pollMs);
     return () => clearInterval(id);
   }, [load, pollMs]);
+
+  // The LAN names, tried once per set (not on every poll), and only when viewed from the LAN.
+  const lanKey = status?.enabled && onLAN(here) ? (status.lan_urls ?? []).join(" ") : "";
+  useEffect(() => {
+    setRebinding(false);
+    if (lanKey === "") return;
+    let live = true;
+    void Promise.all(lanKey.split(" ").map((u) => probe(u))).then((ok) => {
+      if (live) setRebinding(!ok.some(Boolean));
+    });
+    return () => {
+      live = false;
+    };
+  }, [lanKey, probe]);
 
   if (absent) return null;
 
@@ -161,6 +224,7 @@ export function DirectAccessSection({ pollMs = DIRECT_POLL_MS }: { pollMs?: numb
               })}
             </p>
           )}
+          {rebinding && <p data-testid="direct-rebinding">{t("direct.rebinding")}</p>}
           <Toggle
             checked={rules.map_port === false}
             disabled={busy}

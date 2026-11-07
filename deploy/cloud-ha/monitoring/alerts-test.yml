@@ -74,3 +74,40 @@ tests:
             exp_annotations:
               summary: "The Floating IP is not on the leader (node-b)"
               runbook_url: docs/runbooks/cloud/hetzner-api-down.md
+  # story 53.17 T06: the cloud's error lines at 10 times their 7-day rate for 10 minutes page;
+  # the same rate all week does not, nor a spike shorter than 10 minutes
+  # (5-minute samples: a 7-day window at 1 minute is more than promtool's test loads)
+  - interval: 5m
+    input_series:
+      - series: 'maktaba_errors_total{job="cloud",node="node-a",service="cloud.api",code="db_timeout"}'
+        values: '0+5x2016 10080+50x8'
+      - series: 'maktaba_errors_total{job="cloud",node="node-a",service="cloud.relay",code="relay_dial"}'
+        values: '0+5x2024'
+    alert_rule_test:
+      - eval_time: 7d5m
+        alertname: cloud_error_spike
+        exp_alerts: []
+      - eval_time: 7d30m
+        alertname: cloud_error_spike
+        exp_alerts:
+          - exp_labels: {severity: sev2, service: cloud.api}
+            exp_annotations:
+              summary: "cloud.api errors at 5× their usual rate"
+              runbook_url: docs/runbooks/cloud/errors.md
+  # a node's logs 2 minutes behind for 5 minutes: log_forward_lagging
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_log_forward_lag_seconds{job="cloud",node="node-b",service="cloud.relay"}'
+        values: '0 0 120x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: log_forward_lagging
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: log_forward_lagging
+        exp_alerts:
+          - exp_labels: {severity: sev3, node: node-b}
+            exp_annotations:
+              summary: "node-b's logs are not reaching the witness"
+              runbook_url: docs/runbooks/cloud/errors.md
+

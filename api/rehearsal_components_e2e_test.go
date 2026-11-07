@@ -51,6 +51,9 @@ func (m *appMachine) supervisorProcesses() ([]string, bool) {
 			Instance string `json:"instance"`
 			Wanted   bool   `json:"wanted"`
 			State    string `json:"state"`
+			// always or on_demand (a supervisor older than Epic 54's on-demand runners
+			// reports none: always)
+			StartMode string `json:"start_mode"`
 		} `json:"processes"`
 	}
 	if json.NewDecoder(resp.Body).Decode(&snap) != nil {
@@ -66,6 +69,9 @@ func (m *appMachine) supervisorProcesses() ([]string, bool) {
 		row := fmt.Sprintf("%s/%s wanted=%v running=%v", p.Role, p.Instance, p.Wanted, p.State == "running")
 		if p.State == "held" {
 			row += " held" // its component is off: it runs nothing
+		}
+		if p.StartMode != "" {
+			row += " mode=" + p.StartMode
 		}
 		out = append(out, row)
 	}
@@ -135,26 +141,56 @@ func diffLists(t *testing.T, what string, before, after []string) {
 // model server built dormant for an llm that is off, story 51.04), or when its component is
 // one the home's bundle has (story 52.17: a new component starts as the bundle says; the
 // log index, 53.09, is on in Full).
+//
+// An on-demand process (mode=on_demand: started when asked for, a first-party plugin runner
+// since Epic 54) reads held while its gate is closed and idle (not wanted, not running) while
+// it is open and nobody has asked for it: either is no change to what runs. A process the
+// previous release reported with no start mode (older than on-demand runners: always) may
+// come back on demand, idle or held: the one transition allowed, logged. Every other
+// process and field is compared exactly.
 func keptProcesses(t *testing.T, before, after []string, bundle string) []string {
 	t.Helper()
 	cat := components.Default()
-	had := map[string]bool{}
+	had := map[string]string{}
 	for _, row := range before {
-		had[strings.Fields(row)[0]] = true
+		had[strings.Fields(row)[0]] = row
+	}
+	idle := func(state string) bool {
+		return state == "wanted=false running=false" || state == "wanted=false running=false held"
 	}
 	var out []string
 	for _, row := range after {
 		f := strings.Fields(row)
 		role, instance, _ := strings.Cut(f[0], "/")
+		state, mode, hasMode := strings.Cut(strings.TrimPrefix(row, f[0]+" "), " mode=")
 		inBundle := false
 		if c, ok := cat.ByProcess(role, instance); ok {
 			inBundle = slices.Contains(c.Bundles, bundle)
 		}
+		if prev, ok := had[f[0]]; ok {
+			if strings.Contains(prev, " mode=") || !hasMode {
+				out = append(out, row) // both report a mode (or neither): exact
+				continue
+			}
+			// the previous release reported none (always)
+			switch {
+			case mode == "always":
+				out = append(out, f[0]+" "+state)
+			case mode == "on_demand" && idle(state):
+				t.Logf("expected change: %s always -> on_demand (%s -> %s)", f[0], prev, row)
+				out = append(out, prev)
+			default:
+				out = append(out, row)
+			}
+			continue
+		}
 		switch {
-		case had[f[0]]:
-			out = append(out, row)
-		case inBundle && strings.HasPrefix(strings.TrimPrefix(row, f[0]+" "), "wanted=true"):
-		case !strings.HasSuffix(row, " wanted=false running=false held"):
+		case hasMode && mode == "on_demand":
+			if !idle(state) {
+				t.Errorf("an on-demand process new with this release must be held (its gate closed) or idle (open, not asked for): %s", row)
+			}
+		case inBundle && strings.HasPrefix(state, "wanted=true"):
+		case state != "wanted=false running=false held":
 			t.Errorf("a process new with this release must be held and not wanted, unless the home's bundle has it: %s", row)
 		}
 	}

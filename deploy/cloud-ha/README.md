@@ -85,7 +85,13 @@ refuses a contract change in a release) and [`bin/bluegreen`](bin/bluegreen): th
 starts beside the old one and must stay ready for 30 s, then the old colour gets SIGTERM, its
 `/readyz` turns `503 draining` so the edge sends new work to the new colour, and it drains its
 homes' tunnels to it (DRAIN, 50.03); a 10-minute watch rolls back on its own. The colour and the
-tag are recorded on both nodes, so a failover starts the same release.
+tag are recorded on both nodes, so a failover starts the same release. Then
+[`bin/dns-update`](bin/dns-update) puts the release under the dns role (50.15), and
+[`bin/app-update`](bin/app-update) under the api and worker (`/usr/local/bin/maktaba-cloud`),
+each on the standby first (it only installs: those units don't run there) and then on the
+leader, whose running units restart; one that doesn't stay up for 10 s gets the old binary back
+and stops the deploy. The api and worker are not in the blue/green yet (50.08 plans them in
+it), so the leader's api is down for its restart, about a second.
 
 The edge is never reloaded during a deploy: both colours are its upstreams, health-checked
 every second, and readiness moves the traffic (a reload through Caddy's admin API cut streams

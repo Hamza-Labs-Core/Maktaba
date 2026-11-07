@@ -3,6 +3,9 @@ package log
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"strings"
@@ -228,4 +231,23 @@ func decodeOne(t *testing.T, b []byte) map[string]any {
 		t.Fatalf("invalid JSON %q: %v", b[:idx], err)
 	}
 	return got
+}
+
+// Epic 53 story 53.17: a cloud line names a home by home_h, HMAC-SHA256 of its server id under
+// the cloud's log key (53.01's schema: 16 hex), never the id; with no key, nothing is written.
+func TestHashHomeIsTheServerIDsHMAC(t *testing.T) {
+	key := bytes.Repeat([]byte{9}, LogKeySize)
+	SetUserHashKey(key)
+	t.Cleanup(func() { SetUserHashKey(nil) })
+	const id = "0192f0c4-1111-7000-8000-000000000001"
+	m := hmac.New(sha256.New, key)
+	m.Write([]byte(id))
+	want := hex.EncodeToString(m.Sum(nil))[:16]
+	if got := HashHome(id); got != want || len(got) != 16 || strings.Contains(got, id[:8]) {
+		t.Fatalf("home_h = %q, want %q", got, want)
+	}
+	SetUserHashKey(nil)
+	if got := HashHome(id); got != "" {
+		t.Fatalf("no key: %q", got)
+	}
 }

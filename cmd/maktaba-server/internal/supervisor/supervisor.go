@@ -131,6 +131,10 @@ type Process struct {
 	// the process then reads failed with (maktaba-plugind: 78, sandbox_unavailable). It
 	// is started again only when woken (its gate opens again, or a restart is asked).
 	FatalExits map[int]string
+	// IdleOnClean: a clean exit (code 0) is the process stopping because it had nothing to
+	// do (a first-party plugin runner's idle timeout, Epic 54): it is not restarted, and
+	// waits to be wanted again (Want), as an on-demand process does.
+	IdleOnClean bool
 	// Present, when set, says whether the program is on this machine now: the reconciler
 	// keeps a component whose processes all lack theirs off with not_in_payload (story
 	// 51.04 §5). nil: it is there.

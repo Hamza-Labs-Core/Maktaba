@@ -260,3 +260,69 @@ async def test_a_runner_that_died_gives_the_job_back(
     with pytest.raises(JobDeferred) as e:
         await native.run_native(db, job, ctx, connect=gone)
     assert e.value.reason.startswith("plugin_runner_unavailable")
+
+
+def test_a_runner_is_idle_between_jobs_whatever_the_health_checks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A shared group's runner exits once idle (Epic 54: an idle home runs none). The
+    supervisor's hello is not work; a run is, and a job still running keeps it busy."""
+    import time
+
+    from maktaba_plugin_runner.__main__ import idle_seconds
+    from maktaba_plugin_runner.server import Runner
+
+    monkeypatch.delenv("MAKTABA_RUNNER_IDLE_SEC", raising=False)
+    assert idle_seconds() == 0.0  # ml and index: never
+    monkeypatch.setenv("MAKTABA_RUNNER_IDLE_SEC", "600")
+    assert idle_seconds() == 600.0
+    monkeypatch.setenv("MAKTABA_RUNNER_IDLE_SEC", "soon")
+    assert idle_seconds() == 0.0
+    r = Runner(group="light", api_socket="", stages={}, plugin_of={}, bundle="x")
+    r.last_active = time.monotonic() - 700
+    assert r.idle_for() >= 700
+    r.running[1] = None  # type: ignore[assignment]
+    assert r.idle_for() == 0.0
+    r.running.clear()
+    assert r.idle_for() < 1.0
+
+
+@pytest.mark.asyncio
+async def test_the_worker_asks_for_a_runner_that_is_not_up(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A job whose runner is not up runs in the worker, which asks the supervisor for the
+    runner, at most once a minute per group, and never without a supervisor."""
+    import asyncio
+    import urllib.request
+
+    from maktaba_pipeline.plugins import native
+
+    asked: list[str] = []
+
+    class _Res:
+        def __enter__(self) -> _Res:
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b""
+
+    def urlopen(req: urllib.request.Request, timeout: float = 0) -> _Res:
+        asked.append(f"{req.get_method()} {req.full_url}")
+        return _Res()
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    native._ASKED.clear()
+    monkeypatch.delenv("MAKTABA_SUPERVISOR_URL", raising=False)
+    native.want_runner("light")
+    monkeypatch.setenv("MAKTABA_SUPERVISOR_URL", "http://127.0.0.1:9/")
+    native.want_runner("light")
+    native.want_runner("light")  # asked a moment ago: not again
+    native.want_runner("files")
+    await asyncio.gather(*list(native._ASKING))
+    assert sorted(asked) == [
+        "POST http://127.0.0.1:9/runners/files/start",
+        "POST http://127.0.0.1:9/runners/light/start",
+    ]
+    native._ASKED.clear()
