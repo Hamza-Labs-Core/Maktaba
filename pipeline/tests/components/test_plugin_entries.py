@@ -20,7 +20,8 @@ def test_static_plugin_entries_are_refused() -> None:
     base = catalog.raw().decode()
     extra = (
         '\n[[component]]\nid = "plugin.dev.example.x"\nkind = "stages"\ngroup = "plugins"\n'
-        'title_key = "a"\ndesc_key = "b"\nstages = ["p_x"]\nplatforms = ["darwin-arm64"]\nsince = "1"\n'
+        'title_key = "a"\ndesc_key = "b"\nstages = ["p_x"]\n'
+        'platforms = ["darwin-arm64"]\nsince = "1"\n'
     )
     with pytest.raises(catalog.CatalogError, match="plugin"):
         catalog.load(base + extra)
@@ -40,7 +41,13 @@ def test_entries_merge_like_go() -> None:
         catalog.with_entries(static, [catalog.plugin_entry("dev.example.c", ("transcribe",))])
     host = static.get("plugins.host")
     assert host is not None and host.on_demand
-    for r in ("incompatible", "grants_needed", "kept_off", "plugin_crash_loop", "sandbox_unavailable"):
+    for r in (
+        "incompatible",
+        "grants_needed",
+        "kept_off",
+        "plugin_crash_loop",
+        "sandbox_unavailable",
+    ):
         assert r in static.reasons
 
 
@@ -68,7 +75,9 @@ def test_with_plugins_leaves_out_what_it_refuses() -> None:
 
 
 def test_queue_names_follow_the_shared_vector() -> None:
-    vec = json.loads((TESTDATA.parent.parent / "plugins" / "testdata" / "stage_names.json").read_text())
+    vec = json.loads(
+        (TESTDATA.parent.parent / "plugins" / "testdata" / "stage_names.json").read_text()
+    )
     for c in vec:
         assert catalog.plugin_queue_name(c["id"], c["stage"]) == c["name"]
 
