@@ -71,7 +71,8 @@ func main() {
 		logger.Error("claim/credentials failed", "err", err)
 		os.Exit(1)
 	}
-	logger.Info("cloudlink credentials ready", "slug", creds.Slug)
+	// the home's own address is not logged: these lines can go out in a problem report (53.17)
+	logger.Info("cloudlink credentials ready", "event", "cloudlink_ready")
 	creds = ensureIdentity(ctx, logger, cfg, creds)
 
 	sup := &cloudlink.Supervisor{
@@ -199,7 +200,7 @@ func ensureCredentials(ctx context.Context, logger *slog.Logger, cfg config) (cl
 	if serr := cloudlink.SaveCredentials(cfg.credFile, cfg.credKey, creds); serr != nil {
 		return cloudlink.Credentials{}, fmt.Errorf("persist credentials: %w", serr)
 	}
-	logger.Info("server claimed and credentials persisted", "server_id", creds.ServerID)
+	logger.Info("server claimed and credentials persisted", "event", "cloudlink_claimed")
 	return creds, nil
 }
 

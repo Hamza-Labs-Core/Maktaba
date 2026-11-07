@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	"github.com/google/uuid"
 )
 
@@ -44,7 +45,8 @@ func RequestID(next http.Handler) http.Handler {
 			}
 			id = u.String()
 		}
-		ctx := context.WithValue(r.Context(), ctxKeyRequestID, id)
+		// and the shared logger's: a line logged with this request's context carries it (53.17)
+		ctx := mlog.WithRequestID(context.WithValue(r.Context(), ctxKeyRequestID, id), id)
 		w.Header().Set("X-Request-Id", id)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -178,7 +178,7 @@ func (d *Deps) Handler() http.Handler {
 				return
 			}
 			// not here, or only a draining tunnel: a newer one on a peer wins
-			if !hopped && d.forwardIfElsewhere(w, r, slug, t) {
+			if !hopped && d.forwardIfElsewhere(w, r, slug, sv.ID, t) {
 				return
 			}
 			if t != nil {
@@ -194,7 +194,7 @@ func (d *Deps) Handler() http.Handler {
 			return
 		}
 		// the home was here a moment ago: hold the request while it reconnects
-		t, served := d.hold(w, r, slug, hopped)
+		t, served := d.hold(w, r, slug, sv.ID, hopped)
 		switch {
 		case served:
 		case t != nil:
