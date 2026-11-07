@@ -29,7 +29,8 @@ for arg in "$@"; do
         bad=1; continue
     fi
     wildcard="*.${sni#*.}"
-    if ! openssl x509 -noout -ext subjectAltName <<<"${pem}" 2>/dev/null | grep -qF "DNS:${wildcard}"; then
+    sans="$(openssl x509 -noout -ext subjectAltName <<<"${pem}" 2>/dev/null)"
+    if ! grep -qF "DNS:${wildcard}" <<<"${sans}"; then
         echo "cert ${node} (${addr}): does not cover ${wildcard} (issuer ${issuer})"
         bad=1; continue
     fi
