@@ -85,8 +85,8 @@ export function AdminAccounts() {
           options={[
             { value: "", label: t("admin.filter.any") },
             { value: "free", label: "free" },
+            { value: "basic", label: "basic" },
             { value: "pro", label: "pro" },
-            { value: "family", label: "family" },
           ]}
         />
         <Button type="submit" variant="secondary">

@@ -359,7 +359,7 @@ type fakeProvider struct {
 func (*fakeProvider) Name() string  { return "testpay" }
 func (*fakeProvider) Enabled() bool { return true }
 func (*fakeProvider) Sells(plan string) bool {
-	return plan == billingpkg.PlanPro || plan == billingpkg.PlanFamily
+	return plan == billingpkg.PlanBasic || plan == billingpkg.PlanPro
 }
 
 func (f *fakeProvider) CreateCheckout(_ context.Context, p billingpkg.CheckoutParams) (billingpkg.CheckoutSession, error) {
@@ -538,3 +538,20 @@ func (f *fakeIDP) authorize(t *testing.T, location string, sub, email string, ve
 }
 
 func auditLogFor(e *env) *audit.Log { return audit.New(e.pool.DB) }
+
+// withPrices sets the paid plans' prices for the test (story 50.19: they are TBD until the
+// owner sets them, and a plan without a price can't be bought), as they will be after launch.
+func withPrices(t *testing.T) {
+	t.Helper()
+	old := billingpkg.Tiers
+	set := map[string]billingpkg.Tier{}
+	for k, v := range old {
+		set[k] = v
+	}
+	basic, pro := set[billingpkg.PlanBasic], set[billingpkg.PlanPro]
+	p500, p900 := 500, 900
+	basic.PriceCents, pro.PriceCents = &p500, &p900
+	set[billingpkg.PlanBasic], set[billingpkg.PlanPro] = basic, pro
+	billingpkg.Tiers = set
+	t.Cleanup(func() { billingpkg.Tiers = old })
+}

@@ -24,12 +24,17 @@ import importlib.resources
 import json
 from dataclasses import dataclass, field
 from functools import cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from maktaba_plugin_sdk.statements import Registry, Statement
 
-from ..engine.graph import Edge, StageDef
 from . import manifest as pm
+
+if TYPE_CHECKING:
+    # imported where it is used (stage_def): the graph builds its first-party stages from
+    # this module as it loads (engine.graph._fp), so a process that imports this module
+    # first (the plugin runner) must not load the graph from here
+    from ..engine.graph import StageDef
 
 __all__ = [
     "FirstParty",
@@ -191,6 +196,8 @@ def runner_group(name: str) -> str | None:
 
 def stage_def(name: str) -> StageDef:
     """A first-party stage's definition from its manifest (story 54.25 §1)."""
+    from ..engine.graph import Edge, StageDef
+
     p = by_stage(name)
     if p is None:
         raise KeyError(f"no first-party plugin defines the stage {name!r}")

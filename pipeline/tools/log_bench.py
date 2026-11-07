@@ -34,6 +34,10 @@ BUDGET_P99_NS = 20_000
 # came out at factor 1, CI's (2.8 times slower at logging) among them.
 REFERENCE_HASH_S = 0.055
 REFERENCE_LINES_S = 0.060
+# the p99 of the same work in small chunks, on the reference: a runner's own tail. The budget
+# is on a p99, and on a slow runner the tail grows more than the total does (CI, 2026-11-07:
+# logging 2.8 times slower at p50 and 3.3 times at p99 on a runner both loops called 2.7).
+REFERENCE_TAIL_P99_NS = 7_300
 
 
 def _best_of_three(work: Callable[[], None]) -> float:
@@ -62,11 +66,51 @@ def _lines_work() -> None:
         json.dumps(line)
 
 
+def _tail_p99_ns(chunks: int = 20_000) -> int:
+    """The p99 of the lines loop's work in small timed chunks (the best of three rounds)."""
+    from maktaba_pipeline.log import redact
+
+    values = ("http_request", "/api/videos/123?token=abc", "segment 12 of 40 from host-2", "ok")
+
+    def chunk() -> None:
+        line: dict[str, object] = {
+            "ts": "2026-11-07T10:00:00.000001Z",
+            "level": "info",
+            "status": 200,
+        }
+        for n, v in enumerate(values):
+            line[f"f{n}"] = redact.scrub(v)
+        json.dumps(line)
+
+    for _ in range(2_000):
+        chunk()
+    clock = time.perf_counter_ns
+    best = 0
+    for _ in range(3):
+        times = [0] * chunks
+        for i in range(chunks):
+            start = clock()
+            chunk()
+            times[i] = clock() - start
+        times.sort()
+        p99 = percentile(times, 0.99)
+        best = p99 if best == 0 else min(best, p99)
+    return best
+
+
 def calibrate() -> tuple[float, dict[str, float]]:
-    """The runner's speed against the reference (the slower of the two loops, 1–4) and the
+    """The runner's speed against the reference (the slowest of the three loops, 1–4) and the
     loops' times, which the report shows."""
-    raw = {"hash_s": _best_of_three(_hash_work), "lines_s": _best_of_three(_lines_work)}
-    f = max(raw["hash_s"] / REFERENCE_HASH_S, raw["lines_s"] / REFERENCE_LINES_S)
+    raw = {
+        "hash_s": _best_of_three(_hash_work),
+        "lines_s": _best_of_three(_lines_work),
+        "tail_p99_ns": float(_tail_p99_ns()),
+    }
+    f = max(
+        raw["hash_s"] / REFERENCE_HASH_S,
+        raw["lines_s"] / REFERENCE_LINES_S,
+        raw["tail_p99_ns"] / REFERENCE_TAIL_P99_NS,
+    )
     return min(4.0, max(1.0, f)), {k: round(v, 4) for k, v in raw.items()}
 
 
