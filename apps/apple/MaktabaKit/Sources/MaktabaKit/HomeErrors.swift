@@ -20,6 +20,8 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
     case server
     /// The part of the home this needs is turned off: 409 `component_off` (Epic 51 story 51.09).
     case off
+    /// Maktaba Cloud's relay refused this plan's play (Epic 50 story 50.19).
+    case relay(RelayRefusal)
 
     /// The kind of an answer with `status` and its problem+json (nil: not one).
     public static func of(status: Int, problem: Problem?, retryAfter: Int? = nil) -> ErrorKind {
@@ -27,6 +29,14 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
         let code = problem?.code
         if slug == "home-unreachable" || slug == "video-unavailable-offline" { return .unreachable }
         if status == 409 && code == "component_off" { return .off }
+        // the relay names its reason in `error`, the home in `code` (story 50.19)
+        let reason = code ?? problem?.error
+        if status == 402 && reason == "relay_needs_plan" { return .relay(.needsPlan) }
+        if status == 429 && reason == "stream_limit" {
+            let n = problem?.message.flatMap { Int($0.prefix { $0.isNumber }) }
+            return .relay(.streamLimit(n))
+        }
+        if status == 503 && reason == "home_busy" { return .relay(.homeBusy) }
         switch status {
         case 401: return .signedOut
         case 403: return .noAccess
@@ -38,6 +48,16 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
         default: return .server
         }
     }
+}
+
+/// Why Maktaba Cloud's relay refused a plan's play (Epic 50 story 50.19).
+public enum RelayRefusal: Equatable, Hashable, Sendable {
+    /// 402 `relay_needs_plan`: no relay on Free (direct access is free).
+    case needsPlan
+    /// 429 `stream_limit`: the most devices the plan allows already play (how many, when said).
+    case streamLimit(Int?)
+    /// 503 `home_busy`: the home can't prepare a capped stream now.
+    case homeBusy
 }
 
 /// What an error screen offers.
@@ -59,9 +79,13 @@ public struct Problem: Decodable, Equatable, Sendable {
     public let status: Int?
     public let component: String?
     public let feature: String?
+    /// The relay's answers name their reason in `error`, with a `message` (story 50.19).
+    public let error: String?
+    public let message: String?
 
     public init(code: String? = nil, title: String? = nil, detail: String? = nil, attemptsLeft: Int? = nil,
-                type: String? = nil, status: Int? = nil, component: String? = nil, feature: String? = nil) {
+                type: String? = nil, status: Int? = nil, component: String? = nil, feature: String? = nil,
+                error: String? = nil, message: String? = nil) {
         self.code = code
         self.title = title
         self.detail = detail
@@ -70,10 +94,12 @@ public struct Problem: Decodable, Equatable, Sendable {
         self.status = status
         self.component = component
         self.feature = feature
+        self.error = error
+        self.message = message
     }
 
     enum CodingKeys: String, CodingKey {
-        case code, title, detail, type, status, component, feature
+        case code, title, detail, type, status, component, feature, error, message
         case attemptsLeft = "attempts_left"
     }
 
@@ -188,8 +214,8 @@ public struct HomeFailure: Equatable, Sendable {
         switch kind {
         case .signedOut: [.signInAgain, .back]
         case .unreachable: [.tryAgain, .chooseAnotherHome, .back]
-        case .notReady, .busy, .server: [.tryAgain, .back]
-        case .notFound, .noAccess, .off: [.back]
+        case .notReady, .busy, .server, .relay(.streamLimit), .relay(.homeBusy): [.tryAgain, .back]
+        case .notFound, .noAccess, .off, .relay(.needsPlan): [.back]
         }
     }
 
@@ -204,6 +230,9 @@ public struct HomeFailure: Equatable, Sendable {
         case .busy: "clock"
         case .server: "exclamationmark.triangle"
         case .off: "poweroff"
+        case .relay(.needsPlan): "icloud.slash"
+        case .relay(.streamLimit): "rectangle.stack"
+        case .relay(.homeBusy): "clock"
         }
     }
 }

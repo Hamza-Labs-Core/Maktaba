@@ -4,9 +4,11 @@ import { BrowserRouter, Link, Navigate, NavLink, Outlet, Route, Routes } from "r
 import { useLocation } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ToastProvider } from "@ds/components/Toast/Toast";
-import { I18nProvider, useI18n } from "./i18n";
-import { isServiceAdmin, SessionProvider, useSession } from "./session";
-import { Loading } from "./ui";
+import { I18nProvider, useI18n } from "./shared/i18n";
+import { SessionProvider, useSession } from "./shared/session";
+import { Loading, Page } from "./shared/ui";
+import { MESSAGES } from "./catalogs";
+import { forgetSavedHomes } from "./savedHomes";
 import { StatusStrip } from "./StatusStrip";
 import { SignIn } from "./pages/SignIn";
 import { ForgotPassword, Register, ResetPassword, SignedIn, VerifyEmail } from "./pages/AuthFlows";
@@ -14,22 +16,13 @@ import { Account } from "./pages/Account";
 import { Billing } from "./pages/Billing";
 import { LinkHome } from "./pages/LinkHome";
 import { Homes } from "./pages/Homes";
-import { AdminLayout } from "./pages/admin/AdminLayout";
-import { AdminOverview } from "./pages/admin/Overview";
-import { AdminAccounts } from "./pages/admin/Accounts";
-import { AdminAccountDetail } from "./pages/admin/AccountDetail";
-import { AdminServers } from "./pages/admin/Servers";
-import { AdminAbuse } from "./pages/admin/Abuse";
-import { AdminAudit } from "./pages/admin/Audit";
-import { AdminUsage } from "./pages/admin/Usage";
-import { AdminErrors, AdminLogs } from "./pages/admin/Logs";
-import { AdminReportDetail, AdminReports } from "./pages/admin/Reports";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <I18nProvider>
+    <I18nProvider messages={MESSAGES}>
       <ToastProvider>
-        <SessionProvider>{children}</SessionProvider>
+        {/* story 50.13: the saved home list goes with the session */}
+        <SessionProvider onSignOut={forgetSavedHomes}>{children}</SessionProvider>
       </ToastProvider>
     </I18nProvider>
   );
@@ -47,7 +40,7 @@ function LanguageToggle() {
 
 function Shell() {
   const { t } = useI18n();
-  const { status, user, signOut } = useSession();
+  const { status, signOut } = useSession();
   const signedIn = status === "signed_in";
   return (
     <div className="mkc-shell">
@@ -66,11 +59,6 @@ function Shell() {
             <NavLink to="/billing" className="mkc-shell__link">
               {t("nav.billing")}
             </NavLink>
-            {isServiceAdmin(user) && (
-              <NavLink to="/admin" className="mkc-shell__link">
-                {t("nav.admin")}
-              </NavLink>
-            )}
           </nav>
         )}
         <div className="mkc-row">
@@ -114,6 +102,17 @@ function Home() {
   return <Navigate to={status === "signed_in" ? "/account" : "/sign-in"} replace />;
 }
 
+function NotFound() {
+  const { t } = useI18n();
+  return (
+    <Page title={t("common.notFound")}>
+      <p>
+        <Link to="/">{t("shell.brand")}</Link>
+      </p>
+    </Page>
+  );
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -134,21 +133,10 @@ export function AppRoutes() {
           <Route path="homes" element={<Homes />} />
           {/* a home's Account page sends a person here to link their cloud account (42.7) */}
           <Route path="link-home" element={<LinkHome />} />
-          <Route path="admin" element={<AdminLayout />}>
-            <Route index element={<AdminOverview />} />
-            <Route path="accounts" element={<AdminAccounts />} />
-            <Route path="accounts/:id" element={<AdminAccountDetail />} />
-            <Route path="servers" element={<AdminServers />} />
-            <Route path="abuse" element={<AdminAbuse />} />
-            <Route path="audit" element={<AdminAudit />} />
-            <Route path="logs" element={<AdminLogs />} />
-            <Route path="errors" element={<AdminErrors />} />
-            <Route path="usage" element={<AdminUsage />} />
-            <Route path="reports" element={<AdminReports />} />
-            <Route path="reports/:id" element={<AdminReportDetail />} />
-          </Route>
         </Route>
-        <Route path="*" element={<Navigate to="/" replace />} />
+        {/* story 50.32: the operator console is not in this app (admin.maktaba.tv), so a
+            bookmarked /admin is this 404 like any unknown path */}
+        <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
   );

@@ -239,6 +239,90 @@ describe("the buy pages", () => {
   });
 });
 
+describe("Buy on the store's own plugin page", () => {
+  /** One more home linked to the same buyer. */
+  async function anotherHome(cookie: string, name: string): Promise<string> {
+    const p = await call("POST", "/v1/homes/pair", { body: { public_key: (await homeKey()).public, name } });
+    const ok = await call("POST", "/v1/homes/link", { cookie, body: { user_code: p.body.user_code, confirm: true } });
+    expect(ok.status).toBe(200);
+    return ok.body.home_id as string;
+  }
+
+  it("choose one of the account's linked homes, then the same buy page as the home's Buy", async () => {
+    const { buyer, homeId } = await linkedHome();
+    const cabin = await anotherHome(buyer.cookie, "Cabin");
+    const plugin = await paidPlugin();
+
+    // signed out: to sign in, and back to the choice after it
+    const out = await page("GET", `/buy/${plugin}/home`);
+    expect(out.status).toBe(303);
+    expect(out.headers.get("Location")).toBe(`/signin?next=${encodeURIComponent(`/buy/${plugin}/home`)}`);
+
+    // both linked homes, first one chosen; a scriptless form to this page
+    const choose = await page("GET", `/buy/${plugin}/home`, { session: buyer.cookie });
+    expect(choose.status).toBe(200);
+    expect(choose.text).toContain("Which home is it for?");
+    expect(choose.text).toContain(`value="${homeId}" checked`);
+    expect(choose.text).toContain(`value="${cabin}"`);
+    expect(choose.text).toContain("Cabin");
+    expect(choose.text).toContain(`action="/buy/${plugin}/home"`);
+    expect(choose.text).not.toContain("<script");
+    expect(choose.headers.get("Content-Security-Policy")).not.toContain("script-src");
+
+    // the post only from the store's own page, and only for a home linked to this account
+    const cross = await page("POST", `/buy/${plugin}/home`, { session: buyer.cookie, origin: "https://evil.example", form: { home: cabin } });
+    expect(cross.status).toBe(403);
+    const stranger = await linkedHome();
+    const theirs = await page("POST", `/buy/${plugin}/home`, { session: buyer.cookie, form: { home: stranger.homeId } });
+    expect(theirs.status).toBe(400);
+    const signedOut = await page("POST", `/buy/${plugin}/home`, { form: { home: cabin } });
+    expect(signedOut.status).toBe(401);
+    expect(await db().prepare("SELECT count(*) AS n FROM purchase_intents WHERE home_id IN (?, ?)").bind(cabin, stranger.homeId).first()).toEqual({
+      n: 0,
+    });
+
+    const chosen = await page("POST", `/buy/${plugin}/home`, { session: buyer.cookie, form: { home: cabin } });
+    expect(chosen.status).toBe(303);
+    expect(chosen.headers.get("Location")).toBe(`/buy/${plugin}`);
+    const buy = buyCookie(chosen.headers);
+    expect(buy).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const row = await db().prepare("SELECT home_id, product, lang FROM purchase_intents WHERE id_hash = ?").bind(await sha256hex(buy)).first();
+    expect(row).toEqual({ home_id: cabin, product: "one_time", lang: "en" });
+
+    // the same price page and pay step as after the home's own Buy
+    const shown = await page("GET", `/buy/${plugin}`, { buy, session: buyer.cookie, country: "US" });
+    expect(shown.status).toBe(200);
+    expect(shown.text).toContain("$10.00, one time");
+    expect(shown.text).toContain("Cabin");
+    const pay = await page("POST", `/buy/${plugin}/pay`, { buy, session: buyer.cookie, form: { currency: "USD" }, country: "US" });
+    expect(pay.status, pay.text).toBe(303);
+    expect(
+      await db().prepare("SELECT home_id, account_id FROM purchases WHERE home_id = ? AND plugin_id = ?").bind(cabin, plugin).first(),
+    ).toEqual({ home_id: cabin, account_id: buyer.id });
+  });
+
+  it("in Arabic, with no linked home, and for a plugin not on sale", async () => {
+    const lonely = await account();
+    const plugin = await paidPlugin();
+    const none = await page("GET", `/buy/${plugin}/home?lang=ar`, { session: lonely.cookie });
+    expect(none.status).toBe(200);
+    expect(none.text).toContain('dir="rtl"');
+    expect(none.text).toContain("اربط أحد أجهزتك الرئيسية");
+    expect(none.text).not.toContain("<form");
+    const notSold = await page("GET", `/buy/dev.example.free/home`, { session: lonely.cookie });
+    expect(notSold.status).toBe(404);
+
+    const { buyer, homeId } = await linkedHome();
+    const ar = await page("GET", `/buy/${plugin}/home?lang=ar`, { session: buyer.cookie });
+    expect(ar.text).toContain("لأي جهاز رئيسي هي؟");
+    expect(ar.text).toContain(`action="/buy/${plugin}/home?lang=ar"`);
+    const chosen = await page("POST", `/buy/${plugin}/home?lang=ar`, { session: buyer.cookie, form: { home: homeId } });
+    expect(chosen.status).toBe(303);
+    const row = await db().prepare("SELECT lang FROM purchase_intents WHERE id_hash = ?").bind(await sha256hex(buyCookie(chosen.headers))).first();
+    expect(row).toEqual({ lang: "ar" });
+  });
+});
+
 describe("the catalog", () => {
   it("names a paid plugin's product and carries its prices", async () => {
     const dev = await developer();
@@ -256,6 +340,12 @@ describe("the catalog", () => {
     const p = plugins.find((x) => x.id === id)!;
     expect(p.price).toBe("one_time");
     expect(p.extra?.prices).toEqual({ EUR: 450, USD: 500 });
+    // the listing page has Buy, to the home choice, in both languages
+    const en = await page("GET", `/p/${id}`);
+    expect(en.text).toContain(`href="/buy/${id}/home"`);
+    const ar = await page("GET", `/ar/p/${id}`);
+    expect(ar.text).toContain(`href="/buy/${id}/home?lang=ar"`);
+    expect(ar.text).toContain("اشترِ");
     // a free plugin stays free, with no prices
     expect(plugins.filter((x) => x.id !== id && !x.id.includes("paid")).every((x) => x.price === "free" && !x.extra?.prices)).toBe(true);
   });

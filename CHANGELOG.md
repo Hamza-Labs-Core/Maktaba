@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
+- **Apps can reach a home on its own network by address when the router blocks its name
+  (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
+  network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
+  carries each LAN address both by name and by address, the address checked against the home's
+  own certificate, so an app on that network still proves it reached this home.
+- **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
+  runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
+  and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
+  standby's name server, then the leader's, and puts the previous release back on a node whose
+  name server doesn't stay up.
 - **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
   `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
   enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
@@ -104,6 +114,21 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A cloud deploy now updates the API and the worker (Epic 50).** Deploys installed the new
+  release only for the relay and the name server, so the API and the worker never ran a
+  release on the nodes. They now get it too, the standby first; on the leader they restart,
+  and one that doesn't stay up gets the previous release back and stops the deploy.
+- **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
+  June it exited at start and none of its jobs ever ran: expired-token cleanup, account
+  deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
+  certificates. It now listens once, and a test runs the worker in its own process and checks
+  it answers, stays up and stops cleanly. The cloud is not live yet, so no account was affected.
+
+- **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
+  before the database's own thread had ended, so the worker sometimes counted that thread as
+  still running and left without the normal shutdown. The close now waits for the thread to
+  end, and the worker gives threads that are already ending a second before it counts them
+  (#862).
 - **A rollback no longer keeps the home down for half a day building the search index.**
   Putting a backup back rebuilt semantic search's vector index among the other indexes with
   64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
@@ -332,16 +357,10 @@ build fails when the two differ.
 
 ### Added
 
-- **The cloud keeps and searches its own logs (Epic 53 story 53.17).** Each Maktaba Cloud node
-  keeps its processes' lines for 14 days and sends them to the witness: warnings within a
-  second, the rest every 10 seconds, with no gap or duplicate when the network drops. The
-  witness indexes every node's lines, so the service admin's **Logs** and **Errors** pages
-  search the whole cloud even while a node is down. Errors shows the cloud's own groups beside
-  the homes' anonymous ones, with the problem reports that name each. A line names a home only
-  by a hash, never its address, and never logs an email or a token. Every process serves its
-  error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
-  each runbook's Check step links to a saved search.
-
+- **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
+  the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
+  homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
+  run no script, in English and Arabic.
 - **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
   (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
   Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
@@ -1127,6 +1146,13 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Paid plugins' packages stay private (Epic 54, story 54.19).** Once a plugin has a price,
+  its packages are kept out of the public CDN. A home that bought it downloads it from
+  `plugins-cdn.maktaba.tv/paid/` with a URL the store signs for that home for 10 minutes,
+  only while its purchase holds; an expired, forged or another home's URL is refused. A home
+  that has not bought it is told to buy it first. The store needs the new Worker secret
+  `PAID_URL_KEY`.
+
 - **Buying a paid plugin (Epic 54, story 54.19).** A paid plugin's page in Settings →
   Plugins → Browse shows its price and **Buy**, or **Link this home to buy** on a home not
   linked to a store account, which links it right there. Buy asks the store for a one-time
@@ -1234,6 +1260,12 @@ build fails when the two differ.
   installed plugin to the store from Browse, the admin can attach its log lines from the last
   day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
   reviewers alone and deleted after 90 days.
+
+- **Plugins on Windows (Epic 54, #710).** A home with Postgres on Windows now runs plugins.
+  The plugin host runs inside a Windows AppContainer with no network capability, granted only
+  its own folders, and Maktaba reaches it through a named pipe that only the user it runs as
+  can open; a plugin still gets no network, no files and no sockets of its own. maktaba.dev:
+  Building Maktaba plugins, Installing and managing plugins, The sandbox.
 
 ### Fixed
 
@@ -1807,6 +1839,45 @@ build fails when the two differ.
   `remote_access` is on with either the relay or direct access (`feature_any`). Off by default;
   the `cloud.direct` component is on in the Full bundle where the home is linked to the cloud.
 
+- **The Updates page names the plugins an update will pause (Epic 54, story 54.07 §3).**
+  Under the release it is about to install, the page lists each installed plugin whose
+  Maktaba range does not take that release, with its version, its range and whether it is
+  on. After the update those plugins wait as incompatible with their queues kept, and resume
+  when a version that supports the release is installed; the update itself goes ahead.
+  maktaba.dev: Installing a plugin, *When Maktaba itself updates*.
+
+- **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
+  `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
+  accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
+  builds with jco, every optional feature off. Each is built against a plugin world cut to the
+  interfaces its manifest's capabilities cover, so a call it did not declare does not build;
+  `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
+  up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
+  maktaba.dev: Testing and packaging, *Python, JavaScript and Go*.
+
+- **Plugins in Go (Epic 54, story 54.12, tier 2).** `mkp new go` makes a TinyGo project, and
+  `mkp build` turns it into a component built for TinyGo's `wasm-unknown` target, which links
+  no WASI: file, stdin and network calls always fail. The build fails if the component
+  imports anything the home refuses. maktaba.dev: Testing and packaging, *Python, JavaScript
+  and Go*.
+
+- **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
+  a **Purchases** section: each plugin bought with the account, the home it is on, and
+  **Move** to another home linked to the same account, after confirming it's you. A purchase
+  can move twice in any 365 days. The new home gets the plugin at its next daily check (or with
+  **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
+  queue and data.
+
+- **The cloud keeps and searches its own logs (Epic 53 story 53.17).** Each Maktaba Cloud node
+  keeps its processes' lines for 14 days and sends them to the witness: warnings within a
+  second, the rest every 10 seconds, with no gap or duplicate when the network drops. The
+  witness indexes every node's lines, so the service admin's **Logs** and **Errors** pages
+  search the whole cloud even while a node is down. Errors shows the cloud's own groups beside
+  the homes' anonymous ones, with the problem reports that name each. A line names a home only
+  by a hash, never its address, and never logs an email or a token. Every process serves its
+  error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
+  each runbook's Check step links to a saved search.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -1885,6 +1956,25 @@ build fails when the two differ.
   been copied.
 - On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
+
+- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
+  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
+  lists only what fits; on the home's network and over direct access nothing is capped. A
+  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
+  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
+  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
+  too many devices playing, or the home too busy to prepare the video.
+
+- **The operator console is its own web app (Epic 50 story 50.32, part 1).** Maktaba Cloud's
+  console moved out of the account web app into `web/admin` (`pnpm dev:admin`, `pnpm build:admin`),
+  for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
+  new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
+  or staff API path, an admin string or a console module.
+
+- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
+  none of them: a runner starts when the first job of its kind arrives (that job runs in the
+  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
+  processes and its memory budget at rest.
 
 ### Fixed
 
@@ -2351,6 +2441,16 @@ build fails when the two differ.
   the runner's sandbox named the first and was refused the second, so the runner exited
   about 10 s after it started and its stages ran in the worker. The sandbox now names the
   sockets and the run folder by their real paths.
+
+- **A plugin's first job after an update no longer times out while its package compiles
+  (Epic 54, story 54.02).** A job's time limit used to start before the host compiled a
+  package it had not loaded and before the job waited for a free slot, so a large plugin (a
+  Python one: about 15 s to compile on a slow machine) could time out before its code ran.
+  Now the limit counts only the plugin's own work. Compiling has a limit of its own (3
+  minutes per package; a package that goes over is refused with
+  `plugin_compile_timeout`), and the host compiles every installed plugin in the background
+  when it starts, so an update that changes the plugin engine recompiles each one before its
+  first job. maktaba.dev: Testing and packaging.
 
 ## [0.2.0] - 2026-10-19
 

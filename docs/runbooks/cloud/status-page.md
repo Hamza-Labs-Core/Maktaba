@@ -14,8 +14,8 @@ notice (48 hours ahead).
 
 The page and its probe: `https://status.maktaba.tv` shows the state the alerts say; the latest
 **Cloud probe** run in Actions is green. The cloud's own warnings in the service admin's cloud
-log view ([warnings, last hour](https://app.maktaba.tv/admin/logs?level=warn&last=1h);
-[Errors](https://app.maktaba.tv/admin/errors)) say whether the page is right.
+log view ([warnings, last hour](https://admin.maktaba.tv/logs?level=warn&last=1h);
+[Errors](https://admin.maktaba.tv/errors)) say whether the page is right.
 
 ## Do
 

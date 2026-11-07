@@ -200,8 +200,35 @@ provider's own fees are shown to developers as the provider states them.
   any failure keeps the rows. Both gates (the supervisor's runner, the pipeline's
   `plugingate`) read only `valid_until`: a manifest whose `price` is not `free` waits
   `entitlement_missing` without a row valid now (72-hour grace). Settings → Plugins → Store
-  account lists the purchases held and has **Check for purchases now**. Not built yet: the
-  `/paid/*` CDN path and moving a purchase to another home.
+  account lists the purchases held and has **Check for purchases now**.
+- **As built: paid packages.** A plugin with an active product has its package kept only in
+  the private bucket (`paid/<sha256>.mkplugin`), and the catalog names
+  `plugins-cdn.maktaba.tv/paid/<sha256>`. A home asks `POST /v1/homes/{id}/downloads`
+  (`{plugin_id, sha256}`, signed by the home) and gets a URL only while it holds a valid
+  entitlement (`entitlement_missing` otherwise). Its `t` is an HMAC under the Worker secret
+  `PAID_URL_KEY` of the home id, the sha256 and an expiry 10 minutes ahead. There is no
+  separate `store-cdn` Worker: `store-web` serves `plugins-cdn.maktaba.tv/paid/*` on a zone
+  route (the rest of that host stays the public bucket). It checks `t`, the path's sha256 and
+  the home's `X-Maktaba-Home`, then streams the file uncached; an expired, forged or another
+  home's `t` is 403. The home's store install of a paid plugin downloads through it
+  (`storelink.PaidPackage`, checking the URL is the CDN's `/paid/<sha256>`) and checks the
+  sha256 as for any package.
+- **As built: moving a purchase.** store-commerce migration `0003_purchase_moves` keeps one row
+  per move. `GET /v1/purchases` lists the account's plugin purchases (each with its home,
+  moves left and when the next move is free), and `POST /v1/purchases/{id}/move {home_id}`
+  (a verified account, re-authenticated, rate-limited, audited) moves one to a home linked to
+  the same account now: at most 2 moves per purchase in any 365 days, only while it is paid or
+  disputed. One D1 batch writes the move row only while the purchase is still on its home,
+  in a movable state and under the limit, and rewrites `purchases.home_id` and
+  `entitlements.home_id` only if that row exists, so two moves at once cannot both pass. The
+  home needs no change: it replaces `plugin_entitlements` with what the store returns, so the
+  old home drops the plugin at its next refresh. The console's Account page has a Purchases
+  section with Move, in English and Arabic.
+- **As built: Buy on plugins.maktaba.tv.** A paid plugin's listing page (the catalog's
+  `price` not `free`) links to `/buy/<plugin>/home`: the signed-in buyer chooses one of the
+  account's linked homes in a scriptless form, whose POST (the store's own Origin only,
+  rate-limited, a home linked to this account now) makes the same purchase intent the home's
+  Buy asks for and continues on the same price and pay pages.
 
 ### 7. Refunds, disputes and tax: owned by the store
 

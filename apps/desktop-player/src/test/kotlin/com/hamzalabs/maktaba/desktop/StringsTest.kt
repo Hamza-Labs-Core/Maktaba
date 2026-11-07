@@ -76,6 +76,13 @@ class StringsTest {
     }
 
     @Test
+    fun theRelaysRefusalsSayWhatToDo() {
+        assertTrue(Texts(Lang.En).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.RelayNeedsPlan).contains("Direct access from the internet is free"))
+        assertTrue(Texts(Lang.En).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.RelayStreamLimit).contains("Stop one"))
+        assertTrue(Texts(Lang.Ar).sentence(com.hamzalabs.maktaba.core.api.ErrorKind.RelayHomeBusy).startsWith("جهازك الرئيسي مشغول"))
+    }
+
+    @Test
     fun saysWhichAppItIs() {
         assertEquals("player/0.3.35 (windows; desktop)", clientHeader("0.3.35", "Windows 11"))
         assertEquals("player/0.3.35 (linux; desktop)", clientHeader("0.3.35", "Linux"))

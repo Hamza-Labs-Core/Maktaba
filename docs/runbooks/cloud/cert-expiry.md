@@ -9,7 +9,7 @@
 
 ## Check
 
-Each node renews its own wildcard about 30 days before expiry, so one close to expiry means renewal failed. On that node: `docker logs maktaba-caddy 2>&1 | grep -i -E 'obtain|renew|error'`, and the cloud's logs and error groups in the service admin's cloud log view ([certificate warnings, last 24 h](https://app.maktaba.tv/admin/logs?q=certificate&level=warn&last=24h); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines).
+Each node renews its own wildcard about 30 days before expiry, so one close to expiry means renewal failed. On that node: `docker logs maktaba-caddy 2>&1 | grep -i -E 'obtain|renew|error'`, and the cloud's logs and error groups in the service admin's cloud log view ([certificate warnings, last 24 h](https://admin.maktaba.tv/logs?q=certificate&level=warn&last=24h); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17; the witness keeps a dead node's last lines).
 
 ## Do
 

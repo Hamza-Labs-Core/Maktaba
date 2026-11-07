@@ -193,6 +193,9 @@ object Strings {
         "error.busy" to "Your home is busy right now. Try again in a moment.",
         "error.server" to "Something went wrong on your home. Try again in a moment.",
         "error.off" to "This feature is turned off on this home.",
+        "error.relayNeedsPlan" to "Remote play through the relay needs a Basic or Pro plan. Direct access from the internet is free: turn it on in this home's settings.",
+        "error.relayStreamLimit" to "The most devices your plan allows are already playing through the relay. Stop one, or play at home or over a direct connection.",
+        "error.relayHomeBusy" to "Your home is too busy to prepare this video for remote play right now. Try again shortly.",
     )
 
     private val START_AR: Map<String, String> = mapOf(
@@ -318,5 +321,8 @@ object Strings {
         "error.busy" to "منزلك مشغول الآن. حاول مجددًا بعد قليل.",
         "error.server" to "حدث خطأ في منزلك. حاول مجددًا بعد قليل.",
         "error.off" to "هذه الميزة متوقفة على الجهاز الرئيسي.",
+        "error.relayNeedsPlan" to "التشغيل عن بُعد عبر الوسيط يتطلب الخطة الأساسية أو الاحترافية. الوصول المباشر من الإنترنت مجاني: فعّله من إعدادات هذا الجهاز الرئيسي.",
+        "error.relayStreamLimit" to "يشغّل عبر الوسيط أكبر عدد من الأجهزة تسمح به خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر.",
+        "error.relayHomeBusy" to "جهازك الرئيسي مشغول جدًا لتجهيز هذا الفيديو للتشغيل عن بُعد الآن. حاول بعد قليل.",
     )
 }

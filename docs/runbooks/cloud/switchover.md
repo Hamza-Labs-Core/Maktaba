@@ -10,7 +10,7 @@ Work on the leading node: an OS update, a resize, a reboot. Never for an emergen
 
 1. Maintenance is posted at least 48 hours ahead ([templates/maintenance.md](templates/maintenance.md), [status-page.md](status-page.md)).
 2. `patronictl -c /etc/patroni/patroni.yml list`: the standby streams with zero lag.
-3. The cloud's logs and error groups in the service admin's cloud log view ([the switchover window, warnings, last 30 min](https://app.maktaba.tv/admin/logs?level=warn&last=30m); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines): no error spike on either node.
+3. The cloud's logs and error groups in the service admin's cloud log view ([the switchover window, warnings, last 30 min](https://admin.maktaba.tv/logs?level=warn&last=30m); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17; the witness keeps a dead node's last lines): no error spike on either node.
 
 ## Do
 

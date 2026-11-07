@@ -8,7 +8,7 @@ A traffic spike on the relay or the API, an abuse-score alert, or a report.
 
 ## Check
 
-1. The cloud's logs and error groups in the service admin's cloud log view ([relay warnings, last hour](https://app.maktaba.tv/admin/logs?service=cloud.relay&level=warn&last=1h); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines): the saved search `top homes by bytes, last hour` and `requests by source, last 10 min`.
+1. The cloud's logs and error groups in the service admin's cloud log view ([relay warnings, last hour](https://admin.maktaba.tv/logs?service=cloud.relay&level=warn&last=1h); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17; the witness keeps a dead node's last lines): the saved search `top homes by bytes, last hour` and `requests by source, last 10 min`.
 2. Is it one home (a viral link, a scraper) or many sources (an attack)?
 
 ## Do

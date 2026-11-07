@@ -137,6 +137,11 @@ for src in ${SSH_FROM:-}; do ufw allow from "${src}" to any port 22 proto tcp >/
 ufw allow 80/tcp >/dev/null
 ufw allow 443/tcp >/dev/null
 [ "${role}" = witness ] || ufw allow 443/udp >/dev/null
+# 53 on A and B: the direct-name domains' name servers (story 50.15), ns1 and ns2
+if [ "${role}" != witness ]; then
+	ufw allow 53/udp >/dev/null
+	ufw allow 53/tcp >/dev/null
+fi
 for port in 2379 2380 5432 8008 8081 8444 8454 9100 9187 9443; do
 	ufw allow from "${PRIVATE_NET}" to any port "${port}" proto tcp >/dev/null
 done
@@ -319,7 +324,7 @@ fi
 # 6. Patroni, its callback, and what the callback may do (sudo for exactly these)
 # ---------------------------------------------------------------------------------------
 log "Patroni"
-install -m 0755 "${here}/bin/on-role-change" "${here}/bin/switchover" "${here}/bin/leader-guard" "${here}/bin/bluegreen" /usr/local/bin/
+install -m 0755 "${here}/bin/on-role-change" "${here}/bin/switchover" "${here}/bin/leader-guard" "${here}/bin/bluegreen" "${here}/bin/dns-update" "${here}/bin/app-update" /usr/local/bin/
 install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/16/maktaba
 [ -s /etc/maktaba/hcloud-token ] || die "/etc/maktaba/hcloud-token is missing (the maktaba-prod project's API token)"
 chown postgres:postgres /etc/maktaba/hcloud-token && chmod 0600 /etc/maktaba/hcloud-token
@@ -412,5 +417,17 @@ if [ -f /etc/maktaba/cloud.env ]; then
 fi
 apt-get install -y -qq prometheus-postgres-exporter >/dev/null || true
 systemctl enable --now patroni maktaba-caddy maktaba-leader-guard
+# The direct-name DNS (story 50.15), on A and B always, once the owner has the domains
+# (DIRECT_DNS=yes). systemd-resolved's stub holds 127.0.0.53:53, so the dns role couldn't
+# bind 53 on every address: the stub goes, and the node resolves through resolved's upstreams.
+if [ "${DIRECT_DNS:-no}" = yes ]; then
+	install -d -m 0755 /etc/systemd/resolved.conf.d
+	printf '[Resolve]\nDNSStubListener=no\n' >/etc/systemd/resolved.conf.d/maktaba-no-stub.conf
+	ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+	systemctl restart systemd-resolved
+	systemctl enable maktaba-cloud-dns
+	# no binary until the first deploy (dns-update); the unit's condition skips it till then
+	systemctl start maktaba-cloud-dns || true
+fi
 if [ -n "${REPO1_ENDPOINT:-}" ]; then systemctl enable --now maktaba-backup.timer; fi
 log "${NODE_NAME} is up: Patroni decides whether it leads (patronictl -c /etc/patroni/patroni.yml list)"

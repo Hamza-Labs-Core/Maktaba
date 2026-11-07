@@ -10,7 +10,7 @@
 
 ## Check
 
-1. The cloud's logs and error groups in the service admin's cloud log view ([the failover window, warnings, last 30 min](https://app.maktaba.tv/admin/logs?level=warn&last=30m); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines): the old leader's last lines (Patroni, the relay, the kernel).
+1. The cloud's logs and error groups in the service admin's cloud log view ([the failover window, warnings, last 30 min](https://admin.maktaba.tv/logs?level=warn&last=30m); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17; the witness keeps a dead node's last lines): the old leader's last lines (Patroni, the relay, the kernel).
 2. `patronictl -c /etc/patroni/patroni.yml list`: a leader, and once the old node is back, a streaming replica.
 3. The canary answers (the status page, or `curl -fsS https://canary.relay.maktaba.tv/api/health`); `fip_mismatch` is quiet.
 4. The old leader is fenced: it doesn't lead (`curl -s http://<its private address>:8008/primary` answers 503) and its relay is stopped (the leader guard).
