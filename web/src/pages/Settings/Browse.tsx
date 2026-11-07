@@ -65,7 +65,14 @@ export function filterEntries(
   );
 }
 
-export function Browse({ onInstalled }: { onInstalled: (id: string) => void }) {
+export function Browse({
+  onInstalled,
+  initial = "",
+}: {
+  onInstalled: (id: string) => void;
+  /** a plugin to open once the catalog is here (?store=<id> from the store's listing) */
+  initial?: string;
+}) {
   const { t, locale, n } = useI18n();
   const [all, setAll] = useState(false);
   const [view, setView] = useState<CatalogView | null>(null);
@@ -74,10 +81,19 @@ export function Browse({ onInstalled }: { onInstalled: (id: string) => void }) {
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState<Sort>("rating");
   const [open, setOpen] = useState<CatalogEntry | null>(null);
+  const [opened, setOpened] = useState(false);
 
   useEffect(() => {
     pluginsApi.catalog(all).then(setView, (e) => setError(refusalWords(t, e)));
   }, [all, t]);
+
+  // the plugin the listing page sent us to, once (an id not in the catalog: the list shows)
+  useEffect(() => {
+    if (!view || opened || !initial) return;
+    setOpened(true);
+    const p = view.plugins.find((x) => x.id === initial);
+    if (p) setOpen(p);
+  }, [view, initial, opened]);
 
   const shown = useMemo(
     () => (view ? filterEntries(view.plugins, query, category, sort) : []),
