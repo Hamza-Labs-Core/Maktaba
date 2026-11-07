@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	sharedplugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
 )
 
 // Story 54.23 T02: a runner's environment has no database address, no secret and no
@@ -36,6 +37,9 @@ func TestRunnerEnvHasNoDatabaseNorSecrets(t *testing.T) {
 
 // No first-party plugin in this release: no runner is built and none is needed.
 func TestNoRunnerWithoutFirstPartyPlugins(t *testing.T) {
+	was := sharedplugins.FirstParty
+	sharedplugins.FirstParty = []byte(`{"plugins":[]}`)
+	t.Cleanup(func() { sharedplugins.FirstParty = was })
 	cfg := config.Config{}
 	cfg.Database.URL = "postgres://h/db"
 	cfg.Server.DataDir = t.TempDir()
@@ -50,5 +54,34 @@ func TestNoRunnerWithoutFirstPartyPlugins(t *testing.T) {
 	longCfg.Server.DataDir = "/" + strings.Repeat("d", 120)
 	if long := RunnerDir(longCfg); !strings.HasPrefix(long, "/tmp/maktaba-r-") {
 		t.Fatalf("a long data folder: %s", long)
+	}
+}
+
+// Wave 1 on (story 54.28): this release's plugins name the light group, so a Postgres home
+// builds its runner (dormant, on demand), and a SQLite one none.
+func TestTheReleaseBuildsTheRunnersItsPluginsName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no runner on Windows")
+	}
+	cfg := config.Config{}
+	cfg.Database.URL = "postgres://h/db"
+	cfg.Server.DataDir = t.TempDir()
+	ps, err := BuildPluginRunners(Options{Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, p := range ps {
+		if p.Role != RolePluginRunner || !p.Dormant {
+			t.Fatalf("%+v", p)
+		}
+		got[p.Instance] = true
+	}
+	if !got["light"] || !got["fp"] {
+		t.Fatalf("runners %v", got)
+	}
+	cfg.Database.URL = "sqlite:///x.db"
+	if ps, _ := BuildPluginRunners(Options{Config: cfg}); len(ps) != 0 {
+		t.Fatalf("a SQLite home built %d runners", len(ps))
 	}
 }

@@ -145,6 +145,11 @@ func TestSchedulerBlockers(t *testing.T) {
 		if got := HomeBlocked([]ProcState{{Role: "ollama", Wanted: true, Blocked: true, State: "held"}}, nil, f.now); got != "" {
 			t.Fatalf("a process whose component is off blocked the update (%s)", got)
 		}
+		// Epic 54: a plugin runner that crash loops (its stages run in the worker) blocks nothing
+		if got := HomeBlocked([]ProcState{{Role: "plugin-runner", Instance: "light", Wanted: true, State: "failed", CrashLoop: true}},
+			[]ProcEvent{{Role: "plugin-runner", At: f.now.Add(-time.Minute), Kind: "exit", Reason: "crash"}}, f.now); got != "" {
+			t.Fatalf("a plugin runner that cannot start blocked the update (%s)", got)
+		}
 		if HomeBlocked([]ProcState{{Role: "tv-slot", Instance: "amber", State: "stopped"}}, nil, f.now) != "" {
 			t.Fatal("an on-demand slot nobody asked for blocked")
 		}
