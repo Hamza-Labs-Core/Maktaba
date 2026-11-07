@@ -62,7 +62,9 @@ export function capabilityTitle(t: T, cap: string): { title: string; detail: str
   return { title: title + param, detail };
 }
 
-export const unreviewed = (level: string) => level !== "store";
+// anything the store did not countersign (story 54.14 §2; "store" is Phase 1's name)
+export const unreviewed = (level: string) =>
+  level !== "store" && level !== "automated" && level !== "reviewed";
 
 export function PluginsSection() {
   const { user } = useAuth();
@@ -168,8 +170,14 @@ export function PluginCard({ plugin: p, onOpen }: { plugin: Plugin; onOpen: () =
       <div className="mkt-plugins__badges">
         {p.review_level === "development" ? (
           <Badge tone="warn">{t("plugins.badge.development")}</Badge>
+        ) : unreviewed(p.review_level) ? (
+          <Badge tone="error">{t("plugins.badge.unreviewed")}</Badge>
         ) : (
-          unreviewed(p.review_level) && <Badge tone="error">{t("plugins.badge.unreviewed")}</Badge>
+          <Badge tone="success">
+            {t(
+              p.review_level === "automated" ? "plugins.badge.automated" : "plugins.badge.reviewed"
+            )}
+          </Badge>
         )}
         {p.reason === "incompatible" && (
           <Badge tone="warn">{t("plugins.badge.incompatible")}</Badge>
