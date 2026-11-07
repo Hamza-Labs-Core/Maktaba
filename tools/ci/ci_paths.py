@@ -79,8 +79,10 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/web-release.yml": "runs on a tag",
     ".github/workflows/testflight.yml": "runs on a tag",
     ".github/workflows/packages.yml": "runs after a release",
-    ".github/workflows/auto-tag.yml": "runs after CI and the update rehearsal on main (tags the newest green commit); its choice, tools/release/next_tag.py, is tested by tools/ci/tests on every pull request",
     ".github/workflows/relay.yml": "its own workflow (cloud relay)",
+    ".github/workflows/cloud-probe.yml": "its own scheduled workflow (the outside probe, Epic 50 story 50.10)",
+    ".github/workflows/status-page.yml": "its own workflow and path filter (the status page, Epic 50 story 50.11)",
+    "status/**": "the status page: status-page.yml tests and builds it on every pull request that touches it",
     ".github/workflows/cloud-rehearsal.yml": "its own workflow and path filter (the cloud rehearsal, Epic 50 story 50.06)",
     ".github/workflows/trusted-root.yml": "its own scheduled workflow",
     ".github/workflows/components-nightly.yml": "its own scheduled workflow (components-chaos)",
@@ -123,7 +125,7 @@ MARKERS = {"always-run", "push-only", "pr-only", "pr-event", "not-a-gate"}
 # true whenever a filter is.
 TRAIL = "docs/claude-trail.md"
 # A push to main changing only these starts no run (ci.yml's and update-rehearsal.yml's
-# paths-ignore): the frozen trail and trail v2's events and snapshots, the same list as
+# paths-ignore; on main the rehearsal follows CI's green run, so none follows either): the frozen trail and trail v2's events and snapshots, the same list as
 # .trail.toml's [trail_only] paths (tests/test_ci_paths.py keeps them equal). A pull request of
 # docs/trail/** alone still runs the lint job, whose repo checks run the agent-trail Action's
 # `trail check`; only the frozen file runs nothing at all.

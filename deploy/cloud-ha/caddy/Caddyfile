@@ -49,6 +49,21 @@
 	import relay
 }
 
+# The leading relay process's /metrics, for the witness's Prometheus (story 50.10), on the
+# private address only (UFW opens 9443 to the private network); Caddy's own metrics beside.
+http://{$NODE_ADDR}:9443 {
+	handle /caddy-metrics {
+		metrics
+	}
+	handle {
+		reverse_proxy {$RELAY_UPSTREAMS} {
+			lb_policy first
+			health_uri /readyz
+			health_interval 5s
+		}
+	}
+}
+
 # The edge's own health, on the private address only (UFW opens 8081 to the private network):
 # Caddy answers it itself, whatever the relay processes behind it are doing (a standby's are
 # stopped).

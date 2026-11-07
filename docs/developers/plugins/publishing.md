@@ -6,9 +6,10 @@
 > passkeys) and re-authentication, the developer console, signing keys, id prefixes,
 > submissions, linking a home, store admin, the signed catalog and revocation list. The store
 > is built but **not open yet**: sign-up and submissions are closed until its keys, hosting and
-> reviewers are in place. Automated checks and review, the home's catalog and kill switch, and
-> the store browser follow in the next changes of Phase 2; paid plugins are Phase 3. This page
-> describes the design in
+> reviewers are in place, and until then every file is Unreviewed. Automated checks and
+> review, the home's catalog and kill switch, and the store browser follow in the next changes
+> of Phase 2; paid plugins are Phase 3 ([Selling a plugin](selling.md) says what of them is on
+> `main`). This page describes the design in
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
 > section 6, which can change.
 
@@ -200,8 +201,9 @@ misuse reports are triaged within 24 hours.
   within 14 days.
 - A listed free plugin cannot become paid; publish a new plugin id instead.
 - Plugins are bought on `plugins.maktaba.tv` by a home linked to a store account. Payments
-  belong to the store, separate from Maktaba Cloud's billing. The payment provider and seller
-  of record are not chosen yet, and it will never be Stripe.
+  belong to the store, separate from Maktaba Cloud's billing, through pluggable payment
+  providers (never Stripe). [Selling a plugin](selling.md) has the details: payouts,
+  refunds, entitlements and the providers.
 - The home checks a signed entitlement offline and refreshes it daily. Without a valid one the
   plugin waits; its data is never deleted.
 - Your plugin never handles payment: no capability touches money, and a plugin cannot show a

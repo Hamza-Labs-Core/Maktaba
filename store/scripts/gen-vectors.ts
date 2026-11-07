@@ -8,8 +8,8 @@
 // KEY ..." + the label): anyone can recompute it, so nothing it signs is trusted by a real
 // build, whose root (shared/plugins/plugins-root.json) never lists one.
 //
-//   pnpm vectors          write the files
-//   pnpm vectors:check    fail when they differ from what this script makes (CI)
+//   npm run vectors      write the files
+//   npm run vectors:check   fail when they differ from what this script makes (CI)
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -560,7 +560,7 @@ export async function build(): Promise<{ canonical: string; vectors: string }> {
 
   const vectors = {
     _comment:
-      "Story 54.14 T05: made by store/scripts/gen-vectors.ts (pnpm vectors), verified by Go (shared/plugins/pluginsig), Rust (plugind/crates/sig) and TypeScript (store/signing). Every key is a TEST key from a public label; no real build trusts one.",
+      "Story 54.14 T05: made by store/scripts/gen-vectors.ts (npm run vectors), verified by Go (shared/plugins/pluginsig), Rust (plugind/crates/sig) and TypeScript (store/signing). Every key is a TEST key from a public label; no real build trusts one.",
     now: NOW,
     keys,
     roots,
@@ -611,7 +611,7 @@ if (isMain) {
         /* missing */
       }
       if (cur !== text) {
-        console.error(`${path} is stale: run pnpm vectors in store/`);
+        console.error(`${path} is stale: run npm run vectors in store/`);
         stale = true;
       }
     } else {

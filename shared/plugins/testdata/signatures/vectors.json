@@ -1,5 +1,5 @@
 {
-  "_comment": "Story 54.14 T05: made by store/scripts/gen-vectors.ts (pnpm vectors), verified by Go (shared/plugins/pluginsig), Rust (plugind/crates/sig) and TypeScript (store/signing). Every key is a TEST key from a public label; no real build trusts one.",
+  "_comment": "Story 54.14 T05: made by store/scripts/gen-vectors.ts (npm run vectors), verified by Go (shared/plugins/pluginsig), Rust (plugind/crates/sig) and TypeScript (store/signing). Every key is a TEST key from a public label; no real build trusts one.",
   "now": "2026-11-06T12:00:00Z",
   "keys": {
     "root1": {

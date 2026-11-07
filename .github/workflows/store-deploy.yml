@@ -41,14 +41,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - uses: pnpm/action-setup@v6.0.8
-        with:
-          version: 9.15.4
-          run_install: false
-
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version-file: web/.nvmrc
+          node-version-file: store/.nvmrc
           package-manager-cache: false
 
       - uses: actions/download-artifact@v4
@@ -58,7 +53,7 @@ jobs:
 
       - name: Install
         working-directory: store
-        run: pnpm install --frozen-lockfile
+        run: npm ci --no-audit --no-fund
 
       - name: The resources are real
         working-directory: store
@@ -72,14 +67,14 @@ jobs:
         working-directory: store
         run: |
           for db in store-accounts store-catalog store-installs; do
-            pnpm exec wrangler d1 migrations apply "$db" --remote
+            npx wrangler d1 migrations apply "$db" --remote
           done
 
       - name: Upload the new version
         id: upload
         working-directory: store
         run: |
-          out="$(pnpm exec wrangler versions upload --message "${GITHUB_REF_NAME}" 2>&1)"
+          out="$(npx wrangler versions upload --message "${GITHUB_REF_NAME}" 2>&1)"
           echo "$out"
           version="$(grep -oE 'Worker Version ID: [0-9a-f-]+' <<<"$out" | awk '{print $4}')"
           test -n "$version"
@@ -87,7 +82,7 @@ jobs:
 
       - name: 10 % of traffic
         working-directory: store
-        run: pnpm exec wrangler versions deploy "${{ steps.upload.outputs.version }}@10" --yes
+        run: npx wrangler versions deploy "${{ steps.upload.outputs.version }}@10" --yes
 
       - name: Watch the error rate for 30 minutes
         working-directory: store
@@ -95,9 +90,9 @@ jobs:
 
       - name: 100 % of traffic
         working-directory: store
-        run: pnpm exec wrangler versions deploy "${{ steps.upload.outputs.version }}@100" --yes
+        run: npx wrangler versions deploy "${{ steps.upload.outputs.version }}@100" --yes
 
       - name: Roll back on failure
         if: failure() && steps.upload.outputs.version != ''
         working-directory: store
-        run: pnpm exec wrangler rollback --message "store-deploy failed for ${GITHUB_REF_NAME}" --yes
+        run: npx wrangler rollback --message "store-deploy failed for ${GITHUB_REF_NAME}" --yes

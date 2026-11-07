@@ -15,14 +15,34 @@ fails.
 - **Every pull request** that touches the update, the restore, the migrations, the
   supervisor, the launcher, TV staging or the schema (the workflow's `paths`, with
   `shared/db/migrations/**` and the rehearsal itself).
-- **Every push to main** (and to a `release/*` branch), and **nightly** (06:17 UTC).
+- **Every commit of main CI passed on**, after CI: when `ci.yml`'s run of a push to main
+  succeeds, its `workflow_run` starts the rehearsal on that same commit (every job checks out
+  `github.event.workflow_run.head_sha`). Main's rehearsals share one concurrency group, not
+  cancel-in-progress: the running one finishes, and the newest CI-green commit's run replaces
+  an older pending one. So a green rehearsal of main is always on a commit CI passed on: a
+  commit that can be tagged. (Until 2026-11-07 it ran on every push to main, beside CI. Both
+  workflows replaced their pending main run, so they finished on different commits; from
+  00:54 that day no commit had both green, and nothing could be tagged.) A CI run that did not
+  pass, most of them cancelled while pending, still starts a run here. That run runs no job and
+  is named "Update rehearsal not run (CI <conclusion>)", in a group of its own, so it never
+  replaces the pending rehearsal. A trail-only push to main starts no CI run, so no rehearsal
+  follows it.
+- **Every push to a `release/*` branch** (its own push trigger, with CI's `paths-ignore`), and
+  **nightly** (06:17 UTC).
+- **Where main's result is.** A `workflow_run` run's own `head_sha` is main's head at the
+  moment it started, not the commit it rehearsed. So its checks show on that newer commit.
+  The run is named `Update rehearsal of <sha>` after the commit it rehearsed, and its verdict
+  sets that commit's `update-rehearsal` commit status. The tag guard and
+  `tools/release/next_tag.py` find main's run by its name, and never count a `workflow_run`
+  run for its `head_sha`.
 - **Before every release.** The tag guard (`tools/release/tag-guard.sh`, the first job of
   `release.yml` and of every other tag workflow) refuses a tag unless the update rehearsal
   passed on **that exact commit**, as it does for CI. A run still going is waited for; a
   failed one refuses the tag. Nothing is published without it.
-- **It makes the release.** Tags are automatic: when CI and the rehearsal have both passed on
-  a commit of main, `auto-tag.yml` tags the newest such commit as the next patch version and
-  starts every tag workflow on it (see [updates.md](updates.md#how-a-release-is-made)).
+- **It makes the release.** A session pushes each tag: when CI and the rehearsal have both
+  passed on a commit of main, the scheduled release session tags the newest such commit as the
+  next patch version, and that tag push starts every tag workflow on it (see
+  [updates.md](updates.md#how-a-release-is-made)).
 - By hand: Actions → Update rehearsal → Run workflow (`prev_tag` to update from another
   release; `cur_ref` to rehearse another ref's code with this checkout's harness).
 

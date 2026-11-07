@@ -3,7 +3,8 @@ import { defineConfig } from "vitest/config";
 import { testSigner } from "./scripts/gen-vectors";
 import { signEnvelope, toB64 } from "./signing/sig";
 
-// The store's tests: the signer on the shared vectors in Node, and the Worker in Miniflare
+// The store's tests: the signer on the shared vectors and paid plugins (commerce/, payments/)
+// in Node, and the Worker in Miniflare
 // (D1, R2, Durable Objects, Queues), with TEST keys from public labels only.
 async function workers() {
   const root = await testSigner("root-1");
@@ -49,11 +50,12 @@ async function workers() {
 export default defineConfig(async () => ({
   test: {
     projects: [
-      { test: { name: "node", include: ["signing/test/**/*.test.ts", "test/*.test.ts"] } },
+      { test: { name: "node", include: ["signing/test/**/*.test.ts", "test/*.test.ts", "commerce/**/*.test.ts", "payments/**/*.test.ts"] } },
       { esbuild: { jsx: "automatic" }, test: { name: "console", environment: "jsdom", include: ["console/test/**/*.test.tsx"] } },
       {
         plugins: [await workers()],
-        test: { name: "workers", include: ["test/workers/**/*.test.ts"], setupFiles: ["./test/workers/setup.ts"] },
+        // Argon2id runs in wasm for every account a test makes: slow on a loaded runner
+        test: { name: "workers", include: ["test/workers/**/*.test.ts"], setupFiles: ["./test/workers/setup.ts"], testTimeout: 30_000 },
       },
     ],
   },
