@@ -302,6 +302,16 @@ build fails when the two differ.
 
 ### Added
 
+- **The cloud keeps and searches its own logs (Epic 53 story 53.17).** Each Maktaba Cloud node
+  keeps its processes' lines for 14 days and sends them to the witness: warnings within a
+  second, the rest every 10 seconds, with no gap or duplicate when the network drops. The
+  witness indexes every node's lines, so the service admin's **Logs** and **Errors** pages
+  search the whole cloud even while a node is down. Errors shows the cloud's own groups beside
+  the homes' anonymous ones, with the problem reports that name each. A line names a home only
+  by a hash, never its address, and never logs an email or a token. Every process serves its
+  error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
+  each runbook's Check step links to a saved search.
+
 - **The Player for Windows and Linux has Report this on its error screens and says what
   happened to its last crash.** An error's **Report this** opens Report a problem with that
   call's reference, and after signing in the player says once whether its last crash went to

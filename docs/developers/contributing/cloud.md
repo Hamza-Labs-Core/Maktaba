@@ -75,7 +75,8 @@ a copy for 10 minutes. The page's source, its tests and the posts are in
 Failover and alerts handle the failures that were planned for; the rest need a person. Every
 alert carries a severity and links to a runbook in
 [docs/runbooks/cloud](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/docs/runbooks/cloud),
-each laid out the same way: **When**, **Check**, **Do**, **Done when**, **Tell users**.
+each laid out the same way: **When**, **Check**, **Do**, **Done when**, **Tell users**. A
+runbook's **Check** step links to a saved search in the cloud's log view, never to SSH.
 
 | Severity | Means | Response | Users hear |
 |---|---|---|---|
@@ -102,6 +103,7 @@ for downtime, and a check in CI keeps any page or template from offering one.
 | One wildcard certificate per node | `*.relay.maktaba.tv`, issued by a DNS challenge, so the standby node already has it before it is needed. |
 | Backups | The database's log and a nightly backup go to Hetzner Object Storage and to Cloudflare R2, encrypted, with 30 days of point-in-time restore. A restore is tried every week. |
 | Monitoring | The witness probes a canary home through the relay every 30 seconds; GitHub's runners probe it from outside Hetzner too. Alerts page the owner and link to a runbook, and the same probes set the status page. |
+| Logs | Each process writes the same log lines as a home, and the node keeps them for 14 days. Warnings reach the witness within a second and the rest every 10 seconds, so a node that dies leaves its last lines there. The witness indexes every node's lines: the service admin searches the whole cloud and sees its error groups beside the homes' anonymous ones, even while a node is down. A line names a home only by a hash. Each process also serves its error, request and log metrics (`shared/metrics/cloud-series.md`). |
 
 The files are in
 [deploy/cloud-ha](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/deploy/cloud-ha)
