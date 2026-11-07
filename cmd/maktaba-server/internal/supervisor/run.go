@@ -175,6 +175,7 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 			wake: make(chan struct{}, 1),
 			done: make(chan struct{}),
 			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand,
+				StartMode: startMode(p),
 				Component: p.Component, Blocked: p.Dormant},
 		})
 	}
@@ -659,6 +660,17 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	}
 	if info.Reason == ReasonStopped && !stopping {
 		s.logf("%s stopped on request (pid %d)", c.proc.Name(), info.PID)
+		return false // waits until it is wanted again
+	}
+	if c.proc.IdleOnClean && info.Reason == ReasonClean && !stopping {
+		s.mu.Lock()
+		c.wanted = false
+		c.status.Wanted = false
+		c.status.NextRestartAt = nil
+		s.mu.Unlock()
+		s.logf("%s stopped: nothing to do (pid %d, uptime %s); started again when asked",
+			c.proc.Name(), info.PID, uptime(info))
+		*backoff = s.policy.BackoffInitial
 		return false // waits until it is wanted again
 	}
 	if info.Reason == ReasonRestarted && !stopping {
@@ -1242,4 +1254,12 @@ func (s *Supervisor) killRun(c *child, cmd *exec.Cmd, waited time.Duration) {
 		tree.kill()
 		_ = cmd.Process.Kill()
 	}
+}
+
+// startMode is a process's ChildStatus.StartMode.
+func startMode(p Process) string {
+	if p.OnDemand {
+		return StartOnDemand
+	}
+	return StartAlways
 }

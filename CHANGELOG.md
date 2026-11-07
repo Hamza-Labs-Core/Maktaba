@@ -1961,6 +1961,11 @@ build fails when the two differ.
   new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
   or staff API path, an admin string or a console module.
 
+- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
+  none of them: a runner starts when the first job of its kind arrives (that job runs in the
+  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
+  processes and its memory budget at rest.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
