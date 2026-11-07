@@ -33,7 +33,8 @@ async def _scan_output(db: Any, subject: Subject) -> str:
 
 
 async def _probe_output(db: Any, subject: Subject) -> str:
-    """Duration and frame size: what later stages depend on."""
+    """Duration and frame size: what later stages depend on. The engine's ``probe`` stage
+    returns it (story 54.36 §2), so its output hash is the one the legacy stage had."""
     row = await db.fetchrow(
         "SELECT duration_sec, metadata FROM videos WHERE id = $1", str(subject.id)
     )
@@ -62,7 +63,6 @@ async def _always_changed(db: Any, subject: Subject) -> str:
 
 IMPLS: dict[str, StageImpl] = {
     "scan": StageImpl(output_fingerprint=_scan_output),
-    "probe": StageImpl(output_fingerprint=_probe_output),
     **{
         name: StageImpl(output_fingerprint=_always_changed)
         for name in (

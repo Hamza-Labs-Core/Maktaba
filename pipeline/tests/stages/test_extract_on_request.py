@@ -138,13 +138,17 @@ async def test_a_streaming_backend_never_asks_for_extract(
     assert await db.fetchval("SELECT count(*) FROM audio_cache") == 0
 
 
-# Postgres only: the legacy probe's SQL is (``probed_at = now()``, and the FSM advance's
+# Postgres only: the probe's SQL is (``probed_at = now()``, and the FSM advance's
 # ``FOR UPDATE``); tests/audio/test_probe.py covers chain_extract on both dialects' fakes
 @pytest.mark.parametrize("db", ["postgres"], indirect=True)
 @pytest.mark.asyncio
-async def test_the_engine_probe_queues_no_extract(db: Database, tmp_path: Path) -> None:
-    """The engine's probe handler (build_real_dispatch(engine=True)) leaves extract out."""
+async def test_the_engine_probe_queues_no_extract(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine's probe stage (story 54.36 §2) leaves extract out, as the legacy handler
+    did on the engine (build_real_dispatch(engine=True))."""
     from maktaba_pipeline.audio.probe import AudioTrack, MediaInfo, ProbeResult
+    from maktaba_pipeline.engine.stages import probe as probe_stage
     from maktaba_pipeline.handlers import build_real_dispatch
 
     rt = await core_runtime(db)
@@ -162,8 +166,8 @@ async def test_the_engine_probe_queues_no_extract(db: Database, tmp_path: Path) 
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="probe")
     job = await claim_for_pool(db, worker_id="t", pool="nas_read", stages=["probe"], scope="global")
     assert job is not None
-    handlers = {"probe": partial(probe_handler, run_probe=ffprobe, chain_extract=False)}
-    await dispatch_job(db, job, runtime=rt, legacy_handlers=handlers)
+    monkeypatch.setattr(probe_stage, "ffprobe", ffprobe)
+    await dispatch_job(db, job, runtime=rt, legacy_handlers={})
 
     assert [j["state"] for j in await _jobs(db, "probe")] == ["done"]
     assert await _jobs(db, "extract") == []

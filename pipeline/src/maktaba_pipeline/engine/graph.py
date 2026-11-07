@@ -394,13 +394,16 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("thumbnail", "same"),
         ),
     ),
-    _legacy(
-        "probe",
-        "Length",
-        ("video",),
-        "nas_read",
-        1,
+    # Epic 54 story 54.36 §2: on the engine. It returns the hash the legacy bookkeeping
+    # computed (length and frame size), so its edges fire as they did
+    StageDef(
+        name="probe",
+        label="Length",
+        subject_kinds=("video",),
+        pool="nas_read",
         lane="episodes",
+        lane_order=1,
+        version=1,
         edges=(
             Edge("thumb_hash", "same"),
             Edge("link", "same"),

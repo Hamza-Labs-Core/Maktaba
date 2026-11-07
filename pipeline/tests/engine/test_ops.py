@@ -35,8 +35,11 @@ from tests.engine.toy import Recorder, drain, rows, setup, toy_graph
 
 @pytest.mark.asyncio
 async def test_reconciler_repairs_a_crash_between_legacy_done_and_propagation(db: Database) -> None:
-    await sync_graph(db, GRAPH)
-    graph = {s.name: s for s in GRAPH}
+    # a legacy stage with edges: probe as it was before it moved onto the engine (story
+    # 54.36 §2); the repair is the same for any legacy stage
+    legacy = tuple(dataclasses.replace(s, legacy=True) if s.name == "probe" else s for s in GRAPH)
+    await sync_graph(db, legacy)
+    graph = {s.name: s for s in legacy}
     lib = await make_library(db)
     v = await make_video(db, lib, duration=600.0)
     await enqueue_job(db, subject_kind="video", subject_id=v, stage="probe")
