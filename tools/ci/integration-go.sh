@@ -47,7 +47,7 @@ show() {
     jq -Rr 'fromjson? // empty
         | select((.Action == "pass" or .Action == "fail") and .Test and (.Test | contains("/") | not))
         | "\(.Elapsed)s\t\(.Package | sub("^github.com/Hamza-Labs-Core/Maktaba/"; ""))\t\(.Test)"' "$1.json" |
-        sort -rn | head -n 10
+        sort -rn | sed -n 1,10p
 }
 
 rc=0
