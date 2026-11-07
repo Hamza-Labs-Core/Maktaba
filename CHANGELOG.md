@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **Apps can reach a home on its own network by address when the router blocks its name
+  (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
+  network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
+  carries each LAN address both by name and by address, the address checked against the home's
+  own certificate, so an app on that network still proves it reached this home.
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
