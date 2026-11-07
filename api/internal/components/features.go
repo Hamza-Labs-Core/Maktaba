@@ -87,7 +87,8 @@ func componentReason(c *components.Component, g runner.Gate, licensed func(strin
 
 // featureGroups are the groups of components a feature needs: each group is met when
 // one of its members is on. A component is its own group, unless it conflicts with
-// another component that lists the same feature: then they share one.
+// another component that lists the same feature, or the catalog's feature_any puts them in
+// one group for the feature (story 50.35): then they share one.
 func featureGroups(cat *components.Catalog, feature string) [][]string {
 	var listed []*components.Component
 	for _, c := range cat.Components() {
@@ -95,11 +96,28 @@ func featureGroups(cat *components.Catalog, feature string) [][]string {
 			listed = append(listed, c)
 		}
 	}
+	anyGroup := map[string]int{} // id -> its feature_any group of this feature
+	for i, g := range cat.FeatureAny[feature] {
+		for _, id := range g {
+			anyGroup[id] = i
+		}
+	}
 	var groups [][]string
 	in := map[string]int{}
 	for _, c := range listed {
 		g, ok := -1, false
+		if a, grouped := anyGroup[c.ID]; grouped {
+			for id, i := range in {
+				if b, same := anyGroup[id]; same && b == a {
+					g, ok = i, true
+					break
+				}
+			}
+		}
 		for _, x := range c.Conflicts {
+			if ok {
+				break
+			}
 			if i, seen := in[x]; seen {
 				g, ok = i, true
 				break
