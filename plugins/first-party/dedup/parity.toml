@@ -1,0 +1,17 @@
+# The parity proof of tv.maktaba.dedup (story 54.32): a duplicate found, merged into its
+# keeper (the copy to the trash), restored, and the trash emptied. The library and its trash
+# are compared byte for byte, with the journal (the same run-time ids on both sides), the
+# groups and the videos, only the columns that hold the time masked.
+tables = ["duplicate_groups", "duplicate_members", "file_actions", "videos", "video_copies"]
+files  = ["library"]
+
+[ignore]
+duplicate_groups = ["created_at", "decided_at"]
+# a member's score keeps the video row's own created_at (the seed's time)
+duplicate_members = ["score.created_at"]
+file_actions = ["created_at", "updated_at", "purge_after", "purged_at", "verify"]
+videos = ["created_at", "updated_at", "mtime", "last_seen_at"]
+video_copies = ["seen_at", "mtime"]
+
+[[cases]]
+name = "two copies of one lecture: found, merged into the keeper, restored from the trash, the trash emptied"
