@@ -1,7 +1,7 @@
 # Installing and managing plugins
 
 > **Status: on `main`.** Everything on this page is built. Plugins run on a home with
-> Postgres, on macOS and Linux; Windows is not supported yet. A home checks a file's signatures
+> Postgres, on macOS, Linux and Windows. A home checks a file's signatures
 > ([Signing and the chain of trust](trust.md)); until the store opens, every file is
 > **unreviewed**.
 

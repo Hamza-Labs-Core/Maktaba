@@ -497,3 +497,26 @@ fn the_stores_names_are_wasmtimes() {
         assert_eq!((si, se), (wi, we), "{name}");
     }
 }
+
+/// 54.03 §4 (#710): a guest can open no socket, on any OS. The host links no wasi:sockets
+/// (nor http), so a guest that asks for one is refused by the audit, and cannot instantiate
+/// when the audit is bypassed: it never reaches the host's own dispatch socket, nor any
+/// other. CI runs this on Windows too, where the host itself opens its socket through
+/// Winsock before entering its AppContainer.
+#[test]
+fn a_guest_can_open_no_socket() {
+    let wasm = guest("hostile_std");
+    let (imports, _) = plugind_core::audit::component_names(&wasm).unwrap();
+    assert!(
+        imports.iter().any(|i| i.starts_with("wasi:sockets/")),
+        "the hostile guest asks for no socket, so this proves nothing: {imports:?}"
+    );
+    let f = Fixture::new(false);
+    let p = f.package("sockets", &wasm, &[]);
+    let e = f.host.preload(ID, VERSION, &p).unwrap_err();
+    assert_eq!(e.code, "plugin_forbidden_import", "{e}");
+    let g = Fixture::new(true);
+    let q = g.package("sockets", &wasm, &[]);
+    let e = g.host.preload(ID, VERSION, &q).unwrap_err();
+    assert_eq!(e.code, "plugin_link", "{e}");
+}
