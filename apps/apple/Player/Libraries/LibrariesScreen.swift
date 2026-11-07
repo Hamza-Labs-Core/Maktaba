@@ -127,6 +127,8 @@ private struct LibraryCard: View {
     let choose: (() -> Void)?
     let pin: () -> Void
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Group {
@@ -173,11 +175,11 @@ private struct LibraryCard: View {
     }
 
     private var detail: String {
-        let count = String(localized: LocalizedStringResource("\(library.videos) videos", table: "Libraries",
-                                                              comment: "A library card's count of videos"))
+        let count = LocalizedStringResource("\(library.videos) videos", table: "Libraries",
+                                            comment: "A library card's count of videos").string(in: locale)
         guard pinned else { return count }
-        return count + " · " + String(localized: LocalizedStringResource("Pinned", table: "Libraries",
-                                                                         comment: "A library card's mark: pinned first"))
+        return count + " · " + LocalizedStringResource("Pinned", table: "Libraries",
+                                                       comment: "A library card's mark: pinned first").string(in: locale)
     }
 }
 
@@ -187,6 +189,8 @@ struct SeriesGrid: View {
     let series: [SeriesSummary]
     /// Asks for the next page once a cover near the end shows (nil: all are here).
     var more: (() async -> Void)?
+
+    @Environment(\.locale) private var locale
 
     /// How many covers before the end the next page is asked for: about a screen ahead,
     /// so scrolling doesn't stop at the edge of a page.
@@ -201,8 +205,8 @@ struct SeriesGrid: View {
                   alignment: .leading, spacing: MaktabaTokens.Spacing.s4) {
             ForEach(series) { s in
                 NavigationLink(value: PlayerRoute.series(id: s.id)) {
-                    PosterCard(title: s.name.isEmpty ? String(localized: Self.untitled) : s.name,
-                               detail: String(localized: Self.episodes(s.episodeCount)),
+                    PosterCard(title: s.name.isEmpty ? Self.untitled.string(in: locale) : s.name,
+                               detail: Self.episodes(s.episodeCount).string(in: locale),
                                poster: LibraryArt.poster(context.client, video: s.posterVideoID),
                                progress: s.progress, shape: .tall, width: 120)
                 }
