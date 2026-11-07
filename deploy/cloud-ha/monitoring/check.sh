@@ -5,11 +5,14 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"; trap 'rm -rf "${work}"' EXIT
+# mktemp's 0700 would hide the configs from the images' user (nobody)
+chmod 0755 "${work}"
 export NODE_A_ADDR=10.50.0.2 NODE_B_ADDR=10.50.0.3 RELAY_DOMAIN=relay.maktaba.tv \
     NTFY_URL=https://ntfy.example/topic NTFY_TOKEN=t ALERT_EMAIL=ops@example.com ALERT_EMAIL_FROM=alerts@example.com \
     SMTP_HOST=smtp.example.com:587 SMTP_USER=u SMTP_PASSWORD=p
 for f in prometheus.yml alertmanager.yml; do envsubst <"${here}/${f}" >"${work}/${f}"; done
 cp "${here}/alerts.yml" "${here}/backup-rules.yml" "${here}/blackbox.yml" "${work}/"
+chmod 0644 "${work}"/*
 prom=prom/prometheus:v3.5.0
 docker run --rm -v "${work}:/etc/prometheus" --entrypoint promtool "${prom}" check config /etc/prometheus/prometheus.yml
 docker run --rm -v "${here}:/r" -w /r --entrypoint promtool "${prom}" test rules alerts-test.yml backup-rules-test.yml
