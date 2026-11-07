@@ -10,9 +10,9 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from maktaba_fp_youtube.stages.youtube_sync import discover_folders, set_fetcher_factory
 
 from maktaba_pipeline.engine.sql import dumps, is_pg
-from maktaba_pipeline.engine.stages.youtube_sync import discover_folders, set_fetcher_factory
 from maktaba_pipeline.integrations.youtube import (
     FetchError,
     classify_error,

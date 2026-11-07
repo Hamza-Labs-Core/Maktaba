@@ -46,6 +46,8 @@ const (
 	CodeListExpired    = "store_list_stale"
 	CodeNotInCatalog   = "plugin_not_in_catalog"
 	CodeDownloadFailed = "plugin_download_failed"
+	// CodePaidUnavailable: a paid plugin, and this server has no way to fetch paid packages.
+	CodePaidUnavailable = "paid_downloads_unavailable"
 	// CodeOffline: MAKTABA_OFFLINE is on (serve --offline): the home reaches no store.
 	CodeOffline = "store_offline"
 )
@@ -116,6 +118,11 @@ type Service struct {
 	// the loop fetches nothing: the kept lists age, an expired one warns and never stops a
 	// plugin (N10, H10), and store installs wait.
 	Offline func() bool
+	// Paid downloads a paid plugin's package (54.19 §6): a signed URL from the store, issued
+	// only while this home holds a valid entitlement, then the file from the CDN's /paid/
+	// path. Its errors are Problems (entitlement_missing, store_not_linked, store_offline).
+	// Nil: paid plugins cannot be installed from the store.
+	Paid func(ctx context.Context, pluginID, sha256 string) ([]byte, error)
 
 	auto *Auto
 

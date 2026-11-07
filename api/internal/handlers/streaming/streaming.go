@@ -30,6 +30,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -378,6 +379,16 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Epic 50 story 50.19 §3: a session opened through the relay on a capped plan fits the
+	// cap (video and audio, 10 % headroom): the streaming service transcodes a file above it.
+	relayCapped := false
+	if fit := RelayCapFit(r); fit > 0 {
+		relayCapped = true
+		if req.MaxBitrateKbps == 0 || req.MaxBitrateKbps > fit {
+			req.MaxBitrateKbps = fit
+		}
+	}
+
 	// Clamp start_sec to duration_sec - 5 if too large (EC).
 	clampedHeader := ""
 	if duration.Valid && req.StartSec > duration.Float64 {
@@ -404,6 +415,15 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 				Title:  "not enough disk space to prepare this video",
 				Detail: "the server that streams it has too little free on its disk to transcode it"}
 			httperror.Write(w, r, e.With("code", "insufficient_storage"))
+			return
+		}
+		if err != nil && relayCapped {
+			// the home can't prepare a capped stream now (no transcode free): the app says
+			// relay.homeBusy and tries again
+			w.Header().Set("Retry-After", "10")
+			httperror.Write(w, r, (&httperror.Error{Type: ProblemHomeBusy, Status: http.StatusServiceUnavailable,
+				Title:  "the home is too busy to prepare this video for remote play",
+				Detail: err.Error()}).With("code", "home_busy"))
 			return
 		}
 		if err != nil {
@@ -877,4 +897,30 @@ func (d *sessionDebouncer) Allow(id string, now time.Time) bool {
 	}
 	d.last[id] = now
 	return true
+}
+
+// ProblemHomeBusy: a capped relayed stream can't be prepared now (story 50.19, relay.homeBusy).
+const ProblemHomeBusy = "https://maktaba.tv/problems/home-busy"
+
+// RelayCapHeader is the bitrate the relay asks a request's media to fit (Maktaba Cloud sets it
+// on capped plans, story 50.19 §3).
+const RelayCapHeader = "X-Maktaba-Relay-Cap-Kbps"
+
+// RelayCapFit is the highest bitrate (kbps) a relayed request's stream may have: the cap the
+// relay set, less 10 % headroom; 0 when the request is not capped. Only a request the relay
+// agent forwarded (X-Maktaba-Via: relay, which StripVia keeps only from loopback) carries a
+// cap: on the LAN or a direct connection nothing is capped.
+func RelayCapFit(r *http.Request) int {
+	if r.Header.Get("X-Maktaba-Via") != "relay" {
+		return 0
+	}
+	v := strings.TrimSpace(r.Header.Get(RelayCapHeader))
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.ParseUint(v, 10, 32)
+	if err != nil || n == 0 || n > 1_000_000 {
+		return 0
+	}
+	return int(n) * 100 / 110
 }

@@ -31,7 +31,7 @@ func newPGRig(t *testing.T) *pgRig {
 	ctx := context.Background()
 	dir := t.TempDir()
 	b, _ := pgtest.Bundle(ctx, t, programs, dir, false)
-	migrate := pgtest.Migrator(t, dir)
+	migrate := pgtest.Migrator(t)
 	appURL, err := b.URL()
 	if err != nil {
 		t.Fatal(err)
@@ -44,7 +44,7 @@ func newPGRig(t *testing.T) *pgRig {
 		t.Fatal(err)
 	}
 	r := &pgRig{t: Target{URL: super, Bin: b.Bin, Backups: filepath.Join(dir, "backups")}, b: b,
-		api: filepath.Join(dir, "maktaba-api"), repoMg: filepath.Join(pgtest.RepoRoot(t), "shared", "db", "migrations")}
+		api: pgtest.APIBinary(t), repoMg: filepath.Join(pgtest.RepoRoot(t), "shared", "db", "migrations")}
 	if runtime.GOOS == "windows" {
 		r.api += ".exe"
 	}

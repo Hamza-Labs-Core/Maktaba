@@ -14,8 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logindex"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logindex"
 )
 
 // newLogsCmd is `maktaba-server logs`: the log index role (Epic 53 story 53.09, catalog
@@ -55,11 +55,13 @@ func newLogsCmd() *cobra.Command {
 func configureIndex(ix *logindex.Index, logs config.LogsSection) {
 	r := logs.Resolved()
 	ix.Retention, ix.ErrorRetention, ix.ReportRetention = r.Retention, r.ErrorRetention, r.ReportRetention
-	// story 53.12: this machine's metrics (the API's admin port merges the supervisor's)
+	// story 53.12: this machine's metrics (the API's admin port merges the supervisor's;
+	// streaming's admin port has the TV's)
 	if u := strings.TrimSpace(os.Getenv("MAKTABA_METRICS_URLS")); u != "" {
 		ix.MetricsURLs = strings.Split(u, ",")
 	} else {
-		ix.MetricsURLs = []string{"http://" + ports.APIAdmin.Local() + "/metrics"}
+		ix.MetricsURLs = []string{"http://" + ports.APIAdmin.Local() + "/metrics",
+			"http://" + ports.StreamingAdmin.Local() + "/metrics"}
 	}
 	ix.MaxBytes = r.MaxTotal * 35 / 100
 }

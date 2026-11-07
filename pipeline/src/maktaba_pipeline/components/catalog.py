@@ -510,7 +510,10 @@ def _validate(c: Component, where: str, features: tuple[str, ...], bad: list[str
         )
     if c.on_demand and not c.has_part("process"):
         bad.append(f"{where}: on_demand is for a component with a process")
-    if c.plugin and (not c.plugin.startswith("tv.maktaba.") or not c.has_part("stages")):
+    # an extension component with stages (ext.plex) keeps its kind and names its plugin
+    # too (story 54.27 §3)
+    owns_stages = c.has_part("stages") or (c.kind == "extension" and bool(c.stages))
+    if c.plugin and (not c.plugin.startswith("tv.maktaba.") or not owns_stages):
         bad.append(
             f"{where}: plugin names a first-party plugin (tv.maktaba.*) of a component with stages"
         )

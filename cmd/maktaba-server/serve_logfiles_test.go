@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logfiles"
 )
 
 // The supervisor serves this machine's log files over a window to its own api (the local

@@ -7,8 +7,9 @@
 > side of entitlements: the store answers a linked home's entitlements, the home checks them
 > offline, and a paid plugin without one waits. Buy is on `main` too: a paid plugin's price
 > in the home's Browse, Buy or "Link this home to buy", and the store's buy pages. Nothing can
-> be bought until the store admin enables a payment provider. Not built yet: paid packages on
-> their own CDN path, and moving a purchase to another home. The design is in story 54.19 of
+> be bought until the store admin enables a payment provider. Paid packages are on their own
+> CDN path, for homes that bought them, and a purchase can move to another home. The
+> design is in story 54.19 of
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md).
 
 ## What it costs and what you get
@@ -82,6 +83,22 @@ You get a statement each month, in English and Arabic.
 The store's buy pages run no script. The home sends only the plugin, the language and its
 signature.
 
+**Buying on plugins.maktaba.tv.** Your plugin's page on the store's website has **Buy** too.
+The buyer signs in, chooses which of the account's linked homes it is for, and continues on
+the same buy page as above (steps 4 and 5). With no linked home, the page says to link one
+first from Settings → Plugins → Store account in Maktaba.
+
+## Moving a purchase to another home
+
+A purchase belongs to the buyer's store account, and it is used on one home at a time. On the
+store's account page (plugins.maktaba.tv/account), **Purchases** lists the account's plugins,
+each with the home it is on, and **Move** sends one to another home linked to the same account.
+The buyer confirms it's them first, and a purchase can move **twice in any 365 days**; after
+that the page says when the next move is free. The new home picks the plugin up at its next
+daily check (or at once with **Check for purchases now**); the old home stops at its next
+daily check, and the plugin waits there with its queue and data kept. A refunded purchase
+cannot move. Nothing changes for you: the sale, your share and its payout stay as they were.
+
 ## What the home sees
 
 The home never deals with money or a payment provider. After a purchase it downloads a
@@ -93,6 +110,11 @@ length changes nothing at all. Without a valid entitlement your plugin is *Waiti
 (`entitlement_missing`) on that home: its queue and data are kept, and it comes back by
 itself when a new entitlement arrives. A copy of a paid package on another home installs but
 stays *Waiting*.
+
+**Your package stays private.** Once your plugin has a price, the store keeps each version's
+package out of the public CDN. The catalog names `plugins-cdn.maktaba.tv/paid/<sha256>`, and
+a home downloads it only with a URL the store signs for that home, for 10 minutes, while the
+home holds a valid entitlement. A home that has not bought it is told to buy it first.
 
 **When it checks.** The home asks the store for its entitlements daily (signed with its own
 home store key; no account password, no cloud), and every 15 seconds for 15 minutes after a

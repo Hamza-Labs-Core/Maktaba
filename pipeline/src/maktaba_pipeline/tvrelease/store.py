@@ -40,6 +40,15 @@ IN_FLIGHT = ("staged", "verifying", "ready", "approved", "swapping")
 #: the states the open change is in: an update joins it until it is approved (the
 #: rule of story 33.12 AC3); approved, swapping or live, it takes no more
 OPEN = ("draft", "staged", "verifying", "ready")
+#: IN_FLIGHT and OPEN as fixed texts (named statements; a test checks they agree)
+_IN_FLIGHT_SQL = (
+    "SELECT * FROM tv_changes WHERE state IN"
+    " ('staged', 'verifying', 'ready', 'approved', 'swapping') ORDER BY created_at LIMIT 1"
+)
+_OPEN_SQL = (
+    "SELECT * FROM tv_changes WHERE state IN ('draft', 'staged', 'verifying', 'ready')"
+    " ORDER BY number, created_at"
+)
 #: the reopen event's reason (a checked change an update joined goes back to draft)
 REOPEN_WHY = "updated after it was checked: it is checked again"
 _JSON_COLS = ("kinds", "source", "change_set", "diff", "verify_report", "approved_by")
@@ -102,10 +111,7 @@ async def get_change(db: Any, change_id: str) -> Change | None:
 
 async def in_flight(db: Any) -> Change | None:
     """The change in ``staged … swapping``, if any."""
-    marks = ",".join(f"'{s}'" for s in IN_FLIGHT)
-    row = await db.fetchrow(
-        f"SELECT * FROM tv_changes WHERE state IN ({marks}) ORDER BY created_at LIMIT 1"
-    )
+    row = await db.fetchrow(_IN_FLIGHT_SQL)
     return None if row is None else _decode(row)
 
 
@@ -119,10 +125,7 @@ async def open_changes(db: Any) -> list[Change]:
     most (the open change); a second is one opened before the rule (or while the
     first was in flight) and joins the first (``stage.collapse_open``). The automatic
     updater's change is none of them: it queues behind the change in flight on its own."""
-    marks = ",".join(f"'{s}'" for s in OPEN)
-    rows = await db.fetch(
-        f"SELECT * FROM tv_changes WHERE state IN ({marks}) ORDER BY number, created_at"
-    )
+    rows = await db.fetch(_OPEN_SQL)
     return [
         ch
         for ch in map(_decode, rows)
@@ -229,20 +232,80 @@ async def create_change(
     return cid
 
 
+#: the columns a change's update may set, in the order of _UPDATE_SQL's pairs (updated_at
+#: is always set); a test checks they are tv_changes' columns but id, number, created_at
+UPDATE_FIELDS: tuple[str, ...] = (
+    "anchor_at",
+    "approved_at",
+    "approved_by",
+    "auto_rule",
+    "base_release_id",
+    "change_set",
+    "created_by",
+    "diff",
+    "digest",
+    "end_reason",
+    "ended_at",
+    "kinds",
+    "origin",
+    "ready_at",
+    "release_id",
+    "source",
+    "staged_at",
+    "state",
+    "superseded_by",
+    "swap_at",
+    "swap_wait",
+    "swapped_at",
+    "title",
+    "verify_report",
+)
+_UPDATE_SQL = (
+    "UPDATE tv_changes SET updated_at = $2, "
+    "anchor_at = CASE WHEN $3 THEN $4 ELSE anchor_at END, "
+    "approved_at = CASE WHEN $5 THEN $6 ELSE approved_at END, "
+    "approved_by = CASE WHEN $7 THEN $8 ELSE approved_by END, "
+    "auto_rule = CASE WHEN $9 THEN $10 ELSE auto_rule END, "
+    "base_release_id = CASE WHEN $11 THEN $12 ELSE base_release_id END, "
+    "change_set = CASE WHEN $13 THEN $14 ELSE change_set END, "
+    "created_by = CASE WHEN $15 THEN $16 ELSE created_by END, "
+    "diff = CASE WHEN $17 THEN $18 ELSE diff END, "
+    "digest = CASE WHEN $19 THEN $20 ELSE digest END, "
+    "end_reason = CASE WHEN $21 THEN $22 ELSE end_reason END, "
+    "ended_at = CASE WHEN $23 THEN $24 ELSE ended_at END, "
+    "kinds = CASE WHEN $25 THEN $26 ELSE kinds END, "
+    "origin = CASE WHEN $27 THEN $28 ELSE origin END, "
+    "ready_at = CASE WHEN $29 THEN $30 ELSE ready_at END, "
+    "release_id = CASE WHEN $31 THEN $32 ELSE release_id END, "
+    "source = CASE WHEN $33 THEN $34 ELSE source END, "
+    "staged_at = CASE WHEN $35 THEN $36 ELSE staged_at END, "
+    "state = CASE WHEN $37 THEN $38 ELSE state END, "
+    "superseded_by = CASE WHEN $39 THEN $40 ELSE superseded_by END, "
+    "swap_at = CASE WHEN $41 THEN $42 ELSE swap_at END, "
+    "swap_wait = CASE WHEN $43 THEN $44 ELSE swap_wait END, "
+    "swapped_at = CASE WHEN $45 THEN $46 ELSE swapped_at END, "
+    "title = CASE WHEN $47 THEN $48 ELSE title END, "
+    "verify_report = CASE WHEN $49 THEN $50 ELSE verify_report END WHERE id = $1"
+)
+
+
 async def update_change(db: Any, change_id: str, **fields: Any) -> None:
-    """Set columns of a change (JSON columns are encoded, timestamps converted)."""
+    """Set columns of a change (JSON columns are encoded, timestamps converted). One fixed
+    statement: each column is set when it is given and kept otherwise."""
     if not fields:
         return
-    sets: list[str] = []
-    args: list[Any] = [change_id]
-    for k, v in {**fields, "updated_at": now()}.items():
-        if k in _JSON_COLS:
+    unknown = set(fields) - set(UPDATE_FIELDS)
+    if unknown:
+        raise ValueError(f"tv_changes has no writable column {sorted(unknown)}")
+    args: list[Any] = [change_id, to_ts(db, now())]
+    for k in UPDATE_FIELDS:
+        v = fields.get(k)
+        if k in _JSON_COLS and k in fields:
             v = dumps(v)
         elif k in _TS_COLS and isinstance(v, datetime):
             v = to_ts(db, v)
-        args.append(v)
-        sets.append(f"{k} = ${len(args)}")
-    await db.execute(f"UPDATE tv_changes SET {', '.join(sets)} WHERE id = $1", *args)
+        args += [k in fields, v]
+    await db.execute(_UPDATE_SQL, *args)
 
 
 async def event(

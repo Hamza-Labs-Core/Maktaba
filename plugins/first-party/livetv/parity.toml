@@ -1,0 +1,18 @@
+# The parity proof of tv.maktaba.livetv (story 54.34): a library detected and planned into
+# channels, written to the air (staging off) or staged as a TV change (staging on); the
+# rows each writes compared, only the columns that hold a time masked.
+tables = ["channel_plans", "channels", "external_links", "filler_pools", "filler_items",
+          "channel_schedule_state", "tv_changes", "tv_releases", "tv_release_channels"]
+
+[ignore]
+channel_plans = ["id", "created_at", "plan.generated_at"]
+channels = ["created_at", "updated_at"]
+external_links = ["id", "created_at", "updated_at"]
+filler_pools = ["created_at", "updated_at"]
+filler_items = ["created_at"]
+channel_schedule_state = ["updated_at"]
+tv_changes = ["created_at", "updated_at", "staged_at", "ready_at"]
+tv_releases = ["created_at"]
+
+[[cases]]
+name = "a show of forty episodes and four loose talks: planned and written, staging off and on"

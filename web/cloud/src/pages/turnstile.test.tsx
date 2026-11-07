@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "../api";
+import { setAccessToken } from "../shared/api";
 import { ME, renderAt, signedOut, stubFetch, user } from "../test/harness";
 
 beforeEach(() => setAccessToken(null));

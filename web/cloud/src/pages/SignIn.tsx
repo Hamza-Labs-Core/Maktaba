@@ -5,13 +5,13 @@ import { Link, useLocation, useNavigate, useSearchParams } from "react-router-do
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Input } from "@ds/components/Input/Input";
-import { api, apiUrl, CloudApiError } from "../api";
-import { useI18n } from "../i18n";
+import { api, apiUrl, CloudApiError } from "../shared/api";
+import { useI18n } from "../shared/i18n";
 import { navigateExternal } from "../nav";
 import { useProviders } from "../providers";
-import { useSession } from "../session";
+import { useSession } from "../shared/session";
 import { Turnstile } from "../Turnstile";
-import { Banner, useErrorMessage } from "../ui";
+import { Banner, useErrorMessage } from "../shared/ui";
 
 export function SignIn() {
   const { t, has } = useI18n();

@@ -1,6 +1,14 @@
 //! mkp: the Maktaba plugin SDK's CLI (Epic 54, story 54.12).
 //!
-//!   mkp new rust <id> <folder>        a project from the Rust template (no_std, wit-bindgen)
+//!   mkp new rust|python|js|go <id> <folder>
+//!                                     a project from a template (Rust: no_std, wit-bindgen;
+//!                                     Python: componentize-py; JavaScript: jco componentize;
+//!                                     Go: TinyGo's wasm-unknown target)
+//!   mkp build <project> [--entry <file.js>]
+//!                                     the language's toolchain makes package/plugin.wasm,
+//!                                     then the home's checks (as `mkp check`)
+//!   mkp world <project>               the project's WIT with the `plugin` world narrowed to
+//!                                     what its manifest may import (Python, JS, Go)
 //!   mkp check <folder>                the home's manifest validation (54.01) and import audit (54.02)
 //!   mkp pack <folder> <out.mkplugin> [--key <id>]
 //!                                     files.json and the package, every file's sha256 listed;
@@ -19,19 +27,22 @@
 //! ui/settings.schema.json when the manifest names one). The store countersigns a package
 //! after review (store.sig); `mkp pack --key` makes only the developer's signature.
 
+mod buildcmd;
 mod flow;
 mod harness;
 mod keys;
 mod pack;
 mod run;
 mod template;
+mod world;
 
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
 fn usage() -> ! {
     eprintln!(
-        "usage:\n  mkp new rust <id> <folder>\n  mkp check <folder>\n  mkp pack <folder> <out.mkplugin> [--key <id>]\n  \
+        "usage:\n  mkp new rust|python|js|go <id> <folder>\n  mkp build <project> [--entry <file.js>]\n  \
+         mkp world <project>\n  mkp check <folder>\n  mkp pack <folder> <out.mkplugin> [--key <id>]\n  \
          mkp keys new | list | export-public [id]\n  \
          mkp run <folder> --home <http://home:port> --user <admin>\n  \
          mkp test <folder> --stage <name> [--subject kind:id] [--fixtures api.json] [--settings json] [--with <folder>]\n  \
@@ -44,6 +55,16 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let code = match args.first().map(String::as_str) {
         Some("new") if args.len() == 4 && args[1] == "rust" => template::new_rust(&args[2], Path::new(&args[3])),
+        Some("new") if args.len() == 4 && ["python", "js", "go"].contains(&args[1].as_str()) => {
+            template::new_lang(&args[1], &args[2], Path::new(&args[3]))
+        }
+        Some("build") if args.len() == 2 => buildcmd::build(Path::new(&args[1]), None),
+        Some("build") if args.len() == 4 && args[2] == "--entry" => {
+            buildcmd::build(Path::new(&args[1]), Some(Path::new(&args[3])))
+        }
+        Some("world") if args.len() == 2 => world::write(Path::new(&args[1])).map(|keep| {
+            println!("world: {}", keep.into_iter().collect::<Vec<_>>().join(", "));
+        }),
         Some("check") if args.len() == 2 => check(Path::new(&args[1])),
         Some("pack") if args.len() == 3 => pack::pack(Path::new(&args[1]), Path::new(&args[2]), None),
         Some("pack") if args.len() == 5 && args[3] == "--key" => {
@@ -83,7 +104,7 @@ pub fn validate(dir: &Path) -> Result<serde_json::Map<String, serde_json::Value>
     })
 }
 
-fn check(dir: &Path) -> Result<(), String> {
+pub fn check(dir: &Path) -> Result<(), String> {
     let m = validate(dir)?;
     let report = harness::preload(dir, &m)?;
     println!("{report}");

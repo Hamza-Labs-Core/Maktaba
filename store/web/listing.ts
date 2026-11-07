@@ -38,6 +38,8 @@ const W = {
     events: "Events it publishes",
     subscriptions: "What it listens to",
     none2: "None",
+    buy: "Buy",
+    paid: "Paid plugin: buy it for one of your homes linked to a store account.",
   },
   ar: {
     title: "إضافات مكتبة",
@@ -65,6 +67,8 @@ const W = {
     events: "الأحداث التي تنشرها",
     subscriptions: "ما تستمع إليه",
     none2: "لا شيء",
+    buy: "اشترِ",
+    paid: "إضافة مدفوعة: اشترِها لأحد أجهزتك الرئيسية المرتبطة بحساب في المتجر.",
   },
 } as const;
 
@@ -95,6 +99,8 @@ interface CatPlugin {
   installs: number;
   machine_translated: string[];
   versions: CatVersion[];
+  /** the product a paid plugin sells ("one_time" or "yearly"), or "free" (54.19 §4) */
+  price?: string;
   extra?: { descriptions?: Record<string, string> };
 }
 
@@ -210,6 +216,7 @@ export async function pluginPage(env: Env, lang: Lang, id: string): Promise<Resp
 <p>${esc(word(p.summaries, lang))}${machine}</p>
 ${desc ? `<p style="white-space:pre-line">${esc(desc)}</p>` : ""}
 <p class="muted">${esc(fill(w.by, { dev: p.developer }))} · <span class="badge">${esc(level)}</span> · ${esc(ratingLine(p, lang))}</p>
+${p.price && p.price !== "free" ? `<p class="muted">${esc(w.paid)}</p><p><a href="/buy/${esc(p.id)}/home${lang === "ar" ? "?lang=ar" : ""}"><strong>${esc(w.buy)}</strong></a></p>` : ""}
 <p><a href="maktaba://plugins/${esc(p.id)}">${esc(w.open)}</a>${v ? ` · <a href="${esc(v.url)}" download>${esc(w.download)}</a> (${esc(v.version)})` : ""}</p>
 <details><summary>${esc(w.openAt)}</summary><form id="home-open" data-plugin="${esc(p.id)}"><label>${esc(w.home)} <input id="home-addr" type="url" required dir="ltr" placeholder="http://192.168.1.10:8096"></label> <button type="submit">${esc(w.go)}</button> <span id="home-bad" class="muted" hidden>${esc(w.bad)}</span></form></details>
 <h2>${esc(w.capabilities)}</h2><ul>${caps}</ul>

@@ -44,7 +44,8 @@ export function testDB(): DB & { raw: DatabaseSync } {
     async batch(stmts) {
       raw.exec("BEGIN");
       try {
-        const out = stmts.map((s) => (s as SqliteStmt).runSync());
+        // D1's batch answers one result per statement, its changes under meta
+        const out = stmts.map((s) => ({ meta: { changes: Number((s as SqliteStmt).runSync().changes) } }));
         raw.exec("COMMIT");
         return out;
       } catch (e) {

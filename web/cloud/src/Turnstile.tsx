@@ -3,7 +3,7 @@
 // token goes with the form as turnstile_token, and the API verifies it. Native apps have no
 // widget and send no token. The widget follows the page's language ("ar" in Arabic).
 import { useEffect, useRef } from "react";
-import { useI18n } from "./i18n";
+import { useI18n } from "./shared/i18n";
 
 const SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# dns-update <tag>: put a release's binary under the dns role on this node (Epic 50 story
+# 50.15), keeping the one before. deploy.sh runs it on the standby, then on the leader, so one
+# of the two name servers always answers. With the dns role not enabled here, it only installs
+# the binary. If the role isn't running 10 s after the restart, the old binary goes back and
+# it exits 1, so deploy.sh stops before the other node.
+#
+# Env (tests): RELEASES (/opt/maktaba-cloud/releases), BIN (/usr/local/bin/maktaba-cloud-dns),
+# SETTLE (seconds to wait, 10).
+set -euo pipefail
+tag="${1:?usage: dns-update <tag>}"
+releases="${RELEASES:-/opt/maktaba-cloud/releases}"
+bin="${BIN:-/usr/local/bin/maktaba-cloud-dns}"
+settle="${SETTLE:-10}"
+unit=maktaba-cloud-dns.service
+log() { echo "dns-update: $*" >&2; }
+
+new="${releases}/${tag}/maktaba-cloud"
+[ -x "${new}" ] || { log "${new} is missing"; exit 2; }
+[ ! -e "${bin}" ] || cp -p "${bin}" "${bin}.prev"
+install -m 0755 "${new}" "${bin}"
+if ! systemctl is-enabled --quiet "${unit}"; then
+    log "the dns role isn't enabled on this node: binary installed, nothing restarted"
+    exit 0
+fi
+systemctl restart "${unit}"
+sleep "${settle}"
+if systemctl is-active --quiet "${unit}"; then
+    log "${tag} answers on this node"
+    exit 0
+fi
+log "${tag} did not stay up: the previous binary goes back"
+if [ -e "${bin}.prev" ]; then
+    install -m 0755 "${bin}.prev" "${bin}"
+    systemctl restart "${unit}" || true
+fi
+exit 1

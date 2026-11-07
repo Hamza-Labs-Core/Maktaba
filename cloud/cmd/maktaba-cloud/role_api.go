@@ -36,6 +36,7 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	pushpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/push"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
@@ -288,6 +289,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			adminh.Mount(g, &adminh.Deps{
 				DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 				Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
+				// the cloud's log index on W (53.17), as the forwarder reaches it
+				Logs: &adminh.LogsSource{URL: os.Getenv(EnvLogsURL), Token: logsToken()},
 			})
 
 			// the problem reports homes sent, for the service admin only (53.16)
@@ -311,7 +314,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 	// Prometheus scrape of this role's push counters (aggregate only, like
 	// the relay's /metrics).
-	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics))
+	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
 
 	return r, stopMetrics, nil
 }

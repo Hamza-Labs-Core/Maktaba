@@ -9,7 +9,15 @@
 > `subtitle_gen` in `tv.maktaba.subtitles`, the first stages that read media, run ffmpeg and
 > write files. **Wave 3 has moved**: `transcribe` and `second_listen` run in
 > `tv.maktaba.transcription`, and the search index, chapters and topics in
-> `tv.maktaba.semantic-search`. The other stages move wave by wave.
+> `tv.maktaba.semantic-search`. **Wave 5 has moved**: the conversion to MP4 runs in
+> `tv.maktaba.convert`, and finding and merging duplicates, the file trash and restoring
+> from it in `tv.maktaba.dedup`. **Wave 6 has moved**: the YouTube listings, downloads and
+> exact dates run in `tv.maktaba.youtube`, and the repair of broken downloads in
+> `tv.maktaba.repair`, the first stages that reach the network. **Wave 7 has moved**: the
+> channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
+> and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: the Plex
+> stages run in `tv.maktaba.plex`, through the home's service door; the dizqueTV stages stay
+> in the worker for now. The other stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -19,7 +27,11 @@ how they are kept in check, and how a stage moves.
 ## Native, trusted, behind the same interface
 
 A first-party plugin runs as Python in `maktaba-plugin-runner`, one process per **runner group**
-(`light`, `ml`, `index`, `net`, `service`, and `fp` for fingerprints). A runner has no
+(`light`, `files` for the plugins that rewrite or move library files, `ml`, `index`, `net`,
+`service`, and `fp` for fingerprints). A shared group's runner starts when the worker has a
+job for it and stops after ten idle minutes, so an idle home runs none; until it is up, the
+worker runs the job itself. A group whose components are all off is held: nothing starts it.
+A runner has no
 database password and no secrets: the supervisor strips them from its environment and the
 runner refuses to start if any is there. Before it imports a plugin it
 
@@ -181,6 +193,106 @@ shared ones:
 - **Upkeep stays in the worker.** A stage's `refresh` (rules read and jobs queued before
   each selection) runs in the worker; `statements.toml` names such functions under `worker`
   so their statements are not registered.
+
+## Changing the owner's media: what the worker does for a plugin
+
+A stage that rewrites, merges or moves media writes some things no plugin role may hold.
+The plugin asks the worker for them over the run's connection, and the worker checks each
+against the job before it writes it with its own database connection:
+
+| Ask | What the worker checks |
+|---|---|
+| `enqueue` (from `enqueue_job`) | the stage is the job's own, one it may request, or joined to it by an edge, or where the graph starts a new subject (`probe` for a video); the subject is of the job's library |
+| `dedup_commit` (a duplicate group's merge) | the group is the job's subject, and the keeper and the others are its members |
+| `unsupersede` (a restored duplicate) | the video is a superseded video of the job's library |
+| `tv_commit`, `tv_rollback` (a TV change on the air, or the previous release back) | only `tv_swap` / `tv_rollback` may ask; the worker runs it for the change in the job's own payload, and the plugin sends nothing else |
+| `service_request` (a Plex call on a joined machine) | the service is one the stage's plugin lists; the worker forwards it through its channel to the home's service door |
+
+The same code runs in-process, where these calls write directly. Writes go only to the
+library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
+in the file-action journal first.
+
+## The network: `tv.maktaba.youtube` and `tv.maktaba.repair`
+
+Wave 6 moves the stages that reach YouTube: `youtube_sync` lists a channel or playlist,
+`youtube_fetch` and `youtube_backfill` download what it found into the library,
+`exact_dates` fetches the exact upload day of series members, and `repair_broken` fetches a
+broken download again and swaps the good copy in, keeping the broken one beside it.
+
+```toml
+[trusted]
+runner      = "net"
+settings    = ["exactdates"]                # the rules sections the plugin reads
+files.read  = ["library"]
+files.write = ["library", "data.cache"]     # data.cache: the downloads' work folder
+exec        = ["yt-dlp", "ffmpeg", "ffprobe"]
+net         = ["www.youtube.com", "youtube.com", "*.googlevideo.com", "www.googleapis.com", "i.ytimg.com"]
+```
+
+- **The `net` group** is the only runner with sockets beyond its own and the plugin API's.
+  The sandbox opens outbound connections for it as a whole; it does not filter by host
+  (YouTube's media hosts change from one download to the next). The `net` list is what the
+  plugin is meant to reach: reviewed with the manifest and shown on the Plugins page.
+- **A download starts a new video's pipeline.** The video row is written in the plugin's own
+  transaction, which the worker cannot see yet, so the worker holds the `probe` the download
+  asks for and queues it once the job's writes are committed, after the same checks.
+- **Rules are scoped too.** A stage reads a rules section only when the manifest lists it in
+  `settings` (`exactdates` for `exact_dates`, `repair` for `repair_broken`); any other is
+  refused as `plugin_scope`.
+- **Parity** runs a channel listing, two downloads and a back-catalogue fill with a recorded
+  yt-dlp, the five ways a repair can go, and the exact dates of a series, the same on both
+  sides; files, rows, the queue and the job log are compared, then N16.
+
+## Live TV: `tv.maktaba.livetv` and `tv.maktaba.livetv-slots`
+
+Wave 7 moves the channel planner (`plan_channels`), the channel writer (`write_channels`) and
+Epic 33's TV change stages (`tv_stage`, `tv_swap`, `tv_rollback`, `tv_gc`). The loops that
+keep the channels playing (top-up, the change controller, streaming's TV loops) stay where
+they are.
+
+- **Files.** `plan_channels` writes the plan's page to the reports folder
+  (`files.write = ["data.review"]`). Both plugins read the channels' art (`data.channels`):
+  the art an admin uploaded and the logo and watermark folders the planner's rules name. The
+  worker writes these folders into the runners' areas; a changed rule restarts the runner
+  with the new folders.
+- **The stored TV settings stay the engine's.** A swap puts the release's TV settings on the
+  air in the same transaction as its lineup, and only the queue engine writes
+  `app_settings`. So the worker runs the swap commit and the rollback for the plugin's job
+  (`tv_commit`, `tv_rollback` above), for the change the job's payload names.
+- **Extensions add to the plan.** An extension such as the dizqueTV export adds data to each
+  channel of the plan. A runner loads no extension, so the worker sends the names it has
+  registered with every job, and the runner takes the same functions from the extensions it
+  finds. A name it cannot load runs the job in the worker.
+- **Parity** plans a library into channels with staging off (written to the air) and on (a
+  staged TV change), and takes a TV change through stage, swap, rollback and clean-up, with
+  the TV clock frozen on both sides.
+
+## Services through the home's door: `tv.maktaba.plex`
+
+Wave 8 moves the Plex stages (`plex_index`, `plex_collections_import`, `plex_collection`,
+`plex_groups`, `plex_livetv`) into the `service` runner, which has no network at all.
+
+```toml
+[trusted]
+runner    = "service"
+component = "ext.plex"            # the extension keeps its settings and its health check
+service   = ["plex"]              # the services its calls may reach, through the door
+```
+
+- **Every Plex call goes through the home's service door.** The plugin's Plex client sends
+  each request to the plugin API (`trusted/service`); the API hands it to the door, which
+  checks it against the allow-list, adds the Plex token and scrubs the token out of the
+  answer. On a joined machine the runner asks its worker, which forwards the call through its
+  channel to the home's door. A call off the allow-list is refused `plugin_service_path`.
+- **The plugin never learns the token or Plex's address.** Its jobs get the extension's
+  settings without secret fields, and `service:plex` in place of the address.
+- **Live TV is the home's.** The door allows the Live TV calls `plex_livetv` makes (DVRs,
+  tuners, the channel map, guide reloads) only for a caller on the home.
+- **dizqueTV stays in the worker for now.** Its programmes carry the Plex token in the body,
+  and dizqueTV stores them, so a plugin could read the token back. The dizqueTV stages move
+  once the door builds programmes on the home from Plex item ids.
+- **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
+  receives (method, path, query and the token) are identical, then N16.
 
 ## The repo layout
 

@@ -1,7 +1,7 @@
 # Installing and managing plugins
 
 > **Status: on `main`.** Everything on this page is built. Plugins run on a home with
-> Postgres, on macOS and Linux; Windows is not supported yet. A home checks a file's signatures
+> Postgres, on macOS, Linux and Windows. A home checks a file's signatures
 > ([Signing and the chain of trust](trust.md)); until the store opens, every file is
 > **unreviewed**.
 
@@ -57,6 +57,15 @@ is kept for a rollback. An update that adds a required capability needs the admi
 in the same step. Rolling back to a version with a lower `data_version` than the data's is
 refused (`plugin_data_newer`) unless the admin chooses to clear the plugin's data; tags,
 chapters and subtitles it wrote are kept.
+
+### When Maktaba itself updates
+
+A Maktaba release outside your manifest's `maktaba` range pauses your plugin: after the
+update it waits as *incompatible*, its queue kept, and resumes when a version of it whose
+range takes that release is installed. The update is never blocked by a plugin. Before the
+update, the admin's Updates page lists the plugins it will pause, each with its version and
+range, so give your range an upper bound you have tested and publish a new version before
+a release you know you support.
 
 ## Removing it
 

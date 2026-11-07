@@ -1,7 +1,7 @@
 // What the cloud offers on its sign-in pages (GET /v1/auth/providers): Google, Apple, and the
 // Turnstile site key when the bot check is on (story 50.30 §4).
 import { useEffect, useState } from "react";
-import { api } from "./api";
+import { api } from "./shared/api";
 
 export interface Providers {
   google: boolean;
