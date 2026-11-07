@@ -1687,6 +1687,13 @@ build fails when the two differ.
   shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
   app's dialogs follow the session's language (English or Arabic).
 
+- **The Updates page names the plugins an update will pause (Epic 54, story 54.07 §3).**
+  Under the release it is about to install, the page lists each installed plugin whose
+  Maktaba range does not take that release, with its version, its range and whether it is
+  on. After the update those plugins wait as incompatible with their queues kept, and resume
+  when a version that supports the release is installed; the update itself goes ahead.
+  maktaba.dev: Installing a plugin, *When Maktaba itself updates*.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
