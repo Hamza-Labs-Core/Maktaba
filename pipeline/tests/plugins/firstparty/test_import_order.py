@@ -17,6 +17,10 @@ import sys
 
 import pytest
 
+# the module under test, imported here too so the affected-tests map links this test to it;
+# each case below still imports it first in a new interpreter of its own (subprocess)
+import maktaba_pipeline.plugins.firstparty  # noqa: F401
+
 FIRST = [
     # the runner's own order: its main's imports, then the stages its group serves
     """
