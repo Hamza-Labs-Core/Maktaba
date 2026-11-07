@@ -9,7 +9,7 @@
 # Env: see common.sh; SWITCHOVER (the command on the node, default switchover), WAIT (180).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=common.sh
+# shellcheck source=deploy/cloud-ha/runbook/common.sh
 . "${here}/common.sh"
 case "${1:-}" in --announced|--unannounced) ;; *) die "usage: switchover.sh --announced|--unannounced" ;; esac
 

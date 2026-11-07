@@ -11,7 +11,7 @@
 # that stops Patroni on the old node: systemctl stop patroni), WAIT (120).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-# shellcheck source=common.sh
+# shellcheck source=deploy/cloud-ha/runbook/common.sh
 . "${here}/common.sh"
 stop_old=""
 case "${1:-}" in "") ;; --stop-old) stop_old=yes ;; *) die "usage: failover.sh [--stop-old]" ;; esac

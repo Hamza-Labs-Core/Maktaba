@@ -16,7 +16,7 @@ cat >"${work}/node" <<'SH'
 #!/usr/bin/env bash
 host="$1"; cmd="$2"; st="$(dirname "$0")"
 echo "${host}: ${cmd}" >>"${st}/log"
-other() { [ "$1" = node-a ] && echo node-b || echo node-a; }
+other() { if [ "$1" = node-a ]; then echo node-b; else echo node-a; fi; }
 case "${cmd}" in
     *"/primary"*) [ "$(cat "${st}/leader")" = "${host}" ] ;;
     *"switchover --announced"*|*"switchover --unannounced"*)

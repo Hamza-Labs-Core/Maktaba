@@ -13,7 +13,10 @@
 # for --to leader, common.sh's.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-[ "${1:-}" = --to ] && [ -n "${2:-}" ] || { echo "usage: dns-swap.sh --to leader|floating|<IPv4>" >&2; exit 2; }
+if [ "${1:-}" != --to ] || [ -z "${2:-}" ]; then
+    echo "usage: dns-swap.sh --to leader|floating|<IPv4>" >&2
+    exit 2
+fi
 to="$2"
 api="${CF_API:-https://api.cloudflare.com/client/v4}"
 domain="${RELAY_DOMAIN:-relay.maktaba.tv}"
@@ -23,7 +26,7 @@ log() { echo "${0##*/}: $(date -u +%FT%TZ) $*" >&2; }
 case "${to}" in
     floating) ip="${FLOATING_IP:?the Floating IP}" ;;
     leader)
-        # shellcheck source=common.sh
+        # shellcheck source=deploy/cloud-ha/runbook/common.sh
         . "${here}/common.sh"
         find_pair || { log "no node leads: nothing to point at"; exit 1; }
         if [ "${leader}" = "${RELAY_HOST_A}" ]; then ip="${PUBLIC_IP_A:-${RELAY_HOST_A}}"; else ip="${PUBLIC_IP_B:-${RELAY_HOST_B}}"; fi
