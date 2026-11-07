@@ -137,11 +137,9 @@ func (c *Controller) Run(ctx context.Context) {
 			// because Run is stopping says nothing about the connection: the lead is kept,
 			// so the deferred releaseLead unlocks it before Run returns (discarded, its lock
 			// lasted until Postgres ended that backend, after Run had returned)
-			if lead != nil {
-				if err := lead.PingContext(ctx); err != nil && ctx.Err() == nil {
-					discardConn(lead)
-					lead = nil
-				}
+			if lead != nil && leadLost(ctx, lead.PingContext(ctx)) {
+				discardConn(lead)
+				lead = nil
 			}
 			if lead == nil && ctx.Err() == nil {
 				lead = c.takeLead(ctx)
@@ -158,6 +156,12 @@ func (c *Controller) Run(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// leadLost says whether the lead's connection is gone: its ping failed while Run still runs.
+// A ping cut short because Run is stopping (ctx done) says nothing about the connection.
+func leadLost(ctx context.Context, pingErr error) bool {
+	return pingErr != nil && ctx.Err() == nil
 }
 
 // takeLead takes the controller's session advisory lock on a connection of its own
