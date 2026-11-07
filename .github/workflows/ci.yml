@@ -95,6 +95,7 @@ jobs:
       unit_tokens: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
       plugins: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.plugins == 'true' }}
+      store: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.store == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
       log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
@@ -251,6 +252,13 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.plugins == 'true'
     uses: ./.github/workflows/_plugins.yml
+
+  store:
+    # Epic 54 Phase 2: the plugin store, its signer and the home's verifiers on the shared
+    # vectors, and the key rotation drill (see _store.yml)
+    needs: [changes]
+    if: needs.changes.outputs.store == 'true'
+    uses: ./.github/workflows/_store.yml
 
   e2e:
     needs: [changes, integration]
@@ -543,6 +551,7 @@ jobs:
       - replica
       - components
       - plugins
+      - store
       - e2e
       - media-e2e
       - perf-ci
