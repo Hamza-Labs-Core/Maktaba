@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
@@ -43,7 +45,11 @@ type Meter struct {
 	Logger    *slog.Logger
 	now       func() time.Time
 	// writer writes a flush batch (nil: the database; tests fail it)
-	writer func(context.Context, map[bucketKey]counter) error
+	writer func(ctx context.Context, id string, batch map[bucketKey]counter) error
+	// inflight is the batch a failed flush tried to write: retried as it is, under its
+	// id, so a commit that reached the database but whose answer was lost (a
+	// connection cut at COMMIT) is not counted twice; new bytes wait in pending
+	inflight *flushBatch
 
 	mu       sync.Mutex
 	counters map[string]*counter // since the last flush attempt, by server id
@@ -65,6 +71,11 @@ type Meter struct {
 type counter struct {
 	BytesIn  int64
 	BytesOut int64
+}
+
+type flushBatch struct {
+	id      string
+	entries map[bucketKey]counter
 }
 
 type bucketKey struct {
@@ -297,6 +308,13 @@ func (m *Meter) unflushedLocked(serverID string, month time.Time) int64 {
 			n += c.BytesIn + c.BytesOut
 		}
 	}
+	if m.inflight != nil {
+		for k, c := range m.inflight.entries {
+			if k.server == serverID && MonthStart(k.bucket).Equal(month) {
+				n += c.BytesIn + c.BytesOut
+			}
+		}
+	}
 	return n
 }
 
@@ -330,6 +348,11 @@ func (m *Meter) Buffered() (in, out int64) {
 	for _, c := range m.pending {
 		in, out = in+c.BytesIn, out+c.BytesOut
 	}
+	if m.inflight != nil {
+		for _, c := range m.inflight.entries {
+			in, out = in+c.BytesIn, out+c.BytesOut
+		}
+	}
 	return in, out
 }
 
@@ -337,7 +360,11 @@ func (m *Meter) Buffered() (in, out int64) {
 func (m *Meter) BufferedEntries() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return len(m.pending)
+	n := len(m.pending)
+	if m.inflight != nil {
+		n += len(m.inflight.entries)
+	}
+	return n
 }
 
 // LostBytes is what a final flush could not write (relay_meter_lost_bytes).
@@ -390,40 +417,52 @@ func (m *Meter) coarsenLocked() {
 	m.pending = merged
 }
 
-// flush writes the pending buffer in one transaction. On failure everything
-// stays buffered for the next try.
+// flush writes a batch in one transaction: the one a failed flush left (as
+// it was, under the same id), else the pending buffer as a new batch. A batch
+// whose id the database already has is not written again: its commit had
+// reached the database (found by the db-blip test: the database counted 800 KB
+// more than the relay after a connection cut at COMMIT).
 func (m *Meter) flush(ctx context.Context) error {
+	// the batch left by a failed flush first, then what is pending: until nothing is left
+	for {
+		more, err := m.flushOne(ctx)
+		if err != nil || !more {
+			return err
+		}
+	}
+}
+
+// flushOne writes one batch; more reports whether one was written.
+func (m *Meter) flushOne(ctx context.Context) (more bool, err error) {
 	m.mu.Lock()
 	m.stageLocked(m.now())
-	if len(m.pending) == 0 {
-		m.mu.Unlock()
-		return nil
+	if m.inflight == nil {
+		if len(m.pending) == 0 {
+			m.mu.Unlock()
+			return false, nil
+		}
+		b := &flushBatch{id: uuid.NewString(), entries: make(map[bucketKey]counter, len(m.pending))}
+		for k, c := range m.pending {
+			b.entries[k] = *c
+		}
+		m.pending = make(map[bucketKey]*counter)
+		m.inflight = b
 	}
-	batch := make(map[bucketKey]counter, len(m.pending))
-	for k, c := range m.pending {
-		batch[k] = *c
-	}
+	batch := m.inflight
 	m.mu.Unlock()
 
 	write := m.writer
 	if write == nil {
 		write = m.write
 	}
-	if err := write(ctx, batch); err != nil {
-		return err
+	if err := write(ctx, batch.id, batch.entries); err != nil {
+		return false, err
 	}
-	// written: take the batch out of the buffer (bytes added meanwhile stay)
-	// and count it into the month totals read, so Allow does not miss it
-	// until its next read
+	// written: the batch is done, and its bytes count in the month totals read,
+	// so Allow does not miss them until its next read
 	m.mu.Lock()
-	for k, c := range batch {
-		if p, ok := m.pending[k]; ok {
-			p.BytesIn -= c.BytesIn
-			p.BytesOut -= c.BytesOut
-			if p.BytesIn == 0 && p.BytesOut == 0 {
-				delete(m.pending, k)
-			}
-		}
+	m.inflight = nil
+	for k, c := range batch.entries {
 		if mt, ok := m.months[k.server]; ok && mt.month.Equal(MonthStart(k.bucket)) {
 			mt.bytes += c.BytesIn + c.BytesOut
 			m.months[k.server] = mt
@@ -431,15 +470,28 @@ func (m *Meter) flush(ctx context.Context) error {
 	}
 	m.mu.Unlock()
 	m.flushCount.Add(1)
-	return nil
+	return true, nil
 }
 
-func (m *Meter) write(ctx context.Context, batch map[bucketKey]counter) error {
+func (m *Meter) write(ctx context.Context, id string, batch map[bucketKey]counter) error {
 	tx, err := m.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// the batch's id first: a batch already applied (its earlier COMMIT reached the
+	// database, its answer did not reach us) is done
+	res, err := tx.ExecContext(ctx, `INSERT INTO relay_meter_flushes (id) VALUES ($1) ON CONFLICT DO NOTHING`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	// a day of ids is enough to recognise a retry
+	if _, err := tx.ExecContext(ctx, `DELETE FROM relay_meter_flushes WHERE at < now() - interval '1 day'`); err != nil {
+		return err
+	}
 	for k, c := range batch {
 		if _, err := tx.ExecContext(ctx, `
             INSERT INTO bandwidth_samples (server_id, bucket_start, bytes_in, bytes_out)

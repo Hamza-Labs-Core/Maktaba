@@ -1,0 +1,12 @@
+# The weekly restore drill on the witness (deploy/cloud-ha/bin/restore-drill): a guest, at a
+# lower priority than etcd, so it never starves the third vote.
+[Unit]
+Description=Maktaba Cloud: weekly restore drill
+
+[Service]
+Type=oneshot
+User=postgres
+ExecStart=/usr/local/bin/maktaba-restore-drill
+CPUWeight=20
+IOWeight=20
+Nice=10

@@ -4456,3 +4456,37 @@ button.mkt-video__hero {
   margin-inline-end: 0.25rem;
   vertical-align: middle;
 }
+
+/* Epic 53 stories 53.14 and 53.15: crash reports and problem reports */
+.mkt-report__field {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.75rem;
+}
+.mkt-report__text {
+  width: 100%;
+  font: inherit;
+}
+.mkt-report__lines {
+  max-height: 16rem;
+  overflow: auto;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.mkt-report__said {
+  margin: 1rem 0;
+  padding-inline-start: 0.75rem;
+  border-inline-start: 3px solid var(--color-border, #8884);
+}
+.mkt-report__app .mkt-logs__service {
+  color: var(--color-accent);
+}
+.mkt-crash-ask {
+  margin-block: 0.75rem;
+}
+.mkt-crash-ask__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

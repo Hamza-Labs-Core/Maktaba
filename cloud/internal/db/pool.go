@@ -107,6 +107,17 @@ func NewMigrator(p *Pool, dir embed.FS, root string) *Migrator {
 func (m *Migrator) Up(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// two processes migrating at once (blue and green starting together, 50.08)
+	// serialize here, as the README says; the second finds the schema at head
+	conn, err := m.pool.DB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("migrator: lock connection: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(8472612)`); err != nil {
+		return fmt.Errorf("migrator: lock: %w", err)
+	}
+	defer func() { _, _ = conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock(8472612)`) }()
 	goose.SetBaseFS(m.dir)
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrator: dialect: %w", err)

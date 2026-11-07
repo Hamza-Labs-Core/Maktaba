@@ -156,12 +156,18 @@ type Options struct {
 	PingEvery         time.Duration // keepalive (default 5 s)
 	// Legacy homes announce no features (an older agent, no DRAIN, no tickets).
 	Legacy bool
+	// ServerID replaces Creds' id: the servers row's id when the relay is the
+	// real one, on a seeded database (the rehearsal).
+	ServerID string
 }
 
 // Start runs home i against the relay's tunnel endpoint (ws://…/v1/relay/ws),
 // its loopback API at api.
 func Start(i int, endpoint, api string, o Options) *Home {
 	id, secret, slug := Creds(i)
+	if o.ServerID != "" {
+		id = o.ServerID
+	}
 	if o.BaseWait == 0 {
 		o.BaseWait = 50 * time.Millisecond
 	}
@@ -183,7 +189,7 @@ func Start(i int, endpoint, api string, o Options) *Home {
 		cloudlink.LegacyAgent(sup)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	h := &Home{ID: id, Slug: slug, Sup: sup, cancel: cancel, done: make(chan struct{})}
+	h := &Home{ID: id, Slug: slug, Sup: sup, cancel: cancel, done: make(chan struct{})} // ID: what it dials as
 	go func() {
 		defer close(h.done)
 		_ = sup.Run(ctx)

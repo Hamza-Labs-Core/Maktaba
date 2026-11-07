@@ -88,6 +88,8 @@ const AdminLogSettings = /* @__PURE__ */ page(
   "AdminLogSettings"
 );
 const AdminErrors = /* @__PURE__ */ page(() => import("./pages/Admin/Errors"), "AdminErrors");
+const AdminReports = /* @__PURE__ */ page(() => import("./pages/Admin/Reports"), "AdminReports");
+const AdminReport = /* @__PURE__ */ page(() => import("./pages/Admin/Reports"), "AdminReport");
 const AdminDashboards = /* @__PURE__ */ page(
   () => import("./pages/Admin/Dashboards"),
   "AdminDashboards"
@@ -137,6 +139,8 @@ export function serverRoutes() {
       <Route path="/admin/logs" element={<AdminLogs />} />
       <Route path="/admin/logs/settings" element={<AdminLogSettings />} />
       <Route path="/admin/errors" element={<AdminErrors />} />
+      <Route path="/admin/reports" element={<AdminReports />} />
+      <Route path="/admin/reports/:id" element={<AdminReport />} />
       <Route path="/admin/dashboards" element={<AdminDashboards />} />
       <Route path="/admin/errors/:fp" element={<AdminErrorGroup />} />
       <Route path="/admin/devices" element={<CloudDevices />} />

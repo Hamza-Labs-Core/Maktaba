@@ -1,6 +1,6 @@
-# The Claude trail
+# The agent trail
 
-What Claude sessions learned while working on Maktaba, kept so the next session starts from
+What coding-agent sessions learned while working on Maktaba, kept so the next session starts from
 it. It is not a changelog (CHANGELOG.md is) and not a list of pull requests (git is). It holds
 what only the session saw: the approach that failed, the root cause found after the wrong
 guesses, the rule that was corrected mid-task, the gotcha that cost an hour.
@@ -11,8 +11,14 @@ guesses, the rule that was corrected mid-task, the gotcha that cost an hour.
 - **`../claude-trail.md`**: the trail before 2026-11-05, frozen. Read-only history; its entries
   are also migrated into `events/` (`source: claude-trail.md`).
 
-How to write each part: the `trail` skill (`.claude/skills/trail/SKILL.md`). The checker:
-`python3 tools/trail/trail.py check` (the lint job runs it on every pull request).
+The tools live in their own repository,
+[agent-trail](https://github.com/Hamza-Labs-Core/agent-trail): the `trail` CLI, a Claude Code
+plugin (`trail`, enabled in `.claude/settings.json`) with the `trail` skill (how to write each
+part), the `/trail:event`, `/trail:snapshot` and `/trail:read` commands and the session hook,
+the trail block in [`/AGENTS.md`](../../AGENTS.md) for other coding agents (Codex, Cursor, …),
+and the GitHub Action the lint job runs on every pull request (`trail check`). This
+repository's settings are in [`/.trail.toml`](../../.trail.toml). Without the plugin:
+`uvx --from git+https://github.com/Hamza-Labs-Core/agent-trail@v0.2.0 trail check`.
 
 ## Events
 
@@ -83,7 +89,7 @@ built_from: v0.3.81         # the previous snapshot, or full for a rebuild from 
   (`- The cache key is still per path (issue #649). (#634)`). Any other `#N` is a pull request.
 - `snapshots/` holds only `vX.Y.Z.md` files; the checker refuses anything else there.
 - `Missing events` and `Index` are computed, never written by hand
-  (`trail.py skeleton --tag vX.Y.Z` prints them). Missing lists each pull request merged after
+  (`trail skeleton --tag vX.Y.Z` prints them). Missing lists each pull request merged after
   #653 that has no event, so a session that forgot to write one shows up.
 - Each snapshot carries the last one forward, so a lesson keeps its citation and is dropped
   only on purpose. A rebuild from every event (`built_from: full`) at each minor version keeps

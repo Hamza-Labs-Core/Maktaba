@@ -1,48 +1,14 @@
 {
-  "hooks": {
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "f=\"$CLAUDE_PROJECT_DIR/tools/trail/hook.py\"; [ -f \"$f\" ] && python3 \"$f\" || true",
-            "timeout": 30
-          }
-        ]
+  "extraKnownMarketplaces": {
+    "agent-trail": {
+      "source": {
+        "source": "github",
+        "repo": "Hamza-Labs-Core/agent-trail",
+        "ref": "v0"
       }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "f=\"$CLAUDE_PROJECT_DIR/tools/trail/hook.py\"; [ -f \"$f\" ] && python3 \"$f\" || true",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "f=\"$CLAUDE_PROJECT_DIR/tools/trail/hook.py\"; [ -f \"$f\" ] && python3 \"$f\" || true",
-            "timeout": 30
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "f=\"$CLAUDE_PROJECT_DIR/tools/trail/hook.py\"; [ -f \"$f\" ] && python3 \"$f\" || true",
-            "timeout": 30
-          }
-        ]
-      }
-    ]
+    }
+  },
+  "enabledPlugins": {
+    "trail@agent-trail": true
   }
 }

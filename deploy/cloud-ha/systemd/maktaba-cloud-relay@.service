@@ -1,0 +1,23 @@
+# One relay process, colour %i (blue or green, Epic 50 story 50.08): its own listen port,
+# peer port and directory id, so a deploy runs the new colour beside the old one and the old
+# one drains its tunnels to it (50.03, 50.04).
+[Unit]
+Description=Maktaba Cloud relay (%i)
+PartOf=maktaba-cloud-active.target
+After=patroni.service
+
+[Service]
+User=maktaba
+EnvironmentFile=/etc/maktaba/cloud.env
+EnvironmentFile=/etc/maktaba/relay-%i.env
+ExecStart=/usr/local/bin/maktaba-cloud-%i serve --role relay --config /etc/maktaba/cloud.toml
+Restart=on-failure
+RestartSec=2
+# SIGTERM drains the homes' tunnels for up to relay.shutdown_grace (150 s)
+KillSignal=SIGTERM
+TimeoutStopSec=160
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+LimitNOFILE=1048576

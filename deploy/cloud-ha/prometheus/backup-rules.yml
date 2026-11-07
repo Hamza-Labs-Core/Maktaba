@@ -1,0 +1,47 @@
+# The backup alerts (Epic 50 story 50.09), evaluated by the witness's Prometheus (50.10). Each
+# links to its runbook (50.12).
+groups:
+  - name: maktaba-backups
+    rules:
+      - alert: backup_stale
+        # the last good backup of either repository is more than 26 h old
+        expr: time() - max by (type) (backup_last_success_timestamp_seconds) > 26 * 3600
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "No database backup for {{ $value | humanizeDuration }}"
+          runbook: docs/runbooks/cloud-backup-stale.md
+      - alert: backup_never
+        # no backup was ever recorded (a new pair, or the timer is off)
+        expr: absent(backup_last_success_timestamp_seconds)
+        for: 30h
+        labels:
+          severity: page
+        annotations:
+          summary: "No database backup has been recorded"
+          runbook: docs/runbooks/cloud-backup-stale.md
+      - alert: wal_archive_failing
+        # postgres_exporter: the newest archived WAL segment is more than 5 minutes old on the
+        # primary (archive_timeout is 60 s: a WAL push has failed for 5 minutes)
+        expr: pg_stat_archiver_last_archive_age{role="primary"} > 300
+        for: 1m
+        labels:
+          severity: page
+        annotations:
+          summary: "WAL has not reached the backup repositories for {{ $value | humanizeDuration }}"
+          runbook: docs/runbooks/cloud-backup-stale.md
+      - alert: restore_drill_failed
+        expr: backup_restore_drill_ok == 0
+        labels:
+          severity: page
+        annotations:
+          summary: "The weekly restore drill failed (repo{{ $labels.repo }})"
+          runbook: docs/runbooks/cloud-disaster-restore.md
+      - alert: restore_drill_missing
+        expr: time() - backup_restore_drill_timestamp_seconds > 8 * 86400
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No restore drill for more than 8 days"
+          runbook: docs/runbooks/cloud-disaster-restore.md

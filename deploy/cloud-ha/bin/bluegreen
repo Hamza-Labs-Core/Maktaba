@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# The leader's blue/green relay deploy (Epic 50 story 50.08 §1, steps 3–7): a new release
+# starts beside the old one, the edge sends new work to it, the old one drains its homes to it
+# (DRAIN, 50.03) and exits; a watch rolls back on its own. Users see nothing.
+#
+#   bluegreen <new tag>
+#
+#   1. start the other colour with the new tag; wait for its /readyz, then keep it healthy for
+#      READY_STABLE seconds (a release that fails soon after it starts stops here: the old
+#      colour was never touched)
+#   2. SIGTERM the old colour: its /readyz answers 503 "draining" at once, so the edge (Caddy,
+#      both colours as upstreams, health-checked every second) sends new work to the new one,
+#      and it drains its tunnels to the new one (up to 150 s). The edge is never reloaded: a
+#      reload through Caddy's admin API cut streams in flight (the rehearsal's
+#      deploy-blue-green saw 8 of 1,317 segments end early).
+#   3. watch WATCH seconds: the new colour's /readyz failing twice in a row, or CHECK_CMD
+#      failing, rolls back (the old colour again with its tag, the edge back, the new drained)
+#   4. record the colour and the tag (a failover starts the same release on the other node)
+#
+# Env (production defaults; the rehearsal replaces the commands):
+#   STATE_DIR       /opt/maktaba-cloud (colour, deployed: the current colour and tag)
+#   START_CMD       command run with <colour> <tag> to start a colour
+#                   (default: install the tag's binary as maktaba-cloud-<colour>, systemctl start)
+#   STOP_CMD        command run with <colour> to stop (drain) a colour (default: systemctl stop)
+#   READY_URL_blue, READY_URL_green   http://127.0.0.1:8443/readyz, http://127.0.0.1:8453/readyz
+#   READY_TIMEOUT 120, READY_STABLE 30, WATCH 600, CHECK_EVERY 5
+#   CHECK_CMD       optional: a nonzero exit counts as a failed check (50.10: the 5xx rate, the canary)
+set -uo pipefail
+
+new_tag="${1:?usage: bluegreen <new tag>}"
+state="${STATE_DIR:-/opt/maktaba-cloud}"
+ready_timeout="${READY_TIMEOUT:-120}" ready_stable="${READY_STABLE:-30}"
+watch_s="${WATCH:-600}" every="${CHECK_EVERY:-5}"
+log() { echo "bluegreen: $(date -u +%FT%TZ) $*" >&2; }
+
+old="$(cat "${state}/colour" 2>/dev/null || echo blue)"
+old_tag="$(cat "${state}/deployed" 2>/dev/null || echo "")"
+case "${old}" in blue) new=green ;; green) new=blue ;; *) log "unknown colour ${old}"; exit 2 ;; esac
+url_of() { local v="READY_URL_$1" d; [ "$1" = blue ] && d=http://127.0.0.1:8443/readyz || d=http://127.0.0.1:8453/readyz; echo "${!v:-$d}"; }
+
+start_colour() { # start_colour <colour> <tag>
+    if [ -n "${START_CMD:-}" ]; then ${START_CMD} "$1" "$2"; else
+        install -m 0755 "/opt/maktaba-cloud/releases/$2/maktaba-cloud" "/usr/local/bin/maktaba-cloud-$1" \
+            && systemctl start "maktaba-cloud-relay@$1.service"
+    fi
+}
+stop_colour() { # stop_colour <colour>: SIGTERM, the relay drains (blocks until it exits)
+    if [ -n "${STOP_CMD:-}" ]; then ${STOP_CMD} "$1"; else systemctl stop "maktaba-cloud-relay@$1.service"; fi
+}
+ready() { curl -fsS --max-time 2 -o /dev/null "$(url_of "$1")"; }
+
+# 1. the new colour, healthy and staying healthy
+log "deploying ${new_tag} as ${new} (${old} runs ${old_tag:-unknown})"
+start_colour "${new}" "${new_tag}" || { log "${new} did not start"; exit 1; }
+waited=0
+until ready "${new}"; do
+    if [ "${waited}" -ge "${ready_timeout}" ]; then
+        log "${new} not ready after ${ready_timeout} s: stopping it; ${old} untouched"
+        stop_colour "${new}"; exit 1
+    fi
+    sleep 1; waited=$((waited + 1))
+done
+for _ in $(seq 1 "${ready_stable}"); do
+    if ! ready "${new}"; then
+        log "${new} failed its readiness within ${ready_stable} s of starting: stopping it; ${old} untouched"
+        stop_colour "${new}"; exit 1
+    fi
+    sleep 1
+done
+
+# 2. the old colour drains to the new one; the edge follows their readiness
+log "draining ${old}: the edge sends new work to ${new}"
+stop_colour "${old}" &
+drain_pid=$!
+
+# 3. watch
+rollback() {
+    log "rolling back to ${old} (${old_tag:-its release}): $*"
+    wait "${drain_pid}" 2>/dev/null
+    start_colour "${old}" "${old_tag:-${new_tag}}" || log "${old} did not start again"
+    for _ in $(seq 1 "${ready_timeout}"); do ready "${old}" && break; sleep 1; done
+    stop_colour "${new}"
+    log "rolled back: ${old} serves"
+    exit 1
+}
+fails=0
+for _ in $(seq 1 $((watch_s / every))); do
+    sleep "${every}"
+    if ! ready "${new}"; then
+        fails=$((fails + 1))
+        [ "${fails}" -ge 2 ] && rollback "${new}'s /readyz failed twice"
+    else
+        fails=0
+    fi
+    if [ -n "${CHECK_CMD:-}" ] && ! ${CHECK_CMD}; then
+        rollback "the check failed (${CHECK_CMD})"
+    fi
+done
+wait "${drain_pid}" 2>/dev/null
+
+# 4. record
+mkdir -p "${state}"
+echo "${new}" >"${state}/colour"
+echo "${new_tag}" >"${state}/deployed"
+log "deployed ${new_tag} on ${new}"
