@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
-from ..classify.books import BOOKS_VERSION
 from ..classify.display_title import DISPLAY_TITLE_VERSION
 from ..classify.production_style import STYLE_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
@@ -486,17 +485,8 @@ GRAPH: tuple[StageDef, ...] = (
         placement="home",
         model_rules="tagcheck",
     ),
-    StageDef(
-        name="books",
-        label="Books",
-        subject_kinds=("season",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=4,
-        version=BOOKS_VERSION,
-        edges=(Edge("plan_channels", "catalog"),),
-        entry_for=("season",),
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest (net group)
+    _fp("books"),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----
     # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
     _fp("topic_collections"),

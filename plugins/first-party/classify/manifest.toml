@@ -23,12 +23,16 @@ required = ["compute.llm"]
 runner    = "light"
 component = "classify"
 db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "transcript_segments", "transcripts", "video_signals", "videos", "youtube_channels", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
-db.write  = ["clip_checks", "clip_group_items", "clip_groups", "episode_tags", "promo_links", "season_style", "season_tags", "series", "series_episodes", "series_seasons", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
-settings  = ["groups", "detect", "tagcheck"]
+db.write  = ["books", "clip_checks", "clip_group_items", "clip_groups", "episode_tags", "promo_links", "season_style", "season_tags", "series", "series_books", "series_episodes", "series_seasons", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
+settings  = ["groups", "detect", "tagcheck", "books"]
 compute   = ["llm"]
 # review_pages: reads the small thumbnails, writes the library's page in the reports folder
 files.read  = ["data.thumbnails"]
 files.write = ["data.review"]
+# books: the encyclopedia (rules.books.wiki_api). Only the net group gets a socket (the
+# runner's sandbox), so this list is books' alone; the CI recording proxy fails a run that
+# reaches any other host (story 54.31 T03)
+net       = ["ar.wikipedia.org"]
 
 [[stage]]
 name         = "promo_links"
@@ -193,4 +197,21 @@ debounce_max_sec = 3600
 # (from their cached answers) before a clip group or a channel reads them
 edges        = [{ to = "plan_channels", map = "catalog" }, { to = "check_tags", map = "same" }, { to = "check_clips", map = "library_of" }]
 entry        = "maktaba_fp_classify.stages.tag:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "books"
+subject      = "season"
+export       = "books"
+version      = 1
+label        = "Books"
+subject_kinds = ["season"]
+pool         = "lookup"
+lane         = "seasons"
+lane_order   = 4
+entry_for    = ["season"]
+edges        = [{ to = "plan_channels", map = "catalog" }]
+# the one classify stage that reaches the internet (the encyclopedia)
+runner       = "net"
+entry        = "maktaba_fp_classify.stages.books:IMPL"
 fingerprint  = { input = true, output = false }

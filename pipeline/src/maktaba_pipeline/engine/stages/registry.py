@@ -51,7 +51,6 @@ CORE_MODULES: dict[str, str] = {
     "style_sample": "maktaba_pipeline.engine.stages.style_sample",
     "youtube_tartube": "maktaba_pipeline.engine.stages.youtube_tartube",
     "fp_gate": "maktaba_pipeline.engine.stages.fp_gate",
-    "books": "maktaba_pipeline.engine.stages.books",
     "display_title": "maktaba_pipeline.engine.stages.display_title",
     "access_check": "maktaba_pipeline.engine.stages.access_check",
     "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",
