@@ -9,7 +9,9 @@ from __future__ import annotations
 import io
 import json
 import sys
+import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -107,7 +109,7 @@ def test_the_key_is_read_from_the_supervisors_file(
 
 def test_a_clean_value_is_returned_as_is_and_a_secret_still_scrubbed() -> None:
     clean = "http_request"
-    assert redact.RULES.needs_re is not None, (
+    assert redact.RULES.needs_lower is not None, (
         "every value rule has literal needs: the fast path is on"
     )
     assert redact.scrub(clean) is clean
@@ -142,3 +144,59 @@ def test_the_loggers_own_fields_are_left_alone_and_the_callers_scrubbed() -> Non
     assert "s3cr3t" not in out["event"]
     assert "abc123" not in out["path"]
     assert out["password"] != "hunter2"
+
+
+def test_ts_is_written_as_structlogs_iso_stamper_wrote_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    # issue #744: the date and time are formatted once a second; the text is unchanged
+    import maktaba_pipeline.log as mlog
+
+    sec = 1_794_000_000
+    want = structlog.processors.TimeStamper(fmt="iso", utc=True, key="ts")
+    for ns in (
+        sec * 10**9 + 50_115_000,
+        sec * 10**9 + 999_999_999,
+        (sec + 1) * 10**9,
+        sec * 10**9 + 1_000,
+    ):
+        monkeypatch.setattr(time, "time_ns", lambda ns=ns: ns)
+        got = mlog.stamp_ts(None, "info", {})["ts"]
+        dt = datetime.fromtimestamp(ns // 1000 / 10**6, tz=UTC)
+        assert got == dt.isoformat().replace("+00:00", "Z"), (ns, got)
+    assert want(None, "info", {})["ts"].endswith("Z")
+
+
+def test_a_keys_kind_is_decided_once_and_a_string_only_key_masks_only_strings() -> None:
+    import maktaba_pipeline.log as mlog
+
+    rs = frozenset(f.lower() for f in mlog.DEFAULT_REDACTED_FIELDS)
+    seen: dict[str, int] = {}
+    out = mlog._redact_in_place(
+        {"mypassword": "x", "db_password": 5, "path": "/a", "ts": "t"}, rs, seen
+    )
+    assert out["mypassword"] == out["db_password"] == mlog.REDACTED_VALUE and out["path"] == "/a"
+    assert seen == {
+        "mypassword": mlog._MASK_STRING,
+        "db_password": mlog._MASK,
+        "path": mlog._SCRUB,
+        "ts": mlog._OWN,
+    }
+    # a number under a string-only key part is kept, as before
+    assert mlog._redact_in_place({"mypassword": 5}, rs, seen)["mypassword"] == 5
+
+
+def test_the_user_hash_is_added_after_the_scrub(monkeypatch: pytest.MonkeyPatch) -> None:
+    import maktaba_pipeline.log as mlog
+
+    redact.set_user_hash_key(b"k" * 32)
+    rs = frozenset(f.lower() for f in mlog.DEFAULT_REDACTED_FIELDS)
+    calls: list[str] = []
+    real = redact.scrub
+
+    def spy(text: str) -> str:
+        calls.append(text)
+        return real(text)
+
+    monkeypatch.setattr(redact, "scrub", spy)
+    out = mlog._redact_in_place({"event": "e", "user_id": "u-1"}, rs, {})
+    assert "user_id" not in out and out["user_h"] == redact.hash_user("u-1")
+    assert out["user_h"] not in calls, "its own hash is never scrubbed"

@@ -98,3 +98,19 @@ def test_recent_response_routing_and_filtering() -> None:
     # Unknown path → 404; nil ring → 503.
     assert build_recent_response("/nope", ring)[0] == 404
     assert build_recent_response("/logs/recent", None)[0] == 503
+
+
+@pytest.mark.unit
+def test_the_ring_keeps_the_console_line_rendered_once(capsys: pytest.CaptureFixture[str]) -> None:
+    # issue #744: one JSON encoding a line serves the console and the ring
+    import structlog
+
+    init(service="pipeline", env="prod", version="t", ring_capacity=100)
+    structlog.configure(logger_factory=structlog.PrintLoggerFactory())
+    get_logger().info("rendered_once", path="/api/x?token=abc", n=3)
+    printed = capsys.readouterr().out.strip().splitlines()[-1]
+    ring = get_ring()
+    assert ring is not None
+    assert ring.recent()[-1] == printed
+    rec = json.loads(printed)
+    assert rec["msg"] == "rendered_once" and "abc" not in rec["path"]

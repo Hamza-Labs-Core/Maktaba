@@ -47,25 +47,43 @@ two runs read the same lines.
 
 `pipeline/tools/log_bench.py` times the pipeline's logger (contextvars, the shared redaction,
 the ring, the JSON renderer) writing to `/dev/null`: 200,000 calls at the CI load
-(`LOGBENCH_SCALE` scales it), ≤ 20 µs at p99 on the reference, times the runner's factor
-(its own hashing and JSON loop, clamped to 1–4). The `log-bench` job runs it after the Go
-benches and keeps its numbers (`logbench-python.json`).
+(`LOGBENCH_SCALE` scales it), ≤ 20 µs at p99 on the reference, times the runner's factor:
+the slower of two loops (hashing and JSON, and the logger's own work: scrub a line's values,
+encode it) against their times on the reference, clamped to 1–4, as `logbench.Calibrate`
+does. The report shows both loops' times (`_runner.calibration`). The `log-bench` job runs
+it after the Go benches and keeps its numbers (`logbench-python.json`).
 
-**It is over budget today**: on CI's Linux runner a call costs about 50 µs at p50 and 80 µs
-at p99 (the Go logger, in the same job: 4.6 and 10 µs). So over budget it warns rather than
-fails, as the story's rollout starts a budget; `LOGBENCH_PY_STRICT=1` makes it fail, for when
-issue #744 has brought it under.
+Over budget it warns rather than fails, as the story's rollout starts a budget;
+`LOGBENCH_PY_STRICT=1` makes it fail.
 
-Writing it found two costs in the redaction, both fixed:
+Issue #744 took a call from 19.5 to 11.5 µs at p50 (27 to 17 µs at p99) on the reference
+class of Mac, an M3 Ultra; CI's runner was 55 µs at p50 and 82 µs at p99 before it:
 
-- `Rules.key_sensitive` was an `lru_cache` keyed on the rules themselves, so every field of
-  every line hashed the whole frozen rule set (about 90 hash calls a line). The answer is now
-  kept on the instance by key.
-- Every string field went through all eight value rules, even the logger's own fields (time,
-  level, service, version, env, node, component). Those are skipped (the event's name is
-  still scrubbed: a caller outside the pipeline's lint can put a secret there), and a value
-  that matches none of the rules' literal `needs` (one compiled pattern), with too few
-  digits, dots and colons for a card or an address, is returned at once.
+| What | Before | After |
+|---|---|---|
+| The redaction of a line | 8.7 µs | 4.7 µs |
+| The ring's copy (a second JSON encoding) | 2.5 µs | none: the console's line is kept |
+| The time stamp | 0.9 µs | 0.3 µs |
+
+- **The needs.** A value's check against the rules' literal needs was a case-insensitive
+  regex alternation: about 1 µs on a 12-character value. It is now `in` on the lowered text,
+  in a loop (an `any()` over a generator cost twice as much).
+- **The keys.** What each key gets (the logger's own, scrubbed, masked when a string, masked)
+  is decided once per key and kept.
+- **The user hash.** `user_h`, a keyed hash the logger makes itself, is added after the
+  scrub. As 64 hex characters it had enough digits to go through every rule.
+- **The ring.** The ring keeps the line the JSON renderer wrote for the console, byte for
+  byte, so a line is encoded once.
+- **The time stamp.** `ts` is written as structlog's ISO stamper wrote it, with the date and
+  time formatted once a second.
+
+The factor was wrong as well. The hashing loop's reference was 0.20 s, about 3.6 times the
+reference machine's 0.055 s, so every runner up to that slow came out at factor 1. That
+included CI's, which is about 2.8 times slower at logging.
+
+What is left of a call is structlog's own (≈ 2.8 µs with no processors), the contextvars
+merge (≈ 1.6 µs), the scrub of a value that holds a secret (≈ 2.6 µs), and the encoding and
+the write.
 
 ## Every night on a Mac
 
