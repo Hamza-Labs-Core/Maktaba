@@ -19,6 +19,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/signal"
@@ -32,25 +34,39 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/loadtest"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/seed"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/streamgen"
+	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
+
+// logger is the shared logger (shared/log/go): the run's progress and its errors. The report
+// itself (the sizing row, the comparison) goes to the writer each command is given.
+var logger *slog.Logger
+
+func newLogger() *slog.Logger {
+	env := os.Getenv("MAKTABA_ENV")
+	if env == "" {
+		env = "dev"
+	}
+	return mlog.Init(mlog.Options{Service: "cloud.loadtest", Env: env, RingCapacity: -1})
+}
 
 func main() {
 	if len(os.Args) < 2 {
 		usage()
 	}
+	logger = newLogger()
 	var err error
 	switch os.Args[1] {
 	case "run":
-		err = run(os.Args[2:])
+		err = run(os.Args[2:], os.Stdout)
 	case "compare":
-		err = compare(os.Args[2:])
+		err = compare(os.Args[2:], os.Stdout)
 	case "sizing":
 		err = sizing(os.Args[2:])
 	default:
 		usage()
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "maktaba-loadtest:", err)
+		logger.Error("maktaba-loadtest failed", "command", os.Args[1], "err", err)
 		os.Exit(1)
 	}
 }
@@ -76,7 +92,7 @@ func parseBits(s string) (int, error) {
 	return int(v * mult), nil
 }
 
-func run(args []string) error {
+func run(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	target := fs.String("target", "", "the relay's edge: https://staging.relay.maktaba.dev")
 	dsn := fs.String("db", os.Getenv("LOADTEST_DB"), "the target cloud's database, to seed the simulated homes (LOADTEST_DB)")
@@ -92,7 +108,7 @@ func run(args []string) error {
 	relayMetrics := fs.String("relay-metrics", "", "the relay's /metrics (tunnels open, to count drops)")
 	plan := fs.String("plan", "", "the machine's plan (CPX22), for the sizing table")
 	machine := fs.String("machine", "", "its vCPU / RAM, for the sizing table")
-	out := fs.String("out", "loadtest-report.json", "where the report goes")
+	reportPath := fs.String("out", "loadtest-report.json", "where the report goes")
 	_ = fs.Parse(args)
 
 	if err := loadtest.CheckTarget(*target); err != nil {
@@ -170,7 +186,7 @@ func run(args []string) error {
 		if _, err := grow(step.Homes); err != nil {
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "step %d: %d homes, %d players at %s\n", i+1, step.Homes, step.Players, *bitrate)
+		logger.Info("load test step", "step", i+1, "homes", step.Homes, "players", step.Players, "bitrate", *bitrate)
 		stopped, measured := runStep(ctx, look, *relayMetrics, *target, domain, slugs(step.Homes), step, *stepFor, direct)
 		measured.Seconds = int(stepFor.Seconds())
 		rep.Steps = append(rep.Steps, measured)
@@ -182,12 +198,14 @@ func run(args []string) error {
 		rep.LastGood = &good
 	}
 	b, _ := json.MarshalIndent(rep, "", "  ")
-	if err := os.WriteFile(*out, b, 0o644); err != nil {
+	if err := os.WriteFile(*reportPath, b, 0o644); err != nil {
 		return err
 	}
-	fmt.Println(loadtest.SizingRow(rep))
+	if _, err := fmt.Fprintln(out, loadtest.SizingRow(rep)); err != nil {
+		return err
+	}
 	if rep.Stopped != "" {
-		fmt.Fprintf(os.Stderr, "stopped by: %s\n", rep.Stopped)
+		logger.Info("load test stopped", "rule", rep.Stopped, "steps", len(rep.Steps))
 	}
 	return nil
 }
@@ -215,7 +233,7 @@ loop:
 		case now := <-tk.C:
 			m, err := look.Look(sctx)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, "look:", err)
+				logger.Warn("could not read the relay's machine", "err", err)
 				continue
 			}
 			last = m
@@ -268,7 +286,7 @@ func readJSON(path string, v any) error {
 	return json.Unmarshal(b, v)
 }
 
-func compare(args []string) error {
+func compare(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("compare", flag.ExitOnError)
 	basePath := fs.String("baseline", "", "main's last load-small (baseline JSON); missing: this run is the first")
 	curPath := fs.String("current", "", "this run's load-small (baseline JSON)")
@@ -278,11 +296,13 @@ func compare(args []string) error {
 		return err
 	}
 	if err := readJSON(*basePath, &base); err != nil {
-		fmt.Printf("no baseline from main yet (%v): this run becomes it\n", err)
-		return nil
+		_, werr := fmt.Fprintf(out, "no baseline from main yet (%v): this run becomes it\n", err)
+		return werr
 	}
 	ok, rep := loadtest.Compare(base, cur, loadtest.Regressed)
-	fmt.Print(rep)
+	if _, err := fmt.Fprint(out, rep); err != nil {
+		return err
+	}
 	if !ok {
 		return fmt.Errorf("the relay got more than %.0f%% worse", loadtest.Regressed*100)
 	}

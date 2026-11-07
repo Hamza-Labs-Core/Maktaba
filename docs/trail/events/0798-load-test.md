@@ -16,6 +16,7 @@ prs: [780]
 - Prometheus 3's range selectors are open at the start: in a promtool test with samples 5 minutes apart, `rate(x[5m])` sees one sample and returns nothing. Sample more finely in the test (2 minutes here) rather than widening the rule's range. A recorded series keeps its name, so `exp_samples` needs `labels: 'name'`.
 - `docker stats` gives CPU in units of one core (200 % is two full cores). Divide by the machine's CPUs for a share, and integrate the samples over time for CPU-seconds.
 - A baseline "from main's last run" is an artifact. The job needs `actions: read` and `gh run download <id> --name ...`, and the first run (none yet) must pass, saying so.
+- The cloud module's golangci-lint forbids `fmt.Print*` (forbidigo) in a `cmd/` too: write a report to an `io.Writer` the command is given (`os.Stdout`) and log through `shared/log/go`. Run `golangci-lint run` in `cloud/` before pushing, as the `lint (cloud)` job does.
 - Docker Desktop restarted with no images: rebuild `maktaba-cloud:rehearsal` and pull the compose images before a local scenario.
 
 ## Open
