@@ -63,6 +63,12 @@ import MaktabaKit
     static let channel = 24
     static let size = CGSize(width: 760, height: 1500)
 
+    /// The window for a page: the video page is taller, as its "From plugins" comes after the
+    /// chapters and the transcript.
+    static func size(of page: Page) -> CGSize {
+        page == .video ? CGSize(width: size.width, height: 2600) : size
+    }
+
     @Test(arguments: cases) func pageMatchesItsReference(_ c: Case) async throws {
         let home = try MockHome()
         try home.start()
@@ -108,6 +114,7 @@ import MaktabaKit
     /// The screen in a window of `size`, dark, in the case's language and text size, drawn
     /// once its requests have gone quiet (the panels asked, the fixtures and posters read).
     static func draw(_ screen: some View, c: Case, home: MockHome) async throws -> NSBitmapImageRep {
+        let size = size(of: c.page)
         let root = NavigationStack { screen }
             .environment(\.locale, Locale(identifier: c.lang))
             .environment(\.layoutDirection, c.lang == "ar" ? .rightToLeft : .leftToRight)
