@@ -141,6 +141,28 @@ reaches a home on the Mac's network by its address (`192.0.2.20:8088`).
   stage or everything), Libraries (scan) and Machines (drain). A user who is not the home's
   admin is told the app is for admins. The home enforces every rule; the app's checks are not
   the rule.
+- **Remote diagnostics (Epic 53):** **Diagnostics** in the account menu opens the home's
+  Errors (new and seen by default, a group's chart and lines, Mark seen, Resolve, Mute for 24
+  hours, 7 days or until resolved), Logs (words, level and time; a reference from an error
+  screen or a request id opens Follow a request, its lines in time order with gaps marked),
+  Dashboards (Overview and Storage, read only, 1 hour to 90 days, time left to right in
+  Arabic too) and Problem reports (the inbox: a report's device, text and one timeline of the
+  app's and the home's lines; status and reply), through the web's routes
+  (`remote/DiagnosticsScreens.kt`, `client/api/Diagnostics.kt`).
+- **Crash reports and Report a problem (Epic 53, every Android app):** after signing in to a
+  home the app asks once, with two equal buttons, whether to send crash reports there
+  (`core/ui/Diagnostics.kt`); the answer is kept per home (`CrashConsent`) and changed from the
+  account menu (Account on the TV). At start, `CrashLog`'s `last-crash.txt` and, on Android 11
+  and later, the ANRs (with their trace, ≤ 256 KB), native crashes and low-memory kills since
+  the last start become kept crashes (`files/crashes/`, the newest five,
+  `core/diagnostics/CrashReports.kt`). When the switch is on they go to
+  `POST /api/diagnostics/envelope` as Sentry envelopes with the consent in the header and the
+  app's log (≤ 512 KB, ≤ 1 MB in all), scrubbed with the shared rules; a 429 keeps one for at
+  most three retries over seven days (`client/crash/CrashOutbox.kt`). Off, nothing leaves the
+  device. **Report a problem** (the account menu, Account on the TV, and **Report this** on
+  error screens) shows what it will send first: the log of the last 30 minutes, already
+  scrubbed, the last requests, the kept crashes (a tick box) and a screenshot only when ticked
+  and seen; **My reports** shows the admin's reply.
 
 ## Icons
 
