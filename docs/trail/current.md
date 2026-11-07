@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.85
-up_to_commit: ad47c900f
-built_from: v0.3.84
+tag: v0.3.86
+up_to_commit: 3b441e98a
+built_from: v0.3.85
 ---
 
-# Trail snapshot: v0.3.85
+# Trail snapshot: v0.3.86
 
 ## Keep doing
 
@@ -20,7 +20,7 @@ built_from: v0.3.84
 - Branch stacks point HOME, `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR` at scratch folders. (#621, #623)
 - Use only real PR numbers and shas; attribute history with git (blame, `log -L`, PR file lists). (d20261031-standing-rules, #655)
 - Never quote or attribute the owner's words in repo text; state the requirement neutrally. (#603, #604)
-- Write each PR's event in the PR before it merges; post-merge learnings go in a trail-only PR. (#655, #532)
+- Write each PR's event in the PR before it merges; post-merge learnings go in a trail-only PR. Build snapshots in a scratchpad worktree off origin/main and run `trail check` before pushing; check each carried Open item against newer events. (#655, #532, #706)
 
 **Releases and live**
 - Prove update, rollback, restore and migration paths in CI first: nothing touching update, restore, migration, supervisor, launcher, front door or TV-staging code ships unless `update-rehearsal` passed on that exact commit. One release at a time on the live install. (d20261031-standing-rules, #435, #433, #460, #461)
@@ -33,7 +33,7 @@ built_from: v0.3.84
 
 **Tests and CI**
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
-- Fix flaky tests at the root; read the log first, a flaky-looking test is often a real bug. Meet test budgets at the cause, never by raising caps or splitting tests. (d20261031-standing-rules, #364, #635, #271)
+- Fix flaky tests at the root; read the log first, a flaky-looking test is often a real bug. Before calling a UI test a flake, read what it waits for: a self-dismissing element checked after slower queries races a loaded simulator; fix the order, not the timeout. Meet test budgets at the cause, never by raising caps or splitting tests. (d20261031-standing-rules, #364, #635, #271, #716)
 - Turn a "should never happen" rule into a test-time error and run the whole suite under it. (#662)
 - Verify each new test fails without its fix (origin/main's sources on a WIP commit). Latch tests that hold a read's answer reproduce read/write races every time. (#679, #613, #667)
 - Jobs run only when their code changes; run the same check on every PR that the release tag runs. (#528, #519)
@@ -47,8 +47,10 @@ built_from: v0.3.84
 - Apple: throwaway simulators per run, deleted after; `@State` initializers have no side effects; closures for system-framework callbacks are made in a `nonisolated static func`; UI tests scroll with press-drag-hold. (d20261031-standing-rules, #454, #539, #512, #576)
 - Ship Arabic with English on every platform in the same PR; «الجهاز الرئيسي» for the home. (d20261031-standing-rules, #454)
 - Put fault scenarios in the rehearsal matrix that already builds the stack. (#685)
-- Run `ci_paths.py guard` after `git add` (it sees only tracked files); a new top-level tools folder needs a filter or a `NOT_IN_CI` entry. (#700, #704)
+- Run the whole-stack test before pushing: the containerised cloud rehearsal found three relay bugs and the whole-server plugin e2e three wiring bugs that every unit test missed. (#705, #707)
+- Run `ci_paths.py guard` after `git add` (it sees only tracked files); a new top-level tools folder needs a filter or a `NOT_IN_CI` entry. A new path filter touches `ci-paths.yml`, `ci.yml`'s outputs and unit call, `_unit.yml`'s input and `test_ci_paths.py`'s expectations. (#700, #704, #690)
 - Check a guide written before its code against the code (the WIT, `capabilityOf`), not the spec. (#704)
+- A PR that ships user-facing work updates maktaba.dev in the same PR, in English and Arabic (`devportal_follows.py` warns; `No-Portal-Change:` says it needs nothing). (#703)
 
 ## Stop doing
 
@@ -65,6 +67,8 @@ built_from: v0.3.84
 - Writing a measured figure into a commit message before reading it from a run. (#666)
 - Adding CHANGELOG entries at the top of a section; the end conflicts less. (#673, #659)
 - Picking a port without reading the port registry. (#686, #440)
+- Chaining `go test … | tail && git commit`: the pipeline's status is tail's, so a failing test still committed. (#705)
+- `git add -A` while `make compat-prev` runs: it writes `api/internal/compatprobe/main.go` for the run; commit only named paths. (#707)
 - `git reset --soft origin/main` to squash after a fetch: a moved origin/main silently reverted three merged PRs. Reset to the branch's own base sha. (#701)
 - Naming a stale host in backticks in prose (CHANGELOG, docs): the foreign-domain lint flags it; write the name out of the text. (#700)
 
@@ -115,6 +119,9 @@ built_from: v0.3.84
 - Local Network grants need LC_UUID and, like Full Disk Access, apply only to later processes. (#295, d20261031-tooling-local-gotchas)
 - SQLite fsync per commit is nearly free on macOS and costly on Linux and Windows runners; on SQLite every engine loop shares one connection behind a lock. (#521, #540, #561)
 - Relay drain: Docker's 10 s default stop grace kills a 150 s drain (set `stop_grace_period`); `http.Server.Shutdown` returns while hijacked websockets stay open, so the registry tracks every tunnel. Tunnel auth is the in-band AUTH frame, not HTTP headers. (#701)
+- Relay tunnel directory: a tunnel's seq must be its creation time (a per-process counter ordered tunnels wrongly across blue and green); a home closing its drained tunnel the instant streams end races the relay (the home waits a quiet second, the relay retries idempotent requests); a fixed reconnect window makes a 1,000-home drain take the whole 15 s budget. (#705)
+- The shared log redactor rewrites IP addresses (`10.50.0.11` shows as `10.50.0.0`) and the home folder as `~`: read container and test logs with that in mind. (#705, #707)
+- CodeQL's go/reflected-xss flags a header value reaching a page even when only fixed values can match: return constants. (#705)
 - Random bytes are not reliably corrupt media; build fixtures from a real header plus seeded junk. (#526, #537)
 
 **Apps and UI tests**
@@ -125,6 +132,7 @@ built_from: v0.3.84
 - XCUITest does not close the app after a test; settings leak between tests; the `.textClipped` audit relays at 12 text sizes; the simulator can drop taps. (#539, #582, #580, #626, #661)
 - AVPlayer can stall forever on a late segment; reopen after 15 s. HLS subtitles need `X-TIMESTAMP-MAP`. (#614, #468)
 - A rate limit's or "did not happen" test must bound by elapsed time or by the thing's own size. (#694, #696)
+- A per-line performance budget needs enough load to amortise setup: at a tenth of the load the capture bench read 28 µs a line against 15.6 µs. (#690)
 - A setting a separate process consumes needs a test from the file to that process: the `logs` role silently ignored every configured retention. (#688)
 - A per-role level file polled by each logger can say "debug until a time" and works on Windows; SIGUSR1 cannot. (#688)
 - React: a window `keydown` listener re-attached by `useEffect` can be the previous one when a test dispatches at once; `await act(async () => {})` first. A flake fix that will not reproduce locally is a reading of the code until CI stops failing. (#698)
@@ -132,6 +140,10 @@ built_from: v0.3.84
 - A test that reaches a real `os._exit(0)` ends pytest green with no summary. (#565)
 - The installed Maktaba's bundled Postgres binaries can start a scratch cluster in the scratchpad (`-k ''`, a free port), never the app's data. (#693, #677)
 - maktaba.dev: `rewriteHref` joins an absolute `/path` onto the source folder, so generated pages link in-site pages by full URL. `media.info` is gated in `server.go`'s `capabilityOf`, not in `capabilities.toml`. (#704)
+- Screenshots without a stack: the desktop Player through `runDesktopComposeUiTest` plus `captureToImage` (wrap `Shell` in the window's `Surface`); the web through vite and playwright-core with `/api/*` from a route table and `mkt:usage:consent` set first; Apple TV shots are in CI's `tv-ui-tests` artifact. The devportal lazy-loads images, so scroll each into view to check it. (#703)
+- Plugins: stages load at the pipeline worker's start, so a changed installed set needs the supervisor's `Restart`; the pipeline needs `MAKTABA_SUPERVISOR_TOKEN_FILE`; a deep data folder pushes `<data>/run/*.sock` past macOS's 104-byte `sun_path`; Wasmtime under the hardened runtime needs `allow-jit` and `allow-unsigned-executable-memory`; a new catalog group needs its place in the web's `GROUP_ORDER`. (#707)
+- The affected-tests gate maps from main's coverage: tests in a new file do not count for an old source. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. (#707)
+- A snapshot's `#N` must be a PR with an event; other numbers are written without `#`, an issue as `issue #N`. (#706)
 - Homebrew's cargo shadows rustup's and has no wasm target; the root `.gitignore` `MANIFEST` hides a `manifest/` folder on the Mac. (#683, #694)
 
 ## Open
@@ -144,9 +156,11 @@ built_from: v0.3.84
 - Docker Postgres on the home Mac was stopped, never removed. (#148)
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
-- Epic 54 Phase 1 lifecycle: the supervisor `plugins` role, 54.07-54.13, 54.37, 54.38; the SDK and harness guide comes with 54.10-54.13. (#683, #693, #704)
+- Epic 54 Phase 1 PR 4: 54.10-54.13 (re-auth, typed name, CLI), with the SDK and harness guide; the migrate job (issue #712), rehearsal scenario 15 (issue #708), the updater's pre-update list (issue #709), Windows (issue #710), job metrics and problem-report opt-in (issue #711). (#683, #693, #704, #707)
 - Unconfirmed: that `packages.yml`'s `workflow_run` fires after a dispatched release. (#699)
 - Epic 53: native Remote Errors, Logs, Overview and Storage screens; pipeline queue series, API latency histograms and per-machine host metrics on `/metrics`. (#688, #689)
+- Epic 53 log bench: the nightly macOS run with a regression issue, the Python logger bench, the log pipeline's numbers on the live Overview. (#690)
+- maktaba.dev shots of the Remote's word review and the phone Players' queue. (#703)
 - DASH top-level segments are not on the stream gate's allow-list. (#474)
 - Dependabot dismissals to revisit when tauri moves to GTK4 and eslint adopts minimatch 11. (d20261102-dependabot-dismissals)
 
@@ -444,6 +458,7 @@ None.
 | 0687-epic53-error-groups | 2026-11-06 | pr | Epic 53 story 53.10 — error groups on the home |
 | 0688-epic53-admin-pages | 2026-11-06 | pr | Epic 53 story 53.11 — the Logs, Errors and diagnostics settings pages |
 | 0689-epic53-dashboards | 2026-11-06 | pr | Epic 53 story 53.12 — dashboards from this machine's metrics |
+| 0690-epic53-perf | 2026-11-06 | pr | Epic 53 story 53.13 — a performance budget for the log path |
 | 0692-restart-requests-guarded | 2026-11-06 | pr | Restart requests are the home's, retried when a read fails, and counted apart |
 | 0693-plugins-api-queue | 2026-11-06 | pr | Plugins part 2, the plugin API, media handles and plugin stages in the queue (Epic 54, 54.04-54.06) |
 | 0694-plugind-log-flood-bound | 2026-11-06 | pr | The plugin host's log-flood test bounds by elapsed time |
@@ -452,5 +467,10 @@ None.
 | 0699-auto-tag | 2026-11-06 | pr | Releases are automatic: auto-tag.yml tags each green commit of main |
 | 0700-cloud-names | 2026-11-06 | pr | Epic 50 starts: the cloud's names, reserved infrastructure slugs, a foreign-domain lint |
 | 0701-tunnel-handover | 2026-11-06 | pr | Homes move their relay tunnel without a gap (DRAIN, resume tickets, jitter) |
+| 0703-devportal-catch-up | 2026-11-06 | pr | maktaba.dev Apps pages catch up with Epics 52, 53, 55 and 56, and the portal-follows rule |
 | 0704-devportal-plugin-reference | 2026-11-06 | pr | maktaba.dev's plugin reference, generated from the plugin system's own files |
+| 0705-tunnel-directory | 2026-11-06 | pr | Any relay process answers for any home: the tunnel directory, peer forwarding, holding |
+| 0706-first-snapshots | 2026-11-06 | pr | The first trail snapshots, v0.3.83 (full) and v0.3.84 |
+| 0707-plugins-lifecycle-runtime | 2026-11-06 | pr | Plugins part 3, install, run and manage a plugin (Epic 54, 54.03, 54.07-54.09, 54.37, 54.38) |
+| 0716-live-off-notice-test | 2026-11-06 | pr | The Live TV off notice is looked for before it hides itself |
 

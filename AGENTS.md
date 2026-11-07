@@ -65,7 +65,8 @@ sha numbers only; never write secrets; state decisions neutrally, without quotin
 **Check before you push:** `trail check`. **Before you finish:** `trail remind` lists merged
 pull requests with no event and tags with no snapshot.
 
-**After a `vX.Y.Z` tag**, a session builds its snapshot:
+**After a `vX.Y.Z` tag** (a scheduled release session pushes each tag, no workflow does:
+`docs/updates.md`, "How a release is made"), a session builds its snapshot:
 `trail skeleton --tag vX.Y.Z > docs/trail/snapshots/vX.Y.Z.md`. Fold each new
 event the skeleton lists into Keep doing, Stop doing, What we learned and Open, citing it
 (`#634`, `i649`, `d20261104-slug`; `issue #649` names an issue without

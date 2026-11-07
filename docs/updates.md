@@ -495,11 +495,13 @@ release's tag guard refuses a commit the rehearsal did not pass on.
 
 ## How a release is made
 
-Tags are automatic. Each time CI (`ci.yml`) or the update rehearsal finishes green on main,
-[`auto-tag.yml`](../.github/workflows/auto-tag.yml) takes the newest commit of main that both
-passed on and tags it as the next patch version: the highest `vX.Y.Z` plus one, an annotated
-tag whose message is its name. The choice is
-[`tools/release/next_tag.py`](../tools/release/next_tag.py). A commit is not tagged when:
+A session pushes each tag. A scheduled release session on the owner's machine runs every 30
+minutes. It collects the commits of main whose `ci.yml` and `update-rehearsal.yml` push runs
+both succeeded, and hands them to
+[`tools/release/next_tag.py`](../tools/release/next_tag.py) (`--green FILE`, one SHA a line),
+which chooses the commit and the tag: the newest commit of main that both passed on, tagged as
+the next patch version (the highest `vX.Y.Z` plus one). The session pushes it as an annotated
+tag whose message is its name. A commit is not tagged when:
 
 - it has a `v*` tag already, or a newer commit does (an older commit is never tagged after a
   newer one);
@@ -512,47 +514,29 @@ next green commit's tag. A CI run that failed only on the flaky iPhone/iPad shar
 here, though the tag guard would let it through: the next green commit is tagged instead, or a
 session tags that commit by hand.
 
-Auto-tag pushes the tag over SSH with the repository's release deploy key (the secret
-`RELEASE_TAG_DEPLOY_KEY`, below), and the push itself starts every tag workflow
-(`on: push: tags`): `release.yml`, `desktop-release.yml`, `mobile-release.yml`, `tv-release.yml`,
-`play-bundles.yml`, `testflight.yml` and `relay.yml`, as for a tag pushed by hand. Auto-tag then
-checks that each has a push run for the tag, and fails if one is missing. `packages.yml` follows
-`release.yml` and `desktop-release.yml`.
+The session pushes the tag with the owner's git credentials, and the push itself starts every
+tag workflow (`on: push: tags`): `release.yml`, `desktop-release.yml`, `mobile-release.yml`,
+`tv-release.yml`, `play-bundles.yml`, `testflight.yml` and `relay.yml`. `packages.yml` follows
+`release.yml` and `desktop-release.yml`. The session then builds the tag's trail snapshot
+(the `trail` skill, "After a v* tag").
 
-A tag pushed with `GITHUB_TOKEN` starts no workflow, and a release cannot be started with a
-dispatch instead. The release is signed keyless, the signing certificate records the run's
-trigger, and every home's updater (`shared/go/releaseverify`, `BuildTrigger`) accepts only `push`.
-A dispatched `release.yml` run would sign a release that its own verify step and every home
-refuse. That is how v0.3.85 was made, and its release was never published. So `release.yml` takes
-no dispatch, and auto-tag makes no tag while the key is missing: its first step fails, naming the
-secret. A failed `release.yml` run is re-run (a re-run keeps its `push` trigger). The other tag
-workflows still take a dispatch on their tag by hand (`gh workflow run <workflow> --ref vX.Y.Z -f
-tag=vX.Y.Z`) when their push run is missing.
+Tags are pushed by a session, not a workflow, for two reasons. A tag pushed from a workflow
+with `GITHUB_TOKEN` starts no workflow, and a release cannot be started with a dispatch
+instead: the release is signed keyless, the signing certificate records the run's trigger, and
+every home's updater (`shared/go/releaseverify`, `BuildTrigger`) accepts only `push`. A
+dispatched `release.yml` run would sign a release that its own verify step and every home
+refuse. That is how v0.3.85 was made, and its release was never published. And a workflow that
+pushes tags itself needs a long-lived write key in the repository's secrets; a session's push
+needs none. So `release.yml` takes no dispatch, and a failed `release.yml` run is re-run (a
+re-run keeps its `push` trigger). The other tag workflows still take a dispatch on their tag by
+hand (`gh workflow run <workflow> --ref vX.Y.Z -f tag=vX.Y.Z`) when their push run is missing.
 
-A tag with no push run of `release.yml` (v0.3.83, v0.3.84 and v0.3.85, made while auto-tag pushed
-with `GITHUB_TOKEN`) can never be given a release that homes accept, short of deleting and
-pushing the tag again. Those tags stay as tags with no release. Homes only take the newest
-release, so the next tag replaces them.
+A tag with no push run of `release.yml` (v0.3.83, v0.3.84 and v0.3.85, made while a workflow
+pushed tags with `GITHUB_TOKEN`) can never be given a release that homes accept, short of
+deleting and pushing the tag again. Those tags stay as tags with no release. Homes only take the
+newest release, so the next tag replaces them.
 
-### The release deploy key
-
-A deploy key with write access, used only by `auto-tag.yml` to push tags. To set it up (or
-replace it):
-
-1. Make a key pair, with no passphrase:
-   `ssh-keygen -t ed25519 -N "" -C "maktaba auto-tag" -f maktaba-auto-tag`
-2. In the repository's **Settings → Deploy keys → Add deploy key**: title `auto-tag`, the
-   contents of `maktaba-auto-tag.pub`, and tick **Allow write access**.
-3. In **Settings → Secrets and variables → Actions → New repository secret**: the name
-   `RELEASE_TAG_DEPLOY_KEY`, and the contents of the private key `maktaba-auto-tag` (from
-   `-----BEGIN OPENSSH PRIVATE KEY-----` to the end line, included).
-4. Delete both key files from the machine.
-
-The next green CI run or update rehearsal on main makes the tag, and the release follows. A
-deploy key with write access can push branches as well as tags, so the private key lives only in
-this secret.
-
-Tagging by hand still works (a tag pushed with a personal token starts the workflows itself):
-auto-tag then sees the commit tagged and leaves it. Play's release notes come from the tag's
-message ([google-play.md](google-play.md#release-notes)), so a release with notes is still
-tagged by hand.
+Tagging by hand still works the same way (a tag pushed with a person's credentials starts the
+workflows): the release session then sees the commit tagged and leaves it. Play's release notes
+come from the tag's message ([google-play.md](google-play.md#release-notes)), so a release with
+notes is still tagged by hand.
