@@ -38,6 +38,8 @@ var NoStatusGroup = map[string]string{
 	"core.node": "a full node's copy of the home's database: the Machines page shows it",
 	"cloud.link": "remote access through Maktaba Cloud: the cloud's status (Epic 50.11) says it, " +
 		"and the home stays usable without it",
+	"plugins.host": "the third-party plugins' host (Epic 54, story 54.09 §5): no viewer feature stops when " +
+		"it is down (what plugins wrote stays); the admins' Plugins page says it",
 }
 
 // groupOf is the status group of a catalog id ("" when none).

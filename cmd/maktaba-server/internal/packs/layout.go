@@ -180,12 +180,22 @@ func (l Layout) IDs() []string {
 // pointer, or a rollback to a kept release) points at it. It returns what it did, for
 // the log. Removals left unfinished (.removing) are the reconciler's to finish.
 func (l Layout) Recover(version string) []string {
+	did := l.RecoverWith(func(string) string { return version })
+	_ = os.RemoveAll(filepath.Join(l.PartialDir(), ".import"))
+	return did
+}
+
+// RecoverWith is Recover with the version each id expects (Epic 54 story 54.38 §2: a
+// plugin's is its plugin_installs.version, not the server's; "" leaves the pointer as it
+// is). Staging folders are deleted as Recover does.
+func (l Layout) RecoverWith(expect func(id string) string) []string {
 	var did []string
 	for _, id := range l.IDs() {
 		entries, err := os.ReadDir(l.Dir(id))
 		if err != nil {
 			continue
 		}
+		version := expect(id)
 		var mine []string
 		for _, e := range entries {
 			name := e.Name()
@@ -205,9 +215,16 @@ func (l Layout) Recover(version string) []string {
 			}
 		}
 	}
-	_ = os.RemoveAll(filepath.Join(l.PartialDir(), ".import"))
 	return did
 }
+
+// StagingPrefix starts the name of a folder an install writes before it renames it into
+// place (Recover deletes those a crash left).
+const StagingPrefix = stagingPre
+
+// MarkRemoving records that a removal of id started (Removing), so a crash before it ends
+// is finished at the next start.
+func (l Layout) MarkRemoving(id string) error { return l.markRemoving(id) }
 
 // renameRetry is how long a rename held by another program (an antivirus on Windows) is
 // tried again before the install fails busy.

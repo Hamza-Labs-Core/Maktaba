@@ -1,0 +1,14 @@
+{
+  "_comment": "Story 54.08 T04: a plugin's rating from its capabilities and review level. The API (pluginmanifest.Rating) and the store (54.16) answer the same.",
+  "cases": [
+    {"capabilities": [], "review_level": "store", "rating": 6},
+    {"capabilities": [], "review_level": "none", "rating": 5},
+    {"capabilities": ["library.read", "tags.write"], "review_level": "store", "rating": 6},
+    {"capabilities": ["media.read", "transcript.read"], "review_level": "none", "rating": 3},
+    {"capabilities": ["media.read", "transcript.read"], "review_level": "store", "rating": 4},
+    {"capabilities": ["media.read", "media.read"], "review_level": "store", "rating": 5},
+    {"capabilities": ["plugin-data.read:dev.example.other"], "review_level": "store", "rating": 4},
+    {"capabilities": ["plugin-data.read:dev.example.other"], "review_level": "developer", "rating": 3},
+    {"capabilities": ["media.read", "media.frames", "media.audio", "transcript.read", "metadata.write", "plugin-data.read:dev.example.x"], "review_level": "development", "rating": 1}
+  ]
+}

@@ -114,7 +114,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {"unit", "integration", "replica", "launcher", "node-packaging"},
         {
             "lint": {"go", "catalog"},
-            "unit": {"go"},
+            # the supervisor captures the logs: its change runs the log benches (53.13)
+            "unit": {"go", "log_bench"},
             "integration": {"integration"},
             "node-packaging": {"release_venv"},
         },

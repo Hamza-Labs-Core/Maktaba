@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
@@ -20,6 +21,9 @@ const (
 	settingsVersionPrefix = "rules_version."
 	// AuditSettingsReset is the audit action of one section's settings reset.
 	AuditSettingsReset = "settings.reset"
+	// a plugin's settings and their version (Epic 54, story 54.11)
+	pluginSettingsPrefix = "plugins."
+	pluginVersionPrefix  = "plugins_version."
 )
 
 // SectionSettings is one rules section a component owns and how many of its settings
@@ -47,6 +51,9 @@ func (s *Service) sectionsOf(id string) ([]string, error) {
 	for _, name := range c.Settings {
 		if section, ok := strings.CutPrefix(name, settingsKeyPrefix); ok {
 			out = append(out, section)
+		}
+		if strings.HasPrefix(name, pluginSettingsPrefix) && c.Kind == components.KindPlugin {
+			out = append(out, name) // its key as it is: plugins.<id>
 		}
 	}
 	return out, nil
@@ -115,6 +122,10 @@ func (s *Service) ResetSettings(ctx context.Context, id string, actor Actor) (Se
 	out := SettingsReset{ID: id, Sections: []SectionSettings{}}
 	for _, section := range sections {
 		key, vkey := settingsKeyPrefix+section, settingsVersionPrefix+section
+		if pid, ok := strings.CutPrefix(section, pluginSettingsPrefix); ok {
+			// a plugin's settings (Epic 54, story 54.11): plugins.<id> and plugins_version.<id>
+			key, vkey = section, pluginVersionPrefix+pid
+		}
 		if !store.IsSQLite(db) {
 			if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, key); err != nil {
 				return SettingsReset{}, err
@@ -160,4 +171,13 @@ func (s *Service) ResetSettings(ctx context.Context, id string, actor Actor) (Se
 		return SettingsReset{}, err
 	}
 	return out, nil
+}
+
+// PurgePlugin is the purge of a plugin entry beyond its settings (story 54.07 §7): its
+// data, artifacts and the writes no one changed since (Plugins.Purge). 0 with no hooks.
+func (s *Service) PurgePlugin(ctx context.Context, id string, actor Actor) (int, error) {
+	if s.Plugins == nil || !components.IsPlugin(id) {
+		return 0, nil
+	}
+	return s.Plugins.Purge(ctx, id, actor)
 }

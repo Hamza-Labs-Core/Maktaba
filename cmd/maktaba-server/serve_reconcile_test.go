@@ -54,7 +54,7 @@ func TestStartComponentsWithoutReconciler(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	startComponents(ctx, cfg, nil, false, loops, "", nil)
+	startComponents(ctx, cfg, nil, false, loops, "", nil, nil)
 	select {
 	case got := <-ran:
 		if got != "backups" {

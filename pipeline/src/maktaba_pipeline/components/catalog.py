@@ -71,8 +71,13 @@ GROUPS = (
     "models",
     "tools",
     "languages",
+    "plugins",
 )
 BUNDLES = ("full", "core", "worker")
+#: Epic 54 (story 54.37): an installed plugin's run-time entry, never in catalog.toml
+KIND_PLUGIN = "plugin"
+PLUGIN_PREFIX = "plugin."
+PLUGINS_HOST = "plugins.host"
 LOOP_HOSTS = ("supervisor", "api", "streaming", "pipeline")
 DEFAULT_DRAIN_GRACE_S = 30
 DEFAULT_STOP_GRACE_S = 5
@@ -119,6 +124,7 @@ _COMPONENT_KEYS = (
     "files",
     "in_payload",
     "gated",
+    "on_demand",
 )
 _PARTS = ("stages", "process", "loop")
 _PLURAL = {"stages": "stages", "process": "processes", "loop": "loops"}
@@ -171,6 +177,8 @@ class Component:
     in_payload: bool = False
     #: a model whose download needs the owner's Hugging Face login
     gated: bool = False
+    #: a process that runs only while a component it serves is on (Epic 54: plugins.host)
+    on_demand: bool = False
 
     def has_part(self, part: str) -> bool:
         return part in self.kind.split("+")
@@ -367,6 +375,7 @@ class Catalog:
                 "sources": dict(c.sources),
                 "in_payload": c.in_payload,
                 "gated": c.gated,
+                "on_demand": c.on_demand,
             }
             for c in self._components
         ]
@@ -446,6 +455,7 @@ def _component(m: dict[str, Any], where: str, bad: list[str]) -> Component:
         files=tuple(dict(f) for f in files),
         in_payload=b("in_payload", False),
         gated=b("gated", False),
+        on_demand=b("on_demand", False),
     )
 
 
@@ -484,6 +494,13 @@ def _validate_sources(c: Component, where: str, bad: list[str]) -> None:
 
 
 def _validate(c: Component, where: str, features: tuple[str, ...], bad: list[str]) -> None:
+    # a plugin's entry exists only at run time (Epic 54, story 54.37 §1)
+    if c.kind == KIND_PLUGIN or c.id.startswith(PLUGIN_PREFIX):
+        bad.append(
+            f"{where}: kind plugin and ids starting {PLUGIN_PREFIX!r} are run-time plugin entries"
+        )
+    if c.on_demand and not c.has_part("process"):
+        bad.append(f"{where}: on_demand is for a component with a process")
     core = c.id.startswith("core.")
     if core and c.switchable:
         bad.append(f"{where}: core.* components must have switchable = false")
@@ -660,3 +677,98 @@ def raw() -> bytes:
 def default() -> Catalog:
     """The packaged catalog, parsed once."""
     return load(raw())
+
+
+def plugin_queue_name(plugin_id: str, stage: str) -> str:
+    """A plugin stage's queue name (54.01 §4), as ``components.PluginQueueName``."""
+    import hashlib
+
+    return "p_" + hashlib.sha256(plugin_id.encode()).hexdigest()[:8] + "_" + stage
+
+
+_COMPUTE_NEEDS = {"compute.llm": "llm", "compute.embed": "search.semantic"}
+
+
+def plugin_entry(
+    plugin_id: str,
+    stages: tuple[str, ...],
+    platforms: tuple[str, ...] = ("any",),
+    timeout_s: int = 300,
+    since: str = "",
+    required: tuple[str, ...] = (),
+    optional: tuple[str, ...] = (),
+) -> Component:
+    """An installed plugin's catalog entry, derived from its manifest (story 54.37 §1),
+    the same fields as the Go ``components.PluginEntry``."""
+    plats = PLATFORMS if not platforms or "any" in platforms else tuple(platforms)
+    grace = timeout_s if 0 < timeout_s <= 120 else 120
+    requires = (PLUGINS_HOST, *(_COMPUTE_NEEDS[c] for c in required if c in _COMPUTE_NEEDS))
+    wants = tuple(_COMPUTE_NEEDS[c] for c in optional if c in _COMPUTE_NEEDS)
+    return Component(
+        id=PLUGIN_PREFIX + plugin_id, kind=KIND_PLUGIN, switchable=True, group="plugins",
+        title_key=f"plugin.{plugin_id}.name", desc_key=f"plugin.{plugin_id}.summary",
+        stages=tuple(stages), processes=(), loops=(), requires=requires, wants=wants,
+        conflicts=(), settings=(f"plugins.{plugin_id}",), platforms=plats, placement="home",
+        resources=Resources(0, 0, ""), drain=Drain(grace, True), stop_grace_s=0, licence="",
+        features=(), bundles=(), since=since, source="",
+    )  # fmt: skip
+
+
+def plugin_entry_of(manifest: dict[str, Any], since: str = "") -> Component:
+    """The entry of a normalised manifest (``plugin_installs.manifest``), as the Go
+    ``components.PluginSpecOf`` + ``PluginEntry``."""
+    pid = str(manifest["id"])
+    caps = manifest.get("capabilities") or {}
+    return plugin_entry(
+        pid,
+        tuple(plugin_queue_name(pid, str(st["name"])) for st in manifest.get("stage") or []),
+        tuple(manifest.get("platforms") or ("any",)),
+        int((manifest.get("resources") or {}).get("timeout_s") or 0),
+        since,
+        tuple(caps.get("required") or ()),
+        tuple(caps.get("optional") or ()),
+    )
+
+
+def with_entries(static: Catalog, entries: list[Component]) -> Catalog:
+    """A catalog over ``static`` and the plugin entries (Go ``components.With``)."""
+    by_stage = {s: c.id for c in static.components() for s in c.stages}
+    ids = {c.id for c in static.components()}
+    bad: list[str] = []
+    for e in entries:
+        if e.kind != KIND_PLUGIN or not e.id.startswith(PLUGIN_PREFIX):
+            bad.append(f"{e.id}: not a plugin entry")
+        elif e.id in ids:
+            bad.append(f"{e.id}: listed twice")
+        for r in e.requires:
+            if r not in ids:
+                bad.append(f"{e.id}: requires unknown component {r!r}")
+        for s in e.stages:
+            if s in by_stage:
+                bad.append(f"{e.id}: stage {s} is {by_stage[s]}'s")
+            by_stage[s] = e.id
+        ids.add(e.id)
+    if bad:
+        raise CatalogError("catalog: " + "\ncatalog: ".join(bad))
+    return Catalog(
+        static.schema,
+        static.phases,
+        static.reasons,
+        static.features,
+        [*static.components(), *entries],
+    )
+
+
+def with_plugins(static: Catalog, entries: list[Component]) -> tuple[Catalog, list[str]]:
+    """``with_entries`` leaving out an entry it would refuse (Go ``WithPlugins``): the
+    merged catalog and the entries left out, with why."""
+    kept: list[Component] = []
+    skipped: list[str] = []
+    for e in entries:
+        try:
+            with_entries(static, [*kept, e])
+        except CatalogError as exc:
+            skipped.append(f"{e.id}: {exc}")
+            continue
+        kept.append(e)
+    return with_entries(static, kept), skipped

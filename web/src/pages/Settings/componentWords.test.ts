@@ -41,3 +41,18 @@ describe("reasonText", () => {
     expect(text).not.toBe("");
   });
 });
+
+describe("a plugin entry's words (Epic 54)", () => {
+  it("are its own name and summary in the page's language, English when it has none", async () => {
+    const { descText, titleFinder } = await import("./componentWords");
+    const v = {
+      id: "plugin.dev.example.x",
+      title_key: "plugin.dev.example.x.name",
+      desc_key: "plugin.dev.example.x.summary",
+      names: { name: { en: "Tagger", ar: "الواسم" }, summary: { en: "Adds tags.", ar: "" } },
+    } as never;
+    expect(titleFinder(tOf("ar"), [v], "ar")("plugin.dev.example.x")).toBe("الواسم");
+    expect(titleFinder(tOf("en"), [v])("plugin.dev.example.x")).toBe("Tagger");
+    expect(descText(tOf("ar"), v, "ar")).toBe("Adds tags.");
+  });
+});

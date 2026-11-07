@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
@@ -68,7 +70,7 @@ func freeMB() int64 { return int64(hostinfo.FreeMemory() >> 20) }
 // it. With no reconciler the loops run as before. It returns the asset routes (their
 // token set by the caller): every route answers 503 when there is no reconciler.
 func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Supervisor, whole bool,
-	loops []*supervisor.Loop, releaseDir string, log io.Writer) *packsAdmin {
+	loops []*supervisor.Loop, releaseDir string, log io.Writer, po *pluginsOptions) *packsAdmin {
 	if log == nil {
 		log = io.Discard
 	}
@@ -108,7 +110,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	if err != nil {
 		fmt.Fprintf(log, "[components] level=warn the desired state cannot be read: %v\n", err)
 	} else {
-		db.SetMaxOpenConns(2)
+		db.SetMaxOpenConns(3) // the reconciler, the packs runner and the plugins runner
 		st := store.New(db)
 		st.Version = version.Version
 		rec.Source, rec.Status = st, st
@@ -116,12 +118,27 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 		rec.NewListener = func(onError func(error)) (store.Listener, error) { return pqlisten.New(dsn, onError) }
 		go func() { <-ctx.Done(); _ = db.Close() }()
 	}
+	// Epic 54: the plugins' files, catalog entries and gates (story 54.38), on a home
+	// that runs plugins
+	var pr *plugins.Runner
+	var routes *plugins.Routes
+	if po != nil && db != nil && err == nil {
+		pr, routes = startPlugins(cfg, po, rec, sup, db, dsn, machine, log)
+		desiredPacks := rec.OnDesired
+		rec.OnDesired = func(d map[string]store.Desired) {
+			desiredPacks(d)
+			pr.Desired(d)
+		}
+	}
 	rec.Prime()
 	go run.Run(ctx)
+	if pr != nil {
+		go pr.Run(ctx)
+	}
 	go rec.Run(ctx)
 	// story 51.17: the Linux maktaba-full package's packs, at the first start of its version
 	go importSystemPacks(ctx, m, cfg.StateDir(), rec.Off, log)
-	pa := &packsAdmin{ctx: ctx, m: m, r: run, sup: sup, loops: rec, rec: rec}
+	pa := &packsAdmin{ctx: ctx, m: m, r: run, sup: sup, loops: rec, rec: rec, plugins: routes}
 	if st, ok := rec.Source.(*store.Store); ok {
 		pa.metrics = &supervisor.ComponentMetrics{Source: st, Machine: machine}
 	}
@@ -141,4 +158,57 @@ func mdnsLoop(cfg config.Config, noMDNS bool, run func(ctx context.Context)) *su
 		l.Forced, l.ForcedParams = supervisor.ReasonEnvOverride, map[string]any{"variable": "MAKTABA_DISCOVERY_MDNS"}
 	}
 	return l
+}
+
+// pluginsOptions are what serve built for the plugin host (nil: this machine runs no
+// plugins).
+type pluginsOptions struct {
+	host    *supervisor.PluginsHealth
+	plugind string
+	preload func(dir, id, version string) []string
+}
+
+// pluginsOpts is the plugin host's options, when serve built it (nil otherwise).
+func pluginsOpts(cfg config.Config, sopts supervisor.Options, host *supervisor.PluginsHealth) *pluginsOptions {
+	if host == nil {
+		return nil
+	}
+	bin, err := supervisor.PlugindBin(sopts)
+	if err != nil {
+		return nil
+	}
+	return &pluginsOptions{host: host, plugind: bin, preload: supervisor.PreloadArgs(cfg)}
+}
+
+// startPlugins is the plugins runner beside the packs runner (story 54.38 §4): it gives
+// the reconciler the plugins' entries and gates, keeps their files following
+// plugin_installs, and restarts the main pipeline worker when the installed set changes.
+func startPlugins(cfg config.Config, po *pluginsOptions, rec *supervisor.Reconciler, sup *supervisor.Supervisor,
+	db *sql.DB, dsn, machine string, log io.Writer) (*plugins.Runner, *plugins.Routes) {
+	paths := supervisor.PluginsPaths(cfg)
+	files := &plugins.Files{Layout: packs.Layout{Root: paths.Root},
+		Preload: plugins.HostPreload(po.plugind, po.preload)}
+	st := store.New(db)
+	st.Version = version.Version
+	pr := &plugins.Runner{Files: files, DB: db, DSN: dsn, Machine: machine, Version: version.Version,
+		Catalog: rec, Status: st, Host: po.host, RunDir: paths.Run, Off: rec.Off, Log: log}
+	if sup != nil {
+		pr.PipelineStarted = func() time.Time {
+			for _, p := range sup.Snapshot().Processes {
+				if p.Role == supervisor.RolePipeline && p.Instance == "" && p.StartedAt != nil {
+					return *p.StartedAt
+				}
+			}
+			return time.Time{}
+		}
+		pr.RestartPipeline = func() {
+			if err := sup.Restart(supervisor.RolePipeline, ""); err != nil {
+				fmt.Fprintf(log, "[plugins] level=warn the pipeline worker is not restarted: %v\n", err)
+			}
+		}
+	}
+	rec.PluginGate = pr.Gate
+	rec.Overlay = pr.Overlay
+	routes := &plugins.Routes{Files: files, Off: !cfg.Plugins.InstallOn(), Keep: pr.Kept}
+	return pr, routes
 }

@@ -120,10 +120,26 @@ none`), at most 100 KB each. They are taken on test data only:
   throwaway simulator;
 - Android: the Roborazzi references in `apps/android/*/src/test/screenshots/`, leaving out
   any whose fixture shows a person's name, a LAN address or a media path;
+- the Player for Windows and Linux: a scratch test in `apps/desktop-player/src/test/` (not
+  committed) that renders `Shell` at 1280×800 with `runDesktopComposeUiTest` on `TestHome`'s
+  MockWebServer, answering with invented titles, a neutral user and "Maktaba Home", inside
+  the window's own `Surface` (without it the page has no background), and writes
+  `onRoot().captureToImage()` as PNG; run with JDK 17 (`./gradlew :test --tests '<it>'`);
 - the web app and the big screen: a scratch branch stack (its own Postgres, `HOME`,
-  `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR`) seeded with invented libraries.
+  `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR`) seeded with invented libraries; or `vite`
+  in `web/` and a headless Chrome (`playwright-core`, Google Chrome as its executable) that
+  answers `/api/*` and `/status.json` with invented data, the locale (`mkt:locale`), the dark
+  theme (`mkt:theme`) and the usage-data answer (`mkt:usage:consent`, so its prompt stays
+  away) set in local storage first.
 
 Look at every image before adding it: the scan cannot read the pixels.
+
+**Keeping the site current.** A pull request that ships or changes a user-facing feature, an
+app screen, a developer-facing API or the plugin system updates the site in the same pull
+request, in English and Arabic (CLAUDE.md). `tools/ci/devportal_follows.py`, in CI's
+`affected-tests` job, warns when one adds a screen, an API path or a plugin-contract change
+and touches neither this package nor `docs/developers/`; a `No-Portal-Change: <reason>`
+trailer says the portal needs nothing.
 
 ## Build and preview locally
 
