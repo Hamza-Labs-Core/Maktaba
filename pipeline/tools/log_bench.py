@@ -5,8 +5,9 @@
 The pipeline's logger (``maktaba_pipeline.log``: contextvars, redaction of keys and values,
 the ring, the JSON renderer) logs ``--calls`` lines to ``/dev/null`` and each call is timed.
 The budget is 20 µs at the 99th percentile on the reference machine (an Apple M2), times the
-runner's speed against it: the slower of a hashing and JSON loop and a loop of the logger's
-own work (the report shows both times), clamped to 1–4, as the Go benches'
+runner's speed against it: the slowest of a hashing and JSON loop, a loop of the logger's
+own work, that work's p99 in small chunks, and a call's p99 through structlog's stock
+pipeline (the report shows each), clamped to 1–4, as the Go benches'
 ``logbench.Calibrate`` does. Over budget it warns (a GitHub
 ``::warning::`` with the numbers) and exits 1 only with ``LOGBENCH_PY_STRICT=1``: CI's
 ``log-bench`` job sets it; the nightly Mac warns only, its p99 being the runner's noise as
@@ -17,10 +18,7 @@ JSON (and written to ``--out``) either way, and the nightly run compares them ni
 from __future__ import annotations
 
 import argparse
-import collections
-import contextvars
 import hashlib
-import hmac
 import json
 import logging
 import os
@@ -41,6 +39,14 @@ REFERENCE_LINES_S = 0.060
 # is on a p99, and on a slow runner the tail grows more than the total does (CI, 2026-11-07:
 # logging 2.8 times slower at p50 and 3.3 times at p99 on a runner both loops called 2.7).
 REFERENCE_TAIL_P99_NS = 7_300
+# the p99 of a call through structlog's stock JSON pipeline, on the reference. The loops
+# above are C code (hashing, JSON, the regex scrub); the logger's call is mostly the
+# interpreter running structlog. On CI's AMD EPYC 7763 runners the logger's p99 was 0.75-0.79
+# of a budget set by the loops alone, against 0.55-0.63 on its other runners: the loops ran
+# there 2.7 times the reference's time, the logger 3.4 times at p50 and more at p99. The
+# stock pipeline's p99 follows it there (the logger's p99 is 1.7 times it on the 7763, the
+# 9V74 and the Xeon alike), and a slower logger does not move it (issue #807, 48 runners).
+REFERENCE_STOCK_P99_NS = 8_700
 
 
 def _best_of_three(work: Callable[[], None]) -> float:
@@ -101,74 +107,6 @@ def _tail_p99_ns(chunks: int = 20_000) -> int:
     return best
 
 
-_CTX = contextvars.ContextVar("bench_request_id", default="0192f0c4-1111-7000-8000-000000000001")
-_KEY = b"bench-key-not-a-secret"
-_RING: collections.deque[str] = collections.deque(maxlen=1000)
-
-
-def _step_a(d: dict[str, object]) -> dict[str, object]:
-    d.setdefault("request_id", _CTX.get())
-    d["level"] = "info"
-    return d
-
-
-def _step_b(d: dict[str, object]) -> dict[str, object]:
-    sec, ns = divmod(time.time_ns(), 1_000_000_000)
-    d["ts"] = f"2026-11-07T10:00:{sec % 60:02d}.{ns // 1000:06d}Z"
-    return d
-
-
-def _step_c(d: dict[str, object], seen: dict[str, int]) -> dict[str, object]:
-    u = d.pop("user_id", None)
-    for k, v in d.items():
-        kind = seen.get(k)
-        if kind is None:
-            kind = seen[k] = 1 if k.lower() in ("password", "token") else 0
-        if kind and isinstance(v, str):
-            d[k] = "[redacted]"
-    if isinstance(u, str):
-        d["user_h"] = hmac.new(_KEY, u.encode(), "sha256").hexdigest()[:16]
-    return d
-
-
-def _interp_call(seen: dict[str, int], **kw: object) -> None:
-    """A log call's kind of work in plain Python: a chain of small calls over the line's
-    dict, a context variable, the time, a keyed hash, the JSON, a ring. None of it is the
-    logger's code, so a slower logger does not raise the factor; it runs where the logger's
-    own call spends its time, the interpreter, which the hashing and scrub loops (C code)
-    do not measure (CI, 2026-11-07: runners those loops called alike differed 1.6 times at
-    the logger's p50)."""
-    d: dict[str, object] = {"event": "http_request", **kw}
-    d = _step_c(_step_b(_step_a(d)), seen)
-    d["msg"] = d.pop("event")
-    _RING.append(json.dumps(d))
-
-
-def _interp_work() -> None:
-    seen: dict[str, int] = {}
-    for _ in range(10_000):
-        _interp_call(seen, path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
-
-
-def _interp_p99_ns(calls: int = 20_000) -> int:
-    """The p99 of `_interp_call`, timed call by call (the best of three rounds)."""
-    seen: dict[str, int] = {}
-    for _ in range(2_000):
-        _interp_call(seen, path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
-    clock = time.perf_counter_ns
-    best = 0
-    for _ in range(3):
-        times = [0] * calls
-        for i in range(calls):
-            start = clock()
-            _interp_call(seen, path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
-            times[i] = clock() - start
-        times.sort()
-        p99 = percentile(times, 0.99)
-        best = p99 if best == 0 else min(best, p99)
-    return best
-
-
 def _stock_p99_ns(calls: int = 20_000) -> tuple[int, int]:
     """structlog's stock JSON pipeline (its context merge, the level, an ISO timestamp, the
     JSON renderer) to /dev/null, timed call by call: (p50, p99) of the round with the
@@ -213,14 +151,13 @@ def calibrate() -> tuple[float, dict[str, float]]:
         "hash_s": _best_of_three(_hash_work),
         "lines_s": _best_of_three(_lines_work),
         "tail_p99_ns": float(_tail_p99_ns()),
-        "interp_s": _best_of_three(_interp_work),
-        "interp_p99_ns": float(_interp_p99_ns()),
     }
     raw["stock_p50_ns"], raw["stock_p99_ns"] = (float(v) for v in _stock_p99_ns())
     f = max(
         raw["hash_s"] / REFERENCE_HASH_S,
         raw["lines_s"] / REFERENCE_LINES_S,
         raw["tail_p99_ns"] / REFERENCE_TAIL_P99_NS,
+        raw["stock_p99_ns"] / REFERENCE_STOCK_P99_NS,
     )
     return min(4.0, max(1.0, f)), {k: round(v, 4) for k, v in raw.items()}
 
