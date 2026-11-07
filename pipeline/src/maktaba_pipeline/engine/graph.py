@@ -22,7 +22,6 @@ from ..classify.books import BOOKS_VERSION
 from ..classify.display_title import DISPLAY_TITLE_VERSION
 from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
-from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
@@ -510,23 +509,8 @@ GRAPH: tuple[StageDef, ...] = (
     # ---- what a language model and the book behind a series say about the tags ----
     # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
     _fp("check_tags"),
-    StageDef(
-        name="check_clips",
-        label="Check clip tags",
-        subject_kinds=("library",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=3,
-        version=CLIP_CHECK_VERSION,
-        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-        # the model server defaults to localhost: the home's own (a node would ask
-        # another model, or none) unless the settings name a shared one
-        placement="home",
-        model_rules="tagcheck",
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("check_clips"),
     # ---- the on-air titles the guide and the channel strip show (Story 27.11) ----
     StageDef(
         name="display_title",

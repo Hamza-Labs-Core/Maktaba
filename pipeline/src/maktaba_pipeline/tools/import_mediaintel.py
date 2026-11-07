@@ -73,7 +73,7 @@ from ..engine.ids import season_uuid, series_uuid
 from ..engine.paths import PathMap, set_active_path_map, to_db, to_local
 from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
 from ..engine.stages import books as books_stage
-from ..engine.stages import check_clips as check_clips_stage
+from ..engine.stages import _check_clips as check_clips_stage
 from ..engine.stages import _check_tags as check_tags_stage
 from ..engine.stages import detect as detect_stage
 from ..engine.stages import fingerprint as fingerprint_stage

@@ -3,9 +3,10 @@
 # serve stages that have not moved)
 modules = [
     "maktaba_pipeline.engine.stages._leftovers",
+    "maktaba_pipeline.engine.stages._check_clips",
     "maktaba_pipeline.engine.stages._check_tags",
     "maktaba_pipeline.engine.stages._common:load_season,season_episode_ids",
     "maktaba_pipeline.engine.stages.detect:_playlists",
-    "maktaba_pipeline.engine.stages._tagging:latest_output,read_season_tags,season_tags_digest,write_season_tags",
+    "maktaba_pipeline.engine.stages._tagging:latest_output,read_season_tags,read_video_tags,season_tags_digest,video_tags_digest,write_season_tags,write_video_tags",
     "maktaba_pipeline.rules:read",
 ]

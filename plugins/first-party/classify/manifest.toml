@@ -22,8 +22,8 @@ required = ["compute.llm"]
 [trusted]
 runner    = "light"
 component = "classify"
-db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "series", "series_episodes", "series_seasons", "video_signals", "video_topic_tags", "videos", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
-db.write  = ["clip_group_items", "clip_groups", "promo_links", "season_style", "season_tags", "tag_checks", "topic_collections", "topic_items"]
+db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "series", "series_episodes", "series_seasons", "video_signals", "videos", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
+db.write  = ["clip_checks", "clip_group_items", "clip_groups", "promo_links", "season_style", "season_tags", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
 settings  = ["groups", "detect", "tagcheck"]
 compute   = ["llm"]
 
@@ -113,4 +113,25 @@ edges        = [{ to = "books", map = "same" }, { to = "plan_channels", map = "c
 placement    = "home"
 model_rules  = "tagcheck"
 entry        = "maktaba_fp_classify.stages.check_tags:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "check_clips"
+subject      = "library"
+export       = "check-clips"
+version      = 2
+label        = "Check clip tags"
+subject_kinds = ["library"]
+pool         = "lookup"
+lane         = "seasons"
+lane_order   = 3
+entry_for    = ["library"]
+debounce_sec = 30
+debounce_max_sec = 300
+edges        = [{ to = "clip_groups", map = "same" }, { to = "plan_channels", map = "catalog" }]
+# the model server defaults to localhost: the home's own (a node would ask another model,
+# or none) unless the settings name a shared one
+placement    = "home"
+model_rules  = "tagcheck"
+entry        = "maktaba_fp_classify.stages.check_clips:IMPL"
 fingerprint  = { input = true, output = false }
