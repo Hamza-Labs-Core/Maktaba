@@ -146,7 +146,7 @@ switchable = false
 group      = "core"
 title_key  = "components.core.plugin_runners.title"
 desc_key   = "components.core.plugin_runners.desc"
-processes  = ["plugin-runner/light", "plugin-runner/net", "plugin-runner/service", "plugin-runner/fp"]
+processes  = ["plugin-runner/light", "plugin-runner/files", "plugin-runner/net", "plugin-runner/service", "plugin-runner/fp"]
 platforms  = ["darwin-arm64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
 on_demand  = true
@@ -213,6 +213,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "library.convert"
+plugin    = "tv.maktaba.convert"
 kind      = "stages"
 group     = "library"
 title_key = "components.library.convert.title"
@@ -225,6 +226,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "library.dedup"
+plugin    = "tv.maktaba.dedup"
 kind      = "stages"
 group     = "library"
 title_key = "components.library.dedup.title"
@@ -236,6 +238,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "library.repair"
+plugin    = "tv.maktaba.repair"
 kind      = "stages"
 group     = "library"
 title_key = "components.library.repair.title"
@@ -407,6 +410,7 @@ since     = "0.3.86"
 
 [[component]]
 id        = "youtube"
+plugin    = "tv.maktaba.youtube"
 kind      = "stages"
 group     = "integrations"
 title_key = "components.youtube.title"
@@ -464,6 +468,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "livetv"
+plugin    = "tv.maktaba.livetv"
 kind      = "stages+loop"
 group     = "livetv"
 title_key = "components.livetv.title"
@@ -484,6 +489,7 @@ since     = "0.3.66"
 
 [[component]]
 id        = "livetv.slots"
+plugin    = "tv.maktaba.livetv-slots"
 kind      = "stages+process+loop"
 group     = "livetv"
 title_key = "components.livetv.slots.title"

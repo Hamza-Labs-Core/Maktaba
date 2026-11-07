@@ -1,0 +1,54 @@
+# tv.maktaba.livetv: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7
+# (story 54.34): plans the live TV channels and writes them (or stages them as a TV change).
+schema     = 1
+id         = "tv.maktaba.livetv"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.livetv.name"
+summary = "fp.livetv.summary"
+
+[trusted]
+runner    = "light"
+component = "livetv"
+db.read   = ["app_settings", "channel_art_overrides", "clip_group_items", "clip_groups", "collection_items", "episode_tags", "job_stages", "libraries", "media_metadata_enrichment", "processing_jobs", "promo_links", "season_style", "season_tags", "series", "series_episodes", "series_seasons", "tv_slots", "video_topic_tags", "videos", "youtube_channels", "youtube_videos"]
+db.write  = ["channel_plans", "channel_programs", "channel_schedule_state", "channels", "external_links", "filler_items", "filler_pools", "tv_change_events", "tv_changes", "tv_release_channels", "tv_releases", "tv_routing", "tv_sched_gen_seq"]
+settings  = ["planner", "detect", "tv", "tv_output", "tv_staging", "dizquetv", "display_titles"]
+files.read  = ["data.channels"]
+files.write = ["data.review"]
+
+[[stage]]
+name         = "plan_channels"
+subject      = "catalog"
+export       = "plan-channels"
+version      = 5
+label        = "Plan channels"
+subject_kinds = ["catalog"]
+pool         = "cpu"
+lane         = "channels"
+lane_order   = 1
+entry_for    = ["catalog"]
+debounce_sec = 300
+debounce_max_sec = 3600
+placement    = "home"
+edges        = [{ to = "write_channels", map = "same" }]
+entry        = "maktaba_fp_livetv.stages.plan_channels:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "write_channels"
+subject      = "catalog"
+export       = "write-channels"
+version      = 5
+label        = "Write channels"
+subject_kinds = ["catalog"]
+pool         = "cpu"
+lane         = "channels"
+lane_order   = 2
+placement    = "home"
+entry        = "maktaba_fp_livetv.stages.write_channels:IMPL"
+fingerprint  = { input = true, output = false }

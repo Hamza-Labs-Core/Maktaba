@@ -26,6 +26,7 @@ from ..log import get_logger
 from .build import build_release
 from .generation import build_generation, planned_swap
 from .merge import live_defs, merge_pending, plan_pending, with_plan_layer
+from .snapshot import DEF_SELECT, _def
 from .store import (
     Change,
     create_change,
@@ -261,14 +262,10 @@ async def collapse_open(db: Any, *, actor_source: str = "system") -> Change | No
 async def write_plan_pending(db: Any, wp: Any) -> dict[str, Any]:
     """A ``write_channels`` write plan as a change's pending edits (the channels as they
     will be, their links and the filler pools, applied at the swap)."""
-    from .snapshot import DEF_COLUMNS
-
     channels: dict[str, Any] = {}
     links: list[dict[str, Any]] = []
     for cid, w in wp.update:
-        row = await db.fetchrow(f"SELECT {', '.join(DEF_COLUMNS)} FROM channels WHERE id = $1", cid)
-        from .snapshot import _def  # noqa: PLC0415 - shared row decoder
-
+        row = await db.fetchrow(f"SELECT {DEF_SELECT} FROM channels WHERE id = $1", cid)
         cur = _def(row) if row is not None else {"id": cid}
         channels[cid] = {**cur, **_values(w.values)}
         links.append(
@@ -302,7 +299,7 @@ async def write_plan_pending(db: Any, wp: Any) -> dict[str, Any]:
     sched: list[str] = []
     if wp.pools.write or wp.pools.delete:
         # what fills the gaps changed: every channel the tool made plans its filler anew
-        from ..engine.stages.write_channels import SUBJECT_KIND, TARGET
+        from ..channels.plan_link import SUBJECT_KIND, TARGET
 
         sched = sorted(
             {
@@ -417,8 +414,8 @@ async def stage_write_channels(
 
 
 async def _write_links(db: Any, pending: dict[str, Any]) -> None:
+    from ..channels.plan_link import SUBJECT_KIND, TARGET
     from ..engine.sql import to_ts
-    from ..engine.stages.write_channels import SUBJECT_KIND, TARGET
 
     stamp = to_ts(db, now())
     for link in pending.get("links") or []:
