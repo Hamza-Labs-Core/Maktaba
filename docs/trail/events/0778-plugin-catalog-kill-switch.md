@@ -9,7 +9,7 @@ prs: [733, 753, 770]
 ---
 
 ## What happened
-- The home's lists loop (`api:plugins_catalog` on core.api's runner): the revocation head every 5 minutes, the list and catalog when they change, straight from the store's CDN, each verified by the chain of trust and kept on disk and in Postgres, the newest seen winning. A store `disable` holds the plugin within one poll and refuses Start, enable, install, update and rollback to a covered version (`409 plugin_revoked`); store installs by catalog version, checked against its sha256; per-plugin nightly automatic updates; a linked home's daily `seen` with telemetry on. Migration 0200.
+- The home's lists loop (`api:plugins_catalog` on core.api's runner): the revocation head every 5 minutes, the list and catalog when they change, straight from the store's CDN, each verified by the chain of trust and kept on disk and in Postgres, the newest seen winning. A store `disable` holds the plugin within one poll and refuses Start, enable, install, update and rollback to a covered version (`409 plugin_revoked`); store installs by catalog version, checked against its sha256; per-plugin nightly automatic updates; a linked home's daily `seen` with telemetry on. Migration 0201.
 - Offline (`serve --offline`) the loop fetches and sends nothing, the kept lists age into the expired warning, which stops no plugin, and store installs wait; the store's hosts are listed in `ports.Outbound`.
 - A gap in #733's verifier found and closed here: a catalog repeating the newest version with other bytes was accepted (store-keys and the revocation list already refused it); the trust state keeps each catalog's sha256, in Go, Rust and TypeScript, on new shared vectors.
 

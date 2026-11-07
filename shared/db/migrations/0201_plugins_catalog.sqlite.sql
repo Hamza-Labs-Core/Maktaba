@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0200 (plugins: the catalog and the kill switch). Plugins run
+-- SQLite parity sibling for slot 0201 (plugins: the catalog and the kill switch). Plugins run
 -- on a Postgres home only (slot 0194); this keeps the schema in step.
 --
 ALTER TABLE plugin_installs ADD COLUMN IF NOT EXISTS revoked INTEGER NOT NULL DEFAULT 0;

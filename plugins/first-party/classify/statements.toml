@@ -1,0 +1,9 @@
+# The shared pipeline modules whose statements tv.maktaba.classify's stages run (story 54.24 §1):
+# "module" or "module:function,…" (the functions these stages call; a module's other functions
+# serve stages that have not moved)
+modules = [
+    "maktaba_pipeline.engine.stages._leftovers",
+    "maktaba_pipeline.engine.stages._common:load_season,season_episode_ids",
+    "maktaba_pipeline.engine.stages.detect:_playlists",
+    "maktaba_pipeline.rules:read",
+]
