@@ -199,3 +199,20 @@ func TestParseAllowedOrigins(t *testing.T) {
 		t.Errorf("empty input should be nil, got %v", got)
 	}
 }
+
+// The web app may read the cloud's status feed (story 50.11), and nothing else off its origin.
+func TestDefaultHeaders_CSPAllowsOnlyTheStatusFeed(t *testing.T) {
+	csp := DefaultHeaders().CSP
+	var connect string
+	for _, d := range strings.Split(csp, ";") {
+		if f := strings.Fields(d); len(f) > 0 && f[0] == "connect-src" {
+			connect = strings.Join(f[1:], " ")
+		}
+	}
+	if connect != "'self' https://status.maktaba.tv" {
+		t.Fatalf("connect-src = %q, want 'self' and the status page only", connect)
+	}
+	if !strings.Contains(csp, "default-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Fatalf("CSP lost a directive: %s", csp)
+	}
+}

@@ -340,6 +340,14 @@ build fails when the two differ.
   the apps the same states. The witness gets one public site, behind a token, for the outside
   probe; the cloud rehearsal's `status-feed` proves an outage reaches the page within two
   rounds. maktaba.dev's cloud guide describes the page and `summary.json`.
+- **Every app says when Maktaba Cloud is down, but only away from home (Epic 50, story
+  50.11).** When the web app, the cloud web app, the Apple apps or the Android apps reach the
+  home through Maktaba Cloud, the status strip also reads status.maktaba.tv: remote access or
+  signing in with Maktaba Cloud down or slow, or maintenance from a day before it starts, with
+  Details to the status page. The home's own trouble comes first; notifications alone never
+  show; on the home's own network the cloud's line never shows; and a status page that can't
+  be reached shows nothing. The home's web app and the cloud's editions allow that one address
+  in their Content Security Policy.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
