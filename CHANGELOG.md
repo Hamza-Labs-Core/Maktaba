@@ -1157,6 +1157,11 @@ build fails when the two differ.
   plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
   remembers it in that browser only, and opens the home's Browse on the plugin.
 
+- **A plugin report can carry the plugin's logs (Epic 54, story 54.18, #758).** Reporting an
+  installed plugin to the store from Browse, the admin can attach its log lines from the last
+  day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
+  reviewers alone and deleted after 90 days.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

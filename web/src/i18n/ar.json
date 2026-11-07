@@ -7365,6 +7365,7 @@
   "plugins.browse.report": "أبلغ عنها",
   "plugins.browse.report_reason": "السبب",
   "plugins.browse.report_details": "التفاصيل (اختيارية)",
+  "plugins.browse.report_logs": "أرفق سجلات هذه الإضافة من آخر يوم (بعد حذف كلمات المرور والمفاتيح)، لمراجِعي المتجر",
   "plugins.browse.send_report": "أرسل البلاغ",
   "plugins.browse.reported": "أُرسل بلاغك إلى المتجر. ولا يُرسل إلا معرّف الإضافة وإصدارها.",
   "plugins.report.malware": "برمجية خبيثة",
