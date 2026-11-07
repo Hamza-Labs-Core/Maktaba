@@ -104,6 +104,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
+  before the database's own thread had ended, so the worker sometimes counted that thread as
+  still running and left without the normal shutdown. The close now waits for the thread to
+  end, and the worker gives threads that are already ending a second before it counts them
+  (#862).
 - **A rollback no longer keeps the home down for half a day building the search index.**
   Putting a backup back rebuilt semantic search's vector index among the other indexes with
   64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
