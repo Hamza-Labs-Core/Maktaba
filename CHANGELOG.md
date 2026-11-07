@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
+  queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
+  admin's Logs search for the id now finds the job's lines too. The web player's playlist URL
+  carries the id of the call that opened the session (`rid`), and streaming logs it on a failed
+  playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
+  lines for the same action. Streaming's failure lines also carried no request id until now.
 - **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
   `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
   enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two

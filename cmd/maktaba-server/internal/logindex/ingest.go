@@ -261,6 +261,11 @@ func parseLine(raw []byte) (parsed, bool) {
 	p := parsed{level: LevelNum(str("level")), service: str("service"), component: str("component"),
 		node: str("node"), msg: str("msg"), requestID: str("request_id"), jobID: str("job_id"),
 		sessionID: str("session_id"), videoID: str("video_id"), userH: str("user_h")}
+	if p.requestID == "" {
+		// a pipeline job's lines name the request that queued it (story 53.08): searching
+		// that request's id finds the job's lines too
+		p.requestID = str("origin_request_id")
+	}
 	if p.userH == "" {
 		if id := str("user_id"); id != "" {
 			p.userH = mlog.HashUser(id)
