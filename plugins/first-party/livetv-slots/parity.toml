@@ -1,0 +1,17 @@
+# The parity proof of tv.maktaba.livetv-slots (story 54.34): a TV change staged, swapped,
+# rolled back and its staging cleaned up; after each step the lineup, the releases, the
+# schedule generations, the routing, the change and its events and the TV settings are
+# compared, only the columns that hold a time masked (the TV clock itself is frozen).
+tables = ["tv_changes", "tv_change_events", "tv_releases", "tv_release_channels", "channels",
+          "channel_schedule_state", "channel_programs", "tv_routing", "app_settings"]
+
+[ignore]
+tv_changes = ["created_at", "updated_at"]
+tv_change_events = ["id", "at", "actor_source"]
+tv_releases = ["created_at"]
+channels = ["created_at", "updated_at"]
+channel_programs = ["id"]
+app_settings = ["updated_at"]
+
+[[cases]]
+name = "two channels on the air and a change that moves one and adds a third: staged, swapped, rolled back, cleaned up"

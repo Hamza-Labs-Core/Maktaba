@@ -49,7 +49,10 @@ type Server struct {
 	// embedded first-party bundle's, on DB.
 	Statements *statements.Executor
 	// Compute answers compute.embed and compute.llm (54.21; nil: unavailable).
-	Compute  *Compute
+	Compute *Compute
+	// Service is the home's service door (story 54.35: trusted/service); nil on a joined
+	// machine, whose stages reach it through their worker.
+	Service  ServiceDoor
 	routes   map[string]route
 	once     sync.Once
 	stmtOnce sync.Once
@@ -130,6 +133,7 @@ func (s *Server) init() {
 		s.eventRoutes()
 		s.mediaRoutes()
 		s.trustedRoutes()
+		s.serviceRoute()
 		s.computeRoutes()
 	})
 }

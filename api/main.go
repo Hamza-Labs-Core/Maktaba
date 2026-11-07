@@ -38,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/directaccess"
@@ -741,7 +742,11 @@ func runServe() error {
 			// on its unix socket when the supervisor names one
 			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
 				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets, Loops: loops,
-				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient)})
+				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient),
+				// story 54.35: the first-party Plex plugin reaches Plex through the home's
+				// service door, which adds the token and scrubs it out of every answer
+				Service: relay.New(relay.Config{Settings: relay.DBSettings(appDB),
+					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv), Logger: logger})})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

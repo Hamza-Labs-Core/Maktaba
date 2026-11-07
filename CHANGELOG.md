@@ -1970,6 +1970,41 @@ build fails when the two differ.
   worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
   processes and its memory budget at rest.
 
+- **Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave
+  8).** Indexing Plex, writing collections, reading Plex's own collections back and keeping
+  Maktaba's channels in Plex Live TV run in `tv.maktaba.plex`, in a runner with no network:
+  every call to Plex goes through the home's service door, which adds the Plex token and
+  removes it from every answer, so the plugin never holds the token or Plex's address. The
+  dizqueTV stages stay in the worker for now. The parity proof compares the calls Plex receives
+  on both paths.
+
+- **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
+  wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
+  swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
+  sandboxed `light` runner. A swap and a rollback still put the TV settings on the air in
+  one step with the lineup: the worker does that part for the plugin's job. The dizqueTV
+  export's additions to the plan keep working there. The parity proof compares the plan,
+  the channels, the TV change and its schedule through a stage, a swap, a rollback and the
+  clean-up.
+
+- **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
+  wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
+  fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download
+  again in `tv.maktaba.repair`, in the sandboxed `net` runner, the only one that reaches the
+  network. Each reads only the rules it lists, a new download's first job is queued once its
+  video is saved, and the parity proof compares the downloaded files, the rows and the queue
+  with the recorded yt-dlp.
+
+- **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
+  wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
+  duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the
+  sandboxed `files` runner, a new runner group of their own (in `light` their library writes
+  would have covered the subtitles' name-only rule): they write only the library's folders and their trash, and what
+  only the engine may change (queuing jobs, a merge's re-pointing of everything that refers
+  to a video, a restored video's state) the worker does for them, checked against the job.
+  The parity proof compares the library and its trash byte for byte, through a merge, a
+  restore and a purge.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
