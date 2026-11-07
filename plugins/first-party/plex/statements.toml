@@ -4,6 +4,8 @@ modules = [
     "maktaba_pipeline.rules:read",
     "maktaba_pipeline.extensions.links",
     "maktaba_pipeline.extensions.plex_items",
+    "maktaba_pipeline.extensions.seasons",
+    "maktaba_pipeline.engine.sourced_collections",
     "maktaba_pipeline.extensions.plex.index",
     "maktaba_pipeline.extensions.plex.collection",
     "maktaba_pipeline.extensions.plex.collections_import",

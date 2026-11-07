@@ -1,5 +1,5 @@
 {
- "digest": "811b2ea8e1ca19de730043ad9de9e6d097925f66437b790284ed641729d300dd",
+ "digest": "71b7022abf306c70bbc468652b90c15390deda0977a1ec4c249aeb66732fc00d",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -4188,10 +4188,10 @@
    }
   },
   {
-   "digest": "4365857f02f60c176f7f17ac7859d8dab4b986ee2e28b4b8312099319302c2ba",
+   "digest": "0e0fac72c9e2d7dcaf5a7ecae9f3e9e4ca6bad06a50c1c417cf77347753a1ab3",
    "folder": "plex",
    "id": "tv.maktaba.plex",
-   "manifest": "# tv.maktaba.plex: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 8\n# (story 54.35): Plex through the home's service door. The plugin holds neither the Plex token\n# nor Plex's address; every call goes through the door, which adds the token and scrubs it.\nschema     = 1\nid         = \"tv.maktaba.plex\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.plex.name\"\nsummary = \"fp.plex.summary\"\n\n[trusted]\nrunner    = \"service\"\ncomponent = \"ext.plex\"\ndb.read   = [\"app_settings\", \"channel_schedule_state\", \"channels\", \"clip_group_items\", \"clip_groups\", \"hdhr_device\", \"job_stages\", \"libraries\", \"series\", \"series_episodes\", \"series_seasons\", \"topic_collections\", \"topic_items\"]\ndb.write  = [\"external_links\", \"plex_items\", \"plex_livetv_state\", \"videos\"]\nsettings  = [\"plexlive\"]\nservice   = [\"plex\"]\n\n[[stage]]\nname         = \"plex_index\"\nsubject      = \"library\"\nexport       = \"plex-index\"\nversion      = 1\nlabel        = \"Plex index\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"sources\"\nlane_order   = 1\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nedges        = [{ to = \"plex_collection\", map = \"seasons_changed\" }, { to = \"plex_collections_import\", map = \"same\" }, { to = \"plex_groups\", map = \"same\" }]\nentry        = \"maktaba_fp_plex.stages.plex_index:IMPL\"\n\n[[stage]]\nname         = \"plex_collections_import\"\nsubject      = \"library\"\nexport       = \"plex-collections-import\"\nversion      = 1\nlabel        = \"Read Plex collections\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"sources\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_collections_import:IMPL\"\n\n[[stage]]\nname         = \"plex_collection\"\nsubject      = \"season\"\nexport       = \"plex-collection\"\nversion      = 1\nlabel        = \"Plex collection\"\nsubject_kinds = [\"season\"]\npool         = \"network_plex\"\nlane         = \"seasons\"\nlane_order   = 4\nexternal_write = true\nentry_for    = [\"season\"]\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_collection:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"plex_groups\"\nsubject      = \"library\"\nexport       = \"plex-groups\"\nversion      = 1\nlabel        = \"Plex topic and clip collections\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"seasons\"\nlane_order   = 4\nexternal_write = true\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_groups:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"plex_livetv\"\nsubject      = \"catalog\"\nexport       = \"plex-livetv\"\nversion      = 2\nlabel        = \"Plex Live TV\"\nsubject_kinds = [\"catalog\"]\npool         = \"network_plex\"\nlane         = \"channels\"\nlane_order   = 3\nexternal_write = true\nentry_for    = [\"catalog\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nplacement    = \"home\"\nafter_topup  = true\nevery_minutes_rule = [\"plexlive\", \"drift_check_minutes\"]\nentry        = \"maktaba_fp_plex.stages.plex_livetv:IMPL\"\n",
+   "manifest": "# tv.maktaba.plex: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 8\n# (story 54.35): Plex through the home's service door. The plugin holds neither the Plex token\n# nor Plex's address; every call goes through the door, which adds the token and scrubs it.\nschema     = 1\nid         = \"tv.maktaba.plex\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.plex.name\"\nsummary = \"fp.plex.summary\"\n\n[trusted]\nrunner    = \"service\"\ncomponent = \"ext.plex\"\ndb.read   = [\"app_settings\", \"channel_schedule_state\", \"channels\", \"clip_group_items\", \"clip_groups\", \"hdhr_device\", \"job_stages\", \"libraries\", \"series\", \"series_episodes\", \"series_seasons\", \"topic_collections\", \"topic_items\"]\ndb.write  = [\"collection_items\", \"collections\", \"external_links\", \"plex_items\", \"plex_livetv_state\", \"videos\"]\nsettings  = [\"plexlive\"]\nservice   = [\"plex\"]\n\n[[stage]]\nname         = \"plex_index\"\nsubject      = \"library\"\nexport       = \"plex-index\"\nversion      = 1\nlabel        = \"Plex index\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"sources\"\nlane_order   = 1\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nedges        = [{ to = \"plex_collection\", map = \"seasons_changed\" }, { to = \"plex_collections_import\", map = \"same\" }, { to = \"plex_groups\", map = \"same\" }]\nentry        = \"maktaba_fp_plex.stages.plex_index:IMPL\"\n\n[[stage]]\nname         = \"plex_collections_import\"\nsubject      = \"library\"\nexport       = \"plex-collections-import\"\nversion      = 1\nlabel        = \"Read Plex collections\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"sources\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_collections_import:IMPL\"\n\n[[stage]]\nname         = \"plex_collection\"\nsubject      = \"season\"\nexport       = \"plex-collection\"\nversion      = 1\nlabel        = \"Plex collection\"\nsubject_kinds = [\"season\"]\npool         = \"network_plex\"\nlane         = \"seasons\"\nlane_order   = 4\nexternal_write = true\nentry_for    = [\"season\"]\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_collection:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"plex_groups\"\nsubject      = \"library\"\nexport       = \"plex-groups\"\nversion      = 1\nlabel        = \"Plex topic and clip collections\"\nsubject_kinds = [\"library\"]\npool         = \"network_plex\"\nlane         = \"seasons\"\nlane_order   = 4\nexternal_write = true\nentry_for    = [\"library\"]\ndebounce_sec = 60\ndebounce_max_sec = 600\nplacement    = \"home\"\nrelay        = \"plex\"\nentry        = \"maktaba_fp_plex.stages.plex_groups:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"plex_livetv\"\nsubject      = \"catalog\"\nexport       = \"plex-livetv\"\nversion      = 2\nlabel        = \"Plex Live TV\"\nsubject_kinds = [\"catalog\"]\npool         = \"network_plex\"\nlane         = \"channels\"\nlane_order   = 3\nexternal_write = true\nentry_for    = [\"catalog\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nplacement    = \"home\"\nafter_topup  = true\nevery_minutes_rule = [\"plexlive\", \"drift_check_minutes\"]\nentry        = \"maktaba_fp_plex.stages.plex_livetv:IMPL\"\n",
    "statements": [
     {
      "mode": "write",
@@ -4622,6 +4622,130 @@
      "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
      "text": "SELECT value FROM app_settings WHERE key = $1",
      "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "seasons.load_members",
+     "reads": [
+      "series_episodes",
+      "series_seasons",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "30e64c358edfe588e8f2c7bf4f280c00f6a2cd7b878a7505decf756eb88e28a0",
+     "text": "SELECT v.id AS id, v.path AS path, COALESCE(v.title, v.filename) AS title FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) JOIN videos v ON v.id = e.video_id WHERE ss.id = $1 AND v.deleted_at IS NULL ORDER BY (COALESCE(e.episode_override, e.episode) IS NULL), COALESCE(e.episode_override, e.episode), e.absolute_number, v.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "seasons.load_season",
+     "reads": [
+      "libraries",
+      "series",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1fe2780d4aa59c44a8a0a5653458e9e7ff8bcf56148a34f7450cc3ba2be10b46",
+     "text": "SELECT ss.id AS id, ss.season AS season, ss.kind AS kind, ss.membership_hash AS membership_hash, ss.retired_at AS retired_at, ss.metadata AS metadata, COALESCE(s.name_override, s.name) AS series, COALESCE(l.name, '') AS library, (SELECT count(*) FROM series_seasons x WHERE x.series_id = ss.series_id   AND x.retired_at IS NULL) AS n FROM series_seasons ss JOIN series s ON s.id = ss.series_id LEFT JOIN libraries l ON l.id = ss.library_id WHERE ss.id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "sourced_collections.free_name",
+     "reads": [
+      "collections"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "166af3eb3ed92df4def4e2bd90d484952ba8b2d91402e72959fb35422aa8b8db",
+     "text": "SELECT id, name FROM collections WHERE library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "sourced_collections.sync_sourced",
+     "reads": [
+      "collections"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "2e56cda9c642c99d95062e8de5b5c8ce53486237d9f39189f779ff6a8f44908f",
+     "text": "SELECT id, source_kind, source_ref, membership_hash FROM collections WHERE library_id = $1 AND source_kind = ANY($2::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "sourced_collections.sync_sourced.2",
+     "reads": [
+      "collections"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "0ce7a9c016070cbf4d628efd3f1d7c18cd8a22bb805e43d0cc1ab46c7cc520c1",
+     "text": "SELECT id, source_kind, source_ref, membership_hash FROM collections WHERE library_id = $1 AND source_kind IN (SELECT value FROM json_each($2))",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "sourced_collections.sync_sourced.3",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6880e316e7056a286e2140ce4be5c496e87917b1b94b64860c89259b9d7b0236",
+     "text": "DELETE FROM collections WHERE id = $1",
+     "writes": [
+      "collections"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "sourced_collections.sync_sourced.4",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "27d1f3742a016e59ead53424acd391d758fe7c20987989b88164d63696e3d953",
+     "text": "INSERT INTO collections (id, library_id, name, description, is_smart, origin, auto_rule, source_kind, source_ref, membership_hash, hand_ordered, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,'auto',$6,$7,$8,$9,$10,$11,$11)",
+     "writes": [
+      "collections"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "sourced_collections.sync_sourced.5",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b22946cc8a440bbb2d74a73ec647b44ac93e936a28b189cc05a5ff0bf594ebae",
+     "text": "UPDATE collections SET name = $2, description = $3, auto_rule = $4, membership_hash = $5, hand_ordered = $6, updated_at = $7 WHERE id = $1",
+     "writes": [
+      "collections"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "sourced_collections.write_items",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "80860245ad0e194aec8f247e78585d7994087c7b22dc2f0ba5258dbb2d69d618",
+     "text": "DELETE FROM collection_items WHERE collection_id = $1",
+     "writes": [
+      "collection_items"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "sourced_collections.write_items.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "6b970ab86e99508217bf43015797cc5a2928e5b083dab64d6b2d740482eafd1c",
+     "text": "INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1,$2,$3)",
+     "writes": [
+      "collection_items"
+     ]
     }
    ],
    "strings": {

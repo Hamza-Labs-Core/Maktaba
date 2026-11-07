@@ -14,7 +14,9 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +25,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 )
@@ -32,6 +35,8 @@ func main() {
 	socket := flag.String("socket", "", "the plugin API's unix socket")
 	mint := flag.String("mint", "127.0.0.1:0", "where the mint route listens (TCP)")
 	bundle := flag.String("bundle", "", "a first-party bundle (tools/plugins/bundle.py's output)")
+	plexURL := flag.String("plex-url", "", "trusted/service: the Plex the home's door forwards to (a fake)")
+	plexToken := flag.String("plex-token", "", "trusted/service: the token the door adds")
 	flag.Parse()
 	if *dsn == "" || *socket == "" {
 		log.Fatal("plugin-api-dev: -dsn and -socket are needed")
@@ -54,6 +59,16 @@ func main() {
 	defer stop()
 	tokens := plugins.NewTokens(db)
 	s := &plugins.Server{DB: db, Tokens: tokens}
+	if *plexURL != "" {
+		// story 54.35: the home's service door, to a fake Plex
+		s.Service = relay.New(relay.Config{
+			Settings: func(context.Context) (relay.Settings, error) { return relay.DefaultSettings(), nil },
+			Upstream: func(context.Context, *relay.Extension) (relay.Upstream, error) {
+				return relay.Upstream{Enabled: true, URL: *plexURL, Secret: *plexToken}, nil
+			},
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+	}
 	go func() {
 		if err := plugins.ListenUnix(ctx, *socket, s); err != nil {
 			log.Fatal(err)

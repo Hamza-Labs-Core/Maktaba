@@ -17,7 +17,7 @@ summary = "fp.plex.summary"
 runner    = "service"
 component = "ext.plex"
 db.read   = ["app_settings", "channel_schedule_state", "channels", "clip_group_items", "clip_groups", "hdhr_device", "job_stages", "libraries", "series", "series_episodes", "series_seasons", "topic_collections", "topic_items"]
-db.write  = ["external_links", "plex_items", "plex_livetv_state", "videos"]
+db.write  = ["collection_items", "collections", "external_links", "plex_items", "plex_livetv_state", "videos"]
 settings  = ["plexlive"]
 service   = ["plex"]
 
