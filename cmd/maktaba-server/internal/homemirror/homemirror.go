@@ -717,3 +717,14 @@ func (l *LocalLink) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	return c.Do(req)
 }
+
+// Fetch is a signed GET of path on the home's API (over the link first): a joined
+// machine's copies of its home's plugin packages (Epic 54 story 54.42 §2), which the
+// caller verifies.
+func (c *Client) Fetch(ctx context.Context, path string) (*http.Response, error) {
+	key, ok := c.usable()
+	if !ok {
+		return nil, errors.New("homemirror: no way to the home yet")
+	}
+	return c.get(ctx, path, key, nil)
+}

@@ -48,6 +48,13 @@ build fails when the two differ.
   stored words) that lack their second listen are transcribed again by a machine that runs
   it, a few at a time.
 
+- **The pipeline's logger costs less per line, and the log benches run every night on a Mac.**
+  The shared redaction no longer hashes its whole rule set for every field of every line, and
+  it leaves the logger's own fields (time, level, service, version, node, the event's name)
+  alone. A value that cannot hold a secret is returned at once. A new Python logger bench sits
+  beside the Go benches in CI's `log-bench` job. A nightly macOS run keeps the numbers for 90
+  days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
+
 ### Fixed
 
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
@@ -875,6 +882,27 @@ build fails when the two differ.
   new cause `plugin_loop`, "Stopped a loop between plugins", with help in English and
   Arabic. Plugins built for 1.0 keep running. Migration 0199: `plugin_write_lineage`.
   maktaba.dev: Flows gains emitting events and loops at run time.
+- Plugins, the flow chart (Epic 54, story 54.41): a plugin's page draws its flow, the
+  whole set of plugins it works with, this plugin highlighted and the members not installed
+  named and dashed, and the whole home's plugin graph; core events in Maktaba's words, right
+  to left in Arabic, with the steps as a list for screen readers. Turning off a plugin
+  others depend on lists the steps that go idle first; a flow refusal shows the loop in the
+  admin's language. `GET /api/plugins/{id}/flow`. The chart is one layout in the plugin SDK
+  (`flowchart.ts`), drawn by the web as its own SVG elements and by maktaba.dev at build
+  time; `mkp flow` prints a plugin's graph and writes `flow.mmd`, and `mkp test --with`
+  runs a two-plugin chain in the harness. The Remote apps show no plugin administration, so
+  they draw no chart. maktaba.dev: the Flows guide draws its example.
+- Plugins on joined machines (Epic 54, story 54.42): a plugin's manifest says where it may
+  run, `placement = "home"` (the default), `"any"` or `"gpu"` (a machine with a graphics
+  processor, its stages in the gpu pool). The home installs and approves; each joined
+  machine a plugin's placement fits fetches its package from the home over its signed link,
+  checks it (the digest the home recorded, the store's signature when there is one, every
+  file) before placing it, and runs it in its own sandboxed plugin host. The machine's plugin
+  API serves reads and media itself and sends every write to the home, which mints the
+  tokens and applies writes, quotas and lineage with its own checks, so the plugin tables'
+  guard stays. Job outcomes go to the home's breaker; turning a plugin off reaches a machine
+  at its next call. New reasons with English and Arabic words: `plugin_home_only`,
+  `plugin_no_gpu`, `plugin_package_untrusted`. maktaba.dev: Flows gains Where a plugin runs.
 
 - **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
   two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)
@@ -955,6 +983,16 @@ build fails when the two differ.
   (nothing in a refused flow is countersigned), with the cycle path or bad edge in English and
   Arabic; cycles through the published flows it subscribes to count; the review pages draw the
   whole flow.
+- **The Android apps send crash reports to the home, report problems, and the Remote reads the
+  home's diagnostics.** Maktaba Remote for Android has **Diagnostics** in its account menu:
+  Errors (a group's chart and lines, Mark seen, Resolve and Mute), Logs (search, and Follow a
+  request from a reference), Dashboards (Overview and Storage) and the problem-report inbox
+  (status and reply). The Player, the Remote and the Android TV app ask once after signing in
+  whether to **send crash reports** to the home, off until the person says yes. When on, the
+  last crash and, on Android 11 and later, an ANR (with its trace), a native crash or a
+  low-memory kill go to the home at the next start as scrubbed envelopes with the app's log.
+  **Report a problem** (the account menu, the TV's Account, and **Report this** on error
+  screens) shows what it sends first; **My reports** shows the admin's reply.
 
 - **The plugin store's catalog, updates and the kill switch on the home (Epic 54, story
   54.17).** A new loop fetches the store's signed lists straight from the CDN (never through
@@ -970,7 +1008,7 @@ build fails when the two differ.
   were last checked and warns when the list has expired (plugins keep running; store installs
   wait). Store installs by `{store: {id, version}}`, with the download checked against its
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
-  home sends its daily `seen` report when telemetry is on. Migration 0202.
+  home sends its daily `seen` report when telemetry is on. Migration 0200.
 
 - **The plugin store browser, listing pages, ratings and reports (Epic 54, story 54.18).**
   Settings → Plugins → Browse the store shows the catalog this home keeps, only the versions

@@ -23,6 +23,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/machineagent"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/mdns"
@@ -490,7 +491,16 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	sup := supervisor.New(procs, policy, supOpts...)
 	// Epic 51 story 51.04: the gates of the processes set before any starts (the last
 	// desired state seen, cached), then reconciled while serve runs
-	packsRoutes := startComponents(ctx, cfg, sup, wholeMachine, compLoops, releaseDir, os.Stderr, pluginsOpts(cfg, sopts, pluginsHost))
+	po := pluginsOpts(cfg, sopts, pluginsHost)
+	if po != nil && node != nil && node.agent != nil {
+		// a joined machine fetches its home's plugin packages (story 54.42 §2) over its
+		// cluster link first, signed otherwise, as it fetches releases
+		mirror := homeMirrorClient(node.agent)
+		mirror.Link = &homemirror.LocalLink{API: "http://" + supervisor.LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()),
+			TokenFile: supervisor.LocalTokenPath(cfg)}
+		po.home, po.gpu = mirror, servesGPU()
+	}
+	packsRoutes := startComponents(ctx, cfg, sup, wholeMachine, compLoops, releaseDir, os.Stderr, po)
 	// Epic 53 story 53.03: /status.json on the web port, from the supervisor alone
 	startStatusBoard(ctx, cfg, sup, packsRoutes.rec, node)
 	// Epic 53 story 53.04: the recovery console, and the tray's one-time link

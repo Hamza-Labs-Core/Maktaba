@@ -67,6 +67,8 @@ import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.ui.AccountMenu
 import com.hamzalabs.maktaba.core.ui.ApproveTvButton
 import com.hamzalabs.maktaba.core.ui.HomeStatusHost
+import com.hamzalabs.maktaba.core.ui.DiagnosticsHost
+import androidx.compose.runtime.collectAsState
 import com.hamzalabs.maktaba.core.ui.PendingSignInsHost
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.widthIn
@@ -106,6 +108,9 @@ class Remote(
     val isAdmin: Boolean = false,
 ) {
     private val kept = mutableMapOf<String, MutableState<*>>()
+
+    /** The diagnostics are open over the places (Epic 53, from the account menu). */
+    var diagnostics by mutableStateOf(false)
 
     /**
      * A place's state under [key], kept for as long as this home is signed in: another place
@@ -199,7 +204,10 @@ fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: Theme
     PendingSignInsHost(session, user, client) {
         // what is down on the home, on top (Epic 53 story 53.06)
         HomeStatusHost(client, admin = user.isAdmin) {
-            RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client) })
+            // crash reports to the home (asked once, off until yes) and Report a problem (Epic 53)
+            DiagnosticsHost(client, session.current.collectAsState().value) {
+                RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client, remote) })
+            }
         }
     }
 }
@@ -209,9 +217,11 @@ fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: Theme
  * code is approved here), then the account menu, which keeps its own "Approve a sign-in".
  */
 @Composable
-fun RemoteAccount(session: AppSession, user: User, themes: ThemeStore, client: ApiClient) {
+fun RemoteAccount(session: AppSession, user: User, themes: ThemeStore, client: ApiClient, remote: Remote? = null) {
     ApproveTvButton(session, user, client)
-    AccountMenu(session, user, themes)
+    AccountMenu(session, user, themes, extra = { close ->
+        if (remote != null) DiagnosticsMenuItem { close(); remote.diagnostics = true }
+    })
 }
 
 /**
@@ -257,6 +267,10 @@ internal fun RemoteFrame(
 
 @Composable
 private fun PlaceScreen(place: Place, remote: Remote, account: @Composable () -> Unit) {
+    if (remote.diagnostics) {
+        DiagnosticsScreen(remote, onBack = { remote.diagnostics = false })
+        return
+    }
     when (place) {
         Place.Attention -> WithWordReview(remote) { AttentionScreen(remote, account) }
         Place.Queue -> QueueScreen(remote, account)

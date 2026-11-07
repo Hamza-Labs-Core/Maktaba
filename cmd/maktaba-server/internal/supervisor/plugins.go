@@ -41,6 +41,8 @@ const ReasonSandboxUnavailable = "sandbox_unavailable"
 const (
 	EnvPluginAPISocket = "MAKTABA_PLUGIN_API_SOCKET"
 	EnvPluginDSocket   = "MAKTABA_PLUGIND_SOCKET"
+	// EnvPluginsRoot is a joined machine's plugins folder (its copies of the packages, 54.42)
+	EnvPluginsRoot = "MAKTABA_PLUGINS_ROOT"
 )
 
 // PluginPaths are the plugin host's folders and sockets on this machine.
@@ -79,18 +81,19 @@ func PluginsPaths(cfg config.Config) PluginPaths {
 	return p
 }
 
-// PluginsHere reports whether this machine runs plugins: a whole home on Postgres (the
-// plugin tables and job_stages' longer names are Postgres's, #693), not a joined machine
-// (plugin stages run on the home only, README H12), and not Windows yet (the pipeline's
-// dispatcher reaches the host on a unix socket, which asyncio cannot open there).
+// PluginsHere reports whether this machine runs plugins: a home on Postgres (the plugin
+// tables and job_stages' longer names are Postgres's, #693), or a full node of one (a
+// plugin placed any or gpu runs there, its writes sent to the home: story 54.42), and not
+// Windows yet (the pipeline's dispatcher reaches the host on a unix socket, which asyncio
+// cannot open there).
 func PluginsHere(cfg config.Config) bool {
 	if runtime.GOOS == "windows" {
 		return false
 	}
-	if n, err := NodeOf(cfg); err == nil && NodeMode(cfg, n) {
-		return false
-	}
 	u := strings.ToLower(strings.TrimSpace(cfg.Database.URL))
+	if n, err := NodeOf(cfg); err == nil && NodeMode(cfg, n) {
+		u = strings.ToLower(HomeDSN(n))
+	}
 	return strings.HasPrefix(u, "postgres://") || strings.HasPrefix(u, "postgresql://")
 }
 

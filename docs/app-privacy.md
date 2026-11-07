@@ -29,12 +29,14 @@ what an app collects or sends changes this file in the same pull request.
   TV and sends nothing itself.
 
 When the switch is off, nothing leaves the device: crashes are still kept on it (the Apple
-apps keep the last 5), so a person who later sends a problem report can choose to attach
-them, seeing them first.
+apps keep the last 5; the Android apps keep `last-crash.txt` and, from Android 11, the last
+5 ANRs, native crashes and low-memory kills with an ANR's trace, under `files/crashes/`), so
+a person who later sends a problem report can choose to attach them, seeing them first.
 
-Which apps do this today: the Apple apps (Player for iPhone, iPad and Mac, Remote, Apple TV)
-and the web app. The Android and desktop apps follow in their own pull requests, which add
-their lines here.
+Which apps do this today: the Apple apps (Player for iPhone, iPad and Mac, Remote, Apple TV),
+the Android apps (Player, Remote, Android TV) and the web app. The desktop apps follow in
+their own pull request, which adds its lines here. An Android crash report holds the
+exception's class and its frames, never its message (it can name a path or a person).
 
 ## App Store Connect: App Privacy
 

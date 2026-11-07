@@ -140,9 +140,16 @@ fun RemoteForTest(home: FakeRemoteHome, info: WindowAdaptiveInfo, fontScale: Flo
     CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
         MaktabaTheme(ThemeMode.Dark) {
             Surface {
-                // as RemoteHome: the waiting-devices banner above the frame
+                // as RemoteHome: the waiting-devices banner above the frame, and Epic 53's host (the
+                // crash question never shows under Robolectric) with Diagnostics in the account menu
                 PendingSignInsHost(home.session, home.user, home.remote.client, intervalMs = pendingEveryMs) {
-                    RemoteFrame(home.remote, account = { RemoteAccount(home.session, home.user, home.themes, home.remote.client) }, adaptiveInfo = info)
+                    com.hamzalabs.maktaba.core.ui.DiagnosticsHost(home.remote.client, null) {
+                        RemoteFrame(
+                            home.remote,
+                            account = { RemoteAccount(home.session, home.user, home.themes, home.remote.client, home.remote) },
+                            adaptiveInfo = info,
+                        )
+                    }
                 }
             }
         }
