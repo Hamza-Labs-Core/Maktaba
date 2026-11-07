@@ -10,6 +10,7 @@ struct LibraryScreen: View {
     let id: String
 
     @State private var model: LibraryModel
+    @State private var pluginPanels: [PanelView] = []
 
     init(context: PlayerContext, id: String) {
         self.context = context
@@ -30,9 +31,10 @@ struct LibraryScreen: View {
                     PlayShuffleButtons(context: context, source: QueueSource(kind: "library", id: id, filters: model.queueFilters))
                         .padding(.horizontal, MaktabaTokens.Spacing.s4)
                     // story 54.20: "From plugins", collapsed, below the library's hub rows
-                    SubjectPanels<PlayerRoute>(client: client, caps: context.session.capabilities.current,
-                                               kind: "library", id: id, search: { .search(query: $0) })
-                        .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    if !pluginPanels.isEmpty {
+                        PluginPanelsSection<PlayerRoute>(panels: pluginPanels, search: { .search(query: $0) })
+                            .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    }
                     tabs
                 }
             }
@@ -44,6 +46,7 @@ struct LibraryScreen: View {
             await model.reload()
         }
         .task { await model.loadHub() }
+        .subjectPanels(client: client, caps: context.session.capabilities.current, kind: "library", id: id, into: $pluginPanels)
         .task(id: model.gridKey) { await model.reload() }
         .task(id: model.tab) { if model.tab == .series, !model.seriesLoaded { await model.loadSeries() } }
         .navigationTitle(model.name.isEmpty ? Text("Library", tableName: "Libraries", comment: "A library's page, before its name loads") : Text(verbatim: model.name))
