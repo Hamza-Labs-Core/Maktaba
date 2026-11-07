@@ -18,6 +18,9 @@ expect fail type $'-- +goose Up\nALTER TABLE t ALTER COLUMN a TYPE bigint;'
 expect fail not-null $'-- +goose Up\nALTER TABLE t ALTER COLUMN a SET NOT NULL;'
 expect pass contract $'-- contract: the previous release no longer reads t.c\n-- +goose Up\nALTER TABLE t DROP COLUMN c;'
 expect pass in-a-comment $'-- +goose Up\n-- we never DROP TABLE here\nCREATE INDEX CONCURRENTLY i ON t (c);'
+# no new migrations: an empty list passes, also under macOS's bash 3.2, where "${files[@]}" on an
+# empty array is an unbound variable under set -u
+if bash "${here}/cloud-expand-only.sh" --files >/dev/null 2>"${work}/empty.err"; then echo "ok   no files"; else echo "FAIL no files: $(cat "${work}/empty.err")"; fails=$((fails + 1)); fi
 # every cloud migration in the repository today expands only (or is older than the rule)
 if bash "${here}/cloud-expand-only.sh" --files "${here}"/../../cloud/migrations/0050*.sql >/dev/null; then echo "ok   the repository's Epic 50 migrations"; else echo "FAIL the repository's Epic 50 migrations"; fails=$((fails + 1)); fi
 if [ "${fails}" -ne 0 ]; then echo "${fails} failed"; exit 1; fi

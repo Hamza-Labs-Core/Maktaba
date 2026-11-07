@@ -5,8 +5,11 @@
 #   1. leave the child running (Task Scheduler ends no one else with it), and
 #   2. let the task run again while that child still runs (the task, IgnoreNew as the
 #      agent's, is not "running" because of it).
-# A throwaway task here runs a script that starts a 20-second child and exits; the task is
-# run twice, and both children must finish. The task is removed at the end.
+# A throwaway task here runs a script that starts a two-minute child and exits; the task is
+# run twice, the second run must start while the first child still runs (its child.log line
+# is written only when it ends), and both children must finish. The task is removed at the
+# end. A run's start is not timed: a cold powershell.exe on a busy runner took over 15 s
+# (2026-11-07), and what matters is only that the child was still alive when it came.
 $ErrorActionPreference = 'Stop'
 
 $dir = Join-Path $env:RUNNER_TEMP ("task-children-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -16,7 +19,7 @@ $mainLog = Join-Path $dir 'main.log'
 $childLog = Join-Path $dir 'child.log'
 @"
 Add-Content -LiteralPath '$mainLog' -Value "main `$PID"
-Start-Process -WindowStyle Hidden -FilePath "`$env:ComSpec" -ArgumentList '/c', 'ping -n 21 127.0.0.1 >nul & echo child-done>> "$childLog"'
+Start-Process -WindowStyle Hidden -FilePath "`$env:ComSpec" -ArgumentList '/c', 'ping -n 121 127.0.0.1 >nul & echo child-done>> "$childLog"'
 exit 0
 "@ | Set-Content -Encoding UTF8 -LiteralPath $main
 
@@ -48,12 +51,12 @@ try {
 
   # the installer's --server-start, while the installer still runs
   Start-ScheduledTask -TaskName $name
-  try {
-    WaitFor 'the second run while the first child runs' 15 { (Lines $mainLog) -ge 2 }
-  } catch {
+  # the second run, whenever it starts: while the first child lives (no child.log line yet)
+  WaitFor 'the second run' 90 { (Lines $mainLog) -ge 2 -or (Lines $childLog) -ge 1 }
+  if ((Lines $mainLog) -lt 2) {
     throw "the task did not run again while the child of its last run lived (state: $state): an installer started by the agent would keep the server from coming back until it ends"
   }
-  WaitFor 'both children' 60 { (Lines $childLog) -ge 2 }
+  WaitFor 'both children' 300 { (Lines $childLog) -ge 2 }
   Write-Host 'both children outlived the task process that started them, and the task ran again meanwhile'
 } catch {
   $failed = $_

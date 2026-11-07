@@ -18,22 +18,21 @@ was made from the poster and the video's own thumbnail is now found.
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 from typing import Any
 
-from ...db.jobs import Job
-from ...discovery.ytdlp_sidecars import find_sidecar_thumbnail
-from ...thumbnail.generator import thumbnail_dir_for
-from ..context import StageContext, StageFailure
-from ..graph import THUMB_SMALL_VERSION, StageResult, Subject
-from ..hashing import canonical_hash
-from ..media import ffmpeg, run_media
-from ..sql import loads, uid
-from ._common import load_video, require_video
-from .content_hash import is_pending
-from .registry import StageImpl
-from .thumb_hash import find_thumbnail, fingerprint_doc
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.discovery.ytdlp_sidecars import find_sidecar_thumbnail
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import THUMB_SMALL_VERSION, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.media import run_media
+from maktaba_pipeline.engine.sql import loads, uid
+from maktaba_pipeline.engine.stages._common import load_video, require_video
+from maktaba_pipeline.engine.stages.content_hash import is_pending
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.engine.stages.thumb_hash import find_thumbnail, fingerprint_doc
+from maktaba_pipeline.thumbnail.small import SMALL_NAME, WIDTH, small_args, small_path, staged_path
 
 __all__ = [
     "IMPL",
@@ -45,32 +44,8 @@ __all__ = [
     "staged_path",
 ]
 
-WIDTH = 320
-SMALL_NAME = "small.jpg"
-
-#: the cache root (``None``: ``~/.maktaba/cache/thumbnails``); tests point it elsewhere
-ROOT: str | None = os.environ.get("MAKTABA_THUMBNAIL_ROOT") or None
-
-
-def small_path(content_hash: str) -> Path:
-    """Where a video's small copy lives (exists or not)."""
-    return thumbnail_dir_for(content_hash, root=ROOT) / SMALL_NAME
-
-
-def staged_path(video_id: Any) -> Path:
-    """Where the mediaintel import leaves a video's small copy while its real hash is
-    still pending (the final folder is named after that hash); the stage moves it in."""
-    return thumbnail_dir_for("imported", root=ROOT) / f"{video_id}.jpg"
-
-
-def small_args(src: str, *, binary: str | None = None) -> list[str]:
-    """One frame of ``src`` scaled to ``WIDTH`` px, JPEG on stdout (``binary``: the ffmpeg;
-    default the current one)."""
-    return [
-        binary or ffmpeg(), "-v", "error", "-nostdin", "-i", src,
-        "-vf", f"scale={WIDTH}:-2", "-frames:v", "1", "-q:v", "5",
-        "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
-    ]  # fmt: skip
+# the small copy's paths and its command line are maktaba_pipeline.thumbnail.small's (the
+# convert, the review pages and the mediaintel import use them too; its ROOT is the cache)
 
 
 async def _content_hash(db: Any, video_id: Any) -> str:

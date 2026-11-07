@@ -176,7 +176,13 @@ async def refresh_stages(db: Any, graph: Iterable[StageDef], served: Collection[
     ``unavailable()`` reads from the home, and the upkeep of a worker that serves it
     (``served``). One that fails keeps what it read before."""
     from ..engine.stages.registry import get_impl
+    from ..plugins import firstparty, native
 
+    if firstparty.stage_names() and getattr(db, "dialect", "") == "postgres":
+        try:
+            await native.write_areas(db, _path_map())
+        except Exception:  # noqa: BLE001 - the runners keep the areas they have
+            _log.warning("plugin_runner_areas_failed", exc_info=True)
     for st in graph:
         if st.legacy:
             continue
@@ -297,3 +303,10 @@ class StageSelector:
     def pools(self) -> list[str]:
         by_name = {s.name: s.pool for s in self.graph}
         return sorted({by_name[s] for s in self.served})
+
+
+def _path_map() -> Any:
+    """This machine's share-path mapping (the runners' library area is through it)."""
+    from ..engine.paths import active_path_map
+
+    return active_path_map()

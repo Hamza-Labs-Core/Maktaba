@@ -1,0 +1,10 @@
+# The parity proof of tv.maktaba.subtitles (story 54.29): the subtitle files written beside
+# each video (SRT and VTT, compared byte for byte) and their subtitle_files rows.
+tables = ["subtitle_files"]
+files  = ["library"]
+
+[ignore]
+subtitle_files = ["id", "created_at", "deleted_at"]
+
+[[cases]]
+name = "three transcribed episodes and one without a transcript"
