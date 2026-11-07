@@ -27,3 +27,21 @@ func TestFirstPartyBundleAndGroups(t *testing.T) {
 		t.Fatal("reserved_stages.txt has no transcribe")
 	}
 }
+
+// The flow files embedded beside the bundle parse (story 54.39 §1): the schema a flow.toml
+// is read against and the flow check's words in both languages.
+func TestEmbeddedFlowFiles(t *testing.T) {
+	var schema map[string]any
+	if err := json.Unmarshal(FlowSchema, &schema); err != nil || schema["type"] != "object" {
+		t.Fatalf("flow.schema.json: %v", err)
+	}
+	var words map[string]struct{ En, Ar string }
+	if err := json.Unmarshal(FlowMessages, &words); err != nil || len(words) == 0 {
+		t.Fatalf("flow-messages.json: %v", err)
+	}
+	for code, w := range words {
+		if !strings.HasPrefix(code, "flow_") && !strings.HasPrefix(code, "plugin_flow_") || w.En == "" || w.Ar == "" {
+			t.Errorf("%s: %+v", code, w)
+		}
+	}
+}
