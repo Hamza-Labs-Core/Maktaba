@@ -16,6 +16,7 @@ prs: [727, 739]
 - The fake Hetzner API checks its bearer token before any path, its own switches included. A rehearsal-only control (`POST /fake/outage`) needs the token too.
 - A template people copy into `status/data/incidents/` must be a valid post: the guidance comment goes after the front matter (the builder needs `---` first). The status builder's test loads every template.
 - Runbooks name real commands only. `maktaba-cloud` has `admin grant|revoke|list` today; a staff `disable` (50.33) and a billing reconcile (25.14) don't exist yet, and the runbooks say so.
+- The shell tests' stand-in servers (probe, status-export and runbook tests) are stopped by their saved PID with errors left visible, after #779's rule; they used `kill "${pid}" 2>/dev/null` before. After a test, `pgrep -fl 'http.server|prom.py|cf.py'` prints nothing.
 - Docker Desktop may be stopped on this machine: `open -a Docker`, then wait for `docker info`.
 
 ## Open

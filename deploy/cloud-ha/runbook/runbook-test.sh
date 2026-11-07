@@ -5,7 +5,8 @@
 set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"; pid=""
-trap 'kill "${pid}" 2>/dev/null; wait "${pid}" 2>/dev/null; rm -rf "${work}"' EXIT
+# the stand-in server is stopped by its PID (the trail's #779 rule): never a blanket kill, never a hidden error
+trap 'if [ -n "${pid}" ]; then kill "${pid}"; wait "${pid}"; fi; rm -rf "${work}"' EXIT
 fails=0
 ok() { echo "ok   $*"; }
 bad() { echo "FAIL $*"; fails=1; }
