@@ -49,7 +49,11 @@ class _Rule:
         if not self.needs:
             return True
         hay = low if self.ignore_case else text
-        return any(n in hay for n in self.needs)
+        # a loop, not any() over a generator: half the cost (issue #744)
+        for n in self.needs:  # noqa: SIM110
+            if n in hay:
+                return True
+        return False
 
 
 @dataclass(frozen=True)
@@ -69,11 +73,12 @@ class Rules:
     ipv4_keep: frozenset[str]
     ipv6: re.Pattern[str]
     raw: dict[str, Any] = field(repr=False, compare=False, default_factory=dict)
-    # every value rule's literal needs in one pattern (case folded: a superset), or None when
-    # a rule has none: a value it does not match, and with too few digits, dots and colons
-    # for a card or an address, has nothing to scrub (most values: the rules' loop alone was
-    # ~2 µs a value, Epic 53 story 53.13)
-    needs_re: re.Pattern[str] | None = field(repr=False, compare=False, hash=False, default=None)
+    # every value rule's literal needs, case folded (a superset), or None when a rule has
+    # none: a value that contains none of them, with too few digits, dots and colons for a
+    # card or an address, has nothing to scrub (most values: the rules' loop alone was ~2 µs
+    # a value, Epic 53 story 53.13). ``in`` on the lowered text: a regex alternation of the
+    # needs, case-insensitive, cost ~1 µs on a 12-character value (issue #744)
+    needs_lower: tuple[str, ...] | None = field(repr=False, compare=False, hash=False, default=None)
     # each key's answer, kept on the instance: an lru_cache keyed on the rules hashed every
     # field of this dataclass on every call (most of a log call's cost, Epic 53 story 53.13)
     _keys_seen: dict[tuple[str, bool], bool] = field(
@@ -92,16 +97,16 @@ class Rules:
     def scrub(self, text: str) -> str:
         if not text:
             return text
+        low = text.lower()
         if (
-            self.needs_re is not None
+            self.needs_lower is not None
+            and not _contains_any(low, self.needs_lower)
             and text.count(".") < 3
             and text.count(":") < 3
             and (len(text) < self.card_min or sum(map(str.isdigit, text)) < self.card_min)
-            and not self.needs_re.search(text)
         ):
             return text
         out = text
-        low = out.lower()
         for rule in self.values:
             if rule.applies(out, low):
                 new = rule.regex.sub(rule.replace, out)
@@ -138,6 +143,14 @@ def _key_sensitive(rules: Rules, low: str, is_string: bool) -> bool:
     if low in rules.keys or any(low.endswith(s) for s in rules.key_suffixes):
         return True
     return is_string and any(p in low for p in rules.key_parts)
+
+
+def _contains_any(low: str, needs: tuple[str, ...]) -> bool:
+    # a loop, not any() over a generator: half the cost (issue #744)
+    for n in needs:  # noqa: SIM110
+        if n in low:
+            return True
+    return False
 
 
 def _is_digit(c: str) -> bool:
@@ -219,8 +232,8 @@ def load_rules(raw: dict[str, Any]) -> Rules:
         key_suffixes=tuple(raw["key_suffixes"]),
         key_parts=tuple(raw["key_parts_string_only"]),
         values=tuple(values),
-        needs_re=(
-            re.compile("|".join(re.escape(n) for v in values for n in v.needs), re.IGNORECASE)
+        needs_lower=(
+            tuple(dict.fromkeys(n.lower() for v in values for n in v.needs))
             if values and all(v.needs for v in values)
             else None
         ),
