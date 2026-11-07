@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+
+	metrics "github.com/Hamza-Labs-Core/Maktaba/shared/metrics/go"
 )
 
 var (
@@ -175,14 +177,15 @@ var (
 	queueMetricsOnce sync.Once
 )
 
-// RegisterMetrics exports the queue's numbers from db on the default registry (the home's; a
-// later call replaces the database, the collector is registered once).
+// RegisterMetrics exports the queue's numbers from db on the process registry the API's
+// /metrics serves (the home's; a later call replaces the database, the collector is
+// registered once).
 func RegisterMetrics(db *sql.DB) {
 	if db == nil {
 		return
 	}
 	queueMetricsDB.Store(db)
-	queueMetricsOnce.Do(func() { _ = prometheus.DefaultRegisterer.Register(registeredCollector{}) })
+	queueMetricsOnce.Do(func() { _ = metrics.Reg().Register(registeredCollector{}) })
 }
 
 // registeredCollector reads the database RegisterMetrics last named.

@@ -113,6 +113,9 @@ build fails when the two differ.
   empty: they kept series that nothing exported. The home's metrics now carry the jobs waiting or
   running by stage, the jobs finished in the last hour by stage and outcome, the audio
   transcribed in the last hour and the transcription speed, read from the queue once a minute.
+- **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
+  refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
+  read, so they never showed. They do now, and no family is listed twice.
 - **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
   June it exited at start and none of its jobs ever ran: expired-token cleanup, account
   deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
