@@ -29,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -74,6 +75,15 @@ class CastTest {
         background.cancel()
     }
 
+    // Story 53.08: the playlist carries the session-open call's id as rid (a UUID); the rest
+    // of the URL is the signed one, unchanged.
+    private fun withoutRid(url: String): String {
+        val u = url.toHttpUrl()
+        val rid = u.queryParameter("rid")
+        assertTrue("rid is the open call's id: $url", rid != null && java.util.UUID.fromString(rid).toString() == rid)
+        return u.newBuilder().removeAllQueryParameters("rid").build().toString()
+    }
+
     private val v1 = Video("v1", title = "The Message", durationSec = 4.0)
 
     private fun playing(): FakeCastPlayer {
@@ -90,8 +100,8 @@ class CastTest {
         assertTrue("the phone says the receiver plays it", playback.casting)
         val media = cast.handed.single().media!!
         val signed = home.home.client.home.resolve("/stream/s1/master.m3u8?sig=x").toString()
-        assertEquals(signed, media.contentUrl)
-        assertEquals(signed, media.contentId)
+        assertEquals(signed, withoutRid(media.contentUrl!!))
+        assertEquals(media.contentUrl, media.contentId)
         assertEquals(MimeTypes.APPLICATION_M3U8, media.contentType)
         assertEquals(MediaInfo.STREAM_TYPE_BUFFERED, media.streamType)
         assertEquals("The Message", media.metadata!!.getString(CastMetadata.KEY_TITLE))
@@ -127,7 +137,8 @@ class CastTest {
 
         playback.setQuality(3000)
         runUntil { cast.handed.size == 2 }
-        assertEquals(home.home.client.home.resolve("/stream/s2/master.m3u8?sig=x").toString(), cast.handed.last().media!!.contentUrl)
+        assertEquals(home.home.client.home.resolve("/stream/s2/master.m3u8?sig=x").toString(),
+            withoutRid(cast.handed.last().media!!.contentUrl!!))
         assertEquals(2, streams.opens().last().int("start_sec"))
     }
 
