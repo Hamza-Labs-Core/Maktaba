@@ -1,11 +1,12 @@
 # Testing and packaging
 
-> **Status: planned (Phase 1).** The SDK, the `mkp` tool, the templates, the test harness and
-> install from a file are not built yet. This page describes the design in
+> **Status: coming in the next release.** The SDK, the `mkp` tool, the templates, the local
+> test harness and installing from a file are the last part of Phase 1. What a plugin builds
+> against is on `main` already: the [manifest](manifest.md), the WIT and the API in the
+> [plugin reference](reference.md). This page describes the design in
 > [story 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > and
-> [story 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md),
-> which can change.
+> [story 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md).
 
 ## Languages
 
