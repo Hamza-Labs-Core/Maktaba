@@ -1082,6 +1082,22 @@ build fails when the two differ.
   problem reports** on the plugin's page (audited); the plugin host's own lines stay.
   maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
 
+- **The plugin store's catalog, updates and the kill switch on the home (Epic 54, story
+  54.17).** A new loop fetches the store's signed lists straight from the CDN (never through
+  Maktaba Cloud, and only while a plugin is installed or Browse was opened in the last 7 days):
+  the revocation list's head every 5 minutes, the list when it changes and every hour, the
+  catalog every 6 hours. Each is verified by the chain of trust and kept on disk and in
+  Postgres, the newest seen winning; an older or mismatched copy (or a catalog of the version already seen
+  with other bytes) is refused and logged. A store
+  `disable` holds the plugin within one poll (the `revoked` gate and an Epic 51 hold), tells
+  the admins, and refuses Start, enable, install, update and rollback to a covered version
+  (`409 plugin_revoked`); `warn` shows a warning; `delist` changes nothing installed; a lifted
+  entry leaves the plugin for the admin to start. The Plugins page says when withdrawn plugins
+  were last checked and warns when the list has expired (plugins keep running; store installs
+  wait). Store installs by `{store: {id, version}}`, with the download checked against its
+  sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
+  home sends its daily `seen` report when telemetry is on. Migration 0203.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
