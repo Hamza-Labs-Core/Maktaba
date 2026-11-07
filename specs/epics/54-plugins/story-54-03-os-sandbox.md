@@ -78,6 +78,17 @@ network socket family.
   loaded by a dependency) and the escape probes cover loopback and LAN explicitly.
 - The host checks it is in an AppContainer (`GetTokenInformation(TokenIsAppContainer)`) and
   refuses to run otherwise.
+- **Dispatch on Windows (#710).** The host serves its dispatch socket as AF_UNIX there too,
+  which the supervisor's Go reaches from outside the AppContainer; the pipeline cannot
+  (Python on Windows has no AF_UNIX), and the host may not create a named pipe inside its
+  AppContainer (both measured on `windows-2022`). So the supervisor serves a named pipe for
+  the pipeline and relays each connection, byte for byte both ways, to the host's socket
+  (`cmd/maktaba-server/internal/pluginrelay`): its name is random for each run
+  (`MAKTABA_PLUGIND_PIPE`); its DACL admits only the supervisor's user; it refuses remote
+  clients and its first instance takes `FILE_FLAG_FIRST_PIPE_INSTANCE`, so a name someone
+  made first is not served. It sends the client one byte once the host answered and closes
+  it without when not: the pipeline raises the `ConnectionRefusedError` a refused unix
+  socket raises, and falls back the same way.
 
 ### 5. The egress tests (CI only)
 

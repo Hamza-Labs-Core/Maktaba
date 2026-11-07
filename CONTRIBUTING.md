@@ -315,6 +315,20 @@ add the `force-merge` label and a `force-merge: <reason>` line to the
 PR body. The line is the audit trail; PRs with the label but no
 matching reason fail the `pr-body-check` gate.
 
+### Bringing main into a branch
+
+Almost every merge of `main` conflicts in `CHANGELOG.md` and `CHANGELOG.ar.md`: every pull
+request adds an entry at the end of the same section. Run `tools/dev/merge-main.sh` instead of
+`git merge origin/main`. It keeps both sides of those two files entry by entry (main's
+entries, then yours at the end of their sections, and your edits of existing entries) and
+commits the merge. Any other conflicted file, or a change to the same entry on both sides,
+stops it with the merge left in progress: resolve those, `git add` them, and run it again to
+finish the CHANGELOGs. It runs on macOS's bash 3.2. Its tests: `bash tools/dev/merge-main-test.sh`.
+
+A line-wise merge (git's own resolution, or `merge=union` in `.gitattributes`) is not safe
+for these files: two new entries that share a line, even a blank one or a `maktaba.dev:` tail,
+get split around it and interleaved, silently with `union`.
+
 ### Fork PRs
 
 Fork PRs skip `e2e` and `perf-ci` because forked workflows don't have

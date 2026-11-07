@@ -77,10 +77,13 @@ own semver and a `maktaba` range and `plugin_api` version (54.01).
 
 - At install and at every server start, the store checks the range and the API version. Out of
   range → *Waiting* `incompatible`, stages not registered, queue kept.
-- **Before a server update**, the updater (Epic 35; the packs step of 51.18 in
-  `cmd/maktaba-server/internal/updater/packs.go`) lists installed plugins whose range
-  excludes the new version, and the Updates page shows them ("These plugins will pause after
-  the update: …"). The update is not blocked.
+- **Before a server update**, the Updates overview (`GET /api/cluster/updates`, Epic 35)
+  lists, for each release in the catalog and for the plan's target, the installed plugins
+  whose range excludes it (`plugins_paused`: id, version, range, name in each language,
+  whether it is on; `plugins.PausedBy`, the gate's own range check), and the Updates page
+  shows them under the release ("These plugins will pause after the update to …"). The home
+  answers it from `plugin_installs` before any machine updates, so the list is there before
+  the update starts. The update is not blocked.
 - When a newer compatible version is in the catalog (54.17), the plugin shows "Update
   available".
 
@@ -151,6 +154,17 @@ machine's placement), and `running` when the gate passes. The pipeline writes it
 the stage group. So the state stands while the pipeline is down, a refusal or a hold outranks
 the pipeline's `running`, and when the gate passes the pipeline's own phase (`starting`,
 `degraded`, `failed`) wins over the supervisor's `running`.
+
+As built (`api/rehearsal_plugins_e2e_test.go`, T10, T14): the kit carries this commit's
+`maktaba-plugind` and the host's test guest (`tools/rehearsal/build.sh`, `plugins/`); the
+home installs three packages of it through the admin API, A (any version), B (a range that
+excludes the next releases, 20 jobs queued) and C (kept off), then takes an update that fails
+its watch and one that passes. A and B are Running on this commit and after the rollback
+(the supervisor's part: the rehearsal's pipeline is a stand-in that runs no job), B is seen
+waiting `incompatible` (never failed) while the failing release runs (read from its status
+row: that release's API crash-loops by design) and waits so on the release that passes, its
+queued jobs kept and not run, and C stays installed and kept off. Plugin jobs under flips run in `components-chaos` (T09: a plugin among its
+targets, its 400 jobs all done).
 
 ## Acceptance criteria
 

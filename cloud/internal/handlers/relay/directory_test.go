@@ -330,7 +330,7 @@ func TestRelayPageLanguage(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Sec-Fetch-Dest", "document")
 	r.Header.Set("Accept-Language", "ar")
-	for _, kind := range []string{"server_offline", "home_reconnecting", "tier_limit", "no_server"} {
+	for _, kind := range []string{"server_offline", "home_reconnecting", "relay_needs_plan", "stream_limit", "no_server"} {
 		rec := httptest.NewRecorder()
 		writeErr(rec, r, http.StatusServiceUnavailable, kind, "")
 		body := rec.Body.String()

@@ -72,7 +72,15 @@ migrates, then refuses to run on what it migrated: the injected health failure),
 destructive.
 
 The pipeline is the end-to-end tests' stand-in (it answers its probes; no transcription or
-TV staging job ever runs: scenario 11 plays the `tv_stage` job's database writes itself). The
+TV staging job ever runs: scenario 11 plays the `tv_stage` job's database writes itself),
+except in scenarios 16.x. There each release runs its own pipeline: the kit carries each
+release's real pipeline wheel, stamped with its version, without the ML extras
+(`build.sh`), and `tools/rehearsal/venvs.sh` makes one environment of each, once per release.
+The home's Python is a small script that runs the environment of the release whose server
+started it, so a rollback runs the previous release's pipeline again. Only the work of the
+wave's stages changes (`tools/rehearsal/sleepy`): each job sleeps 8 s wherever its release
+runs it (in the worker, or in its runner), and logs where it ran. The claims, the drain,
+the flip and the runners are the releases' own code. The
 streaming binary is built with `-tags tvstaging`, as the release builds it. The web UI is
 not built in (the web answers with its placeholder page; the API through the web is checked).
 
@@ -128,6 +136,8 @@ start to its end.
 | 12 | No behaviour change: an update leaves what a home runs alone (Epic 51, [story 51.03](../specs/epics/51-configurable-components/story-51-03-seed-from-today.md)). The small seed's home on the previous release (which seeded its components when the seeded home was made, v0.3.81 on) with the TV slots turned on in the components, the relay off, Plex enabled, `youtube_backfill` turned off by an operator and the HDHomeRun device off; after the update the server is restarted once more | the supervisor's processes (role, instance, wanted, running), `job_stages` (enabled, disabled_reason, paused), `extensions` and `hdhr_device.enabled` equal before and after; `component_meta.seeded_at` unchanged, bundle `full`; every component row of the previous release keeps its want, generation and writer, with the want §2 gives this home; the loops the previous release runs, read from its own `component_status` (part `api` or `streaming`) before the update once every switchable component it left enabled with a loop there reports one `running`, are `running` after it, and no other switchable loop of those hosts is, but one of a component the previous release had no row for (one this release adds) that the Full bundle has; each component the previous release had no row for and this release's seed wrote follows the bundle (on in it, off outside it, an asset installed in it and absent outside it unless a component that seed turned on requires it), while one the previous release seeded keeps its row whatever the bundle says; the restart moves neither `seeded_at` nor any `generation`, one seed in the audit log, no `toml_key_superseded` after the update. The first seed (from a release before the component model) was rehearsed from v0.3.80 when v0.3.81 was tagged; `componentseed`'s tests keep it. The pipeline's loops and stage claiming are not here (the stand-in runs no job) | 2 min |
 | 13 | An update carries the packs (Epic 51, [story 51.18](../specs/epics/51-configurable-components/story-51-18-update-rehearsal.md)). The small seed's home on this commit (installed by hand, as in 03) with the `tool.yt-dlp` pack of this commit imported (`POST /components/import` on the supervisor's admin, an offline folder of the release's signed files, its index and the pack); an update to the release after it, with its own pack, that fails its watch (03's injected failure); then an update to the release after that, which passes | the import installed the pack and `current` names its folder (`<version>_<sha12>`); the run ends `rolled_back` with no restore; the journal's `packs` step is `done` and ended before the apply's first step (`order`, `backup`, `switch`) started; the journal names the staged folder (the new release's, replacing the running one's); `current` was seen naming the new release's folder while it ran, and names the kept folder again after the rollback, which is still there; the progress route says installed; the seeded counts unchanged; the second update ends `done` within the same budget as an update without packs (N13); `current` names its folder; after its commit every pack folder belongs to a kept release (the app's payload and `updates/payloads/*/.kept`) or the running one, the kept releases' folders are there, and the rolled-back release's is gone unless it is kept | 4 min (the rollback), 2 min (the update after) |
 | 14 | A pack that fails its verification stops the update. The home of 13 (this commit, the pack imported); the release after it is published with its pack's bytes changed by one after signing (its `checksums.txt` and index list the bytes it was built with) | the run is neither `done` nor `rolled_back`; the journal ends `prepare_failed` with `pack_verify_failed` at the `packs` step, said in the run's error; the journal never went `applying`, `restarting` or `watching`; the pack folders and `current` unchanged; the database's record unchanged; the progress route still says installed; the site serves this commit; the seeded counts unchanged | 5 s |
+| 15 | Plugins follow an update and its rollback (Epic 54, [story 54.07](../specs/epics/54-plugins/story-54-07-lifecycle.md) §8, T10, T14). The small seed's home on this commit (installed by hand, as in 03) with the kit's `maktaba-plugind` (`plugins/`, built by `build.sh` when cargo is there); the admin allows unreviewed plugins and installs three packages of the host's test guest through `POST /api/plugins/install`: A (any server version, on), B (a range that excludes the next releases, on, 20 jobs queued) and C (turned off by the admin: kept off); an update that fails its watch (03's injected failure), then one that passes | A and B are Running on this commit; while the failing release runs (its API crash-loops by design, so B's status row is read from the database: the supervisor's `plugins` part, story 54.07 §8), B is seen waiting `incompatible` and never failed; after the rollback A and B are Running again; C is `installed` and kept off after every step; B's jobs are all there after the rollback, none failed or cancelled; on the release that passes, A is Running, B waits `incompatible` (still enabled) and its newly queued jobs are kept and not run. The stand-in pipeline runs no job: the state is the home's (the supervisor's part), and plugin jobs run in the components CI (`components-chaos`, `plugins-live`) | 4 min (the rollback), 2 min (the update after) |
+| 16.1–16.3 | Epic 54 Phase 4's waves across an update ([stories 54.28–54.30](../specs/epics/54-plugins/story-54-28-wave1-leaf-classify.md), each one's T05): the small seed's home on the previous release, running each release's own pipeline, with jobs of the wave's stages queued and running (16.1: `promo_links`, `clip_groups`, `topic_collections`, `rate_style` where the seed has seasons; 16.2: `thumb_small`, `chapter_thumbs`, `subtitle_gen`; 16.3: `topic_assign`, `chapter_infer`); the update to the release that fails its watch; more jobs; the update to this commit; then two more jobs of each stage | every job ends done, none failed or cancelled, none took a second attempt or started twice; each ran where its release runs the stage: in its runner (`plugin`) on a release whose built-in plugins have it, in-process on one without, so a rollback to a release from before the wave runs it in-process again; on a release with the plugin, a job claimed before its runner says Hello runs in-process (story 54.25 §3); once this commit serves, every stage of the wave is `plugin` and the last jobs run in their runners; no restore. The rows of waves 4–9 are in `api/rehearsal_waves_e2e_test.go`; each is skipped until its wave's plugins are in the commit, and its workflow row comes with the wave | 4 min (the rollback), 2 min (the update) |
 
 ### Expected failures
 
@@ -165,6 +175,10 @@ scenario on the small seed (minutes instead of a quarter of an hour for the firs
 A missing seed is made on the fly in `MAKTABA_REHEARSAL_SEEDS` (default
 `$MAKTABA_REHEARSAL_WORK/seeds`).
 
+Scenarios 16.x need the releases' pipeline environments (Python 3.12 and uv):
+`tools/rehearsal/venvs.sh --kit /tmp/rh/kit` makes them in the kit's `venvs/`, and keeps
+one already made.
+
 | Variable | |
 |---|---|
 | `MAKTABA_E2E_REHEARSAL=1` | runs the rehearsal's tests (skipped otherwise) |
@@ -174,6 +188,7 @@ A missing seed is made on the fly in `MAKTABA_REHEARSAL_SEEDS` (default
 | `MAKTABA_REHEARSAL_SEEDS` | the seeded homes |
 | `MAKTABA_REHEARSAL_PROFILE` | `TestUpdateRehearsalSeed`'s profile |
 | `MAKTABA_REHEARSAL_PROFILE_OVERRIDE` | one profile for every scenario |
+| `MAKTABA_REHEARSAL_VENVS` | the releases' pipeline environments, scenarios 16.x (`venvs.sh`'s `--out`; default `$MAKTABA_REHEARSAL_KIT/venvs`) |
 | `MAKTABA_REHEARSAL_SMALL_VOLUME` | scenario 08's volume (filled; never this machine's disk) |
 | `MAKTABA_REHEARSAL_REQUIRE_ALL=1` | a scenario that cannot run here fails instead of skipping (CI) |
 | `MAKTABA_E2E_LOG_DIR` | each machine's whole log |
@@ -192,6 +207,7 @@ A missing seed is made on the fly in `MAKTABA_REHEARSAL_SEEDS` (default
 | Scenario 11 | `api/rehearsal_tv_e2e_test.go` |
 | Scenario 12, the loops the previous release runs on the rehearsal's home | `api/rehearsal_components_e2e_test.go` (read from the previous release's `component_status` and component rows before the update: nothing to keep per release) |
 | Scenarios 13 and 14, the releases' packs and their index, the offline import | `api/rehearsal_packs_e2e_test.go`; the packs in the kit: `tools/rehearsal/build.sh`, `tools/release/packs/build.sh` |
+| Scenarios 16.x, the waves' stages across an update | `api/rehearsal_waves_e2e_test.go`; each release's pipeline wheel: `tools/rehearsal/build.sh`; their environments: `tools/rehearsal/venvs.sh` (CI: the kit job builds them, the previous release's from its cache by tag, and hands them to the 16.x jobs as the `rehearsal-venvs` artifact); the sleeping stages: `tools/rehearsal/sleepy/maktaba_rehearsal_sleepy.py` |
 | Expected failures | `tools/rehearsal/expected-failures.txt` |
 | The release gate | `tools/release/tag-guard.sh` (`passed_on`), `tools/release/tag-guard-test.sh` |
 

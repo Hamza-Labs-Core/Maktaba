@@ -220,6 +220,14 @@ The language model plugins ask, and how much of the home's models each plugin ma
 
 Plugins ask the model one question at a time with Maktaba's own model steps, and get at most one turn in three while Maktaba's work waits. Maktaba never logs what plugins ask or what the model answers.
 
+### Direct access {#direct}
+
+Lets apps outside the home reach it directly over HTTPS, without Maktaba Cloud's relay, when the router allows it. Free on every plan. It needs the home linked to Maktaba Cloud, which gives the home its own certificate and checks it from outside. **Storage & discovery** shows whether the check passed, with **Check now**.
+
+- **Let apps reach this home directly from outside, without the relay** (off): the home opens a port on the router (UPnP, NAT-PMP or PCP) every 20 minutes and serves the same pages and API over HTTPS on it.
+- **Open the port on the router** (on): off, forward a port by hand on the router to this home's direct port (8444) and give it as **Public port**.
+- If your internet provider shares your address with others (CGNAT), direct access isn't possible; remote access uses the relay.
+
 ## What the states and messages mean {#states}
 
 - **changed**: the saved value differs from the built-in default.

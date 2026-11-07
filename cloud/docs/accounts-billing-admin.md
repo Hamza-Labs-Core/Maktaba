@@ -81,11 +81,14 @@ Signing in during the 30-day hold is allowed and the account page offers
 
 | Method & path | Auth | Success |
 |---|---|---|
-| `GET /v1/billing/plans` | public | `{payments_enabled, plans:[{id, name, price_cents, bandwidth_bytes_per_month, max_servers, max_concurrent_streams, relay_qos, includes_transcoding, family_seats, purchasable, home_tier}]}` (`home_tier`: the plan the license gives the account's homes, see Licenses) |
+| `GET /v1/billing/plans` | public | `{payments_enabled, plans:[{id, name, price_cents, relay, relay_cap_kbps, max_relay_streams, fair_use_bytes_per_month, allowance_bytes_per_month, pay_as_you_go, payg_price_per_gb_cents, extra_streams, extra_stream_price_cents, max_servers, purchasable, home_tier}]}`: `free`, `basic`, `pro` (Epic 50 story 50.19). A null number is a value not set yet (TBD); a plan without a price can't be bought. `home_tier`: the tier the license gives the account's homes, see Licenses |
 | `GET /v1/billing/me` | bearer | `{plan, status, interval?, current_period_end?, cancel_at_period_end, has_customer}` |
-| `POST /v1/billing/checkout` | bearer | body `{plan:"pro"\|"family"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 payments_not_set_up` |
+| `POST /v1/billing/checkout` | bearer | body `{plan:"basic"\|"pro"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 payments_not_set_up` |
 | `POST /v1/billing/portal` | bearer | `{portal_url}`; `409 no_customer`, `503 payments_not_set_up` |
-| `GET /v1/billing/usage` | bearer | `{month, plan, limit_bytes, used_bytes, servers:[{id, name, bytes_in, bytes_out}]}` |
+| `GET /v1/billing/usage` | bearer | `{month, plan, limit_bytes, used_bytes, servers:[{id, name, bytes_in, bytes_out}]}`: `limit_bytes` is Pro's full-quality allowance or Basic's fair use (0: none). Past it nothing stops; the relay slows (story 50.19) |
+| `GET /v1/billing/payg` | bearer | `{enabled, cap_cents, spent_cents, price_per_gb_cents}`: Pro's pay-as-you-go (story 50.19 §5); `price_per_gb_cents` null until the owner sets it |
+| `PATCH /v1/billing/payg` | bearer | body `{enabled, cap_cents}`: on needs a cap (`422 cap_required`); adds or removes item 2 at the provider; `409 needs_pro`, `409 price_not_set`, `503 payments_not_set_up` |
+| `PATCH /v1/billing/extra-streams` | bearer | body `{count}` (0–100) → `202`: item 3's quantity at the provider (prorated); its webhook puts the count on the account's homes, and the relay allows them within a second |
 | `GET /.well-known/maktaba-entitlement-key` | public | `{fingerprint, public_key}` (base64 Ed25519): the license-signing key, whose public half release builds of the home embed |
 | `POST /v1/billing/webhook/{provider}` | the provider's signature | `200`; `400 invalid_signature`; `404` unless `{provider}` is the configured provider and it takes payments |
 
@@ -118,6 +121,36 @@ that wrote them (`manual` for a plan set by hand). The effective plan is mirrore
 `users.plan` and onto the plan of every server the account owns, which is
 what the relay's bandwidth gate reads.
 
+## The plans on the relay — Epic 50 story 50.19
+
+The relay decides each forwarded request's mode from the home's plan and this month's bytes by
+mode (`billing.ModeFor`, `relay_usage_monthly`), and counts the request's bytes in it:
+
+| Mode | When | What the relay does |
+|---|---|---|
+| `refused` | Free (no relay) | `402 relay_needs_plan` without forwarding, always; the tunnel stays (direct access, entitlements, push) |
+| `full` | Pro within its allowance or pay-as-you-go cap; any paid home while `relay.plans.enforce` is off | forwards untouched |
+| `capped` | Basic; Pro past its allowance and cap | adds `X-Maktaba-Relay-Cap-Kbps: 3000` (a client's own copy is removed) and paces media at the cap + 20 % |
+| `capped_slow` | past 500 GB of fair use in capped mode | the same with `1500` |
+
+- **Pacing** applies to media under `/stream/` (segments, a live stream, a file), never to
+  playlists, subtitles, artwork or the API. It slows, never stops.
+- **Streams at once.** A media stream is a session (`/stream/{session}/…`), or a channel or clip
+  with the client's address. A new one past the plan's limit (Basic 2; Pro N plus its extra
+  streams) is `429 stream_limit`; the ones playing go on. Counted in `relay_streams` (both relay
+  colours agree), touched once a minute, and swept by the worker after 2 minutes of silence. A
+  counting error admits the stream.
+- **Pay-as-you-go.** Pro past its allowance plays at full quality while the account's
+  pay-as-you-go is on and its cost this month (every home's `bytes_payg` at the GB price) is
+  under the owner's cap; then capped. The worker queues each home's whole GB every hour in
+  `billing_usage_outbox` (id `<server_id>:<month>:<hour>`, the provider's idempotency key),
+  clamped to the cap's worth, and sends the queue; a provider outage leaves it queued. It
+  emails at 80 % and 100 % of the cap, and reconciles daily (`billing_usage_mismatch` over
+  1 GB).
+- **Switches.** `relay.plans.enforce` (default false): capping, pacing and the stream limit.
+  `relay.stream_limit.enabled` (default true): the limit within them. Free is refused either
+  way.
+
 ## Licenses — Epic 16
 
 A paid plan becomes a **license** its homes verify: Ed25519-signed JSON
@@ -130,8 +163,8 @@ user-scoped entitlement token (`GET /v1/billing/entitlement`) is gone.
 | Cloud plan | Home tier | Seats on the home |
 |---|---|---|
 | `free` | none (the home's Free: one user, LAN only) | 1 |
-| `pro` | `home` | 4 |
-| `family` | `pro` | unlimited |
+| `basic` | `home` (homes released before story 50.19 refuse a tier they don't know, so `basic` keeps the wire name `home` until homes read it) | 4 |
+| `pro` | `pro` | unlimited |
 
 | Method & path | Auth | Success |
 |---|---|---|

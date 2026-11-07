@@ -314,6 +314,12 @@ function AdminSubscription() {
         ) : (
           <p className="mkt-muted">{t("subscription.cloud.unclaimed")}</p>
         )}
+        {/* Epic 50 story 50.19: on Basic (the home tier), relayed videos are converted here */}
+        {view.cloud.claimed && view.tier === "home" && (
+          <p className="mkt-muted" data-testid="relay-transcode-note">
+            {t("relay.transcodeNote")}
+          </p>
+        )}
         {view.last_refresh_at && (
           <p className="mkt-muted">
             {t("subscription.lastChecked", { when: d(view.last_refresh_at) })}

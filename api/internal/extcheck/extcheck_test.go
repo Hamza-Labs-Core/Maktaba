@@ -336,6 +336,12 @@ func TestPlexRedirectToOtherHostRefused(t *testing.T) {
 	var mu sync.Mutex
 	evil := []string{}
 	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// a path the Plex check asks for; a stray request (another process probing a
+		// recycled 127.0.0.1 port) is not the redirect followed
+		if p := r.URL.Path; p != "/identity" && !strings.HasPrefix(p, "/library/") && !strings.HasPrefix(p, "/livetv/") {
+			http.NotFound(w, r)
+			return
+		}
 		mu.Lock()
 		evil = append(evil, r.Header.Get("X-Plex-Token"))
 		mu.Unlock()

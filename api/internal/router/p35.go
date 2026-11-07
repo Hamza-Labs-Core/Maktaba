@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
@@ -201,7 +202,7 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 	}
 	store := &updates.Store{DB: d.DB}
 	svc := &updates.Service{Store: store, Notifier: hub, Log: d.Logger, Current: d.Current,
-		BaseChannel: d.BaseChannel, Getenv: getenv}
+		BaseChannel: d.BaseChannel, Getenv: getenv, PluginsPaused: pluginsPausedBy(d.DB)}
 	disabled := func() bool {
 		v := getenv("MAKTABA_UPDATE_DISABLE")
 		return v == "1" || strings.EqualFold(v, "true")
@@ -282,4 +283,20 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 		d.Loops.Declare("updates_health_sampler", runner.Bound(ctx, runner.Func(sampler.Run)))
 	}
 	return h
+}
+
+// pluginsPausedBy is the updates service's list of the plugins a release would pause
+// (story 54.07 §3), from plugin_installs.
+func pluginsPausedBy(db *sql.DB) func(ctx context.Context, version string) ([]updates.PausedPlugin, error) {
+	return func(ctx context.Context, version string) ([]updates.PausedPlugin, error) {
+		ps, err := plugins.PausedBy(ctx, db, version)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]updates.PausedPlugin, 0, len(ps))
+		for _, p := range ps {
+			out = append(out, updates.PausedPlugin{ID: p.ID, Version: p.Version, Range: p.Range, Name: p.Name, Enabled: p.Enabled})
+		}
+		return out, nil
+	}
 }

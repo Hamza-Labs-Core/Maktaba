@@ -26,6 +26,10 @@ var (
 		Purpose: "the REST API and the cluster link ([server] listen)"})
 	APIAdmin = add(Entry{Name: "api admin", Owner: "api", Host: Loopback, Port: 9100,
 		Purpose: "/healthz, /readyz, logs and metrics ([server] admin_addr)"})
+	// DirectHTTPS is direct remote access's listener (Epic 50 story 50.15): the web port's
+	// pages and API over TLS with the home's own certificate, the port the router maps.
+	DirectHTTPS = add(Entry{Name: "direct https", Owner: "api", Host: AllInterfaces, Port: 8444,
+		Purpose: "direct remote access over HTTPS while rules.direct is on ([direct] listen)"})
 )
 
 // maktaba-server itself (serve): the web pages, the supervisor's endpoint, mDNS.

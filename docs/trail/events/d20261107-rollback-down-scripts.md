@@ -7,7 +7,7 @@ session: b743b7d4-a714-4de3-9952-e11ad221c8e6
 ---
 
 ## What happened
-- 0.3.90 rolled back with watch_timeout. Its only migration, 0192, added two columns and two CHECK constraints to user_playlists.
+- 0.3.90 rolled back with watch_timeout. It brought 14 migrations (0184–0197); none of them loses data on the way up, and every one has a Down script.
 - The schema-keep rule counts any ADD CONSTRAINT as destructive, so the rollback put the whole 73 GB database back from the pre-update dump. Every table was reloaded and every index rebuilt; the HNSW index over 28 M vectors alone needed about a day. Everything written since the dump was lost, and the home was down the whole time.
 
 ## What we learned

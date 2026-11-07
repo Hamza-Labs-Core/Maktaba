@@ -33,15 +33,20 @@ const (
 	TierPro  = "pro"
 )
 
-// TierForPlan maps a cloud plan (billing.Plan*) to the home tier its
-// license grants. The cloud catalog predates Epic 16's names: the entry
-// paid plan ("pro", $5) is the home's Home tier, the top plan
-// ("family", $10) its Pro tier. "" means no license (the free plan).
+// TierBasic is story 50.19's name for the entry paid tier. Homes released before it know the
+// tier as home and refuse a license naming a tier they don't know, so the cloud keeps issuing
+// home for Basic until homes read basic (story 50.19 part 4); then TierForPlan becomes the
+// identity.
+const TierBasic = "basic"
+
+// TierForPlan maps a cloud plan (billing.Plan*) to the home tier its license grants (story
+// 50.19 §7): basic is the home's home tier (its wire name for now, above), pro is pro. "" means
+// no license (the free plan).
 func TierForPlan(plan string) string {
 	switch plan {
-	case "pro":
+	case "basic":
 		return TierHome
-	case "family":
+	case "pro":
 		return TierPro
 	}
 	return ""

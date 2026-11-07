@@ -103,3 +103,45 @@ rate     = 100
 [relay.ticket]
 # Homes reconnect with a 10-minute resume ticket instead of their secret.
 enabled = true
+
+[relay.plans]
+# Epic 50 story 50.19: a plan without the relay (Free) is always refused (402 relay_needs_plan).
+# true: paid homes are capped (X-Maktaba-Relay-Cap-Kbps, paced at the cap + 20 %) and limited
+# as their plan says; false: they are forwarded in full, and their bytes still counted.
+enforce = false
+
+[relay.stream_limit]
+# A new relayed stream past the plan's limit is refused (429 stream_limit) while the plans
+# are enforced; false: counted, never refused.
+enabled = true
+
+# Direct remote access (Epic 50 story 50.15): each home's own HTTPS names under one of several
+# direct-name domains (never maktaba.tv), answered by the dns role on nodes A and B, certificates
+# from Let's Encrypt within each domain's weekly budget, then ZeroSSL, then Google Trust
+# Services. Adding a domain is configuration only: register it, delegate its NS to ns1/ns2
+# (docs/cloud-dns.md), append it here. Off until the domains exist.
+[direct]
+enabled = false
+domains = ["direct-a.example", "direct-b.example", "direct-c.example"]
+ns1 = "203.0.113.11"          # node A's primary IP
+ns2 = "203.0.113.12"          # node B's primary IP
+dns_listen = ":53"
+weekly_budget = 45
+check_every = "15m"
+
+[direct.acme.letsencrypt]
+directory = "https://acme-v02.api.letsencrypt.org/directory"
+account_key = "/etc/maktaba/acme-letsencrypt.key"
+contact = "mailto:ops@maktaba.tv"
+
+# ZeroSSL and Google need external account binding: the HMAC comes from the environment only
+# (MAKTABA_CLOUD_DIRECT_ZEROSSL_EAB_HMAC, MAKTABA_CLOUD_DIRECT_GOOGLE_EAB_HMAC)
+[direct.acme.zerossl]
+directory = "https://acme.zerossl.com/v2/DV90"
+account_key = "/etc/maktaba/acme-zerossl.key"
+eab_kid = ""
+
+[direct.acme.google]
+directory = "https://dv.acme-v02.api.pki.goog/directory"
+account_key = "/etc/maktaba/acme-google.key"
+eab_kid = ""

@@ -7,12 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
@@ -29,8 +31,10 @@ type ServerLookup interface {
 // Metering is the per-home bandwidth gate and counter (*billing.Meter
 // satisfies it).
 type Metering interface {
-	Allow(ctx context.Context, sv stores.Server) error
-	Record(ctx context.Context, sv stores.Server, in, out int64)
+	// Decide is the home's relay mode now (story 50.19 §3).
+	Decide(ctx context.Context, sv stores.Server) billing.Decision
+	// Record counts a request's bytes in the mode it was relayed in.
+	Record(ctx context.Context, sv stores.Server, d billing.Decision, in, out int64)
 }
 
 // DefaultHeadTimeout bounds the wait for the home's response head.
@@ -49,9 +53,12 @@ const clientWriteIdle = 2 * time.Minute
 type Deps struct {
 	Registry *relaypkg.Registry
 	// Servers resolves slugs unless Lookup is set.
-	Servers    *stores.Servers
-	Lookup     ServerLookup
-	Meter      Metering
+	Servers *stores.Servers
+	Lookup  ServerLookup
+	Meter   Metering
+	// Plans enforces each plan on the relay (story 50.19 §3): refusal, the cap, pacing and
+	// the stream limit. Nil: every home is forwarded as it comes.
+	Plans      *Plans
 	PublicHost string // e.g. "relay.maktaba.tv"
 	// Editions serves the web app's player and remote editions at /play/ and /manage/ on
 	// a home's relay address (Epic 42.9); nil: those paths go to the home like any other.
@@ -212,12 +219,40 @@ func (d *Deps) Handler() http.Handler {
 // the tunnel closed before the home answered a GET or HEAD.
 func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t *relaypkg.Tunnel) (retry bool) {
 	{
-		// Tier gate: the plan's monthly relay allowance.
+		// The home's relay mode (story 50.19 §3), in which its bytes are counted. A plan
+		// without the relay is refused (the tunnel stays: direct access, entitlements and push
+		// use it); a paid plan is capped and limited when the plans are enforced, never cut
+		// off for bytes.
+		mode := billing.Decision{Mode: billing.ModeFull}
 		if d.Meter != nil {
-			if err := d.Meter.Allow(r.Context(), sv); err != nil {
-				writeErr(w, r, http.StatusPaymentRequired, "tier_limit", err.Error())
+			mode = d.Meter.Decide(r.Context(), sv)
+		}
+		if mode.Mode == billing.ModeRefused {
+			if d.Plans != nil {
+				writeErr(w, r, http.StatusPaymentRequired, "relay_needs_plan",
+					"remote play through the relay needs a Basic or Pro plan; direct access is free")
 				return false
 			}
+			mode = billing.Decision{Mode: billing.ModeFull}
+		}
+		if d.Plans == nil || !d.Plans.Enforce {
+			mode = billing.Decision{Mode: billing.ModeFull, PAYG: mode.PAYG}
+		}
+		media := mediaPath(r.URL.Path)
+		stream, isStream := streamKey(r.URL.Path, clientIP(r))
+		if isStream && d.Plans != nil && d.Plans.Enforce && d.Plans.StreamLimit && d.Plans.Streams != nil {
+			// the extra streams bought ride on the cached home (tier_changed refreshes it)
+			if limit, ok := billing.StreamLimit(sv.Plan, sv.ExtraStreams); ok {
+				if admitted, open := d.Plans.admit(r.Context(), sv.ID, stream, limit); !admitted {
+					writeErr(w, r, http.StatusTooManyRequests, "stream_limit",
+						fmt.Sprintf("%d devices are already playing through the relay, the most this plan allows", open))
+					return false
+				}
+			}
+		}
+		var pace *bucket
+		if media && isStream && mode.CapKbps > 0 && d.Plans != nil {
+			pace = d.Plans.pacer(sv.ID, stream, mode.CapKbps)
 		}
 		// No deadline on the exchange: a video plays as long as its client
 		// reads. Only the home's answer (the head) is bounded.
@@ -228,6 +263,8 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 		setForwarded(req.Header, r)
 		req.Header.Set("X-Forwarded-Host", r.Host)
 		req.Header.Set("X-Relayed-By", "maktaba-cloud")
+		// the home offers only renditions within the cap (only the relay sets it)
+		planHeaders(req.Header, mode.CapKbps)
 		// only the home's own agent marks a request as relayed
 		req.Header.Del("X-Maktaba-Via")
 		// the cloud's own cookies never reach a home (a parent-domain one
@@ -275,7 +312,7 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 				return
 			}
 			if d.Meter != nil {
-				d.Meter.Record(ctx, sv, in, out)
+				d.Meter.Record(ctx, sv, mode, in, out)
 			}
 			// Aggregate-only relay analytics (Epic 30): no server id, no
 			// user id.
@@ -289,6 +326,10 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 		for {
 			n, rerr := resp.Body.Read(buf)
 			if n > 0 {
+				// a capped media stream is held to its cap plus 20 %: slower, never stopped
+				if pace != nil && !pace.wait(r.Context(), n) {
+					break
+				}
 				_ = rc.SetWriteDeadline(time.Now().Add(clientWriteIdle))
 				if _, werr := w.Write(buf[:n]); werr != nil {
 					break

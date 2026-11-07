@@ -78,6 +78,10 @@ type Supervisor struct {
 	// legacy: behave as an agent from before story 50.03 (LegacyAgent)
 	legacy bool
 
+	// Direct carries direct remote access's frames (story 50.15) when set: the agent announces
+	// the feature and serves /admin/cloud-link/direct from it.
+	Direct *Direct
+
 	mu    sync.Mutex
 	state LinkState
 }
@@ -170,6 +174,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if maxW <= 0 {
 		maxW = 30 * time.Second
 	}
+	if s.Direct != nil && s.Dialer != nil && !s.legacy {
+		s.Dialer.direct = true
+	}
 	dial := s.dial
 	if dial == nil {
 		dial = s.Dialer.Dial
@@ -195,7 +202,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		for {
 			s.setOnline(res.Slug)
 			s.setTicket(res.Ticket)
-			next := s.serveTunnel(ctx, res.Conn, res.Flow, dial)
+			next := s.serveTunnel(ctx, res, dial)
 			if next == nil {
 				break
 			}
@@ -245,7 +252,12 @@ var ErrTunnelSilent = errors.New("cloudlink: no word from the cloud; reconnectin
 // streams it has and closes with 4000 when it has none, or at deadline_ms. A
 // new tunnel that fails to open is retried with jitter while the old one
 // keeps serving. It returns nil when the tunnel simply ended.
-func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn, flow bool, dial func(context.Context) (DialResult, error)) *DialResult {
+func (s *Supervisor) serveTunnel(ctx context.Context, res DialResult, dial func(context.Context) (DialResult, error)) *DialResult {
+	conn, flow := res.Conn, res.Flow
+	direct := s.Direct
+	if !res.Direct {
+		direct = nil // an older cloud: it would ignore the frames
+	}
 	drains := make(chan DrainPayload, 1)
 	control := func(f Frame) {
 		switch f.Kind {
@@ -264,6 +276,10 @@ func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn, flow bool,
 			case drains <- p: // a second DRAIN while moving is ignored
 			default:
 			}
+		case KindDirectName, KindDirectCert, KindDirectCheck:
+			if direct != nil {
+				direct.onFrame(f)
+			}
 		}
 	}
 	var opts []MuxOption
@@ -274,6 +290,10 @@ func (s *Supervisor) serveTunnel(ctx context.Context, conn FrameConn, flow bool,
 		opts = append(opts, WithFlowControl())
 	}
 	mux := NewMultiplexer(conn, s.Proxy, opts...)
+	if direct != nil {
+		gen := direct.attach(mux.writeFrame)
+		defer direct.detach(gen)
+	}
 	handedOff := false
 	defer func() {
 		if !handedOff {

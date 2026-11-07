@@ -9,11 +9,16 @@ import * as dev from "./developers";
 import type { Env } from "./env";
 import { nightlyExport } from "./exports";
 import * as homes from "./homes";
+import { entitlements } from "./entitlements";
+import { buyPage, purchaseIntent } from "./buy";
+import { paymentsWebhook } from "./payments";
 import { Refusal, json, problem, refuse } from "./http";
 import { type Mail, deliver } from "./mail";
 import { resignPage } from "./publish";
 import { runChecks, runnerRoute } from "./checks";
 import * as review from "./review";
+import * as ratings from "./ratings";
+import { listPage, pluginPage } from "./listing";
 
 export { AccountGuard } from "../objects/account-guard";
 export { CatalogWriter } from "../objects/catalog-writer";
@@ -76,11 +81,28 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/admin\/submissions\/([\w-]+)\/ask$/, review.ask],
   ["POST", /^\/v1\/admin\/flagged-words$/, review.flagWord],
   ["POST", /^\/v1\/submissions\/([\w-]+)\/answer$/, review.answer],
+  ["POST", /^\/v1\/plugins\/([a-z0-9.-]+)\/ratings$/, ratings.rate],
+  ["GET", /^\/v1\/plugins\/([a-z0-9.-]+)\/ratings$/, (ctx, id) => ratings.ratings(ctx.env, id!)],
+  ["POST", /^\/v1\/ratings\/([\w-]+)\/reply$/, ratings.reply],
+  ["POST", /^\/v1\/ratings\/([\w-]+)\/report$/, ratings.reportRating],
+  ["POST", /^\/v1\/plugins\/([a-z0-9.-]+)\/reports$/, ratings.report],
+  ["GET", /^\/v1\/admin\/reports$/, ratings.moderationQueue],
+  ["GET", /^\/v1\/admin\/reports\/([\w-]+)\/logs$/, ratings.reportLogs],
+  ["POST", /^\/v1\/admin\/reports\/([\w-]+)\/resolve$/, ratings.resolveReport],
+  ["POST", /^\/v1\/admin\/ratings\/([\w-]+)\/hide$/, ratings.hideRating],
 ];
 
 /** Routes a home calls with its own signature, not a session (no cookie, no Origin). */
 const HOME_ROUTES: [string, RegExp, (env: Env, req: Request, ...p: string[]) => Promise<Response>][] = [
   ["POST", /^\/v1\/homes\/([\w-]+)\/seen$/, homes.seen],
+  // story 54.19 §6: the home's entitlements, signed by E
+  ["GET", /^\/v1\/homes\/([\w-]+)\/entitlements$/, entitlements],
+  ["POST", /^\/v1\/homes\/([\w-]+)\/ratings$/, ratings.rateFromHome],
+  ["POST", /^\/v1\/homes\/([\w-]+)\/reports$/, ratings.reportFromHome],
+  // story 54.19 §5: a linked home's purchase intent for its admin's Buy, and the payment
+  // providers' webhooks (each verified by its own module; no session, no cookie)
+  ["POST", /^\/v1\/homes\/([\w-]+)\/purchase-intents$/, purchaseIntent],
+  ["POST", /^\/v1\/payments\/webhook\/([a-z0-9][a-z0-9_-]{0,31})$/, (env, req) => paymentsWebhook(env, req)],
   ["PUT", /^\/v1\/uploads\/([A-Za-z0-9_-]{43})$/, dev.workerUpload],
   // the isolated runner's single-use URLs (54.16 §1): it holds no session and no secret
   ["GET", /^\/v1\/runner\/([A-Za-z0-9_-]{43})$/, runnerRoute],
@@ -151,6 +173,25 @@ export default {
       }
     }
     if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return adminPage(req, env);
+    // the buy pages (story 54.19 §5): server-rendered, no script
+    if (url.pathname.startsWith("/buy/")) {
+      try {
+        const res = await buyPage(env, req);
+        if (res) return res;
+      } catch (e) {
+        if (e instanceof Refusal) return problem(e);
+        console.error(JSON.stringify({ event: "store_error", path: url.pathname, error: String(e), stack: (e as Error).stack }));
+        return json({ error: "internal" }, 500);
+      }
+    }
+    // the listing pages (54.18 §2), server-rendered for search engines, English and Arabic
+    if (req.method === "GET") {
+      const m = /^(\/ar)?(?:\/p\/([a-z0-9.-]+))?\/?$/.exec(url.pathname);
+      if (m) {
+        const lang = m[1] ? "ar" : "en";
+        return m[2] ? pluginPage(env, lang, m[2]) : listPage(env, lang);
+      }
+    }
     if (env.ASSETS) return env.ASSETS.fetch(req);
     return json({ error: "not_found" }, 404);
   },

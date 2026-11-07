@@ -5,7 +5,8 @@ import XCTest
 /// - after signing in, the crash-report question shows its two buttons, neither chosen; "Not
 ///   now" leaves the Profile's switch off;
 /// - Report a problem opens from Profile with the screenshot box unticked, and Send posts
-///   the report without a screenshot and says its number.
+///   the report without a screenshot and says its number;
+/// - while the home allows it (53.16), the form offers "Also send to Maktaba", unticked.
 ///
 /// The question shows in a UI test only when it asks for it (`-maktaba-crash-question`), so
 /// no other test meets it. Each check waits on something that stays on screen until the test
@@ -68,6 +69,35 @@ final class PlayerReportProblemUITests: PlayerUITestCase {
         XCTAssertTrue(body.contains(#"name="report""#), "the app's part")
         XCTAssertFalse(body.contains(#"name="screenshot""#), "no screenshot without the tick")
         XCTAssertTrue(body.contains(#""screenshot_previewed":false"#))
+    }
+
+    /// Epic 53 story 53.16: while the home lets reports go to Maktaba, the form offers "Also
+    /// send to Maktaba", unticked; ticked, the report says so. Without it (an older home, or
+    /// the setting off: the other tests' mock answers 404) there is no box.
+    func testAlsoSendToMaktabaWhenTheHomeAllowsIt() throws {
+        home.stub("GET", "/api/reports/maktaba", body: #"{"available":true,"enabled":true}"#)
+        home.stub("POST", "/api/reports", body: #"{"id":28}"#)
+        launchProfile()
+        XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 15))
+        let row = element("profile.reportProblem")
+        scrollUntil(row)
+        row.tap()
+        XCTAssertTrue(element("screen.report").waitForExistence(timeout: 10), "the form")
+        let box = app.switches["report.maktaba"].firstMatch
+        scrollUntil(box)
+        XCTAssertTrue(box.waitForExistence(timeout: 10), "the Maktaba box, the home allowing it")
+        XCTAssertEqual(box.value as? String, "0", "unticked")
+        box.switches.firstMatch.tap()
+        XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "keeps it for 90 days")).firstMatch
+            .waitForExistence(timeout: 5), "what Maktaba gets")
+        shot("report-to-maktaba")
+        let send = element("report.send")
+        scrollUntil(send)
+        send.tap()
+        XCTAssertTrue(element("report.sent").waitForExistence(timeout: 15))
+        let posted = home.requests.last { $0.method == "POST" && $0.path == "/api/reports" }
+        let body = posted.map { String(decoding: $0.body, as: UTF8.self) } ?? ""
+        XCTAssertTrue(body.contains(#""share_with_maktaba":true"#), "sent with the box ticked")
     }
 
     func testReportAProblemInArabic() throws {

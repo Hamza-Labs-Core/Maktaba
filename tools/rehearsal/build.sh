@@ -14,8 +14,14 @@
 #           database it migrated, the rehearsal's injected health failure)
 #   after/  this commit as the release after that (version PREV+4, the same API: a release
 #           that passes after a rollback, scenario 13)
+#   prev/pipeline/, cur/pipeline/   each release's real pipeline wheel (its version stamped,
+#           as the release's packaging stamps it) and its tree's runtime pins: scenarios
+#           16.x run them (tools/rehearsal/venvs.sh); next and after run cur's
 #   packs/<version>/   this commit's tool.yt-dlp pack of each of cur, next and after for
 #           this machine's platform, and its components-<version>.json (story 51.18)
+#   plugins/   this commit's maktaba-plugind and its well-behaved test guest (hello.wasm),
+#           for scenario 15 (Epic 54, story 54.07 §8): one host serves cur, next and after,
+#           built from the same tree; none when cargo or the plugin host is missing
 #   versions.env   PREV, FAILED (PREV+1: the newer release the scenario of the live Mac's
 #           state has rolled back from), CUR, NEXT, AFTER, PLATFORM (the packs'), REV (this
 #           commit's newest migration)
@@ -97,6 +103,34 @@ build "$cur_src" "$out/next" "$next" $((rev + 1))
 # failing release's migration too (rev+2, kept by the rollback: afterSpec), so it knows it
 build "$cur_src" "$out/after" "$after" $((rev + 2))
 
+# wheel SRC DST VERSION: the release's real pipeline wheel, stamped with its version as the
+# release's packaging stamps it (deploy/packaging/node/build-release.sh: the copy of
+# pipeline/ with plugins/ beside it, which hatch_build.py bundles), in DST/pipeline/, with
+# its tree's runtime pins (uv.lock, no extra: no ML). The per-wave scenarios (16.x) run it:
+# tools/rehearsal/venvs.sh makes one environment of each.
+wheel() {
+    local src="$1" dst="$2" version="$3" tmp
+    tmp="$(mktemp -d)"
+    tar -C "$src" --exclude=.venv --exclude=__pycache__ --exclude=.mypy_cache --exclude=.pytest_cache \
+        --exclude=.ruff_cache --exclude=target --exclude=node_modules -cf - pipeline plugins | tar -C "$tmp" -xf -
+    sed -i.bak -e "s/^version = \".*\"/version = \"$version\"/" "$tmp/pipeline/pyproject.toml"
+    sed -i.bak -e "s/^__version__ = \".*\"/__version__ = \"$version\"/" "$tmp/pipeline/src/maktaba_pipeline/__init__.py"
+    if ! grep -q "^version = \"$version\"" "$tmp/pipeline/pyproject.toml" ||
+        ! grep -q "^__version__ = \"$version\"" "$tmp/pipeline/src/maktaba_pipeline/__init__.py"; then
+        echo "build.sh: could not stamp $version into $src's pipeline" >&2
+        exit 1
+    fi
+    echo "build.sh: the pipeline wheel $version (from $src)"
+    mkdir -p "$dst/pipeline"
+    uv build --wheel --project "$tmp/pipeline" --out-dir "$dst/pipeline" --quiet
+    (cd "$tmp/pipeline" && uv export --frozen --no-dev --no-emit-project --no-hashes --format requirements-txt \
+        --quiet) >"$dst/pipeline/constraints.txt"
+    rm -rf "$tmp"
+}
+# next and after are this commit too: their pipeline is cur's, as their binaries are
+wheel "$prev_src" "$out/prev" "$prev_version"
+wheel "$cur_src" "$out/cur" "$cur"
+
 # story 51.18 (scenarios 13, 14): this commit's tool.yt-dlp pack for this machine's
 # platform, built by the release's own pack build for each of this commit's versions,
 # with the index gen-components-index makes of it (the harness signs it with the release:
@@ -120,6 +154,19 @@ if [ -f "$cur_src/tools/release/packs/build.sh" ]; then
     done
 else
     echo "build.sh: $cur_src has no pack build: no packs in the kit"
+fi
+
+# Epic 54 (story 54.07 §8, scenario 15): the plugin host and the test guest. A tree from
+# before the plugin host, or a machine without cargo, has none: scenario 15 then cannot run.
+if [ -f "$cur_src/plugind/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
+    echo "build.sh: maktaba-plugind and the hello guest (from $cur_src)"
+    mkdir -p "$out/plugins"
+    (cd "$cur_src/plugind" && cargo build --locked --release -p maktaba-plugind)
+    cp "$cur_src/plugind/target/release/maktaba-plugind" "$out/plugins/maktaba-plugind"
+    (cd "$cur_src/plugind/guests" && cargo build --locked --release --target wasm32-wasip2 -p hello)
+    cp "$cur_src/plugind/guests/target/wasm32-wasip2/release/hello.wasm" "$out/plugins/hello.wasm"
+else
+    echo "build.sh: no plugin host (no cargo, or $cur_src has no plugind): no plugins in the kit"
 fi
 
 cat >"$out/versions.env" <<EOF

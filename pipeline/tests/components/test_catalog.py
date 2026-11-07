@@ -418,3 +418,22 @@ def test_a_first_party_plugins_stages_are_its_components() -> None:
     for c in cat.components():
         if c.plugin:
             assert firstparty.by_id(c.plugin) is not None, f"{c.id}: no built-in plugin {c.plugin}"
+
+
+# Story 50.35 T03 (Python side): feature_any is read, and refused as Go's loader refuses it,
+# from the same fixtures.
+def test_feature_any() -> None:
+    cat = catalog.load(_fixture("feature_any_ok.toml"))
+    assert cat.feature_any == {"live_tv": [["a", "b"]]}
+    for name, want in (
+        ("feature_any_unknown_feature.toml", "feature_any: 'nope' is not a feature"),
+        ("feature_any_unknown_id.toml", "feature_any.live_tv: unknown component 'zz'"),
+        (
+            "feature_any_not_listed.toml",
+            "feature_any.youtube: component a does not list the feature youtube",
+        ),
+        ("feature_any_two_groups.toml", "feature_any.live_tv: component b is in two groups"),
+    ):
+        with pytest.raises(catalog.CatalogError, match=want):
+            catalog.load(_fixture(name))
+    assert catalog.default().feature_any == {"remote_access": [["cloud.relay", "cloud.direct"]]}
