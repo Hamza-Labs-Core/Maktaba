@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
@@ -67,6 +68,62 @@ func TestMachineHealthChecksThePipelineVersion(t *testing.T) {
 	status, body = 200, `{"status":"ok","version":"0.0.1"}`
 	if v := h.Check(context.Background(), "v1.5.0-rc.1"); !v.Healthy {
 		t.Fatalf("under MAKTABA_PYTHON: %+v", v)
+	}
+}
+
+// A pipeline process that answered with the release's version is not asked again while it
+// runs (2026-11-07: on a loaded Mac its /healthz went past the watch's 3 s now and then, the
+// watch flapped and ran out its bound, and 0.3.90 rolled back). Its liveness is the
+// supervisor's; a restart (a new pid) is asked again.
+func TestMachineHealthPipelineVersionOncePerProcess(t *testing.T) {
+	t.Setenv("MAKTABA_PYTHON", "")
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	release := t.TempDir()
+	py := filepath.Join(release, "venv", "bin", "python")
+	if runtime.GOOS == "windows" {
+		py = filepath.Join(release, "venv", "Scripts", "python.exe")
+	}
+	for _, f := range []string{py, filepath.Join(release, "pipeline", "maktaba_pipeline-1.5.0rc1-py3-none-any.whl")} {
+		if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(f, nil, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	slow := false
+	asked := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		asked++
+		if slow {
+			time.Sleep(300 * time.Millisecond)
+		}
+		_, _ = w.Write([]byte(`{"status":"ok","version":"1.5.0rc1"}`))
+	}))
+	defer srv.Close()
+	proc := supervisor.ChildStatus{Role: supervisor.RolePipeline, State: supervisor.StateRunning,
+		ProbeURL: srv.URL + "/healthz", PID: 4242}
+	snap := supervisor.Snapshot{Processes: []supervisor.ChildStatus{proc}}
+	h := &machineHealth{releaseDir: release, snap: func() (supervisor.Snapshot, bool) { return snap, true },
+		http: &http.Client{Timeout: 100 * time.Millisecond}}
+
+	if v := h.Check(context.Background(), "v1.5.0-rc.1"); !v.Healthy {
+		t.Fatalf("the first answer: %+v", v)
+	}
+	// now it answers past the timeout: the same process is not asked again
+	slow = true
+	for i := 0; i < 3; i++ {
+		if v := h.Check(context.Background(), "v1.5.0-rc.1"); !v.Healthy {
+			t.Fatalf("round %d, the same process answering slowly: %+v", i, v)
+		}
+	}
+	if asked != 1 {
+		t.Errorf("asked %d times, want once", asked)
+	}
+	// a restart: a new pid is asked again (and its slow answer counts)
+	snap.Processes[0].PID = 4243
+	if v := h.Check(context.Background(), "v1.5.0-rc.1"); v.Healthy {
+		t.Fatalf("a new process that did not answer: %+v", v)
 	}
 }
 

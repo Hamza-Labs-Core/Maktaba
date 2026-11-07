@@ -6,6 +6,7 @@ On a database: the integration tier (SQLite; Postgres with ``MAKTABA_TEST_PG_URL
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from maktaba_pipeline.language_packs.ar import morphology
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt.settings import HEARD_DIFFERENTLY, Word
 from maktaba_pipeline.stt.word_data import pack
+from maktaba_pipeline.word_review import signals
 from maktaba_pipeline.word_review.db import read_array
 from tests.language_packs.fixtures import install
 from tests.stages.world import core_runtime, drain_core, make_show
@@ -241,6 +243,51 @@ async def test_the_budget_keeps_the_top_words_open(db: Database) -> None:
     assert len(skipped) == 25 and all(f["scores"]["over_budget"] for f in skipped)
     (poor,) = [f for f in flags if f["kind"] == "transcript"]
     assert poor["segment_seq"] == -1 and poor["scores"]["suspect"] == 30
+
+
+@pytest.mark.asyncio
+async def test_the_flags_go_in_one_batch_and_the_check_runs_off_the_loop(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-11-07, a busy home: the check on the event loop and a statement per flag kept
+    one flags transaction open for minutes (the next writer of the transcript waited, the
+    worker's probe round crawled). The check runs in a thread, the flags in one batch."""
+    sentences = []
+    for i in range(30):
+        text = f"كتسبلمن{i} قال"
+        sentences.append((text, _words(text, i * 4.0, [0.05, 0.9]), None))
+    vid, tid, _ = await _transcript(db, sentences)
+
+    loop_thread = threading.get_ident()
+    checked_on: list[int] = []
+    real_check = signals.check
+
+    def check(inp: Any) -> Any:
+        checked_on.append(threading.get_ident())
+        return real_check(inp)
+
+    monkeypatch.setattr(signals, "check", check)
+    statements: list[str] = []
+    batches: list[int] = []
+    cls = type(db)
+    real_execute, real_many = cls.execute, cls.executemany
+
+    async def execute(self: Any, sql: str, *args: Any, **kw: Any) -> Any:
+        statements.append(sql)
+        return await real_execute(self, sql, *args, **kw)
+
+    async def executemany(self: Any, sql: str, rows: Any, *args: Any, **kw: Any) -> Any:
+        if "INSERT INTO word_flags" in sql:
+            batches.append(len(list(rows)))
+        return await real_many(self, sql, rows, *args, **kw)
+
+    monkeypatch.setattr(cls, "execute", execute)
+    monkeypatch.setattr(cls, "executemany", executemany)
+    await _check(db, vid)
+
+    assert checked_on and all(t != loop_thread for t in checked_on)
+    assert not [q for q in statements if "INSERT INTO word_flags" in q]
+    assert batches == [len(await _flags(db, tid))]
 
 
 @pytest.mark.asyncio
