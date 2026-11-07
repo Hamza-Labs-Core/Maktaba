@@ -13,9 +13,9 @@ import (
 func TestTheRefreshCookieIsHostOnly(t *testing.T) {
 	set := httptest.NewRecorder()
 	setRefreshCookie(set, "raw-token", ".maktaba.tv", true, time.Now().Add(time.Hour))
-	clear := httptest.NewRecorder()
-	clearRefreshCookie(clear, ".maktaba.tv", true)
-	for name, rec := range map[string]*httptest.ResponseRecorder{"set": set, "clear": clear} {
+	cleared := httptest.NewRecorder()
+	clearRefreshCookie(cleared, ".maktaba.tv", true)
+	for name, rec := range map[string]*httptest.ResponseRecorder{"set": set, "clear": cleared} {
 		raw := rec.Header().Get("Set-Cookie")
 		cs := rec.Result().Cookies()
 		if len(cs) != 1 {
@@ -27,7 +27,7 @@ func TestTheRefreshCookieIsHostOnly(t *testing.T) {
 			t.Errorf("%s: %q", name, raw)
 		}
 	}
-	if !strings.Contains(set.Header().Get("Set-Cookie"), "raw-token") || clear.Result().Cookies()[0].MaxAge >= 0 {
+	if !strings.Contains(set.Header().Get("Set-Cookie"), "raw-token") || cleared.Result().Cookies()[0].MaxAge >= 0 {
 		t.Error("the set carries no token, or the clear does not expire it")
 	}
 }
