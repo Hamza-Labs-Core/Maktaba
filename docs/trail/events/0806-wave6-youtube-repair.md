@@ -21,6 +21,7 @@ prs: [800]
 - ffmpeg's error text carries pointers (`@ 0x…`) that differ between runs. The harness masks them in the job-log comparison.
 - A parity test passes `group=` explicitly. After a plugin moves to another group, the test's runner serves nothing and everything falls back (`runner_not_serving_here`). The fallback check catches it.
 - A check of each plugin test for `compare_n16` would have caught the missing N16 earlier.
+- The sandbox's `exec` must name the program a stage actually starts. yt-dlp runs as `MAKTABA_YTDLP` (a command line) or `python -m yt_dlp`, but `tool_path("yt-dlp")` looked only for a `yt-dlp` on PATH. On an install without one, the `net` runner could not run yt-dlp, and real downloads would have been refused and run in the worker. The parity fakes replace the subprocess, so they never exec anything. CI caught it because neither job has yt-dlp on PATH. A developer machine with Homebrew's yt-dlp did not. `tool_path` now resolves yt-dlp the way `ytdlp_command()` does.
 
 ## Open
 - The nightly check of the hosts yt-dlp contacts (T02): issue #805.
