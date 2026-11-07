@@ -131,19 +131,27 @@ func parseServers(s string) (map[int64]string, map[int64]string, error) {
 	return names, ips, nil
 }
 
-func runFakeGateway() {
-	wan, err := netip.ParseAddr(env("FAKEGW_WAN", ""))
-	if err != nil {
-		log.Fatalf("fakegateway: FAKEGW_WAN: %v", err)
+// fakeGatewayConfig reads the router's environment: FAKEGW_WAN (its address on "the
+// internet"), FAKEGW_LAN (the homes' network, a CIDR) and FAKEGW_LISTEN (NAT-PMP, :5351).
+func fakeGatewayConfig() (wan netip.Addr, lan netip.Prefix, listen string, err error) {
+	if wan, err = netip.ParseAddr(env("FAKEGW_WAN", "")); err != nil {
+		return wan, lan, "", fmt.Errorf("fakegateway: FAKEGW_WAN: %w", err)
 	}
-	lan, err := netip.ParsePrefix(env("FAKEGW_LAN", ""))
+	if lan, err = netip.ParsePrefix(env("FAKEGW_LAN", "")); err != nil {
+		return wan, lan, "", fmt.Errorf("fakegateway: FAKEGW_LAN: %w", err)
+	}
+	return wan, lan, env("FAKEGW_LISTEN", ":5351"), nil
+}
+
+func runFakeGateway() {
+	wan, lan, listen, err := fakeGatewayConfig()
 	if err != nil {
-		log.Fatalf("fakegateway: FAKEGW_LAN: %v", err)
+		log.Fatal(err)
 	}
 	if err := fakegateway.Masquerade(lan); err != nil {
 		log.Fatal(err)
 	}
-	pc, err := net.ListenPacket("udp", env("FAKEGW_LISTEN", ":5351"))
+	pc, err := net.ListenPacket("udp", listen)
 	if err != nil {
 		log.Fatal(err)
 	}
