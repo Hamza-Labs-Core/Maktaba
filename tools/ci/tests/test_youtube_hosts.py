@@ -5,6 +5,7 @@ each host noted, the bytes relayed unchanged)."""
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -30,7 +31,7 @@ def test_a_pattern_matches_its_host_or_any_name_under_its_domain() -> None:
 
 def test_the_list_is_the_plugins_manifest() -> None:
     net = yh.manifest_hosts()
-    assert "www.youtube.com" in net and "*.googlevideo.com" in net
+    assert {"www.youtube.com", "*.googlevideo.com"} <= set(net)
 
 
 def test_hosts_only_fails_on_a_host_outside_the_list(tmp_path: Path) -> None:
@@ -129,3 +130,14 @@ def test_youtubes_bot_check_makes_a_step_inconclusive_not_a_failure(
 
     monkeypatch.setattr(yh, "record", broken)
     assert yh.main([]) == 1
+
+
+def test_the_json_report_names_the_manifest_not_its_list(tmp_path: Path) -> None:
+    hosts = tmp_path / "hosts.txt"
+    hosts.write_text("www.youtube.com\n")
+    out = tmp_path / "report.json"
+    assert yh.main(["--hosts-only", str(hosts), "--json", str(out)]) == 0
+    report = json.loads(out.read_text())
+    assert report["manifest"] == "plugins/first-party/youtube/manifest.toml"
+    assert report["hosts"] == ["www.youtube.com"] and report["outside"] == []
+    assert "net" not in report

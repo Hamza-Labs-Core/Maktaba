@@ -198,7 +198,8 @@ def main(argv: list[str] | None = None) -> int:
                 {
                     "hosts": sorted(hosts),
                     "outside": outside,
-                    "net": patterns,
+                    # the list itself is in the manifest; the report names it
+                    "manifest": str(MANIFEST.relative_to(ROOT)),
                     "failures": failures,
                     "inconclusive": [f for f in failures if blocked(f)],
                 },
