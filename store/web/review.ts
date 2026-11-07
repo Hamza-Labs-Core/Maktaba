@@ -100,13 +100,13 @@ export async function submission(ctx: Ctx, id: string): Promise<Response> {
     .first<{ display_name: string }>();
   await audit(ctx, a.id, "review.open", id);
   const flow = (report as { flow?: FlowSummary } | null)?.flow;
-  const cycle = flow?.findings.find((f) => f.code === "flow_cycle")?.path;
   return json({
     submission: s,
     version: v,
     report,
     // the whole flow, drawn (54.41): this plugin's stages outlined, a refusal's cycle in red
-    flow_chart: flow ? flowSVG(flow.graph, { title: flow.id, highlight: s!.plugin, ...(cycle ? { cycle } : {}) }) : "",
+    // (a refused cycle's path is in C12's words, in the report's checks)
+    flow_chart: flow ? flowSVG(flow.graph, { title: flow.id, highlight: s!.plugin }) : "",
     developer: dev?.display_name ?? "",
     source: src ? { size: src.size, url: `/v1/admin/submissions/${id}/source` } : null,
   });
