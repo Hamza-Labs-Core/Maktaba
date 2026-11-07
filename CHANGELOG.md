@@ -1025,7 +1025,10 @@ build fails when the two differ.
   turned off shows none. Every value is plain text: the plugin API refuses a URL, HTML,
   markdown or a control character in a value a panel shows (`plugin_text_forbidden`), and
   every app escapes again and makes no request from one. `GET /api/panels` and the
-  capability `plugin_panels`, which apps read missing as off.
+  capability `plugin_panels`, which apps read missing as off. Series and library pages show
+  panels too, in every app; a chip opens Search with its text on Android and Apple as on the
+  web. The Apple TV and Android TV video pages show `kv`, `badges` and `markers`, open, and a
+  marker plays from its time.
 
 - **Automated checks and human review in the plugin store (Epic 54, story 54.16).** Every
   submitted version is checked by the home's own rules, compiled to WebAssembly for the store's
@@ -1078,6 +1081,22 @@ build fails when the two differ.
   problem report leaves out a plugin's log lines unless an admin ticks **Include its logs in
   problem reports** on the plugin's page (audited); the plugin host's own lines stay.
   maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
+
+- **The plugin store's catalog, updates and the kill switch on the home (Epic 54, story
+  54.17).** A new loop fetches the store's signed lists straight from the CDN (never through
+  Maktaba Cloud, and only while a plugin is installed or Browse was opened in the last 7 days):
+  the revocation list's head every 5 minutes, the list when it changes and every hour, the
+  catalog every 6 hours. Each is verified by the chain of trust and kept on disk and in
+  Postgres, the newest seen winning; an older or mismatched copy (or a catalog of the version already seen
+  with other bytes) is refused and logged. A store
+  `disable` holds the plugin within one poll (the `revoked` gate and an Epic 51 hold), tells
+  the admins, and refuses Start, enable, install, update and rollback to a covered version
+  (`409 plugin_revoked`); `warn` shows a warning; `delist` changes nothing installed; a lifted
+  entry leaves the plugin for the admin to start. The Plugins page says when withdrawn plugins
+  were last checked and warns when the list has expired (plugins keep running; store installs
+  wait). Store installs by `{store: {id, version}}`, with the download checked against its
+  sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
+  home sends its daily `seen` report when telemetry is on. Migration 0203.
 
 - **The Updates page names the plugins an update will pause (Epic 54, story 54.07 §3).**
   Under the release it is about to install, the page lists each installed plugin whose

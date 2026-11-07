@@ -279,6 +279,9 @@ func (k *StoreKeys) VerifyCatalog(raw []byte, apiMajor int64, st State, clock ti
 	if s.Version < seen {
 		return nil, fail(CodeCatalogRollback, StepList, "version %d is older than %d, the newest seen", s.Version, seen)
 	}
+	if sum := st.CatalogSHA256(apiMajor); s.Version == seen && sum != "" && sum != sha256Hex(raw) {
+		return nil, fail(CodeCatalogRollback, StepList, "version %d differs from the copy seen before", s.Version)
+	}
 	if st.Now(clock).After(expires) {
 		return nil, fail(CodeCatalogExpired, StepList, "version %d expired %s", s.Version, s.Expires)
 	}

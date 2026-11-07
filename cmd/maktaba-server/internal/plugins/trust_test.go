@@ -219,3 +219,19 @@ func TestInstallChecksTheSignatures(t *testing.T) {
 		})
 	}
 }
+
+// Story 54.17 §3: a store `disable` (plugin_installs.revoked) is the runner's revoked gate,
+// before any other.
+func TestARevokedInstallIsTheRevokedGate(t *testing.T) {
+	m := []byte(`{"maktaba":">=0.1.0","plugin_api":"1.0","capabilities":{"required":[]}}`)
+	st := &state{installs: map[string]Install{
+		"dev.example.bad": {ID: "dev.example.bad", Manifest: m, ReviewLevel: "reviewed", Revoked: true},
+		"dev.example.ok":  {ID: "dev.example.ok", Manifest: m, ReviewLevel: "reviewed"},
+	}, grants: map[string][]string{}}
+	if r, _ := st.gate("dev.example.bad", "0.7.0"); r != "revoked" {
+		t.Fatalf("revoked: %q", r)
+	}
+	if r, _ := st.gate("dev.example.ok", "0.7.0"); r != "" {
+		t.Fatalf("ok: %q", r)
+	}
+}
