@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
+  `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
+  enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
+  streams, Pro past its allowance plays at Basic's quality, and pay-as-you-go's usage reaches a
+  fake payment provider once, through an outage. No stream stops in any.
 - **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
   keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
   (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
