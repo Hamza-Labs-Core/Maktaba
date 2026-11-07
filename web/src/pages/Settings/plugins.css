@@ -124,3 +124,11 @@
   border-block-start: 1px solid var(--color-border);
   padding-block-start: var(--space-3);
 }
+
+/* Store account (story 54.15 §5): the link code, large and in its own direction */
+.mkt-plugins__code {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}

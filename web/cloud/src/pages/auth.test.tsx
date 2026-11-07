@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { setAccessToken } from "../api";
+import { setCloudStatus } from "../../../src/lib/cloudStatus";
 import { json, ME, renderAt, signedOut, stubFetch, user } from "../test/harness";
 
 const { navigateExternal } = vi.hoisted(() => ({ navigateExternal: vi.fn() }));
@@ -161,5 +162,31 @@ describe("verify email", () => {
     expect(await screen.findByText(/Your email is verified/)).toBeInTheDocument();
     expect(f.find("POST", "/v1/auth/verify-email")).toHaveLength(1);
     expect(f.find("POST", "/v1/auth/verify-email")[0].body).toEqual({ token: "abc" });
+  });
+});
+
+describe("the shell's status strip (Epic 50 story 50.11)", () => {
+  afterEach(() => setCloudStatus(null));
+
+  it("tells a signed-out visitor that signing in with Maktaba Cloud is down", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": signedOut,
+      "GET /v1/auth/providers": [200, { google: false, apple: false }],
+    });
+    setCloudStatus({
+      updated_at: "2026-11-03T10:15:00Z",
+      overall: "outage",
+      components: { relay: "operational", api: "outage", push: "operational" },
+      incident: null,
+      maintenance: [],
+    });
+    renderAt("/sign-in");
+    expect(await screen.findByTestId("cloud-status-strip")).toHaveTextContent(
+      /Signing in with Maktaba Cloud isn't working right now/
+    );
+    expect(screen.getByRole("link", { name: "Details" })).toHaveAttribute(
+      "href",
+      "https://status.maktaba.tv"
+    );
   });
 });

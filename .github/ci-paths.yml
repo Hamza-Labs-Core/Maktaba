@@ -272,8 +272,15 @@ store:
   - *ci
   - 'store/**'
   - 'shared/plugins/**'
+  # the Worker's WebAssembly is built from the home's package reader and manifest validator
+  - 'plugind/Cargo.toml'
+  - 'plugind/Cargo.lock'
+  - 'plugind/crates/storewasm/**'
+  - 'plugind/crates/pluginmanifest/**'
   - 'tools/ci/payment_provider_allowlist.py'
   - '.github/workflows/_store.yml'
+  - '.github/workflows/store-deploy.yml'
+  - '.github/workflows/store-weekly.yml'
 
 # ---- the server's tiers ---------------------------------------------------------------
 
