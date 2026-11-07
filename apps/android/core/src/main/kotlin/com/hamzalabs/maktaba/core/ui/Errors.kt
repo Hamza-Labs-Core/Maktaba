@@ -93,6 +93,7 @@ fun featureOff(feature: String): Int? = when (feature) {
     "plex" -> R.string.feature_off_plex
     "remote_access" -> R.string.feature_off_remote_access
     "recommendations" -> R.string.feature_off_recommendations
+    "plugin_panels" -> R.string.feature_off_plugin_panels
     else -> null
 }
 
@@ -108,6 +109,7 @@ fun featureUnavailable(feature: String): Int? = when (feature) {
     "plex" -> R.string.feature_unavailable_plex
     "remote_access" -> R.string.feature_unavailable_remote_access
     "recommendations" -> R.string.feature_unavailable_recommendations
+    "plugin_panels" -> R.string.feature_unavailable_plugin_panels
     else -> null
 }
 

@@ -49,6 +49,17 @@ func TestP54MountsTheAdminRoutesWithTheComponentsService(t *testing.T) {
 		}
 		return nil
 	})
+	// story 54.20: the panels' routes, for every signed-in user
+	panels := 0
+	_ = chi.Walk(r, func(_, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		if strings.HasPrefix(route, "/api/panels") {
+			panels++
+		}
+		return nil
+	})
+	if panels != 2 {
+		t.Fatalf("%d panel routes", panels)
+	}
 	if n < 15 || svc.Plugins == nil {
 		t.Fatalf("%d plugin routes, hooks %v", n, svc.Plugins)
 	}

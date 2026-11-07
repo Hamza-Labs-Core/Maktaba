@@ -202,6 +202,7 @@
     <string name="feature_off_plex">Plex is off on this home.</string>
     <string name="feature_off_remote_access">Access away from home is off on this home.</string>
     <string name="feature_off_recommendations">Recommendations are off on this home.</string>
+    <string name="feature_off_plugin_panels">Plugin panels are off on this home.</string>
     <string name="feature_unavailable_live_tv">Live TV isn\'t available on this home.</string>
     <string name="feature_unavailable_transcripts">Transcripts aren\'t available on this home.</string>
     <string name="feature_unavailable_subtitles">Subtitles aren\'t available on this home.</string>
@@ -211,6 +212,7 @@
     <string name="feature_unavailable_plex">Plex isn\'t available on this home.</string>
     <string name="feature_unavailable_remote_access">Access away from home isn\'t available on this home.</string>
     <string name="feature_unavailable_recommendations">Recommendations aren\'t available on this home.</string>
+    <string name="feature_unavailable_plugin_panels">Plugin panels aren\'t available on this home.</string>
     <string name="search_words_only">Searching by words only. Search by meaning is off.</string>
     <plurals name="parts_off">
         <item quantity="one">%d part is off</item>

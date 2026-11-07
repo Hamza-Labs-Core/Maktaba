@@ -1140,6 +1140,22 @@
         }
       }
     },
+    "capabilities.off.plugin_panels" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لوحات الإضافات متوقفة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin panels are off on this home."
+          }
+        }
+      }
+    },
     "capabilities.off.recommendations" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1289,6 +1305,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plex isn't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.plugin_panels" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لوحات الإضافات غير متاحة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin panels aren't available on this home."
           }
         }
       }
