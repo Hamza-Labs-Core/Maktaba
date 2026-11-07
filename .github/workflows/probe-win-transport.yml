@@ -1,0 +1,76 @@
+# #710's probe (a branch of its own, never merged): which transport links the pipeline,
+# outside the plugin host's AppContainer, and the host inside it, on a Windows runner.
+name: Probe Windows transport
+
+on:
+  push:
+    branches: [probe/win-transport]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cmd/maktaba-server/go.mod
+          cache: false
+
+      - uses: actions/setup-python@v6.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Build
+        working-directory: cmd/maktaba-server
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -o "$RUNNER_TEMP/bin/probewin.exe" ./internal/appcontainer/probewin
+          go build -o "$RUNNER_TEMP/bin/aclaunch.exe" ./internal/appcontainer/aclaunch
+          cp internal/appcontainer/probewin/client.py "$RUNNER_TEMP/bin/"
+
+      - name: Python's facts
+        run: python "$RUNNER_TEMP/bin/client.py" facts
+
+      - name: The probes
+        run: |
+          set -uo pipefail
+          B="$(cygpath -w "$RUNNER_TEMP/bin")"
+          P="$RUNNER_TEMP/bin/probewin.exe"
+          A="$RUNNER_TEMP/bin/aclaunch.exe"
+          IN="$(cygpath -w "$RUNNER_TEMP/in")"; mkdir -p "$RUNNER_TEMP/in"
+          OUT="$(cygpath -w "$RUNNER_TEMP/out")"; mkdir -p "$RUNNER_TEMP/out"
+          results=()
+          # serve WHERE(in|out) MODE ADDR [SDDL] -- then CLIENT...: one server, one client
+          probe() {
+            local label="$1" where="$2" mode="$3" addr="$4" sddl="$5"; shift 5
+            echo "::group::$label"
+            if [ "$where" = in ]; then
+              "$A" -read "$B" -write "$IN" -- "$B\\probewin.exe" "$mode" "$addr" "$sddl" & spid=$!
+            else
+              "$P" "$mode" "$addr" "$sddl" & spid=$!
+            fi
+            sleep 3
+            if "$@"; then c=OK; else c=FAIL; fi
+            wait "$spid"; s=$?
+            echo "::endgroup::"
+            results+=("$label: client $c, server exit $s")
+          }
+          probe "1 uds served in the container, Go client outside" in uds-serve "$IN\\s1.sock" x "$P" uds-dial "$IN\\s1.sock"
+          probe "2 uds served in the container, Python client outside" in uds-serve "$IN\\s2.sock" x python "$B\\client.py" uds "$IN\\s2.sock"
+          probe "3 uds served outside, Go client in the container" out uds-serve "$IN\\s3.sock" x "$A" -read "$B" -write "$IN" -- "$B\\probewin.exe" uds-dial "$IN\\s3.sock"
+          probe "4 pipe served in the container (default DACL), Go client outside" in pipe-serve '\\.\pipe\maktaba-probe-4' default "$P" pipe-dial '\\.\pipe\maktaba-probe-4'
+          probe "5 pipe served in the container (default DACL), Python client outside" in pipe-serve '\\.\pipe\maktaba-probe-5' default python "$B\\client.py" pipe '\\.\pipe\maktaba-probe-5'
+          probe "6 pipe served in the container (AU+AC), Python client outside" in pipe-serve '\\.\pipe\maktaba-probe-6' 'D:(A;;GA;;;AU)(A;;GA;;;AC)' python "$B\\client.py" pipe '\\.\pipe\maktaba-probe-6'
+          probe "7 pipe served outside (AU+AC), Go client in the container" out pipe-serve '\\.\pipe\maktaba-probe-7' 'D:(A;;GA;;;AU)(A;;GA;;;AC)' "$A" -read "$B" -write "$IN" -- "$B\\probewin.exe" pipe-dial '\\.\pipe\maktaba-probe-7'
+          probe "8 pipe served outside (default DACL), Go client in the container" out pipe-serve '\\.\pipe\maktaba-probe-8' default "$A" -read "$B" -write "$IN" -- "$B\\probewin.exe" pipe-dial '\\.\pipe\maktaba-probe-8'
+          echo "## Windows transport probe" >> "$GITHUB_STEP_SUMMARY"
+          for r in "${results[@]}"; do echo "$r"; echo "- $r" >> "$GITHUB_STEP_SUMMARY"; done
