@@ -2021,6 +2021,14 @@ build fails when the two differ.
   of it. Every line is still in the log segments, the Logs page and the recovery console.
   `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
 
+- **The cloud rehearsal proves direct remote access end to end (Epic 50 story 50.15, T06,
+  T10, T12).** Its `direct-remote` scenario puts two homes behind a router that maps ports,
+  with the cloud's relay, worker and name server and two certificate authorities on the other
+  side. Each home gets its certificate through the cloud, the second from the overflow
+  authority once the week's budget is used, and passes the outside check, and an app outside
+  downloads from each home directly, never through the relay. The cloud's name server now
+  starts: its role was refused as unknown.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

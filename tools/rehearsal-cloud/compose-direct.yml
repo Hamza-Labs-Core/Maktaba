@@ -1,0 +1,194 @@
+# The direct-remote scenario's world (Epic 50 story 50.15 T06, T10, T12): two homes behind a
+# router, and the cloud's direct access on the internet side, with nothing outside the runner.
+#
+#   wan 198.51.100.0/24   "the internet" (a documentation range: a home takes a private
+#                         external address for carrier-grade NAT and turns direct access off)
+#     postgres .10, relay .11, worker .12 (issuing and the outside check), dns .53 (the
+#     direct-name responder), pebble .41 (Let's Encrypt), pebble-zs .42 (ZeroSSL, the
+#     overflow CA), router .2
+#   lan 192.168.77.0/24   the homes' network: router .2 (NAT and NAT-PMP), home0 .20, home1 .21
+#
+# Pebble validates DNS-01 against the dns role, so a certificate here proves the responder
+# serves the challenges from Postgres. The scenario (cloud/rehearsal/direct_test.go) writes
+# .work/direct first: the homes' sealed credentials, the second Pebble's certificate (signed
+# by Pebble's test CA) and the CA file the worker and the outside client trust.
+name: maktaba-rehearsal-direct
+
+networks:
+  wan:
+    # No host masquerade from "the internet": Docker's rule (-s 198.51.100.0/24 ! -o br-wan
+    # -j MASQUERADE) also rewrites the router's forwarded connections as they enter the lan
+    # bridge, so a home saw them from the Docker host (192.168.77.1), answered it directly, and
+    # the router's port mapping never got its reply (the outside check timed out).
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+    ipam:
+      config:
+        - subnet: 198.51.100.0/24
+  lan:
+    ipam:
+      config:
+        - subnet: 192.168.77.0/24
+
+x-cloud: &cloud
+  image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+  restart: on-failure
+  volumes:
+    - ./direct-rehearsal.toml:/etc/maktaba/cloud.toml:ro
+    - ./.work/direct:/work:ro
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+x-cloud-env: &cloud-env
+  MAKTABA_ENV: rehearsal
+  MAKTABA_CLOUD_LISTEN_ADDR: "0.0.0.0:8443"
+  MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@198.51.100.10:5432/maktaba?sslmode=disable
+  MAKTABA_CLOUD_PUBLIC_URL: http://relay.test
+  MAKTABA_CLOUD_RELAY_PUBLIC_HOST: relay.test
+  MAKTABA_CLOUD_TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  MAKTABA_CLOUD_BILLING_PROVIDER: none
+  # what the cloud trusts: Pebble's test CA (the CAs' own TLS; it also signed pebble-zs's
+  # certificate) and both Pebbles' issuing roots (the homes' certificates, for the outside check)
+  SSL_CERT_FILE: /work/roots.pem
+
+x-home: &home
+  image: ${HOME_IMAGE:-maktaba-home:rehearsal}
+  restart: "no"
+  cap_add: [NET_ADMIN] # its default route through the router
+  depends_on:
+    router:
+      condition: service_started
+
+x-home-env: &home-env
+  ROUTER: 192.168.77.2
+  MAKTABA_RELAY_WS: ws://198.51.100.11:8443/v1/relay/ws
+  MAKTABA_LOCAL_API: http://127.0.0.1:8080
+  MAKTABA_CRED_FILE: /work/cloudlink.cred
+  MAKTABA_ADMIN_ADDR: 127.0.0.1:8765
+  DIRECT_DIR: /data/direct
+  DIRECT_LISTEN: ":8444"
+  AGENT_ADDR: 127.0.0.1:8765
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: maktaba
+      POSTGRES_PASSWORD: rehearsal
+      POSTGRES_DB: maktaba
+    networks:
+      wan:
+        ipv4_address: 198.51.100.10
+    ports:
+      - "127.0.0.1:${PG_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U maktaba -d maktaba"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:2.8.0
+    command: ["-config", "/test/config/pebble-config.json", "-dnsserver", "198.51.100.53:53"]
+    environment:
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
+    networks:
+      wan:
+        ipv4_address: 198.51.100.41
+    ports:
+      - "127.0.0.1:${PEBBLE_MGMT_PORT:-15000}:15000"
+
+  pebble-zs:
+    image: ghcr.io/letsencrypt/pebble:2.8.0
+    command: ["-config", "/work/pebble-zs.json", "-dnsserver", "198.51.100.53:53"]
+    environment:
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
+    volumes:
+      - ./.work/direct:/work:ro
+    networks:
+      wan:
+        ipv4_address: 198.51.100.42
+    ports:
+      - "127.0.0.1:${PEBBLE_ZS_MGMT_PORT:-15001}:15000"
+
+  relay:
+    <<: *cloud
+    command: ["serve", "--role", "relay", "--config", "/etc/maktaba/cloud.toml"]
+    environment:
+      <<: *cloud-env
+      MAKTABA_NODE_ID: a-blue
+      MAKTABA_CLOUD_RELAY_ID: a-blue
+    networks:
+      wan:
+        ipv4_address: 198.51.100.11
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8443/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  worker:
+    <<: *cloud
+    command: ["serve", "--role", "worker", "--config", "/etc/maktaba/cloud.toml"]
+    environment:
+      <<: *cloud-env
+      MAKTABA_CLOUD_LISTEN_ADDR: "0.0.0.0:8450"
+    networks:
+      wan:
+        ipv4_address: 198.51.100.12
+
+  dns:
+    <<: *cloud
+    command: ["serve", "--role", "dns", "--config", "/etc/maktaba/cloud.toml"]
+    environment:
+      <<: *cloud-env
+    networks:
+      wan:
+        ipv4_address: 198.51.100.53
+    ports:
+      - "127.0.0.1:${DNS_PORT:-15353}:53/udp"
+
+  router:
+    image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+    entrypoint: ["/usr/local/bin/maktaba-rehearsal", "fakegateway"]
+    restart: "no"
+    cap_add: [NET_ADMIN]
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    environment:
+      FAKEGW_WAN: 198.51.100.2
+      FAKEGW_LAN: 192.168.77.0/24
+      FAKEGW_LISTEN: "192.168.77.2:5351"
+    networks:
+      wan:
+        ipv4_address: 198.51.100.2
+      lan:
+        ipv4_address: 192.168.77.2
+
+  home0:
+    <<: *home
+    environment:
+      <<: *home-env
+      SERVER_ID: ${HOME0_ID:-}
+      MAKTABA_CRED_KEY_HEX: ${HOME_CRED_KEY:-}
+    volumes:
+      - ./.work/direct/home0:/work
+    networks:
+      lan:
+        ipv4_address: 192.168.77.20
+
+  home1:
+    <<: *home
+    environment:
+      <<: *home-env
+      SERVER_ID: ${HOME1_ID:-}
+      MAKTABA_CRED_KEY_HEX: ${HOME_CRED_KEY:-}
+    volumes:
+      - ./.work/direct/home1:/work
+    networks:
+      lan:
+        ipv4_address: 192.168.77.21

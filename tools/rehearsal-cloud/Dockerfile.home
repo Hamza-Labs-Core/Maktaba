@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1.7
+# The cloud rehearsal's home for direct remote access (Epic 50 story 50.15, scenario
+# direct-remote): this commit's relay agent (maktaba-cloudlink) and the home's direct access
+# (api/cmd/rehearsal-direct-home: port mapping, the certificate by CSR, the TLS listener),
+# behind the scenario's router. Never published.
+#
+#   docker build -f tools/rehearsal-cloud/Dockerfile.home -t maktaba-home:rehearsal .
+ARG GO_VERSION=1.26
+FROM golang:${GO_VERSION}-bookworm AS builder
+WORKDIR /src
+ENV CGO_ENABLED=0 GOOS=linux
+COPY cloud/go.mod cloud/go.sum ./cloud/
+COPY api/go.mod api/go.sum ./api/
+COPY tools/healthcheck/go.mod ./tools/healthcheck/
+COPY shared ./shared
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    (cd cloud && go mod download) && (cd api && go mod download)
+COPY cloud ./cloud
+COPY api ./api
+COPY tools/healthcheck ./tools/healthcheck
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    (cd cloud && go build -trimpath -ldflags "-s -w" -o /out/maktaba-cloudlink ./cmd/maktaba-cloudlink) \
+    && (cd api && go build -trimpath -ldflags "-s -w" -o /out/rehearsal-direct-home ./cmd/rehearsal-direct-home)
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /out/maktaba-cloudlink /out/rehearsal-direct-home /usr/local/bin/
+COPY tools/rehearsal-cloud/home-entrypoint.sh /usr/local/bin/home-entrypoint
+ENTRYPOINT ["/usr/local/bin/home-entrypoint"]

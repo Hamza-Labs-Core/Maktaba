@@ -26,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     && go build -trimpath -ldflags "-s -w" -o /out/maktaba-rehearsal ./cmd/maktaba-rehearsal
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl iptables \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/maktaba-cloud /out/maktaba-rehearsal /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/maktaba-cloud"]
