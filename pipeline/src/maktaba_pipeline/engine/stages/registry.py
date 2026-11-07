@@ -50,7 +50,6 @@ CORE_MODULES: dict[str, str] = {
     "fingerprint": "maktaba_pipeline.engine.stages.fingerprint",
     "style_sample": "maktaba_pipeline.engine.stages.style_sample",
     "youtube_tartube": "maktaba_pipeline.engine.stages.youtube_tartube",
-    "detect": "maktaba_pipeline.engine.stages.detect",
     "fp_gate": "maktaba_pipeline.engine.stages.fp_gate",
     "tag": "maktaba_pipeline.engine.stages.tag",
     "books": "maktaba_pipeline.engine.stages.books",

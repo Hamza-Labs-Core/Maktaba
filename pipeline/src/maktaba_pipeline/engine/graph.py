@@ -21,7 +21,6 @@ from ..audio.chromaprint import AUDIO_FP_VERSION
 from ..classify.books import BOOKS_VERSION
 from ..classify.display_title import DISPLAY_TITLE_VERSION
 from ..classify.production_style import STYLE_VERSION
-from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
@@ -449,29 +448,8 @@ GRAPH: tuple[StageDef, ...] = (
     # Epic 54: defined by tv.maktaba.thumbnails's manifest
     _fp("thumb_small"),
     # ---- seasons and libraries lane ------------------------------------
-    StageDef(
-        name="detect",
-        label="Place episodes",
-        subject_kinds=("library",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=1,
-        version=DETECTOR_VERSION,
-        edges=(
-            Edge("tag", "seasons_changed"),
-            Edge("rate_style", "seasons_changed"),
-            Edge("tag", "same"),
-            Edge("plan_channels", "catalog"),
-            Edge("review_pages", "same"),
-            Edge("topic_collections", "same"),
-            Edge("promo_links", "same"),
-            Edge("display_title", "same"),
-        ),
-        may_request=("fingerprint", "fp_gate"),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("detect"),
     StageDef(
         name="fp_gate",
         label="Samples to candidates",

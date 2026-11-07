@@ -1,11 +1,11 @@
 {
- "digest": "fae346955fdb745d60417a9f76eb000b39768d44a8cc64a4a2886f8b44956610",
+ "digest": "90df8db493954a50221eba05c32946f246536c2091af6a48988519b7e059cce0",
  "plugins": [
   {
-   "digest": "b453db14704cd02d7704bf624faf1f580e040723562dd714cb31ff87ae70515a",
+   "digest": "08eb9371e1589c6bb1bb819b6927c39605c62bcfbc9e398c0d28d14fea54ee04",
    "folder": "classify",
    "id": "tv.maktaba.classify",
-   "manifest": "# tv.maktaba.classify: Maktaba's classifiers as a first-party plugin (Epic 54, README §15.2).\n# Wave 1 (story 54.28) moved the stages that read the database and write it, with no file,\n# no model and no network; wave 4 (story 54.31) brings the rest of classify: the model's\n# questions go through the plugin API's compute.generate (model_rules), the encyclopedia\n# lookup runs in the net group.\nschema     = 1\nid         = \"tv.maktaba.classify\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.classify.name\"\nsummary = \"fp.classify.summary\"\n\n[capabilities]\n# the model's questions (check_tags, check_clips) go through compute.generate (54.31 §2)\nrequired = [\"compute.llm\"]\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"classify\"\ndb.read   = [\"app_settings\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"series\", \"series_episodes\", \"series_seasons\", \"video_signals\", \"videos\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_videos\"]\ndb.write  = [\"clip_checks\", \"clip_group_items\", \"clip_groups\", \"promo_links\", \"season_style\", \"season_tags\", \"tag_checks\", \"topic_collections\", \"topic_items\", \"video_topic_tags\"]\nsettings  = [\"groups\", \"detect\", \"tagcheck\"]\ncompute   = [\"llm\"]\n# review_pages: reads the small thumbnails, writes the library's page in the reports folder\nfiles.read  = [\"data.thumbnails\"]\nfiles.write = [\"data.review\"]\n\n[[stage]]\nname         = \"promo_links\"\nsubject      = \"library\"\nexport       = \"promo-links\"\nversion      = 1\nlabel        = \"Promo links\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.promo_links:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"clip_groups\"\nsubject      = \"library\"\nexport       = \"clip-groups\"\nversion      = 1\nlabel        = \"Clip groups\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.clip_groups:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_collections\"\nsubject      = \"library\"\nexport       = \"topic-collections\"\nversion      = 1\nlabel        = \"Topic collections\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }, { to = \"youtube_collections\", map = \"same\" }]\nentry        = \"maktaba_fp_classify.stages.topic_collections:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"rate_style\"\nsubject      = \"season\"\nexport       = \"rate-style\"\nversion      = 1\nlabel        = \"Rate style\"\nsubject_kinds = [\"season\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nmay_request  = [\"style_sample\"]\nentry_for    = [\"season\"]\ndebounce_sec = 10\ndebounce_max_sec = 120\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.rate_style:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"check_tags\"\nsubject      = \"season\"\nexport       = \"check-tags\"\nversion      = 1\nlabel        = \"Check series tags\"\nsubject_kinds = [\"season\"]\npool         = \"lookup\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"season\"]\nedges        = [{ to = \"books\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\n# the model server defaults to localhost: the home's own (a node would ask another model,\n# or none) unless the settings name a shared one\nplacement    = \"home\"\nmodel_rules  = \"tagcheck\"\nentry        = \"maktaba_fp_classify.stages.check_tags:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"check_clips\"\nsubject      = \"library\"\nexport       = \"check-clips\"\nversion      = 2\nlabel        = \"Check clip tags\"\nsubject_kinds = [\"library\"]\npool         = \"lookup\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\n# the model server defaults to localhost: the home's own (a node would ask another model,\n# or none) unless the settings name a shared one\nplacement    = \"home\"\nmodel_rules  = \"tagcheck\"\nentry        = \"maktaba_fp_classify.stages.check_clips:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"review_pages\"\nsubject      = \"library\"\nexport       = \"review-pages\"\nversion      = 1\nlabel        = \"Review pages\"\nsubject_kinds = [\"library\"]\npool         = \"reports\"\nlane         = \"seasons\"\nlane_order   = 6\nentry_for    = [\"library\"]\ndebounce_sec = 120\ndebounce_max_sec = 900\n# the reports folder is the home's (the API serves it)\nplacement    = \"home\"\nentry        = \"maktaba_fp_classify.stages.review_pages:IMPL\"\nfingerprint  = { input = true, output = false }\n",
+   "manifest": "# tv.maktaba.classify: Maktaba's classifiers as a first-party plugin (Epic 54, README §15.2).\n# Wave 1 (story 54.28) moved the stages that read the database and write it, with no file,\n# no model and no network; wave 4 (story 54.31) brings the rest of classify: the model's\n# questions go through the plugin API's compute.generate (model_rules), the encyclopedia\n# lookup runs in the net group.\nschema     = 1\nid         = \"tv.maktaba.classify\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.classify.name\"\nsummary = \"fp.classify.summary\"\n\n[capabilities]\n# the model's questions (check_tags, check_clips) go through compute.generate (54.31 §2)\nrequired = [\"compute.llm\"]\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"classify\"\ndb.read   = [\"app_settings\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"video_signals\", \"videos\", \"youtube_channels\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_videos\"]\ndb.write  = [\"clip_checks\", \"clip_group_items\", \"clip_groups\", \"promo_links\", \"season_style\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"tag_checks\", \"topic_collections\", \"topic_items\", \"video_topic_tags\"]\nsettings  = [\"groups\", \"detect\", \"tagcheck\"]\ncompute   = [\"llm\"]\n# review_pages: reads the small thumbnails, writes the library's page in the reports folder\nfiles.read  = [\"data.thumbnails\"]\nfiles.write = [\"data.review\"]\n\n[[stage]]\nname         = \"promo_links\"\nsubject      = \"library\"\nexport       = \"promo-links\"\nversion      = 1\nlabel        = \"Promo links\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.promo_links:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"clip_groups\"\nsubject      = \"library\"\nexport       = \"clip-groups\"\nversion      = 1\nlabel        = \"Clip groups\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.clip_groups:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_collections\"\nsubject      = \"library\"\nexport       = \"topic-collections\"\nversion      = 1\nlabel        = \"Topic collections\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }, { to = \"youtube_collections\", map = \"same\" }]\nentry        = \"maktaba_fp_classify.stages.topic_collections:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"rate_style\"\nsubject      = \"season\"\nexport       = \"rate-style\"\nversion      = 1\nlabel        = \"Rate style\"\nsubject_kinds = [\"season\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nmay_request  = [\"style_sample\"]\nentry_for    = [\"season\"]\ndebounce_sec = 10\ndebounce_max_sec = 120\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.rate_style:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"check_tags\"\nsubject      = \"season\"\nexport       = \"check-tags\"\nversion      = 1\nlabel        = \"Check series tags\"\nsubject_kinds = [\"season\"]\npool         = \"lookup\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"season\"]\nedges        = [{ to = \"books\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\n# the model server defaults to localhost: the home's own (a node would ask another model,\n# or none) unless the settings name a shared one\nplacement    = \"home\"\nmodel_rules  = \"tagcheck\"\nentry        = \"maktaba_fp_classify.stages.check_tags:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"check_clips\"\nsubject      = \"library\"\nexport       = \"check-clips\"\nversion      = 2\nlabel        = \"Check clip tags\"\nsubject_kinds = [\"library\"]\npool         = \"lookup\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\n# the model server defaults to localhost: the home's own (a node would ask another model,\n# or none) unless the settings name a shared one\nplacement    = \"home\"\nmodel_rules  = \"tagcheck\"\nentry        = \"maktaba_fp_classify.stages.check_clips:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"review_pages\"\nsubject      = \"library\"\nexport       = \"review-pages\"\nversion      = 1\nlabel        = \"Review pages\"\nsubject_kinds = [\"library\"]\npool         = \"reports\"\nlane         = \"seasons\"\nlane_order   = 6\nentry_for    = [\"library\"]\ndebounce_sec = 120\ndebounce_max_sec = 900\n# the reports folder is the home's (the API serves it)\nplacement    = \"home\"\nentry        = \"maktaba_fp_classify.stages.review_pages:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"detect\"\nsubject      = \"library\"\nexport       = \"detect\"\nversion      = 3\nlabel        = \"Place episodes\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 1\nmay_request  = [\"fingerprint\", \"fp_gate\"]\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"tag\", map = \"seasons_changed\" }, { to = \"rate_style\", map = \"seasons_changed\" }, { to = \"tag\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }, { to = \"review_pages\", map = \"same\" }, { to = \"topic_collections\", map = \"same\" }, { to = \"promo_links\", map = \"same\" }, { to = \"display_title\", map = \"same\" }]\nentry        = \"maktaba_fp_classify.stages.detect:IMPL\"\nfingerprint  = { input = true, output = false }\n",
    "statements": [
     {
      "mode": "write",
@@ -297,6 +297,181 @@
      "scope_arg": 0,
      "sha256": "6e025ce782db788eb2aea72e8744846a8f647b2f3b606f95a1bee9e49bd3e15e",
      "text": "SELECT e.video_id AS id FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.id = $1 ORDER BY COALESCE(e.episode_override, e.episode), e.video_id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "detect.apply_changes",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "380093ff121c84868dc4f9d19744f26eb3e49b9b20c33ca22e0d05112bb2ac1e",
+     "text": "INSERT INTO series (id, library_id, name, year, metadata, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$6) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, year = EXCLUDED.year, metadata = EXCLUDED.metadata, library_id = EXCLUDED.library_id, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "series"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "detect.apply_changes.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 3,
+     "sha256": "ae65997b2f88e4e97420704b92de4988d0f95fb2a718360e6ddfb6929c0d117b",
+     "text": "INSERT INTO series_seasons (id, series_id, library_id, season, kind, name, first_air, last_air, median_duration_s, episode_count, membership_hash, detector_version, metadata, retired_at, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NULL,$14,$14) ON CONFLICT (id) DO UPDATE SET series_id = EXCLUDED.series_id, kind = EXCLUDED.kind, season = EXCLUDED.season, name = EXCLUDED.name, first_air = EXCLUDED.first_air, last_air = EXCLUDED.last_air, median_duration_s = EXCLUDED.median_duration_s, episode_count = EXCLUDED.episode_count, membership_hash = EXCLUDED.membership_hash, detector_version = EXCLUDED.detector_version, metadata = EXCLUDED.metadata, retired_at = NULL, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "series_seasons"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "detect.apply_changes.3",
+     "reads": [
+      "series_episodes",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "1d80fd8c0e454dc8f479018b95bce355ac123c940565f8d757669c8e93ddb23d",
+     "text": "SELECT e.video_id AS video_id FROM series_episodes e JOIN videos v ON v.id = e.video_id WHERE v.library_id = $1 AND e.season_override IS NULL AND e.episode_override IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "detect.apply_changes.4",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "4c193653379b46764c8d36d5e3e2e1663109b6d8ca68e8c3690b0e6972bb0912",
+     "text": "INSERT INTO series_episodes (series_id, video_id, season, episode, created_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (video_id) DO UPDATE SET series_id = EXCLUDED.series_id, season = EXCLUDED.season, episode = EXCLUDED.episode",
+     "writes": [
+      "series_episodes"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "detect.apply_changes.5",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9b94376ea643660776abb946474843ec1257f511ffba3b8b990ae90c9a08bc51",
+     "text": "UPDATE series_seasons SET retired_at = $2, updated_at = $2 WHERE id = $1",
+     "writes": [
+      "series_seasons"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "detect.delete_episodes",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b28210b39a6392d092660e6c5072b07573bd6c83a958b9aededd2bbf9fba76f7",
+     "text": "DELETE FROM series_episodes WHERE video_id = ANY($1::uuid[])",
+     "writes": [
+      "series_episodes"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "detect.delete_episodes.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "af815e59d9dcb79db11d6220dc2566fa7131c63477f4a2490805048bf8647550",
+     "text": "DELETE FROM series_episodes WHERE video_id IN (SELECT value FROM json_each($1))",
+     "writes": [
+      "series_episodes"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "detect.input_fingerprint",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "1927b795baf07c3d6fca1740d9e6c9ee2b73c367270ba0840daba304c4b1006d",
+     "text": "SELECT id, title, filename FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "detect.input_fingerprint.2",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "acf1a9c1cb9536d10b4121b7194c03c7503ebab56cd65ec4a455bbb4c18caf22",
+     "text": "SELECT j.subject_id AS vid, j.stage AS stage, j.output_hash AS h FROM processing_jobs j WHERE j.library_id = $1 AND j.subject_kind = 'video' AND j.stage IN ('probe','thumb_hash','link','fingerprint') AND j.state = 'done' AND j.outcome IN ('changed','unchanged','skipped_unchanged','imported') AND j.id = (SELECT max(k.id) FROM processing_jobs k WHERE k.subject_kind = 'video'   AND k.subject_id = j.subject_id AND k.stage = j.stage AND k.state = 'done'   AND k.outcome IN ('changed','unchanged','skipped_unchanged','imported')) ORDER BY j.subject_id, j.stage",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "detect.input_fingerprint.3",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "a7e694f8f073e4843b0f22cd2ffd7d952cc2c39d0105217abe4524507ad94d43",
+     "text": "SELECT output_hash FROM processing_jobs WHERE subject_kind = 'library' AND subject_id = $1 AND stage = 'youtube_sync' AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "detect.input_fingerprint.4",
+     "reads": [
+      "series_episodes",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "ac29f1277e39d9a2ce7e6d719e2ff29837f5ccb5e4fa9425be4da4e1b6a1b6ba",
+     "text": "SELECT e.video_id AS vid, e.season_override AS so, e.episode_override AS eo FROM series_episodes e JOIN videos v ON v.id = e.video_id WHERE v.library_id = $1 AND (e.season_override IS NOT NULL OR e.episode_override IS NOT NULL) ORDER BY e.video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "detect.load_current",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "28af836b12e3428eacb176d0a5aa8cc63b2dd85638eacd581667142bb685b463",
+     "text": "SELECT id, name, kind, season, membership_hash, retired_at, metadata FROM series_seasons WHERE library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "detect.load_current.2",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "003de77e00c4b4e9748f173f259cfca7b9f9c64c2efcecd089e4ccbc9b4975d3",
+     "text": "SELECT ss.id AS sid, e.video_id AS vid FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id AND ss.season = e.season WHERE ss.library_id = $1 ORDER BY ss.id, e.episode, e.video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "detect.load_rows",
+     "reads": [
+      "media_metadata_enrichment",
+      "video_signals",
+      "videos",
+      "youtube_channels",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "37bdbc8da66c182ab1c86125453a5145161819710e1c9e464e22716dfe96711c",
+     "text": "SELECT v.id AS id, v.path AS path, v.filename AS filename, v.title AS title,\n       v.duration_sec AS duration_sec, v.metadata AS metadata,\n       vs.thumb_dhash AS thumb_dhash, vs.audio_head AS audio_head, vs.audio_tail AS audio_tail,\n       vs.frame_hashes AS frame_hashes, vs.fp_version AS fp_version, vs.fp_partial AS fp_partial,\n       m.external_id AS youtube_id,\n       yv.title AS yt_title, yv.upload_date AS upload_date, yv.date_quality AS date_quality,\n       yv.duration_s AS yt_duration, yv.tab AS tab, yc.title AS channel_title\n  FROM videos v\n  LEFT JOIN video_signals vs ON vs.video_id = v.id\n  LEFT JOIN media_metadata_enrichment m\n         ON m.video_id = v.id AND m.provider = 'youtube' AND NOT m.is_dismissed\n  LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id\n  LEFT JOIN youtube_channels yc ON yc.channel_id = yv.channel_id\n WHERE v.library_id = $1 AND v.deleted_at IS NULL\n ORDER BY v.id",
      "writes": []
     },
     {
