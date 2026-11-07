@@ -129,8 +129,8 @@ func TestOffline(t *testing.T) {
 	}
 }
 
-// Epic 54's plugin store calls (54.15, 54.17, 54.18): each is listed with its host, and each
-// says what turns it off besides MAKTABA_OFFLINE.
+// Epic 54's plugin store calls (54.15, 54.17, 54.18, 54.19): each is listed with its host, and
+// each says what turns it off besides MAKTABA_OFFLINE.
 func TestPluginStoreCallsAreListed(t *testing.T) {
 	want := map[string]string{
 		"plugin-store-link":      "plugins.maktaba.tv",
@@ -138,6 +138,9 @@ func TestPluginStoreCallsAreListed(t *testing.T) {
 		"plugin-store-downloads": "plugins-cdn.maktaba.tv",
 		"plugin-store-seen":      "plugins.maktaba.tv",
 		"plugin-store-ratings":   "plugins.maktaba.tv",
+		// 54.19: the paid plugins' entitlement refresh and an admin's Buy
+		"plugin-store-entitlements": "plugins.maktaba.tv",
+		"plugin-store-buy":          "plugins.maktaba.tv",
 	}
 	for _, c := range Outbound {
 		host, ok := want[c.Name]

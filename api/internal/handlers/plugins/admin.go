@@ -101,6 +101,7 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Delete("/api/plugins/store-account", h.storeUnlink)
 		r.Get("/api/plugins/store-account/entitlements", h.entitlements)
 		r.Post("/api/plugins/store-account/entitlements/refresh", h.refreshEntitlements)
+		r.Post("/api/plugins/store-account/buy", h.buy)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
 		r.Put("/api/plugins/{id}/report-logs", h.reportLogs)

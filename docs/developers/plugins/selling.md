@@ -5,8 +5,10 @@
 > provider and an Adyen for Platforms module that are not connected to any live account.
 > The store service and linking a home (Phase 2) are on `main` too, and so is the home's
 > side of entitlements: the store answers a linked home's entitlements, the home checks them
-> offline, and a paid plugin without one waits. Buy in the home's Browse comes with the store
-> browser (54.18), so nothing can be bought yet. The design is in story 54.19 of
+> offline, and a paid plugin without one waits. Buy is on `main` too: a paid plugin's price
+> in the home's Browse, Buy or "Link this home to buy", and the store's buy pages. Nothing can
+> be bought until the store admin enables a payment provider. Not built yet: paid packages on
+> their own CDN path, and moving a purchase to another home. The design is in story 54.19 of
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md).
 
 ## What it costs and what you get
@@ -58,6 +60,27 @@ You get a statement each month, in English and Arabic.
 - A **dispute** (a chargeback) the store loses ends the entitlement and reverses your share
   the same way; one the store wins changes nothing.
 - A plugin withdrawn for malware is refunded to every buyer automatically.
+
+## How a buyer buys
+
+1. Your plugin's page in the home's Browse (Settings → Plugins → Browse the store) shows its
+   price, as the signed catalog carries it: the product (`one_time` or `yearly`) and its
+   amounts per currency.
+2. An admin of a home **linked to a store account** clicks **Buy**. A home that isn't linked
+   shows **Link this home to buy**, which links it right there.
+3. The home asks the store for a one-time purchase intent, signed with its own key: only your
+   plugin's id and the admin's language, never the home's address. A new tab opens the
+   store's buy page, `plugins.maktaba.tv/buy/<plugin id>`, with the intent posted, not in
+   the URL. The intent is used once and lasts 10 minutes.
+4. The buyer signs in to the store account the home is linked to and sees the price in a
+   currency an enabled payment provider sells to their country (their own currency when you
+   priced it). A country no provider sells to is told so, and nothing is bought.
+5. **Continue to payment** goes to that provider's own page. The provider confirms the
+   payment to the store, the store records the sale and its 85/15 split, and the home picks
+   up the entitlement within 15 seconds. Your plugin starts by itself.
+
+The store's buy pages run no script. The home sends only the plugin, the language and its
+signature.
 
 ## What the home sees
 
