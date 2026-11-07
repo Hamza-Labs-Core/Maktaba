@@ -8,6 +8,7 @@ import com.hamzalabs.maktaba.desktop.diagnostics.MyReportsDialog
 import com.hamzalabs.maktaba.desktop.diagnostics.ReportProblemDialog
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -111,6 +112,8 @@ fun main(args: Array<String>) {
         var approving by remember { mutableStateOf(false) }
         var updating by remember { mutableStateOf(false) }
         var reporting by remember { mutableStateOf(false) }
+        var reportRef by remember { mutableStateOf<String?>(null) }
+        var crashNotice by remember { mutableStateOf<com.hamzalabs.maktaba.core.crash.CrashOutbox.Notice?>(null) }
         var myReports by remember { mutableStateOf(false) }
         var askCrashes by remember { mutableStateOf(false) }
         var crashesOn by remember { mutableStateOf(false) }
@@ -170,6 +173,11 @@ fun main(args: Array<String>) {
             }
             PlayerTheme(texts, big) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    // "Report this" on every error box opens the form with that call's reference
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        com.hamzalabs.maktaba.desktop.diagnostics.LocalReportProblem provides
+                            (if (phase is AppSession.Phase.SignedIn) { ref: String? -> reportRef = ref; reporting = true } else null),
+                    ) {
                     PlayerApp(
                         session, background, prefs,
                         HomeActions(
@@ -182,6 +190,7 @@ fun main(args: Array<String>) {
                         fullScreen = big,
                         onFullScreen = { big = it },
                     )
+                    }
                 }
                 session.link.collectAsState().value?.let { ConnectLinkDialog(session, it) }
                 val signedIn = phase as? AppSession.Phase.SignedIn
@@ -193,7 +202,11 @@ fun main(args: Array<String>) {
                     LaunchedEffect(signedIn.client, signedHome) {
                         crashesOn = crashConsent.isOn(signedHome)
                         if (crashConsent.answer(signedHome) == null) askCrashes = true
-                        else runCatching { DesktopCrashes.flush(crashOutbox, signedIn.client, signedHome, crashConsent, crashHeader) }
+                        else {
+                            runCatching { DesktopCrashes.flush(crashOutbox, signedIn.client, signedHome, crashConsent, crashHeader) }
+                            // what happened to the last crash, once (53.14 §4)
+                            crashNotice = crashOutbox.notice()
+                        }
                     }
                     if (askCrashes) {
                         val scope = rememberCoroutineScope()
@@ -204,7 +217,20 @@ fun main(args: Array<String>) {
                             scope.launch { runCatching { DesktopCrashes.flush(crashOutbox, signedIn.client, signedHome, crashConsent, crashHeader) } }
                         }
                     }
-                    if (reporting) ReportProblemDialog(signedIn.client, signedHome.label, crashHeader, crashOutbox, onDismiss = { reporting = false })
+                    if (reporting) {
+                        ReportProblemDialog(signedIn.client, signedHome.label, crashHeader, crashOutbox, reference = reportRef,
+                            onDismiss = { reporting = false; reportRef = null })
+                    }
+                    crashNotice?.let { n ->
+                        androidx.compose.material3.AlertDialog(
+                            onDismissRequest = { crashNotice = null },
+                            text = {
+                                Text(if (n == com.hamzalabs.maktaba.core.crash.CrashOutbox.Notice.Sent) texts["crash.lastCrash.sent", signedHome.label]
+                                else texts["crash.lastCrash.kept"])
+                            },
+                            confirmButton = { androidx.compose.material3.TextButton(onClick = { crashNotice = null }) { Text(texts["report.done"]) } },
+                        )
+                    }
                     if (myReports) MyReportsDialog(signedIn.client, onDismiss = { myReports = false })
                 }
             }

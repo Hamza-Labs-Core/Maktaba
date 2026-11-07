@@ -198,6 +198,16 @@ function BillingBody({ data }: { data: BillingData }) {
       </div>
 
       {usage && <UsagePanel usage={usage} />}
+
+      {/* Epic 50 story 50.12: the uptime target, a target with no credit (uptime.policy) */}
+      <Card header={<h2>{t("billing.uptime.title")}</h2>}>
+        <p>{t("uptime.policy")}</p>
+        <p>
+          <a href="https://status.maktaba.tv" target="_blank" rel="noopener noreferrer">
+            {t("billing.uptime.status")}
+          </a>
+        </p>
+      </Card>
     </div>
   );
 }

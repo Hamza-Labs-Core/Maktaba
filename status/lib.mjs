@@ -210,9 +210,11 @@ export function loadPosts(dir) {
     if (kind === "incident" && fm.state === "resolved" && !fm.resolved) throw new Error(`${name}: a resolved incident needs resolved`);
     if (kind === "maintenance" && fm.ends <= fm.starts) throw new Error(`${name}: ends must come after starts`);
     if (fm.impact && !["degraded", "outage"].includes(fm.impact)) throw new Error(`${name}: impact must be degraded or outage`);
+    // story 50.12: a SEV1 needs a postmortem within 5 days (the Postmortem reminder workflow)
+    if (fm.severity && !["sev1", "sev2", "sev3"].includes(fm.severity)) throw new Error(`${name}: severity must be sev1, sev2 or sev3`);
     return {
       id: name.slice(0, -3), kind, components, state: fm.state, impact: fm.impact || null,
-      started: fm.started || null, resolved: fm.resolved || null, starts: fm.starts || null, ends: fm.ends || null,
+      severity: fm.severity || null, started: fm.started || null, resolved: fm.resolved || null, starts: fm.starts || null, ends: fm.ends || null,
       title: { en: fm.title_en, ar: fm.title_ar }, body: splitSections(body, name),
     };
   });

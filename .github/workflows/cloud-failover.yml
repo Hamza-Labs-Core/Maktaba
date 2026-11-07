@@ -1,0 +1,41 @@
+# Runbook action: Cloud failover (Epic 50 story 50.12, docs/runbooks/cloud/forced-failover.md),
+# for a leader that is sick but alive: Patroni fails over to the standby, which promotes; with
+# "stop the old leader", its Patroni is stopped too so it can't lead again until started by
+# hand. Proven against the rehearsal pair first (runbook-forced-failover). Runs in the
+# production environment: its required reviewer approves each run.
+name: Cloud failover
+
+on:
+  workflow_dispatch:
+    inputs:
+      stop_old:
+        description: Also stop Patroni on the old leader (a node too sick to demote cleanly)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-ops
+  cancel-in-progress: false
+
+jobs:
+  failover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: Fail over
+        env:
+          RELAY_HOST_A: ${{ secrets.RELAY_HOST_A }}
+          RELAY_HOST_B: ${{ secrets.RELAY_HOST_B }}
+          RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          STOP_OLD_LEADER: ${{ inputs.stop_old }}
+        run: |
+          if [ "${STOP_OLD_LEADER}" = true ]; then bash deploy/cloud-ha/runbook/failover.sh --stop-old
+          else bash deploy/cloud-ha/runbook/failover.sh; fi

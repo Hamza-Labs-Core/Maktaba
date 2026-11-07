@@ -1,0 +1,41 @@
+# Runbook action: Cloud switchover (Epic 50 story 50.12, docs/runbooks/cloud/switchover.md). The
+# other node becomes the leader (Patroni's switchover after bin/switchover's checks); the
+# Floating IP and the relay follow. Proven against the rehearsal pair first
+# (cloud-rehearsal.yml, runbook-switchover). Runs in the production environment: its required
+# reviewer approves each run.
+name: Cloud switchover
+
+on:
+  workflow_dispatch:
+    inputs:
+      announced:
+        description: Posted on the status page at least 48 hours ago (no for an emergency)
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-ops
+  cancel-in-progress: false
+
+jobs:
+  switchover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: Switch over
+        env:
+          RELAY_HOST_A: ${{ secrets.RELAY_HOST_A }}
+          RELAY_HOST_B: ${{ secrets.RELAY_HOST_B }}
+          RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          ANNOUNCED: ${{ inputs.announced }}
+        run: |
+          if [ "${ANNOUNCED}" = true ]; then flag=--announced; else flag=--unannounced; fi
+          bash deploy/cloud-ha/runbook/switchover.sh "${flag}"
