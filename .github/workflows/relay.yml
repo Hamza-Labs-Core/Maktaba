@@ -372,7 +372,7 @@ jobs:
         run: |
           shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
           bash deploy/cloud-ha/tests/scripts-test.sh
-      - name: The monitoring (Epic 50 stories 50.09, 50.10: promtool, amtool, the probe)
+      - name: The monitoring configs, rules and probe (Epic 50 stories 50.09 and 50.10)
         run: |
           bash deploy/cloud-ha/monitoring/check.sh
           bash deploy/cloud-ha/monitoring/probe-test.sh
