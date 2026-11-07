@@ -34,6 +34,7 @@ mod applog;
 mod attempts;
 mod autoinstall;
 mod bigscreen;
+mod crashes;
 mod flavour;
 mod lang;
 mod mode;
@@ -295,6 +296,8 @@ pub fn run() {
             bigscreen::big_screen_state,
             bigscreen::set_big_screen,
             bigscreen::set_big_screen_start,
+            crashes::shell_crashes,
+            crashes::shell_crashes_sent,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
@@ -443,7 +446,15 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
 
     // Help menu
     let docs = MenuItem::with_id(app, "open-docs", "Documentation", true, None::<&str>)?;
-    let help_menu = Submenu::with_items(app, "Help", true, &[&docs])?;
+    // Epic 53 story 53.15: the web app's form, to this home's admin
+    let report = MenuItem::with_id(
+        app,
+        "report-problem",
+        "Report a Problem…",
+        true,
+        None::<&str>,
+    )?;
+    let help_menu = Submenu::with_items(app, "Help", true, &[&docs, &report])?;
 
     let menu = Menu::with_items(
         app,

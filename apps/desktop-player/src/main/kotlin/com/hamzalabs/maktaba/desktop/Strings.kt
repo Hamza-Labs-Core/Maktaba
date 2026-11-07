@@ -58,6 +58,7 @@ object Strings {
             com.hamzalabs.maktaba.desktop.home.HomeStrings.part,
             com.hamzalabs.maktaba.desktop.search.SearchStrings.part,
             com.hamzalabs.maktaba.desktop.libraries.LibrariesStrings.part,
+            com.hamzalabs.maktaba.desktop.diagnostics.DiagnosticsStrings.part,
             com.hamzalabs.maktaba.desktop.video.VideoStrings.part,
             com.hamzalabs.maktaba.desktop.live.LiveStrings.part,
             com.hamzalabs.maktaba.desktop.watch.WatchStrings.part,
