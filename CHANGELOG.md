@@ -109,6 +109,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
+  June it exited at start and none of its jobs ever ran: expired-token cleanup, account
+  deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
+  certificates. It now listens once, and a test runs the worker in its own process and checks
+  it answers, stays up and stops cleanly. The cloud is not live yet, so no account was affected.
+
 - **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
   before the database's own thread had ended, so the worker sometimes counted that thread as
   still running and left without the normal shutdown. The close now waits for the thread to
