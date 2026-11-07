@@ -1702,6 +1702,15 @@ build fails when the two differ.
   shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
   app's dialogs follow the session's language (English or Arabic).
 
+- **Plugins from the command line, developer mode and `mkp run` (Epic 54, stories 54.10 §4,
+  §5 and 54.12).** `maktaba-server plugins list|show|install|update|enable|disable|start|stop|
+  rollback|remove|grants|policy` does what Settings → Plugins does, for a home without a
+  browser, with the components CLI's `--yes`, `--json`, `--dsn` and exit codes.
+  `maktaba-server plugins dev <folder>` installs a plugin folder as Development and reloads it
+  on every save (removed when it stops, unless `--keep`). `mkp run <folder> --home
+  http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
+  developer's machine. maktaba.dev: Testing and packaging.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
