@@ -3,6 +3,10 @@
 > Epic 54 · Phase 1 · Depends on: 54.01, Epic 51 (51.01, 51.02, 51.04, 51.05, 51.06, 51.08,
 > 51.09) · Needed by: 54.07, 54.38, 54.17, 54.19
 
+**On-demand processes:** a shared runner group starts when the worker has a job for it and
+stops when idle, and is held while none of its components is on. The supervisor reports each
+process's start mode (`always` or `on_demand`).
+
 ## Why
 
 Epic 51's catalog is fixed per release. `shared/components/catalog.toml` is embedded in the Go
@@ -104,6 +108,28 @@ supervisor's reconciler gets that rule as a catalog field, `on_demand = true` (b
 learn it), and reports the component `running` with `detail.idle = true` while no process is
 needed. A home with no plugin enabled runs no `maktaba-plugind` (N14), without a derived
 desired-state write that an admin's own switch would fight.
+
+Within `core.plugin_runners`, each shared runner group (`light`, `net`, `service`, `fp`) has
+a gate of its own, and its process starts on demand:
+
+- **Held** while none of the components its first-party plugins serve is on (the catalog
+  components named in their manifests' `[trusted] component`; `fp` serves all of them): it
+  reads `held`, and nothing starts it.
+- **Idle** while one is on and nobody has asked for it: not wanted, not running. The worker,
+  finding a job's runner not up, runs that job itself and asks the supervisor for the runner
+  (`POST /runners/{group}/start` on its loopback address, at most once a minute per group).
+  The supervisor refuses a held group (`409 component_off`) and never opens a gate for an ask.
+- **Running** once asked; it exits 0 after ten minutes with no job or fingerprint request,
+  and is not restarted until asked again (`Process.IdleOnClean`).
+
+The supervisor reports each process's **start mode**, `always` (started at boot, restarted
+when it exits) or `on_demand` (started when asked for), in its process view
+(`ChildStatus.start_mode`). An on-demand process that is not wanted is never waited on: not
+by an update's checks, a release's confirmation (`healthyFor`) or an adoption. An update
+rehearsal reads an on-demand process as unchanged when it is held (gate closed) or idle (gate
+open), and a process the previous release reported with no start mode may come back on
+demand, held or idle: the change from always-on runners, logged. An idle home, Core's
+included, runs none, which keeps Core at its four processes.
 
 ### 5. The API and the Components page
 

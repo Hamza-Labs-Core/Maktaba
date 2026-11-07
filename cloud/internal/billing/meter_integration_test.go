@@ -4,6 +4,9 @@ package billing
 
 import (
 	"context"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -159,5 +162,83 @@ func TestPlanNamesMigration(t *testing.T) {
 	var back string
 	if err := pool.DB.QueryRowContext(ctx, `SELECT plan FROM users WHERE id = $1`, ids["family"]).Scan(&back); err != nil || back != "family" {
 		t.Fatalf("down: %q %v", back, err)
+	}
+}
+
+// Story 50.19 T04: two relay processes count one home's streams together. On Basic (2), the
+// third stream is refused whichever relay it reaches; a playing stream goes on; a crashed
+// relay's streams stop counting after 2 minutes and the worker deletes them.
+func TestRelayStreamsAcrossTwoRelays(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.Migrated(t)
+	u, err := stores.NewUsers(pool.DB).Create(ctx, uuid.NewString()+"@example.test", "", "M", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var home string
+	if err := pool.DB.QueryRowContext(ctx, `INSERT INTO servers (owner_user_id, name, slug, server_secret_hash, plan)
+	        VALUES ($1, 'm', $2, 'x', 'basic') RETURNING id`, u.ID, "m"+uuid.NewString()[:8]).Scan(&home); err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Now()
+	blue := &Streams{DB: pool.DB, Relay: "blue", now: func() time.Time { return clock }}
+	green := &Streams{DB: pool.DB, Relay: "green", now: func() time.Time { return clock }}
+	limit, ok := StreamLimit(PlanBasic, 0)
+	if !ok || limit != 2 {
+		t.Fatalf("basic's limit: %d %v", limit, ok)
+	}
+	if ok, n, err := blue.Open(ctx, home, "s1", limit); !ok || n != 1 || err != nil {
+		t.Fatalf("s1: %v %d %v", ok, n, err)
+	}
+	if ok, n, err := green.Open(ctx, home, "s2", limit); !ok || n != 2 || err != nil {
+		t.Fatalf("s2: %v %d %v", ok, n, err)
+	}
+	if ok, n, _ := blue.Open(ctx, home, "s3", limit); ok || n != 2 {
+		t.Fatalf("a third stream on blue: %v %d", ok, n)
+	}
+	if ok, _, _ := green.Open(ctx, home, "s3", limit); ok {
+		t.Fatal("a third stream on green")
+	}
+	// the playing ones go on, on either relay
+	if ok, _, _ := green.Open(ctx, home, "s1", limit); !ok {
+		t.Fatal("a playing stream refused")
+	}
+	// at once, from both relays: still two
+	var wg sync.WaitGroup
+	var admitted atomic.Int32
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s := blue
+			if i%2 == 1 {
+				s = green
+			}
+			if ok, _, _ := s.Open(ctx, home, "race-"+strconv.Itoa(i), limit); ok {
+				admitted.Add(1)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if admitted.Load() != 0 {
+		t.Fatalf("%d streams past the limit", admitted.Load())
+	}
+	// s2's relay crashes: 2 minutes later its stream no longer counts, and is swept
+	clock = clock.Add(StreamSilence + time.Second)
+	if ok, _, _ := blue.Open(ctx, home, "s1", limit); !ok {
+		t.Fatal("s1 after silence")
+	}
+	if ok, n, _ := blue.Open(ctx, home, "s4", limit); !ok || n != 2 {
+		t.Fatalf("s4 after s2's silence: %v %d", ok, n)
+	}
+	clock = clock.Add(StreamSilence + time.Second)
+	if n, err := blue.Sweep(ctx); err != nil || n != 3 {
+		t.Fatalf("swept %d %v", n, err)
+	}
+	if _, ok := StreamLimit("gold", 0); ok {
+		t.Fatal("an unknown plan is limited")
+	}
+	if n, ok := StreamLimit(PlanPro, 2); ok {
+		t.Fatalf("pro's N is TBD, yet limited to %d", n)
 	}
 }

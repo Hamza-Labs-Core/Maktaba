@@ -25,6 +25,7 @@ import json
 import os
 import struct
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -194,6 +195,9 @@ class Runner:
     #: the transport a job's database uses (a seam: tests give one in memory)
     transport: Callable[[str], Any] | None = None
     running: dict[int, asyncio.Task[Any]] = field(default_factory=dict)
+    #: when it last had work (a run or a fingerprint request; the health check's hello
+    #: is not work), for the idle timeout
+    last_active: float = field(default_factory=time.monotonic)
 
     def _transport(self, token: str) -> Any:
         if self.transport is not None:
@@ -215,6 +219,8 @@ class Runner:
         try:
             msg = await read_frame(r)
             kind = msg.get("type")
+            if kind in ("run", "fingerprints"):
+                self.last_active = time.monotonic()
             if kind == "hello":
                 await write_frame(w, self.hello())
             elif kind == "run":
@@ -324,6 +330,13 @@ class Runner:
             if close is not None:
                 await close()
         return {"type": "fingerprints", "hashes": out, "calls": db.calls}
+
+    def idle_for(self) -> float:
+        """Seconds since it last had work; 0 while a job runs."""
+        if self.running:
+            self.last_active = time.monotonic()
+            return 0.0
+        return time.monotonic() - self.last_active
 
     async def serve(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

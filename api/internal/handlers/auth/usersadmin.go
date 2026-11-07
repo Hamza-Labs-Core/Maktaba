@@ -103,7 +103,7 @@ func seatRefusal(tier string, limit, used int) *httperror.Error {
 	if tier == string(subscriptions.TierHome) {
 		detail += "Pro has no limit: apply a Pro license in Settings → Subscription."
 	} else {
-		detail += "Adding users needs the Home plan (4 users) or Pro (unlimited): apply a license in Settings → Subscription."
+		detail += "Adding users needs the Basic plan (4 users) or Pro (unlimited): apply a license in Settings → Subscription."
 	}
 	return (&httperror.Error{
 		Type: TypeSeatLimit, Title: "User limit reached", Status: http.StatusForbidden, Detail: detail,

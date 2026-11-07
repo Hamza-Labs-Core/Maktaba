@@ -28,6 +28,7 @@ import contextlib
 import os
 import sys
 import threading
+import time
 from typing import Any
 
 from . import __version__
@@ -292,6 +293,8 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
 #: answer, a download) may take before the process exits without them
 _INDEX_CLOSE_WAIT_SEC = 10.0
 _EXIT_WAIT_SEC = 5.0
+#: past those, how long the threads that are ending have, in all, before the count
+_THREAD_END_SEC = 1.0
 
 
 async def _close_search_index(log: Any) -> None:
@@ -307,6 +310,15 @@ async def _close_search_index(log: Any) -> None:
     closed = await asyncio.to_thread(semantic.close_clients)
     if closed:
         log.info("search_index_closed", clients=closed)
+
+
+def _threads_still_running(grace: float) -> list[threading.Thread]:
+    """The threads still running after `grace` seconds in all to end: one that is ending
+    as the worker stops (a closed connection's, issue #862) is not one left behind."""
+    deadline = time.monotonic() + grace
+    for t in _lingering_threads():
+        t.join(max(0.0, deadline - time.monotonic()))
+    return _lingering_threads()
 
 
 def _lingering_threads() -> list[threading.Thread]:
@@ -335,7 +347,8 @@ async def _exit_if_threads_linger(
     loop: Any = asyncio.get_running_loop()  # the base loop's shutdown takes a timeout
     with contextlib.suppress(Exception):  # the threads are counted below
         await loop.shutdown_default_executor(timeout=_EXIT_WAIT_SEC)
-    left = _lingering_threads()
+    # on the loop's thread: the default executor is shut down, and the loop is done
+    left = _threads_still_running(_THREAD_END_SEC)
     if not left:
         return
     if failure is not None and not isinstance(failure, asyncio.CancelledError):

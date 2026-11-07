@@ -1943,6 +1943,16 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   agree. The extension still adds the edges from other stages into them, and in-process its
   own implementations run with its own client. The token mint takes a first-party stage
   tagged with the extension whose component the plugin names.
+- **A shared runner group runs only while it has work.** `light`, `files`, `net`, `service`
+  and `fp` start on demand: the worker, finding a job's runner not up, runs the job itself and
+  asks the supervisor for the runner (`POST /runners/{group}/start`, at most once a minute per
+  group), which then serves the next jobs. A runner with no work for ten minutes exits 0 and
+  is not restarted until asked again. An idle home, Core's included, runs none (Core's budget
+  is four processes). A group is held while none of the components its plugins serve is on,
+  and the supervisor never starts a held group for an ask. It reports each process's start
+  mode (`always`, `on_demand`), and nothing waits on an on-demand process nobody asked for
+  (story 54.37 §4). `ml` and `index`, their own components' processes, run while those
+  components are on.
 - **What the plugin never learns, its rows do not hold.** `plex_livetv` stored Plex's address
   in its status (`server`); through the plugin it stores `service:plex`. Nothing reads the
   field: the API and the Live TV page take the address from the extension's settings.

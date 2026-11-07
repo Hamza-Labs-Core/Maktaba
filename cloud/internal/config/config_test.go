@@ -218,3 +218,26 @@ func TestRelayBlipConfig(t *testing.T) {
 		t.Errorf("from the file: %+v %v", c.Relay, err)
 	}
 }
+
+// Epic 50 story 50.19: the plans are not enforced until relay.plans.enforce; the stream limit
+// is on once they are.
+func TestLoad_RelayPlans(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Relay.PlansEnforce || !c.Relay.StreamLimitEnabled {
+		t.Errorf("defaults: enforce %v, stream limit %v", c.Relay.PlansEnforce, c.Relay.StreamLimitEnabled)
+	}
+	p := filepath.Join(t.TempDir(), "cloud.toml")
+	if err := os.WriteFile(p, []byte("[relay.plans]\nenforce = true\n\n[relay.stream_limit]\nenabled = false\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Relay.PlansEnforce || c.Relay.StreamLimitEnabled {
+		t.Errorf("from the file: enforce %v, stream limit %v", c.Relay.PlansEnforce, c.Relay.StreamLimitEnabled)
+	}
+}

@@ -36,6 +36,7 @@ from .classify.series_detector import DetectorConfig
 from .classify.tag_check import TagCheckConfig
 from .classify.topic_tags import TaggerConfig
 from .cluster.machines_settings import ClusterMachinesConfig
+from .direct_settings import DirectConfig
 from .engine.failure_classes import QueueHealthConfig
 from .enrich.config import EnrichConfig
 from .plugins.compute_settings import PluginComputeConfig
@@ -225,6 +226,9 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                "searches each user keeps"),
     "plugin_compute": (PluginComputeConfig, "Plugin models", "which language model plugins "
                        "ask, and how much of the home's models each plugin may use a day"),
+    "direct": (DirectConfig, "Direct access", "apps outside the home reach it directly over "
+               "HTTPS, without the relay, when the router allows it: the port on the router "
+               "and a port forwarded by hand"),
 }  # fmt: skip
 
 

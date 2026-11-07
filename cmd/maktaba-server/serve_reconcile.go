@@ -181,7 +181,9 @@ func pluginsOpts(cfg config.Config, sopts supervisor.Options, host *supervisor.P
 	if err != nil {
 		return nil
 	}
-	return &pluginsOptions{host: host, plugind: bin, preload: supervisor.PreloadArgs(cfg)}
+	// on Windows the check runs through the AppContainer launcher, as the host does (#710)
+	bin, preload := supervisor.PreloadCommand(cfg, bin)
+	return &pluginsOptions{host: host, plugind: bin, preload: preload}
 }
 
 // startPlugins is the plugins runner beside the packs runner (story 54.38 §4): it gives

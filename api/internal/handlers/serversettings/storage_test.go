@@ -21,11 +21,13 @@ func storageFixture(t *testing.T) (http.Handler, *atomic.Int32, *[]string, *Hand
 	calls := &atomic.Int32{}
 	bodies := &[]string{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
+		// counted once it carries the API's token: a stray request (another process
+		// probing a recycled 127.0.0.1 port) is not a call the API made
 		if r.Header.Get("Authorization") != "Bearer tok" {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		calls.Add(1)
 		b, _ := io.ReadAll(r.Body)
 		*bodies = append(*bodies, string(b))
 		w.Header().Set("Content-Type", "application/json")

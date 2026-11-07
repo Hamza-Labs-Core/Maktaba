@@ -160,6 +160,14 @@ type RelayConfig struct {
 	// waits for its homes to move (relay.shutdown_grace, default 150s).
 	ShutdownGrace time.Duration
 
+	// The plans (Epic 50 story 50.19 §3). PlansEnforce (relay.plans.enforce, default false):
+	// paid homes are capped, paced and stream-limited as their plan says; off, they are
+	// forwarded in full and their bytes still counted. A plan without the relay (Free) is
+	// refused either way. StreamLimitEnabled (relay.stream_limit.enabled, default true): a new
+	// stream past the plan's limit is refused (counting goes on when off).
+	PlansEnforce       bool
+	StreamLimitEnabled bool
+
 	// The tunnel directory (story 50.04). ID names this relay process
 	// (relay.id, env MAKTABA_CLOUD_RELAY_ID; default the host name), and
 	// PeerAddr is where its peers forward requests to it (relay.peer_addr,
@@ -216,6 +224,8 @@ func defaultConfig() Config {
 			HoldMax:        15 * time.Second,
 			CacheEnabled:   true,
 			HoldRecent:     2 * time.Minute,
+
+			StreamLimitEnabled: true,
 		},
 	}
 }
@@ -459,6 +469,10 @@ func assign(c *Config, section, key, val string) error {
 		c.Relay.PeerAddr = val
 	case "relay.cache.enabled":
 		return setBool(&c.Relay.CacheEnabled, val)
+	case "relay.plans.enforce":
+		return setBool(&c.Relay.PlansEnforce, val)
+	case "relay.stream_limit.enabled":
+		return setBool(&c.Relay.StreamLimitEnabled, val)
 	case "relay.readyz_strict":
 		return setBool(&c.Relay.ReadyzStrict, val)
 	case "relay.hold_max":

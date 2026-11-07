@@ -12,6 +12,7 @@ export default tseslint.config(
     ignores: [
       "dist",
       "dist-cloud",
+      "dist-admin",
       "node_modules",
       "mockups",
       "wiki-app",
@@ -28,6 +29,7 @@ export default tseslint.config(
     files: [
       "src/**/*.{js,ts,tsx}",
       "cloud/**/*.{js,ts,tsx}",
+      "admin/**/*.{js,ts,tsx}",
       "design-system/**/*.{js,ts,tsx}",
       "packages/**/*.{js,ts,tsx}",
     ],
@@ -49,6 +51,24 @@ export default tseslint.config(
     },
     plugins: {
       "@typescript-eslint": tseslint.plugin,
+    },
+  },
+  {
+    // story 50.32: the user app never imports the operator console (web/admin), so no admin
+    // code can reach a user's browser; tools/lint/no-admin-in-user-bundle.mjs checks the build
+    files: ["cloud/**/*.{js,ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/admin/src/**", "**/admin/src"],
+              message: "The user app never imports the operator console.",
+            },
+          ],
+        },
+      ],
     },
   }
 );

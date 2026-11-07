@@ -7,6 +7,8 @@ package pgtest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -65,19 +67,11 @@ func RepoRoot(t *testing.T) string {
 	return ""
 }
 
-// Migrator builds maktaba-api into dir and returns what migrates a database with it.
-func Migrator(t *testing.T, dir string) func(ctx context.Context, dsn string) error {
+// Migrator returns what migrates a database with maktaba-api built from the repository.
+func Migrator(t *testing.T) func(ctx context.Context, dsn string) error {
 	t.Helper()
 	root := RepoRoot(t)
-	api := filepath.Join(dir, "maktaba-api")
-	if runtime.GOOS == "windows" {
-		api += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", api, ".")
-	build.Dir = filepath.Join(root, "api")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("build maktaba-api: %v\n%s", err, out)
-	}
+	api := APIBinary(t)
 	migrations := filepath.Join(root, "shared", "db", "migrations")
 	return func(ctx context.Context, dsn string) error {
 		cmd := exec.CommandContext(ctx, api, "migrate", "--dir", migrations, "--dsn", dsn, "up")
@@ -186,4 +180,39 @@ func WaitUp(ctx context.Context, t *testing.T, b pgbundle.Bundle) {
 		defer c()
 		return pgbundle.Ready(rctx, b.Addr(), pgbundle.AppRole, pgbundle.AppDatabase) == nil
 	})
+}
+
+var (
+	apiOnce sync.Once
+	apiPath string
+	apiErr  error
+)
+
+// APIBinary is maktaba-api built from the repository, once a test process, into one path per
+// checkout under the temporary directory: go build into a target that is up to date
+// does not link again (0.7 s, where a new path linked for 6.5 s and more on a busy
+// runner, on every call: issue #855).
+func APIBinary(t *testing.T) string {
+	t.Helper()
+	root := RepoRoot(t)
+	apiOnce.Do(func() {
+		sum := sha256.Sum256([]byte(root))
+		dir := filepath.Join(os.TempDir(), "maktaba-pgtest-"+hex.EncodeToString(sum[:6]))
+		if apiErr = os.MkdirAll(dir, 0o700); apiErr != nil {
+			return
+		}
+		apiPath = filepath.Join(dir, "maktaba-api")
+		if runtime.GOOS == "windows" {
+			apiPath += ".exe"
+		}
+		build := exec.Command("go", "build", "-o", apiPath, ".")
+		build.Dir = filepath.Join(root, "api")
+		if out, err := build.CombinedOutput(); err != nil {
+			apiErr = fmt.Errorf("%w\n%s", err, out)
+		}
+	})
+	if apiErr != nil {
+		t.Fatalf("build maktaba-api: %v", apiErr)
+	}
+	return apiPath
 }
