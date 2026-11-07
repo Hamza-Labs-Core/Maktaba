@@ -79,6 +79,29 @@ logger's p99 is about 1.7 times the stock pipeline's on the 7763, the 9V74 and t
 so with this term the 7763 sits at 0.73–0.75. A slower logger does not move the stock
 pipeline, so the gate still catches the logger's own regressions.
 
+No proxy judges every CPU alike. A factor from structlog's stock pipeline alone still leaves a
+1.3× spread, and it only moves the tight spot from the 7763 to the 9V45, at 0.89 of the
+budget. A pure-Python stand-in loop did worse: Python's p99 per unit of it was 400 on the
+9V45 against 590 on the 7763.
+
+So CI also measures **the base's logger in the same job**: the logger of the commit a change
+goes onto (a pull request's base, a merge group's, a push's previous tip), on the same runner
+(`--base-src`). Base and head rounds alternate, each in a fresh process, in the order base,
+head, head, base, so a runner that drifts during the job weighs on both alike.
+
+Over the budget fails a change only when it is also more than 15% slower than its base:
+
+| Over the budget | ≥15% slower than base | Result |
+|---|---|---|
+| yes | yes | error |
+| yes | no | warning: the runner, not the change |
+| no | yes | warning |
+| no | no | pass |
+
+#806 changed nothing in the logger yet failed twice at factor 2.7–2.8 (p99 55.7 against 55.3,
+then 54.4 against 54.2), while the commit with its code passed elsewhere. Without a base, the
+budget alone decides, as before.
+
 More rounds or a median of repeats would not help. The three rounds of a run agree within
 2–3 %, and a runner type's runs agree within 4 %. The spread is between CPU types.
 
