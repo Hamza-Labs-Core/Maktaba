@@ -93,3 +93,51 @@ fn an_undeclared_interface_does_not_build() {
     let wit = std::fs::read_to_string(dir.join("wit/maktaba-plugin.wit")).unwrap();
     assert!(wit.contains("  import write;"), "the world has no write import");
 }
+
+/// The Go template (tier 2, story 54.12 T02) needs TinyGo, wit-bindgen-go and wasm-tools:
+/// run with MKP_TEST_GO=1 (CI's non-blocking Go step installs them).
+fn go_on() -> bool {
+    if std::env::var("MKP_TEST_GO").as_deref() == Ok("1") {
+        return true;
+    }
+    eprintln!("skipped: set MKP_TEST_GO=1 with tinygo, wit-bindgen-go and wasm-tools installed");
+    false
+}
+
+#[test]
+fn go_hello_builds_and_runs() {
+    if !go_on() {
+        return;
+    }
+    let t = tempfile::tempdir().unwrap();
+    hello("go", &t.path().join("hello-go"));
+}
+
+/// A Go plugin that imports something the home refuses (here the filesystem, which TinyGo's
+/// wasip2 runtime would bring) does not build, and the build says what.
+#[test]
+fn a_refused_import_fails_the_go_build() {
+    if !go_on() {
+        return;
+    }
+    let t = tempfile::tempdir().unwrap();
+    let dir = t.path().join("refused");
+    let p = dir.to_str().unwrap();
+    ok(&mkp(&["new", "go", "dev.example.refused", p]), "mkp new");
+    let src = std::fs::read_to_string(dir.join("main.go")).unwrap();
+    // called from run, which the host calls (main is never called: a dead import is dropped)
+    let src = src
+        .replace(
+            "func main() {}",
+            "//go:wasmimport wasi:filesystem/preopens@0.2.0 get-directories\n\
+             func getDirectories(out uint32)\n\n\
+             func main() {}",
+        )
+        .replace("\t\tsubject := job.JobSubject()", "\t\tgetDirectories(0)\n\t\tsubject := job.JobSubject()");
+    assert!(src.contains("getDirectories(0)\n"), "the template's run changed: update this test");
+    std::fs::write(dir.join("main.go"), src).unwrap();
+    let out = mkp(&["build", p]);
+    let said = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(!out.status.success(), "a Go plugin importing wasi:filesystem built:\n{said}");
+    assert!(said.contains("wasi:filesystem"), "the build did not say what it refused:\n{said}");
+}

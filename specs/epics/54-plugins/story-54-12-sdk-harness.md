@@ -45,10 +45,14 @@ smoke test; best effort. Other languages that make components (C, C#) work but g
       `maktaba:plugin`;
     - a Python component holds one core instance per module of its runtime (38 measured),
       which the host's store caps allow since 54.02 §5 raised them to 64;
-    - Go (TinyGo) imports stdin and the filesystem whatever the program does. Its template
-      (a PR of its own, after Python's and JS's) composes in a stub component that exports
-      both (no preopens, stdin at its end, every call an error), and `mkp build` fails if
-      the composed component still imports anything the host refuses;
+    - Go (TinyGo): the `wasip2` target's runtime imports stdin and the filesystem whatever
+      the program does, and its `syscall` init asks for stdin at every start, so a stub
+      component exporting stdin cannot answer it (an input stream is the host's resource).
+      The template builds for TinyGo's `wasm-unknown` target instead, which links no WASI,
+      with its own `cabi_realloc` (`realloc.go`); `wasm-tools component embed` and `new`
+      make the component against the narrowed world. File, stdin and network calls always
+      fail. The home's audit runs last, so a Go plugin that imports anything refused does
+      not build;
   - `mkp test`: runs the plugin in the **harness** (§3) against its fixtures;
   - `mkp keys new|list|export-public` (Ed25519, stored in the OS keychain or a passphrase file);
   - `mkp pack --sign`: writes `files.json`, signs it, makes the `.mkplugin`;

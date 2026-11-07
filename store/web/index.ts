@@ -11,6 +11,7 @@ import { nightlyExport } from "./exports";
 import * as homes from "./homes";
 import { entitlements } from "./entitlements";
 import { buyPage, purchaseIntent } from "./buy";
+import { listPurchases, movePurchaseRoute } from "./purchases";
 import { paymentsWebhook } from "./payments";
 import { paidDownloadURL, paidPackage } from "./paid";
 import { Refusal, json, problem, refuse } from "./http";
@@ -64,6 +65,9 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/homes\/link$/, homes.link],
   ["GET", /^\/v1\/homes$/, homes.listHomes],
   ["DELETE", /^\/v1\/homes\/([\w-]+)$/, homes.unlink],
+  // story 54.19 §6: the buyer's purchases, and moving one to another linked home
+  ["GET", /^\/v1\/purchases$/, listPurchases],
+  ["POST", /^\/v1\/purchases\/([\w-]+)\/move$/, movePurchaseRoute],
   ["POST", /^\/v1\/admin\/bootstrap$/, admin.bootstrap],
   ["POST", /^\/v1\/admin\/roles$/, admin.grantRole],
   ["DELETE", /^\/v1\/admin\/roles\/([\w-]+)\/([a-z_]+)$/, admin.revokeRole],

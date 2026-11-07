@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **Apps can reach a home on its own network by address when the router blocks its name
+  (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
+  network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
+  carries each LAN address both by name and by address, the address checked against the home's
+  own certificate, so an app on that network still proves it reached this home.
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
@@ -109,6 +114,10 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A cloud deploy now updates the API and the worker (Epic 50).** Deploys installed the new
+  release only for the relay and the name server, so the API and the worker never ran a
+  release on the nodes. They now get it too, the standby first; on the leader they restart,
+  and one that doesn't stay up gets the previous release back and stops the deploy.
 - **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
   June it exited at start and none of its jobs ever ran: expired-token cleanup, account
   deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
@@ -1844,7 +1853,20 @@ build fails when the two differ.
   interfaces its manifest's capabilities cover, so a call it did not declare does not build;
   `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
   up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
-  maktaba.dev: Testing and packaging, *Python and JavaScript*.
+  maktaba.dev: Testing and packaging, *Python, JavaScript and Go*.
+
+- **Plugins in Go (Epic 54, story 54.12, tier 2).** `mkp new go` makes a TinyGo project, and
+  `mkp build` turns it into a component built for TinyGo's `wasm-unknown` target, which links
+  no WASI: file, stdin and network calls always fail. The build fails if the component
+  imports anything the home refuses. maktaba.dev: Testing and packaging, *Python, JavaScript
+  and Go*.
+
+- **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
+  a **Purchases** section: each plugin bought with the account, the home it is on, and
+  **Move** to another home linked to the same account, after confirming it's you. A purchase
+  can move twice in any 365 days. The new home gets the plugin at its next daily check (or with
+  **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
+  queue and data.
 
 ### Changed
 

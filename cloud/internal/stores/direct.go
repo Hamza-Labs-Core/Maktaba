@@ -41,6 +41,70 @@ func (d *Direct) SetEndpoints(ctx context.Context, serverID string, public netip
 	return nil
 }
 
+// MaxLAN is how many LAN addresses a home's report keeps.
+const MaxLAN = 4
+
+// SetLAN records the LAN addresses (ip:port) of a home's direct listener from its report, for
+// the home list's LAN entries (story 50.15 §3). Only private addresses with a port are kept, at
+// most MaxLAN; none clears them.
+func (d *Direct) SetLAN(ctx context.Context, serverID string, lan []netip.AddrPort) error {
+	keep := make([]string, 0, MaxLAN)
+	for _, a := range lan {
+		ip := a.Addr().Unmap()
+		if len(keep) == MaxLAN || a.Port() == 0 || ip.Zone() != "" || !ip.IsPrivate() {
+			continue
+		}
+		keep = append(keep, netip.AddrPortFrom(ip, a.Port()).String())
+	}
+	var v any
+	if len(keep) > 0 {
+		v = pq.Array(keep)
+	}
+	_, err := d.DB.ExecContext(ctx, `UPDATE servers SET direct_lan = $2 WHERE id = $1`, serverID, v)
+	return err
+}
+
+// LANHome is a home's LAN addresses with its certificate's names: the home list's local entries.
+type LANHome struct {
+	HomeID, Domain string
+	LAN            []netip.AddrPort
+}
+
+// LANFor gives the homes among ids that hold a certificate, report direct access on (or on
+// behind carrier-grade NAT, or with no port mapped: the LAN still works) and listed LAN
+// addresses.
+func (d *Direct) LANFor(ctx context.Context, ids []string) (map[string]LANHome, error) {
+	out := map[string]LANHome{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	rows, err := d.DB.QueryContext(ctx, `
+        SELECT s.id, c.home_id, c.domain, s.direct_lan
+          FROM servers s
+          JOIN direct_certs c ON c.server_id = s.id AND c.cert_pem IS NOT NULL
+         WHERE s.id = ANY($1::uuid[]) AND s.direct_state IN ('on', 'cgnat', 'mapping_failed')
+           AND cardinality(s.direct_lan) > 0`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		var lan []string
+		var h LANHome
+		if err := rows.Scan(&id, &h.HomeID, &h.Domain, pq.Array(&lan)); err != nil {
+			return nil, err
+		}
+		for _, s := range lan {
+			if a, err := netip.ParseAddrPort(s); err == nil {
+				h.LAN = append(h.LAN, a)
+			}
+		}
+		out[id] = h
+	}
+	return out, rows.Err()
+}
+
 // DomainUse is each domain's new certificates in the last 7 days and its homes.
 func (d *Direct) DomainUse(ctx context.Context, now time.Time) ([]direct.DomainUse, error) {
 	rows, err := d.DB.QueryContext(ctx, `
