@@ -275,14 +275,17 @@ export const LIMITS = {
       t("One `media.audio` span, in minutes", "مدة استدعاء `media.audio` الواحد، بالدقائق"),
       (v) => num(v / 60000),
     ],
-    MaxEmbedTexts: [t("Texts per `compute.embed`", "النصوص في استدعاء `compute.embed` الواحد"), num],
-    MaxEmbedChars: [
-      t("Characters per embedded text", "المحارف في النص الواحد المراد تضمينه"),
+    MaxEmbedTexts: [
+      t("Texts per `compute.embed`", "النصوص في استدعاء `compute.embed` الواحد"),
       num,
     ],
+    MaxEmbedChars: [t("Characters per embedded text", "المحارف في النص الواحد المراد تضمينه"), num],
     MaxPrompt: [t("One `compute.generate` prompt", "موجّه `compute.generate` الواحد"), KB],
     MaxTokens: [
-      t("Tokens one `compute.generate` may ask for", "الرموز التي يطلبها استدعاء `compute.generate` الواحد"),
+      t(
+        "Tokens one `compute.generate` may ask for",
+        "الرموز التي يطلبها استدعاء `compute.generate` الواحد"
+      ),
       num,
     ],
   },
