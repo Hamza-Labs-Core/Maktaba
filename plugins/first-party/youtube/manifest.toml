@@ -17,7 +17,7 @@ runner    = "net"
 component = "youtube"
 db.read   = ["app_settings", "job_stages", "libraries", "media_metadata_enrichment", "processing_jobs", "series_episodes"]
 db.write  = ["file_actions", "video_copies", "videos", "youtube_channels", "youtube_downloads", "youtube_playlist_items", "youtube_playlists", "youtube_sources", "youtube_videos"]
-settings  = []
+settings  = ["exactdates"]
 files.read  = ["library"]
 # the downloads' work folder (MAKTABA_YT_WORK) is the data.cache area
 files.write = ["library", "data.cache"]

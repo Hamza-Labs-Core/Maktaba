@@ -150,3 +150,95 @@ async def test_youtube_wave_6_is_identical(
         ignore = {k: list(v) for k, v in cfg.ignore.items()}
         rows = await p.compare(tables, ignore=ignore, perf=False)
         assert rows == [], "\n".join(rows[:30])
+        problems = await p.compare_n16(
+            [], ignore=ignore, stages=STAGES, perf=cfg.perf, timing_only=True
+        )
+        slowest = p.report("tv.maktaba.youtube")
+    assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
+
+
+def exact_seeder() -> Any:
+    from datetime import date
+
+    from tests.engine.factory import make_library, make_series_and_season, make_video
+    from tests.extensions.harness import add_episode
+    from tests.stages.test_exact_dates import A, B, C
+    from tests.stages.test_exact_dates import set_rules as exact_rules
+
+    async def seed(db: Any) -> None:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(uuid, "uuid4", SameIds(5441))
+            lib = await make_library(db, "مكتبة التواريخ")
+            series, _ = await make_series_and_season(db, lib)
+            # A: a series member, B: a loose video, C: a member whose date is exact already
+            for yid, member, quality in ((A, True, "approximate"), (B, False, "approximate"),
+                                         (C, True, "exact")):  # fmt: skip
+                v = await make_video(db, lib)
+                if member:
+                    await add_episode(db, series, v)
+                await db.execute(
+                    "INSERT INTO media_metadata_enrichment (id, video_id, provider,"
+                    " external_id, mapped, confidence, is_accepted)"
+                    " VALUES ($1, $2, 'youtube', $3, '{}', 1.0, true)",
+                    str(uuid.uuid4()), str(v), yid,
+                )  # fmt: skip
+                await db.execute(
+                    "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date,"
+                    " date_quality) VALUES ($1, 'UCx', $2, $3, $4)",
+                    yid, f"video {yid}", date(2024, 3, 1), quality,
+                )  # fmt: skip
+            await exact_rules(db, {"enabled": True, "delay_s": 0})
+            await enqueue_job(db, subject_kind="library", subject_id=lib, stage="exact_dates")
+
+    return seed
+
+
+@pytest.mark.asyncio
+async def test_exact_dates_wave_6_is_identical(
+    template: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exact upload dates fetched for a library's series members (the stage tests' fake
+    fetcher, the same on both sides), compared row by row, then N16."""
+    from maktaba_fp_youtube.stages import exact_dates
+    from maktaba_fp_youtube.stages.youtube_sync import set_fetcher_factory
+
+    from maktaba_pipeline.plugins import firstparty
+    from tests.stages.test_exact_dates import FakeFetcher
+
+    f = FakeFetcher()
+    prev_factory = set_fetcher_factory(lambda: f)  # type: ignore[arg-type,return-value]
+
+    async def no_sleep(_s: float) -> None:
+        return None
+
+    prev_sleep = exact_dates.set_sleep(no_sleep)
+    try:
+        async with parity(
+            PG_URL,
+            template,
+            bundle=firstparty._raw(),
+            stages=["exact_dates"],
+            group="net",
+            seed=exact_seeder(),
+            monkeypatch=monkeypatch,
+        ) as p:
+            await p.run()
+            assert p.a.ran == p.b.ran, "the two sides ran different jobs"
+            assert "exact_dates" in p.b.ran, p.b.ran
+            assert sorted(c[0] for c in f.calls) == ["AAAAAAAAAAA"] * 2, f.calls
+            n = await p.b.db.fetchval(
+                "SELECT count(*) FROM plugin_invocations WHERE plugin_id = 'tv.maktaba.youtube'"
+            )
+            assert n >= 1, "no job went through the plugin"
+            tables = [("youtube_videos", ("youtube_id",))]
+            ignore = {"youtube_videos": ["fetched_at", "updated_at", "first_seen_at", "last_seen_at"]}
+            rows = await p.compare(tables, ignore=ignore, perf=False)
+            assert rows == [], "\n".join(rows[:30])
+            problems = await p.compare_n16(
+                [], ignore=ignore, stages=["exact_dates"], timing_only=True
+            )
+            slowest = p.report("tv.maktaba.youtube.exact_dates")
+    finally:
+        set_fetcher_factory(prev_factory)
+        exact_dates.set_sleep(prev_sleep)
+    assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
