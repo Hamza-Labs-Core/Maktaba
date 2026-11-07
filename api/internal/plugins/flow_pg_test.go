@@ -130,7 +130,7 @@ func TestFlowCycleOfTwo(t *testing.T) {
 	if err := g.enable(fa); err != nil {
 		t.Fatal(err)
 	}
-	flowProblem(t, g.enable(fb), CodeFlowCycle)
+	_ = flowProblem(t, g.enable(fb), CodeFlowCycle)
 	if !g.l.enabled(context.Background(), fa) || g.l.enabled(context.Background(), fb) {
 		t.Fatal("the refused enable changed a plugin")
 	}

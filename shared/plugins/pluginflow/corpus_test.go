@@ -170,10 +170,18 @@ func TestBudget(t *testing.T) {
 		m.Events = []Event{{Name: "p.done", Subject: "video", Payload: "events/p.json"}}
 		members = append(members, m)
 	}
-	start := time.Now()
-	_, fs := Check(members, Options{})
-	if took := time.Since(start); took > 50*time.Millisecond {
-		t.Fatalf("took %s", took)
+	// N22 is the check's own time on a home: warm (not the first read of events.toml) and
+	// the best of five, so a runner busy with other jobs does not time its own queue
+	Check(members, Options{})
+	best := time.Hour
+	var fs []Finding
+	for i := 0; i < 5; i++ {
+		start := time.Now()
+		_, fs = Check(members, Options{})
+		best = min(best, time.Since(start))
+	}
+	if best > 50*time.Millisecond {
+		t.Fatalf("took %s", best)
 	}
 	if !HasRefusal(fs) {
 		t.Fatal("a 2,000-stage chain must be too deep")

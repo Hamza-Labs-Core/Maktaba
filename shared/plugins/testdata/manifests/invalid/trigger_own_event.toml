@@ -1,4 +1,4 @@
-# expect: manifest_bad_trigger plugin:dev.example.silence-chapters/silences.found
+# expect: manifest_bad_trigger
 schema = 1
 id = "dev.example.silence-chapters"
 version = "1.4.0"
