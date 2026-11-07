@@ -687,7 +687,8 @@ async def _relayed_requeue_failed(db: Any, ctx: Any, a: dict[str, Any]) -> list[
         ok = False
     if not ok:
         raise EnqueueRefused(f"plugin_scope: {stage} may not queue video {vid} again")
-    return await requeue_failed(db, uid(vid), str(a.get("why") or "requeued"))
+    # checked above: the job's own video, or a row of its library, so a valid id
+    return await requeue_failed(db, UUID(vid), str(a.get("why") or "requeued"))
 
 
 async def _relayed_storage_canonicalize(db: Any, ctx: Any) -> dict[str, Any]:

@@ -38,6 +38,9 @@ STAGES = [
     "scan", "probe", "thumb_hash", "link", "content_hash", "fingerprint", "style_sample",
     "access_check",
 ]  # fmt: skip
+#: and tv.maktaba.thumbnails's thumbnail (wave 9 too, same runner), which content_hash's edge
+#: queues: its state transition is the second the worker writes for a plugin's job
+ALSO = ["thumbnail"]
 #: the stages queued by hand for each video once the scan and probe's edges have run
 LATER = ("content_hash", "fingerprint", "style_sample", "access_check")
 KEYS = {
@@ -64,7 +67,7 @@ SAME_VIDEO_IDS = (
 
 def selected() -> list[str]:
     want = [s for s in os.environ.get("MAKTABA_PARITY_STAGES", "").split(",") if s]
-    return [s for s in STAGES if not want or s in want]
+    return [s for s in STAGES + ALSO if not want or s in want]
 
 
 @pytest.fixture
@@ -77,11 +80,30 @@ def template(pg_template: str) -> str:
 
 
 @pytest.fixture
-def media(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+def media(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     """ffmpeg (chromaprint, frames, style) answers by the file's family, ffprobe by its
-    name: the same on both sides, as the runner is in this process."""
+    name, the poster and sprite by the file's content: the same on both sides, as the
+    runner is in this process."""
+    from maktaba_fp_thumbnails.stages import thumbnail as thumbnail_stage
+
+    from maktaba_pipeline.thumbnail import handler as thumbnail_handler
+    from maktaba_pipeline.thumbnail.generator import ThumbnailSet, thumbnail_dir_for
+
     make_fake_media({})
     probe_mod = sys.modules["maktaba_pipeline.audio.probe"]
+
+    async def fake_frames(
+        src: str, *, duration_sec: float, content_hash: str, chapters: Any = (), **_: Any
+    ) -> ThumbnailSet:
+        d = thumbnail_dir_for(content_hash, root=str(tmp_path / "thumbs"))
+        d.mkdir(parents=True, exist_ok=True)
+        poster, sprite = d / "poster.jpg", d / "sprite.jpg"
+        poster.write_bytes(b"poster " + content_hash.encode())
+        sprite.write_bytes(b"sprite " + content_hash.encode())
+        return ThumbnailSet(poster=poster, sprite=sprite)
+
+    monkeypatch.setattr(thumbnail_handler, "generate_thumbnails", fake_frames)
+    monkeypatch.setattr(thumbnail_stage, "generate", fake_frames)
 
     async def fake_ffprobe(path: str, **_: Any) -> dict[str, Any]:
         name = Path(path).name
@@ -149,9 +171,9 @@ def seeder(lib_dir: Path) -> Any:
 async def test_core_media_wave_9_is_identical(
     template: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from maktaba_fp_core_media.stages import link
     from maktaba_plugin_sdk.parity import ParityConfig
 
-    from maktaba_fp_core_media.stages import link
     from maktaba_pipeline.plugins import firstparty
     from maktaba_pipeline.thumbnail import small
 
@@ -184,8 +206,13 @@ async def test_core_media_wave_9_is_identical(
         assert p.a.ran == p.b.ran, "the two sides ran different jobs"
         rows = await p.compare(tables, ignore=ignore, perf=False)
         assert rows == [], "\n".join(rows[:30])
-        # 2. each video's identity, fingerprint, style sample and access check
+        # 2. each video's identity, fingerprint, style sample and access check, and the
+        # thumbnail its identity queues; one video is indexed (as transcription leaves it),
+        # so its thumbnail moves it on (INDEXED -> THUMBNAILED), the worker's write
         for side in (p.a, p.b):
+            await side.db.execute(
+                "UPDATE videos SET state = 'indexed' WHERE filename = 'talk_a.mp4'"
+            )
             for vid in await side.db.fetch("SELECT id FROM videos ORDER BY path"):
                 for stage in LATER:
                     await enqueue_job(
@@ -205,7 +232,8 @@ async def test_core_media_wave_9_is_identical(
         }
         assert set(states) == set(FILES), states
         assert states == {
-            "talk_a.mp4": "probed", "talk_b.mp4": "probed", "silent_c.mp4": "ready_no_audio",
+            "talk_a.mp4": "thumbnailed" if "thumbnail" in stages else "indexed",
+            "talk_b.mp4": "probed", "silent_c.mp4": "ready_no_audio",
             "broken_d.mkv": "discovered",
         }, states  # fmt: skip
         probes = {

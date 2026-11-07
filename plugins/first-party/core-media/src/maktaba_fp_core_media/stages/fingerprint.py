@@ -22,13 +22,13 @@ from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import ffmpeg, run_media
 from maktaba_pipeline.engine.stages._common import load_video, require_video
 from maktaba_pipeline.engine.stages.registry import StageImpl
-
-from ._signals import upsert_fingerprint
 from maktaba_pipeline.thumbnail.dhash import (
     dhashes_from_frames,
     ffmpeg_frame_args,
     frame_times,
 )
+
+from ._signals import upsert_fingerprint
 
 __all__ = ["IMPL", "incomplete"]
 

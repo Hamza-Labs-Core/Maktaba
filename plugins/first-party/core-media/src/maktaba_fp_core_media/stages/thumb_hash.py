@@ -23,10 +23,10 @@ from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import ffmpeg, run_media
 from maktaba_pipeline.engine.stages._common import load_video, require_video
 from maktaba_pipeline.engine.stages.registry import StageImpl
-
-from ._signals import upsert_thumb
 from maktaba_pipeline.thumbnail.dhash import DHASH_VERSION, dhash_from_gray, ffmpeg_gray_args
 from maktaba_pipeline.thumbnail.sidecar import find_thumbnail, fingerprint_doc
+
+from ._signals import upsert_thumb
 
 __all__ = ["IMPL"]
 
