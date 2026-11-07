@@ -1,5 +1,11 @@
 package com.hamzalabs.maktaba.desktop
 
+import kotlinx.coroutines.launch
+import com.hamzalabs.maktaba.desktop.diagnostics.CrashConsent
+import com.hamzalabs.maktaba.desktop.diagnostics.CrashQuestionDialog
+import com.hamzalabs.maktaba.desktop.diagnostics.DesktopCrashes
+import com.hamzalabs.maktaba.desktop.diagnostics.MyReportsDialog
+import com.hamzalabs.maktaba.desktop.diagnostics.ReportProblemDialog
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -80,6 +86,12 @@ fun main(args: Array<String>) {
     Platform.setImplicitExit(false)
     ClientHeader.use(clientHeader())
     val stores = Stores()
+    // an uncaught exception is kept (class and frames, no message) for the home, sent only
+    // when crash reports are on (Epic 53 story 53.14)
+    DesktopCrashes.install(AppDirs.config, BuildInfo.VERSION)
+    val crashOutbox = DesktopCrashes.outbox(AppDirs.config)
+    val crashConsent = CrashConsent(stores.settings)
+    val crashHeader = DesktopCrashes.header(DesktopCrashes.installId(stores.settings), BuildInfo.VERSION)
     // the session's own work (restoring a sign-in) and what must outlive a screen (a stopped
     // video's last position)
     val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -98,6 +110,10 @@ fun main(args: Array<String>) {
         var big by remember { mutableStateOf(startBig) }
         var approving by remember { mutableStateOf(false) }
         var updating by remember { mutableStateOf(false) }
+        var reporting by remember { mutableStateOf(false) }
+        var myReports by remember { mutableStateOf(false) }
+        var askCrashes by remember { mutableStateOf(false) }
+        var crashesOn by remember { mutableStateOf(false) }
         val texts = remember(lang) { Texts(lang) }
         val phase by session.phase.collectAsState()
         val home by session.current.collectAsState()
@@ -121,6 +137,12 @@ fun main(args: Array<String>) {
                     if (signedIn != null) {
                         Item(texts["menu.signedInAs", signedIn.user.username, home?.label ?: ""], enabled = false, onClick = {})
                         Item(texts["menu.approve"], onClick = { approving = true })
+                        home?.let { h ->
+                            CheckboxItem(texts["menu.crashReports", h.label], checked = crashesOn, onCheckedChange = {
+                                crashesOn = it
+                                crashConsent.set(it, h)
+                            })
+                        }
                         Item(texts["menu.signOut"], onClick = { session.signOut() })
                     }
                     if (phase !is AppSession.Phase.ChoosingHome) Item(texts["menu.switchHome"], onClick = { session.switchHome() })
@@ -140,6 +162,10 @@ fun main(args: Array<String>) {
                 Menu(texts["menu.help"]) {
                     Item(texts["menu.help"], onClick = { openHelp(home?.url) })
                     Item(texts["menu.updates"], onClick = { updating = true })
+                    if (phase is AppSession.Phase.SignedIn) {
+                        Item(texts["menu.reportProblem"], onClick = { reporting = true })
+                        Item(texts["menu.myReports"], onClick = { myReports = true })
+                    }
                 }
             }
             PlayerTheme(texts, big) {
@@ -161,6 +187,26 @@ fun main(args: Array<String>) {
                 val signedIn = phase as? AppSession.Phase.SignedIn
                 if (approving && signedIn != null) ApproveDialog(signedIn.client, onDismiss = { approving = false })
                 if (updating) UpdateDialog(onDismiss = { updating = false }, onInstalling = ::exitApplication)
+                // Epic 53: crash reports to this home (asked once, off until yes) and Report a problem
+                val signedHome = home
+                if (signedIn != null && signedHome != null) {
+                    LaunchedEffect(signedIn.client, signedHome) {
+                        crashesOn = crashConsent.isOn(signedHome)
+                        if (crashConsent.answer(signedHome) == null) askCrashes = true
+                        else runCatching { DesktopCrashes.flush(crashOutbox, signedIn.client, signedHome, crashConsent, crashHeader) }
+                    }
+                    if (askCrashes) {
+                        val scope = rememberCoroutineScope()
+                        CrashQuestionDialog(signedHome.label) { yes ->
+                            crashConsent.set(yes, signedHome)
+                            crashesOn = yes
+                            askCrashes = false
+                            scope.launch { runCatching { DesktopCrashes.flush(crashOutbox, signedIn.client, signedHome, crashConsent, crashHeader) } }
+                        }
+                    }
+                    if (reporting) ReportProblemDialog(signedIn.client, signedHome.label, crashHeader, crashOutbox, onDismiss = { reporting = false })
+                    if (myReports) MyReportsDialog(signedIn.client, onDismiss = { myReports = false })
+                }
             }
         }
     }

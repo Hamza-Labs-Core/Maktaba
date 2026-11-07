@@ -631,23 +631,8 @@ GRAPH: tuple[StageDef, ...] = (
         entry_for=("season",),
     ),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----
-    StageDef(
-        name="topic_collections",
-        label="Topic collections",
-        subject_kinds=("library",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=2,
-        version=TOPIC_VERSION,
-        edges=(
-            Edge("clip_groups", "same"),
-            Edge("plan_channels", "catalog"),
-            Edge("youtube_collections", "same"),
-        ),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-    ),
+    # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
+    _fp("topic_collections"),
     # Epic 56 story 56.06: a collection from each YouTube playlist and channel that is
     # neither a season nor a topic (stages/youtube_collections.py)
     StageDef(
@@ -662,46 +647,12 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_sec=30,
         debounce_max_sec=300,
     ),
-    StageDef(
-        name="promo_links",
-        label="Promo links",
-        subject_kinds=("library",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=2,
-        version=PROMO_VERSION,
-        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-    ),
-    StageDef(
-        name="clip_groups",
-        label="Clip groups",
-        subject_kinds=("library",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=3,
-        version=CLIP_GROUPS_VERSION,
-        edges=(Edge("plan_channels", "catalog"),),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-    ),
-    StageDef(
-        name="rate_style",
-        label="Rate style",
-        subject_kinds=("season",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=3,
-        version=STYLE_VERSION,
-        edges=(Edge("plan_channels", "catalog"),),
-        may_request=("style_sample",),
-        entry_for=("season",),
-        debounce_sec=10,
-        debounce_max_sec=120,
-    ),
+    # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
+    _fp("promo_links"),
+    # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
+    _fp("clip_groups"),
+    # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
+    _fp("rate_style"),
     # Its own pool and no edges out: nothing waits for a review page (plan 06-11 section 18).
     StageDef(
         name="review_pages",

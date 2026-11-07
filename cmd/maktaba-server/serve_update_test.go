@@ -181,3 +181,18 @@ func TestMachineHealthLeavesAProcessWhoseComponentIsOff(t *testing.T) {
 		t.Fatalf("a stopped process the home wants passed the watch: %+v", v)
 	}
 }
+
+// Epic 54: a plugin runner that crash loops or is halted (its stages run in the worker) never
+// fails the watch after an update.
+func TestMachineHealthLeavesThePluginRunners(t *testing.T) {
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	procs := []supervisor.ChildStatus{
+		{Role: supervisor.RoleStreaming, State: supervisor.StateRunning},
+		{Role: supervisor.RolePluginRunner, Instance: "fp", Wanted: true, State: supervisor.StateFailed, CrashLoop: true},
+		{Role: supervisor.RolePluginRunner, Instance: "light", Wanted: true, State: supervisor.StateHeld, DetailCode: "sandbox_unavailable"},
+	}
+	h := &machineHealth{snap: func() (supervisor.Snapshot, bool) { return supervisor.Snapshot{Processes: procs}, true }}
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Healthy || v.Fatal {
+		t.Fatalf("a plugin runner judged the home: %+v", v)
+	}
+}

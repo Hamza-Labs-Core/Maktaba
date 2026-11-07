@@ -1,0 +1,91 @@
+# tv.maktaba.classify: Maktaba's classifiers as a first-party plugin (Epic 54, README §15.2).
+# Wave 1 (story 54.28) moves the stages that read the database and write it, with no file,
+# no model and no network; wave 4 (story 54.31) brings the rest of classify.
+schema     = 1
+id         = "tv.maktaba.classify"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.classify.name"
+summary = "fp.classify.summary"
+
+[trusted]
+runner    = "light"
+component = "classify"
+db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "series", "series_episodes", "series_seasons", "video_signals", "video_topic_tags", "videos", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
+db.write  = ["clip_group_items", "clip_groups", "promo_links", "season_style", "topic_collections", "topic_items"]
+settings  = ["groups", "detect"]
+
+[[stage]]
+name         = "promo_links"
+subject      = "library"
+export       = "promo-links"
+version      = 1
+label        = "Promo links"
+subject_kinds = ["library"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 2
+entry_for    = ["library"]
+debounce_sec = 30
+debounce_max_sec = 300
+edges        = [{ to = "clip_groups", map = "same" }, { to = "plan_channels", map = "catalog" }]
+entry        = "maktaba_fp_classify.stages.promo_links:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "clip_groups"
+subject      = "library"
+export       = "clip-groups"
+version      = 1
+label        = "Clip groups"
+subject_kinds = ["library"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 3
+entry_for    = ["library"]
+debounce_sec = 30
+debounce_max_sec = 300
+edges        = [{ to = "plan_channels", map = "catalog" }]
+entry        = "maktaba_fp_classify.stages.clip_groups:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "topic_collections"
+subject      = "library"
+export       = "topic-collections"
+version      = 1
+label        = "Topic collections"
+subject_kinds = ["library"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 2
+entry_for    = ["library"]
+debounce_sec = 30
+debounce_max_sec = 300
+edges        = [{ to = "clip_groups", map = "same" }, { to = "plan_channels", map = "catalog" }, { to = "youtube_collections", map = "same" }]
+entry        = "maktaba_fp_classify.stages.topic_collections:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "rate_style"
+subject      = "season"
+export       = "rate-style"
+version      = 1
+label        = "Rate style"
+subject_kinds = ["season"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 3
+may_request  = ["style_sample"]
+entry_for    = ["season"]
+debounce_sec = 10
+debounce_max_sec = 120
+edges        = [{ to = "plan_channels", map = "catalog" }]
+entry        = "maktaba_fp_classify.stages.rate_style:IMPL"
+fingerprint  = { input = true, output = false }
+

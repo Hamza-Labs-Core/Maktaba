@@ -17,8 +17,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..extensions.store import ExtensionState
+from ..log import get_logger
 from .graph import POOLS, PoolDef, StageDef
 from .sql import dumps, is_pg, now, to_ts
+
+_log = get_logger()
 
 __all__ = [
     "COMPONENT_HELD",
@@ -172,7 +175,30 @@ async def sync_graph(
             added.append(s.name)
         elif old[s.name] != s.version:
             versions[s.name] = (old[s.name], s.version)
+    await _flip_first_party(db, [s.name for s in graph])
     return SyncReport(versions, tuple(added))
+
+
+async def _flip_first_party(db: Any, names: Sequence[str]) -> None:
+    """The flip at update (Epic 54, README §15.9): a stage one of Maktaba's own first-party
+    plugins defines runs in its plugin's runner once the release that moved it syncs its
+    graph, unless someone set the stage's impl by hand (``impl_changed_at``: an admin's
+    flip back, which an update keeps). On Postgres only: the runners need its roles."""
+    from ..plugins import firstparty
+
+    if getattr(db, "dialect", "") != "postgres":
+        return
+    moved = sorted(set(names) & firstparty.stage_names())
+    if not moved:
+        return
+    try:
+        await db.execute(
+            "UPDATE job_stages SET impl = 'plugin' WHERE stage = ANY($1::text[])"
+            " AND impl = 'inproc' AND impl_changed_at IS NULL",
+            moved,
+        )
+    except Exception as exc:  # noqa: BLE001 - a database before slot 0196: every stage stays inproc
+        _log.warning("first_party_flip_skipped", error=str(exc)[:200])
 
 
 async def stages_ahead(db: Any, graph: Sequence[StageDef]) -> dict[str, int]:

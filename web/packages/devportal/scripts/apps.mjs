@@ -345,8 +345,8 @@ export const APPS = [
                 "**شريط الحالة**: حين يتوقف البث في الجهاز الرئيسي، يقول المشغّل ذلك قبل أن تضغط على التشغيل."
               ),
               t(
-                "**Crash reports and Report a problem** (iPhone, iPad, Mac and Android): after signing in, the Player asks once whether to **send crash reports** to the home, with two equal buttons; it stays off until you say yes, and **Profile** keeps the switch. **Report a problem** in Profile (and **Report this** on an error screen) shows everything it will send before it does: the app's log of the last 30 minutes, already scrubbed, the last requests, the crashes kept on the device, and a screenshot only when you tick it and see it. It goes to the home's admin, who can reply in **My reports**.",
-                "**تقارير الأعطال والإبلاغ عن مشكلة** (آيفون وآيباد والماك وأندرويد): بعد تسجيل الدخول يسأل المشغّل مرة واحدة هل **يرسل تقارير الأعطال** إلى الجهاز الرئيسي، بزرّين متساويين؛ وتبقى متوقفة حتى توافق، ومفتاحها في **الملف الشخصي**. ويعرض **الإبلاغ عن مشكلة** في الملف الشخصي (و**الإبلاغ عن هذا** في شاشة الخطأ) كل ما سيُرسله قبل الإرسال: سجل التطبيق لآخر 30 دقيقة منقّحًا، وآخر الطلبات، والأعطال المحفوظة على الجهاز، ولقطة شاشة فقط إن حدّدتها ورأيتها. ويصل البلاغ إلى مشرف الجهاز الرئيسي، ويمكنه الرد عليك في **بلاغاتي**."
+                "**Crash reports and Report a problem** (iPhone, iPad, Mac and Android; on Windows and Linux in the **Account** and **Help** menus, without a screenshot): after signing in, the Player asks once whether to **send crash reports** to the home, with two equal buttons; it stays off until you say yes, and **Profile** keeps the switch. **Report a problem** in Profile (and **Report this** on an error screen) shows everything it will send before it does: the app's log of the last 30 minutes, already scrubbed, the last requests, the crashes kept on the device, and a screenshot only when you tick it and see it. It goes to the home's admin, who can reply in **My reports**.",
+                "**تقارير الأعطال والإبلاغ عن مشكلة** (آيفون وآيباد والماك وأندرويد؛ وعلى ويندوز ولينكس في قائمتَي **الحساب** و**المساعدة**، دون لقطة شاشة): بعد تسجيل الدخول يسأل المشغّل مرة واحدة هل **يرسل تقارير الأعطال** إلى الجهاز الرئيسي، بزرّين متساويين؛ وتبقى متوقفة حتى توافق، ومفتاحها في **الملف الشخصي**. ويعرض **الإبلاغ عن مشكلة** في الملف الشخصي (و**الإبلاغ عن هذا** في شاشة الخطأ) كل ما سيُرسله قبل الإرسال: سجل التطبيق لآخر 30 دقيقة منقّحًا، وآخر الطلبات، والأعطال المحفوظة على الجهاز، ولقطة شاشة فقط إن حدّدتها ورأيتها. ويصل البلاغ إلى مشرف الجهاز الرئيسي، ويمكنه الرد عليك في **بلاغاتي**."
               ),
             ],
           },
@@ -941,6 +941,10 @@ export const APPS = [
               t(
                 "Keeps every part's logs for as long as the admin chooses, and groups repeated errors, which the web app's **Logs**, **Errors** and **Dashboards** pages show.",
                 "يحتفظ بسجلات كل جزء المدة التي يختارها المدير، ويجمع الأخطاء المتكررة، وتعرضها صفحات **السجلات** و**الأخطاء** و**لوحات المتابعة** في تطبيق الويب."
+              ),
+              t(
+                "**Report a problem…** in the tray and the **Help** menu opens the web app's form. If the app itself crashes, the crash is kept on this computer, scrubbed, and the web app in its window sends it to the home only when crash reports are on there (**Settings → Privacy**).",
+                "يفتح **الإبلاغ عن مشكلة…** في منطقة الإشعارات وقائمة **المساعدة** نموذجَ تطبيق الويب. وإذا توقف التطبيق نفسه فجأة، يُحفظ العطل على هذا الحاسوب منقّحًا، ولا يرسله تطبيق الويب في نافذته إلى الجهاز الرئيسي إلا حين تكون تقارير الأعطال مشغّلة هناك (**الإعدادات ← الخصوصية**)."
               ),
               t(
                 "Can run with no outbound call at all: `maktaba-server serve --offline` (or `MAKTABA_OFFLINE=1`) turns off the update check, pack and model downloads, usage data and the link to Maktaba Cloud at once.",

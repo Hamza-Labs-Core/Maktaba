@@ -27,6 +27,8 @@
     "allow-permissions-seen",
     "allow-big-screen-state",
     "allow-set-big-screen",
-    "allow-set-big-screen-start"
+    "allow-set-big-screen-start",
+    "allow-shell-crashes",
+    "allow-shell-crashes-sent"
   ]
 }

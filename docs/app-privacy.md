@@ -34,8 +34,10 @@ apps keep the last 5; the Android apps keep `last-crash.txt` and, from Android 1
 a person who later sends a problem report can choose to attach them, seeing them first.
 
 Which apps do this today: the Apple apps (Player for iPhone, iPad and Mac, Remote, Apple TV),
-the Android apps (Player, Remote, Android TV) and the web app. The desktop apps follow in
-their own pull request, which adds its lines here. An Android crash report holds the
+the Android apps (Player, Remote, Android TV), the desktop apps and the web app. The desktop
+Player (Windows, Linux) keeps the last 5 crashes in its settings folder; Maktaba's desktop
+app keeps its own panics under its logs folder's `crashes/` and sends them through the web app
+in its window, only when the switch there is on. An Android crash report holds the
 exception's class and its frames, never its message (it can name a path or a person).
 
 ## App Store Connect: App Privacy

@@ -136,6 +136,39 @@ func TestStatementsForgedScopeIsRefused(t *testing.T) {
 	}
 }
 
+// A library job's videos are read once per invocation (loadLibrary); a video added to the
+// library after that is still its own (looked up), and another library's is still refused.
+func TestStatementsLibraryJobReadsItsVideosOnceAndStillChecksNewOnes(t *testing.T) {
+	w := newWorld(t)
+	ctx := context.Background()
+	sc := w.scope(w.a)
+	sc.SubjectKind, sc.SubjectID, sc.Invocation = "library", w.library, "inv_lib_once"
+	ins := func(video string) *Error {
+		_, err := w.e.Stmt(ctx, sc, Request{Name: "a.insert", Op: "execute", Args: args(video, nil, nil, nil, nil, nil, nil)})
+		return err
+	}
+	if err := ins(w.video); err != nil {
+		t.Fatalf("its library's video: %v", err)
+	}
+	w.e.mu.Lock()
+	cached := w.e.vlibs[sc.Invocation][w.video]
+	w.e.mu.Unlock()
+	if cached != w.library {
+		t.Fatalf("the library's videos were not read in one go: %q", cached)
+	}
+	var late string
+	if err := w.db.QueryRow(`INSERT INTO videos (library_id, path, filename, size_bytes, mtime, content_hash) VALUES ($1, $2, $2, 1, now(), md5($2) || md5($2)) RETURNING id::text`,
+		w.library, fmt.Sprintf("/m/late%d.mp4", time.Now().UnixNano())).Scan(&late); err != nil {
+		t.Fatal(err)
+	}
+	if err := ins(late); err != nil {
+		t.Fatalf("a video added after the cache was filled: %v", err)
+	}
+	if err := ins(w.other); err == nil || err.Code != CodeScope {
+		t.Fatalf("another library's video after the cache was filled: %v", err)
+	}
+}
+
 func TestStatementsTableOutsideTheRoleIsAPermissionError(t *testing.T) {
 	w := newWorld(t)
 	_, err := w.e.Stmt(context.Background(), w.scope(w.a), Request{Name: "a.secret", Op: "execute"})

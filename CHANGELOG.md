@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Four classify stages run as Maktaba's built-in plugin (Epic 54 wave 1).** Promo links,
+  clip groups, topic collections and season styles run in `tv.maktaba.classify`, in the
+  sandboxed `light` runner with no database password, through its named statements under its
+  own Postgres role (migration 0200). They write exactly what they wrote in the worker (the
+  parity proof runs them both ways on a seeded library). On update each stage switches to the
+  plugin by itself; `maktaba-server stages impl <stage> inproc` or **Runs in** on its Queues
+  page sets one back. A SQLite home and Windows machines run them in the worker, as before.
 - **Maktaba's own stages can run as built-in plugins (the foundation, Epic 54 Phase 4).** A
   built-in plugin's stage runs in `maktaba-plugin-runner`, a sandboxed process with no database
   password and no secrets (Seatbelt on macOS, Landlock and seccomp on Linux), and reaches the
@@ -993,6 +1000,15 @@ build fails when the two differ.
   low-memory kill go to the home at the next start as scrubbed envelopes with the app's log.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
+
+
+- **The desktop apps report problems and send crash reports to the home.** Maktaba's tray and
+  Help menu have **Report a problem…**, which opens the web app's form. A panic of the app
+  itself is kept, scrubbed, and the web app in its window sends it to the home only when
+  crash reports are on there. The Player for Windows and Linux asks once after signing in
+  whether to send crash reports, off until the person says yes (the Account menu keeps the
+  switch). It sends a kept crash at the next sign-in when on, and has **Report a problem…** and
+  **My reports** in its Help menu.
 
 ### Fixed
 

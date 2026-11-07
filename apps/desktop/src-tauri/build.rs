@@ -24,6 +24,10 @@ const COMMANDS: &[&str] = &[
     "big_screen_state",
     "set_big_screen",
     "set_big_screen_start",
+    // Epic 53 story 53.14: the shell's own crashes, sent by the web app when crash reports
+    // are on (crashes.rs)
+    "shell_crashes",
+    "shell_crashes_sent",
 ];
 
 fn main() {
