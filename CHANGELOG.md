@@ -1876,6 +1876,14 @@ build fails when the two differ.
 - On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
 
+- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
+  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
+  lists only what fits; on the home's network and over direct access nothing is capped. A
+  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
+  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
+  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
+  too many devices playing, or the home too busy to prepare the video.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
