@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/cloudlink"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
@@ -73,8 +74,10 @@ type fakeMeter struct {
 	out   int64
 }
 
-func (m *fakeMeter) Allow(context.Context, stores.Server) error { return nil }
-func (m *fakeMeter) Record(_ context.Context, _ stores.Server, _, out int64) {
+func (m *fakeMeter) Decide(context.Context, stores.Server) billing.Decision {
+	return billing.Decision{Mode: billing.ModeFull}
+}
+func (m *fakeMeter) Record(_ context.Context, _ stores.Server, _ billing.Decision, _, out int64) {
 	m.mu.Lock()
 	m.calls++
 	m.out += out
