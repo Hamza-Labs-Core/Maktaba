@@ -203,7 +203,7 @@ func TestUnderMinFreeOnlyDebugStops(t *testing.T) {
 	}
 }
 
-// server.log keeps every line as it came (EchoAll, this release), or else warn and above.
+// server.log keeps warn and above (the default), or every line as it came (EchoAll).
 func TestServerLogEcho(t *testing.T) {
 	for _, all := range []bool{true, false} {
 		k, _, echo := newKeeper(t, -1, func(c *Config) { c.EchoAll = all })

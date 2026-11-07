@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **`server.log` keeps the warnings and errors (Epic 53 story 53.02).** After one release with
+  both written, the server's parts send only their warnings and errors to `server.log`, beside
+  the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
+  of it. Every line is still in the log segments, the Logs page and the recovery console.
+  `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
