@@ -45,3 +45,39 @@ func TestEmbeddedFlowFiles(t *testing.T) {
 		}
 	}
 }
+
+// Each runner group's components follow the bundle (story 54.37 §4): every group the
+// release runs serves at least one component (else it would be held for good), and the
+// fingerprint runner serves every first-party component.
+func TestFirstPartyGroupComponents(t *testing.T) {
+	comps := FirstPartyGroupComponents()
+	groups := FirstPartyGroups()
+	if len(groups) == 0 {
+		if len(comps) != 0 {
+			t.Fatalf("components %v with no group", comps)
+		}
+		return
+	}
+	all := map[string]bool{}
+	for g, cs := range comps {
+		for _, c := range cs {
+			if g != "fp" {
+				all[c] = true
+			}
+		}
+	}
+	for _, g := range groups {
+		if len(comps[g]) == 0 {
+			t.Fatalf("group %s serves no component: %v", g, comps)
+		}
+	}
+	fp := map[string]bool{}
+	for _, c := range comps["fp"] {
+		fp[c] = true
+	}
+	for c := range all {
+		if !fp[c] {
+			t.Fatalf("fp does not serve %s: %v", c, comps["fp"])
+		}
+	}
+}
