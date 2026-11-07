@@ -28,6 +28,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "postgres/"
       ],
@@ -87,6 +88,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "api/"
       ],
@@ -145,6 +147,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "streaming/"
       ],
@@ -200,6 +203,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "pipeline/",
         "pipeline/chroma-copy"
@@ -231,6 +235,56 @@
       "stop_grace_s": 5,
       "switchable": false,
       "title_key": "components.core.pipeline.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.plugin_runners.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.plugin_runners",
+      "in_payload": false,
+      "kind": "process",
+      "licence": "",
+      "loops": [],
+      "on_demand": true,
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [
+        "plugin-runner/light",
+        "plugin-runner/net",
+        "plugin-runner/service",
+        "plugin-runner/fp"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.86",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": false,
+      "title_key": "components.core.plugin_runners.title",
       "wants": []
     },
     {
@@ -275,6 +329,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "copy/"
       ],
@@ -325,6 +380,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -377,6 +433,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -422,6 +479,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -471,6 +529,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -517,6 +576,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -565,6 +625,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -617,6 +678,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "pipeline/stt-*"
       ],
@@ -683,6 +745,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -733,6 +796,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -791,6 +855,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "pipeline/index"
       ],
@@ -851,6 +916,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -918,6 +984,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -969,6 +1036,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1016,6 +1084,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "ollama/"
       ],
@@ -1071,6 +1140,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "plugins/"
       ],
@@ -1119,6 +1189,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -1174,6 +1245,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1223,6 +1295,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -1274,6 +1347,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -1334,6 +1408,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1395,6 +1470,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "tv-slot/*"
       ],
@@ -1457,6 +1533,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -1506,6 +1583,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -1556,6 +1634,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "logs/"
       ],
@@ -1601,6 +1680,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [
         "relay/"
       ],
@@ -1650,6 +1730,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -1709,6 +1790,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1758,6 +1840,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1804,6 +1887,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1853,6 +1937,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1896,6 +1981,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1942,6 +2028,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -1994,6 +2081,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -2040,6 +2128,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -2084,6 +2173,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -2127,6 +2217,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -2171,6 +2262,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2218,6 +2310,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2265,6 +2358,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2315,6 +2409,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2363,6 +2458,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2411,6 +2507,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2458,6 +2555,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2506,6 +2604,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -2545,6 +2644,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [],
       "resources": {
@@ -2589,6 +2689,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2637,6 +2738,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2682,6 +2784,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2727,6 +2830,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2772,6 +2876,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2817,6 +2922,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2862,6 +2968,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2907,6 +3014,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2952,6 +3060,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -2997,6 +3106,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -3042,6 +3152,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -3087,6 +3198,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -3132,6 +3244,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
+      "plugin": "",
       "processes": [],
       "requires": [
         [
@@ -3170,6 +3283,7 @@
     "core.api",
     "core.streaming",
     "core.pipeline",
+    "core.plugin_runners",
     "core.node",
     "core.updates",
     "core.switchover",
@@ -3288,7 +3402,8 @@
     "runner_crash_loop",
     "plugin_trusted_unsigned",
     "plugin_trusted_version",
-    "kept_off"
+    "kept_off",
+    "runner_env"
   ],
   "schema": 1
 }
