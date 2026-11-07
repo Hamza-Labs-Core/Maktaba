@@ -67,7 +67,8 @@ sessions left without one: write them if you have the context.
 
 ## 4. After a v* tag: build the snapshot
 
-Tags are automatic (`auto-tag.yml` tags each green commit of main). A scheduled session builds
+A scheduled release session pushes each tag (the newest commit of main whose CI and update
+rehearsal both passed: `tools/release/next_tag.py --green FILE`), then builds
 each new tag's `docs/trail/snapshots/vX.Y.Z.md` (any session that finds a tag without one builds it):
 
 ```bash

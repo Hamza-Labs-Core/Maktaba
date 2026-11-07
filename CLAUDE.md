@@ -10,9 +10,11 @@
    doing, what is open. Something learned after the merge goes in a second event, in a
    trail-only pull request. Events are append-only; real PR numbers and shas only. The hook in
    `.claude/settings.json` reminds a session that merged a PR with no event.
-3. **Tags are automatic**: `auto-tag.yml` tags each green commit of main as the next patch
-   version and starts the release workflows (`docs/updates.md`, "How a release is made"); do
-   not tag by hand unless a release needs it. A scheduled session builds each new tag's
+3. **A session pushes each tag**: a scheduled release session (every 30 minutes, on the
+   owner's machine) tags the newest commit of main whose CI and update rehearsal both passed as
+   the next patch version (`tools/release/next_tag.py --green FILE`), and its tag push starts the
+   release workflows (`docs/updates.md`, "How a release is made"); no workflow pushes tags. Do
+   not tag by hand unless a release needs it. The same session then builds each new tag's
    snapshot (`trail.py skeleton --tag vX.Y.Z`), as the skill says, in a trail-only pull
    request; a session that finds a tag without one builds it. `python3 tools/trail/trail.py
    check` must pass.

@@ -1,6 +1,7 @@
-"""auto-tag.yml's choice (tools/release/next_tag.py): the next patch tag, never on a trail-only
-change, never twice on one commit, never on a commit older than a tagged one; and the workflows
-it dispatches are every tag workflow, each dispatchable on its tag."""
+"""The release session's choice (tools/release/next_tag.py): the next patch tag, never on a
+trail-only change, never twice on one commit, never on a commit older than a tagged one; and the
+tag workflows its tag push starts: release.yml only on a push, each other one dispatchable on
+its tag by hand."""
 
 from __future__ import annotations
 
@@ -194,41 +195,10 @@ def tag_workflows() -> set[str]:
     return out
 
 
-def watched() -> set[str]:
-    env = load("auto-tag.yml")["jobs"]["tag"]["env"]
-    return set(env["RELEASE_WORKFLOWS"].split())
-
-
-def auto_tag_steps() -> list[dict]:
-    return load("auto-tag.yml")["jobs"]["tag"]["steps"]
-
-
-def test_auto_tag_checks_every_tag_workflow_started() -> None:
-    assert watched() == tag_workflows()
-    assert "release.yml" in watched()
-
-
-def test_auto_tag_pushes_the_tag_with_the_deploy_key() -> None:
-    # a tag pushed with GITHUB_TOKEN starts no workflow; the deploy key's push does
-    steps = auto_tag_steps()
-    checkout = next(s for s in steps if str(s.get("uses", "")).startswith("actions/checkout@"))
-    assert checkout["with"]["ssh-key"] == "${{ secrets.RELEASE_TAG_DEPLOY_KEY }}"
-    first = steps[0]
-    assert "secrets.RELEASE_TAG_DEPLOY_KEY" in str(first.get("env")), "no key, no tag: checked first"
-    assert "exit 1" in first["run"]
-    perms = load("auto-tag.yml")["jobs"]["tag"]["permissions"]
-    assert perms.get("contents") == "read", "the tag is not pushed with GITHUB_TOKEN"
-    assert perms.get("actions") != "write", "auto-tag dispatches nothing"
-
-
-def test_auto_tag_never_dispatches_a_tag_workflow() -> None:
-    # a dispatched release.yml is signed as `workflow_dispatch`, which releaseverify refuses
-    for step in auto_tag_steps():
-        assert "gh workflow run" not in str(step.get("run", "")), step.get("name")
-
-
 def test_release_is_never_dispatched() -> None:
-    # shared/go/releaseverify pins BuildTrigger "push" (identity.go): homes refuse anything else
+    # shared/go/releaseverify pins BuildTrigger "push" (identity.go): homes refuse anything else,
+    # so release.yml runs only from the release session's tag push
+    assert "release.yml" in tag_workflows()
     assert "workflow_dispatch" not in on(load("release.yml"))
     identity = (ROOT / "shared/go/releaseverify/identity.go").read_text()
     assert 'BuildTrigger = "push"' in identity
@@ -238,15 +208,6 @@ def test_release_is_never_dispatched() -> None:
 def test_each_other_tag_workflow_takes_a_tag_by_hand(workflow: str) -> None:
     inputs = (on(load(workflow)).get("workflow_dispatch") or {}).get("inputs") or {}
     assert "tag" in inputs, f"{workflow}: workflow_dispatch needs a `tag` input (a tag's run by hand)"
-
-
-def test_auto_tag_follows_ci_and_the_rehearsal_on_main() -> None:
-    doc = load("auto-tag.yml")
-    run_on = on(doc)["workflow_run"]
-    names = {load("ci.yml")["name"], load("update-rehearsal.yml")["name"]}
-    assert set(run_on["workflows"]) == names
-    assert run_on["branches"] == ["main"]
-    assert doc["concurrency"]["cancel-in-progress"] is False
 
 
 def test_the_guard_checks_a_dispatched_runs_tag() -> None:

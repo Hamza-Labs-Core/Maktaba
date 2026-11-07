@@ -79,7 +79,6 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/web-release.yml": "runs on a tag",
     ".github/workflows/testflight.yml": "runs on a tag",
     ".github/workflows/packages.yml": "runs after a release",
-    ".github/workflows/auto-tag.yml": "runs after CI and the update rehearsal on main (tags the newest green commit); its choice, tools/release/next_tag.py, is tested by tools/ci/tests on every pull request",
     ".github/workflows/relay.yml": "its own workflow (cloud relay)",
     ".github/workflows/cloud-rehearsal.yml": "its own workflow and path filter (the cloud rehearsal, Epic 50 story 50.06)",
     ".github/workflows/trusted-root.yml": "its own scheduled workflow",
