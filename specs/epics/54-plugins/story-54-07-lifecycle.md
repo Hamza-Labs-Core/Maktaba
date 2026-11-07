@@ -150,6 +150,16 @@ release and back. After each step the plugin is *Running*, its queued jobs are i
 plugin built with a range that excludes the target goes *Waiting* `incompatible` (not
 *Failed*), and comes back after the rollback.
 
+A plugin's state on a machine is its parts rolled up worst first (`store.Rollup`). The
+supervisor's plugins runner writes its part (`plugins`) with the home's decision on each
+installed plugin: `failed` (its files), `removing`, `off` when it is not wanted on, `stopped`
+(`held`) while an admin or its breaker holds it, `waiting` with the gate's reason and params
+when the gate refuses it (`incompatible`, `grants_needed`, `unreviewed_disallowed`, `revoked`, a
+machine's placement), and `running` when the gate passes. The pipeline writes its own part for
+the stage group. So the state stands while the pipeline is down, a refusal or a hold outranks
+the pipeline's `running`, and when the gate passes the pipeline's own phase (`starting`,
+`degraded`, `failed`) wins over the supervisor's `running`.
+
 ## Acceptance criteria
 
 - **Given** an installed, enabled plugin with 100 queued jobs and 2 running,

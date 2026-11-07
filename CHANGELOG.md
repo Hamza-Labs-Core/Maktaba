@@ -80,6 +80,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A rollback no longer keeps the home down for half a day building the search index.**
+  Putting a backup back rebuilt semantic search's vector index among the other indexes with
+  64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
+  down all the while (the rollback of 0.3.90 on 2026-11-07). The vector index is now built
+  in a step of its own, with a third of the machine's memory (at most 32 GB) and parallel
+  workers; if that is refused it is built again with less, so a rollback never fails on it.
+
 - **An update no longer rolls back because the transcription pipeline is busy.** The update's
   watch asked every pipeline process for its version on every check, with three seconds to
   answer; on a busy home the answer sometimes came late, the watch never saw ten healthy
@@ -1081,6 +1088,36 @@ build fails when the two differ.
   problem report leaves out a plugin's log lines unless an admin ticks **Include its logs in
   problem reports** on the plugin's page (audited); the plugin host's own lines stay.
   maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
+
+- **The plugin store's catalog, updates and the kill switch on the home (Epic 54, story
+  54.17).** A new loop fetches the store's signed lists straight from the CDN (never through
+  Maktaba Cloud, and only while a plugin is installed or Browse was opened in the last 7 days):
+  the revocation list's head every 5 minutes, the list when it changes and every hour, the
+  catalog every 6 hours. Each is verified by the chain of trust and kept on disk and in
+  Postgres, the newest seen winning; an older or mismatched copy (or a catalog of the version already seen
+  with other bytes) is refused and logged. A store
+  `disable` holds the plugin within one poll (the `revoked` gate and an Epic 51 hold), tells
+  the admins, and refuses Start, enable, install, update and rollback to a covered version
+  (`409 plugin_revoked`); `warn` shows a warning; `delist` changes nothing installed; a lifted
+  entry leaves the plugin for the admin to start. The Plugins page says when withdrawn plugins
+  were last checked and warns when the list has expired (plugins keep running; store installs
+  wait). Store installs by `{store: {id, version}}`, with the download checked against its
+  sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
+  home sends its daily `seen` report when telemetry is on. Migration 0203.
+
+- **A plugin's state shows while the pipeline is down (Epic 54, story 54.07 §8).** The
+  supervisor reports what the home decides of each plugin: waiting with the reason when its
+  gate refuses it (a Maktaba version outside its range, a grant missing, unreviewed while not
+  allowed), stopped while held, running when it may run. Before, a plugin read *Off* until the
+  pipeline reported its stages. While the pipeline runs, its own state of the stages
+  (starting, failed) shows when the gate lets the plugin run. maktaba.dev: Installing a
+  plugin, *Health and logs*.
+
+- **The plugin store's isolated runner can run on Cloudflare Containers (Epic 54, #756).** The
+  malware scan, the sandbox run and the reproducible build of each submission run in a
+  container of its own, started with its internet off and handed the package by the store,
+  instead of a GitHub Actions job. It is turned on by a deploy setting; the GitHub Actions
+  runner stays the default, and a runner that fails refuses the version.
 
 - **A plugin's data migrates before its new version runs (Epic 54, story 54.07 §5).** When
   an update raises a plugin's `data_version`, its other stages wait while one migrate job
