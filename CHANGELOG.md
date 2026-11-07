@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
+  wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
+  fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download
+  again in `tv.maktaba.repair`, in the sandboxed `net` runner, the only one that reaches the
+  network. Each reads only the rules it lists, a new download's first job is queued once its
+  video is saved, and the parity proof compares the downloaded files, the rows and the queue
+  with the recorded yt-dlp.
 - **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
   wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
   duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the

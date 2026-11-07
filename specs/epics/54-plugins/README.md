@@ -1880,6 +1880,25 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   §2, T02). The sandbox allows the library and its trash, and every database change a plugin
   asks of the worker is checked; the job-scoped path check in the file-moving functions
   follows (issue #796).
+- **The `net` group's hosts are declared, not filtered.** The sandbox gives the `net` runner
+  outbound network as a whole: neither Seatbelt nor Landlock and seccomp can filter by host
+  name, and YouTube's media hosts change from one download to the next. The manifest's `net`
+  list is reviewed with it and shown on the Plugins page; the nightly check of the hosts
+  yt-dlp actually contacts (story 54.33 T02) follows in issue #805.
+- **A stage that makes a subject may start its pipeline.** A relayed `enqueue` may also name
+  the stage where the graph starts a new subject (`probe` for a video, or a stage whose
+  `entry_for` has the kind). A download writes its video in the plugin's own transaction,
+  which the worker cannot see yet, so the worker holds such a request and queues it, with
+  the same checks, once the job's writes are committed; a failed job queues nothing.
+- **Rules sections are in the scope.** A stage reads `rules.<section>` only when the
+  manifest's `settings` lists the section (`exactdates`, `repair`); any other read is
+  refused `plugin_scope`.
+- **The downloads' work folder is `data.cache`** (`MAKTABA_YT_WORK`, else
+  `~/.maktaba/work/yt`): the `.part` files and sidecars, before a finished download is
+  placed in the library.
+- **The YouTube collections and the Tartube import stay with the core** until wave 9
+  (story 54.36): `youtube_collections` and `youtube_tartube` build series and playlists
+  from the library as a whole, as the core stages there do.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

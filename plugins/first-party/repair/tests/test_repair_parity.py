@@ -121,7 +121,9 @@ async def test_repair_wave_6_is_identical(
         assert "repair_broken" in p.b.ran, p.b.ran
         made = files_tree(p.tmp / "files-a" / "library")
         assert any(k.endswith(".broken") for k in made), "nothing was swapped in"
-        assert sorted(tools.downloads()) == sorted(["yt000000001", "yt000000004", "yt000000005"] * 2)
+        assert sorted(tools.downloads()) == sorted(
+            ["yt000000001", "yt000000004", "yt000000005"] * 2
+        )
         n = await p.b.db.fetchval(
             "SELECT count(*) FROM plugin_invocations WHERE plugin_id = 'tv.maktaba.repair'"
         )

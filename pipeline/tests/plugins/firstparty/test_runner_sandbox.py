@@ -308,3 +308,28 @@ def test_the_files_group_rewrites_the_library_and_the_light_group_does_not() -> 
     assert set(files.write) >= {"/media/a", "/media/.trash"}
     light = policy_for(group("light"), areas=areas, own_socket="/run/runner-light.sock", **kw)
     assert "/media/a" not in light.write and "/media/.trash" not in light.write
+
+
+def test_only_the_net_group_reaches_the_network() -> None:
+    """youtube and repair (story 54.33) run in ``net``: sockets, yt-dlp, and the library, its
+    trash and the downloads' work folder; no other group has the network."""
+    from maktaba_pipeline.plugins import firstparty
+    from maktaba_plugin_runner.sandbox import policy_for, seatbelt_profile
+
+    def group(name: str) -> list[dict[str, object]]:
+        return [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == name]
+
+    assert {p.id for p in firstparty.plugins() if p.trusted.get("runner") == "net"} >= {
+        "tv.maktaba.youtube",
+        "tv.maktaba.repair",
+    }
+    areas = {"library": "/media/a", "trash": "/media/a/.maktaba/trash", "data.cache": "/w/yt"}
+    kw = {"api_socket": "/run/api.sock", "run_dir": "/run"}
+    net = policy_for(group("net"), areas=areas, own_socket="/run/runner-net.sock", **kw)
+    assert net.net and set(net.write) >= {"/media/a", "/media/a/.maktaba/trash", "/w/yt"}
+    assert any(x.endswith("yt-dlp") or x == "yt-dlp" for x in net.exec), net.exec
+    assert "(allow network-outbound)" in seatbelt_profile(net)
+    for other in ("light", "files"):
+        p = policy_for(group(other), areas=areas, own_socket=f"/run/runner-{other}.sock", **kw)
+        assert not p.net, other
+        assert "(allow network-outbound)" not in seatbelt_profile(p), other

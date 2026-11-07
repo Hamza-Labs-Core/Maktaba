@@ -231,7 +231,9 @@ async def test_exact_dates_wave_6_is_identical(
             )
             assert n >= 1, "no job went through the plugin"
             tables = [("youtube_videos", ("youtube_id",))]
-            ignore = {"youtube_videos": ["fetched_at", "updated_at", "first_seen_at", "last_seen_at"]}
+            ignore = {
+                "youtube_videos": ["fetched_at", "updated_at", "first_seen_at", "last_seen_at"]
+            }
             rows = await p.compare(tables, ignore=ignore, perf=False)
             assert rows == [], "\n".join(rows[:30])
             problems = await p.compare_n16(

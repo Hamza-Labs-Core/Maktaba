@@ -11,7 +11,10 @@
 > `tv.maktaba.transcription`, and the search index, chapters and topics in
 > `tv.maktaba.semantic-search`. **Wave 5 has moved**: the conversion to MP4 runs in
 > `tv.maktaba.convert`, and finding and merging duplicates, the file trash and restoring
-> from it in `tv.maktaba.dedup`. The other stages move wave by wave.
+> from it in `tv.maktaba.dedup`. **Wave 6 has moved**: the YouTube listings, downloads and
+> exact dates run in `tv.maktaba.youtube`, and the repair of broken downloads in
+> `tv.maktaba.repair`, the first stages that reach the network. The other stages move wave by
+> wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -193,13 +196,44 @@ against the job before it writes it with its own database connection:
 
 | Ask | What the worker checks |
 |---|---|
-| `enqueue` (from `enqueue_job`) | the stage is the job's own, one it may request, or joined to it by an edge; the subject is of the job's library |
+| `enqueue` (from `enqueue_job`) | the stage is the job's own, one it may request, or joined to it by an edge, or where the graph starts a new subject (`probe` for a video); the subject is of the job's library |
 | `dedup_commit` (a duplicate group's merge) | the group is the job's subject, and the keeper and the others are its members |
 | `unsupersede` (a restored duplicate) | the video is a superseded video of the job's library |
 
 The same code runs in-process, where these calls write directly. Writes go only to the
 library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
 in the file-action journal first.
+
+## The network: `tv.maktaba.youtube` and `tv.maktaba.repair`
+
+Wave 6 moves the stages that reach YouTube: `youtube_sync` lists a channel or playlist,
+`youtube_fetch` and `youtube_backfill` download what it found into the library,
+`exact_dates` fetches the exact upload day of series members, and `repair_broken` fetches a
+broken download again and swaps the good copy in, keeping the broken one beside it.
+
+```toml
+[trusted]
+runner      = "net"
+settings    = ["exactdates"]                # the rules sections the plugin reads
+files.read  = ["library"]
+files.write = ["library", "data.cache"]     # data.cache: the downloads' work folder
+exec        = ["yt-dlp", "ffmpeg", "ffprobe"]
+net         = ["www.youtube.com", "youtube.com", "*.googlevideo.com", "www.googleapis.com", "i.ytimg.com"]
+```
+
+- **The `net` group** is the only runner with sockets beyond its own and the plugin API's.
+  The sandbox opens outbound connections for it as a whole; it does not filter by host
+  (YouTube's media hosts change from one download to the next). The `net` list is what the
+  plugin is meant to reach: reviewed with the manifest and shown on the Plugins page.
+- **A download starts a new video's pipeline.** The video row is written in the plugin's own
+  transaction, which the worker cannot see yet, so the worker holds the `probe` the download
+  asks for and queues it once the job's writes are committed, after the same checks.
+- **Rules are scoped too.** A stage reads a rules section only when the manifest lists it in
+  `settings` (`exactdates` for `exact_dates`, `repair` for `repair_broken`); any other is
+  refused as `plugin_scope`.
+- **Parity** runs a channel listing, two downloads and a back-catalogue fill with a recorded
+  yt-dlp, the five ways a repair can go, and the exact dates of a series, the same on both
+  sides; files, rows, the queue and the job log are compared, then N16.
 
 ## The repo layout
 
