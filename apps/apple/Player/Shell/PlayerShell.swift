@@ -116,6 +116,10 @@ struct PlayerShell: View {
         // every 10 s while in front; nothing when all is well or the home has none
         .homeStatusStrip(client: context.client, home: context.client.home, admin: context.user.isAdmin,
                          liveTVOff: liveTVHidden)
+        // crash reports to the home, asked once and off until the person says yes (53.14);
+        // Report a problem from Profile and error screens (53.15)
+        .crashReports(session: context.session)
+        .reportsProblems(session: context.session)
         // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
         .playerMenuTarget(sections: shown, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token

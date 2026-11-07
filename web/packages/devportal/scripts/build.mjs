@@ -65,8 +65,10 @@ const GUIDES = {
     "queue-and-api.md",
     "installing.md",
     "testing-and-packaging.md",
+    "trust.md",
     "publishing.md",
     "selling.md",
+    "first-party.md",
   ],
   contributing: [
     "README.md",
@@ -174,6 +176,8 @@ const FILES = [
   ["shared/api/openapi.json", "api/openapi.json"],
   // the manifest schema at its own $id (https://maktaba.dev/plugins/manifest.schema.json)
   ["shared/plugins/manifest.schema.json", "plugins/manifest.schema.json"],
+  // the panel schema at its own $id (https://maktaba.dev/plugins/panel.schema.json, story 54.20)
+  ["shared/plugins/panel.schema.json", "plugins/panel.schema.json"],
   // ar/api/openapi.json is written by the build: openapi.json with openapi.ar.json's prose
   [
     "web/packages/devportal/node_modules/redoc/bundles/redoc.standalone.js",

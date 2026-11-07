@@ -112,6 +112,43 @@ describe("QueueDetail", () => {
     expect(post).toHaveBeenCalledWith("/api/queues/link/resume");
   });
 
+  it("shows a built-in plugin's stage and flips where it runs (Epic 54)", async () => {
+    const snap = {
+      ...snapshotFixture,
+      stages: snapshotFixture.stages.map((s) =>
+        s.stage === "link" ? { ...s, plugin: "tv.maktaba.core-media", impl: "plugin" as const } : s
+      ),
+    };
+    routeGet(get, {
+      "/api/queues": snap,
+      "/api/queues/link": detailFixture("link"),
+      "/api/queues/link/rate": rateFixture,
+      "/api/queues/libraries": { items: librariesFixture },
+      "/api/activity": { items: [], next: null },
+    });
+    put.mockResolvedValue({
+      stage: "link",
+      impl: "inproc",
+      plugin: "tv.maktaba.core-media",
+      paused: 0,
+    });
+    renderAt(<QueueDetail />, "/queue/link", "/queue/:stage");
+    const box = await screen.findByTestId("queue-builtin-plugin");
+    expect(within(box).getByText("Built-in plugin")).toBeInTheDocument();
+    const menu = within(box).getByRole("combobox", { name: "Runs in" });
+    expect(menu).toHaveValue("plugin");
+    await userEvent.selectOptions(menu, "inproc");
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith("/api/queues/link/impl", { impl: "inproc" })
+    );
+  });
+
+  it("shows no built-in plugin box for the core's own stages", async () => {
+    setup("link");
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByTestId("queue-builtin-plugin")).toBeNull();
+  });
+
   it("says who paused the queue and when", async () => {
     const snap = {
       ...snapshotFixture,

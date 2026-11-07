@@ -15,6 +15,8 @@ public struct HomeErrorView: View {
 
     @State private var showDetails = false
     @FocusState private var focused: ErrorAction?
+    /// Set by `reportsProblems(session:)`: "Report this" opens the form with this call's reference.
+    @Environment(\.reportProblem) private var reportProblem
 
     public init(_ failure: HomeFailure, video: Bool = true, actions: [ErrorAction]? = nil,
                 words: ErrorStrings = .forPreferredLanguages(), perform: @escaping (ErrorAction) -> Void) {
@@ -46,6 +48,17 @@ public struct HomeErrorView: View {
                 VStack(spacing: Self.spacing / 2) { buttons }
             }
             .padding(.top, Self.spacing / 2)
+            if let reportProblem {
+                // the form, pre-filled with the reference of the call that failed (53.15)
+                Button(ReportWords.thisError, systemImage: "exclamationmark.bubble") {
+                    reportProblem(reference: RequestID.recent().last.map(RequestID.short))
+                }
+                .font(Self.detailsFont)
+                #if !os(tvOS)
+                .buttonStyle(.borderless)
+                #endif
+                .accessibilityIdentifier("error.report")
+            }
             if let details = failure.details {
                 Button(words.text(.details), systemImage: showDetails ? "chevron.up" : "chevron.down") {
                     showDetails.toggle()

@@ -1,18 +1,40 @@
 {
   "name": "@maktaba/store",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The Maktaba plugin store's Workers (Epic 54). This package holds paid plugins (story 54.19): the pluggable payment providers, the provider-neutral ledger, entitlements and payouts.",
+  "description": "The Maktaba plugin store (Epic 54): its signer and verifier (story 54.14), its Cloudflare Workers, D1 migrations, accounts, checks, review, catalog and ratings (stories 54.15-54.18), and paid plugins (story 54.19): the pluggable payment providers, the provider-neutral ledger, entitlements and payouts. Independent of Maktaba Cloud: nothing here imports cloud/.",
   "engines": {
     "node": ">=22.13"
   },
   "scripts": {
-    "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.workers.json --noEmit && tsc -p tsconfig.console.json --noEmit",
+    "vectors": "tsx scripts/gen-vectors.ts",
+    "vectors:check": "tsx scripts/gen-vectors.ts --check",
+    "test": "tsx scripts/gen-vectors.ts --check && npm run typecheck && vitest run",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "build:console": "vite build console",
+    "build": "bash scripts/build-wasm.sh && vite build console"
+  },
+  "dependencies": {
+    "argon2id": "1.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.23.0",
+    "@cloudflare/workers-types": "5.20261001.1",
+    "@testing-library/react": "16.3.2",
     "@types/node": "22.19.1",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
+    "aws4fetch": "1.0.20",
+    "jsdom": "25.0.1",
+    "tsx": "4.23.15",
     "typescript": "5.7.3",
-    "vitest": "4.1.12"
+    "vite": "6.4.5",
+    "vitest": "4.1.12",
+    "wrangler": "4.124.0"
   }
 }

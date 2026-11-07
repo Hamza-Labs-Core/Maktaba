@@ -2,17 +2,22 @@
 //!
 //!   mkp new rust <id> <folder>        a project from the Rust template (no_std, wit-bindgen)
 //!   mkp check <folder>                the home's manifest validation (54.01) and import audit (54.02)
-//!   mkp pack <folder> <out.mkplugin>  files.json and the package, every file's sha256 listed
+//!   mkp pack <folder> <out.mkplugin> [--key <id>]
+//!                                     files.json and the package, every file's sha256 listed;
+//!                                     with --key, signed (signatures/developer.sig, 54.14)
+//!   mkp keys new | list | export-public [id]
+//!                                     the developer's Ed25519 signing key (54.14 §1)
 //!   mkp test <folder> --stage <name> [--subject kind:id] [--fixtures api.json] [--settings json]
 //!                                     run a stage in the harness: the same host code as
 //!                                     maktaba-plugind (plugind-core), a mock plugin API
 //!                                     answering from fixtures, every call recorded
 //!
 //! The package folder holds manifest.toml, i18n/en.json, i18n/ar.json and plugin.wasm (and
-//! ui/settings.schema.json when the manifest names one). `mkp pack` signs nothing: signing
-//! is Phase 2 (54.14).
+//! ui/settings.schema.json when the manifest names one). The store countersigns a package
+//! after review (store.sig); `mkp pack --key` makes only the developer's signature.
 
 mod harness;
+mod keys;
 mod pack;
 mod template;
 
@@ -21,7 +26,8 @@ use std::process::exit;
 
 fn usage() -> ! {
     eprintln!(
-        "usage:\n  mkp new rust <id> <folder>\n  mkp check <folder>\n  mkp pack <folder> <out.mkplugin>\n  \
+        "usage:\n  mkp new rust <id> <folder>\n  mkp check <folder>\n  mkp pack <folder> <out.mkplugin> [--key <id>]\n  \
+         mkp keys new | list | export-public [id]\n  \
          mkp test <folder> --stage <name> [--subject kind:id] [--fixtures api.json] [--settings json]"
     );
     exit(2)
@@ -32,10 +38,18 @@ fn main() {
     let code = match args.first().map(String::as_str) {
         Some("new") if args.len() == 4 && args[1] == "rust" => template::new_rust(&args[2], Path::new(&args[3])),
         Some("check") if args.len() == 2 => check(Path::new(&args[1])),
-        Some("pack") if args.len() == 3 => pack::pack(Path::new(&args[1]), Path::new(&args[2])),
+        Some("pack") if args.len() == 3 => pack::pack(Path::new(&args[1]), Path::new(&args[2]), None),
+        Some("pack") if args.len() == 5 && args[3] == "--key" => {
+            keys::load(&args[4]).and_then(|k| pack::pack(Path::new(&args[1]), Path::new(&args[2]), Some(&k)))
+        }
+        Some("keys") if args.len() == 2 && args[1] == "new" => keys::new_key(),
+        Some("keys") if args.len() == 2 && args[1] == "list" => keys::list(),
+        Some("keys") if (2..=3).contains(&args.len()) && args[1] == "export-public" => {
+            keys::export_public(args.get(2).map(String::as_str))
+        }
         Some("test") if args.len() >= 2 => test(&args[1..]),
         Some("--version") => {
-            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 0);
+            println!("mkp {} (plugin API {}.{})", env!("CARGO_PKG_VERSION"), 1, 1);
             Ok(())
         }
         _ => usage(),
@@ -91,4 +105,13 @@ fn test(args: &[String]) -> Result<(), String> {
         exit(1)
     }
     Ok(())
+}
+
+/// A manifest's id and version (for the developer signature).
+pub fn manifest_of(src: &[u8]) -> Result<(String, String), String> {
+    let m = maktaba_plugin_manifest::validate(src, None).map_err(|errs| {
+        errs.iter().map(|e| format!("{} {}: {}", e.code, e.path, e.detail)).collect::<Vec<_>>().join("\n")
+    })?;
+    let s = |k: &str| m.get(k).and_then(|v| v.as_str()).map(str::to_string).ok_or(format!("the manifest has no {k}"));
+    Ok((s("id")?, s("version")?))
 }

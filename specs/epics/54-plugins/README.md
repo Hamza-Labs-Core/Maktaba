@@ -1,7 +1,8 @@
 # Epic 54: Plugins: new functions from the queue, with no internet, from a Maktaba store
 
 > **Status:** spec (2026-11-03; decisions applied in §14; first-party plugins added in §15;
-> rebased on Epic 51 as built, §4.11). **Builds on:** [Epic 51](../51-configurable-components/README.md)
+> rebased on Epic 51 as built, §4.11; flows, cross-plugin events, loop checks and joined
+> machines added on 2026-11-06, §4.12, §4.13). **Builds on:** [Epic 51](../51-configurable-components/README.md)
 > (the component catalog `shared/components/catalog.toml`, desired and actual state, the
 > runners, drain without lost work, the admin API, capabilities, signed packs, offline import),
 > [Epic 6](../06-job-queue/README.md) (the queue), [Epic 40](../40-queue-health/README.md)
@@ -60,8 +61,10 @@ strangers. Epic 51 left a store to "a later epic on this model" (Epic 51 H5). Th
 ## 3. Goals
 
 1. **Plugins add functions through the queue.** A plugin adds stages that run after stable
-   events (a video was added, a transcript is ready…), on a schedule, or when another of its
-   own stages asks. It writes metadata, tags, chapters, subtitles, artwork and its own data,
+   core events (a video was added, a transcript is ready…), on a schedule, after or on
+   request from another of its own stages, or when another plugin publishes an event it
+   subscribes to (§4.12). Its stages are leaves after core: never before or between core
+   stages, and never feeding one. It writes metadata, tags, chapters, subtitles, artwork and its own data,
    and can declare settings pages and (Phase 3) panels the apps draw.
 2. **No internet, enforced.** A plugin cannot open a socket, resolve a name or make an HTTP
    request. It cannot see the disk. It reaches media only through handles the API grants for
@@ -90,6 +93,16 @@ strangers. Epic 51 left a store to "a later epic on this model" (Epic 51 H5). Th
    stage by stage with no downtime and no data loss, into first-party plugins that use the same
    manifest, dispatch and plugin API as third-party ones, with a trusted capability set that
    only Maktaba's release signature unlocks (§15).
+10. **The graph is the configuration** (decided 2026-11-06). Each set of plugins that works
+    together submits one signed flow (`flow.toml`): its plugins, their stages, the core events
+    they attach to, the events they publish and who subscribes to what. That declared graph
+    is the only way a plugin wires into the queue. Cycles are refused when the store verifies
+    a flow and again when a home installs, enables or updates a plugin, and a loop that slips
+    through data is stopped at run time by each job's lineage (§4.12). Maktaba draws the
+    graph as a chart wherever an admin or a developer decides about it.
+11. **Plugins on joined machines** (decided 2026-11-06). The home installs and approves; a
+    plugin whose placement allows it runs on any joined machine, under the same sandbox, with
+    that machine's own plugin host and plugin API (§4.13).
 
 ### Not in this epic
 
@@ -100,8 +113,10 @@ strangers. Epic 51 left a store to "a later epic on this model" (Epic 51 H5). Th
   for apps. Plugins work through the queue and the plugin API only.
 - Arbitrary code in the apps. UI is declared as data (settings forms, panels) and drawn by
   Maktaba's own code.
-- Plugins on cluster machines other than the home. Plugin stages are `placement = home` in
-  this epic (H12).
+- Third-party stages before or between core stages, or feeding one: they are leaves after
+  core events (§4.12, H24).
+- Wiring outside the declared flow: no edge, request or event that `flow.toml` and the
+  manifest do not declare (§4.12, H25).
 - Moving first-party code into the **WebAssembly** sandbox. Maktaba's own stages, the Plex and
   dizqueTV extensions included, become **native trusted** first-party plugins behind the same
   interface (§15, H16), not Wasm components. Cloudflare Stream (no stage) and Epic 52's
@@ -119,13 +134,17 @@ strings in English and Arabic, an icon, and optional declarative UI. It can prov
 | Part | What it does | Declared in the manifest as |
 |---|---|---|
 | **Stages** | queue job types run by the plugin's exported `run` function | `[[stage]]` |
-| **Triggers** | when a stage gets a job: after a stable event, on a schedule, or on request from another of the plugin's own stages | `[[stage.trigger]]`, `[[schedule]]` |
+| **Triggers** | when a stage gets a job: after a stable core event, on a schedule, after or on request from another of the plugin's own stages, or when another plugin publishes an event it subscribes to | `[[stage.trigger]]`, `may_request`, `[[schedule]]` |
+| **Published events** | events its stages emit, with a subject and a payload schema, that other plugins may subscribe to | `[[event]]`, a stage's `emits` |
+| **Dependencies** | the other plugins whose events it subscribes to, by id and version range | `[[depends]]` |
+| **Flow** | the chart of the whole set of plugins it works with (one plugin: a flow of one), the configuration the manifests must match | `flow.toml` (§4.12) |
 | **Outputs** | what it writes: its own data, metadata fields, tags, chapters, subtitles, artwork, suggestions for review, admin notices | capabilities (§4.4) |
 | **Settings** | an admin form, drawn by Maktaba from a JSON schema | `[settings]` |
 | **Panels** (Phase 3) | read-only views on a video, series or library page, drawn by every app from a small schema | `[[panel]]` |
 
 A plugin cannot add API routes, run at boot, run in the apps, run outside a job, or talk to
-another plugin except through data that plugin chose to export (§4.4).
+another plugin except through data that plugin chose to export (§4.4) and events it publishes
+(§4.12).
 
 ### 4.2 Events a plugin can follow
 
@@ -152,11 +171,19 @@ loader through `GraphBuilder.add_edge`, exactly how built-in extensions wire in 
 (`engine/reconcile.py`). A request is a `Request` to a stage in the plugin's own
 `may_request`; requests to other plugins' or core stages are refused (`GraphViolation`).
 
+**Core events stay the contract** (H7); plugins add their own on top. A plugin **publishes**
+the events it declares in `[[event]]`; another plugin subscribes as
+`event = "plugin:<publisher id>/<event name>"`, for example
+`plugin:dev.example.silences/silences.found`. A published event is not a core event: it
+starts only subscribing plugin stages, never a core stage. A subscription names a published
+event, never another plugin's stage (those names are internal to the plugin and change
+between its versions). How events, subscriptions and their checks fit together is §4.12.
+
 ### 4.3 How a job runs
 
 ```
 pipeline worker (Python)                      plugin host: maktaba-plugind (Rust, Wasmtime)
-  claims plugin stage job (pool "plugins")       one process per home, OS-sandboxed (§5.3)
+  claims plugin stage job (pool "plugins")       one process per machine running plugins (§4.13), OS-sandboxed (§5.3)
   │ POST /internal/plugins/invocations ──► API   no network, no DB login, no secrets
   │   (machine auth) mints invocation token      │
   │ ◄── token {plugin, version, job, subject,     │
@@ -166,7 +193,7 @@ pipeline worker (Python)                      plugin host: maktaba-plugind (Rust
   │                                              │ call export run(job)
   │                                              │   guest calls WIT imports: maktaba:plugin/*
   │                                              │   host forwards each with the token ──► plugin API
-  │                                              │                    (Go API, unix socket only)
+  │                                              │                    (this machine's Go API, unix socket only)
   │ ◄──────────── result (outputs, log) ─────────│   API checks token + grant + library + quota
   │ StageResult → Epic 40 failure policy          │
 ```
@@ -174,7 +201,8 @@ pipeline worker (Python)                      plugin host: maktaba-plugind (Rust
 - **The pipeline still owns the queue.** Claiming, pools, retries, failure classes, drain and
   parking are unchanged. A plugin stage is a `StageDef` with `extension = "plugin:<id>"` and a
   handler that forwards the job to the plugin host and maps the answer to a `StageResult`.
-- **The plugin host owns the sandbox.** It is one supervised process per home: role
+- **The plugin host owns the sandbox.** It is one supervised process per machine that runs
+  plugins (the home, and each joined machine a plugin's placement allows, §4.13): role
   `plugins`, catalog component `plugins.host` (`kind = "process+loop"`, on demand, 54.02,
   54.37 §4). Each job gets a fresh Wasmtime store. A trap, a deadline or
   a memory cap ends that job, not the host.
@@ -182,6 +210,10 @@ pipeline worker (Python)                      plugin host: maktaba-plugind (Rust
   from what the pipeline or the host says), and checks the token, the grant, the library scope
   and the quota on every call. The guest never sees the token: it calls typed imports, and the
   host attaches the token.
+- **The lineage travels with the job.** The token carries the job's lineage (origin, hops,
+  path, §4.12); the API refuses a request or an emitted event that would pass the hop cap or
+  re-enter a `(plugin stage, subject)` already in it, and the pipeline enqueues only what the
+  API allowed, with the extended lineage.
 
 ### 4.4 The plugin API
 
@@ -201,6 +233,7 @@ and the previous major for at least 12 months after a new major ships.
 | `write` | `set-field(video, field, value)`, `add-tags`, `set-chapters`, `add-subtitle(video, lang, vtt)`, `set-artwork(subject, kind, image)` | `metadata.write`, `tags.write`, `chapters.write`, `subtitles.write`, `artwork.write` |
 | `suggest` | `suggest(subject, field, value, reason)` into the admin's review queue | `suggest` |
 | `queue` | `request(stage, subject, payload)` for the plugin's own stages | `jobs.enqueue` |
+| `events` (1.1) | `emit(name, subject, payload)` of an event in the calling stage's `emits`, payload checked against its schema | none (only what the manifest declares) |
 | `notify` | `admin(code, params)`: an in-app notice to admins, from the plugin's strings | `notify.admin` |
 | `exports` | `read(plugin, subject, key)` of data another plugin marked as exported | `plugin-data.read:<id>` |
 | `compute` (Phase 3) | `embed(texts)`, `generate(prompt, opts)` on the home's own models | `compute.embed`, `compute.llm` |
@@ -220,10 +253,14 @@ Rules the API enforces on every call:
   undone per plugin, and kept out of anything that leaves the home (§9).
 - **No secrets, no users.** There is no call that returns users, sessions, tokens, settings of
   other components, `home_secrets`, file paths or machine addresses.
+- **Only the declared graph.** `queue.request` reaches only the calling stage's
+  `may_request`; `events.emit` only the calling stage's `emits`, with a payload that matches
+  the declared schema; and neither when the lineage would loop (`plugin_loop`, §4.12).
 
 The API listens for plugin calls **only on a unix domain socket** (`<data>/run/plugin-api.sock`;
 Windows 10+ supports AF_UNIX), never on TCP, so the LAN cannot reach it and a plugin token is
-useless off the box.
+useless off the box. Each machine that runs plugins serves its own socket for its own jobs
+(§4.13); a token minted on one machine is refused by every other.
 
 ### 4.5 Capabilities and grants
 
@@ -241,6 +278,7 @@ useless off the box.
 | `jobs.enqueue` | Queue more of its own work | low |
 | `notify.admin` | Send notices to admins | low |
 | `plugin-data.read:<id>` | Read what plugin X shares | depends on X |
+| `events.subscribe:<id>` | Start its work when plugin X publishes an event | depends on X |
 | `compute.embed` / `compute.llm` | Use this home's search model / language model | low |
 
 - The manifest marks each capability `required` or `optional`. At install the admin sees them
@@ -269,6 +307,7 @@ languages   = ["ar", "en"]                      # content languages it is good a
 licence     = "MIT"                             # SPDX, or "proprietary"
 price       = "free"                            # or a store product id (Phase 3)
 data_version = 2                                # bump when its stored data changes shape (§4.8)
+placement   = "home"                            # "home" (default), "any", or a capability like "gpu" (§4.13)
 
 [strings]                                       # keys into i18n/en.json and i18n/ar.json; both required
 name        = "plugin.name"
@@ -291,9 +330,35 @@ name        = "find_silences"                   # becomes plugin stage "p.<short
 subject     = "video"
 export      = "run-find-silences"               # the component export to call
 version     = 3                                 # bump to rerun on everything
-may_request = ["write_chapters"]
+may_request = ["write_chapters"]                # own stages only
+emits       = ["silences.found"]                # own published events only
   [[stage.trigger]]
-  event = "audio.ready"
+  event = "audio.ready"                         # a core event (§4.2)
+
+[[stage]]
+name        = "write_chapters"
+subject     = "video"
+export      = "run-write-chapters"
+version     = 1
+  [[stage.trigger]]
+  stage = "find_silences"                       # after another of its own stages
+
+[[stage]]
+name        = "mark_music"
+subject     = "video"
+export      = "run-mark-music"
+version     = 1
+  [[stage.trigger]]
+  event = "plugin:dev.example.music-finder/music.found"   # another plugin's published event
+
+[[event]]                                       # what this plugin publishes (§4.12)
+name        = "silences.found"                  # others subscribe as plugin:dev.example.silence-chapters/silences.found
+subject     = "video"
+payload     = "events/silences.found.schema.json"
+
+[[depends]]                                     # whose events it subscribes to
+plugin      = "dev.example.music-finder"
+version     = ">=2.1.0, <3.0.0"
 
 [[schedule]]
 stage       = "weekly_report"
@@ -310,7 +375,9 @@ schema      = "ui/panel.json"
 
 The manifest is validated by one schema (`shared/plugins/manifest.schema.json`) in the Go API,
 the Rust host, the store and the SDK, from one file. Story 54.01 lists every field and its
-limits.
+limits; story 54.39 adds the graph fields (`emits`, a trigger's `stage`, published-event
+triggers, `[[event]]`, `[[depends]]`, `placement`) and `flow.toml`, which the manifest must
+match (§4.12).
 
 ### 4.7 Resources and quotas
 
@@ -328,6 +395,12 @@ limits.
 | Log lines | 100 /s, 10 MB per day | — | host, before Epic 53's segments |
 | Package size | — | 50 MB | installer, store |
 | Plugin host process | — | 2 GB RSS (Job Object / cgroup / `RLIMIT_AS` fallback) | OS |
+| Lineage hops (plugin jobs in one chain from its origin) | — | 16 | API at `queue.request` and `events.emit`; the flow check's longest path |
+| Lineage re-entry of one `(plugin stage, subject)` | — | 0 | API; pipeline at enqueue |
+| Data lineage after a plugin write | 10 minutes | — | API (`plugin_write_lineage`) |
+| Events emitted per job | — | 1,000 (shared with requests) | API |
+| Event payload | — | 16 KB, the settings' JSON Schema subset | API at `events.emit` |
+| Plugins in one flow / published events per plugin / stages in a home's combined graph | — | 20 / 20 / 2,000 | flow check |
 
 ### 4.8 Lifecycle, on Epic 51
 
@@ -341,16 +414,18 @@ this epic adds them (story 54.37): entries derived from the manifest, read from
 
 | Action | What happens |
 |---|---|
-| **Install** | verify signatures and revocation (§6.3) → validate manifest → audit the component's imports against its capabilities → AOT-compile (`.cwasm`, cached) → the supervisor unpacks to `<state>/plugins/<id>/<version>_<sha12>/` and writes `current` (54.38) → grants dialog → `want = installed` |
-| **Enable** | `want = enabled`. The plugin loader adds its stages and edges at the next graph sync (≤ 2 s via `NOTIFY`), `job_stages` rows appear with `extension = 'plugin:<id>'`, workers claim. Existing items are *not* back-filled unless the admin ticks "Run on my existing library" (a catch-up, Epic 51 §4.5). |
-| **Disable / hold** | Epic 51 §4.5: stop claiming ≤ 2 s, drain ≤ the plugin's `timeout_s` (capped at 120 s), force-pause the rest, keep the queue, don't feed. Disable is `want = installed`; hold is Epic 51's hold (until Start; there is no restart route). An admin's disable also sets **keep off** for the plugin id (§6.3): no update, restore or reinstall turns it back on; only an admin does. |
-| **Update** | the new version installs beside the old one, grants are compared (more → *Waiting* `grants_needed`), the old version drains, the `current` pointer switches, stage versions decide what reruns. The previous version is kept for rollback. |
+| **Install** | verify signatures and revocation (§6.3) → validate manifest → check the flow against the manifest and the combined graph of every enabled plugin (§4.12; a cycle refuses the install with its path) → audit the component's imports against its capabilities → AOT-compile (`.cwasm`, cached) → the supervisor unpacks to `<state>/plugins/<id>/<version>_<sha12>/` and writes `current` (54.38) → grants dialog → `want = installed` |
+| **Enable** | the flow check runs again over every enabled plugin plus this one, and a change that would close a cycle is refused (`409 plugin_flow_cycle`, the path in English and Arabic); missing upstreams are listed, not refused. Then `want = enabled`. The plugin loader adds its stages and edges at the next graph sync (≤ 2 s via `NOTIFY`), `job_stages` rows appear with `extension = 'plugin:<id>'`, workers claim. Existing items are *not* back-filled unless the admin ticks "Run on my existing library" (a catch-up, Epic 51 §4.5). |
+| **Disable / hold** | Epic 51 §4.5: stop claiming ≤ 2 s, drain ≤ the plugin's `timeout_s` (capped at 120 s), force-pause the rest, keep the queue, don't feed. Disabling a plugin that others depend on first shows which downstream plugins and stages go idle (§4.12). Disable is `want = installed`; hold is Epic 51's hold (until Start; there is no restart route). An admin's disable also sets **keep off** for the plugin id (§6.3): no update, restore or reinstall turns it back on; only an admin does. |
+| **Update** | the flow check runs over the new version's flow and every enabled plugin (an upstream's update re-checks its subscribers too), the new version installs beside the old one, grants are compared (more → *Waiting* `grants_needed`), the old version drains, the `current` pointer switches, stage versions decide what reruns. The previous version is kept for rollback. |
 | **Rollback** | switch back to the kept version. Refused when the kept version's `data_version` is lower than the data's, unless the admin chooses "roll back and clear this plugin's data". |
 | **Uninstall** | `want = absent`: drain, remove stages (their queued jobs are deleted, the only time jobs are dropped, and the dialog says how many), delete files. Data, attributed writes and settings are kept unless "Also remove what it wrote" (purge, Epic 51 §4.7; Epic 51's `DELETE …?purge=true` resets `rules.*` sections only, and 54.07 extends it to the plugin's data and writes): purge deletes `plugin_data`, artifacts, and reverts attributed writes it made that no one changed since. |
 
 The plugin host itself is a first-party component, `plugins.host`, in the Full and Core
 bundles, whose process runs only on demand: while at least one plugin is enabled and passes
-its gates (54.37 §4). A home without plugins runs no extra process. An admin can switch
+its gates (54.37 §4), on each machine where an enabled plugin's placement fits (§4.13). Every
+action above is the home's; joined machines follow it, and report their own status per
+plugin (Epic 51's lifecycle per machine, story 54.42). A home without plugins runs no extra process. An admin can switch
 `plugins.host` off as a master switch for all third-party code.
 
 ### 4.9 Crash isolation, health and logs
@@ -359,7 +434,9 @@ its gates (54.37 §4). A home without plugins runs no extra process. An admin ca
   Epic 40's table (`engine/failure_classes.py`): `plugin_trap` and `plugin_timeout` are
   `transient` (one retry; plugin stages have `max_attempts = 2`); `plugin_memory`,
   `plugin_capability`, `plugin_scope` and `plugin_quota` are `item_permanent`; a held or revoked
-  plugin is `dependency:plugin`, so its jobs wait without spending attempts.
+  plugin is `dependency:plugin`, so its jobs wait without spending attempts. A job whose
+  request or event would loop is `plugin_loop` (`item_permanent`, §4.12): it is not retried,
+  and the subject's next real change runs the stage again.
 - **A circuit breaker** holds a plugin after 5 traps in 10 minutes or more than 50 % failures
   over the last 20 jobs, and tells admins. The API sets the Epic 51 hold
   (`hold_by = "plugin-breaker"`); Epic 51 holds carry no reason, so the runner reports the
@@ -378,6 +455,11 @@ its gates (54.37 §4). A home without plugins runs no extra process. An admin ca
 - **Web, admin only:** Settings → **Plugins**, with *Installed* (status, grants, libraries,
   settings, logs, update, roll back, disable, remove, "what it wrote") and *Browse* (the store
   catalog for this server version, story 54.18), plus *Install from a file*.
+- **The flow chart** (story 54.41): the install and approve screen draws the plugin's flow,
+  the whole set with this plugin highlighted and missing members named, before the admin
+  enables it; the Plugins page draws the whole home's plugin graph with the open plugin
+  highlighted; the store listing and review draw the flow (Phase 2). It is drawn by
+  Maktaba's own code from the normalised graph, never from plugin markup.
 - **Settings pages** are forms generated from the plugin's JSON schema by the web's existing
   schema form code (the one that draws `rules.*` sections). No secret fields: a plugin with no
   internet has nothing to sign in to.
@@ -415,6 +497,181 @@ says plainly where it does not:
 | Clients | `GET /api/capabilities` (nine fixed `features`), `capabilities_changed` on `/ws/home`, `409 component_off` | one more feature, `plugin_panels` (54.20) |
 | Bundles | `bundles` per component (`full`, `core`, `worker`), `GET /api/components/bundles`, `POST /api/components/bundle` | nothing; no bundle turns a third-party plugin on |
 | Kill switch | `[components] reconcile = "off"` in `server.toml` | the same switch stops plugin runners acting |
+
+### 4.12 Flows: the declared graph is the configuration
+
+Decided 2026-11-06. A plugin wires into the queue only through the graph it declares. There
+is no other wiring: no edge, request or event outside the declared graph is ever made, and
+the API, the loader and the pipeline each refuse one.
+
+**A flow is a submitted, versioned, signed document that describes a set of plugins.** It is
+`flow.toml`, at the root of every package of the flow, byte-identical in each, listed in each
+package's `files.json` (so both signatures cover it, §6.3). A developer, or a publisher with
+several plugins that work together, writes one flow for the set; a single plugin is the
+trivial flow of one plugin. The flow names:
+
+- every member plugin, by id and version range;
+- every member's stages, and for each stage what triggers it, what it emits and what it may
+  request;
+- the core events each stage attaches to;
+- the events each member publishes, with their subject and payload schema;
+- who subscribes to what.
+
+```toml
+# flow.toml (story 54.39 lists every field and its limits)
+schema  = 1
+id      = "dev.example.chapters"                # under the developer's verified prefix
+version = "1.2.0"                               # semver; a new version for any change
+
+[strings]                                       # keys into each member's i18n files
+name    = "flow.name"
+
+[[plugin]]
+id      = "dev.example.silences"
+version = ">=1.4.0, <2.0.0"
+
+  [[plugin.stage]]
+  name        = "find_silences"
+  subject     = "video"
+  triggers    = ["audio.ready"]                 # a core event (§4.2)
+  emits       = ["silences.found"]
+  may_request = []
+
+  [[plugin.event]]
+  name    = "silences.found"                    # published as plugin:dev.example.silences/silences.found
+  subject = "video"
+  payload = "events/silences.found.schema.json" # in this member's package
+
+[[plugin]]
+id      = "dev.example.chapter-writer"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name        = "write_chapters"
+  subject     = "video"
+  triggers    = ["plugin:dev.example.silences/silences.found"]
+  may_request = ["tidy"]
+
+  [[plugin.stage]]
+  name     = "tidy"
+  subject  = "video"
+  triggers = ["stage:write_chapters"]           # after another of its own stages
+```
+
+A trigger is one of three forms, and nothing else parses:
+
+| Form | Means | Example |
+|---|---|---|
+| a core event | after the stable core event of §4.2 | `audio.ready` |
+| `stage:<name>` | after another stage of the same plugin, when its output changed | `stage:write_chapters` |
+| `plugin:<id>/<event>` | when plugin `<id>` publishes `<event>` | `plugin:dev.example.silences/silences.found` |
+
+**The manifest carries each plugin's own part of the flow, and must match it exactly.** Each
+`[[stage]]` keeps `[[stage.trigger]]` (now with `event`, `stage` or a published event) and
+`may_request`, and gains `emits`; `[[event]]` declares what the plugin publishes; `[[depends]]`
+names each other plugin whose events it subscribes to (id and version range), so a missing
+or disabled upstream is shown, never a silent break; `placement` says where it may run
+(§4.13). The checker projects each manifest onto its flow member (stages and their subjects,
+triggers, emits, requests, events and their payload schemas, dependencies) and refuses any difference with
+`flow_manifest_mismatch`. A package with no `flow.toml` (one built before flows) is read as
+the trivial flow of its manifest; the store requires `flow.toml` in every submission.
+
+**The rules a flow must keep** (the same rules wherever it is checked, codes in story 54.39):
+
+1. **Leaves after core.** Third-party stages attach only after core events. No edge, request
+   or event from a third-party stage reaches a core stage, and no core stage waits on, reads
+   the output hash of, or is fed by a third-party stage. A trigger, `stage:` reference or
+   `may_request` that names a core stage or another plugin's stage is refused
+   (`flow_core_edge`, `flow_foreign_stage`). This protects the core pipeline: a plugin can
+   never sit before or between core stages. First-party plugins (§15) are core, not leaves.
+2. **Cross-plugin only through published events.** A plugin triggers another plugin's work
+   only by publishing an event the other subscribes to, never by naming another plugin's
+   stage. The subscriber needs the grant `events.subscribe:<publisher id>`, approved by the
+   admin (§4.5). Every event's payload is checked against the publisher's declared schema
+   (the JSON Schema subset of settings, ≤ 16 KB) when it is emitted.
+3. **No cycles.** The combined graph (core events, every stage, every published event, and
+   the edges between them) has no cycle, self-loops included. A refusal names the cycle as
+   a path, in English and Arabic: `dev.example.a/tag → plugin:dev.example.a/tagged →
+   dev.example.b/check → plugin:dev.example.b/checked → dev.example.a/tag`.
+4. **Within the hop cap.** The longest path from a core event through plugin stages is at
+   most the lineage hop cap of §4.7 (16), so no declared chain is cut at run time.
+5. **Everything named exists.** Every event a trigger names is a core event or one a member,
+   or a plugin the flow depends on, publishes at a compatible version; subjects match.
+
+**One check, two places.** The check is one algorithm (Tarjan's strongly connected
+components over the combined graph, then the leaf, subject, hop and existence rules), built
+once in Go (`shared/plugins/pluginflow`, the home's API) and once in TypeScript
+(`tools/plugin-sdk/js/src/flow.ts`, used by the store's checks, the SDK and the web's chart),
+both tested against one corpus (`shared/plugins/testdata/flows/`: valid flows with their
+normalised graph, invalid ones with the code and the exact path each must name), the way
+54.01's manifest corpus is tested in four languages. It runs:
+
+- **at the store's verification step** (story 54.16, C12, Phase 2), over the submitted flow
+  plus every plugin it depends on at the newest compatible store version: a submission that
+  fails is refused with the cycle path or the bad edge named, and review shows the drawn
+  chart;
+- **on the home, at install, enable and update, and when an upstream plugin is updated or
+  re-enabled,** over core events plus every enabled plugin plus the change: a home can
+  combine flows the store never saw together, and a file install skips the store. A change
+  that would close a cycle is refused (`409 plugin_flow_cycle`, with the path), and nothing
+  changes.
+
+**Missing and disabled upstreams.** A plugin whose `[[depends]]` names a plugin that is not
+installed, not enabled or at an incompatible version still installs and enables; the stages
+that subscribe to it are idle, shown on its chart as waiting for that plugin, and the Plugins
+page names what is missing. **Disabling a plugin that others depend on** asks first, naming
+the downstream plugins and stages that go idle.
+
+**The chart.** Maktaba draws the flow as a chart (story 54.41) from the same normalised graph
+the checker builds: core events on the left, plugin stages and published events after them,
+the plugin being looked at highlighted, missing members dashed. It is shown in the admin's
+install and approve screen before enabling, on the Plugins page (the whole home's plugin
+graph with this plugin highlighted), on the store listing and in review (Phase 2), and on
+maktaba.dev.
+
+**Run-time lineage, the second line.** A loop can still slip past the static check through
+data: a plugin writes a tag, a core stage reruns because its input changed, and the core
+event it fires starts the same plugin again. Every plugin job therefore carries its lineage:
+the origin (the core event, schedule or admin action that started the chain), a hop count,
+and the path of `(plugin stage, subject)` pairs it has passed through. A request or an
+emitted event extends the lineage; a plugin write stamps the subject with the writer's
+lineage for 10 minutes, and a plugin job started by a core event on that subject inside
+that time inherits it. A job whose lineage would pass the hop cap, or re-enter a
+`(plugin stage, subject)` already in its path, is refused: the call answers
+`call-error.scope` (API code `plugin_loop`), nothing is enqueued, and the job fails with its
+own cause, `plugin_loop` (Epic 40, `item_permanent`, with a label and help in English and
+Arabic, story 54.40).
+
+### 4.13 Third-party plugins on joined machines
+
+Decided 2026-11-06: third-party plugins can run on joined machines, not only on the home
+(H12). The model is the one first-party plugins already use (§15.4, `placement:any`): every
+machine is a full Maktaba, so every machine can serve the plugin API itself.
+
+- **The home stays where plugins are installed and approved.** Install, grants, settings,
+  keep-off, the flow check and the store's revocation list are the home's. Grants stay
+  home-defined; a machine never grants anything.
+- **Placement is in the manifest:** `placement = "home"` (the default), `"any"`, or a machine
+  capability such as `"gpu"`, with the meaning core placement has (a `gpu` stage runs only on
+  machines that serve the `gpu` pool). The plugin catalog entry (54.37) carries it.
+- **Distribution.** The home offers each enabled plugin's signed package to every machine
+  whose placement fits, over the cluster channel (Epic 35). Each machine verifies the
+  package before it unpacks it: against Phase 2's trust root when the package carries a
+  store signature (§6.3), otherwise against the home's own signature, which the home makes
+  over `files.json` at install with its cluster identity key. A package that fails is never
+  unpacked, and the machine reports it.
+- **Running.** Each machine runs its own `maktaba-plugind` under the same OS sandbox (§5.3),
+  as Epic 51's `plugins.host` component per machine, on demand. Each machine's Go API serves
+  the plugin API on its own unix socket, mints the tokens for its own jobs from the home's
+  grants (read from its copy of the database, and refused when the copy is older than the
+  grants' generation), and opens media through local handles (the share-path mapping of
+  Epic 35). Plugin stages are claimed per pool on that machine, as core stages are.
+- **Logs and health** go to the home through Epic 53's channels (`service = plugin.<id>`, the
+  machine's name), and each machine reports its own `component_status` row for
+  `plugin.<id>` (Epic 51's lifecycle per machine).
+- **Off reaches every machine.** Turning a plugin off, holding it, a revocation `disable` or
+  an uninstall stops claiming on every machine within the same ≤ 2 s (N9) and ends its tokens;
+  an uninstall removes the files there too.
 
 ## 5. The "no internet" guarantee
 
@@ -677,7 +934,7 @@ records and refunds owned by the store.
 |---|---|
 | F1 | A plugin package is one `.mkplugin` (tar.zst) with a manifest validated by one shared schema; the manifest has id, version, plugin API version, Maktaba range, capabilities, resources, platforms, languages, stages, triggers, schedules, settings, panels and English + Arabic strings. |
 | F2 | Third-party plugin stages run in the queue like core stages: claimed from a `plugins` pool, retried, drained, parked and classified by Epic 40's rules. |
-| F3 | Plugins attach only to the stable events of §4.2, their own schedules, and their own stages. |
+| F3 | Plugins attach only to the stable core events of §4.2, their own schedules, their own stages, and events other plugins publish (§4.12); never to a core stage by name, never before or between core stages. |
 | F4 | Third-party plugin code runs only in `maktaba-plugind`, as a WebAssembly component with no sockets, HTTP, filesystem or process imports, under per-job memory, time and fuel limits. |
 | F5 | `maktaba-plugind` runs under the OS sandbox of §5.3 on macOS, Linux and Windows, or does not run. |
 | F6 | Every plugin API call is checked server-side for token, capability, subject and library scope, and quota; refusals are logged and counted. |
@@ -699,6 +956,13 @@ records and refunds owned by the store.
 | F22 | Each stage moves with a per-stage switch (`job_stages.impl`) that drains, flips and resumes without losing or rerunning a job, and flips back the same way. |
 | F23 | CI proves for every stage that the plugin writes the same rows and files, returns the same result and computes the same fingerprints as the in-process code, and that the graph assembled from manifests equals the golden graph. |
 | F24 | Each first-party plugin implements the stages of one existing Epic 51 component, which keeps its id and kind (§15.7); bundles, desired state and settings carry over unchanged. |
+| F25 | Every set of plugins that works together is described by one signed, versioned flow (`flow.toml`, in each member's package; one plugin is a flow of one) naming every member's stages, the core events they attach to, the events they publish and who subscribes to what. Each manifest matches its part of the flow exactly; nothing outside the declared graph is wired. |
+| F26 | Third-party stages are leaves after core: no edge, request or event from a third-party stage reaches a core stage, and no core stage waits on one; the schema, the flow check, the loader and the API each refuse a violation. |
+| F27 | A plugin triggers another plugin only through an event the publisher declares, with a payload checked against its declared schema; the subscriber needs `events.subscribe:<id>`, approved by the admin; a missing or disabled upstream is shown, never a silent break. |
+| F28 | One cycle check (strongly connected components over core events, plugin stages and published events, plus the leaf, subject, hop and existence rules), built in Go and TypeScript against one corpus, runs at the store's verification (54.16 C12) and on the home at install, enable, update, and an upstream's update or re-enable; a refusal names the cycle path or the bad edge in English and Arabic. |
+| F29 | Every plugin job carries its lineage (origin, hops, path); a request or event that would pass 16 hops or re-enter a `(plugin stage, subject)` in it is refused, and the job fails with `plugin_loop`, labelled and explained in English and Arabic. |
+| F30 | Maktaba draws each flow as a chart on the install and approve screen, on the Plugins page (the whole home's plugin graph, this plugin highlighted), on the store listing and in review, and on maktaba.dev; installing one plugin of a flow shows which other members are missing. |
+| F31 | A third-party plugin whose placement allows it (`any`, or a machine capability such as `gpu`) runs on joined machines: the home installs and approves and distributes the signed package; each machine verifies it, runs its own sandboxed host and plugin API, mints tokens for its own jobs from the home's grants, and reports logs and health to the home; turning the plugin off or revoking it reaches every machine. |
 
 ### 7.2 Non-functional: the numbers
 
@@ -725,6 +989,9 @@ records and refunds owned by the store.
 | N19 | Fingerprints for 1,000 subjects in one propagate | ≤ 1.5× the in-process time | `plugins-parity` bench step |
 | N20 | Extra memory of the runners on a Full home, idle, vs today's workers | ≤ 300 MB RSS | bundle-size footprint step (Epic 51) |
 | N21 | Stage flip (drain, set, resume) | ≤ the stage's grace + 2 s; 0 lost jobs and 0 reruns over 100 flips under load | `components-chaos` |
+| N22 | The flow check over a home's combined graph | ≤ 50 ms for 100 plugins of 20 stages each, in Go and in TypeScript | Go benchmark and a vitest bench on a generated graph |
+| N23 | Lineage on a plugin job (read at mint, check at each request or event) | ≤ 1 ms added to N1 and N4 | Go benchmark |
+| N24 | An enabled plugin running on a joined machine | ≤ 60 s from enable on the home to the machine claiming its jobs; off reaches the machine in ≤ 2 s (N9) | `plugins-e2e`, home plus one joined machine |
 
 ### 7.3 What must not change
 
@@ -746,7 +1013,10 @@ records and refunds owned by the store.
   host and its sandbox with CI proof, the plugin API with capabilities, media handles, plugin
   stages, Epic 51 lifecycle, grants, crash isolation and logs, install from a file (unreviewed
   opt-in), settings as data, the SDK and harness, the admin Plugins page. After Phase 1 the
-  owner and developers can write, install and run plugins; nothing is distributed.
+  owner and developers can write, install and run plugins; nothing is distributed. Added on
+  2026-11-06 (54.39–54.42): flows and the graph checks, published events with cross-plugin
+  triggers and run-time lineage, the flow chart, and plugins on joined machines; the store's
+  side of flows (54.16 C12, the listing's chart in 54.18) is Phase 2's.
 - **Phase 2: store, signing and review** (54.14–54.18). Trust root and signatures, the store
   service and developer console, automated checks and review, the home's catalog with updates
   and the kill switch, the store browser, listing pages, ratings and reports.
@@ -771,10 +1041,10 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | T2 | **…through Maktaba's own networked parts** (writes data that Plex sync, the cloud relay, telemetry or a problem report then carries out) | Every plugin write is attributed. First-party exporters (Plex collections, telemetry, problem reports to Maktaba, the cloud's metadata cache) skip `origin = plugin:*` fields and `plugin_data` unless an admin turns on "share with Plex" per plugin. Problem reports never include plugin data or logs unless the admin ticks them (Epic 53.15). |
 | T3 | **…through files on disk** (subtitle files written next to videos on a NAS that syncs to the cloud) | Only `subtitles.write` writes next to media; content is parsed as WebVTT/SRT and re-serialised by Maktaba (no arbitrary bytes), ≤ 4 MB, names chosen by Maktaba. Other artifacts live under `<data>/plugins/`. Documented: the owner's own sync of media folders is outside Maktaba. |
 | T4 | **…through the apps** (a panel or string that makes an app fetch a URL: a beacon) | Panels and strings are plain text; URLs, HTML and markdown links are refused by the API and again by each app's renderer; images only as home-served artifacts; CI test in every app. **Panels are shown to everyone in the home, viewers included, once the plugin is installed, with no separate viewer approval** (decided 2026-11-03). The guard is the store review (a person reviews every first submission and every version that adds a panel) plus the read-only, data-only panel schema; the admin can still disable or uninstall the plugin at any time, and viewers see panels only on subjects their library access allows. |
-| T5 | **…through another plugin** (collusion: one reads, another leaks) | No plugin can leak (T1–T4), and cross-plugin reads need `plugin-data.read:<id>` granted by the admin and an explicit export by the other plugin. |
+| T5 | **…through another plugin** (collusion: one reads, another leaks) | No plugin can leak (T1–T4), and cross-plugin reads need `plugin-data.read:<id>` granted by the admin and an explicit export by the other plugin. A subscription to another plugin's events needs `events.subscribe:<id>`, granted by the admin, and carries only the payload the publisher declared, checked against its schema (§4.12). |
 | T6 | **Reading more than granted** | Server-side scope checks per call; tokens bound to job, subject, libraries, grant generation, expiry; the guest never holds the token. Role tests and capability tests for every interface. |
 | T7 | **Escaping Wasm** (a Wasmtime bug) | The OS sandbox still denies network and files; Wasmtime pinned and patched within 14 days of an advisory; fuzzing of host functions (`cargo fuzz`) in nightly CI. |
-| T8 | **Denial of service** (CPU, memory, disk, queue flooding, log flooding) | §4.7 limits; per-plugin concurrency; the `plugins` pool; enqueue only to own stages and rate-limited (1,000 requests per job); circuit breaker; Epic 53 log rate limits. |
+| T8 | **Denial of service** (CPU, memory, disk, queue flooding, log flooding) | §4.7 limits; per-plugin concurrency; the `plugins` pool; enqueue only to own stages and rate-limited (1,000 requests and events per job); circuit breaker; Epic 53 log rate limits. |
 | T9 | **Supply chain: a tampered package** (CDN, mirror, USB stick) | Two signatures over `files.json`; every file's sha256 checked before unpack; unpack refuses absolute paths, `..`, links and devices (as Epic 51 §6.4). |
 | T10 | **Supply chain: a stolen developer key or a hijacked account** | MFA to publish, re-auth for key changes and submissions, passkeys for reviewers and store admins, a 7-day hold on MFA resets; key revocation; store countersignature after checks; new capability → human review; revocation list. |
 | T11 | **Supply chain: a stolen store key** | Root keys offline (two, either can rotate); online keys short-lived; anti-rollback; the server refuses a `store-keys.json` not signed by the embedded root. |
@@ -784,6 +1054,9 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | T15 | **Privacy of the home** | The store learns: the store's own home id (only when the home is linked to a store account; unrelated to any cloud home id), server version and platform for compatibility, and which plugins were downloaded. It never learns libraries, titles, plugin outputs or logs. Install counts shown on listings are aggregated. Ratings are tied to a store account, shown with a display name only. |
 | T16 | **A third-party package claims first-party rights** (`[trusted]`, a `tv.maktaba.*` id, an exact core stage name) | `[trusted]` counts only when the package's digest is in the running release's Sigstore-verified `checksums.txt` and its version equals the server's; the store refuses such submissions (54.16 C3); the `tv.maktaba.` prefix and core stage names are reserved; CI test per refusal path (54.22). |
 | T17 | **A first-party plugin bug writes outside its job** (wrong subject, wrong table) | Named statements only, registered from the signed package; scope arguments bound by the API from the token; a per-plugin Postgres role with grants on the manifest's tables only; per-plugin CI tests of each refusal (§15.10). |
+| T19 | **A loop of plugins floods the queue** (a cycle across two or three plugins, or a loop through data: a write reruns a core stage whose event starts the writer again) | Cycles in the declared graph are refused at the store and at every install, enable and update (§4.12); at run time each job's lineage caps the chain at 16 hops and refuses re-entering a `(plugin stage, subject)`, including through a plugin write within 10 minutes; `plugin_loop` fails the job without a retry. Hostile tests per path (54.40). |
+| T20 | **A plugin reaches into the core pipeline** (an edge to a core stage, a request to one, a stage a core stage waits on) | The leaf rule in the schema, the flow check, the loader's graph assertion and the API's `may_request` and `emits` checks; first-party rights only with `[trusted]` (T16). |
+| T21 | **A tampered package on a joined machine** (a machine fed a different package, or one that missed a revocation) | Each machine verifies the store's or the home's signature over `files.json` and every file's sha256 before unpacking; tokens are minted only for plugins the home's rows enable at a grants generation the machine has; off, hold, revocation and uninstall reach every machine in ≤ 2 s and end its tokens. |
 | T18 | **A first-party runner is compromised** (a malicious file parsed by ffmpeg, a hostile page fetched by yt-dlp) | The runner has no database login and no secrets; its OS sandbox allows only its declared files, tools and (for `net` groups) network; secrets-bearing services only through the service door; the API checks every call it makes. |
 
 ## 10. Plex, Jellyfin, Home Assistant and Maktaba
@@ -809,12 +1082,16 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | H4 | **The pipeline keeps the queue; the host only runs jobs; the API only answers calls.** | *The host claims jobs itself*: it would need a database login and copy Epic 40's claim and failure logic. *Plugins call the API over HTTP*: needs sockets inside the sandbox. |
 | H5 | **Plugin API calls go over a unix socket with a per-job token the guest never sees.** | *A TCP port on loopback*: reachable by anything on the box, and needs loopback networking in the sandbox. *Long-lived plugin API keys*: a leaked key would work forever. |
 | H6 | **Capabilities are fixed, named, and granted by the admin, with library scope; updates asking for more wait.** | *All or nothing* (Jellyfin, Nextcloud): no informed consent. *Silent auto-grant on update*: the classic store-hijack path. |
-| H7 | **Plugins follow stable events, not internal stage names.** | *Edges from any stage*: every Maktaba release could break every plugin (Jellyfin's ABI churn). |
+| H7 | **Plugins follow stable core events, not internal stage names; plugins add their own published events on top.** Core events stay the contract for every plugin. | *Edges from any stage*: every Maktaba release could break every plugin (Jellyfin's ABI churn). *Subscribing to another plugin's stage names*: the same churn between plugin versions, so cross-plugin triggers go through published events only. |
 | H8 | **No secrets and no network means no settings secrets.** | *Secret fields like built-in extensions*: nothing to sign in to; a secret field would only be a place to hide exfiltrated data. |
 | H9 | **Store signing uses its own keys (offline root + online keys), not the release Sigstore identity.** | *Reuse Epic 51's release identity*: it means "built by Maktaba's release workflow from Maktaba's commit", which a third-party plugin is not; the store signs outside GitHub Actions. *Sigstore keyless for developers*: ties developers to an OIDC provider and makes offline verification of a developer's identity need Rekor; Ed25519 keys are simpler for an offline home. |
 | H10 | **Revocation `disable` cannot be undone; an admin's own "keep off" sticks through updates, restores and reinstalls; an expired revocation list warns but does not stop plugins.** | *Admin override of everything*: a known-malware plugin would keep running. *Keep-off on the install row*: a reinstall or a restore would silently turn back on a plugin the admin switched off. *Expired list stops plugins*: a store or network outage would switch off every plugin in every home. |
 | H11 | **Unreviewed install is allowed, off by default, behind a re-authenticated admin opt-in, and marked everywhere.** | *Never allow it*: kills development, offline sharing and private plugins; the sandbox does not depend on review. *Allow silently*: Obsidian learned to start in Restricted Mode. |
-| H12 | **Third-party plugin stages run on the home only in this epic** (first-party ones keep their placement, §15.4). | *Any machine*: each node would need its own host, plugin API endpoint and token minting, and media handles across machines. Later, on the same model. |
+| H12 | **Third-party plugins can run on joined machines** (decided 2026-11-06): the home installs, approves and distributes the signed package; each machine whose placement fits verifies it, runs its own sandboxed host, serves the plugin API on its own socket and mints tokens for its own jobs from the home's grants, as first-party plugins do (§4.13, §15.4). | *Home only* (the first draft): a GPU or a faster machine on the LAN could not help, and every plugin job queued behind the home. *A plugin API on the home reached over the LAN*: tokens and calls would cross the network, against H5. *Grants per machine*: two places to approve and a machine an admin forgot. |
+| H24 | **Third-party stages are leaves after core stages.** | *Plugins anywhere in the graph*: one plugin before or between core stages could stall or corrupt every library, and a plugin release would change what core computes. |
+| H25 | **The flow is the configuration: one signed document per set of plugins, checked at the store and again on the home, by one algorithm in Go and TypeScript on one corpus.** | *Wiring from code at run time*: no one could see or check the graph before it runs. *A per-plugin graph only*: a publisher's plugins could not be reviewed as a whole. *Store-only checks*: a home combines flows the store never saw together, and file installs skip the store. *Two hand-kept checkers with no shared corpus*: they would drift. |
+| H26 | **Loops are refused twice: statically on the declared graph, and at run time by each job's lineage.** | *Static only*: a loop through data (a write that reruns a core stage) is invisible in the declared graph. *Run time only*: the admin would learn about a cycle from a flooded queue, after enabling. *A time-to-live alone*: lets a cycle run 16 times on every subject before stopping it. |
+| H18 | **First-party plugins move with the server version
 | H13 | **Heavy compute is a host service, not plugin code.** | *Let plugins bring ML runtimes*: impossible in Wasm today (no NumPy/torch), huge packages, and duplicates what Maktaba already runs. |
 | H14 | **85/15 split; payment providers are pluggable (several at once, per country and currency); payouts and the ledger are provider-neutral.** | *70/30*: high for a small ecosystem. *No paid plugins*: paid plugins are a requirement; developers need a reason to maintain plugins (Plex's lesson). *Choosing one seller of record*: many restrict resale of third-party products, and no one provider serves every region and currency well; each provider needs written confirmation first. |
 | H15 | **English and Arabic strings are required for store listing.** | *English only*: the product is Arabic-first; a plugin that can't name itself in Arabic would show English in an RTL UI. Developers may use machine translation; the listing says so (decided 2026-11-03). |
@@ -869,6 +1146,10 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | 54.36 | [Wave 9: the core stages, and removing the in-process path](story-54-36-wave9-core.md) | 4 | 54.35 |
 | 54.37 | [The component catalog takes plugin entries](story-54-37-catalog-plugin-entries.md) | 1 | 54.01, Epic 51 (51.01, 51.02, 51.04, 51.05, 51.06, 51.08, 51.09) |
 | 54.38 | [Plugin files on disk, on Epic 51's packs code](story-54-38-plugin-files.md) | 1 | 54.01, 54.37, Epic 51 (51.15, 51.16) |
+| 54.39 | [Flows: the declared graph, the leaf rule and the cycle check](story-54-39-flows.md) | 1 | 54.01, 54.06, 54.07 |
+| 54.40 | [Published events, cross-plugin triggers and run-time lineage](story-54-40-events-lineage.md) | 1 | 54.04, 54.06, 54.08, 54.39 |
+| 54.41 | [The flow chart](story-54-41-flow-chart.md) | 1 | 54.13, 54.39 |
+| 54.42 | [Third-party plugins on joined machines](story-54-42-joined-machines.md) | 1 | 54.07, 54.09, 54.37, 54.38, 54.40, Epic 35, Epic 53 |
 
 54.37 and 54.38 cover what Epic 51 does not provide: its catalog is fixed per release with no
 run-time entries, and its packs code installs only first-party `asset` packs verified against
@@ -953,6 +1234,19 @@ graph LR
   S33 --> S34[54.34 wave 7]
   S34 --> S35[54.35 wave 8]
   S35 --> S36[54.36 wave 9]
+  S01 --> S39[54.39 flows]
+  S06 --> S39
+  S07 --> S39
+  S39 --> S40[54.40 events + lineage]
+  S04 --> S40
+  S08 --> S40
+  S39 --> S41[54.41 flow chart]
+  S13 --> S41
+  S40 --> S42[54.42 joined machines]
+  S37 --> S42
+  S38 --> S42
+  S39 --> S16
+  S41 --> S18
 ```
 
 **Parallel tracks.** 54.01 first. Then 54.02, 54.04, 54.14 and 54.37 in parallel (Rust host,
@@ -960,7 +1254,9 @@ Go API, signing library, the catalog's plugin entries); 54.38 follows 54.37. Aft
 store track (54.15, 54.16) can start once 54.14 lands, alongside the rest of Phase 1. The
 first-party track (Phase 4) starts with 54.22 after 54.01; 54.23 and 54.24 run in parallel
 (Python runner, Go registry); 54.27 can run alongside them. The waves are serial on purpose:
-each needs the previous one green in a tagged release.
+each needs the previous one green in a tagged release. The flow track (54.39 to 54.42) is
+serial: the graph and its checks, then events and lineage, then the chart, then joined
+machines; the store's flow check (54.16 C12) uses 54.39's TypeScript checker and corpus.
 
 ## 13. CI added by this epic
 
@@ -976,6 +1272,8 @@ each needs the previous one green in a tagged release.
 | `catalog` (Epic 51, `.github/workflows/_lint.yml`) | as Epic 51 | the twelve plugin reason codes and the `plugin_panels` feature have English and Arabic; no static `plugin` entry; each first-party `stages` list equals its manifest (54.27) |
 | `plugins-parity` (§15.8) | PRs touching `plugins/first-party/`, `plugins/sdk/python/`, the runner, the statement registry or `pipeline/src/maktaba_pipeline/engine/`; nightly for all stages | each migrated stage writes the same rows and files, returns the same result and fingerprints as in-process; N16, N17, N19 |
 | `graph-golden` | PRs touching a first-party manifest or `engine/graph.py` | the graph from manifests equals `shared/plugins/graph.golden.json` |
+| `plugins-flow` (in `plugins-api` and the SDK's unit job) | PRs touching `shared/plugins/`, `tools/plugin-sdk/`, `api/internal/plugins/` | the Go and TypeScript flow checkers give the same answer, code and cycle path on every case of `shared/plugins/testdata/flows/`; N22 |
+| `plugins-e2e` (gains) | as above | a two-plugin chain (A's event starts B); hostile flows refused at install and enable; a loop through data stopped by lineage; plugin A on the home triggering plugin B on a joined machine |
 | `plugins-trusted` | PRs touching `shared/plugins/`, the runner, `api/internal/plugins/` | every refusal of §15.6 and §15.10: unsigned `[trusted]`, wrong version, unregistered statement, forged scope argument, table outside the role |
 | `fp-<name>` (one per first-party plugin) | PRs touching that plugin's folder, `_lib`, the SDK or the runner | its unit, contract and parity tests |
 | update-rehearsal scenario 15 | gates every tag | an installed plugin survives a server update and a rollback; an incompatible one goes *Waiting* `incompatible`, not *Failed* |
@@ -1023,6 +1321,19 @@ Items 1–9 are decided. Open: the email provider (item 10) and the isolated che
 11. **Isolated check runner: open, after a spike.** Cloudflare Containers if its limits and
     maturity fit and the plugin sandbox profile applies inside it; otherwise a CI runner job
     with no secrets and no network (story 54.16 §1).
+
+### Decisions of 2026-11-06: flows, events, loops and machines
+
+12. **Third-party plugins run on joined machines** (H12, §4.13). The home installs and
+    approves; machines whose placement fits run them under the same sandbox.
+13. **Third-party stages are leaves after core stages** (H24). Core events (H7) stay the
+    contract.
+14. **Plugins can trigger other plugins**, through published events only (§4.12).
+15. **Loops are detected at two levels**: statically at the store's verification and at every
+    install, enable and update; at run time by each job's lineage (H26).
+16. **The graph is the configuration**: a signed `flow.toml` per set of plugins, matched
+    exactly by each manifest, checked by one algorithm in two places, drawn as a chart on the
+    install screen, the Plugins page, the store listing and maktaba.dev (H25).
 
 ## 15. Maktaba's own stages as first-party plugins
 
@@ -1154,7 +1465,7 @@ refuses any submission that declares one, 54.16 C3):
 | `net:<host,…>` | outbound network to the listed hosts | the sandbox denies all network to a runner group with no `net`; for groups with `net`, the list is enforced in CI (§15.9) by a recording proxy and logged at run time (OS sandboxes filter by address, not name) |
 | `service:<name>` | call Plex or dizqueTV through the home's service door (story 31.R), which adds the secret | API; the plugin never sees the token or the address of a secret-bearing service |
 | `graph.internal` | keep its exact stage names (no `p_<hash>_` prefix), use any core pool, wire edges from other first-party stages by name, and use every `StageDef` field (§15.5) | graph build; the CI golden graph (§15.8) |
-| `placement:any` | run on cluster machines, not only the home | each machine's own Go API serves the plugin API on its unix socket (every machine is a full Maktaba since Epic 35), with that machine's database role, which is a member of the plugin roles |
+| `placement:any` | run on cluster machines, not only the home | each machine's own Go API serves the plugin API on its unix socket (every machine is a full Maktaba since Epic 35), with that machine's database role, which is a member of the plugin roles. Third-party plugins now run on machines too, by the manifest's `placement` and with packages the home distributes (§4.13); first-party packages ship with every machine's release |
 
 **Not a back door.** Every one of these is a manifest line, reviewed in the PR that adds it,
 signed with the release, shown on the Plugins page under the plugin ("What Maktaba's built-in
@@ -1420,3 +1731,52 @@ the migration that set `impl = plugin` is expand-only (an older release ignores 
 - **Tests per plugin.** Unit tests of its pure code; contract tests through the SDK harness with
   a fake API that serves its statements against a test Postgres under its role; parity
   (§15.8); and its stages in `plugins-e2e` with the real runner and API.
+
+### 15.12 Decisions taken while building the foundation (2026-11-06)
+
+These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
+
+- **Statement text stays in the moved code; only names cross the wire.** A moved stage keeps
+  the pipeline's database interface (`db.fetch(text, $1…)`, `db.execute`, `db.transaction()`),
+  so the same code runs in the worker (`inproc`) and in the runner (`plugin`), and the parity
+  proof compares two paths of one code base. In the runner, `StatementDB` looks each text up in
+  the plugin's `queries/*.sql` and sends the plugin API only the statement's name and its
+  arguments; the API runs the text it registered from the release. A text the plugin did not
+  register never leaves the runner: that one job runs in the worker instead, and the parity
+  job fails on any such fallback. `tools/plugins/statements_build.py` writes `queries/` from the
+  code's own statements (the AST of the plugin and of the shared modules its `statements.toml`
+  lists) and checks each statement's tables, mode and scope from its parse tree.
+- **Scope is checked, not bound.** A statement's header names the argument its scope checks
+  (`scope: subject $2`, `library $1`, `settings $1`, or `catalog`); the API compares that
+  argument with the job's token (a video of another library, another library, a settings
+  section the manifest does not list: `403 plugin_scope`). Reserved parameter names bound by
+  the API would have meant rewriting every moved statement.
+- **The API holds a plugin's transactions.** Besides one statement in its own transaction,
+  the plugin API opens a transaction for an invocation (`trusted/tx`: begin, savepoints,
+  commit, rollback), under the plugin's role and `maktaba.origin`, so moved code keeps its
+  `async with db.transaction()` blocks unchanged. An idle transaction is rolled back after two
+  minutes, and an ended invocation's on the spot.
+- **The plugin path is Postgres on macOS and Linux.** The statements run under a Postgres role,
+  and asyncio opens no unix socket on Windows. On a SQLite home, on Windows, or on any machine
+  whose runner does not serve the stage, a stage set to `plugin` runs in the worker, which
+  writes the same data; the per-stage switch is the same everywhere.
+- **Trust comes from the signed server binary and the signed pipeline wheel; per-plugin
+  packages are deferred.** The server embeds the bundle of first-party manifests, strings and
+  compiled statements (`shared/plugins/firstparty.json`), and the plugins' code ships inside the
+  pipeline wheel; both are release artifacts the release's Sigstore identity already signs and
+  every home already verifies. The runner checks its plugins' files against the wheel's
+  `RECORD` before it imports one, and the worker checks the runner's bundle digest against its
+  own. One signed artifact per kind keeps the homes' verification unchanged. Separate
+  `.mkplugin` packages per first-party plugin, with each `files.json` listed in
+  `checksums.txt`, need a change to the release workflow and its signing, so they wait for a
+  change of their own; `firstparty.CheckPackage` (the check of §15.6) is in place for them.
+- **The parity fixture is seeded at run time.** Each parity test seeds both databases with the
+  same deterministic Python seeding (fixed ids), so the fixture always follows the schema;
+  no `seed.sql` is committed. The runner runs in the test's process without its OS sandbox,
+  which has its own escape tests; the plugin API, its statements and its roles are the
+  release's (`api/tools/plugin-api-dev`).
+- **A core stage's name is not reserved.** A third-party stage's queue is always
+  `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
+  `tag`; refusing the name would only break existing plugins. The trusted-only keys and the
+  `dup_group` subject stay refused (`plugin_trusted_field`). `reserved_stages.txt` stays as
+  the golden graph's list of names.

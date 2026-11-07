@@ -59,3 +59,24 @@ func TestStorageCommand(t *testing.T) {
 		t.Errorf("same target: %v\n%s", err, out.String())
 	}
 }
+
+// Epic 54, story 54.25 §3: `maktaba-server stages impl` flips only a built-in plugin's
+// stage, to inproc or plugin; it refuses anything else before it touches the database.
+func TestStagesImplRefusesBeforeTheDatabase(t *testing.T) {
+	var out bytes.Buffer
+	if err := runStagesImpl(context.Background(), &out, nil, "promo_links", "wasm", 0); err == nil ||
+		!strings.Contains(err.Error(), "inproc or plugin") {
+		t.Fatalf("a bad impl: %v", err)
+	}
+	if err := runStagesImpl(context.Background(), &out, nil, "probe", "plugin", 0); err == nil ||
+		!strings.Contains(err.Error(), "not a built-in plugin's stage") {
+		t.Fatalf("a core stage: %v", err)
+	}
+	names := stageNamesOf("[[stage]]\nname = \"a\"\n[[stage]]\nname = \"b\"\n")
+	if strings.Join(names, ",") != "a,b" {
+		t.Fatalf("stages %v", names)
+	}
+	if newStagesCmd().Commands()[0].Name() != "impl" {
+		t.Fatal("stages impl")
+	}
+}

@@ -24,28 +24,31 @@ import (
 
 // Error codes (words in web/src/i18n/{en,ar}.json as plugins.error.<code>).
 const (
-	CodeInvalid                   = "manifest_invalid"
-	CodeUnknownKey                = "manifest_unknown_key"
-	CodeMissingKey                = "manifest_missing_key"
-	CodeSchemaNewer               = "manifest_schema_newer"
-	CodeReservedID                = "manifest_reserved_id"
-	CodeBadPlatform               = "manifest_bad_platform"
-	CodeBadRange                  = "manifest_bad_range"
-	CodeBadCapability             = "manifest_bad_capability"
-	CodeDuplicateCapability       = "manifest_duplicate_capability"
-	CodeDuplicateStage            = "manifest_duplicate_stage"
-	CodeBadRequest                = "manifest_bad_request"
-	CodeUnknownEvent              = "manifest_unknown_event"
-	CodeSubjectMismatch           = "manifest_subject_mismatch"
-	CodeBadSchedule               = "manifest_bad_schedule"
-	CodeMissingString             = "manifest_missing_string"
-	CodeStringTooLong             = "manifest_string_too_long"
-	CodeMissingFile               = "manifest_missing_file"
-	CodeBadSettings               = "manifest_bad_settings"
-	CodeNotTOML                   = "manifest_not_toml"
-	MaxNameCodePoints             = 40
-	MaxSummaryCodePoints          = 140
-	SchemaVersion           int64 = 1
+	CodeInvalid             = "manifest_invalid"
+	CodeUnknownKey          = "manifest_unknown_key"
+	CodeMissingKey          = "manifest_missing_key"
+	CodeSchemaNewer         = "manifest_schema_newer"
+	CodeReservedID          = "manifest_reserved_id"
+	CodeBadPlatform         = "manifest_bad_platform"
+	CodeBadRange            = "manifest_bad_range"
+	CodeBadCapability       = "manifest_bad_capability"
+	CodeDuplicateCapability = "manifest_duplicate_capability"
+	CodeDuplicateStage      = "manifest_duplicate_stage"
+	CodeBadRequest          = "manifest_bad_request"
+	CodeUnknownEvent        = "manifest_unknown_event"
+	CodeSubjectMismatch     = "manifest_subject_mismatch"
+	CodeBadSchedule         = "manifest_bad_schedule"
+	CodeMissingString       = "manifest_missing_string"
+	CodeStringTooLong       = "manifest_string_too_long"
+	CodeMissingFile         = "manifest_missing_file"
+	CodeBadSettings         = "manifest_bad_settings"
+	CodeNotTOML             = "manifest_not_toml"
+	// CodeTrustedField: a key, a stage name or a subject only Maktaba's own
+	// release-signed plugins may use (story 54.22 §1)
+	CodeTrustedField           = "plugin_trusted_field"
+	MaxNameCodePoints          = 40
+	MaxSummaryCodePoints       = 140
+	SchemaVersion        int64 = 1
 )
 
 // Error is one refusal: a code, where (a slash path into the manifest) and a detail
@@ -220,7 +223,17 @@ type Files func(path string) ([]byte, bool)
 
 // Validate parses and checks a manifest.toml. On success it answers the normalised
 // manifest (defaults filled); otherwise the refusals.
-func Validate(src []byte, files Files) (map[string]any, Errors) {
+func Validate(src []byte, files Files) (map[string]any, Errors) { return validate(src, files, false) }
+
+// ValidateTrusted checks the manifest of one of Maktaba's own first-party plugins (story
+// 54.22): the keys marked x-trusted-only are read, the id must be under tv.maktaba., and
+// its stages keep their exact names. Only manifests built into the release (the
+// firstparty package) are ever checked this way.
+func ValidateTrusted(src []byte, files Files) (map[string]any, Errors) {
+	return validate(src, files, true)
+}
+
+func validate(src []byte, files Files, trusted bool) (map[string]any, Errors) {
 	if err := load(); err != nil {
 		panic(err)
 	}
@@ -233,13 +246,13 @@ func Validate(src []byte, files Files) (map[string]any, Errors) {
 		return nil, Errors{{Code: CodeSchemaNewer, Path: "schema"}}
 	}
 	var errs []Error
-	schemaRoot.check(raw, "", "", &errs)
+	schemaRoot.check(raw, "", "", trusted, &errs)
 	if len(errs) > 0 {
 		return nil, errs
 	}
 	m := schemaRoot.fill(raw).(map[string]any)
 	m["maktaba"] = normaliseRange(m["maktaba"].(string))
-	errs = rules(m, files)
+	errs = rules(m, files, trusted)
 	if len(errs) > 0 {
 		return nil, errs
 	}

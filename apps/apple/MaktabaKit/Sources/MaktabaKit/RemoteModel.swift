@@ -23,6 +23,9 @@ public final class RemoteModel {
     /// an older home may not have one; the other screens are not held up by it.
     public private(set) var statusProblems: [StatusPart: String] = [:]
     public private(set) var loaded = false
+    /// How many error groups are new (the Errors row's badge, Epic 53 story 53.11); nil when
+    /// the home has no error groups (an older home) or its log index is down.
+    public private(set) var newErrors: Int?
     /// Why the last read or action did not work (nil once one works again).
     public var problem: String?
     /// What is under way: a group, a stage, a library, a machine, or "all".
@@ -86,6 +89,16 @@ public final class RemoteModel {
         }
         if let processes { self.processes = processes }
         if let running { self.running = running }
+        await loadNewErrors()
+    }
+
+    /// The number of new error groups, quietly: the Errors screen says why it can't read them.
+    public func loadNewErrors() async {
+        do {
+            newErrors = try await client.errorGroups(.open).filter { $0.status == "new" }.count
+        } catch {
+            if !Log.isCancellation(error) { newErrors = nil }
+        }
     }
 
     private func readPart<T>(_ part: StatusPart, _ f: @escaping () async throws -> T) async -> T? {

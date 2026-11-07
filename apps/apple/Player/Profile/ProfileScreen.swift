@@ -15,6 +15,7 @@ struct ProfileScreen: View {
     @State private var model: ProfileModel
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.dark
     @State private var confirmSignOut = false
+    @Environment(\.reportProblem) private var reportProblem
     /// The page shown in the first screen's place (nil: the first screen). The pages are not
     /// pushed: the section's stack holds `PlayerRoute`s only, and a view pushed beside them
     /// would be put under a video opened from it.
@@ -87,6 +88,7 @@ struct ProfileScreen: View {
         case .sessions: SessionsPage(model: model)
         case .playback: PlaybackPage()
         case .diagnostics: DiagnosticsPage()
+        case .myReports: MyReportsView(client: context.client)
         }
     }
 
@@ -175,6 +177,19 @@ struct ProfileScreen: View {
                 pageRow(.diagnostics, Text("Diagnostics", tableName: "Profile", comment: "The crash reports kept on this device"), "stethoscope")
             } header: {
                 sectionTitle(Text("Help and about", tableName: "Profile", comment: "A Profile group: help, versions, diagnostics"))
+            }
+
+            // Epic 53, after the rows above (they keep their place): crash reports to the home,
+            // off until the person turns them on (53.14); Report a problem and My reports (53.15)
+            Section {
+                CrashReportsToggle(session: context.session)
+                Button {
+                    reportProblem?()
+                } label: {
+                    row(Text(verbatim: ReportWords.title), "exclamationmark.bubble")
+                }
+                .accessibilityIdentifier("profile.reportProblem")
+                pageRow(.myReports, Text(verbatim: ReportWords.mine), "person.crop.rectangle.stack")
             }
         }
         .maktabaSurface()
@@ -329,7 +344,7 @@ enum ProfileLinks {
 
 /// The Profile's pages.
 enum ProfilePage: Hashable, Identifiable {
-    case history, favorites, playlists, sessions, playback, diagnostics
+    case history, favorites, playlists, sessions, playback, diagnostics, myReports
     case playlist(PlaylistSummary)
 
     var id: String {
@@ -340,6 +355,7 @@ enum ProfilePage: Hashable, Identifiable {
         case .sessions: "sessions"
         case .playback: "playback"
         case .diagnostics: "diagnostics"
+        case .myReports: "myReports"
         case let .playlist(p): "playlist.\(p.id)"
         }
     }
@@ -347,7 +363,7 @@ enum ProfilePage: Hashable, Identifiable {
     /// A page a launch opens on (`-maktaba-profile`, by its `id`); a playlist needs its
     /// summary, so it is not one.
     init?(launchID: String) {
-        guard let page = [ProfilePage.history, .favorites, .playlists, .sessions, .playback, .diagnostics]
+        guard let page = [ProfilePage.history, .favorites, .playlists, .sessions, .playback, .diagnostics, .myReports]
             .first(where: { $0.id == launchID }) else { return nil }
         self = page
     }

@@ -16,6 +16,8 @@ use sha2::{Digest, Sha256};
 pub const MANIFEST_SCHEMA: &str = include_str!("../../../../shared/plugins/manifest.schema.json");
 pub const CAPABILITIES_TOML: &str = include_str!("../../../../shared/plugins/capabilities.toml");
 pub const EVENTS_TOML: &str = include_str!("../../../../shared/plugins/events.toml");
+/// The stage names only Maktaba's own plugins may define (story 54.22 §1).
+pub const RESERVED_STAGES: &str = include_str!("../../../../shared/plugins/reserved_stages.txt");
 pub const WIT: &str = include_str!("../../../../shared/plugins/wit/maktaba-plugin.wit");
 
 pub const CODE_INVALID: &str = "manifest_invalid";
@@ -37,6 +39,9 @@ pub const CODE_STRING_TOO_LONG: &str = "manifest_string_too_long";
 pub const CODE_MISSING_FILE: &str = "manifest_missing_file";
 pub const CODE_BAD_SETTINGS: &str = "manifest_bad_settings";
 pub const CODE_NOT_TOML: &str = "manifest_not_toml";
+/// A key, a stage name or a subject only Maktaba's own release-signed plugins may use
+/// (story 54.22 §1): never in a manifest this host loads.
+pub const CODE_TRUSTED_FIELD: &str = "plugin_trusted_field";
 
 const SCHEMA_VERSION: i64 = 1;
 const MAX_NAME: usize = 40;
@@ -64,6 +69,7 @@ const KEYWORDS: &[&str] = &[
     "default",
     "x-code",
     "x-unknown-code",
+    "x-trusted-only",
 ];
 
 /// One refusal: a code, a slash path into the manifest and a detail (a language, a file).
@@ -410,6 +416,9 @@ fn check(n: &Value, v: &Value, path: &str, parent: &str, errs: &mut Vec<Manifest
             let props = n.get("properties").and_then(Value::as_object);
             for (k, x) in o {
                 match props.and_then(|p| p.get(k)) {
+                    Some(c) if c.get("x-trusted-only") == Some(&Value::Bool(true)) => {
+                        errs.push(ManifestError::new(CODE_TRUSTED_FIELD, &join(path, k), ""));
+                    }
                     Some(c) => check(c, x, &join(path, k), code, errs),
                     None => {
                         if n.get("additionalProperties") == Some(&Value::Bool(false)) {
@@ -458,6 +467,11 @@ fn reserved(id: &str) -> bool {
         return true;
     }
     labels.iter().any(|l| *l == "maktaba" || *l == "official")
+}
+
+/// Whether `name` is a stage of Maktaba's own graph (shared/plugins/reserved_stages.txt).
+pub fn reserved_stage(name: &str) -> bool {
+    RESERVED_STAGES.lines().map(str::trim).any(|l| !l.is_empty() && !l.starts_with('#') && l == name)
 }
 
 fn known_capability(name: &str) -> bool {
@@ -518,6 +532,11 @@ fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError
             errs.push(ManifestError::new(CODE_DUPLICATE_STAGE, &format!("stage/{i}/name"), name));
         }
         subjects.insert(name.into(), s(st, "subject").into());
+        // R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
+        // reserved (a third-party stage's queue is p_<hash>_<name>)
+        if s(st, "subject") == "dup_group" {
+            errs.push(ManifestError::new(CODE_TRUSTED_FIELD, &format!("stage/{i}/name"), name));
+        }
     }
     for (i, st) in stages.iter().enumerate() {
         for (j, r) in arr(st, "may_request").iter().enumerate() {

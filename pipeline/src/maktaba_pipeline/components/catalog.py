@@ -125,6 +125,7 @@ _COMPONENT_KEYS = (
     "in_payload",
     "gated",
     "on_demand",
+    "plugin",
 )
 _PARTS = ("stages", "process", "loop")
 _PLURAL = {"stages": "stages", "process": "processes", "loop": "loops"}
@@ -179,6 +180,8 @@ class Component:
     gated: bool = False
     #: a process that runs only while a component it serves is on (Epic 54: plugins.host)
     on_demand: bool = False
+    #: the first-party plugin that implements the stages (Epic 54, story 54.27 §3)
+    plugin: str = ""
 
     def has_part(self, part: str) -> bool:
         return part in self.kind.split("+")
@@ -376,6 +379,7 @@ class Catalog:
                 "in_payload": c.in_payload,
                 "gated": c.gated,
                 "on_demand": c.on_demand,
+                "plugin": c.plugin,
             }
             for c in self._components
         ]
@@ -456,6 +460,7 @@ def _component(m: dict[str, Any], where: str, bad: list[str]) -> Component:
         in_payload=b("in_payload", False),
         gated=b("gated", False),
         on_demand=b("on_demand", False),
+        plugin=s("plugin"),
     )
 
 
@@ -501,6 +506,10 @@ def _validate(c: Component, where: str, features: tuple[str, ...], bad: list[str
         )
     if c.on_demand and not c.has_part("process"):
         bad.append(f"{where}: on_demand is for a component with a process")
+    if c.plugin and (not c.plugin.startswith("tv.maktaba.") or not c.has_part("stages")):
+        bad.append(
+            f"{where}: plugin names a first-party plugin (tv.maktaba.*) of a component with stages"
+        )
     core = c.id.startswith("core.")
     if core and c.switchable:
         bad.append(f"{where}: core.* components must have switchable = false")

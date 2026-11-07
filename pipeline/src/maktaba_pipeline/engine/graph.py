@@ -338,6 +338,14 @@ def _legacy(
     )
 
 
+def _fp(name: str) -> StageDef:
+    """A stage one of Maktaba's first-party plugins defines (Epic 54, story 54.25 §1): the
+    graph keeps its place and its name, its manifest's ``[[stage]]`` gives every field."""
+    from ..plugins.firstparty import stage_def
+
+    return stage_def(name)
+
+
 #: Stages in lane order. Edge and request wiring is exactly plan 06-11 section 3.2.
 GRAPH: tuple[StageDef, ...] = (
     # ---- sources -------------------------------------------------------

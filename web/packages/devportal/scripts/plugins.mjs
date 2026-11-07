@@ -128,6 +128,8 @@ export function readPluginSources(repo) {
       ...goConsts(read("api/internal/plugins/routes.go")),
       ...goConsts(read("api/internal/plugins/media.go")),
       ...goConsts(read("api/internal/plugins/tokens.go")),
+      ...goConsts(read("api/internal/plugins/compute.go")),
+      ...goConsts(read("api/internal/plugins/panels.go")),
     },
     pack: goConsts(read("shared/go/componentpack/plugin.go")),
     causes,
@@ -197,6 +199,22 @@ export const CODE_WORDS = {
     "The job is not claimed and running, so it gets no token.",
     "المهمة ليست محجوزة وقيد التشغيل، فلا تحصل على رمز."
   ),
+  compute_unavailable: t(
+    "The home's model is off or busy past the question's time (`call-error.unavailable`).",
+    "نموذج الجهاز الرئيسي متوقف، أو مشغول حتى انتهاء وقت السؤال (`call-error.unavailable`)."
+  ),
+  compute_remote: t(
+    "The language model is not on this home or the local network, so it is never asked.",
+    "النموذج اللغوي ليس على هذا الجهاز الرئيسي ولا على الشبكة المحلية، فلا يُسأل أبدًا."
+  ),
+  compute_bad_output: t(
+    "The model's answer did not follow `json-schema`, after one retry.",
+    "لم تتبع إجابة النموذج `json-schema`، بعد محاولة ثانية."
+  ),
+  plugin_text_forbidden: t(
+    "A value for a key a panel shows holds a URL, HTML, markdown or a control character.",
+    "قيمة لمفتاح تعرضه لوحة فيها رابط أو HTML أو markdown أو محرف تحكم."
+  ),
 };
 
 /** The WIT's call-error variants: the Arabic of each English comment (kept with it). */
@@ -261,6 +279,19 @@ export const LIMITS = {
     MaxAudioMs: [
       t("One `media.audio` span, in minutes", "مدة استدعاء `media.audio` الواحد، بالدقائق"),
       (v) => num(v / 60000),
+    ],
+    MaxEmbedTexts: [
+      t("Texts per `compute.embed`", "النصوص في استدعاء `compute.embed` الواحد"),
+      num,
+    ],
+    MaxEmbedChars: [t("Characters per embedded text", "المحارف في النص الواحد المراد تضمينه"), num],
+    MaxPrompt: [t("One `compute.generate` prompt", "موجّه `compute.generate` الواحد"), KB],
+    MaxTokens: [
+      t(
+        "Tokens one `compute.generate` may ask for",
+        "الرموز التي يطلبها استدعاء `compute.generate` الواحد"
+      ),
+      num,
     ],
   },
   pack: {
@@ -339,15 +370,32 @@ const table = (head, rows) =>
     ...rows.map((r) => `| ${r.map(cell).join(" | ")} |`),
   ].join("\n");
 
-/** The manifest's keys, depth first: [{key, spec, required}]. */
+/** The manifest's keys, depth first: [{key, spec, required}]. Keys only Maktaba's own
+ * plugins may use (x-trusted-only) are left out: trustedKeys lists them. */
 function manifestKeys(schema) {
   const out = [];
   const walk = (node, prefix) => {
     for (const [k, v] of Object.entries(node.properties ?? {})) {
       const key = prefix + k;
+      if (v["x-trusted-only"]) continue;
       out.push({ key, spec: v, required: (node.required ?? []).includes(k) });
       if (v.properties) walk(v, key + ".");
       if (v.items?.properties) walk(v.items, key + "[].");
+    }
+  };
+  walk(schema, "");
+  return out;
+}
+
+/** The keys only Maktaba's own first-party plugins may use (Epic 54, story 54.22). */
+function trustedKeys(schema) {
+  const out = [];
+  const walk = (node, prefix) => {
+    for (const [k, v] of Object.entries(node.properties ?? {})) {
+      const key = prefix + k;
+      if (v["x-trusted-only"]) out.push(key);
+      else if (v.properties) walk(v, key + ".");
+      else if (v.items?.properties) walk(v.items, key + "[].");
     }
   };
   walk(schema, "");
@@ -411,6 +459,19 @@ export function pluginReference(src, lang) {
       })
     )
   );
+
+  const trusted = trustedKeys(src.schema);
+  if (trusted.length) {
+    md.push(
+      L("### Keys only Maktaba's own plugins use", "### مفاتيح لا تستخدمها إلا إضافات مكتبة نفسها")
+    );
+    md.push(
+      L(
+        `These keys, and the \`dup_group\` subject, are refused in your manifest with \`plugin_trusted_field\`: only the manifests built into a Maktaba release are read with them ([Maktaba's own plugins](../first-party/)). ${trusted.map(code).join(", ")}.`,
+        `تُرفض هذه المفاتيح، ومعها العنصر \`dup_group\`، في بيانك بالرمز \`plugin_trusted_field\`: لا تُقرأ إلا في البيانات المدمجة في إصدار مكتبة ([إضافات مكتبة نفسها](../first-party/)). ${trusted.map(code).join("، ")}.`
+      )
+    );
+  }
 
   // capabilities
   md.push(L("## Capabilities", "## الصلاحيات"));

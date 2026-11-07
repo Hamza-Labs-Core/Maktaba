@@ -48,6 +48,9 @@ func TestEditionsAreServedOnAHomesAddress(t *testing.T) {
 		if rec.Header().Get("Cache-Control") != "no-cache" {
 			t.Errorf("%s: the page is revalidated, got %q", path, rec.Header().Get("Cache-Control"))
 		}
+		if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "connect-src 'self' https://status.maktaba.tv;") {
+			t.Errorf("%s: the status feed (50.11) is not in connect-src: %q", path, rec.Header().Get("Content-Security-Policy"))
+		}
 		if !strings.Contains(rec.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'") ||
 			rec.Header().Get("X-Content-Type-Options") != "nosniff" {
 			t.Errorf("%s: the home SPA's headers: %v", path, rec.Header())

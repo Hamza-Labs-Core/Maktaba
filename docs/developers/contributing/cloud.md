@@ -24,6 +24,52 @@ something fails, and how to work on it without a server.
 - **Play at home never depends on the cloud.** Signing in on the home and playing on its own
   network work with the cloud unreachable.
 
+## The status page
+
+[status.maktaba.tv](https://status.maktaba.tv) answers "is it me or them?". It is hosted on
+GitHub Pages, off Hetzner, so it still loads when the cloud is down, and no one updates it by
+hand: the probes set each part's state.
+
+- **The parts:** Remote access (the relay), Sign-in and accounts (the API), Notifications,
+  and a pointer to the payment provider's own status page. Each reads **Working**, **Slow**,
+  **Down** or **Maintenance**, with a 90-day uptime bar, one cell a day.
+- **Two networks decide.** The witness probes from inside Hetzner, and GitHub's runners from
+  outside it. Both failing twice in a row (30 seconds apart) is **Down**; one alone is
+  **Slow**, because it is probably that probe's own network. Recovering also takes two passing
+  rounds, so one lost packet never flashes a banner.
+- **The uptime target, with no credit.** The page shows the 99.9 % monthly target for remote
+  access and last month's measured figure. It is a target, not a guarantee: no credit or
+  refund is given for downtime.
+- **English and Arabic.** The page follows the browser's language on a first visit, and has a
+  switch. It reads fully without JavaScript.
+- **Incidents and maintenance** are posts in the repository, each with an English and an
+  Arabic title and text. Maintenance is posted at least 48 hours ahead.
+
+### `summary.json` for apps
+
+Apps read `https://status.maktaba.tv/summary.json` when they start, every 5 minutes while
+open, and at once when a relayed request fails. They never wait on it: a failed fetch shows
+nothing.
+
+```json
+{ "updated_at": "2026-11-03T10:15:00Z",
+  "overall": "degraded",
+  "components": { "relay": "degraded", "api": "operational", "push": "operational" },
+  "incident": { "id": "2026-11-03-relay-slow", "state": "identified", "components": ["relay"],
+                "title": { "en": "Remote access is slow", "ar": "الوصول عن بُعد بطيء" },
+                "url": "https://status.maktaba.tv/i/2026-11-03-relay-slow" },
+  "maintenance": [ { "id": "2026-11-04-db-upgrade", "starts_at": "2026-11-05T02:00:00Z",
+                     "ends_at": "2026-11-05T02:30:00Z", "components": ["relay", "api"],
+                     "title": { "en": "Database upgrade", "ar": "ترقية قاعدة البيانات" },
+                     "url": "https://status.maktaba.tv/i/2026-11-04-db-upgrade" } ] }
+```
+
+A state is `operational`, `degraded`, `outage` or `maintenance`; `overall` is the worst of them.
+Add the minute to the address (`summary.json?t=<unix minute>`): GitHub Pages lets caches keep
+a copy for 10 minutes. The page's source, its tests and the posts are in
+[status/](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/status); how to post is in
+[docs/runbooks/cloud-status-page.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/runbooks/cloud-status-page.md).
+
 ## How it is built
 
 | Part | What it does |
@@ -34,7 +80,7 @@ something fails, and how to work on it without a server.
 | The tunnel directory | Which relay process holds each home's tunnel, so a process without it forwards the request to the one with it. |
 | One wildcard certificate per node | `*.relay.maktaba.tv`, issued by a DNS challenge, so the standby node already has it before it is needed. |
 | Backups | The database's log and a nightly backup go to Hetzner Object Storage and to Cloudflare R2, encrypted, with 30 days of point-in-time restore. A restore is tried every week. |
-| Monitoring | The witness probes a canary home through the relay every 30 seconds; GitHub's runners probe it from outside Hetzner too. Alerts page the owner and link to a runbook. |
+| Monitoring | The witness probes a canary home through the relay every 30 seconds; GitHub's runners probe it from outside Hetzner too. Alerts page the owner and link to a runbook, and the same probes set the status page. |
 
 The files are in
 [deploy/cloud-ha](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/deploy/cloud-ha)
@@ -62,6 +108,7 @@ breaks them on purpose:
 | `deploy-bad-release-rollback` | a release that breaks after 20 s | stopped before users see it |
 | `restore-pitr` | destroys both nodes | the database comes back with exactly the rows up to the chosen time |
 | `cert-on-standby` | fresh nodes | each holds its own wildcard certificate before any traffic |
+| `status-feed` | stops every relay process | the status page's `summary.json` says remote access is down within two probe rounds, and working again after two passing ones |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,
 Cloudflare or Let's Encrypt host is ever contacted: a fake Hetzner API moves the address,
