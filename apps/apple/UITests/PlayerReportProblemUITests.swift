@@ -23,7 +23,8 @@ final class PlayerReportProblemUITests: PlayerUITestCase {
         XCTAssertTrue(no.waitForExistence(timeout: 20), "the question after signing in")
         XCTAssertTrue(yes.exists)
         XCTAssertFalse(yes.isSelected || no.isSelected, "neither is chosen for the person")
-        XCTAssertEqual(yes.frame.height, no.frame.height, accuracy: 1, "the same size")
+        XCTAssertEqual(yes.frame.height, no.frame.height, accuracy: 1, "the same height")
+        XCTAssertEqual(yes.frame.width, no.frame.width, accuracy: 1, "the same width")
         shot("crash-question")
         no.tap()
         XCTAssertTrue(no.waitForNonExistence(timeout: 10), "answered: the question goes")
@@ -49,8 +50,9 @@ final class PlayerReportProblemUITests: PlayerUITestCase {
         let row = element("profile.reportProblem")
         scrollUntil(row)
         row.tap()
+        // the form is a lazy list: Send, at its end, exists once scrolled to
+        XCTAssertTrue(element("screen.report").waitForExistence(timeout: 10), "the form")
         let send = element("report.send")
-        XCTAssertTrue(send.waitForExistence(timeout: 10), "the form")
         let screenshot = app.switches["report.screenshot"].firstMatch
         if screenshot.exists {
             XCTAssertEqual(screenshot.value as? String, "0", "the screenshot box starts unticked")
@@ -74,9 +76,10 @@ final class PlayerReportProblemUITests: PlayerUITestCase {
         let row = element("profile.reportProblem")
         scrollUntil(row)
         row.tap()
-        XCTAssertTrue(element("report.send").waitForExistence(timeout: 10))
-        XCTAssertTrue(app.staticTexts["ما الذي سيُرسل"].exists || app.staticTexts["ما الذي سيُرسل".uppercased()].exists,
-                      "What will be sent, in Arabic")
+        XCTAssertTrue(element("screen.report").waitForExistence(timeout: 10), "the form")
         shot("report-a-problem")
+        let send = element("report.send")
+        scrollUntil(send)
+        XCTAssertEqual(send.label, "إرسال", "Send, in Arabic")
     }
 }

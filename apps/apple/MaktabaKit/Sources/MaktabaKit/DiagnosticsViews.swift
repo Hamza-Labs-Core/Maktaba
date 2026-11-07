@@ -69,11 +69,8 @@ public struct CrashQuestionView: View {
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            // the same style and size: neither is the default
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 16) { buttons }
-                VStack(spacing: 12) { buttons }
-            }
+            // the same style and size, one above the other: neither is the default
+            VStack(spacing: 12) { buttons }
         }
         .padding(32)
         .frame(maxWidth: 640)

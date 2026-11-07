@@ -98,9 +98,12 @@ struct PanelChart: View {
 
     /// "Log files: now 2 MB; highest 3 MB."
     var summary: String {
-        let all = series.flatMap(\.points)
-        let latest = series.compactMap(\.points.last).map(\.value).reduce(0, +)
-        let max = all.map(\.value).max() ?? 0
+        // the series summed at each time: "now" is the last time's, "highest" the largest
+        var byTime: [Date: Double] = [:]
+        for s in series { for p in s.points { byTime[p.at, default: 0] += p.value } }
+        let times = byTime.keys.sorted()
+        let latest = times.last.flatMap { byTime[$0] } ?? 0
+        let max = byTime.values.max() ?? 0
         return String(localized: "\(DashWords.title(name)): now \(DashWords.value(latest, of: name)); highest \(DashWords.value(max, of: name)).")
     }
 }

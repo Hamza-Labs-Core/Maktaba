@@ -162,8 +162,6 @@ struct ProfileScreen: View {
                 .accessibilityHint(Text("Opens the system's settings for this app", tableName: "Profile",
                                         comment: "What the Language row does, spoken"))
                 pageRow(.playback, Text("Playback", tableName: "Profile", comment: "The playback settings page"), "play.rectangle")
-                // Privacy: crash reports to the home, off until the person turns them on (53.14)
-                CrashReportsToggle(session: context.session)
             } header: {
                 sectionTitle(Text("Settings on this device", tableName: "Profile", comment: "A Profile group: theme, language, playback"))
             }
@@ -175,7 +173,16 @@ struct ProfileScreen: View {
                     row(Text("Help", tableName: "Profile", comment: "Opens the home's help page for this app"), "questionmark.circle")
                 }
                 .accessibilityIdentifier("profile.help")
-                // Report a problem to the home's admin, and the person's own reports (53.15)
+                about
+                pageRow(.diagnostics, Text("Diagnostics", tableName: "Profile", comment: "The crash reports kept on this device"), "stethoscope")
+            } header: {
+                sectionTitle(Text("Help and about", tableName: "Profile", comment: "A Profile group: help, versions, diagnostics"))
+            }
+
+            // Epic 53, after the rows above (they keep their place): crash reports to the home,
+            // off until the person turns them on (53.14); Report a problem and My reports (53.15)
+            Section {
+                CrashReportsToggle(session: context.session)
                 Button {
                     reportProblem?()
                 } label: {
@@ -183,10 +190,6 @@ struct ProfileScreen: View {
                 }
                 .accessibilityIdentifier("profile.reportProblem")
                 pageRow(.myReports, Text(verbatim: ReportWords.mine), "person.crop.rectangle.stack")
-                about
-                pageRow(.diagnostics, Text("Diagnostics", tableName: "Profile", comment: "The crash reports kept on this device"), "stethoscope")
-            } header: {
-                sectionTitle(Text("Help and about", tableName: "Profile", comment: "A Profile group: help, versions, diagnostics"))
             }
         }
         .maktabaSurface()

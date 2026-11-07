@@ -149,8 +149,27 @@ struct ErrorGroupView: View {
             }
             if let d = detail {
                 let g = d.group
+                // what the admin does, first: on screen without scrolling
                 Section {
                     Text(verbatim: g.title).font(.headline)
+                }
+                Section {
+                    BusyButton(title: "Mark seen", systemImage: "eye", busy: busy) { await act(.seen) }
+                        .disabled(g.status == "seen")
+                        .accessibilityIdentifier("error.seen")
+                    BusyButton(title: "Resolve", systemImage: "checkmark.circle", busy: busy) { await act(.resolve(version: g.lastVersion)) }
+                        .accessibilityIdentifier("error.resolve")
+                    Menu {
+                        Button("For 24 hours") { Task { await act(.mute(until: Date().addingTimeInterval(86400))) } }
+                        Button("For 7 days") { Task { await act(.mute(until: Date().addingTimeInterval(7 * 86400))) } }
+                        Button("Until it is resolved") { Task { await act(.mute(until: nil)) } }
+                    } label: {
+                        Label("Mute", systemImage: "bell.slash")
+                    }
+                    .disabled(busy)
+                    .accessibilityIdentifier("error.mute")
+                }
+                Section {
                     LabeledContent("Status") { Badge(text: ErrorWords.status(g.status), tint: ErrorWords.tint(g.status)) }
                     LabeledContent("Part") { Text(verbatim: g.component ?? g.service).font(.callout.monospaced()) }
                     if let code = g.code { LabeledContent("Code") { Text(verbatim: code).font(.callout.monospaced()) } }
@@ -170,22 +189,6 @@ struct ErrorGroupView: View {
                     .frame(height: 140)
                     .environment(\.layoutDirection, .leftToRight)
                     .accessibilityLabel(Text("\(d.hourly.reduce(0) { $0 + $1.count }) in the last 7 days"))
-                }
-                Section {
-                    BusyButton(title: "Mark seen", systemImage: "eye", busy: busy) { await act(.seen) }
-                        .disabled(g.status == "seen")
-                        .accessibilityIdentifier("error.seen")
-                    BusyButton(title: "Resolve", systemImage: "checkmark.circle", busy: busy) { await act(.resolve(version: g.lastVersion)) }
-                        .accessibilityIdentifier("error.resolve")
-                    Menu {
-                        Button("For 24 hours") { Task { await act(.mute(until: Date().addingTimeInterval(86400))) } }
-                        Button("For 7 days") { Task { await act(.mute(until: Date().addingTimeInterval(7 * 86400))) } }
-                        Button("Until it is resolved") { Task { await act(.mute(until: nil)) } }
-                    } label: {
-                        Label("Mute", systemImage: "bell.slash")
-                    }
-                    .disabled(busy)
-                    .accessibilityIdentifier("error.mute")
                 }
                 Section("Recent lines") {
                     if d.samples.lines.isEmpty { Text("No line of it is kept any more.").foregroundStyle(.secondary) }

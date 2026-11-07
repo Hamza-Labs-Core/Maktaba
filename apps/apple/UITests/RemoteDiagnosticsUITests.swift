@@ -91,7 +91,8 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         open("home.dashboards", homeTab: "Home")
         let chart = element("dash.panel.maktaba_component_up")
         XCTAssertTrue(chart.waitForExistence(timeout: 15), "the Overview's first chart")
-        XCTAssertTrue(chart.label.hasPrefix("Components up: now"), "its summary for VoiceOver: \(chart.label)")
+        XCTAssertTrue(chart.label.contains("Components up") && chart.label.contains("now 2") && chart.label.contains("highest 2"),
+                      "its summary for VoiceOver, the two components summed: \(chart.label)")
         shot("dashboards")
         back()
 
@@ -112,7 +113,7 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         open("home.dashboards", homeTab: homeTab)
         let chart = element("dash.panel.maktaba_component_up")
         XCTAssertTrue(chart.waitForExistence(timeout: 15))
-        XCTAssertTrue(chart.label.hasPrefix("المكوّنات العاملة"), "Components up, in Arabic: \(chart.label)")
+        XCTAssertTrue(chart.label.contains("المكوّنات العاملة"), "Components up, in Arabic: \(chart.label)")
         shot("ar-dashboards")
     }
 
