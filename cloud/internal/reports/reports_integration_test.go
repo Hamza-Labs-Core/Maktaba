@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +23,8 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols/symbolstest"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
@@ -93,6 +96,7 @@ type rig struct {
 	db    *sql.DB
 	store *Store
 	agent *AgentDeps
+	syms  *symbols.Deps
 	h     http.Handler
 	now   time.Time
 }
@@ -113,7 +117,10 @@ func newRig(t *testing.T, admitted bool) *rig {
 			next.ServeHTTP(w, req)
 		})
 	}
-	MountAdmin(r, &AdminDeps{Store: rg.store, DB: d, Gate: gate})
+	rg.syms = &symbols.Deps{Store: &symbols.Store{DB: d}, Token: "symtok", Gate: gate}
+	symbols.MountUpload(r, rg.syms)
+	symbols.MountAdmin(r, rg.syms)
+	MountAdmin(r, &AdminDeps{Store: rg.store, DB: d, Gate: gate, Symbols: rg.syms.Store})
 	rg.h = r
 	return rg
 }
@@ -272,9 +279,108 @@ func TestTheServiceAdminTriagesAndRepliesAndTheHomeFetchesIt(t *testing.T) {
 	}
 }
 
+// 53.14 and 53.16: a forwarded report's Apple crash reads as functions and lines once its
+// release's symbol tables are uploaded; before, the frames are as the app sent them and the
+// binaries are named as missing. An upload replaces the table of the same binary.
+func TestAReportsCrashIsSymbolicatedWithTheUploadedTables(t *testing.T) {
+	rg := newRig(t, true)
+	tables, err := symbols.ExtractPath(symbolstest.Fixture(t, "crashy.dwarf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var arm *symbols.Table
+	for _, x := range tables {
+		if x.Arch == "arm64" {
+			arm = x
+		}
+	}
+	off := func(fn string) uint64 {
+		for i, n := range arm.Names {
+			for _, f := range arm.Funcs {
+				if n == fn && int(f[2]) == i {
+					return f[0] - arm.TextAddr
+				}
+			}
+		}
+		t.Fatalf("no %s", fn)
+		return 0
+	}
+	rep := sample(1)
+	rep["crashes"] = []any{map[string]any{
+		"platform": "cocoa",
+		"exception": map[string]any{"values": []any{map[string]any{"type": "EXC_BAD_ACCESS", "value": "SIGSEGV",
+			"stacktrace": map[string]any{"frames": []any{
+				map[string]any{"function": fmt.Sprintf("crashy + 0x%x", off("main")+0x10), "package": "crashy", "in_app": true},
+				map[string]any{"function": fmt.Sprintf("crashy + 0x%x", off("depth")+8), "package": "crashy", "in_app": true},
+			}}}}},
+		"debug_meta": map[string]any{"images": []any{map[string]any{"type": "macho", "code_file": "crashy",
+			"debug_id": strings.ToUpper(arm.DebugID)}}},
+	}}
+	sid := home(t, rg.ctx, rg.db, "homea")
+	body, ct := form(t, rep, nil)
+	if rec := rg.do("POST", "/v1/homes/"+sid+"/reports", "good", body, ct); rec.Code != 201 {
+		t.Fatalf("send: %d", rec.Code)
+	}
+	type view struct {
+		Crashes []symbols.Crash `json:"crashes"`
+	}
+	read := func() view {
+		rec := rg.do("GET", "/v1/admin/reports/1", "", nil, "")
+		var v view
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &v) != nil || len(v.Crashes) != 1 {
+			t.Fatalf("read: %d %s", rec.Code, rec.Body)
+		}
+		return v
+	}
+	before := read().Crashes[0]
+	if before.Frames[0].Symbol != nil || before.Frames[0].Raw != fmt.Sprintf("crashy + 0x%x", off("depth")+8) ||
+		len(before.Missing) != 1 || before.Missing[0].DebugID != arm.DebugID {
+		t.Fatalf("before the upload: %+v", before)
+	}
+
+	upload := func(tok string, tab *symbols.Table) int {
+		b, err := tab.Encode()
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest("POST", "/v1/symbols?version=0.3.98", bytes.NewReader(b))
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		rg.h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := upload("wrong", arm); c != 401 {
+		t.Fatalf("a wrong token: %d", c)
+	}
+	for _, tab := range tables {
+		if c := upload("symtok", tab); c != 201 {
+			t.Fatalf("upload %s: %d", tab.Arch, c)
+		}
+	}
+	after := read().Crashes[0]
+	if f := after.Frames[0]; f.Symbol == nil || f.Symbol.Function != "depth" || f.Symbol.File != "/src/crashy.c" || f.Symbol.Line != 2 {
+		t.Fatalf("top frame: %+v", f)
+	}
+	if f := after.Frames[1]; f.Symbol == nil || f.Symbol.Function != "main" || len(after.Missing) != 0 {
+		t.Fatalf("after the upload: %+v", after)
+	}
+
+	// the list, and the same binary uploaded again replaces its row
+	if c := upload("symtok", arm); c != 201 {
+		t.Fatalf("again: %d", c)
+	}
+	rec := rg.do("GET", "/v1/admin/symbols", "", nil, "")
+	var l struct{ Tables []symbols.Info }
+	_ = json.Unmarshal(rec.Body.Bytes(), &l)
+	if rec.Code != 200 || len(l.Tables) != 2 || l.Tables[0].DebugID != arm.DebugID || l.Tables[0].Version != "0.3.98" ||
+		l.Tables[0].CodeFile != "crashy.dwarf" || l.Tables[0].Size == 0 {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestOnlyTheServiceAdminReadsReports(t *testing.T) {
 	rg := newRig(t, false)
-	for _, p := range []string{"/v1/admin/reports", "/v1/admin/reports/1", "/v1/admin/reports/1/screenshot"} {
+	for _, p := range []string{"/v1/admin/reports", "/v1/admin/reports/1", "/v1/admin/reports/1/screenshot", "/v1/admin/symbols"} {
 		if rec := rg.do("GET", p, "", nil, ""); rec.Code != 403 {
 			t.Fatalf("%s: %d", p, rec.Code)
 		}

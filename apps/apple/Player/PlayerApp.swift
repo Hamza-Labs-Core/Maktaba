@@ -18,6 +18,8 @@ struct PlayerApp: App {
         Log.launched()
         // a crash at an earlier launch is logged and kept on this device
         CrashReports.shared.start()
+        // pictures from a home reached by its LAN address: checked against its name (50.15 §3)
+        ImageCache.trust = PinnedTrust.shared
         #if DEBUG && os(iOS)
         // the UI tests' Dynamic Type sizes, changed while the app runs (`TextSizeHook`; only
         // when launched with its flag)
