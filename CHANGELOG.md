@@ -80,6 +80,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **An update no longer rolls back because the transcription pipeline is busy.** The update's
+  watch asked every pipeline process for its version on every check, with three seconds to
+  answer; on a busy home the answer sometimes came late, the watch never saw ten healthy
+  minutes in a row, and it rolled the release back (0.3.90 on 2026-11-07). Each process's
+  version is now confirmed once (a restarted process is asked again); its liveness stays the
+  supervisor's. The word check also runs off the pipeline's event loop and writes a
+  transcript's flags in one batch, so it no longer holds its transaction open for minutes.
+
 - **The Mac app no longer says a part keeps stopping when that part is only turned off.** A
   process whose component is off (the supervisor's `held` state, as the plugin host is with
   no plugin installed) made the menu bar and the starting screen say "Some parts keep stopping:

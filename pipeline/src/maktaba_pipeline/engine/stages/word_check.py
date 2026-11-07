@@ -19,6 +19,7 @@ has pending or running jobs: it is given back (:class:`JobDeferred`, no attempt 
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -203,7 +204,10 @@ async def check_video(db: Any, row: Any, settings: Effective) -> tuple[list[sign
         names=gazetteer.build(names, split),
         vocabulary=vocab,
     )
-    return signals.check(inp), vocab
+    # CPU only and long on a long transcript: off the event loop, so the worker's heartbeat,
+    # claims and probe rounds keep running beside it (2026-11-07: run on the loop, it kept
+    # a flags transaction open for minutes between statements on a busy home)
+    return await asyncio.to_thread(signals.check, inp), vocab
 
 
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
