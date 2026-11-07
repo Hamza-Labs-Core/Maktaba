@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.91
-up_to_commit: 73ded4be4
-built_from: v0.3.90
+tag: v0.3.92
+up_to_commit: 32a79aab9
+built_from: v0.3.91
 ---
 
-# Trail snapshot: v0.3.91
+# Trail snapshot: v0.3.92
 
 ## Keep doing
 
@@ -16,7 +16,7 @@ built_from: v0.3.90
 - No placeholder features: a feature is built or it is not shown. (#128, d20261014-pc-dizquetv-origin-and-rules)
 - Review every PR yourself; the Copilot reviewer check and its quota comment are noise. Merge with a merge commit on the reviewed head, every check present and green (main has no branch protection). (d20261031-standing-rules, d20261020-pc-coordinator-merge-rules, #314, #212)
 - Fold small Apple fixes into one integration PR; fix agents push branches, not PRs. (#539)
-- Reuse the home's own code where another service must agree with it: the plugin store reads packages with the home's Rust reader built to wasm, not a second implementation. (#753)
+- Reuse the home's own code where another service must agree with it: the plugin store reads packages with the home's Rust reader built to wasm, runs the import audit as a crate shared with the host (`plugind/crates/audit`) and the flow check as #759's checker. A wrapper that walks the graph again is a second implementation; the store only loads data. Build a store check from the shared corpus's own cases, not hand-made fixtures. (#753, #770)
 - Keep worktrees under `.claude/worktrees/`, never `$TMPDIR`; remove merged worktrees and branches. (d20261031-standing-rules, d20261102-worktree-cleanup)
 - Branch stacks point HOME, `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR` at scratch folders. (#621, #623)
 - Use only real PR numbers and shas; attribute history with git (blame, `log -L`, PR file lists). (d20261031-standing-rules, #655)
@@ -100,6 +100,8 @@ built_from: v0.3.90
 - Product shape: native Player, Remote, Server and TV apps (SwiftUI, Compose), none a web wrapper; lists open recently added first. (#305, #306, #375)
 - Epic 51 components: one catalog, desired state in Postgres, one gate rule; an asset is on unless `absent`; a dormant process of an off component is not a role that should run. (#608, #635)
 - Search moved from Chroma to pgvector (Chroma broke on killed writers). (#319)
+- Plugins on joined machines: a manifest's `placement` (`home`, `any`, `gpu`) says where stages run; a machine fetches packages from the home and checks digest, names and signatures before writing anything; it serves reads and media itself and sends every write, quota, lineage and compute call to the home's API, so `plugin_tables_guard` stays and off, hold and revocation reach it at its next call. (#767)
+- Store flows are one upload of their members, refused, reviewed or approved as a whole; what a flow records is its own members, events and subscriptions, not the upstream plugins the checker pulled in. (#770)
 
 **CI and releases**
 - Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release, so v0.3.86 is the first published release of their components (`since` says 0.3.86). (#725, #730, #748)
@@ -126,7 +128,7 @@ built_from: v0.3.90
 - Android: names live in `res/values*/strings.xml`, not `resValue`; App Store names must be unique ("Maktaba Remote"). (#564, #560)
 
 **Database and migrations**
-- Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. (#669, #692, #678, #672, #657, #693, #762)
+- Number a migration slot only when merging main (slots are taken while a PR builds); a slot above a gap fails migration-lint; `SchemaRev` lives in three places. Check `git ls-tree origin/main shared/db/migrations/` right before each push, not only at the start. (#669, #692, #678, #672, #657, #693, #762, #767)
 - A new table keeps `maktaba_worker`'s default grants (compat-prev) and refuses joined machines' writes with a `BEFORE` trigger; it must be decided for the node copy (`copyReviewed` or `cluster_copy_excluded()`). A new failure cause needs its label and help; a new pool needs its `worker_pools` seed. (#663, #692, #693)
 - migration-lint refuses a plain `CREATE INDEX` even on a new empty table: `CONCURRENTLY`, in its own statement block of a NO TRANSACTION file. (#731)
 - The SQLite migration runner rewrites `ADD COLUMN IF NOT EXISTS` only when it is the one statement of its `StatementBegin` block. (#733)
@@ -203,8 +205,11 @@ built_from: v0.3.90
 - Screenshots without a stack: the desktop Player through `runDesktopComposeUiTest` plus `captureToImage` (wrap `Shell` in the window's `Surface`); the web through vite and playwright-core with `/api/*` from a route table and `mkt:usage:consent` set first; Apple TV shots are in CI's `tv-ui-tests` artifact. The devportal lazy-loads images, so scroll each into view to check it. (#703)
 - Plugins: stages load at the pipeline worker's start, so a changed installed set needs the supervisor's `Restart`; the pipeline needs `MAKTABA_SUPERVISOR_TOKEN_FILE`; a deep data folder pushes `<data>/run/*.sock` past macOS's 104-byte `sun_path`; Wasmtime under the hardened runtime needs `allow-jit` and `allow-unsigned-executable-memory`; a new catalog group needs its place in the web's `GROUP_ORDER`. (#707)
 - The affected-tests gate maps from main's coverage: tests in a new file count for an old source only when the coverage map names its package, schema-revision constants still need a `No-Test-Change` trailer, and shared JSON tables map to no test (add a direct test beside the row); `tools/ci/tests` needs PyYAML. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. (#707, #731)
+- `@maktaba/flowchart` is the SDK's source reached by a tsconfig and Vite alias, so every build copying `web/` alone needs it too (`web/Dockerfile`, `cloud/Dockerfile`'s web stage, the dev compose mounts); only the e2e image build shows it. Node 22 imports an erasable-syntax TypeScript file with `--experimental-strip-types`, so the portal draws with the SDK's source. The web draws charts with React's SVG elements from a geometry model, so no plugin string is set as markup. (#763)
+- The home's auth gate must list the machine routes (`/internal/cluster/plugins/`, `/internal/cluster/plugin-api/`) beside the delegation middleware, or a signed machine gets 401. A CPU budget on a shared CI runner is timed as the process's own CPU time (getrusage, `process.cpuUsage`), not wall clock. A stopped `make compat-prev` can leave `api/internal/compatprobe`; it is now git-ignored and the script cleans up on INT and TERM. The first-party parity self-test fails locally on main with a dev API binary; CI is its judge. (#767)
+- Repository rules bind every new workflow: each tag workflow takes a `tag` input, each artifact download is a three-attempt chain naming its artifact, each file sits under a ci-paths filter (`ci_paths.py guard`). A D1 `CHECK` on a status cannot widen without a table rebuild: add a column (`flow_state`). The shared flow checker's lookup is synchronous: run it, load what it asked for, run again until it asks for nothing new. (#770)
 - A snapshot's `#N` must be a PR with an event; other numbers are written without `#`, an issue as `issue #N`. (#706)
-- Homebrew's cargo shadows rustup's and has no wasm target (the SDK template needs rustup's `wasm32-wasip2`; the store's wasm builds with `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` first on PATH); the root `.gitignore` `MANIFEST` hides a `manifest/` folder on the Mac. (#683, #694, #717, #753)
+- Homebrew's cargo shadows rustup's and has no wasm target (the SDK template needs rustup's `wasm32-wasip2`; the store's wasm builds with `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` first on PATH); the root `.gitignore` `MANIFEST` hides a `manifest/` folder on the Mac. (#683, #694, #717, #753, #770)
 - Claude Code reserves plugin names starting with `claude-`; the plugin is `trail`. Hook machines have python3 without `tomllib`. (#702)
 
 ## Open
@@ -218,10 +223,10 @@ built_from: v0.3.90
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
 - Epic 54: TypeScript, Python and Go templates (issue #718); signing, `mkp run`, developer mode and the plugins CLI (issue #719); the migrate job (issue #712), rehearsal scenario 15 (issue #708), the updater's pre-update list (issue #709), Windows (issue #710), job metrics and problem-report opt-in (issue #711). (#683, #693, #704, #707, #717)
-- Epic 54 Phase 2 (signing ships dark, no root keys): the store service is built but not deployed (its go-live list, the email provider and the Cloudflare resources, DNS and secrets, are in `store/README.md`); next are checks and review (54.16, with flow check C12), the home's catalog loop and kill switch (54.17), the store browser (54.18); release-time embedding of the revocation list and store keys; the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. (#733, #735, #743, #751, #753)
+- Epic 54 Phase 2 (signing ships dark, no root keys): the store service is built but not deployed (its go-live list, the email provider and the Cloudflare resources, DNS and secrets, are in `store/README.md`); checks, the flow check C12 and human review are built (54.16); next are the home's catalog loop and kill switch (54.17), the store browser (54.18), the isolated runner on Cloudflare Containers (issue #756); release-time embedding of the revocation list and store keys; the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. (#733, #735, #743, #751, #753, #770)
 - Epic 54 Phase 4: first-party waves 1-9 (54.28-54.36; wave 4 can build on plugin `compute`) and removal of the in-process path; per-plugin `.mkplugin` packages in `checksums.txt` wait for a release-workflow change. (#731, #750)
 - Epic 54 plugin panels: the TV apps, Android chip search, an admin order and the T05 snapshots (issue #741); the series and library pages are done. (#742, #765)
-- Epic 54: the flow chart (54.41) and joined machines (54.42) follow flows and events. (#759, #762)
+- Epic 54 joined machines: a machine's plugin compute always asks the home's models; its own GPU models are not offered to plugins. (#767)
 - Epic 50: the cloud status line is in every app's strip, but Apple and Android read the feed only at start and every 5 minutes, not at once after a failed request; the Android TV app has no status strip (53.06's TV part); series that 53.17 emits for the monitoring alerts and status page; 50.12 to 50.15, 50.19, 50.30 to 50.35 and 53.16 to 53.18 follow. (#727, #739, #752)
 - Rare web test races of one shape (a check one render too early), listed on issue #697; BigScreen still re-attaches its key listener. (#746)
 - Story 51.03's spec still names the removed `loops-full-home.txt`. (#748)
@@ -585,6 +590,9 @@ None.
 | 0752-status-banners | 2026-11-07 | pr | Maktaba Cloud's line in every app's status strip |
 | 0752-status-banners-ci | 2026-11-07 | pr | What #752's CI taught after its event was written |
 | 0762-plugin-events-lineage | 2026-11-07 | pr | Events between plugins and run-time lineage (Epic 54, 54.40) |
+| 0763-plugin-flow-chart | 2026-11-07 | pr | The flow chart, on the plugin page, in the SDK and on maktaba.dev (Epic 54, 54.41) |
 | 0765-panels-series-library | 2026-11-07 | pr | Plugin panels on the web's series and library pages (Epic 54, story 54.20) |
+| 0767-plugins-on-joined-machines | 2026-11-07 | pr | Third-party plugins on joined machines (Epic 54, 54.42) |
 | 0769-fp-selftest-urls | 2026-11-07 | pr | The first-party parity self-test keeps the test URL's sslmode; per-checkout dev API |
+| 0770-store-checks-flows-review | 2026-11-07 | pr | Plugins Phase 2 part 3, automated checks, the flow check and human review (Epic 54, 54.16) |
 
