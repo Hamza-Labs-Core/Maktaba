@@ -1,0 +1,76 @@
+# The witness's monitoring (Epic 50 story 50.10): guests beside etcd, at a lower CPU and IO
+# weight, so they never starve the third vote. setup.sh --role witness renders the configs
+# into /etc/maktaba/monitoring and runs this with docker compose.
+name: maktaba-monitoring
+
+x-guest: &guest
+  restart: unless-stopped
+  cpu_shares: 256     # etcd keeps the CPU it needs (the default is 1024)
+  blkio_config:
+    weight: 100
+
+services:
+  prometheus:
+    <<: *guest
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d",
+              "--web.listen-address=127.0.0.1:9090"]
+    network_mode: host
+    volumes:
+      - /etc/maktaba/monitoring:/etc/prometheus:ro
+      - prometheus:/prometheus
+  alertmanager:
+    <<: *guest
+    image: prom/alertmanager:v0.28.1
+    command: ["--config.file=/etc/alertmanager/alertmanager.yml", "--web.listen-address=127.0.0.1:9093"]
+    network_mode: host
+    volumes:
+      - /etc/maktaba/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+  blackbox:
+    <<: *guest
+    image: prom/blackbox-exporter:v0.27.0
+    command: ["--config.file=/etc/blackbox/blackbox.yml", "--web.listen-address=127.0.0.1:9115"]
+    network_mode: host
+    volumes:
+      - /etc/maktaba/monitoring/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+  pushgateway:
+    <<: *guest
+    image: prom/pushgateway:v1.11.1
+    # reached through the front (Caddyfile.witness), with a token, by network 2's probe
+    command: ["--web.listen-address=127.0.0.1:9091"]
+    network_mode: host
+  # the witness's one public site (Caddyfile.witness): the probe's pushes and the status
+  # page's view, behind a token; a certificate by HTTP-01 for WITNESS_DOMAIN
+  front:
+    <<: *guest
+    image: ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    network_mode: host
+    env_file: /etc/maktaba/monitoring/front.env
+    volumes:
+      - /etc/maktaba/monitoring/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/maktaba/status:/srv:ro
+      - front_data:/data
+  grafana:
+    <<: *guest
+    image: grafana/grafana:12.1.1
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - grafana:/var/lib/grafana
+
+volumes:
+  prometheus:
+  # the witness's one public site (Caddyfile.witness): the probe's pushes and the status
+  # page's view, behind a token; a certificate by HTTP-01 for WITNESS_DOMAIN
+  front:
+    <<: *guest
+    image: ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    network_mode: host
+    env_file: /etc/maktaba/monitoring/front.env
+    volumes:
+      - /etc/maktaba/monitoring/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/maktaba/status:/srv:ro
+      - front_data:/data
+  grafana:

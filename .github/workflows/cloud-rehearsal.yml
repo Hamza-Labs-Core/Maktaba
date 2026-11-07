@@ -91,6 +91,7 @@ jobs:
           - db-blip
           - restore-pitr
           - cert-on-standby
+          - status-feed
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0

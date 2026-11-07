@@ -17,8 +17,8 @@ For each database to restore, pick the minute before the damage, then:
 
 ```sh
 cd store
-pnpm exec wrangler d1 time-travel info store-catalog --timestamp=2026-11-06T10:41:00Z
-pnpm exec wrangler d1 time-travel restore store-catalog --timestamp=2026-11-06T10:41:00Z
+npx wrangler d1 time-travel info store-catalog --timestamp=2026-11-06T10:41:00Z
+npx wrangler d1 time-travel restore store-catalog --timestamp=2026-11-06T10:41:00Z
 ```
 
 Restore only the database that was damaged. The signed lists' next versions are taken above
@@ -39,12 +39,12 @@ encrypted to the owner's RSA key (`EXPORT_PUBLIC_KEY`). Exports are kept 90 days
 lifecycle rule).
 
 1. Download the file (Cloudflare dashboard, R2, the private bucket; or
-   `pnpm exec wrangler r2 object get maktaba-plugins-private/exports/store-catalog/2026-10-01.sql.gz.enc --file catalog.enc`).
+   `npx wrangler r2 object get maktaba-plugins-private/exports/store-catalog/2026-10-01.sql.gz.enc --file catalog.enc`).
 2. On the owner's machine, decrypt it with the private key kept outside Cloudflare:
-   `pnpm exec tsx scripts/decrypt-export.ts export-private.pem catalog.enc > catalog.sql`.
+   `npx tsx scripts/decrypt-export.ts export-private.pem catalog.enc > catalog.sql`.
 3. Make a new, empty D1 database, apply the migrations
-   (`pnpm exec wrangler d1 migrations apply <new db> --remote`), then load the rows:
-   `pnpm exec wrangler d1 execute <new db> --remote --file catalog.sql`.
+   (`npx wrangler d1 migrations apply <new db> --remote`), then load the rows:
+   `npx wrangler d1 execute <new db> --remote --file catalog.sql`.
 4. Check it (counts of `plugins`, `versions`, `developer_keys`, `revocations`), then point the
    binding in `store/wrangler.jsonc` at the new database id and deploy with a `store-v*` tag.
 5. Sessions and passkey challenges are not exported: everyone signs in again.

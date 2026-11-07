@@ -31,7 +31,9 @@
 # trigger's paths-ignore; it skips only when every changed file is the trail), so a trail
 # commit never joins the `ci-main` group and never replaces the pending run of the code
 # commit before it. Trail-only commits are never tagged: the tag goes on a code commit
-# (deploy/packaging/README.md, "Release flow"). update-rehearsal.yml does the same.
+# (deploy/packaging/README.md, "Release flow"). On main, update-rehearsal.yml runs after this
+# workflow: a push run of main that passes starts its rehearsal on the same commit (workflow_run),
+# so a trail-only push starts neither; a release/* push starts both, with the same paths-ignore.
 #
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
@@ -254,8 +256,8 @@ jobs:
     uses: ./.github/workflows/_plugins.yml
 
   store:
-    # Epic 54 Phase 2: the plugin store, its signer and the home's verifiers on the shared
-    # vectors, and the key rotation drill (see _store.yml)
+    # Epic 54: the plugin store, its signer and the home's verifiers on the shared vectors,
+    # the key rotation drill, and paid plugins' payment providers (see _store.yml)
     needs: [changes]
     if: needs.changes.outputs.store == 'true'
     uses: ./.github/workflows/_store.yml
@@ -405,6 +407,10 @@ jobs:
     uses: ./.github/workflows/_devportal.yml
     with:
       upload: ${{ github.event_name == 'pull_request' }}
+
+  # The plugin store (Epic 54, story 54.19): its TypeScript typechecks, its tests run the
+  # store-commerce migrations on node:sqlite with the fake and the recorded Adyen shapes (no
+  # network, no keys), and every payment provider stays in its own module.
 
   # The in-repo wiki app (web/wiki-app): its database matches the specs it is generated
   # from (docs/wiki/db/generate_wiki.py --check, and the generator's tests), and it builds.

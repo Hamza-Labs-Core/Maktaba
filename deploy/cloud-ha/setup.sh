@@ -132,12 +132,12 @@ ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
 for src in ${SSH_FROM:-}; do ufw allow from "${src}" to any port 22 proto tcp >/dev/null; done
 [ -n "${SSH_FROM:-}" ] || ufw allow 22/tcp >/dev/null
-if [ "${role}" != witness ]; then
-	ufw allow 80/tcp >/dev/null
-	ufw allow 443/tcp >/dev/null
-	ufw allow 443/udp >/dev/null
-fi
-for port in 2379 2380 5432 8008 8081 8444 8454; do
+# 80 and 443 on the witness too: its one site, behind a token (the probe's Pushgateway and
+# network 1's view for the status page, monitoring/Caddyfile.witness)
+ufw allow 80/tcp >/dev/null
+ufw allow 443/tcp >/dev/null
+[ "${role}" = witness ] || ufw allow 443/udp >/dev/null
+for port in 2379 2380 5432 8008 8081 8444 8454 9100 9187 9443; do
 	ufw allow from "${PRIVATE_NET}" to any port "${port}" proto tcp >/dev/null
 done
 ufw --force enable >/dev/null
@@ -160,6 +160,83 @@ setup_pgbackrest() {
 }
 if [ -n "${REPO1_ENDPOINT:-}" ]; then setup_pgbackrest; fi
 
+# ---------------------------------------------------------------------------------------
+# node_exporter (with the textfile collector) and postgres_exporter for the witness to scrape
+# (story 50.10); on W, the monitoring stack itself
+# ---------------------------------------------------------------------------------------
+apt-get install -y -qq prometheus-node-exporter >/dev/null
+install -d -m 0755 /var/lib/node_exporter/textfile
+echo 'ARGS="--collector.textfile.directory=/var/lib/node_exporter/textfile"' >/etc/default/prometheus-node-exporter
+systemctl restart prometheus-node-exporter
+install -m 0755 "${here}/bin/alert-textfile" /usr/local/bin/maktaba-alert
+setup_monitoring() {
+	command -v docker >/dev/null || apt-get install -y -qq docker.io docker-compose-v2 >/dev/null
+	install -d -m 0750 /etc/maktaba/monitoring
+	for f in prometheus.yml alertmanager.yml; do
+		envsubst <"${here}/monitoring/${f}" >"/etc/maktaba/monitoring/${f}"
+	done
+	install -m 0644 "${here}/monitoring/alerts.yml" "${here}/monitoring/backup-rules.yml" "${here}/monitoring/blackbox.yml" /etc/maktaba/monitoring/
+	install -m 0644 "${here}/monitoring/Caddyfile.witness" /etc/maktaba/monitoring/Caddyfile
+	# the token GitHub's probe uses (the repository secret PUSHGATEWAY_TOKEN holds the same)
+	[ -s /etc/maktaba/witness.token ] || (umask 077 && openssl rand -hex 32 >/etc/maktaba/witness.token)
+	(umask 077 && printf 'WITNESS_DOMAIN=%s\nACME_EMAIL=%s\nWITNESS_TOKEN=%s\n' "${WITNESS_DOMAIN:?}" "${ACME_EMAIL:?}" \
+		"$(cat /etc/maktaba/witness.token)" >/etc/maktaba/monitoring/front.env)
+	install -d -m 0755 /var/lib/maktaba/status/status
+	docker compose -f "${here}/monitoring/compose.yml" up -d
+	# network 1's view for the status page (story 50.11), every 30 s
+	install -m 0755 "${here}/bin/status-export" /usr/local/bin/maktaba-status-export
+	cat >/etc/systemd/system/maktaba-status-export.service <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the witness's view for the status page
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/maktaba-status-export
+UNIT
+	cat >/etc/systemd/system/maktaba-status-export.timer <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the status page's view, every 30 seconds
+[Timer]
+OnCalendar=*-*-* *:*:00,30
+AccuracySec=1s
+[Install]
+WantedBy=timers.target
+UNIT
+	install -m 0755 "${here}/bin/fip-check" /usr/local/bin/maktaba-fip-check
+	cat >/etc/systemd/system/maktaba-fip-check.service <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: which node holds the Floating IP
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/maktaba-fip-check
+UNIT
+	cat >/etc/systemd/system/maktaba-fip-check.timer <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the Floating IP check, every minute
+[Timer]
+OnCalendar=*-*-* *:*:00
+[Install]
+WantedBy=timers.target
+UNIT
+	if [ -s /etc/maktaba/canary.secret ]; then
+		cat >/etc/systemd/system/maktaba-canary.service <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the canary home (a real cloudlink in front of a stub)
+After=network-online.target
+[Service]
+EnvironmentFile=/etc/maktaba/cloud-ha.env
+ExecStart=/usr/local/bin/maktaba-canary
+Restart=always
+RestartSec=5
+CPUWeight=50
+[Install]
+WantedBy=multi-user.target
+UNIT
+	fi
+	systemctl daemon-reload
+	systemctl enable --now maktaba-fip-check.timer maktaba-status-export.timer
+	[ ! -s /etc/maktaba/canary.secret ] || systemctl enable --now maktaba-canary
+}
+
 if [ "${role}" = witness ]; then
 	if [ -n "${REPO1_ENDPOINT:-}" ]; then
 		# the drill restores with the same Postgres major
@@ -176,7 +253,10 @@ if [ "${role}" = witness ]; then
 		systemctl daemon-reload
 		systemctl enable --now maktaba-restore-drill.timer
 	fi
-	log "witness ${NODE_NAME} is up: etcd (and the restore drill, a guest)"
+	# the monitoring (story 50.10): Prometheus, Alertmanager, Grafana, the blackbox exporter and
+	# the Pushgateway in Docker (guests, lower weights), the canary home, the Floating IP check
+	setup_monitoring
+	log "witness ${NODE_NAME} is up: etcd, with the restore drill and the monitoring as guests"
 	exit 0
 fi
 
@@ -281,6 +361,8 @@ command -v docker >/dev/null || apt-get install -y -qq docker.io >/dev/null
 
 systemctl daemon-reload
 grep -q '^PATRONI_URL=' "${ENV_FILE}" || echo "PATRONI_URL=http://${NODE_ADDR}:8008" >>"${ENV_FILE}"
+grep -q '^ALERT_CMD=.' "${ENV_FILE}" || echo "ALERT_CMD=/usr/local/bin/maktaba-alert" >>"${ENV_FILE}"
+apt-get install -y -qq prometheus-postgres-exporter >/dev/null || true
 systemctl enable --now patroni maktaba-caddy maktaba-leader-guard
 if [ -n "${REPO1_ENDPOINT:-}" ]; then systemctl enable --now maktaba-backup.timer; fi
 log "${NODE_NAME} is up: Patroni decides whether it leads (patronictl -c /etc/patroni/patroni.yml list)"
