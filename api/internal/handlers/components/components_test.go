@@ -628,3 +628,26 @@ func TestPluginInstallRouteIsRefused(t *testing.T) {
 		t.Fatalf("a viewer: %d", rec.Code)
 	}
 }
+
+// Story 54.36 §1, T05: core.pipeline's stages run in a first-party plugin
+// (tv.maktaba.core-media) since wave 9, and the component stays part of the server: an
+// admin's every write to it is 409 not_switchable, a viewer's 403; nothing changes.
+func TestCorePipelineStaysNotSwitchable(t *testing.T) {
+	f := newFixture(t)
+	rev := f.revision(t)
+	for _, c := range []struct{ method, path, body string }{
+		{"PUT", "/api/components/core.pipeline", `{"want":"installed"}`},
+		{"PUT", "/api/components/core.pipeline", `{"want":"enabled"}`},
+		{"DELETE", "/api/components/core.pipeline", ""},
+		{"POST", "/api/components/core.pipeline/stop", ""},
+		{"POST", "/api/components/apply", `{"changes":[{"id":"core.pipeline","want":"installed"}]}`},
+	} {
+		code(t, f.do(c.method, c.path, c.body, admin()), http.StatusConflict, svc.CodeNotSwitchable)
+		if rec := f.do(c.method, c.path, c.body, viewer()); rec.Code != http.StatusForbidden {
+			t.Errorf("%s %s as a viewer: %d", c.method, c.path, rec.Code)
+		}
+	}
+	if f.revision(t) != rev || f.audits(t) != 0 {
+		t.Fatalf("a refusal wrote: revision %d -> %d, %d audit rows", rev, f.revision(t), f.audits(t))
+	}
+}
