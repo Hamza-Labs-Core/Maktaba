@@ -348,6 +348,10 @@ build fails when the two differ.
 
 ### Added
 
+- **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
+  the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
+  homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
+  run no script, in English and Arabic.
 - **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
   (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
   Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
