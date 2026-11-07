@@ -157,4 +157,24 @@ class DiagnosticsScreenTest {
         assertTrue(body.contains("0192f0c4"))
         assertEquals(false, done)
     }
+
+    /** The account menu (core's AccountMenu, the Remote's extra): Diagnostics, Report a problem, My reports, the switch. */
+    @Test
+    fun theAccountMenuOpensDiagnosticsAndReportAProblem() {
+        stub()
+        compose.setContent {
+            MaktabaTheme(ThemeMode.Dark) {
+                Surface {
+                    com.hamzalabs.maktaba.core.ui.DiagnosticsHost(home.remote.client, null) {
+                        RemoteAccount(home.session, home.user, home.themes, home.remote.client, home.remote)
+                    }
+                }
+            }
+        }
+        compose.onNode(androidx.compose.ui.test.hasContentDescription(compose.activity.getString(com.hamzalabs.maktaba.core.R.string.account))).performClick()
+        compose.settledUntil { compose.has("account-diagnostics") }
+        assertTrue("Report a problem, under the host", compose.has("account-report"))
+        compose.onNodeWithTag("account-diagnostics").performClick()
+        compose.settledUntil { home.remote.diagnostics }
+    }
 }
