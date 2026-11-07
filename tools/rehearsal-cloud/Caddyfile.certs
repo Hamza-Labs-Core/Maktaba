@@ -1,0 +1,41 @@
+# The cert-on-standby scenario's node edge (Epic 50 story 50.02): each node gets its own
+# wildcard certificate for relay.test and *.relay.test by DNS-01, before any traffic.
+# Production's issuers are Let's Encrypt then ZeroSSL; here an unreachable CA stands in for
+# a failing Let's Encrypt (T04) and Pebble, Let's Encrypt's test CA, for the next one. The
+# DNS-01 provider is Caddy's acmedns module against the rehearsal's fakeacmedns, which
+# answers Pebble's TXT lookups.
+{
+	email rehearsal@relay.test
+	admin 0.0.0.0:2019
+	skip_install_trust
+}
+
+relay.test, *.relay.test {
+	tls {
+		issuer acme {
+			dir https://unreachable.test:14000/dir
+			dns acmedns {
+				username rehearsal
+				password rehearsal-key
+				subdomain relay-test
+				server_url http://10.50.0.40
+			}
+			propagation_timeout -1
+			resolvers 10.50.0.40:53
+		}
+		issuer acme {
+			dir https://pebble:14000/dir
+			trusted_roots /work/pebble.minica.pem
+			dns acmedns {
+				username rehearsal
+				password rehearsal-key
+				subdomain relay-test
+				server_url http://10.50.0.40
+			}
+			propagation_delay 1s
+			propagation_timeout -1
+			resolvers 10.50.0.40:53
+		}
+	}
+	respond "node {$NODE}" 200
+}

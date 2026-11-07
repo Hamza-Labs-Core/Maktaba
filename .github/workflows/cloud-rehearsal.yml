@@ -48,9 +48,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       - name: Build
-        run: docker build -f tools/rehearsal-cloud/Dockerfile -t maktaba-cloud:rehearsal .
+        run: |
+          docker build -f tools/rehearsal-cloud/Dockerfile -t maktaba-cloud:rehearsal .
+          # Maktaba's Caddy (deploy/caddy, story 50.02) for the cert-on-standby scenario
+          docker build -t maktaba-caddy:rehearsal deploy/caddy
       - name: Save
-        run: docker save maktaba-cloud:rehearsal | gzip -1 > /tmp/image.tar.gz
+        run: docker save maktaba-cloud:rehearsal maktaba-caddy:rehearsal | gzip -1 > /tmp/image.tar.gz
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: rehearsal-image
@@ -136,7 +139,7 @@ jobs:
       - name: Load the image
         run: gunzip -c /tmp/image.tar.gz | docker load
       - name: Pull the cluster's other images
-        run: docker compose -f tools/rehearsal-cloud/compose.yml pull --ignore-buildable --quiet postgres edge
+        run: docker compose -f tools/rehearsal-cloud/compose.yml --profile certs pull --ignore-buildable --quiet postgres edge pebble
       - name: Run ${{ matrix.scenario }}
         env:
           REHEARSAL_OUT: ${{ runner.temp }}/rehearsal

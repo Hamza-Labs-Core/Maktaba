@@ -8,4 +8,3 @@ deploy-blue-green           50.08  needs deploy/cloud-ha/deploy.sh
 deploy-bad-release-rollback 50.08  needs deploy/cloud-ha/deploy.sh and a rehearsalbad build
 migration-n-minus-1         50.08  needs the previous release's image and the expand/contract rule
 restore-pitr                50.09  needs pgBackRest and MinIO
-cert-on-standby             50.02  needs Pebble, acme-dns and the wildcard certificate

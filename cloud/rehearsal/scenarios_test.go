@@ -13,14 +13,18 @@ package rehearsal
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -95,14 +99,19 @@ func TestScenario(t *testing.T) {
 		{"migration-n-minus-1", nil},
 		{"db-blip", dbBlip},
 		{"restore-pitr", nil},
-		{"cert-on-standby", nil},
+		{"cert-on-standby", certOnStandby},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
 				writeResult(t, Result{Scenario: s.name, Passed: false, Notes: []string{"not built yet: " + why}})
 				t.Skipf("not built yet: %s", why)
 			}
-			c := up(t, s.name)
+			var c *cluster
+			if s.name == "cert-on-standby" {
+				c = upOnly(t, s.name)
+			} else {
+				c = up(t, s.name)
+			}
 			r := s.run(t, c)
 			r.Scenario = s.name
 			r.Passed = !t.Failed()
@@ -162,7 +171,12 @@ func (c *cluster) env() []string {
 	if img == "" {
 		img = "maktaba-cloud:rehearsal"
 	}
-	return []string{"CLOUD_IMAGE=" + img, fmt.Sprintf("PG_PORT=%d", ports[0]), fmt.Sprintf("EDGE_PORT=%d", ports[1])}
+	caddy := os.Getenv("CADDY_IMAGE")
+	if caddy == "" {
+		caddy = "maktaba-caddy:rehearsal"
+	}
+	return []string{"CLOUD_IMAGE=" + img, "CADDY_IMAGE=" + caddy, fmt.Sprintf("PG_PORT=%d", ports[0]), fmt.Sprintf("EDGE_PORT=%d", ports[1]),
+		fmt.Sprintf("CERT_A_PORT=%d", ports[1]+1000), fmt.Sprintf("CERT_B_PORT=%d", ports[1]+1001)}
 }
 
 // portsFor gives each scenario its own host ports (they may run on one machine).
@@ -220,6 +234,22 @@ func up(t *testing.T, scenario string) *cluster {
 	})
 	api := simhome.API()
 	c.api = &httptestServer{URL: api.URL, close: api.Close}
+	return c
+}
+
+// upOnly is a scenario's compose project with nothing started (it starts its own
+// services), torn down and its logs kept like up's.
+func upOnly(t *testing.T, scenario string) *cluster {
+	t.Helper()
+	c := &cluster{t: t, project: "mr-" + scenario, dir: filepath.Join(repoRoot(t), "tools/rehearsal-cloud")}
+	_, _ = c.compose("--profile", "certs", "down", "-v", "--remove-orphans")
+	t.Cleanup(func() {
+		logs, _ := c.compose("--profile", "certs", "logs", "--no-color", "--timestamps")
+		_ = os.WriteFile(filepath.Join(outDir(t), scenario+".log"), []byte(logs), 0o644)
+		if os.Getenv("REHEARSAL_KEEP") == "" {
+			_, _ = c.compose("--profile", "certs", "down", "-v", "--remove-orphans")
+		}
+	})
 	return c
 }
 
@@ -410,4 +440,75 @@ func envInt(k string, def int) int {
 		return v
 	}
 	return def
+}
+
+// C10 cert-on-standby (story 50.02): a fresh pair of node edges each gets its
+// own wildcard certificate for relay.test and *.relay.test by DNS-01, within 2
+// minutes and before any traffic, after the first CA (standing in for a failing
+// Let's Encrypt) fails; a home's name is answered with the wildcard by both
+// nodes, and no per-home certificate is ever requested.
+func certOnStandby(t *testing.T, c *cluster) Result {
+	work := filepath.Join(c.dir, ".work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c.must("--profile", "certs", "up", "-d", "--wait", "pebble", "fakeacmedns")
+	c.must("--profile", "certs", "cp", "pebble:/test/certs/pebble.minica.pem", filepath.Join(work, "pebble.minica.pem"))
+	start := time.Now()
+	c.must("--profile", "certs", "up", "-d", "cert-a", "cert-b")
+	ports := portsFor(c.project)
+	nodes := map[string]int{"a": ports[1] + 1000, "b": ports[1] + 1001}
+	serials := map[string]string{}
+	for node, port := range nodes {
+		var cert *x509.Certificate
+		waitFor(t, 2*time.Minute, "node "+node+"'s wildcard", func() bool {
+			cert = peerCert(port, "anyhome.relay.test")
+			return cert != nil && strings.Contains(cert.Issuer.CommonName, "Pebble")
+		})
+		// Caddy keeps one certificate per name: the wildcard for every home, and the
+		// apex's own (two issuances per node every ~60 days, each name set well
+		// inside Let's Encrypt's 5 duplicates a week)
+		if !slices.Contains(cert.DNSNames, "*.relay.test") {
+			t.Errorf("node %s: names %v, want *.relay.test", node, cert.DNSNames)
+		}
+		waitFor(t, 2*time.Minute, "node "+node+"'s apex certificate", func() bool {
+			apex := peerCert(port, "relay.test")
+			return apex != nil && slices.Contains(apex.DNSNames, "relay.test") && strings.Contains(apex.Issuer.CommonName, "Pebble")
+		})
+		for _, n := range cert.DNSNames {
+			if n != "relay.test" && n != "*.relay.test" {
+				t.Errorf("node %s: a per-home name %q", node, n)
+			}
+		}
+		serials[node] = cert.SerialNumber.String()
+		// another home's name: the same certificate, nothing new issued
+		if other := peerCert(port, "otherhome.relay.test"); other == nil || other.SerialNumber.String() != serials[node] {
+			t.Errorf("node %s: another home got another certificate", node)
+		}
+	}
+	took := time.Since(start)
+	if serials["a"] == serials["b"] {
+		t.Error("the two nodes share one certificate; each must issue its own")
+	}
+	logs, _ := c.compose("--profile", "certs", "logs", "--no-color", "cert-a", "cert-b")
+	if !strings.Contains(logs, "unreachable.test") {
+		t.Error("the first CA was never tried (the fallback was not exercised)")
+	}
+	t.Logf("both nodes hold their own wildcard after %s (first CA failed, Pebble issued)", took)
+	return Result{Notes: []string{fmt.Sprintf("both wildcards issued in %s; serials a=%s b=%s", took, serials["a"], serials["b"])}}
+}
+
+// peerCert is the certificate a TLS server on 127.0.0.1:port presents for sni.
+func peerCert(port int, sni string) *x509.Certificate {
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 2 * time.Second}, "tcp", fmt.Sprintf("127.0.0.1:%d", port),
+		&tls.Config{ServerName: sni, InsecureSkipVerify: true}) //nolint:gosec // the test reads the certificate, Pebble's root is not trusted here
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = conn.Close() }()
+	certs := conn.ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return nil
+	}
+	return certs[0]
 }

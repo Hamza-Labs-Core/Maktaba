@@ -29,6 +29,9 @@ on:
   push:
     branches: [main]
     paths:
+      # Maktaba's Caddy (Epic 50 story 50.02) and the HA pair's edge
+      - 'deploy/caddy/**'
+      - 'deploy/cloud-ha/**'
       - 'cloud/**'
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
@@ -38,6 +41,9 @@ on:
       - 'v*'
   pull_request:
     paths:
+      # Maktaba's Caddy (Epic 50 story 50.02) and the HA pair's edge
+      - 'deploy/caddy/**'
+      - 'deploy/cloud-ha/**'
       - 'cloud/**'
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
@@ -329,6 +335,80 @@ jobs:
             COMMIT=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  # Maktaba's Caddy (Epic 50 story 50.02, deploy/caddy): Caddy with the Cloudflare DNS module,
+  # for the wildcard certificate every node holds. Every run builds it and checks it (T01: the
+  # module is in; T02: both Caddyfiles validate); a push to main publishes it, multi-arch, and
+  # signs it (cosign, keyless).
+  caddy:
+    name: caddy image (build, check, publish)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless signing
+    env:
+      CADDY_IMAGE: ${{ vars.MAKTABA_REGISTRY || 'ghcr.io/hamza-labs-core' }}/maktaba-caddy
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Build (this runner's arch)
+        run: docker build -t maktaba-caddy:check deploy/caddy
+      - name: T01 the DNS modules are in
+        run: |
+          docker run --rm maktaba-caddy:check caddy list-modules | tee /tmp/modules
+          grep -qx 'dns.providers.cloudflare' /tmp/modules
+          grep -qx 'dns.providers.acmedns' /tmp/modules
+      - name: T02 the Caddyfiles validate
+        run: |
+          set -euo pipefail
+          tok=test0000000000000000000000000000000000ab
+          for f in deploy/cloud-relay/Caddyfile deploy/cloud-ha/caddy/Caddyfile; do
+            docker run --rm -v "$PWD/$f:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
+              -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
+              maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
+          done
+      - name: T05 the witness's certificate check
+        run: |
+          shellcheck deploy/cloud-ha/witness/check-certs.sh deploy/cloud-ha/witness/check-certs-test.sh
+          bash deploy/cloud-ha/witness/check-certs-test.sh
+      - name: The image's tag
+        id: tag
+        run: |
+          caddy="$(sed -n 's/^ARG CADDY_VERSION=v//p' deploy/caddy/Dockerfile)"
+          cf="$(sed -n 's/^ARG CLOUDFLARE_VERSION=v//p' deploy/caddy/Dockerfile)"
+          echo "tag=${caddy}-cf${cf}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3.6.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: docker/setup-buildx-action@v4.1.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Registry login
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        id: push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v7.2.0
+        with:
+          context: deploy/caddy
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          sbom: true
+          tags: |
+            ${{ env.CADDY_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.CADDY_IMAGE }}:sha-${{ github.sha }}
+      - uses: sigstore/cosign-installer@v3.10.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Sign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          IMAGE_REF: ${{ env.CADDY_IMAGE }}@${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_REF"
 
   # A tag deploys only once release.yml has published its release (published means its
   # signed set is in: build-images pushed and signed every image, sign-and-release signed the

@@ -11,3 +11,12 @@ func TestParseServers(t *testing.T) {
 		t.Error("a bad id parsed")
 	}
 }
+
+func TestNewFakeACMEDNS(t *testing.T) {
+	t.Setenv("FAKEACMEDNS_USER", "u")
+	t.Setenv("FAKEACMEDNS_KEY", "k")
+	s := newFakeACMEDNS()
+	if s.Zone != "relay.test" || s.User != "u" || s.Key != "k" {
+		t.Errorf("%+v", s)
+	}
+}
