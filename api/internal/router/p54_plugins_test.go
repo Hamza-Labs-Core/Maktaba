@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 )
@@ -98,5 +100,38 @@ func TestP54ComputeFollowsTheComponents(t *testing.T) {
 	_, offLLM := caps.Snapshot().ComponentOff("llm")
 	if k.LLMOn(context.Background()) == offLLM {
 		t.Fatalf("llm off %v, LLMOn %v", offLLM, k.LLMOn(context.Background()))
+	}
+}
+
+// 54.09 §4 (#711): mounting the plugins on the home puts their job numbers on /metrics,
+// read from plugin_health at the scrape.
+func TestP54ExportsThePluginsJobMetrics(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	if _, err := db.Exec(`INSERT INTO plugin_health (plugin_id, recent, jobs_done, jobs_failed)
+		VALUES ('dev.example.metered', '[{"at":1,"cause":"","ms":500,"memory":2048}]', 4, 2)`); err != nil {
+		t.Fatal(err)
+	}
+	MountP54(chi.NewRouter(), P54Deps{DB: db})
+	fams, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]float64{}
+	for _, f := range fams {
+		for _, m := range f.GetMetric() {
+			for _, l := range m.GetLabel() {
+				if l.GetName() == "plugin" && l.GetValue() == "dev.example.metered" {
+					v := m.GetGauge().GetValue()
+					if m.GetCounter() != nil {
+						v = m.GetCounter().GetValue()
+					}
+					found[f.GetName()] += v
+				}
+			}
+		}
+	}
+	if found["maktaba_plugin_jobs_total"] != 6 || found["maktaba_plugin_memory_peak_bytes"] != 2048 ||
+		found["maktaba_plugin_job_seconds"] != 1 {
+		t.Fatalf("metrics: %v", found)
 	}
 }

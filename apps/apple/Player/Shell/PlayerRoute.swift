@@ -15,9 +15,12 @@ enum PlayerRoute: Hashable, Codable, Sendable {
     case channel(id: String)
     /// The player, at a time in seconds (nil: where the person left off).
     case watch(videoID: String, at: Double? = nil)
+    /// Search with a query already sent (story 54.20: a plugin panel's chip).
+    case search(query: String)
 
     /// The route as a short path, as a deep link's path would carry it:
-    /// `video/v1`, `series/s1`, `library/l1`, `channel/c1`, `watch/v1` or `watch/v1@90`.
+    /// `video/v1`, `series/s1`, `library/l1`, `channel/c1`, `watch/v1`, `watch/v1@90` or
+    /// `search/<query, percent-encoded>`.
     var path: String {
         switch self {
         case let .video(id): "video/\(id)"
@@ -26,6 +29,7 @@ enum PlayerRoute: Hashable, Codable, Sendable {
         case let .channel(id): "channel/\(id)"
         case let .watch(id, at?): "watch/\(id)@\(at.formatted(.number.grouping(.never).locale(Locale(identifier: "en_US_POSIX"))))"
         case let .watch(id, nil): "watch/\(id)"
+        case let .search(q): "search/\(q.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "")"
         }
     }
 
@@ -38,6 +42,9 @@ enum PlayerRoute: Hashable, Codable, Sendable {
         case "series": self = .series(id: id)
         case "library": self = .library(id: id)
         case "channel": self = .channel(id: id)
+        case "search":
+            guard let q = id.removingPercentEncoding, !q.isEmpty else { return nil }
+            self = .search(query: q)
         case "watch":
             let w = id.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
             guard let video = w.first, !video.isEmpty else { return nil }

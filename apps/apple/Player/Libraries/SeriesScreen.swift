@@ -31,6 +31,9 @@ struct SeriesScreen: View {
                     header
                     seasons
                     episodes
+                    // story 54.20: "From plugins", collapsed, below the series' own sections
+                    SubjectPanels<PlayerRoute>(client: client, caps: context.session.capabilities.current,
+                                               kind: "series", id: id, search: { .search(query: $0) })
                 }
             }
             .padding(MaktabaTokens.Spacing.s4)

@@ -150,6 +150,35 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١١"].firstMatch.waitForExistence(timeout: 10))
     }
 
+    /// Story 54.20: a series' page shows its plugins' panels under From plugins (collapsed),
+    /// asked for `series:<id>` only while the home answers `plugin_panels: on`; a chip opens
+    /// Search with its text sent.
+    func testASeriesPanelChipSearchesMaktaba() {
+        let features = MockHome.features.map { #""\#($0)":"on""# }.joined(separator: ",")
+        home.stub("GET", "/api/capabilities", body: #"{"etag":"c-ui-p","features":{\#(features),"plugin_panels":"on"}}"#,
+                  headers: ["ETag": #""c-ui-p""#])
+        home.stub("GET", "/api/panels", body: #"""
+        {"panels":[{"plugin_id":"topics","plugin":"Topics","title":"Topics","blocks":[
+         {"type":"kv","value":[{"label":"Era","value":"7th century"}]},
+         {"type":"chips","value":["Hijra"]}]}]}
+        """#)
+        launchSignedIn(section: "libraries", open: "series/s-seerah")
+        XCTAssertTrue(element("series.continue").waitForExistence(timeout: 20), "the series")
+        let asked = waitForRequest { $0.method == "GET" && $0.path == "/api/panels" }
+        XCTAssertNotNil(asked, home.seen.joined(separator: ", "))
+        XCTAssertEqual(asked?.value("subject"), "series:s-seerah")
+        let heading = app.staticTexts["From plugins"].firstMatch
+        for _ in 0..<8 where !heading.isHittable { app.swipeUp() }
+        heading.tap()
+        let chip = app.buttons["Hijra"].firstMatch
+        XCTAssertTrue(chip.waitForExistence(timeout: 10), "the panel opens")
+        if !chip.isHittable { app.swipeUp() }
+        chip.tap()
+        XCTAssertTrue(element("screen.search").waitForExistence(timeout: 10), "Search opens")
+        let sent = waitForRequest { $0.method == "POST" && $0.path == "/api/search" }
+        XCTAssertTrue(String(decoding: sent?.body ?? Data(), as: UTF8.self).contains("Hijra"), "searched for the chip's text")
+    }
+
     /// Mark watched on the season marks each of its episodes; on one episode, that one.
     func testMarkWatchedOnASeasonMarksEachEpisode() {
         launchSignedIn(section: "libraries", open: "series/s-seerah")

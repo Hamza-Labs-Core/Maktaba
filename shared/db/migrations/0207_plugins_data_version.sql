@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0203 - plugins: the version a plugin's stored data is at (Epic 54, story 54.07 §5
+-- Slot 0207 - plugins: the version a plugin's stored data is at (Epic 54, story 54.07 §5
 -- step 4).
 --
 --   plugin_installs.data_version  the data_version the plugin's data is at, when it is

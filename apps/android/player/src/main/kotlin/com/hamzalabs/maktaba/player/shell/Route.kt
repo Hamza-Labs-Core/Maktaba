@@ -26,6 +26,8 @@ sealed interface Route {
     @Serializable data class Library(val id: String) : Route
     /** A channel's live player (48.30), by the channel's id (`GET /api/channels/{id}`). */
     @Serializable data class Channel(val id: String) : Route
+    /** Search for [q] at once (a plugin panel's chip, story 54.20): Search with the query run. */
+    @Serializable data class SearchFor(val q: String) : Route
     /** The player (48.32), from [startSec] (null: where the person left it). */
     @Serializable data class Watch(val videoId: String, val startSec: Int? = null) : Route
 }

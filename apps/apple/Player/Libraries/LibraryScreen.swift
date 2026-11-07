@@ -29,6 +29,10 @@ struct LibraryScreen: View {
                     // Epic 56 story 56.12: Play and Shuffle the grid's view (one server queue)
                     PlayShuffleButtons(context: context, source: QueueSource(kind: "library", id: id, filters: model.queueFilters))
                         .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    // story 54.20: "From plugins", collapsed, below the library's hub rows
+                    SubjectPanels<PlayerRoute>(client: client, caps: context.session.capabilities.current,
+                                               kind: "library", id: id, search: { .search(query: $0) })
+                        .padding(.horizontal, MaktabaTokens.Spacing.s4)
                     tabs
                 }
             }

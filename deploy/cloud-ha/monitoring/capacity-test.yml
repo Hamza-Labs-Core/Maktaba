@@ -1,0 +1,66 @@
+# promtool tests for the Phase 2 trigger (Epic 50 story 50.14 §5): monitoring/check.sh runs them.
+rule_files:
+  - alerts.yml
+evaluation_interval: 2m
+tests:
+  # 70 % of 300 Mbit/s (210 Mbit/s: 3.15e9 bytes each 2 minutes) for 8 days: start Phase 2
+  # (2-minute samples: Prometheus 3's ranges are open at the start, so a 5m rate needs two
+  # samples inside 5 minutes; production scrapes every 15 s)
+  - interval: 2m
+    input_series:
+      - series: 'maktaba_relay_bandwidth_out_bytes_total{job="cloud",node="node-a"}'
+        values: '0+3150000000x6000'
+      - series: 'maktaba_relay_bandwidth_in_bytes_total{job="cloud",node="node-a"}'
+        values: '0x6000'
+      - series: 'maktaba_relay_active_tunnels{job="cloud",node="node-a"}'
+        values: '1000x6000'
+      - series: 'relay_measured_mbit_per_second{node="witness"}'
+        values: '300x6000'
+      - series: 'relay_measured_tunnels{node="witness"}'
+        values: '5000x6000'
+    promql_expr_test:
+      - expr: relay_capacity_used
+        eval_time: 1h
+        exp_samples:
+          - labels: 'relay_capacity_used'
+            value: 0.7
+      - expr: relay_tunnels_used
+        eval_time: 1h
+        exp_samples:
+          - labels: 'relay_tunnels_used'
+            value: 0.2
+    alert_rule_test:
+      - eval_time: 3d
+        alertname: relay_start_phase2
+        exp_alerts: []
+      - eval_time: 8d
+        alertname: relay_start_phase2
+        exp_alerts:
+          - exp_labels: {severity: sev3}
+            exp_annotations:
+              summary: "Start Phase 2: the relay's daily peak passed 60 % of one node's measured capacity for 7 days (traffic 70%)"
+              runbook_url: docs/runbooks/cloud/capacity.md
+  # 85 % (255 Mbit/s: 3.825e9 bytes each 2 minutes): a page after an hour, not before
+  - interval: 2m
+    input_series:
+      - series: 'maktaba_relay_bandwidth_out_bytes_total{job="cloud",node="node-a"}'
+        values: '0+3825000000x100'
+      - series: 'maktaba_relay_bandwidth_in_bytes_total{job="cloud",node="node-a"}'
+        values: '0x100'
+      - series: 'maktaba_relay_active_tunnels{job="cloud",node="node-a"}'
+        values: '1000x100'
+      - series: 'relay_measured_mbit_per_second{node="witness"}'
+        values: '300x100'
+      - series: 'relay_measured_tunnels{node="witness"}'
+        values: '5000x100'
+    alert_rule_test:
+      - eval_time: 45m
+        alertname: relay_resize_now
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: relay_resize_now
+        exp_alerts:
+          - exp_labels: {severity: sev2}
+            exp_annotations:
+              summary: "The relay is above 80 % of one node's measured capacity for an hour: resize the pair now"
+              runbook_url: docs/runbooks/cloud/capacity.md
