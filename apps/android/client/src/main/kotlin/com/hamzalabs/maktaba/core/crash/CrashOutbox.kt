@@ -46,7 +46,9 @@ class CrashOutbox(val dir: File, private val now: () -> Long = System::currentTi
         dir.mkdirs()
         val tmp = File(dir, "outbox.json.tmp")
         tmp.writeText(JSON.encodeToString(State.serializer(), s))
-        tmp.renameTo(stateFile)
+        // File.renameTo does not replace an existing file on Windows: the state was never saved
+        // after its first time there (CrashOutboxTest on the desktop Player's Windows job)
+        java.nio.file.Files.move(tmp.toPath(), stateFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
     }
 
     /** The kept files, oldest first. */
