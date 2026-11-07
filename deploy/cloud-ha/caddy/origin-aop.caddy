@@ -17,8 +17,13 @@ api.maktaba.tv, app.maktaba.tv, admin.maktaba.tv {
 			trust_pool file /etc/caddy/maktaba-aop-ca.pem
 		}
 	}
+	# A handle of its own, first: a bare "respond @outside 403" never runs, because Caddy orders
+	# handle before respond and the catch-all handle below answers every request (rehearsal
+	# origin-aop, T08, found it). handle blocks are exclusive and keep this order.
 	@outside not remote_ip CLOUDFLARE_RANGES
-	respond @outside 403
+	handle @outside {
+		respond 403
+	}
 	@admin host admin.maktaba.tv
 	handle @admin {
 		reverse_proxy 127.0.0.1:8091
