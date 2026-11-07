@@ -81,6 +81,11 @@ func TestEnvelope(t *testing.T) {
 	if rec := post("not an envelope", viewer); rec.Code != http.StatusBadRequest {
 		t.Errorf("garbage: %d", rec.Code)
 	}
+	// an item's length is the sender's word: one past the envelope is refused, not allocated
+	lying := `{"consent":"crash_reports_to_home","install_id":"i9"}` + "\n" + `{"type":"event","length":2000000000}` + "\n{}\n"
+	if rec := post(lying, viewer); rec.Code != http.StatusBadRequest {
+		t.Errorf("a length past the envelope: %d", rec.Code)
+	}
 	for i := 0; i < EnvelopesPerHour; i++ {
 		post(env(ConsentCrashReports), &principal.Principal{UserID: "u-2"})
 	}

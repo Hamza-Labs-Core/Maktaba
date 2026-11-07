@@ -122,6 +122,10 @@ func parseEnvelope(b []byte) (envelopeHeader, []envItem, error) {
 			return hdr, items, fmt.Errorf("item header: %w", err)
 		}
 		if it.Length > 0 {
+			// the length is the sender's word: never more than what the envelope still holds
+			if it.Length > len(b) {
+				return hdr, items, fmt.Errorf("item %s: length %d is more than the envelope holds", it.Type, it.Length)
+			}
 			it.payload = make([]byte, it.Length)
 			if _, err := io.ReadFull(r, it.payload); err != nil {
 				return hdr, items, fmt.Errorf("item %s: short", it.Type)
