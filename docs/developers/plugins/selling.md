@@ -82,6 +82,17 @@ You get a statement each month, in English and Arabic.
 The store's buy pages run no script. The home sends only the plugin, the language and its
 signature.
 
+## Moving a purchase to another home
+
+A purchase belongs to the buyer's store account, and it is used on one home at a time. On the
+store's account page (plugins.maktaba.tv/account), **Purchases** lists the account's plugins,
+each with the home it is on, and **Move** sends one to another home linked to the same account.
+The buyer confirms it's them first, and a purchase can move **twice in any 365 days**; after
+that the page says when the next move is free. The new home picks the plugin up at its next
+daily check (or at once with **Check for purchases now**); the old home stops at its next
+daily check, and the plugin waits there with its queue and data kept. A refunded purchase
+cannot move. Nothing changes for you: the sale, your share and its payout stay as they were.
+
 ## What the home sees
 
 The home never deals with money or a payment provider. After a purchase it downloads a

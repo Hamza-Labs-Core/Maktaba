@@ -337,6 +337,12 @@ build fails when the two differ.
 
 ### Added
 
+- **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
+  a **Purchases** section: each plugin bought with the account, the home it is on, and
+  **Move** to another home linked to the same account, after confirming it's you. A purchase
+  can move twice in any 365 days. The new home gets the plugin at its next daily check (or with
+  **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
+  queue and data.
 - **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
   (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
   Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
