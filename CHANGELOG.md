@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud rehearsal proves direct remote access end to end (Epic 50 story 50.15, T06,
+  T10, T12).** Its `direct-remote` scenario puts two homes behind a router that maps ports,
+  with the cloud's relay, worker and name server and two certificate authorities on the other
+  side. Each home gets its certificate through the cloud, the second from the overflow
+  authority once the week's budget is used, and passes the outside check, and an app outside
+  downloads from each home directly, never through the relay. The cloud's name server now
+  starts: its role was refused as unknown.
 - **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
   `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
   enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two

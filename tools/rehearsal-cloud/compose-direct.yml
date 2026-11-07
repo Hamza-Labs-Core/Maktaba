@@ -16,6 +16,12 @@ name: maktaba-rehearsal-direct
 
 networks:
   wan:
+    # No host masquerade from "the internet": Docker's rule (-s 198.51.100.0/24 ! -o br-wan
+    # -j MASQUERADE) also rewrites the router's forwarded connections as they enter the lan
+    # bridge, so a home saw them from the Docker host (192.168.77.1), answered it directly, and
+    # the router's port mapping never got its reply (the outside check timed out).
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
     ipam:
       config:
         - subnet: 198.51.100.0/24
