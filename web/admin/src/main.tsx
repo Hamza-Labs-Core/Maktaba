@@ -10,7 +10,12 @@ import "@fontsource/amiri/700.css";
 import "../../src/styles/tokens.css";
 import "../../cloud/src/cloud.css";
 import { applyResolvedTheme, readMode } from "../../src/lib/theme";
+import { setChangeHeaders } from "@cloud-shared/api";
 import { App } from "./App";
+import { STAFF_HEADERS } from "./staff";
+
+// the console's listener refuses a change without its CSRF header (story 50.32 §4)
+setChangeHeaders(STAFF_HEADERS);
 
 // the same light / dark choice as the home app (stored mode, else the OS)
 applyResolvedTheme(readMode());
