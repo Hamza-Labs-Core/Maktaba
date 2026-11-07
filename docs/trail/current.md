@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.88
-up_to_commit: 8d2b59e2b
-built_from: v0.3.87
+tag: v0.3.89
+up_to_commit: a3e70bc02
+built_from: v0.3.88
 ---
 
-# Trail snapshot: v0.3.88
+# Trail snapshot: v0.3.89
 
 ## Keep doing
 
@@ -36,7 +36,7 @@ built_from: v0.3.87
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
 - Fix flaky tests at the root; read the log first, a flaky-looking test is often a real bug (in Epic 53's series as many failures were real as were flakes; a flaky TempDir cleanup was a shutdown bug). A UI failure is the change's only if the same code fails the shard elsewhere and the failing test does not move between runs. Before calling a UI test a flake, read what it waits for: a self-dismissing element checked after slower queries races a loaded simulator; fix the order, not the timeout. Meet test budgets at the cause, never by raising caps or splitting tests. (d20261031-standing-rules, #364, #635, #271, #716, d20261106-epic53-ci-flakes, #673)
 - Turn a "should never happen" rule into a test-time error and run the whole suite under it. (#662)
-- Verify each new test fails without its fix (origin/main's sources on a WIP commit). Latch tests that hold a read's answer reproduce read/write races every time. (#679, #613, #667)
+- Verify each new test fails without its fix (origin/main's sources on a WIP commit); a security alert is fixed only once a test fails on main for it. Latch tests that hold a read's answer reproduce read/write races every time. (#679, #613, #667, #734)
 - Jobs run only when their code changes; run the same check on every PR that the release tag runs. (#528, #519)
 - Tests get a server's ports from the server once open; tests bind 127.0.0.1. (#571, #451, #127)
 - Test SQLite runs with `synchronous=OFF` and a memory journal, set in the DSN. Scratch Postgres uses `initdb -E UTF8` and `-k ''`. (#521, #540, #467, #543, d20261031-tooling-local-gotchas)
@@ -101,6 +101,7 @@ built_from: v0.3.87
 - On main the update rehearsal is a `workflow_run` of CI's successful push run; a `workflow_run` run's `head_sha` is main's head when it started, not the commit it rehearsed. The rehearsed commit is in the run name `Update rehearsal of <sha>` (and its commit status); `tag-guard.sh` and `next_tag.py` read it there. Before this, two separate main concurrency groups finished on different commits and nothing was tagged for a day. (#737)
 - A push with `GITHUB_TOKEN` starts no workflow, but `gh workflow run` with it does (`actions: write`). GitHub Pages sends `max-age=600`; fresher clients add a per-minute query. Probe data lives on a data branch (`status-data`), not main. (#739)
 - CodeQL reads test code too (a `<script>`-stripping regexp is a high finding), and a flagged line in a PR's diff is fixed in that PR. (#739)
+- CodeQL's models: its Go path query does not follow `CanonicalUnder`'s prefix check but recognises a `strings.Contains(x, "..")` refusal; clear-text logging matches variable names (credential file paths named `passwords`); a wrapper relaying a captured response must set its own non-HTML content type. Teach it with such changes before dismissing; dismissal comments are capped at 280 characters. (#734)
 - A run green except for the ignored iPhone/iPad shards is not tagged; web-release.yml is not a tag workflow. (#699)
 - CI builds the Desktop Player on x64 only, so arm-only native-library gaps show first at release; reproduce with `docker --platform linux/arm64 ubuntu:22.04` and `ldd -r`. (#725)
 - A public repository cannot use an Action from a private one; GitHub shows a workflow that does not parse by its path and starts no run. (#702)
@@ -120,6 +121,7 @@ built_from: v0.3.87
 **Database and migrations**
 - Number a migration slot only when merging main; a slot above a gap fails migration-lint; `SchemaRev` lives in three places. (#669, #692, #678, #672, #657, #693)
 - A new table keeps `maktaba_worker`'s default grants (compat-prev) and refuses joined machines' writes with a `BEFORE` trigger; it must be decided for the node copy (`copyReviewed` or `cluster_copy_excluded()`). A new failure cause needs its label and help; a new pool needs its `worker_pools` seed. (#663, #692, #693)
+- migration-lint refuses a plain `CREATE INDEX` even on a new empty table: `CONCURRENTLY`, in its own statement block of a NO TRANSACTION file. (#731)
 - The SQLite migration runner rewrites `ADD COLUMN IF NOT EXISTS` only when it is the one statement of its `StatementBegin` block. (#733)
 - Cloud migrations are numbered by epic slot; goose refuses a version below the head, so `Migrator.Up` passes `goose.WithAllowMissing()`. (#700)
 - `job_stages.stage` is capped at 40 characters; the SQLite sibling cannot widen an inline check without rebuilding the table. (#693)
@@ -154,6 +156,8 @@ built_from: v0.3.87
 - Canonical JSON for signatures needs its own small parser per language: Go's `encoding/json` escapes `<`, `>`, `&` and U+2028/9 unless `SetEscapeHTML(false)` and keeps the last duplicate key, JavaScript keeps lone surrogates, serde_json refuses them. Hash `files.json` in canonical form. WebCrypto imports an Ed25519 seed as PKCS 8 with the prefix `302e020100300506032b657004220420`. (#733, #743)
 - `node:sqlite` (Node 22.13+) runs D1's SQL as is, so store tests need no Miniflare. A far-future ISO date (`+275760…`) sorts before `2026` as text; compare against `9999-12-31T…`. (#735)
 - A WIT variant gains no case without breaking 1.0 guests; a plugin loop refusal reuses `scope` with the API code `plugin_loop`. (#751)
+- Wasmtime's component linker matches a guest's `maktaba:plugin/x@1.0.0` import against the host's `@1.1.0` by semver (old guests keep working while no shared type changes) and links a newer minor too, so the import audit (`plugin_api_newer`) alone refuses it. `cargo build` of the guests misses a WIT change (`generate!` does not track the file): touch the guest sources, check with `strings x.wasm | grep maktaba:plugin`. (#731)
+- Go's `rules.Effective` does not apply the pipeline's `ENV_DEFAULTS` (`MAKTABA_OLLAMA_URL`); Go code reading those rules applies the variable itself. (#731)
 - On the rehearsal's seeded home the previous release's first seed writes every component of its catalog (by what is on disk); only components newer than it go through SeedMissing. (#748)
 - Random bytes are not reliably corrupt media; build fixtures from a real header plus seeded junk. (#526, #537)
 
@@ -178,7 +182,7 @@ built_from: v0.3.87
 - maktaba.dev: `rewriteHref` joins an absolute `/path` onto the source folder, so generated pages link in-site pages by full URL. It builds with npm, not pnpm; a new guide is one line in `GUIDES` and one in `src/site.test.ts`. `media.info` is gated in `server.go`'s `capabilityOf`, not in `capabilities.toml`. (#704, #723)
 - Screenshots without a stack: the desktop Player through `runDesktopComposeUiTest` plus `captureToImage` (wrap `Shell` in the window's `Surface`); the web through vite and playwright-core with `/api/*` from a route table and `mkt:usage:consent` set first; Apple TV shots are in CI's `tv-ui-tests` artifact. The devportal lazy-loads images, so scroll each into view to check it. (#703)
 - Plugins: stages load at the pipeline worker's start, so a changed installed set needs the supervisor's `Restart`; the pipeline needs `MAKTABA_SUPERVISOR_TOKEN_FILE`; a deep data folder pushes `<data>/run/*.sock` past macOS's 104-byte `sun_path`; Wasmtime under the hardened runtime needs `allow-jit` and `allow-unsigned-executable-memory`; a new catalog group needs its place in the web's `GROUP_ORDER`. (#707)
-- The affected-tests gate maps from main's coverage: tests in a new file do not count for an old source, and shared JSON tables map to no test (add a direct test beside the row); `tools/ci/tests` needs PyYAML. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. (#707)
+- The affected-tests gate maps from main's coverage: tests in a new file count for an old source only when the coverage map names its package, schema-revision constants still need a `No-Test-Change` trailer, and shared JSON tables map to no test (add a direct test beside the row); `tools/ci/tests` needs PyYAML. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. (#707, #731)
 - A snapshot's `#N` must be a PR with an event; other numbers are written without `#`, an issue as `issue #N`. (#706)
 - Homebrew's cargo shadows rustup's and has no wasm target (the SDK template needs rustup's `wasm32-wasip2`); the root `.gitignore` `MANIFEST` hides a `manifest/` folder on the Mac. (#683, #694, #717)
 - Claude Code reserves plugin names starting with `claude-`; the plugin is `trail`. Hook machines have python3 without `tomllib`. (#702)
@@ -195,6 +199,7 @@ built_from: v0.3.87
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
 - Epic 54: TypeScript, Python and Go templates (issue #718); signing, `mkp run`, developer mode and the plugins CLI (issue #719); the migrate job (issue #712), rehearsal scenario 15 (issue #708), the updater's pre-update list (issue #709), Windows (issue #710), job metrics and problem-report opt-in (issue #711). (#683, #693, #704, #707, #717)
 - Epic 54 Phase 2 (signing ships dark, no root keys): the store service, checks and review (with flow check C12), the home's catalog loop and kill switch, the store browser; release-time embedding of the revocation list and store keys; the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. Flows (§4.12) and joined machines (§4.13) build PRs. (#733, #735, #743, #751)
+- Epic 54 Phase 4 wave 4 (54.31) can build on plugin `compute` (Plugin API 1.1, in v0.3.89). (#731)
 - Epic 50: 50.11 part 2 status banners in every app; series that 53.17 emits for the monitoring alerts and status page; 50.12 onward. (#727, #739)
 - Rare web test races of one shape (a check one render too early), listed on issue #697; BigScreen still re-attaches its key listener. (#746)
 - Story 51.03's spec still names the removed `loops-full-home.txt`. (#748)
@@ -529,7 +534,9 @@ None.
 | 0725-release-signing-deploy-key | 2026-11-06 | pr | Tags are pushed with a deploy key, so releases are signed as a push |
 | 0726-snapshot-v0385 | 2026-11-06 | pr | Trail snapshot v0.3.85 |
 | 0730-tag-by-session | 2026-11-06 | pr | Tags are pushed by the release session; auto-tag.yml is removed |
+| 0731-plugins-local-compute | 2026-11-06 | pr | Plugins ask the home's own models, local compute (Epic 54, story 54.21) |
 | 0733-plugins-signing-trust | 2026-11-06 | pr | Plugins Phase 2 part 1, signing and the chain of trust (Epic 54, 54.14) |
+| 0734-codeql-alerts | 2026-11-06 | pr | The open CodeQL alerts on main, fixed or dismissed |
 | 0735-pluggable-payments | 2026-11-06 | pr | Paid plugins through pluggable payment providers, the store side (Epic 54, story 54.19) |
 | 0743-home-entitlements | 2026-11-06 | pr | The home checks plugin entitlements offline (Epic 54, story 54.19 §6) |
 | 0751-epic54-flows-spec | 2026-11-06 | decision | Epic 54 spec, flows, cross-plugin events, loop checks and joined machines |
