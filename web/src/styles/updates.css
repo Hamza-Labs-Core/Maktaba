@@ -342,3 +342,16 @@
 .mkt-about__copyright {
   font-size: var(--font-size-sm);
 }
+
+/* the plugins a release would pause (story 54.07 §3): a note, not a blocker */
+.mkt-updates__note {
+  margin-block: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid var(--color-warn, var(--color-accent));
+  border-radius: var(--radius-md);
+}
+.mkt-updates__note ul {
+  margin-block: var(--space-2);
+  padding-inline-start: var(--space-4);
+}

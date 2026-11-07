@@ -8,6 +8,7 @@
 // (update-attempts.md): whoever made it (the desktop app's own updater, a release's first
 // start, a run), what happened, why, and what to do next.
 import { Fragment, useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -598,6 +599,26 @@ export function AdminUpdates() {
             <li>{t("updates.release.home", { version: target.version })}</li>
             {nodes.length > 0 && <li>{t("updates.release.machines", { count: nodes.length })}</li>}
           </ol>
+          {(target.plugins_paused?.length ?? 0) > 0 && (
+            <div className="mkt-updates__note" data-testid="updates-plugins-paused">
+              <p>{t("updates.release.pluginsPause", { version: target.version })}</p>
+              <ul>
+                {target.plugins_paused!.map((p) => (
+                  <li key={p.id} data-testid={`updates-plugin-paused-${p.id}`}>
+                    <bdi>{p.name?.[locale] || p.name?.en || p.id}</bdi>{" "}
+                    <span className="mkt-muted">
+                      {t("updates.release.pluginRange", { version: p.version, range: p.range })}
+                      {p.enabled ? null : <> · {t("updates.release.pluginOff")}</>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <p className="mkt-muted">
+                {t("updates.release.pluginsPauseHow")}{" "}
+                <Link to="/settings/plugins">{t("updates.release.pluginsLink")}</Link>
+              </p>
+            </div>
+          )}
           {sysStatus?.instructions && (
             <div className="mkt-about__docker">
               <p>{t("update.docker.instructions")}</p>

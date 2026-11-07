@@ -520,3 +520,42 @@ func TestStoreSignedInstallRecordsItsLevel(t *testing.T) {
 		t.Fatalf("after the rollback: %s %s %q", version, level, key)
 	}
 }
+
+// 54.07 §3 (#709): the plugins a server version would pause are the installed ones whose
+// maktaba range excludes it, each with its own name and whether it is on.
+func TestPausedBy(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	pkg := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(pkg, "i18n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(pkg, "i18n", "en.json"), []byte(`{"plugin.name":"Silences"}`), 0o644)
+	_ = os.WriteFile(filepath.Join(pkg, "i18n", "ar.json"), []byte(`{"plugin.name":"الصمت"}`), 0o644)
+	for id, rng := range map[string]string{"dev.example.old": ">=0.6.0, <0.7.0", "dev.example.wide": ">=0.6.0", "dev.example.off": "<0.7.0"} {
+		m := `{"maktaba":"` + rng + `","strings":{"name":"plugin.name","summary":"plugin.summary"}}`
+		if _, err := db.Exec(`INSERT INTO plugin_installs (plugin_id, version, digest, path, manifest) VALUES ($1, '1.2.0', 'd', $2, $3)`,
+			id, pkg, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO components (id, want, updated_by) VALUES ($1, 'enabled', 'test'), ($2, 'installed', 'test')`,
+		components.PluginPrefix+"dev.example.old", components.PluginPrefix+"dev.example.off"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := PausedBy(context.Background(), db, "0.7.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0].ID != "dev.example.off" || got[1].ID != "dev.example.old" {
+		t.Fatalf("paused by 0.7.0: %+v", got)
+	}
+	if got[0].Enabled || !got[1].Enabled || got[1].Range != ">=0.6.0, <0.7.0" || got[1].Version != "1.2.0" {
+		t.Fatalf("rows: %+v", got)
+	}
+	if got[1].Name["en"] != "Silences" || got[1].Name["ar"] != "الصمت" {
+		t.Fatalf("names: %v", got[1].Name)
+	}
+	if got, _ := PausedBy(context.Background(), db, "v0.6.5"); len(got) != 0 {
+		t.Fatalf("paused by 0.6.5: %+v", got)
+	}
+}

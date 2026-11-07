@@ -36,6 +36,23 @@ type Release struct {
 	ApprovedAt      *time.Time   `json:"approved_at,omitempty"`
 	ApprovedBy      string       `json:"approved_by,omitempty"`
 	Attempts        int          `json:"attempts"`
+	// PluginsPaused are the installed plugins this release would pause (story 54.07 §3):
+	// their maktaba range excludes it. The Updates page lists them before the update,
+	// which they do not block. Filled by the overview, never stored.
+	PluginsPaused []PausedPlugin `json:"plugins_paused,omitempty"`
+}
+
+// PausedPlugin is an installed plugin a release would pause: after the update it waits
+// incompatible, its queue kept, until a version whose range takes the release is installed.
+type PausedPlugin struct {
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	// Range is the plugin's maktaba range.
+	Range string `json:"range"`
+	// Name is its own name by language (en, ar).
+	Name map[string]string `json:"name"`
+	// Enabled: it runs now (an off plugin stays off either way).
+	Enabled bool `json:"enabled"`
 }
 
 // Asset is one GitHub release asset (name, download URL, size).

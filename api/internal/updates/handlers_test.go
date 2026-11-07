@@ -127,6 +127,16 @@ func TestSkipDeferRunAndOverview(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t, sqliteDB(t))
 	seed(t, f.store, rel("1.5.0"), rel("1.6.0"))
+	// story 54.07 §3 (#709): the plugins each release would pause, asked once a version
+	asked := map[string]int{}
+	f.svc.PluginsPaused = func(_ context.Context, v string) ([]PausedPlugin, error) {
+		asked[v]++
+		if v != "1.6.0" {
+			return nil, nil
+		}
+		return []PausedPlugin{{ID: "dev.example.old", Version: "1.0.0", Range: "<1.6.0", Enabled: true,
+			Name: map[string]string{"en": "Old", "ar": "قديم"}}}, nil
+	}
 	h := newRouter(t, f)
 
 	code, body := do(t, h, "GET", "/api/cluster/updates", nil, true)
@@ -134,6 +144,16 @@ func TestSkipDeferRunAndOverview(t *testing.T) {
 	target, _ := plan["target"].(map[string]any)
 	if code != 200 || target["version"] != "1.6.0" || body["auto_install_available"] != false {
 		t.Fatalf("overview: %d %v", code, body)
+	}
+	paused, _ := target["plugins_paused"].([]any)
+	if len(paused) != 1 || paused[0].(map[string]any)["id"] != "dev.example.old" || asked["1.6.0"] != 1 {
+		t.Fatalf("plugins paused by the target: %v (asked %v)", target["plugins_paused"], asked)
+	}
+	for _, r := range body["catalog"].([]any) {
+		rel := r.(map[string]any)
+		if _, ok := rel["plugins_paused"]; ok != (rel["version"] == "1.6.0") {
+			t.Fatalf("catalog %v: %v", rel["version"], rel["plugins_paused"])
+		}
 	}
 	enableAutoInstall(t) // Update now below needs a build that installs by itself
 	if code, _ := do(t, h, "POST", "/api/cluster/updates/skip", map[string]any{"version": "v1.6.0"}, true); code != 200 {

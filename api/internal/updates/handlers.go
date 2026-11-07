@@ -168,6 +168,7 @@ func (s *Service) Overview(ctx context.Context) (Overview, error) {
 	if pl.Target != nil && run == nil {
 		o.Stuck = s.stuck(ctx, pl.Target.Version)
 	}
+	s.pausedPlugins(ctx, o.Catalog, o.Plan.Target)
 	if st.LastCheckOK != nil {
 		o.CheckStale = s.now().Sub(*st.LastCheckOK) >= StaleAfter
 	}
@@ -561,4 +562,34 @@ func (c *capture) Write(b []byte) (int, error) {
 		c.code = http.StatusOK
 	}
 	return c.body.Write(b)
+}
+
+// pausedPlugins fills each release's plugins it would pause (story 54.07 §3), each version
+// asked once. A failure leaves the lists empty: the page shows the update as before.
+func (s *Service) pausedPlugins(ctx context.Context, cat []Release, target *Release) {
+	if s.PluginsPaused == nil {
+		return
+	}
+	seen := map[string][]PausedPlugin{}
+	fill := func(r *Release) {
+		v := NormalizeVersion(r.Version)
+		ps, ok := seen[v]
+		if !ok {
+			var err error
+			if ps, err = s.PluginsPaused(ctx, v); err != nil {
+				if s.Log != nil {
+					s.Log.Warn("updates_plugins_paused_failed", "version", v, "err", err)
+				}
+				ps = nil
+			}
+			seen[v] = ps
+		}
+		r.PluginsPaused = ps
+	}
+	for i := range cat {
+		fill(&cat[i])
+	}
+	if target != nil {
+		fill(target)
+	}
 }

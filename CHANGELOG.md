@@ -1045,6 +1045,13 @@ build fails when the two differ.
   switch). It sends a kept crash at the next sign-in when on, and has **Report a problem…** and
   **My reports** in its Help menu.
 
+- **The Updates page names the plugins an update will pause (Epic 54, story 54.07 §3).**
+  Under the release it is about to install, the page lists each installed plugin whose
+  Maktaba range does not take that release, with its version, its range and whether it is
+  on. After the update those plugins wait as incompatible with their queues kept, and resume
+  when a version that supports the release is installed; the update itself goes ahead.
+  maktaba.dev: Installing a plugin, *When Maktaba itself updates*.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

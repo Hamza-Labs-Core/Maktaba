@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { deferred } from "../../test/deferred";
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 const { get, post, put, downloadBlob } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -144,11 +145,13 @@ function routes(ov: unknown, view: unknown, runs: unknown[] = []) {
 function renderPage(lang?: string) {
   if (lang) localStorage.setItem("mkt:locale", lang);
   return render(
-    <I18nProvider>
-      <ToastProvider>
-        <AdminUpdates />
-      </ToastProvider>
-    </I18nProvider>
+    <MemoryRouter>
+      <I18nProvider>
+        <ToastProvider>
+          <AdminUpdates />
+        </ToastProvider>
+      </I18nProvider>
+    </MemoryRouter>
   );
 }
 
@@ -910,6 +913,41 @@ describe("Admin Updates", () => {
     expect(await screen.findByTestId("updates-what-backup")).toHaveTextContent(
       "backs up the library database first"
     );
+  });
+
+  it("lists the plugins the release would pause, by name, without blocking it (story 54.07 §3)", async () => {
+    const paused = [
+      {
+        id: "dev.example.old",
+        version: "1.0.0",
+        range: "<1.5.0",
+        enabled: true,
+        name: { en: "Silences", ar: "الصمت" },
+      },
+      { id: "dev.example.off", version: "2.0.0", range: "=1.4.0", enabled: false },
+    ];
+    routes(
+      overview({ plan: { ...overview().plan, target: { ...target, plugins_paused: paused } } }),
+      null
+    );
+    renderPage();
+    const box = await screen.findByTestId("updates-plugins-paused");
+    expect(box).toHaveTextContent("These plugins will pause after the update to 1.5.0");
+    expect(within(box).getByTestId("updates-plugin-paused-dev.example.old")).toHaveTextContent(
+      "Silences version 1.0.0, for Maktaba <1.5.0"
+    );
+    expect(within(box).getByTestId("updates-plugin-paused-dev.example.off")).toHaveTextContent(
+      "dev.example.off version 2.0.0, for Maktaba =1.4.0 · off"
+    );
+    expect(within(box).getByRole("link")).toHaveAttribute("href", "/settings/plugins");
+    expect(screen.getByRole("button", { name: "Update now" })).toBeEnabled();
+  });
+
+  it("names no plugin when none would pause", async () => {
+    routes(overview(), null);
+    renderPage();
+    await screen.findByTestId("updates-what-happens");
+    expect(screen.queryByTestId("updates-plugins-paused")).toBeNull();
   });
 
   it("colours states", () => {

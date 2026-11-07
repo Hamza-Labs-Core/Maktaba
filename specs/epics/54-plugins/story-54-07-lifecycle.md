@@ -77,10 +77,13 @@ own semver and a `maktaba` range and `plugin_api` version (54.01).
 
 - At install and at every server start, the store checks the range and the API version. Out of
   range → *Waiting* `incompatible`, stages not registered, queue kept.
-- **Before a server update**, the updater (Epic 35; the packs step of 51.18 in
-  `cmd/maktaba-server/internal/updater/packs.go`) lists installed plugins whose range
-  excludes the new version, and the Updates page shows them ("These plugins will pause after
-  the update: …"). The update is not blocked.
+- **Before a server update**, the Updates overview (`GET /api/cluster/updates`, Epic 35)
+  lists, for each release in the catalog and for the plan's target, the installed plugins
+  whose range excludes it (`plugins_paused`: id, version, range, name in each language,
+  whether it is on; `plugins.PausedBy`, the gate's own range check), and the Updates page
+  shows them under the release ("These plugins will pause after the update to …"). The home
+  answers it from `plugin_installs` before any machine updates, so the list is there before
+  the update starts. The update is not blocked.
 - When a newer compatible version is in the catalog (54.17), the plugin shows "Update
   available".
 
