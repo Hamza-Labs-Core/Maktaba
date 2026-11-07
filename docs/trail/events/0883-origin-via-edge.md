@@ -17,6 +17,7 @@ prs: [867]
 
 ## What we learned
 - The shared access logger read the leftmost `X-Forwarded-For` entry, which the client controls, so any client could write its own address into the logs. Logging the resolved IP, with the TCP peer as the fallback, closes that. On the relay router the log now shows Caddy's loopback address.
+- The WIP commit left `affected-tests` red: `role_api.go`, `main.go` and `ratelimit.go` changed with none of their tests. The fix was a real test through `newAPI`'s wiring, not a `No-Test-Change` trailer: a forged `CF-Connecting-IP` from an untrusted peer shares the peer's rate-limit bucket, and behind the trusted connector two clients get separate buckets. Dropping `WithTrustedProxies` makes it fail.
 - A new step for T04 in the Caddy job piped into `grep -q`, which the repo's lint forbids. Check new workflow shell against the lint rules before pushing.
 
 ## Open
