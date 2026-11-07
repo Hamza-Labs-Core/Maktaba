@@ -95,12 +95,12 @@ async def test_off_the_allow_list_is_plexs_forbidden_other_refusals_are_errors()
     db = SimpleNamespace(transport=_Refusing("plugin_service_path"))
     with service.bind(db, "api"):
         got = await asyncio.to_thread(
-            t.request, "GET", "http://service.plex/livetv/sessions", {}, None, 5.0
+            t.request, "GET", "service://plex/livetv/sessions", {}, None, 5.0
         )
     assert got == (403, b"")
     db = SimpleNamespace(transport=_Refusing("plugin_capability"))
     with service.bind(db, "api"), pytest.raises(TransportError, match="plugin_capability"):
-        await asyncio.to_thread(t.request, "GET", "http://service.plex/identity", {}, None, 5.0)
+        await asyncio.to_thread(t.request, "GET", "service://plex/identity", {}, None, 5.0)
 
 
 def test_unbound_the_client_is_the_workers_own() -> None:

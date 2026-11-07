@@ -34,8 +34,9 @@ __all__ = [
     "plugin_settings",
 ]
 
-#: the base URL a plugin's client has for a service (the door knows the real one)
-SERVICE_URL = "http://service.{name}"
+#: the base a plugin's client has for a service: not an address (the door knows the real one),
+#: so a scheme of its own, as the relay's ``relay://<ext>``
+SERVICE_URL = "service://{name}"
 
 
 @dataclass(frozen=True)
