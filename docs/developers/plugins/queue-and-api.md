@@ -55,6 +55,22 @@ classes, drain and parking work as for Maktaba's own stages.
 Use `job.progress(pct)` to report progress, and `job.checkpoint(bytes)` to save state so a
 drained or retried job can resume.
 
+### Migrating your data
+
+When an update raises your manifest's `data_version`, your data still has the old shape.
+Before any other job of the new version runs, Maktaba runs **one migrate job**: a `catalog`
+job on the home whose `run` is called with the stage `__migrate`, and whose payload
+(`job.payload()`) is `{"from": <the data's version>, "to": <your data_version>}`.
+
+- Declare `migrate = true` in the manifest and handle `__migrate` in `run`: read your data
+  with `data.get` and `data.list`, rewrite it with `data.put`, and return a result.
+- Until it succeeds, your other stages wait (their jobs are paused, not failed); a failed
+  migrate job is retried like any job. After it succeeds, they run on the new version.
+- Without `migrate = true`, no code runs: the data is taken as it is at the new version.
+- A rollback to a version whose `data_version` is below the data's is refused unless the admin
+  clears your data. A rollback before your migrate job ran is allowed: the data was not
+  changed yet.
+
 ## The plugin API
 
 One WIT package, `maktaba:plugin@1.x`, versioned with semver. A minor version only adds

@@ -134,7 +134,10 @@ The CLI also has `list`, `show`, `enable`, `disable`, `start`, `stop`, `update`,
 - A new version installs beside the old one. The old version drains, then the new one takes
   over. The previous version is kept for rollback.
 - If the new version asks for more capabilities, it waits for the admin's approval.
-- Bump `data_version` when your stored data changes shape. Rolling back to a version with a
-  lower `data_version` is refused unless the admin also clears your plugin's data.
+- Bump `data_version` when your stored data changes shape, and set `migrate = true` to
+  bring the old data up in one migrate job before your other stages run (see
+  [Migrating your data](queue-and-api.md#migrating-your-data)). Rolling back to a version with
+  a lower `data_version` than the data's is refused unless the admin also clears your
+  plugin's data.
 - When an admin turns your plugin off, it stays off through updates, restores and reinstalls
   until an admin turns it on.

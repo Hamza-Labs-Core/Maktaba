@@ -41,6 +41,9 @@ STAGE = pm.queue_name(PID, "find_silences")
 @dataclass
 class FakeDB:
     executed: list[tuple[str, tuple[Any, ...]]] = field(default_factory=list)
+    #: the row's data_version (slot 0202) and the manifest's, with its migrate flag
+    data_version: int | None = None
+    doc: dict[str, Any] = field(default_factory=lambda: DOC)
 
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
         return [
@@ -48,8 +51,9 @@ class FakeDB:
                 "plugin_id": PID,
                 "version": "1.4.0",
                 "path": "/data/plugins/x",
-                "manifest": DOC,
+                "manifest": self.doc,
                 "review_level": "none",
+                "data_version": self.data_version,
             }
         ]
 
@@ -330,3 +334,79 @@ async def test_a_mint_refused_as_a_loop_fails_the_job(monkeypatch: pytest.Monkey
     with pytest.raises(StageFailure) as f:
         await dispatch.run_plugin_stage(FakeDB(), Job(), Ctx())
     assert f.value.kind == "plugin_loop" and not f.value.retryable
+
+
+# story 54.07 §5 step 4 (#712): a version whose data_version grew runs one migrate job first
+
+
+def _migrating(migrate: bool) -> FakeDB:
+    doc = dict(DOC, data_version=3, migrate=migrate) if migrate else dict(DOC, data_version=3)
+    return FakeDB(data_version=2, doc=doc)
+
+
+async def test_a_stage_waits_for_the_migrate_job(
+    monkeypatch: pytest.MonkeyPatch, api: list[tuple[str, str]]
+) -> None:
+    enqueued: list[dict[str, Any]] = []
+
+    async def enqueue(db: Any, **kw: Any) -> None:
+        enqueued.append(kw)
+
+    import maktaba_pipeline.engine.enqueue as enq
+
+    monkeypatch.setattr(enq, "enqueue_job", enqueue)
+    seen: list[dict[str, Any]] = []
+    _host(monkeypatch, [_result("ok", output_hash="h")], seen)
+    with pytest.raises(JobDeferred) as d:
+        await dispatch.run_plugin_stage(_migrating(True), Job(), Ctx())
+    assert "plugin_migrating" in d.value.reason
+    assert [e["stage"] for e in enqueued] == [pm.queue_name(PID, "_migrate")]
+    assert enqueued[0]["subject_kind"] == "catalog"
+    assert seen == [] and api == []  # no token, no host
+
+
+async def test_a_migrate_job_runs_the_guests_migrate_and_records_it(
+    monkeypatch: pytest.MonkeyPatch, api: list[tuple[str, str]]
+) -> None:
+    db = _migrating(True)
+    seen: list[dict[str, Any]] = []
+    _host(monkeypatch, [_result("ok", output_hash="h")], seen)
+    job = Job(stage=pm.queue_name(PID, "_migrate"), subject=Subject("catalog", uuid4()))
+    out = await dispatch.run_plugin_stage(db, job, Ctx())
+    assert out.output_hash == "data-3"
+    assert seen[0]["job"]["stage"] == "__migrate"
+    assert json.loads(seen[0]["job"]["payload"]) == {"from": 2, "to": 3}
+    sql, args = db.executed[-1]
+    assert "SET data_version = NULL" in sql and args == (PID, "1.4.0", 2)
+
+
+async def test_a_failed_migrate_leaves_the_data_behind(
+    monkeypatch: pytest.MonkeyPatch, api: list[tuple[str, str]]
+) -> None:
+    db = _migrating(True)
+    _host(monkeypatch, [_result("failed", error_code="plugin_failed", detail="bad")], [])
+    job = Job(stage=pm.queue_name(PID, "_migrate"), subject=Subject("catalog", uuid4()))
+    with pytest.raises(StageFailure):
+        await dispatch.run_plugin_stage(db, job, Ctx())
+    assert not any("data_version" in sql for sql, _ in db.executed)
+
+
+async def test_with_no_migrate_step_the_data_is_taken_as_it_is(
+    monkeypatch: pytest.MonkeyPatch, api: list[tuple[str, str]]
+) -> None:
+    db = _migrating(False)
+    _no_host(monkeypatch)
+    job = Job(stage=pm.queue_name(PID, "_migrate"), subject=Subject("catalog", uuid4()))
+    out = await dispatch.run_plugin_stage(db, job, Ctx())
+    assert out.output_hash == "data-3" and api == []
+    assert "SET data_version = NULL" in db.executed[-1][0]
+
+
+async def test_a_migrate_job_with_nothing_behind_does_nothing(
+    monkeypatch: pytest.MonkeyPatch, api: list[tuple[str, str]]
+) -> None:
+    db = FakeDB(data_version=None, doc=dict(DOC, data_version=3, migrate=True))
+    _no_host(monkeypatch)
+    job = Job(stage=pm.queue_name(PID, "_migrate"), subject=Subject("catalog", uuid4()))
+    out = await dispatch.run_plugin_stage(db, job, Ctx())
+    assert out.output_hash == "data-3" and db.executed == [] and api == []

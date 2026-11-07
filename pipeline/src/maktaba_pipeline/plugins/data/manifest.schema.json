@@ -85,6 +85,10 @@
       "default": 1,
       "x-code": "manifest_bad_data_version"
     },
+    "migrate": {
+      "type": "boolean",
+      "x-code": "manifest_bad_data_version"
+    },
     "strings": {
       "type": "object",
       "additionalProperties": false,

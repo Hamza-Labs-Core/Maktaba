@@ -100,6 +100,7 @@ schema = "ui/settings.schema.json"
 | `licence` | an SPDX id or `proprietary` |
 | `price` | `free`, or a store product id (Phase 3) |
 | `data_version` | integer of 1 or more; bump it when your stored data changes shape |
+| `migrate` | `true` when your `run` handles the stage `__migrate` (see [Migrating your data](queue-and-api.md#migrating-your-data)); absent or `false`: your data is taken as it is |
 | `strings.name`, `strings.summary` | keys present in both `i18n` files; name up to 40 and summary up to 140 characters in each language |
 | `capabilities` | names from Maktaba's capability list, no duplicates across the two lists |
 | `resources.*` | within the limits in [The sandbox](sandbox.md); missing means the default |

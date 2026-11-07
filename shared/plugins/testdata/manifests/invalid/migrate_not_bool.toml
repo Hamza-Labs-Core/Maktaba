@@ -1,0 +1,19 @@
+# expect: manifest_bad_data_version
+schema = 1
+id = "dev.example.notes"
+version = "2.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.4.0"
+licence = "MIT"
+data_version = 3
+migrate = "yes"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "keep_notes"
+subject = "video"
+export = "run-keep-notes"
+version = 1

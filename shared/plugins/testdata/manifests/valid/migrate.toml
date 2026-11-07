@@ -1,0 +1,20 @@
+# story 54.07 §5 step 4: data_version 3 with a migrate step: after an update from a version
+# whose data_version was lower, one run("__migrate") job comes before the other stages
+schema = 1
+id = "dev.example.notes"
+version = "2.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.4.0"
+licence = "MIT"
+data_version = 3
+migrate = true
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "keep_notes"
+subject = "video"
+export = "run-keep-notes"
+version = 1

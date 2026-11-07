@@ -34,7 +34,21 @@ if TYPE_CHECKING:
     from ..engine.graph import GraphBuilder, StageDef
     from ..engine.stages.registry import StageImpl
 
-__all__ = ["PREFIX", "PluginExtension", "assert_plugin_leaves", "load_installed", "plugin_of"]
+__all__ = [
+    "MIGRATE",
+    "PREFIX",
+    "PluginExtension",
+    "assert_plugin_leaves",
+    "load_installed",
+    "plugin_of",
+]
+
+#: a plugin's migrate stage name: its queue is ``p_<hash>__migrate`` (story 54.07 §5 step
+#: 4), and its guest's ``run`` gets ``__migrate``; a manifest's stage names start with a
+#: letter, so neither can collide
+MIGRATE = "_migrate"
+#: what the guest's ``run`` is called with for its migrate job
+MIGRATE_STAGE_ARG = "__migrate"
 
 #: a plugin stage's ``StageDef.extension`` is ``plugin:<id>``
 PREFIX = "plugin:"
@@ -58,6 +72,9 @@ class PluginExtension:
     path: str
     doc: dict[str, Any]
     review_level: str = "none"
+    #: the data_version the plugin's data is at while it is behind the manifest's (slot
+    #: 0202; story 54.07 §5 step 4): its stages wait for its migrate job. None: up to date.
+    data_version: int | None = None
     manifest: Manifest = field(init=False)
 
     def __post_init__(self) -> None:
@@ -65,8 +82,24 @@ class PluginExtension:
             name=PREFIX + self.plugin_id,
             version=self.version,
             description=f"plugin {self.plugin_id}",
-            stages=tuple(pm.queue_name(self.plugin_id, s["name"]) for s in self.doc["stage"]),
+            stages=tuple(pm.queue_name(self.plugin_id, s["name"]) for s in self.doc["stage"])
+            + (self.migrate_stage,),
         )
+
+    @property
+    def migrate_stage(self) -> str:
+        """The queue of its migrate job, ``p_<hash>__migrate`` (story 54.07 §5 step 4)."""
+        return pm.queue_name(self.plugin_id, MIGRATE)
+
+    @property
+    def target_data_version(self) -> int:
+        return max(int(self.doc.get("data_version", 1)), 1)
+
+    @property
+    def migrating(self) -> bool:
+        """Whether its data is behind the manifest's data_version (its migrate job has not
+        brought it up yet)."""
+        return self.data_version is not None and self.data_version < self.target_data_version
 
     @property
     def concurrency(self) -> int:
@@ -111,6 +144,23 @@ class PluginExtension:
                     every_minutes_rule=(f"plugins.{self.plugin_id}", setting) if setting else None,
                 )
             )
+        # its migrate job (story 54.07 §5 step 4): one catalog job before the other stages
+        # of a version whose data_version grew, on the home only (it records the data's
+        # version in plugin_installs, which joined machines do not write)
+        graph.add_stage(
+            StageDef(
+                name=self.migrate_stage,
+                label=f"{self.plugin_id}: migrate its data",
+                subject_kinds=("catalog",),
+                pool="plugins",
+                lane="sources",
+                lane_order=900,
+                version=1,
+                extension=PREFIX + self.plugin_id,
+                max_attempts=3,
+                placement="home",
+            )
+        )
         for s in self.doc["stage"]:
             name = pm.queue_name(self.plugin_id, s["name"])
             for t in s.get("trigger", []):
@@ -153,10 +203,14 @@ class PluginExtension:
         from ..engine.stages.registry import StageImpl
         from .dispatch import run_plugin_stage
 
-        return {
+        out = {
             name: StageImpl(run=run_plugin_stage, input_fingerprint=self._fingerprint(name))
             for name in self.manifest.stages
+            if name != self.migrate_stage
         }
+        # no fingerprint: a migrate job always runs (it checks the data's version itself)
+        out[self.migrate_stage] = StageImpl(run=run_plugin_stage)
+        return out
 
     def _fingerprint(self, queue_name: str) -> Any:
         """sha256 of the plugin's digest, the stage version, the grants' generation, the
@@ -213,8 +267,8 @@ async def load_installed(db: Any) -> list[PluginExtension]:
     cannot read is left out with a warning; its stages stay ``not_configured``)."""
     try:
         rows = await db.fetch(
-            "SELECT plugin_id, version, path, manifest, review_level FROM plugin_installs"
-            " ORDER BY plugin_id"
+            "SELECT plugin_id, version, path, manifest, review_level, data_version"
+            " FROM plugin_installs ORDER BY plugin_id"
         )
     except Exception:  # noqa: BLE001 - an older schema (no table yet): no plugins
         return []
@@ -227,8 +281,17 @@ async def load_installed(db: Any) -> list[PluginExtension]:
         except (pm.ManifestInvalid, ValueError) as exc:
             _log.warning("plugin_manifest_unreadable", plugin=r["plugin_id"], error=str(exc))
             continue
+        try:
+            dv = r["data_version"]
+        except KeyError:  # a fake row with no such column: up to date
+            dv = None
         ext = PluginExtension(
-            str(r["plugin_id"]), str(r["version"]), str(r["path"]), doc, str(r["review_level"])
+            str(r["plugin_id"]),
+            str(r["version"]),
+            str(r["path"]),
+            doc,
+            str(r["review_level"]),
+            None if dv is None else int(dv),
         )
         try:
             ext.check_leaves()

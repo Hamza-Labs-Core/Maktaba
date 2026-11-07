@@ -155,6 +155,18 @@ type installRow struct {
 	InstalledAt                            time.Time
 	PrevVersion, PrevDigest, PrevPath      sql.NullString
 	PrevManifest                           []byte
+	// DataVersion is the data_version the plugin's data is at while it is behind the
+	// manifest's (slot 0202; story 54.07 §5 step 4): its migrate job has not run yet.
+	DataVersion sql.NullInt64
+}
+
+// dataAt is the data_version a plugin's data is at: its row's while a migration is
+// pending, else the manifest's.
+func (r *installRow) dataAt(m manifestOf) int {
+	if r.DataVersion.Valid {
+		return int(r.DataVersion.Int64)
+	}
+	return max(m.DataVersion, 1)
 }
 
 type querier interface {
@@ -168,9 +180,9 @@ func loadInstall(ctx context.Context, q querier, id string, forUpdate bool) (*in
 	}
 	var r installRow
 	err := q.QueryRowContext(ctx, `SELECT plugin_id, version, digest, path, manifest, review_level, installed_at,
-		previous_version, previous_digest, previous_path, previous_manifest FROM plugin_installs WHERE plugin_id = $1`+lock, id).
+		previous_version, previous_digest, previous_path, previous_manifest, data_version FROM plugin_installs WHERE plugin_id = $1`+lock, id).
 		Scan(&r.ID, &r.Version, &r.Digest, &r.Path, &r.Manifest, &r.ReviewLevel, &r.InstalledAt,
-			&r.PrevVersion, &r.PrevDigest, &r.PrevPath, &r.PrevManifest)
+			&r.PrevVersion, &r.PrevDigest, &r.PrevPath, &r.PrevManifest, &r.DataVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -494,12 +506,20 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 			developer_key_id, reviewed_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 			in.PluginID, in.Version, in.Digest, in.Path, string(in.Manifest), level, in.DeveloperKeyID, in.ReviewedAt)
 	} else {
+		// story 54.07 §5 step 4: a version whose data_version grew finds the data where the
+		// old one left it; its stages wait for one migrate job, which clears the column
+		var behind any
+		if om, err := parseManifest(old.Manifest); err == nil {
+			if at := old.dataAt(om); at < max(m.DataVersion, 1) {
+				behind = at
+			}
+		}
 		_, err = tx.ExecContext(ctx, `UPDATE plugin_installs SET previous_version = version, previous_digest = digest,
 			previous_path = path, previous_manifest = manifest, previous_review_level = review_level,
 			previous_developer_key_id = developer_key_id, previous_reviewed_at = reviewed_at,
 			version = $2, digest = $3, path = $4, manifest = $5,
-			review_level = $6, developer_key_id = $7, reviewed_at = $8, installed_at = now() WHERE plugin_id = $1`,
-			in.PluginID, in.Version, in.Digest, in.Path, string(in.Manifest), level, in.DeveloperKeyID, in.ReviewedAt)
+			review_level = $6, developer_key_id = $7, reviewed_at = $8, data_version = $9, installed_at = now() WHERE plugin_id = $1`,
+			in.PluginID, in.Version, in.Digest, in.Path, string(in.Manifest), level, in.DeveloperKeyID, in.ReviewedAt, behind)
 	}
 	if err != nil {
 		return nil, err
@@ -798,16 +818,24 @@ func (l *Lifecycle) Rollback(ctx context.Context, id string, clearData bool, act
 			return err
 		}
 	}
-	if prev.DataVersion < cur.DataVersion {
+	// the data's own version decides (a migration that has not run left it lower)
+	at := in.dataAt(cur)
+	if prev.DataVersion < at {
 		if !clearData {
-			p := problem(http.StatusConflict, CodeDataNewer, "the data is version %d; %s keeps %d", cur.DataVersion,
+			p := problem(http.StatusConflict, CodeDataNewer, "the data is version %d; %s keeps %d", at,
 				prev.Version, prev.DataVersion)
-			p.Params = map[string]any{"data_version": cur.DataVersion, "previous": prev.DataVersion}
+			p.Params = map[string]any{"data_version": at, "previous": prev.DataVersion}
 			return p
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM plugin_data WHERE plugin_id = $1`, id); err != nil {
 			return err
 		}
+	}
+	// the data stays where it is: behind the kept version's data_version only when it was
+	// lower still (cleared data starts at the kept version's)
+	var behind any
+	if !clearData && at < max(prev.DataVersion, 1) {
+		behind = at
 	}
 	// the review level, key and review time go back with the version (54.14: the previous
 	// version's own signatures); a row from before slot 0196 has none and keeps its level
@@ -818,7 +846,7 @@ func (l *Lifecycle) Rollback(ctx context.Context, id string, clearData bool, act
 		previous_version = version, previous_digest = digest,
 		previous_path = path, previous_manifest = manifest, previous_review_level = review_level,
 		previous_developer_key_id = developer_key_id, previous_reviewed_at = reviewed_at,
-		installed_at = now() WHERE plugin_id = $1`, id); err != nil {
+		data_version = $2, installed_at = now() WHERE plugin_id = $1`, id, behind); err != nil {
 		return err
 	}
 	if err := audit(ctx, tx, "plugin.rollback", components.PluginPrefix+id, actor, map[string]any{"version": in.Version},

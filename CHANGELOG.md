@@ -1049,6 +1049,15 @@ build fails when the two differ.
   lists the plugins that declare panels; pages show at most three, in that order, then in
   install order. `GET`/`PUT /api/plugins/panel-order` (admin only, audited).
 
+- **A plugin's data migrates before its new version runs (Epic 54, story 54.07 §5).** When
+  an update raises a plugin's `data_version`, its other stages wait while one migrate job
+  runs on the home first: the plugin's `run` gets the stage `__migrate` with `{"from", "to"}`
+  when its manifest says `migrate = true`, and nothing runs when it does not. The new
+  `plugin_installs.data_version` keeps the data's own version until then (migration 0202),
+  and a rollback before the migration ran no longer needs the plugin's data cleared.
+  maktaba.dev: Queue stages and the plugin API, *Migrating your data*; the manifest's
+  `migrate` field.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

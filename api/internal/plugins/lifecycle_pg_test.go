@@ -285,6 +285,34 @@ func TestRollbackAcrossDataVersions(t *testing.T) {
 	if err != nil || !res.Updated {
 		t.Fatalf("update %+v %v", res, err)
 	}
+	// 54.07 §5 step 4 (#712): the update leaves the data at 2 until the migrate job runs
+	dataAt := func() sql.NullInt64 {
+		var dv sql.NullInt64
+		if err := f.db.QueryRow(`SELECT data_version FROM plugin_installs WHERE plugin_id = $1`, lcPlugin).Scan(&dv); err != nil {
+			t.Fatal(err)
+		}
+		return dv
+	}
+	if dv := dataAt(); !dv.Valid || dv.Int64 != 2 {
+		t.Fatalf("data after the update: %v", dv)
+	}
+	// before the migration the data is still 2: the kept version takes it back, as it is
+	if err := f.l.Rollback(ctx, lcPlugin, false, admin); err != nil {
+		t.Fatalf("rollback before the migration: %v", err)
+	}
+	if dv := dataAt(); dv.Valid {
+		t.Fatalf("data after rolling back to its own version: %v", dv)
+	}
+	if err := f.l.Rollback(ctx, lcPlugin, false, admin); err != nil { // to 1.1.0 again
+		t.Fatal(err)
+	}
+	if dv := dataAt(); !dv.Valid || dv.Int64 != 2 {
+		t.Fatalf("data after rolling forward: %v", dv)
+	}
+	// the migrate job ran (the pipeline clears the column): the data is 3 now
+	if _, err := f.db.Exec(`UPDATE plugin_installs SET data_version = NULL WHERE plugin_id = $1`, lcPlugin); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := f.db.Exec(`INSERT INTO plugin_data (plugin_id, subject_kind, subject_id, key, value, bytes)
 		VALUES ($1, 'video', 'v', 'k', '1', 1)`, lcPlugin); err != nil {
 		t.Fatal(err)
@@ -299,6 +327,17 @@ func TestRollbackAcrossDataVersions(t *testing.T) {
 	_ = f.db.QueryRow(`SELECT version, previous_version FROM plugin_installs WHERE plugin_id = $1`, lcPlugin).Scan(&version, &prev)
 	if version != "1.0.0" || prev != "1.1.0" || f.count(t, `SELECT count(*) FROM plugin_data`) != 0 {
 		t.Fatalf("after the rollback: %s (previous %s)", version, prev)
+	}
+	if dv := dataAt(); dv.Valid {
+		t.Fatalf("cleared data starts at the kept version's: %v", dv)
+	}
+	// a fresh install, and an update that keeps data_version, leave nothing to migrate
+	res, err = f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.2.0", nil, nil, 2)), ExpectID: lcPlugin}, admin)
+	if err != nil || !res.Updated {
+		t.Fatalf("update %+v %v", res, err)
+	}
+	if dv := dataAt(); dv.Valid {
+		t.Fatalf("same data_version: %v", dv)
 	}
 }
 
