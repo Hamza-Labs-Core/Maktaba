@@ -268,6 +268,7 @@
       "plugin": "",
       "processes": [
         "plugin-runner/light",
+        "plugin-runner/files",
         "plugin-runner/net",
         "plugin-runner/service",
         "plugin-runner/fp"
@@ -530,7 +531,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.convert",
       "processes": [],
       "requires": [],
       "resources": {
@@ -577,7 +578,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.dedup",
       "processes": [],
       "requires": [],
       "resources": {
