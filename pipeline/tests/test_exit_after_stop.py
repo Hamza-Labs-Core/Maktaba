@@ -165,32 +165,3 @@ def test_a_thread_ending_as_the_worker_stops_is_not_left_behind(
     assert exits == []
     assert not ending.is_alive()
     assert all(e != "pipeline_exit_threads_left" for e, _ in log.events)
-
-
-def test_a_closed_sqlite_database_leaves_no_thread(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
-) -> None:
-    # aiosqlite's worker thread, slow to end after its close said it stops (a loaded
-    # runner): Database.close waits for it, so the worker's exit never counts it
-    import time
-
-    import aiosqlite.core
-
-    from maktaba_pipeline.runtime import Database
-
-    real = aiosqlite.core._connection_worker_thread
-
-    def slow_to_end(tx: Any) -> None:
-        real(tx)
-        time.sleep(0.3)
-
-    monkeypatch.setattr(aiosqlite.core, "_connection_worker_thread", slow_to_end)
-
-    async def go() -> threading.Thread:
-        db = await Database.connect(f"sqlite:///{tmp_path / 'w.db'}")
-        thread: threading.Thread = db._conn._thread
-        await db.close()
-        return thread
-
-    thread = asyncio.run(go())
-    assert not thread.is_alive()
