@@ -170,13 +170,13 @@ fi
 # 6. Patroni, its callback, and what the callback may do (sudo for exactly these)
 # ---------------------------------------------------------------------------------------
 log "Patroni"
-install -m 0755 "${here}/bin/on-role-change" "${here}/bin/switchover" "${here}/bin/leader-guard" /usr/local/bin/
+install -m 0755 "${here}/bin/on-role-change" "${here}/bin/switchover" "${here}/bin/leader-guard" "${here}/bin/bluegreen" /usr/local/bin/
 install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/16/maktaba
 [ -s /etc/maktaba/hcloud-token ] || die "/etc/maktaba/hcloud-token is missing (the maktaba-prod project's API token)"
 chown postgres:postgres /etc/maktaba/hcloud-token && chmod 0600 /etc/maktaba/hcloud-token
 chgrp postgres "${ENV_FILE}" && chmod 0640 "${ENV_FILE}"
 cat >/etc/sudoers.d/maktaba-patroni <<SUDO
-postgres ALL=(root) NOPASSWD: /usr/bin/systemctl start maktaba-cloud-active.target, /usr/bin/systemctl stop maktaba-cloud-active.target, /usr/sbin/ip addr add ${FLOATING_IP:-0.0.0.0}/32 dev ${FIP_DEV:-eth0}
+postgres ALL=(root) NOPASSWD: /usr/bin/systemctl start maktaba-cloud-active.target maktaba-cloud-relay@blue.service, /usr/bin/systemctl start maktaba-cloud-active.target maktaba-cloud-relay@green.service, /usr/bin/systemctl stop maktaba-cloud-active.target, /usr/sbin/ip addr add ${FLOATING_IP:-0.0.0.0}/32 dev ${FIP_DEV:-eth0}
 SUDO
 chmod 0440 /etc/sudoers.d/maktaba-patroni
 visudo -cf /etc/sudoers.d/maktaba-patroni >/dev/null

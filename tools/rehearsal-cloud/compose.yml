@@ -66,6 +66,9 @@ services:
 
   relay-blue:
     <<: *relay
+    image: ${BLUE_IMAGE:-maktaba-cloud:rehearsal}
+    ports:
+      - "127.0.0.1:${BLUE_PORT:-18443}:8443"
     environment:
       <<: *relay-env
       MAKTABA_NODE_ID: a-blue
@@ -77,6 +80,9 @@ services:
 
   relay-green:
     <<: *relay
+    image: ${GREEN_IMAGE:-maktaba-cloud:rehearsal}
+    ports:
+      - "127.0.0.1:${GREEN_PORT:-18453}:8443"
     environment:
       <<: *relay-env
       MAKTABA_NODE_ID: a-green
@@ -98,6 +104,7 @@ services:
         ipv4_address: 10.50.0.20
     ports:
       - "127.0.0.1:${EDGE_PORT:-18080}:80"
+      - "127.0.0.1:${EDGE_ADMIN_PORT:-12019}:2019"
     depends_on:
       relay-blue:
         condition: service_healthy

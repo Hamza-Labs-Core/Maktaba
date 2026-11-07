@@ -18,6 +18,13 @@ mkdir -p "${work}/bin"
 cat >"${work}/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 url="${*: -1}"
+if [[ "${url}" == *:8453/readyz ]]; then
+    # the green colour: ready while $GREEN_READY says so (a count of good answers, or "always")
+    n="$(cat "${STATE}/green_n" 2>/dev/null || echo 0)"; echo $((n + 1)) >"${STATE}/green_n"
+    [ "${GREEN_READY:-always}" = always ] || [ "${n}" -lt "${GREEN_READY}" ]
+    exit $?
+fi
+if [[ "${url}" == *:8443/readyz ]]; then exit 0; fi
 if [[ "${url}" == */primary ]]; then
     printf '%s' "${GUARD_CODE:-200}"
     exit 0
@@ -145,6 +152,42 @@ guard leads 200 start
 if [ ! -f "${work}/leads/active" ]; then ok "leader-guard: the leader keeps its processes"; else fail "guard leads: $(cat "${work}/leads/active")"; fi
 guard idle 503 stop
 if [ ! -f "${work}/idle/active" ]; then ok "leader-guard: a standby with nothing running is left alone"; else fail "guard idle"; fi
+
+# bluegreen (story 50.08): a release that fails its readiness soon after it starts is stopped
+# and the old colour is never touched; a good one replaces the old colour, which drains
+cat >"${work}/bin/colour" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"${STATE}/colours"
+STUB
+chmod +x "${work}/bin/colour"
+bg() { # bg <case> [env...]
+    local name=$1; shift
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}/state"
+    echo blue >"${work}/${name}/state/colour"; echo v1 >"${work}/${name}/state/deployed"
+    env PATH="${work}/bin:${PATH}" STATE="${work}/${name}" STATE_DIR="${work}/${name}/state" \
+        START_CMD="${work}/bin/colour start" STOP_CMD="${work}/bin/colour stop" READY_STABLE=5 WATCH=4 CHECK_EVERY=2 \
+        "$@" bash "${here}/bin/bluegreen" v2 >"${work}/${name}/out" 2>&1
+    echo $?
+}
+rc="$(bg bad GREEN_READY=2)"
+if [ "${rc}" != 0 ] && [ "$(tr '\n' ',' <"${work}/bad/colours")" = "start green v2,stop green," ] && [ "$(cat "${work}/bad/state/colour")" = blue ]; then
+    ok "bluegreen: a release failing its readiness is stopped; blue untouched"
+else
+    fail "bluegreen bad: rc=${rc} colours=$(cat "${work}/bad/colours" 2>/dev/null) $(cat "${work}/bad/out")"
+fi
+rc="$(bg good)"
+if [ "${rc}" = 0 ] && [ "$(tr '\n' ',' <"${work}/good/colours")" = "start green v2,stop blue," ] \
+    && [ "$(cat "${work}/good/state/colour")" = green ] && [ "$(cat "${work}/good/state/deployed")" = v2 ]; then
+    ok "bluegreen: a good release replaces blue, which drains; green v2 recorded"
+else
+    fail "bluegreen good: rc=${rc} colours=$(cat "${work}/good/colours" 2>/dev/null) $(cat "${work}/good/out")"
+fi
+rc="$(bg rollback GREEN_READY=6 WATCH=6)"
+if [ "${rc}" != 0 ] && grep -q "rolling back to blue" "${work}/rollback/out" && [ "$(tr '\n' ',' <"${work}/rollback/colours")" = "start green v2,stop blue,start blue v1,stop green," ]; then
+    ok "bluegreen: a release failing during the watch rolls back to blue v1"
+else
+    fail "bluegreen rollback: rc=${rc} colours=$(cat "${work}/rollback/colours" 2>/dev/null) $(cat "${work}/rollback/out")"
+fi
 
 if [ "${fails}" -ne 0 ]; then echo "${fails} failed"; exit 1; fi
 echo "all passed"

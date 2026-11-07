@@ -15,10 +15,12 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go mod download
 COPY cloud ./cloud
+# BUILD_TAGS=rehearsalbad: the bad release (story 50.08); VERSION: what /version says
 ARG BUILD_TAGS=
+ARG VERSION=rehearsal
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    cd cloud && go build -trimpath -tags "${BUILD_TAGS}" -ldflags "-s -w -X main.Version=rehearsal" -o /out/maktaba-cloud ./cmd/maktaba-cloud \
+    cd cloud && go build -trimpath -tags "${BUILD_TAGS}" -ldflags "-s -w -X main.Version=${VERSION}" -o /out/maktaba-cloud ./cmd/maktaba-cloud \
     && go build -trimpath -ldflags "-s -w" -o /out/maktaba-rehearsal ./cmd/maktaba-rehearsal
 
 FROM debian:bookworm-slim
