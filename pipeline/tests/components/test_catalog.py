@@ -119,6 +119,8 @@ def source_stages(root: Path = _PACKAGE) -> tuple[dict[str, str], list[str]]:
             continue
         tree = ast.parse(src, filename=str(path))
         factories = _stage_factories(tree)
+        # Epic 54 Phase 4: _fp("<stage>") names a stage a first-party manifest defines
+        factories.setdefault("_fp", 0)
         inside = {
             id(n)
             for fn in ast.walk(tree)
@@ -395,12 +397,24 @@ def test_a_components_plugin_field_names_a_first_party_plugin_of_its_stages() ->
         .joinpath("catalog.toml")
         .read_text()
     )
-    good = base.replace(
-        'id        = "classify"\n', 'id        = "classify"\nplugin    = "tv.maktaba.classify"\n', 1
-    )
-    assert catalog.load(good).get("classify").plugin == "tv.maktaba.classify"  # type: ignore[union-attr]
-    bad = base.replace(
-        'id        = "classify"\n', 'id        = "classify"\nplugin    = "dev.example.x"\n', 1
-    )
+    assert catalog.load(base).get("classify").plugin == "tv.maktaba.classify"  # type: ignore[union-attr]
+    bad = base.replace('plugin    = "tv.maktaba.classify"', 'plugin    = "dev.example.x"', 1)
     with pytest.raises(catalog.CatalogError, match="plugin names a first-party plugin"):
         catalog.load(bad)
+
+
+def test_a_first_party_plugins_stages_are_its_components() -> None:
+    """Epic 54, story 54.27 §3: a component's ``plugin`` defines stages of that component
+    only (the rest of a component moves in a later wave), and each first-party stage's
+    component is its manifest's ``[trusted] component``."""
+    from maktaba_pipeline.plugins import firstparty
+
+    cat = catalog.default()
+    for p in firstparty.plugins():
+        comp = cat.get(p.component)
+        assert comp is not None, p.id
+        assert comp.plugin == p.id, f"{comp.id} names {comp.plugin!r}, not {p.id}"
+        assert set(p.stages) <= set(comp.stages), sorted(set(p.stages) - set(comp.stages))
+    for c in cat.components():
+        if c.plugin:
+            assert firstparty.by_id(c.plugin) is not None, f"{c.id}: no built-in plugin {c.plugin}"

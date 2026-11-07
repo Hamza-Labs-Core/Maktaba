@@ -53,3 +53,26 @@ async def test_seed_loads_on_the_migrated_schema_and_covers_every_state(db: Data
         "INSERT INTO processing_jobs (video_id, stage) VALUES ('00000000-0000-0000-0000-000000000b06', 'thumbnail') RETURNING id"
     )
     assert nxt >= 1000
+
+
+@pytest.mark.asyncio
+async def test_the_sync_flips_a_moved_stage_to_its_plugin_unless_set_by_hand(db: Database) -> None:
+    """Epic 54, README §15.12: once the release that moved a stage into a first-party plugin
+    syncs its graph, the stage runs in the plugin (Postgres); a stage an admin set back
+    stays as it was, through every later sync."""
+    from maktaba_pipeline.engine.graph import GRAPH
+    from maktaba_pipeline.engine.sync import sync_graph
+
+    await sync_graph(db, GRAPH)
+    impl = await db.fetchval("SELECT impl FROM job_stages WHERE stage = 'promo_links'")
+    core = await db.fetchval("SELECT impl FROM job_stages WHERE stage = 'probe'")
+    assert core == "inproc"
+    if db.dialect != "postgres":
+        assert impl == "inproc"  # the runners need Postgres
+        return
+    assert impl == "plugin"
+    await db.execute(
+        "UPDATE job_stages SET impl = 'inproc', impl_changed_at = now() WHERE stage = 'promo_links'"
+    )
+    await sync_graph(db, GRAPH)
+    assert await db.fetchval("SELECT impl FROM job_stages WHERE stage = 'promo_links'") == "inproc"

@@ -581,6 +581,9 @@ func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args
 		if sc.LibraryID == "" {
 			return nil
 		}
+		if err := e.loadLibrary(ctx, sc); err != nil {
+			return refuse(503, CodeDatabase, err.Error())
+		}
 		lib, err := e.videoLibrary(ctx, sc.Invocation, v)
 		if err != nil {
 			return refuse(503, CodeDatabase, err.Error())
@@ -593,6 +596,9 @@ func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args
 	return refuse(400, CodeInvalid, st.Name+": scope "+st.Scope)
 }
 
+// videoLibrary answers a video's library for a scope check, from the invocation's cache:
+// a library job's videos are read in one query the first time (a stage that writes one row
+// per video would otherwise pay a lookup per row).
 func (e *Executor) videoLibrary(ctx context.Context, inv, video string) (string, error) {
 	e.mu.Lock()
 	if lib, ok := e.vlibs[inv][video]; ok {
@@ -612,4 +618,43 @@ func (e *Executor) videoLibrary(ctx context.Context, inv, video string) (string,
 	e.vlibs[inv][video] = lib.String
 	e.mu.Unlock()
 	return lib.String, nil
+}
+
+// loadLibrary fills the invocation's video cache with its library's videos, once.
+func (e *Executor) loadLibrary(ctx context.Context, sc Scope) error {
+	key := "library:" + sc.LibraryID
+	e.mu.Lock()
+	if _, done := e.vlibs[sc.Invocation][key]; done {
+		e.mu.Unlock()
+		return nil
+	}
+	e.mu.Unlock()
+	rows, err := e.DB.QueryContext(ctx, `SELECT CAST(id AS text) FROM videos WHERE CAST(library_id AS text) = $1`, sc.LibraryID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	m := e.vlibs[sc.Invocation]
+	if m == nil {
+		m = map[string]string{}
+		e.vlibs[sc.Invocation] = m
+	}
+	for _, id := range ids {
+		m[id] = sc.LibraryID
+	}
+	m[key] = sc.LibraryID
+	e.mu.Unlock()
+	return nil
 }

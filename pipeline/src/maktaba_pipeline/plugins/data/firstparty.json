@@ -1,5 +1,468 @@
 {
- "digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
- "plugins": [],
+ "digest": "66b0b7d8b1ad5f1d242b05f80d92bd8fd7a15471ab59f8c2be5e37410c181c51",
+ "plugins": [
+  {
+   "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
+   "folder": "classify",
+   "id": "tv.maktaba.classify",
+   "manifest": "# tv.maktaba.classify: Maktaba's classifiers as a first-party plugin (Epic 54, README §15.2).\n# Wave 1 (story 54.28) moves the stages that read the database and write it, with no file,\n# no model and no network; wave 4 (story 54.31) brings the rest of classify.\nschema     = 1\nid         = \"tv.maktaba.classify\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.classify.name\"\nsummary = \"fp.classify.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"classify\"\ndb.read   = [\"app_settings\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"series\", \"series_episodes\", \"series_seasons\", \"video_signals\", \"video_topic_tags\", \"videos\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_videos\"]\ndb.write  = [\"clip_group_items\", \"clip_groups\", \"promo_links\", \"season_style\", \"topic_collections\", \"topic_items\"]\nsettings  = [\"groups\", \"detect\"]\n\n[[stage]]\nname         = \"promo_links\"\nsubject      = \"library\"\nexport       = \"promo-links\"\nversion      = 1\nlabel        = \"Promo links\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.promo_links:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"clip_groups\"\nsubject      = \"library\"\nexport       = \"clip-groups\"\nversion      = 1\nlabel        = \"Clip groups\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.clip_groups:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"topic_collections\"\nsubject      = \"library\"\nexport       = \"topic-collections\"\nversion      = 1\nlabel        = \"Topic collections\"\nsubject_kinds = [\"library\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 2\nentry_for    = [\"library\"]\ndebounce_sec = 30\ndebounce_max_sec = 300\nedges        = [{ to = \"clip_groups\", map = \"same\" }, { to = \"plan_channels\", map = \"catalog\" }, { to = \"youtube_collections\", map = \"same\" }]\nentry        = \"maktaba_fp_classify.stages.topic_collections:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"rate_style\"\nsubject      = \"season\"\nexport       = \"rate-style\"\nversion      = 1\nlabel        = \"Rate style\"\nsubject_kinds = [\"season\"]\npool         = \"cpu\"\nlane         = \"seasons\"\nlane_order   = 3\nmay_request  = [\"style_sample\"]\nentry_for    = [\"season\"]\ndebounce_sec = 10\ndebounce_max_sec = 120\nedges        = [{ to = \"plan_channels\", map = \"catalog\" }]\nentry        = \"maktaba_fp_classify.stages.rate_style:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "clip_groups.input_fingerprint",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "3060ecebfdd348f9aa58c334abdfe061045dcc5a96c7a35b9ee21c0c88c4adae",
+     "text": "SELECT id, membership_hash FROM series_seasons WHERE library_id = $1 AND retired_at IS NULL ORDER BY id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "clip_groups.input_fingerprint.2",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "f327f354056ad4cd3b7d84239d97f43f71088d51f4188cfbc6fdf777ace4f7c5",
+     "text": "SELECT id, size_bytes, mtime FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "clip_groups.input_fingerprint.3",
+     "reads": [
+      "video_topic_tags",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "24d1f97c44804f00fd2c89d8f93ee2e745bd0e2378d7c85bb68e11c9b6ea2069",
+     "text": "SELECT t.video_id AS v, t.tag AS t, t.score AS s FROM video_topic_tags t JOIN videos v ON v.id = t.video_id WHERE v.library_id = $1 ORDER BY 1, 2",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "clip_groups.input_fingerprint.4",
+     "reads": [
+      "topic_collections"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4256b378138c96c2b9b4f3f558f786c87bf15da2f94872fbeb811e5f91211625",
+     "text": "SELECT playlist_id FROM topic_collections WHERE library_id = $1 ORDER BY 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "clip_groups.input_fingerprint.5",
+     "reads": [
+      "promo_links"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "5c3c94104f1cbfab1dda6669ef5d06eceb2d4a1ffb279bafeab395f1a1ca8e61",
+     "text": "SELECT video_id FROM promo_links WHERE library_id = $1 ORDER BY 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "clip_groups.plan_library_groups",
+     "reads": [
+      "topic_collections"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "36528cce67810f8b5f47106b699ff937ad9697256119540aa87133a2f9faf70e",
+     "text": "SELECT playlist_id FROM topic_collections WHERE library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "clip_groups.plan_library_groups.2",
+     "reads": [
+      "promo_links"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "e7440282e3b6163288cbffef2d9573df1aedef8eb31c5597f0d77413b1dc9ed8",
+     "text": "SELECT video_id FROM promo_links WHERE library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "clip_groups.run",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "e03cb27fc214d5d91ac53e41776a8a1a8d1e790a6c62ebf034edd22148fe88de",
+     "text": "DELETE FROM clip_groups WHERE library_id = $1",
+     "writes": [
+      "clip_groups"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "clip_groups.run.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "0d4372577b0cc195a01fd7488b809d3d6e1f6953bcaa819fe1b7c81b605c6b62",
+     "text": "INSERT INTO clip_groups (id, library_id, kind, basis, name, topic, title, membership_hash, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+     "writes": [
+      "clip_groups"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "clip_groups.run.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "296e09f6ceb3d15d23bef9d64cd1d983146a5211672e1798180b89b2aeac5496",
+     "text": "INSERT INTO clip_group_items (group_id, video_id, position) VALUES ($1,$2,$3)",
+     "writes": [
+      "clip_group_items"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "common.load_season",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "3605fce40c3e84688526c704e9e472f4ed3cc4785b028c0e1de6df4dd650311d",
+     "text": "SELECT id, series_id, library_id, name, kind, season, membership_hash, retired_at, median_duration_s, metadata FROM series_seasons WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "common.season_episode_ids",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6e025ce782db788eb2aea72e8744846a8f647b2f3b606f95a1bee9e49bd3e15e",
+     "text": "SELECT e.video_id AS id FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.id = $1 ORDER BY COALESCE(e.episode_override, e.episode), e.video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "detect.playlists",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos",
+      "youtube_playlist_items",
+      "youtube_playlists"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "0ae01b976721814bc531fdf3c18965b4c208d2c1e9afdd192fe0e1bd279bed67",
+     "text": "SELECT p.playlist_id AS pid, p.title AS title, m.video_id AS vid, i.position AS pos FROM youtube_playlists p JOIN youtube_playlist_items i ON i.playlist_id = p.playlist_id JOIN media_metadata_enrichment m ON m.external_id = i.youtube_id AND m.provider = 'youtube' JOIN videos v ON v.id = m.video_id WHERE p.is_real = $2 AND v.library_id = $1 AND v.deleted_at IS NULL ORDER BY p.playlist_id, i.position",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "leftovers.library_name",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e2b8ba9a12b59b9fcbf51a5681b50a64a3ff47ea53020b0173054a97acce4a29",
+     "text": "SELECT name FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "leftovers.load_leftovers",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "2e09385741f09a3b19ccc3b34bfa5a87e19779b37aa1393494272bba668cecdd",
+     "text": "SELECT ss.id AS id, ss.series_id AS series_id, ss.season AS season, ss.kind AS kind, ss.metadata AS metadata FROM series_seasons ss WHERE ss.library_id = $1 AND ss.retired_at IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "leftovers.load_leftovers.2",
+     "reads": [
+      "series_episodes",
+      "series_seasons"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4a50189757998b8b2f334d659f88991b10d8ac07f3f216815e040f5a65942ce0",
+     "text": "SELECT e.video_id AS vid, ss.kind AS kind FROM series_episodes e JOIN series_seasons ss ON ss.series_id = e.series_id  AND ss.season = COALESCE(e.season_override, e.season) AND ss.retired_at IS NULL WHERE ss.library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "leftovers.load_leftovers.3",
+     "reads": [
+      "video_topic_tags",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "df9132b6b3f66c6f8ec6e52f265bf9e418d73dc5a676f5325bc7a7948e225cfc",
+     "text": "SELECT t.video_id AS vid, t.tag AS tag, t.score AS score FROM video_topic_tags t JOIN videos v ON v.id = t.video_id WHERE v.library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "leftovers.load_leftovers.4",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "60c875ef7c0845de6964603b008b5094262de947847a0d1f4903c06efd1d50d8",
+     "text": "SELECT v.id AS vid, COALESCE(yv.title, v.title, v.filename) AS title,\n       COALESCE(v.duration_sec, yv.duration_s) AS dur, yv.upload_date AS upload_date,\n       yv.tab AS tab, v.metadata AS metadata\n  FROM videos v\n  LEFT JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube'\n  LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id\n WHERE v.library_id = $1 AND v.deleted_at IS NULL\n ORDER BY v.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "leftovers.load_shows",
+     "reads": [
+      "libraries",
+      "series",
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "2ee3151477bdf10099894f87e7db1ab8e6458eeac1c0cfe631a7a2f3999933f3",
+     "text": "SELECT s.id AS id, COALESCE(s.name_override, s.name) AS name, s.library_id AS lib, COALESCE(l.name, '') AS library, ss.season AS season FROM series s JOIN series_seasons ss ON ss.series_id = s.id AND ss.retired_at IS NULL AND ss.kind <> 'clips' LEFT JOIN libraries l ON l.id = s.library_id ORDER BY s.id, ss.season",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "promo_links.input_fingerprint",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9c7923d49ed361c4665ff41faf05d74d89552d79b7936a15e6fbe9e2b31a812c",
+     "text": "SELECT id, membership_hash FROM series_seasons WHERE retired_at IS NULL ORDER BY id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "promo_links.run",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "147aac608d0d8f09698d5dde20f4b89e4470bf553e9b759fe7675e5f75038adb",
+     "text": "SELECT id, series_id, season FROM series_seasons WHERE retired_at IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "promo_links.run.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "a163f39db2074ebef33a8d686da9dc86a33ba3aadcdfe65330483df14592a358",
+     "text": "DELETE FROM promo_links WHERE library_id = $1",
+     "writes": [
+      "promo_links"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "promo_links.run.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "ccd4960a50ce94c70560f04482e1ddf1ca3d074507af7c9a5c47953710266f08",
+     "text": "INSERT INTO promo_links (video_id, library_id, series_id, season_id, season, score, evidence, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+     "writes": [
+      "promo_links"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "rate_style.gave_up",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "023c3ad6fd578bbf1fea6abd818ad46ae5bc8c3f5bd6568fc612e3f427811fb5",
+     "text": "SELECT state, attempts, max_attempts FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'style_sample' ORDER BY id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "rate_style.input_fingerprint",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b6d2e993222ee961688312a92e589a9ef0488941c0cd8b38e407bab88af0857e",
+     "text": "SELECT output_hash FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'style_sample' AND state = 'done' AND outcome IN ('changed','unchanged','skipped_unchanged','imported') ORDER BY id DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "rate_style.metrics",
+     "reads": [
+      "video_signals"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "f3ab313d647bc12264ac94b48df16afab43b6326d8b0d0a4d8370507284f3e9c",
+     "text": "SELECT style_metrics, style_version FROM video_signals WHERE video_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "rate_style.override",
+     "reads": [
+      "season_style"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "718ad44fab360e013c5fca647510b7e5b2632995ada76539af0d9400dfb608e0",
+     "text": "SELECT override_style FROM season_style WHERE season_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "rate_style.run",
+     "reads": [
+      "season_style"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d46b21bf18644d064010531a106f7f2feef8c4fa53feaf06a899ad771caebb2f",
+     "text": "SELECT style, tier, confidence FROM season_style WHERE season_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "rate_style.write",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "85ac02a4a16ae11d1d4b2c293826fc791c7e35998f4e44b9332ce3c9db9fb898",
+     "text": "INSERT INTO season_style (season_id, style, tier, confidence, reasons, sampled, style_version, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (season_id) DO UPDATE SET style = EXCLUDED.style, tier = EXCLUDED.tier, confidence = EXCLUDED.confidence, reasons = EXCLUDED.reasons, sampled = EXCLUDED.sampled, style_version = EXCLUDED.style_version, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "season_style"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "topic_collections.plan_topics",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "54db7e36dcc39805d70cba3bdec1ec84fa899f651e6444487c775d7025d09260",
+     "text": "SELECT id FROM videos WHERE library_id = $1 AND deleted_at IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "topic_collections.run",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "c30a9bf1b84c3101075d67dd407248c8bc487ff06e9ba22045274a15cace26f1",
+     "text": "DELETE FROM topic_collections WHERE library_id = $1",
+     "writes": [
+      "topic_collections"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "topic_collections.run.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "aa72660bccf8d0a978557de64723ae022d5f9522b0420af274963ae8865eb672",
+     "text": "INSERT INTO topic_collections (id, library_id, playlist_id, name, membership_hash, updated_at) VALUES ($1,$2,$3,$4,$5,$6)",
+     "writes": [
+      "topic_collections"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "topic_collections.run.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "9521152ce58e0defb16911f6792b4e9457a7a2015b82cfc67b9338260dcbf655",
+     "text": "INSERT INTO topic_items (topic_id, video_id, position) VALUES ($1,$2,$3)",
+     "writes": [
+      "topic_items"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "topic_collections.stored_series",
+     "reads": [
+      "series_seasons"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "69141bca2bf9302df6fd4a39558719781dcb2d770821213bb18913595a890df1",
+     "text": "SELECT ss.id AS id, ss.series_id AS series_id, ss.season AS season, ss.kind AS kind, ss.name AS name, ss.metadata AS metadata FROM series_seasons ss WHERE ss.library_id = $1 AND ss.retired_at IS NULL ORDER BY ss.series_id, ss.season",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "topic_collections.stored_series.2",
+     "reads": [
+      "series",
+      "series_episodes"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "c88461190b35884533f1491ca3f829f03e99e5d6719e47f59a5962ecd48a6199",
+     "text": "SELECT e.series_id AS series_id, COALESCE(e.season_override, e.season) AS season, e.video_id AS vid FROM series_episodes e JOIN series s ON s.id = e.series_id WHERE s.library_id = $1 ORDER BY e.series_id, COALESCE(e.season_override, e.season), COALESCE(e.episode_override, e.episode), e.video_id",
+     "writes": []
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.classify.name": "التصنيف",
+     "fp.classify.summary": "يجد مواضيع كل مكتبة وإعلاناتها ومجموعات مقاطعها، ويقدّر أسلوب كل موسم."
+    },
+    "en": {
+     "fp.classify.name": "Classify",
+     "fp.classify.summary": "Finds the topics, promos and clip groups of each library, and rates each season's style."
+    }
+   }
+  }
+ ],
  "schema": 1
 }

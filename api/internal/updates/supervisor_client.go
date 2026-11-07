@@ -21,6 +21,11 @@ type HomeHealth struct {
 // roleTVSlot is the supervisor's role of a TV slot (blue, green, amber).
 const roleTVSlot = "tv-slot"
 
+// rolePluginRunner is a first-party plugin runner (Epic 54, story 54.23): like a TV slot it
+// never blocks an update. Its stages run in the worker while it does not run, and a runner
+// that cannot start is what an update may be the fix for.
+const rolePluginRunner = "plugin-runner"
+
 // CrashQuiet is how long the home must have run without a crash before a run starts.
 const CrashQuiet = 10 * time.Minute
 
@@ -84,10 +89,11 @@ type ProcEvent struct {
 // ignored), none is crash
 // looping, and no crash or hang in the last CrashQuiet. The TV slots are not judged:
 // TV never blocks an update (its own staging holds a TV that fails), and a slot that
-// cannot start is what an update may be the fix for.
+// cannot start is what an update may be the fix for. Nor are the plugin runners: their
+// stages run in the worker meanwhile.
 func HomeBlocked(procs []ProcState, events []ProcEvent, now time.Time) string {
 	for _, p := range procs {
-		if p.Role == roleTVSlot || (p.Instance != "" && !p.Wanted && p.State != "running") ||
+		if p.Role == roleTVSlot || p.Role == rolePluginRunner || (p.Instance != "" && !p.Wanted && p.State != "running") ||
 			(p.Blocked && p.State != "running") {
 			continue
 		}
@@ -96,7 +102,7 @@ func HomeBlocked(procs []ProcState, events []ProcEvent, now time.Time) string {
 		}
 	}
 	for _, e := range events {
-		if e.Role != roleTVSlot && (e.Reason == "crash" || e.Reason == "hang") && now.Sub(e.At) < CrashQuiet {
+		if e.Role != roleTVSlot && e.Role != rolePluginRunner && (e.Reason == "crash" || e.Reason == "hang") && now.Sub(e.At) < CrashQuiet {
 			return BlockRecentCrash
 		}
 	}

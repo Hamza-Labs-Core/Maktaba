@@ -16,15 +16,15 @@ from collections import defaultdict
 from typing import Any
 from uuid import UUID
 
-from ...classify.series_detector import PlaylistFacts, Season, Series, find_topics
-from ...db.jobs import Job
-from ..context import StageContext
-from ..graph import TOPIC_VERSION, StageResult, Subject
-from ..hashing import canonical_hash
-from ..ids import topic_uuid
-from ..sql import loads, now, to_ts, uid
-from .detect import _playlists
-from .registry import StageImpl
+from maktaba_pipeline.classify.series_detector import PlaylistFacts, Season, Series, find_topics
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.engine.context import StageContext
+from maktaba_pipeline.engine.graph import TOPIC_VERSION, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.ids import topic_uuid
+from maktaba_pipeline.engine.sql import loads, now, to_ts, uid
+from maktaba_pipeline.engine.stages.detect import _playlists
+from maktaba_pipeline.engine.stages.registry import StageImpl
 
 __all__ = ["IMPL", "plan_topics"]
 

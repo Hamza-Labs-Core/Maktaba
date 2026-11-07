@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Four classify stages run as Maktaba's built-in plugin (Epic 54 wave 1).** Promo links,
+  clip groups, topic collections and season styles run in `tv.maktaba.classify`, in the
+  sandboxed `light` runner with no database password, through its named statements under its
+  own Postgres role (migration 0200). They write exactly what they wrote in the worker (the
+  parity proof runs them both ways on a seeded library). On update each stage switches to the
+  plugin by itself; `maktaba-server stages impl <stage> inproc` or **Runs in** on its Queues
+  page sets one back. A SQLite home and Windows machines run them in the worker, as before.
 - **Maktaba's own stages can run as built-in plugins (the foundation, Epic 54 Phase 4).** A
   built-in plugin's stage runs in `maktaba-plugin-runner`, a sandboxed process with no database
   password and no secrets (Seatbelt on macOS, Landlock and seccomp on Linux), and reaches the
@@ -1008,7 +1015,7 @@ build fails when the two differ.
   were last checked and warns when the list has expired (plugins keep running; store installs
   wait). Store installs by `{store: {id, version}}`, with the download checked against its
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
-  home sends its daily `seen` report when telemetry is on. Migration 0200.
+  home sends its daily `seen` report when telemetry is on. Migration 0201.
 
 
 ### Fixed
