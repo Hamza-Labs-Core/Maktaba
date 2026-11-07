@@ -65,8 +65,11 @@ The root keys sign only `store-keys.json`, a few times a year. They never touch 
    the store's Workers (story 54.15): `wrangler secret put STORE_SIGNING_KEY`, typed or pasted
    by the owner at the prompt, never in a file, a shell history or a log. The entitlement key
    (Phase 3) is a separate secret, `STORE_ENTITLEMENT_KEY`.
-3. Upload `store-keys.json` to the CDN bucket (story 54.15) and copy it to
-   `shared/plugins/store-keys-embedded.json` so each release carries it.
+3. Upload `store-keys.json` to the CDN bucket (story 54.15). From then on each release
+   embeds the current `store-keys.json` and `revoked.json` by itself (`release.yml`'s
+   `plugin-lists` job, #755), verified by the committed root: **the CDN must be up when a
+   release runs**, or the release fails until it is (it never ships stale lists). The copies
+   committed in `shared/plugins/` are only the floor a release refuses to go below.
 4. **Each year**: make the next S, sign a store-keys.json (version + 1) listing both while
    the store re-signs every live package with the new key, then one more without the old key.
 

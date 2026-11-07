@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
@@ -152,5 +156,32 @@ func TestBadAfterFailsReadiness(t *testing.T) {
 	time.Sleep(1100 * time.Millisecond)
 	if !strings.Contains(probe(), "draining") {
 		t.Error("not failing after badAfter")
+	}
+}
+
+// Story 50.15: with direct access off nothing is built; on, the relay's handler and the
+// worker's jobs are, each CA's account key made on first use.
+func TestDirectIsBuiltOnlyWhenOn(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var cfg config.Config
+	if directHandler(cfg, nil, logger) != nil || directJobs(cfg, nil, logger) != nil {
+		t.Fatal("built while off")
+	}
+	dir := t.TempDir()
+	cfg.Direct = config.DirectConfig{Enabled: true, Domains: []string{"direct-a.example"}, Budget: 45,
+		ACME: map[string]config.DirectACME{
+			"letsencrypt": {Directory: "https://acme.test/directory", AccountKey: filepath.Join(dir, "le.key")},
+			"zerossl":     {Directory: ""}, // not configured: left out
+		}}
+	pool := &db.Pool{}
+	if directHandler(cfg, pool, logger) == nil {
+		t.Fatal("no relay handler while on")
+	}
+	j := directJobs(cfg, pool, logger)
+	if j == nil {
+		t.Fatal("no worker jobs while on")
+	}
+	if st, err := os.Stat(filepath.Join(dir, "le.key")); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("the account key: %v %v", st, err)
 	}
 }
