@@ -20,8 +20,28 @@
 # failure is reported, not counted, until the fix's PR is in the commit rehearsed; from
 # then on it is required. The release's tag guard (tools/release/tag-guard.sh) refuses to
 # release a commit this workflow did not pass on.
+#
+# On main it runs after CI (since 2026-11-07): CI's push run on a main commit finishes green,
+# and that run's `workflow_run` starts this one on the same commit
+# (github.event.workflow_run.head_sha, checked out by every job). With both workflows on their
+# own main group, each finishing its running run and replacing the pending one, the two had
+# finished on different commits since 2026-11-07 00:54, so no commit had both green and
+# nothing could be tagged. Now every rehearsal of main is of a CI-green commit, and a green
+# rehearsal is a taggable commit. A workflow_run run's own head_sha is main's head when it
+# started, not the commit it rehearses, so the run is named after its commit
+# ("Update rehearsal of <sha>": the tag guard and tools/release/next_tag.py find it by that
+# name) and the verdict sets the commit's `update-rehearsal` status. A CI run that did not
+# pass (most are cancelled while pending) still starts a run here: it runs no job, in a
+# group of its own.
 
 name: Update rehearsal
+run-name: >-
+  ${{ github.event_name == 'workflow_run'
+      && (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+          && format('Update rehearsal of {0}', github.event.workflow_run.head_sha)
+          || format('Update rehearsal not run (CI {0})', github.event.workflow_run.conclusion))
+      || github.event_name == 'pull_request' && github.event.pull_request.title
+      || format('Update rehearsal ({0})', github.event_name) }}
 
 on:
   pull_request:
@@ -76,11 +96,17 @@ on:
       - 'tools/rehearsal/**'
       - 'tools/release/linux-app/pins.env'
       - '.github/workflows/update-rehearsal.yml'
+  # main: after CI's push run passes, on its commit (see above). A trail-only push to main
+  # starts no CI run (ci.yml's paths-ignore), so no rehearsal follows it either
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  # a maintenance line: on its own push, as before
   push:
-    branches: [main, 'release/**']
-    # a push that changes only the Claude trail starts no run: it would join the
-    # update-rehearsal-main group and replace the pending run of the code commit before it,
-    # the one waiting to be tagged (trail-only commits are never tagged; see ci.yml)
+    branches: ['release/**']
+    # a push that changes only the Claude trail starts no run (trail-only commits are never
+    # tagged; see ci.yml)
     paths-ignore: ['docs/claude-trail.md', 'docs/trail/**']
   schedule:
     - cron: '17 6 * * *' # nightly, 06:17 UTC
@@ -99,12 +125,14 @@ permissions:
   contents: read
 
 concurrency:
-  # As ci.yml: per PR (cancelled by a newer push); one group for main's pushes, NOT
-  # cancel-in-progress: the running rehearsal finishes and a newer commit's run replaces
-  # only the older pending one (the tag guard needs a finished green run on the tagged
-  # commit); a re-run, the nightly run, a hand run and a release/** push get their commit's
-  # own group and are never cancelled.
-  group: update-rehearsal-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') && 'main' || github.sha }}
+  # Per PR (cancelled by a newer push). Main: one group for the runs CI's green main runs
+  # start, NOT cancel-in-progress: the running rehearsal finishes and a newer CI-green
+  # commit's run replaces only the older pending one, so main rehearses the newest commit CI
+  # passed on (the tag guard needs a finished green run on the tagged commit). A workflow_run
+  # of a CI run that did not pass runs nothing, in a group of its own (the run's id), so it
+  # never replaces the pending one. A re-run, the nightly run, a hand run and a release/**
+  # push get their commit's own group and are never cancelled.
+  group: update-rehearsal-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.run_attempt == '1') && 'main' || github.event_name == 'workflow_run' && github.run_attempt == '1' && format('skip-{0}', github.run_id) || github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -118,6 +146,13 @@ jobs:
     name: kit (two releases' binaries, the bundled Postgres)
     runs-on: ubuntu-24.04
     timeout-minutes: 35 # the binaries of four releases and three packs (story 51.18)
+    # main's run: only after CI's push run on the commit passed (a cancelled or failed CI
+    # run's workflow_run runs nothing); every job after this one needs it
+    if: >-
+      github.event_name != 'workflow_run'
+      || (github.event.workflow_run.conclusion == 'success'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
     outputs:
       prev: ${{ steps.prev.outputs.tag }}
       expect_fail: ${{ steps.expected.outputs.list }}
@@ -125,6 +160,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
         with:
+          # main's run: the commit CI passed on, not main's head ('' elsewhere: the default)
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - uses: actions/setup-go@v6.4.0
@@ -132,7 +169,7 @@ jobs:
           go-version-file: api/go.mod
           cache: false
 
-      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      # restore only: main's entries (.github/actions/go-cache); only main's run saves
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
@@ -221,7 +258,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # restore only; the save after the download runs on a push to main (a pull request's
+      # restore only; the save after the download runs on main's run (a pull request's
       # entry would push main's out of the repository's 10 GB cache)
       - id: pg-cache
         uses: actions/cache/restore@v4
@@ -235,7 +272,7 @@ jobs:
           PREV: ${{ steps.prev.outputs.tag }}
         run: tools/rehearsal/postgres.sh --tag "${PREV}" --out "$KIT/pg"
 
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pg-cache.outputs.cache-hit != 'true'
+      - if: github.event_name == 'workflow_run' && steps.pg-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.KIT }}/pg
@@ -251,9 +288,9 @@ jobs:
           retention-days: 3
           compression-level: 6
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      # only main's run writes the caches restored above (pull requests and tags read main's)
       - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        if: github.event_name == 'workflow_run' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.go-cache.outputs.path }}
@@ -270,6 +307,8 @@ jobs:
         profile: [full, restore, small]
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - id: cache
         uses: actions/cache/restore@v4
@@ -283,7 +322,7 @@ jobs:
           go-version-file: api/go.mod
           cache: false
 
-      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      # restore only: main's entries (.github/actions/go-cache); only main's run saves
       - name: Go caches
         id: go-cache
         if: steps.cache.outputs.cache-hit != 'true'
@@ -359,8 +398,8 @@ jobs:
           grep -q -- '--- PASS: TestUpdateRehearsalSeed ' "$RUNNER_TEMP/seed.out" || { echo "::error::the seed did not run"; exit 1; }
           du -sh "$SEEDS"/* || true
 
-      # only a push to main saves a seed; a pull request builds its own and reads main's
-      - if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
+      # only main's run saves a seed; a pull request builds its own and reads main's
+      - if: github.event_name == 'workflow_run' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.SEEDS }}
@@ -388,9 +427,9 @@ jobs:
           path: ${{ runner.temp }}/rh-logs
           if-no-files-found: ignore
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      # only main's run writes the caches restored above (pull requests and tags read main's)
       - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        if: github.event_name == 'workflow_run' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.go-cache.outputs.path }}
@@ -430,13 +469,15 @@ jobs:
           - { id: 'F10', name: safe mode from the recovery console, test: TestFaultRehearsalF10SafeMode, profile: small }
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
           cache: false
 
-      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      # restore only: main's entries (.github/actions/go-cache); only main's run saves
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
@@ -589,9 +630,9 @@ jobs:
             ${{ runner.temp }}/scenario.out
           if-no-files-found: ignore
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      # only main's run writes the caches restored above (pull requests and tags read main's)
       - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        if: github.event_name == 'workflow_run' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ steps.go-cache.outputs.path }}
@@ -600,10 +641,17 @@ jobs:
   update-rehearsal:
     name: update-rehearsal
     needs: [kit, seed, scenario]
-    if: always()
+    # always, but not for a CI run that did not pass (nothing ran: there is no verdict)
+    if: >-
+      always()
+      && (github.event_name != 'workflow_run' || needs.kit.result != 'skipped')
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      statuses: write # main's run: the verdict on the commit it rehearsed
     steps:
       - name: The verdict
+        id: verdict
         env:
           RESULTS: ${{ toJSON(needs) }}
           EXPECTED: ${{ needs.kit.outputs.expected_notes }}
@@ -619,3 +667,20 @@ jobs:
             [ "$r" = success ] || { echo "::error::$j: $r"; fail=1; }
           done
           exit $fail
+
+      # main's run (a workflow_run) shows on main's head of when it started, not on the commit
+      # it rehearsed: the commit's own status says how the rehearsal went (its run is named
+      # after it too, for the tag guard and the release session)
+      - name: The verdict on the commit
+        if: always() && github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          OK: ${{ steps.verdict.outcome == 'success' }}
+          URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "${OK}" = true ]; then state=success desc="every update path passed"; else state=failure desc="an update path failed"; fi
+          gh api "repos/${GITHUB_REPOSITORY}/statuses/${SHA}" -f state="${state}" -f context=update-rehearsal \
+            -f description="${desc}" -f target_url="${URL}" >/dev/null
+          echo "update-rehearsal: ${state} on ${SHA}"

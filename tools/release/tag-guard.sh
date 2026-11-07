@@ -13,7 +13,10 @@
 #     Player UI shards, since 2026-11-02) and the ci-success rollup counts as passed;
 #   - the update rehearsal passed on that exact commit (update-rehearsal.yml: every update
 #     path of the Mac app, from the latest published release to this commit; waited for
-#     likewise). Since 2026-10-28: no release before its updates are proven in CI.
+#     likewise). Since 2026-10-28: no release before its updates are proven in CI. On main it
+#     runs after CI passes (a workflow_run, since 2026-11-07), named "Update rehearsal of
+#     <sha>": such a run's own head_sha is main's head when it started, so it is found by its
+#     name, and a workflow_run run is never counted for its head_sha.
 # A deliberate maintenance release of an older line (story 22.5 EC1) is named in the
 # repository variable MAKTABA_RELEASE_ALLOW_TAG: its commit is on main or a release/*
 # branch (ci.yml runs on those), it skips the history check, and it never becomes the
@@ -71,7 +74,7 @@ fi
 # 3. CI passed on the commit: its run for it (a push to main, or the pull request's head),
 # waited for while it runs; and 4. the update rehearsal passed on that exact commit
 # (update-rehearsal.yml, docs/update-rehearsal.md: every update path of the owner's Mac
-# app, rehearsed; it runs on every push to main and release/*)
+# app, rehearsed; on main it runs after CI passes, on release/* on every push)
 # The CI jobs a release does not wait on (decided 2026-11-02): the
 # Apple iPhone/iPad Player UI test shards are flaky and are being fixed separately, so a
 # finished CI run whose only failed jobs are these shards (and the ci-success rollup that
@@ -104,19 +107,38 @@ jobs_pass() {
     return 0
 }
 
-passed_on() { # passed_on WORKFLOW WHAT [judge-jobs]
+# runs_on WORKFLOW: "status conclusion id" a line, the workflow's runs on ${SHA}. CI's are its
+# runs with that head_sha. The rehearsal's (rehearsal) are its runs with that head_sha that
+# are not a workflow_run (a pull request's, a release/** push's, the nightly and hand runs),
+# and main's runs named after the commit (a workflow_run's head_sha is main's head when it
+# started: two runs of one head_sha may rehearse two commits).
+runs_on() {
+    local workflow="$1" kind="${2:-}"
+    if [ "${kind}" != rehearsal ]; then
+        gh run list --workflow "${workflow}" --commit "${SHA}" --limit 50 --json status,conclusion,databaseId \
+            --jq '[.[] | "\(.status) \(.conclusion) \(.databaseId)"] | .[]' 2>/dev/null || true
+        return
+    fi
+    { gh run list --workflow "${workflow}" --commit "${SHA}" --limit 50 --json status,conclusion,databaseId,event \
+        --jq '.[] | "\(.status) \(.conclusion | if . == "" then "-" else . end) \(.databaseId) \(.event)"' 2>/dev/null || true; } \
+        | awk '$4 != "workflow_run" { print $1, $2, $3 }'
+    { gh run list --workflow "${workflow}" --event workflow_run --limit 300 --json status,conclusion,databaseId,displayTitle \
+        --jq '.[] | "\(.status) \(.conclusion | if . == "" then "-" else . end) \(.databaseId) \(.displayTitle)"' 2>/dev/null || true; } \
+        | awk -v t="Update rehearsal of ${SHA}" 'substr($0, length($0) - length(t) + 1) == t { print $1, $2, $3 }'
+}
+
+passed_on() { # passed_on WORKFLOW WHAT [judge-jobs|rehearsal]
     local workflow="$1" what="$2" judge="${3:-}" runs id
     local deadline=$(( $(date +%s) + wait_s ))
     while :; do
-        runs="$(gh run list --workflow "${workflow}" --commit "${SHA}" --limit 50 --json status,conclusion,databaseId \
-            --jq '[.[] | "\(.status) \(.conclusion) \(.databaseId)"] | .[]' 2>/dev/null || true)"
+        runs="$(runs_on "${workflow}" "${judge}")"
         if grep -q '^completed success ' <<<"${runs}"; then
             echo "tag guard: ${what} passed on ${SHA}"
             return 0
         fi
         # a finished, failed CI run whose only failed jobs are the ignored ones (a cancelled run
         # is never judged: it blocks)
-        if [ -n "${judge}" ]; then
+        if [ "${judge}" = judge-jobs ]; then
             while read -r id; do
                 if jobs_pass "${id}" </dev/null; then
                     echo "tag guard: ${what} passed on ${SHA} (run ${id}, every required job)"
@@ -134,7 +156,7 @@ passed_on() { # passed_on WORKFLOW WHAT [judge-jobs]
     done
 }
 passed_on "${ci}" "CI" judge-jobs
-passed_on "${REHEARSAL_WORKFLOW:-update-rehearsal.yml}" "the update rehearsal"
+passed_on "${REHEARSAL_WORKFLOW:-update-rehearsal.yml}" "the update rehearsal" rehearsal
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {
