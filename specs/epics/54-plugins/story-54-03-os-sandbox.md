@@ -73,9 +73,12 @@ network socket family.
 - File access: the installer grants the AppContainer SID read on `plugins\` and read-write on
   `run\plugins\` and `plugins\cache\` only.
 - Network: blocked by the Windows Filtering Platform's default rule for AppContainers without
-  network capabilities. Because a WFP default-rule bypass was found in 2021, the host also
-  refuses to call `WSAStartup` after start (a self-check fails the start if Winsock is already
-  loaded by a dependency) and the escape probes cover loopback and LAN explicitly.
+  network capabilities. Because a WFP default-rule bypass was found in 2021, the escape probes
+  cover loopback and the LAN explicitly. As built, the host opens its own dispatch socket
+  (AF_UNIX) through Winsock before it enters its AppContainer, so Winsock is loaded by
+  design; the guest cannot reach it or any other socket: the host links no `wasi:sockets`,
+  so the audit refuses a guest that asks for one and the linker cannot instantiate it
+  (`a_guest_can_open_no_socket`, run on Windows CI too).
 - The host checks it is in an AppContainer (`GetTokenInformation(TokenIsAppContainer)`) and
   refuses to run otherwise.
 - **Dispatch on Windows (#710).** The host serves its dispatch socket as AF_UNIX there too,
@@ -89,6 +92,13 @@ network socket family.
   made first is not served. It sends the client one byte once the host answered and closes
   it without when not: the pipeline raises the `ConnectionRefusedError` a refused unix
   socket raises, and falls back the same way.
+- **The supervisor starts the host** through `maktaba-server plugins-sandbox-run` (the code of
+  the CI job's `aclaunch`): it grants the AppContainer read on `plugins\` and read-write on
+  the compile cache, the host's run folder (`run\plugins\`, where both sockets are on Windows,
+  never `run\` itself, which holds the supervisor's own files) and the short socket folder
+  when the data path is long, then starts the host in its AppContainer and Job Object; the
+  install's `--preload` check starts the same way. It serves the relay's pipe and names it
+  to the pipeline (`MAKTABA_PLUGIND_PIPE`).
 
 ### 5. The egress tests (CI only)
 
@@ -161,8 +171,9 @@ compiles it.
 - **The data folder on a network share** (SMB on Windows, NFS on Linux): Landlock and the
   AppContainer ACL still apply to the local mount path; the escape probes include a write to
   the share's parent.
-- **Antivirus on Windows** injecting a DLL that loads Winsock: the start self-check catches it
-  and reports `sandbox_unavailable:winsock_loaded` with words telling the owner which product.
+- **Antivirus on Windows** injecting a DLL that loads Winsock: Winsock is loaded by design
+  (the host's own socket, §4), so it changes nothing; the network stays the container's to
+  refuse, and the escape probes check it.
 - **Older macOS** without a profile operation the `.sb` uses: CI runs the oldest supported macOS
   in the matrix when the Mac app's minimum changes.
 

@@ -171,6 +171,7 @@ fn main() {
         skip_audit: false,
         sandbox: applied.level.clone(),
         sandbox_missing: applied.missing.clone(),
+        compile_timeout: plugind_core::engine::COMPILE_TIMEOUT,
     }) {
         Ok(h) => h,
         Err(e) => {
@@ -193,6 +194,8 @@ fn main() {
         if applied.missing.is_empty() { "started" } else { "sandbox_partial" },
         serde_json::json!({"sandbox": applied.level, "missing": applied.missing, "pool": f.pool, "wasmtime": plugind_core::engine::WASMTIME_VERSION}),
     );
+    // every installed package into the compile cache, in the background: ready meanwhile
+    host.warm();
     if let Err(e) = plugind_core::serve::serve(host, listener) {
         eprintln!("maktaba-plugind: serve: {e}");
         std::process::exit(1);

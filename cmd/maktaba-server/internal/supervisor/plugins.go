@@ -66,15 +66,24 @@ const maxSocketPath = 100
 
 // PluginsPaths are cfg's plugin paths. The two sockets are in <data>/run, or, when that
 // path is too long for a unix socket, in /tmp/maktaba-<12 hex of the data folder>/ (a
-// folder of this user only, made by the plugins role's start).
-func PluginsPaths(cfg config.Config) PluginPaths {
+// folder of this user only, made by the plugins role's start). On Windows both are in the
+// host's own run folder (<data>\run\plugins), the one folder of <data>\run its AppContainer
+// is granted (#710), and the short folder is under the user's temporary folder.
+func PluginsPaths(cfg config.Config) PluginPaths { return pluginsPaths(cfg, runtime.GOOS) }
+
+func pluginsPaths(cfg config.Config, goos string) PluginPaths {
 	root := filepath.Join(cfg.StateDir(), "plugins")
 	run := filepath.Join(cfg.Server.DataDir, "run", "plugins")
 	p := PluginPaths{Root: root, Cache: filepath.Join(root, ".cache"), Run: run,
 		Dispatch: filepath.Join(run, "plugind.sock"), API: filepath.Join(cfg.Server.DataDir, "run", "plugin-api.sock")}
+	tmp := "/tmp"
+	if goos == "windows" {
+		p.API = filepath.Join(run, "plugin-api.sock")
+		tmp = os.TempDir()
+	}
 	if len(p.Dispatch) > maxSocketPath || len(p.API) > maxSocketPath {
 		sum := sha256.Sum256([]byte(filepath.Clean(cfg.Server.DataDir)))
-		dir := filepath.Join("/tmp", "maktaba-"+hex.EncodeToString(sum[:6]))
+		dir := filepath.Join(tmp, "maktaba-"+hex.EncodeToString(sum[:6]))
 		p.Sockets = dir
 		p.Dispatch, p.API = filepath.Join(dir, "plugind.sock"), filepath.Join(dir, "plugin-api.sock")
 	}
@@ -83,13 +92,10 @@ func PluginsPaths(cfg config.Config) PluginPaths {
 
 // PluginsHere reports whether this machine runs plugins: a home on Postgres (the plugin
 // tables and job_stages' longer names are Postgres's, #693), or a full node of one (a
-// plugin placed any or gpu runs there, its writes sent to the home: story 54.42), and not
-// Windows yet (the pipeline's dispatcher reaches the host on a unix socket, which asyncio
-// cannot open there).
+// plugin placed any or gpu runs there, its writes sent to the home: story 54.42). On
+// Windows the host runs in its AppContainer and the pipeline reaches it through the
+// supervisor's named pipe relay (#710).
 func PluginsHere(cfg config.Config) bool {
-	if runtime.GOOS == "windows" {
-		return false
-	}
 	u := strings.ToLower(strings.TrimSpace(cfg.Database.URL))
 	if n, err := NodeOf(cfg); err == nil && NodeMode(cfg, n) {
 		u = strings.ToLower(HomeDSN(n))
@@ -121,7 +127,8 @@ func BuildPlugins(opts Options) (Process, *PluginsHealth, error) {
 	p := PluginsPaths(opts.Config)
 	args := []string{"--data", opts.Config.Server.DataDir, "--plugins-dir", p.Root, "--cache-dir", p.Cache,
 		"--run-dir", p.Run, "--api-socket", p.API, "--dispatch-socket", p.Dispatch, "--pool", strconv.Itoa(PluginsPool())}
-	cmd := exec.Command(bin, args...)
+	name, argv := sandboxed(runtime.GOOS, SandboxLauncher(), p, bin, args)
+	cmd := exec.Command(name, argv...)
 	cmd.Env = os.Environ()
 	wire(cmd)
 	h := &PluginsHealth{Socket: p.Dispatch}
@@ -152,6 +159,50 @@ func PlugindBin(opts Options) (string, error) {
 		bin = "maktaba-plugind"
 	}
 	return bin, nil
+}
+
+// SandboxLauncher is what starts the plugin host inside its AppContainer on Windows: this
+// binary (`maktaba-server plugins-sandbox-run`), or MAKTABA_PLUGINS_SANDBOX_RUN (tests: the
+// CI job's aclaunch, the same code).
+func SandboxLauncher() string {
+	if v := os.Getenv("MAKTABA_PLUGINS_SANDBOX_RUN"); v != "" {
+		return v
+	}
+	if exe, err := os.Executable(); err == nil {
+		return exe
+	}
+	return "maktaba-server"
+}
+
+// sandboxed is the plugin host's command line on goos: on Windows inside its AppContainer
+// and Job Object through launcher, granted read on the plugins folder and read-write on its
+// compile cache, its run folder and the short socket folder when there is one (#710);
+// elsewhere bin itself (the host applies its own sandbox, 54.03).
+func sandboxed(goos, launcher string, p PluginPaths, bin string, args []string) (string, []string) {
+	if goos != "windows" {
+		return bin, args
+	}
+	w := []string{"plugins-sandbox-run", "-read", p.Root, "-write", p.Cache, "-write", p.Run}
+	if p.Sockets != "" {
+		w = append(w, "-write", p.Sockets)
+	}
+	w = append(w, "--", bin)
+	return launcher, append(w, args...)
+}
+
+// PreloadCommand is the install's check of a package (--preload) as this OS runs it: the
+// host binary, or on Windows the launcher around it (the host refuses to run outside its
+// AppContainer).
+func PreloadCommand(cfg config.Config, bin string) (string, func(dir, id, version string) []string) {
+	p, args := PluginsPaths(cfg), PreloadArgs(cfg)
+	if runtime.GOOS != "windows" {
+		return bin, args
+	}
+	launcher := SandboxLauncher()
+	return launcher, func(dir, id, version string) []string {
+		_, argv := sandboxed("windows", launcher, p, bin, args(dir, id, version))
+		return argv
+	}
 }
 
 // PreloadArgs are maktaba-plugind's arguments to check a package folder (--preload): the

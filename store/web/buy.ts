@@ -5,6 +5,10 @@
 // country, and is sent to that provider's hosted checkout. The provider's webhook records the
 // purchase (payments_webhook.ts) and the home picks up its entitlement.
 //
+// The store's own plugin page has Buy too: GET /buy/<plugin>/home asks the signed-in buyer
+// which of the account's linked homes it is for, and its POST makes the same intent the home
+// would have asked for, then continues on the same page as the home's Buy.
+//
 // The pages run no script: plain forms and links, every text escaped, a CSP that allows
 // nothing but inline style and forms to this origin (and the provider's checkout, which the
 // pay step redirects to). The home's address is never sent here.
@@ -12,7 +16,7 @@
 import type { DB } from "../commerce/db";
 import { SaleRefused, startPurchase } from "../commerce/sales";
 import type { Currency } from "../payments/provider";
-import { type Account, context } from "./auth";
+import { type Account, context, limit } from "./auth";
 import { sha256hex, token } from "./crypto";
 import { type Env, now } from "./env";
 import { cookie, json, refuse } from "./http";
@@ -46,6 +50,9 @@ const WORDS = {
     doneTitle: "Thank you",
     done: "Your purchase is being confirmed. Your Maktaba checks for it every 15 seconds and starts the plugin by itself; you can close this page.",
     plugin: "The plugin's page",
+    whichHome: "Which home is it for?",
+    next: "Continue",
+    noHome: "Link one of your homes to this store account first: in your Maktaba, open Settings → Plugins → Store account and choose Link.",
   },
   ar: {
     title: "شراء {name}",
@@ -62,6 +69,9 @@ const WORDS = {
     doneTitle: "شكرًا لك",
     done: "يجري تأكيد شرائك. يتحقق جهازك الرئيسي منه كل 15 ثانية ويشغّل الإضافة وحده؛ يمكنك إغلاق هذه الصفحة.",
     plugin: "صفحة الإضافة",
+    whichHome: "لأي جهاز رئيسي هي؟",
+    next: "متابعة",
+    noHome: "اربط أحد أجهزتك الرئيسية بحساب المتجر هذا أولًا: في مكتبة، افتح الإعدادات ← الإضافات ← حساب المتجر واختر «ربط».",
   },
 } as const;
 
@@ -142,16 +152,80 @@ export async function purchaseIntent(env: Env, req: Request, id: string): Promis
   const product = await productOf(db!, plugin, typeof b.product === "string" ? b.product : undefined);
   if (!product) refuse(404, "not_for_sale");
   const lang: Lang = b.lang === "ar" ? "ar" : "en";
+  const { t, expires } = await newIntent(db!, home!.id, plugin, product!, lang);
+  return json({ intent: t, buy_url: `${env.STORE_ORIGIN}/buy/${plugin}`, product, expires_at: expires.toISOString() });
+}
+
+/** A new intent for a home (its token, kept only as a sha256), used once within INTENT_MS. */
+async function newIntent(db: DB, homeId: string, plugin: string, product: Kind, lang: Lang): Promise<{ t: string; expires: Date }> {
   const t = token();
   const at = now();
   const expires = new Date(at.getTime() + INTENT_MS);
-  await db!
+  await db
     .prepare(
       `INSERT INTO purchase_intents (id_hash, home_id, plugin_id, product, lang, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(await sha256hex(t), home!.id, plugin, product, lang, at.toISOString(), expires.toISOString())
+    .bind(await sha256hex(t), homeId, plugin, product, lang, at.toISOString(), expires.toISOString())
     .run();
-  return json({ intent: t, buy_url: `${env.STORE_ORIGIN}/buy/${plugin}`, product, expires_at: expires.toISOString() });
+  return { t, expires };
+}
+
+/** The intent's cookie and the way on to the buy page, as after the home's own post. */
+function toBuyPage(plugin: string, t: string): Response {
+  return new Response(null, {
+    status: 303,
+    headers: {
+      Location: `/buy/${plugin}`,
+      "Set-Cookie": `${BUY_COOKIE}=${t}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${INTENT_MS / 1000}`,
+      "Cache-Control": "no-store",
+      "Referrer-Policy": "no-referrer",
+    },
+  });
+}
+
+/**
+ * Buy from the store's own plugin page: GET /buy/<plugin>/home lists the signed-in account's
+ * linked homes to choose from; POST makes that home's intent and goes on to the buy page.
+ */
+async function chooseHome(env: Env, req: Request, db: DB, plugin: string, lang: Lang): Promise<Response> {
+  const w = words(lang);
+  const title = fill(w.title, { name: await pluginName(env, plugin, lang) });
+  const product = await productOf(db, plugin);
+  if (!product) return message(lang, title, w.notForSale, 404);
+  const here = `/buy/${plugin}/home${lang === "ar" ? "?lang=ar" : ""}`;
+  const ctx = await context(env, req);
+  if (!ctx.account) {
+    if (req.method !== "GET") return message(lang, title, w.expired, 401);
+    return new Response(null, { status: 303, headers: { Location: `/signin?next=${encodeURIComponent(here)}`, "Cache-Control": "no-store" } });
+  }
+  const { results: homes } = await env.DB_INSTALLS.prepare(
+    "SELECT id, name FROM homes WHERE account = ? AND unlinked_at IS NULL ORDER BY linked_at",
+  )
+    .bind(ctx.account.id)
+    .all<{ id: string; name: string }>();
+  if (req.method === "POST") {
+    // from the form below only (the session cookie is SameSite=Lax; this is the CSRF check)
+    if (req.headers.get("Origin") !== env.STORE_ORIGIN) return message(lang, title, w.expired, 403);
+    await limit(ctx, "buy_intent", 30, 3600_000);
+    const homeId = (await form(req)).get("home");
+    // only a home linked to this account now: another account's, or an unlinked one, is refused
+    if (!homeId || !homes.some((h) => h.id === homeId)) return message(lang, title, w.expired, 400);
+    const { t } = await newIntent(db, homeId, plugin, product, lang);
+    return toBuyPage(plugin, t);
+  }
+  if (req.method !== "GET") return message(lang, title, w.expired, 405);
+  if (homes.length === 0) return message(lang, title, w.noHome);
+  const options = homes
+    .map(
+      (h, i) =>
+        `<p><label><input type="radio" name="home" value="${esc(h.id)}"${i === 0 ? " checked" : ""} required> <bdi>${esc(h.name || h.id)}</bdi></label></p>`,
+    )
+    .join("");
+  return page(
+    lang,
+    title,
+    `<form method="post" action="${esc(here)}"><fieldset><legend>${esc(w.whichHome)}</legend>${options}</fieldset><p><button type="submit">${esc(w.next)}</button></p></form>`,
+  );
 }
 
 /** The currency of a buyer's country, then the store's usual ones. */
@@ -251,7 +325,7 @@ const clearBuyCookie = `${BUY_COOKIE}=; Path=/; Secure; HttpOnly; SameSite=Lax; 
  */
 export async function buyPage(env: Env, req: Request): Promise<Response | null> {
   const url = new URL(req.url);
-  const m = new RegExp(`^/buy/(${PLUGIN})(/pay|/done)?/?$`).exec(url.pathname);
+  const m = new RegExp(`^/buy/(${PLUGIN})(/pay|/done|/home)?/?$`).exec(url.pathname);
   if (!m) return null;
   const plugin = m[1]!;
   const step = m[2] ?? "";
@@ -266,21 +340,14 @@ export async function buyPage(env: Env, req: Request): Promise<Response | null> 
   }
   const db = commerceDB(env);
   if (!db) return message("en", WORDS.en.title.replace("{name}", plugin), WORDS.en.noProvider, 503);
+  if (step === "/home") return chooseHome(env, req, db, plugin, url.searchParams.get("lang") === "ar" ? "ar" : "en");
 
   // the home's post: keep the intent in a same-site cookie, then the page itself (a GET)
   if (step === "" && req.method === "POST") {
     const t = (await form(req)).get("intent");
     const intent = await intentOf(db, t, plugin);
     if (!intent) return message("en", words("en").title.replace("{name}", plugin), WORDS.en.expired, 400);
-    return new Response(null, {
-      status: 303,
-      headers: {
-        Location: `/buy/${plugin}`,
-        "Set-Cookie": `${BUY_COOKIE}=${t}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${INTENT_MS / 1000}`,
-        "Cache-Control": "no-store",
-        "Referrer-Policy": "no-referrer",
-      },
-    });
+    return toBuyPage(plugin, t!);
   }
 
   const t = cookie(req, BUY_COOKIE);

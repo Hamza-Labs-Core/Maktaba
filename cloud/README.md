@@ -59,8 +59,13 @@ go run ./cmd/maktaba-cloud serve --role api
 
 curl http://localhost:8090/healthz
 
-# The cloud web app (account, billing, operator console) on :5174:
+# The cloud web app (account, billing) on :5174:
 pnpm -C ../web dev:cloud
+
+# The operator console, its own bundle (web/admin, story 50.32), on :5175. It proxies /v1 to
+# the api role's admin listener (:8091, story 50.32 §1); until that listener is in, point it
+# at the user listener:
+CLOUD_ADMIN_API_URL=http://localhost:8090 pnpm -C ../web dev:admin
 
 # Make an account a service admin (after it verified its email; the
 # verification link is in the api log — mail.driver is "log"):
@@ -192,7 +197,7 @@ automatically.
 | 25.17 | push ingest | handlers/push |
 | 25.18 | APNs dispatcher | push/apns.go |
 | 25.19 | FCM dispatcher | push/fcm.go |
-| 25.20 | admin console (accounts, suspend, servers, abuse, audit) | handlers/admin, auth/middleware.RequireServiceAdmin, web/cloud |
+| 25.20 | admin console (accounts, suspend, servers, abuse, audit) | handlers/admin, auth/middleware.RequireServiceAdmin, web/admin (its own bundle since 50.32) |
 | 25.21 | admin revenue | handlers/admin (Revenue) |
 | 25.22 | subdomain provisioning | handlers/servers/subdomain.go |
 | 25.23 | TLS/ACME edge | tls/acme.go |

@@ -82,6 +82,8 @@ _web: &web
   # help.coverage.test.ts checks the help against these
   - 'api/internal/handlers/rules/schema.json'
   - 'api/internal/handlers/systemstatus/types.go'
+  # the cloud user bundle's admin check (story 50.32), run by the web unit job
+  - 'tools/lint/no-admin-in-user-bundle*.mjs'
 
 # make test-tokens: the token source and the files built from it
 _tokens: &tokens

@@ -100,6 +100,25 @@ fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The harness's compile cache, kept across runs (a large component, a Python one, compiles
+/// once rather than in every `mkp test`): MKP_CACHE_DIR, else the user's cache folder. Its
+/// names bind the component's sha256, the Wasmtime version and the engine's settings.
+fn cache_dir() -> Result<PathBuf, String> {
+    let base = match std::env::var_os("MKP_CACHE_DIR") {
+        Some(d) if !d.is_empty() => PathBuf::from(d),
+        _ => match std::env::var_os("XDG_CACHE_HOME").filter(|d| !d.is_empty()) {
+            Some(d) => PathBuf::from(d).join("mkp"),
+            None => match std::env::var_os("HOME").or_else(|| std::env::var_os("LOCALAPPDATA")) {
+                Some(h) if cfg!(windows) => PathBuf::from(h).join("mkp").join("cache"),
+                Some(h) => PathBuf::from(h).join(".cache").join("mkp"),
+                None => std::env::temp_dir().join("mkp-cache"),
+            },
+        },
+    };
+    std::fs::create_dir_all(&base).map_err(|e| format!("{}: {e}", base.display()))?;
+    Ok(base)
+}
+
 fn harness(
     dir: &Path,
     m: &Map<String, Value>,
@@ -115,13 +134,14 @@ fn harness(
     let mock = Arc::new(Mock { fixtures, calls: Mutex::new(Vec::new()), subscribers });
     let host = Host::new(HostConfig {
         plugins_dir: root.clone(),
-        cache_dir: root.join(".cache"),
+        cache_dir: cache_dir()?,
         pool_size: 1,
         api: mock.clone(),
         logs: Arc::new(Logs::new(sink.clone())),
         skip_audit: false,
         sandbox: "none".into(),
         sandbox_missing: vec!["harness".into()],
+        compile_timeout: plugind_core::engine::COMPILE_TIMEOUT,
     })
     .map_err(|e| format!("{e:#}"))?;
     Ok(Harness { _dir: tmp, host, package: pkg.to_string_lossy().into_owned(), sink, mock })
