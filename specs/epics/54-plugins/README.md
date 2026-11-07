@@ -1789,13 +1789,16 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   in turns, and the p50 and p95 ratios are taken over those runs; a difference under 25 ms is
   the plugin path's fixed cost of one job (its token and the hop to the runner) and does not
   count. Every statement runs on a connection already set to the plugin's role and origin, so
-  a statement outside a transaction is one round trip to Postgres. p50 is taken over the whole job and p95
-  over the job's own run (the stage through its path), not the worker's code around it that
-  both sides share: on CI that code stalled for 30-180 ms on either side's turn while the
-  process's CPU stayed flat (waiting on the shared Postgres), and the plugin's run did not
-  (its p95 within 3 ms of its p50). A failure that is only the timing is measured once more
-  and counts when the second run fails too. Each run writes its timings (both sides' wall
-  time, CPU, the plugin API's CPU and the run's spans) to the `parity-report` artifact.
+  a statement outside a transaction is one round trip to Postgres. p50 is taken over the whole job's wall time
+  and p95 over the CPU each job cost (the worker's process and the plugin API's, from
+  `/proc/<pid>/schedstat` on Linux; Postgres is left out, as both sides run the same
+  queries). On CI a job's wall time stalls now and then for 30-250 ms, on either side and in
+  any span, with the CPU flat (a round trip waiting on the shared Postgres); with eleven runs
+  a side p95 is about the slowest run, so one stall decided it. The median is not moved by a
+  stall and keeps the plugin path's round trips in the gate; the tail is judged by work. A
+  failure that is only the timing is measured once more and counts when the second run fails
+  too. Each run writes its timings (both sides' wall time, CPU, the plugin API's CPU and the
+  run's spans) to the `parity-report` artifact.
 - **A runner never judges an update.** Like a TV slot, a plugin runner that does not run (it
   crash loops, or its sandbox is unavailable) is left out of the update's health rules, before
   and after: its stages run in the worker meanwhile, and the Components page shows it.

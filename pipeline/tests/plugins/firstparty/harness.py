@@ -168,26 +168,34 @@ def _go_dsn(url: str) -> str:
 
 
 def _cpu_of(pid: int) -> float | None:
-    """A process's user and system CPU seconds (Linux /proc; None elsewhere)."""
+    """A process's CPU seconds, every thread (Linux ``/proc/<pid>/schedstat``, in ns; the
+    clock-tick counters of ``stat`` are 10 ms coarse). None elsewhere."""
     if not pid:
         return None
+    total = 0
     try:
-        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        for task in Path(f"/proc/{pid}/task").iterdir():
+            try:
+                total += int((task / "schedstat").read_text().split()[0])
+            except (OSError, ValueError, IndexError):
+                continue
     except OSError:
         return None
-    return (int(fields[11]) + int(fields[12])) / os.sysconf("SC_CLK_TCK")
+    return total / 1e9
 
 
 #: a timing line of perf_check (N16), as opposed to a difference in what was written
-_PERF_LINE = re.compile(r" p(50|95)( \(its run\))?: plugin ")
+_PERF_LINE = re.compile(r" p(50|95)( \(CPU\))?: plugin ")
 
 
 @dataclass
 class Side:
     db: Database
     times: dict[str, list[float]] = field(default_factory=dict)
-    #: N16's p95 samples: each benched job's own run (the stage through its path)
-    run_times: dict[str, list[float]] = field(default_factory=dict)
+    #: N16's p95 samples: the CPU each benched job cost, this process (the worker and, in
+    #: the harness, the runner) and the plugin API's process; Postgres is left out, as both
+    #: sides run the same queries
+    cpu_times: dict[str, list[float]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
 
 
@@ -260,7 +268,7 @@ class Parity:
         for side in (self.a, self.b):
             for st in stages:
                 side.times[st] = []
-                side.run_times[st] = []
+                side.cpu_times[st] = []
         # the worker and the runner share this test's process and loop: a collector pause
         # would land on whichever side runs then, so it is held off while both are timed
         from dataclasses import replace
@@ -350,8 +358,10 @@ class Parity:
                             "api": named,
                             "unnamed": (at["@end"] - at["@start"]) - named,
                         }
-                    if "run" in spans:
-                        side.run_times[st].append(spans["run"])
+                    side.cpu_times[st].append(
+                        (cpu1 - cpu0)
+                        + ((api1 - api0) if api0 is not None and api1 is not None else 0.0)
+                    )
                     self.jobs.append(
                         {
                             "side": "plugin" if side is self.b else "in-process",
@@ -487,8 +497,8 @@ class Parity:
                     self.a.times.get(s, []),
                     self.b.times.get(s, []),
                     floor_s=PERF_FLOOR_S,
-                    inproc_p95=self.a.run_times.get(s),
-                    plugin_p95=self.b.run_times.get(s),
+                    inproc_p95=self.a.cpu_times.get(s),
+                    plugin_p95=self.b.cpu_times.get(s),
                 )
         return out
 

@@ -214,10 +214,12 @@ def perf_check(
     smallest difference that counts (a job of a few milliseconds is noise).
 
     ``inproc_p95`` / ``plugin_p95``, when given, are the samples p95 is taken over instead:
-    the job's own run (the stage through its path), without the worker's code around it
-    that both sides share. A shared machine's stall in that code (waiting on Postgres, with
-    this process's CPU flat) lands on either side's turn and is not the plugin's cost; the
-    median of the whole job is not moved by it."""
+    the CPU each job cost (the worker's process and the plugin API's), not its wall time. On
+    a shared CI machine a job's wall time stalls now and then for 30-250 ms, on either side,
+    in any span, with the CPU flat (a round trip waiting on Postgres): with eleven runs a
+    side p95 is about the slowest run, so a single stall decided it. The median of the
+    wall time is not moved by such a stall and keeps the plugin path's latency (its round
+    trips) in the gate; the tail is judged by the work the plugin path does."""
     if not inproc or not plugin:
         return []
     out = []
@@ -227,7 +229,7 @@ def perf_check(
             xa, xb = inproc_p95, plugin_p95
         a, b = _quantile(xa, q), _quantile(xb, q)
         if b > a * limit and b - a > floor_s:
-            what = " (its run)" if xa is not inproc else ""
+            what = " (CPU)" if xa is not inproc else ""
             out.append(
                 f"{stage} {name}{what}: plugin {b * 1000:.1f} ms > {limit:.2f} x in-process {a * 1000:.1f} ms"  # noqa: E501
             )
