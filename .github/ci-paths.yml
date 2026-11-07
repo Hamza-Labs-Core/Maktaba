@@ -77,6 +77,8 @@ _pipeline: &pipeline
 _web: &web
   - 'web/**'
   - 'shared/testtier/ts/**'
+  # the plugin SDK's flow chart, which the Plugins page draws with (54.41)
+  - 'tools/plugin-sdk/js/src/flowchart.ts'
   # help.coverage.test.ts checks the help against these
   - 'api/internal/handlers/rules/schema.json'
   - 'api/internal/handlers/systemstatus/types.go'
@@ -622,6 +624,8 @@ devportal:
   - 'api/internal/handlers/queues/causes.go'
   - 'api/internal/security/disclosure.go'
   - 'web/public/icons/**'
+  # the Flows guide's example chart is drawn at build time (54.41)
+  - 'tools/plugin-sdk/js/src/flowchart.ts'
   - '.github/workflows/_devportal.yml'
   - '.github/workflows/devportal-deploy.yml'
 

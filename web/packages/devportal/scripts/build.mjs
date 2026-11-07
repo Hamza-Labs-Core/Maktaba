@@ -24,6 +24,9 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
+// the plugin SDK's flow chart (story 54.41), the one layout every place draws a flow with;
+// TypeScript with nothing but erasable types, so Node reads it with type stripping
+const { renderSvg } = await import("../../../../tools/plugin-sdk/js/src/flowchart.ts");
 import { STRINGS } from "./strings.mjs";
 import { APPS, appShots } from "./apps.mjs";
 import { pluginFindings, pluginReference, readPluginSources } from "./plugins.mjs";
@@ -807,6 +810,25 @@ export function build() {
   // the portal's own static files (authored in this package)
   for (const rel of walk(path.join(PKG, "static"))) copy(path.join(PKG, "static", rel), rel);
   for (const [src, out] of FILES) copy(path.join(REPO, src), out);
+  // the Flows guide's example chart, drawn at build time from the flow corpus's two-plugin
+  // chain, in each language
+  const chain = JSON.parse(
+    fs.readFileSync(
+      path.join(REPO, "shared/plugins/testdata/flows/chain_two_home/expect.json"),
+      "utf8"
+    )
+  ).graph;
+  for (const lang of LANGS) {
+    const words =
+      lang === "ar" ? { "audio.ready": "صوته جاهز" } : { "audio.ready": "Its audio is ready" };
+    const svg = renderSvg(chain, {
+      lang,
+      highlight: "dev.example.chapter-writer",
+      coreLabel: (e) => words[e] ?? e,
+      title: lang === "ar" ? "مثال تدفّق من إضافتين" : "An example flow of two plugins",
+    });
+    write((lang === "ar" ? "ar/" : "") + "plugins/flows/example.svg", svg + "\n");
+  }
   const openapi = JSON.parse(fs.readFileSync(path.join(REPO, "shared/api/openapi.json"), "utf8"));
   const overlay = JSON.parse(
     fs.readFileSync(path.join(REPO, "shared/api/openapi.ar.json"), "utf8")

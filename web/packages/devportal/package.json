@@ -5,7 +5,7 @@
   "type": "module",
   "description": "maktaba.dev, the Maktaba developer portal: a Cloudflare Worker with static assets (landing page, the wiki in English and Arabic, API reference, developer guides, changelog, security.txt).",
   "scripts": {
-    "build": "node scripts/build.mjs",
+    "build": "node --experimental-strip-types --no-warnings=ExperimentalWarning scripts/build.mjs",
     "scan": "node scripts/scan.mjs dist",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

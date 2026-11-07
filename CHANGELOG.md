@@ -882,6 +882,16 @@ build fails when the two differ.
   new cause `plugin_loop`, "Stopped a loop between plugins", with help in English and
   Arabic. Plugins built for 1.0 keep running. Migration 0199: `plugin_write_lineage`.
   maktaba.dev: Flows gains emitting events and loops at run time.
+- Plugins, the flow chart (Epic 54, story 54.41): a plugin's page draws its flow, the
+  whole set of plugins it works with, this plugin highlighted and the members not installed
+  named and dashed, and the whole home's plugin graph; core events in Maktaba's words, right
+  to left in Arabic, with the steps as a list for screen readers. Turning off a plugin
+  others depend on lists the steps that go idle first; a flow refusal shows the loop in the
+  admin's language. `GET /api/plugins/{id}/flow`. The chart is one layout in the plugin SDK
+  (`flowchart.ts`), drawn by the web as its own SVG elements and by maktaba.dev at build
+  time; `mkp flow` prints a plugin's graph and writes `flow.mmd`, and `mkp test --with`
+  runs a two-plugin chain in the harness. The Remote apps show no plugin administration, so
+  they draw no chart. maktaba.dev: the Flows guide draws its example.
 
 - **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
   two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)

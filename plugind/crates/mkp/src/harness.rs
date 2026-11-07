@@ -22,6 +22,10 @@ pub struct Options {
     pub fixtures: Option<PathBuf>,
     /// JSON text of the plugin's settings
     pub settings: String,
+    /// JSON text of the job's payload ("{}" when empty)
+    pub payload: String,
+    /// the stages an emitted event goes to (a chain, `mkp test --with`)
+    pub subscribers: Vec<String>,
 }
 
 const TOKEN: &str = "mkp-harness";
@@ -30,6 +34,7 @@ const TOKEN: &str = "mkp-harness";
 struct Mock {
     fixtures: BTreeMap<String, Value>,
     calls: Mutex<Vec<Value>>,
+    subscribers: Vec<String>,
 }
 
 impl PluginApi for Mock {
@@ -44,6 +49,8 @@ impl PluginApi for Mock {
                 Err(ApiError::from_code(o["refuse"].as_str().unwrap_or("plugin_invalid")))
             }
             Some(v) => Ok(Answer::Json(v.clone())),
+            // an emitted event goes to the chain's subscribers (54.40)
+            None if key == "events/emit" => Ok(Answer::Json(json!({"stages": self.subscribers}))),
             None => Ok(Answer::Json(json!({}))),
         }
     }
@@ -93,14 +100,19 @@ fn copy_dir(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn harness(dir: &Path, m: &Map<String, Value>, fixtures: BTreeMap<String, Value>) -> Result<Harness, String> {
+fn harness(
+    dir: &Path,
+    m: &Map<String, Value>,
+    fixtures: BTreeMap<String, Value>,
+    subscribers: Vec<String>,
+) -> Result<Harness, String> {
     let tmp = tempfile_dir::Dir::new().map_err(|e| e.to_string())?;
     let root = tmp.path().canonicalize().map_err(|e| e.to_string())?.join("plugins");
     let id = m["id"].as_str().unwrap_or_default();
     let pkg = root.join(id).join("harness");
     copy_dir(dir, &pkg)?;
     let sink = Arc::new(MemorySink::default());
-    let mock = Arc::new(Mock { fixtures, calls: Mutex::new(Vec::new()) });
+    let mock = Arc::new(Mock { fixtures, calls: Mutex::new(Vec::new()), subscribers });
     let host = Host::new(HostConfig {
         plugins_dir: root.clone(),
         cache_dir: root.join(".cache"),
@@ -117,7 +129,7 @@ fn harness(dir: &Path, m: &Map<String, Value>, fixtures: BTreeMap<String, Value>
 
 /// The import audit and compile, as the home's preload does.
 pub fn preload(dir: &Path, m: &Map<String, Value>) -> Result<String, String> {
-    let h = harness(dir, m, BTreeMap::new())?;
+    let h = harness(dir, m, BTreeMap::new(), Vec::new())?;
     let id = m["id"].as_str().unwrap_or_default();
     let version = m["version"].as_str().unwrap_or_default();
     h.host.preload(id, version, &h.package).map_err(|e| format!("{}: {}", e.code, e.detail))?;
@@ -151,7 +163,7 @@ pub fn run(dir: &Path, m: &Map<String, Value>, o: &Options) -> Result<Value, Str
         .flat_map(|k| caps[*k].as_array().cloned().unwrap_or_default())
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
-    let h = harness(dir, m, fixtures)?;
+    let h = harness(dir, m, fixtures, o.subscribers.clone())?;
     let req = Run {
         invocation_id: "inv-harness".into(),
         plugin_id: m["id"].as_str().unwrap_or_default().into(),
@@ -162,7 +174,7 @@ pub fn run(dir: &Path, m: &Map<String, Value>, o: &Options) -> Result<Value, Str
             id: "job-harness".into(),
             stage: o.stage.clone(),
             subject: Subject { kind, id },
-            payload: "{}".into(),
+            payload: if o.payload.is_empty() { "{}".into() } else { o.payload.clone() },
             attempt: 1,
             checkpoint: None,
         },

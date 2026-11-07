@@ -33,6 +33,7 @@ on:
       - 'api/internal/handlers/queues/causes.go'
       - 'api/internal/security/disclosure.go'
       - 'web/public/icons/**'
+      - 'tools/plugin-sdk/js/src/flowchart.ts'
       - '.github/workflows/_devportal.yml'
       - '.github/workflows/devportal-deploy.yml'
   workflow_dispatch:
