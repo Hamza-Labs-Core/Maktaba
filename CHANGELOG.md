@@ -438,6 +438,13 @@ build fails when the two differ.
   removed at sign-out); a new cloud sign-in that can't reach the cloud goes to the home's own
   sign-in. A request the relay answers `503 home_reconnecting` is tried again for up to a
   minute while the status strip says "Reconnecting to your home…".
+- **What one relay node carries is measured (Epic 50, story 50.14).** `maktaba-loadtest` ramps
+  simulated homes and players at a bitrate against a relay until a stop rule (CPU 70 %, 20 ms
+  added latency, 0.5 % stalls, a dropped tunnel, memory 75 %) holds for 2 minutes, and turns the
+  last good step into a row of `docs/cloud-sizing.md`; it refuses any target under maktaba.tv.
+  The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
+  CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
+  measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
 - **Direct remote access, the cloud's side (Epic 50, story 50.15, part 1).** Maktaba Cloud can
   give each home its own HTTPS names under separate direct-name domains (never maktaba.tv): a
   name server (`--role dns`) that computes each name's address and serves the ACME challenges
@@ -1070,6 +1077,14 @@ build fails when the two differ.
 - **The admin orders plugin panels (Epic 54, story 54.20).** Settings → Plugins → Panel order
   lists the plugins that declare panels; pages show at most three, in that order, then in
   install order. `GET`/`PUT /api/plugins/panel-order` (admin only, audited).
+
+- **Plugin job metrics, and problem reports keep plugin logs out (Epic 54, story 54.09 §3,
+  §4).** The home's `/metrics` has each plugin's `maktaba_plugin_jobs_total{plugin,outcome}`,
+  `maktaba_plugin_job_seconds{plugin,quantile}` (p50 and p95 of its last 20 jobs) and
+  `maktaba_plugin_memory_peak_bytes{plugin}`, read from its health row at each scrape. A
+  problem report leaves out a plugin's log lines unless an admin ticks **Include its logs in
+  problem reports** on the plugin's page (audited); the plugin host's own lines stay.
+  maktaba.dev: Installing a plugin, *Health and logs* and the admin's API.
 
 ### Fixed
 

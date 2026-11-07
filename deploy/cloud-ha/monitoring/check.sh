@@ -15,7 +15,7 @@ cp "${here}/alerts.yml" "${here}/backup-rules.yml" "${here}/blackbox.yml" "${wor
 chmod 0644 "${work}"/*
 prom=prom/prometheus:v3.5.0
 docker run --rm -v "${work}:/etc/prometheus" --entrypoint promtool "${prom}" check config /etc/prometheus/prometheus.yml
-docker run --rm -v "${here}:/r" -w /r --entrypoint promtool "${prom}" test rules alerts-test.yml backup-rules-test.yml
+docker run --rm -v "${here}:/r" -w /r --entrypoint promtool "${prom}" test rules alerts-test.yml backup-rules-test.yml capacity-test.yml
 docker run --rm -v "${work}:/c" --entrypoint amtool prom/alertmanager:v0.28.1 check-config /c/alertmanager.yml
 docker run --rm -v "${work}:/c" prom/blackbox-exporter:v0.27.0 --config.file=/c/blackbox.yml --config.check
 # the witness's public site (story 50.11): a token in front of everything

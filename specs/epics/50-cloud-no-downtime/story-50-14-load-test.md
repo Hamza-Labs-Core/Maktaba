@@ -15,7 +15,9 @@ and the Phase 2 trigger.
 
 ### 1. The harness
 
-`tools/loadtest/` (new, Go; no k6, so it reuses simhome and streamgen from 50.03 / 50.06):
+`cloud/loadtest/` and `cloud/cmd/maktaba-loadtest` (Go; no k6, so it reuses simhome and
+streamgen from 50.03 / 50.06, inside the cloud module because simhome is one of its internal
+packages):
 
 - **Homes:** `simhome` with N tunnels. Each simulated home serves a fake media API: HLS
   playlists and segments of fixed sizes from memory (no disk), so the home side is never the
@@ -28,8 +30,8 @@ and the Phase 2 trigger.
 - **Collector:** scrapes the relay's `/metrics` and the node's CPU, memory, network and socket
   counts (node_exporter) every 5 s.
 
-Run: `go run ./tools/loadtest --target https://<host> --homes 5000 --players 200 --bitrate 5M
---ramp 10m --hold 20m`. It ramps up until a **stop rule** trips, then reports the last good step.
+Run: `go run ./cmd/maktaba-loadtest run --target https://<host> --homes 1000 --homes-step 1000
+--players 50 --players-step 50 --bitrate 5M --step 3m`. It ramps up until a **stop rule** trips, then reports the last good step.
 
 ### 2. Stop rules (what "full" means)
 
@@ -123,13 +125,13 @@ the next plan during a planned switchover, 50.07).
 
 | File | Change |
 |---|---|
-| `tools/loadtest/` (new, Go) | Ramp driver, stop rules, collector, report. |
-| `cloud/internal/relay/simhome/` (from 50.03) | Fake HLS media API; idle mode. |
-| `tools/rehearsal-cloud/streamgen/` (from 50.06) | Bitrate profiles, stall and TTFB measurement. |
+| `cloud/loadtest/`, `cloud/cmd/maktaba-loadtest` (new, Go) | Ramp driver, stop rules, collector (node_exporter on staging, `docker stats` in CI), regression compare, sizing rows. |
+| `cloud/internal/relay/simhome/` (from 50.03) | Its `/stream` serves sized segments from memory over a set time (the home is never the bottleneck); homes PING every 25 s. |
+| `cloud/rehearsal/streamgen/` (from 50.06) | Bitrate profiles, stall and TTFB measurement. |
 | `.github/workflows/cloud-rehearsal.yml` | Job `load-small` with the regression check. |
 | `.github/workflows/loadtest.yml` (new) | `workflow_dispatch` against staging; secrets on a `staging` environment. |
 | `docs/cloud-sizing.md` (new) | The table. |
-| `deploy/cloud-ha/witness/prometheus/rules.yml` (from 50.10) | `relay_capacity_used`, `relay_tunnels_used`, the 60 % and 80 % alerts. |
+| `deploy/cloud-ha/monitoring/alerts.yml`, `capacity-test.yml` (from 50.10) | `relay_capacity_used`, `relay_tunnels_used`, the 60 % and 80 % alerts, against the witness's `relay_measured_*` textfile (`RELAY_MEASURED_MBIT`, `RELAY_MEASURED_TUNNELS`); runbook `docs/runbooks/cloud/capacity.md`. |
 | `specs/architecture.md` §13.13 | Cost model from measured numbers (after the first staging run). |
 
 ### Tests
