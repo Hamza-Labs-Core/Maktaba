@@ -318,6 +318,12 @@ build fails when the two differ.
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
+- **A file job in a plugin's runner moves only its own subject's files (Epic 54 wave 5, story
+  54.32 §2).** The runner's sandbox lets the file plugins write anywhere in the library, so a
+  merge, a conversion or a restore could move a file that is not its own. Now, before such a
+  job starts, the runner reads its subject's files (a duplicate group's members, a video's file
+  and its MP4, the ledger rows a restore names), and refuses any other library file with
+  `plugin_scope`: the job fails, not retried, and the file stays where it is.
 
 ### Added
 
