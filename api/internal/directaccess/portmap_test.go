@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -268,4 +269,68 @@ func TestShared(t *testing.T) {
 			t.Errorf("%s: want %v", ip, want)
 		}
 	}
+}
+
+// Ports are read and sent only within 1–65535 (0 where the router picks); anything else is a
+// clear error, never a silent wrap into 16 bits.
+func TestPortsStayInRange(t *testing.T) {
+	for in, want := range map[string]int{"1": 1, "8444": 8444, "65535": 65535} {
+		if got, err := ParsePort(in); err != nil || got != want {
+			t.Errorf("ParsePort(%q) = %d, %v", in, got, err)
+		}
+	}
+	for _, bad := range []string{"0", "65536", "-1", "99999999999", "", "port"} {
+		if _, err := ParsePort(bad); err == nil || !strings.Contains(err.Error(), "1–65535") {
+			t.Errorf("ParsePort(%q): %v", bad, err)
+		}
+	}
+	if v, err := portValue(65535, false); err != nil || v != 65535 {
+		t.Errorf("65535: %d %v", v, err)
+	}
+	if v, err := portValue(0, true); err != nil || v != 0 {
+		t.Errorf("0 where the router picks: %d %v", v, err)
+	}
+	for _, bad := range []int{0, 65536, -1} {
+		if _, err := portValue(bad, false); err == nil {
+			t.Errorf("portValue(%d) accepted", bad)
+		}
+	}
+	if _, err := portValue(65536, true); err == nil {
+		t.Error("65536 accepted where the router picks")
+	}
+	// the mappers refuse before sending anything
+	if _, err := natpmpMap(65536, 0, Lease); err == nil {
+		t.Error("NAT-PMP took internal port 65536")
+	}
+	if _, err := natpmpMap(8444, -1, Lease); err == nil {
+		t.Error("NAT-PMP took external port -1")
+	}
+	if _, err := (&PCP{Gateway: netip.MustParseAddrPort("127.0.0.1:9")}).Map(context.Background(), 0, 0, Lease); err == nil {
+		t.Error("PCP took internal port 0")
+	}
+	if leaseSeconds(-time.Second) != 0 || leaseSeconds(Lease) != 3600 || leaseSeconds(200*365*24*time.Hour) != math.MaxUint32 {
+		t.Error("lease seconds")
+	}
+}
+
+// A direct.listen without a valid port maps nothing and says why.
+func TestABadListenPortFailsTheMapping(t *testing.T) {
+	_, agentSrv := newFakeAgent(t)
+	s := &Service{
+		Agent:    &Agent{Addr: strings.TrimPrefix(agentSrv.URL, "http://")},
+		Listen:   ":65536",
+		Settings: func(context.Context) (Settings, error) { return Settings{Enabled: true, MapPort: true}, nil },
+		Mappers:  []Mapper{},
+		LAN:      func(int) []string { return nil },
+		Poll:     10 * time.Millisecond,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.RunPortmap(ctx); close(done) }()
+	waitUntil(t, "mapping_failed", func() bool {
+		st := s.Status()
+		return st.State == StateMappingFailed && strings.Contains(st.Error, "1–65535")
+	})
+	cancel()
+	<-done
 }

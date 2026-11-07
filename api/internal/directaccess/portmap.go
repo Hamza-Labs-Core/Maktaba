@@ -9,8 +9,11 @@ package directaccess
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"math/rand/v2"
 	"net/netip"
+	"strconv"
 	"time"
 )
 
@@ -77,4 +80,34 @@ func randomPorts(n int) []int {
 		out[i] = 30000 + rand.IntN(20000)
 	}
 	return out
+}
+
+// ParsePort reads a TCP port, 1–65535.
+func ParsePort(s string) (int, error) {
+	n, err := strconv.ParseUint(s, 10, 16)
+	if err != nil || n == 0 {
+		return 0, fmt.Errorf("directaccess: port %q is not in 1–65535", s)
+	}
+	return int(n), nil
+}
+
+// portValue is p on the wire: 1–65535, or 0 where the router may choose (anyOK).
+func portValue(p int, anyOK bool) (uint16, error) {
+	if p < 0 || p > math.MaxUint16 || (p == 0 && !anyOK) {
+		return 0, fmt.Errorf("directaccess: port %d is not in 1–65535", p)
+	}
+	return uint16(p), nil
+}
+
+// leaseSeconds is d in whole seconds for the wire, 0 for a negative d and at most what 32 bits
+// hold.
+func leaseSeconds(d time.Duration) uint32 {
+	s := int64(d / time.Second)
+	switch {
+	case s <= 0:
+		return 0
+	case s > math.MaxUint32:
+		return math.MaxUint32
+	}
+	return uint32(s)
 }

@@ -5,13 +5,13 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/netip"
 	"net/url"
-	"strconv"
 	"sync"
 	"time"
 
@@ -133,14 +133,13 @@ func (s *Service) Status() Status {
 	return st
 }
 
-// internalPort is the direct listener's port as configured.
-func (s *Service) internalPort() int {
+// internalPort is the direct listener's port as configured (direct.listen, host:port).
+func (s *Service) internalPort() (int, error) {
 	_, p, err := net.SplitHostPort(s.Listen)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("directaccess: direct.listen %q: %w", s.Listen, err)
 	}
-	n, _ := strconv.Atoi(p)
-	return n
+	return ParsePort(p)
 }
 
 // sleep waits d or until ctx ends (false).
@@ -270,7 +269,10 @@ func (s *Service) RunPortmap(ctx context.Context) {
 	var last Settings
 	var next time.Time
 	first := true
-	internal := s.internalPort()
+	internal, portErr := s.internalPort()
+	if portErr != nil {
+		s.log().Error("direct: no port to map", "err", portErr, "event", "direct_bad_listen")
+	}
 	unmap := func() {
 		if held == nil {
 			return
@@ -298,6 +300,10 @@ func (s *Service) RunPortmap(ctx context.Context) {
 			switch {
 			case !cur.Enabled:
 				unmap()
+				next = s.now().Add(RenewEvery)
+			case cur.MapPort && portErr != nil:
+				unmap()
+				ep.State, errText = StateMappingFailed, portErr.Error()
 				next = s.now().Add(RenewEvery)
 			case cur.MapPort:
 				want := internal
@@ -371,6 +377,10 @@ func (s *Service) lan(port int) []string {
 	if s.LAN != nil {
 		return s.LAN(port)
 	}
+	pv, err := portValue(port, false)
+	if err != nil {
+		return nil
+	}
 	var out []string
 	addrs, _ := net.InterfaceAddrs()
 	for _, a := range addrs {
@@ -379,7 +389,7 @@ func (s *Service) lan(port int) []string {
 			continue
 		}
 		if ip := p.Addr(); ip.Is4() && ip.IsPrivate() {
-			out = append(out, netip.AddrPortFrom(ip, uint16(port)).String())
+			out = append(out, netip.AddrPortFrom(ip, pv).String())
 		}
 	}
 	return out

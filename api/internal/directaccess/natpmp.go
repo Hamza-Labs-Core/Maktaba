@@ -77,7 +77,11 @@ func (n *NATPMP) Map(ctx context.Context, internal, external int, lifetime time.
 	if err != nil {
 		return Mapping{}, err
 	}
-	resp, err := n.request(ctx, natpmpMap(internal, external, lifetime), 16)
+	req, err := natpmpMap(internal, external, lifetime)
+	if err != nil {
+		return Mapping{}, err
+	}
+	resp, err := n.request(ctx, req, 16)
 	if err != nil {
 		return Mapping{}, err
 	}
@@ -88,17 +92,30 @@ func (n *NATPMP) Map(ctx context.Context, internal, external int, lifetime time.
 
 // Unmap asks the mapping with lifetime 0 (RFC 6886 §3.4).
 func (n *NATPMP) Unmap(ctx context.Context, m Mapping) error {
-	_, err := n.request(ctx, natpmpMap(m.Internal, 0, 0), 16)
+	req, err := natpmpMap(m.Internal, 0, 0)
+	if err != nil {
+		return err
+	}
+	_, err = n.request(ctx, req, 16)
 	return err
 }
 
-func natpmpMap(internal, external int, lifetime time.Duration) []byte {
+// natpmpMap is a TCP mapping request: internal 1–65535, external 0 (the router picks) to 65535.
+func natpmpMap(internal, external int, lifetime time.Duration) ([]byte, error) {
+	in, err := portValue(internal, false)
+	if err != nil {
+		return nil, err
+	}
+	ex, err := portValue(external, true)
+	if err != nil {
+		return nil, err
+	}
 	b := make([]byte, 12)
 	b[1] = 2 // TCP
-	binary.BigEndian.PutUint16(b[4:6], uint16(internal))
-	binary.BigEndian.PutUint16(b[6:8], uint16(external))
-	binary.BigEndian.PutUint32(b[8:12], uint32(lifetime/time.Second))
-	return b
+	binary.BigEndian.PutUint16(b[4:6], in)
+	binary.BigEndian.PutUint16(b[6:8], ex)
+	binary.BigEndian.PutUint32(b[8:12], leaseSeconds(lifetime))
+	return b, nil
 }
 
 // PCP asks the gateway by the Port Control Protocol (RFC 6887) on UDP 5351: a MAP request for
@@ -127,6 +144,14 @@ func (p *PCP) Unmap(ctx context.Context, m Mapping) error {
 }
 
 func (p *PCP) do(ctx context.Context, internal, external int, lifetime time.Duration) (Mapping, error) {
+	in, err := portValue(internal, false)
+	if err != nil {
+		return Mapping{}, err
+	}
+	ex, err := portValue(external, true)
+	if err != nil {
+		return Mapping{}, err
+	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "udp", p.Gateway.String())
 	if err != nil {
 		return Mapping{}, err
@@ -135,13 +160,13 @@ func (p *PCP) do(ctx context.Context, internal, external int, lifetime time.Dura
 	local, _ := netip.ParseAddrPort(conn.LocalAddr().String())
 	req := make([]byte, 60)
 	req[0], req[1] = 2, 1 // version 2, MAP
-	binary.BigEndian.PutUint32(req[4:8], uint32(lifetime/time.Second))
+	binary.BigEndian.PutUint32(req[4:8], leaseSeconds(lifetime))
 	client := local.Addr().As16()
 	copy(req[8:24], client[:])
 	copy(req[24:36], p.nonce[:])
 	req[36] = 6 // TCP
-	binary.BigEndian.PutUint16(req[40:42], uint16(internal))
-	binary.BigEndian.PutUint16(req[42:44], uint16(external))
+	binary.BigEndian.PutUint16(req[40:42], in)
+	binary.BigEndian.PutUint16(req[42:44], ex)
 	// suggested external address: none (::ffff:0.0.0.0)
 	req[54], req[55] = 0xff, 0xff
 	tries := p.Tries

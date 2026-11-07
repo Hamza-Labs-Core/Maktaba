@@ -24,6 +24,7 @@ prs: [808, 825]
 - In the seed, a component's bundle puts it on, and `keepRequirementsOn` turns on what it requires. A component in `full` that requires `cloud.link` would have turned the cloud link on for every full home. Seed it from the relay fact, like `cloud.link`.
 - At runtime nothing turns a requirement on: enabling `cloud.direct` without the link leaves it Waiting (`dependency_off`). Only bundles bring requirements.
 - A new rules section needs English and Arabic words (`localizeRules.test.ts`) and a help entry (`help.coverage.test.ts`), beyond the schema.
+- CodeQL flags every int → uint16/uint32 conversion it can trace back to a parse (`strconv.Atoi` → `uint16(port)`). Parse ports with `strconv.ParseUint(s, 10, 16)` and convert only inside a bounds-checked helper (`portValue`, `leaseSeconds`), returning an error for anything out of range. Write wire-format code that way from the start.
 - `since` must be the next release: a release (v0.3.94) went out while this was in progress.
 
 ## Open
