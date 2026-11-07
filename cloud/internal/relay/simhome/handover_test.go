@@ -394,3 +394,12 @@ func TestShutdownMovesAThousandHomes(t *testing.T) {
 		t.Errorf("a closing process answered a tunnel %d, want 503", resp.StatusCode)
 	}
 }
+
+// Options.ServerID replaces the simulated id (a seeded database's row id).
+func TestStartWithAServerID(t *testing.T) {
+	h := Start(9, "ws://127.0.0.1:1/v1/relay/ws", "http://127.0.0.1:1", Options{ServerID: "6f1c2a8e-0000-4000-8000-000000000009"})
+	defer h.Stop()
+	if h.Sup.Dialer.ServerID != "6f1c2a8e-0000-4000-8000-000000000009" || h.ID != h.Sup.Dialer.ServerID {
+		t.Errorf("dialer id %q, home id %q", h.Sup.Dialer.ServerID, h.ID)
+	}
+}

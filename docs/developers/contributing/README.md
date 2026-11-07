@@ -19,6 +19,7 @@ and CI. The source lives at
   server-side roles, no secrets, commit style.
 - [CI](ci.md): how CI picks the jobs a change needs, and the single merge gate.
 - [Pull requests](pull-requests.md): branch, test, describe, review, merge.
+- [Maktaba Cloud: how it stays up](cloud.md): the two nodes, deploys, backups, and the cloud rehearsal.
 - [Security rules for plugins and contributors](../security/conformance.md): what
   plugins and contributors must follow, and how to report a vulnerability.
 

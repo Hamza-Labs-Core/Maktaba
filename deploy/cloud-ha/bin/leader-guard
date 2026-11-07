@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# The leader guard (Epic 50 story 50.07): the cloud processes run only while this node's
+# Patroni says it is the primary. Patroni's callback stops them on a role change, but only
+# once a demotion has finished; a primary cut off from etcd answers /primary 503 at once and
+# can take tens of seconds to finish demoting. The guard asks every INTERVAL seconds and
+# stops the processes after FAILS answers in a row that are not 200. It never starts them
+# (the callback does).
+#
+# Env: PATRONI_URL (http://<this node>:8008), INTERVAL (2), FAILS (3), MAKTABA_ACTIVE_CMD
+# (as on-role-change's), ACTIVE_FILE (the rehearsal: the file whose "start" means running).
+set -uo pipefail
+env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
+# shellcheck disable=SC1090
+[ -r "${env_file}" ] && . "${env_file}"
+url="${PATRONI_URL:-http://127.0.0.1:8008}/primary"
+interval="${INTERVAL:-2}" fails_max="${FAILS:-3}"
+log() { logger -t leader-guard -- "$*" 2>/dev/null; echo "leader-guard: $*" >&2; }
+
+running() {
+    if [ -n "${ACTIVE_FILE:-}" ]; then
+        [ "$(cat "${ACTIVE_FILE}" 2>/dev/null)" = start ]
+    else
+        systemctl is-active --quiet maktaba-cloud-active.target
+    fi
+}
+stop() {
+    if [ -n "${MAKTABA_ACTIVE_CMD:-}" ]; then ${MAKTABA_ACTIVE_CMD} stop; else sudo -n systemctl stop maktaba-cloud-active.target; fi
+}
+
+fails=0
+while :; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "${url}" || echo 000)"
+    if [ "${code}" = 200 ]; then
+        fails=0
+    else
+        fails=$((fails + 1))
+        if [ "${fails}" -ge "${fails_max}" ] && running; then
+            log "Patroni answers ${code} on /primary ${fails} times in a row: this node does not lead; stopping the cloud processes"
+            stop
+        fi
+    fi
+    [ "${ONCE:-}" = 1 ] && exit 0
+    sleep "${interval}"
+done

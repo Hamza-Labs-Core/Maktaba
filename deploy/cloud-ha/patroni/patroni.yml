@@ -1,0 +1,98 @@
+# Patroni on node ${NODE_NAME} (Epic 50 story 50.07 §2). setup.sh renders it to
+# /etc/patroni/patroni.yml with envsubst; the rehearsal renders the same file.
+#
+# The rule: everything follows the database leader. Patroni holds a 30 s leader lease in etcd
+# (three members: A, B and the witness W, so two nodes can never both win). The leader is the
+# Postgres primary; Patroni's role-change callback moves the Floating IP and starts the cloud
+# processes there (bin/on-role-change).
+scope: maktaba
+name: ${NODE_NAME}
+
+restapi:
+  listen: ${RESTAPI_LISTEN}
+  connect_address: ${NODE_ADDR}:8008
+
+etcd3:
+  hosts: ${ETCD_HOSTS}
+  protocol: ${ETCD_PROTOCOL}
+  cacert: ${ETCD_CACERT}
+  cert: ${ETCD_CERT}
+  key: ${ETCD_KEY}
+
+bootstrap:
+  dcs:
+    ttl: 30                         # a dead leader is noticed within 30 s
+    loop_wait: 10
+    retry_timeout: 10               # a leader that cannot reach etcd or Postgres gives up the lease
+    maximum_lag_on_failover: 1048576  # 1 MB: a replica far behind is never promoted
+    synchronous_mode: true          # a commit waits for the replica: RPO 0 while both run
+    synchronous_mode_strict: false  # the replica gone: the primary keeps taking writes alone
+    postgresql:
+      use_pg_rewind: true           # an old leader rejoins as a replica, rewound
+      use_slots: true
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 1GB
+        wal_log_hints: "on"
+        archive_mode: "on"
+        archive_timeout: 60         # a WAL segment at least every minute: RPO 60 s if both are lost
+        archive_command: '${ARCHIVE_COMMAND}'
+        max_connections: 200
+        # a primary cut off from its replica must stop quickly: its shutdown waits for the
+        # WAL senders, which wait this long on a peer that no longer answers (the default
+        # 60 s held a partitioned primary's demotion, and so its cloud processes, for 43 s
+        # in the rehearsal's failover-network-partition)
+        wal_sender_timeout: 10s
+        wal_receiver_timeout: 10s
+        password_encryption: scram-sha-256
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+    - locale: C.UTF-8
+  pg_hba:
+    - local all all peer
+    - host all all 127.0.0.1/32 scram-sha-256
+    - host all all ${PRIVATE_NET} scram-sha-256
+    - host replication replicator ${PRIVATE_NET} scram-sha-256
+  post_bootstrap: ${POST_BOOTSTRAP}
+
+postgresql:
+  listen: ${PG_LISTEN}
+  connect_address: ${NODE_ADDR}:5432
+  data_dir: ${PG_DATA}
+  bin_dir: ${PG_BIN}
+  pgpass: /tmp/pgpass0
+  authentication:
+    superuser:
+      username: postgres
+      password: '${PG_SUPERUSER_PASSWORD}'
+    replication:
+      username: replicator
+      password: '${PG_REPLICATION_PASSWORD}'
+    rewind:
+      username: rewind_user
+      password: '${PG_REWIND_PASSWORD}'
+  callbacks:
+    on_role_change: ${ON_ROLE_CHANGE}
+    on_start: ${ON_ROLE_CHANGE}
+  create_replica_methods:
+    - basebackup
+  basebackup:
+    checkpoint: fast
+
+watchdog:
+  # production: required, softdog: a leader that hangs is rebooted by the kernel before its
+  # lease runs out, so a frozen old primary cannot come back and write (the rehearsal's
+  # containers have no watchdog: off)
+  mode: ${WATCHDOG_MODE}
+  device: /dev/watchdog
+  safety_margin: 5
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

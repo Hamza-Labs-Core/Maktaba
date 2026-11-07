@@ -111,7 +111,14 @@ export function LoadError({ error, onRetry, backTo, backLabel, title, className 
                   }
                 >
                   {t("error.copyDetails")}
-                </button>
+                </button>{" "}
+                {/* Epic 53 story 53.15: a report about this failure, with its reference */}
+                <Link
+                  className="mkt-link-button"
+                  to={`/account/report?ref=${encodeURIComponent(ref)}`}
+                >
+                  {t("report.this")}
+                </Link>
               </p>
             )}
           </>

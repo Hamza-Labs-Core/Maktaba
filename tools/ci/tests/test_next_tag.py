@@ -1,6 +1,7 @@
-"""auto-tag.yml's choice (tools/release/next_tag.py): the next patch tag, never on a trail-only
-change, never twice on one commit, never on a commit older than a tagged one; and the workflows
-it dispatches are every tag workflow, each dispatchable on its tag."""
+"""The release session's choice (tools/release/next_tag.py): the next patch tag, never on a
+trail-only change, never twice on one commit, never on a commit older than a tagged one; and the
+tag workflows its tag push starts: release.yml only on a push, each other one dispatchable on
+its tag by hand."""
 
 from __future__ import annotations
 
@@ -68,6 +69,14 @@ def test_trail_only(path: str, only: bool) -> None:
 @pytest.mark.parametrize("workflow", ["ci.yml", "update-rehearsal.yml"])
 def test_trail_paths_are_the_workflows_paths_ignore(workflow: str) -> None:
     assert tuple(on(load(workflow))["push"]["paths-ignore"]) == nt.TRAIL_ONLY
+
+
+def test_trail_paths_are_the_trails_own_trail_only_list() -> None:
+    # .trail.toml's [trail_only]: what `trail is-trail-only` (agent-trail) calls trail-only
+    import tomllib
+
+    conf = tomllib.loads((ROOT / ".trail.toml").read_text(encoding="utf-8"))
+    assert tuple(conf["trail_only"]["paths"]) == nt.TRAIL_ONLY
 
 
 # --- the decision (a linear main: a <- b <- c <- d) --------------------------------------------
@@ -182,7 +191,7 @@ def test_in_a_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys
     assert choose(repo, [], monkeypatch, capsys)["tag"] == ""
 
 
-# --- the workflows it dispatches --------------------------------------------------------------
+# --- the workflows its tag push starts -----------------------------------------------------------
 
 
 def tag_workflows() -> set[str]:
@@ -194,29 +203,19 @@ def tag_workflows() -> set[str]:
     return out
 
 
-def dispatched() -> set[str]:
-    env = load("auto-tag.yml")["jobs"]["tag"]["env"]
-    return set(env["RELEASE_WORKFLOWS"].split())
+def test_release_is_never_dispatched() -> None:
+    # shared/go/releaseverify pins BuildTrigger "push" (identity.go): homes refuse anything else,
+    # so release.yml runs only from the release session's tag push
+    assert "release.yml" in tag_workflows()
+    assert "workflow_dispatch" not in on(load("release.yml"))
+    identity = (ROOT / "shared/go/releaseverify/identity.go").read_text()
+    assert 'BuildTrigger = "push"' in identity
 
 
-def test_auto_tag_dispatches_every_tag_workflow() -> None:
-    assert dispatched() == tag_workflows()
-    assert "release.yml" in dispatched()
-
-
-@pytest.mark.parametrize("workflow", sorted(tag_workflows()))
-def test_each_tag_workflow_takes_a_tag_by_dispatch(workflow: str) -> None:
+@pytest.mark.parametrize("workflow", sorted(tag_workflows() - {"release.yml"}))
+def test_each_other_tag_workflow_takes_a_tag_by_hand(workflow: str) -> None:
     inputs = (on(load(workflow)).get("workflow_dispatch") or {}).get("inputs") or {}
-    assert "tag" in inputs, f"{workflow}: workflow_dispatch needs a `tag` input (auto-tag.yml passes it)"
-
-
-def test_auto_tag_follows_ci_and_the_rehearsal_on_main() -> None:
-    doc = load("auto-tag.yml")
-    run_on = on(doc)["workflow_run"]
-    names = {load("ci.yml")["name"], load("update-rehearsal.yml")["name"]}
-    assert set(run_on["workflows"]) == names
-    assert run_on["branches"] == ["main"]
-    assert doc["concurrency"]["cancel-in-progress"] is False
+    assert "tag" in inputs, f"{workflow}: workflow_dispatch needs a `tag` input (a tag's run by hand)"
 
 
 def test_the_guard_checks_a_dispatched_runs_tag() -> None:

@@ -92,15 +92,11 @@ on:
   push:
     tags:
       - 'v*'
-  # auto-tag.yml starts it on each tag it makes (a tag pushed with GITHUB_TOKEN starts no
-  # push run): `gh workflow run <this> --ref vX.Y.Z -f tag=vX.Y.Z`. The tag guard refuses a
-  # dispatched run whose ref is not that tag.
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "The v* tag to release (dispatch with --ref set to it)"
-        required: true
-        type: string
+  # Only a tag push, never a dispatch: the release is signed keyless, the certificate records
+  # the run's trigger, and every home's updater (shared/go/releaseverify, BuildTrigger) accepts
+  # only `push`. A dispatched run (v0.3.85's) signs a release that fails its own verify step
+  # and every home's. The release session pushes each tag with the owner's git credentials,
+  # which starts this run; a failed run is re-run (a re-run keeps its push trigger).
 
 permissions:
   contents: read

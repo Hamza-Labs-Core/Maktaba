@@ -97,6 +97,7 @@ func (ix *Index) Sweep(ctx context.Context) (int, error) {
 	if err := ix.sweepErrors(ctx, ix.ErrorRetention); err != nil {
 		return total, err
 	}
+	ix.sweepReports()
 	if err := ix.Rollup(ctx); err != nil {
 		return total, err
 	}

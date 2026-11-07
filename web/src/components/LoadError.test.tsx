@@ -113,5 +113,9 @@ describe("LoadError's reference (Epic 53 story 53.08)", () => {
       </I18nProvider>
     );
     expect(s.getByTestId("error-reference").textContent).toBe("Reference: 0193f2a1");
+    // story 53.15: a report about this failure carries its reference
+    expect(s.getByRole("link", { name: "Report this" }).getAttribute("href")).toBe(
+      "/account/report?ref=0193f2a1"
+    );
   });
 });

@@ -330,8 +330,19 @@ def test_a_push_of_only_trail_events_and_snapshots_starts_no_run() -> None:
 
 
 def test_a_pull_request_of_trail_events_runs_the_repository_checks() -> None:
-    # unlike the frozen file, events are checked: the lint job runs tools/trail/trail.py check
+    # unlike the frozen file, events are checked: the lint job runs the agent-trail Action
     assert ran(run("docs/trail/events/0654-x.md")) == ALWAYS
+
+
+def test_push_ignore_is_the_trails_own_trail_only_list() -> None:
+    # .trail.toml's [trail_only] paths are what the agent-trail tools call trail-only (never
+    # Missing an event, never tagged: `trail is-trail-only`); a push of only those starts no run
+    import tomllib
+
+    root = Path(__file__).resolve().parents[3]
+    conf = tomllib.loads((root / ".trail.toml").read_text(encoding="utf-8"))
+    assert conf["trail_only"]["paths"] == ci_paths.PUSH_IGNORE
+    assert conf["paths"]["legacy"] == ci_paths.TRAIL
 
 
 def test_guard_catches_a_filter_that_does_not_exist() -> None:

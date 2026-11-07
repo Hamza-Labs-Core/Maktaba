@@ -118,6 +118,7 @@ jobs:
       desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
       apple_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_apps == 'true' }}
       devportal: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.devportal == 'true' }}
+      store: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.store == 'true' }}
       wiki: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.wiki == 'true' }}
       # the Player's own files, or a Player object among the project file's changes
       apple_player_ui: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_player_ui == 'true' || steps.apple.outputs.player_ui == 'true' }}
@@ -398,6 +399,31 @@ jobs:
     with:
       upload: ${{ github.event_name == 'pull_request' }}
 
+  # The plugin store (Epic 54, story 54.19): its TypeScript typechecks, its tests run the
+  # store-commerce migrations on node:sqlite with the fake and the recorded Adyen shapes (no
+  # network, no keys), and every payment provider stays in its own module.
+  store:
+    needs: [changes]
+    if: needs.changes.outputs.store == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: store/.nvmrc
+          package-manager-cache: false
+      - name: Payment providers stay in their modules
+        run: python3 tools/ci/payment_provider_allowlist.py
+      - name: Typecheck and tests
+        working-directory: store
+        run: |
+          npm ci --no-audit --no-fund
+          npm run typecheck
+          npm test
+
   # The in-repo wiki app (web/wiki-app): its database matches the specs it is generated
   # from (docs/wiki/db/generate_wiki.py --check, and the generator's tests), and it builds.
   wiki:
@@ -558,6 +584,7 @@ jobs:
       - desktop-player
       - apple-apps
       - devportal
+      - store
       - wiki
       - pr-body-check
       - affected-tests

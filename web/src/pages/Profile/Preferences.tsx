@@ -12,6 +12,7 @@
 // Settings (full and remote) shows the same panels in its own tabs, with the admin
 // parts passed in (the home's name, the server's usage data), so this module never
 // imports a server page.
+import { CrashReportsSetting } from "../../components/CrashReportsSetting";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { RadioGroup, Radio } from "@ds/components/Choice/Radio";
@@ -323,6 +324,12 @@ export function PrivacyPanel({ serverUsage }: { serverUsage?: ReactNode }) {
 
       <hr />
       <TelemetrySettings server={serverUsage} />
+      {/* Epic 53 story 53.14: crash reports to the home, off until the person says yes */}
+      <CrashReportsSetting />
+      <p>
+        <Link to="/account/report">{t("report.title")}</Link> ·{" "}
+        <Link to="/account/reports">{t("report.mine")}</Link>
+      </p>
 
       <hr />
       <h2>{t("settings.privacy.history")}</h2>

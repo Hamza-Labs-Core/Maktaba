@@ -4,7 +4,7 @@
 #   postgres 16            durable state (server registry, billing meter)
 #   redis 7                a cache only, no persistence (nothing uses it yet;
 #                          cloud/README.md "Redis is a cache", story 50.05)
-#   caddy 2                reverse proxy + automatic Let's Encrypt TLS
+#   caddy 2                reverse proxy + one wildcard certificate (DNS-01)
 #
 # Bring up:  docker compose --env-file .env up -d
 # (setup.sh wires this into a systemd unit on the host.)
@@ -98,7 +98,9 @@ services:
       start_period: 40s
 
   caddy:
-    image: caddy:2-alpine
+    # Caddy with the Cloudflare DNS module (deploy/caddy): the wildcard certificate
+    # for RELAY_DOMAIN and *.RELAY_DOMAIN by DNS-01 (Epic 50 story 50.02)
+    image: ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
     restart: *restart
     depends_on:
       maktaba-cloud:
@@ -110,6 +112,7 @@ services:
     environment:
       RELAY_DOMAIN: ${RELAY_DOMAIN}
       ACME_EMAIL: ${ACME_EMAIL}
+      CF_API_TOKEN: ${CF_API_TOKEN:?CF_API_TOKEN is required (a Cloudflare DNS-edit token)}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data      # issued certs + ACME account (persist!)

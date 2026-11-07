@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Which commit auto-tag.yml tags, and with which tag.
+"""Which commit the release session tags, and with which tag.
 
-auto-tag.yml runs when a CI run or an update rehearsal finishes on main. It hands this script
-the commits on main that both passed on (`--green FILE`, one SHA a line) and it prints, for
-$GITHUB_OUTPUT:
+The release session (a scheduled agent session, not a workflow: docs/updates.md, "How a release
+is made") runs this. It hands this script the commits on main whose ci.yml and
+update-rehearsal.yml push runs both succeeded (`--green FILE`, one SHA a line) and it prints
+(key=value lines, as for $GITHUB_OUTPUT):
 
     tag=vX.Y.Z      the next patch tag ('' when nothing is tagged)
     sha=<commit>    the commit it goes on
@@ -32,7 +33,8 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
 # The paths a push to main may change without a CI run or a rehearsal: ci.yml's and
-# update-rehearsal.yml's push paths-ignore (tools/ci/tests/test_next_tag.py keeps the three the same).
+# update-rehearsal.yml's push paths-ignore and .trail.toml's [trail_only] paths, which `trail
+# is-trail-only` (agent-trail) reads (tools/ci/tests/test_next_tag.py keeps the four the same).
 TRAIL_ONLY: tuple[str, ...] = ("docs/claude-trail.md", "docs/trail/**")
 
 STABLE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")

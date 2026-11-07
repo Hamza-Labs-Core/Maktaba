@@ -256,15 +256,6 @@ build fails when the two differ.
   before. The relay's stop grace is 150 s (the container's 160 s), with switches
   `relay.drain.enabled` and `relay.ticket.enabled`, and `/metrics` counts drains, forced
   closes and handshakes by method.
-- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
-  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
-  each minute, and dropped at once when a plan, an address or an owner changes, through
-  database notifications sent by triggers), so a request needs no database call, and a home
-  it served in the last hour keeps playing however long the database is away. Metering is
-  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
-  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
-  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
-  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
 - **Any relay process answers for any home, and a home that is reconnecting is waited for
   (Epic 50, story 50.04).** A tunnel directory in the cloud database (`relay_tunnels`,
   `relay_nodes`) records which relay process holds each home's tunnel; a process without it
@@ -275,6 +266,79 @@ build fails when the two differ.
   `503 home_reconnecting` with `Retry-After: 5`; a home offline longer answers
   `503 server_offline` at once (it was a 502). The relay's error pages are in Arabic too,
   right to left, by the browser's language.
+- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
+  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
+  each minute, and dropped at once when a plan, an address or an owner changes, through
+  database notifications sent by triggers), so a request needs no database call, and a home
+  it served in the last hour keeps playing however long the database is away. Metering is
+  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
+  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
+  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
+  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
+- **The cloud rehearsal: Maktaba Cloud's failover and deploy paths are proven in CI before
+  they reach a server (Epic 50, story 50.06).** A new workflow runs the cloud's cluster in
+  Docker (two relay processes behind Caddy, Postgres, 1,000 simulated homes and a stream
+  generator) and breaks it on purpose: a relay process stopped mid-stream (every home moved
+  in 12 s, no request failed) and the database killed for 15 s (no request failed, metering
+  within 1 %). The later failover, deploy and restore scenarios have their places and join as
+  their stories land. A cloud deploy is refused unless the rehearsal passed on its commit.
+  `docs/cloud-rehearsal.md` says how to run one scenario locally.
+- **One wildcard certificate on every relay node instead of one per home (Epic 50, story
+  50.02).** The relay's Caddy is now Maktaba's own image (`deploy/caddy`: Caddy with the
+  Cloudflare DNS module) and gets a certificate for `*.relay.maktaba.tv` (and the apex) by a
+  DNS-01 challenge, so a standby node holds it before it is ever needed; Let's Encrypt's 50
+  new certificates a week could never have covered every home after a failover. ZeroSSL is
+  the fallback CA. The single-VPS deploy needs a `CF_API_TOKEN` (a Cloudflare token that can
+  edit the zone's DNS only); per-home on-demand certificates stay for one release as a
+  fallback. The witness checks both nodes' certificates daily and warns at 21 days. The cloud
+  rehearsal's `cert-on-standby` scenario proves it with Pebble.
+- **Two cloud machines that cover for each other, and a witness (Epic 50, story 50.07).**
+  `deploy/cloud-ha` sets up Maktaba Cloud's production pair: Postgres 16 under Patroni on nodes
+  A and B with synchronous replication (no committed write lost while both run), a 30-second
+  leader lease in a three-member etcd (A, B and a witness, so the two can never both lead), and
+  a role-change callback that moves the Hetzner Floating IP to the new leader and starts the
+  cloud there; a leader guard stops the cloud on a node as soon as it no longer leads. A
+  planned switchover script checks the replica and the other node first. In the cloud
+  rehearsal a killed leader is replaced in 38 s with remote play back in under a minute, a
+  leader cut off from the others stops taking writes in 19 s and never runs beside the new
+  one, and a switchover pauses play for 2 s, with no committed write lost in any of them.
+- **Cloud deploys with no downtime (Epic 50, story 50.08).** A release now reaches the cloud's
+  pair in order: the standby node tries it first against its own replica, the leader runs only
+  migrations that the running release survives (a new lint refuses a drop, rename, type change
+  or NOT NULL unless marked as a later "contract" release), then the new release starts beside
+  the old one, must stay healthy for 30 s, and the old one hands its homes over (DRAIN) before
+  it exits; a 10-minute watch rolls back by itself. In the cloud rehearsal a deploy under 1,000
+  homes and 100 streams failed no request, and a release that breaks 20 s after it starts is
+  stopped before anything changes for users. One deploy runs at a time.
+- **The cloud's database is backed up twice and restored every week (Epic 50, story 50.09).**
+  pgBackRest sends the write-ahead log at least every minute and a nightly backup (full on
+  Sunday) to Hetzner Object Storage and to Cloudflare R2, each encrypted with its own
+  passphrase, keeping 30 days to restore to any second; only the current leader backs up, so
+  it follows a failover. The witness restores last week's data to 5 minutes ago every Monday
+  and checks it against the live database, and an alert pages when a backup is a day late,
+  the log stops reaching the buckets, or a drill fails. A runbook covers losing the whole
+  zone. In the cloud rehearsal both nodes are destroyed and the database comes back on a new
+  machine with exactly the rows committed up to the chosen second, from either copy.
+- **The cloud is watched from inside and outside, and pages before users notice (Epic 50,
+  story 50.10).** A canary home (the same link code every home runs) answers through the relay,
+  and the cloud's witness machine probes it and the API every 30 seconds, scrapes both nodes
+  (the relay, Patroni, Postgres, the machines) and keeps 30 days; GitHub's runners probe the
+  same addresses from outside Hetzner so a Hetzner-wide outage still pages. Alerts cover remote
+  play down (within 90 s), the month's downtime budget burning, a failover, a missing replica,
+  the Floating IP away from the leader, certificates, disks, errors and the backups, each with
+  a runbook; pages reach the owner's phone and repeat until acknowledged.
+  maktaba.dev's new guide, Maktaba Cloud: how it stays up, says what an owner sees and how
+  the cloud is built and rehearsed.
+- **status.maktaba.tv says whether remote access is working (Epic 50, story 50.11).** A
+  static page on GitHub Pages, off Hetzner, in English and Arabic: Remote access, Sign-in and
+  accounts and Notifications, each Working, Slow, Down or Maintenance with a 90-day uptime
+  bar; current incidents, maintenance notices and the past 90 days; and the 99.9 % monthly
+  target for remote access beside last month's figure, a target with no credit. Its states
+  come from the probes inside and outside Hetzner, never by hand: both failing twice in a row
+  is Down, one alone is Slow, and a change is published within minutes. `summary.json` gives
+  the apps the same states. The witness gets one public site, behind a token, for the outside
+  probe; the cloud rehearsal's `status-feed` proves an outage reaches the page within two
+  rounds. maktaba.dev's cloud guide describes the page and `summary.json`.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -726,6 +790,33 @@ build fails when the two differ.
   Go logger's cost per call and the disk caps through a day. A bench over its budget fails
   with its numbers. The budgets follow the runner's speed, and the numbers are kept as the
   job's artifact (`docs/performance/logs.md`).
+
+- **Report a problem, and crash reports to the home (Epic 53, stories 53.14 and 53.15).** Anyone
+  can send a problem report from Settings → Privacy, or from an error screen's **Report this**,
+  which adds that error's reference. Before Send, the form shows everything it carries: the
+  app and its version, its log of the last 30 minutes and its last requests. The home adds its
+  own lines of those requests and the warnings around that time, and tells the admins.
+  Administration → Problem reports lists the reports and merges the app's and the home's
+  lines by time. An admin sets a report's status, writes back (the sender sees it in **My
+  reports**, without the home's lines) or downloads it. Reports are kept 90 days. **Send crash
+  reports to your home** is a new switch, off until the person turns it on; the web app asks
+  once. When it is on, an uncaught error is sent to `POST /api/diagnostics/envelope` (a Sentry
+  envelope). The home refuses an envelope without that consent, scrubs it again, keeps it, and
+  groups it on the Errors page.
+
+- **Paid plugins go through pluggable payment providers (Epic 54, story 54.19).** The plugin
+  store gets its payments side: one `PaymentProvider` interface (checkout, webhooks verified
+  with each provider's own secret, refunds, payouts to developers, tax and dispute hooks, and
+  a descriptor of what the provider can do) and a registry the store admin configures, with
+  several providers at once, chosen by the buyer's country, the currency and the admin's
+  order. Sales, refunds, disputes and payouts go into the store's own ledger whatever provider
+  took them; the 85/15 split rounds Maktaba's share down; homes get store-signed entitlements
+  and never see a provider. Two modules, neither connected to a live account: a test provider
+  for CI and Adyen for Platforms (split payments to each developer's balance account). A
+  provider is used live only after its written confirmation that it allows plugin resale.
+  CI's new `store` job runs the tests and keeps each provider's code in its own module; the
+  store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
+  adding a provider).
 
 ### Fixed
 

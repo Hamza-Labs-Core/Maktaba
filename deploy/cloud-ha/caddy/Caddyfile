@@ -1,0 +1,72 @@
+# The edge of each node of the Phase 1 pair (Epic 50 stories 50.02, 50.07, 50.08).
+#
+# Each node holds its own wildcard certificate for RELAY_DOMAIN and *.RELAY_DOMAIN (DNS-01
+# through Cloudflare), issued at its first start, so the standby presents it before any
+# failover. Two independent certificates fail independently: no shared disk, no copy in
+# the database (a replica is read-only exactly when it is needed).
+#
+# Behind it, the node's relay processes, blue and green (50.08): new work goes to the first
+# whose /readyz answers 200; a draining process answers 503 "draining" and drops out at once.
+# The API, the web app and the console are not served here: they reach the leader only
+# through the Cloudflare Tunnel (50.31).
+#
+# Env: RELAY_DOMAIN, ACME_EMAIL, CF_API_TOKEN, RELAY_UPSTREAMS ("127.0.0.1:8443 127.0.0.1:8453"),
+# NODE_ADDR (the node's private address: the edge's own health check listens there, 50.07's
+# switchover asks it before it moves the lead).
+
+{
+	email {$ACME_EMAIL}
+	admin 127.0.0.1:2019
+	servers {
+		# the tunnels and streams are long: no read or write timeout cuts them
+		timeouts {
+			idle 5m
+		}
+	}
+}
+
+(relay) {
+	reverse_proxy {$RELAY_UPSTREAMS} {
+		lb_policy first
+		lb_try_duration 5s
+		lb_try_interval 100ms
+		health_uri /readyz
+		health_interval 1s
+		health_timeout 2s
+		health_fails 1
+		health_passes 1
+		fail_duration 2s
+		flush_interval -1
+	}
+}
+
+{$RELAY_DOMAIN}, *.{$RELAY_DOMAIN} {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+		resolvers 1.1.1.1 9.9.9.9
+	}
+	encode zstd gzip
+	import relay
+}
+
+# The leading relay process's /metrics, for the witness's Prometheus (story 50.10), on the
+# private address only (UFW opens 9443 to the private network); Caddy's own metrics beside.
+http://{$NODE_ADDR}:9443 {
+	handle /caddy-metrics {
+		metrics
+	}
+	handle {
+		reverse_proxy {$RELAY_UPSTREAMS} {
+			lb_policy first
+			health_uri /readyz
+			health_interval 5s
+		}
+	}
+}
+
+# The edge's own health, on the private address only (UFW opens 8081 to the private network):
+# Caddy answers it itself, whatever the relay processes behind it are doing (a standby's are
+# stopped).
+http://{$NODE_ADDR}:8081 {
+	respond "edge ok" 200
+}

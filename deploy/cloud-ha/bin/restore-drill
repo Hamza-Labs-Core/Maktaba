@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# The weekly restore drill (Epic 50 story 50.09 §4), on the witness W, Mondays 04:00 UTC: the
+# latest backup restored to 5 minutes ago into a scratch directory (from R2, repo2, on the first
+# Monday of a month; Object Storage, repo1, on the others), checked against the live replica
+# (bin/drill-checks), the result pushed for Prometheus (backup_restore_drill_ok, its duration,
+# the restored size), and the scratch data deleted.
+#
+# Env: LIVE_CONNINFO (the replica, read-only), SCRATCH (/var/lib/maktaba-drill), REPO (1|2:
+# override the calendar), TEXTFILE_DIR (/var/lib/node_exporter/textfile), PG_BIN.
+set -uo pipefail
+env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
+# shellcheck disable=SC1090
+[ -r "${env_file}" ] && . "${env_file}"
+here="$(cd "$(dirname "$0")" && pwd)"
+scratch="${SCRATCH:-/var/lib/maktaba-drill}/data" bin="${PG_BIN:-/usr/lib/postgresql/16/bin}" port=5499
+repo="${REPO:-}"
+if [ -z "${repo}" ]; then
+    if [ "$(date -u +%d)" -le 7 ]; then repo=2; else repo=1; fi
+fi
+target_epoch=$(( $(date +%s) - 300 ))
+target="$(date -u -d "@${target_epoch}" '+%Y-%m-%d %H:%M:%S+00' 2>/dev/null || date -u -r "${target_epoch}" '+%Y-%m-%d %H:%M:%S+00')"
+start=$(date +%s)
+cleanup() { "${bin}/pg_ctl" -D "${scratch}" -m immediate stop >/dev/null 2>&1; rm -rf "${scratch}"; }
+trap cleanup EXIT
+rm -rf "${scratch}"
+
+ok=0
+if "${here}/restore" --pgdata "${scratch}" --repo "${repo}" --target "${target}" --port "${port}"; then
+    if "${here}/drill-checks" "host=/tmp port=${port} user=postgres dbname=maktaba" "${LIVE_CONNINFO:?}" "${target_epoch}"; then
+        ok=1
+    fi
+fi
+took=$(( $(date +%s) - start ))
+size="$(du -sb "${scratch}" 2>/dev/null | cut -f1)"
+dir="${TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+mkdir -p "${dir}" && cat >"${dir}/maktaba_drill.prom.tmp" <<PROM && mv "${dir}/maktaba_drill.prom.tmp" "${dir}/maktaba_drill.prom"
+# HELP backup_restore_drill_ok Whether the last restore drill passed (1) or failed (0).
+# TYPE backup_restore_drill_ok gauge
+backup_restore_drill_ok{repo="${repo}"} ${ok}
+# HELP backup_restore_drill_seconds How long the last restore drill took.
+# TYPE backup_restore_drill_seconds gauge
+backup_restore_drill_seconds{repo="${repo}"} ${took}
+# HELP backup_restore_drill_bytes The size of the last drill's restored database.
+# TYPE backup_restore_drill_bytes gauge
+backup_restore_drill_bytes{repo="${repo}"} ${size:-0}
+# HELP backup_restore_drill_timestamp_seconds When the last restore drill ran.
+# TYPE backup_restore_drill_timestamp_seconds gauge
+backup_restore_drill_timestamp_seconds ${start}
+PROM
+echo "restore-drill: repo${repo} to ${target}: $([ "${ok}" = 1 ] && echo passed || echo FAILED) in ${took} s"
+[ "${ok}" = 1 ]
