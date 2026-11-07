@@ -25,13 +25,16 @@ func TestComponentsPassesTheExitCodeThrough(t *testing.T) {
 	if _, ok := childExitCode(nil); ok {
 		t.Error("success has a code")
 	}
-	found := false
+	// story 54.10 §5 (#719): plugins is passed through the same way
+	found := map[string]bool{}
 	for _, c := range newRootCmd().Commands() {
-		if c.Name() == "components" {
-			found = c.DisableFlagParsing
+		if c.Name() == "components" || c.Name() == "plugins" {
+			found[c.Name()] = c.DisableFlagParsing
 		}
 	}
-	if !found {
-		t.Fatal("no components command that hands its flags to maktaba-api")
+	for _, name := range []string{"components", "plugins"} {
+		if !found[name] {
+			t.Fatalf("no %s command that hands its flags to maktaba-api", name)
+		}
 	}
 }

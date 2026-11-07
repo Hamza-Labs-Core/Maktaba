@@ -145,6 +145,17 @@ func (l *Link) key(ctx context.Context, create bool) (ed25519.PrivateKey, error)
 	return ed25519.NewKeyFromSeed(seed), nil
 }
 
+// KeyFingerprint is the sha256 (hex) of the home store key's raw public key: what an
+// entitlement names (story 54.19 §6) so a copy for another home's key is refused.
+func (l *Link) KeyFingerprint(ctx context.Context) (string, error) {
+	k, err := l.key(ctx, false)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(k.Public().(ed25519.PublicKey))
+	return hex.EncodeToString(sum[:]), nil
+}
+
 // LoadState reads the link (nil when not linked).
 func (l *Link) LoadState(ctx context.Context) (*State, error) {
 	var raw []byte

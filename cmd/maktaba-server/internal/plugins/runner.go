@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
 // Part is the component_status part a plugin's files are reported under (story 54.38 §4).
@@ -53,7 +54,17 @@ type state struct {
 	grants          map[string][]string
 	keepOff         map[string]bool
 	allowUnreviewed bool
+	// entitledUntil is, per plugin, the latest valid_until of its entitlements (story 54.19
+	// §6: checked offline when the API fetched them); at is when the state was read
+	entitledUntil map[string]time.Time
+	at            time.Time
 }
+
+// EntitlementGrace is pluginsig's: an entitlement holds this long past its valid_until.
+const EntitlementGrace = pluginsig.EntitlementGrace
+
+// paid is whether a manifest's price names a product (a paid plugin, story 54.19 §4).
+func paid(price string) bool { return price != "" && price != "free" }
 
 // CatalogSink takes the catalog with the plugins' entries (*supervisor.Reconciler).
 type CatalogSink interface {
@@ -199,14 +210,46 @@ func (st *state) gate(id, version string) (string, map[string]any) {
 	var m struct {
 		Maktaba      string `json:"maktaba"`
 		PluginAPI    string `json:"plugin_api"`
+		Price        string `json:"price"`
 		Capabilities struct {
 			Required []string `json:"required"`
 		} `json:"capabilities"`
 	}
 	_ = json.Unmarshal(in.Manifest, &m)
+	// a paid plugin waits while no entitlement holds now (54.19 §6): queue and data kept
+	missing := false
+	if paid(m.Price) {
+		until, ok := st.entitledUntil[id]
+		missing = !ok || !st.at.Before(until.Add(EntitlementGrace))
+	}
 	return components.PluginGate(components.PluginGateInput{ServerVersion: version, Range: m.Maktaba,
 		PluginAPI: m.PluginAPI, Required: m.Capabilities.Required, Granted: st.grants[id],
-		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked})
+		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked, EntitlementMissing: missing})
+}
+
+// reasonHeld is the reason a held component's row gives (the reconciler's and the
+// pipeline's word).
+const reasonHeld = "held"
+
+// gatePhase is an enabled plugin's phase as the home decides it: held (stopped), refused
+// by its gate (waiting, with the gate's reason and params), or running.
+func (r *Runner) gatePhase(st *state, id string, d store.Desired, inst store.Condition) (string, []store.Condition) {
+	if d.Hold != nil {
+		return components.PhaseStopped, []store.Condition{inst,
+			{Type: "Ready", Status: "false", Reason: reasonHeld}}
+	}
+	reason, params := "", map[string]any(nil)
+	if r.Home != nil {
+		reason = r.machineGate(st, id)
+	}
+	if reason == "" {
+		reason, params = st.gate(id, r.Version)
+	}
+	if reason != "" {
+		return components.PhaseWaiting, []store.Condition{inst,
+			{Type: components.CondRequirementsMet, Status: "false", Reason: reason, Params: params}}
+	}
+	return components.PhaseRunning, []store.Condition{inst, {Type: components.CondRequirementsMet, Status: "true"}}
 }
 
 // Overlay adds the host's sandbox to plugins.host's row (supervisor.Reconciler.Overlay):
@@ -308,7 +351,8 @@ func (r *Runner) Pass(ctx context.Context) {
 }
 
 func (r *Runner) load(ctx context.Context) (*state, error) {
-	st := &state{installs: map[string]Install{}, grants: map[string][]string{}, keepOff: map[string]bool{}}
+	st := &state{installs: map[string]Install{}, grants: map[string][]string{}, keepOff: map[string]bool{},
+		entitledUntil: map[string]time.Time{}, at: r.now()}
 	rows, err := r.DB.QueryContext(ctx, `SELECT plugin_id, version, digest, path, COALESCE(previous_path, ''),
 		manifest, review_level, installed_at, revoked FROM plugin_installs`)
 	if err != nil {
@@ -351,6 +395,17 @@ func (r *Runner) load(ctx context.Context) (*state, error) {
 			}
 		}
 		krows.Close()
+	}
+	// an older schema has no entitlements table: no paid plugin runs
+	if erows, err := r.DB.QueryContext(ctx, `SELECT plugin_id, max(valid_until) FROM plugin_entitlements GROUP BY plugin_id`); err == nil {
+		for erows.Next() {
+			var id string
+			var until time.Time
+			if erows.Scan(&id, &until) == nil {
+				st.entitledUntil[id] = until
+			}
+		}
+		erows.Close()
 	}
 	var pol []byte
 	if err := r.DB.QueryRowContext(ctx, `SELECT value FROM app_settings WHERE key = $1`, PolicyKey).Scan(&pol); err == nil {
@@ -573,9 +628,18 @@ func (r *Runner) restartIfChanged(st *state) {
 	r.RestartPipeline()
 }
 
-// report writes the files part of every plugin installed or being removed: off when its
-// files are in place (the stage group's phase is the pipeline's), failed with
-// pack_missing when its folder is gone, removing while a removal waits for the drain.
+// report writes this machine's part of every plugin installed or being removed: its files
+// and the home's decision on it, so the home shows the plugin's state even while the
+// pipeline is down (story 54.07 §8). Failed with pack_missing when its folder is gone,
+// removing while a removal waits for the drain, off when it is not wanted on, stopped
+// (held) while an admin or its breaker holds it, waiting with the gate's reason when its
+// gate refuses it (incompatible, grants_needed, unreviewed_disallowed, revoked,
+// entitlement_missing, a machine's placement), and running when its gate passes.
+//
+// Which one wins: a machine's parts roll up worst first (store.Rollup), so a refusal or a
+// hold written here outranks the pipeline's running, and when the gate passes the
+// pipeline's own phase (starting, degraded, failed) outranks this part's running. With no
+// pipeline report (the pipeline down, or a machine without one), this part is the state.
 func (r *Runner) report(ctx context.Context, st *state, desired map[string]store.Desired) {
 	if r.Status == nil {
 		return
@@ -624,6 +688,9 @@ func (r *Runner) report(ctx context.Context, st *state, desired map[string]store
 			}
 		}
 		row.Conditions = []store.Condition{inst}
+		if row.Phase == components.PhaseOff && d.Want == components.WantEnabled {
+			row.Phase, row.Conditions = r.gatePhase(st, id, d, inst)
+		}
 		rows = append(rows, row)
 	}
 	if rows == nil {

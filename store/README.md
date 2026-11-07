@@ -59,14 +59,22 @@ The root keys sign only `store-keys.json`, a few times a year. They never touch 
        --store /Volumes/KEY-S/s-2027.pub --months 13 > store-keys.json
    ```
 
-   (With Phase 3, add `--entitlement E.pub` for the entitlement key.)
+   For paid plugins (story 54.19), make the entitlement key E the same way on its own stick
+   (`npx tsx scripts/keys.ts new /Volumes/KEY-E e-2027`) and add `--entitlement
+   /Volumes/KEY-E/e-2027.pub`: the list then names it with `use: "entitlement"`, and a home
+   accepts an entitlement only from a key listed so.
 
 2. Set S's seed (the one line in `s-2027.key`) as the Worker secret **`STORE_SIGNING_KEY`** of
    the store's Workers (story 54.15): `wrangler secret put STORE_SIGNING_KEY`, typed or pasted
-   by the owner at the prompt, never in a file, a shell history or a log. The entitlement key
-   (Phase 3) is a separate secret, `STORE_ENTITLEMENT_KEY`.
-3. Upload `store-keys.json` to the CDN bucket (story 54.15) and copy it to
-   `shared/plugins/store-keys-embedded.json` so each release carries it.
+   by the owner at the prompt, never in a file, a shell history or a log. The entitlement key E's
+   seed is a separate secret, **`STORE_ENTITLEMENT_KEY`** (`wrangler secret put
+   STORE_ENTITLEMENT_KEY`); without it a home's entitlements route answers
+   `entitlements_unavailable` and no paid plugin can be used.
+3. Upload `store-keys.json` to the CDN bucket (story 54.15). From then on each release
+   embeds the current `store-keys.json` and `revoked.json` by itself (`release.yml`'s
+   `plugin-lists` job, #755), verified by the committed root: **the CDN must be up when a
+   release runs**, or the release fails until it is (it never ships stale lists). The copies
+   committed in `shared/plugins/` are only the floor a release refuses to go below.
 4. **Each year**: make the next S, sign a store-keys.json (version + 1) listing both while
    the store re-signs every live package with the new key, then one more without the old key.
 
@@ -84,7 +92,7 @@ on it). Create, then put each id in `store/wrangler.jsonc` in a pull request:
 
 | Resource            | Name                                                                                                 | Notes                                                                                                                       |
 | ------------------- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| D1 database         | `store-accounts`, `store-catalog`, `store-installs`                                                  | `wrangler d1 create <name>`; their ids replace the `00000000-…` placeholders (the deploy refuses to run with a placeholder) |
+| D1 database         | `store-accounts`, `store-catalog`, `store-installs`, `store-commerce` (paid plugins, 54.19)                                               | `wrangler d1 create <name>`; their ids replace the `00000000-…` placeholders (the deploy refuses to run with a placeholder) |
 | R2 bucket           | `maktaba-plugins`                                                                                    | public, through the custom domain below; turn on object versioning                                                          |
 | R2 bucket           | `maktaba-plugins-private`                                                                            | never public; a lifecycle rule deleting `exports/` after 90 days                                                            |
 | Queues              | `store-checks`, `store-catalog`, `store-mail`                                                        | `wrangler queues create <name>`                                                                                             |
@@ -123,6 +131,7 @@ file, a log, a commit or a chat.
 | Secret                                                      | What                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `STORE_SIGNING_KEY`                                         | the online key S's seed (step 2)                                                                                                                                                                                                            |
+| `STORE_ENTITLEMENT_KEY`                                     | the entitlement key E's seed (step 2), for paid plugins; payment providers' own secrets are in `payments/README.md`                                                                                                                       |
 | `MFA_ENC_KEY`                                               | 32 random bytes, base64 (`openssl rand -base64 32`): encrypts TOTP secrets at rest                                                                                                                                                          |
 | `BOOTSTRAP_ADMIN_TOKEN`                                     | a long random string, used once (step 8), then deleted (`wrangler secret delete`)                                                                                                                                                           |
 | `MAIL_API_KEY`                                              | the email provider's token                                                                                                                                                                                                                  |
@@ -143,10 +152,30 @@ empty. To open it:
    add a passkey, and call `POST /v1/admin/bootstrap {token}` once with `BOOTSTRAP_ADMIN_TOKEN`:
    that account is the first `store_admin`. Delete the secret afterwards.
 4. Grant `store_reviewer` to the reviewers (each with a passkey), then set
-   `SUBMISSIONS_OPEN = "true"`. The isolated runner is the GitHub Actions fallback
-   (`RUNNER = "github"`); Cloudflare Containers (`check-runner/Dockerfile`) needs the spike of
-   README §14 item 11 first, and is not wired.
+   `SUBMISSIONS_OPEN = "true"`. The isolated runner starts as the GitHub Actions fallback
+   (`RUNNER = "github"`, with `RUNNER_DISPATCH_TOKEN`).
 5. Once the root keys are in a server release (step 1), homes accept the store's signatures.
+
+### The isolated runner on Cloudflare Containers (optional, #756)
+
+The checks' runner (C7's ClamAV scan, C8 the sandbox run, C10 the reproducible build) can run
+on Cloudflare Containers instead of GitHub Actions: one container per submission, its
+outbound internet off, no secret and no binding, handed the package and source by the
+`CheckRunner` Durable Object (`objects/check-runner.ts`, `check-runner/serve.py`). To turn it
+on:
+
+1. Turn on Containers for the Cloudflare account (Workers Paid includes it; billed by use: one
+   `standard-2` instance per submission while its checks run, at most 4 at once).
+2. Give the CI token `CLOUDFLARE_API_TOKEN` the **Containers: Edit** permission on this account
+   (the deploy builds `check-runner/Dockerfile` and pushes it to Cloudflare's registry). No new
+   secret.
+3. Set the repository variable **`STORE_RUNNER`** to `containers`. The next `store-v*` deploy
+   uses `scripts/containers-config.mjs`'s config (the committed one, plus the container and
+   `RUNNER = "containers"`).
+4. Check one submission end to end on the admin pages (its report shows C7, C8 and C10 from
+   the container). Then `RUNNER_DISPATCH_TOKEN` can be deleted.
+
+To go back, set `STORE_RUNNER` to anything else and deploy again: the CI fallback runs.
 
 ### Rollback
 
