@@ -8,7 +8,7 @@
 > offline, and a paid plugin without one waits. Buy is on `main` too: a paid plugin's price
 > in the home's Browse, Buy or "Link this home to buy", and the store's buy pages. Nothing can
 > be bought until the store admin enables a payment provider. Paid packages are on their own
-> CDN path, for homes that bought them. Not built yet: moving a purchase to another home. The
+> CDN path, for homes that bought them, and a purchase can move to another home. The
 > design is in story 54.19 of
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md).
 
