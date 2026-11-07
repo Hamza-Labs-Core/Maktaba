@@ -141,7 +141,8 @@ impl Child {
         match self.state.as_str() {
             _ if self.crash_loop => true,
             "backoff" => self.last_exit.is_some(),
-            "running" | "starting" | "exited" | "stopped" => false,
+            // held: its component is off (Epic 51), so it is meant to be down
+            "running" | "starting" | "exited" | "stopped" | "held" => false,
             _ => true,
         }
     }
@@ -315,6 +316,10 @@ pub fn derive(setup_done: bool, paused: bool, waiting: &Waiting, probe: &Probe) 
             "starting" | "backoff" if !c.crash_loop => coming_up = true,
             // exited / stopped: an on-demand process nobody asked for is
             // meant to be down; one that was asked for is on its way.
+            // held: its component is off (Epic 51: the plugin host with no plugin,
+            // a turned-off extension), so it is meant to be down, like the server's
+            // own procStatus says (off, never down)
+            "held" => continue,
             "exited" | "stopped" if !c.wanted => continue,
             "exited" | "stopped" => coming_up = true,
             // failed, unhealthy, a crash loop, or a state we do not know
@@ -982,6 +987,34 @@ mod tests {
             ServerStatus::Problem {
                 roles: vec!["pipeline".into(), "transcribe 1".into(), "streaming".into()]
             }
+        );
+    }
+
+    #[test]
+    fn a_held_process_is_off_not_a_problem() {
+        // 0.3.90 on the owner's Mac: the plugin host, held (no plugin installed), made
+        // the menu bar say the plugins keep stopping
+        let held = child("plugins", "held");
+        assert!(!held.failing());
+        assert_eq!(
+            derive(
+                true,
+                false,
+                &Waiting::Stopped,
+                &snap(vec![child("api", "running"), held.clone()])
+            ),
+            ServerStatus::Running
+        );
+        // the supervisor's own JSON for it
+        let c: Child = serde_json::from_str(
+            r#"{"role":"plugins","wanted":false,"state":"held","restarts":0,"crash_loop":false,"uptime_sec":0,"component":"plugins.host","blocked":true}"#,
+        )
+        .unwrap();
+        assert!(!c.failing());
+        // a held process alone is not a running home: the others are still to come
+        assert_eq!(
+            derive(true, false, &Waiting::Stopped, &snap(vec![held])),
+            ServerStatus::Starting
         );
     }
 

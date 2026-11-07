@@ -23,11 +23,11 @@ from typing import Any
 from uuid import UUID
 
 from ...db.jobs import Job
+from ...thumbnail import small as thumb_small
 from ..context import StageContext
 from ..graph import REVIEW_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
 from ..sql import uid
-from . import thumb_small
 from .registry import StageImpl
 
 __all__ = ["IMPL", "REVIEW_VERSION", "page_path", "render"]

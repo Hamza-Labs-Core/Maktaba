@@ -102,6 +102,17 @@ cd apps/desktop-player
   the minisign signature the release made with the apps' key (`Minisign.kt`, as
   `tools/release/updaterfeed/verify.go`), version included, before anything runs. Windows runs
   the per-user .msi; Linux saves the checked package for the person's installer.
+- **Crash reports and Report a problem (Epic 53, `diagnostics/Diagnostics.kt`):** an uncaught
+  exception is kept under the config folder's `crashes/` (its deepest cause's class and frames,
+  never its message; the newest five). After signing in to a home the player asks once, with
+  two equal buttons, whether to send crash reports there; the **Account** menu keeps the
+  switch, off until the person says yes. When on, a kept crash goes to the home's
+  `POST /api/diagnostics/envelope` as a scrubbed Sentry envelope (the Android apps' `client`
+  code: `Envelope`, `CrashOutbox`, the shared `Redact`). **Help → Report a problem…** shows
+  what it will send first (the device line, the last requests, the kept crashes as a tick box)
+  and says the report's number; **Help → My reports** shows the admin's reply. A desktop window
+  cannot be captured without the system's screen recording, so no screenshot is offered (as the
+  web app's form).
 - **Languages:** English and Arabic, Arabic laid out right to left. `Strings.kt` holds the start
   screens' words and merges one table per area (`<area>/<Area>Strings.kt`); `StringsTest` fails
   when a key has no Arabic, the placeholders differ, or a key is defined twice.

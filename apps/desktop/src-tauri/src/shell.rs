@@ -477,6 +477,19 @@ fn see_logs(app: &AppHandle) -> Result<(), String> {
     navigate_main(app, &url)
 }
 
+/// The web shell's menu id (web/src/lib/desktop.ts `KNOWN_MENU_IDS`) a tray item forwards
+/// to, or none for an item the shell acts on itself.
+pub fn web_menu_id(tray_id: &str) -> Option<&'static str> {
+    Some(match tray_id {
+        "media-play" => "media-play",
+        "media-pause" => "media-pause",
+        "tray-settings" => "preferences",
+        // Epic 53 story 53.15: the web app's form
+        "report-problem" => "report-problem",
+        _ => return None,
+    })
+}
+
 /// The local home's Components page (story 51.10): `<web_url>/settings/components`.
 pub fn components_url(web_url: &str) -> String {
     format!("{}/settings/components", web_url.trim_end_matches('/'))
@@ -1197,12 +1210,15 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             focus_main(app);
             Ok(())
         }
-        // Transport controls and Settings go to the web shell through the
-        // same "menu" channel as the menu bar (web/src/lib/desktop.ts).
-        "media-play" | "media-pause" => app.emit("menu", id.to_string()).map_err(|e| e.to_string()),
-        "tray-settings" => {
-            focus_main(app);
-            app.emit("menu", "preferences").map_err(|e| e.to_string())
+        // Transport controls, Settings and Report a problem go to the web shell through the
+        // same "menu" channel as the menu bar (web/src/lib/desktop.ts); all but the
+        // transport controls bring the window forward first.
+        _ if web_menu_id(id).is_some() => {
+            let to = web_menu_id(id).unwrap_or(id);
+            if !id.starts_with("media-") {
+                focus_main(app);
+            }
+            app.emit("menu", to).map_err(|e| e.to_string())
         }
         "server-pause" => {
             sh.mark_paused();
@@ -2309,6 +2325,33 @@ mod tests {
         assert!(!allowed_external("https://plex.tv.evil.com/"));
         assert!(!allowed_external("http://plex.tv/link"));
         assert!(!allowed_external("file:///Applications"));
+    }
+
+    #[test]
+    fn the_trays_web_items_are_ids_the_web_shell_resolves() {
+        let known = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../web/src/lib/desktop.ts"
+        ))
+        .unwrap();
+        for tray in [
+            "media-play",
+            "media-pause",
+            "tray-settings",
+            "report-problem",
+        ] {
+            let id = web_menu_id(tray).unwrap();
+            assert!(
+                known.contains(&format!("\"{id}\"")),
+                "{tray} forwards {id}, which desktop.ts must know"
+            );
+        }
+        assert_eq!(web_menu_id("report-problem"), Some("report-problem"));
+        assert_eq!(
+            web_menu_id("server-pause"),
+            None,
+            "the shell acts on it itself"
+        );
     }
 
     #[test]
