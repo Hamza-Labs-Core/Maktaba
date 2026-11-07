@@ -207,7 +207,10 @@ func TestTheWorkerSweepsStreams(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &countingSweeper{}
 	done := make(chan struct{})
-	go func() { sweepStreams(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), s, 5*time.Millisecond); close(done) }()
+	go func() {
+		sweepStreams(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), s, 5*time.Millisecond)
+		close(done)
+	}()
 	deadline := time.Now().Add(2 * time.Second)
 	for s.n.Load() < 2 && time.Now().Before(deadline) {
 		time.Sleep(5 * time.Millisecond)
