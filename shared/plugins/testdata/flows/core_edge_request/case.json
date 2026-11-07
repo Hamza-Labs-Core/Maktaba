@@ -1,0 +1,5 @@
+{
+  "about": "a flow whose stage requests a core stage",
+  "mode": "store",
+  "states": {}
+}

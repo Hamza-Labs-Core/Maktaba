@@ -4,6 +4,8 @@ package plugins
 //
 //	GET    /api/plugins                      installed plugins
 //	GET    /api/plugins/policy               the home's policy (allow_unreviewed)
+//	GET    /api/plugins/graph                the home's plugin graph and its findings (54.39, 54.41)
+//	GET    /api/plugins/{id}/downstream      other plugins' stages that go idle when it is off
 //	PUT    /api/plugins/policy               change it
 //	POST   /api/plugins/install              multipart: file, grants, libraries, all_libraries, enable, confirm_name
 //	GET    /api/plugins/{id}                 one plugin's detail
@@ -61,6 +63,7 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Use(adminOnly)
 		r.Get("/api/plugins", h.list)
 		r.Get("/api/plugins/policy", h.getPolicy)
+		r.Get("/api/plugins/graph", h.graph)
 		r.Put("/api/plugins/policy", h.putPolicy)
 		r.Post("/api/plugins/install", h.install)
 		r.Get("/api/plugins/{id}", h.show)
@@ -73,6 +76,7 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/{id}/rollback", h.rollback)
 		r.Delete("/api/plugins/{id}", h.remove)
 		r.Get("/api/plugins/{id}/writes", h.writes)
+		r.Get("/api/plugins/{id}/downstream", h.downstream)
 		r.Get("/api/plugins/{id}/settings", h.getSettings)
 		r.Put("/api/plugins/{id}/settings", h.putSettings)
 		r.Post("/api/plugins/{id}/writes/revert", h.revert)
@@ -169,6 +173,24 @@ func (h *Admin) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": v, "policy": pol})
+}
+
+func (h *Admin) graph(w http.ResponseWriter, r *http.Request) {
+	g, err := h.L.Graph(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, g)
+}
+
+func (h *Admin) downstream(w http.ResponseWriter, r *http.Request) {
+	d, err := h.L.Downstream(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"stages": d})
 }
 
 func (h *Admin) show(w http.ResponseWriter, r *http.Request) {

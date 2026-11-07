@@ -289,7 +289,7 @@ func (l *Lifecycle) Check(ctx context.Context, ch svc.Change) error {
 		p.Params = map[string]any{"capabilities": missing}
 		return p
 	}
-	return nil
+	return l.checkFlow(ctx, id, in.Manifest, in.Path)
 }
 
 func missingOf(required, granted []string) []string {
@@ -419,6 +419,11 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 		}
 	}
 	if err := checkAsked(req.Grants, m); err != nil {
+		return nil, err
+	}
+	// the flow check (54.39 §6): a change that would close a cycle, or reach a core stage,
+	// is refused before anything is written
+	if err := l.checkFlow(ctx, in.PluginID, in.Manifest, in.Path); err != nil {
 		return nil, err
 	}
 	if err := l.checkLibraries(ctx, req.Libraries); err != nil {
@@ -769,6 +774,12 @@ func (l *Lifecycle) Rollback(ctx context.Context, id string, clearData bool, act
 	prev, err := parseManifest(in.PrevManifest)
 	if err != nil {
 		return err
+	}
+	if l.enabled(ctx, id) {
+		// the kept version is wired again: it must keep the home's graph valid (54.39 §6)
+		if err := l.checkFlow(ctx, id, in.PrevManifest, in.PrevPath.String); err != nil {
+			return err
+		}
 	}
 	if prev.DataVersion < cur.DataVersion {
 		if !clearData {

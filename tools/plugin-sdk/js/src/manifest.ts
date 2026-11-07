@@ -6,7 +6,7 @@
 import { createHash } from "node:crypto";
 import { parse as parseToml } from "smol-toml";
 
-import { capabilitiesToml, eventsToml, manifestSchema } from "./data.generated.js";
+import { capabilitiesToml, eventsToml, flowSchema, manifestSchema } from "./data.generated.js";
 
 export const CODES = {
   invalid: "manifest_invalid",
@@ -311,6 +311,35 @@ export function validate(src: Uint8Array | string, files?: Files): Obj {
   errs = rules(m, files);
   if (errs.length) throw new ManifestInvalid(errs);
   return m;
+}
+
+let flowRoot: SchemaNode | null = null;
+const FLOW_REMAPS: Record<string, string> = {
+  [CODES.missingKey]: "flow_invalid",
+  [CODES.unknownKey]: "flow_unknown_key",
+  [CODES.invalid]: "flow_invalid",
+};
+
+/** Parse a flow.toml and check it against shared/plugins/flow.schema.json (story 54.39
+ * §1), with the same schema reader as the manifest: the document with its defaults
+ * filled, or the refusals with flow_* codes. The checks across plugins are flow.ts's. */
+export function validateFlowDoc(src: Uint8Array | string): { doc?: Obj; errors?: ManifestError[] } {
+  flowRoot ??= JSON.parse(flowSchema) as SchemaNode;
+  let raw: Obj;
+  try {
+    const text = typeof src === "string" ? src : new TextDecoder("utf-8", { fatal: true }).decode(src);
+    if (text.length > 1 << 20) throw new Error("over 1 MB");
+    raw = plain(parseToml(text, { integersAsBigInt: true })) as Obj;
+  } catch {
+    return { errors: [{ code: "flow_invalid", path: "", detail: "not TOML" }] };
+  }
+  const errs: ManifestError[] = [];
+  check(flowRoot, raw, "", "", errs);
+  if (errs.length) {
+    // the detail a flow refusal shows is where: the slash path into flow.toml
+    return { errors: errs.map((e) => ({ code: FLOW_REMAPS[e.code] ?? e.code, path: e.path, detail: e.path })) };
+  }
+  return { doc: fill(flowRoot, raw) as Obj };
 }
 
 /** The one JSON text of a valid manifest: keys sorted, no spaces, UTF-8. */

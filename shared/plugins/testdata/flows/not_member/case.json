@@ -1,0 +1,6 @@
+{
+  "about": "a manifest at a version outside its flow's range",
+  "mode": "store",
+  "package": "dev.example.alpha",
+  "states": {}
+}

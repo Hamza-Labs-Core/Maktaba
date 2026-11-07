@@ -578,6 +578,12 @@ store:
   - 'tools/ci/payment_provider_allowlist.py'
   # the entitlement vectors the store's signer and the home's verifier share
   - 'shared/plugins/testdata/entitlements/**'
+  # the flow check the store's verification runs (story 54.39, 54.16 C12): the SDK's
+  # checker, its shared files and its corpus
+  - 'tools/plugin-sdk/js/src/**'
+  - 'shared/plugins/*.json'
+  - 'shared/plugins/*.toml'
+  - 'shared/plugins/testdata/flows/**'
 
 devportal:
   - *ci

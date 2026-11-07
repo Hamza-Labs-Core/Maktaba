@@ -1,0 +1,84 @@
+{
+  "findings": [
+    {
+      "code": "flow_missing_plugin",
+      "severity": "warn",
+      "plugin": "dev.example.alpha",
+      "detail": "dev.example.gamma >=1.0.0, <2.0.0"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/one"
+      },
+      {
+        "from": "event:dev.example.alpha/a.done",
+        "kind": "subscribe",
+        "to": "stage:dev.example.beta/two"
+      },
+      {
+        "from": "stage:dev.example.alpha/one",
+        "kind": "emit",
+        "to": "event:dev.example.alpha/a.done"
+      },
+      {
+        "from": "stage:dev.example.beta/two",
+        "kind": "emit",
+        "to": "event:dev.example.beta/b.done"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.alpha/a.done",
+        "kind": "event",
+        "name": "a.done",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.beta/b.done",
+        "kind": "event",
+        "name": "b.done",
+        "plugin": "dev.example.beta",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.beta/two",
+        "kind": "stage",
+        "name": "two",
+        "plugin": "dev.example.beta",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تعمل الإضافة ⁦dev.example.alpha⁩ مع ⁦dev.example.gamma >=1.0.0, <2.0.0⁩، وهي غير موجودة هنا بإصدار تقبله."
+    ],
+    "en": [
+      "dev.example.alpha works with dev.example.gamma >=1.0.0, <2.0.0, which is not here at a version it accepts."
+    ]
+  }
+}

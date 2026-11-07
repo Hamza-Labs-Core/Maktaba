@@ -25,3 +25,13 @@ var Events []byte
 //
 //go:embed wit/maktaba-plugin.wit
 var WIT []byte
+
+// FlowSchema is flow.schema.json (story 54.39 §1).
+//
+//go:embed flow.schema.json
+var FlowSchema []byte
+
+// FlowMessages is flow-messages.json: the flow check's codes in English and Arabic.
+//
+//go:embed flow-messages.json
+var FlowMessages []byte
