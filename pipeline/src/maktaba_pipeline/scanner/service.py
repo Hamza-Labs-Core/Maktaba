@@ -303,6 +303,9 @@ class ScanResult:
     files_skipped: int = 0  # ON CONFLICT swallowed the insert
     files_ignored: int = 0  # zero-byte, or matched the library's ignore_globs
     errors: list[ScanError] = field(default_factory=list)
+    #: the videos this run inserted whose pipeline starts now (``probe``): the scan
+    #: stage's changed subjects (Epic 54 story 54.36: the edge to probe, not a hand enqueue)
+    to_probe: list[UUID] = field(default_factory=list)
 
 
 class _Logger(Protocol):
@@ -350,10 +353,14 @@ class Scanner:
         config: ScanConfig | None = None,
         *,
         log: _Logger,
+        queue_probe: bool = True,
     ) -> None:
         self._store = store
         self._config = config or ScanConfig()
         self._log = log
+        #: queue each new video's probe here (the legacy scan handler, the CLI); the scan
+        #: stage leaves it to its declared edge and reads ``ScanResult.to_probe``
+        self._queue_probe = queue_probe
 
     async def run(
         self,
@@ -550,7 +557,7 @@ class Scanner:
             size_bytes=hash_result.size_bytes,
             mtime=mtime_dt,
             last_seen_at=_utcnow(),
-            enqueue_probe=not lib.disabled,
+            enqueue_probe=self._queue_probe and not lib.disabled,
         )
 
         try:
@@ -570,6 +577,8 @@ class Scanner:
 
         if save.inserted:
             result.files_inserted += 1
+            if not lib.disabled:
+                result.to_probe.append(save.video_id)
             self._log.debug(
                 "scanner.video_inserted",
                 video_id=str(save.video_id),

@@ -114,6 +114,8 @@ async def resolve_edge(
     if m == "payload_seasons":
         seasons = (job.payload or {}).get("seasons") or []
         return [("season", UUID(str(s))) for s in seasons]
+    if m == "videos_changed":
+        return [(k, i) for k, i in changed_subjects if k == "video"]
     if m == "videos_of":
         if subj.kind != "library":
             return []

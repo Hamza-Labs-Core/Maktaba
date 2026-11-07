@@ -38,7 +38,7 @@ tokens.
 ### 3. Errors
 
 The cloud's own `error`/`fatal` lines are grouped with 53.10's fingerprint into the index on W.
-The cloud admin's **Errors** view (`app.maktaba.tv/admin/errors`, service admin only) lists, side
+The cloud admin's **Errors** view (`admin.maktaba.tv/errors`, the operator console of story 50.32, service admin only) lists, side
 by side: the cloud's own groups (from W's index) and the anonymous home/app groups
 (`telemetry_error_groups`, existing), with report counts from 53.16.
 
@@ -102,7 +102,7 @@ them. **Home** metrics never go to the cloud's Prometheus (the home keeps its ow
 | `cloud/cmd/maktaba-cloud/logs.go` (new) | The `logs` subcommand on W. |
 | `cloud/internal/metrics/` | §4 metrics. |
 | `shared/metrics/cloud-series.md` (new) | Names and labels. |
-| `cloud/internal/handlers/admin/logs.go`, `errors.go` (new); `web/cloud/src/pages/admin/Logs.tsx`, `Errors.tsx` (new) | Service admin views. |
+| `cloud/internal/handlers/admin/logs.go`, `errors.go` (new); `web/admin/src/pages/Logs.tsx` (new; its Logs and Errors pages, in the operator console of story 50.32) | Service admin views. |
 | `deploy/cloud-ha/` (Epic 50) | Keeper on each node, index on W, the systemd units. |
 
 ### Tests
