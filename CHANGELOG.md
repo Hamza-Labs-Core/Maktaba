@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
+  keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
+  (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
+  month's relayed use by quality, the limit and what was spent, and says at 80 % and 100 %; the
+  account is emailed too. Usage goes to the payment provider hourly, queued through an outage and
+  never billed twice or past the limit. Prices are not set yet, so it stays off.
 - **The relay enforces each plan (Epic 50 story 50.19, part 2).** A home on Free (no relay)
   gets `402 relay_needs_plan` through the relay, and keeps its tunnel for direct access. With
   `relay.plans.enforce` on, Basic's relayed requests carry `X-Maktaba-Relay-Cap-Kbps` (3000,
