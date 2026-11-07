@@ -1862,6 +1862,13 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   in-process instead (`native.FALLBACKS`: an unregistered statement, a sandbox refusal,
   `choose()` declining); the parity harness fails on any for the stages under test, since
   the in-process rerun writes the same rows and the comparison alone would pass.
+- **A shared runner group runs only while it has work.** `light`, `net`, `service` and `fp`
+  start on demand: the worker, finding a job's runner not up, runs the job itself and asks
+  the supervisor for the runner (`POST /runners/{group}/start`, at most once a minute per
+  group), which then serves the next jobs. A runner with no work for ten minutes exits 0 and
+  is not restarted until asked again. An idle home, Core's included, runs none (Core's budget
+  is four processes). `ml` and `index`, their own components' processes, run while those
+  components are on.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

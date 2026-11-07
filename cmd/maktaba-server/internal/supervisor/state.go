@@ -309,6 +309,31 @@ func (s *Supervisor) Handler() http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.Snapshot())
 	})
+	// POST /runners/{group}/start: the pipeline worker has a job for a first-party plugin
+	// runner that is not up (Epic 54): it is started, if its component's gate is open. It
+	// stops itself once idle (IdleOnClean).
+	mux.HandleFunc("/runners/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/runners/"), "/"), "/")
+		if len(parts) != 2 || parts[1] != "start" {
+			http.Error(w, "POST /runners/{group}/start", http.StatusBadRequest)
+			return
+		}
+		if comp, open, ok := s.Gate(RolePluginRunner, parts[0]); ok && !open {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"code": "component_off", "component": comp})
+			return
+		}
+		if err := s.Want(RolePluginRunner, parts[0], true); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok","service":"supervisor"}`))

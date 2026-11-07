@@ -661,6 +661,17 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		s.logf("%s stopped on request (pid %d)", c.proc.Name(), info.PID)
 		return false // waits until it is wanted again
 	}
+	if c.proc.IdleOnClean && info.Reason == ReasonClean && !stopping {
+		s.mu.Lock()
+		c.wanted = false
+		c.status.Wanted = false
+		c.status.NextRestartAt = nil
+		s.mu.Unlock()
+		s.logf("%s stopped: nothing to do (pid %d, uptime %s); started again when asked",
+			c.proc.Name(), info.PID, uptime(info))
+		*backoff = s.policy.BackoffInitial
+		return false // waits until it is wanted again
+	}
 	if info.Reason == ReasonRestarted && !stopping {
 		// asked for: no backoff, and not an exit of a crash loop
 		s.logf("%s stopped to start again (pid %d)", c.proc.Name(), info.PID)
