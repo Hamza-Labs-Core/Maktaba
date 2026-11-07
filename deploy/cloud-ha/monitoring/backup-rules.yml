@@ -8,40 +8,40 @@ groups:
         expr: time() - max by (type) (backup_last_success_timestamp_seconds) > 26 * 3600
         for: 5m
         labels:
-          severity: page
+          severity: sev2
         annotations:
           summary: "No database backup for {{ $value | humanizeDuration }}"
-          runbook: docs/runbooks/cloud-backup-stale.md
+          runbook_url: docs/runbooks/cloud/backup-stale.md
       - alert: backup_never
         # no backup was ever recorded (a new pair, or the timer is off)
         expr: absent(backup_last_success_timestamp_seconds)
         for: 30h
         labels:
-          severity: page
+          severity: sev2
         annotations:
           summary: "No database backup has been recorded"
-          runbook: docs/runbooks/cloud-backup-stale.md
+          runbook_url: docs/runbooks/cloud/backup-stale.md
       - alert: wal_archive_failing
         # postgres_exporter: the newest archived WAL segment is more than 5 minutes old on the
         # primary (archive_timeout is 60 s: a WAL push has failed for 5 minutes)
         expr: pg_stat_archiver_last_archive_age{role="primary"} > 300
         for: 1m
         labels:
-          severity: page
+          severity: sev2
         annotations:
           summary: "WAL has not reached the backup repositories for {{ $value | humanizeDuration }}"
-          runbook: docs/runbooks/cloud-backup-stale.md
+          runbook_url: docs/runbooks/cloud/backup-stale.md
       - alert: restore_drill_failed
         expr: backup_restore_drill_ok == 0
         labels:
-          severity: page
+          severity: sev2
         annotations:
           summary: "The weekly restore drill failed (repo{{ $labels.repo }})"
-          runbook: docs/runbooks/cloud-disaster-restore.md
+          runbook_url: docs/runbooks/cloud/restore.md
       - alert: restore_drill_missing
         expr: time() - backup_restore_drill_timestamp_seconds > 8 * 86400
         labels:
-          severity: ticket
+          severity: sev3
         annotations:
           summary: "No restore drill for more than 8 days"
-          runbook: docs/runbooks/cloud-disaster-restore.md
+          runbook_url: docs/runbooks/cloud/restore.md

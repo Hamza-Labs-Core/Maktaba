@@ -85,13 +85,46 @@ async def write(
         }
         resolved = {k for k, r in existing.items() if r["resolved_by"] is not None}
         made: set[tuple[int, int]] = set()
+        rows: list[tuple[Any, ...]] = []
         for f in flags:
             place = (f.segment_seq, f.char_start)
             if place in resolved:
                 done["kept"] += 1
                 continue
             made.add(place)
-            await db.execute(
+            rows.append(
+                (
+                    flag_id(tid, f.segment_seq, f.char_start),
+                    f.kind,
+                    tid,
+                    uid(transcript["video_id"]),
+                    uid(transcript["library_id"]),
+                    transcript["audio_track_id"],
+                    f.segment_seq,
+                    f.word_index,
+                    f.word_count,
+                    f.char_start,
+                    f.char_len,
+                    f.start_sec,
+                    f.end_sec,
+                    f.original,
+                    f.context,
+                    f.language,
+                    array_param(db, list(f.reasons)),
+                    dumps(f.scores),
+                    f.priority,
+                    dumps(f.candidates),
+                    f.key,
+                    f.status,
+                    f.pack,
+                    check_version,
+                )
+            )
+        # one batch, not a statement per flag: the transaction is held for one round trip
+        # (a long transcript has thousands of flags; per-flag it held its row locks for
+        # minutes on a busy home, and the next writer of the same transcript waited)
+        if rows:
+            await db.executemany(
                 "INSERT INTO word_flags (id, kind, transcript_id, video_id, library_id,"
                 " audio_track_id, segment_seq, word_index, word_count, char_start, char_len,"
                 " start_sec, end_sec, original, context, language, reasons, scores, priority,"
@@ -109,32 +142,9 @@ async def write(
                 " status = excluded.status, pack = excluded.pack,"
                 " check_version = excluded.check_version, audio_track_id = excluded.audio_track_id"
                 " WHERE word_flags.resolved_by IS NULL",
-                flag_id(tid, f.segment_seq, f.char_start),
-                f.kind,
-                tid,
-                uid(transcript["video_id"]),
-                uid(transcript["library_id"]),
-                transcript["audio_track_id"],
-                f.segment_seq,
-                f.word_index,
-                f.word_count,
-                f.char_start,
-                f.char_len,
-                f.start_sec,
-                f.end_sec,
-                f.original,
-                f.context,
-                f.language,
-                array_param(db, list(f.reasons)),
-                dumps(f.scores),
-                f.priority,
-                dumps(f.candidates),
-                f.key,
-                f.status,
-                f.pack,
-                check_version,
+                rows,
             )
-            done["written"] += 1
+        done["written"] += len(rows)
         for place, r in sorted(existing.items(), key=lambda kv: kv[0]):
             if place in made or place in resolved:
                 continue

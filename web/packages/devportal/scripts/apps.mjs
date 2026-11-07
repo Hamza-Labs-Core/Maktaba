@@ -345,8 +345,8 @@ export const APPS = [
                 "**شريط الحالة**: حين يتوقف البث في الجهاز الرئيسي، يقول المشغّل ذلك قبل أن تضغط على التشغيل."
               ),
               t(
-                "**Crash reports and Report a problem** (iPhone, iPad, Mac and Android; on Windows and Linux in the **Account** and **Help** menus, without a screenshot): after signing in, the Player asks once whether to **send crash reports** to the home, with two equal buttons; it stays off until you say yes, and **Profile** keeps the switch. **Report a problem** in Profile (and **Report this** on an error screen) shows everything it will send before it does: the app's log of the last 30 minutes, already scrubbed, the last requests, the crashes kept on the device, and a screenshot only when you tick it and see it. It goes to the home's admin, who can reply in **My reports**.",
-                "**تقارير الأعطال والإبلاغ عن مشكلة** (آيفون وآيباد والماك وأندرويد؛ وعلى ويندوز ولينكس في قائمتَي **الحساب** و**المساعدة**، دون لقطة شاشة): بعد تسجيل الدخول يسأل المشغّل مرة واحدة هل **يرسل تقارير الأعطال** إلى الجهاز الرئيسي، بزرّين متساويين؛ وتبقى متوقفة حتى توافق، ومفتاحها في **الملف الشخصي**. ويعرض **الإبلاغ عن مشكلة** في الملف الشخصي (و**الإبلاغ عن هذا** في شاشة الخطأ) كل ما سيُرسله قبل الإرسال: سجل التطبيق لآخر 30 دقيقة منقّحًا، وآخر الطلبات، والأعطال المحفوظة على الجهاز، ولقطة شاشة فقط إن حدّدتها ورأيتها. ويصل البلاغ إلى مشرف الجهاز الرئيسي، ويمكنه الرد عليك في **بلاغاتي**."
+                "**Crash reports and Report a problem** (iPhone, iPad, Mac and Android; on Windows and Linux in the **Account** and **Help** menus and **Report this** on an error, without a screenshot): after signing in, the Player asks once whether to **send crash reports** to the home, with two equal buttons; it stays off until you say yes, and **Profile** keeps the switch. **Report a problem** in Profile (and **Report this** on an error screen) shows everything it will send before it does: the app's log of the last 30 minutes, already scrubbed, the last requests, the crashes kept on the device, and a screenshot only when you tick it and see it. It goes to the home's admin, who can reply in **My reports**.",
+                "**تقارير الأعطال والإبلاغ عن مشكلة** (آيفون وآيباد والماك وأندرويد؛ وعلى ويندوز ولينكس في قائمتَي **الحساب** و**المساعدة** و**الإبلاغ عن هذا** عند الخطأ، دون لقطة شاشة): بعد تسجيل الدخول يسأل المشغّل مرة واحدة هل **يرسل تقارير الأعطال** إلى الجهاز الرئيسي، بزرّين متساويين؛ وتبقى متوقفة حتى توافق، ومفتاحها في **الملف الشخصي**. ويعرض **الإبلاغ عن مشكلة** في الملف الشخصي (و**الإبلاغ عن هذا** في شاشة الخطأ) كل ما سيُرسله قبل الإرسال: سجل التطبيق لآخر 30 دقيقة منقّحًا، وآخر الطلبات، والأعطال المحفوظة على الجهاز، ولقطة شاشة فقط إن حدّدتها ورأيتها. ويصل البلاغ إلى مشرف الجهاز الرئيسي، ويمكنه الرد عليك في **بلاغاتي**."
               ),
             ],
           },
@@ -463,6 +463,24 @@ export const APPS = [
                 "phone",
                 "The Player's Home on an iPhone: a new series, Continue Watching and On Deck",
                 "الرئيسية في المشغّل على آيفون: سلسلة جديدة، وتابع المشاهدة، والدرس التالي"
+              ),
+              shot(
+                "player-iphone-crash-question",
+                "phone",
+                "The Player on an iPhone after signing in: should it send crash reports to the home? Two equal buttons, neither chosen",
+                "المشغّل على آيفون بعد تسجيل الدخول: هل يرسل تقارير الأعطال إلى الجهاز الرئيسي؟ زرّان متساويان، لم يُختر أيٌّ منهما"
+              ),
+              shot(
+                "player-iphone-report",
+                "phone",
+                "Report a problem on an iPhone: what happened, when, and what will be sent; the screenshot box unticked",
+                "الإبلاغ عن مشكلة على آيفون: ماذا حدث، ومتى، وما الذي سيُرسل؛ ومربّع لقطة الشاشة غير محدَّد"
+              ),
+              shot(
+                "android-player-report-phone",
+                "phone",
+                "Report a problem on an Android phone, with what will be sent shown before Send",
+                "الإبلاغ عن مشكلة على هاتف أندرويد، وما سيُرسل معروض قبل الإرسال"
               ),
               shot(
                 "player-iphone-library",

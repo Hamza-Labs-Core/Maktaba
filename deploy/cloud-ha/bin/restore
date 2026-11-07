@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Restores the cloud's database from a pgBackRest repository into a data directory and starts
 # it (Epic 50 story 50.09): the weekly drill's first half, and the disaster runbook's restore
-# on a fresh machine (docs/runbooks/cloud-disaster-restore.md).
+# on a fresh machine (docs/runbooks/cloud/restore.md).
 #
 #   restore --pgdata <dir> [--repo 1|2] [--target <timestamp>|latest] [--port 5499] [--start|--no-start]
 #

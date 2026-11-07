@@ -7,6 +7,11 @@
 //
 //	POST /v1/floating_ips/{id}/actions/assign  {"server": <server id>}
 //	GET  /v1/floating_ips/{id}
+//
+// and, the rehearsal's own switch (never Hetzner's API), a Hetzner API outage (story 50.12's
+// runbook-dns-swap): while down, every /v1 call answers 503.
+//
+//	POST /fake/outage  {"down": true|false}
 package fakehcloud
 
 import (
@@ -34,6 +39,7 @@ type API struct {
 	Token string
 
 	mu      sync.Mutex
+	down    bool            // a Hetzner API outage (POST /fake/outage)
 	holder  map[int64]int64 // floating ip -> server (0: none)
 	actions int64
 	moving  sync.WaitGroup
@@ -57,6 +63,27 @@ func (a *API) Wait() { a.moving.Wait() }
 func (a *API) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if a.Token != "" && r.Header.Get("Authorization") != "Bearer "+a.Token {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "invalid token"}})
+		return
+	}
+	if r.URL.Path == "/fake/outage" && r.Method == http.MethodPost {
+		var body struct {
+			Down bool `json:"down"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": "down: true or false"})
+			return
+		}
+		a.mu.Lock()
+		a.down = body.Down
+		a.mu.Unlock()
+		writeJSON(w, http.StatusOK, map[string]any{"down": body.Down})
+		return
+	}
+	a.mu.Lock()
+	down := a.down
+	a.mu.Unlock()
+	if down {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]string{"code": "unavailable", "message": "service unavailable"}})
 		return
 	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")

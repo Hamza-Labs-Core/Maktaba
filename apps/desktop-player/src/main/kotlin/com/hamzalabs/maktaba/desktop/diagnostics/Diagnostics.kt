@@ -138,6 +138,12 @@ object DesktopCrashes {
         }
 }
 
+/** Opens Report a problem with an error's reference (its request id's first 8), from an error box. */
+val LocalReportProblem = androidx.compose.runtime.staticCompositionLocalOf<((String?) -> Unit)?> { null }
+
+/** The reference "Report this" passes: the last request the player made (the call that failed). */
+fun lastReference(): String? = RequestId.recent().lastOrNull()?.take(8)
+
 /** The one-time question (53.14 §3): two equal buttons, neither the default. */
 @Composable
 fun CrashQuestionDialog(home: String, answer: (Boolean) -> Unit) {
@@ -167,6 +173,7 @@ fun ReportProblemDialog(
     header: Envelope.Header,
     outbox: CrashOutbox,
     log: () -> List<String> = { emptyList() },
+    reference: String? = null,
     onDismiss: () -> Unit,
 ) {
     val t = LocalTexts.current
@@ -240,7 +247,7 @@ fun ReportProblemDialog(
                         try {
                             val now = System.currentTimeMillis()
                             val part = ReportPart.part(category, text, if (earlier) now - 3_600_000 else null, lines,
-                                if (withCrashes) outbox.events(Redact::scrub) else emptyList(), header, RequestId.recent(), null, false, Redact::scrub)
+                                if (withCrashes) outbox.events(Redact::scrub) else emptyList(), header, RequestId.recent(), reference, false, Redact::scrub)
                             number = client.sendProblemReport(part, null)
                         } catch (e: CancellationException) {
                             throw e
@@ -302,6 +309,9 @@ object DiagnosticsStrings {
             "menu.crashReports" to "Send crash reports to {0}",
             "menu.reportProblem" to "Report a problem…",
             "menu.myReports" to "My reports",
+            "report.this" to "Report this",
+            "crash.lastCrash.sent" to "The app closed unexpectedly last time. A report was sent to {0}.",
+            "crash.lastCrash.kept" to "The app closed unexpectedly last time. The crash is kept on this device; you can attach it to a problem report.",
             "crash.question.title" to "Help {0} fix problems?",
             "crash.question.body" to "If the app crashes, it can send a crash report to {0} so its admin can fix it. It contains no videos or messages. It is off unless you turn it on.",
             "crash.question.yes" to "Send crash reports",
@@ -341,6 +351,9 @@ object DiagnosticsStrings {
             "menu.crashReports" to "إرسال تقارير الأعطال إلى {0}",
             "menu.reportProblem" to "الإبلاغ عن مشكلة…",
             "menu.myReports" to "بلاغاتي",
+            "report.this" to "الإبلاغ عن هذا",
+            "crash.lastCrash.sent" to "أُغلق التطبيق بشكل غير متوقع في المرة السابقة. أُرسل تقرير إلى {0}.",
+            "crash.lastCrash.kept" to "أُغلق التطبيق بشكل غير متوقع في المرة السابقة. حُفظ العطل على هذا الجهاز، ويمكنك إرفاقه ببلاغ عن مشكلة.",
             "crash.question.title" to "هل تريد مساعدة {0} في إصلاح المشكلات؟",
             "crash.question.body" to "إذا توقف التطبيق فجأة، يمكنه إرسال تقرير عطل إلى {0} ليتمكّن المشرف من إصلاحه. لا يحتوي التقرير على فيديوهات أو رسائل. هذه الميزة متوقفة ما لم تشغّلها.",
             "crash.question.yes" to "إرسال تقارير الأعطال",
