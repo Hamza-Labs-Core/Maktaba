@@ -91,7 +91,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			logger.Warn("relay: the change listener did not start; the cache refreshes each minute", "err", err)
 		}
 	}
-	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg), relayReadiness(cfg, cache)...)
+	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg), relayRouterOptions(cfg, cache, registry)...)
 
 	// Story 50.03: resume tickets (the key derived from the token secret every
 	// node shares) and DRAIN on shutdown, each with its switch.
@@ -197,6 +197,22 @@ func relayReadiness(cfg config.Config, cache *relayh.HomeCache) []server.RouterO
 		return nil
 	}
 	return []server.RouterOption{server.WithLenientReadiness(&server.LenientReadiness{Warm: cache.Warm})}
+}
+
+// badAfter, in seconds, makes the relay's readiness fail that long after it
+// starts (0: never). Only the rehearsal's bad-release build sets it
+// (rehearsalbad.go).
+var badAfter = 0
+
+// relayRouterOptions: the relay's readiness, and /readyz 503 "draining" while
+// the registry shuts down (the edge then sends new work to the other process).
+func relayRouterOptions(cfg config.Config, cache *relayh.HomeCache, reg *relaypkg.Registry) []server.RouterOption {
+	draining := reg.Closing
+	if badAfter > 0 {
+		started := time.Now()
+		draining = func() bool { return reg.Closing() || time.Since(started) > time.Duration(badAfter)*time.Second }
+	}
+	return append(relayReadiness(cfg, cache), server.WithDraining(draining))
 }
 
 // relayIDOf names this relay process in the tunnel directory: relay.id, or

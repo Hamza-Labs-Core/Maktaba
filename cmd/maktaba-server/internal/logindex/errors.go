@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -508,4 +510,33 @@ func (ix *Index) errorRoutes(mux *http.ServeMux) {
 		}
 		writeJSON(w, map[string]any{"notices": ns, "more": more})
 	})
+}
+
+// sweepReports removes the problem reports older than ReportRetention and the crash
+// reports' days older than ErrorRetention (the API writes both; stories 53.14, 53.15).
+func (ix *Index) sweepReports() {
+	now := ix.now()
+	if ix.ReportRetention > 0 {
+		dir := filepath.Join(ix.root, "reports")
+		ents, _ := os.ReadDir(dir)
+		for _, e := range ents {
+			if _, err := strconv.Atoi(e.Name()); err != nil || !e.IsDir() {
+				continue
+			}
+			fi, err := os.Stat(filepath.Join(dir, e.Name(), "report.json"))
+			if err == nil && now.Sub(fi.ModTime()) > ix.ReportRetention {
+				_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
+	if ix.ErrorRetention > 0 {
+		dir := filepath.Join(ix.root, "crashes")
+		ents, _ := os.ReadDir(dir)
+		for _, e := range ents {
+			day, err := time.Parse("20060102", e.Name())
+			if err == nil && now.Sub(day) > ix.ErrorRetention+24*time.Hour {
+				_ = os.RemoveAll(filepath.Join(dir, e.Name()))
+			}
+		}
+	}
 }

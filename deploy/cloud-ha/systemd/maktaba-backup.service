@@ -1,0 +1,9 @@
+# The cloud's database backup on the leader (deploy/cloud-ha/bin/backup, Epic 50 story 50.09).
+[Unit]
+Description=Maktaba Cloud: database backup (the leader only)
+After=patroni.service
+
+[Service]
+Type=oneshot
+User=postgres
+ExecStart=/usr/local/bin/maktaba-backup

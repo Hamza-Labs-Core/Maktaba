@@ -1,0 +1,21 @@
+# A rehearsal node's edge: deploy/cloud-ha/caddy/Caddyfile's relay site, in plain HTTP (the
+# certificate is cert-on-standby's scenario), and its private health site.
+{
+	admin 127.0.0.1:2019
+	auto_https off
+}
+
+:80 {
+	reverse_proxy 127.0.0.1:8443 {
+		lb_try_duration 5s
+		lb_try_interval 100ms
+		health_uri /readyz
+		health_interval 1s
+		health_timeout 2s
+		flush_interval -1
+	}
+}
+
+http://{$NODE_ADDR}:8081 {
+	respond "edge ok" 200
+}

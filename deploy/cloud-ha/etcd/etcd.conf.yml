@@ -1,0 +1,28 @@
+# etcd member ${ETCD_NAME} (Epic 50 story 50.07): three members, A, B and the witness W, on
+# the private network only, peer and client traffic with TLS (certificates from setup.sh's
+# small CA, kept on the owner's machine and in the password manager). The third vote is what
+# breaks a tie between A and B: two nodes alone could both think they lead.
+name: ${ETCD_NAME}
+data-dir: /var/lib/etcd
+listen-peer-urls: https://${NODE_ADDR}:2380
+listen-client-urls: https://${NODE_ADDR}:2379,https://127.0.0.1:2379
+initial-advertise-peer-urls: https://${NODE_ADDR}:2380
+advertise-client-urls: https://${NODE_ADDR}:2379
+initial-cluster: ${ETCD_INITIAL_CLUSTER}
+initial-cluster-state: ${ETCD_CLUSTER_STATE}
+initial-cluster-token: maktaba-prod
+heartbeat-interval: 250
+election-timeout: 2500
+auto-compaction-mode: periodic
+auto-compaction-retention: "1h"
+quota-backend-bytes: 2147483648
+client-transport-security:
+  cert-file: /etc/etcd/pki/${ETCD_NAME}.crt
+  key-file: /etc/etcd/pki/${ETCD_NAME}.key
+  client-cert-auth: true
+  trusted-ca-file: /etc/etcd/pki/ca.crt
+peer-transport-security:
+  cert-file: /etc/etcd/pki/${ETCD_NAME}.crt
+  key-file: /etc/etcd/pki/${ETCD_NAME}.key
+  client-cert-auth: true
+  trusted-ca-file: /etc/etcd/pki/ca.crt

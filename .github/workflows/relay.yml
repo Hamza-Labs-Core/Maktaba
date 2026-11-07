@@ -29,6 +29,9 @@ on:
   push:
     branches: [main]
     paths:
+      # Maktaba's Caddy (Epic 50 story 50.02) and the HA pair's edge
+      - 'deploy/caddy/**'
+      - 'deploy/cloud-ha/**'
       - 'cloud/**'
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
@@ -38,6 +41,9 @@ on:
       - 'v*'
   pull_request:
     paths:
+      # Maktaba's Caddy (Epic 50 story 50.02) and the HA pair's edge
+      - 'deploy/caddy/**'
+      - 'deploy/cloud-ha/**'
       - 'cloud/**'
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
@@ -45,8 +51,8 @@ on:
       - '.github/workflows/relay.yml'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
   # run the deploy job against the `production` environment.
-  # Or a tag's run, as a pushed tag's: auto-tag.yml dispatches it on each tag it makes
-  # (`--ref vX.Y.Z -f tag=vX.Y.Z`; a tag pushed with GITHUB_TOKEN starts no push run).
+  # Or a tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
+  # is missing (auto-tag.yml's tag push starts the push run).
   # "A tag's run" below is a pushed tag, or a dispatch with `tag` on that tag's ref.
   workflow_dispatch:
     inputs:
@@ -330,6 +336,88 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
+  # Maktaba's Caddy (Epic 50 story 50.02, deploy/caddy): Caddy with the Cloudflare DNS module,
+  # for the wildcard certificate every node holds. Every run builds it and checks it (T01: the
+  # module is in; T02: both Caddyfiles validate); a push to main publishes it, multi-arch, and
+  # signs it (cosign, keyless).
+  caddy:
+    name: caddy image (build, check, publish)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless signing
+    env:
+      CADDY_IMAGE: ${{ vars.MAKTABA_REGISTRY || 'ghcr.io/hamza-labs-core' }}/maktaba-caddy
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Build (this runner's arch)
+        run: docker build -t maktaba-caddy:check deploy/caddy
+      - name: T01 the DNS modules are in
+        run: |
+          docker run --rm maktaba-caddy:check caddy list-modules | tee /tmp/modules
+          grep -qx 'dns.providers.cloudflare' /tmp/modules
+          grep -qx 'dns.providers.acmedns' /tmp/modules
+      - name: T02 the Caddyfiles validate
+        run: |
+          set -euo pipefail
+          tok=test0000000000000000000000000000000000ab
+          for f in deploy/cloud-relay/Caddyfile deploy/cloud-ha/caddy/Caddyfile; do
+            docker run --rm -v "$PWD/$f:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
+              -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e NODE_ADDR=10.0.0.2 -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
+              maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
+          done
+      - name: The HA pair's scripts (Epic 50 story 50.07)
+        run: |
+          shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
+          bash deploy/cloud-ha/tests/scripts-test.sh
+      - name: The backup alerts (Epic 50 story 50.09, promtool)
+        run: |
+          docker run --rm -v "$PWD/deploy/cloud-ha/prometheus:/r" -w /r --entrypoint promtool \
+            prom/prometheus:v3.5.0 test rules backup-rules-test.yml
+      - name: T05 the witness's certificate check
+        run: |
+          shellcheck deploy/cloud-ha/witness/check-certs.sh deploy/cloud-ha/witness/check-certs-test.sh
+          bash deploy/cloud-ha/witness/check-certs-test.sh
+      - name: The image's tag
+        id: tag
+        run: |
+          caddy="$(sed -n 's/^ARG CADDY_VERSION=v//p' deploy/caddy/Dockerfile)"
+          cf="$(sed -n 's/^ARG CLOUDFLARE_VERSION=v//p' deploy/caddy/Dockerfile)"
+          echo "tag=${caddy}-cf${cf}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3.6.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - uses: docker/setup-buildx-action@v4.1.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Registry login
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v4.2.0
+        with:
+          registry: ${{ env.REGISTRY == 'ghcr.io/hamza-labs-core' && 'ghcr.io' || env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.REGISTRY_TOKEN || secrets.GITHUB_TOKEN }}
+      - name: Build and push
+        id: push
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v7.2.0
+        with:
+          context: deploy/caddy
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: true
+          sbom: true
+          tags: |
+            ${{ env.CADDY_IMAGE }}:${{ steps.tag.outputs.tag }}
+            ${{ env.CADDY_IMAGE }}:sha-${{ github.sha }}
+      - uses: sigstore/cosign-installer@v3.10.0
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Sign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          IMAGE_REF: ${{ env.CADDY_IMAGE }}@${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "$IMAGE_REF"
+
   # A tag deploys only once release.yml has published its release (published means its
   # signed set is in: build-images pushed and signed every image, sign-and-release signed the
   # checksums), and only the latest release: a maintenance release of an older line (story
@@ -454,9 +542,14 @@ jobs:
     permissions:
       contents: read
       packages: read # the release's image in the registry
+      actions: read # the cloud rehearsal's runs (tools/release/cloud-guard.sh)
     # The `production` environment has no protection rules yet, so a
     # deploy does not wait for approval. To add a gate, add required
     # reviewers under Settings → Environments → production.
+    # one deploy at a time (a deploy that waits is never cancelled)
+    concurrency:
+      group: relay-deploy
+      cancel-in-progress: false
     environment:
       name: production
       url: ${{ vars.RELAY_PUBLIC_URL }}
@@ -505,7 +598,25 @@ jobs:
           echo "::error::${IMAGE} was not published within an hour (release.yml's build-images, or its tag guard)"
           exit 1
 
-      - name: Deploy
+      # Epic 50 story 50.06: no cloud deploy of a commit whose failover, deploy, rollback and
+      # restore the cloud rehearsal (cloud-rehearsal.yml) did not pass on; a run still going is
+      # waited for. The commit is the pushed tag's, or the dispatched image tag's.
+      - name: The cloud rehearsal passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA}"
+          if [ "${IMAGE_TAG}" != latest ] && [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+            git fetch -q origin "+refs/tags/${IMAGE_TAG}:refs/tags/${IMAGE_TAG}"
+            sha="$(git rev-list -n 1 "refs/tags/${IMAGE_TAG}")"
+          fi
+          SHA="${sha}" bash tools/release/cloud-guard.sh
+
+      # The single VPS (deploy/cloud-relay), until the Phase 1 pair exists.
+      - name: Deploy (the single VPS)
+        if: vars.CLOUD_HA != 'true'
         env:
           RELAY_SSH_HOST: ${{ secrets.RELAY_SSH_HOST }}
           RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
@@ -514,3 +625,17 @@ jobs:
         # deploy.sh fails if the SSH secrets are missing: once this job
         # runs, a missing host is a misconfiguration, not a skip.
         run: bash deploy/cloud-relay/deploy.sh
+
+      # The Phase 1 pair (Epic 50 story 50.08, deploy/cloud-ha/deploy.sh): Patroni says which
+      # node leads; the standby smoke-tests the release first, then expand-only migrations and
+      # a blue/green on the leader, whose old colour drains its homes to the new one. Set the
+      # repository variable CLOUD_HA to 'true' once the pair runs.
+      - name: Deploy (the Phase 1 pair)
+        if: vars.CLOUD_HA == 'true'
+        env:
+          RELAY_HOST_A: ${{ secrets.RELAY_HOST_A }}
+          RELAY_HOST_B: ${{ secrets.RELAY_HOST_B }}
+          RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: bash deploy/cloud-ha/deploy.sh "${{ steps.tag.outputs.tag }}"
