@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from tests.components import rig as R
+from components import rig as R
 
 
 def test_prune_runs_keeps_the_newest(tmp_path: Path) -> None:
