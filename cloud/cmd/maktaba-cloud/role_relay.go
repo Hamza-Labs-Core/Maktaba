@@ -129,9 +129,15 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	// don't restrict by route prefix — the proxied server's URL space
 	// is opaque to us.
 	deps := relayh.Deps{
-		Registry:   registry,
-		Servers:    serversStore,
-		Meter:      meter,
+		Registry: registry,
+		Servers:  serversStore,
+		Meter:    meter,
+		// story 50.19: a plan without the relay is refused; the rest as relay.plans.enforce says
+		Plans: &relayh.Plans{
+			Enforce:     cfg.Relay.PlansEnforce,
+			StreamLimit: cfg.Relay.StreamLimitEnabled,
+			Streams:     &billingpkg.Streams{DB: pool.DB, Relay: relayID},
+		},
 		PublicHost: cfg.Relay.PublicHost,
 		Collector:  collector,
 		Editions:   editions(logger, cfg.Relay.EditionsDir),
