@@ -81,6 +81,7 @@ func Mount(r chi.Router, d *Deps) {
 	r.Post("/v1/billing/checkout", d.Checkout)
 	r.Post("/v1/billing/portal", d.Portal)
 	r.Get("/v1/billing/usage", d.Usage)
+	mountPAYG(r, d)
 }
 
 // Plans returns the static catalog from billing.Tiers (story 50.19): free, basic and pro. A
@@ -306,12 +307,22 @@ func (d *Deps) Usage(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "load usage", err)
 		return
 	}
+	var by billingpkg.Usage
+	if err := d.DB.QueryRowContext(r.Context(), `
+        SELECT COALESCE(sum(u.bytes_full),0), COALESCE(sum(u.bytes_payg),0), COALESCE(sum(u.bytes_capped),0), COALESCE(sum(u.bytes_capped_slow),0)
+          FROM relay_usage_monthly u JOIN servers s ON s.id = u.server_id
+         WHERE s.owner_user_id = $1 AND u.month = $2`, uid, month).Scan(&by.Full, &by.PAYG, &by.Capped, &by.CappedSlow); err != nil {
+		d.fail(w, r, "load usage by mode", err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"month":       month.Format("2006-01"),
 		"plan":        u.Plan,
 		"limit_bytes": UsageLimit(u.Plan),
 		"used_bytes":  used,
 		"servers":     servers,
+		// story 50.19: this month's relayed bytes by quality mode
+		"by_mode": map[string]int64{"full": by.Full, "payg": by.PAYG, "capped": by.Capped, "capped_slow": by.CappedSlow},
 	})
 }
 
