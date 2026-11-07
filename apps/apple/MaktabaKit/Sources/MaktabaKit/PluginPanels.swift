@@ -314,8 +314,13 @@ public struct SubjectPanels<Route: Hashable>: View {
     }
 
     public var body: some View {
-        PluginPanelsSection<Route>(panels: panels, search: search)
-            .task(id: "\(kind):\(id):\(caps.panels)") {
+        // a stack that is always there: the section draws nothing until it has a panel, and a
+        // task on nothing never starts
+        VStack(alignment: .leading, spacing: 0) {
+            PluginPanelsSection<Route>(panels: panels, search: search)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: "\(kind):\(id):\(caps.panels)") {
                 guard caps.panels else {
                     panels = []
                     return
