@@ -48,6 +48,12 @@
       "database_id": "00000000-0000-0000-0000-000000000003",
       "migrations_dir": "migrations/installs",
     },
+    {
+      "binding": "DB_COMMERCE",
+      "database_name": "store-commerce",
+      "database_id": "00000000-0000-0000-0000-000000000004",
+      "migrations_dir": "migrations/commerce",
+    },
   ],
   "r2_buckets": [
     { "binding": "BUCKET", "bucket_name": "maktaba-plugins" },

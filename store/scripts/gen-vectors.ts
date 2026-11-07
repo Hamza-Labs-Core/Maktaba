@@ -552,6 +552,30 @@ export async function build(): Promise<{ canonical: string; vectors: string }> {
     { name: "signed by the entitlement key", raw: await signEnvelope("entitlement", ent, k.ent1), expect: { ok: true } },
     { name: "signed by a store key", raw: await signEnvelope("entitlement", ent, k.store1), expect: no("key_use_mismatch", "list") },
   ];
+  // story 54.19 §6: what the home checks beyond the signature (CheckEntitlement): its own
+  // home id and home key, and the validity with Epic 16's 72-hour grace
+  const fp = "ab".repeat(32);
+  const body = (over: Record<string, unknown> = {}) => ({
+    v: 1,
+    home_id: "h_test",
+    home_key_fp: fp,
+    plugin_id: pid,
+    product: "one_time",
+    purchase_id: "pur_test",
+    valid_from: at(-24),
+    valid_until: at(24 * 31),
+    issued_at: at(-1),
+    ...over,
+  });
+  const entitlementHomeCases = [
+    { name: "this home, valid", raw: await signEnvelope("entitlement", body(), k.ent1), now: NOW, expect: { ok: true } },
+    { name: "within the grace after valid_until", raw: await signEnvelope("entitlement", body({ valid_until: at(-71) }), k.ent1), now: NOW, expect: { ok: true } },
+    { name: "past the grace", raw: await signEnvelope("entitlement", body({ valid_until: at(-73) }), k.ent1), now: NOW, expect: no("entitlement_expired", "entitlement") },
+    { name: "another home id", raw: await signEnvelope("entitlement", body({ home_id: "h_other" }), k.ent1), now: NOW, expect: no("entitlement_other_home", "entitlement") },
+    { name: "this home id, another home key", raw: await signEnvelope("entitlement", body({ home_key_fp: "cd".repeat(32) }), k.ent1), now: NOW, expect: no("entitlement_other_home", "entitlement") },
+    { name: "a store key signs no entitlement", raw: await signEnvelope("entitlement", body(), k.store1), now: NOW, expect: no("key_use_mismatch", "list") },
+    { name: "not version 1", raw: await signEnvelope("entitlement", body({ v: 2 }), k.ent1), now: NOW, expect: no("entitlement_invalid", "entitlement") },
+  ];
   const rootCases = [
     { name: "a new root signed by the old root's key", old: "v1", next: "v2_chained", expect: { ok: true, version: 2 } },
     { name: "a new root signed only by its own keys", old: "v1", next: "v2_unchained", expect: no("plugin_signature_invalid", "root") },
@@ -575,6 +599,8 @@ export async function build(): Promise<{ canonical: string; vectors: string }> {
     catalogs,
     catalog_cases: catalogCases,
     entitlement_cases: entitlementCases,
+    entitlement_home: { home_id: "h_test", home_key_fp: fp },
+    entitlement_home_cases: entitlementHomeCases,
     root_cases: rootCases,
   };
   const canonicalCases = CANONICAL.map((c) => ({

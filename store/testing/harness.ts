@@ -4,7 +4,7 @@ import { signFake } from "../payments/providers/fake/index.js";
 import { PROVIDER_MODULES } from "../payments/providers/index.js";
 import type { ProviderEvent } from "../payments/provider.js";
 import { type ProviderConfig, ProviderRegistry } from "../payments/registry.js";
-import type { Signer } from "../commerce/entitlements.js";
+import { Signer } from "../signing/sig.js";
 import { testDB } from "./sqlite.js";
 
 export const SECRET = "test-webhook-secret";
@@ -47,14 +47,16 @@ export async function fakeWebhook(events: ProviderEvent[], secret = SECRET) {
   });
 }
 
-export async function testSigner(): Promise<{ signer: Signer; publicKey: CryptoKey; publicRaw: Uint8Array }> {
-  const kp = (await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])) as CryptoKeyPair;
-  const publicRaw = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
-  return {
-    signer: { keyId: "E-test", sign: async (m) => new Uint8Array(await crypto.subtle.sign({ name: "Ed25519" }, kp.privateKey, m)) },
-    publicKey: kp.publicKey,
-    publicRaw,
-  };
+/** A test entitlement key E (a seed from a public label, never for production). */
+export async function testSigner(): Promise<{ signer: Signer; publicRaw: Uint8Array }> {
+  const seed = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode("maktaba-plugins TEST KEY, never for production: entitlement-1")),
+  );
+  const signer = await Signer.fromSeed(seed);
+  return { signer, publicRaw: signer.publicRaw };
 }
+
+/** An entitlement envelope's signed object. */
+export const signedOf = (envelope: string) => JSON.parse(envelope).signed as Record<string, string>;
 
 export { testDB };

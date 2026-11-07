@@ -9,6 +9,7 @@ import * as dev from "./developers";
 import type { Env } from "./env";
 import { nightlyExport } from "./exports";
 import * as homes from "./homes";
+import { entitlements } from "./entitlements";
 import { Refusal, json, problem, refuse } from "./http";
 import { type Mail, deliver } from "./mail";
 import { resignPage } from "./publish";
@@ -80,6 +81,8 @@ const ROUTES: [string, RegExp, Handler][] = [
 /** Routes a home calls with its own signature, not a session (no cookie, no Origin). */
 const HOME_ROUTES: [string, RegExp, (env: Env, req: Request, ...p: string[]) => Promise<Response>][] = [
   ["POST", /^\/v1\/homes\/([\w-]+)\/seen$/, homes.seen],
+  // story 54.19 §6: the home's entitlements, signed by E
+  ["GET", /^\/v1\/homes\/([\w-]+)\/entitlements$/, entitlements],
   ["PUT", /^\/v1\/uploads\/([A-Za-z0-9_-]{43})$/, dev.workerUpload],
   // the isolated runner's single-use URLs (54.16 §1): it holds no session and no secret
   ["GET", /^\/v1\/runner\/([A-Za-z0-9_-]{43})$/, runnerRoute],

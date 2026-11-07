@@ -2,13 +2,13 @@
 // provider and the real store-commerce schema.
 
 import { describe, expect, it } from "vitest";
-import { T0, fakeConfig, fakeWebhook, registry, testDB, testSigner } from "../testing/harness.js";
+import { T0, fakeConfig, fakeWebhook, registry, signedOf, testDB, testSigner } from "../testing/harness.js";
 import { handlePaymentWebhook } from "../web/payments_webhook.js";
-import { canonical, homeEntitlements } from "./entitlements.js";
+import { homeEntitlements } from "./entitlements.js";
+import { KIND, verifySig } from "../signing/sig.js";
 import { balances } from "./ledger.js";
 import { SaleRefused, approvePayout, requestRefund, runPayouts, setPrice, startPurchase, startSellerFee } from "./sales.js";
 import type { ProviderEvent } from "../payments/provider.js";
-import { utf8, fromBase64 } from "../payments/crypto.js";
 
 const buyer = { accountId: "acct-1", email: "buyer@example.com", country: "SA" };
 
@@ -50,17 +50,20 @@ describe("paid plugins on the fake provider", () => {
     expect(await balances(db, "developer:dev-1")).toEqual([{ provider_id: "fake", currency: "USD", minor: 850 }]);
     expect(await balances(db, "maktaba")).toEqual([{ provider_id: "fake", currency: "USD", minor: 150 }]);
 
-    const { signer, publicKey } = await testSigner();
-    const ents = await homeEntitlements(db, "home-1", async () => "ab".repeat(32), signer, T0);
+    const { signer, publicRaw } = await testSigner();
+    const ents = await homeEntitlements(db, "home-1", "ab".repeat(32), signer, T0);
     expect(ents).toHaveLength(1);
-    const e = ents[0]!;
-    expect(e.signed).toMatchObject({ v: 1, home_id: "home-1", home_key_fp: "ab".repeat(32), plugin_id: "dev.example.loudness", purchase_id: "pur-1" });
-    expect(new Date(e.signed.valid_until).getTime() - T0.getTime()).toBe(31 * 86_400_000);
-    expect(await crypto.subtle.verify({ name: "Ed25519" }, publicKey, fromBase64(e.sig), utf8(canonical(e.signed)))).toBe(true);
+    const env = JSON.parse(ents[0]!) as { signed: Record<string, unknown>; signatures: { key_id: string; sig: string }[] };
+    expect(env.signed).toMatchObject({ v: 1, home_id: "home-1", home_key_fp: "ab".repeat(32), plugin_id: "dev.example.loudness", purchase_id: "pur-1" });
+    expect(new Date(String(env.signed.valid_until)).getTime() - T0.getTime()).toBe(31 * 86_400_000);
+    expect(env.signatures[0]!.key_id).toBe(signer.id);
+    expect(await verifySig(publicRaw, KIND.entitlement, JSON.stringify(env.signed), env.signatures[0]!.sig)).toBe(true);
+    // a signature of this kind only: the same bytes are no catalog
+    expect(await verifySig(publicRaw, KIND.catalog, JSON.stringify(env.signed), env.signatures[0]!.sig)).toBe(false);
     // nothing in it names the provider
-    expect(JSON.stringify(e)).not.toContain("fake");
+    expect(ents[0]).not.toContain("fake");
     // another home gets nothing
-    expect(await homeEntitlements(db, "home-2", async () => "cd".repeat(32), signer, T0)).toEqual([]);
+    expect(await homeEntitlements(db, "home-2", "cd".repeat(32), signer, T0)).toEqual([]);
   });
 
   it("the same webhook twice makes one purchase and one set of ledger rows", async () => {
@@ -94,7 +97,7 @@ describe("paid plugins on the fake provider", () => {
     await hook([{ eventId: "ev-refund-4", type: "refund.succeeded", purchaseId: "pur-4", providerRef: "fake_refund_pur-4", occurredAt: T0.toISOString() }]);
     expect(await balances(db, "developer:dev-1")).toEqual([{ provider_id: "fake", currency: "USD", minor: 0 }]);
     const { signer } = await testSigner();
-    expect(await homeEntitlements(db, "home-1", async () => "ab".repeat(32), signer, T0)).toEqual([]);
+    expect(await homeEntitlements(db, "home-1", "ab".repeat(32), signer, T0)).toEqual([]);
     // a store admin may refund later
     await expect(requestRefund(db, reg, "pur-4", "store_admin", later)).rejects.toThrow("not_refundable");
   });
@@ -111,7 +114,7 @@ describe("paid plugins on the fake provider", () => {
     expect([await status("pur-5"), await status("pur-6")]).toEqual(["lost", "paid"]);
     expect(await balances(db, "developer:dev-1")).toEqual([{ provider_id: "fake", currency: "USD", minor: 850 }]);
     const { signer } = await testSigner();
-    expect((await homeEntitlements(db, "home-1", async () => "ab".repeat(32), signer, T0)).map((e) => e.signed.purchase_id)).toEqual(["pur-6"]);
+    expect((await homeEntitlements(db, "home-1", "ab".repeat(32), signer, T0)).map((e) => signedOf(e).purchase_id)).toEqual(["pur-6"]);
   });
 
   it("pricing needs the seller fee and active payouts; a free plugin stays free", async () => {

@@ -43,17 +43,27 @@ type vectorFile struct {
 		} `json:"package"`
 		Expect expect `json:"expect"`
 	} `json:"package_cases"`
-	StoreKeysCases []listCase         `json:"store_keys_cases"`
-	Revoked        map[string]string  `json:"revoked"`
-	RevokedCases   []listCase         `json:"revoked_cases"`
-	StoredCases    []storedCase       `json:"revoked_stored_cases"`
-	Heads          map[string]string  `json:"heads"`
-	HeadCases      []headCase         `json:"head_cases"`
-	Catalogs       map[string]string  `json:"catalogs"`
-	CatalogCases   []listCase         `json:"catalog_cases"`
-	Entitlements   []entitlementCase  `json:"entitlement_cases"`
-	RootCases      []rootCase         `json:"root_cases"`
-	Keys           map[string]RootKey `json:"keys"`
+	StoreKeysCases []listCase        `json:"store_keys_cases"`
+	Revoked        map[string]string `json:"revoked"`
+	RevokedCases   []listCase        `json:"revoked_cases"`
+	StoredCases    []storedCase      `json:"revoked_stored_cases"`
+	Heads          map[string]string `json:"heads"`
+	HeadCases      []headCase        `json:"head_cases"`
+	Catalogs       map[string]string `json:"catalogs"`
+	CatalogCases   []listCase        `json:"catalog_cases"`
+	Entitlements   []entitlementCase `json:"entitlement_cases"`
+	EntHome        struct {
+		HomeID    string `json:"home_id"`
+		HomeKeyFP string `json:"home_key_fp"`
+	} `json:"entitlement_home"`
+	EntHomeCases []struct {
+		Name   string `json:"name"`
+		Raw    string `json:"raw"`
+		Now    string `json:"now"`
+		Expect expect `json:"expect"`
+	} `json:"entitlement_home_cases"`
+	RootCases []rootCase         `json:"root_cases"`
+	Keys      map[string]RootKey `json:"keys"`
 }
 
 type listCase struct {
@@ -303,6 +313,25 @@ func TestVectorsEntitlementKeyUse(t *testing.T) {
 		t.Run(c.Name, func(t *testing.T) {
 			_, err := VerifyEntitlement([]byte(c.Raw), keys, State{}, mustTime(t, v.Now))
 			checkOutcome(t, err, c.Expect)
+		})
+	}
+}
+
+// Story 54.19 §6: an entitlement names this home and its store key and is valid now, with
+// the 72-hour grace; the store's TypeScript signer made these.
+func TestVectorsEntitlementForThisHome(t *testing.T) {
+	v := loadVectors(t)
+	keys := v.keys(t, "v3")
+	if len(v.EntHomeCases) < 7 {
+		t.Fatalf("%d cases", len(v.EntHomeCases))
+	}
+	for _, c := range v.EntHomeCases {
+		t.Run(c.Name, func(t *testing.T) {
+			e, err := CheckEntitlement([]byte(c.Raw), keys, State{}, mustTime(t, c.Now), v.EntHome.HomeID, v.EntHome.HomeKeyFP)
+			checkOutcome(t, err, c.Expect)
+			if err == nil && (e.PluginID == "" || e.PurchaseID == "" || e.ValidUntil.IsZero() || len(e.Raw) == 0) {
+				t.Fatalf("checked %+v", e)
+			}
 		})
 	}
 }

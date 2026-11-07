@@ -1104,6 +1104,78 @@
       }
     }
   ],
+  "entitlement_home": {
+    "home_id": "h_test",
+    "home_key_fp": "abababababababababababababababababababababababababababababababab"
+  },
+  "entitlement_home_cases": [
+    {
+      "name": "this home, valid",
+      "raw": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"T8xhVP8heq8mDS8bLLKrl+WMtDsmCAOHrJRVLU+Fm1PtA5HV/jN2CzKqI89o/6fVe79KjJMbesIu6E3NDlgWAA==\"}],\"signed\":{\"home_id\":\"h_test\",\"home_key_fp\":\"abababababababababababababababababababababababababababababababab\",\"issued_at\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"product\":\"one_time\",\"purchase_id\":\"pur_test\",\"v\":1,\"valid_from\":\"2026-11-05T12:00:00Z\",\"valid_until\":\"2026-12-07T12:00:00Z\"}}",
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "within the grace after valid_until",
+      "raw": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"mDWtuwq3JKNWUT7fwWWsGSWjMiQ5UP68sg5jkrt/yp6dgPPjwaeBIRG3waHiH9Tcj4NlopkCks/ZVDhTHqJLDQ==\"}],\"signed\":{\"home_id\":\"h_test\",\"home_key_fp\":\"abababababababababababababababababababababababababababababababab\",\"issued_at\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"product\":\"one_time\",\"purchase_id\":\"pur_test\",\"v\":1,\"valid_from\":\"2026-11-05T12:00:00Z\",\"valid_until\":\"2026-11-03T13:00:00Z\"}}",
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true
+      }
+    },
+    {
+      "name": "past the grace",
+      "raw": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"U43RNmyJpOjEJY7MMfryhNgZL6GwkSGaeB7WeE2MyRcpvO6stTUyC/3mWHPvoUkaihk6rzASS5xiUtksEq1BAQ==\"}],\"signed\":{\"home_id\":\"h_test\",\"home_key_fp\":\"abababababababababababababababababababababababababababababababab\",\"issued_at\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"product\":\"one_time\",\"purchase_id\":\"pur_test\",\"v\":1,\"valid_from\":\"2026-11-05T12:00:00Z\",\"valid_until\":\"2026-11-03T11:00:00Z\"}}",
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "entitlement_expired",
+        "step": "entitlement"
+      }
+    },
+    {
+      "name": "another home id",
+      "raw": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"gbDdMmiaVa3cy2NYPREhECjgLyGGeXcF2rd2GVXNuV3/+THS/0SV65rp6f/IFhBWCS9U9rCuTYESTK60Whc7Bg==\"}],\"signed\":{\"home_id\":\"h_other\",\"home_key_fp\":\"abababababababababababababababababababababababababababababababab\",\"issued_at\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"product\":\"one_time\",\"purchase_id\":\"pur_test\",\"v\":1,\"valid_from\":\"2026-11-05T12:00:00Z\",\"valid_until\":\"2026-12-07T12:00:00Z\"}}",
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "entitlement_other_home",
+        "step": "entitlement"
+      }
+    },
+    {
+      "name": "this home id, another home key",
+      "raw": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"rufQr1LwQQBBwfWheZBcYWoEJk9xdkBat2I5XJJvs13iFscnhKawWqnNbsAS4vC9G+aDmu7UwMfg/0q0n10KBg==\"}],\"signed\":{\"home_id\":\"h_test\",\"home_key_fp\":\"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"issued_at\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"product\":\"one_time\",\"purchase_id\":\"pur_test\",\"v\":1,\"valid_from\":\"2026-11-05T12:00:00Z\",\"valid_until\":\"2026-12-07T12:00:00Z\"}}",
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "entitlement_other_home",
+        "step": "entitlement"
+      }
+    },
+    {
+      "name": "a store key signs no entitlement",
+      "raw": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"k0zWaWaqQkd8AoAal5B87cWnCibCQrPs7rVSrsi7HcBlz5EgRgX9qRvsUum0Foc7UY7ncTeO7Kc4rdiBsoKUAw==\"}],\"signed\":{\"home_id\":\"h_test\",\"home_key_fp\":\"abababababababababababababababababababababababababababababababab\",\"issued_at\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"product\":\"one_time\",\"purchase_id\":\"pur_test\",\"v\":1,\"valid_from\":\"2026-11-05T12:00:00Z\",\"valid_until\":\"2026-12-07T12:00:00Z\"}}",
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "key_use_mismatch",
+        "step": "list"
+      }
+    },
+    {
+      "name": "not version 1",
+      "raw": "{\"signatures\":[{\"key_id\":\"67bb58b22c5bb30e3837e2f39f8e96cb\",\"sig\":\"6cchoqhSlXk5ICec3dLdrCvfuwPz5tLfIu6RXTLm9NXJJ80U7WXLlyVQ0JnNSukKTSimdZrLfghf08hxhOAiDQ==\"}],\"signed\":{\"home_id\":\"h_test\",\"home_key_fp\":\"abababababababababababababababababababababababababababababababab\",\"issued_at\":\"2026-11-06T11:00:00Z\",\"plugin_id\":\"dev.example.signed\",\"product\":\"one_time\",\"purchase_id\":\"pur_test\",\"v\":2,\"valid_from\":\"2026-11-05T12:00:00Z\",\"valid_until\":\"2026-12-07T12:00:00Z\"}}",
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "entitlement_invalid",
+        "step": "entitlement"
+      }
+    }
+  ],
   "root_cases": [
     {
       "name": "a new root signed by the old root's key",

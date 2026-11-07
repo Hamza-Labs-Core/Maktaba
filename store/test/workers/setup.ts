@@ -5,5 +5,6 @@ const m = JSON.parse(e.TEST_MIGRATIONS);
 await applyD1Migrations(e.DB_ACCOUNTS as D1Database, m.accounts);
 await applyD1Migrations(e.DB_CATALOG as D1Database, m.catalog);
 await applyD1Migrations(e.DB_INSTALLS as D1Database, m.installs);
+await applyD1Migrations(e.DB_COMMERCE as D1Database, m.commerce);
 // the owner's store-keys.json, signed offline with a root key, on the CDN
 await e.BUCKET.put("store-keys.json", e.TEST_STORE_KEYS);
