@@ -72,6 +72,24 @@ func runCase(t *testing.T, dir string) expect {
 				members = append(members, FromManifest(manifests[id], ""))
 			}
 		}
+		// the store's other plugins, reached only through the flow's publishers
+		catalog := map[string]map[string]any{}
+		cpaths, _ := filepath.Glob(filepath.Join(dir, "catalog", "*.toml"))
+		for _, p := range cpaths {
+			src, _ := os.ReadFile(p)
+			m, errs := pluginmanifest.Validate(src, nil)
+			if errs != nil {
+				t.Fatalf("%s: %v", p, errs)
+			}
+			catalog[m["id"].(string)] = m
+		}
+		members = ResolveDepends(members, func(id, _ string) (Member, bool) {
+			m, ok := catalog[id]
+			if !ok {
+				return Member{}, false
+			}
+			return FromManifest(m, ""), true
+		})
 	} else {
 		for _, id := range ids {
 			members = append(members, FromManifest(manifests[id], meta.States[id]))
