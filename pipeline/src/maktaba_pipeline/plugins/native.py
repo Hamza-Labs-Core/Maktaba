@@ -17,7 +17,8 @@ mixed cluster or a machine without a runner never stops a stage.
    log, its events, whether it was cancelled: ``engine`` frames), answered here;
 4. the ``result``: the :class:`StageResult`, or the failure exactly as the in-process
    handler would have raised it (the same kind, message and retry class); a statement the
-   plugin did not register (``unregistered``) runs the job in-process instead, logged;
+   plugin did not register (``unregistered``), or a file its sandbox refused
+   (``sandbox_refused``), runs the job in-process instead, logged;
 5. the token ends in a ``finally``.
 """
 
@@ -45,6 +46,7 @@ from . import firstparty
 
 __all__ = [
     "ImplChoice",
+    "SandboxRefused",
     "Unregistered",
     "choose",
     "hello",
@@ -63,6 +65,28 @@ HELLO_TTL = 15.0
 
 class Unregistered(Exception):
     """The plugin ran a statement it does not have: the job runs in-process instead."""
+
+
+class SandboxRefused(Exception):
+    """The runner's sandbox refused a file the job needed (a folder added since the runner
+    started, before it restarts on the new areas): the job runs in-process instead."""
+
+
+def sandbox_refused(exc: BaseException) -> bool:
+    """Whether a permission refusal is in the exception's chain (a stage that wraps an I/O
+    error in a StageFailure keeps it as the cause)."""
+    import errno
+
+    seen: BaseException | None = exc
+    for _ in range(10):
+        if seen is None:
+            return False
+        if isinstance(seen, PermissionError) or (
+            isinstance(seen, OSError) and seen.errno in (errno.EPERM, errno.EACCES)
+        ):
+            return True
+        seen = seen.__cause__ or seen.__context__
+    return False
 
 
 async def write_frame(w: asyncio.StreamWriter, msg: dict[str, Any]) -> None:
@@ -163,6 +187,13 @@ async def choose(db: Any, stage: str) -> ImplChoice:
         return ImplChoice("inproc", "runner_not_serving_here")
     if not await role_usable(db, stage):
         return ImplChoice("inproc", "role_unusable")
+    if files_stage(stage):
+        group = firstparty.runner_group(stage) or ""
+        h = await hello(group)
+        if not _AREAS_WRITTEN or (h or {}).get("areas") != _AREAS_WRITTEN[-1]:
+            # the runner's sandbox is from other folders than this machine's now (a library
+            # was added): this job runs here while the runner restarts on the new areas
+            return ImplChoice("inproc", "runner_areas_stale")
     return ImplChoice("plugin")
 
 
@@ -306,6 +337,8 @@ def raise_failure(d: dict[str, Any]) -> None:
         raise GraphViolation(str(d["message"]))
     if st == "unregistered":
         raise Unregistered(str(d.get("message") or ""))
+    if st == "sandbox_refused":
+        raise SandboxRefused(str(d.get("message") or ""))
     if st == "refused":
         raise StageFailure(
             str(d.get("code") or "plugin_capability"), str(d.get("message") or ""), retryable=False
@@ -539,3 +572,73 @@ def fingerprint_fn(stage: str, kind: str, inproc: Any) -> Any:
             return await inproc(db, subject)
 
     return fn
+
+
+# --- the runners' file areas (story 54.23 §3) --------------------------------------------
+
+AREAS_FILE = "areas.json"
+
+
+async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
+    """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
+    library roots through this machine's share-path mapping, and the data folders the
+    stages' own settings name. A runner applies its sandbox from them."""
+    from ..thumbnail import small
+    from ..thumbnail.generator import thumbnail_dir_for
+
+    roots: set[str] = set()
+    try:
+        rows = await db.fetch("SELECT roots FROM libraries")
+    except Exception:  # noqa: BLE001 - a database without libraries: no library area
+        rows = []
+    for r in rows:
+        raw = r["roots"]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                raw = [raw]
+        for root in raw or ():
+            local = path_map.to_local(str(root)) if path_map is not None else str(root)
+            roots.add(os.path.realpath(local) if os.path.isabs(local) else local)
+    # the cache the thumbnail stages write (maktaba_pipeline.thumbnail.small.ROOT)
+    thumbs = str(thumbnail_dir_for("x", root=small.ROOT).parent)
+    lib = ";".join(sorted(roots))
+    # library.subtitles is the library's folders, written only by subtitle names
+    return {"library": lib, "library.subtitles": lib, "data.thumbnails": thumbs}
+
+
+def areas_digest(doc: dict[str, str]) -> str:
+    import hashlib
+
+    return hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()[:16]
+
+
+_AREAS_WRITTEN: list[str] = []
+
+
+async def write_areas(db: Any, path_map: Any = None) -> str:
+    """Write the areas for the runners (``<runner dir>/areas.json``) when they changed; a
+    runner that started with others restarts itself (story 54.23 §3). Answers the digest."""
+    from maktaba_plugin_runner import runner_dir
+
+    doc = await areas_doc(db, path_map)
+    digest = areas_digest(doc)
+    if _AREAS_WRITTEN and _AREAS_WRITTEN[-1] == digest:
+        return digest
+    d = runner_dir()
+    with contextlib.suppress(OSError):
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / (AREAS_FILE + ".tmp")
+        tmp.write_text(json.dumps({"digest": digest, "areas": doc}, sort_keys=True))
+        os.replace(tmp, d / AREAS_FILE)
+        _AREAS_WRITTEN.append(digest)
+    return digest
+
+
+def files_stage(stage: str) -> bool:
+    """Whether a first-party stage reads or writes files (its runner must have this
+    machine's current areas to serve it)."""
+    p = firstparty.by_stage(stage)
+    files = (p.trusted.get("files") or {}) if p is not None else {}
+    return bool(files.get("read") or files.get("write"))

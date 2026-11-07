@@ -1,0 +1,10 @@
+# The parity proof of tv.maktaba.thumbnails (story 54.29): its stages write no table, only
+# files in the thumbnail cache (the small copy and the chapter frames), compared byte for byte.
+tables = []
+files  = ["data.thumbnails"]
+
+[[cases]]
+name = "four episodes: a thumbnail beside the video, one in .thumbs/, one .webp, one with none; chapters on two"
+
+[[failure_cases]]
+name = "a video with no thumbnail and no poster"
