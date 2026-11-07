@@ -31,6 +31,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -100,20 +101,32 @@ func runLogs(_ []string) {
 
 // serveLogs runs W's keeper, the index over it (on loopback) and the private listener.
 func serveLogs(ctx context.Context, logger *slog.Logger, dir, listen, tok string) error {
-	k := logship.NewKeeper(dir, "W")
-	go k.Run(ctx)
 	ix, err := logindex.Open(dir, time.Now)
 	if err != nil {
 		return fmt.Errorf("the log index: %w", err)
 	}
-	defer ix.Close()
+	// the keeper and the index stop with ctx and are waited for, then the index is closed:
+	// what W took is on disk before the process ends
+	// (an early return, a listener that cannot start, stops them too)
+	ctx, cancel := context.WithCancel(ctx)
+	var wg sync.WaitGroup
+	defer func() {
+		cancel()
+		wg.Wait()
+		_ = ix.Close()
+	}()
+	k := logship.NewKeeper(dir, "W")
+	wg.Add(1)
+	go func() { defer wg.Done(); k.Run(ctx) }()
 	ix.Retention = logship.Retention
 	ix.Log = func(msg string, kv ...any) { logger.Info(msg, append(kv, "event", msg)...) }
 	loop, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		if err := ix.Serve(ctx, loop, time.Second); err != nil {
 			logger.Error("logs: the index stopped", "err", err, "event", "cloud_log_index_failed")
 		}

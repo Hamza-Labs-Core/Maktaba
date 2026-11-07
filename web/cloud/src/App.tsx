@@ -23,6 +23,7 @@ import { AdminAbuse } from "./pages/admin/Abuse";
 import { AdminAudit } from "./pages/admin/Audit";
 import { AdminUsage } from "./pages/admin/Usage";
 import { AdminErrors, AdminLogs } from "./pages/admin/Logs";
+import { AdminReportDetail, AdminReports } from "./pages/admin/Reports";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -143,6 +144,8 @@ export function AppRoutes() {
             <Route path="logs" element={<AdminLogs />} />
             <Route path="errors" element={<AdminErrors />} />
             <Route path="usage" element={<AdminUsage />} />
+            <Route path="reports" element={<AdminReports />} />
+            <Route path="reports/:id" element={<AdminReportDetail />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

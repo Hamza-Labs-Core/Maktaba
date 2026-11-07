@@ -63,7 +63,7 @@ async def runner(db: Database) -> AsyncIterator[Path]:
         bundle=firstparty.bundle_digest(),
         transport=lambda _token: LocalTransport(reg, db),
     )
-    with tempfile.TemporaryDirectory(dir="/tmp") as d:
+    with tempfile.TemporaryDirectory() as d:
         sock = Path(d) / "runner-light.sock"
         task = asyncio.create_task(r.serve(sock))
         for _ in range(100):

@@ -105,3 +105,24 @@ func waitUp(t *testing.T, u string) {
 		time.Sleep(100 * time.Millisecond)
 	}
 }
+
+// A W that cannot listen returns its error, and stops the keeper and the index it started.
+func TestWThatCannotListenStopsCleanly(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close() // the address is taken
+	done := make(chan error, 1)
+	go func() {
+		done <- serveLogs(context.Background(), slog.New(slog.DiscardHandler), t.TempDir(), ln.Addr().String(), "t")
+	}()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("a taken address is an error")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("serveLogs hung after its listener failed")
+	}
+}

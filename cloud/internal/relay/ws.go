@@ -233,6 +233,10 @@ type TunnelServer struct {
 	// Directory records which process holds each tunnel (story 50.04); nil:
 	// none (one process, no forwarding).
 	Directory Directory
+	// Direct handles direct remote access's frames (story 50.15) for homes that announce
+	// it; nil: off. DirectEvery is how often a home is given what it is owed (default 1m).
+	Direct      DirectHandler
+	DirectEvery time.Duration
 }
 
 // ServeHTTP upgrades and authenticates one home's tunnel. The agent must
@@ -302,6 +306,7 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flow := ap.Flow >= FlowVersion
 	canTicket := ts.Tickets != nil && ap.has(FeatureTicket)
 	canDrain := ts.Drain && ap.has(FeatureDrain)
+	canDirect := ts.Direct != nil && ap.has(FeatureDirect)
 	okp := AuthOKPayload{Slug: sv.Slug, IssuedAt: time.Now().UTC()}
 	opts := []TunnelOption{WithFeatures(canDrain, canTicket)}
 	if flow {
@@ -314,6 +319,10 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if canTicket {
 		okp.Features = append(okp.Features, FeatureTicket)
 		okp.Ticket = ts.Tickets.Mint(sv.ID)
+	}
+	if canDirect {
+		okp.Features = append(okp.Features, FeatureDirect)
+		opts = append(opts, WithDirect(ts.Direct, tunnelSource(r), logger))
 	}
 	ok, _ := json.Marshal(okp)
 	_ = c.SetWriteDeadline(time.Now().Add(writeWait))
@@ -341,6 +350,13 @@ func (ts *TunnelServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	logger.Info("relay: tunnel up", "home_h", mlog.HashHome(sv.ID), "flow", flow, "method", method, "event", "tunnel_up")
 	if canTicket {
 		go ts.refreshTickets(t)
+	}
+	if canDirect {
+		every := ts.DirectEvery
+		if every <= 0 {
+			every = time.Minute
+		}
+		go t.keepDelivering(every)
 	}
 	go func() {
 		<-t.Done()

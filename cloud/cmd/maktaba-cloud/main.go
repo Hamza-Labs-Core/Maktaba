@@ -119,6 +119,8 @@ func runServe(args []string) {
 		runRelay(logger, cfg, pool, mig, build)
 	case "worker":
 		runWorker(logger, cfg, pool, mig, build)
+	case "dns":
+		runDNS(logger, cfg, pool, mig, build)
 	default:
 		logger.Error("unknown role", "role", *role)
 		os.Exit(2)

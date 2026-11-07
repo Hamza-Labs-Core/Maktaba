@@ -89,6 +89,16 @@ on:
       - 'shared/go/ports/**'
       - 'shared/go/releaseverify/**'
       - 'shared/db/migrations/**'
+      # the waves' stages across an update (scenarios 16.x run each release's pipeline):
+      # the claims, the drain, the flip, the runners and the built-in plugins
+      - 'pipeline/src/maktaba_pipeline/pipeline/**'
+      - 'pipeline/src/maktaba_pipeline/plugins/**'
+      - 'pipeline/src/maktaba_pipeline/engine/run.py'
+      - 'pipeline/src/maktaba_plugin_runner/**'
+      - 'pipeline/pyproject.toml'
+      - 'pipeline/uv.lock'
+      - 'plugins/first-party/**'
+      - 'plugins/sdk/python/**'
       # the rehearsal itself
       - 'api/rehearsal_*_e2e_test.go'
       - 'api/autoupdate_*e2e_test.go'
@@ -140,12 +150,15 @@ env:
   # path), outside the checkout; actions/cache takes no '..' in a path
   KIT: /home/runner/rh-kit
   SEEDS: /home/runner/rh-seeds
+  # the releases' pipeline environments (scenarios 16.x, tools/rehearsal/venvs.sh): a venv
+  # is not relocatable, so the kit job builds them where the scenarios use them
+  VENVS: /home/runner/rh-venvs
 
 jobs:
   kit:
     name: kit (two releases' binaries, the bundled Postgres)
     runs-on: ubuntu-24.04
-    timeout-minutes: 35 # the binaries of four releases and three packs (story 51.18)
+    timeout-minutes: 45 # the binaries of four releases, three packs (story 51.18) and the plugin host (54.07)
     # main's run: only after CI's push run on the commit passed (a cancelled or failed CI
     # run's workflow_run runs nothing); every job after this one needs it
     if: >-
@@ -182,6 +195,20 @@ jobs:
         with:
           modules: api streaming cmd/maktaba-server cmd/maktaba-launcher tools/release
           offline: "false"
+
+      # the plugin host and its test guest (tools/rehearsal/build.sh: plugins/, scenario 15,
+      # Epic 54 story 54.07 §8)
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            plugind
+            plugind/guests
+          # only main's run saves (pull requests and tags read main's entries)
+          save-if: ${{ github.event_name == 'workflow_run' }}
 
       # the release's pack build (tools/rehearsal/build.sh: the tool.yt-dlp pack of each of
       # this commit's releases, scenarios 13 and 14)
@@ -257,6 +284,46 @@ jobs:
             cat "$KIT/versions.env"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # scenarios 16.x run each release's real pipeline (tools/rehearsal/venvs.sh): one
+      # environment per release, built here once for every scenario that takes them (their
+      # own artifact, not the kit's: no other scenario downloads them). The previous
+      # release's comes from its cache, keyed by its tag, once main's run saved it; this
+      # commit's is built every run (its pipeline is this commit's)
+      - name: The releases' pipeline versions
+        id: pyenv
+        run: |
+          set -euo pipefail
+          . "$KIT/versions.env"
+          { echo "prev=$PREV"; echo "cur=$CUR"; } >> "$GITHUB_OUTPUT"
+
+      - name: The previous release's pipeline environment (its cache)
+        id: venv-prev
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.VENVS }}/${{ steps.pyenv.outputs.prev }}
+          key: rehearsal-venv-${{ steps.prev.outputs.tag }}-${{ runner.arch }}-${{ hashFiles('tools/rehearsal/venvs.sh', 'tools/rehearsal/sleepy/**') }}
+
+      - name: The releases' pipeline environments
+        run: tools/rehearsal/venvs.sh --kit "$KIT" --out "$VENVS" --python python3.12
+
+      # main's run only, as the other caches (a pull request's entry would push main's out)
+      - name: Save the previous release's pipeline environment
+        if: github.event_name == 'workflow_run' && steps.venv-prev.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.VENVS }}/${{ steps.pyenv.outputs.prev }}
+          key: ${{ steps.venv-prev.outputs.cache-primary-key }}
+
+      - name: Pack the pipeline environments
+        run: tar -C "$VENVS/.." -cf "$RUNNER_TEMP/rh-venvs.tar" "$(basename "$VENVS")"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rehearsal-venvs
+          path: ${{ runner.temp }}/rh-venvs.tar
+          retention-days: 3
+          compression-level: 6
 
       # restore only; the save after the download runs on main's run (a pull request's
       # entry would push main's out of the repository's 10 GB cache)
@@ -461,6 +528,13 @@ jobs:
           - { id: '12', name: no behaviour change (an update of a seeded home), test: TestUpdateRehearsal12NoBehaviourChange, profile: small }
           - { id: '13', name: an update carries the packs and a rollback finds the kept one, test: TestUpdateRehearsal13UpdateWithPacks, profile: small }
           - { id: '14', name: a pack that fails its verification stops the update, test: TestUpdateRehearsal14PackFailsVerification, profile: small }
+          - { id: '15', name: plugins follow an update and its rollback, test: TestUpdateRehearsal15Plugins, profile: small }
+          # Epic 54 Phase 4's waves (stories 54.28-54.36): each release's real pipeline, the
+          # wave's stages sleeping, jobs in flight across a rollback and an update. A wave's
+          # row comes with the wave (api/rehearsal_waves_e2e_test.go has every wave's)
+          - { id: '16.1', name: wave 1's jobs across a rollback and an update, test: TestUpdateRehearsal16_1Wave1, profile: small, venvs: true }
+          - { id: '16.2', name: wave 2's jobs across a rollback and an update, test: TestUpdateRehearsal16_2Wave2, profile: small, venvs: true }
+          - { id: '16.3', name: wave 3's jobs across a rollback and an update, test: TestUpdateRehearsal16_3Wave3, profile: small, venvs: true }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }
@@ -572,10 +646,56 @@ jobs:
           echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
           exit 1
 
+      - name: Download rehearsal-venvs
+        id: artifact-rehearsal-venvs
+        if: matrix.venvs
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-venvs
+          path: ${{ runner.temp }}
+      - name: Wait 15s to retry the download of rehearsal-venvs
+        if: steps.artifact-rehearsal-venvs.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download rehearsal-venvs (attempt 2)
+        id: artifact-rehearsal-venvs-2
+        if: steps.artifact-rehearsal-venvs.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-venvs
+          path: ${{ runner.temp }}
+      - name: Wait 45s to retry the download of rehearsal-venvs
+        if: steps.artifact-rehearsal-venvs-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download rehearsal-venvs (attempt 3)
+        id: artifact-rehearsal-venvs-3
+        if: steps.artifact-rehearsal-venvs-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-venvs
+          path: ${{ runner.temp }}
+      - name: Check rehearsal-venvs downloaded
+        id: artifact-rehearsal-venvs-check
+        if: steps.artifact-rehearsal-venvs-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: rehearsal-venvs
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
       - name: The kit, the seed, Python's venv
         run: |
           set -euo pipefail
           mkdir -p "$KIT" && tar -C "$KIT/.." -xf "$RUNNER_TEMP/rh-kit.tar"
+          if [ -f "$RUNNER_TEMP/rh-venvs.tar" ]; then
+            mkdir -p "$VENVS" && tar -C "$VENVS/.." -xf "$RUNNER_TEMP/rh-venvs.tar"
+            ls -l "$VENVS"
+          fi
           mkdir -p "$SEEDS" && tar -C "$SEEDS" -xf "$RUNNER_TEMP/rh-seed-${{ matrix.profile }}.tar"
           rm -f "$RUNNER_TEMP/rh-seed-${{ matrix.profile }}.tar"
           cat "$KIT/versions.env"
@@ -611,6 +731,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           MAKTABA_REHEARSAL_KIT="$KIT" MAKTABA_REHEARSAL_PG_HOME="$KIT/pg" MAKTABA_REHEARSAL_SEEDS="$SEEDS" \
             MAKTABA_REHEARSAL_WORK="$RUNNER_TEMP/rh-work" MAKTABA_E2E_LOG_DIR="$RUNNER_TEMP/rh-logs" \
+            MAKTABA_REHEARSAL_VENVS="$VENVS" \
             go test -count=1 -timeout 45m -run "^${TEST}\$" -v . 2>&1 | tee "$RUNNER_TEMP/scenario.out"
           grep -q -- "--- PASS: ${TEST} " "$RUNNER_TEMP/scenario.out" || { echo "::error::${TEST} did not pass"; exit 1; }
 

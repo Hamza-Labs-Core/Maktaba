@@ -50,6 +50,39 @@ describe("Report a problem", () => {
     expect(sent.lines.some((l: { msg: string }) => l.msg === "playback_stalled")).toBe(true);
   });
 
+  // Epic 53 story 53.16: the Maktaba box shows only while the home allows it, starts
+  // unticked, and a ticked box says what Maktaba gets and is sent with the report
+  it("offers Also send to Maktaba only when the home allows it", async () => {
+    get.mockResolvedValue({ available: true, enabled: false });
+    const { unmount } = renderPage(<ReportProblem />, { path: "/account/report" });
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/reports/maktaba"));
+    expect(screen.queryByTestId("report-to-maktaba")).toBeNull();
+    unmount();
+    get.mockResolvedValue({ available: true, enabled: true });
+    renderPage(<ReportProblem />, { path: "/account/report" });
+    const box = await screen.findByRole("checkbox", { name: en["report.to.maktaba"] });
+    expect(box).not.toBeChecked();
+    expect(screen.queryByText(en["report.to.maktaba.note"])).toBeNull();
+    fireEvent.click(box);
+    expect(screen.getByText(en["report.to.maktaba.note"])).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: en["report.send"] }));
+    await screen.findByTestId("report-sent");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String((init.body as FormData).get("report"))).share_with_maktaba).toBe(true);
+  });
+
+  it("sends without Maktaba while the box is unticked", async () => {
+    get.mockResolvedValue({ available: true, enabled: true });
+    renderPage(<ReportProblem />, { path: "/account/report" });
+    await screen.findByRole("checkbox", { name: en["report.to.maktaba"] });
+    fireEvent.click(screen.getByRole("button", { name: en["report.send"] }));
+    await screen.findByTestId("report-sent");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String((init.body as FormData).get("report"))).share_with_maktaba).toBe(
+      false
+    );
+  });
+
   it("says when it could not be sent", async () => {
     fetchMock.mockResolvedValue(new Response("{}", { status: 429 }));
     renderPage(<ReportProblem />, { path: "/account/report" });
@@ -75,5 +108,38 @@ describe("Report a problem", () => {
     expect(await screen.findByTestId("my-report")).toHaveTextContent(en["report.status.fixed"]);
     expect(screen.getByTestId("my-report-reply")).toHaveTextContent("Fixed in 0.3.85");
     await waitFor(() => expect(get).toHaveBeenCalledWith("/api/reports"));
+  });
+
+  it("My reports says a report also went to Maktaba, and Maktaba's reply", async () => {
+    get.mockResolvedValue({
+      reports: [
+        {
+          id: 28,
+          at: "2026-11-07T10:00:00Z",
+          app: "web",
+          category: "playback",
+          status: "new",
+          shared_with_maktaba: true,
+          maktaba: { state: "sent", reply: "Thank you, it is fixed", fixed_in: "0.3.96" },
+        },
+        {
+          id: 29,
+          at: "2026-11-07T11:00:00Z",
+          app: "web",
+          category: "search",
+          status: "new",
+          shared_with_maktaba: true,
+          maktaba: { state: "queued" },
+        },
+      ],
+    });
+    renderPage(<MyReports />, { path: "/account/reports" });
+    const rows = await screen.findAllByTestId("report-maktaba");
+    expect(rows[0]).toHaveTextContent(en["report.sentToMaktaba"]);
+    expect(screen.getByTestId("report-maktaba-reply")).toHaveTextContent(
+      `${en["report.maktabaReplied"]}: Thank you, it is fixed`
+    );
+    expect(screen.getByTestId("report-maktaba-reply")).toHaveTextContent("0.3.96");
+    expect(rows[1]).toHaveTextContent(en["report.maktaba.state.queued"]);
   });
 });

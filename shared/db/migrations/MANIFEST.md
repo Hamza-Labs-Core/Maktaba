@@ -208,6 +208,7 @@ reservations; the permanent gaps are listed below the table).
 | `0201` | `0201_fp_roles.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) stories 54.24, 54.29 | 0200 | Wave 2's first-party plugin roles, from `tools/plugins/roles.py`: `maktaba_fp_subtitles` (writes `subtitle_files`) and `maktaba_fp_thumbnails` (reads only: it writes files), with `maktaba_fp_classify` as in 0200. Where the migration may not make or grant a role it says so and goes on; the worker then runs those stages in-process. SQLite: nothing (no roles). Additive. |
 | `0202` | `0202_fp_roles.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) stories 54.24, 54.30 | 0201 | Wave 3's first-party plugin roles, from `tools/plugins/roles.py`: `maktaba_fp_transcription` and `maktaba_fp_semantic-search`'s role `maktaba_fp_semantic_search`, with the earlier waves' as in 0201. Where the migration may not make or grant a role it says so and goes on; the worker then runs those stages in-process. SQLite: nothing (no roles). Additive. |
 | `0203` | `0203_plugins_catalog.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) stories 54.14, 54.17 | 0199 | Plugins: the store's catalog and kill switch. `plugin_installs.revoked` (a store `disable` covers the installed version: the `revoked` gate), `revocation` (the entry that applies) and `auto_update`; `plugin_trust` (the newest versions of the signed lists seen, one row, beside the file copy) and `plugin_lists` (the lists as fetched). Both tables guarded by `plugin_tables_guard()` (default grants kept) and left out of a machine's copy (`cluster_copy_excluded()`: 0195's list and the two). SQLite: the columns and tables. Additive. |
+| `0204` | `0204_plugins_entitlements.sql` | [Epic 54](../../specs/epics/54-plugins/README.md) story 54.19 §6 | 0203 | Plugins: `plugin_entitlements`, the entitlements of paid plugins this home holds, one per purchase, as checked offline when fetched (an entitlement key of store-keys.json, this home's store id and key): plugin, product, validity and the signed envelope. A paid plugin with no row valid now (72-hour grace) waits `entitlement_missing`. Guarded by `plugin_tables_guard()` (default grants kept) and left out of a machine's copy (`cluster_copy_excluded()`: 0203's list and this one). SQLite: the table. Additive. |
 
 ### Permanent gaps
 
@@ -233,6 +234,13 @@ reservations; the permanent gaps are listed below the table).
    for `CREATE INDEX CONCURRENTLY` and similar non-transactional steps.
 5. If two epics need to land migrations concurrently, they coordinate slot
    assignment by editing this file in the same PR.
+6. A migration that redefines a whole-list function starts from the newest
+   definition on `main` at merge time, not the one it was written against, and
+   its Down restores that exact definition. `cluster_copy_excluded()` is one:
+   migration-lint's `copy-excluded-keeps` fails when a redefinition loses a
+   table an earlier one listed, or when its Down does not restore the previous
+   definition. A table taken out on purpose is named on a line
+   `-- cluster_copy_excluded drops: <table>`.
 
 ## Cross-epic ownership
 

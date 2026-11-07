@@ -1,0 +1,32 @@
+{
+  "id": 12,
+  "at": "2026-11-07T11:52:00Z",
+  "when": "2026-11-07T11:50:00Z",
+  "user_h": "a1b2c3d4e5f60708",
+  "name": "Fatima Al-Hassan",
+  "app": "apple.player",
+  "version": "0.3.95",
+  "platform": "ios",
+  "category": "playback",
+  "text": "Fatima here: the lesson stopped at 12:40 on /Volumes/Media/Lessons/Seerah/04 - Badr.mp4, mail me at fatima@example.org, from 192.168.1.23",
+  "lines": [
+    {"ts": "2026-11-07T11:49:58Z", "level": "error", "service": "apple.player", "msg": "segment_missing",
+     "title": "The Seerah, lesson 4", "video_title": "Badr", "user_h": "a1b2c3d4e5f60708",
+     "url": "http://10.0.0.5:8080/api/stream/v1/master.m3u8?token=abc123",
+     "path": "/Volumes/Media/Lessons/Seerah/04 - Badr.mp4", "fp": "fp-segment"},
+    {"ts": "2026-11-07T11:49:59Z", "level": "warn", "service": "apple.player", "msg": "retrying",
+     "detail": "host fe80:0:0:0:1234:5678:9abc:def0 answered slowly", "peer": "loopback 127.0.0.1 is fine"}
+  ],
+  "crashes": [
+    {"exception": {"type": "SIGSEGV", "value": "in Player for Fatima Al-Hassan"},
+     "file_name": "04 - Badr.mp4", "series_title": "The Seerah"}
+  ],
+  "server": [
+    {"ts": "2026-11-07T11:49:57Z", "level": "error", "service": "streaming", "msg": "stream_failed",
+     "user_h": "a1b2c3d4e5f60708", "src": "/Volumes/Media/Lessons/Seerah/04 - Badr.mp4", "fp": "fp-stream",
+     "episode_title": "Badr", "client_ip": "192.168.1.0"},
+    {"ts": "2026-11-07T11:49:57Z", "level": "info", "service": "api", "msg": "http_request",
+     "user_h": "ffeeddccbbaa9988", "path": "/api/videos/123", "remote": "203.0.113.9:51234",
+     "note": "a second library at /srv/maktaba/library-2/Tafsir/al-Kahf 01.mkv"}
+  ]
+}

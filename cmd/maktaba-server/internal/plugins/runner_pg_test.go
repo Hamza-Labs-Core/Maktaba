@@ -246,6 +246,64 @@ func TestFirstPassRestartsForAnInstallAfterTheWorkerStarted(t *testing.T) {
 	}
 }
 
+// Story 54.19 T04 (the supervisor's half): a paid plugin waits entitlement_missing while no
+// entitlement holds now; a row valid now (or within the 72-hour grace) opens it, and a lapse
+// past the grace closes it again; a free plugin needs none.
+func TestRunnerGatesPaidPlugins(t *testing.T) {
+	db := scratchDB(t)
+	ctx := context.Background()
+	f, _ := newFiles(t)
+	now := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	r := &Runner{Files: f, DB: db, Machine: store.Home, Version: "0.3.83", Catalog: &sink{}, Status: store.New(db),
+		Log: os.Stderr, Now: func() time.Time { return now }}
+	manifest := func(price string) json.RawMessage {
+		return json.RawMessage(`{"schema":1,"id":"` + testID + `","version":"1.0.0","plugin_api":"1.0","maktaba":">=0.1.0",` +
+			`"price":"` + price + `","capabilities":{"required":[],"optional":[]},"stage":[]}`)
+	}
+	record(t, db, &Installed{PluginID: testID, Version: "1.0.0", Digest: "d1", Path: t.TempDir(), Manifest: manifest("dev.example.pro")}, nil)
+	if _, err := db.Exec(`INSERT INTO app_settings (key, value) VALUES ($1, '{"allow_unreviewed": true}')`, PolicyKey); err != nil {
+		t.Fatal(err)
+	}
+	cid := components.PluginPrefix + testID
+	// wanted on, so the supervisor's own part says what the gate decides (#814)
+	r.Desired(map[string]store.Desired{cid: {ID: cid, Want: components.WantEnabled, Generation: 1}})
+	pass := func() string { r.Pass(ctx); return r.Gate(cid) }
+	part := func(phase, reason string) {
+		t.Helper()
+		if got, why := statusOf(t, db, cid), reasonOf(t, db, cid); got != phase || why != reason {
+			t.Fatalf("status part: %s %q, want %s %q", got, why, phase, reason)
+		}
+	}
+	if g := pass(); g != components.ReasonEntitlementMissing {
+		t.Fatalf("no entitlement: gate %q", g)
+	}
+	part(components.PhaseWaiting, components.ReasonEntitlementMissing)
+	until := now.Add(10 * 24 * time.Hour)
+	if _, err := db.Exec(`INSERT INTO plugin_entitlements (purchase_id, plugin_id, product, store_home, valid_from, valid_until,
+		issued_at, envelope) VALUES ('pur-1', $1, 'one_time', 'h1', $2, $3, $2, '{}')`, testID, now.Add(-24*time.Hour), until); err != nil {
+		t.Fatal(err)
+	}
+	if g := pass(); g != "" {
+		t.Fatalf("entitled: gate %q", g)
+	}
+	part(components.PhaseRunning, "")
+	now = until.Add(71 * time.Hour)
+	if g := pass(); g != "" {
+		t.Fatalf("within the grace: gate %q", g)
+	}
+	part(components.PhaseRunning, "")
+	now = until.Add(73 * time.Hour)
+	if g := pass(); g != components.ReasonEntitlementMissing {
+		t.Fatalf("past the grace: gate %q", g)
+	}
+	part(components.PhaseWaiting, components.ReasonEntitlementMissing)
+	// the same plugin made free needs none
+	record(t, db, &Installed{PluginID: testID, Version: "1.0.1", Digest: "d2", Path: t.TempDir(), Manifest: manifest("free")}, nil)
+	if g := pass(); g != "" {
+		t.Fatalf("free: gate %q", g)
+	}
+}
+
 // reasonOf is the first false condition's reason of this machine's plugins part.
 func reasonOf(t *testing.T, db *sql.DB, id string) string {
 	t.Helper()

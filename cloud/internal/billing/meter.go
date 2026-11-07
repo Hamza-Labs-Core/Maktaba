@@ -17,13 +17,14 @@ import (
 )
 
 // Meter accumulates per-server bandwidth in-memory and flushes to
-// Postgres on an interval. We intentionally trade write volume for a short
+// Postgres on an interval. Story 50.19: bytes are also counted by the mode they were relayed in
+// (relay_usage_monthly), and Decide answers a home's mode from them; nothing is refused for
+// bytes any more. We intentionally trade write volume for a short
 // window of in-memory bytes: a relay node serving 1000 connected servers at
 // 1 req/s would otherwise produce one INSERT per request.
 //
-// Tier enforcement reads from the same in-memory counter so a server
-// that has just blown its cap is rejected immediately without waiting
-// for the flush.
+// Decide reads from the same in-memory counters, so a home that has just used its allowance
+// changes mode at once without waiting for the flush.
 //
 // Riding out a database blip (Epic 50 story 50.05): a flush that fails
 // keeps its counts and retries every RetryInterval, summing new bytes into
@@ -71,6 +72,34 @@ type Meter struct {
 type counter struct {
 	BytesIn  int64
 	BytesOut int64
+	// by mode (in + out): full, pay-as-you-go, capped, capped_slow
+	Usage Usage
+}
+
+// add counts in and out bytes relayed in d's mode.
+func (c *counter) add(d Decision, in, out int64) {
+	c.BytesIn += in
+	c.BytesOut += out
+	n := in + out
+	switch {
+	case d.Mode == ModeCapped:
+		c.Usage.Capped += n
+	case d.Mode == ModeCappedSlow:
+		c.Usage.CappedSlow += n
+	case d.PAYG:
+		c.Usage.PAYG += n
+	default:
+		c.Usage.Full += n
+	}
+}
+
+func (c *counter) merge(o counter) {
+	c.BytesIn += o.BytesIn
+	c.BytesOut += o.BytesOut
+	c.Usage.Full += o.Usage.Full
+	c.Usage.PAYG += o.Usage.PAYG
+	c.Usage.Capped += o.Usage.Capped
+	c.Usage.CappedSlow += o.Usage.CappedSlow
 }
 
 type flushBatch struct {
@@ -85,7 +114,7 @@ type bucketKey struct {
 
 type monthTotal struct {
 	month time.Time
-	bytes int64
+	usage Usage
 	at    time.Time
 }
 
@@ -191,9 +220,9 @@ func (m *Meter) Close() {
 	}
 }
 
-// Record adds to the in-memory counters. Called from the relay handler
-// after each proxied request.
-func (m *Meter) Record(_ context.Context, sv stores.Server, in, out int64) {
+// Record adds to the in-memory counters, in the mode d the request was relayed in. Called
+// from the relay handler as a request's bytes flow.
+func (m *Meter) Record(_ context.Context, sv stores.Server, d Decision, in, out int64) {
 	if in == 0 && out == 0 {
 		return
 	}
@@ -204,33 +233,40 @@ func (m *Meter) Record(_ context.Context, sv stores.Server, in, out int64) {
 		c = &counter{}
 		m.counters[sv.ID] = c
 	}
-	c.BytesIn += in
-	c.BytesOut += out
+	c.add(d, in, out)
 }
 
-// Allow is the pre-request gate. We approve unless the running total
-// for this month already exceeds the tier cap plus FreeOverageGrace.
-func (m *Meter) Allow(ctx context.Context, sv stores.Server) error {
-	tier, ok := Tiers[sv.Plan]
-	if !ok {
-		tier = Tiers[PlanFree]
-	}
+// Decide is a home's relay mode now (story 50.19 §3), from its plan and this month's usage by
+// mode: what the database has (read at most once a MonthCacheTTL) and what is not flushed
+// yet. It never refuses for bytes: a paid plan slows, never stops. Pay-as-you-go is off until
+// its settings exist (story 50.19 part 3).
+func (m *Meter) Decide(ctx context.Context, sv stores.Server) Decision {
 	month := MonthStart(m.now())
-	monthBytes := m.persistedMonth(ctx, sv.ID, month)
+	u := m.persistedMonth(ctx, sv.ID, month)
 	m.mu.Lock()
-	monthBytes += m.unflushedLocked(sv.ID, month)
+	x := m.unflushedLocked(sv.ID, month)
 	m.mu.Unlock()
-	limit := tier.BandwidthBytesPerMo + FreeOverageGrace
-	if monthBytes > limit {
-		return ErrOverLimit
-	}
-	return nil
+	u.Full += x.Full
+	u.PAYG += x.PAYG
+	u.Capped += x.Capped
+	u.CappedSlow += x.CappedSlow
+	return ModeFor(sv.Plan, u, PAYG{})
 }
 
-// persistedMonth is serverID's month total in bandwidth_monthly, read at most
-// once a MonthCacheTTL; while the database errors, the last one read (0 if
+// Usage is a home's usage this month by mode, as Decide sees it.
+func (m *Meter) Usage(ctx context.Context, serverID string) Usage {
+	month := MonthStart(m.now())
+	u := m.persistedMonth(ctx, serverID, month)
+	m.mu.Lock()
+	x := m.unflushedLocked(serverID, month)
+	m.mu.Unlock()
+	return Usage{Full: u.Full + x.Full, PAYG: u.PAYG + x.PAYG, Capped: u.Capped + x.Capped, CappedSlow: u.CappedSlow + x.CappedSlow}
+}
+
+// persistedMonth is serverID's month usage in relay_usage_monthly, read at most
+// once a MonthCacheTTL; while the database errors, the last one read (none if
 // none: a home this relay knows keeps playing through a blip).
-func (m *Meter) persistedMonth(ctx context.Context, serverID string, month time.Time) int64 {
+func (m *Meter) persistedMonth(ctx context.Context, serverID string, month time.Time) Usage {
 	ttl := m.MonthCacheTTL
 	if ttl <= 0 {
 		ttl = 60 * time.Second
@@ -247,16 +283,16 @@ func (m *Meter) persistedMonth(ctx context.Context, serverID string, month time.
 		if now.Sub(mt.at) >= ttl && !down {
 			m.refreshMonth(serverID, month)
 		}
-		return mt.bytes
+		return mt.usage
 	}
 	if down {
-		return 0
+		return Usage{}
 	}
-	total, err := m.readMonth(ctx, serverID, month)
+	u, err := m.readMonth(ctx, serverID, month)
 	if err != nil {
-		return 0
+		return Usage{}
 	}
-	return total
+	return u
 }
 
 // refreshMonth reads serverID's month total in the background (one at a time
@@ -282,45 +318,53 @@ func (m *Meter) refreshMonth(serverID string, month time.Time) {
 	}()
 }
 
-// readMonth reads serverID's month total and keeps it, or notes the database
+// readMonth reads serverID's month usage and keeps it, or notes the database
 // away for 5 s.
-func (m *Meter) readMonth(ctx context.Context, serverID string, month time.Time) (int64, error) {
+func (m *Meter) readMonth(ctx context.Context, serverID string, month time.Time) (Usage, error) {
 	now := m.now()
-	total, err := m.MonthlyBytes(ctx, serverID, month)
+	u, err := m.MonthlyUsage(ctx, serverID, month)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err != nil {
 		m.dbDownUntil = now.Add(5 * time.Second)
-		return 0, err
+		return Usage{}, err
 	}
-	m.months[serverID] = monthTotal{month: month, bytes: total, at: now}
-	return total, nil
+	m.months[serverID] = monthTotal{month: month, usage: u, at: now}
+	return u, nil
 }
 
-// unflushedLocked is serverID's bytes this month not yet in the database.
-func (m *Meter) unflushedLocked(serverID string, month time.Time) int64 {
-	var n int64
+// unflushedLocked is serverID's usage this month not yet in the database.
+func (m *Meter) unflushedLocked(serverID string, month time.Time) Usage {
+	var u counter
 	if c, ok := m.counters[serverID]; ok {
-		n += c.BytesIn + c.BytesOut
+		u.merge(*c)
 	}
 	for k, c := range m.pending {
 		if k.server == serverID && MonthStart(k.bucket).Equal(month) {
-			n += c.BytesIn + c.BytesOut
+			u.merge(*c)
 		}
 	}
 	if m.inflight != nil {
 		for k, c := range m.inflight.entries {
 			if k.server == serverID && MonthStart(k.bucket).Equal(month) {
-				n += c.BytesIn + c.BytesOut
+				u.merge(c)
 			}
 		}
 	}
-	return n
+	return u.Usage
 }
 
-// ErrOverLimit is the sentinel returned by Allow when a server has
-// exhausted its plan's bandwidth for the current month.
-var ErrOverLimit = errors.New("billing: monthly bandwidth limit reached")
+// MonthlyUsage is a home's persisted usage by mode for a month (relay_usage_monthly).
+func (m *Meter) MonthlyUsage(ctx context.Context, serverID string, month time.Time) (Usage, error) {
+	var u Usage
+	err := m.DB.QueryRowContext(ctx, `
+        SELECT bytes_full, bytes_payg, bytes_capped, bytes_capped_slow FROM relay_usage_monthly
+        WHERE server_id = $1 AND month = $2`, serverID, month).Scan(&u.Full, &u.PAYG, &u.Capped, &u.CappedSlow)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Usage{}, nil
+	}
+	return u, err
+}
 
 // MonthlyBytes returns the persisted byte count for a given month.
 func (m *Meter) MonthlyBytes(ctx context.Context, serverID string, month time.Time) (int64, error) {
@@ -381,8 +425,7 @@ func (m *Meter) stageLocked(now time.Time) {
 			p = &counter{}
 			m.pending[k] = p
 		}
-		p.BytesIn += c.BytesIn
-		p.BytesOut += c.BytesOut
+		p.merge(*c)
 	}
 	m.counters = make(map[string]*counter, len(m.counters))
 	limit := m.MaxBuffered
@@ -411,8 +454,7 @@ func (m *Meter) coarsenLocked() {
 			t = &counter{}
 			merged[mk] = t
 		}
-		t.BytesIn += c.BytesIn
-		t.BytesOut += c.BytesOut
+		t.merge(*c)
 	}
 	m.pending = merged
 }
@@ -464,7 +506,10 @@ func (m *Meter) flushOne(ctx context.Context) (more bool, err error) {
 	m.inflight = nil
 	for k, c := range batch.entries {
 		if mt, ok := m.months[k.server]; ok && mt.month.Equal(MonthStart(k.bucket)) {
-			mt.bytes += c.BytesIn + c.BytesOut
+			mt.usage.Full += c.Usage.Full
+			mt.usage.PAYG += c.Usage.PAYG
+			mt.usage.Capped += c.Usage.Capped
+			mt.usage.CappedSlow += c.Usage.CappedSlow
 			m.months[k.server] = mt
 		}
 	}
@@ -509,6 +554,18 @@ func (m *Meter) write(ctx context.Context, id string, batch map[bucketKey]counte
                 bytes_in  = bandwidth_monthly.bytes_in  + EXCLUDED.bytes_in,
                 bytes_out = bandwidth_monthly.bytes_out + EXCLUDED.bytes_out
         `, k.server, MonthStart(k.bucket), c.BytesIn, c.BytesOut); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `
+            INSERT INTO relay_usage_monthly (server_id, month, bytes_full, bytes_payg, bytes_capped, bytes_capped_slow)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ON CONFLICT (server_id, month) DO UPDATE SET
+                bytes_full        = relay_usage_monthly.bytes_full        + EXCLUDED.bytes_full,
+                bytes_payg        = relay_usage_monthly.bytes_payg        + EXCLUDED.bytes_payg,
+                bytes_capped      = relay_usage_monthly.bytes_capped      + EXCLUDED.bytes_capped,
+                bytes_capped_slow = relay_usage_monthly.bytes_capped_slow + EXCLUDED.bytes_capped_slow,
+                updated_at        = now()
+        `, k.server, MonthStart(k.bucket), c.Usage.Full, c.Usage.PAYG, c.Usage.Capped, c.Usage.CappedSlow); err != nil {
 			return err
 		}
 	}

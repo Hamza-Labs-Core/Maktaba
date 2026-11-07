@@ -3,8 +3,10 @@ package components
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,5 +256,89 @@ func BenchmarkCapabilities(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		s := c.Snapshot()
 		_ = s.Body(i%2 == 0)
+	}
+}
+
+// withDirect is the embedded catalog with story 50.15's cloud.direct and its remote_access
+// group (story 50.35), as 50.15 adds them.
+func withDirect(t *testing.T) *components.Catalog {
+	t.Helper()
+	raw := string(components.Raw())
+	raw = strings.Replace(raw, "feature_any = {}", `feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }`, 1)
+	raw += `
+[[component]]
+id        = "cloud.direct"
+kind      = "loop"
+group     = "system"
+title_key = "components.cloud.direct.title"
+desc_key  = "components.cloud.direct.desc"
+loops     = ["api:direct_listener"]
+requires  = ["cloud.link"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+features  = ["remote_access"]
+since     = "0.3.93"
+`
+	cat, err := components.Load([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cat
+}
+
+// Story 50.35 T01: remote_access is on when cloud.link is on and either cloud.relay or
+// cloud.direct is; off, an admin sees both members, with the first one's reason.
+func TestRemoteAccessIsOnWhenAnyPathIs(t *testing.T) {
+	cat := withDirect(t)
+	for _, c := range []struct {
+		link   bool
+		relay  string // on, off, licence (on, no cloud_relay flag)
+		direct bool
+		on     bool
+		reason string
+	}{
+		{true, "on", true, true, ""},
+		{true, "on", false, true, ""},
+		{true, "off", true, true, ""},
+		{true, "licence", true, true, ""}, // a Free home with direct access
+		{true, "off", false, false, ReasonSwitchedOff},
+		{true, "licence", false, false, ReasonLicenceMissing},
+		{false, "on", true, false, ReasonSwitchedOff},
+		{false, "licence", true, false, ReasonSwitchedOff},
+		{false, "off", false, false, ReasonSwitchedOff},
+	} {
+		d := map[string]store.Desired{}
+		for _, comp := range cat.Components() {
+			if comp.Switchable {
+				d[comp.ID] = store.Desired{ID: comp.ID, Want: components.WantEnabled, Generation: 1}
+			}
+		}
+		want := func(on bool) string {
+			if on {
+				return components.WantEnabled
+			}
+			return components.WantInstalled
+		}
+		setWant(d, "cloud.link", want(c.link), false)
+		setWant(d, "cloud.relay", want(c.relay != "off"), false)
+		setWant(d, "cloud.direct", want(c.direct), false)
+		licensed := func(flag string) bool { return flag != "cloud_relay" || c.relay != "licence" }
+		r := Resolve(cat, d, licensed, false)
+		name := fmt.Sprintf("link %v relay %s direct %v", c.link, c.relay, c.direct)
+		if r.Features["remote_access"] != c.on {
+			t.Errorf("%s: remote_access %v, want %v", name, r.Features["remote_access"], c.on)
+			continue
+		}
+		if c.on {
+			continue
+		}
+		by := r.Off["remote_access"]
+		if by.Reason != c.reason {
+			t.Errorf("%s: reason %q, want %q", name, by.Reason, c.reason)
+		}
+		if c.link && !slices.Equal(by.Components, []string{"cloud.relay", "cloud.direct"}) {
+			t.Errorf("%s: off by %v, want both members", name, by.Components)
+		}
 	}
 }

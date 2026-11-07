@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,6 +56,10 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 	anon := e.client()
 
 	routes := adminRoutes(t, e.router)
+	// the problem reports homes sent (53.16): a home admin's cloud token reads none of them
+	if !slices.ContainsFunc(routes, func(rt [2]string) bool { return rt[1] == "/v1/admin/reports" }) {
+		t.Fatalf("the walk missed /v1/admin/reports: %v", routes)
+	}
 	for _, rt := range routes {
 		method, path := rt[0], concrete(rt[1], victimID)
 		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
@@ -81,6 +86,11 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 		method, path := rt[0], concrete(rt[1], victimID)
 		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
 		r := admin.do(method, path, body)
+		// the cloud's log routes answer 503 logs_unavailable with no index on W (53.17): past
+		// the gate, and saying why
+		if r.code == http.StatusServiceUnavailable && r.errCode() == "logs_unavailable" {
+			continue
+		}
 		if r.code == http.StatusUnauthorized || r.code == http.StatusForbidden || r.code >= 500 {
 			t.Errorf("service admin %s %s = %d %s", method, path, r.code, r.body)
 		}
@@ -163,8 +173,9 @@ func TestAdminSuspendAndConsole(t *testing.T) {
 	if sv["total"].(float64) != 1 || sv["servers"].([]any)[0].(map[string]any)["owner_email"] != email {
 		t.Fatalf("servers: %v", sv)
 	}
-	e.exec(`UPDATE users SET plan = 'pro' WHERE id = $1`, tid)
-	e.exec(`INSERT INTO subscriptions (user_id, plan, status) VALUES ($1, 'pro', 'active')`, tid)
+	withPrices(t)
+	e.exec(`UPDATE users SET plan = 'basic' WHERE id = $1`, tid)
+	e.exec(`INSERT INTO subscriptions (user_id, plan, status) VALUES ($1, 'basic', 'active')`, tid)
 	rev := admin.mustStatus(admin.do("GET", "/v1/admin/revenue", nil), 200).json(t)
 	if rev["mrr_cents"].(float64) != 500 || rev["active_paid"].(float64) != 1 {
 		t.Fatalf("revenue: %v", rev)

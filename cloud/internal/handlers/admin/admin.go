@@ -213,10 +213,6 @@ func (d *Deps) AccountDetail(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "load usage", err)
 		return
 	}
-	tier, ok := billingpkg.Tiers[u.Plan]
-	if !ok {
-		tier = billingpkg.Tiers[billingpkg.PlanFree]
-	}
 	active, err := d.Sessions.CountActive(ctx, id)
 	if err != nil {
 		d.fail(w, r, "count sessions", err)
@@ -240,7 +236,7 @@ func (d *Deps) AccountDetail(w http.ResponseWriter, r *http.Request) {
 		"account":         acct,
 		"subscription":    sub,
 		"servers":         servers,
-		"usage":           map[string]any{"month": month.Format("2006-01"), "used_bytes": used, "limit_bytes": tier.BandwidthBytesPerMo},
+		"usage":           map[string]any{"month": month.Format("2006-01"), "used_bytes": used, "limit_bytes": billingh.UsageLimit(u.Plan)},
 		"sessions_active": active,
 		"abuse":           signals,
 		"audit":           entries,
@@ -602,8 +598,8 @@ func (d *Deps) Revenue(w http.ResponseWriter, r *http.Request) {
 			d.fail(w, r, "revenue scan", err)
 			return
 		}
-		if t, ok := billingpkg.Tiers[p.Plan]; ok && t.PricePerMonthCents > 0 {
-			p.MRRCents = int64(p.Active) * int64(t.PricePerMonthCents)
+		if t, ok := billingpkg.Tiers[p.Plan]; ok && t.PriceCents != nil && *t.PriceCents > 0 {
+			p.MRRCents = int64(p.Active) * int64(*t.PriceCents)
 			paid += p.Active
 		}
 		mrr += p.MRRCents

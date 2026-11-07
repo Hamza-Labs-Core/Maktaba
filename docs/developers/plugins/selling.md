@@ -3,8 +3,10 @@
 > **Status:** the store's payments side is **on `main`**: the payment provider interface and
 > registry, the store's own ledger, refunds, payouts and signed entitlements, with a test
 > provider and an Adyen for Platforms module that are not connected to any live account.
-> Buying needs the store itself (Phase 2), which is not built yet, so nothing can be bought
-> today. The design is in story 54.19 of
+> The store service and linking a home (Phase 2) are on `main` too, and so is the home's
+> side of entitlements: the store answers a linked home's entitlements, the home checks them
+> offline, and a paid plugin without one waits. Buy in the home's Browse comes with the store
+> browser (54.18), so nothing can be bought yet. The design is in story 54.19 of
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md).
 
 ## What it costs and what you get
@@ -68,6 +70,13 @@ length changes nothing at all. Without a valid entitlement your plugin is *Waiti
 (`entitlement_missing`) on that home: its queue and data are kept, and it comes back by
 itself when a new entitlement arrives. A copy of a paid package on another home installs but
 stays *Waiting*.
+
+**When it checks.** The home asks the store for its entitlements daily (signed with its own
+home store key; no account password, no cloud), and every 15 seconds for 15 minutes after a
+Buy it started. Settings → Plugins → Store account lists the paid plugins the home holds, each
+with its date, and **Check for purchases now** asks at once. A plugin is paid when its
+manifest's `price` names a product (anything but `free`): test your plugin with `price =
+"free"` until you list it for sale.
 
 Your plugin never handles payment: no capability touches money, and no string, panel or call
 can show a price, a paywall or a link.

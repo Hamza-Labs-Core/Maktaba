@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba Cloud's plans are Free, Basic and Pro (Epic 50 story 50.19, part 1).** Only the
+  relay is paid, and a paid plan never cuts remote play off. Free has no relay (direct access
+  will be free on every plan); Basic relays at about 3 Mbps on 2 devices with 500 GB a month of
+  fair use, after which streams play slower; Pro relays at full quality for an allowance. The
+  Family plan is gone: accounts on the old Pro are now Basic, those on Family are Pro. Prices
+  are not set yet, so paid plans stay "coming soon". The relay counts each home's bytes by
+  quality mode, and no longer refuses a home for its bytes.
 - **Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3).**
   Whisper and the second listen run in `tv.maktaba.transcription`, in an `ml` runner beside
   each transcription worker that holds the model and opens the GPU; the search index,
@@ -279,6 +286,12 @@ build fails when the two differ.
   for one refresh. The tray now reads the record again for a moment before it treats it as
   gone.
 
+- **Maktaba's built-in plugins run in their runners again (Epic 54, story 54.23).** Since
+  0.3.93 every first-party runner (light, fp, ml, index) exited about 0.2 s after it
+  started, on a circular import, and was marked failed after five restarts; the worker ran
+  the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
+  runner. The runners start again, and a test imports each entry point in a fresh process.
+
 ### Security
 
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
@@ -311,6 +324,18 @@ build fails when the two differ.
   by a hash, never its address, and never logs an email or a token. Every process serves its
   error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
   each runbook's Check step links to a saved search.
+
+- **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
+  (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
+  Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
+  Then **Report a problem** on the web, Apple and Android apps offers **Also send to Maktaba**,
+  unticked, and an admin can send any report after seeing exactly what leaves the home.
+  Names, video titles, file names, library folders and addresses are removed first, and the
+  person shows as user-1. The home sends it through its relay agent and keeps trying for 7
+  days when the cloud can't be reached. Maktaba keeps it for 90 days; its reply shows in the
+  report and in the sender's **My reports**; **Delete what Maktaba has** deletes every report
+  of the home there. The cloud's service admin reads, triages and answers them at
+  **/admin/reports**; a home admin's cloud account cannot.
 
 - **The Player for Windows and Linux has Report this on its error screens and says what
   happened to its last crash.** An error's **Report this** opens Report a problem with that
@@ -462,6 +487,13 @@ build fails when the two differ.
   The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
   CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
   measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
+- **Direct remote access, the cloud's side (Epic 50, story 50.15, part 1).** Maktaba Cloud can
+  give each home its own HTTPS names under separate direct-name domains (never maktaba.tv): a
+  name server (`--role dns`) that computes each name's address and serves the ACME challenges
+  and CAA, certificates ordered from a home's own CSR (Let's Encrypt within each domain's weekly
+  budget, then ZeroSSL, then Google Trust Services; a home keeps its domain), an outside check
+  every 15 minutes, and the home list's HTTPS `direct` connection once it passes. Free on every
+  plan. Off until the domains exist; the home's side follows.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -1078,6 +1110,15 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Paid plugins wait for their purchase (Epic 54, story 54.19).** A home linked to a store
+  account fetches its entitlements from the store daily, signed with its own home store key
+  (and every 15 seconds for 15 minutes after a Buy), checks each offline against the store
+  keys it verified (an entitlement key, this home and its key, valid now with a 72-hour grace),
+  and keeps the ones that hold. A plugin whose manifest names a price waits ("This plugin needs
+  a purchase") without one: its queue and data are kept, and it comes back by itself when a
+  purchase arrives. A refund ends it at the next check; a store outage changes nothing for 31
+  days, a Maktaba Cloud outage nothing at all. Settings → Plugins → Store account lists the
+  purchases held, with **Check for purchases now**. Migration 0204.
 
 - **The desktop apps report problems and send crash reports to the home.** Maktaba's tray and
   Help menu have **Report a problem…**, which opens the web app's form. A panic of the app
@@ -1128,6 +1169,37 @@ build fails when the two differ.
   container of its own, started with its internet off and handed the package by the store,
   instead of a GitHub Actions job. It is turned on by a deploy setting; the GitHub Actions
   runner stays the default, and a runner that fails refuses the version.
+
+- **Each release embeds the plugin store's current lists (Epic 54, #755).** The release run
+  fetches the store's key list and revocation list, verifies them by the chain of trust and
+  builds them into every binary of the release, so a home that never reaches the store still
+  trusts store-signed files and knows the plugins the store withdrew. It fails closed: a list
+  that cannot be fetched, does not verify, has expired or is older than the committed copy
+  stops the release. Until the plugin root keys exist it embeds nothing.
+
+- **The plugin store browser, listing pages, ratings and reports (Epic 54, story 54.18).**
+  Settings → Plugins → Browse the store shows the catalog this home keeps, only the versions
+  this server's version, plugin API and platform can run (a switch shows those that need a
+  newer Maktaba), searched in English and Arabic with letter forms and diacritics folded, by
+  category, sorted by rating, installs or newest. A plugin's page shows its words, what it can
+  do in Maktaba's own words, its review level, the rating (shown from 5 ratings), its versions
+  and Install. A store account linked to a home that has had the plugin for 24 hours can rate
+  it once (1 to 5 stars, optional text, editable); the developer can reply once; a review can
+  be reported and hidden by the store's reviewers. Anyone can report a plugin; malware and
+  data misuse reports alert the store admins and lead the moderation queue, and the reporter
+  hears the outcome. plugins.maktaba.tv lists every plugin and has a page per plugin, in
+  English and Arabic (right to left), rendered on the server from the signed catalog, with
+  Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
+  review is plain text.
+
+- **The store browser draws a plugin's flow (Epic 54, stories 54.18 and 54.41).** Settings →
+  Plugins → Browse the store shows, for a plugin in a flow, the whole flow drawn with the events
+  it publishes and the ones it listens to, from the store's signed catalog. The store's review
+  and listing pages now draw flows with the same chart as the home.
+
+- **Open in my Maktaba works without an app (Epic 54, story 54.18, #757).** A plugin's page on
+  plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
+  remembers it in that browser only, and opens the home's Browse on the plugin.
 
 ### Fixed
 
@@ -1683,6 +1755,15 @@ build fails when the two differ.
   shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
   app's dialogs follow the session's language (English or Arabic).
 
+- **Plugins from the command line, developer mode and `mkp run` (Epic 54, stories 54.10 §4,
+  §5 and 54.12).** `maktaba-server plugins list|show|install|update|enable|disable|start|stop|
+  rollback|remove|grants|policy` does what Settings → Plugins does, for a home without a
+  browser, with the components CLI's `--yes`, `--json`, `--dsn` and exit codes.
+  `maktaba-server plugins dev <folder>` installs a plugin folder as Development and reloads it
+  on every save (removed when it stops, unless `--keep`). `mkp run <folder> --home
+  http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
+  developer's machine. maktaba.dev: Testing and packaging.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -2221,6 +2302,12 @@ build fails when the two differ.
 - **No stale page after an update.** The service worker carries each build's stamp, pages load
   from the network first, and a page an older release left open reloads once instead of going
   blank.
+
+- **A plugin runner starts on a Mac whose data folder has a long path (Epic 54, story
+  54.23).** A runner's socket then lives under `/tmp`, which macOS keeps at `/private/tmp`;
+  the runner's sandbox named the first and was refused the second, so the runner exited
+  about 10 s after it started and its stages ran in the worker. The sandbox now names the
+  sockets and the run folder by their real paths.
 
 ## [0.2.0] - 2026-10-19
 

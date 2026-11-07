@@ -1,10 +1,12 @@
 // My reports (Epic 53 story 53.15, /account/reports): the reports this person sent, with
-// their status and the admin's reply. Never the home's side, and never anyone else's.
+// their status and the admin's reply, and whether it also went to Maktaba and Maktaba's
+// reply (story 53.16). Never the home's side, and never anyone else's.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { useI18n } from "../../lib/i18n";
 import { listReports, type ReportSummary } from "../../lib/problemReports";
+import { MaktabaStatus } from "./MaktabaStatus";
 
 export function MyReports() {
   const { t, formatDate } = useI18n();
@@ -28,6 +30,7 @@ export function MyReports() {
           <strong>#{r.id}</strong> {t(`report.category.${r.category}`)} · {formatDate(r.at)} ·{" "}
           {t(`report.status.${r.status}`)}
           {r.reply && <p data-testid="my-report-reply">{r.reply}</p>}
+          <MaktabaStatus m={r.maktaba} />
         </Card>
       ))}
     </section>

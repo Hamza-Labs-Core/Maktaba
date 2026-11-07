@@ -53,6 +53,16 @@ encode it) against their times on the reference, clamped to 1–4, as `logbench.
 does. The report shows both loops' times (`_runner.calibration`). The `log-bench` job runs
 it after the Go benches and keeps its numbers (`logbench-python.json`).
 
+The runner's factor also takes its tail: the p99 of the same scrub-and-encode work timed in
+small chunks, against the reference's (7.3 µs). On a slow runner the tail grows more than the
+total does; a factor from the totals alone left the p99 budget too tight there (CI, factor 2.70:
+p99 54.6 µs against 54.0, with logging 2.8 times slower at p50 and 3.3 times at p99).
+
+It runs three rounds and is judged on the one with the lowest p99 (`LOGBENCH_PY_ROUNDS`; every
+round's p99 is in the report): a shared runner's other tenants only add time, as the
+calibration's best of three says. One noisy round on a slow runner failed a pull request that
+did not touch the logger (p99 56.5 µs against 54).
+
 Over budget it fails in CI's `log-bench` job (`LOGBENCH_PY_STRICT=1`) and warns elsewhere,
 as the story's rollout starts a budget. The nightly Mac only warns: on that 3-core VM a p99
 is 6–10 times its p50 for the Go and the Python logger alike (issue #807).
@@ -78,6 +88,11 @@ class of Mac, an M3 Ultra. CI's Linux runner went from 55 µs at p50 and 82 µs 
   byte, so a line is encoded once.
 - **The time stamp.** `ts` is written as structlog's ISO stamper wrote it, with the date and
   time formatted once a second.
+- **The context.** The merge of bound fields reads structlog's own context variables only,
+  where structlog's copied every variable of the context (asyncio's and the libraries'): about
+  2 µs a line with a few dozen around.
+- **The chain.** Eight small processors are two (`_head`, `_tail`) around the redaction, and
+  the stack and the exception are rendered only on a line that has one.
 
 The factor was wrong as well. The hashing loop's reference was 0.20 s, about 3.6 times the
 reference machine's 0.055 s, so every runner up to that slow came out at factor 1. That
@@ -88,6 +103,10 @@ merge (≈ 1.6 µs), the scrub of a value that holds a secret (≈ 2.6 µs), and
 the write.
 
 ## Every night on a Mac
+
+The Go logger's p99 is judged the same way as the Python one: the best of three rounds, every
+round in the report (`p99_ns_rounds`). On the nightly macOS runner a single round's p99 was 6
+to 10 times its p50 for both loggers (issue #807): the runner's tail, not the logger's.
 
 `.github/workflows/nightly-perf.yml` runs the Go and Python benches at 04:17 UTC on a
 macOS arm64 runner (the reference class), keeps the numbers for 90 days (`logbench-nightly`),

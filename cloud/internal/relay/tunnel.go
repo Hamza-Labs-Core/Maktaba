@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -46,6 +48,10 @@ type Tunnel struct {
 	inflight atomic.Int64
 	// tracked: in its registry's open set (Registry.track)
 	tracked atomic.Bool
+	// direct remote access (story 50.15): the home speaks its frames (WithDirect)
+	direct DirectHandler
+	from   netip.Addr
+	logger *slog.Logger
 }
 
 // tunnelSeq numbers the tunnels as they are made: the wall clock in
@@ -164,6 +170,8 @@ func (t *Tunnel) dispatch(f Frame) {
 			s.fail(err)
 			go t.closeStream(f.StreamID, err.Error())
 		}
+	case KindMetaEndpoints, KindDirectCSR, KindDirectCheckNow:
+		go t.onDirect(f)
 	case KindHeartbeat:
 		// Heartbeat data is consumed by the supervisor goroutine via a
 		// callback wired at construction time in a future story.
