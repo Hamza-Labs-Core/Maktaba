@@ -40,3 +40,5 @@ api:update_checker
 api:updates_discoverer
 api:updates_scheduler
 api:updates_driver
+# logs.index (since 0.3.83, on in Full: the error groups' notifier, 53.10)
+api:errors_notifier
