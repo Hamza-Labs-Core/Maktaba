@@ -58,12 +58,15 @@ class FinishResult:
 
 
 async def last_success(db: Any, job: Job) -> Any | None:
-    """The newest earlier ``done`` row of the same subject and stage that counts as a success."""
-    outs = ",".join(f"'{o}'" for o in _SUCCESS_OUTCOMES)
+    """The newest earlier ``done`` row of the same subject and stage that counts as a success.
+
+    A fixed text (a first-party plugin's stage runs it as a named statement, story 54.31):
+    the outcomes are :data:`_SUCCESS_OUTCOMES`, which a test holds it to."""
     return await db.fetchrow(
         "SELECT id, stage_version, input_hash, output_hash FROM processing_jobs"
         " WHERE subject_kind = $1 AND subject_id = $2 AND stage = $3 AND state = 'done'"
-        f" AND id <> $4 AND outcome IN ({outs}) ORDER BY id DESC LIMIT 1",
+        " AND id <> $4 AND outcome IN ('changed','unchanged','skipped_unchanged','imported')"
+        " ORDER BY id DESC LIMIT 1",
         job.subject_kind,
         uid(job.subject.id),
         job.stage,

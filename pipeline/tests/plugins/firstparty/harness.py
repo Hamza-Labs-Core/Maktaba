@@ -649,7 +649,7 @@ async def parity(
     await admin.close()
     tmp = Path(tempfile.mkdtemp(prefix="mkp-"))
     proc: subprocess.Popen[str] | None = None
-    task: asyncio.Task[None] | None = None
+    tasks: list[asyncio.Task[None]] = []
     sides: list[Database] = []
     try:
         for n in names:
@@ -703,19 +703,27 @@ async def parity(
         from maktaba_plugin_runner.server import library_roots
 
         area_dirs = json.loads((run_dir / native.AREAS_FILE).read_text()).get("areas") or {}
-        runner = Runner(
-            group=group,
-            api_socket=str(api_sock),
-            stages=served,
-            plugin_of={s: firstparty.by_stage(s).id for s in stages},  # type: ignore[union-attr]
-            bundle=firstparty.bundle_digest(),
-            areas=areas,
-            library_roots=library_roots(area_dirs),
-        )
-        sock = run_dir / f"runner-{group}.sock"
-        task = asyncio.create_task(runner.serve(sock))
+        # one runner per group the stages run in (classify's books is in net, story 54.31;
+        # its other stages in light); ``group`` for a stage with none
+        by_group: dict[str, dict[str, str]] = {}
+        for s, entry in served.items():
+            by_group.setdefault(firstparty.runner_group(s) or group, {})[s] = entry
+        socks = []
+        for g, members in sorted(by_group.items()):
+            runner = Runner(
+                group=g,
+                api_socket=str(api_sock),
+                stages=members,
+                plugin_of={s: firstparty.by_stage(s).id for s in members},  # type: ignore[union-attr]
+                bundle=firstparty.bundle_digest(),
+                areas=areas,
+                library_roots=library_roots(area_dirs),
+            )
+            sock = run_dir / f"runner-{g}.sock"
+            socks.append(sock)
+            tasks.append(asyncio.create_task(runner.serve(sock)))
         for _ in range(200):
-            if sock.exists() and api_sock.exists():
+            if all(x.exists() for x in socks) and api_sock.exists():
                 break
             await asyncio.sleep(0.02)
         native.forget_hello()
@@ -735,7 +743,7 @@ async def parity(
         native.forget_hello()
         native._FP_TOKENS.clear()
         native._AREAS_WRITTEN.clear()
-        if task is not None:
+        for task in tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

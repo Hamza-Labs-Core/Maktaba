@@ -24,7 +24,7 @@ runner    = "light"
 component = "classify"
 db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "transcript_segments", "transcripts", "video_signals", "videos", "youtube_channels", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
 db.write  = ["books", "clip_checks", "clip_group_items", "clip_groups", "episode_tags", "promo_links", "season_style", "season_tags", "series", "series_books", "series_episodes", "series_seasons", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
-settings  = ["groups", "detect", "tagcheck", "books"]
+settings  = ["groups", "detect", "tag", "tagcheck", "books"]
 compute   = ["llm"]
 # review_pages: reads the small thumbnails, writes the library's page in the reports folder
 files.read  = ["data.thumbnails"]
