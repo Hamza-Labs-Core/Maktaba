@@ -663,7 +663,7 @@ func (u *updates) setAPI(procs []supervisor.Process) {
 // the api, the pipeline and the streaming role stop first (their writes, and the locks the
 // ALTERs wait for), then `maktaba-api migrate down-to schema` runs with this release's
 // migrations, the ones that made the schema.
-func (u *updates) migrateDown(ctx context.Context, j *updater.Journal, schema int64) error {
+func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema int64) error {
 	u.mu.Lock()
 	api := u.api
 	u.mu.Unlock()
