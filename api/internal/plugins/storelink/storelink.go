@@ -392,3 +392,57 @@ func (s *signer) headerWith(method, path string, body []byte, at time.Time, nonc
 	sig := base64.StdEncoding.EncodeToString(ed25519.Sign(s.key, []byte(msg)))
 	return fmt.Sprintf("MKS-Home id=%s, ts=%s, nonce=%s, sig=%s", s.homeID, ts, nonce, sig)
 }
+
+// PaidHomeHeader names this home to the CDN when it downloads a paid package (bound in the
+// signed URL).
+const PaidHomeHeader = "X-Maktaba-Home"
+
+// PaidPackage downloads a paid plugin's package (54.19 §6): it asks the store, signed with
+// the home store key, for a download URL (issued only against a valid entitlement, for 10
+// minutes), checks the URL is the CDN's /paid/<sha256>, and fetches it naming this home. At
+// most maxBytes.
+func (l *Link) PaidPackage(ctx context.Context, cdnBase, pluginID, sha string, maxBytes int64) ([]byte, error) {
+	s, err := l.LoadState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s == nil {
+		return nil, &Error{Status: http.StatusConflict, Code: CodeNotLinked, Msg: "this home is not linked"}
+	}
+	body, _ := json.Marshal(map[string]string{"plugin_id": pluginID, "sha256": sha})
+	resp, b, err := l.Signed(ctx, http.MethodPost, "/v1/homes/"+s.HomeID+"/downloads", body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, storeError(resp, b)
+	}
+	var ans struct {
+		URL string `json:"url"`
+	}
+	want := strings.TrimRight(cdnBase, "/") + "/paid/" + sha + "?t="
+	if err := json.Unmarshal(b, &ans); err != nil || !strings.HasPrefix(ans.URL, want) || strings.ContainsAny(ans.URL, " \r\n") {
+		return nil, &Error{Status: http.StatusBadGateway, Code: CodeUnreachable, Msg: "the store's answer was not a download URL for this file"}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ans.URL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(PaidHomeHeader, s.HomeID)
+	if l.Version != "" {
+		req.Header.Set("User-Agent", "Maktaba/"+l.Version)
+	}
+	c := l.HTTP
+	if c == nil {
+		c = &http.Client{Timeout: 2 * time.Minute}
+	}
+	r, err := c.Do(req)
+	if err != nil {
+		return nil, &Error{Status: http.StatusBadGateway, Code: CodeUnreachable, Msg: err.Error()}
+	}
+	defer r.Body.Close()
+	if r.StatusCode != http.StatusOK {
+		return nil, &Error{Status: http.StatusBadGateway, Code: CodeUnreachable, Msg: fmt.Sprintf("the CDN answered %d", r.StatusCode)}
+	}
+	return io.ReadAll(io.LimitReader(r.Body, maxBytes))
+}
