@@ -343,5 +343,12 @@
   "homes.manage": "Manage",
   "homes.notLinked": "Your account here is not linked to an account on this home: owning a home is not an account in it. Sign in on the home and link this account from its Account page.",
   "homes.openHome": "Open the home",
-  "homes.rights": "The home decides what you can do there: you are your own account on it, watching only through the cloud unless you are an admin of the home who allowed managing for your own link."
+  "homes.rights": "The home decides what you can do there: you are your own account on it, watching only through the cloud unless you are an admin of the home who allowed managing for your own link.",
+  "status.details": "Details",
+  "status.close": "Close",
+  "banner.relay.degraded": "Remote access is slower than usual. Playback at home is not affected.",
+  "banner.relay.outage": "Remote access is down. We're working on it. Playback at home still works.",
+  "banner.api.degraded": "Signing in with Maktaba Cloud is slower than usual.",
+  "banner.api.outage": "Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password.",
+  "banner.maintenance": "Planned maintenance on {date}, {start}–{end}. Remote play may pause for a few seconds."
 }

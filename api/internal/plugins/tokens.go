@@ -91,6 +91,14 @@ type Invocation struct {
 	Exp             time.Time
 	// limits from the installed manifest
 	DataBytes int64
+	// Trusted: one of Maktaba's own first-party plugins (story 54.22), whose calls are
+	// its named statements (trusted/*); FirstParty is its embedded manifest. LibraryID is
+	// the job's library (the scope of a library statement). ReadOnly: the fingerprint
+	// runner's token, which runs read statements only (54.24 §4).
+	Trusted    bool
+	FirstParty *FirstParty
+	LibraryID  string
+	ReadOnly   bool
 	// the stages of this plugin, by queue name, and what each may request
 	MayRequest map[string][]string
 	// Lineage is the job's (54.40 §3): every request and event it makes extends it
@@ -156,6 +164,9 @@ type Tokens struct {
 	// by sha256 hex of the token
 	byHash map[string]*Invocation
 	byID   map[string]*Invocation
+	// OnEnd is told each invocation that ends (the statements executor rolls back what
+	// it left open)
+	OnEnd func(id string)
 }
 
 // NewTokens answers an empty token store over db.
@@ -204,6 +215,9 @@ func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
 	}
 	pluginID, ok := strings.CutPrefix(ext.String, "plugin:")
 	if !ok || pluginID == "" {
+		if fp := FirstPartyByStage(stage); fp != nil && !ext.Valid {
+			return t.mintFirstParty(ctx, fp, jobID, stage, kind, subject)
+		}
 		return nil, refuse(409, CodeNotPluginJob, "the job's stage is not a plugin's")
 	}
 	var version string
@@ -271,6 +285,60 @@ func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
 		Libraries: nonNil(g.Libraries), AllLibraries: g.AllLibraries, Exp: inv.Exp, Lineage: lineage}, nil
 }
 
+// trustedTTL is how long a first-party token lives: its job's lease, not a plugin's
+// timeout, ends it (the worker ends it when the job ends).
+const trustedTTL = 6 * time.Hour
+
+// mintFirstParty is a token for a job of one of Maktaba's own plugins (story 54.22): no
+// grants row (turning its component on is the decision, 54.22 §4); its public
+// capabilities are its manifest's, every library, and its named statements.
+func (t *Tokens) mintFirstParty(ctx context.Context, fp *FirstParty, jobID int64, stage, kind, subject string) (*Minted, error) {
+	var lib sql.NullString
+	if err := t.DB.QueryRowContext(ctx, `SELECT CAST(library_id AS text) FROM processing_jobs WHERE id = $1`, jobID).Scan(&lib); err != nil {
+		return nil, err
+	}
+	return t.mintTrusted(ctx, fp, jobID, stage, kind, subject, lib.String, false)
+}
+
+// MintFingerprints is the fingerprint runner's token for one first-party plugin (story
+// 54.23 §4, 54.24 §4): no job, the catalog as its subject, read statements only.
+func (t *Tokens) MintFingerprints(ctx context.Context, pluginID string) (*Minted, error) {
+	fp := FirstPartyByID(pluginID)
+	if fp == nil {
+		return nil, refuse(404, CodeNotInstalled, pluginID)
+	}
+	return t.mintTrusted(ctx, fp, 0, "", "catalog", "", "", true)
+}
+
+func (t *Tokens) mintTrusted(ctx context.Context, fp *FirstParty, jobID int64, stage, kind, subject, library string, readOnly bool) (*Minted, error) {
+	var caps []string
+	if c, ok := fp.Manifest["capabilities"].(map[string]any); ok {
+		caps = append(strs(c["required"]), strs(c["optional"])...)
+	}
+	now := t.Now()
+	inv := &Invocation{
+		ID: "inv_" + randomHex(12), PluginID: fp.ID, Version: fp.Version, JobID: jobID, Stage: stage,
+		SubjectKind: kind, SubjectID: subject, AllLibraries: true, Grants: caps,
+		Exp: now.Add(trustedTTL), MayRequest: map[string][]string{}, bucket: RateBurst, bucketAt: now,
+		handles: map[uint64]*handle{}, Trusted: true, FirstParty: fp, LibraryID: library, ReadOnly: readOnly,
+	}
+	token := randomHex(32)
+	h := hashToken(token)
+	if jobID > 0 {
+		if _, err := t.DB.ExecContext(ctx, `INSERT INTO plugin_invocations (id, token_hash, plugin_id, version, job_id, stage,
+			subject_kind, subject_id, libraries, all_libraries, grants, grant_generation, exp)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CAST($9 AS uuid[]),true,$10,0,$11)`,
+			inv.ID, h, fp.ID, fp.Version, jobID, stage, kind, subject, pq.Array([]string{}), pq.Array(nonNil(caps)), inv.Exp); err != nil {
+			return nil, err
+		}
+	}
+	t.mu.Lock()
+	t.byHash[h], t.byID[inv.ID] = inv, inv
+	t.mu.Unlock()
+	return &Minted{InvocationID: inv.ID, Token: token, PluginID: fp.ID, Version: fp.Version, Grants: nonNil(caps),
+		Libraries: []string{}, AllLibraries: true, Exp: inv.Exp}, nil
+}
+
 func nonNil(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -296,6 +364,9 @@ func (t *Tokens) Check(ctx context.Context, token string) (*Invocation, *Refusal
 	inv.mu.Unlock()
 	if ended || !t.Now().Before(inv.Exp) {
 		return nil, refuse(401, CodeToken, "the token ended")
+	}
+	if inv.Trusted {
+		return inv, nil // a first-party plugin has no grants row (its component is the switch)
 	}
 	var gen int64
 	err := t.DB.QueryRowContext(ctx, `SELECT generation FROM plugin_grants WHERE plugin_id = $1`, inv.PluginID).Scan(&gen)
@@ -330,6 +401,9 @@ func (t *Tokens) EndCounting(ctx context.Context, id string) (bool, int64) {
 	t.mu.Unlock()
 	if inv == nil {
 		return false, 0
+	}
+	if t.OnEnd != nil {
+		t.OnEnd(id)
 	}
 	inv.mu.Lock()
 	inv.ended = true

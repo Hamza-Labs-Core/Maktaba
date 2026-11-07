@@ -75,6 +75,20 @@ export interface PluginDetail extends Plugin {
   data_mb: number;
 }
 
+/** One of Maktaba's own built-in (first-party) plugins (Epic 54, story 54.22 §4). Its
+ * component's switch on the Components page is its switch: there is no grants dialog. */
+export interface BuiltInPlugin {
+  id: string;
+  name: string;
+  name_ar: string;
+  summary: string;
+  summary_ar: string;
+  component: string;
+  stages: string[];
+  /** fp.trusted.<capability> (and plugins.cap.<name>) words, each with its parameter */
+  capabilities: { key: string; param: string }[];
+}
+
 export interface Policy {
   allow_unreviewed: boolean;
 }
@@ -200,7 +214,8 @@ export const pluginsApi = {
     api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),
   storePoll: () => api.post<StoreLinkStatus>("/api/plugins/store-account/poll"),
   storeUnlink: () => api.delete<{ linked: boolean }>("/api/plugins/store-account"),
-  list: () => api.get<{ plugins: Plugin[]; policy: Policy }>("/api/plugins"),
+  list: () =>
+    api.get<{ plugins: Plugin[]; policy: Policy; built_in?: BuiltInPlugin[] }>("/api/plugins"),
   graph: () => api.get<{ graph: FlowGraph; findings: FlowFinding[] | null }>("/api/plugins/graph"),
   flow: (id: string) => api.get<PluginFlow>(`/api/plugins/${enc(id)}/flow`),
   downstream: (id: string) => api.get<{ stages: string[] }>(`/api/plugins/${enc(id)}/downstream`),

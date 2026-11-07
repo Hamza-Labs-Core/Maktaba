@@ -1,0 +1,76 @@
+/* Plugin panels (story 54.20): Maktaba's own look; logical properties so RTL mirrors. */
+.mkt-ppanels {
+  margin-block: var(--mk-space-6, 24px);
+}
+.mkt-ppanels > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding-block: var(--mk-space-2, 8px);
+}
+.mkt-ppanel {
+  padding: var(--mk-space-4, 16px);
+  margin-block-start: var(--mk-space-3, 12px);
+}
+.mkt-ppanel__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--mk-space-2, 8px);
+  flex-wrap: wrap;
+}
+.mkt-ppanel__head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.mkt-ppanel__by {
+  color: var(--mk-color-text-muted, #666);
+  font-size: 0.85rem;
+}
+.mkt-ppanel__block {
+  margin-block-start: var(--mk-space-3, 12px);
+  overflow-wrap: anywhere;
+}
+.mkt-ppanel__block h4 {
+  margin: 0 0 var(--mk-space-1, 4px);
+  font-size: 0.9rem;
+}
+.mkt-ppanel__kv {
+  display: grid;
+  gap: var(--mk-space-1, 4px);
+  margin: 0;
+}
+.mkt-ppanel__kv > div {
+  display: flex;
+  gap: var(--mk-space-3, 12px);
+}
+.mkt-ppanel__kv dt {
+  color: var(--mk-color-text-muted, #666);
+  min-inline-size: 8rem;
+}
+.mkt-ppanel__kv dd {
+  margin: 0;
+}
+.mkt-ppanel__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mk-space-2, 8px);
+}
+.mkt-ppanel__chip {
+  border: 1px solid var(--mk-color-border, #ccc);
+  border-radius: 999px;
+  padding-inline: var(--mk-space-3, 12px);
+  padding-block: 2px;
+  text-decoration: none;
+  color: inherit;
+}
+.mkt-ppanel__table {
+  inline-size: 100%;
+}
+.mkt-ppanel__image {
+  max-inline-size: 100%;
+  block-size: auto;
+  border-radius: var(--mk-radius-2, 8px);
+}
+.mkt-ppanel__text {
+  margin: 0;
+  white-space: pre-line;
+}

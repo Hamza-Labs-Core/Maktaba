@@ -75,3 +75,29 @@ func TestMintWrongLocalToken(t *testing.T) {
 		t.Fatalf("right token, bad body: %d", w.Code)
 	}
 }
+
+// Epic 54, story 54.23 §4: the fingerprint runner's token is minted by plugin id and
+// purpose, machine only; a body with neither a job nor that purpose is refused, and a
+// plugin this release has no built-in one of is 404.
+func TestMintFingerprintToken(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(f, []byte("right"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("MAKTABA_SUPERVISOR_TOKEN_FILE", f)
+	r := chi.NewRouter()
+	(&Invocations{Tokens: pl.NewTokens(nil)}).Mount(r)
+	for body, want := range map[string]int{
+		`{"plugin_id":"tv.maktaba.nothing"}`:                          400,
+		`{"purpose":"fingerprints"}`:                                  400,
+		`{"plugin_id":"tv.maktaba.nothing","purpose":"fingerprints"}`: 404,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/internal/plugins/invocations", strings.NewReader(body))
+		req.Header.Set(middleware.LocalTokenHeader, "right")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Errorf("%s: %d, want %d", body, w.Code, want)
+		}
+	}
+}

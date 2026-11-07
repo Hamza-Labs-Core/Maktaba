@@ -16,6 +16,13 @@
 /api/                                   @Hamza-Labs-Core/backend
 /streaming/                             @Hamza-Labs-Core/backend
 /pipeline/                              @Hamza-Labs-Core/pipeline
+# Epic 54 Phase 4: Maktaba's own stages as first-party plugins (story 54.27 §4); each plugin
+# folder gets its own line as its wave adds it
+/plugins/first-party/                   @Hamza-Labs-Core/pipeline
+/plugins/sdk/python/                    @Hamza-Labs-Core/pipeline
+/pipeline/src/maktaba_plugin_runner/    @Hamza-Labs-Core/pipeline
+/api/internal/plugins/statements/       @Hamza-Labs-Core/backend
+/tools/plugins/                         @Hamza-Labs-Core/pipeline
 
 # Frontend
 /web/                                   @Hamza-Labs-Core/frontend

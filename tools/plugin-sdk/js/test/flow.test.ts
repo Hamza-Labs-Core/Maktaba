@@ -113,15 +113,17 @@ test("T09: N22, 100 plugins of 20 stages in at most 50 ms", () => {
     }
     members.push(m);
   }
-  // N22 is the check's own time on a home: warm (not V8's first compile of it) and the best
-  // of five, so a runner busy with other jobs does not time its own queue
+  // N22 is the check's own time on a home: warm (not V8's first compile of it), the best
+  // of five, and counted as this process's CPU time, so a runner busy with other jobs does
+  // not time its own queue
   checkMembers(members);
   let took = Infinity;
   let findings: Finding[] = [];
   for (let i = 0; i < 5; i++) {
-    const start = performance.now();
+    const start = process.cpuUsage();
     findings = checkMembers(members).findings;
-    took = Math.min(took, performance.now() - start);
+    const used = process.cpuUsage(start);
+    took = Math.min(took, (used.user + used.system) / 1000);
   }
   assert.ok(took <= 50, `took ${took} ms`);
   assert.ok(hasRefusal(findings));
