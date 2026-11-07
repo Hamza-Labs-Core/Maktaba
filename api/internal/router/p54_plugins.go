@@ -108,6 +108,17 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			link = &storelink.Link{DB: d.DB, Secrets: d.Secrets, StoreURL: os.Getenv("MAKTABA_PLUGIN_STORE_URL"),
 				Version: d.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH, Name: host}
 		}
+		// story 54.19 §6: a linked home's entitlements, fetched with its signature and checked
+		// offline by this machine's supervisor
+		var ents *plugins.Entitlements
+		if sup := plugins.SupervisorFromEnv(); link != nil && sup != nil {
+			ents = &plugins.Entitlements{DB: d.DB, Link: link, Verifier: sup, Logger: logger}
+			ectx := d.Ctx
+			if ectx == nil {
+				ectx = context.Background()
+			}
+			go ents.Run(ectx)
+		}
 		stateDir := os.Getenv("MAKTABA_STATE_DIR")
 		if stateDir == "" && d.DataDir != "" {
 			stateDir = filepath.Join(d.DataDir, "state")
@@ -158,7 +169,7 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			ctxLoop = context.Background()
 		}
 		d.Loops.Declare("plugins_catalog", runner.Bound(ctxLoop, runner.Func(cat.Run)))
-		(&pluginsh.Admin{L: l, Logger: logger, Store: link, Catalog: cat, Server: d.Version, Platform: platform,
+		(&pluginsh.Admin{L: l, Logger: logger, Store: link, Entitlements: ents, Catalog: cat, Server: d.Version, Platform: platform,
 			VerifyPassword: func(ctx context.Context, id, pw string) error {
 				u, err := accounts.GetByID(ctx, id)
 				if err != nil {
