@@ -200,3 +200,85 @@ def test_a_tool_reads_its_own_installation(tmp_path: Path) -> None:
     assert tool_prefixes(str(bundled)) == [str(bundled.parent.parent.resolve())]
     assert tool_prefixes("/opt/homebrew/Cellar/ffmpeg/8.1/bin/ffmpeg") == ["/opt/homebrew"]
     assert tool_prefixes("/usr/bin/ffmpeg") == ["/usr/bin/ffmpeg"]  # never all of /usr
+
+
+NAMES_PROBE = textwrap.dedent(
+    """
+    import json, os, sys
+    from maktaba_plugin_runner import sandbox
+    library, run_dir, guarded = sys.argv[1], sys.argv[2], sys.argv[3] == "1"
+    policy = sandbox.Policy(read=[library], write_named=[library], run_dir=run_dir)
+    out = {}
+    try:
+        out["applied"] = sandbox.apply(policy).level
+    except sandbox.SandboxUnavailable as exc:
+        out["applied"] = "unavailable:" + exc.step
+    if guarded:
+        sandbox.guard_names(policy.write_named)
+    def probe(name, fn):
+        try:
+            fn()
+            out[name] = "allowed"
+        except Exception as exc:
+            out[name] = "denied:" + type(exc).__name__ + ":" + getattr(exc, "code", "")
+    show = os.path.join(library, "show")
+    def subtitle():
+        tmp = os.path.join(show, "ep1.ar.srt.maktaba-tmp")
+        with open(tmp, "w") as f:
+            f.write("1")
+        os.replace(tmp, os.path.join(show, "ep1.ar.srt"))
+    probe("subtitle", subtitle)
+    probe("vtt", lambda: open(os.path.join(show, "ep1.en-GB.vtt"), "w").write("x"))
+    probe("evil", lambda: open(os.path.join(show, "evil.sh"), "w").write("x"))
+    probe("over_video", lambda: open(os.path.join(show, "ep1.mp4"), "w").write("x"))
+    probe("read_video", lambda: open(os.path.join(show, "ep1.mp4"), "rb").read())
+    print(json.dumps(out))
+    """
+)
+
+
+@pytest.mark.parametrize("guarded", [True, False])
+def test_subtitles_write_only_subtitle_names_next_to_a_video(tmp_path: Path, guarded: bool) -> None:
+    """Story 54.29 T04: library.subtitles. With the runner's guard any other name is
+    plugin_scope (both systems); without it, Seatbelt alone refuses it on macOS."""
+    library, run_dir = tmp_path / "lib", tmp_path / "run"
+    (library / "show").mkdir(parents=True)
+    run_dir.mkdir()
+    (library / "show" / "ep1.mp4").write_bytes(b"video")
+    out = subprocess.run(
+        [sys.executable, "-c", NAMES_PROBE, str(library.resolve()), str(run_dir.resolve()),
+         "1" if guarded else "0"],
+        capture_output=True, text=True, timeout=60,
+    )  # fmt: skip
+    assert out.returncode == 0, out.stderr
+    got = json.loads(out.stdout.strip().splitlines()[-1])
+    if str(got["applied"]).startswith("unavailable"):
+        pytest.skip(f"this machine cannot apply the sandbox: {got['applied']}")
+    assert got["subtitle"] == got["vtt"] == got["read_video"] == "allowed", got
+    if guarded:
+        assert got["evil"] == got["over_video"] == "denied:PluginRefused:plugin_scope", got
+    elif sys.platform == "darwin":
+        assert got["evil"].startswith("denied:PermissionError"), got
+        assert got["over_video"].startswith("denied:PermissionError"), got
+    assert (library / "show" / "ep1.ar.srt").read_text() == "1"
+    assert (library / "show" / "ep1.mp4").read_bytes() == b"video"
+
+
+def test_the_light_group_writes_subtitles_by_name_and_thumbnails_in_full() -> None:
+    from maktaba_pipeline.plugins import firstparty
+    from maktaba_plugin_runner.sandbox import policy_for, seatbelt_profile
+
+    light = [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == "light"]
+    p = policy_for(
+        light,
+        areas={"library": "/media/a;/media/b", "data.thumbnails": "/data/thumbnails"},
+        api_socket="/run/api.sock",
+        own_socket="/run/runner-light.sock",
+        run_dir="/run",
+    )
+    assert p.read[:2] == ["/media/a", "/media/b"]
+    assert p.write == ["/data/thumbnails"]
+    assert p.write_named == ["/media/a", "/media/b"]
+    profile = seatbelt_profile(p)
+    assert '(allow file-read* file-write* (subpath "/media/a"))' not in profile
+    assert '(regex #"^/media/a/(.*/)?' in profile

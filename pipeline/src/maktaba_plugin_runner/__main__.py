@@ -108,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     except sandbox.SandboxUnavailable as exc:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))
         return EXIT_SANDBOX
+    sandbox.guard_names(policy.write_named)
     unavailable: dict[str, str] = {}
     entries: dict[str, str] = {}
     for stage, (entry, _) in served.items():

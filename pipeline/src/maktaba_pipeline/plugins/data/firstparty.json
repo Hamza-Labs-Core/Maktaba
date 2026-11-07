@@ -1,5 +1,5 @@
 {
- "digest": "3a7110168e490539cf55f81b314826de32affdf08fd6d11b73ab953b9dd1cede",
+ "digest": "647450d3ea34e3efa65ac80d445cf54709df1418e1cb13f474127fae60c58e90",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -464,10 +464,10 @@
    }
   },
   {
-   "digest": "a94f310d41acc5d20d17b0be0c4de9fc4414259d479396fdd5a135a98ac616dd",
+   "digest": "8cf1440b944d43ae1619fc3a01c0b705b739bca709913702e9a9b904885e3c28",
    "folder": "subtitles",
    "id": "tv.maktaba.subtitles",
-   "manifest": "# tv.maktaba.subtitles: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files.\nschema     = 1\nid         = \"tv.maktaba.subtitles\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.subtitles.name\"\nsummary = \"fp.subtitles.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"subtitles\"\ndb.read   = [\"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"subtitle_files\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"library\"]\n\n[[stage]]\nname         = \"subtitle_gen\"\nsubject      = \"video\"\nexport       = \"subtitle-gen\"\nversion      = 1\nlabel        = \"Subtitle files\"\nsubject_kinds = [\"video\"]\npool         = \"nas_write\"\nlane         = \"speech\"\nlane_order   = 4\nexternal_write = true\nentry        = \"maktaba_fp_subtitles.stages.subtitle_gen:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "manifest": "# tv.maktaba.subtitles: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files.\nschema     = 1\nid         = \"tv.maktaba.subtitles\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.subtitles.name\"\nsummary = \"fp.subtitles.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"subtitles\"\ndb.read   = [\"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"subtitle_files\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"library.subtitles\"]\n\n[[stage]]\nname         = \"subtitle_gen\"\nsubject      = \"video\"\nexport       = \"subtitle-gen\"\nversion      = 1\nlabel        = \"Subtitle files\"\nsubject_kinds = [\"video\"]\npool         = \"nas_write\"\nlane         = \"speech\"\nlane_order   = 4\nexternal_write = true\nentry        = \"maktaba_fp_subtitles.stages.subtitle_gen:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
    "statements": [
     {
      "mode": "read",

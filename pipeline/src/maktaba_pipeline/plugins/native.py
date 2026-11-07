@@ -603,7 +603,9 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
             roots.add(os.path.realpath(local) if os.path.isabs(local) else local)
     # the cache the thumbnail stages write (maktaba_pipeline.thumbnail.small.ROOT)
     thumbs = str(thumbnail_dir_for("x", root=small.ROOT).parent)
-    return {"library": ";".join(sorted(roots)), "data.thumbnails": thumbs}
+    lib = ";".join(sorted(roots))
+    # library.subtitles is the library's folders, written only by subtitle names
+    return {"library": lib, "library.subtitles": lib, "data.thumbnails": thumbs}
 
 
 def areas_digest(doc: dict[str, str]) -> str:

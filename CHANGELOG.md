@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **Thumbnails and subtitle files are made by Maktaba's built-in plugins (Epic 54 wave 2).**
+  The small thumbnail and the chapter frames run in `tv.maktaba.thumbnails`, and subtitle
+  files in `tv.maktaba.subtitles`, in the sandboxed `light` runner: it reads the library,
+  writes only the thumbnail cache and, next to a video, only subtitle files
+  (`<name>.<lang>.srt|vtt`), and runs only ffmpeg. They write the same files byte for byte
+  (the parity proof compares both ways). A runner that cannot start never blocks an update,
+  and a home whose database cannot hold a plugin's role runs the stage in the worker. The
+  chapter frames now follow `MAKTABA_THUMBNAIL_ROOT`, where the server already looked for them.
 - **Four classify stages run as Maktaba's built-in plugin (Epic 54 wave 1).** Promo links,
   clip groups, topic collections and season styles run in `tv.maktaba.classify`, in the
   sandboxed `light` runner with no database password, through its named statements under its

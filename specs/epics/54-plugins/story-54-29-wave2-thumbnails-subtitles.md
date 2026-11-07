@@ -105,3 +105,15 @@ Per stage switch; per release Epic 51 rollback.
 ### Dependencies
 
 54.28 (wave 1 green in a tagged release).
+
+## Built (2026-11-07)
+
+Wave 2 moved `thumb_small` and `chapter_thumbs` into `tv.maktaba.thumbnails` and
+`subtitle_gen` into `tv.maktaba.subtitles` (runner group `light`; roles in migration 0200).
+The small copy's paths moved to `maktaba_pipeline.thumbnail.small`, which the convert, the
+review pages and the mediaintel import read too; the chapter frames use the same cache root
+(`MAKTABA_THUMBNAIL_ROOT`), which the API already read them from. The legacy `thumbnail`
+stage, with the §2 conversion, follows in its own pull request (README §15.12). Paths come
+from the job's own rows rather than a `media_path` call, `library.subtitles` is a Seatbelt
+name rule plus the runner's own guard, and a sandbox refusal runs that job in-process
+(README §15.12). Parity compares the thumbnail cache and the library's files byte for byte.
