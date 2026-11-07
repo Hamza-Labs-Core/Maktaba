@@ -492,11 +492,12 @@ async def test_scan_is_an_engine_stage_whose_edge_names_only_its_new_videos() ->
 
     from maktaba_pipeline.engine.graph import Subject, get_stage
     from maktaba_pipeline.engine.propagate import resolve_edge
-    from maktaba_pipeline.engine.stages.registry import CORE_MODULES
+    from maktaba_pipeline.plugins.firstparty import impl_entry
 
     scan = get_stage("scan")
     assert scan is not None and not scan.legacy
-    assert CORE_MODULES["scan"] == "maktaba_pipeline.engine.stages.scan"
+    # Epic 54 wave 9 (story 54.36): a stage of tv.maktaba.core-media, in-process by its entry
+    assert impl_entry("scan") == "maktaba_fp_core_media.stages.scan:IMPL"
     edge = next(e for e in scan.edges if e.to == "probe")
     assert (edge.map, edge.when, edge.legacy) == ("videos_changed", "always", False)
     lib, v1, v2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()

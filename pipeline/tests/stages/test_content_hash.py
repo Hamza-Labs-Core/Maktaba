@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from maktaba_pipeline.engine.stages.content_hash import on_disk
+from maktaba_pipeline.identity.on_disk import on_disk
 
 pytestmark = pytest.mark.unit
 

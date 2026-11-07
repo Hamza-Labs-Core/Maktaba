@@ -89,7 +89,10 @@ __all__ = [
     "release_stages",
     "request",
     "restore",
+    "run_for_job",
     "run_once",
+    "set_stage_env",
+    "stage_env",
 ]
 
 _log = get_logger()
@@ -1019,3 +1022,42 @@ async def restore(
             env.on_change()
         _log.info("storage_canonicalize_backup_restored", backup=bid, rows=n)
         return bid, n
+
+
+# -- the stage's job -----------------------------------------------------------------------
+
+#: the environment the home's agent gives the stage (its mounts' callback); ``None`` on a
+#: worker that is not the home's own machine (it has a path map of its own)
+_STAGE_ENV: AutoEnv | None = None
+
+
+def set_stage_env(env: AutoEnv | None) -> None:
+    """The home's agent (:mod:`..cluster.node`) names its mounts for the stage's runs."""
+    global _STAGE_ENV
+    _STAGE_ENV = env
+
+
+def stage_env() -> AutoEnv | None:
+    return _STAGE_ENV
+
+
+async def run_for_job(db: Any) -> dict[str, Any]:
+    """What one ``storage_canonicalize`` job does: a run with the home's mounts, summed up
+    for the job's result. The run pauses and resumes stages and writes the share map, which
+    only the queue engine's own process may (README §15.3): in a first-party plugin's runner
+    (Epic 54 story 54.36, ``tv.maktaba.core-media``) the worker runs it for the job, as the
+    relayed ``storage_canonicalize``, and the plugin gets this summary back."""
+    relay = getattr(db, "engine_relay", None)
+    if relay is not None:
+        return dict(await relay.ask("storage_canonicalize") or {})
+    env = stage_env()
+    if env is None:
+        return {"phase": "skipped", "why": "not the home's own machine"}
+    state = await run_once(db, env)
+    return {
+        "phase": state.get("phase"),
+        "problems": state.get("problems") or [],
+        "plan": {k: v for k, v in (state.get("plan") or {}).items() if k != "columns"},
+        "last": state.get("last"),
+        "servers_added": [s.get("name") for s in state.get("servers_added") or []],
+    }

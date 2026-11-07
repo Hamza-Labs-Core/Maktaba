@@ -41,29 +41,17 @@ class StageImpl:
 #: stage name -> module exposing ``IMPL: StageImpl``. ``legacy`` is special: it
 #: exposes ``IMPLS`` (output fingerprints for the stages that predate the engine).
 CORE_MODULES: dict[str, str] = {
-    "scan": "maktaba_pipeline.engine.stages.scan",
-    "probe": "maktaba_pipeline.engine.stages.probe",
-    "thumbnail": "maktaba_pipeline.engine.stages.thumbnail",
-    "extract": "maktaba_pipeline.engine.stages.extract",
-    "content_hash": "maktaba_pipeline.engine.stages.content_hash",
     "component_catchup": "maktaba_pipeline.engine.stages.component_catchup",
     "word_check": "maktaba_pipeline.engine.stages.word_check",
-    "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
     "review_pages": "maktaba_pipeline.engine.stages.review_pages",
     "youtube_collections": "maktaba_pipeline.engine.stages.youtube_collections",
-    "link": "maktaba_pipeline.engine.stages.link",
-    "fingerprint": "maktaba_pipeline.engine.stages.fingerprint",
-    "style_sample": "maktaba_pipeline.engine.stages.style_sample",
     "youtube_tartube": "maktaba_pipeline.engine.stages.youtube_tartube",
     "detect": "maktaba_pipeline.engine.stages.detect",
-    "fp_gate": "maktaba_pipeline.engine.stages.fp_gate",
     "tag": "maktaba_pipeline.engine.stages.tag",
     "check_tags": "maktaba_pipeline.engine.stages.check_tags",
     "check_clips": "maktaba_pipeline.engine.stages.check_clips",
     "books": "maktaba_pipeline.engine.stages.books",
     "display_title": "maktaba_pipeline.engine.stages.display_title",
-    "access_check": "maktaba_pipeline.engine.stages.access_check",
-    "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",
     "enrich": "maktaba_pipeline.engine.stages.enrich",
     # Epic 47 (offline, MP4, no duplicates): shipped. A stage added before its story
     # ships is kept off by the graph (StageDef.unreleased); the web help test reads
@@ -110,9 +98,13 @@ def get_impl(name: str) -> StageImpl | None:
         _IMPLS[name] = impl
         return impl  # type: ignore[no-any-return]
     if not _LEGACY_LOADED:
-        # a stage that has moved onto the engine (a core module) keeps that module's
-        # implementation, whichever stage happened to load the legacy table first
+        # a stage that has moved onto the engine (a core module, or a first-party plugin's
+        # entry: scan, story 54.36) keeps that implementation, whichever stage happened to
+        # load the legacy table first
+        from ...plugins.firstparty import stage_names as first_party_stages
+
+        moved = set(CORE_MODULES) | first_party_stages()
         legacy = importlib.import_module(_LEGACY_MODULE).IMPLS
-        _IMPLS.update({k: v for k, v in legacy.items() if k not in CORE_MODULES})
+        _IMPLS.update({k: v for k, v in legacy.items() if k not in moved})
         _LEGACY_LOADED = True
     return _IMPLS.get(name)

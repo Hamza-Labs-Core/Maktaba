@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from maktaba_fp_transcription.stages import extract as extract_stage
 
 from maktaba_pipeline import handlers as handlers_mod
 from maktaba_pipeline.audio.extract import ExtractError
@@ -45,7 +46,6 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Edge, bound_graph
 from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import reset_runner
-from maktaba_pipeline.engine.stages import extract as extract_stage
 from maktaba_pipeline.engine.stages.legacy import _always_changed
 from maktaba_pipeline.handlers import build_real_dispatch
 from tests.stages.test_probe_engine_parity import _differences, _fork

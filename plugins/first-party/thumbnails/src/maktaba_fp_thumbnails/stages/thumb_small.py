@@ -29,9 +29,9 @@ from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import run_media
 from maktaba_pipeline.engine.sql import loads, uid
 from maktaba_pipeline.engine.stages._common import load_video, require_video
-from maktaba_pipeline.engine.stages.content_hash import is_pending
 from maktaba_pipeline.engine.stages.registry import StageImpl
-from maktaba_pipeline.engine.stages.thumb_hash import find_thumbnail, fingerprint_doc
+from maktaba_pipeline.identity.on_disk import is_pending
+from maktaba_pipeline.thumbnail.sidecar import find_thumbnail, fingerprint_doc
 from maktaba_pipeline.thumbnail.small import SMALL_NAME, WIDTH, small_args, small_path, staged_path
 
 __all__ = [
@@ -60,7 +60,7 @@ async def _content_hash(db: Any, video_id: Any) -> str:
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     """The file's identity, the poster it could fall back to, and a thumbnail found in
     ``.thumbs/`` (the rule ``thumb_hash`` fingerprints:
-    :func:`~maktaba_pipeline.engine.stages.thumb_hash.fingerprint_doc`)."""
+    :func:`~maktaba_pipeline.thumbnail.sidecar.fingerprint_doc`)."""
     v = await load_video(db, subject.id)
     if v is None:
         return None

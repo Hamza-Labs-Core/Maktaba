@@ -1,0 +1,177 @@
+# tv.maktaba.core-media: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 9
+# (story 54.36 §1): the stages every home always runs, the stages of core.pipeline (not
+# switchable). The engine's component_catchup stays in the core, and so does categorize (a
+# placeholder stage with no handler, declared in the graph). The filesystem watcher and the
+# manual scans stay in the core and only enqueue scan. What only the queue engine may write
+# (videos.state, a stage queued again, the path conversion's pauses) the worker writes for the
+# plugin's job: the relayed advance, requeue_failed and storage_canonicalize.
+schema     = 1
+id         = "tv.maktaba.core-media"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.core-media.name"
+summary = "fp.core-media.summary"
+
+[trusted]
+runner    = "light"
+component = "core.pipeline"
+db.read   = ["app_settings", "libraries", "media_field_provenance", "processing_jobs", "transcripts"]
+db.write  = ["audio_tracks", "item_checks", "media_info", "media_metadata_enrichment", "series_seasons", "video_copies", "video_signals", "videos", "youtube_channel_libraries", "youtube_channels", "youtube_playlist_items", "youtube_playlists", "youtube_source_decisions", "youtube_sources", "youtube_videos"]
+files.read  = ["library", "data.thumbnails"]
+files.write = []
+exec      = ["ffprobe", "ffmpeg"]
+settings  = ["queue_health"]
+
+[[stage]]
+name         = "scan"
+subject      = "library"
+export       = "scan"
+version      = 1
+label        = "Scan folders"
+subject_kinds = ["library"]
+pool         = "nas_read"
+lane         = "media"
+lane_order   = 0
+placement    = "any"
+edges        = [{ to = "probe", map = "videos_changed", when = "always" }]
+entry        = "maktaba_fp_core_media.stages.scan:IMPL"
+
+[[stage]]
+name         = "content_hash"
+subject      = "video"
+export       = "content-hash"
+version      = 1
+label        = "File identity"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "episodes"
+lane_order   = 0
+placement    = "any"
+edges        = [{ to = "thumb_small", map = "same" }, { to = "transcribe", map = "same" }, { to = "thumbnail", map = "same" }]
+entry        = "maktaba_fp_core_media.stages.content_hash:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "probe"
+subject      = "video"
+export       = "probe"
+version      = 1
+label        = "Length"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "episodes"
+lane_order   = 1
+placement    = "any"
+edges        = [{ to = "thumb_hash", map = "same" }, { to = "link", map = "same" }, { to = "detect", map = "library_of" }]
+entry        = "maktaba_fp_core_media.stages.probe:IMPL"
+
+[[stage]]
+name         = "thumb_hash"
+subject      = "video"
+export       = "thumb-hash"
+version      = 1
+label        = "Thumbnail"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "episodes"
+lane_order   = 2
+placement    = "any"
+edges        = [{ to = "detect", map = "library_of" }, { to = "thumb_small", map = "same" }]
+entry        = "maktaba_fp_core_media.stages.thumb_hash:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "link"
+subject      = "video"
+export       = "link"
+version      = 1
+label        = "Link"
+subject_kinds = ["video"]
+pool         = "cpu"
+lane         = "episodes"
+lane_order   = 3
+placement    = "any"
+edges        = [{ to = "detect", map = "library_of" }]
+entry        = "maktaba_fp_core_media.stages.link:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "fingerprint"
+subject      = "video"
+export       = "fingerprint"
+version      = 101
+label        = "Fingerprint"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "episodes"
+lane_order   = 4
+placement    = "any"
+edges        = [{ to = "detect", map = "library_of" }, { to = "fp_gate", map = "payload_seasons" }]
+entry        = "maktaba_fp_core_media.stages.fingerprint:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "style_sample"
+subject      = "video"
+export       = "style-sample"
+version      = 1
+label        = "Style sample"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "episodes"
+lane_order   = 5
+placement    = "any"
+edges        = [{ to = "rate_style", map = "payload_seasons" }]
+entry        = "maktaba_fp_core_media.stages.style_sample:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "fp_gate"
+subject      = "season"
+export       = "fp-gate"
+version      = 101
+label        = "Samples to candidates"
+subject_kinds = ["season"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 1
+placement    = "any"
+may_request  = ["fingerprint"]
+debounce_sec = 10
+debounce_max_sec = 120
+hidden       = true
+entry        = "maktaba_fp_core_media.stages.fp_gate:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "storage_canonicalize"
+subject      = "catalog"
+export       = "storage-canonicalize"
+version      = 1
+label        = "Canonical share paths"
+subject_kinds = ["catalog"]
+pool         = "cpu"
+lane         = "media"
+lane_order   = 11
+placement    = "home"
+max_attempts = 1
+entry        = "maktaba_fp_core_media.stages.storage_canonicalize:IMPL"
+
+[[stage]]
+name         = "access_check"
+subject      = "video"
+export       = "access-check"
+version      = 1
+label        = "Access check"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "media"
+lane_order   = 13
+placement    = "any"
+max_attempts = 1
+entry        = "maktaba_fp_core_media.stages.access_check:IMPL"

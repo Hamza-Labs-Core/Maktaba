@@ -11,16 +11,16 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from maktaba_fp_core_media.stages import link as link_stage
+from maktaba_fp_core_media.stages.link import Candidate, build_index, match_candidates
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.media import ProcResult, reset_runner, set_runner
 from maktaba_pipeline.engine.paths import PathMap
 from maktaba_pipeline.engine.sql import loads, to_date
-from maktaba_pipeline.engine.stages import link as link_stage
-from maktaba_pipeline.engine.stages import thumb_hash
-from maktaba_pipeline.engine.stages.link import Candidate, build_index, match_candidates
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.thumbnail.sidecar import find_thumbnail
 from tests.engine.factory import make_library, make_video
 from tests.stages.world import add_channel, core_runtime, drain_core, make_fake_media
 
@@ -236,7 +236,7 @@ async def test_thumb_hash_without_any_thumbnail_records_none(db: Database, tmp_p
         await db.fetchval("SELECT thumb_dhash FROM video_signals WHERE video_id = $1", str(v))
         is None
     )
-    assert thumb_hash.find_thumbnail(str(tmp_path / "a.mp4"), None) is None
+    assert find_thumbnail(str(tmp_path / "a.mp4"), None) is None
 
 
 @pytest.mark.asyncio

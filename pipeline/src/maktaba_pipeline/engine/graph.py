@@ -20,11 +20,10 @@ from uuid import UUID
 from ..audio.chromaprint import AUDIO_FP_VERSION
 from ..classify.books import BOOKS_VERSION
 from ..classify.display_title import DISPLAY_TITLE_VERSION
-from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
-from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
+from ..thumbnail.dhash import FRAMES_VERSION
 
 if TYPE_CHECKING:
     from ..db.jobs import DBConn, Job
@@ -377,81 +376,20 @@ GRAPH: tuple[StageDef, ...] = (
     # Epic 54: defined by tv.maktaba.youtube's manifest
     _fp("exact_dates"),
     # ---- episodes lane -------------------------------------------------
-    StageDef(
-        name="content_hash",
-        label="File identity",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="episodes",
-        lane_order=0,
-        version=CONTENT_HASH_VERSION,
-        # a video imported from mediaintel exists before its file was read; its small
-        # thumbnail lives under the real hash. Its speech follows its identity, and so do
-        # its poster and sprite: a video with no audio (or not transcribed yet) has them too
-        edges=(
-            Edge("thumb_small", "same"),
-            Edge("transcribe", "same"),
-            Edge("thumbnail", "same"),
-        ),
-    ),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("content_hash"),
     # Epic 54 story 54.36 §2: on the engine. It returns the hash the legacy bookkeeping
-    # computed (length and frame size), so its edges fire as they did
-    StageDef(
-        name="probe",
-        label="Length",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="episodes",
-        lane_order=1,
-        version=1,
-        edges=(
-            Edge("thumb_hash", "same"),
-            Edge("link", "same"),
-            Edge("detect", "library_of"),
-        ),
-    ),
-    StageDef(
-        name="thumb_hash",
-        label="Thumbnail",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="episodes",
-        lane_order=2,
-        version=DHASH_VERSION,
-        # the sidecar it hashed is the small copy's source too (YouTube archives never run
-        # the legacy thumbnail stage)
-        edges=(Edge("detect", "library_of"), Edge("thumb_small", "same")),
-    ),
-    StageDef(
-        name="link",
-        label="Link",
-        subject_kinds=("video",),
-        pool="cpu",
-        lane="episodes",
-        lane_order=3,
-        version=LINK_VERSION,
-        edges=(Edge("detect", "library_of"),),
-    ),
-    StageDef(
-        name="fingerprint",
-        label="Fingerprint",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="episodes",
-        lane_order=4,
-        version=SIG_VERSION,
-        edges=(Edge("detect", "library_of"), Edge("fp_gate", "payload_seasons")),
-    ),
-    StageDef(
-        name="style_sample",
-        label="Style sample",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="episodes",
-        lane_order=5,
-        version=STYLE_VERSION,
-        edges=(Edge("rate_style", "payload_seasons"),),
-    ),
+    # computed (length and frame size), so its edges fire as they did.
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("probe"),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("thumb_hash"),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("link"),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("fingerprint"),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("style_sample"),
     # Epic 54: defined by tv.maktaba.thumbnails's manifest
     _fp("thumb_small"),
     # ---- seasons and libraries lane ------------------------------------
@@ -478,19 +416,8 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_sec=30,
         debounce_max_sec=300,
     ),
-    StageDef(
-        name="fp_gate",
-        label="Samples to candidates",
-        subject_kinds=("season",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=1,
-        version=SIG_VERSION,
-        may_request=("fingerprint",),
-        debounce_sec=10,
-        debounce_max_sec=120,
-        hidden=True,
-    ),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("fp_gate"),
     StageDef(
         name="tag",
         label="Tag topics",
@@ -634,30 +561,14 @@ GRAPH: tuple[StageDef, ...] = (
     # ---- media lane (legacy) -------------------------------------------
     # Epic 54 story 54.36 §2: on the engine. Its new videos are its changed subjects and
     # the edge queues their probes (before, the scanner's store queued each by hand)
-    StageDef(
-        name="scan",
-        label="Scan folders",
-        subject_kinds=("library",),
-        pool="nas_read",
-        lane="media",
-        lane_order=0,
-        version=1,
-        edges=(Edge("probe", "videos_changed", when="always"),),
-    ),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("scan"),
     # the WAV a backend that reads a file needs (openai-api): only transcribe asks for it
     # (may_request), and extract asks for transcribe again once it is written. Nothing else
     # leads here: a streaming backend never gets an extract job. Epic 54 story 54.36 §2: on
     # the engine; its transcribe is a request (it carries the payload transcribe reads)
-    StageDef(
-        name="extract",
-        label="Extract audio",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="media",
-        lane_order=1,
-        version=1,
-        may_request=("transcribe",),
-    ),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.transcription's manifest
+    _fp("extract"),
     # plan 03-10: transcription on the engine. The file is decoded straight off the share
     # and batched across the worker's jobs (content_hash's edge reaches it). When the
     # configured STT backend reads a file it asks for the extract stage's WAV first.
@@ -702,17 +613,8 @@ GRAPH: tuple[StageDef, ...] = (
     # the per-machine caches stay on the home (Epic 31 R3.4, R4.2; moving them to the
     # share is out of scope), so a node never claims it (as thumb_small after it).
     # Epic 54 story 54.36 §2: on the engine, its output the poster's and the sprite's paths
-    StageDef(
-        name="thumbnail",
-        label="Poster and sprites",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="media",
-        lane_order=5,
-        version=1,
-        edges=(Edge("thumb_small", "same"),),
-        placement="home",
-    ),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.thumbnails's manifest
+    _fp("thumbnail"),
     # Files whose probe failed, fetched from YouTube again and swapped in on the share
     # (mediaintel repair-broken). Writes to the share: off until the "repair" rules enable it.
     # Epic 54: defined by tv.maktaba.repair's manifest
@@ -721,29 +623,12 @@ GRAPH: tuple[StageDef, ...] = (
     # (sharepath/auto.py). Its own agent enqueues it (catalog subject) when there may be
     # work, an admin asks for it on the Machines page, or a run was cut short; the home's
     # mounts decide the mapping, so it never runs on a node.
-    StageDef(
-        name="storage_canonicalize",
-        label="Canonical share paths",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="media",
-        lane_order=11,
-        version=1,
-        placement="home",
-        max_attempts=1,
-    ),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("storage_canonicalize"),
     # Epic 40: an admin's "check access" on the failures page reads 64 KiB of the file on
     # the worker host; when it reads, the video's failed jobs are queued again
-    StageDef(
-        name="access_check",
-        label="Access check",
-        subject_kinds=("video",),
-        pool="nas_read",
-        lane="media",
-        lane_order=13,
-        version=1,
-        max_attempts=1,
-    ),
+    # Epic 54 wave 9 (story 54.36): defined by tv.maktaba.core-media's manifest
+    _fp("access_check"),
     # ---- Epic 47: offline, MP4, no duplicates (specs/epics/47-offline-convert-dedup) --
     # Convert a video's file to MP4 without losing it: the original goes to the library's
     # trash once the MP4 is verified and swapped in (library_mgmt/swap.py). The work
@@ -768,6 +653,9 @@ GRAPH: tuple[StageDef, ...] = (
     # trashed file goes back and the DB change is reversed; the API only queues it
     # Epic 54: defined by tv.maktaba.dedup's manifest
     _fp("file_restore"),
+    # a placeholder from slot 0087 that never had a handler. Epic 54 wave 9 (story 54.36)
+    # leaves it here, in the core graph and in core.pipeline: whether it is removed or moved
+    # into tv.maktaba.core-media is an open decision
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
     # Stub audit #4 (Story 26.5): a video's metadata suggestions from Maktaba's own intel
     # and, when configured, a web search a language model reads. The API (Find metadata,

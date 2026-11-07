@@ -27,8 +27,8 @@ from maktaba_pipeline.engine.graph import SUBTITLE_VERSION, StageResult, Subject
 from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.sql import dumps, now, to_ts, uid
 from maktaba_pipeline.engine.stages._common import require_video
-from maktaba_pipeline.engine.stages.content_hash import READ_TIMEOUT_S, on_disk
 from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.identity.on_disk import READ_TIMEOUT_S, on_disk
 
 __all__ = ["IMPL", "SUBTITLE_VERSION", "srt", "vtt"]
 

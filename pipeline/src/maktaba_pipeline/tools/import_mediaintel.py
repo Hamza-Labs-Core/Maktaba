@@ -76,14 +76,10 @@ from ..engine.stages import books as books_stage
 from ..engine.stages import check_clips as check_clips_stage
 from ..engine.stages import check_tags as check_tags_stage
 from ..engine.stages import detect as detect_stage
-from ..engine.stages import fingerprint as fingerprint_stage
-from ..engine.stages import link as link_stage
-from ..engine.stages import style_sample as style_sample_stage
 from ..engine.stages import tag as tag_stage
-from ..engine.stages import thumb_hash as thumb_stage
 from ..engine.stages._leftovers import library_name
 from ..engine.stages._tagging import season_tags_digest, video_tags_digest
-from ..engine.stages.content_hash import PENDING, is_pending
+from ..identity.on_disk import PENDING, is_pending
 from ..library_mgmt import youtube_derive
 from ..library_mgmt.youtube_snapshot import _snapshot as yt_snapshot
 from ..log import get_logger
@@ -1259,11 +1255,11 @@ async def _jobs(
             subject = Subject("video", vid)
             oh: str | None
             if stage == "thumb_hash":
-                ih = await thumb_stage.input_fingerprint(db, subject)
+                ih = await _fingerprint("thumb_hash", db, subject)
                 oh = canonical_hash({"dhash": None if sig is None else sig["thumb_dhash"]})
                 ver = DHASH_VERSION
             elif stage == "fingerprint":
-                ih = await fingerprint_stage.input_fingerprint(db, subject)
+                ih = await _fingerprint("fingerprint", db, subject)
                 oh = canonical_hash(
                     {
                         "head": sig["audio_head"],
@@ -1273,7 +1269,7 @@ async def _jobs(
                 )
                 ver = SIG_VERSION if int(j["version"]) == SIG_VERSION else int(j["version"])
             else:
-                ih = await style_sample_stage.input_fingerprint(db, subject)
+                ih = await _fingerprint("style_sample", db, subject)
                 oh = (
                     canonical_hash(loads(sig["style_metrics"]))
                     if sig and sig["style_metrics"]
@@ -1297,7 +1293,7 @@ async def _jobs(
         if not f["youtube_id"]:
             continue
         method = f["link_method"] or "info_json"
-        ih = await link_stage.input_fingerprint(db, Subject("video", vid))
+        ih = await _fingerprint("link", db, Subject("video", vid))
         await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage="link", version=1,
                          input_hash=ih, output_hash=canonical_hash({"youtube_id": f["youtube_id"], "method": method}))  # fmt: skip
     await _flush_jobs(db, report)  # detect's fingerprint reads every video stage

@@ -17,6 +17,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from maktaba_fp_core_media.stages import thumb_hash
 from maktaba_fp_thumbnails.stages import thumb_small
 
 from maktaba_pipeline.discovery.ytdlp_sidecars import THUMBS_DIR, find_sidecar_thumbnail
@@ -26,11 +27,11 @@ from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import ProcResult, reset_runner, set_runner
 from maktaba_pipeline.engine.reconcile import _thumbs_dir_sweep
 from maktaba_pipeline.engine.sql import dumps, loads
-from maktaba_pipeline.engine.stages import thumb_hash
 from maktaba_pipeline.engine.stages._common import load_video
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.scanner.walker import DEFAULT_IGNORE_DIRNAMES
 from maktaba_pipeline.thumbnail.dhash import DHASH_VERSION
+from maktaba_pipeline.thumbnail.sidecar import find_thumbnail
 from maktaba_pipeline.watcher.service import LibraryObserver, WatcherConfig
 from tests.engine.factory import make_library, make_video
 from tests.stages.world import core_runtime, drain_core
@@ -80,7 +81,7 @@ def test_a_sidecar_next_to_the_video_is_found(tmp_path: Path, stem: str) -> None
     video = _touch(_channel(tmp_path) / f"{stem}.mp4")
     side = _touch(_channel(tmp_path) / f"{stem}.webp")
     assert find_sidecar_thumbnail(str(video)) == str(side)
-    assert thumb_hash.find_thumbnail(str(video), None) == str(side)
+    assert find_thumbnail(str(video), None) == str(side)
 
 
 @pytest.mark.unit
@@ -91,7 +92,7 @@ def test_a_sidecar_in_thumbs_is_found(tmp_path: Path, stem: str) -> None:
     _touch(_channel(tmp_path) / THUMBS_DIR / "another video.jpg")
     assert find_sidecar_thumbnail(str(video)) == str(side)
     poster = _touch(tmp_path / "cache" / "poster.jpg")
-    assert thumb_hash.find_thumbnail(str(video), str(poster)) == str(side)
+    assert find_thumbnail(str(video), str(poster)) == str(side)
 
 
 @pytest.mark.unit
@@ -109,8 +110,8 @@ def test_without_a_sidecar_the_poster_is_used(tmp_path: Path) -> None:
     _touch(_channel(tmp_path) / THUMBS_DIR / f"{STEM}.mp4.jpg")  # not this rule's name
     poster = _touch(tmp_path / "cache" / "poster.jpg")
     assert find_sidecar_thumbnail(str(video)) is None
-    assert thumb_hash.find_thumbnail(str(video), str(poster)) == str(poster)
-    assert thumb_hash.find_thumbnail(str(video), str(tmp_path / "gone.jpg")) is None
+    assert find_thumbnail(str(video), str(poster)) == str(poster)
+    assert find_thumbnail(str(video), str(tmp_path / "gone.jpg")) is None
 
 
 # ------------------------------------------------------------------ fingerprints

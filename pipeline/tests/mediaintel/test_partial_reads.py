@@ -1,4 +1,5 @@
-from maktaba_pipeline.engine.stages.fingerprint import incomplete
+from maktaba_fp_core_media.stages.fingerprint import incomplete
+
 from scripts.mediaintel.scan_local import probe_failure
 from scripts.mediaintel.signatures import _incomplete
 
