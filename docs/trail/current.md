@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.87
-up_to_commit: 5e39b1535
-built_from: v0.3.86
+tag: v0.3.88
+up_to_commit: 8d2b59e2b
+built_from: v0.3.87
 ---
 
-# Trail snapshot: v0.3.87
+# Trail snapshot: v0.3.88
 
 ## Keep doing
 
@@ -20,7 +20,7 @@ built_from: v0.3.86
 - Branch stacks point HOME, `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR` at scratch folders. (#621, #623)
 - Use only real PR numbers and shas; attribute history with git (blame, `log -L`, PR file lists). (d20261031-standing-rules, #655)
 - Never quote or attribute the owner's words in repo text; state the requirement neutrally. (#603, #604)
-- Write each PR's event in the PR before it merges; post-merge learnings go in a trail-only PR. Build snapshots in a scratchpad worktree off origin/main and run `trail check` before pushing; check each carried Open item against newer events, and check origin/main's `snapshots/` again right before opening the PR so two sessions do not snapshot the same tag. On a trail-only PR wait for CodeQL (the slowest job), not the lint. (#655, #532, #706, #726)
+- Write each PR's event in the PR before it merges; post-merge learnings go in a trail-only PR. Build snapshots in a scratchpad worktree off origin/main and run `trail check` before pushing; check each carried Open item against newer events, and check origin/main's `snapshots/` again right before opening the PR so two sessions do not snapshot the same tag. On a trail-only PR wait for CodeQL (the slowest job), not the lint. The trail's checks are the agent-trail CLI (`uvx --from git+https://github.com/Hamza-Labs-Core/agent-trail@v0 trail check`); `tools/trail/trail.py` is gone. (#655, #532, #706, #726, #739)
 - Keep CI's paths-ignore, `next_tag.py`'s TRAIL_ONLY and `.trail.toml`'s `[trail_only]` paths equal (test_ci_paths.py and test_next_tag.py check it). (#702, #699)
 
 **Releases and live**
@@ -30,7 +30,7 @@ built_from: v0.3.86
 - Use live data only for justified recovery: tests use scratch Postgres; pause stages through `POST /api/queues/{stage}/pause`, never raw SQL. (d20261031-standing-rules, #524)
 - On the PC: restart services only through their sign-in tasks; check an installer's sha256, then the owner runs it. Prove Windows behaviour on CI's runner, not the owner's PC. (d20261025-pc-windows-app-node, #457)
 - Prefer keyless federation over downloaded service-account keys. (#557)
-- No Stripe or Stripe-owned services for any payment, in specs or code. (#591, #593)
+- No Stripe or Stripe-owned services for any payment, in specs or code; payment providers are pluggable (`PaymentProvider`, each in its own folder), Adyen for Platforms the first real one. Check a brief's suggestion against the trail before building it. (#591, #593, #735)
 
 **Tests and CI**
 - A code change ships with its tests changed in the same push (affected-tests gate; `No-Test-Change: <reason>` only when the mapped tests cannot run locally). (#516, d20261031-standing-rules, #685)
@@ -49,11 +49,18 @@ built_from: v0.3.86
 - Ship Arabic with English on every platform in the same PR; «الجهاز الرئيسي» for the home. (d20261031-standing-rules, #454)
 - Put fault scenarios in the rehearsal matrix that already builds the stack. (#685)
 - Run the whole-stack test before pushing: the containerised cloud rehearsal (real containers, a health-checked edge, a database that vanishes rather than refuses) found five relay bugs and the whole-server plugin e2e three wiring bugs that every unit test missed. (#705, #707, #715)
-- Run `ci_paths.py guard` after `git add` (it sees only tracked files); a new top-level tools folder needs a filter or a `NOT_IN_CI` entry. A new path filter touches `ci-paths.yml`, `ci.yml`'s outputs and unit call, `_unit.yml`'s input and `test_ci_paths.py`'s expectations. (#700, #704, #690)
+- Run `ci_paths.py guard` after `git add` (it sees only tracked files); a new top-level tools folder needs a filter or a `NOT_IN_CI` entry. A new path filter touches `ci-paths.yml`, `ci.yml`'s outputs and unit call, `_unit.yml`'s input and `test_ci_paths.py`'s expectations. (#700, #704, #690, #739)
 - Check a guide written before its code against the code (the WIT, `capabilityOf`), not the spec. (#704)
 - A PR that ships user-facing work updates maktaba.dev in the same PR, in English and Arabic (`devportal_follows.py` warns; `No-Portal-Change:` says it needs nothing); run `npm run build`, `npm run scan` and `npm test` in `web/packages/devportal` before pushing. (#703, #723)
 - Before changing a log format or adding a fixed loopback port, grep the e2e tests: they match `key=value` output and template `server.toml` for two machines on one host. (#673, #686)
-- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. (#690)
+- Calibrate a performance budget with work like the work budgeted; a "share of a core" budget is CPU time, not wall time. A timing assertion times only the thing it is about (the runaway-job test counted guest compile time). (#690, #738, #694, #696)
+- Measure a flaky suite under real load before and after (three concurrent full copies on the Mac reproduce CI's web failures every time) and report both counts; profile a slow test (`--pool=forks --execArgv=--cpu-prof`): most of its time was page code. (#746)
+- Web: window key handlers that read render state use `useWindowKeydown`; formatters made in render come from `lib/intl`. (#746, #698)
+- Write a cross-language check once as an algorithm with a deterministic output, and share test vectors across Go, Rust and TypeScript (Ed25519 is deterministic, so a fixed seed suffices). (#751, #733, #743)
+- Chain a workflow that must agree with CI on a commit after CI (`workflow_run` on success) rather than running both beside each other on main. (#737)
+- After editing a workflow, load every workflow with PyYAML (`tools/ci/tests`): actionlint passes a step `name:` containing ": ". (#727)
+- A rehearsal check reads the previous release's state before the update instead of keeping a hand list or comparing versions, which break each time the previous release moves. (#748)
+- When an earlier PR says something is reachable, check that something actually serves it. On an RTL page check the Arabic at phone width before pushing. (#739)
 
 ## Stop doing
 
@@ -90,7 +97,10 @@ built_from: v0.3.86
 - Search moved from Chroma to pgvector (Chroma broke on killed writers). (#319)
 
 **CI and releases**
-- Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release. (#725, #730)
+- Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release, so v0.3.86 is the first published release of their components (`since` says 0.3.86). (#725, #730, #748)
+- On main the update rehearsal is a `workflow_run` of CI's successful push run; a `workflow_run` run's `head_sha` is main's head when it started, not the commit it rehearsed. The rehearsed commit is in the run name `Update rehearsal of <sha>` (and its commit status); `tag-guard.sh` and `next_tag.py` read it there. Before this, two separate main concurrency groups finished on different commits and nothing was tagged for a day. (#737)
+- A push with `GITHUB_TOKEN` starts no workflow, but `gh workflow run` with it does (`actions: write`). GitHub Pages sends `max-age=600`; fresher clients add a per-minute query. Probe data lives on a data branch (`status-data`), not main. (#739)
+- CodeQL reads test code too (a `<script>`-stripping regexp is a high finding), and a flagged line in a PR's diff is fixed in that PR. (#739)
 - A run green except for the ignored iPhone/iPad shards is not tagged; web-release.yml is not a tag workflow. (#699)
 - CI builds the Desktop Player on x64 only, so arm-only native-library gaps show first at release; reproduce with `docker --platform linux/arm64 ubuntu:22.04` and `ldd -r`. (#725)
 - A public repository cannot use an Action from a private one; GitHub shows a workflow that does not parse by its path and starts no run. (#702)
@@ -100,6 +110,8 @@ built_from: v0.3.86
 - A heavy import for a small helper pulls a module graph into every run; keep helpers stdlib-only and prove it with `GOPROXY=off`. (#533, #546)
 - PR caches can evict main's from the 10 GB Actions cache. (#615, #618)
 - A plain CI re-run reuses the old merge ref; merge main and push. (#166)
+- promtool unit tests compare annotations too; a missing sample (`_`) is not a failed scrape (`stale` is); an SLO over several probes takes the best probe before the burn rate. A `mktemp -d` folder is 0700 and unreadable to an image running as `nobody` on Linux CI, hidden by Docker Desktop; chmod it before mounting. (#727)
+- macOS bash 3.2 treats an empty `"${arr[@]}"` as unbound under `set -u`; use `${arr[@]+"${arr[@]}"}`. (#739)
 - Release fixtures built for an old state owner break on the next push after the change ships; drive state the way the owner does. (#656)
 - Mac notarization breaks on empty `APPLE_*` variables; local builds carry a placeholder updater key. (#276, #288)
 - TestFlight: the API cannot create app records (Xcode Organizer can; its error after a 201 is harmless); the CI key needs Admin. An unsigned archive has no entitlements; a single-size macOS icon is ignored. (#447, #583)
@@ -108,6 +120,7 @@ built_from: v0.3.86
 **Database and migrations**
 - Number a migration slot only when merging main; a slot above a gap fails migration-lint; `SchemaRev` lives in three places. (#669, #692, #678, #672, #657, #693)
 - A new table keeps `maktaba_worker`'s default grants (compat-prev) and refuses joined machines' writes with a `BEFORE` trigger; it must be decided for the node copy (`copyReviewed` or `cluster_copy_excluded()`). A new failure cause needs its label and help; a new pool needs its `worker_pools` seed. (#663, #692, #693)
+- The SQLite migration runner rewrites `ADD COLUMN IF NOT EXISTS` only when it is the one statement of its `StatementBegin` block. (#733)
 - Cloud migrations are numbered by epic slot; goose refuses a version below the head, so `Migrator.Up` passes `goose.WithAllowMissing()`. (#700)
 - `job_stages.stage` is capped at 40 characters; the SQLite sibling cannot widen an inline check without rebuilding the table. (#693)
 - `ADD CONSTRAINT` makes a release unsafe to roll back; use a trigger. Migrations run twice in integration: `DROP CONSTRAINT IF EXISTS` first. (#524, #669)
@@ -138,6 +151,10 @@ built_from: v0.3.86
 - Docker: moving a network alias reconnects the container (the Floating IP gets its own network); `docker compose down` needs the same variables as `up`; read effective config with `docker compose config`, since logs redact IPs. Go's `flag` stops at the first non-flag argument. (#721, #715, #722)
 - On Windows an atomic replace guarantees whole contents, not a successful open: a reader treats a failed open as "try again". A test reading two facts from one snapshot needs both under one lock. (#684)
 - In a length-prefixed format bound the length by the bytes received before allocating. (#691)
+- Canonical JSON for signatures needs its own small parser per language: Go's `encoding/json` escapes `<`, `>`, `&` and U+2028/9 unless `SetEscapeHTML(false)` and keeps the last duplicate key, JavaScript keeps lone surrogates, serde_json refuses them. Hash `files.json` in canonical form. WebCrypto imports an Ed25519 seed as PKCS 8 with the prefix `302e020100300506032b657004220420`. (#733, #743)
+- `node:sqlite` (Node 22.13+) runs D1's SQL as is, so store tests need no Miniflare. A far-future ISO date (`+275760…`) sorts before `2026` as text; compare against `9999-12-31T…`. (#735)
+- A WIT variant gains no case without breaking 1.0 guests; a plugin loop refusal reuses `scope` with the API code `plugin_loop`. (#751)
+- On the rehearsal's seeded home the previous release's first seed writes every component of its catalog (by what is on disk); only components newer than it go through SeedMissing. (#748)
 - Random bytes are not reliably corrupt media; build fixtures from a real header plus seeded junk. (#526, #537)
 
 **Apps and UI tests**
@@ -151,15 +168,17 @@ built_from: v0.3.86
 - A per-line performance budget needs enough load to amortise setup: at a tenth of the load the capture bench read 28 µs a line against 15.6 µs. (#690)
 - A setting a separate process consumes needs a test from the file to that process: the `logs` role silently ignored every configured retention. (#688)
 - A per-role level file polled by each logger can say "debug until a time" and works on Windows; SIGUSR1 cannot. (#688)
-- React: a window `keydown` listener re-attached by `useEffect` can be the previous one when a test dispatches at once; `await act(async () => {})` first. A flake fix that will not reproduce locally is a reading of the code until CI stops failing. (#698)
+- React: a window `keydown` listener re-attached by `useEffect` can be the previous one when a key arrives between commit and effect; `useWindowKeydown` attaches once. A flake fix that will not reproduce locally is a reading of the code until CI stops failing. (#698)
 - Scrape over HTTP once in a test, then feed parsed samples directly; 720 scrapes broke the per-test cap. The Prometheus text format parses in about 60 lines, no module needed. (#689)
 - A test that reaches a real `os._exit(0)` ends pytest green with no summary. (#565)
+- Web tests under load: vitest is main-process bound past about 7 workers, so `maxWorkers` is half the cores, 2 to 8 (CI keeps 2); axe's first run in a worker is several times slower, so warm it in `beforeAll`; parallel module warm-up can expose a half-evaluated module; `shouldAdvanceTime` fake timers make "not yet at T−1" racy, so read times off the fake clock. (#746)
 - Web tests: a page that loads names in a separate call is tested with `findBy`, not `getBy`; accessible names keep `bidiIsolate`'s isolates, so match with a regular expression; a browser cannot read a `.mkplugin` before upload, so the typed-name check is a second upload. An error fingerprint takes the message line and first frame's function, numbers folded. (#691, #717)
 - The installed Maktaba's bundled Postgres binaries can start a scratch cluster in the scratchpad (`-k ''`, a free port), never the app's data. (#693, #677)
+- The wiki's Arabic store translates only each spec file's title and first 600 characters, so deep README edits need no Arabic but a changed story header does (`--ar-todo --epic 54`); its JSON is `indent=2`, keep it. (#751, #735)
 - maktaba.dev: `rewriteHref` joins an absolute `/path` onto the source folder, so generated pages link in-site pages by full URL. It builds with npm, not pnpm; a new guide is one line in `GUIDES` and one in `src/site.test.ts`. `media.info` is gated in `server.go`'s `capabilityOf`, not in `capabilities.toml`. (#704, #723)
 - Screenshots without a stack: the desktop Player through `runDesktopComposeUiTest` plus `captureToImage` (wrap `Shell` in the window's `Surface`); the web through vite and playwright-core with `/api/*` from a route table and `mkt:usage:consent` set first; Apple TV shots are in CI's `tv-ui-tests` artifact. The devportal lazy-loads images, so scroll each into view to check it. (#703)
 - Plugins: stages load at the pipeline worker's start, so a changed installed set needs the supervisor's `Restart`; the pipeline needs `MAKTABA_SUPERVISOR_TOKEN_FILE`; a deep data folder pushes `<data>/run/*.sock` past macOS's 104-byte `sun_path`; Wasmtime under the hardened runtime needs `allow-jit` and `allow-unsigned-executable-memory`; a new catalog group needs its place in the web's `GROUP_ORDER`. (#707)
-- The affected-tests gate maps from main's coverage: tests in a new file do not count for an old source. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. (#707)
+- The affected-tests gate maps from main's coverage: tests in a new file do not count for an old source, and shared JSON tables map to no test (add a direct test beside the row); `tools/ci/tests` needs PyYAML. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. (#707)
 - A snapshot's `#N` must be a PR with an event; other numbers are written without `#`, an issue as `issue #N`. (#706)
 - Homebrew's cargo shadows rustup's and has no wasm target (the SDK template needs rustup's `wasm32-wasip2`); the root `.gitignore` `MANIFEST` hides a `manifest/` folder on the Mac. (#683, #694, #717)
 - Claude Code reserves plugin names starting with `claude-`; the plugin is `trail`. Hook machines have python3 without `tomllib`. (#702)
@@ -175,6 +194,10 @@ built_from: v0.3.86
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
 - Epic 54: TypeScript, Python and Go templates (issue #718); signing, `mkp run`, developer mode and the plugins CLI (issue #719); the migrate job (issue #712), rehearsal scenario 15 (issue #708), the updater's pre-update list (issue #709), Windows (issue #710), job metrics and problem-report opt-in (issue #711). (#683, #693, #704, #707, #717)
+- Epic 54 Phase 2 (signing ships dark, no root keys): the store service, checks and review (with flow check C12), the home's catalog loop and kill switch, the store browser; release-time embedding of the revocation list and store keys; the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. Flows (§4.12) and joined machines (§4.13) build PRs. (#733, #735, #743, #751)
+- Epic 50: 50.11 part 2 status banners in every app; series that 53.17 emits for the monitoring alerts and status page; 50.12 onward. (#727, #739)
+- Rare web test races of one shape (a check one render too early), listed on issue #697; BigScreen still re-attaches its key listener. (#746)
+- Story 51.03's spec still names the removed `loops-full-home.txt`. (#748)
 - The tag guard requires the cloud rehearsal once 50.07's scenarios are live. (#715)
 - agent-trail's PyPI publishing waits for its trusted publisher; the CLI runs from git. (#702)
 - Epic 53: native crash capture and report forms (Apple, Android, TV, desktop), 53.16 sharing, `docs/app-privacy.md`; native Remote Errors, Logs, Overview and Storage screens; pipeline queue series, API latency histograms and per-machine host metrics on `/metrics`. (#688, #689, #691)
@@ -506,8 +529,20 @@ None.
 | 0725-release-signing-deploy-key | 2026-11-06 | pr | Tags are pushed with a deploy key, so releases are signed as a push |
 | 0726-snapshot-v0385 | 2026-11-06 | pr | Trail snapshot v0.3.85 |
 | 0730-tag-by-session | 2026-11-06 | pr | Tags are pushed by the release session; auto-tag.yml is removed |
+| 0733-plugins-signing-trust | 2026-11-06 | pr | Plugins Phase 2 part 1, signing and the chain of trust (Epic 54, 54.14) |
+| 0735-pluggable-payments | 2026-11-06 | pr | Paid plugins through pluggable payment providers, the store side (Epic 54, story 54.19) |
+| 0743-home-entitlements | 2026-11-06 | pr | The home checks plugin entitlements offline (Epic 54, story 54.19 §6) |
+| 0751-epic54-flows-spec | 2026-11-06 | decision | Epic 54 spec, flows, cross-plugin events, loop checks and joined machines |
 | d20261106-epic53-ci-flakes | 2026-11-06 | incident | Epic 53's merge series — the CI failures that were not the change |
 | 0691-after-merge | 2026-11-07 | pr | After the merge of #691 — a crash envelope's item length |
 | 0721-two-nodes | 2026-11-07 | pr | Two nodes, one address: Patroni, etcd and the Floating IP, rehearsed with kill and partition |
 | 0722-zero-downtime-deploys | 2026-11-07 | pr | Cloud deploys with no downtime: standby first, expand-only migrations, blue/green by readiness |
 | 0724-backups-restore | 2026-11-07 | pr | Backups to two repositories and point-in-time restore, rehearsed by destroying both nodes |
+| 0727-monitoring | 2026-11-07 | pr | Monitoring: the canary home, the witness's Prometheus, alerts with unit tests, the outside probe |
+| 0737-rehearsal-after-ci | 2026-11-07 | pr | On main the update rehearsal runs after CI passes, on the same commit |
+| 0738-plugind-runaway-timing | 2026-11-07 | pr | A runaway plugin job is timed from its start |
+| 0739-status-page | 2026-11-07 | pr | The status page, status.maktaba.tv, and its feed from the probes |
+| 0739-status-page-ci | 2026-11-07 | pr | What #739's CI taught after its event was written |
+| 0746-web-tests-under-load | 2026-11-07 | pr | The web unit suite keeps passing on a loaded machine |
+| 0748-rehearsal-loops-v0386 | 2026-11-07 | pr | Scenario 12 reads the previous release's loops and components from the home itself |
+
