@@ -57,7 +57,7 @@ outbox. A forward while `reports.share` is not on answers `409 component_off` wi
 - Each report's crash stacks are symbolicated with the release's dSYMs (53.14) and its error
   groups joined to the anonymous `telemetry_error_groups` by fingerprint (README D8), so a group
   page shows "3 reports" next to its anonymous counts.
-- **Service admin view** (`app.maktaba.tv/admin/reports`, the Maktaba service admin only, not home
+- **Service admin view** (`admin.maktaba.tv/reports`, the operator console, story 50.32; the Maktaba service admin only, not home
   admins): list across homes (home, app, version, category, status, age), a report page (the same
   merged timeline as the home's inbox), status (New, Triaged, Fixed in {version}, Closed), a
   link to a GitHub issue (pasted by hand), and **reply to the home** (the home's admin sees it in
@@ -119,9 +119,9 @@ outbox. A forward while `reports.share` is not on answers `409 component_off` wi
 | `cloud/migrations/<next>_problem_reports.sql` (new) | Table. |
 | `cloud/internal/reports/` (new), `cloud/internal/handlers/admin/reports.go` (new) | §4. |
 | `cloud/internal/telemetry/` | Join by fingerprint. |
-| `web/cloud/src/pages/admin/Reports.tsx` (new) | Service admin view. |
+| `web/admin/src/pages/Reports.tsx` (new; the operator console, story 50.32) | Service admin view. |
 | `web/src/pages/Settings/Privacy*` | The setting, delete button. |
-| `tools/apple/symbolicate.py` (new) | dSYM symbolication. |
+| `cloud/internal/symbols/`, `cloud/cmd/maktaba-symbols/`, `cloud/migrations/00530002_symbol_tables.sql` (new) | dSYM symbolication: a symbol table per binary made from the dSYM where it is built, uploaded with a token, read against a report's crashes when the service admin opens it. |
 | String files | §5. |
 
 ### Tests

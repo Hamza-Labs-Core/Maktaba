@@ -43,6 +43,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/reports"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/telemetry"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 )
@@ -198,6 +199,9 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// rollback: homes keep them in their outbox).
 	reportStore := &reports.Store{DB: pool.DB}
 	go reports.RunSweeper(metricsCtx, reportStore, logger)
+	// The release dSYMs' symbol tables their Apple crashes are read against (53.14, 53.16):
+	// uploaded with the token in MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE (none: uploads are off).
+	symbolDeps := &symbols.Deps{Store: &symbols.Store{DB: pool.DB}, Token: tokenFile(EnvSymbolsTokenFile), Logger: logger}
 
 	// OAuth flows — each is on only when its client id is configured.
 	var googleFlow *oauth.GoogleFlow
@@ -274,6 +278,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		serversh.MountAgent(app, serversDeps)
 		reports.MountAgent(app, &reports.AgentDeps{Store: reportStore, Servers: servers, Logger: logger,
 			Refuse: strings.EqualFold(os.Getenv("MAKTABA_CLOUD_REPORTS"), "off")})
+		// a release's symbol tables: the symbols token, no account
+		symbols.MountUpload(app, symbolDeps)
 		homesh.MountPublic(app, homes)
 
 		// Anonymous usage data from homes: no account, no server secret.
@@ -300,7 +306,6 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			(&healthh.Deps{DB: pool.DB}).Mount(g)
 			billingh.Mount(g, billing)
 			pushh.Mount(g, pushh.Deps{DB: pool.DB, Dispatcher: dispatcher})
-
 		})
 	})
 
@@ -337,7 +342,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		})
 
 		// the problem reports homes sent, for the service admin only (53.16)
-		reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate})
+		reports.MountAdmin(g, &reports.AdminDeps{Store: reportStore, DB: pool.DB, Logger: logger, Gate: adminGate,
+			Symbols: symbolDeps.Store})
+		symbolDeps.Gate = adminGate
+		symbols.MountAdmin(g, symbolDeps)
 
 		// Epic 30 — relay-analytics dashboard + export + GDPR endpoints.
 		// Reads the relay_metrics_* tables the relay role writes (same DB);

@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.98
-up_to_commit: 2f65aa107
-built_from: v0.3.97
+tag: v0.3.99
+up_to_commit: adbfc23cd
+built_from: v0.3.98
 ---
 
-# Trail snapshot: v0.3.98
+# Trail snapshot: v0.3.99
 
 ## Keep doing
 
@@ -327,6 +327,7 @@ built_from: v0.3.97
 | --- | --- | --- |
 | #784 | 2026-11-07 | fix(update): a busy pipeline no longer rolls an update back |
 | #812 | 2026-11-07 | fix(restore): the vector index is built alone, with memory of its own |
+| #896 | 2026-11-07 | fix(dashboards): Queue, Processing and Streaming boards get real series; the API's p95 on Overview; /metrics serves the plugins' metrics (53.12) |
 | #902 | 2026-11-07 | test(engine): the runner-serves test stubs the plugin role a later test makes |
 | #904 | 2026-11-07 | test(pipeline): the log bench's compare test checks both rounds ran, not their speed |
 

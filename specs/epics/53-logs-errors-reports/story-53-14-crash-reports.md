@@ -45,8 +45,10 @@ signed-in device (viewer or admin; the device's own token):
 | Desktop shell | `applog.rs` panic hook (exists) | Envelope written to disk at panic; sent by the next start through the local server, only when crash reports are on. |
 
 Symbols: Apple stacks are unsymbolicated on the device; the release workflow keeps each build's
-dSYMs as a release asset, and `tools/apple/symbolicate.py` turns a crash's addresses into names
-**at Maktaba** when a report is forwarded with consent (53.16). At home, the group shows the
+dSYMs as a release asset, and `maktaba-symbols upload` (`cloud/cmd/maktaba-symbols`) keeps each
+binary's symbol table (its functions and line table, keyed by its UUID; never the dSYM) in the
+cloud, which turns a crash's offsets into functions, files and lines **at Maktaba** when a report
+is forwarded with consent (53.16). At home, the group shows the
 binary images and offsets plus the app log, which is usually enough to tell what happened.
 
 ### 3. Consent and switches (decided 2026-11-03, README §12)

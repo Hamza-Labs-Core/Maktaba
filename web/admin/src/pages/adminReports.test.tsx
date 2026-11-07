@@ -1,6 +1,8 @@
 // Epic 53 story 53.16: the service admin's problem reports. A home admin's token is refused
 // by the API (Access denied); the list filters by app, version, category, status and error
 // group; a report shows its merged timeline, and status, issue link and reply are posted.
+// Its Apple crashes read as functions and lines where the release's symbols are uploaded
+// (53.14), and the Crash symbols page lists the uploaded tables.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -117,5 +119,105 @@ describe("admin problem reports", () => {
       "/reports"
     );
     expect(await screen.findByText("No reports match.")).toBeInTheDocument();
+  });
+
+  it("a report's crash, symbolicated where the release's symbols are uploaded", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/reports/41": [
+        200,
+        {
+          ...REPORT,
+          body: {},
+          crashes: [
+            {
+              type: "EXC_BAD_ACCESS",
+              value: "SIGSEGV",
+              frames: [
+                {
+                  raw: "Maktaba + 0x1a2b",
+                  in_app: true,
+                  symbol: {
+                    function: "Maktaba.Player.play",
+                    file: "/src/apps/apple/Player.swift",
+                    line: 42,
+                  },
+                },
+                { raw: "libsystem_c.dylib + 0x10", in_app: false },
+              ],
+              missing: [{ code_file: "libsystem_c.dylib", debug_id: "1111" }],
+            },
+          ],
+        },
+      ],
+    });
+    renderAt("/reports/41");
+    expect(await screen.findByRole("heading", { name: "Crashes" })).toBeInTheDocument();
+    expect(screen.getByText("EXC_BAD_ACCESS · SIGSEGV")).toBeInTheDocument();
+    const frames = within(screen.getByTestId("crash-frames")).getAllByRole("listitem");
+    expect(frames[0]).toHaveTextContent("Maktaba.Player.play (Player.swift:42) · Maktaba + 0x1a2b");
+    expect(frames[1]).toHaveTextContent(/^libsystem_c\.dylib \+ 0x10$/);
+    expect(screen.getByTestId("crash-missing")).toHaveTextContent(
+      "No symbols for libsystem_c.dylib (1111)."
+    );
+  });
+
+  it("a report without crashes shows no crash section", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/reports/41": [200, { ...REPORT, body: {} }],
+    });
+    renderAt("/reports/41");
+    expect(await screen.findByTestId("cloud-report")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Crashes" })).not.toBeInTheDocument();
+  });
+
+  it("lists the uploaded crash symbols, linked from the nav", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/symbols": [
+        200,
+        {
+          tables: [
+            {
+              debug_id: "9e40f33c5e1e37528634a1cd1b5ae44f",
+              code_file: "Maktaba",
+              arch: "arm64",
+              version: "0.3.98",
+              uploaded_at: "2026-11-07T12:00:00Z",
+              size: 2_500_000,
+            },
+          ],
+        },
+      ],
+    });
+    renderAt("/symbols");
+    const table = await screen.findByTestId("symbol-tables");
+    expect(table).toHaveTextContent("9e40f33c5e1e37528634a1cd1b5ae44f");
+    expect(table).toHaveTextContent("0.3.98");
+    expect(table).toHaveTextContent("2,442 KB");
+    const nav = screen.getByRole("navigation", { name: "Admin" });
+    expect(within(nav).getByRole("link", { name: "Crash symbols" })).toHaveAttribute(
+      "href",
+      "/symbols"
+    );
+  });
+
+  it("says when no symbols are uploaded", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/symbols": [200, { tables: [] }],
+    });
+    renderAt("/symbols");
+    expect(await screen.findByText("No symbols uploaded yet.")).toBeInTheDocument();
+  });
+
+  it("renders Access denied on the symbols page for a normal account", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "user" })),
+      "GET /v1/admin/symbols": [403, { error: "admin_access_denied", message: "denied" }],
+    });
+    renderAt("/symbols");
+    expect(await screen.findByText("Access denied")).toBeInTheDocument();
   });
 });
