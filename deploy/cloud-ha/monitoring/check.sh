@@ -24,5 +24,5 @@ witness=(docker run --rm -e WITNESS_DOMAIN=witness.example.com -e ACME_EMAIL=ops
     -v "${here}/Caddyfile.witness:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy)
 "${witness[@]}" validate --config /etc/caddy/Caddyfile --adapter caddyfile
 "${witness[@]}" adapt --config /etc/caddy/Caddyfile --adapter caddyfile >"${work}/witness.json"
-bash "${here}/../tests/deny-first.sh" "${work}/witness.json" witness.example.com 401
+bash "${here}/../tests/deny-first.sh" "${work}/witness.json" witness.example.com 401 header
 echo "monitoring configs: ok"
