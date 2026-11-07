@@ -2,24 +2,32 @@
   "name": "@maktaba/store",
   "version": "0.0.0",
   "private": true,
-  "description": "The Maktaba plugin store (Epic 54, stories 54.14-54.18): its Cloudflare Workers, D1 migrations, the signer and the review pipeline. Independent of Maktaba Cloud: nothing here imports cloud/.",
   "type": "module",
+  "description": "The Maktaba plugin store (Epic 54): its signer and verifier (story 54.14), its Cloudflare Workers, D1 migrations, accounts, checks, review, catalog and ratings (stories 54.15-54.18), and paid plugins (story 54.19): the pluggable payment providers, the provider-neutral ledger, entitlements and payouts. Independent of Maktaba Cloud: nothing here imports cloud/.",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.workers.json --noEmit && tsc -p tsconfig.console.json --noEmit",
     "vectors": "tsx scripts/gen-vectors.ts",
     "vectors:check": "tsx scripts/gen-vectors.ts --check",
-    "test": "tsx scripts/gen-vectors.ts --check && tsx scripts/gen-data.ts --check && pnpm typecheck && vitest run",
+    "test": "tsx scripts/gen-vectors.ts --check && tsx scripts/gen-data.ts --check && npm run typecheck && vitest run",
     "build:wasm": "bash scripts/build-wasm.sh",
     "build:console": "vite build console",
     "build": "bash scripts/build-wasm.sh && vite build console",
     "data": "tsx scripts/gen-data.ts",
     "data:check": "tsx scripts/gen-data.ts --check"
   },
+  "dependencies": {
+    "argon2id": "1.0.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.23.0",
     "@cloudflare/workers-types": "5.20261001.1",
     "@testing-library/react": "16.3.2",
-    "@types/node": "20.19.43",
+    "@types/node": "22.19.1",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "4.7.0",
@@ -31,12 +39,5 @@
     "vite": "6.4.5",
     "vitest": "4.1.12",
     "wrangler": "4.124.0"
-  },
-  "packageManager": "pnpm@9.15.4",
-  "dependencies": {
-    "@bokuweb/zstd-wasm": "0.0.27",
-    "argon2id": "1.0.1",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
   }
 }

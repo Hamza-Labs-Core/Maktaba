@@ -1,0 +1,4 @@
+{
+  "id": "adyen",
+  "markers": ["adyen", "adyenpayments.com", "@adyen/", "hmacSignature", "NotificationRequestItem"]
+}

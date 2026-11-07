@@ -32,15 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - uses: pnpm/action-setup@v6.0.8
-        with:
-          version: 9.15.4
-          run_install: false
-
       - uses: actions/setup-node@v6.4.0
         with:
-          node-version-file: web/.nvmrc
+          node-version-file: store/.nvmrc
           package-manager-cache: false
+
+      # 54.19: each payment provider stays in its own module
+      - name: Payment providers stay in their modules
+        run: python3 tools/ci/payment_provider_allowlist.py
 
       - uses: actions/setup-go@v6.4.0
         with:
@@ -64,16 +63,16 @@ jobs:
 
       - name: Install
         working-directory: store
-        run: pnpm install --frozen-lockfile
+        run: npm ci --no-audit --no-fund
 
       - name: Build the WebAssembly and the console
         working-directory: store
-        run: pnpm build
+        run: npm run build
 
       # 54.14 T05, T07, T08 (ts); 54.15 T14
       - name: The store's tests (vectors current, typecheck, vitest)
         working-directory: store
-        run: pnpm test
+        run: npm test
 
       # 54.14 T01-T05, T07, T08 (go) on the same vectors
       - name: The home's verifier on the vectors
@@ -84,7 +83,7 @@ jobs:
       - name: Online key rotation drill
         run: |
           drill="$RUNNER_TEMP/store-drill"
-          (cd store && pnpm exec tsx scripts/drill-rotation.ts "$drill")
+          (cd store && npx tsx scripts/drill-rotation.ts "$drill")
           (cd shared/plugins && MAKTABA_STORE_DRILL="$drill" go test -run TestRotationDrill -v ./pluginsig/)
 
       # 54.16: the isolated runner's scripts (they run in store-check-runner.yml and the image)

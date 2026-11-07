@@ -46,9 +46,9 @@ jobs:
       published: ${{ steps.guard.outputs.published }}
       latest: ${{ steps.guard.outputs.latest }}
     steps:
-      # A dispatched run (auto-tag.yml starts each tag workflow so: a tag it pushes with
-      # GITHUB_TOKEN starts none) releases its ref, so the ref must be the tag itself, and the
-      # `tag` input, when given, that same tag. The guard below is then the same as a push's.
+      # A dispatched run (a tag's run by hand, when its push run is missing: a session pushes
+      # each tag, and that push starts the push runs) releases its ref, so the ref must be the
+      # tag itself, and the `tag` input, when given, that same tag. The guard below is then the same as a push's.
       - name: A dispatched run is on its tag
         if: github.event_name == 'workflow_dispatch'
         env:

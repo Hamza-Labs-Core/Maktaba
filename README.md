@@ -280,8 +280,8 @@ The apps are in testing. Testers get them from TestFlight and Google Play's inte
 not from the public stores yet. The owner adds each tester: their Apple ID to a TestFlight
 testers group in App Store Connect ([docs/testflight.md](docs/testflight.md)), their Google
 account to the testers list in Play Console ([docs/google-play.md](docs/google-play.md)).
-Every release tag uploads a new build to both (tags are automatic: each commit of main that CI
-and the update rehearsal pass on is tagged as the next patch version,
+Every release tag uploads a new build to both (a scheduled release session tags the newest commit
+of main that CI and the update rehearsal pass on as the next patch version,
 [docs/updates.md](docs/updates.md#how-a-release-is-made)), which
 reaches testers as an update, and attaches the installable files to the
 [GitHub Release](https://github.com/Hamza-Labs-Core/Maktaba/releases) for that tag.

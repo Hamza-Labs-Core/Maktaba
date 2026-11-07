@@ -44,7 +44,7 @@ on:
     tags:
       - 'v*'
   # by hand from a branch (no guard), or on a tag (`--ref vX.Y.Z -f tag=vX.Y.Z`) when its push
-  # run is missing (auto-tag.yml's tag push starts the push run)
+  # run is missing (the release session's tag push starts the push run)
   workflow_dispatch:
     inputs:
       tag:

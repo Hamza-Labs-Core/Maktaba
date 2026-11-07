@@ -83,7 +83,7 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(out))
 }
 
-// TestScenario runs every scenario (C01–C10); one with -run 'TestScenario/<name>'.
+// TestScenario runs every scenario (C01–C10, and 50.11's status-feed); one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
 	for _, s := range []struct {
@@ -100,6 +100,7 @@ func TestScenario(t *testing.T) {
 		{"db-blip", dbBlip},
 		{"restore-pitr", restorePITR},
 		{"cert-on-standby", certOnStandby},
+		{"status-feed", statusFeed},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -518,3 +519,92 @@ func peerCert(port int, sni string) *x509.Certificate {
 }
 
 func jsonDecode(resp *http.Response, v any) error { return json.NewDecoder(resp.Body).Decode(v) }
+
+// status-feed (story 50.11, T10): the outside probe (deploy/cloud-ha/monitoring/probe.sh)
+// against the cluster's canary home, its rounds folded into the status data
+// (status/publish-data.sh) and pushed to a local bare repository standing in for GitHub,
+// the site built from it (status/build.mjs). With every relay process killed, summary.json
+// says the relay is in outage within two probe rounds; with them back, operational again
+// after two passing rounds.
+func statusFeed(t *testing.T, c *cluster) Result {
+	slugs := c.homesOnline(1)
+	root := repoRoot(t)
+	work := t.TempDir()
+	git := func(dir string, args ...string) {
+		t.Helper()
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		}
+	}
+	git(work, "init", "-q", "--bare", "github.git")
+	git(work, "clone", "-q", filepath.Join(work, "github.git"), "data")
+	data := filepath.Join(work, "data")
+	git(data, "checkout", "-q", "-b", "status-data")
+	site := filepath.Join(work, "site")
+	rounds := filepath.Join(work, "rounds")
+	edgePort := strings.TrimPrefix(c.edge, "http://127.0.0.1:")
+	build := fmt.Sprintf("node %q --checks %q --out %q", filepath.Join(root, "status/build.mjs"), data, site)
+
+	round := func() string {
+		t.Helper()
+		probe := exec.Command("bash", filepath.Join(root, "deploy/cloud-ha/monitoring/probe.sh"))
+		probe.Env = append(os.Environ(), "ROUNDS=1", "EVERY=0", "ROUNDS_FILE="+rounds,
+			"CANARY_URL=http://"+slugs[0]+".relay.test/api/health", "API_URL="+c.edge+"/readyz",
+			"CONNECT_TO=::127.0.0.1:"+edgePort)
+		out, _ := probe.CombinedOutput() // a failed round exits 0 with ROUNDS=1; its result is in the file
+		t.Logf("%s", strings.TrimSpace(string(out)))
+		pub := exec.Command("bash", filepath.Join(root, "status/publish-data.sh"), data, rounds, "--if-changed")
+		pub.Env = append(os.Environ(), "PUBLISH_CMD="+build)
+		if out, err := pub.CombinedOutput(); err != nil {
+			t.Fatalf("publish-data: %v\n%s", err, out)
+		}
+		var sum struct {
+			Components map[string]string `json:"components"`
+		}
+		b, err := os.ReadFile(filepath.Join(site, "summary.json"))
+		if err != nil {
+			return ""
+		}
+		if err := json.Unmarshal(b, &sum); err != nil {
+			t.Fatal(err)
+		}
+		return sum.Components["relay"]
+	}
+	untilState := func(want string, max int) (int, time.Duration) {
+		t.Helper()
+		start := time.Now()
+		for i := 1; i <= max; i++ {
+			if got := round(); got == want {
+				return i, time.Since(start)
+			}
+			time.Sleep(3 * time.Second)
+		}
+		t.Fatalf("summary.json never said relay %s in %d rounds", want, max)
+		return 0, 0
+	}
+
+	if n, _ := untilState("operational", 3); n > 1 {
+		t.Errorf("the first round with everything up took %d rounds to read operational", n)
+	}
+	c.must("kill", "relay-blue", "relay-green")
+	downRounds, downAfter := untilState("outage", 4)
+	if downRounds > 2 {
+		t.Errorf("relay outage after %d probe rounds, budget 2", downRounds)
+	}
+	c.must("start", "relay-blue", "relay-green")
+	waitFor(t, 2*time.Minute, "the canary home back", func() bool { return c.tunnels("") == 1 })
+	upRounds, _ := untilState("operational", 6)
+	if upRounds < 2 {
+		t.Errorf("relay operational after %d passing round: a change takes two in a row", upRounds)
+	}
+	log, err := exec.Command("git", "-C", filepath.Join(work, "github.git"), "log", "--format=%s", "status-data").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushed := strings.Count(string(log), "\n")
+	if !strings.Contains(string(log), `"relay":"outage"`) {
+		t.Errorf("the stand-in GitHub never got the outage: %s", log)
+	}
+	return Result{DowntimeMS: downAfter.Milliseconds(), BudgetMS: (5 * time.Minute).Milliseconds(), Requests: int64(downRounds + upRounds),
+		Notes: []string{fmt.Sprintf("outage in summary.json after %d rounds (%s); operational again after %d; %d pushes to the stand-in GitHub", downRounds, downAfter.Round(time.Second), upRounds, pushed)}}
+}

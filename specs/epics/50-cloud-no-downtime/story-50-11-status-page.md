@@ -17,14 +17,18 @@ someone remembering to update it, and it must still load when Hetzner is down.
 - `status.maktaba.tv`, a **static site** hosted **off Hetzner** on GitHub Pages (Cloudflare
   Pages is the fallback if Pages is ever down for us). DNS: a `CNAME` on Cloudflare, DNS only.
 - Built from `status/` in this repo by a GitHub Actions workflow. Its data is plain files:
-  - `status/data/checks/<component>/<yyyy-mm-dd>.json`: probe results per day, written by the
-    outside prober (50.10) through a commit by its workflow, or pushed by the witness's
-    Alertmanager webhook through a GitHub App with write access to `status/data/` only.
+  - `checks/<component>/<yyyy-mm-dd>.json` and `checks/state.json`: probe results per day and
+    each component's state, on the **`status-data` branch**, not main (main's every green
+    commit is tagged as a release, and the probe writes every few minutes). The outside prober
+    (50.10, `cloud-probe.yml` on GitHub's runners) writes them each round, beside network 1's
+    view: the witness's own probes and series from its Prometheus, read from
+    `witness.maktaba.tv` behind a token. The witness unreachable counts as no answer, so the
+    outside network alone decides.
   - `status/data/incidents/<yyyy-mm-dd>-<slug>.md`: incident posts and maintenance notices,
     with front matter (`component`, `state`, `started`, `resolved`, `title_en`, `title_ar`) and
     one English and one Arabic section.
-- The workflow rebuilds the site on every push to `status/` and every 5 minutes on a schedule,
-  so a missed webhook still shows within 5 minutes.
+- The workflow rebuilds the site on every push to `status/`, every 5 minutes on a schedule,
+  and at once when the prober sees a component change state.
 
 ### 2. Components and states
 
@@ -71,7 +75,10 @@ request rate above 5 %), **outage** (both networks fail two probes in a row), **
                      "title": { "en": "...", "ar": "..." } } ] }
 ```
 
-- `Access-Control-Allow-Origin: *`, `Cache-Control: max-age=60`.
+- `Access-Control-Allow-Origin: *`. GitHub Pages sets its own `Cache-Control` (10 minutes),
+  so the apps add the minute to the address (`summary.json?t=<unix minute>`) and never read a
+  copy more than a minute old; Cloudflare Pages, the fallback, reads `_headers`
+  (`max-age=60`).
 - Apps fetch it when they start, every 5 minutes while open, and at once when a relay request
   fails. They never block on it: a failed fetch shows nothing.
 
@@ -184,9 +191,10 @@ states and draws it. No app has two banners.
 
 | File | Change |
 |---|---|
-| `status/` (new) | Static site source: templates (EN/AR), `build.ts` (or Go `cmd`), `data/checks/`, `data/incidents/`, `CNAME`. |
-| `.github/workflows/status-page.yml` (new) | Build and publish to GitHub Pages on push to `status/**` and every 5 min; check Arabic titles. |
-| `.github/workflows/status-probe.yml` (new) | The outside prober from 50.10 writes `status/data/checks/` (one of its two networks is GitHub's runners). |
+| `status/` (new) | Static site source: `build.mjs`, `update.mjs`, `publish-data.sh` (Node, no dependencies), `strings.json` (EN/AR), `data/incidents/`; the build writes `CNAME`. |
+| `.github/workflows/status-page.yml` (new) | Build and publish to GitHub Pages on push to `status/**`, every 5 min and on a state change; check Arabic titles. |
+| `.github/workflows/cloud-probe.yml` | The outside prober from 50.10 writes the `status-data` branch each round (one of its two networks is GitHub's runners). |
+| `deploy/cloud-ha/bin/status-export`, `monitoring/Caddyfile.witness` (new) | The witness's view (network 1) every 30 s, behind its token on `witness.maktaba.tv`. |
 | `web/src/lib/cloudStatus.ts` (new) | `summary.json` fetch and model for the home's web app; drawn by 53.06's `StatusStrip.tsx`. |
 | `web/src/i18n/en.json`, `web/src/i18n/ar.json` | `banner.*` keys. |
 | `web/cloud/src/cloudStatus.ts` (new), `web/cloud/src/i18n/en.json`, `web/cloud/src/i18n/ar.json` | Fetch and strings for the cloud web app; drawn by 53.06's strip. |

@@ -142,8 +142,8 @@ service account's Play Console permissions.
 ### Release notes
 
 The notes come from the annotated tag's message: English first, then a line that is exactly
-`--- ar ---`, then the Arabic. Each is cut to Play's 500 characters. An automatic tag
-(`auto-tag.yml`, [updates.md](updates.md#how-a-release-is-made)) has only its name as message,
+`--- ar ---`, then the Arabic. Each is cut to Play's 500 characters. A tag the release
+session pushes ([updates.md](updates.md#how-a-release-is-made)) has only its name as message,
 so it gives no notes; a release with notes is tagged by hand, as below.
 
 ```bash

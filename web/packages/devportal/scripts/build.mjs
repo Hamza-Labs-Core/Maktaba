@@ -68,6 +68,7 @@ const GUIDES = {
     "trust.md",
     "publishing.md",
     "guidelines.md",
+    "selling.md",
   ],
   contributing: [
     "README.md",
@@ -78,6 +79,7 @@ const GUIDES = {
     "conventions.md",
     "ci.md",
     "pull-requests.md",
+    "cloud.md",
   ],
   security: ["conformance.md"],
 };

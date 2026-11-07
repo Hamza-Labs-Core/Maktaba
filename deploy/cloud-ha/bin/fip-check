@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Which node holds the Floating IP, against which node leads (Epic 50 story 50.10): the
+# witness asks the Hetzner API (read-only) and both nodes' Patroni every minute, and pushes
+# fip_holder{node} and patroni_primary{node} to the Pushgateway; fip_mismatch pages when they
+# disagree for 2 minutes.
+#
+# Env (cloud-ha.env on W): HCLOUD_ENDPOINT, HCLOUD_TOKEN_FILE (a read-only token is enough),
+# FLOATING_IP_ID, NODE_A_ADDR, NODE_B_ADDR, SERVER_ID_A, SERVER_ID_B, PUSHGATEWAY
+# (http://127.0.0.1:9091).
+set -uo pipefail
+env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
+# shellcheck disable=SC1090
+[ -r "${env_file}" ] && . "${env_file}"
+token="$(cat "${HCLOUD_TOKEN_FILE:-/etc/maktaba/hcloud-token}" 2>/dev/null)" || token=""
+holder="$(curl -fsS --max-time 10 -H "Authorization: Bearer ${token}" \
+    "${HCLOUD_ENDPOINT:-https://api.hetzner.cloud/v1}/floating_ips/${FLOATING_IP_ID:?}" | jq -r '.floating_ip.server // 0')" || holder=""
+lead() { curl -s -o /dev/null -w '%{http_code}' --max-time 3 "http://$1:8008/primary" || true; }
+body=""
+for n in a b; do
+    addr_var="NODE_$(tr '[:lower:]' '[:upper:]' <<<"${n}")_ADDR" id_var="SERVER_ID_$(tr '[:lower:]' '[:upper:]' <<<"${n}")"
+    h=0; [ -n "${holder}" ] && [ "${holder}" = "${!id_var:-x}" ] && h=1
+    p=0; [ "$(lead "${!addr_var:?}")" = 200 ] && p=1
+    body+="fip_holder{node=\"node-${n}\"} ${h}"$'\n'"patroni_primary{node=\"node-${n}\"} ${p}"$'\n'
+done
+[ -n "${holder}" ] || body+="fip_check_api_failed 1"$'\n'
+printf '%s' "${body}" | curl -fsS --max-time 5 --data-binary @- "${PUSHGATEWAY:-http://127.0.0.1:9091}/metrics/job/fip_check" >/dev/null
+printf '%s' "${body}"

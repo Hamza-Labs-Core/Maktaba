@@ -14,8 +14,8 @@
 # and (optionally) attach the web bundle for an existing tag without
 # cutting a full server release — useful for re-publishing the SPA after a
 # CDN/static-host change. It never fires automatically, so it cannot
-# collide with `release.yml`. auto-tag.yml, which starts every tag workflow
-# on the tags it makes, leaves this one out for the same reason.
+# collide with `release.yml`; the release session's tag push does not
+# start it.
 name: Web Release
 
 on:
