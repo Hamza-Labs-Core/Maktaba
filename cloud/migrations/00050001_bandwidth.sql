@@ -1,8 +1,8 @@
 -- +goose Up
 -- Bandwidth metering. We store raw 5-minute samples for the current
--- month plus rolled-up monthly buckets for billing. The hot read path
--- (current-month totals) hits Redis; this table is the durable source
--- of truth that survives Redis flush.
+-- month plus rolled-up monthly buckets for billing. The relay's meter
+-- counts in memory and flushes here every 30 s (no Redis: story 50.05);
+-- these tables are the durable source of truth.
 CREATE TABLE IF NOT EXISTS bandwidth_samples (
     server_id     UUID        NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
     bucket_start  TIMESTAMPTZ NOT NULL,

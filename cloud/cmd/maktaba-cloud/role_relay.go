@@ -58,6 +58,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	registry := relaypkg.NewRegistry()
 	serversStore := stores.NewServers(pool.DB)
 	meter := billingpkg.NewMeter(pool.DB)
+	meter.Logger = logger
 	meter.Start(context.Background())
 	defer meter.Close()
 
@@ -80,7 +81,17 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	)
 	go runner.Run(ctx)
 
-	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg))
+	// Story 50.05: home lookups through a cache that outlives a database
+	// failover, dropped at once by the database's change notifications.
+	var cache *relayh.HomeCache
+	if cfg.Relay.CacheEnabled {
+		cache = &relayh.HomeCache{Lookup: serversStore}
+		if err := stores.Listen(ctx, cfg.Database.URL, []string{stores.ChannelTierChanged, stores.ChannelServerChanged}, logger,
+			func(_, slug string) { cache.Invalidate(slug) }, cache.Expire); err != nil {
+			logger.Warn("relay: the change listener did not start; the cache refreshes each minute", "err", err)
+		}
+	}
+	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg), relayReadiness(cfg, cache)...)
 
 	// Story 50.03: resume tickets (the key derived from the token secret every
 	// node shares) and DRAIN on shutdown, each with its switch.
@@ -123,6 +134,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		PublicHost: cfg.Relay.PublicHost,
 		Collector:  collector,
 		Editions:   editions(logger, cfg.Relay.EditionsDir),
+		Cache:      cache,
 		RelayID:    relayID,
 		Directory:  directory,
 		PeerAuth:   peerAuth,
@@ -161,7 +173,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics)))
+	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, meter.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
@@ -176,6 +188,15 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		logger.Error("relay exited", "err", err)
 		os.Exit(1)
 	}
+}
+
+// relayReadiness is the relay's /readyz rule (story 50.05): lenient while
+// its cache can serve, unless relay.readyz_strict (or no cache).
+func relayReadiness(cfg config.Config, cache *relayh.HomeCache) []server.RouterOption {
+	if cfg.Relay.ReadyzStrict || cache == nil {
+		return nil
+	}
+	return []server.RouterOption{server.WithLenientReadiness(&server.LenientReadiness{Warm: cache.Warm})}
 }
 
 // relayIDOf names this relay process in the tunnel directory: relay.id, or

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
+	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 )
 
@@ -92,5 +93,22 @@ func TestRelayIDAndHoldMax(t *testing.T) {
 	}
 	if holdMax(0) >= 0 || holdMax(15*time.Second) != 15*time.Second {
 		t.Error("holdMax")
+	}
+}
+
+// Story 50.05: the relay's readiness is lenient with its cache, strict
+// without it or when asked.
+func TestRelayReadiness(t *testing.T) {
+	var cfg config.Config
+	cache := &relayh.HomeCache{}
+	if len(relayReadiness(cfg, cache)) != 1 {
+		t.Error("lenient by default")
+	}
+	if relayReadiness(cfg, nil) != nil {
+		t.Error("no cache: strict")
+	}
+	cfg.Relay.ReadyzStrict = true
+	if relayReadiness(cfg, cache) != nil {
+		t.Error("relay.readyz_strict")
 	}
 }

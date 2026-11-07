@@ -22,6 +22,13 @@ var seq atomic.Int64
 // Migrated makes a scratch database, migrates it and drops it after the
 // test; it skips the test when MAKTABA_CLOUD_DB_URL is unset.
 func Migrated(t *testing.T) *db.Pool {
+	pool, _ := MigratedURL(t)
+	return pool
+}
+
+// MigratedURL is Migrated, and the scratch database's URL (for a second
+// pool, a listener or a Cut).
+func MigratedURL(t *testing.T) (*db.Pool, string) {
 	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
@@ -54,5 +61,5 @@ func Migrated(t *testing.T) *db.Pool {
 	if err := db.NewMigrator(pool, migrations.FS, ".").Up(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return pool
+	return pool, u.String()
 }

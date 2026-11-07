@@ -103,6 +103,8 @@ func (d *PGDirectory) Lookup(ctx context.Context, slug string) (Peer, bool) {
 	}
 	var p Peer
 	var seq int64
+	ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
 	err := d.DB.QueryRowContext(ctx, `
         SELECT t.relay_id, t.relay_addr, t.seq FROM relay_tunnels t
           JOIN relay_nodes n ON n.relay_id = t.relay_id

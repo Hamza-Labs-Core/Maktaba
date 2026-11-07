@@ -66,6 +66,10 @@ type Deps struct {
 	Collector     *metricspkg.Collector
 	CountryHeader string
 
+	// Cache serves home lookups through a database blip (story 50.05); its
+	// Lookup is the database. Nil: every request reads the database.
+	Cache *HomeCache
+
 	// Story 50.04: forwarding between relay processes and holding.
 	// RelayID names this process in the directory; Directory finds a
 	// home's tunnel elsewhere (nil: no forwarding); PeerAuth signs and
@@ -104,6 +108,9 @@ func (d *Deps) clock() time.Time {
 }
 
 func (d *Deps) lookup() ServerLookup {
+	if d.Cache != nil {
+		return d.Cache
+	}
 	if d.Lookup != nil {
 		return d.Lookup
 	}
@@ -144,8 +151,13 @@ func (d *Deps) Handler() http.Handler {
 		r.Header.Del(relaypkg.HeaderPeerAuth)
 
 		sv, err := d.lookup().BySlug(r.Context(), slug)
-		if err != nil {
+		if errors.Is(err, stores.ErrServerNotFound) {
 			writeErr(w, r, http.StatusNotFound, "no_server", "")
+			return
+		}
+		if err != nil {
+			// the database is away and this relay does not know the home
+			writeErr(w, r, http.StatusServiceUnavailable, "server_offline", "")
 			return
 		}
 		// the cloud's own files for a claimed home's player and remote (42.9): not the

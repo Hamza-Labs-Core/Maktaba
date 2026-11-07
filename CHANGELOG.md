@@ -242,6 +242,15 @@ build fails when the two differ.
   before. The relay's stop grace is 150 s (the container's 160 s), with switches
   `relay.drain.enabled` and `relay.ticket.enabled`, and `/metrics` counts drains, forced
   closes and handshakes by method.
+- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
+  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
+  each minute, and dropped at once when a plan, an address or an owner changes, through
+  database notifications sent by triggers), so a request needs no database call, and a home
+  it served in the last hour keeps playing however long the database is away. Metering is
+  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
+  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
+  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
+  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
 - **Any relay process answers for any home, and a home that is reconnecting is waited for
   (Epic 50, story 50.04).** A tunnel directory in the cloud database (`relay_tunnels`,
   `relay_nodes`) records which relay process holds each home's tunnel; a process without it
