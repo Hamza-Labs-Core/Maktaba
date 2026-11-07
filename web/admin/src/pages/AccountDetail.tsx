@@ -1,4 +1,4 @@
-// /admin/accounts/:id — one account: subscription, servers, usage, abuse and
+// /accounts/:id — one account: subscription, servers, usage, abuse and
 // audit, with Suspend / Unsuspend and Set plan (a reason is required and
 // audited). Set plan is how plans change while no payment provider is set up.
 import { useState } from "react";
@@ -9,9 +9,9 @@ import { Card } from "@ds/components/Card/Card";
 import { Select } from "@ds/components/Select/Select";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "../../api";
-import { useI18n } from "../../i18n";
-import { LoadError, Loading, Page, useBytes, useLoad } from "../../ui";
+import { api } from "@cloud-shared/api";
+import { useI18n } from "@cloud-shared/i18n";
+import { LoadError, Loading, Page, useBytes, useLoad } from "@cloud-shared/ui";
 import type { AdminAccount } from "./Accounts";
 import type { AuditEntry } from "./Audit";
 import type { AbuseSignal } from "./Abuse";
@@ -118,7 +118,7 @@ export function AdminAccountDetail() {
       }
     >
       <p>
-        <Link to="/admin/accounts">{t("admin.account.back")}</Link>
+        <Link to="/accounts">{t("admin.account.back")}</Link>
       </p>
       <div className="mkc-stack">
         <Card header={<h2>{t("admin.account.title")}</h2>}>

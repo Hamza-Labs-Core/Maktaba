@@ -1,6 +1,7 @@
-// i18n for the cloud app: the same shape as the home app's provider
-// (web/src/lib/i18n.tsx) with the cloud's own catalogs, so the two bundles
-// do not ship each other's copy. Arabic flips <html dir> to rtl.
+// i18n for the cloud's web apps: the same shape as the home app's provider
+// (web/src/lib/i18n.tsx). Each app passes its own catalogs (the user app's, web/cloud/src/i18n;
+// the operator console's, web/admin/src/i18n), so no bundle ships another's copy. Arabic flips
+// <html dir> to rtl.
 import {
   createContext,
   useCallback,
@@ -10,17 +11,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import en from "./i18n/en.json";
-import ar from "./i18n/ar.json";
 
 export type Locale = "en" | "ar";
 
-const STORAGE_KEY = "mkt:cloud:locale";
+/** An app's catalogs, by locale. */
+export type Messages = Record<Locale, Record<string, string>>;
 
-export const MESSAGES: Record<Locale, Record<string, string>> = {
-  en: en as Record<string, string>,
-  ar: ar as Record<string, string>,
-};
+const STORAGE_KEY = "mkt:cloud:locale";
 
 export interface I18nState {
   locale: Locale;
@@ -51,7 +48,7 @@ function interpolate(template: string, vars?: Record<string, string | number>): 
   return template.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
 }
 
-export function I18nProvider({ children }: { children: ReactNode }) {
+export function I18nProvider({ messages, children }: { messages: Messages; children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
   const dir = locale === "ar" ? "rtl" : "ltr";
   const intlLocale = locale === "ar" ? "ar-EG" : "en";
@@ -63,10 +60,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const t = useCallback(
     (key: string, vars?: Record<string, string | number>) =>
-      interpolate(MESSAGES[locale][key] ?? MESSAGES.en[key] ?? key, vars),
-    [locale]
+      interpolate(messages[locale][key] ?? messages.en[key] ?? key, vars),
+    [messages, locale]
   );
-  const has = useCallback((key: string) => key in MESSAGES.en, []);
+  const has = useCallback((key: string) => key in messages.en, [messages]);
   const n = useCallback(
     (value: number, opts?: Intl.NumberFormatOptions) =>
       new Intl.NumberFormat(intlLocale, opts).format(value),

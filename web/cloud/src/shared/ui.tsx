@@ -73,8 +73,8 @@ export function LoadError({ error, onRetry }: { error: unknown; onRetry?: () => 
     return (
       <ErrorState
         kind="permission"
-        title={t("admin.denied.title")}
-        description={t("admin.denied.body")}
+        title={t("common.denied.title")}
+        description={t("common.denied.body")}
       />
     );
   }

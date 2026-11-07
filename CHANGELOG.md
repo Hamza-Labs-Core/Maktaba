@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The operator console is its own web app (Epic 50 story 50.32, part 1).** Maktaba Cloud's
+  console moved out of the account web app into `web/admin` (`pnpm dev:admin`, `pnpm build:admin`),
+  for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
+  new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
+  or staff API path, an admin string or a console module.
 - **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
   keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
   (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this

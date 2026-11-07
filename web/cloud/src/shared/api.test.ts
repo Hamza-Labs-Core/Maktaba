@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, CloudApiError, onSessionChange, setAccessToken } from "./api";
-import { json, stubFetch, user } from "./test/harness";
+import { json, stubFetch, user } from "./test/fetch";
 
 beforeEach(() => setAccessToken(null));
 afterEach(() => vi.unstubAllGlobals());
