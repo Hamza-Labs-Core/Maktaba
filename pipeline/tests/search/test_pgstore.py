@@ -580,3 +580,19 @@ async def test_the_reconciler_queues_videos_without_vectors(
     )
     assert [str(r["subject_id"]) for r in queued] == [str(v)]
     assert await _semantic_sweep(pg, graph) == 0  # queued already
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_prepare_grants_the_semantic_search_plugin_its_vectors_table(pg: Database) -> None:
+    """Epic 54 wave 3: the plugin's roles migration grants only the tables that exist, and
+    segment_embeddings comes with pgvector, later: prepare() grants it then."""
+    if not await pg.fetchval(
+        "SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)", pgstore.PLUGIN_ROLE
+    ):
+        pytest.skip("this database has no tv.maktaba.semantic-search role")
+    await pg.execute(f"REVOKE ALL ON segment_embeddings FROM {pgstore.PLUGIN_ROLE}")
+    await prepare(pg)
+    assert await pg.fetchval(
+        "SELECT has_table_privilege($1, 'segment_embeddings', 'INSERT')", pgstore.PLUGIN_ROLE
+    )
