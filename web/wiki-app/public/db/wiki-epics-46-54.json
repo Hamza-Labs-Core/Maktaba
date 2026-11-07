@@ -5778,7 +5778,7 @@
       "title": "Wave 8: Plex and dizqueTV through the service door",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.35 — Wave 8: Plex and dizqueTV through the service door\n\n> Epic 54 · Phase 4 · Depends on: 54.34 · Needed by: 54.36\n\n## Why\n\nThe Plex and dizqueTV extensions hold the home's most sensitive settings (the Plex token) and\ntalk to other products. As first-party plugins they must keep working without ever holding the\nsecret: they call through the home's service door (story 31.R), which adds it.\n\n## Description\n\n### 1. The stages\n\n| Stage | Plugin | Pool | Placement | Trusted needs |\n|---|---|---|---|---|\n| `plex_index` | `tv.maktaba.plex` | `network_plex` | home, or any with `relay` | `s",
+      "content": "# Story 54.35 — Wave 8: Plex and dizqueTV through the service door\n\n> Epic 54 · Phase 4 · Depends on: 54.34 · Needed by: 54.36\n\n**Only the Plex stages move.** dizqueTV stores the programme bodies its stages write, which\ncarry the Plex token, and a plugin could read them back: those stages stay in the worker until\nthe door builds programmes on the home (issue #827).\n\n## Why\n\nThe Plex and dizqueTV extensions hold the home's most sensitive settings (the Plex token) and\ntalk to other products. As first-party plugins they must keep working without ever holding the\nsecret: they call through the home",
       "tags": [
         "story",
         "54-plugins",
@@ -5840,7 +5840,7 @@
       "title": "The component catalog takes plugin entries",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.37 — The component catalog takes plugin entries\n\n> Epic 54 · Phase 1 · Depends on: 54.01, Epic 51 (51.01, 51.02, 51.04, 51.05, 51.06, 51.08,\n> 51.09) · Needed by: 54.07, 54.38, 54.17, 54.19\n\n## Why\n\nEpic 51's catalog is fixed per release. `shared/components/catalog.toml` is embedded in the Go\nbinaries (`shared/components/catalog.go`, `go:embed`) and copied byte for byte into the\npipeline (`pipeline/src/maktaba_pipeline/components/catalog.toml`, `make catalog-sync`). Both\nloaders refuse an unknown field, a kind outside `process | stages | loop | extension | asset`\n(or a `+` join of t",
+      "content": "# Story 54.37 — The component catalog takes plugin entries\n\n> Epic 54 · Phase 1 · Depends on: 54.01, Epic 51 (51.01, 51.02, 51.04, 51.05, 51.06, 51.08,\n> 51.09) · Needed by: 54.07, 54.38, 54.17, 54.19\n\n**On-demand processes:** a shared runner group starts when the worker has a job for it and\nstops when idle, and is held while none of its components is on. The supervisor reports each\nprocess's start mode (`always` or `on_demand`).\n\n## Why\n\nEpic 51's catalog is fixed per release. `shared/components/catalog.toml` is embedded in the Go\nbinaries (`shared/components/catalog.go`, `go:embed`) and copi",
       "tags": [
         "story",
         "54-plugins",

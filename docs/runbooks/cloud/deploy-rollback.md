@@ -8,7 +8,7 @@ Errors or complaints after a release that passed its health checks and the blue/
 
 ## Check
 
-1. The cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines): the error groups new since the deploy.
+1. The cloud's logs and error groups in the service admin's cloud log view ([errors, last hour](https://admin.maktaba.tv/logs?level=error&last=1h); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17; the witness keeps a dead node's last lines): the error groups new since the deploy.
 2. The tag running: `cat /opt/maktaba-cloud/deployed` on the leader; the previous one is the last good release on the Releases page.
 
 ## Do

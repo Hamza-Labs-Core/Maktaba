@@ -86,6 +86,11 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 		method, path := rt[0], concrete(rt[1], victimID)
 		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
 		r := admin.do(method, path, body)
+		// the cloud's log routes answer 503 logs_unavailable with no index on W (53.17): past
+		// the gate, and saying why
+		if r.code == http.StatusServiceUnavailable && r.errCode() == "logs_unavailable" {
+			continue
+		}
 		if r.code == http.StatusUnauthorized || r.code == http.StatusForbidden || r.code >= 500 {
 			t.Errorf("service admin %s %s = %d %s", method, path, r.code, r.body)
 		}

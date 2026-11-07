@@ -25,6 +25,8 @@ EXEMPT = {
     ("_tag-guard.yml", "guard"): "release-order builds from the checkout alone, with GOPROXY=off already",
     ("_node-packaging.yml", "installer-tests"): "tag-guard-test.sh runs offline on an empty module cache",
     ("release.yml", "package-nfpm"): "Go only to install nfpm",
+    ("_plugins.yml", "plugind"): "Go only for the Go plugin template: TinyGo builds a plugin "
+    "`mkp new` generates outside this checkout, best effort (story 54.12 T02)",
 }
 
 # jobs that stay online after the download: tag, release and scheduled runs no pull

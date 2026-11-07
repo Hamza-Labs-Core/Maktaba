@@ -52,6 +52,9 @@ type Deps struct {
 	// Licenses is the license record (Epic 16). Nil ⇒ the license
 	// routes answer 503.
 	Licenses *license.Issuer
+	// Logs is the cloud's log index on W (53.17). Nil or unset: the log
+	// routes answer 503 and the Errors view has the homes' groups only.
+	Logs *LogsSource
 }
 
 func (d *Deps) now() time.Time {
@@ -89,6 +92,11 @@ func Mount(r chi.Router, d *Deps) {
 		g.Post("/v1/admin/licenses/{id}/revoke", d.RevokeLicense)
 		g.Post("/v1/admin/licenses/{id}/unrevoke", d.UnrevokeLicense)
 		g.Get("/v1/admin/usage", d.Usage)
+		// the cloud's own logs and errors (53.17)
+		g.Get("/v1/admin/logs/search", d.proxyLogs("/search"))
+		g.Get("/v1/admin/logs/around", d.proxyLogs("/around"))
+		g.Get("/v1/admin/errors", d.Errors)
+		g.Get("/v1/admin/errors/cloud/{fp}", d.proxyLogs("/errors/{fp}"))
 	})
 }
 

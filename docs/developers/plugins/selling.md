@@ -8,7 +8,7 @@
 > offline, and a paid plugin without one waits. Buy is on `main` too: a paid plugin's price
 > in the home's Browse, Buy or "Link this home to buy", and the store's buy pages. Nothing can
 > be bought until the store admin enables a payment provider. Paid packages are on their own
-> CDN path, for homes that bought them. Not built yet: moving a purchase to another home. The
+> CDN path, for homes that bought them, and a purchase can move to another home. The
 > design is in story 54.19 of
 > [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md).
 
@@ -82,6 +82,22 @@ You get a statement each month, in English and Arabic.
 
 The store's buy pages run no script. The home sends only the plugin, the language and its
 signature.
+
+**Buying on plugins.maktaba.tv.** Your plugin's page on the store's website has **Buy** too.
+The buyer signs in, chooses which of the account's linked homes it is for, and continues on
+the same buy page as above (steps 4 and 5). With no linked home, the page says to link one
+first from Settings → Plugins → Store account in Maktaba.
+
+## Moving a purchase to another home
+
+A purchase belongs to the buyer's store account, and it is used on one home at a time. On the
+store's account page (plugins.maktaba.tv/account), **Purchases** lists the account's plugins,
+each with the home it is on, and **Move** sends one to another home linked to the same account.
+The buyer confirms it's them first, and a purchase can move **twice in any 365 days**; after
+that the page says when the next move is free. The new home picks the plugin up at its next
+daily check (or at once with **Check for purchases now**); the old home stops at its next
+daily check, and the plugin waits there with its queue and data kept. A refunded purchase
+cannot move. Nothing changes for you: the sale, your share and its payout stay as they were.
 
 ## What the home sees
 

@@ -7595,5 +7595,6 @@
   "direct.state.checking": "Checking from outside. This takes a minute or two.",
   "direct.manual": "I forwarded a port by hand",
   "direct.manualPort": "Public port",
-  "direct.checkNow": "Check now"
+  "direct.checkNow": "Check now",
+  "direct.rebinding": "Apps on this network can't use the home's secure name: your router blocks it (DNS rebinding protection). Apps will use its address instead."
 }

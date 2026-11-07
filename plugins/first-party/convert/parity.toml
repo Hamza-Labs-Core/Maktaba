@@ -1,0 +1,13 @@
+# The parity proof of tv.maktaba.convert (story 54.32): the library's files and its trash,
+# compared byte for byte, and the rows the conversion writes (the file-action journal with
+# the same run-time ids on both sides), only the columns that hold the time masked.
+tables = ["file_actions", "videos", "video_copies", "audio_tracks"]
+files  = ["library"]
+
+[ignore]
+file_actions = ["created_at", "updated_at", "purge_after"]
+videos = ["created_at", "updated_at", "mtime", "last_seen_at"]
+video_copies = ["seen_at", "mtime"]
+
+[[cases]]
+name = "two MKVs (H.264 and Opus: the audio converted, the video copied) and an MP4 already fine"

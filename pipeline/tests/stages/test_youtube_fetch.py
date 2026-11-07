@@ -16,6 +16,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from maktaba_fp_youtube.stages import _youtube_drain as drain
 
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import dispatch_job
@@ -23,7 +24,6 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, GRAPH
 from maktaba_pipeline.engine.reconcile import reconcile_once
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts
-from maktaba_pipeline.engine.stages import _youtube_drain as drain
 from maktaba_pipeline.engine.watchers import watch_once
 from maktaba_pipeline.integrations import youtube_download as ytd
 from maktaba_pipeline.integrations.youtube_errors import classify

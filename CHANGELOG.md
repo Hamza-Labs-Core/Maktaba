@@ -14,11 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
-- **`server.log` keeps the warnings and errors (Epic 53 story 53.02).** After one release with
-  both written, the server's parts send only their warnings and errors to `server.log`, beside
-  the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
-  of it. Every line is still in the log segments, the Logs page and the recovery console.
-  `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
+- **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
+  Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
+  home's secure LAN names from the browser, and when none answers it explains that the router
+  blocks them (DNS rebinding protection) and apps will use the home's address instead.
+- **Apps can reach a home on its own network by address when the router blocks its name
+  (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
+  network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
+  carries each LAN address both by name and by address, the address checked against the home's
+  own certificate, so an app on that network still proves it reached this home.
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
@@ -113,6 +117,16 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **A cloud deploy now updates the API and the worker (Epic 50).** Deploys installed the new
+  release only for the relay and the name server, so the API and the worker never ran a
+  release on the nodes. They now get it too, the standby first; on the leader they restart,
+  and one that doesn't stay up gets the previous release back and stops the deploy.
+- **The cloud's worker stays up (Epic 50).** It listened on its control port twice, so since
+  June it exited at start and none of its jobs ever ran: expired-token cleanup, account
+  deletion purges, the relayed-stream sweep, pay-as-you-go usage reports and direct-access
+  certificates. It now listens once, and a test runs the worker in its own process and checks
+  it answers, stays up and stops cleanly. The cloud is not live yet, so no account was affected.
 
 - **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
   before the database's own thread had ended, so the worker sometimes counted that thread as
@@ -347,6 +361,10 @@ build fails when the two differ.
 
 ### Added
 
+- **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
+  the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
+  homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
+  run no script, in English and Arabic.
 - **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
   (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
   Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
@@ -1832,6 +1850,38 @@ build fails when the two differ.
   when a version that supports the release is installed; the update itself goes ahead.
   maktaba.dev: Installing a plugin, *When Maktaba itself updates*.
 
+- **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
+  `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
+  accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
+  builds with jco, every optional feature off. Each is built against a plugin world cut to the
+  interfaces its manifest's capabilities cover, so a call it did not declare does not build;
+  `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
+  up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
+  maktaba.dev: Testing and packaging, *Python, JavaScript and Go*.
+
+- **Plugins in Go (Epic 54, story 54.12, tier 2).** `mkp new go` makes a TinyGo project, and
+  `mkp build` turns it into a component built for TinyGo's `wasm-unknown` target, which links
+  no WASI: file, stdin and network calls always fail. The build fails if the component
+  imports anything the home refuses. maktaba.dev: Testing and packaging, *Python, JavaScript
+  and Go*.
+
+- **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
+  a **Purchases** section: each plugin bought with the account, the home it is on, and
+  **Move** to another home linked to the same account, after confirming it's you. A purchase
+  can move twice in any 365 days. The new home gets the plugin at its next daily check (or with
+  **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
+  queue and data.
+
+- **The cloud keeps and searches its own logs (Epic 53 story 53.17).** Each Maktaba Cloud node
+  keeps its processes' lines for 14 days and sends them to the witness: warnings within a
+  second, the rest every 10 seconds, with no gap or duplicate when the network drops. The
+  witness indexes every node's lines, so the service admin's **Logs** and **Errors** pages
+  search the whole cloud even while a node is down. Errors shows the cloud's own groups beside
+  the homes' anonymous ones, with the problem reports that name each. A line names a home only
+  by a hash, never its address, and never logs an email or a token. Every process serves its
+  error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
+  each runbook's Check step links to a saved search.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -1924,6 +1974,52 @@ build fails when the two differ.
   for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
   new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
   or staff API path, an admin string or a console module.
+
+- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
+  none of them: a runner starts when the first job of its kind arrives (that job runs in the
+  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
+  processes and its memory budget at rest.
+
+- **Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave
+  8).** Indexing Plex, writing collections, reading Plex's own collections back and keeping
+  Maktaba's channels in Plex Live TV run in `tv.maktaba.plex`, in a runner with no network:
+  every call to Plex goes through the home's service door, which adds the Plex token and
+  removes it from every answer, so the plugin never holds the token or Plex's address. The
+  dizqueTV stages stay in the worker for now. The parity proof compares the calls Plex receives
+  on both paths.
+
+- **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
+  wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
+  swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
+  sandboxed `light` runner. A swap and a rollback still put the TV settings on the air in
+  one step with the lineup: the worker does that part for the plugin's job. The dizqueTV
+  export's additions to the plan keep working there. The parity proof compares the plan,
+  the channels, the TV change and its schedule through a stage, a swap, a rollback and the
+  clean-up.
+
+- **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
+  wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
+  fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download
+  again in `tv.maktaba.repair`, in the sandboxed `net` runner, the only one that reaches the
+  network. Each reads only the rules it lists, a new download's first job is queued once its
+  video is saved, and the parity proof compares the downloaded files, the rows and the queue
+  with the recorded yt-dlp.
+
+- **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
+  wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
+  duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the
+  sandboxed `files` runner, a new runner group of their own (in `light` their library writes
+  would have covered the subtitles' name-only rule): they write only the library's folders and their trash, and what
+  only the engine may change (queuing jobs, a merge's re-pointing of everything that refers
+  to a video, a restored video's state) the worker does for them, checked against the job.
+  The parity proof compares the library and its trash byte for byte, through a merge, a
+  restore and a purge.
+
+- **`server.log` keeps the warnings and errors (Epic 53 story 53.02).** After one release with
+  both written, the server's parts send only their warnings and errors to `server.log`, beside
+  the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
+  of it. Every line is still in the log segments, the Logs page and the recovery console.
+  `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
 
 ### Fixed
 
@@ -2390,6 +2486,16 @@ build fails when the two differ.
   the runner's sandbox named the first and was refused the second, so the runner exited
   about 10 s after it started and its stages ran in the worker. The sandbox now names the
   sockets and the run folder by their real paths.
+
+- **A plugin's first job after an update no longer times out while its package compiles
+  (Epic 54, story 54.02).** A job's time limit used to start before the host compiled a
+  package it had not loaded and before the job waited for a free slot, so a large plugin (a
+  Python one: about 15 s to compile on a slow machine) could time out before its code ran.
+  Now the limit counts only the plugin's own work. Compiling has a limit of its own (3
+  minutes per package; a package that goes over is refused with
+  `plugin_compile_timeout`), and the host compiles every installed plugin in the background
+  when it starts, so an update that changes the plugin engine recompiles each one before its
+  first job. maktaba.dev: Testing and packaging.
 
 ## [0.2.0] - 2026-10-19
 

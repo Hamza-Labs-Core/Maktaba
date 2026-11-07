@@ -66,6 +66,66 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm test
 
+      # story 54.12 T01, T05: the Python and JavaScript templates, new to build to test in
+      # the harness, the Python package's size, and a call no capability covers refused at
+      # build. Each toolchain in an environment of its own, pinned to what the templates
+      # were made with
+      - name: The SDK templates' toolchains
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/componentize-py"
+          "$RUNNER_TEMP/componentize-py/bin/pip" install --quiet componentize-py==0.25.1
+          mkdir -p "$RUNNER_TEMP/jco"
+          npm install --prefix "$RUNNER_TEMP/jco" --no-fund --no-audit --silent \
+            @bytecodealliance/jco@1.41.0 @bytecodealliance/componentize-js@0.23.0
+          {
+            echo "MKP_COMPONENTIZE_PY=$RUNNER_TEMP/componentize-py/bin/componentize-py"
+            echo "MKP_JCO=$RUNNER_TEMP/jco/node_modules/.bin/jco"
+          } >> "$GITHUB_ENV"
+
+      # in release, as a developer's mkp and a home's host are, and one at a time: three
+      # compiles of large components at once on this runner's 4 cores ran past the compile
+      # cap (54.02 §6, 180 s) in a debug build. Debug builds now optimize Wasmtime and
+      # Cranelift too (plugind/Cargo.toml), so either way a compile takes seconds
+      - name: The Python and JavaScript templates (mkp new, build, test, pack)
+        working-directory: plugind
+        env:
+          MKP_TEST_TOOLCHAINS: '1'
+        run: cargo test --locked --release -p mkp --test templates -- --test-threads=1
+
+      # story 54.12 T02: the Go template is tier 2 (a template and a smoke test, best effort),
+      # so its steps do not fail the job. TinyGo's wasm-unknown target, wit-bindgen-go's
+      # bindings, wasm-tools for the component; each pinned
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: The Go template's toolchain
+        id: go-toolchain
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/tinygo.deb" \
+            https://github.com/tinygo-org/tinygo/releases/download/v0.44.0/tinygo_0.44.0_amd64.deb
+          sudo dpkg -i "$RUNNER_TEMP/tinygo.deb"
+          curl -fsSL --retry 3 \
+            https://github.com/bytecodealliance/wasm-tools/releases/download/v1.263.0/wasm-tools-1.263.0-x86_64-linux.tar.gz |
+            tar -xz -C "$RUNNER_TEMP"
+          GOBIN="$RUNNER_TEMP/go-bin" go install go.bytecodealliance.org/cmd/wit-bindgen-go@v0.7.0
+          {
+            echo "MKP_WASM_TOOLS=$RUNNER_TEMP/wasm-tools-1.263.0-x86_64-linux/wasm-tools"
+            echo "MKP_WIT_BINDGEN_GO=$RUNNER_TEMP/go-bin/wit-bindgen-go"
+          } >> "$GITHUB_ENV"
+
+      - name: The Go template (mkp new, build, test; a refused import fails the build)
+        if: steps.go-toolchain.outcome == 'success'
+        continue-on-error: true
+        working-directory: plugind
+        env:
+          MKP_TEST_GO: '1'
+        run: cargo test --locked -p mkp --test templates -- go
+
   plugins-sandbox:
     strategy:
       fail-fast: false
