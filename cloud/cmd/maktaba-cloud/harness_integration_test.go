@@ -354,6 +354,20 @@ type fakeProvider struct {
 	checkouts []billingpkg.CheckoutParams
 	portals   []string
 	seq       int
+	// items 2 and 3 and usage reports (story 50.19): the billing package's fake
+	billing billingpkg.Fake
+}
+
+func (p *fakeProvider) ReportUsage(ctx context.Context, r billingpkg.UsageReport) error {
+	return p.billing.ReportUsage(ctx, r)
+}
+
+func (p *fakeProvider) SetItems(ctx context.Context, sub string, payg bool, extra int) error {
+	return p.billing.SetItems(ctx, sub, payg, extra)
+}
+
+func (p *fakeProvider) ReportedUsage(ctx context.Context, sub string, month time.Time) (int64, error) {
+	return p.billing.ReportedUsage(ctx, sub, month)
 }
 
 func (*fakeProvider) Name() string  { return "testpay" }
@@ -412,6 +426,8 @@ type testEvent struct {
 	AmountCents    int64     `json:"amount_cents,omitempty"`
 	Currency       string    `json:"currency,omitempty"`
 	DisputeID      string    `json:"dispute_id,omitempty"`
+	ExtraStreams   int       `json:"extra_streams,omitempty"`
+	PAYG           bool      `json:"payg,omitempty"`
 }
 
 func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Header) (billingpkg.Event, error) {
@@ -427,6 +443,7 @@ func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Head
 		UserID: te.UserID, CustomerID: te.CustomerID, SubscriptionID: te.SubscriptionID,
 		Plan: te.Plan, PriceID: "price_" + te.Plan, Interval: te.Interval, Status: te.Status, PeriodEnd: te.PeriodEnd,
 		InvoiceID: te.InvoiceID, AmountCents: te.AmountCents, Currency: te.Currency, DisputeID: te.DisputeID,
+		ExtraStreams: te.ExtraStreams, PAYG: te.PAYG,
 		Payload: payload,
 	}, nil
 }

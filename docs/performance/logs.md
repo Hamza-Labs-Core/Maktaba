@@ -58,6 +58,53 @@ small chunks, against the reference's (7.3 µs). On a slow runner the tail grows
 total does; a factor from the totals alone left the p99 budget too tight there (CI, factor 2.70:
 p99 54.6 µs against 54.0, with logging 2.8 times slower at p50 and 3.3 times at p99).
 
+It also takes structlog's: the p99 of a call through structlog's stock JSON pipeline (its
+context merge, the level, an ISO timestamp, the JSON renderer, none of the logger's own
+processors), against the reference's (8.7 µs). The other loops are C code: hashing, JSON and
+the regex scrub. The logger's call is mostly the interpreter running structlog, and that
+cost differs between CPUs in a way the C loops miss.
+
+48 CI runs (issue #807) put the logger's p99 at these shares of a budget from the C loops and
+the tail alone:
+
+| Runner CPU | Share of the budget |
+|---|---|
+| AMD EPYC 9V45 | 0.55–0.58 |
+| AMD EPYC 9V74 | 0.56–0.60 |
+| Intel Xeon 8573C | 0.60–0.68 |
+| AMD EPYC 7763 | 0.75–0.79 |
+
+On the 7763 the loops ran 2.7 times the reference's time and the logger 3.4 times. The
+logger's p99 is about 1.7 times the stock pipeline's on the 7763, the 9V74 and the Xeon alike,
+so with this term the 7763 sits at 0.73–0.75. A slower logger does not move the stock
+pipeline, so the gate still catches the logger's own regressions.
+
+No proxy judges every CPU alike. A factor from structlog's stock pipeline alone still leaves a
+1.3× spread, and it only moves the tight spot from the 7763 to the 9V45, at 0.89 of the
+budget. A pure-Python stand-in loop did worse: Python's p99 per unit of it was 400 on the
+9V45 against 590 on the 7763.
+
+So CI also measures **the base's logger in the same job**: the logger of the commit a change
+goes onto (a pull request's base, a merge group's, a push's previous tip), on the same runner
+(`--base-src`). Base and head rounds alternate, each in a fresh process, in the order base,
+head, head, base, so a runner that drifts during the job weighs on both alike.
+
+Over the budget fails a change only when it is also more than 15% slower than its base:
+
+| Over the budget | ≥15% slower than base | Result |
+|---|---|---|
+| yes | yes | error |
+| yes | no | warning: the runner, not the change |
+| no | yes | warning |
+| no | no | pass |
+
+#806 changed nothing in the logger yet failed twice at factor 2.7–2.8 (p99 55.7 against 55.3,
+then 54.4 against 54.2), while the commit with its code passed elsewhere. Without a base, the
+budget alone decides, as before.
+
+More rounds or a median of repeats would not help. The three rounds of a run agree within
+2–3 %, and a runner type's runs agree within 4 %. The spread is between CPU types.
+
 It runs three rounds and is judged on the one with the lowest p99 (`LOGBENCH_PY_ROUNDS`; every
 round's p99 is in the report): a shared runner's other tenants only add time, as the
 calibration's best of three says. One noisy round on a slow runner failed a pull request that
@@ -103,6 +150,10 @@ merge (≈ 1.6 µs), the scrub of a value that holds a secret (≈ 2.6 µs), and
 the write.
 
 ## Every night on a Mac
+
+The Go logger's p99 is judged the same way as the Python one: the best of three rounds, every
+round in the report (`p99_ns_rounds`). On the nightly macOS runner a single round's p99 was 6
+to 10 times its p50 for both loggers (issue #807): the runner's tail, not the logger's.
 
 `.github/workflows/nightly-perf.yml` runs the Go and Python benches at 04:17 UTC on a
 macOS arm64 runner (the reference class), keeps the numbers for 90 days (`logbench-nightly`),

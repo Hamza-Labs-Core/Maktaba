@@ -54,6 +54,15 @@ func TestDirectState(t *testing.T) {
 	if err != nil || again.Domain != "direct-a.example" {
 		t.Fatalf("renewal: %+v %v", again, err)
 	}
+	// a home asks its name before its CSR: assigned once, the same on the next ask, not pending
+	c := home()
+	n1, _, err := d.Assign(ctx, c, pick, now)
+	if err != nil || n1.Domain == "" || n1.HomeID != direct.HomeID(c) || n1.CSR != nil {
+		t.Fatalf("a name: %+v %v", n1, err)
+	}
+	if n2, _, err := d.Assign(ctx, c, pick, now); err != nil || n2.Domain != n1.Domain {
+		t.Fatalf("asked again: %+v %v", n2, err)
+	}
 	pend, _ := d.PendingCSRs(ctx, 10)
 	if len(pend) != 2 {
 		t.Fatalf("pending: %d", len(pend))
@@ -116,5 +125,76 @@ func TestDirectState(t *testing.T) {
 	_ = d.DeleteChallenge(ctx, name, "v1")
 	if v, _ := d.ChallengeTXT(ctx, name); len(v) != 0 {
 		t.Fatalf("deleted: %v", v)
+	}
+}
+
+// Story 50.15 §3 (DNS rebinding): the private LAN addresses of a home's report are kept (at
+// most MaxLAN, a public, link-local or port-less one dropped) and listed with its certificate's
+// names while direct access is on, behind CGNAT or unmapped; off, or with no certificate, not.
+func TestDirectLAN(t *testing.T) {
+	pool := dbtest.Migrated(t)
+	ctx := context.Background()
+	d := NewDirect(pool.DB)
+	owner, err := NewUsers(pool.DB).Create(ctx, "o-"+uuid.NewString()+"@example.com", "x", "O", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	home := func() string {
+		id := uuid.NewString()
+		if _, err := pool.DB.ExecContext(ctx, `INSERT INTO servers (id, owner_user_id, name, slug, server_secret_hash) VALUES ($1, $2, 'h', $3, 'x')`,
+			id, owner.ID, "s"+id[:8]); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	pick := func(use []direct.DomainUse) (string, string, bool) {
+		return direct.Pick([]string{"direct-a.example"}, use, 45)
+	}
+	a, nocert := home(), home()
+	if _, _, err := d.PutCSR(ctx, a, []byte("csr"), pick, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	_ = d.SetIssued(ctx, a, "letsencrypt", "CHAIN", time.Now().Add(90*24*time.Hour))
+	ap := netip.MustParseAddrPort
+	report := []netip.AddrPort{ap("81.2.3.4:8444"), ap("192.168.1.20:8444"), ap("[fe80::1%eth0]:8444"),
+		ap("10.0.0.5:0"), ap("[fd00::7]:8444"), ap("10.0.0.6:8444"), ap("10.0.0.7:8444"), ap("10.0.0.8:8444")}
+	for _, id := range []string{a, nocert} {
+		if err := d.SetEndpoints(ctx, id, netip.MustParseAddr("81.2.3.4"), 32443, "on"); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.SetLAN(ctx, id, report); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := d.LANFor(ctx, []string{a, nocert})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got[nocert]; ok {
+		t.Error("a home with no certificate listed")
+	}
+	h := got[a]
+	want := []netip.AddrPort{ap("192.168.1.20:8444"), ap("[fd00::7]:8444"), ap("10.0.0.6:8444"), ap("10.0.0.7:8444")}
+	if h.HomeID != direct.HomeID(a) || h.Domain != "direct-a.example" || len(h.LAN) != len(want) {
+		t.Fatalf("%+v", h)
+	}
+	for i := range want {
+		if h.LAN[i] != want[i] {
+			t.Errorf("lan %d: %v, want %v", i, h.LAN[i], want[i])
+		}
+	}
+	// behind CGNAT the LAN still works; turned off it is not listed; an empty report clears
+	_ = d.SetEndpoints(ctx, a, netip.MustParseAddr("100.64.1.2"), 0, direct.CheckCGNAT)
+	if got, _ := d.LANFor(ctx, []string{a}); len(got[a].LAN) != 4 {
+		t.Errorf("cgnat: %+v", got)
+	}
+	_ = d.SetEndpoints(ctx, a, netip.Addr{}, 0, "off")
+	if got, _ := d.LANFor(ctx, []string{a}); len(got) != 0 {
+		t.Errorf("off: %+v", got)
+	}
+	_ = d.SetEndpoints(ctx, a, netip.MustParseAddr("81.2.3.4"), 32443, "on")
+	_ = d.SetLAN(ctx, a, nil)
+	if got, _ := d.LANFor(ctx, []string{a}); len(got) != 0 {
+		t.Errorf("cleared: %+v", got)
 	}
 }

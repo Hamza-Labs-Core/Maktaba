@@ -111,6 +111,7 @@ describe("re-authentication (T10)", () => {
       ["POST", "/v1/accounts/email", () => ({ email: uniqueEmail("new") })],
       ["POST", "/v1/developers", () => ({ agreement_version: 1 })],
       ["POST", "/v1/homes/link", () => ({ user_code: "AAAA-AAAA" })],
+      ["POST", "/v1/purchases/pur-x/move", () => ({ home_id: "h_x" })],
     ];
     for (const [m, path, b] of routes) {
       await ageFactor(a.cookie, 6);

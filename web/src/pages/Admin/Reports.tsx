@@ -1,7 +1,8 @@
 // Problem reports, the admin's inbox (Epic 53 story 53.15, /admin/reports): number, who,
 // when, category, app, status. A report: its text and device, the timeline (the app's lines
 // and the home's merged by time; a request id follows its request in Logs), and the actions:
-// set its status, write back (its sender sees it in My reports), download the bundle.
+// set its status, write back (its sender sees it in My reports), download the bundle, and
+// send it to Maktaba (story 53.16) with the admin's own preview of what leaves the home.
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
@@ -9,14 +10,18 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Select } from "@ds/components/Select/Select";
 import { useI18n } from "../../lib/i18n";
-import { downloadBlob } from "../../lib/api";
+import { apiUrl, downloadBlob } from "../../lib/api";
 import { AdminGate } from "../../components/AdminGate";
 import { TitleRow } from "../../help/HelpLink";
 import { logsPageLink } from "../../lib/logIndex";
+import { MaktabaStatus } from "../Profile/MaktabaStatus";
 import {
   STATUSES,
   getReport,
   listReports,
+  maktabaPreview,
+  maktabaSetting,
+  shareReport,
   replyToReport,
   reportBundlePath,
   setReportStatus,
@@ -141,6 +146,8 @@ function ReportPage() {
         </dd>
       </dl>
       {d.text && <blockquote className="mkt-report__said">{d.text}</blockquote>}
+      <MaktabaStatus m={d.maktaba} />
+      <SendToMaktaba d={d} onSent={load} />
       <div className="mkt-errors__actions">
         <label>
           {t("report.statusCol")}{" "}
@@ -212,5 +219,82 @@ function ReportPage() {
         </ul>
       </Card>
     </section>
+  );
+}
+
+/** States a report can be sent again from (it never went, or did not arrive). */
+const SENDABLE = new Set(["expired", "refused", "cancelled"]);
+
+// Send to Maktaba (story 53.16): shown while the home lets reports go to Maktaba, for a
+// report that is not on its way. The admin first sees exactly what leaves the home, and its
+// screenshot goes only when the admin ticks it.
+function SendToMaktaba({ d, onSent }: { d: ReportDoc; onSent: () => void }) {
+  const { t } = useI18n();
+  const [on, setOn] = useState(false);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [shot, setShot] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(false);
+  useEffect(() => {
+    maktabaSetting()
+      .then((s) => setOn(s?.enabled === true))
+      .catch(() => setOn(false));
+  }, []);
+  if (!on || (d.maktaba && !SENDABLE.has(d.maktaba.state))) return null;
+  return (
+    <Card data-testid="report-send-maktaba">
+      {preview === null ? (
+        <Button
+          variant="secondary"
+          disabled={busy}
+          onClick={() =>
+            maktabaPreview(d.id)
+              .then((p) => setPreview(JSON.stringify(p, null, 2)))
+              .catch(() => setErr(true))
+          }
+        >
+          {t("report.shareMaktaba")}
+        </Button>
+      ) : (
+        <>
+          <p className="mkt-report__label">{t("report.shareMaktaba.preview")}</p>
+          <pre className="mkt-report__lines" dir="ltr" data-testid="report-maktaba-preview">
+            {preview}
+          </pre>
+          {d.screenshot && (
+            <img
+              className="mkt-report__shot"
+              src={apiUrl(`/api/reports/${d.id}/screenshot`)}
+              alt={t("report.shareMaktaba.screenshotAlt")}
+              data-testid="report-maktaba-shot"
+            />
+          )}
+          {d.screenshot && (
+            <label>
+              <input type="checkbox" checked={shot} onChange={(e) => setShot(e.target.checked)} />{" "}
+              {t("report.shareMaktaba.screenshot")}
+            </label>
+          )}
+          <p className="mkt-muted">{t("report.to.maktaba.note")}</p>
+          <Button
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              shareReport(d.id, shot)
+                .then(onSent)
+                .catch(() => setErr(true))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {t("report.shareMaktaba.send")}
+          </Button>
+        </>
+      )}
+      {err && (
+        <p role="alert" className="mkt-muted">
+          {t("report.shareMaktaba.error")}
+        </p>
+      )}
+    </Card>
   );
 }

@@ -32,17 +32,21 @@ type LogsDeps struct {
 	Peers []logs.PeerLog
 	// Files reads a machine's own log files (LogFiles). nil: none are there.
 	Files logs.FileSource
+	// Switches is the home's components (the loops' runner): reports.share (story 53.16).
+	Switches logs.Switches
 }
 
 // MountLogs wires the troubleshooting log-collection routes
 // (/api/admin/logs/* and /api/diagnostics/export). The ring buffer is
-// pulled from the process-global installed by mlog.Init.
-func MountLogs(r chi.Router, d LogsDeps) {
+// pulled from the process-global installed by mlog.Init. It answers the problem reports'
+// forwarder to Maktaba (story 53.16), for the caller to declare as the
+// api:reports_forwarder loop.
+func MountLogs(r chi.Router, d LogsDeps) *logs.Forwarder {
 	health := system.NewAggregatorWithStats(d.AggregatorServices, system.StatsConfig{
 		DataDir: d.DataDir,
 		DB:      d.StatsDB,
 	})
-	(&logs.Handler{
+	h := &logs.Handler{
 		Ring:       mlog.Ring(),
 		DB:         d.DB,
 		DataDir:    d.DataDir,
@@ -51,5 +55,8 @@ func MountLogs(r chi.Router, d LogsDeps) {
 		Health:     health,
 		Peers:      d.Peers,
 		FileSource: d.Files,
-	}).Mount(r)
+		Switches:   d.Switches,
+	}
+	h.Mount(r)
+	return h.Forwarder()
 }

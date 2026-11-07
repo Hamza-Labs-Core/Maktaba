@@ -134,7 +134,7 @@ let redactRulesJSON = #"""
     "pattern": "[0-9A-Fa-f]{1,4}(:[0-9A-Fa-f]{0,4}){3,7}"
   },
   "export_only": {
-    "about": "applied when anything leaves the home (story 53.16), never at home: a media path under a library root becomes <library>/..., a title field is removed",
+    "about": "applied when anything leaves the home (story 53.16), never at home: a media path under a library root becomes <library>/..., a title field is removed, and an address is removed whole (at home only its host part is)",
     "remove_keys": [
       "title",
       "video_title",
@@ -143,7 +143,8 @@ let redactRulesJSON = #"""
       "file_name",
       "filename"
     ],
-    "library_mask": "<library>/…"
+    "library_mask": "<library>/…",
+    "ip_mask": "[ip]"
   }
 }
 
