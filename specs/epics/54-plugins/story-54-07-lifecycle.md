@@ -156,11 +156,11 @@ As built (`api/rehearsal_plugins_e2e_test.go`, T10, T14): the kit carries this c
 `maktaba-plugind` and the host's test guest (`tools/rehearsal/build.sh`, `plugins/`); the
 home installs three packages of it through the admin API, A (any version), B (a range that
 excludes the next releases, 20 jobs queued) and C (kept off), then takes an update that fails
-its watch and one that passes. The rehearsal's pipeline is a stand-in that runs no job, so
-it checks the home's side of each step: A's and B's gates pass on this commit and after the
-rollback, B is seen waiting `incompatible` (never failed) while the failing release runs and
-waits so on the release that passes, its queued jobs kept and not run, and C stays installed
-and kept off. Plugin jobs under flips run in `components-chaos` (T09: a plugin among its
+its watch and one that passes. A and B are Running on this commit and after the rollback
+(the supervisor's part: the rehearsal's pipeline is a stand-in that runs no job), B is seen
+waiting `incompatible` (never failed) while the failing release runs (read from its status
+row: that release's API crash-loops by design) and waits so on the release that passes, its
+queued jobs kept and not run, and C stays installed and kept off. Plugin jobs under flips run in `components-chaos` (T09: a plugin among its
 targets, its 400 jobs all done).
 
 ## Acceptance criteria

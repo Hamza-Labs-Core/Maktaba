@@ -5,19 +5,18 @@ package main
 // Update-rehearsal scenario 15 (Epic 54, story 54.07 §8, T10, T14; docs/update-rehearsal.md):
 // a home with plugins updates and rolls back, and its plugins follow.
 //
-//	A  dev.example.rehearsal-a, any server version, enabled: its gate passes after every
-//	   step (never waiting, never failed), its files installed, still enabled
+//	A  dev.example.rehearsal-a, any server version, enabled: Running after every step
 //	B  dev.example.rehearsal-b, a range that excludes next and after, enabled, its queue
 //	   full: Waiting incompatible (never Failed) on a release it does not take, its queued
-//	   jobs kept and not run; its gate passes again after the rollback
+//	   jobs kept and not run; Running again after the rollback
 //	C  dev.example.rehearsal-c, turned off by the admin (kept off): installed and kept_off
 //	   after every step, as only an admin's enable turns it on
 //
-// The rehearsal's pipeline is a stand-in that answers its probes (the e2e's fake wheel), so
-// no plugin job runs and a plugin's Running phase (the pipeline's part of its status) is
-// never reached here: the scenario checks the home's side of every step, the supervisor's
-// gate, the plugins runner's files and the queue, which is what an update and a rollback
-// change. The plugins' own jobs run in the components CI (components-chaos, plugins-live).
+// A plugin's state is the home's decision, which the supervisor's plugins runner reports
+// even with no pipeline (story 54.07 §8): the rehearsal's pipeline is a stand-in that runs
+// no job, so the scenario reads that state; the plugins' own jobs run in the components CI
+// (components-chaos, plugins-live). While the release that fails its watch runs, its API
+// crash-loops by design, so B's state then is read from its status row in the database.
 //
 // The update to next fails its watch and rolls back to cur; the update to after passes.
 // The plugins are the host's well-behaved test guest (plugind/guests/hello), packed here and
@@ -185,8 +184,12 @@ type pluginWatch struct {
 	seen []string
 }
 
-func (a *ownerSession) watchPlugin(id string) *pluginWatch {
+// watchPlugin records the phases of id's status row on the home that the supervisor's
+// plugins runner writes (part plugins), read from the database: it is there while the API
+// is down, as it is while a release that fails its watch runs.
+func watchPlugin(home *appMachine, id string) *pluginWatch {
 	w := &pluginWatch{stop: make(chan struct{}), done: make(chan struct{})}
+	db := home.superDB("maktaba")
 	go func() {
 		defer close(w.done)
 		for {
@@ -195,8 +198,20 @@ func (a *ownerSession) watchPlugin(id string) *pluginWatch {
 				return
 			case <-time.After(time.Second):
 			}
-			if v, ok := a.plugin(id); ok {
-				s := v.Phase + "/" + v.Reason
+			var phase string
+			var raw []byte
+			if db.QueryRow(`SELECT phase, conditions FROM component_status WHERE machine = 'home' AND id = $1
+				AND part = 'plugins'`, "plugin."+id).Scan(&phase, &raw) == nil {
+				var conds []struct{ Status, Reason string }
+				_ = json.Unmarshal(raw, &conds)
+				reason := ""
+				for _, c := range conds {
+					if c.Status == "false" && c.Reason != "" {
+						reason = c.Reason
+						break
+					}
+				}
+				s := phase + "/" + reason
 				w.mu.Lock()
 				if len(w.seen) == 0 || w.seen[len(w.seen)-1] != s {
 					w.seen = append(w.seen, s)
@@ -326,10 +341,9 @@ func (r *rehearsal) homeWithPlugins() (*appMachine, *ownerSession) {
 	return home, admin
 }
 
-// gatePasses: the plugin is on, installed, and nothing gates it (no reason, not waiting or
-// failed): what the home decides of it, whatever its pipeline runs.
+// gatePasses: the plugin is on and Running, nothing gating it.
 func gatePasses(v pluginView) bool {
-	return v.Want == "enabled" && v.Reason == "" && v.Phase != "waiting" && v.Phase != "failed"
+	return v.Want == "enabled" && v.Reason == "" && v.Phase == "running"
 }
 
 // incompatible: the plugin waits incompatible, still the admin's choice.
@@ -359,7 +373,7 @@ func TestUpdateRehearsal15Plugins(t *testing.T) {
 	r.logf("B's jobs before the update: %v (%d queued now)", jobsBefore, queued)
 
 	// the update to next, which takes no B: it fails its watch and rolls back to cur
-	watchB := admin.watchPlugin(rehearsalPluginB)
+	watchB := watchPlugin(home, rehearsalPluginB)
 	run, mon, states := r.update(home, k.nextAdditiveFailing(), 25*time.Minute)
 	seenB := watchB.end()
 	r.logf("B on the way: %v", seenB)
