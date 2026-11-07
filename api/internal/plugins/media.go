@@ -45,6 +45,9 @@ func (c *call) file(video string) (string, float64, *Refusal) {
 	if err := c.s.DB.QueryRowContext(c.ctx, `SELECT path, duration_sec FROM videos WHERE id = $1`, video).Scan(&path, &dur); err != nil {
 		return "", 0, dbErr(err)
 	}
+	if c.s.ToLocal != nil {
+		path = c.s.ToLocal(path)
+	}
 	return path, dur.Float64, nil
 }
 

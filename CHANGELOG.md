@@ -892,6 +892,17 @@ build fails when the two differ.
   time; `mkp flow` prints a plugin's graph and writes `flow.mmd`, and `mkp test --with`
   runs a two-plugin chain in the harness. The Remote apps show no plugin administration, so
   they draw no chart. maktaba.dev: the Flows guide draws its example.
+- Plugins on joined machines (Epic 54, story 54.42): a plugin's manifest says where it may
+  run, `placement = "home"` (the default), `"any"` or `"gpu"` (a machine with a graphics
+  processor, its stages in the gpu pool). The home installs and approves; each joined
+  machine a plugin's placement fits fetches its package from the home over its signed link,
+  checks it (the digest the home recorded, the store's signature when there is one, every
+  file) before placing it, and runs it in its own sandboxed plugin host. The machine's plugin
+  API serves reads and media itself and sends every write to the home, which mints the
+  tokens and applies writes, quotas and lineage with its own checks, so the plugin tables'
+  guard stays. Job outcomes go to the home's breaker; turning a plugin off reaches a machine
+  at its next call. New reasons with English and Arabic words: `plugin_home_only`,
+  `plugin_no_gpu`, `plugin_package_untrusted`. maktaba.dev: Flows gains Where a plugin runs.
 
 - **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
   two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)

@@ -57,7 +57,9 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
            "entitlement_missing", "plugin_crash_loop", "sandbox_partial", "sandbox_unavailable",
            "runner_crash_loop", "plugin_trusted_unsigned", "plugin_trusted_version", "kept_off",
            # Maktaba's own plugin runners (Epic 54, story 54.23)
-           "runner_env"]
+           "runner_env",
+           # third-party plugins on joined machines (Epic 54, story 54.42)
+           "plugin_home_only", "plugin_no_gpu", "plugin_package_untrusted"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".
@@ -376,7 +378,7 @@ group     = "plugins"
 title_key = "components.plugins.host.title"
 desc_key  = "components.plugins.host.desc"
 processes = ["plugins/"]
-placement = "home"
+placement = "any"   # on demand: a machine runs it while one of its plugins passes (54.42)
 # the language model plugins ask and their daily share of the home's models (story 54.21)
 settings  = ["rules.plugin_compute"]
 # not on Windows yet: the pipeline's dispatcher reaches the host on a unix socket, which

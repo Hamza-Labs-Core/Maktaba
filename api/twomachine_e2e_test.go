@@ -810,6 +810,16 @@ slots = "off"
 		t.Logf("the node refused the revoked session %s after the home's sign-out", time.Since(start).Round(time.Millisecond))
 	})
 
+	t.Run("plugins: A on the home starts B on the machine; off reaches it", func(t *testing.T) {
+		homeData, nodeData := filepath.Join(homeDir, "data"), filepath.Join(nodeDir, "data")
+		pluginsAcrossMachines(t, db,
+			pluginMachine{api: fmt.Sprintf("http://127.0.0.1:%d", hAPI), socket: pluginAPISocket(homeData),
+				tokenFile: filepath.Join(homeData, "supervisor", "local.token")},
+			pluginMachine{api: fmt.Sprintf("http://127.0.0.1:%d", nAPI), socket: pluginAPISocket(nodeData),
+				tokenFile: filepath.Join(nodeData, "supervisor", "local.token")},
+			v1, lib)
+	})
+
 	t.Run("home gone: the node runs on its copy of the home's database", func(t *testing.T) {
 		if !withCopy {
 			t.Skip("MAKTABA_TEST_PG_BIN unset: the node keeps no copy of the home's database")

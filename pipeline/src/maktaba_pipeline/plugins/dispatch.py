@@ -83,6 +83,16 @@ def plugind_socket() -> str:
     return str(Path(data) / "run" / "plugins" / "plugind.sock")
 
 
+def package_path(plugin_id: str, home_path: str) -> str:
+    """Where the host finds a package: the home's own folder, or on a joined machine
+    (MAKTABA_PLUGINS_ROOT, story 54.42 §2) this machine's copy of it, the same version
+    folder under its own plugins folder."""
+    root = os.environ.get("MAKTABA_PLUGINS_ROOT", "").strip()
+    if not root:
+        return home_path
+    return str(Path(root) / plugin_id / Path(home_path).name)
+
+
 def _local_token() -> str:
     path = os.environ.get("MAKTABA_SUPERVISOR_TOKEN_FILE", "").strip()
     if not path:
@@ -335,7 +345,7 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
             "invocation_id": minted["invocation_id"],
             "plugin_id": plugin_id,
             "version": install.version,
-            "package_path": install.path,
+            "package_path": package_path(plugin_id, install.path),
             "export": sdoc.get("export", ""),
             "job": {
                 "id": str(job.id),
