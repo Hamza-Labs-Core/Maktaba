@@ -173,7 +173,7 @@ catalog:
   - 'pipeline/src/maktaba_pipeline/log/redact_rules.json'
   - 'web/src/lib/redactRules.json'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/RedactRules.swift'
-  - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/diagnostics/RedactRules.kt'
+  - 'apps/android/client/src/main/kotlin/com/hamzalabs/maktaba/core/diagnostics/RedactRules.kt'
 
 # ---- unit (_unit.yml) -----------------------------------------------------------------
 

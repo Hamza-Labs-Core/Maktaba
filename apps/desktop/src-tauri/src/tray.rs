@@ -300,6 +300,8 @@ pub fn entries_with_order(
     out.push(item("media-pause", w.pause_playback));
     out.push(Entry::Separator);
     out.push(item("tray-settings", w.settings));
+    // Epic 53 story 53.15: the web app's Report a problem, in the window
+    out.push(item("report-problem", w.report_problem));
     out.push(Entry::Separator);
     if server && *status != ServerStatus::SetupNeeded {
         out.push(item("quit", w.quit_server_runs));
@@ -596,6 +598,7 @@ mod tests {
                 "media-play",
                 "media-pause",
                 "tray-settings",
+                "report-problem",
                 "quit"
             ]
         );
@@ -644,6 +647,7 @@ mod tests {
                 "media-play",
                 "media-pause",
                 "tray-settings",
+                "report-problem",
                 "quit",
                 "stop-and-quit"
             ]
@@ -1202,6 +1206,7 @@ mod tests {
                 "تشغيل",
                 "إيقاف التشغيل مؤقتًا",
                 "الإعدادات",
+                "الإبلاغ عن مشكلة…",
                 "خروج (يبقى الخادم عاملًا)",
                 "إيقاف الخادم والخروج",
             ]

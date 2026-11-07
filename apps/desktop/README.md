@@ -110,7 +110,8 @@ package-desktop` (= `scripts/build.sh`).
 | Feature | Notes |
 |---|---|
 | **Menu bar** | custom items emit a `menu` event; `web/src/lib/desktop.ts` routes them (navigate / scan / server picker / Cmd+1..9 library slots) |
-| **System tray** | **Play / Pause** (forward through the `menu` channel → `media-control` action, no window focus), Show / Hide, Settings, **Quit** |
+| **System tray** | **Play / Pause** (forward through the `menu` channel → `media-control` action, no window focus), Show / Hide, Settings, **Report a problem…** (the web app's form, `/account/report`), **Quit** |
+| **Crash reports** (Epic 53) | a panic is also kept, scrubbed, with app.log's last lines, under the logs folder's `crashes/` (`crashes.rs`, the newest five). The web app the window shows asks for them (`shell_crashes`, in the `local-server` capability) and sends each to the home as an envelope only when crash reports are on there (its switch in Settings → Privacy), then marks those the home took (`shell_crashes_sent`). Off, nothing leaves the machine |
 | **Close-to-tray** | closing the window hides it; only Quit exits |
 | **Deep links** | `maktaba://watch/{id}` etc. — scheme registered in `tauri.conf.json`; the Rust `on_open_url` handler emits a `deep-link` event the web shell maps to an SPA route via the same `deepLinkToPath` parser the Capacitor shell uses |
 | **Single instance** | on Windows/Linux a `maktaba://` open spawns a new process; the single-instance plugin (with the `deep-link` feature) focuses the running window and forwards the URL |
