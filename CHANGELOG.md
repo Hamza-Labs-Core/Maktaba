@@ -313,6 +313,8 @@ build fails when the two differ.
   play down (within 90 s), the month's downtime budget burning, a failover, a missing replica,
   the Floating IP away from the leader, certificates, disks, errors and the backups, each with
   a runbook; pages reach the owner's phone and repeat until acknowledged.
+  maktaba.dev's new guide, Maktaba Cloud: how it stays up, says what an owner sees and how
+  the cloud is built and rehearsed.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

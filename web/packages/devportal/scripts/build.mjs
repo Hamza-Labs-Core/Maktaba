@@ -76,6 +76,7 @@ const GUIDES = {
     "conventions.md",
     "ci.md",
     "pull-requests.md",
+    "cloud.md",
   ],
   security: ["conformance.md"],
 };

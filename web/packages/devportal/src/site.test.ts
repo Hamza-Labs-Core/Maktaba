@@ -231,6 +231,7 @@ describe("the allow-list", () => {
       "contributing/architecture/index.html",
       "contributing/repo-layout/index.html",
       "contributing/local-setup/index.html",
+      "contributing/cloud/index.html",
       "contributing/tests/index.html",
       "contributing/conventions/index.html",
       "contributing/ci/index.html",
