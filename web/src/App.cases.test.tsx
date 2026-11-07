@@ -1,7 +1,7 @@
 // Cases that need the real App route tree (web/test-cases/app-shell.md SHL-01
 // and the "crash on a public page" cases of the auth pages). App uses a
 // BrowserRouter, so the URL is set with history.pushState before rendering.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -47,6 +47,17 @@ async function browserBack() {
     await new Promise((r) => setTimeout(r, 30));
   });
 }
+
+// Each lazy server page these cases open transforms on its first visit: one-time work
+// that, under load, ran out a findBy's wait (#697). Done once here, in a hook with its
+// own budget.
+beforeAll(async () => {
+  // one at a time: modules evaluated at once could each see another half-made
+  await import("./pages/queue/LibraryDashboard");
+  await import("./pages/Admin/LibraryAdmin");
+  await import("./pages/Admin/Errors");
+  await import("./pages/Admin/LogSettings");
+}, 60_000);
 
 beforeEach(() => {
   crash.keys.clear();

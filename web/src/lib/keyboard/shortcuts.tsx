@@ -12,20 +12,13 @@
 // ignore keystrokes so a shortcut never fires mid-word. Typing targets
 // (input/textarea/select/contenteditable) are exempt EXCEPT `?`+Esc are
 // still swallowed when the help overlay is open.
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Modal } from "@ds/components/Modal/Modal";
 import { useI18n } from "../i18n";
 import { BIG_BASE, enterBigScreen, isBigPath } from "../bigScreen";
 import { SERVER_PAGES } from "../edition";
+import { useWindowKeydown } from "../useWindowKeydown";
 
 interface ShortcutApi {
   focusSearchRef: (el: HTMLInputElement | null) => void;
@@ -63,71 +56,67 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // big screen has its own keys
-      if (big) return;
-      // IME guard — never act on a composition keystroke.
-      if (e.isComposing || e.keyCode === 229) return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // (lib/useWindowKeydown: the handler of the render on screen, #697)
+  useWindowKeydown((e: KeyboardEvent) => {
+    // big screen has its own keys
+    if (big) return;
+    // IME guard — never act on a composition keystroke.
+    if (e.isComposing || e.keyCode === 229) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      // Esc closes the help overlay from anywhere.
-      if (e.key === "Escape" && helpOpen) {
-        e.preventDefault();
-        setHelpOpen(false);
-        return;
-      }
-
-      const typing = isTypingTarget(e.target);
-
-      // Leader follow-up (only meaningful outside text fields).
-      if (leaderRef.current && !typing) {
-        clearLeader();
-        const k = e.key.toLowerCase();
-        if (k === "b") {
-          e.preventDefault();
-          enterBigScreen(pathname + search);
-          nav(BIG_BASE);
-          return;
-        }
-        const dest: Record<string, string> = {
-          l: "/library",
-          s: "/search",
-          // a player has no Processing or Settings (Epic 42.5): c opens Preferences
-          ...(SERVER_PAGES ? { q: "/queue", c: "/settings" } : { c: "/account/preferences" }),
-        };
-        if (dest[k]) {
-          e.preventDefault();
-          nav(dest[k]);
-        }
-        return;
-      }
-
-      if (typing) return;
-
-      if (e.key === "g") {
-        e.preventDefault();
-        leaderRef.current = true;
-        if (leaderTimer.current) clearTimeout(leaderTimer.current);
-        leaderTimer.current = setTimeout(clearLeader, 1200);
-        return;
-      }
-      if (e.key === "/") {
-        e.preventDefault();
-        const el = searchInputRef.current;
-        if (el) el.focus();
-        else nav("/search");
-        return;
-      }
-      if (e.key === "?") {
-        e.preventDefault();
-        setHelpOpen((v) => !v);
-      }
+    // Esc closes the help overlay from anywhere.
+    if (e.key === "Escape" && helpOpen) {
+      e.preventDefault();
+      setHelpOpen(false);
+      return;
     }
 
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [nav, helpOpen, clearLeader, big, pathname, search]);
+    const typing = isTypingTarget(e.target);
+
+    // Leader follow-up (only meaningful outside text fields).
+    if (leaderRef.current && !typing) {
+      clearLeader();
+      const k = e.key.toLowerCase();
+      if (k === "b") {
+        e.preventDefault();
+        enterBigScreen(pathname + search);
+        nav(BIG_BASE);
+        return;
+      }
+      const dest: Record<string, string> = {
+        l: "/library",
+        s: "/search",
+        // a player has no Processing or Settings (Epic 42.5): c opens Preferences
+        ...(SERVER_PAGES ? { q: "/queue", c: "/settings" } : { c: "/account/preferences" }),
+      };
+      if (dest[k]) {
+        e.preventDefault();
+        nav(dest[k]);
+      }
+      return;
+    }
+
+    if (typing) return;
+
+    if (e.key === "g") {
+      e.preventDefault();
+      leaderRef.current = true;
+      if (leaderTimer.current) clearTimeout(leaderTimer.current);
+      leaderTimer.current = setTimeout(clearLeader, 1200);
+      return;
+    }
+    if (e.key === "/") {
+      e.preventDefault();
+      const el = searchInputRef.current;
+      if (el) el.focus();
+      else nav("/search");
+      return;
+    }
+    if (e.key === "?") {
+      e.preventDefault();
+      setHelpOpen((v) => !v);
+    }
+  });
 
   const focusSearchRef = useCallback((el: HTMLInputElement | null) => {
     searchInputRef.current = el;
