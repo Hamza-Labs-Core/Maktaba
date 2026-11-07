@@ -130,13 +130,15 @@ def test_the_loggers_own_fields_are_left_alone_and_the_callers_scrubbed() -> Non
 
     rs = frozenset(f.lower() for f in mlog.DEFAULT_REDACTED_FIELDS)
     ev = {
-        "event": "http_request",
+        "event": "fetch failed: /x?token=s3cr3t",
         "ts": "2026-11-07T03:00:00.123456Z",
         "service": "api",
         "path": "/x?token=abc123",
         "password": "hunter2",
     }
     out = mlog._redact_in_place(dict(ev), rs)
-    assert out["ts"] == ev["ts"] and out["event"] == "http_request" and out["service"] == "api"
+    assert out["ts"] == ev["ts"] and out["service"] == "api"
+    # the event's name is a caller's text: still scrubbed
+    assert "s3cr3t" not in out["event"]
     assert "abc123" not in out["path"]
     assert out["password"] != "hunter2"

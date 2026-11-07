@@ -273,12 +273,13 @@ def _make_redact_processor(redact_set: frozenset[str]) -> structlog.types.Proces
     return processor
 
 
-# Fields the logger writes itself, never from a caller's data: the time, the level, the
-# process's own service, version, env, node and component, and the event's name (a literal:
-# ``make lint-log`` refuses a formatted one). Scrubbing them cost ~11 µs a line for nothing
-# (Epic 53 story 53.13's Python logger bench).
+# Fields the logger writes itself, never from a caller's data: the time, the level and the
+# process's own service, version, env, node and component. Scrubbing them cost ~10 µs a
+# line for nothing (Epic 53 story 53.13's Python logger bench). The event's name is not one:
+# ``make lint-log`` keeps the pipeline's a literal, but a caller outside it can put a
+# message with a secret there.
 _OWN_FIELDS = frozenset(
-    {"ts", "timestamp", "level", "service", "version", "env", "node", "component", "event"}
+    {"ts", "timestamp", "level", "service", "version", "env", "node", "component"}
 )
 
 

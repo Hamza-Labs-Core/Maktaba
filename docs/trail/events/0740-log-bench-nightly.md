@@ -18,5 +18,10 @@ session: 03d72f4f-f05c-4d72-897b-0e3d0c10f530
 - An `lru_cache` on a function that takes a large frozen dataclass hashes that dataclass on every call. Its fields are not cached. Keep per-key answers on the instance instead.
 - During this session the Mac's load average was ~135 (other sessions building), and a bare `print` to `/dev/null` took 28 µs. Local timings were unusable as absolutes. The profile's call counts still showed where the time went, and the budget comes from the CI and nightly runners.
 
+- On CI the Python logger costs ~50 µs at p50 and 80 µs at p99, against 4.6 and 10 µs for Go. The bench warns instead of failing (`LOGBENCH_PY_STRICT=1` makes it fail).
+- A first version also skipped scrubbing the `event` field, on the grounds that `make lint-log` keeps it a literal. `test_log.py` logs a token inside an event and caught it. Lint covers the pipeline's sources, not every caller, so the event is still scrubbed.
+- The integration run failed `TestControllerGivesItsLockBackWhenItStops`. Run's ping of its lock connection failed *because* the context was cancelled, so it discarded the connection. Postgres frees the lock only when that backend exits, after `stop()` had returned. A ping that fails while stopping now keeps the lead, so the deferred unlock runs.
+
 ## Open
+- Bring the Python logger under its budget, then make the bench strict (issue #744).
 - The `logs` role's CPU share and memory on a live home (53.13 §3) are not measured yet.

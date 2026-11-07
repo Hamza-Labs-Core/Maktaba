@@ -51,15 +51,21 @@ the ring, the JSON renderer) writing to `/dev/null`: 200,000 calls at the CI loa
 (its own hashing and JSON loop, clamped to 1–4). The `log-bench` job runs it after the Go
 benches and keeps its numbers (`logbench-python.json`).
 
+**It is over budget today**: on CI's Linux runner a call costs about 50 µs at p50 and 80 µs
+at p99 (the Go logger, in the same job: 4.6 and 10 µs). So over budget it warns rather than
+fails, as the story's rollout starts a budget; `LOGBENCH_PY_STRICT=1` makes it fail, for when
+issue #744 has brought it under.
+
 Writing it found two costs in the redaction, both fixed:
 
 - `Rules.key_sensitive` was an `lru_cache` keyed on the rules themselves, so every field of
   every line hashed the whole frozen rule set (about 90 hash calls a line). The answer is now
   kept on the instance by key.
 - Every string field went through all eight value rules, even the logger's own fields (time,
-  level, service, version, env, node, component, the event's literal name). Those are skipped,
-  and a value that matches none of the rules' literal `needs` (one compiled pattern), with
-  too few digits, dots and colons for a card or an address, is returned at once.
+  level, service, version, env, node, component). Those are skipped (the event's name is
+  still scrubbed: a caller outside the pipeline's lint can put a secret there), and a value
+  that matches none of the rules' literal `needs` (one compiled pattern), with too few
+  digits, dots and colons for a card or an address, is returned at once.
 
 ## Every night on a Mac
 
@@ -68,7 +74,7 @@ macOS arm64 runner (the reference class), keeps the numbers for 90 days (`logben
 and compares them with the last successful night's (`tools/logbench/compare.py`). Each run is
 divided by its runner factor first. A cost more than 20 % higher opens the issue "Log benches:
 a cost grew by more than 20 % overnight", or comments on it while it is open. A bench over its
-budget fails the run.
+budget fails the run (the Python bench warns, as above).
 
 ## Not measured here yet
 

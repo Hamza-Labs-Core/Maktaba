@@ -133,12 +133,17 @@ func (c *Controller) Run(ctx context.Context) {
 	for {
 		if !IsSQLite(c.DB) {
 			// a lead whose connection died (a restarted or terminated backend) holds no
-			// lock any more: take it again rather than act without it
-			if lead != nil && lead.PingContext(ctx) != nil {
-				discardConn(lead)
-				lead = nil
+			// lock any more: take it again rather than act without it. A ping that fails
+			// because Run is stopping says nothing about the connection: the lead is kept,
+			// so the deferred releaseLead unlocks it before Run returns (discarded, its lock
+			// lasted until Postgres ended that backend, after Run had returned)
+			if lead != nil {
+				if err := lead.PingContext(ctx); err != nil && ctx.Err() == nil {
+					discardConn(lead)
+					lead = nil
+				}
 			}
-			if lead == nil {
+			if lead == nil && ctx.Err() == nil {
 				lead = c.takeLead(ctx)
 			}
 		}

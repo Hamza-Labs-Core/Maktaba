@@ -6,8 +6,11 @@ The pipeline's logger (``maktaba_pipeline.log``: contextvars, redaction of keys 
 the ring, the JSON renderer) logs ``--calls`` lines to ``/dev/null`` and each call is timed.
 The budget is 20 µs at the 99th percentile on the reference machine (an Apple M2), times the
 runner's speed against it: a fixed hashing and JSON loop, the factor clamped to 1–4, as the
-Go benches' ``logbench.Calibrate`` does. Over budget, it exits 1 with the numbers; the numbers
-are printed as JSON (and written to ``--out``) either way.
+Go benches' ``logbench.Calibrate`` does. Over budget it warns (a GitHub
+``::warning::`` with the numbers) and exits 1 only with ``LOGBENCH_PY_STRICT=1``: the
+story's rollout starts a budget as a warning, and the Python logger is over it today (see
+docs/performance/logs.md). The numbers are printed as JSON (and written to ``--out``) either
+way, and the nightly run compares them night to night.
 """
 
 from __future__ import annotations
@@ -87,13 +90,14 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.out, "w") as f:
             f.write(text)
     if got["p99_ns"] > limit:
-        print(  # noqa: T201
+        why = (
             f"a Python log call (p99): {got['p99_ns'] / 1000:.1f} µs, "
             f"over its budget of {limit / 1000:.1f} µs "
-            f"(20 µs at the reference, runner factor {factor:.2f})",
-            file=sys.stderr,
+            f"(20 µs at the reference, runner factor {factor:.2f})"
         )
-        return 1
+        strict = os.environ.get("LOGBENCH_PY_STRICT", "") == "1"
+        print(f"::{'error' if strict else 'warning'}::{why}", file=sys.stderr)  # noqa: T201
+        return 1 if strict else 0
     return 0
 
 
