@@ -770,6 +770,20 @@ build fails when the two differ.
   envelope). The home refuses an envelope without that consent, scrubs it again, keeps it, and
   groups it on the Errors page.
 
+- **Paid plugins go through pluggable payment providers (Epic 54, story 54.19).** The plugin
+  store gets its payments side: one `PaymentProvider` interface (checkout, webhooks verified
+  with each provider's own secret, refunds, payouts to developers, tax and dispute hooks, and
+  a descriptor of what the provider can do) and a registry the store admin configures, with
+  several providers at once, chosen by the buyer's country, the currency and the admin's
+  order. Sales, refunds, disputes and payouts go into the store's own ledger whatever provider
+  took them; the 85/15 split rounds Maktaba's share down; homes get store-signed entitlements
+  and never see a provider. Two modules, neither connected to a live account: a test provider
+  for CI and Adyen for Platforms (split payments to each developer's balance account). A
+  provider is used live only after its written confirmation that it allows plugin resale.
+  CI's new `store` job runs the tests and keeps each provider's code in its own module; the
+  store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
+  adding a provider).
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
