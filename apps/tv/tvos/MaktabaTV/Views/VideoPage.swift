@@ -99,7 +99,7 @@ struct VideoPage: View {
             seriesID = try? await client.myVideo(id).series?.id
             problem = nil
             panels = session?.capabilities.current.panels == true
-                ? ((try? await client.panels(kind: "video", id: id, language: SubjectPanels<String>.language)) ?? [])
+                ? ((try? await client.panels(kind: "video", id: id, language: SubjectPanels.language)) ?? [])
                 : []
         } catch {
             problem = HomeFailure.shown("load video", error) ?? problem
