@@ -98,3 +98,33 @@ def test_only_a_store_countersignature_needs_no_opt_in() -> None:
 
     assert [unreviewed(lv) for lv in ("automated", "reviewed", "store")] == [False, False, False]
     assert all(unreviewed(lv) for lv in ("none", "developer", "development", ""))
+
+
+def test_read_gives_a_revoked_plugin_the_revoked_gate() -> None:
+    """Story 54.17 §3: a store `disable` (plugin_installs.revoked) is the revoked gate, first."""
+    from maktaba_pipeline.components import plugingate
+
+    class DB:
+        async def fetch(self, q: str, *a: object) -> list[dict[str, object]]:
+            if "FROM plugin_installs" in q:
+                manifest = {"maktaba": ">=0.1.0", "plugin_api": "1.0", "capabilities": {}}
+                row = {"manifest": manifest, "review_level": "reviewed"}
+                return [
+                    {**row, "plugin_id": "dev.example.bad", "revoked": True},
+                    {**row, "plugin_id": "dev.example.ok", "revoked": False},
+                ]
+            return []
+
+        async def fetchrow(self, q: str, *a: object) -> None:
+            return None
+
+    # the fake never suspends: run the coroutine to its end without an event loop (the unit
+    # tier opens no socket, and a loop would)
+    coro = plugingate.read(DB(), "0.7.0")
+    try:
+        coro.send(None)
+        raise AssertionError("read suspended")
+    except StopIteration as done:
+        out = done.value
+    assert out["plugin.dev.example.bad"][0] == "revoked"
+    assert out["plugin.dev.example.ok"][0] == ""

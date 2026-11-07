@@ -240,6 +240,43 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// True once `condition` holds, after at least `reads` looks and at least `timeout` seconds
+    /// (false when both have passed without it). On a loaded runner one look at the app's tree
+    /// took 4.2 s (#761's iPad): a deadline alone ended after a single look, taken while the
+    /// page still moved.
+    func waitUntil(timeout: TimeInterval = 5, reads: Int = 3, _ condition: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        var looks = 0
+        while true {
+            if condition() { return true }
+            looks += 1
+            if looks >= reads, Date() >= end { return false }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+    }
+
+    /// Waits until the app has asked the mock home nothing for `quiet` seconds (at most
+    /// `timeout`): every answer it was waiting for is in and drawn. Home draws its kept rows,
+    /// then each answer (the rows, the recommendations, each card's title as it comes), and a
+    /// long press during one of those redraws loses its touch: no menu, or a tap's page (#695,
+    /// #761).
+    func waitUntilHomeIsQuiet(_ quiet: TimeInterval = 1.5, timeout: TimeInterval = 20,
+                              file: StaticString = #filePath, line: UInt = #line) {
+        let end = Date().addingTimeInterval(timeout)
+        var seen = home.requests.count, since = Date()
+        while Date() < end {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+            let now = home.requests.count
+            if now != seen {
+                seen = now
+                since = Date()
+            } else if Date().timeIntervalSince(since) >= quiet {
+                return
+            }
+        }
+        XCTFail("the app kept asking the home for \(Int(timeout)) s", file: file, line: line)
+    }
+
     /// The mock home's address typed in the picker, then a code approved elsewhere.
     /// `timeout`: how long the picker may take to show (longer at a large text size).
     /// `patience`: every other wait, as many times longer (the warm-up's first launch).

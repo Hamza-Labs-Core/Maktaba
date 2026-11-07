@@ -25,6 +25,7 @@ __all__ = [
     "LogRingBuffer",
     "get_ring",
     "level_rank",
+    "make_json_ring_renderer",
     "make_ring_processor",
     "set_ring",
 ]
@@ -158,5 +159,25 @@ def make_ring_processor(ring: LogRingBuffer) -> Any:
         except Exception:  # noqa: BLE001 — a logging sink must never raise
             pass
         return event_dict
+
+    return processor
+
+
+def make_json_ring_renderer(ring: LogRingBuffer) -> Any:
+    """The JSON renderer that keeps each line it renders in ``ring`` too: one encoding a
+    line for the console and the ring, where :func:`make_ring_processor` and the renderer
+    encoded it twice (~2.5 µs of a ~15 µs call, issue #744). The ring's line is the console's,
+    byte for byte (``event`` is already ``msg`` in the JSON chain)."""
+    import structlog
+
+    render = structlog.processors.JSONRenderer()
+
+    def processor(logger: Any, name: str, event_dict: Any) -> Any:
+        line = render(logger, name, event_dict)
+        try:  # noqa: SIM105 - suppress() would add a context manager to every line
+            ring.append(line if isinstance(line, str) else line.decode())
+        except Exception:  # noqa: BLE001 — a logging sink must never raise
+            pass
+        return line
 
     return processor

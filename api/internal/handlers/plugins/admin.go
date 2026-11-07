@@ -20,6 +20,10 @@ package plugins
 //	GET    /api/plugins/{id}/writes          ?before=&limit=
 //	POST   /api/plugins/{id}/writes/revert   {ids: [...]}
 //	…/api/plugins/store-account              linking to a store account (store.go, 54.15 §5)
+//	GET    /api/plugins/catalog              the store's catalog for this server (catalog.go, 54.17)
+//	GET    /api/plugins/trust                the signed lists' state (withdrawn plugins checked when)
+//	POST   /api/plugins/install (JSON)       {store: {id, version}}: install from the store
+//	PUT    /api/plugins/{id}/auto-update     {on}
 //
 // Every one is admin-only: no sign-in 401; a viewer, a cloud-linked play sign-in (its
 // scope clears IsAdmin) and a token without the admin scope 403. Switches go through the
@@ -43,6 +47,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/catalog"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -61,6 +66,11 @@ type Admin struct {
 	VerifyPassword func(ctx context.Context, userID, password string) error
 	// Store links this home to a plugin store account (story 54.15 §5; nil: 503).
 	Store *storelink.Link
+	// Catalog is the store's catalog and the kill switch (story 54.17; nil: 503).
+	Catalog *catalog.Service
+	// Server and Platform are this server's version and platform (Browse's filter).
+	Server   string
+	Platform catalog.Platform
 }
 
 // Mount adds the routes to r.
@@ -74,12 +84,16 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/install", h.install)
 		r.Get("/api/plugins/panel-order", h.getPanelOrder)
 		r.Put("/api/plugins/panel-order", h.putPanelOrder)
+		r.Get("/api/plugins/catalog", h.catalogView)
+		r.Get("/api/plugins/trust", h.trust)
+		r.Put("/api/plugins/{id}/auto-update", h.autoUpdate)
 		r.Get("/api/plugins/store-account", h.storeStatus)
 		r.Post("/api/plugins/store-account/link", h.storeLink)
 		r.Post("/api/plugins/store-account/poll", h.storePoll)
 		r.Delete("/api/plugins/store-account", h.storeUnlink)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
+		r.Put("/api/plugins/{id}/report-logs", h.reportLogs)
 		r.Post("/api/plugins/{id}/enable", h.switchTo(components.WantEnabled))
 		r.Post("/api/plugins/{id}/disable", h.switchTo(components.WantInstalled))
 		r.Post("/api/plugins/{id}/start", h.hold(false))
@@ -366,6 +380,11 @@ func (h *Admin) update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Admin) installAs(w http.ResponseWriter, r *http.Request, expect string) {
+	if ct, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); ct == "application/json" {
+		// {store: {id, version}, grants…}: install or update from the store (54.17 §5)
+		h.installFromStore(w, r, expect)
+		return
+	}
 	req, done, ok := h.installForm(w, r, expect)
 	if !ok {
 		return
@@ -386,6 +405,28 @@ func (h *Admin) installAs(w http.ResponseWriter, r *http.Request, expect string)
 		status = http.StatusOK
 	}
 	common.WriteJSON(w, r, status, map[string]any{"result": res, "plugin": d})
+}
+
+// reportLogs is PUT /api/plugins/{id}/report-logs {include}: whether problem reports carry
+// the plugin's log lines (story 54.09 §3).
+func (h *Admin) reportLogs(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Include *bool `json:"include"`
+	}
+	if e := common.ReadJSON(r, &body, 1<<10); e != nil {
+		httperror.Write(w, r, e)
+		return
+	}
+	if body.Include == nil {
+		httperror.Write(w, r, problem(http.StatusBadRequest, "plugin_invalid", "include is required"))
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := h.L.SetReportLogs(r.Context(), id, *body.Include, h.actor(r)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugin_id": id, "report_logs": *body.Include})
 }
 
 func (h *Admin) grants(w http.ResponseWriter, r *http.Request) {
