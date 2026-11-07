@@ -33,7 +33,7 @@ func TestGoldenVector(t *testing.T) {
 }
 
 func TestTierForPlan(t *testing.T) {
-	for plan, want := range map[string]string{"free": "", "pro": TierHome, "family": TierPro, "bogus": ""} {
+	for plan, want := range map[string]string{"free": "", "basic": TierHome, "pro": TierPro, "family": "", "bogus": ""} {
 		if got := TierForPlan(plan); got != want {
 			t.Errorf("%s: %q want %q", plan, got, want)
 		}

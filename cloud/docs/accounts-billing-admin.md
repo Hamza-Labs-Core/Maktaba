@@ -81,11 +81,11 @@ Signing in during the 30-day hold is allowed and the account page offers
 
 | Method & path | Auth | Success |
 |---|---|---|
-| `GET /v1/billing/plans` | public | `{payments_enabled, plans:[{id, name, price_cents, bandwidth_bytes_per_month, max_servers, max_concurrent_streams, relay_qos, includes_transcoding, family_seats, purchasable, home_tier}]}` (`home_tier`: the plan the license gives the account's homes, see Licenses) |
+| `GET /v1/billing/plans` | public | `{payments_enabled, plans:[{id, name, price_cents, relay, relay_cap_kbps, max_relay_streams, fair_use_bytes_per_month, allowance_bytes_per_month, pay_as_you_go, payg_price_per_gb_cents, extra_streams, extra_stream_price_cents, max_servers, purchasable, home_tier}]}`: `free`, `basic`, `pro` (Epic 50 story 50.19). A null number is a value not set yet (TBD); a plan without a price can't be bought. `home_tier`: the tier the license gives the account's homes, see Licenses |
 | `GET /v1/billing/me` | bearer | `{plan, status, interval?, current_period_end?, cancel_at_period_end, has_customer}` |
-| `POST /v1/billing/checkout` | bearer | body `{plan:"pro"\|"family"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 payments_not_set_up` |
+| `POST /v1/billing/checkout` | bearer | body `{plan:"basic"\|"pro"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 payments_not_set_up` |
 | `POST /v1/billing/portal` | bearer | `{portal_url}`; `409 no_customer`, `503 payments_not_set_up` |
-| `GET /v1/billing/usage` | bearer | `{month, plan, limit_bytes, used_bytes, servers:[{id, name, bytes_in, bytes_out}]}` |
+| `GET /v1/billing/usage` | bearer | `{month, plan, limit_bytes, used_bytes, servers:[{id, name, bytes_in, bytes_out}]}`: `limit_bytes` is Pro's full-quality allowance or Basic's fair use (0: none). Past it nothing stops; the relay slows (story 50.19) |
 | `GET /.well-known/maktaba-entitlement-key` | public | `{fingerprint, public_key}` (base64 Ed25519): the license-signing key, whose public half release builds of the home embed |
 | `POST /v1/billing/webhook/{provider}` | the provider's signature | `200`; `400 invalid_signature`; `404` unless `{provider}` is the configured provider and it takes payments |
 
@@ -130,8 +130,8 @@ user-scoped entitlement token (`GET /v1/billing/entitlement`) is gone.
 | Cloud plan | Home tier | Seats on the home |
 |---|---|---|
 | `free` | none (the home's Free: one user, LAN only) | 1 |
-| `pro` | `home` | 4 |
-| `family` | `pro` | unlimited |
+| `basic` | `home` (homes released before story 50.19 refuse a tier they don't know, so `basic` keeps the wire name `home` until homes read it) | 4 |
+| `pro` | `pro` | unlimited |
 
 | Method & path | Auth | Success |
 |---|---|---|

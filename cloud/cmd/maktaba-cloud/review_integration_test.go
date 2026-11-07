@@ -84,17 +84,17 @@ func TestWebhookTiesAndSecondSubscription(t *testing.T) {
 	s := e.client()
 	at := time.Now().Add(-time.Minute).Truncate(time.Second)
 	end := time.Now().Add(720 * time.Hour)
-	body, sig := signedEvent(subEvent("evt_upd", "subscription_changed", "sub_a", "cus_t", uid, "active", "pro", at, end))
+	body, sig := signedEvent(subEvent("evt_upd", "subscription_changed", "sub_a", "cus_t", uid, "active", "basic", at, end))
 	s.mustStatus(s.webhook("testpay", body, sig), 200)
-	body, sig = signedEvent(subEvent("evt_crt", "subscription_started", "sub_a", "cus_t", uid, "incomplete", "pro", at, end))
+	body, sig = signedEvent(subEvent("evt_crt", "subscription_started", "sub_a", "cus_t", uid, "incomplete", "basic", at, end))
 	s.mustStatus(s.webhook("testpay", body, sig), 200)
-	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["plan"] != "pro" || me["status"] != "active" {
+	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["plan"] != "basic" || me["status"] != "active" {
 		t.Fatalf("tie reset the subscription: %v", me)
 	}
 
-	body, sig = signedEvent(subEvent("evt_b_del", "subscription_cancelled", "sub_b", "cus_t", uid, "canceled", "family", at.Add(time.Minute), end))
+	body, sig = signedEvent(subEvent("evt_b_del", "subscription_cancelled", "sub_b", "cus_t", uid, "canceled", "pro", at.Add(time.Minute), end))
 	s.mustStatus(s.webhook("testpay", body, sig), 200)
-	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["plan"] != "pro" {
+	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["plan"] != "basic" {
 		t.Fatalf("second subscription's cancel downgraded the live one: %v", me)
 	}
 }

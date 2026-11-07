@@ -6,7 +6,7 @@
 # Both sides add an entry at the end of a section; two new entries share a line (which a
 # line-wise merge interleaves); the Arabic CHANGELOG; this branch edits an entry while main
 # adds one; both edit the same entry (stops); a conflict outside the CHANGELOGs (stops, the
-# merge left in progress); a merge with no conflict.
+# merge left in progress); main adding more entries than the branch; a merge with no conflict.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -207,6 +207,29 @@ code="$(run topic)"
 grep -q "README.md" "$work/out" || fail "README.md not named: $(cat "$work/out")"
 git rev-parse -q --verify MERGE_HEAD >/dev/null || fail "the merge is not left in progress"
 grep -q '^<<<<<<< ' CHANGELOG.md || fail "the CHANGELOG was resolved while another file waits"
+
+# 8. main adds more entries than this branch: the blank lines that separate entries differ
+# in number on the two sides, and are not a change of the text between them
+CASE="main adds more"
+repo more
+en "" | put main CHANGELOG.md
+en '
+- **Entry of the branch.** x
+' | put topic CHANGELOG.md
+en '
+- **Entry A of main.** a
+
+- **Entry B of main.** b
+' | put main CHANGELOG.md
+code="$(run topic)"
+[ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
+en '
+- **Entry A of main.** a
+
+- **Entry B of main.** b
+
+- **Entry of the branch.** x
+' | same CHANGELOG.md
 
 # 7. no conflict: merged, nothing else touched
 CASE="clean"

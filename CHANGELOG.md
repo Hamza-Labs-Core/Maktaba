@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba Cloud's plans are Free, Basic and Pro (Epic 50 story 50.19, part 1).** Only the
+  relay is paid, and a paid plan never cuts remote play off. Free has no relay (direct access
+  will be free on every plan); Basic relays at about 3 Mbps on 2 devices with 500 GB a month of
+  fair use, after which streams play slower; Pro relays at full quality for an allowance. The
+  Family plan is gone: accounts on the old Pro are now Basic, those on Family are Pro. Prices
+  are not set yet, so paid plans stay "coming soon". The relay counts each home's bytes by
+  quality mode, and no longer refuses a home for its bytes.
 - **Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3).**
   Whisper and the second listen run in `tv.maktaba.transcription`, in an `ml` runner beside
   each transcription worker that holds the model and opens the GPU; the search index,
@@ -1180,6 +1187,10 @@ build fails when the two differ.
   it publishes and the ones it listens to, from the store's signed catalog. The store's review
   and listing pages now draw flows with the same chart as the home.
 
+- **Open in my Maktaba works without an app (Epic 54, story 54.18, #757).** A plugin's page on
+  plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
+  remembers it in that browser only, and opens the home's Browse on the plugin.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2281,6 +2292,12 @@ build fails when the two differ.
 - **No stale page after an update.** The service worker carries each build's stamp, pages load
   from the network first, and a page an older release left open reloads once instead of going
   blank.
+
+- **A plugin runner starts on a Mac whose data folder has a long path (Epic 54, story
+  54.23).** A runner's socket then lives under `/tmp`, which macOS keeps at `/private/tmp`;
+  the runner's sandbox named the first and was refused the second, so the runner exited
+  about 10 s after it started and its stages ran in the worker. The sandbox now names the
+  sockets and the run folder by their real paths.
 
 ## [0.2.0] - 2026-10-19
 
