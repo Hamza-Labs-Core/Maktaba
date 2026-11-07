@@ -2,6 +2,7 @@
 // classification and localised duration / rate formatting.
 import { useCallback, useMemo } from "react";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { dateTimeFormat, numberFormat } from "../../lib/intl";
 import type { QueueSummary, StageInfo } from "../../lib/queueApi";
 
 export type QueueVisualState = "running" | "failing" | "waiting" | "done" | "off";
@@ -121,7 +122,7 @@ export function useFmt(): Fmt {
             : dur(ms / 1000),
       rate: (perMin) =>
         t("queue.unit.perMin", {
-          n: new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en", {
+          n: numberFormat(locale === "ar" ? "ar-EG" : "en", {
             maximumFractionDigits: perMin < 10 ? 1 : 0,
           }).format(perMin),
         }),
@@ -132,7 +133,7 @@ export function useFmt(): Fmt {
       },
       since: (iso) => (iso ? dur(Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)) : "–"),
       clock: (d) =>
-        new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
+        dateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",

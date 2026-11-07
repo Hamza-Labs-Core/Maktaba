@@ -1,7 +1,7 @@
 // Epic 42.5: the editions (VITE_MAKTABA_EDITION, lib/edition.ts), each with the real
 // App route tree and shell. The edition is read when the modules load, so each test
 // stubs the variable, resets the module registry and imports App afresh.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import type { Edition } from "./lib/edition";
 import en from "./i18n/en.json";
@@ -50,6 +50,17 @@ async function sidebar() {
   await within(side).findByRole("link", { name: en["nav.account"] });
   return side;
 }
+
+// The first import of App transforms its whole module graph, and each lazy server page
+// transforms on its first visit: seconds of one-time work that, under load, ran out the
+// first test's 5 s and a page's 1 s findBy (#697). Done once here, in a hook with its own
+// budget; each test's fresh import after resetModules then only evaluates cached code.
+beforeAll(async () => {
+  // one at a time: modules evaluated at once could each see another half-made
+  await import("./App");
+  await import("./pages/Settings");
+  await import("./pages/Admin/Users");
+}, 60_000);
 
 beforeEach(() => {
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
