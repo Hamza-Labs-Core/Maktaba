@@ -198,9 +198,10 @@ async def test_thumbnail_on_the_engine_saves_and_queues_what_the_handler_did(
             {"poster": v["poster_path"], "sprite": v["sprite_path"]}
         )
         assert json.loads(j["output_summary"]) == {"chapters": 0, "state": v["state"]}
-        old = next(
+        legacy_job = next(
             r
             for r in out["old"]["jobs"]
             if r["stage"] == "thumbnail" and r["subject"] == j["subject"]
         )
-        assert old["output_summary"] is None and old["output_hash"] != j["output_hash"]
+        assert legacy_job["output_summary"] is None
+        assert legacy_job["output_hash"] != j["output_hash"]
