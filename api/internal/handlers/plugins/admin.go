@@ -71,6 +71,9 @@ type Admin struct {
 	Entitlements *pl.Entitlements
 	// Catalog is the store's catalog and the kill switch (story 54.17; nil: 503).
 	Catalog *catalog.Service
+	// PluginLogs are a plugin's recent lines for a store report (#758; nil: the logs index's,
+	// logs.PluginLines).
+	PluginLogs func(ctx context.Context, id string) []json.RawMessage
 	// Server and Platform are this server's version and platform (Browse's filter).
 	Server   string
 	Platform catalog.Platform

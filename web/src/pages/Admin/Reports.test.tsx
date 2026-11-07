@@ -77,4 +77,44 @@ describe("Problem reports", () => {
     expect(await screen.findByText(en["common.forbidden.title"])).toBeInTheDocument();
     expect(get).not.toHaveBeenCalled();
   });
+
+  // Epic 53 story 53.16: an admin sends a report to Maktaba after their own preview of what
+  // leaves the home; its screenshot only when the admin ticks it
+  it("sends a report to Maktaba after the admin's preview", async () => {
+    get.mockImplementation((p: string) => {
+      if (p === "/api/reports/maktaba") return Promise.resolve({ available: true, enabled: true });
+      if (p === "/api/reports/27/maktaba-preview")
+        return Promise.resolve({ id: 27, text: "it stopped", user_h: "user-1" });
+      return Promise.resolve({ ...REPORT, screenshot: true });
+    });
+    renderPage(<AdminReport />, { path: "/admin/reports/27", route: "/admin/reports/:id" });
+    fireEvent.click(await screen.findByRole("button", { name: en["report.shareMaktaba"] }));
+    expect(await screen.findByTestId("report-maktaba-preview")).toHaveTextContent(
+      '"user_h": "user-1"'
+    );
+    expect(screen.getByTestId("report-maktaba-shot")).toHaveAttribute(
+      "src",
+      expect.stringContaining("/api/reports/27/screenshot")
+    );
+    const shot = screen.getByRole("checkbox", { name: en["report.shareMaktaba.screenshot"] });
+    expect(shot).not.toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: en["report.shareMaktaba.send"] }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/api/reports/27/share", { screenshot: false })
+    );
+  });
+
+  it("offers no Send to Maktaba while the home does not allow it, or once it went", async () => {
+    get.mockImplementation((p: string) => {
+      if (p === "/api/reports/maktaba") return Promise.resolve({ available: true, enabled: true });
+      return Promise.resolve({ ...REPORT, maktaba: { state: "sent", reply: "Looking at it" } });
+    });
+    renderPage(<AdminReport />, { path: "/admin/reports/27", route: "/admin/reports/:id" });
+    expect(await screen.findByTestId("report-maktaba")).toHaveTextContent(
+      en["report.sentToMaktaba"]
+    );
+    expect(screen.getByTestId("report-maktaba-reply")).toHaveTextContent("Looking at it");
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/reports/maktaba"));
+    expect(screen.queryByRole("button", { name: en["report.shareMaktaba"] })).toBeNull();
+  });
 });

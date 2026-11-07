@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **The relay enforces each plan (Epic 50 story 50.19, part 2).** A home on Free (no relay)
+  gets `402 relay_needs_plan` through the relay, and keeps its tunnel for direct access. With
+  `relay.plans.enforce` on, Basic's relayed requests carry `X-Maktaba-Relay-Cap-Kbps` (3000,
+  1500 past fair use) and its media is paced at the cap + 20 %, and a new relayed stream past
+  the plan's limit gets `429 stream_limit` (`relay_streams`, swept after 2 minutes of silence)
+  while the ones playing go on. Off (the default), paid homes play in full.
 - **Maktaba Cloud's plans are Free, Basic and Pro (Epic 50 story 50.19, part 1).** Only the
   relay is paid, and a paid plan never cuts remote play off. Free has no relay (direct access
   will be free on every plan); Basic relays at about 3 Mbps on 2 devices with 500 GB a month of
@@ -314,6 +320,18 @@ build fails when the two differ.
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
 ### Added
+
+- **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
+  (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
+  Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
+  Then **Report a problem** on the web, Apple and Android apps offers **Also send to Maktaba**,
+  unticked, and an admin can send any report after seeing exactly what leaves the home.
+  Names, video titles, file names, library folders and addresses are removed first, and the
+  person shows as user-1. The home sends it through its relay agent and keeps trying for 7
+  days when the cloud can't be reached. Maktaba keeps it for 90 days; its reply shows in the
+  report and in the sender's **My reports**; **Delete what Maktaba has** deletes every report
+  of the home there. The cloud's service admin reads, triages and answers them at
+  **/admin/reports**; a home admin's cloud account cannot.
 
 - **The Player for Windows and Linux has Report this on its error screens and says what
   happened to its last crash.** An error's **Report this** opens Report a problem with that
@@ -1190,6 +1208,11 @@ build fails when the two differ.
 - **Open in my Maktaba works without an app (Epic 54, story 54.18, #757).** A plugin's page on
   plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
   remembers it in that browser only, and opens the home's Browse on the plugin.
+
+- **A plugin report can carry the plugin's logs (Epic 54, story 54.18, #758).** Reporting an
+  installed plugin to the store from Browse, the admin can attach its log lines from the last
+  day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
+  reviewers alone and deleted after 90 days.
 
 ### Fixed
 

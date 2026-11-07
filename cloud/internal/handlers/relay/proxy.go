@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -52,9 +53,12 @@ const clientWriteIdle = 2 * time.Minute
 type Deps struct {
 	Registry *relaypkg.Registry
 	// Servers resolves slugs unless Lookup is set.
-	Servers    *stores.Servers
-	Lookup     ServerLookup
-	Meter      Metering
+	Servers *stores.Servers
+	Lookup  ServerLookup
+	Meter   Metering
+	// Plans enforces each plan on the relay (story 50.19 §3): refusal, the cap, pacing and
+	// the stream limit. Nil: every home is forwarded as it comes.
+	Plans      *Plans
 	PublicHost string // e.g. "relay.maktaba.tv"
 	// Editions serves the web app's player and remote editions at /play/ and /manage/ on
 	// a home's relay address (Epic 42.9); nil: those paths go to the home like any other.
@@ -215,15 +219,43 @@ func (d *Deps) Handler() http.Handler {
 // the tunnel closed before the home answered a GET or HEAD.
 func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t *relaypkg.Tunnel) (retry bool) {
 	{
-		// The home's relay mode (story 50.19): bytes are counted in it. Nothing is refused for
-		// bytes any more; refusing a plan without the relay, the cap header, pacing and the
-		// stream limit are part 2's.
+		// The home's relay mode (story 50.19 §3), in which its bytes are counted. A plan
+		// without the relay is refused (the tunnel stays: direct access, entitlements and push
+		// use it); a paid plan is capped and limited when the plans are enforced, never cut
+		// off for bytes.
 		mode := billing.Decision{Mode: billing.ModeFull}
 		if d.Meter != nil {
 			mode = d.Meter.Decide(r.Context(), sv)
-			if mode.Mode == billing.ModeRefused {
-				mode = billing.Decision{Mode: billing.ModeFull} // forwarded until part 2 refuses it
+		}
+		if mode.Mode == billing.ModeRefused {
+			if d.Plans != nil {
+				writeErr(w, r, http.StatusPaymentRequired, "relay_needs_plan",
+					"remote play through the relay needs a Basic or Pro plan; direct access is free")
+				return false
 			}
+			mode = billing.Decision{Mode: billing.ModeFull}
+		}
+		if d.Plans == nil || !d.Plans.Enforce {
+			mode = billing.Decision{Mode: billing.ModeFull, PAYG: mode.PAYG}
+		}
+		media := mediaPath(r.URL.Path)
+		stream, isStream := streamKey(r.URL.Path, clientIP(r))
+		if isStream && d.Plans != nil && d.Plans.Enforce && d.Plans.StreamLimit && d.Plans.Streams != nil {
+			extra := 0
+			if d.Plans.Extra != nil {
+				extra = d.Plans.Extra(r.Context(), sv.ID)
+			}
+			if limit, ok := billing.StreamLimit(sv.Plan, extra); ok {
+				if admitted, open := d.Plans.admit(r.Context(), sv.ID, stream, limit); !admitted {
+					writeErr(w, r, http.StatusTooManyRequests, "stream_limit",
+						fmt.Sprintf("%d devices are already playing through the relay, the most this plan allows", open))
+					return false
+				}
+			}
+		}
+		var pace *bucket
+		if media && isStream && mode.CapKbps > 0 && d.Plans != nil {
+			pace = d.Plans.pacer(sv.ID, stream, mode.CapKbps)
 		}
 		// No deadline on the exchange: a video plays as long as its client
 		// reads. Only the home's answer (the head) is bounded.
@@ -234,6 +266,8 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 		setForwarded(req.Header, r)
 		req.Header.Set("X-Forwarded-Host", r.Host)
 		req.Header.Set("X-Relayed-By", "maktaba-cloud")
+		// the home offers only renditions within the cap (only the relay sets it)
+		planHeaders(req.Header, mode.CapKbps)
 		// only the home's own agent marks a request as relayed
 		req.Header.Del("X-Maktaba-Via")
 		// the cloud's own cookies never reach a home (a parent-domain one
@@ -295,6 +329,10 @@ func (d *Deps) serve(w http.ResponseWriter, r *http.Request, sv stores.Server, t
 		for {
 			n, rerr := resp.Body.Read(buf)
 			if n > 0 {
+				// a capped media stream is held to its cap plus 20 %: slower, never stopped
+				if pace != nil && !pace.wait(r.Context(), n) {
+					break
+				}
 				_ = rc.SetWriteDeadline(time.Now().Add(clientWriteIdle))
 				if _, werr := w.Write(buf[:n]); werr != nil {
 					break

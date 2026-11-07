@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -132,6 +133,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		Registry:   registry,
 		Servers:    serversStore,
 		Meter:      meter,
+		Plans:      relayPlans(cfg, pool.DB, relayID),
 		PublicHost: cfg.Relay.PublicHost,
 		Collector:  collector,
 		Editions:   editions(logger, cfg.Relay.EditionsDir),
@@ -262,5 +264,16 @@ func relayDrain(logger *slog.Logger, cfg config.Config, reg *relaypkg.Registry, 
 			Deadline: cfg.Relay.DrainDeadline,
 		}, cfg.Relay.DrainRate, tickets.Mint)
 		logger.Info("relay: tunnels drained", "left", reg.Live(), "event", "relay_drain_done")
+	}
+}
+
+// relayPlans are the relay's plan rules (story 50.19 §3): a plan without the relay is refused;
+// paid plans are capped and stream-limited as relay.plans.enforce and
+// relay.stream_limit.enabled say, their streams counted in Postgres under this relay's id.
+func relayPlans(cfg config.Config, db *sql.DB, relayID string) *relayh.Plans {
+	return &relayh.Plans{
+		Enforce:     cfg.Relay.PlansEnforce,
+		StreamLimit: cfg.Relay.StreamLimitEnabled,
+		Streams:     &billingpkg.Streams{DB: db, Relay: relayID},
 	}
 }

@@ -87,6 +87,7 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/ratings\/([\w-]+)\/report$/, ratings.reportRating],
   ["POST", /^\/v1\/plugins\/([a-z0-9.-]+)\/reports$/, ratings.report],
   ["GET", /^\/v1\/admin\/reports$/, ratings.moderationQueue],
+  ["GET", /^\/v1\/admin\/reports\/([\w-]+)\/logs$/, ratings.reportLogs],
   ["POST", /^\/v1\/admin\/reports\/([\w-]+)\/resolve$/, ratings.resolveReport],
   ["POST", /^\/v1\/admin\/ratings\/([\w-]+)\/hide$/, ratings.hideRating],
 ];

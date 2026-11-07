@@ -10,6 +10,7 @@ const LINKS = [
   { to: "/admin/servers", key: "admin.nav.servers" },
   { to: "/admin/abuse", key: "admin.nav.abuse" },
   { to: "/admin/usage", key: "admin.nav.usage" },
+  { to: "/admin/reports", key: "admin.nav.reports" },
   { to: "/admin/audit", key: "admin.nav.audit" },
 ];
 

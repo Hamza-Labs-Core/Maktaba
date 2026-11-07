@@ -24,6 +24,8 @@ export interface ReportDraft {
   when?: string; // ISO; empty: just now
   appVersion: string;
   requestRef?: string; // the error screen's reference it was opened from
+  /** also send it to Maktaba (story 53.16): shown only while the home allows it */
+  shareWithMaktaba?: boolean;
 }
 
 /** Sends a report; answers its number. */
@@ -45,6 +47,7 @@ export async function sendReport(d: ReportDraft): Promise<number> {
       install_id: installId(),
       request_ids: reqs.slice(-20),
       lines: reportLines(),
+      share_with_maktaba: d.shareWithMaktaba === true,
     })
   );
   const r = await fetch(apiUrl("/api/reports"), {
@@ -74,6 +77,57 @@ export interface ReportSummary {
   status: ReportStatus;
   shared_with_maktaba: boolean;
   reply?: string;
+  maktaba?: ToMaktaba | null;
+}
+
+/** A report's way to Maktaba (story 53.16). */
+export interface ToMaktaba {
+  state: "queued" | "sent" | "expired" | "refused" | "cancelled" | "deleted";
+  screenshot?: boolean;
+  sent_at?: string;
+  reply?: string;
+  replied_at?: string;
+  status?: string;
+  fixed_in?: string;
+  error?: string;
+}
+
+/** Whether the home lets people send reports to Maktaba (the box shows only then). */
+export interface MaktabaSetting {
+  available: boolean;
+  enabled: boolean;
+  // an admin's view
+  delete?: {
+    state: "none" | "pending" | "done";
+    requested_at?: string;
+    deleted_at?: string;
+    error?: string;
+  };
+  queued?: number;
+  sent?: number;
+}
+
+// async: always a promise (an app shell with no API answers no setting, never a throw)
+export async function maktabaSetting(): Promise<MaktabaSetting> {
+  return api.get<MaktabaSetting>("/api/reports/maktaba");
+}
+
+export function setMaktabaSetting(enabled: boolean): Promise<{ enabled: boolean }> {
+  return api.put<{ enabled: boolean }>("/api/reports/maktaba", { enabled });
+}
+
+export function deleteAtMaktaba(): Promise<{ state: string }> {
+  return api.delete<{ state: string }>("/api/reports/maktaba");
+}
+
+/** An admin sends a report to Maktaba (without its screenshot unless kept). */
+export function shareReport(id: number, screenshot: boolean): Promise<ReportSummary> {
+  return api.post<ReportSummary>(`/api/reports/${id}/share`, { screenshot });
+}
+
+/** The report exactly as it would leave the home (the admin's preview). */
+export function maktabaPreview(id: number): Promise<Record<string, unknown>> {
+  return api.get<Record<string, unknown>>(`/api/reports/${id}/maktaba-preview`);
 }
 
 export interface ReportLine {
