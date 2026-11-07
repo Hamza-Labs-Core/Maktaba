@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0201 - plugins: the entitlements of paid plugins (Epic 54, story 54.19 §6).
+-- Slot 0202 - plugins: the entitlements of paid plugins (Epic 54, story 54.19 §6).
 --
 --   plugin_entitlements  each entitlement the store signed for this home (one per purchase),
 --                        as it was checked offline when it was fetched (signed by an
@@ -97,7 +97,7 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0199): the lineage a plugin write leaves on its subject, the home's
         -- API alone reads and writes it
         'plugin_write_lineage',
-        -- plugins (slot 0201): the entitlements of paid plugins this home holds, signed by
+        -- plugins (slot 0202): the entitlements of paid plugins this home holds, signed by
         -- the store for this home and its store key; a machine's copy has no use for them
         'plugin_entitlements'
     ]::text[]

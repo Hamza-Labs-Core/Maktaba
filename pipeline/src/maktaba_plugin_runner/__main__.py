@@ -26,6 +26,9 @@ FORBIDDEN_ENV = (
 EXIT_SANDBOX = 70
 EXIT_UNTRUSTED = 71
 EXIT_ENV = 72
+#: the areas changed: the supervisor starts the runner again with them
+EXIT_AREAS_CHANGED = 75
+AREAS_POLL_S = 10.0
 
 
 def members(group: str) -> dict[str, tuple[str, str]]:
@@ -88,6 +91,15 @@ def main(argv: list[str] | None = None) -> int:
     if group == "fp":
         tables = [{}]  # the fingerprint runner reads statements only: no files, no tools
     areas = json.loads(os.environ.get("MAKTABA_RUNNER_AREAS") or "{}")
+    # the worker writes this machine's areas (the library roots through its share-path
+    # mapping); a runner restarts itself when they change (story 54.23 §3)
+    areas_digest, areas_file = "", own.parent / "areas.json"
+    try:
+        doc = json.loads(areas_file.read_text())
+        areas.update(doc.get("areas") or {})
+        areas_digest = str(doc.get("digest") or "")
+    except (OSError, ValueError):
+        pass
     policy = sandbox.policy_for(
         tables, areas=areas, api_socket=args.api_socket, own_socket=str(own), run_dir=run_dir
     )
@@ -96,6 +108,7 @@ def main(argv: list[str] | None = None) -> int:
     except sandbox.SandboxUnavailable as exc:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))
         return EXIT_SANDBOX
+    sandbox.guard_names(policy.write_named)
     unavailable: dict[str, str] = {}
     entries: dict[str, str] = {}
     for stage, (entry, _) in served.items():
@@ -117,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         plugin_of={s: pid for s, (_, pid) in served.items()},
         bundle=firstparty.bundle_digest(),
         unavailable=unavailable,
+        areas=areas_digest,
     )
     log(
         "plugin_runner_serving",
@@ -128,8 +142,25 @@ def main(argv: list[str] | None = None) -> int:
         socket=str(own),
     )
     with contextlib.suppress(KeyboardInterrupt):
-        asyncio.run(runner.serve(own))
-    return 0
+        asyncio.run(_serve(runner, own, areas_file, areas_digest))
+    return EXIT_AREAS_CHANGED if runner.areas_changed else 0
+
+
+async def _serve(runner: Any, own: Any, areas_file: Any, digest: str) -> None:
+    """Serve until the areas the sandbox was built from change on disk."""
+    serving = asyncio.ensure_future(runner.serve(own))
+    while not serving.done():
+        await asyncio.sleep(AREAS_POLL_S)
+        try:
+            now = str(json.loads(areas_file.read_text()).get("digest") or "")
+        except (OSError, ValueError):
+            continue
+        if now and now != digest and not runner.running:
+            log("plugin_runner_areas_changed", group=runner.group, was=digest, now=now)
+            runner.areas_changed = True
+            serving.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await serving
 
 
 if __name__ == "__main__":

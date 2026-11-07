@@ -24,12 +24,13 @@ from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, bound_graph, get_stage, validate
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads, uid
-from maktaba_pipeline.engine.stages import convert_mp4, thumb_small
+from maktaba_pipeline.engine.stages import convert_mp4
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.library_mgmt import convert as cv
 from maktaba_pipeline.library_mgmt.ledger import list_actions
 from maktaba_pipeline.library_mgmt.verify import moov_before_mdat, probe
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.thumbnail import small as thumb_small
 from tests.library_mgmt.epic47_world import World, make_world
 from tests.library_mgmt.media_fixtures import FFMPEG, mkv_h264_aac, mp4_moov_at_end, needs_ffmpeg
 

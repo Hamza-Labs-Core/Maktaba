@@ -181,7 +181,7 @@ provider's own fees are shown to developers as the provider states them.
   home, the API's refresher (`api/internal/plugins/entitlements.go`) fetches daily (an hour of
   jitter) and, after a Buy, every 15 s for 15 minutes; the supervisor checks each envelope
   against the store keys it verified (`POST /plugins/entitlements/verify`, `pluginsig.
-  CheckEntitlement`); the ones that hold replace `plugin_entitlements` (migration 0201), and
+  CheckEntitlement`); the ones that hold replace `plugin_entitlements` (migration 0202), and
   any failure keeps the rows. Both gates (the supervisor's runner, the pipeline's
   `plugingate`) read only `valid_until`: a manifest whose `price` is not `free` waits
   `entitlement_missing` without a row valid now (72-hour grace). Settings → Plugins → Store
@@ -298,7 +298,7 @@ All payment tests use the fake provider and recorded fixtures; no live payment c
 | `store/migrations/commerce/0001_payments.sql` (new) | Providers, provider accounts, seller fees, products, prices, purchases, the ledger, provider events, payouts, entitlements. |
 | `api/internal/plugins/entitlements.go` (new) | The home's refresh (store → supervisor check → `plugin_entitlements`). |
 | `cmd/maktaba-server/internal/plugins/routes.go`, `runner.go` | The supervisor's check route and the `entitlement_missing` gate (54.37); `pipeline/.../components/plugingate.py` the same gate. |
-| `shared/db/migrations/0201_plugins_entitlements.sql` (new) | `plugin_entitlements`. |
+| `shared/db/migrations/0202_plugins_entitlements.sql` (new) | `plugin_entitlements`. |
 | `shared/components/catalog.toml`, `web/src/i18n/{en,ar}.json` | `entitlement_missing` in `reasons`, with its words (if 54.37 has not added it). |
 | `shared/plugins/pluginsig/` | Entitlement verification with `use: "entitlement"` keys (`VerifyEntitlement`, `CheckEntitlement`). |
 | `tools/ci/payment_provider_allowlist.py` (new) | T07. |

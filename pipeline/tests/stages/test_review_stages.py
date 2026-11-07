@@ -14,8 +14,9 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, POOLS
 from maktaba_pipeline.engine.media import ProcResult, reset_runner, set_runner
 from maktaba_pipeline.engine.sql import loads
-from maktaba_pipeline.engine.stages import review_pages, thumb_small
+from maktaba_pipeline.engine.stages import review_pages
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.thumbnail import small as thumb_small
 from tests.engine.factory import make_library, make_series_and_season, make_video
 from tests.extensions.harness import add_episode
 from tests.stages.world import core_runtime, drain_core

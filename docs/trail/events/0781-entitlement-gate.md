@@ -9,7 +9,7 @@ prs: [735, 743, 753, 733]
 ---
 
 ## What happened
-- With the home link (#753) and the chain of trust (#733) on main: the store's signed entitlements route, `pluginsig.CheckEntitlement`, the supervisor's check route, the API's daily refresh into `plugin_entitlements` (migration 0201), the `entitlement_missing` gate in both runners, and the purchases list on the Store account page.
+- With the home link (#753) and the chain of trust (#733) on main: the store's signed entitlements route, `pluginsig.CheckEntitlement`, the supervisor's check route, the API's daily refresh into `plugin_entitlements` (migration 0202; #773 took 0201 first), the `entitlement_missing` gate in both runners, and the purchases list on the Store account page.
 
 ## What we learned
 - #743's entitlement format (one signature, no kind) predated 54.14's envelope, which already had a kind and a key use for entitlements. Merging Phase 2 retired it. When two phases build toward one format, check the other phase's constants (`KindEntitlement`, `UseEntitlement`) before writing your own.

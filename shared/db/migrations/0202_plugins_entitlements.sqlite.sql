@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0201 (plugins: entitlements). Plugins run on a Postgres home
+-- SQLite parity sibling for slot 0202 (plugins: entitlements). Plugins run on a Postgres home
 -- only (slot 0194); this keeps the schema in step.
 --
 CREATE TABLE IF NOT EXISTS plugin_entitlements (

@@ -9,8 +9,8 @@ from typing import Any
 
 import numpy as np
 import pytest
+from maktaba_fp_subtitles.stages.subtitle_gen import srt, vtt
 
-from maktaba_pipeline.engine.stages.subtitle_gen import srt, vtt
 from maktaba_pipeline.stt.batched import (
     N_FRAMES,
     BatchedTranscriber,
