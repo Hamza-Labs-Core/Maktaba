@@ -28,8 +28,8 @@ type Config struct {
 	// MinFree: below it on the data volume, debug lines stop and the oldest hours go
 	// (5 GB). Under HardFree (1 GB) only warn and above are written.
 	MinFree, HardFree int64
-	// Echo is server.log (the supervisor's stderr); EchoAll writes every line there as it
-	// came (as before the keeper), else only warn and above, as kept lines.
+	// Echo is server.log (the supervisor's stderr): warn and above, as kept lines; EchoAll
+	// writes every line there as it came (as before the keeper; server_log = "all").
 	Echo    io.Writer
 	EchoAll bool
 	// Component names a supervised process's catalog component (ByProcess).

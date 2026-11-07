@@ -33,8 +33,9 @@ stay 7 days, debug 24 hours, all of it under 550 MB of the 1 GB diagnostics cap 
 `server.toml`: `retention`, `debug_retention`, `max_total_size`, `max_segments_size`,
 `min_free`). Below 5 GB free on the data volume debug lines stop, below 1 GB only warnings and
 errors are written. Each child writes to its own spool, `<data>/logs/spool/<service>.out`,
-which the keeper reads and empties. `server.log` still gets every line for now
-(`server_log = "warn"` keeps only warnings and errors there). The roles write JSON lines
+which the keeper reads and empties. `server.log` gets the roles' warnings and errors
+only, beside the supervisor's and the launcher's own lines (`server_log = "all"` under
+`[logs]` brings every line back there). The roles write JSON lines
 (`MAKTABA_LOG_FORMAT=json`). Read a segment with `zstd -dc 20261106-10.ndjson.zst | jq`.
 
 Every line follows one shape (`shared/log/schema/line.schema.json`, Epic 53), and every part
