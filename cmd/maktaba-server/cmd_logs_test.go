@@ -74,8 +74,8 @@ func TestLogsRoleServes(t *testing.T) {
 func itoa(n int) string { return strconv.Itoa(n) }
 
 // Epic 53 stories 53.10, 53.11 and 53.15: the index keeps what [logs] says (logs, error
-// groups, problem reports, its share of the cap), and scrapes the API's admin metrics when
-// nothing else is named.
+// groups, problem reports, its share of the cap), and scrapes the API's admin metrics and
+// streaming's when nothing else is named.
 func TestConfigureIndexFollowsLogs(t *testing.T) {
 	t.Setenv("MAKTABA_METRICS_URLS", "")
 	ix, err := logindex.Open(t.TempDir(), time.Now)
@@ -88,7 +88,8 @@ func TestConfigureIndexFollowsLogs(t *testing.T) {
 	if ix.Retention != 14*day || ix.ErrorRetention != 60*day || ix.ReportRetention != 120*day || ix.MaxBytes != (2<<30)*35/100 {
 		t.Fatalf("index: %v %v %v %d", ix.Retention, ix.ErrorRetention, ix.ReportRetention, ix.MaxBytes)
 	}
-	if len(ix.MetricsURLs) != 1 || !strings.HasSuffix(ix.MetricsURLs[0], ":9100/metrics") {
+	if len(ix.MetricsURLs) != 2 || !strings.HasSuffix(ix.MetricsURLs[0], ":9100/metrics") ||
+		!strings.HasSuffix(ix.MetricsURLs[1], ":9101/metrics") {
 		t.Fatalf("metrics: %v", ix.MetricsURLs)
 	}
 }

@@ -255,3 +255,42 @@ maktaba_pipeline_realtime_factor{stage="transcribe"} 3
 		}
 	}
 }
+
+// Story 53.12: the log index scrapes the API and streaming. Each exports process_* and go_*
+// unlabelled; the first target keeps a series, a later one adds only what it lacked (the
+// TV's), so the Streaming board fills and the API's counters never read another process's.
+func TestScrapeTwoTargetsFirstKeepsASeries(t *testing.T) {
+	root, now := t.TempDir(), t0
+	ix := open(t, root, &now)
+	ctx := context.Background()
+	serve := func(text string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = fmt.Fprint(w, text)
+		}))
+	}
+	api := serve("process_cpu_seconds_total 100\ngo_goroutines 40\n")
+	defer api.Close()
+	streaming := serve("process_cpu_seconds_total 5\ngo_goroutines 9\nmaktaba_tv_channels_on_air 3\n")
+	defer streaming.Close()
+	urls := []string{api.URL, streaming.URL}
+	ix.Scrape(ctx, urls, api.Client())
+	now = now.Add(time.Minute)
+	ix.Scrape(ctx, urls, api.Client())
+	val := func(name string) float64 {
+		var v float64
+		if err := ix.db.QueryRow(`SELECT value FROM metric_1m WHERE name = ? AND minute = ?`, name,
+			minuteOf(now)).Scan(&v); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		return v
+	}
+	if v := val("go_goroutines"); v != 40 {
+		t.Errorf("go_goroutines: %v, want the API's 40", v)
+	}
+	if v := val("process_cpu_seconds_total"); v != 0 {
+		t.Errorf("the API's cpu counter did not move: %v, want 0 (not a reset to 5)", v)
+	}
+	if v := val("maktaba_tv_channels_on_air"); v != 3 {
+		t.Errorf("streaming's series: %v, want 3", v)
+	}
+}

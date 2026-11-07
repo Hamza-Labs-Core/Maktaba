@@ -5,7 +5,6 @@
   "series": [
     { "name": "maktaba_component_up", "kind": "gauge", "board": "overview", "id_labels": true },
     { "name": "maktaba_component_restarts_total", "kind": "counter", "board": "overview", "id_labels": true },
-    { "name": "maktaba_supervisor_children", "kind": "gauge", "board": "overview" },
     { "name": "maktaba_node_paused", "kind": "gauge", "board": "overview" },
     { "name": "maktaba_node_proxy_requests_total", "kind": "counter", "board": "overview" },
     { "name": "maktaba_update_runs_total", "kind": "counter", "board": "overview" },

@@ -289,6 +289,10 @@ func (ix *Index) sweepMetrics(ctx context.Context) error {
 func (ix *Index) Scrape(ctx context.Context, urls []string, client *http.Client) {
 	at := ix.now()
 	var all []sample
+	// The first target that has a series keeps it: every Go process exports process_* and
+	// go_* unlabelled, and two processes' counters read as one would look like a reset at
+	// each scrape. A later target adds only what the earlier ones lacked (streaming's tv_*).
+	seen := map[string]bool{}
 	for _, u := range urls {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
@@ -300,8 +304,17 @@ func (ix *Index) Scrape(ctx context.Context, urls []string, client *http.Client)
 		}
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 		_ = resp.Body.Close()
-		if resp.StatusCode == http.StatusOK {
-			all = append(all, parseMetrics(bytes.NewReader(b))...)
+		if resp.StatusCode != http.StatusOK {
+			continue
+		}
+		mine := parseMetrics(bytes.NewReader(b))
+		for _, s := range mine {
+			if !seen[s.name+"{"+s.labels] {
+				all = append(all, s)
+			}
+		}
+		for _, s := range mine {
+			seen[s.name+"{"+s.labels] = true
 		}
 	}
 	if err := ix.Record(ctx, all, at); err != nil {
