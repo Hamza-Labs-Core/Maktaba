@@ -7,4 +7,5 @@ modules = [
     "maktaba_pipeline.library_mgmt.ledger:create_action,get_action,advance,update_fields,open_actions,failed_actions",
     "maktaba_pipeline.library_mgmt.swap:_trash_target,swap_in,_fail_before_swap,_finish_swapped,_roll_back_swapped,recover,_restore_convert,_restore_dedup,restore,_finish_restore",
     "maktaba_pipeline.library_mgmt.trash",
+    "maktaba_pipeline.library_mgmt.scope:video_paths",
 ]
