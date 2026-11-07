@@ -252,6 +252,18 @@ build fails when the two differ.
   and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
   route (a test fails on an undescribed one). Migrations 0191-0193. Every new word in English
   and Arabic.
+- **Plugins, part 4: the Plugins page, settings and the SDK (Epic 54, stories 54.10–54.13).**
+  Settings → Plugins (admins) lists each plugin with its badges (Unreviewed, Development), its
+  rating, what it is doing and why, and its jobs; a plugin's page shows its permissions in
+  Maktaba's own words with its libraries (none until you tick one), its status and stages, its
+  settings, what it wrote (revert what you choose), its versions (roll back, update from a file)
+  and turning it off or removing it. Install from a file asks you to type an unreviewed
+  plugin's name; allowing unreviewed plugins asks for your password. A plugin's settings are a
+  form drawn from its own description, checked by the server (no password or key fields), kept
+  through updates. Plugin queues have their own lane on the Queues page, and the Components page
+  shows a plugin's own name. For developers, `mkp` makes a Rust plugin, checks it as the server
+  does, runs it in a test harness with the plugin host's own code and packs it. Every new word in
+  English and Arabic.
 - **Plugins, part 3: install, turn on, run and remove a plugin (Epic 54, stories 54.03,
   54.07–54.09, 54.37, 54.38).** An admin installs a plugin package on a Postgres home with
   `POST /api/plugins/install` (Allow unreviewed plugins on: every file is unreviewed before the

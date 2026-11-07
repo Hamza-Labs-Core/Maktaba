@@ -1,0 +1,22 @@
+[package]
+name = "{{crate}}"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = { version = "0.46", default-features = false, features = ["macros", "realloc"] }
+dlmalloc = { version = "0.2", features = ["global"] }
+
+# wit-bindgen's std_feature gates `impl Error` on it; the plugin never turns it on
+[features]
+std = []
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+panic = "abort"
