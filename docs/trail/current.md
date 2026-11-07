@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.89
-up_to_commit: a3e70bc02
-built_from: v0.3.88
+tag: v0.3.90
+up_to_commit: 51e428d7b
+built_from: v0.3.89
 ---
 
-# Trail snapshot: v0.3.89
+# Trail snapshot: v0.3.90
 
 ## Keep doing
 
@@ -16,6 +16,7 @@ built_from: v0.3.88
 - No placeholder features: a feature is built or it is not shown. (#128, d20261014-pc-dizquetv-origin-and-rules)
 - Review every PR yourself; the Copilot reviewer check and its quota comment are noise. Merge with a merge commit on the reviewed head, every check present and green (main has no branch protection). (d20261031-standing-rules, d20261020-pc-coordinator-merge-rules, #314, #212)
 - Fold small Apple fixes into one integration PR; fix agents push branches, not PRs. (#539)
+- Reuse the home's own code where another service must agree with it: the plugin store reads packages with the home's Rust reader built to wasm, not a second implementation. (#753)
 - Keep worktrees under `.claude/worktrees/`, never `$TMPDIR`; remove merged worktrees and branches. (d20261031-standing-rules, d20261102-worktree-cleanup)
 - Branch stacks point HOME, `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR` at scratch folders. (#621, #623)
 - Use only real PR numbers and shas; attribute history with git (blame, `log -L`, PR file lists). (d20261031-standing-rules, #655)
@@ -155,6 +156,9 @@ built_from: v0.3.88
 - In a length-prefixed format bound the length by the bytes received before allocating. (#691)
 - Canonical JSON for signatures needs its own small parser per language: Go's `encoding/json` escapes `<`, `>`, `&` and U+2028/9 unless `SetEscapeHTML(false)` and keeps the last duplicate key, JavaScript keeps lone surrogates, serde_json refuses them. Hash `files.json` in canonical form. WebCrypto imports an Ed25519 seed as PKCS 8 with the prefix `302e020100300506032b657004220420`. (#733, #743)
 - `node:sqlite` (Node 22.13+) runs D1's SQL as is, so store tests need no Miniflare. A far-future ISO date (`+275760…`) sorts before `2026` as text; compare against `9999-12-31T…`. (#735)
+- Cloudflare Workers tests (Miniflare): workerd refuses a compatibility date newer than its build; Argon2id in wasm makes each test account slow, so Worker tests get 30 s; a queue consumer races tests driving the same work by hand, so a binding (`CHECKS_FROM_QUEUE`) turns it off. (#753)
+- Signed-list versions never go below the copy already on the CDN, or a restored database publishes a list homes refuse as a rollback. Split an `Authorization` value on its first separator only: splitting on `=` cuts base64 padding. (#753)
+- A feed on another origin needs a CSP change (`connect-src` was `'self'`) in the home's headers and in the cloud's player and remote editions, which copy them (`cloud/internal/handlers/relay/editions.go`). "Through the cloud" is the home's address under `relay.maktaba.tv`: match the suffix with its dot, or `evilrelay.maktaba.tv` passes. (#752)
 - A WIT variant gains no case without breaking 1.0 guests; a plugin loop refusal reuses `scope` with the API code `plugin_loop`. (#751)
 - Wasmtime's component linker matches a guest's `maktaba:plugin/x@1.0.0` import against the host's `@1.1.0` by semver (old guests keep working while no shared type changes) and links a newer minor too, so the import audit (`plugin_api_newer`) alone refuses it. `cargo build` of the guests misses a WIT change (`generate!` does not track the file): touch the guest sources, check with `strings x.wasm | grep maktaba:plugin`. (#731)
 - Go's `rules.Effective` does not apply the pipeline's `ENV_DEFAULTS` (`MAKTABA_OLLAMA_URL`); Go code reading those rules applies the variable itself. (#731)
@@ -166,6 +170,8 @@ built_from: v0.3.88
 - Lazy grids anchor on the first visible key, so out-of-order answers open a page scrolled. A BackHandler always composed keeps its old order. (#529, #523)
 - A read that started before a write must not overwrite it on screen: one `ReadOrder` per platform. (#613, #616, #624)
 - SwiftUI: an identifier on a wrapping Section replaces its children's; a `LazyHStack` in a horizontal scroll can stay 0 pt; not every `INFOPLIST_KEY_*` is generated (check the built Info.plist). (#541, #569, #579)
+- Apple localization: `LocalizedStringKey` lookups with values need `String(format: localized(key), args)` and positional `%1$@` in both languages; a line's values belong in its close signature so a new value reopens a closed strip. Edit `.xcstrings` in place: a JSON round trip that re-sorts rewrites hundreds of lines (Python's sort is not Xcode's). (#752)
+- Android unit tests use OkHttp 5's `mockwebserver3` (`MockResponse.Builder()`, `server.close()`); local gradle needs `JAVA_HOME` (Homebrew openjdk@17) and `ANDROID_HOME=~/Library/Android/sdk`. (#752)
 - XCUITest does not close the app after a test; settings leak between tests; the `.textClipped` audit relays at 12 text sizes; the simulator can drop taps. (#539, #582, #580, #626, #661)
 - AVPlayer can stall forever on a late segment; reopen after 15 s. HLS subtitles need `X-TIMESTAMP-MAP`. (#614, #468)
 - A rate limit's or "did not happen" test must bound by elapsed time or by the thing's own size. (#694, #696)
@@ -175,7 +181,7 @@ built_from: v0.3.88
 - React: a window `keydown` listener re-attached by `useEffect` can be the previous one when a key arrives between commit and effect; `useWindowKeydown` attaches once. A flake fix that will not reproduce locally is a reading of the code until CI stops failing. (#698)
 - Scrape over HTTP once in a test, then feed parsed samples directly; 720 scrapes broke the per-test cap. The Prometheus text format parses in about 60 lines, no module needed. (#689)
 - A test that reaches a real `os._exit(0)` ends pytest green with no summary. (#565)
-- Web tests under load: vitest is main-process bound past about 7 workers, so `maxWorkers` is half the cores, 2 to 8 (CI keeps 2); axe's first run in a worker is several times slower, so warm it in `beforeAll`; parallel module warm-up can expose a half-evaluated module; `shouldAdvanceTime` fake timers make "not yet at T−1" racy, so read times off the fake clock. (#746)
+- Web tests under load: vitest is main-process bound past about 7 workers, so `maxWorkers` is half the cores, 2 to 8 (CI keeps 2); axe's first run in a worker is several times slower, so warm it in `beforeAll`; parallel module warm-up can expose a half-evaluated module; `shouldAdvanceTime` fake timers make "not yet at T−1" racy, so read times off the fake clock. On a loaded machine a few web unit tests still time out at 5 s, different ones each run: run the failing files alone before suspecting the change. (#746, #752)
 - Web tests: a page that loads names in a separate call is tested with `findBy`, not `getBy`; accessible names keep `bidiIsolate`'s isolates, so match with a regular expression; a browser cannot read a `.mkplugin` before upload, so the typed-name check is a second upload. An error fingerprint takes the message line and first frame's function, numbers folded. (#691, #717)
 - The installed Maktaba's bundled Postgres binaries can start a scratch cluster in the scratchpad (`-k ''`, a free port), never the app's data. (#693, #677)
 - The wiki's Arabic store translates only each spec file's title and first 600 characters, so deep README edits need no Arabic but a changed story header does (`--ar-todo --epic 54`); its JSON is `indent=2`, keep it. (#751, #735)
@@ -184,7 +190,7 @@ built_from: v0.3.88
 - Plugins: stages load at the pipeline worker's start, so a changed installed set needs the supervisor's `Restart`; the pipeline needs `MAKTABA_SUPERVISOR_TOKEN_FILE`; a deep data folder pushes `<data>/run/*.sock` past macOS's 104-byte `sun_path`; Wasmtime under the hardened runtime needs `allow-jit` and `allow-unsigned-executable-memory`; a new catalog group needs its place in the web's `GROUP_ORDER`. (#707)
 - The affected-tests gate maps from main's coverage: tests in a new file count for an old source only when the coverage map names its package, schema-revision constants still need a `No-Test-Change` trailer, and shared JSON tables map to no test (add a direct test beside the row); `tools/ci/tests` needs PyYAML. On the Mac with under 20 GB free some cmd/maktaba-server tests fail on main too; `make compat-prev` needs `psql` on PATH. (#707, #731)
 - A snapshot's `#N` must be a PR with an event; other numbers are written without `#`, an issue as `issue #N`. (#706)
-- Homebrew's cargo shadows rustup's and has no wasm target (the SDK template needs rustup's `wasm32-wasip2`); the root `.gitignore` `MANIFEST` hides a `manifest/` folder on the Mac. (#683, #694, #717)
+- Homebrew's cargo shadows rustup's and has no wasm target (the SDK template needs rustup's `wasm32-wasip2`; the store's wasm builds with `~/.rustup/toolchains/stable-aarch64-apple-darwin/bin` first on PATH); the root `.gitignore` `MANIFEST` hides a `manifest/` folder on the Mac. (#683, #694, #717, #753)
 - Claude Code reserves plugin names starting with `claude-`; the plugin is `trail`. Hook machines have python3 without `tomllib`. (#702)
 
 ## Open
@@ -198,9 +204,9 @@ built_from: v0.3.88
 - The VPS kernel patch for CVE-2026-98432, and a `SECURITY.md`. (#518)
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
 - Epic 54: TypeScript, Python and Go templates (issue #718); signing, `mkp run`, developer mode and the plugins CLI (issue #719); the migrate job (issue #712), rehearsal scenario 15 (issue #708), the updater's pre-update list (issue #709), Windows (issue #710), job metrics and problem-report opt-in (issue #711). (#683, #693, #704, #707, #717)
-- Epic 54 Phase 2 (signing ships dark, no root keys): the store service, checks and review (with flow check C12), the home's catalog loop and kill switch, the store browser; release-time embedding of the revocation list and store keys; the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. Flows (§4.12) and joined machines (§4.13) build PRs. (#733, #735, #743, #751)
+- Epic 54 Phase 2 (signing ships dark, no root keys): the store service is built but not deployed (its go-live list, the email provider and the Cloudflare resources, DNS and secrets, are in `store/README.md`); next are checks and review (54.16, with flow check C12), the home's catalog loop and kill switch (54.17), the store browser (54.18); release-time embedding of the revocation list and store keys; the home's `entitlement_missing` gate, daily refresh and store link; the store's webhook route and sales calls. Flows (§4.12) and joined machines (§4.13) build PRs. (#733, #735, #743, #751, #753)
 - Epic 54 Phase 4 wave 4 (54.31) can build on plugin `compute` (Plugin API 1.1, in v0.3.89). (#731)
-- Epic 50: 50.11 part 2 status banners in every app; series that 53.17 emits for the monitoring alerts and status page; 50.12 onward. (#727, #739)
+- Epic 50: the cloud status line is in every app's strip, but Apple and Android read the feed only at start and every 5 minutes, not at once after a failed request; the Android TV app has no status strip (53.06's TV part); series that 53.17 emits for the monitoring alerts and status page; 50.12 to 50.15, 50.19, 50.30 to 50.35 and 53.16 to 53.18 follow. (#727, #739, #752)
 - Rare web test races of one shape (a check one render too early), listed on issue #697; BigScreen still re-attaches its key listener. (#746)
 - Story 51.03's spec still names the removed `loops-full-home.txt`. (#748)
 - The tag guard requires the cloud rehearsal once 50.07's scenarios are live. (#715)
@@ -540,6 +546,7 @@ None.
 | 0735-pluggable-payments | 2026-11-06 | pr | Paid plugins through pluggable payment providers, the store side (Epic 54, story 54.19) |
 | 0743-home-entitlements | 2026-11-06 | pr | The home checks plugin entitlements offline (Epic 54, story 54.19 §6) |
 | 0751-epic54-flows-spec | 2026-11-06 | decision | Epic 54 spec, flows, cross-plugin events, loop checks and joined machines |
+| 0753-plugin-store-service | 2026-11-06 | pr | Plugins Phase 2 part 2, the plugin store service, store accounts and linking a home (Epic 54, 54.15) |
 | d20261106-epic53-ci-flakes | 2026-11-06 | incident | Epic 53's merge series — the CI failures that were not the change |
 | 0691-after-merge | 2026-11-07 | pr | After the merge of #691 — a crash envelope's item length |
 | 0721-two-nodes | 2026-11-07 | pr | Two nodes, one address: Patroni, etcd and the Floating IP, rehearsed with kill and partition |
@@ -552,4 +559,5 @@ None.
 | 0739-status-page-ci | 2026-11-07 | pr | What #739's CI taught after its event was written |
 | 0746-web-tests-under-load | 2026-11-07 | pr | The web unit suite keeps passing on a loaded machine |
 | 0748-rehearsal-loops-v0386 | 2026-11-07 | pr | Scenario 12 reads the previous release's loops and components from the home itself |
+| 0752-status-banners | 2026-11-07 | pr | Maktaba Cloud's line in every app's status strip |
 
