@@ -160,4 +160,15 @@ mod tests {
         *m.locked() += 1;
         assert_eq!(*m.locked(), 2);
     }
+
+    /// The crash kept for the home (crashes.rs) takes the panic's message, whatever its payload.
+    #[test]
+    fn a_panics_message_is_its_payload_or_none() {
+        assert_eq!(panic_message(&"boom" as &(dyn Any + Send)), "boom");
+        assert_eq!(
+            panic_message(&String::from("boom") as &(dyn Any + Send)),
+            "boom"
+        );
+        assert_eq!(panic_message(&42 as &(dyn Any + Send)), "(no message)");
+    }
 }
