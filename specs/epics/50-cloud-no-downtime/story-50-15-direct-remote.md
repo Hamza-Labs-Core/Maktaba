@@ -22,7 +22,10 @@ found no code that writes them, and nothing in the repo talks UPnP or NAT-PMP.
 ### 1. Opening the port
 
 - The home's server gets a **TLS listener for direct access** (`direct.listen`, default
-  `:8443`), serving the same API and web as the LAN port, with the per-home certificate (§3).
+  `:8444`; 8443 is the web port's own HTTPS), serving the same API and web as the LAN port, with
+  the per-home certificate (§3). It forwards to the web port as a request from the internet
+  (`X-Maktaba-Via: direct`, the client's forwarding headers dropped), so the machines' routes
+  are refused to it as to the relay.
 - On start and every 20 minutes it asks the router to map an external port to it, trying in
   order **UPnP-IGD**, **NAT-PMP**, **PCP**. It asks for the same external port first, else a
   random one in 30000–49999, with a 1-hour lease renewed every 20 minutes. Candidate libraries:
@@ -80,7 +83,7 @@ settings. Only homes whose last check passed get a `direct` entry in the connect
   50.10 fires 14 days before expiry.
 - **DNS rebinding**: names that resolve to LAN addresses are blocked by some routers' rebinding
   protection (research §2). So the connection list keeps the **raw-IP entries** too (LAN
-  `https://192.168.1.20:8443` with the app pinning the home's certificate by its home ID, and
+  `https://192.168.1.20:8444` with the app pinning the home's certificate by its home ID, and
   the relay), and the home's settings explain the router option when the LAN name fails but the
   raw IP works.
 
@@ -173,8 +176,11 @@ since     = "<the release that ships this story>"
   settings, and the next `META_ENDPOINTS` frame drops the direct endpoints so the cloud stops
   listing a `direct` connection. A hold (`POST /api/components/cloud.direct/stop`) does the same
   until `start`.
-- **Settings.** The mapping switch and the manual port are a `rules.direct` section, with a
-  `SCHEMA_VERSION` (story 51.13); `direct.listen` stays a `server.toml` key.
+- **Settings.** The switch (`enabled`, off by default: the rollout's step 2), the mapping switch
+  and the manual port are a `rules.direct` section, with a `SCHEMA_VERSION` (story 51.13);
+  `direct.listen` stays a `server.toml` key. The admin sets them on **Settings → Storage &
+  discovery**, which also shows the outside check's result and **Check now**
+  (`GET /api/direct`, `POST /api/direct/check`).
 - **Capabilities.** `cloud.direct` serves the viewer feature `remote_access` together with
   `cloud.relay`: either one is enough. This story adds the group to the catalog with the
   component, `feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }` (the key is
@@ -287,7 +293,7 @@ since     = "<the release that ships this story>"
 |---|---|
 | `cloud/internal/direct/` (new) | Name codec, home ID, DNS responder (`--role=dns`) for every configured domain (with the apex's `CAA`, which CAs ask the authoritative server for), domain picker (§4), ACME DNS-01 ordering for CSRs against Let's Encrypt with ZeroSSL and Google Trust Services as overflow, outside check. |
 | `cloud/internal/directjobs/` (new) | The worker's issuing (a first certificate moves to the next CA when one refuses; a renewal stays with its CA) and outside checks. |
-| `cloud/internal/relay/direct.go` (new) | The tunnel's frames for a home that announces the `direct` feature: `0x40 META_ENDPOINTS`, `0x41 DIRECT_CSR` (home → cloud), `0x42 DIRECT_CERT`, `0x43 DIRECT_CHECK` (cloud → home), `0x44 DIRECT_CHECK_NOW`; the relay stores what the home sends and hands it what the worker produced. The public address is the tunnel's source, never the home's claim. |
+| `cloud/internal/relay/direct.go` (new) | The tunnel's frames for a home that announces the `direct` feature: `0x40 META_ENDPOINTS`, `0x41 DIRECT_CSR` (home → cloud), `0x42 DIRECT_CERT`, `0x43 DIRECT_CHECK` (cloud → home), `0x44 DIRECT_CHECK_NOW`, `0x45 DIRECT_NAME` (the home asks its name before its first CSR, which must name `*.<home id>.<its domain>`; the cloud assigns the domain then and answers it); the relay stores what the home sends and hands it what the worker produced. The public address is the tunnel's source, never the home's claim. |
 | `cloud/configs/cloud.example.toml` | `direct.domains` list, per-domain weekly budget, overflow CA settings. |
 | `cloud/cmd/maktaba-cloud/main.go`, `role_dns.go` (new), `role_worker.go` | New role; worker runs the outside check. |
 | `cloud/migrations/00500005_direct_access.sql` | `direct_certs` (home ID, domain, CA, the pending CSR, the chain, issued_at, renewed_at, not-after), `direct_checks` (result, port, at, requested, delivered), `acme_challenges` (TXT values), `servers.direct_state`. |

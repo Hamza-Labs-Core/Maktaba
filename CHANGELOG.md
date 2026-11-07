@@ -302,6 +302,14 @@ build fails when the two differ.
 
 ### Added
 
+- **Direct access from the internet, the home's side (Epic 50 story 50.15, part 2).** In
+  Settings → Storage & discovery an admin turns it on: the home opens a port on its router
+  (UPnP-IGD, NAT-PMP or PCP, renewed every 20 minutes, or a port forwarded by hand), notices a
+  shared address (CGNAT), makes its own key and asks Maktaba Cloud for a certificate for
+  `*.<home id>.<domain>` (the key never leaves it), and serves the same pages and API over HTTPS
+  on port 8444. The page shows the cloud's outside check, with Check now. Free on every plan:
+  `remote_access` is on with either the relay or direct access (`feature_any`). Off by default;
+  the `cloud.direct` component is on in the Full bundle where the home is linked to the cloud.
 - **The Player for Windows and Linux has Report this on its error screens and says what
   happened to its last crash.** An error's **Report this** opens Report a problem with that
   call's reference, and after signing in the player says once whether its last crash went to

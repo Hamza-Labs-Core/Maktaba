@@ -1772,7 +1772,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "remote_access"
+      ],
       "gated": false,
       "group": "system",
       "id": "cloud.direct",
@@ -3330,7 +3332,14 @@
       "wants": []
     }
   ],
-  "feature_any": {},
+  "feature_any": {
+    "remote_access": [
+      [
+        "cloud.relay",
+        "cloud.direct"
+      ]
+    ]
+  },
   "features": [
     "live_tv",
     "transcripts",

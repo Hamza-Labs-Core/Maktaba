@@ -142,7 +142,10 @@ func TestTheAgentCarriesTheDirectFrames(t *testing.T) {
 	go func() { _ = sup.Run(ctx); close(done) }()
 	defer func() { cancel(); <-done }()
 
-	waitFor(t, "the name", func() bool { st := status(); return st.Online && st.Domain == "direct-a.example" && st.HomeID == "0123abcd" })
+	waitFor(t, "the name", func() bool {
+		st := status()
+		return st.Online && st.Domain == "direct-a.example" && st.HomeID == "0123abcd"
+	})
 	cloud.mu.Lock()
 	if len(cloud.endpoints) != 1 || cloud.endpoints[0].Port != 32443 || cloud.from != netip.MustParseAddr("81.2.3.4") {
 		t.Fatalf("endpoints %+v from %v", cloud.endpoints, cloud.from)
@@ -156,7 +159,10 @@ func TestTheAgentCarriesTheDirectFrames(t *testing.T) {
 	if code := post(DirectRequest{CheckNow: true}); code != http.StatusNoContent {
 		t.Fatalf("check now: %d", code)
 	}
-	waitFor(t, "the check", func() bool { st := status(); return st.Check != nil && st.Check.Result == "ok" && st.Check.Port == 32443 })
+	waitFor(t, "the check", func() bool {
+		st := status()
+		return st.Check != nil && st.Check.Result == "ok" && st.Check.Port == 32443
+	})
 }
 
 // An older cloud (it didn't agree to direct): nothing is sent, and the status says offline.

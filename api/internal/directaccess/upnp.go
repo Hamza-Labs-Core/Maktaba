@@ -28,7 +28,7 @@ type UPnP struct {
 	Client *http.Client
 
 	control, service string     // found once
-	local           netip.Addr // this machine's address towards the router
+	local            netip.Addr // this machine's address towards the router
 }
 
 func (u *UPnP) Name() string { return "upnp" }
