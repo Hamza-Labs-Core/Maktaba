@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -41,6 +42,9 @@ func TestNoRunnerWithoutFirstPartyPlugins(t *testing.T) {
 	ps, err := BuildPluginRunners(Options{Config: cfg})
 	if err != nil || len(ps) != 0 {
 		t.Fatalf("%d runners, %v", len(ps), err)
+	}
+	if runtime.GOOS == "windows" {
+		return // no runner on Windows (RunnersHere), and no /tmp socket folder
 	}
 	longCfg := config.Config{}
 	longCfg.Server.DataDir = "/" + strings.Repeat("d", 120)

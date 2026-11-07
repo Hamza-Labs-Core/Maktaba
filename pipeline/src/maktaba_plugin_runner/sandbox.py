@@ -234,7 +234,7 @@ def _landlock(p: Policy) -> tuple[bool, list[str]]:
 
     def rule(path: str, access: int) -> None:
         try:
-            pfd = os.open(path, os.O_PATH | os.O_CLOEXEC)  # type: ignore[attr-defined]
+            pfd = os.open(path, os.O_PATH | os.O_CLOEXEC)  # type: ignore[attr-defined,unused-ignore]
         except OSError:
             return  # a path this machine does not have
         try:
