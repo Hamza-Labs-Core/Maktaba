@@ -22,39 +22,55 @@ the workers of machines that serve the `gpu` pool.
 
 ### 2. Distribution
 
-- At install the home signs the package's `files.json` with its cluster identity key
-  (`home.sig`, beside `developer.sig` and `store.sig`).
-- A joined machine's supervisor lists the enabled plugins whose placement fits it
-  (`GET /internal/cluster/plugins`, over the cluster channel) and fetches each package it
-  lacks (`GET /internal/cluster/plugins/{id}/{version}/package`).
-- Before unpacking it verifies the store's signature against the embedded trust root when
-  the package has one (Phase 2, 54.14), otherwise `home.sig` against the home's cluster
-  identity it joined with; then every file's sha256 (54.01). A failure is reported to the
-  home (`plugin_package_untrusted`) and nothing is unpacked.
-- It unpacks with the same layout code (54.38) under its own `<state>/plugins/`, and removes
-  versions the home no longer lists.
+- The home keeps each installed version's files (`files.json`, the signatures, the files it
+  lists) and serves them to its machines only: `GET /internal/cluster/plugins/files/{id}/
+  {folder}/{path}`, for a request a machine signed (delegation), and only the files
+  `files.json` lists.
+- A joined machine's plugins runner fetches the folder `plugin_installs` names for each
+  plugin its placement fits, with the signed client it fetches release files with (over
+  its cluster link first).
+- Before anything is placed it checks that `files.json`'s sha256 is the digest the home
+  recorded in `plugin_installs` (the home's own word: only the home writes that table, read
+  over the machine's verified database link), that every file matches `files.json`, and,
+  when the package is signed, the chain of trust of 54.14 against the embedded trust root.
+  A failure places nothing and gates the plugin on that machine with
+  `plugin_package_untrusted`.
+- It places the copy with the same layout code (54.38), points `current` at it, and removes
+  versions and plugins the home no longer keeps. It writes no plugin table: an uninstall is
+  the home's.
 
 ### 3. Running
 
-- Each machine runs `plugins.host` on demand (54.37 §4) when a plugin it can run is enabled:
-  its own `maktaba-plugind`, the same OS sandbox (§5.3).
-- Each machine's Go API serves the plugin API on its own `<data>/run/plugin-api.sock` and
-  mints tokens for its own jobs (`POST /internal/plugins/invocations`, machine-local auth),
-  from the home's `plugin_installs` and `plugin_grants` as its database copy has them; it
-  refuses to mint while its copy's grants generation is older than the job's
-  (`plugin_held: grants_pending`, the job waits).
-- Media handles open local paths through the share-path mapping (Epic 35); writes go to the
-  home's database exactly as the machine's other writes do.
+- Each machine runs `plugins.host` on demand (54.37 §4; its catalog placement is `any`)
+  while a plugin it may run is enabled: its own `maktaba-plugind`, the same OS sandbox
+  (§5.3). A plugin whose placement does not fit is gated there (`plugin_home_only`,
+  `plugin_no_gpu`).
+- The machine's API serves the plugin API on its own socket for its own jobs. The home
+  mints each token (`POST /internal/cluster/plugins/invocations`, signed by the machine; it
+  writes the invocation row and checks the plugin is on and placed for machines) and the
+  machine adopts it; ending it is sent to the home too.
+- Reads and media are the machine's: library, transcripts, its plugin data and exports
+  through its database role; media through its own mounts (the share-path mapping).
+- **Every write goes to the home**: data, tags, fields, chapters, subtitles, artwork,
+  suggestions, notices, requests and events (`POST /internal/cluster/plugin-api/v1/…`, the
+  job's token, signed by the machine). The home answers them as calls on its own socket,
+  with the same capability, scope, quota and lineage checks, under its own role, so the
+  plugin tables' guard stays and one place enforces quotas and lineage.
+- The machine's pipeline names its own copy to its host (`MAKTABA_PLUGINS_ROOT`).
 
 ### 4. Health, logs and off
 
-- The machine's host writes each plugin's lines to Epic 53's segments with
-  `service = plugin.<id>` and the machine name, shipped to the home through Epic 53's
-  channels; each machine reports `component_status` for `plugin.<id>` (Epic 51 per machine),
-  and the Plugins page shows each machine's state.
-- Disable, hold, a revocation `disable`, keep-off and uninstall change the home's rows; every
-  machine's runner sees them through `NOTIFY components_changed` on its copy, stops claiming
-  within 2 s, ends its tokens and drains as the home does; uninstall removes the files.
+- Each job's outcome goes to the home (`POST /internal/plugins/outcome` on the machine's
+  API, sent on to `/internal/cluster/plugins/outcome`), which records it in the plugin's
+  breaker with the dispatcher's own statements (a test holds the two texts equal) and holds
+  the plugin when it trips.
+- The machine's host writes each plugin's lines to its Epic 53 segments with
+  `service = plugin.<id>`, which travel with the machine's other logs; each machine reports
+  `component_status` for `plugin.<id>` (Epic 51 per machine).
+- Disable, hold, a revocation `disable`, keep-off and uninstall change the home's rows; a
+  machine checks the plugin is on at the home on every call of a job's token (so the next
+  call after off is refused), the home mints no new token, and the machine's runner stops
+  claiming through its catalog's gates; an uninstall removes the machine's copies.
 
 ## Acceptance criteria
 
@@ -75,10 +91,11 @@ the workers of machines that serve the `gpu` pool.
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
 | T01 | unit (py) | `placement` home / any / gpu | load | `StageDef.placement` and pool claims |
-| T02 | unit (go) | package with a good and a bad `home.sig` | verify | ok / `plugin_package_untrusted` |
-| T03 | integration (PG, go) | machine-local mint with an older grants generation | mint | waits |
-| T04 | e2e (`plugins-e2e`, two machines on one runner) | A on the home, B on the machine | add a video | B ran on the machine |
-| T05 | e2e | B revoked on the home | claim | none on the machine ≤ 2 s |
+| T02 | unit (go) | a copy from the home; a tampered file; a `files.json` the home did not install | fetch | placed, current set / `plugin_package_untrusted`, nothing placed |
+| T03 | integration (PG, go) | a machine's mint, read, forwarded write, ungranted write, end | call | the home's invocation row; the read here; the write applied by the home; `plugin_capability`; ended at the home |
+| T04 | e2e (`api/twomachine_e2e_test.go`, a home and a full node on one runner) | A on the home emits; B, placed any, subscribed | B's job on the machine | B's token from the home, its read on the machine, its write applied by the home with a lineage of 2 |
+| T05 | e2e | B turned off on the home | the machine's next call, a new mint | refused within 2 s; no token |
+| T06 | integration (PG, go) | five traps on a machine | outcomes | the home's breaker trips and holds the plugin |
 
 ## Edge cases
 
@@ -95,7 +112,7 @@ the workers of machines that serve the `gpu` pool.
 | File | Change |
 |---|---|
 | `pipeline/src/maktaba_pipeline/plugins/loader.py` | placement |
-| `api/internal/plugins/lifecycle.go` | `home.sig` at install; the cluster routes |
+| `api/internal/plugins/remote.go`, `breaker.go`; `api/internal/handlers/plugins/cluster.go` | the home's routes for its machines; the machine's forwarding plugin API and adopted tokens |
 | `cmd/maktaba-server/internal/plugins/` | fetch, verify, unpack per machine |
 | `api/internal/plugins/tokens.go` | the grants-generation check per machine |
 | `tests/components/` | the two-machine e2e |

@@ -325,7 +325,10 @@ func TestMachineRoutesPassForAMachineOnly(t *testing.T) {
 		return rec.Code
 	}
 	for _, p := range []string{"/api/cluster/updates/artifacts/1.5.0/release.json",
-		"/api/cluster/updates/wheelhouse/1.5.0/linux-amd64", "/api/cluster/updates/tuf/targets/ab.trusted_root.json"} {
+		"/api/cluster/updates/wheelhouse/1.5.0/linux-amd64", "/api/cluster/updates/tuf/targets/ab.trusted_root.json",
+		// Epic 54 story 54.42: a joined machine's plugin jobs
+		"/internal/cluster/plugins/invocations", "/internal/cluster/plugin-api/v1/write/add-tags",
+		"/internal/cluster/plugins/files/dev.example.a/1.0.0_aaaaaaaaaaaa/files.json"} {
 		if c := get(p, true); c != http.StatusOK {
 			t.Errorf("a machine's %s: %d", p, c)
 		}
@@ -378,6 +381,7 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/api/cluster/sso/exchange", "/api/cluster/delegate/introspect", "/api/cluster/delegate/signout",
 		"/internal/updates/restored",
 		"/internal/plugins/invocations", "/internal/plugins/invocations/*", "/internal/plugins/breaker",
+		"/internal/plugins/outcome",
 	}
 	got := DefaultPublicAllowlist()
 	if len(got) != len(want) {

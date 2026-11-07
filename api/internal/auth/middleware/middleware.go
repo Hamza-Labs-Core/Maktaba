@@ -261,6 +261,9 @@ func DefaultPublicAllowlist() map[string]struct{} {
 		// Epic 54 story 54.09 — the pipeline's circuit breaker asks the API to hold a
 		// plugin: the same per-boot local token only
 		"/internal/plugins/breaker": {},
+		// Epic 54 story 54.42 — a joined machine's dispatcher reports a job's outcome, sent
+		// on to the home's breaker: the same per-boot local token only
+		"/internal/plugins/outcome": {},
 	}
 }
 
@@ -303,7 +306,10 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 // user, and each handler refuses any other.
 // The artifact route is first (machineRoute).
 var machineRoutes = []string{"/api/cluster/updates/artifacts/", "/api/cluster/updates/wheelhouse/",
-	"/api/cluster/updates/tuf/"}
+	"/api/cluster/updates/tuf/",
+	// Epic 54 story 54.42: a joined machine's plugin jobs (tokens, forwarded writes,
+	// outcomes, package files); every handler refuses a request no machine signed
+	"/internal/cluster/plugins/", "/internal/cluster/plugin-api/"}
 
 func machineRoute(r *http.Request) bool {
 	if delegation.NodeFrom(r.Context()) == "" {
