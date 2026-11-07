@@ -29,9 +29,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -197,8 +200,9 @@ func (h *Handler) export(w http.ResponseWriter, r *http.Request, scopeUserID str
 	// scope to the proxied JSONL here — otherwise the bundle would leak
 	// other users' streaming/pipeline lines.
 	peerLogs := map[string][]byte{}
+	peerQ := peerQuery(baseFilter)
 	for _, peer := range h.Peers {
-		data := h.fetchPeerLogs(ctx, peer, r.URL.RawQuery)
+		data := h.fetchPeerLogs(ctx, peer, peerQ)
 		if scopeUserID != "" {
 			data = scopeJSONL(data, scopeUserID)
 		}
@@ -346,19 +350,61 @@ func ownedBy(raw []byte, userID, hash string) bool {
 	return (rec.UserID != "" && rec.UserID == userID) || (hash != "" && rec.UserH == hash)
 }
 
+// peerQuery is the filter a peer's /logs/recent is asked for, encoded again from the
+// parsed filter: only the parameters that endpoint reads, never the caller's raw query, so
+// a caller cannot hand an internal service a parameter of its own choosing.
+func peerQuery(f mlog.Filter) url.Values {
+	q := url.Values{}
+	switch {
+	case f.MinLevel <= slog.LevelDebug:
+		q.Set("level", "debug")
+	case f.MinLevel >= slog.LevelError:
+		q.Set("level", "error")
+	case f.MinLevel >= slog.LevelWarn:
+		q.Set("level", "warn")
+	default:
+		q.Set("level", "info")
+	}
+	if !f.Since.IsZero() {
+		q.Set("since", f.Since.UTC().Format(time.RFC3339Nano))
+	}
+	if !f.Until.IsZero() {
+		q.Set("until", f.Until.UTC().Format(time.RFC3339Nano))
+	}
+	if len(f.Services) > 0 {
+		names := make([]string, 0, len(f.Services))
+		for s := range f.Services {
+			names = append(names, s)
+		}
+		sort.Strings(names)
+		q.Set("services", strings.Join(names, ","))
+	}
+	if f.Search != "" {
+		q.Set("q", f.Search)
+	}
+	if f.Limit > 0 {
+		q.Set("limit", strconv.Itoa(f.Limit))
+	}
+	return q
+}
+
 // fetchPeerLogs proxies a downstream service's /logs/recent. On any
 // error it returns a single JSONL note line so the bundle records that
-// the service was unreachable rather than silently omitting it.
-func (h *Handler) fetchPeerLogs(ctx context.Context, peer PeerLog, rawQuery string) []byte {
-	url := peer.URL
-	if rawQuery != "" {
-		if bytes.ContainsRune([]byte(url), '?') {
-			url += "&" + rawQuery
-		} else {
-			url += "?" + rawQuery
-		}
+// the service was unreachable rather than silently omitting it. The
+// peer's address is the server's own configuration (PeerLog.URL); only
+// the query, from peerQuery (over any the configuration gives), follows
+// the request, after its "?".
+func (h *Handler) fetchPeerLogs(ctx context.Context, peer PeerLog, filter url.Values) []byte {
+	base, configured, _ := strings.Cut(peer.URL, "?")
+	q, _ := url.ParseQuery(configured)
+	for k, v := range filter {
+		q[k] = v
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	target := base
+	if enc := q.Encode(); enc != "" {
+		target = base + "?" + enc
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return peerNote(peer.Service, err.Error())
 	}
