@@ -3,7 +3,8 @@
 # The branch protection rule blocks merges that don't satisfy `ci-success`.
 # The only sanctioned bypass is the `force-merge` label, which requires
 # a `force-merge: <reason>` line in the PR body. This job enforces that
-# pairing — TC3 in story-22-01.
+# pairing — TC3 in story-22-01. It also refuses a body whose closing keyword names an open
+# pull request (tools/ci/pr_closing_refs.py): that would close the other PR on merge.
 
 name: PR body check
 
@@ -54,3 +55,18 @@ jobs:
 
             // No force-merge label = no override; nothing to validate.
             core.info("No force-merge label; PR body check passes.");
+
+      # A closing keyword (close, fixes, resolved…) before an open pull request's number
+      # closes that pull request when this one merges: GitHub did so to a waiting PR once
+      # (the trail's d20261107-closing-keyword-closed-a-pr). Closing issues stays allowed.
+      - uses: actions/checkout@v6.0.2
+        if: github.event_name == 'pull_request'
+        with:
+          sparse-checkout: tools/ci
+          persist-credentials: false
+
+      - name: The body closes no open pull request
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/ci/pr_closing_refs.py
