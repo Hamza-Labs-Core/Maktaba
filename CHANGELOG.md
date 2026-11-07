@@ -1113,6 +1113,12 @@ build fails when the two differ.
   (starting, failed) shows when the gate lets the plugin run. maktaba.dev: Installing a
   plugin, *Health and logs*.
 
+- **The plugin store's isolated runner can run on Cloudflare Containers (Epic 54, #756).** The
+  malware scan, the sandbox run and the reproducible build of each submission run in a
+  container of its own, started with its internet off and handed the package by the store,
+  instead of a GitHub Actions job. It is turned on by a deploy setting; the GitHub Actions
+  runner stays the default, and a runner that fails refuses the version.
+
 - **Plugins from the command line, developer mode and `mkp run` (Epic 54, stories 54.10 §4,
   §5 and 54.12).** `maktaba-server plugins list|show|install|update|enable|disable|start|stop|
   rollback|remove|grants|policy` does what Settings → Plugins does, for a home without a
