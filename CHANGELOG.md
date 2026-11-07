@@ -104,6 +104,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A pipeline worker on SQLite stops the normal way.** Closing its database returned a moment
+  before the database's own thread had ended, so the worker sometimes counted that thread as
+  still running and left without the normal shutdown. The close now waits for the thread to
+  end, and the worker gives threads that are already ending a second before it counts them
+  (#862).
 - **A rollback no longer keeps the home down for half a day building the search index.**
   Putting a backup back rebuilt semantic search's vector index among the other indexes with
   64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
@@ -1796,6 +1801,13 @@ build fails when the two differ.
   on port 8444. The page shows the cloud's outside check, with Check now. Free on every plan:
   `remote_access` is on with either the relay or direct access (`feature_any`). Off by default;
   the `cloud.direct` component is on in the Full bundle where the home is linked to the cloud.
+
+- **The Updates page names the plugins an update will pause (Epic 54, story 54.07 §3).**
+  Under the release it is about to install, the page lists each installed plugin whose
+  Maktaba range does not take that release, with its version, its range and whether it is
+  on. After the update those plugins wait as incompatible with their queues kept, and resume
+  when a version that supports the release is installed; the update itself goes ahead.
+  maktaba.dev: Installing a plugin, *When Maktaba itself updates*.
 
 - **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
   `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
