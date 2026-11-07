@@ -54,15 +54,18 @@ def _sleepy(stage: str, impl: Any) -> Any:
     from maktaba_pipeline.engine.stages.registry import StageImpl
 
     side = "plugin" if _SERVER in sys.modules else "inproc"
+    # the release the rehearsal's Python started this process for (next and after run cur's
+    # environment, whose own version is cur's)
+    release = os.environ.get("MAKTABA_REHEARSAL_RELEASE") or __version__
 
     async def run(_db: Any, job: Any, ctx: Any) -> Any:
-        info = {"rehearsal": "start", "impl": side, "release": __version__, "pid": os.getpid()}
-        await ctx.log("info", f"rehearsal: {stage} sleeps ({side}, {__version__})", info)
+        info = {"rehearsal": "start", "impl": side, "release": release, "pid": os.getpid()}
+        await ctx.log("info", f"rehearsal: {stage} sleeps ({side}, {release})", info)
         await asyncio.sleep(_seconds())
         return StageResult(
             output_hash=f"rehearsal:{stage}:{job.id}",
             outcome="unchanged",
-            summary={"rehearsal": {"impl": side, "release": __version__}},
+            summary={"rehearsal": {"impl": side, "release": release}},
         )
 
     async def fingerprint(_db: Any, subject: Any) -> str:

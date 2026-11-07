@@ -90,6 +90,8 @@ if [ -z "$v" ] || [ ! -x "` + envs + `/$v/bin/python" ]; then
     echo "rehearsal: no pipeline environment for the release of $exe (version '$v')" >&2
     exit 70
 fi
+# the release it runs for (next and after run cur's environment: their jobs say their own)
+export MAKTABA_REHEARSAL_RELEASE="$v"
 exec "` + envs + `/$v/bin/python" "$@"
 `
 	if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
