@@ -86,7 +86,7 @@ have="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $2}' || true)"
 ok "this system's glibc: ${have:-unknown} (the payload needs $max_glibc)"
 
 echo "binaries"
-for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher; do
+for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher maktaba-plugind; do
     run "$b" "$PAYLOAD/bin/$b" --version
 done
 run "maktaba-cloudlink" "$PAYLOAD/bin/maktaba-cloudlink" version

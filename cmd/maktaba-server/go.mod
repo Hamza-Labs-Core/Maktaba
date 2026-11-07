@@ -29,6 +29,7 @@ require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/plugins v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
@@ -127,3 +128,5 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/log/go => ../../shared/log/go
 replace github.com/Hamza-Labs-Core/Maktaba/shared/components => ../../shared/components
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack => ../../shared/go/componentpack
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/plugins => ../../shared/plugins

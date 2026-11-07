@@ -59,7 +59,7 @@ sleep 1   # mtime granularity: anything the checks write into the payload is new
 FLAVOUR="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("flavour","full"))' "$PAYLOAD/payload.json" 2>/dev/null || echo full)"
 echo "payload: $PAYLOAD ($FLAVOUR)"
 echo "binaries"
-for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher; do
+for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher maktaba-plugind; do
     run "$b" "$PAYLOAD/bin/$b" --version
 done
 run "maktaba-cloudlink" "$PAYLOAD/bin/maktaba-cloudlink" version

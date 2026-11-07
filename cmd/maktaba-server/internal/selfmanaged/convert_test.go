@@ -138,3 +138,18 @@ func TestHomebrewManaged(t *testing.T) {
 		}
 	}
 }
+
+// Epic 54: the plugin host beside the binaries goes into the release too.
+func TestConvertCopiesThePluginHost(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "maktaba")
+	from := archive(t, "1.4.3", true)
+	if err := os.WriteFile(filepath.Join(from, layout.Exe("maktaba-plugind")), []byte("plugind"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Convert(Options{Root: root, From: from, Version: "1.4.3"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(layout.New(root).ReleaseDir("1.4.3"), layout.Exe("maktaba-plugind"))); err != nil {
+		t.Fatal(err)
+	}
+}

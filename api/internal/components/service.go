@@ -38,18 +38,37 @@ type Service struct {
 	// OnMachineChanged is called after a machine's override rewrote its stage switches
 	// (51.12): its processes reload their stages at once (nil: at their next refresh).
 	OnMachineChanged func(node string)
+	// Plugins, when set, is Epic 54's part of every change of a plugin.<id> entry (story
+	// 54.07, 54.08 §5): the Epic 51 routes and /api/plugins/* write the same rows through
+	// it (nil: a plugin entry is switched as any component).
+	Plugins PluginHooks
 }
 
-// NewService is the service on db, with the embedded catalog.
+// PluginHooks are what a change of a plugin entry adds to Epic 51's (api/internal/plugins
+// sets them).
+type PluginHooks interface {
+	// Check refuses a change before anything is written (enable with a required
+	// capability not granted: plugin_required_capability; a revoked plugin: plugin_revoked).
+	Check(ctx context.Context, ch Change) error
+	// Written runs in the batch's transaction after each plugin row is written, with who
+	// asked: an admin's disable sets keep-off, an enable clears it (story 54.07 §1).
+	Written(ctx context.Context, tx *sql.Tx, after store.Desired, actor Actor) error
+	// Purge deletes what a plugin stored and wrote (story 54.07 §7): its settings, data,
+	// artifacts, and the writes no one changed since. It answers how many writes it reverted.
+	Purge(ctx context.Context, id string, actor Actor) (int, error)
+}
+
+// NewService is the service on db, with the live catalog (the embedded one with the
+// installed plugins' entries, story 54.37 §2).
 func NewService(db *sql.DB) *Service {
-	return &Service{Store: New(db), Catalog: components.Default()}
+	return &Service{Store: New(db)}
 }
 
 func (s *Service) cat() *components.Catalog {
 	if s.Catalog != nil {
 		return s.Catalog
 	}
-	return components.Default()
+	return components.Live()
 }
 
 func (s *Service) now() time.Time {
@@ -145,6 +164,24 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 	if err != nil {
 		return Result{}, err
 	}
+	if s.Plugins != nil {
+		for _, ch := range req.Changes {
+			if components.IsPlugin(ch.ID) {
+				if err := s.Plugins.Check(ctx, ch); err != nil {
+					return Result{}, err
+				}
+			}
+		}
+	}
+	afterWrite := writeMirror
+	if s.Plugins != nil {
+		afterWrite = func(ctx context.Context, tx *sql.Tx, after store.Desired) error {
+			if components.IsPlugin(after.ID) {
+				return s.Plugins.Written(ctx, tx, after, actor)
+			}
+			return writeMirror(ctx, tx, after)
+		}
+	}
 	var p *plan
 	batch := uuid.NewString()
 	changed, err := s.Store.SetDesiredBatch(ctx, func(rows map[string]store.Desired, rev int64) (store.BatchPlan, error) {
@@ -160,7 +197,7 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 		}
 		// the mirrors (extensions.enabled, hdhr_device.enabled) commit with the rows, so
 		// the pipeline and older clients see the change at once (story 51.07)
-		return store.BatchPlan{Writes: p.writes, Bundle: p.bundle, AfterWrite: writeMirror}, nil
+		return store.BatchPlan{Writes: p.writes, Bundle: p.bundle, AfterWrite: afterWrite}, nil
 	})
 	if err != nil {
 		return Result{}, err

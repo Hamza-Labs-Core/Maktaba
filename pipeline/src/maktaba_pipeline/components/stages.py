@@ -28,11 +28,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..engine.sync import COMPONENT_HELD, COMPONENT_OFF
-from .catalog import Catalog, Component, default
+from .catalog import KIND_PLUGIN, Catalog, Component, default
 from .store import Desired
 
 __all__ = [
     "HELD",
+    "KEPT_OFF",
+    "PLUGIN_CRASH_LOOP",
+    "PLUGIN_WAITING",
     "OFF",
     "ON",
     "SETTINGS_INVALID",
@@ -90,7 +93,9 @@ def stage_components(cat: Catalog | None = None) -> list[Component]:
     return [
         c
         for c in cat.components()
-        if c.switchable and c.stages and (c.has_part("stages") or c.kind == "extension")
+        if c.switchable
+        and c.stages
+        and (c.has_part("stages") or c.kind in ("extension", KIND_PLUGIN))
     ]
 
 
@@ -116,15 +121,29 @@ def _own(c: Component, d: Desired | None) -> Gate:
     return Gate(c.id, ON, want=d.want, generation=d.generation)
 
 
+#: a plugin's gates beyond its desired row (Epic 54, story 54.37 §3): it waits
+PLUGIN_WAITING = frozenset(
+    {"incompatible", "grants_needed", "revoked", "unreviewed_disallowed", "entitlement_missing"}
+)
+#: an admin turned the plugin off (54.07: keep-off, on its ``off`` row)
+KEPT_OFF = "kept_off"
+#: its circuit breaker held it (54.09 §2): reported stopped with this reason, not ``held``
+PLUGIN_CRASH_LOOP = "plugin_crash_loop"
+
+
 def gates(
     desired: Mapping[str, Desired],
     cat: Catalog | None = None,
     blocked: Mapping[str, Sequence[tuple[str, str]]] | None = None,
+    plugins: Mapping[str, tuple[str, dict[str, Any]]] | None = None,
 ) -> dict[str, Gate]:
     """Every component's gate from ``desired`` (one machine's merged desired state),
     requirements first. ``blocked`` (``settings_migrate.blocked``: component -> its failed
     sections) keeps a component that would be on off with ``settings_invalid``: it never
-    runs on the defaults (story 51.13), and what requires it waits (``dependency_off``)."""
+    runs on the defaults (story 51.13), and what requires it waits (``dependency_off``).
+    ``plugins`` (:mod:`.plugingate`: plugin entry -> its reason and params) closes a plugin
+    that would be on (it waits: ``grants_needed`` …), names a kept-off one's reason, and a
+    held one's ``plugin_crash_loop`` when its breaker tripped."""
     cat = cat or default()
     out: dict[str, Gate] = {}
     safe = safe_mode_on()
@@ -154,6 +173,19 @@ def gates(
                 reason=SETTINGS_INVALID,
                 params={"section": section, "error": error},
             )
+        why = (plugins or {}).get(cid)
+        if why is not None and c.kind == KIND_PLUGIN:
+            reason, params = why
+            kept = bool(params.get(KEPT_OFF))
+            params = {k: v for k, v in params.items() if k != KEPT_OFF}
+            if g.open and reason in PLUGIN_WAITING:
+                g = Gate(
+                    cid, OFF, want=g.want, generation=g.generation, reason=reason, params=params
+                )
+            elif kept and g.want == "installed" and g.state == OFF:
+                g = Gate(cid, OFF, want=g.want, generation=g.generation, reason=KEPT_OFF)
+            elif reason == PLUGIN_CRASH_LOOP and g.state == HELD:
+                g = Gate(cid, HELD, want=g.want, generation=g.generation, reason=PLUGIN_CRASH_LOOP)
         if g.open and c.switchable:
             for group in cat.requires(cid):
                 have = [out[r] for r in group if r in out]

@@ -312,6 +312,20 @@ components:
   - 'cmd/maktaba-server/internal/supervisor/reconcile*.go'
   - 'cmd/maktaba-server/serve_reconcile.go'
   - 'cmd/maktaba-server/cmd_serve.go'
+  # Epic 54's end to end (test_plugins_live.py): the plugin host and its guests, the
+  # supervisor's plugins role and runner, the API's plugin routes, the pipeline's plugin
+  # stages, the package format and the plugin tables
+  - 'plugind/**'
+  - 'cmd/maktaba-server/internal/supervisor/plugins.go'
+  - 'cmd/maktaba-server/internal/plugins/**'
+  - 'cmd/maktaba-server/internal/logkeeper/**'
+  - 'api/internal/plugins/**'
+  - 'api/internal/handlers/plugins/**'
+  - 'api/internal/router/p54_plugins.go'
+  - 'pipeline/src/maktaba_pipeline/plugins/**'
+  - 'shared/plugins/**'
+  - 'shared/go/componentpack/**'
+  - 'shared/db/migrations/*plugins*'
 
 # components-chaos on a pull request: the runner, the drain and the claims it stops
 components_chaos:

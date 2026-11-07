@@ -32,6 +32,8 @@
 #   features    the user-facing words it serves (top-level `features`)
 #   resources   { ram_mb, disk_mb, gpu = none | preferred | required }
 #   since       first release with this id
+#   on_demand   a process that runs only while a component it serves is enabled and
+#               passes its gates (plugins.host: while a plugin is on)
 #   assets: source (default), sources (per platform), files ({path, sha256, size},
 #   filled by 51.15), in_payload
 
@@ -48,7 +50,11 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
            "index_missing", "index_expired", "index_wrong_version", "index_replayed",
            "download_failed", "disk_space", "unpack_refused", "offline_wrong_version",
            "offline_wrong_platform", "packs_disabled", "pack_missing", "pack_not_published",
-           "install_failed", "busy", "not_configured", "offline_verify_failed"]
+           "install_failed", "busy", "not_configured", "offline_verify_failed",
+           # third-party plugins (Epic 54, story 54.37 §3)
+           "incompatible", "grants_needed", "revoked", "unreviewed_disallowed",
+           "entitlement_missing", "plugin_crash_loop", "sandbox_partial", "sandbox_unavailable",
+           "runner_crash_loop", "plugin_trusted_unsigned", "plugin_trusted_version", "kept_off"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".
@@ -335,6 +341,25 @@ platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 resources = { ram_mb = 6000, disk_mb = 0, gpu = "preferred" }
 bundles   = ["full"]
 since     = "0.3.66"
+
+# ---- plugins (Epic 54) ----------------------------------------------------------------
+# Each installed plugin is a run-time entry plugin.<id> (kind plugin, story 54.37), never
+# listed here. This is the host their code runs in, started only while one is on.
+
+[[component]]
+id        = "plugins.host"
+kind      = "process"
+group     = "plugins"
+title_key = "components.plugins.host.title"
+desc_key  = "components.plugins.host.desc"
+processes = ["plugins/"]
+placement = "home"
+# not on Windows yet: the pipeline's dispatcher reaches the host on a unix socket, which
+# asyncio cannot open there
+platforms = ["darwin-arm64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core"]
+on_demand = true
+since     = "0.3.83"
 
 # ---- integrations --------------------------------------------------------------------
 
