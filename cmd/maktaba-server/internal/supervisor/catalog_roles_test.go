@@ -28,8 +28,10 @@ var catalogInstances = map[Role][]string{
 	RoleCopy:      {""},
 	RoleLogs:      {""},
 	RolePlugins:   {""},
-	RoleTVSlot:    SlotNames,
-	RolePipeline:  pipelineInstances(),
+	// Epic 54 Phase 4: the shared runner groups of core.plugin_runners
+	RolePluginRunner: RunnerGroups,
+	RoleTVSlot:       SlotNames,
+	RolePipeline:     pipelineInstances(),
 }
 
 func pipelineInstances() []string {

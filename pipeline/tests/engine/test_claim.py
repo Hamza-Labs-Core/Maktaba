@@ -312,3 +312,20 @@ async def test_a_plugin_runs_at_most_its_concurrency(db: Database) -> None:
         for i in range(4)
     ]
     assert sorted(j.stage for j in two if j is not None) == ["p_00000002_work", "p_00000002_work"]
+
+
+@pytest.mark.asyncio
+async def test_a_stage_being_flipped_is_not_claimed(db: Database) -> None:
+    """Epic 54, story 54.25 §3 step 1: while a stage flips between in-process and its
+    first-party plugin, no worker claims a new job of it; once it is set, claims resume."""
+    await _videos(db, 2)
+    await db.execute(
+        "UPDATE job_stages SET flipping = $1 WHERE stage = 'probe'",
+        True if db.dialect == "postgres" else 1,
+    )
+    assert await claim_for_pool(db, worker_id="w", pool="nas_read", stages=["probe"]) is None
+    await db.execute(
+        "UPDATE job_stages SET flipping = $1 WHERE stage = 'probe'",
+        False if db.dialect == "postgres" else 0,
+    )
+    assert await claim_for_pool(db, worker_id="w", pool="nas_read", stages=["probe"]) is not None

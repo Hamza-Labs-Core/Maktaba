@@ -145,6 +145,64 @@ describe("C12 at verification", () => {
     expect(r.checks.find((c) => c.result === "block")).toMatchObject({ id: "C2", code: "plugin_signature_invalid" });
   });
 
+  it("a plugin alone closing a cycle through two published plugins, two hops upstream, is refused", async () => {
+    const dev = await developer();
+    const [p, q, r] = ["p", "q", "r"].map((x) => `${dev.prefix}.${x}`) as [string, string, string];
+    // in the store already: P listens to Q's event, Q listens to R's (R not yet published)
+    const stage = (name: string, trigger: string, emits: string) => ({
+      name, subject: "video", export: "run-tag", version: 1, emits: [emits], trigger: [{ event: trigger }],
+    });
+    for (const [id, trig, ev] of [[p, `plugin:${q}/q.done`, "p.done"], [q, `plugin:${r}/r.done`, "q.done"]] as const) {
+      const manifest = { id, version: "1.0.0", stage: [stage(id.split(".").pop()!, trig, ev)], event: [{ name: ev, subject: "video", payload: "e.json" }], depends: [] };
+      await E.DB_CATALOG.batch([
+        E.DB_CATALOG.prepare("INSERT OR IGNORE INTO plugins (id, developer, developer_name, created) VALUES (?, ?, 'Dev', ?)").bind(id, dev.id, new Date().toISOString()),
+        E.DB_CATALOG.prepare("INSERT INTO versions (plugin, version, status, manifest, released) VALUES (?, '1.0.0', 'approved', ?, ?)").bind(id, JSON.stringify(manifest), new Date().toISOString()),
+      ]);
+    }
+    // R listens to P's event: R -> P -> Q -> R
+    const manifest = `schema = 1
+id = "${r}"
+version = "1.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0, <0.9.0"
+licence = "MIT"
+
+[capabilities]
+required = []
+optional = ["tags.write"]
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "r"
+subject = "video"
+export = "run-tag"
+version = 1
+emits = ["r.done"]
+  [[stage.trigger]]
+  event = "plugin:${p}/p.done"
+
+[[event]]
+name = "r.done"
+subject = "video"
+payload = "events/r.done.schema.json"
+
+[[depends]]
+plugin = "${p}"
+version = ">=1.0.0, <2.0.0"
+`;
+    const pkg = await buildPackage(r, "1.0.0", dev.key, {
+      manifest,
+      files: { "plugin.wasm": component("good"), "events/r.done.schema.json": enc.encode('{"type":"object"}') },
+    });
+    const rep = await runChecks(E, await submit(dev, r, "1.0.0", pkg));
+    const c12 = rep.checks.find((c) => c.id === "C12")!;
+    expect(c12).toMatchObject({ result: "block", code: "flow_cycle" });
+    expect(c12.path).toEqual(expect.arrayContaining([`${p}/p`, `${q}/q`, `${r}/r`]));
+  });
+
   it("a package outside the flow submission's members is refused at the start", async () => {
     const dev = await developer();
     const fs = await call("POST", "/v1/flow-submissions", {

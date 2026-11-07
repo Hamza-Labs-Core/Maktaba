@@ -14,6 +14,6 @@
     "resolveJsonModule": true,
     "paths": { "smol-toml": ["./node_modules/smol-toml"] }
   },
-  "include": ["signing/**/*.ts", "scripts/**/*.ts", "test/*.ts", "commerce/**/*.ts", "payments/**/*.ts", "testing/**/*.ts", "checks/**/*.ts"],
+  "include": ["checks/**/*.ts", "signing/**/*.ts", "scripts/**/*.ts", "test/*.ts", "commerce/**/*.ts", "payments/**/*.ts", "testing/**/*.ts"],
   "exclude": ["node_modules", "scripts/decrypt-export.ts"]
 }

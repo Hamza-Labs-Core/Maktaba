@@ -13,6 +13,8 @@ struct MaktabaTVApp: App {
 
     init() {
         Theme.registerFonts()
+        // a crash at the last launch is read and kept on the TV (Epic 53 story 53.14)
+        CrashCapture.start()
         // the UI tests start from a TV that knows no home and holds no tokens
         if CommandLine.arguments.contains("-uitest-reset") {
             UserDefaults.standard.removePersistentDomain(forName: Bundle.main.bundleIdentifier ?? "")
@@ -54,6 +56,10 @@ struct RootView: View {
                                          liveTVOff: session.capabilities.current.shown(.liveTV) == .hidden)
                         .environment(\.client, client)
                         .environment(\.appSession, session)
+                        // crash reports to the home: asked once, off until the person says
+                        // yes (53.14); Report a problem from Settings (53.15)
+                        .crashReports(session: session)
+                        .reportsProblems(session: session)
                 }
             }
         }

@@ -126,7 +126,7 @@ func Redact(s string) string { return redact(s) }
 func ProcessEnv(env []string, dir string) ([]string, error) {
 	var lines, bares []string
 	seen := map[string]bool{}
-	out := make([]string, 0, len(env)+1)
+	out := make([]string, 0, len(env)) // PGPASSFILE is appended: the slice grows
 	for _, e := range env {
 		k, v, ok := strings.Cut(e, "=")
 		if ok && strings.HasSuffix(k, "DATABASE_URL") {

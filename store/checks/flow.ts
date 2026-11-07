@@ -14,6 +14,7 @@ import {
   matchManifest,
   message,
   parseFlow,
+  resolveDepends,
   type Finding,
   type Graph,
   type Member,
@@ -39,7 +40,6 @@ export function checkFlow(
   let graph: Graph | undefined;
   if (flow) {
     const members: Member[] = [...flow.members];
-    const inFlow = new Map(flow.members.map((m) => [m.id, m]));
     const inUpload = new Set<string>();
     for (const m of uploaded) {
       inUpload.add(String(m.id));
@@ -51,19 +51,13 @@ export function checkFlow(
         all.push({ code: "flow_missing_plugin", severity: "refuse", plugin: flow.id, detail: `${m.id} ${m.version}` });
       }
     }
-    // the plugins the flow subscribes to outside itself, from the store
-    for (const m of flow.members) {
-      for (const s of m.stages) {
-        for (const t of s.triggers) {
-          if (!t.startsWith("plugin:")) continue;
-          const publisher = t.slice("plugin:".length).split("/")[0] ?? "";
-          if (inFlow.has(publisher) || members.some((x) => x.id === publisher)) continue;
-          const found = catalog(publisher, ">=0.0.0");
-          if (found) members.push(fromManifest(found));
-        }
-      }
-    }
-    const checked = checkMembers(members, { strict: true });
+    // the plugins the flow subscribes to outside itself, from the store, and the ones
+    // those subscribe to, all the way: a loop or a missing plugin further away is refused
+    const resolved = resolveDepends(members, (id, range) => {
+      const found = catalog(id, range || ">=0.0.0");
+      return found ? fromManifest(found) : undefined;
+    });
+    const checked = checkMembers(resolved, { strict: true });
     graph = checked.graph;
     all.push(...checked.findings);
   }

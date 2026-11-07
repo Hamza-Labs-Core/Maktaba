@@ -14,6 +14,7 @@
 // whatever the sort. Season 0 is a "Specials" row. RTL-correct for Arabic.
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { PluginPanels } from "../../components/PluginPanel/PluginPanel";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
@@ -382,6 +383,8 @@ export function SeriesDetail() {
           </section>
         ))
       )}
+      {/* story 54.20: installed plugins' panels, below Maktaba's own sections */}
+      {id && <PluginPanels subject={{ kind: "series", id }} />}
     </section>
   );
 }

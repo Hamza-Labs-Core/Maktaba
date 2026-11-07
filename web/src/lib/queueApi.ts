@@ -90,6 +90,10 @@ export interface StageInfo {
   /** Extension that owns this queue (e.g. "plex", "dizquetv"); null/absent = core. */
   extension?: string | null;
   graph_synced_at: string | null;
+  /** The built-in (first-party) plugin that defines the stage (Epic 54); null: the core's. */
+  plugin?: string | null;
+  /** Where it runs: in the pipeline worker ("inproc") or in its plugin's runner ("plugin"). */
+  impl?: "inproc" | "plugin";
 }
 
 export type WaitingReason =
@@ -949,6 +953,12 @@ export const queueApi = {
   pause: (stage: string, interrupt = false) =>
     api.post<void>(`/api/queues/${q(stage)}/pause${interrupt ? "?interrupt=true" : ""}`),
   resume: (stage: string) => api.post<void>(`/api/queues/${q(stage)}/resume`),
+  /** PUT /api/queues/{stage}/impl (Epic 54, story 54.25): admin only, audited. */
+  setImpl: (stage: string, impl: "inproc" | "plugin") =>
+    api.put<{ stage: string; impl: string; plugin: string | null; paused: number }>(
+      `/api/queues/${q(stage)}/impl`,
+      { impl }
+    ),
   pauseAll: () => api.post<void>("/api/queues/pause-all"),
   resumeAll: () => api.post<void>("/api/queues/resume-all"),
   patchStage: (stage: string, body: { enabled?: boolean; write_mode?: "auto" | "review" }) =>

@@ -23,6 +23,7 @@ var notCalled = map[string]string{
 	"schemas.microsoft.com":               "an XML namespace (the Windows task)",
 	"www.apple.com":                       "a plist DTD (the launchd job)",
 	"customer-":                           "a Cloudflare Stream customer subdomain built from the account (api.cloudflare.com listed)",
+	"status.maktaba.tv":                   "the cloud's status page in the web app's CSP: the browser reads it, never a server (Epic 50 story 50.11)",
 }
 
 var (

@@ -1,0 +1,5 @@
+{
+  "about": "a one-plugin flow that loops through two store plugins found only by walking publishers",
+  "mode": "store",
+  "states": {}
+}

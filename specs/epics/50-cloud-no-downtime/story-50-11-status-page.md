@@ -84,6 +84,11 @@ request rate above 5 %), **outage** (both networks fail two probes in a row), **
 
 ### 5. The banner in the apps
 
+An app reaches its home through the cloud when the home's address is under `relay.maktaba.tv`
+(or it is the cloud's player and remote editions); only then does it read the feed. The home's
+web app and the cloud's editions allow `https://status.maktaba.tv` in their CSP's
+`connect-src` for it, and nothing else.
+
 Web (the home's own web app when reached through the relay), cloud web (`app.maktaba.tv`),
 Apple (Player, Remote, tvOS) and Android (Player, Remote, TV) show a slim banner when the
 **relay** or **API** component is degraded, in outage, or under maintenance (now or within
@@ -180,6 +185,7 @@ states and draws it. No app has two banners.
 | `status.payments.link` | Payments are handled by our payment provider. See its status page. | يتولى مزوّد الدفع لدينا المدفوعات. راجع صفحة حالته. |
 | `banner.relay.degraded` | Remote access is slower than usual. Playback at home is not affected. | الوصول عن بُعد أبطأ من المعتاد. التشغيل داخل المنزل لا يتأثر. |
 | `banner.relay.outage` | Remote access is down. We're working on it. Playback at home still works. | الوصول عن بُعد متوقف، ونعمل على إصلاحه. التشغيل داخل المنزل ما زال يعمل. |
+| `banner.api.degraded` | Signing in with Maktaba Cloud is slower than usual. | تسجيل الدخول عبر سحابة مكتبة أبطأ من المعتاد. |
 | `banner.api.outage` | Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password. | تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. يمكنك تسجيل الدخول إلى الجهاز الرئيسي بكلمة مروره. |
 | `banner.maintenance` | Planned maintenance on {date}, {start}–{end}. Remote play may pause for a few seconds. | صيانة مجدولة في {date}، من {start} إلى {end}. قد يتوقف التشغيل عن بُعد بضع ثوانٍ. |
 | `banner.details` | Details | التفاصيل |
@@ -199,7 +205,7 @@ states and draws it. No app has two banners.
 | `web/src/i18n/en.json`, `web/src/i18n/ar.json` | `banner.*` keys. |
 | `web/cloud/src/cloudStatus.ts` (new), `web/cloud/src/i18n/en.json`, `web/cloud/src/i18n/ar.json` | Fetch and strings for the cloud web app; drawn by 53.06's strip. |
 | `apps/apple/MaktabaKit/Sources/MaktabaKit/CloudStatus.swift` (new), `Localizable.xcstrings` | `summary.json` fetch and model; drawn by 53.06's `StatusStrip.swift` in Player, Remote and tvOS. |
-| `apps/android/client/src/main/kotlin/com/hamzalabs/maktaba/core/session/CloudStatus.kt` (new) | Fetch and model. |
+| `apps/android/client/src/main/kotlin/com/hamzalabs/maktaba/core/api/CloudStatus.kt` (new) | Fetch and model, beside 53.06's `HomeStatus.kt`. |
 | `apps/android/core/src/main/res/values/strings.xml`, `values-ar/strings.xml` | Banner strings; drawn by 53.06's `StatusStrip.kt`. |
 | `docs/runbooks/cloud/status-page.md` (new, with 50.12) | How to post an incident or maintenance notice. |
 

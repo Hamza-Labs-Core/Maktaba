@@ -1,6 +1,8 @@
 // Package plugins holds the HTTP routes of Epic 54 on the API's TCP listener.
 //
-//	POST   /internal/plugins/invocations       {job_id} → a token for a plugin job (54.04 §2)
+//	POST   /internal/plugins/invocations       {job_id} → a token for a plugin job (54.04 §2);
+//	                                           {plugin_id, purpose: "fingerprints"} → the
+//	                                           fingerprint runner's read-only token (54.23 §4)
 //	DELETE /internal/plugins/invocations/{id}  the job ended
 //	POST   /internal/plugins/breaker           {plugin_id, reason}: its breaker tripped (54.09 §2)
 //
@@ -92,12 +94,22 @@ func (h *Invocations) mint(w http.ResponseWriter, r *http.Request) {
 	}
 	var in struct {
 		JobID int64 `json:"job_id"`
+		// {plugin_id, purpose: "fingerprints"}: the fingerprint runner's read-only token
+		// for one of Maktaba's own plugins (story 54.23 §4)
+		PluginID string `json:"plugin_id"`
+		Purpose  string `json:"purpose"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&in); err != nil || in.JobID <= 0 {
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&in)
+	if err != nil || (in.JobID <= 0 && (in.Purpose != "fingerprints" || in.PluginID == "")) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "plugin_invalid"})
 		return
 	}
-	m, err := h.Tokens.Mint(r.Context(), in.JobID)
+	var m *pl.Minted
+	if in.JobID > 0 {
+		m, err = h.Tokens.Mint(r.Context(), in.JobID)
+	} else {
+		m, err = h.Tokens.MintFingerprints(r.Context(), in.PluginID)
+	}
 	var ref *pl.Refusal
 	switch {
 	case errors.As(err, &ref):

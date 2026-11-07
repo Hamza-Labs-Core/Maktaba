@@ -7,6 +7,7 @@ struct SettingsView: View {
     let user: User
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.dark
     @AppStorage("autoplayNext") private var autoplay = true
+    @Environment(\.reportProblem) private var reportProblem
 
     var body: some View {
         NavigationStack {
@@ -28,6 +29,26 @@ struct SettingsView: View {
                 Section("Appearance") {
                     Picker("Theme", selection: $theme) {
                         ForEach(ThemeMode.allCases) { Text($0.label).tag($0) }
+                    }
+                }
+                // Epic 53: crash reports to the home (off until turned on), Report a problem
+                Section("Privacy") {
+                    CrashReportsToggle(session: session)
+                }
+                Section("Help") {
+                    Button {
+                        reportProblem?()
+                    } label: {
+                        Label { Text(verbatim: ReportWords.title) } icon: { Image(systemName: "exclamationmark.bubble") }
+                    }
+                    .accessibilityIdentifier("settings.reportProblem")
+                    if let client = session.client {
+                        NavigationLink {
+                            MyReportsView(client: client).padding(80)
+                        } label: {
+                            Label { Text(verbatim: ReportWords.mine) } icon: { Image(systemName: "person.crop.rectangle.stack") }
+                        }
+                        .accessibilityIdentifier("settings.myReports")
                     }
                 }
                 Section {
