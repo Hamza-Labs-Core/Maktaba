@@ -89,6 +89,9 @@ var Outbound = []Call{
 	{Name: "model-downloads", Hosts: []string{"huggingface.co"}, By: "admin",
 		What: "a model an admin downloads from the Models page (the pipeline's model service)",
 		Off:  "HF_HUB_OFFLINE=1 for the transcription models' cache"},
+	{Name: "plugin-store-link", Hosts: []string{"plugins.maktaba.tv"}, By: "admin",
+		What: "linking this home to a plugin store account and unlinking it (Epic 54 story 54.15; the home's storelink)",
+		Off:  "never started by the server; offline, the store link is refused (store_offline)"},
 	{Name: "cloudflare", Hosts: []string{"api.cloudflare.com"}, By: "admin",
 		What: "the TV remote's Cloudflare Stream, when an admin set it up", Off: "ext.cloudflare_stream off"},
 }

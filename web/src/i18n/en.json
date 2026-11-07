@@ -7275,6 +7275,7 @@
   "plugins.error.store_not_linked": "This home is not linked to a store account.",
   "plugins.error.store_link_not_started": "Start linking first.",
   "plugins.error.store_unreachable": "The plugin store could not be reached. Try again later.",
+  "plugins.error.store_offline": "This home is offline, so it does not reach the plugin store.",
   "plugins.error.store_unavailable": "This home cannot keep a store key (its secrets store is unavailable).",
   "plugins.fact.installed": "Installed",
   "plugins.fact.range": "Works with Maktaba",
