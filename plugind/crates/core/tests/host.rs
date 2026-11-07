@@ -216,8 +216,10 @@ fn forbidden_imports_cannot_link_without_the_audit() {
 fn runaway_jobs_end_and_the_host_serves_the_next() {
     let f = Fixture::new(false);
     let p = f.package("hostile", &guest("hostile"), ALL);
-    let t = Instant::now();
     f.host.preload(ID, VERSION, &p).unwrap();
+    // timed from the job's start: the preload (compiling the guest) is not part of how fast
+    // a runaway job ends, and on a slow runner it alone pushed this past the bound
+    let t = Instant::now();
     // fuel well above what a second of looping burns, so the wall deadline ends it
     let r = f.run(&p, "loop", &[], Limits { timeout_ms: 1_000, fuel: 1_000_000_000_000, ..Default::default() });
     let took = t.elapsed();
