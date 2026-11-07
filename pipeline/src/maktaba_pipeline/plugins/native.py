@@ -455,9 +455,110 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
         if op == "review_digest":
             ctx.review_digests.append(str(a["digest"]))
             return None
+        if op == "enqueue":
+            return await _relayed_enqueue(db, ctx, {k: decode_any(v) for k, v in a.items()})
+        if op == "dedup_uncovered":
+            from ..library_mgmt.dedup_merge import uncovered_foreign_keys
+
+            return [list(x) for x in await uncovered_foreign_keys(db)]
+        if op == "dedup_commit":
+            return await _relayed_dedup_commit(db, ctx, {k: decode_any(v) for k, v in a.items()})
         raise ValueError(f"engine op {op!r}")
 
     return handle
+
+
+def _neighbours(a: str, b: str) -> bool:
+    """Whether an edge of the graph joins the two stages, either way (``dedup_scan`` queues
+    ``convert_mp4``, whose edge leads to it, for a video never planned for conversion)."""
+    from ..engine.graph import GRAPH
+
+    for s in GRAPH:
+        for e in s.edges:
+            if (s.name, e.to) in ((a, b), (b, a)):
+                return True
+    return False
+
+
+class EnqueueRefused(Exception):
+    """A plugin asked to queue what its stage may not (story 54.32: the plugin's scope)."""
+
+
+async def _relayed_enqueue(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """A job a plugin's stage queues, as the worker enqueues it: only the stage itself or a
+    stage it may request (``may_request``), and only for a subject of the job's library (a
+    video of it, or the library)."""
+    from uuid import UUID
+
+    from ..engine.enqueue import enqueue_job
+    from ..engine.sql import uid
+
+    job, sdef = ctx.job, ctx.stage
+    stage = str(a["stage"])
+    if stage != sdef.name and stage not in (sdef.may_request or ()) and not _neighbours(
+        sdef.name, stage
+    ):
+        raise EnqueueRefused(f"plugin_scope: {sdef.name} may not queue {stage}")
+    kind, subject = str(a["subject_kind"]), str(a["subject_id"])
+    lib = getattr(job, "library_id", None)
+    if lib is None:
+        raise EnqueueRefused("plugin_scope: this job has no library")
+    if kind == "library":
+        ok = str(lib) == str(UUID(subject))
+    elif kind == "video":
+        ok = (
+            await db.fetchval(
+                "SELECT 1 FROM videos WHERE id = $1 AND library_id = $2", uid(subject), uid(lib)
+            )
+            is not None
+        )
+    else:
+        ok = False
+    if not ok:
+        raise EnqueueRefused(f"plugin_scope: {kind} {subject} is not of this job's library")
+    res = await enqueue_job(
+        db,
+        subject_kind=kind,
+        subject_id=subject,
+        stage=stage,
+        priority=a.get("priority"),
+        force=bool(a.get("force")),
+        force_cascade=bool(a.get("force_cascade")),
+        reason=a.get("reason"),
+        triggered_by=a.get("triggered_by"),
+        payload=a.get("payload"),
+        max_attempts=a.get("max_attempts"),
+    )
+    return {"job_id": res.job_id, "outcome": res.outcome}
+
+
+async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """A duplicate group's merge, committed by the worker for ``dedup_apply`` in its runner:
+    only this job's group (its subject), and only the group's own members."""
+    from ..library_mgmt.dedup_merge import MergeRefused, commit_merge
+
+    gid = str(a["group_id"])
+    if str(ctx.job.subject.id) != gid:
+        raise EnqueueRefused(f"plugin_scope: group {gid} is not this job's")
+    members = {
+        str(r["video_id"])
+        for r in await db.fetch("SELECT video_id FROM duplicate_members WHERE group_id = $1", gid)
+    }
+    keeper, losers = str(a["keeper"]), [str(x) for x in a.get("losers") or []]
+    if keeper not in members or not set(losers) <= members or keeper in losers:
+        raise EnqueueRefused(f"plugin_scope: not the members of group {gid}")
+    try:
+        moved = await commit_merge(
+            db,
+            gid,
+            keeper,
+            losers,
+            keeper_library=str(a["keeper_library"]),
+            decided_by=a.get("decided_by"),
+        )
+    except MergeRefused as exc:
+        return {"refused": [list(x) for x in exc.uncovered]}
+    return {"moved": moved}
 
 
 async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> StageResult:
@@ -638,6 +739,8 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     return {
         "library": lib,
         "library.subtitles": lib,
+        # each root's trash (library_mgmt.trash.TRASH_DIR)
+        "trash": ";".join(f"{r}/.maktaba/trash" for r in sorted(roots)),
         "data.thumbnails": thumbs,
         "models": ";".join(_model_folders()),
         "data.index": os.path.realpath(

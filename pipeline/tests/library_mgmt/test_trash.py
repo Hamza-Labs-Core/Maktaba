@@ -13,12 +13,12 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from maktaba_fp_dedup.stages import trash_purge
 from watchdog.events import FileCreatedEvent, FileMovedEvent
 
 from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.graph import get_stage
 from maktaba_pipeline.engine.sql import to_ts
-from maktaba_pipeline.engine.stages import trash_purge
 from maktaba_pipeline.library_mgmt import trash as trash_mod
 from maktaba_pipeline.library_mgmt.ledger import (
     LedgerError,
@@ -354,7 +354,7 @@ def _stage_ctx() -> Any:
 
 @pytest.mark.asyncio
 async def test_the_file_restore_stage(db: Database, tmp_path: Path) -> None:
-    from maktaba_pipeline.engine.stages import file_restore
+    from maktaba_fp_dedup.stages import file_restore
 
     stage = get_stage("file_restore")
     assert stage is not None and stage.pool == "nas_write" and stage.subject_kinds == ("library",)

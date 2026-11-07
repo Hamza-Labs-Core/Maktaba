@@ -299,9 +299,15 @@ def test_the_epic47_stages_are_shipped_in_the_registry() -> None:
     ``unreleased`` flag: a shipped stage's entry may not say it comes later. Each Epic 47
     stage is a core module of its own, not unreleased, and its job is not the stub that
     fails with ``not_implemented``."""
+    from maktaba_pipeline.plugins import firstparty
+
     by = {s.name: s for s in GRAPH}
     for name in EPIC47_STAGES:
-        assert CORE_MODULES[name] == f"maktaba_pipeline.engine.stages.{name}", name
+        # a core module of its own, or a first-party plugin's stage (Epic 54 wave 5)
+        assert (
+            CORE_MODULES.get(name) == f"maktaba_pipeline.engine.stages.{name}"
+            or firstparty.by_stage(name) is not None
+        ), name
         assert not by[name].unreleased, name
         impl = get_impl(name)
         assert impl is not None and impl.run is not None, name

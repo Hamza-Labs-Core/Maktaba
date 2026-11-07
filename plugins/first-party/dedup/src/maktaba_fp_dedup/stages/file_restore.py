@@ -18,13 +18,13 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from ...db.jobs import Job
-from ...library_mgmt.ledger import get_action
-from ...library_mgmt.swap import RestoreError, restore
-from ..context import StageContext, StageFailure
-from ..graph import StageResult
-from ..hashing import canonical_hash
-from .registry import StageImpl
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.library_mgmt.ledger import get_action
+from maktaba_pipeline.library_mgmt.swap import RestoreError, restore
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import StageResult
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.stages.registry import StageImpl
 
 __all__ = ["IMPL", "run"]
 

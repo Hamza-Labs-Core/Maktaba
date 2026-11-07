@@ -83,6 +83,51 @@ _FIELDS = frozenset(
 )
 
 
+#: the writable fields in the order of the fixed statements below: each is set when given,
+#: else kept (``CASE WHEN $flag THEN $value ELSE field END``), so the statement's text is the
+#: same whatever is written (Epic 54 wave 5: a first-party plugin runs named statements)
+FIELD_ORDER: tuple[str, ...] = tuple(sorted(_FIELDS))
+
+_ADVANCE_SQL = (
+    "UPDATE file_actions SET state = $3, updated_at = $4, "
+    "error = CASE WHEN $5 THEN $6 ELSE error END, "
+    "new_hash = CASE WHEN $7 THEN $8 ELSE new_hash END, "
+    "new_path = CASE WHEN $9 THEN $10 ELSE new_path END, "
+    "new_size = CASE WHEN $11 THEN $12 ELSE new_size END, "
+    "old_hash = CASE WHEN $13 THEN $14 ELSE old_hash END, "
+    "old_path = CASE WHEN $15 THEN $16 ELSE old_path END, "
+    "old_size = CASE WHEN $17 THEN $18 ELSE old_size END, "
+    "purge_after = CASE WHEN $19 THEN $20 ELSE purge_after END, "
+    "purged_at = CASE WHEN $21 THEN $22 ELSE purged_at END, "
+    "trash_path = CASE WHEN $23 THEN $24 ELSE trash_path END, "
+    "verify = CASE WHEN $25 THEN $26 ELSE verify END, "
+    "video_id = CASE WHEN $27 THEN $28 ELSE video_id END WHERE id = $1 AND state = $2 RETURNING id"
+)
+
+_UPDATE_SQL = (
+    "UPDATE file_actions SET updated_at = $2, "
+    "error = CASE WHEN $3 THEN $4 ELSE error END, "
+    "new_hash = CASE WHEN $5 THEN $6 ELSE new_hash END, "
+    "new_path = CASE WHEN $7 THEN $8 ELSE new_path END, "
+    "new_size = CASE WHEN $9 THEN $10 ELSE new_size END, "
+    "old_hash = CASE WHEN $11 THEN $12 ELSE old_hash END, "
+    "old_path = CASE WHEN $13 THEN $14 ELSE old_path END, "
+    "old_size = CASE WHEN $15 THEN $16 ELSE old_size END, "
+    "purge_after = CASE WHEN $17 THEN $18 ELSE purge_after END, "
+    "purged_at = CASE WHEN $19 THEN $20 ELSE purged_at END, "
+    "trash_path = CASE WHEN $21 THEN $22 ELSE trash_path END, "
+    "verify = CASE WHEN $23 THEN $24 ELSE verify END, "
+    "video_id = CASE WHEN $25 THEN $26 ELSE video_id END WHERE id = $1"
+)
+
+
+def _field_args(db: Any, fields: dict[str, Any]) -> list[Any]:
+    out: list[Any] = []
+    for name in FIELD_ORDER:
+        out += [name in fields, _param(db, name, fields.get(name))]
+    return out
+
+
 class LedgerError(Exception):
     """A ledger row is missing, or a change would move it backwards."""
 
@@ -243,15 +288,8 @@ async def advance(
     bad = set(fields) - _FIELDS
     if bad:
         raise LedgerError(f"file action fields not writable: {sorted(bad)}")
-    sets = ["state = $3", "updated_at = $4"]
     args: list[Any] = [uid(action_id), cur.state, state, to_ts(db, now())]
-    for name, value in fields.items():
-        args.append(_param(db, name, value))
-        sets.append(f"{name} = ${len(args)}")
-    hit = await db.fetchval(
-        f"UPDATE file_actions SET {', '.join(sets)} WHERE id = $1 AND state = $2 RETURNING id",
-        *args,
-    )
+    hit = await db.fetchval(_ADVANCE_SQL, *args, *_field_args(db, fields))
     if hit is None:
         raise LedgerError(f"file action {action_id} changed under us (was {cur.state})")
     got = await get_action(db, action_id)
@@ -266,12 +304,7 @@ async def update_fields(db: Any, action_id: UUID | str, **fields: Any) -> None:
         raise LedgerError(f"file action fields not writable: {sorted(bad)}")
     if not fields:
         return
-    args: list[Any] = [uid(action_id), to_ts(db, now())]
-    sets = ["updated_at = $2"]
-    for name, value in fields.items():
-        args.append(_param(db, name, value))
-        sets.append(f"{name} = ${len(args)}")
-    await db.execute(f"UPDATE file_actions SET {', '.join(sets)} WHERE id = $1", *args)
+    await db.execute(_UPDATE_SQL, uid(action_id), to_ts(db, now()), *_field_args(db, fields))
 
 
 async def open_actions(

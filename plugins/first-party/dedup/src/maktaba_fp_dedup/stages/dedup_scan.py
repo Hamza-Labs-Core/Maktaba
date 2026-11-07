@@ -32,13 +32,13 @@ from __future__ import annotations
 from typing import Any, Literal
 from uuid import UUID
 
-from ...db.jobs import Job
-from ...library_mgmt.duplicates import conversion_states, find_groups, write_groups
-from ..context import StageContext
-from ..enqueue import enqueue_job
-from ..graph import EPIC47_PRIORITIES, Request, StageResult
-from ..hashing import canonical_hash
-from .registry import StageImpl
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.library_mgmt.duplicates import conversion_states, find_groups, write_groups
+from maktaba_pipeline.engine.context import StageContext
+from maktaba_pipeline.engine.enqueue import enqueue_job
+from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, Request, StageResult
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.stages.registry import StageImpl
 
 __all__ = ["IMPL", "run"]
 

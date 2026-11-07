@@ -14,12 +14,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from ...db.jobs import Job
-from ...library_mgmt.trash import TrashSizeMismatch, purge_due
-from ..context import StageContext, StageFailure
-from ..graph import StageResult
-from ..hashing import canonical_hash
-from .registry import StageImpl
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.library_mgmt.trash import TrashSizeMismatch, purge_due
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import StageResult
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.stages.registry import StageImpl
 
 __all__ = ["IMPL", "run"]
 

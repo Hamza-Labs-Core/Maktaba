@@ -73,13 +73,8 @@ CORE_MODULES: dict[str, str] = {
     # Epic 47 (offline, MP4, no duplicates): shipped. A stage added before its story
     # ships is kept off by the graph (StageDef.unreleased); the web help test reads
     # this table and that flag
-    "convert_mp4": "maktaba_pipeline.engine.stages.convert_mp4",
-    "dedup_scan": "maktaba_pipeline.engine.stages.dedup_scan",
-    "dedup_apply": "maktaba_pipeline.engine.stages.dedup_apply",
     "youtube_fetch": "maktaba_pipeline.engine.stages.youtube_fetch",
     "youtube_backfill": "maktaba_pipeline.engine.stages.youtube_backfill",
-    "trash_purge": "maktaba_pipeline.engine.stages.trash_purge",
-    "file_restore": "maktaba_pipeline.engine.stages.file_restore",
 }
 _LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
 

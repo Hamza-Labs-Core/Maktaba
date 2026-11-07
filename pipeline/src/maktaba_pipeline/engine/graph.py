@@ -861,69 +861,20 @@ GRAPH: tuple[StageDef, ...] = (
     # order"). Nothing downstream of the content hash (transcribe, index, embeddings)
     # runs again: the words and the picture are the same; only probe reads the new
     # container, and the thumbnails are made again only when their folder cannot move.
-    StageDef(
-        name="convert_mp4",
-        label="Convert to MP4",
-        subject_kinds=("video", "library"),
-        pool="convert",
-        lane="media",
-        lane_order=14,
-        version=CONVERT_VERSION,
-        edges=(Edge("dedup_scan", "same_video", when="always"),),
-        may_request=("probe", "thumbnail", "thumb_small"),
-        external_write=True,
-        max_attempts=2,
-        placement="home",
-    ),
-    StageDef(
-        name="dedup_scan",
-        label="Find duplicates",
-        # a video: its own check, queued by its conversion (the edge above); a library:
-        # "Find duplicates" queues each converted video's check and the conversion of
-        # every video never converted (enqueue_job, as convert's library job does)
-        subject_kinds=("library", "video"),
-        pool="nas_read",
-        lane="media",
-        lane_order=15,
-        version=DEDUP_SCAN_VERSION,
-        # an exact group of a library with auto_exact on is merged at once
-        may_request=("dedup_apply",),
-    ),
+    # Epic 54: defined by tv.maktaba.convert's manifest
+    _fp("convert_mp4"),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("dedup_scan"),
     # merges one duplicate group: user data to the keeper, the loser's file to the trash
-    StageDef(
-        name="dedup_apply",
-        label="Merge duplicates",
-        subject_kinds=("dup_group",),
-        pool="nas_write",
-        lane="media",
-        lane_order=16,
-        version=DEDUP_APPLY_VERSION,
-        external_write=True,
-    ),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("dedup_apply"),
     # deletes the trash entries whose grace period has passed (library_mgmt/trash.py)
-    StageDef(
-        name="trash_purge",
-        label="Empty file trash",
-        subject_kinds=("library",),
-        pool="nas_write",
-        lane="media",
-        lane_order=17,
-        version=TRASH_PURGE_VERSION,
-        external_write=True,
-    ),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("trash_purge"),
     # undoes ledger rows from the file-actions page (library_mgmt/swap.py restore): the
     # trashed file goes back and the DB change is reversed; the API only queues it
-    StageDef(
-        name="file_restore",
-        label="Restore from trash",
-        subject_kinds=("library",),
-        pool="nas_write",
-        lane="media",
-        lane_order=18,
-        version=FILE_RESTORE_VERSION,
-        external_write=True,
-        max_attempts=2,
-    ),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("file_restore"),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
     # Stub audit #4 (Story 26.5): a video's metadata suggestions from Maktaba's own intel
     # and, when configured, a web search a language model reads. The API (Find metadata,

@@ -17,10 +17,10 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from maktaba_fp_dedup.stages import dedup_apply, dedup_scan
 
 from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.sql import is_pg, to_ts
-from maktaba_pipeline.engine.stages import dedup_apply, dedup_scan
 from maktaba_pipeline.library_mgmt.dedup_merge import (
     RULES,
     MergeRefused,

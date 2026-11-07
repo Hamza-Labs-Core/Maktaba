@@ -1,0 +1,11 @@
+# The shared pipeline modules whose statements tv.maktaba.dedup's stages run (story 54.24 §1).
+# dedup_merge's re-pointing of every table that references a video (merge_rows and its
+# helpers, built from the catalogue) is the worker's, relayed (dedup_commit): not listed.
+modules = [
+    "maktaba_pipeline.engine.stages._common:load_video,require_video",
+    "maktaba_pipeline.library_mgmt.duplicates",
+    "maktaba_pipeline.library_mgmt.dedup_merge:apply_group,_fail_group,_full,_move_file,_retry_moves",
+    "maktaba_pipeline.library_mgmt.ledger",
+    "maktaba_pipeline.library_mgmt.swap",
+    "maktaba_pipeline.library_mgmt.trash",
+]

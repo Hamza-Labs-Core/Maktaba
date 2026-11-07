@@ -1,0 +1,42 @@
+# tv.maktaba.convert: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5
+# (story 54.32): rewrites a library video as MP4 and swaps it in, the original kept in the trash.
+schema     = 1
+id         = "tv.maktaba.convert"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.convert.name"
+summary = "fp.convert.summary"
+
+[trusted]
+runner    = "light"
+component = "library.convert"
+db.read   = ["libraries", "media_info"]
+db.write  = ["audio_tracks", "file_actions", "video_copies", "videos"]
+settings  = []
+files.read  = ["library"]
+files.write = ["library", "trash"]
+exec      = ["ffmpeg", "ffprobe"]
+
+[[stage]]
+name         = "convert_mp4"
+subject      = "video"
+export       = "convert-mp4"
+version      = 1
+label        = "Convert to MP4"
+subject_kinds = ["video", "library"]
+pool         = "convert"
+lane         = "media"
+lane_order   = 14
+may_request  = ["probe", "thumbnail", "thumb_small"]
+external_write = true
+max_attempts = 2
+placement    = "home"
+edges        = [{ to = "dedup_scan", map = "same_video", when = "always" }]
+entry        = "maktaba_fp_convert.stages.convert_mp4:IMPL"
+fingerprint  = { input = true, output = false }
+

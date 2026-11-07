@@ -110,6 +110,27 @@ async def enqueue_job(
 ) -> EnqueueResult:
     """Enqueue ``stage`` for a subject. Safe to call concurrently and repeatedly."""
     reason = reason or {"why": "enqueue", "by": "system"}
+    relay = getattr(db, "engine_relay", None)
+    if relay is not None:
+        # in a first-party plugin's runner (Epic 54 wave 5): the worker enqueues it, and
+        # refuses a stage the job's stage may not request or a subject outside its library
+        got = await relay.enqueue(
+            subject_kind=subject_kind,
+            subject_id=str(subject_id),
+            stage=stage,
+            priority=priority,
+            force=force,
+            force_cascade=force_cascade,
+            reason=reason,
+            triggered_by=triggered_by,
+            payload=payload,
+            max_attempts=max_attempts,
+        )
+        job_id = got.get("job_id")
+        return EnqueueResult(
+            job_id=None if job_id is None else int(job_id),
+            outcome=got.get("outcome", "disabled"),  # type: ignore[arg-type]
+        )
     if is_pg(db):
         row = await db.fetchrow(
             "SELECT job_id, outcome FROM processing_jobs_enqueue($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",

@@ -1,0 +1,81 @@
+# tv.maktaba.dedup: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5
+# (story 54.32): finds duplicates, merges a group into its keeper, empties and restores the file trash.
+schema     = 1
+id         = "tv.maktaba.dedup"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.dedup.name"
+summary = "fp.dedup.summary"
+
+[trusted]
+runner    = "light"
+component = "library.dedup"
+db.read   = ["libraries"]
+db.write  = ["duplicate_groups", "duplicate_members", "file_actions", "video_copies", "videos"]
+settings  = []
+files.read  = ["library"]
+files.write = ["library", "trash"]
+exec      = ["ffmpeg", "ffprobe"]
+
+[[stage]]
+name         = "dedup_scan"
+subject      = "library"
+export       = "dedup-scan"
+version      = 1
+label        = "Find duplicates"
+subject_kinds = ["library", "video"]
+pool         = "nas_read"
+lane         = "media"
+lane_order   = 15
+may_request  = ["dedup_apply"]
+entry        = "maktaba_fp_dedup.stages.dedup_scan:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "dedup_apply"
+subject      = "dup_group"
+export       = "dedup-apply"
+version      = 1
+label        = "Merge duplicates"
+subject_kinds = ["dup_group"]
+pool         = "nas_write"
+lane         = "media"
+lane_order   = 16
+external_write = true
+entry        = "maktaba_fp_dedup.stages.dedup_apply:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "trash_purge"
+subject      = "library"
+export       = "trash-purge"
+version      = 1
+label        = "Empty file trash"
+subject_kinds = ["library"]
+pool         = "nas_write"
+lane         = "media"
+lane_order   = 17
+external_write = true
+entry        = "maktaba_fp_dedup.stages.trash_purge:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "file_restore"
+subject      = "library"
+export       = "file-restore"
+version      = 1
+label        = "Restore from trash"
+subject_kinds = ["library"]
+pool         = "nas_write"
+lane         = "media"
+lane_order   = 18
+external_write = true
+max_attempts = 2
+entry        = "maktaba_fp_dedup.stages.file_restore:IMPL"
+fingerprint  = { input = true, output = false }
+

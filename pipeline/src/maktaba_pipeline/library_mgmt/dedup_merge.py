@@ -407,6 +407,73 @@ class _M:
     size: int
 
 
+async def commit_merge(
+    db: Any,
+    gid: str,
+    keeper: str,
+    losers: list[str],
+    *,
+    keeper_library: str,
+    decided_by: str | None,
+) -> dict[str, int]:
+    """In one transaction: each loser's data moved to the keeper (:func:`merge_rows`, every
+    table that references a video, from the catalogue) and the group applied. The rows
+    moved per table."""
+    out: dict[str, int] = {}
+    async with db.transaction():
+        for v in losers:
+            for t, n in (await merge_rows(db, keeper, v, keeper_library=keeper_library)).items():
+                out[t] = out.get(t, 0) + n
+        await db.execute(
+            "UPDATE duplicate_groups SET status = 'applied', keeper_video_id = $2,"
+            " decided_by = COALESCE($3, decided_by), decided_at = $4 WHERE id = $1",
+            gid,
+            keeper,
+            decided_by,
+            to_ts(db, now()),
+        )
+    return out
+
+
+async def _commit(
+    db: Any,
+    gid: str,
+    keeper: str,
+    losers: list[str],
+    *,
+    keeper_library: str,
+    decided_by: str | None,
+) -> dict[str, int]:
+    """:func:`commit_merge`, by the worker when this runs in a first-party plugin's runner
+    (Epic 54 wave 5): re-pointing every table that references a video is the engine's, not a
+    plugin role's (its statements are built from the catalogue)."""
+    relay = getattr(db, "engine_relay", None)
+    if relay is None:
+        return await commit_merge(
+            db, gid, keeper, losers, keeper_library=keeper_library, decided_by=decided_by
+        )
+    got = await relay.ask(
+        "dedup_commit",
+        group_id=gid,
+        keeper=keeper,
+        losers=losers,
+        keeper_library=keeper_library,
+        decided_by=decided_by,
+    )
+    if isinstance(got, dict) and "refused" in got:
+        raise MergeRefused([tuple(x) for x in got["refused"]])
+    return {str(k): int(v) for k, v in dict(got or {}).get("moved", {}).items()}
+
+
+async def _uncovered(db: Any) -> list[tuple[str, str]]:
+    """:func:`uncovered_foreign_keys`, by the worker in a plugin's runner."""
+    relay = getattr(db, "engine_relay", None)
+    if relay is None:
+        return await uncovered_foreign_keys(db)
+    got = await relay.ask("dedup_uncovered")
+    return [(str(t), str(c)) for t, c in (got or [])]
+
+
 async def _fail_group(db: Any, gid: str, reason: str) -> None:
     await db.execute(
         "UPDATE duplicate_groups SET status = 'failed', reason = $2 WHERE id = $1", gid, reason
@@ -445,7 +512,7 @@ async def apply_group(
         return await _retry_moves(db, gid, local, dry_run=dry_run)
     if status == "dismissed":
         return ApplyOutcome("noop", gid, reason="the group was dismissed")
-    uncovered = await uncovered_foreign_keys(db)
+    uncovered = await _uncovered(db)
     if uncovered:
         raise MergeRefused(uncovered)
 
@@ -523,19 +590,11 @@ async def apply_group(
 
     # one transaction: the user data, the losers, the group
     prior = {v: str(videos[v]["state"]) for v in losers}
-    async with db.transaction():
-        for v in losers:
-            moved = await merge_rows(db, keeper, v, keeper_library=str(k["library_id"]))
-            for t, n in moved.items():
-                out.moved[t] = out.moved.get(t, 0) + n
-        await db.execute(
-            "UPDATE duplicate_groups SET status = 'applied', keeper_video_id = $2,"
-            " decided_by = COALESCE($3, decided_by), decided_at = $4 WHERE id = $1",
-            gid,
-            keeper,
-            decided_by,
-            to_ts(db, now()),
-        )
+    moved = await _commit(
+        db, gid, keeper, list(losers), keeper_library=str(k["library_id"]), decided_by=decided_by
+    )
+    for t, n in moved.items():
+        out.moved[t] = out.moved.get(t, 0) + n
 
     # the files, one ledger row each
     for m in to_trash:

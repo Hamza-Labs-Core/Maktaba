@@ -1,0 +1,8 @@
+# The shared pipeline modules whose statements tv.maktaba.convert's stage runs (story 54.24 §1)
+modules = [
+    "maktaba_pipeline.engine.stages._common:load_video,require_video",
+    "maktaba_pipeline.library_mgmt.convert",
+    "maktaba_pipeline.library_mgmt.ledger",
+    "maktaba_pipeline.library_mgmt.swap",
+    "maktaba_pipeline.library_mgmt.trash",
+]
