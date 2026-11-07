@@ -428,7 +428,10 @@ def test_feature_any() -> None:
     for name, want in (
         ("feature_any_unknown_feature.toml", "feature_any: 'nope' is not a feature"),
         ("feature_any_unknown_id.toml", "feature_any.live_tv: unknown component 'zz'"),
-        ("feature_any_not_listed.toml", "feature_any.youtube: component a does not list the feature youtube"),
+        (
+            "feature_any_not_listed.toml",
+            "feature_any.youtube: component a does not list the feature youtube",
+        ),
         ("feature_any_two_groups.toml", "feature_any.live_tv: component b is in two groups"),
     ):
         with pytest.raises(catalog.CatalogError, match=want):
