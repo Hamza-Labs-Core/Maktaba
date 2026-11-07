@@ -7,6 +7,7 @@
 import CAPS from "../checks/capabilities.json";
 import type { Env } from "./env";
 import { flowSVG } from "./flowchart";
+import { OPEN_SCRIPT, openScriptHash } from "./open-script";
 
 type Lang = "en" | "ar";
 
@@ -29,6 +30,9 @@ const W = {
     langHref: "/ar",
     reviews: "Reviews",
     home: "Your Maktaba's address (for example http://192.168.1.10:8096)",
+    openAt: "No Maktaba app here? Open it at your Maktaba's address",
+    go: "Open",
+    bad: "Enter the address you open Maktaba at, starting with http:// or https://.",
     flow: "How it works with Maktaba and other plugins",
     flowAlt: "The flow {id}: its plugins' stages, the Maktaba events they start from and the events between them",
     events: "Events it publishes",
@@ -53,6 +57,9 @@ const W = {
     langHref: "/",
     reviews: "المراجعات",
     home: "عنوان مكتبتك (مثل http://192.168.1.10:8096)",
+    openAt: "لا يوجد تطبيق مكتبة هنا؟ افتحها على عنوان مكتبتك",
+    go: "افتح",
+    bad: "أدخل العنوان الذي تفتح عليه مكتبة، ويبدأ بـ http:// أو https://.",
     flow: "كيف تعمل مع مكتبة ومع إضافات أخرى",
     flowAlt: "التدفق {id}: مراحل إضافاته، وأحداث مكتبة التي تبدأ منها، والأحداث بينها",
     events: "الأحداث التي تنشرها",
@@ -105,7 +112,8 @@ function capWords(name: string, lang: Lang): string {
 
 const fill = (s: string, p: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k: string) => String(p[k] ?? ""));
 
-function page(lang: Lang, title: string, body: string, path: string): Response {
+async function page(lang: Lang, title: string, body: string, path: string): Promise<Response> {
+  const script = body.includes('id="home-open"');
   const w = W[lang];
   const html = `<!doctype html>
 <html lang="${lang}" dir="${lang === "ar" ? "rtl" : "ltr"}">
@@ -127,12 +135,13 @@ ul.plugins{list-style:none;padding:0} ul.plugins li{border-block-end:1px solid v
 <body>
 <header><strong><a href="${lang === "ar" ? "/ar" : "/"}">${esc(w.title)}</a></strong><span style="flex:1"></span><a href="${esc(w.langHref + (path.replace(/^\/ar/, "") === "/" ? "" : path.replace(/^\/ar/, "")))}" lang="${lang === "ar" ? "en" : "ar"}">${esc(w.lang)}</a></header>
 <main>${body}</main>
+${script ? `<script>${OPEN_SCRIPT}</script>` : ""}
 </body>
 </html>`;
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https://plugins-cdn.maktaba.tv; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+      "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; img-src https://plugins-cdn.maktaba.tv; base-uri 'none'; frame-ancestors 'none'; form-action 'none'${script ? `; script-src ${await openScriptHash()}` : ""}`,
       "Cache-Control": "public, max-age=300",
       "X-Content-Type-Options": "nosniff",
     },
@@ -190,7 +199,7 @@ export async function pluginPage(env: Env, lang: Lang, id: string): Promise<Resp
   const subs = flow ? mine(JSON.parse(flow.subscriptions) as string[], (x) => x.split(" -> ")[1] ?? "") : [];
   const list = (l: string[]) => (l.length ? `<ul dir="ltr">${l.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>` : `<p class="muted">${esc(w.none2)}</p>`);
   const flowHTML = flow
-    ? `<h2>${esc(w.flow)}</h2><figure style="overflow-x:auto;margin:0">${flowSVG(JSON.parse(flow.graph), { title: fill(w.flowAlt, { id: flow.id }), highlight: id })}</figure>
+    ? `<h2>${esc(w.flow)}</h2><figure style="overflow-x:auto;margin:0">${flowSVG(JSON.parse(flow.graph), { title: fill(w.flowAlt, { id: flow.id }), highlight: id, lang })}</figure>
 <h3>${esc(w.events)}</h3>${list(events)}<h3>${esc(w.subscriptions)}</h3>${list(subs)}`
     : "";
   const caps = (v?.capabilities ?? []).map((c) => `<li>${esc(capWords(c, lang))}</li>`).join("");
@@ -202,6 +211,7 @@ export async function pluginPage(env: Env, lang: Lang, id: string): Promise<Resp
 ${desc ? `<p style="white-space:pre-line">${esc(desc)}</p>` : ""}
 <p class="muted">${esc(fill(w.by, { dev: p.developer }))} · <span class="badge">${esc(level)}</span> · ${esc(ratingLine(p, lang))}</p>
 <p><a href="maktaba://plugins/${esc(p.id)}">${esc(w.open)}</a>${v ? ` · <a href="${esc(v.url)}" download>${esc(w.download)}</a> (${esc(v.version)})` : ""}</p>
+<details><summary>${esc(w.openAt)}</summary><form id="home-open" data-plugin="${esc(p.id)}"><label>${esc(w.home)} <input id="home-addr" type="url" required dir="ltr" placeholder="http://192.168.1.10:8096"></label> <button type="submit">${esc(w.go)}</button> <span id="home-bad" class="muted" hidden>${esc(w.bad)}</span></form></details>
 <h2>${esc(w.capabilities)}</h2><ul>${caps}</ul>
 ${flowHTML}
 <h2>${esc(w.versions)}</h2><ul>${p.versions.map((x) => `<li dir="ltr">${esc(x.version)} · ${esc(x.maktaba)}</li>`).join("")}</ul>
