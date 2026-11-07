@@ -32,3 +32,34 @@ async def test_a_calls_lines_carry_its_request_id() -> None:
     await _dispatch(b"{}", handler, Ctx([("maktaba-request-id", rid)]))
     await _dispatch(b"{}", handler, Ctx([]))
     assert seen == [rid, None]
+
+
+@pytest.mark.asyncio
+async def test_embed_texts_answers_the_model_and_one_vector_per_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Epic 54 story 54.21: a plugin's compute.embed, as passages with the search model."""
+    from maktaba_pipeline import grpc_server
+    from maktaba_pipeline.grpc_server import PipelineService, passages_fn
+
+    class Embedder:
+        model_name = "intfloat/multilingual-e5-small"
+
+        def embed_passages(self, texts: list[str]) -> list[list[float]]:
+            return [[float(len(t)), 0.5] for t in texts]
+
+    monkeypatch.setattr(grpc_server, "_semantic_on", lambda: True)
+    svc = PipelineService(embed_texts=passages_fn(Embedder()))
+    out = await svc.embed_texts({"texts": ["ab", "c"]})
+    assert out == {"model": "intfloat/multilingual-e5-small", "vectors": [[2.0, 0.5], [1.0, 0.5]]}
+    bads: list[dict[str, object]] = [
+        {"texts": []},
+        {"texts": "x"},
+        {"texts": ["x"] * 65},
+        {"texts": ["x" * 2001]},
+    ]
+    for bad in bads:
+        with pytest.raises(ValueError):
+            await svc.embed_texts(bad)
+    monkeypatch.setattr(grpc_server, "_semantic_on", lambda: False)
+    assert await svc.embed_texts({"texts": ["a"]}) == {"error": grpc_server.SEMANTIC_OFF}

@@ -151,3 +151,11 @@
   color: var(--color-muted);
   font-size: var(--font-size-sm);
 }
+
+/* Store account (story 54.15 §5): the link code, large and in its own direction */
+.mkt-plugins__code {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+}

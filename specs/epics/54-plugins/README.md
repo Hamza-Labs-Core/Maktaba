@@ -233,7 +233,7 @@ and the previous major for at least 12 months after a new major ships.
 | `write` | `set-field(video, field, value)`, `add-tags`, `set-chapters`, `add-subtitle(video, lang, vtt)`, `set-artwork(subject, kind, image)` | `metadata.write`, `tags.write`, `chapters.write`, `subtitles.write`, `artwork.write` |
 | `suggest` | `suggest(subject, field, value, reason)` into the admin's review queue | `suggest` |
 | `queue` | `request(stage, subject, payload)` for the plugin's own stages | `jobs.enqueue` |
-| `events` (1.1) | `emit(name, subject, payload)` of an event in the calling stage's `emits`, payload checked against its schema | none (only what the manifest declares) |
+| `events` (1.2) | `emit(name, subject, payload)` of an event in the calling stage's `emits`, payload checked against its schema | none (only what the manifest declares) |
 | `notify` | `admin(code, params)`: an in-app notice to admins, from the plugin's strings | `notify.admin` |
 | `exports` | `read(plugin, subject, key)` of data another plugin marked as exported | `plugin-data.read:<id>` |
 | `compute` (Phase 3) | `embed(texts)`, `generate(prompt, opts)` on the home's own models | `compute.embed`, `compute.llm` |

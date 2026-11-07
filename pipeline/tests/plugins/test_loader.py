@@ -4,6 +4,7 @@ valid; the new failure causes; the stable events name real stages."""
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -143,7 +144,7 @@ def _forged(**stage: object) -> PluginExtension:
     ],
     ids=["request-core", "after-core-stage", "core-stage-as-event", "follows-itself"],
 )
-def test_check_leaves_refuses_a_manifest_that_reaches_core(stage: dict) -> None:
+def test_check_leaves_refuses_a_manifest_that_reaches_core(stage: dict[str, Any]) -> None:
     """54.39 T07: a stored manifest edited to reach a core stage is refused."""
     from maktaba_pipeline.engine.graph import GraphViolation
 
@@ -160,7 +161,7 @@ def test_load_installed_leaves_out_a_plugin_that_breaks_the_leaf_rule() -> None:
     bad["stage"][0]["may_request"] = ["transcribe"]
 
     class DB:
-        async def fetch(self, *_: object) -> list[dict]:
+        async def fetch(self, *_: object) -> list[dict[str, Any]]:
             row = {"version": "1.4.0", "path": "/x", "review_level": "none"}
             return [
                 {**row, "plugin_id": "dev.example.bad", "manifest": bad},

@@ -435,7 +435,7 @@ fn dispatch_over_the_socket() {
     protocol::write_frame(&mut c, &Request::Health).unwrap();
     let Response::Health(h) = protocol::read_frame(&mut c).unwrap() else { panic!() };
     assert!(h.ok && h.ready);
-    assert_eq!(h.plugin_api, "1.1");
+    assert_eq!(h.plugin_api, "1.2");
 
     let mut c = plugind_core::uds::connect(&sock).unwrap();
     protocol::write_frame(&mut c, &Request::Run(Box::new(req(&p, "progress", &[], Limits::default())))).unwrap();

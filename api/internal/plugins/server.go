@@ -41,6 +41,8 @@ type Server struct {
 	// ToLocal maps a stored media path to this machine's own (a joined machine's share
 	// mapping, story 54.42 §3); nil: paths are the home's.
 	ToLocal func(string) string
+	// Compute answers compute.embed and compute.llm (54.21; nil: unavailable).
+	Compute *Compute
 	routes  map[string]route
 	once    sync.Once
 }
@@ -119,6 +121,7 @@ func (s *Server) init() {
 		s.otherRoutes()
 		s.eventRoutes()
 		s.mediaRoutes()
+		s.computeRoutes()
 	})
 }
 

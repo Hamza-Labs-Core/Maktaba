@@ -2,7 +2,7 @@
 
 > **Status:** the flow format, the manifest's graph fields and the flow check are **on
 > `main`**: the home checks every install, enable, update and rollback, and the store's
-> verification uses the same check. Emitting events (plugin API 1.1), run-time lineage, the
+> verification uses the same check. Emitting events (plugin API 1.2), run-time lineage, the
 > drawn chart and plugins on joined machines are **on `main`** too. The exact fields and
 > codes are in the [plugin reference](reference.md).
 
@@ -159,7 +159,7 @@ ends well: a job that fails sends nothing. The subscriber reads it with `job::pa
 {"event": "silences.found", "from": "dev.example.silences", "payload": {"silences": 4}}
 ```
 
-Requests and events share one budget of 1,000 a job. Emitting needs plugin API 1.1:
+Requests and events share one budget of 1,000 a job. Emitting needs plugin API 1.2:
 declare `plugin_api = "1.1"`; a 1.0 plugin keeps running unchanged.
 
 ## Loops at run time
@@ -196,7 +196,7 @@ machine that may run it fetches the package from the home and checks it (the dig
 home recorded, the store's signature when there is one, every file) before it places
 it, then runs it in its own sandboxed host. Reads and media are served by the machine
 itself; every write (tags, fields, chapters, subtitles, artwork, your own data,
-suggestions, notices, requests and events) is applied by the home, with the same
+suggestions, notices, requests, events, and asks of the home's models) is applied by the home, with the same
 permission, quota and lineage checks, so a plugin behaves the same wherever it runs. Your
 logs and health show on the home's Plugins page. Turning the plugin off on the home
 reaches every machine at its next call.

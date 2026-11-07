@@ -14,6 +14,7 @@ import {
   hasRefusal,
   inRange,
   matchManifest,
+  resolveDepends,
   message,
   parseFlow,
   type Finding,
@@ -48,6 +49,19 @@ function runCase(dir: string): string {
       if (flow && inFlow.has(id)) findings.push(...matchManifest(flow, m));
       else members.push(fromManifest(m));
     }
+    // the store's other plugins, reached only through the flow's publishers
+    const cdir = join(dir, "catalog");
+    const catalog = new Map<string, Record<string, unknown>>();
+    for (const n of existsSync(cdir) ? readdirSync(cdir).filter((f) => f.endsWith(".toml")) : []) {
+      const m = validate(readFileSync(join(cdir, n))) as Record<string, unknown>;
+      catalog.set(m.id as string, m);
+    }
+    const resolved = resolveDepends(members, (id) => {
+      const m = catalog.get(id);
+      return m ? fromManifest(m) : undefined;
+    });
+    members.length = 0;
+    members.push(...resolved);
   } else {
     for (const id of ids) members.push(fromManifest(manifests.get(id) as Record<string, unknown>, meta.states[id] ?? ""));
   }

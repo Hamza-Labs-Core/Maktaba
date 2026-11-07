@@ -29,11 +29,13 @@ import (
 const CodeHomeUnreachable = "plugin_home_unreachable"
 
 // Forwarded are the plugin API routes a machine sends to its home: each writes a plugin
-// table or core data, or spends a quota or a lineage the home keeps.
+// table or core data, spends a quota or a lineage the home keeps, or asks the home's
+// models (compute, story 54.21).
 var Forwarded = []string{
 	"data/put", "data/delete",
 	"write/set-field", "write/add-tags", "write/set-chapters", "write/add-subtitle", "write/set-artwork",
 	"suggest/add", "notify/admin", "queue/request", "events/emit",
+	"compute/embed", "compute/generate",
 }
 
 // IsForwarded reports whether a machine sends route to the home.

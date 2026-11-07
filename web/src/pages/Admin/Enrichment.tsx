@@ -24,6 +24,7 @@ import { AdminGate } from "../../components/AdminGate";
 import { EnrichmentPanel } from "../../components/EnrichmentPanel";
 import { api, ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { useWindowKeydown } from "../../lib/useWindowKeydown";
 import { TitleRow } from "../../help/HelpLink";
 import { usePageData } from "../../lib/usePageData";
 import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
@@ -138,18 +139,15 @@ function EnrichmentInner() {
   }, [items]);
 
   // j/k navigate the queue (keyboard-driven review, Story 26.6 AC).
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (!items || items.length === 0) return;
-      if (e.key !== "j" && e.key !== "k") return;
-      if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
-      const idx = items.findIndex((it) => it.video_id === selected);
-      const next = e.key === "j" ? Math.min(items.length - 1, idx + 1) : Math.max(0, idx - 1);
-      setSelected(items[next].video_id);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [items, selected]);
+  // (lib/useWindowKeydown: a key moves from the row on screen, #697)
+  useWindowKeydown((e: KeyboardEvent) => {
+    if (!items || items.length === 0) return;
+    if (e.key !== "j" && e.key !== "k") return;
+    if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+    const idx = items.findIndex((it) => it.video_id === selected);
+    const next = e.key === "j" ? Math.min(items.length - 1, idx + 1) : Math.max(0, idx - 1);
+    setSelected(items[next].video_id);
+  });
 
   if (err)
     return (

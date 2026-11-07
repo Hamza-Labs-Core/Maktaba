@@ -156,6 +156,12 @@ func TestAMachineRunsAPluginThroughTheHome(t *testing.T) {
 	if code, c := rig.call(t, rig.node, m.Token, "data/put", map[string]any{"subject": vid, "key": "k", "value": "1"}); code != 200 {
 		t.Fatalf("data on the home: %d %s", code, c)
 	}
+	// the home's models and their daily share are the home's (story 54.21)
+	for _, route := range []string{"compute/embed", "compute/generate"} {
+		if !pl.IsForwarded(route) {
+			t.Fatalf("%s is answered on the machine", route)
+		}
+	}
 	ended, refused := rig.nodeTokens.EndCounting(ctx, m.InvocationID)
 	if !ended || refused < 1 {
 		t.Fatalf("end: %v %d", ended, refused)

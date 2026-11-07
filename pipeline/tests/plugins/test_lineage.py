@@ -6,6 +6,7 @@ another plugin's stage."""
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -23,7 +24,7 @@ PID = "dev.example.silences"
 HEAR = pm.queue_name("dev.example.writer", "write_chapters")
 
 
-def _lineage(hops: int, *pairs: list[str]) -> dict:
+def _lineage(hops: int, *pairs: list[str]) -> dict[str, Any]:
     return {
         "origin": {"kind": "core", "stage": "extract"},
         "hops": hops,
@@ -51,6 +52,7 @@ def test_requests_and_events_carry_the_extended_lineage() -> None:
     }
     out = dispatch.result_to_stage(res, PID, _lineage(1, [me, f"video:{vid}"]))
     req, ev = out.requests
+    assert req.payload is not None and ev.payload is not None
     assert req.stage == pm.queue_name(PID, "tidy") and req.payload["a"] == 1
     assert req.payload["_lineage"]["hops"] == 2
     assert req.payload["_lineage"]["path"][-1] == [pm.queue_name(PID, "tidy"), f"video:{other}"]
@@ -74,6 +76,7 @@ def test_a_guest_cannot_forge_its_lineage_in_a_request() -> None:
         ],
     }
     (req,) = dispatch.result_to_stage(res, PID, _lineage(5)).requests
+    assert req.payload is not None
     assert req.payload["_lineage"]["hops"] == 6
 
 

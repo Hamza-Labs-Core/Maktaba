@@ -747,7 +747,7 @@
       "settings": [
         "rules.word_review"
       ],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "",
       "sources": {},
       "stages": [
@@ -930,7 +930,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "",
       "sources": {},
       "stages": [
@@ -1080,8 +1080,10 @@
         "gpu": "",
         "ram_mb": 0
       },
-      "settings": [],
-      "since": "0.3.83",
+      "settings": [
+        "rules.plugin_compute"
+      ],
+      "since": "0.3.86",
       "source": "",
       "sources": {},
       "stages": [],
@@ -1566,7 +1568,7 @@
         "ram_mb": 120
       },
       "settings": [],
-      "since": "0.3.83",
+      "since": "0.3.86",
       "source": "",
       "sources": {},
       "stages": [],
@@ -2092,7 +2094,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:runtime.lang",
       "sources": {},
       "stages": [],
@@ -2601,7 +2603,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.ar",
       "sources": {},
       "stages": [],
@@ -2649,7 +2651,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.en",
       "sources": {},
       "stages": [],
@@ -2694,7 +2696,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.fr",
       "sources": {},
       "stages": [],
@@ -2739,7 +2741,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.de",
       "sources": {},
       "stages": [],
@@ -2784,7 +2786,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.es",
       "sources": {},
       "stages": [],
@@ -2829,7 +2831,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.it",
       "sources": {},
       "stages": [],
@@ -2874,7 +2876,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.pt",
       "sources": {},
       "stages": [],
@@ -2919,7 +2921,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.nl",
       "sources": {},
       "stages": [],
@@ -2964,7 +2966,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.tr",
       "sources": {},
       "stages": [],
@@ -3009,7 +3011,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.ru",
       "sources": {},
       "stages": [],
@@ -3054,7 +3056,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.id",
       "sources": {},
       "stages": [],
@@ -3099,7 +3101,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.sv",
       "sources": {},
       "stages": [],
@@ -3144,7 +3146,7 @@
         "ram_mb": 0
       },
       "settings": [],
-      "since": "0.3.82",
+      "since": "0.3.86",
       "source": "pack:lang.hunspell.pl",
       "sources": {},
       "stages": [],

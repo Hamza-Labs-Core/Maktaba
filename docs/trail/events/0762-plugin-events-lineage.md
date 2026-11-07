@@ -10,7 +10,7 @@ prs: [759]
 ---
 
 ## What happened
-- Plugin API 1.1 adds `events.emit`; the API checks the declared event, the subject, the payload against the publisher's schema and the subscribers' `events.subscribe` grants, and every plugin job carries a lineage that refuses a 17th hop, a re-entry, and a loop through data (`plugin_write_lineage`, migration 0197). The new cause `plugin_loop` has its label and help in both languages.
+- Plugin API 1.2 adds `events.emit`; the API checks the declared event, the subject, the payload against the publisher's schema and the subscribers' `events.subscribe` grants, and every plugin job carries a lineage that refuses a 17th hop, a re-entry, and a loop through data (`plugin_write_lineage`, migration 0198). The new cause `plugin_loop` has its label and help in both languages.
 
 ## What we learned
 - Wasmtime's component linker resolves semver-compatible import names (a guest's `job@1.0.0` finds the host's `job@1.1.0`), so a WIT minor bump keeps old guests linking; the audit's version check was the only thing to move.

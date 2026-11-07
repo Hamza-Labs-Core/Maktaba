@@ -31,7 +31,8 @@
 #   licence     an existing flag of api/internal/flags/declarations.go, or empty
 #   features    the user-facing words it serves (top-level `features`)
 #   resources   { ram_mb, disk_mb, gpu = none | preferred | required }
-#   since       first release with this id
+#   since       first published release with this id (a tag whose release was never
+#               published shipped nothing: v0.3.83 to v0.3.85)
 #   on_demand   a process that runs only while a component it serves is enabled and
 #               passes its gates (plugins.host: while a plugin is on)
 #   assets: source (default), sources (per platform), files ({path, sha256, size},
@@ -268,7 +269,7 @@ settings  = ["rules.word_review"]
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 drain     = { grace_s = 30, checkpoint = false }
 bundles   = ["full", "worker"]
-since     = "0.3.82"
+since     = "0.3.86"
 
 [[component]]
 id        = "search.semantic"
@@ -313,7 +314,7 @@ requires  = ["classify"]
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full", "worker"]
 features  = ["youtube"]
-since     = "0.3.82"
+since     = "0.3.86"
 
 [[component]]
 id        = "enrich"
@@ -356,12 +357,14 @@ title_key = "components.plugins.host.title"
 desc_key  = "components.plugins.host.desc"
 processes = ["plugins/"]
 placement = "any"   # on demand: a machine runs it while one of its plugins passes (54.42)
+# the language model plugins ask and their daily share of the home's models (story 54.21)
+settings  = ["rules.plugin_compute"]
 # not on Windows yet: the pipeline's dispatcher reaches the host on a unix socket, which
 # asyncio cannot open there
 platforms = ["darwin-arm64", "linux-amd64", "linux-arm64"]
 bundles   = ["full", "core"]
 on_demand = true
-since     = "0.3.83"
+since     = "0.3.86"
 
 # ---- integrations --------------------------------------------------------------------
 
@@ -508,7 +511,7 @@ resources = { ram_mb = 120, disk_mb = 350, gpu = "none" }
 # not in Core, which runs no switchable process (N9: four processes); a Core home keeps its
 # segments and reads them on the recovery page, and an admin can turn this on
 bundles   = ["full", "worker"]
-since     = "0.3.83"
+since     = "0.3.86"
 
 [[component]]
 id        = "cloud.link"
@@ -659,7 +662,7 @@ source     = "pack:runtime.lang"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "worker"]
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "runtime.ollama"
@@ -889,7 +892,7 @@ source     = "pack:lang.ar"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "worker"]
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.en"
@@ -903,7 +906,7 @@ source     = "pack:lang.en"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "worker"]
-since      = "0.3.82"
+since      = "0.3.86"
 
 # ---- BEGIN lang.hunspell: written by `make catalog-sync` from tools/release/packs/hunspell-languages.toml
 
@@ -919,7 +922,7 @@ source     = "pack:lang.hunspell.fr"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.de"
@@ -933,7 +936,7 @@ source     = "pack:lang.hunspell.de"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.es"
@@ -947,7 +950,7 @@ source     = "pack:lang.hunspell.es"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.it"
@@ -961,7 +964,7 @@ source     = "pack:lang.hunspell.it"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.pt"
@@ -975,7 +978,7 @@ source     = "pack:lang.hunspell.pt"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.nl"
@@ -989,7 +992,7 @@ source     = "pack:lang.hunspell.nl"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.tr"
@@ -1003,7 +1006,7 @@ source     = "pack:lang.hunspell.tr"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.ru"
@@ -1017,7 +1020,7 @@ source     = "pack:lang.hunspell.ru"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.id"
@@ -1031,7 +1034,7 @@ source     = "pack:lang.hunspell.id"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.sv"
@@ -1045,7 +1048,7 @@ source     = "pack:lang.hunspell.sv"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 [[component]]
 id         = "lang.hunspell.pl"
@@ -1059,6 +1062,6 @@ source     = "pack:lang.hunspell.pl"
 in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
-since      = "0.3.82"
+since      = "0.3.86"
 
 # ---- END lang.hunspell

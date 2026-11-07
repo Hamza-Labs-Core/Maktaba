@@ -6,6 +6,7 @@
 // the API's 403 is the rule.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { useWindowKeydown } from "../../lib/useWindowKeydown";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../../lib/i18n";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
@@ -207,66 +208,63 @@ export function Review() {
     }
   }, [load, t, toast]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const inField = document.activeElement === field.current;
-      const act = keyAction(e, inField);
-      if (!act) return;
-      e.preventDefault();
-      e.stopPropagation();
-      switch (act.kind) {
-        case "next":
-          setIndex((i) => Math.min(i + 1, Math.max(0, (items?.length ?? 1) - 1)));
-          break;
-        case "prev":
-          setIndex((i) => Math.max(0, i - 1));
-          break;
-        case "play":
-          player.current?.toggle(act.slow ? 0.75 : 1);
-          break;
-        case "replay":
-          player.current?.replay();
-          break;
-        case "accept":
-          if (inField && edit.trim() && edit !== detail?.original)
-            void resolve("correct", edit.trim());
-          else void resolve("accept");
-          break;
-        case "candidate": {
-          const c = detail?.candidates[act.n];
-          if (c) void resolve("correct", c.text);
-          break;
-        }
-        case "edit":
-          field.current?.focus();
-          field.current?.select();
-          break;
-        case "name":
-          void resolve("name");
-          break;
-        case "dictionary":
-          if (!detail?.reasons.includes("quran_mismatch")) void resolve("dictionary");
-          break;
-        case "skip":
-          void resolve("skip");
-          break;
-        case "applyAll":
-          setApplyAll((v) => !v);
-          break;
-        case "undo":
-          void undo();
-          break;
-        case "help":
-          setHelp((v) => !v);
-          break;
-        case "leave":
-          field.current?.blur();
-          break;
+  // keys act on the word on screen (lib/useWindowKeydown, #697)
+  useWindowKeydown((e: KeyboardEvent) => {
+    const inField = document.activeElement === field.current;
+    const act = keyAction(e, inField);
+    if (!act) return;
+    e.preventDefault();
+    e.stopPropagation();
+    switch (act.kind) {
+      case "next":
+        setIndex((i) => Math.min(i + 1, Math.max(0, (items?.length ?? 1) - 1)));
+        break;
+      case "prev":
+        setIndex((i) => Math.max(0, i - 1));
+        break;
+      case "play":
+        player.current?.toggle(act.slow ? 0.75 : 1);
+        break;
+      case "replay":
+        player.current?.replay();
+        break;
+      case "accept":
+        if (inField && edit.trim() && edit !== detail?.original)
+          void resolve("correct", edit.trim());
+        else void resolve("accept");
+        break;
+      case "candidate": {
+        const c = detail?.candidates[act.n];
+        if (c) void resolve("correct", c.text);
+        break;
       }
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [items, detail, edit, resolve, undo]);
+      case "edit":
+        field.current?.focus();
+        field.current?.select();
+        break;
+      case "name":
+        void resolve("name");
+        break;
+      case "dictionary":
+        if (!detail?.reasons.includes("quran_mismatch")) void resolve("dictionary");
+        break;
+      case "skip":
+        void resolve("skip");
+        break;
+      case "applyAll":
+        setApplyAll((v) => !v);
+        break;
+      case "undo":
+        void undo();
+        break;
+      case "help":
+        setHelp((v) => !v);
+        break;
+      case "leave":
+        field.current?.blur();
+        break;
+    }
+  }, true);
 
   if (!isAdmin || error === "forbidden")
     return (

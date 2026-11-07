@@ -27,6 +27,10 @@ func TestPluginGatesTable(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
+	// stories 54.21 and 54.40: this release serves plugin API 1.2 (compute, events), as the host's audit does
+	if fmt.Sprintf("%d.%d", PluginAPIMajor, PluginAPIMinor) != "1.2" {
+		t.Fatalf("serves %d.%d", PluginAPIMajor, PluginAPIMinor)
+	}
 	if len(doc.Cases) < 10 {
 		t.Fatalf("only %d cases", len(doc.Cases))
 	}
@@ -74,13 +78,14 @@ func TestUnreviewedLevels(t *testing.T) {
 	}
 }
 
-// Story 54.40: this release serves plugin API 1.1 (events.emit), the host's audit minor.
-func TestServesPluginAPI11(t *testing.T) {
-	if PluginAPIMajor != 1 || PluginAPIMinor != 1 {
+// Story 54.40: this release serves plugin API 1.2 (events.emit; 1.1 is compute), the
+// host's audit minor.
+func TestServesPluginAPI12(t *testing.T) {
+	if PluginAPIMajor != 1 || PluginAPIMinor != 2 {
 		t.Fatalf("plugin API %d.%d", PluginAPIMajor, PluginAPIMinor)
 	}
-	in := PluginGateInput{ServerVersion: "0.7.0", Range: ">=0.6.0", PluginAPI: "1.1", ReviewLevel: "store"}
+	in := PluginGateInput{ServerVersion: "0.7.0", Range: ">=0.6.0", PluginAPI: "1.2", ReviewLevel: "store"}
 	if reason, why := PluginGate(in); reason != "" {
-		t.Fatalf("a 1.1 plugin is gated: %s %v", reason, why)
+		t.Fatalf("a 1.2 plugin is gated: %s %v", reason, why)
 	}
 }

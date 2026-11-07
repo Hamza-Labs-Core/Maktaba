@@ -52,7 +52,8 @@ the workers of machines that serve the `gpu` pool.
 - Reads and media are the machine's: library, transcripts, its plugin data and exports
   through its database role; media through its own mounts (the share-path mapping).
 - **Every write goes to the home**: data, tags, fields, chapters, subtitles, artwork,
-  suggestions, notices, requests and events (`POST /internal/cluster/plugin-api/v1/…`, the
+  suggestions, notices, requests, events and asks of the home's models (`compute`, story
+  54.21) (`POST /internal/cluster/plugin-api/v1/…`, the
   job's token, signed by the machine). The home answers them as calls on its own socket,
   with the same capability, scope, quota and lineage checks, under its own role, so the
   plugin tables' guard stays and one place enforces quotas and lineage.
