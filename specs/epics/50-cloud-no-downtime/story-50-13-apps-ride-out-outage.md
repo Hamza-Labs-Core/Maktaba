@@ -122,9 +122,9 @@ looking at the "can't reach Maktaba Cloud" message also sees it is a known outag
 | T06 | unit (all) | assertion call times out | cloud sign-in | message + home sign-in offered |
 | T07 | unit (cloud) | `GET /v1/homes` | response | has `connections`, `direct_url`, `relay_url` |
 | T08 | integration (CI) | home stack + an app client library (Android `client`, MaktabaKit), cloud host blackholed | sign in with home password, start playback | plays; zero requests to the cloud host |
-| T09 | rehearsal (CI, 50.06 `apps-cloud-down`) | rehearsal pair stopped, home running | client library run as T08 | as T08 |
+| T09 | rehearsal (CI, 50.06 `apps-cloud-down`) | rehearsal pair stopped, home running | client library run as T08 | as T08 — **open**: the cloud rehearsal has no home stack yet (its homes are simulated); T08 runs in the client libraries until it has one |
 | T10 | Arabic | new keys | strings check | Arabic present in web, cloud web, Android `values-ar`, Apple catalog |
-| T11 | UI (CI only) | Player shards, mocked cloud down | launch | saved homes visible, banner shown |
+| T11 | UI (CI only) | mocked cloud down: the cloud web app in Chromium (Playwright, `web-ui.yml`, every `/v1` call answered by the test), the Apple UI tests (`ConnectUITests`, MockHome answering the cloud's sign-in 503, the saved list given at launch), Android (Robolectric, the player's `SignInKeyboardTest`) | launch | saved homes visible with their time |
 | T12 | unit (cloud) | `GET /v1/homes` for a Free and a Basic home | list | Free: no `relay` / `relay_hint`; Basic: all four kinds |
 
 ## Edge cases

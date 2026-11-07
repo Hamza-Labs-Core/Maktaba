@@ -81,6 +81,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/packages.yml": "runs after a release",
     ".github/workflows/relay.yml": "its own workflow (cloud relay)",
     ".github/workflows/cloud-probe.yml": "its own scheduled workflow (the outside probe, Epic 50 story 50.10)",
+    ".github/workflows/web-ui.yml": "its own workflow and path filter (the cloud web app in a browser, Epic 50 story 50.13)",
     ".github/workflows/status-page.yml": "its own workflow and path filter (the status page, Epic 50 story 50.11)",
     "status/**": "the status page: status-page.yml tests and builds it on every pull request that touches it",
     ".github/workflows/cloud-rehearsal.yml": "its own workflow and path filter (the cloud rehearsal, Epic 50 story 50.06)",
