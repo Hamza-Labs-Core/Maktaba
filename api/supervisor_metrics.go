@@ -17,9 +17,9 @@ import (
 )
 
 // supervisorMetricsPrefixes: the only families taken from the supervisor's /metrics (its
-// update metrics, story 35.15, and its machine's components, story 51.14), never one the
-// API has of its own.
-var supervisorMetricsPrefixes = []string{"maktaba_update_", "maktaba_component_"}
+// update metrics, story 35.15, its machine's components, story 51.14, and its machine's
+// memory, disk and load, story 53.12), never one the API has of its own.
+var supervisorMetricsPrefixes = []string{"maktaba_update_", "maktaba_component_", "maktaba_host_"}
 
 // supervisorMetrics gathers this machine's supervisor's /metrics into the API's, so a
 // machine is one scrape target (plan 35.15 D2). A supervisor that does not answer (none

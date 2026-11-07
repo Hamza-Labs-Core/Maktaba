@@ -31,6 +31,8 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 			// story 51.14: the machine's components
 			"# TYPE maktaba_component_up gauge\n"+
 			"maktaba_component_up{id=\"youtube\",machine=\"home\",phase=\"off\"} 0\n"+
+			// story 53.12: the machine's memory, disk and load
+			"# TYPE maktaba_host_load1 gauge\nmaktaba_host_load1{machine=\"home\"} 1.5\n"+
 			// a family the API has of its own too (taken, it would repeat the
 			// API's) and one only the supervisor has: neither is taken
 			"# TYPE go_goroutines gauge\ngo_goroutines 7\n"+
@@ -52,6 +54,9 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 	}
 	if !strings.Contains(body, `maktaba_component_up{id="youtube",machine="home",phase="off"} 0`) {
 		t.Fatalf("the supervisor's components are missing:\n%s", body)
+	}
+	if !strings.Contains(body, `maktaba_host_load1{machine="home"} 1.5`) {
+		t.Fatalf("the machine's load is missing:\n%s", body)
 	}
 	// go_goroutines is the API's own family too (its value may well be 7):
 	// the check is that the family appears once, and the supervisor-only one not at all
