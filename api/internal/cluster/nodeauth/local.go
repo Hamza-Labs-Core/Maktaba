@@ -395,7 +395,7 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 		r.Logger.Info("node: signed in on this machine, from its copy (the home is away)", "user_id", dp.UserID,
 			"until", expires, "event", "node_local_sign_in")
 	}
-	r.setCookies(w, id, csrf, expires)
+	r.setCookies(w, req, id, csrf, expires)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
@@ -444,7 +444,7 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 			r.Logger.Info("node: signed out everywhere on this machine only: the person signed in here only from the copy",
 				"user_id", user, "event", "node_local_sign_out_all_here")
 		}
-		r.setCookies(w, "", "", time.Time{})
+		r.setCookies(w, req, "", "", time.Time{})
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
@@ -466,7 +466,7 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	if err != nil && r.Logger != nil {
 		r.Logger.Warn("node: a node-local sign-out was not saved", "err", err, "event", "node_local_sessions_failed")
 	}
-	r.setCookies(w, "", "", time.Time{})
+	r.setCookies(w, req, "", "", time.Time{})
 	if all && live && !known {
 		if r.Logger != nil {
 			r.Logger.Warn("node: signed out everywhere on this machine; the copy did not say whether the home takes it, so it is handed over",
@@ -484,18 +484,22 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 }
 
 // setCookies sets (or, with a zero expiry, clears) the session and CSRF cookies as the
-// home's sign-in does: host-only, the session cookie HttpOnly, both SameSite=Lax.
-func (r *Resolver) setCookies(w http.ResponseWriter, id, csrf string, expires time.Time) {
+// home's sign-in does: host-only, the session cookie HttpOnly, both SameSite=Lax. They
+// are Secure when the server is configured so (SecureCookies) or the request came over
+// TLS: a machine reached over plain HTTP on the LAN keeps cookies it can send back, and
+// one reached over HTTPS never hands them to a plain-HTTP request.
+func (r *Resolver) setCookies(w http.ResponseWriter, req *http.Request, id, csrf string, expires time.Time) {
 	maxAge := -1
 	if !expires.IsZero() {
 		if maxAge = int(expires.Sub(r.now()).Seconds()); maxAge <= 0 {
 			maxAge = -1
 		}
 	}
+	secure := r.SecureCookies || (req != nil && req.TLS != nil)
 	http.SetCookie(w, &http.Cookie{Name: CookieSession, Value: id, Path: "/", HttpOnly: true,
-		SameSite: http.SameSiteLaxMode, Secure: r.SecureCookies, MaxAge: maxAge})
+		SameSite: http.SameSiteLaxMode, Secure: secure, MaxAge: maxAge})
 	http.SetCookie(w, &http.Cookie{Name: CookieCSRF, Value: csrf, Path: "/",
-		SameSite: http.SameSiteLaxMode, Secure: r.SecureCookies, MaxAge: maxAge})
+		SameSite: http.SameSiteLaxMode, Secure: secure, MaxAge: maxAge})
 }
 
 func writeLocked(w http.ResponseWriter) {

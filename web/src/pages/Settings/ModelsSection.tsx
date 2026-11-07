@@ -2,7 +2,8 @@
 // /api/models endpoints (api/internal/handlers/models). Models are
 // grouped by type into cards; each card exposes download (with live
 // progress), delete, activate and test. An active-backend selector and
-// the OpenAI API key field sit above the groups.
+// a note on where the OpenAI API key is set (the server's OPENAI_API_KEY)
+// sit above the groups: the key is never typed into, or kept by, a browser.
 //
 // State lifecycle: download returns 202 and then advances progress
 // server-side, so we poll `list()` on a short interval but ONLY while
@@ -12,7 +13,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
-import { Input } from "@ds/components/Input/Input";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { Select } from "@ds/components/Select/Select";
 import { api, ApiError } from "../../lib/api";
@@ -50,19 +50,14 @@ const STATUS_TONE: Record<Status, "neutral" | "accent" | "success" | "warn"> = {
   available: "neutral",
 };
 
-const API_KEY_STORAGE = "mkt:openai_api_key";
+// Where an earlier build kept a typed OpenAI key, in plain text, without ever using
+// it: removed from the browser on sight.
+const LEGACY_API_KEY_STORAGE = "mkt:openai_api_key";
 
 export function ModelsSection() {
   const { t } = useI18n();
   const [models, setModels] = useState<Model[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [apiKey, setApiKey] = useState(() => {
-    try {
-      return localStorage.getItem(API_KEY_STORAGE) ?? "";
-    } catch {
-      return "";
-    }
-  });
   const pollRef = useRef<number | null>(null);
   // A poll begun before a removal or an activation still has the model as it
   // was: it is dropped (lib/readOrder).
@@ -85,6 +80,14 @@ export function ModelsSection() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem(LEGACY_API_KEY_STORAGE);
+    } catch {
+      /* storage unavailable: nothing kept there */
+    }
+  }, []);
 
   // Arm a poll only while something is downloading; disarm otherwise.
   const downloading = models.some((m) => m.status === "downloading");
@@ -117,14 +120,6 @@ export function ModelsSection() {
   const activate = (id: string) => act(() => api.patch(`/api/models/${id}/activate`));
   const test = (id: string) => act(() => api.post(`/api/models/${id}/test`));
 
-  function saveApiKey() {
-    try {
-      localStorage.setItem(API_KEY_STORAGE, apiKey);
-    } catch {
-      /* ignored */
-    }
-  }
-
   // Downloading, activating, testing and deleting are admin-only on the
   // server (SMD-18); other users see the catalog without the controls.
   const canManage = useOptionalAuth()?.user?.is_admin ?? false;
@@ -156,19 +151,7 @@ export function ModelsSection() {
           options={downloadedStt.map((m) => ({ value: m.id, label: m.name }))}
         />
 
-        <div className="mkt-models__apikey">
-          <Input
-            type="password"
-            label={t("settings.models.apiKey")}
-            placeholder={t("settings.models.apiKeyPlaceholder")}
-            value={apiKey}
-            onChange={(e) => setApiKey(e.currentTarget.value)}
-            autoComplete="off"
-          />
-          <Button variant="secondary" size="sm" onClick={saveApiKey}>
-            {t("settings.models.apiKeySave")}
-          </Button>
-        </div>
+        <p className="mkt-models__apikey mkt-muted">{t("settings.models.apiKeyServer")}</p>
       </div>
 
       {GROUPS.map((group) => {
