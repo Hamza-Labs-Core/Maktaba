@@ -52,7 +52,7 @@ on:
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
   # run the deploy job against the `production` environment.
   # Or a tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
-  # is missing (auto-tag.yml's tag push starts the push run).
+  # is missing (the release session's tag push starts the push run).
   # "A tag's run" below is a pushed tag, or a dispatch with `tag` on that tag's ref.
   workflow_dispatch:
     inputs:
@@ -61,7 +61,7 @@ on:
         required: false
         default: ''
       tag:
-        description: "A tag's run (auto-tag.yml), dispatched with --ref set to it; blank for a manual rollout"
+        description: "A tag's run by hand, dispatched with --ref set to it; blank for a manual rollout"
         required: false
         default: ''
 

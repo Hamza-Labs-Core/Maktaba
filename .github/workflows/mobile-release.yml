@@ -50,7 +50,7 @@ on:
     tags:
       - 'v*'
   # A tag's run by hand, when its push run is missing or failed for good: `gh workflow run
-  # <this> --ref vX.Y.Z -f tag=vX.Y.Z` (auto-tag.yml's tag push starts the push run). The tag
+  # <this> --ref vX.Y.Z -f tag=vX.Y.Z` (the release session's tag push starts the push run). The tag
   # guard refuses a dispatched run whose ref is not that tag.
   workflow_dispatch:
     inputs:

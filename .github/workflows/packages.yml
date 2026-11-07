@@ -3,8 +3,8 @@
 #
 # A release is published by whichever tag workflow finishes last (release.yml or
 # desktop-release.yml: tools/release/release-assets.sh), so this runs when either completes
-# (workflow_run, from main's copy of this file: a pushed tag's run, or one auto-tag.yml
-# dispatched on the tag) and acts only on a published release that is
+# (workflow_run, from main's copy of this file: a pushed tag's run, or one dispatched by hand
+# on the tag) and acts only on a published release that is
 # the newest stable one: a pre-release, a draft, an older or a maintenance release changes
 # nothing. It also runs every week, for the newest stable release again: the apt indexes are
 # valid for 14 days, so they are signed again (and anything a run missed is caught up). Every
@@ -106,8 +106,8 @@ jobs:
               tag="$(gh release view --json tagName --jq .tagName 2>/dev/null || true)"
               [ -n "${tag}" ] || none "no release is the latest yet" ;;
             *)
-              # a pushed tag's run, or a dispatched one on the tag (auto-tag.yml starts each
-              # tag's release so: --ref vX.Y.Z); a run on a branch is caught by the check below
+              # a pushed tag's run, or one dispatched by hand on the tag (--ref vX.Y.Z, when
+              # its push run is missing); a run on a branch is caught by the check below
               case "${RUN_EVENT}" in
                 push | workflow_dispatch) ;;
                 *) none "the run (${RUN_EVENT}) was no tag's release: nothing to publish" ;;
