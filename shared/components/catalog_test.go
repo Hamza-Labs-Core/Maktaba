@@ -344,3 +344,38 @@ func TestPluginField(t *testing.T) {
 		}
 	}
 }
+
+// Story 50.35 T03: feature_any is read, and refused for a feature that isn't one, an id the
+// catalog lacks, a member that doesn't list the feature, or an id in two groups of a feature.
+// The pipeline's loader reads the same fixtures.
+func TestFeatureAny(t *testing.T) {
+	cat, err := Load(mustRead(t, "feature_any_ok.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := cat.FeatureAny["live_tv"]; len(g) != 1 || !slices.Equal(g[0], []string{"a", "b"}) {
+		t.Fatalf("feature_any %v", cat.FeatureAny)
+	}
+	for file, want := range map[string]string{
+		"feature_any_unknown_feature.toml": `feature_any: "nope" is not a feature`,
+		"feature_any_unknown_id.toml":      `feature_any.live_tv: unknown component "zz"`,
+		"feature_any_not_listed.toml":      `feature_any.youtube: component a does not list the feature youtube`,
+		"feature_any_two_groups.toml":      `feature_any.live_tv: component b is in two groups`,
+	} {
+		if _, err := Load(mustRead(t, file)); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: got %v, want %q", file, err, want)
+		}
+	}
+	if len(Default().FeatureAny) != 0 {
+		t.Errorf("the embedded catalog's feature_any is %v; story 50.15 adds remote_access with cloud.direct", Default().FeatureAny)
+	}
+}
+
+func mustRead(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
