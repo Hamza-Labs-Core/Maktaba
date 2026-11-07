@@ -17,10 +17,13 @@ public final class PinnedNames: @unchecked Sendable {
         host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased() + "|" + String(port)
     }
 
-    /// Pins `url` (https, an IP address, with its port) to `name`; anything else is ignored.
+    /// Pins `url` (https, an IP address, with its port) to `name`, a home's name for that same
+    /// address (`<encoded ip>.<home id>.<domain>`); anything else is ignored, so a home list can
+    /// never make an address answer for an unrelated name.
     public func pin(_ url: URL, name: String) {
         let n = name.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: ".")).lowercased()
-        guard url.scheme?.lowercased() == "https", let host = url.host(), Self.isIPLiteral(host), !n.isEmpty else { return }
+        guard url.scheme?.lowercased() == "https", let host = url.host(), Self.isIPLiteral(host),
+              Self.namesAddress(n, host: host) else { return }
         let port = url.port ?? 443
         lock.withLock { names[Self.key(host, port)] = n }
     }
@@ -32,6 +35,27 @@ public final class PinnedNames: @unchecked Sendable {
 
     /// Forgets every pin (tests; a sign-out keeps them: they name no account).
     public func clear() { lock.withLock { names.removeAll() } }
+
+    /// Whether `name` is a home's name for `host`: four labels or more, the first `host` as the
+    /// cloud encodes it ("192-168-1-20", "fd00--7"; `direct.EncodeIP`).
+    static func namesAddress(_ name: String, host: String) -> Bool {
+        let labels = name.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 4, labels.allSatisfy({ !$0.isEmpty }), let label = labels.first else { return false }
+        let hex = Set("0123456789abcdef-")
+        guard label.allSatisfy({ hex.contains($0) }) else { return false }
+        let v4 = label.filter { $0 == "-" }.count == 3 && !label.contains("--") && !label.contains(where: { "abcdef".contains($0) })
+        let text = label.replacingOccurrences(of: "-", with: v4 ? "." : ":")
+        guard let a = addressBytes(text) else { return false }
+        return a == addressBytes(host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")))
+    }
+
+    static func addressBytes(_ s: String) -> [UInt8]? {
+        var v4 = in_addr()
+        if inet_pton(AF_INET, s, &v4) == 1 { return withUnsafeBytes(of: &v4) { Array($0) } }
+        var v6 = in6_addr()
+        if inet_pton(AF_INET6, s, &v6) == 1 { return withUnsafeBytes(of: &v6) { Array($0) } }
+        return nil
+    }
 
     static func isIPLiteral(_ host: String) -> Bool {
         let h = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]"))

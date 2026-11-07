@@ -89,6 +89,20 @@ class PinnedNamesTest {
     }
 
     @Test
+    fun aNameForAnotherAddressOrNoHomeIsNotPinned() {
+        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-21.$hid.direct-a.example")
+        PinnedNames.pin("https://192.168.1.20:8444", "bank.example")
+        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-20.example")
+        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-20..direct-a.example")
+        PinnedNames.pin("https://[fd00::7]:8444", "fd00--8.$hid.direct-a.example")
+        PinnedNames.pin("https://192.168.1.20:8444", "localhost.$hid.direct-a.example")
+        assertNull(PinnedNames.nameFor("192.168.1.20", 8444))
+        assertNull(PinnedNames.nameFor("fd00::7", 8444))
+        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-20.$hid.direct-a.example")
+        assertEquals("192-168-1-20.$hid.direct-a.example", PinnedNames.nameFor("192.168.1.20", 8444))
+    }
+
+    @Test
     fun theCloudListPinsItsLocalIpEntriesAndTheyComeAfterTheLanName() {
         val home = ApiClient.json.decodeFromString(
             CloudHome.serializer(),

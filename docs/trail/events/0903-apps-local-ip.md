@@ -15,10 +15,12 @@ prs: [897]
 ## What we learned
 - Apple refuses a TLS leaf whose validity exceeds its maximum ("exceeds maximum temporal validity period"), even when it chains to a custom anchor. A test certificate has to be short-lived (90 days here), and the test pins its verify date so the certificate doesn't expire under the test.
 - Swapping the name the chain is checked against keeps the platform's whole chain and expiry check. Skipping that check, which other "trust this IP" workarounds do, would accept any certificate on the LAN.
+- The first draft accepted any `tls_name`, so a bad home list could have made a LAN address answer for an unrelated name. A security review caught it before merge. A pin now requires the name's first label to decode to the URL's own address (`direct.EncodeIP`'s form) with a home ID and domain after it; anything else is ignored.
 - The two image caches build their own HTTP clients, and the first draft missed them. A search for every `OkHttpClient.Builder` and `URLSession(` that reaches a home found both.
 
 ## Keep doing
 - When adding a TLS rule, find every client that can reach a home, not only the API client.
+- When a server-supplied value relaxes a check, bind it to what it is for (here: the address it pins) instead of trusting it whole.
 
 ## Open
 - The web home settings' `direct.rebinding` notice for when the LAN name fails and the address works.

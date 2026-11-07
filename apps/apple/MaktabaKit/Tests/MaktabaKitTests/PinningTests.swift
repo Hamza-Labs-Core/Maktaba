@@ -51,6 +51,20 @@ import Testing
         #expect(names.name(host: "fd00::7", port: 8444) == "fd00--7.\(Self.hid).direct-a.example")
     }
 
+    @Test func aNameForAnotherAddressOrNoHomeIsNotPinned() {
+        let names = PinnedNames()
+        let url = URL(string: "https://192.168.1.20:8444")!
+        for bad in ["192-168-1-21.\(Self.hid).direct-a.example", "bank.example", "192-168-1-20.example",
+                    "192-168-1-20..direct-a.example", "localhost.\(Self.hid).direct-a.example"] {
+            names.pin(url, name: bad)
+        }
+        names.pin(URL(string: "https://[fd00::7]:8444")!, name: "fd00--8.\(Self.hid).direct-a.example")
+        #expect(names.name(host: "192.168.1.20", port: 8444) == nil)
+        #expect(names.name(host: "fd00::7", port: 8444) == nil)
+        names.pin(url, name: "192-168-1-20.\(Self.hid).direct-a.example")
+        #expect(names.name(host: "192.168.1.20", port: 8444) == "192-168-1-20.\(Self.hid).direct-a.example")
+    }
+
     @Test func theCloudListPinsItsLocalIPEntriesAfterTheLANName() throws {
         let json = """
         {"server_id":"s","relay_url":"https://x.relay.test","connections":[

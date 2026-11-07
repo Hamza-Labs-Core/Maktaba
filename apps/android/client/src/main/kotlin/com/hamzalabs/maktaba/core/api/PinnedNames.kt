@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.core.api
 
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.internal.tls.OkHostnameVerifier
+import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLSession
@@ -18,11 +19,15 @@ object PinnedNames {
 
     private fun key(host: String, port: Int) = host.removeSurrounding("[", "]").lowercase() + "|" + port
 
-    /** Pins [url] (https, an IP address) to [tlsName]; anything else is ignored. */
+    /**
+     * Pins [url] (https, an IP address) to [tlsName], a home's name for that same address
+     * (`<encoded ip>.<home id>.<domain>`); anything else is ignored, so a home list can never
+     * make an address answer for an unrelated name.
+     */
     fun pin(url: String, tlsName: String) {
         val u = url.toHttpUrlOrNull() ?: return
         val name = tlsName.trim().trimEnd('.').lowercase()
-        if (!u.isHttps || name.isEmpty() || !isIpLiteral(u.host)) return
+        if (!u.isHttps || !isIpLiteral(u.host) || !namesAddress(name, u.host)) return
         names[key(u.host, u.port)] = name
     }
 
@@ -31,6 +36,23 @@ object PinnedNames {
 
     /** Forgets every pin (tests; a sign-out keeps them: they name no account). */
     fun clear() = names.clear()
+
+    /**
+     * Whether [name] is a home's name for [host]: four labels or more, the first [host] as the
+     * cloud encodes it ("192-168-1-20", "fd00--7"; `direct.EncodeIP`).
+     */
+    private fun namesAddress(name: String, host: String): Boolean {
+        val labels = name.split('.')
+        if (labels.size < 4 || labels.any { it.isEmpty() }) return false
+        val label = labels[0]
+        if (label.any { it !in '0'..'9' && it !in 'a'..'f' && it != '-' }) return false
+        val v4 = label.count { it == '-' } == 3 && "--" !in label && label.none { it in 'a'..'f' }
+        val text = label.replace('-', if (v4) '.' else ':')
+        // both are literals (checked), so no lookup happens
+        if (!isIpLiteral(text)) return false
+        return runCatching { InetAddress.getByName(text) == InetAddress.getByName(host.removeSurrounding("[", "]")) }
+            .getOrDefault(false)
+    }
 
     private fun isIpLiteral(host: String): Boolean {
         val h = host.removeSurrounding("[", "]")
