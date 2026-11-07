@@ -91,6 +91,16 @@ type Handler struct {
 	// LogsRoot is <data>/logs, where crash reports and problem reports are kept
 	// ("": MAKTABA_DATA_DIR/logs).
 	LogsRoot string
+	// Switches is the home's components (the loops' runner): whether reports.share is on
+	// (story 53.16). nil: off.
+	Switches Switches
+	// AgentAddr is the relay agent's loopback admin address ("": MAKTABA_CLOUDLINK_ADMIN,
+	// set while the cloud link is on).
+	AgentAddr string
+	// ShareClient calls the agent (nil: a default with a 90 s timeout).
+	ShareClient *http.Client
+
+	forwarder *Forwarder
 }
 
 // Mount wires the routes. Admin routes are gated with RequireAdmin; the
@@ -124,6 +134,12 @@ func (h *Handler) Mount(r chi.Router) {
 	r.With(authmw.RequireAdmin).Post("/api/reports/{id}/status", h.changeReport("status"))
 	r.With(authmw.RequireAdmin).Post("/api/reports/{id}/reply", h.changeReport("reply"))
 	r.With(authmw.RequireAdmin).Get("/api/reports/{id}/bundle", h.reportBundle)
+	// problem reports to Maktaba (story 53.16)
+	r.With(authmw.RequireAuth).Get("/api/reports/maktaba", h.maktabaSettings)
+	r.With(authmw.RequireAdmin).Put("/api/reports/maktaba", h.setMaktaba)
+	r.With(authmw.RequireAdmin).Delete("/api/reports/maktaba", h.deleteAtMaktaba)
+	r.With(authmw.RequireAdmin).Post("/api/reports/{id}/share", h.shareReport)
+	r.With(authmw.RequireAdmin).Get("/api/reports/{id}/maktaba-preview", h.previewReport)
 }
 
 func (h *Handler) client() *http.Client {

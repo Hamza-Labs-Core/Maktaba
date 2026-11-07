@@ -6199,6 +6199,8 @@
   "components.analytics.desc": "Remembers what was watched and counts use.",
   "components.telemetry.title": "Usage reports",
   "components.telemetry.desc": "Sends anonymous usage data when you allow it.",
+  "components.reports.share.title": "Problem reports to Maktaba",
+  "components.reports.share.desc": "Sends the problem reports people choose to share to Maktaba, through the cloud link.",
   "components.backups.title": "Nightly backups",
   "components.backups.desc": "Copies the database every night.",
   "components.updates.auto.title": "Automatic updates",

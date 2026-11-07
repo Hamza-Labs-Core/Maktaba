@@ -26,6 +26,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
@@ -44,6 +45,9 @@ import (
 //	POST /api/reports/{n}/status   an admin: new, looking, fixed or closed
 //	POST /api/reports/{n}/reply    an admin: a short message its sender sees
 //	GET  /api/reports/{n}/bundle   an admin: the report as one .tar.gz
+//
+// A report sent with the Maktaba box ticked (share_with_maktaba) also goes to Maktaba
+// (story 53.16, maktaba.go); the box is refused (409 component_off) while reports.share is off.
 
 const (
 	ReportPartMax        = 512 << 10
@@ -82,6 +86,8 @@ type Report struct {
 	Crashes  []json.RawMessage `json:"crashes,omitempty"`
 	// the home's part
 	Server []json.RawMessage `json:"server,omitempty"`
+	// its way to Maktaba (story 53.16): nil when it was not sent there
+	Maktaba *ToMaktaba `json:"maktaba,omitempty"`
 }
 
 // reportOwner is the meta kept beside a report for who may read it.
@@ -170,6 +176,11 @@ func (h *Handler) createReport(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.BadRequest("what happened: at most 2,000 characters"))
 		return
 	}
+	if in.ShareWithMaktaba && (!h.shareOn() || !h.linked()) {
+		// the box shows only while the admin's setting is on (53.16)
+		httperror.Write(w, r, mw.ComponentOff(ShareComponent))
+		return
+	}
 	var shot []byte
 	if f, fh, err := r.FormFile("screenshot"); err == nil {
 		defer f.Close()
@@ -197,6 +208,10 @@ func (h *Handler) createReport(w http.ResponseWriter, r *http.Request) {
 	rep := Report{At: now, When: when, UserH: mlog.HashUser(p.UserID), App: in.App, Version: in.Version,
 		Platform: in.Platform, OSVersion: in.OSVersion, Device: in.Device, Category: in.Category,
 		Text: mlog.Scrub(in.Text), Status: "new", Shared: in.ShareWithMaktaba, Screenshot: shot != nil}
+	if in.ShareWithMaktaba {
+		// the screenshot goes only when its sender ticked and previewed it (it is here only then)
+		rep.Maktaba = &ToMaktaba{State: ShareQueued, QueuedAt: now, Screenshot: shot != nil}
+	}
 	for _, rid := range in.Requests {
 		if len(rep.Requests) < 20 && len(rid) <= 64 {
 			rep.Requests = append(rep.Requests, rid)
@@ -238,6 +253,9 @@ func (h *Handler) createReport(w http.ResponseWriter, r *http.Request) {
 			TitleKey: "notify.logs.problem_report", Params: map[string]any{"name": rep.Name, "category": rep.Category,
 				"id": rep.ID}, Link: "/admin/reports/" + strconv.Itoa(rep.ID), Subject: "report:" + strconv.Itoa(rep.ID),
 			Every: -1})
+	}
+	if rep.Maktaba != nil {
+		h.Forwarder().Kick()
 	}
 	common.WriteJSON(w, r, http.StatusCreated, map[string]any{"id": rep.ID})
 }
@@ -357,7 +375,31 @@ func readReport(dir string, id int) (Report, reportOwner, error) {
 // summary is a report as a list shows it.
 func summary(rep Report) map[string]any {
 	return map[string]any{"id": rep.ID, "at": rep.At, "name": rep.Name, "app": rep.App, "category": rep.Category,
-		"status": rep.Status, "shared_with_maktaba": rep.Shared, "reply": rep.Reply}
+		"status": rep.Status, "shared_with_maktaba": rep.Shared, "reply": rep.Reply, "maktaba": maktabaView(rep.Maktaba)}
+}
+
+// maktabaView is a report's way to Maktaba as its sender and the admins see it (nil: not sent).
+func maktabaView(m *ToMaktaba) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := map[string]any{"state": m.State, "screenshot": m.Screenshot}
+	if m.SentAt != nil {
+		out["sent_at"] = m.SentAt
+	}
+	if m.Reply != "" {
+		out["reply"], out["replied_at"] = m.Reply, m.RepliedAt
+	}
+	if m.Status != "" {
+		out["status"] = m.Status
+	}
+	if m.FixedIn != "" {
+		out["fixed_in"] = m.FixedIn
+	}
+	if m.Error != "" && m.State != ShareSent {
+		out["error"] = m.Error
+	}
+	return out
 }
 
 func (h *Handler) listReports(w http.ResponseWriter, r *http.Request) {
@@ -415,7 +457,7 @@ func (h *Handler) getReport(w http.ResponseWriter, r *http.Request) {
 	case own.UserID == p.UserID:
 		// its sender sees what they sent, its status and the reply; never the server's part
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"id": rep.ID, "at": rep.At, "category": rep.Category,
-			"text": rep.Text, "status": rep.Status, "reply": rep.Reply, "app": rep.App})
+			"text": rep.Text, "status": rep.Status, "reply": rep.Reply, "app": rep.App, "maktaba": maktabaView(rep.Maktaba)})
 	default:
 		httperror.Write(w, r, httperror.NotFound("no such report"))
 	}
@@ -423,7 +465,7 @@ func (h *Handler) getReport(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) changeReport(field string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		rep, own, ok := h.reportOf(w, r)
+		rep, _, ok := h.reportOf(w, r)
 		if !ok {
 			return
 		}
@@ -441,17 +483,21 @@ func (h *Handler) changeReport(field string) http.HandlerFunc {
 				httperror.Write(w, r, httperror.BadRequest("status: new, looking, fixed or closed"))
 				return
 			}
-			rep.Status = body.Status
 		case "reply":
 			if len([]rune(body.Reply)) > 1000 {
 				httperror.Write(w, r, httperror.BadRequest("reply: at most 1,000 characters"))
 				return
 			}
-			rep.Reply = body.Reply
 		}
-		reportsMu.Lock()
-		err := writeReport(h.reportsDir(), rep, own, nil)
-		reportsMu.Unlock()
+		// read, changed and written under the lock: the forwarder writes the same file
+		rep, err := updateReport(h.reportsDir(), rep.ID, func(x *Report) error {
+			if field == "status" {
+				x.Status = body.Status
+			} else {
+				x.Reply = body.Reply
+			}
+			return nil
+		})
 		if err != nil {
 			httperror.Write(w, r, err)
 			return

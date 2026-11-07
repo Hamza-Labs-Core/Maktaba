@@ -6212,6 +6212,8 @@
   "components.analytics.desc": "يتذكر ما شوهد ويحصي الاستخدام.",
   "components.telemetry.title": "تقارير الاستخدام",
   "components.telemetry.desc": "يرسل بيانات استخدام مجهولة عندما تسمح بذلك.",
+  "components.reports.share.title": "بلاغات المشكلات إلى مكتبة",
+  "components.reports.share.desc": "يرسل إلى مكتبة بلاغات المشكلات التي يختار الأشخاص مشاركتها، عبر الربط السحابي.",
   "components.backups.title": "النسخ الاحتياطي الليلي",
   "components.backups.desc": "ينسخ قاعدة البيانات كل ليلة.",
   "components.updates.auto.title": "التحديثات التلقائية",
