@@ -137,6 +137,9 @@ def runner_context(
     from maktaba_pipeline.engine.context import JobCancelled, StageContext
 
     class RunnerContext(StageContext):
+        #: a model question goes to the plugin API's compute.generate (story 54.31 §2)
+        model_via = "api"
+
         async def progress(
             self,
             step: str,
