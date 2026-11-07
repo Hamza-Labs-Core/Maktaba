@@ -37,6 +37,7 @@ export interface TrustState {
   revoked_version: number;
   revoked_sha256?: string;
   catalog_versions?: Record<string, number>;
+  catalog_sha256?: Record<string, string>;
   newest_issued?: string;
 }
 
@@ -410,6 +411,10 @@ export class StoreKeys {
     const version = int(env.signed, "version", step);
     const seen = st.catalog_versions?.[String(apiMajor)] ?? 0;
     if (version < seen) throw fail(CODE.catalogRollback, step, `version ${version} is older than ${seen}`);
+    const seenSum = st.catalog_sha256?.[String(apiMajor)];
+    if (version === seen && seenSum && seenSum !== (await sha256Hex(raw))) {
+      throw fail(CODE.catalogRollback, step, `version ${version} differs from the copy seen before`);
+    }
     if (homeNow(st, clock) > expires) throw fail(CODE.catalogExpired, step, `version ${version} expired`);
     return { version, signed: env.signed };
   }

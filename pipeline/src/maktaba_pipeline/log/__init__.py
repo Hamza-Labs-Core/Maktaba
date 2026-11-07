@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 from collections.abc import Callable, Iterator, Mapping, MutableMapping
 from contextlib import contextmanager, suppress
 from typing import Any
@@ -110,12 +111,10 @@ def init(
     fields = redacted_fields if redacted_fields is not None else DEFAULT_REDACTED_FIELDS
     redact_set = frozenset(f.lower() for f in fields)
 
-    timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True, key="ts")
-
     processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
-        timestamper,
+        stamp_ts,
         _make_redact_processor(redact_set),
         truncate_msg,
         structlog.processors.StackInfoRenderer(),
@@ -130,7 +129,13 @@ def init(
     # redacted + truncated.
     ring = None
     if ring_capacity is None or ring_capacity >= 0:
-        from .ring import DEFAULT_RING_CAPACITY, LogRingBuffer, make_ring_processor, set_ring
+        from .ring import (
+            DEFAULT_RING_CAPACITY,
+            LogRingBuffer,
+            make_json_ring_renderer,
+            make_ring_processor,
+            set_ring,
+        )
 
         cap = ring_capacity if ring_capacity else DEFAULT_RING_CAPACITY
         ring = LogRingBuffer(cap)
@@ -141,9 +146,11 @@ def init(
     as_json = env == "prod" or os.environ.get("MAKTABA_LOG_FORMAT", "").strip().lower() == "json"
     if as_json:
         processors.append(_rename_event_to_msg)
+        # rendered once for the console and the ring
         if ring is not None:
-            processors.append(make_ring_processor(ring))
-        processors.append(structlog.processors.JSONRenderer())
+            processors.append(make_json_ring_renderer(ring))
+        else:
+            processors.append(structlog.processors.JSONRenderer())
     else:
         if ring is not None:
             processors.append(make_ring_processor(ring))
@@ -258,17 +265,18 @@ def redact_processor(
     builds an equivalent processor with the resolved redact set baked
     in.
     """
-    redact_set = frozenset(f.lower() for f in DEFAULT_REDACTED_FIELDS)
-    return _redact_in_place(event_dict, redact_set)
+    return _redact_in_place(event_dict, _DEFAULT_REDACT_SET, _DEFAULT_KEYS_SEEN)
 
 
 def _make_redact_processor(redact_set: frozenset[str]) -> structlog.types.Processor:
+    seen: dict[str, int] = {}
+
     def processor(
         _logger: Any,
         _name: str,
         event_dict: MutableMapping[str, Any],
     ) -> MutableMapping[str, Any]:
-        return _redact_in_place(event_dict, redact_set)
+        return _redact_in_place(event_dict, redact_set, seen)
 
     return processor
 
@@ -282,26 +290,53 @@ _OWN_FIELDS = frozenset(
     {"ts", "timestamp", "level", "service", "version", "env", "node", "component"}
 )
 
+# what a key's value gets, decided once per key and kept (issue #744: lowering the key and
+# asking the rules cost ~0.5 µs a field): the logger's own, a value scrubbed, masked only
+# when a string (a key part such as ``db_password``), masked always
+_OWN, _SCRUB, _MASK_STRING, _MASK = 0, 1, 2, 3
+_KEYS_SEEN_MAX = 4096
+_DEFAULT_REDACT_SET = frozenset(f.lower() for f in DEFAULT_REDACTED_FIELDS)
+_DEFAULT_KEYS_SEEN: dict[str, int] = {}
+
+
+def _key_kind(key: str, redact_set: frozenset[str]) -> int:
+    if key in _OWN_FIELDS:
+        return _OWN
+    lowered = key.lower()
+    if lowered in redact_set or _redact.RULES.key_sensitive(lowered, False):
+        return _MASK
+    if _redact.RULES.key_sensitive(lowered, True):
+        return _MASK_STRING
+    return _SCRUB
+
 
 def _redact_in_place(
     event_dict: MutableMapping[str, Any],
     redact_set: frozenset[str],
+    seen: dict[str, int] | None = None,
 ) -> MutableMapping[str, Any]:
-    if "user_id" in event_dict:
-        # a person is named by their hash only (story 53.01 §3); no key, no id
-        user_h = _redact.hash_user(event_dict.pop("user_id"))
-        if user_h:
-            event_dict["user_h"] = user_h
-    for key, value in list(event_dict.items()):
-        if key in _OWN_FIELDS:
+    if seen is None:
+        seen = {}
+    # a person is named by their hash only (story 53.01 §3); no key, no id. The hash is the
+    # logger's own (hex from a keyed hash): added after the scrub, which it needs none of
+    user_h = _redact.hash_user(event_dict.pop("user_id")) if "user_id" in event_dict else ""
+    for key, value in event_dict.items():
+        kind = seen.get(key)
+        if kind is None:
+            kind = _key_kind(key, redact_set)
+            if len(seen) < _KEYS_SEEN_MAX:
+                seen[key] = kind
+        if kind == _OWN:
             continue
-        lowered = key.lower()
-        if lowered in redact_set or _redact.RULES.key_sensitive(lowered, isinstance(value, str)):
+        is_string = isinstance(value, str)
+        if kind == _MASK or (kind == _MASK_STRING and is_string):
             event_dict[key] = REDACTED_VALUE
-        elif isinstance(value, str):
+        elif is_string:
             scrubbed = scrub_secrets(value)
             if scrubbed is not value:
                 event_dict[key] = scrubbed
+    if user_h:
+        event_dict["user_h"] = user_h
     return event_dict
 
 
@@ -323,6 +358,29 @@ def _scrub_exception(
     exc = event_dict.get("exception")
     if isinstance(exc, str):
         event_dict["exception"] = scrub_secrets(exc)
+    return event_dict
+
+
+_ts_second: tuple[int, str] = (-1, "")
+
+
+def stamp_ts(
+    _logger: Any,
+    _name: str,
+    event_dict: MutableMapping[str, Any],
+) -> MutableMapping[str, Any]:
+    """``ts``: the time in UTC, as structlog's ``TimeStamper(fmt="iso", utc=True)`` writes it
+    (``2026-11-07T13:34:21.050115Z``, no fraction on a whole second), with the date and time
+    formatted once a second: a timezone-aware datetime and its ``isoformat`` every line cost
+    ~1.5 µs of a ~13 µs call (issue #744)."""
+    global _ts_second
+    sec, ns = divmod(time.time_ns(), 1_000_000_000)
+    kept = _ts_second  # one read: another thread may replace it
+    if kept[0] != sec:
+        kept = (sec, time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(sec)))
+        _ts_second = kept
+    us = ns // 1000
+    event_dict["ts"] = f"{kept[1]}.{us:06d}Z" if us else f"{kept[1]}Z"
     return event_dict
 
 

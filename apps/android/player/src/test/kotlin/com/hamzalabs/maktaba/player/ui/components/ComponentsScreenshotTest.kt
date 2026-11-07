@@ -26,8 +26,11 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.hamzalabs.maktaba.core.api.PanelView
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
+import com.hamzalabs.maktaba.core.ui.PluginPanel
 import com.hamzalabs.maktaba.core.ui.ThemeMode
+import kotlinx.serialization.json.Json
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -159,6 +162,30 @@ class ComponentsScreenshotTest {
     @Test @Config(qualifiers = "ar-$PHONE") fun shimmerAr() = shoot("shimmer", content = shimmer)
     @Test @Config(qualifiers = PHONE) fun shimmerEnLarge() = shoot("shimmer", LARGE, shimmer)
     @Test @Config(qualifiers = "ar-$PHONE") fun shimmerArLarge() = shoot("shimmer", LARGE, shimmer)
+
+    // story 54.20: a plugin's panel with every block the phone draws, then the TV's subset
+    private fun panel(ar: Boolean): PanelView = Json { ignoreUnknownKeys = true }.decodeFromString(
+        """{"plugin_id":"subtitle-scout","plugin":"Subtitle Scout","title":"${t(ar, "Subtitles", "الترجمات")}","blocks":[""" +
+            """{"type":"kv","value":[{"label":"${t(ar, "Languages", "اللغات")}","value":"${t(ar, "Arabic, English", "العربية، الإنجليزية")}"},""" +
+            """{"label":"${t(ar, "Checked", "فُحصت")}","value":"2026-11-01"}]},""" +
+            """{"type":"badges","value":[{"text":"${t(ar, "Synced", "متزامنة")}","tone":"good"},{"text":"HD"}]},""" +
+            """{"type":"chips","label":"${t(ar, "Topics", "المواضيع")}","value":["${t(ar, "History", "تاريخ")}","${t(ar, "Andalusia", "الأندلس")}"]},""" +
+            """{"type":"table","columns":["${t(ar, "Track", "المسار")}","${t(ar, "Lines", "الأسطر")}"],"value":[["ar","812"],["en","798"]]},""" +
+            """{"type":"markers","label":"${t(ar, "Scenes", "المشاهد")}","value":[{"t_ms":0,"label":"${t(ar, "Opening", "البداية")}"},{"t_ms":754000,"label":"${t(ar, "The road north", "الطريق شمالًا")}"}]},""" +
+            """{"type":"text","value":"${t(ar, "Both tracks match the audio.", "المساران يطابقان الصوت.")}"}]}""",
+    )
+
+    private val pluginPanel: @Composable (Boolean) -> Unit = { ar ->
+        Column(Modifier.padding(horizontal = 16.dp)) {
+            PluginPanel(panel(ar), onSeek = {}, onSearch = {})
+            PluginPanel(panel(ar), tv = true, onSeek = {})
+        }
+    }
+
+    @Test @Config(qualifiers = PHONE) fun pluginPanelEn() = shoot("pluginpanel", content = pluginPanel)
+    @Test @Config(qualifiers = "ar-$PHONE") fun pluginPanelAr() = shoot("pluginpanel", content = pluginPanel)
+    @Test @Config(qualifiers = PHONE) fun pluginPanelEnLarge() = shoot("pluginpanel", LARGE, pluginPanel)
+    @Test @Config(qualifiers = "ar-$PHONE") fun pluginPanelArLarge() = shoot("pluginpanel", LARGE, pluginPanel)
 
     private companion object {
         const val PHONE = "w411dp-h891dp-xxhdpi"

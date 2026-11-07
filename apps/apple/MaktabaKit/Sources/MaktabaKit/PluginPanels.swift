@@ -126,13 +126,17 @@ public struct PluginPanelView<Route: Hashable>: View {
     let search: ((String) -> Route)?
     /// the panel image, loaded by the app with its session (nil: no image)
     let image: ((String) -> AnyView)?
+    /// a marker's time in seconds, played by the page itself (the Apple TV, whose pages play
+    /// rather than push a route); used when `seek` is nil
+    let play: ((Double) -> Void)?
 
     public init(panel: PanelView, seek: ((Double) -> Route)? = nil, search: ((String) -> Route)? = nil,
-                image: ((String) -> AnyView)? = nil) {
+                image: ((String) -> AnyView)? = nil, play: ((Double) -> Void)? = nil) {
         self.panel = panel
         self.seek = seek
         self.search = search
         self.image = image
+        self.play = play
     }
 
     static var isTV: Bool {
@@ -212,7 +216,13 @@ public struct PluginPanelView<Route: Hashable>: View {
                             Text(verbatim: PanelText.clock(t)).monospacedDigit().foregroundStyle(.secondary)
                             Text(verbatim: PanelText.plain(m["label"]))
                         }
-                        if let seek { NavigationLink(value: seek(t / 1000)) { row }.buttonStyle(.plain) } else { row }
+                        if let seek {
+                            NavigationLink(value: seek(t / 1000)) { row }.buttonStyle(.plain)
+                        } else if let play {
+                            Button { play(t / 1000) } label: { row }
+                        } else {
+                            row
+                        }
                     }
                 }
             case "image":
@@ -245,14 +255,16 @@ public struct PluginPanelsSection<Route: Hashable>: View {
     let seek: ((Double) -> Route)?
     let search: ((String) -> Route)?
     let image: ((String) -> AnyView)?
+    let play: ((Double) -> Void)?
     @State private var open = false
 
     public init(panels: [PanelView], seek: ((Double) -> Route)? = nil, search: ((String) -> Route)? = nil,
-                image: ((String) -> AnyView)? = nil) {
+                image: ((String) -> AnyView)? = nil, play: ((Double) -> Void)? = nil) {
         self.panels = panels
         self.seek = seek
         self.search = search
         self.image = image
+        self.play = play
     }
 
     public var body: some View {
@@ -260,12 +272,12 @@ public struct PluginPanelsSection<Route: Hashable>: View {
             #if os(tvOS)
             VStack(alignment: .leading, spacing: 12) {
                 Text("From plugins", bundle: .module).font(.headline)
-                ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek) }
+                ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, play: play) }
             }
             #else
             DisclosureGroup(isExpanded: $open) {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, search: search, image: image) }
+                    ForEach(panels) { PluginPanelView<Route>(panel: $0, seek: seek, search: search, image: image, play: play) }
                 }
                 .padding(.top, 8)
             } label: {
@@ -274,5 +286,43 @@ public struct PluginPanelsSection<Route: Hashable>: View {
             .accessibilityIdentifier("plugin-panels")
             #endif
         }
+    }
+}
+
+/// A series' or library's panels (story 54.20 §1): asked for `<kind>:<id>` only while the
+/// home answers `plugin_panels: on`, into the page's own state, so the page adds its
+/// [PluginPanelsSection] only when there is a panel (an empty view would still take the
+/// page's spacing, and a task on a view that draws nothing never starts). A failure is no
+/// panels: they are extras, never the page.
+public struct SubjectPanelsLoader: ViewModifier {
+    let client: APIClient
+    let caps: Capabilities
+    let kind: String
+    let id: String
+    @Binding var panels: [PanelView]
+
+    public func body(content: Content) -> some View {
+        content.task(id: "\(kind):\(id):\(caps.panels)") {
+            guard caps.panels else {
+                panels = []
+                return
+            }
+            panels = (try? await client.panels(kind: kind, id: id, language: SubjectPanels.language)) ?? []
+        }
+    }
+}
+
+public enum SubjectPanels {
+    /// The language the home words a panel in: Arabic when the app is in Arabic.
+    public static var language: String {
+        AppLanguage.locale.language.languageCode?.identifier == "ar" ? "ar" : "en"
+    }
+}
+
+extension View {
+    /// Loads a series' or library's plugin panels into `panels` (see [SubjectPanelsLoader]).
+    public func subjectPanels(client: APIClient, caps: Capabilities, kind: String, id: String,
+                              into panels: Binding<[PanelView]>) -> some View {
+        modifier(SubjectPanelsLoader(client: client, caps: caps, kind: kind, id: id, panels: panels))
     }
 }

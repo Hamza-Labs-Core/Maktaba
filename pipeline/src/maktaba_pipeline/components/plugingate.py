@@ -126,7 +126,9 @@ async def read(db: Any, version: str) -> dict[str, tuple[str, dict[str, Any]]]:
     inputs the supervisor's runner reads. A schema without them answers nothing."""
     out: dict[str, tuple[str, dict[str, Any]]] = {}
     try:
-        rows = await db.fetch("SELECT plugin_id, manifest, review_level FROM plugin_installs")
+        rows = await db.fetch(
+            "SELECT plugin_id, manifest, review_level, revoked FROM plugin_installs"
+        )
         grants = {
             str(r["plugin_id"]): list(_json(r["capabilities"]) or [])
             if isinstance(r["capabilities"], str)
@@ -157,6 +159,7 @@ async def read(db: Any, version: str) -> dict[str, tuple[str, dict[str, Any]]]:
                 granted=tuple(grants.get(pid, ())),
                 review_level=str(r["review_level"]),
                 allow_unreviewed=allow,
+                revoked=bool(r["revoked"]),
             )
         )
         if not reason and pid in tripped:
