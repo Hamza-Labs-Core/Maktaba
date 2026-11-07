@@ -180,6 +180,28 @@ describe("Browse", () => {
     expect(screen.queryByText("plugin:dev.example.silences/silences.found")).toBeNull();
   });
 
+  it("#757: opened from the store's listing (?store=<id>), the plugin's page shows; an unknown id leaves the list", async () => {
+    get.mockResolvedValue(view());
+    const { unmount } = render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.tagger" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("button", { name: EN["plugins.browse.back"] })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Tagger/ })).toBeInTheDocument();
+    unmount();
+    render(
+      <I18nProvider>
+        <Browse onInstalled={vi.fn()} initial="dev.example.absent" />
+      </I18nProvider>
+    );
+    expect(
+      await screen.findByRole("heading", { name: EN["plugins.browse.title"] })
+    ).toBeInTheDocument();
+  });
+
   it("a plugin with no flow shows no chart", async () => {
     get.mockResolvedValue(view());
     show();
