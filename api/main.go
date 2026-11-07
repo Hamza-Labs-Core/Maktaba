@@ -398,10 +398,7 @@ func runServe() error {
 		// Epic 53 story 53.16: whether reports.share is on
 		Switches: loops,
 	})
-	// the problem reports people chose to send to Maktaba: on as the admin's setting says
-	// (reports.share, which needs cloud.link); off, nothing leaves the home
-	forwarder.Log = logger
-	loops.Declare("reports_forwarder", runner.Func(forwarder.Run))
+	wireReportsForwarder(loops, forwarder, logger)
 	logger.Info("logs: diagnostics export surface mounted", "event", "logs_mounted")
 
 	// Process supervision (Story 22.9): the supervisor's per-process
