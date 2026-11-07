@@ -372,6 +372,10 @@ jobs:
         run: |
           shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
           bash deploy/cloud-ha/tests/scripts-test.sh
+      - name: The backup alerts (Epic 50 story 50.09, promtool)
+        run: |
+          docker run --rm -v "$PWD/deploy/cloud-ha/prometheus:/r" -w /r --entrypoint promtool \
+            prom/prometheus:v3.5.0 test rules backup-rules-test.yml
       - name: T05 the witness's certificate check
         run: |
           shellcheck deploy/cloud-ha/witness/check-certs.sh deploy/cloud-ha/witness/check-certs-test.sh

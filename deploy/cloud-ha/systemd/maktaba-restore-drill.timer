@@ -1,0 +1,9 @@
+[Unit]
+Description=Maktaba Cloud: weekly restore drill (Mondays 04:00 UTC)
+
+[Timer]
+OnCalendar=Mon *-*-* 04:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

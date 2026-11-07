@@ -48,7 +48,7 @@ hashes (`cloud/rehearsal/seed`); the relay's check is the real one.
 | C06 | `deploy-bad-release-rollback`: a release built with `-tags rehearsalbad` (its readiness fails 20 s after it starts) | 50.08 | the deploy exits non-zero before blue is touched; green removed; 0 failed requests |
 | C07 | `migration-n-minus-1` | 50.08 | — |
 | C08 | `db-blip`: 300 homes streaming; the database container killed for 15 s | 50.06 | 0 failed requests, metering within 1 % of what the clients received |
-| C09 | `restore-pitr` | 50.09 | 4 h |
+| C09 | `restore-pitr`: the pair archives WAL and backs up (`deploy/cloud-ha/bin/backup`) to two S3 repositories (SeaweedFS with TLS, standing in for Object Storage and R2); rows written for 80 s with repo1 down for 20 s of it; both nodes destroyed; `bin/restore` on a fresh machine to a time T, from repo1 and from repo2 | 50.09 | exactly the rows committed up to T from both; a wrong passphrase reads nothing; the bucket holds ciphertext; restore time against the 4 h RTO (7 s locally) |
 | C10 | `cert-on-standby`: two fresh node edges (this repository's Caddy), Pebble and a DNS-01 provider (`cloud/rehearsal/fakeacmedns`); the first CA unreachable | 50.02 | each node holds its own wildcard and apex certificate within 2 min, from the second CA; a home's name gets the wildcard; no per-home certificate |
 
 A scenario a later story builds is listed in `tools/rehearsal-cloud/expected-failures.txt`

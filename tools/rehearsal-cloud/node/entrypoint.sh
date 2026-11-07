@@ -36,6 +36,9 @@ ENV
 echo "${HCLOUD_TOKEN}" >/etc/maktaba/hcloud-token
 chown -R postgres:postgres /etc/maktaba /run/maktaba && chmod 0600 /etc/maktaba/hcloud-token
 
+# pgBackRest's repositories, when the scenario has them (restore-pitr)
+/opt/rehearsal-node/pgbr-conf.sh
+
 mkdir -p /etc/patroni /var/lib/postgresql/16/maktaba
 cp /pki/ca.crt /etc/patroni/etcd-ca.crt
 cp "/pki/${NODE_NAME}.crt" /etc/patroni/etcd-client.crt

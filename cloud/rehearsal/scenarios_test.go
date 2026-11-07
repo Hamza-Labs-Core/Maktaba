@@ -98,7 +98,7 @@ func TestScenario(t *testing.T) {
 		{"deploy-bad-release-rollback", deployBadRelease},
 		{"migration-n-minus-1", nil},
 		{"db-blip", dbBlip},
-		{"restore-pitr", nil},
+		{"restore-pitr", restorePITR},
 		{"cert-on-standby", certOnStandby},
 	} {
 		t.Run(s.name, func(t *testing.T) {
@@ -110,7 +110,7 @@ func TestScenario(t *testing.T) {
 			switch s.name {
 			case "cert-on-standby":
 				c = upOnly(t, s.name)
-			case "failover-kill-leader", "failover-network-partition", "switchover":
+			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr":
 				// the pair's own cluster (compose-ha.yml), started by the scenario
 			default:
 				c = up(t, s.name)

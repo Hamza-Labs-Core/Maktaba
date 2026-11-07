@@ -189,5 +189,58 @@ else
     fail "bluegreen rollback: rc=${rc} colours=$(cat "${work}/rollback/colours" 2>/dev/null) $(cat "${work}/rollback/out")"
 fi
 
+# backup (story 50.09 T01): a replica's timer does nothing and exits 0; the leader backs up
+cat >"${work}/bin/pgbackrest" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"${STATE}/pgbackrest"
+STUB
+chmod +x "${work}/bin/pgbackrest"
+backup() { # backup <case> <patroni code> [env...]
+    local name=$1 code=$2; shift 2
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}"
+    env PATH="${work}/bin:${PATH}" STATE="${work}/${name}" CLOUD_HA_ENV=/nonexistent GUARD_CODE="${code}" \
+        TEXTFILE_DIR="${work}/${name}/tf" "$@" bash "${here}/bin/backup" >"${work}/${name}/out" 2>&1
+    echo $?
+}
+rc="$(backup replica 503)"
+if [ "${rc}" = 0 ] && [ ! -f "${work}/replica/pgbackrest" ]; then ok "backup: a replica does nothing, exits 0"; else fail "backup replica: rc=${rc} $(cat "${work}/replica/out")"; fi
+rc="$(backup sunday 200 DOW=7)"
+if [ "${rc}" = 0 ] && grep -q -- "--repo=1 --type=full backup" "${work}/sunday/pgbackrest" && grep -q -- "--repo=2 --type=full backup" "${work}/sunday/pgbackrest" \
+    && grep -q 'type="full"' "${work}/sunday/tf/maktaba_backup.prom"; then
+    ok "backup: the leader takes a full backup to both repositories on Sunday and records it"
+else
+    fail "backup sunday: rc=${rc} $(cat "${work}/sunday/out")"
+fi
+rc="$(backup monday 200 DOW=1)"
+if grep -q -- "--type=diff backup" "${work}/monday/pgbackrest"; then ok "backup: a differential on the other days"; else fail "backup monday: $(cat "${work}/monday/out")"; fi
+
+# drill-checks (T02): counts off by 5 % fail naming the table; within 1 % and fresh pass
+cat >"${work}/bin/psql" <<'STUB'
+#!/usr/bin/env bash
+db="$1"; q="${*: -1}"
+case "${db}:${q}" in
+    restored:*"FROM users") echo "${R_USERS:-1000}" ;;
+    live:*"FROM users") echo 1000 ;;
+    restored:*"FROM servers") echo 500 ;;
+    live:*"FROM servers") echo 500 ;;
+    *:*"FROM subscriptions") echo 0 ;;
+    restored:*relay_nodes) echo "${NEWEST:-1000000}" ;;
+    *) echo "psql stub: ${db} ${q}" >&2; exit 1 ;;
+esac
+STUB
+chmod +x "${work}/bin/psql"
+drill() { # drill <case> [env...]
+    local name=$1; shift
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}"
+    env PATH="${work}/bin:${PATH}" "$@" bash "${here}/bin/drill-checks" restored live 1000100 >"${work}/${name}/out" 2>&1
+    echo $?
+}
+rc="$(drill off R_USERS=950)"
+if [ "${rc}" = 1 ] && grep -q "drill: users: 950 rows restored, 1000 live" "${work}/off/out"; then ok "drill-checks: 5 % fewer users fails, naming the table"; else fail "drill off: rc=${rc} $(cat "${work}/off/out")"; fi
+rc="$(drill good R_USERS=995)"
+if [ "${rc}" = 0 ]; then ok "drill-checks: within 1 % and fresh passes"; else fail "drill good: $(cat "${work}/good/out")"; fi
+rc="$(drill stale NEWEST=999000)"
+if [ "${rc}" = 1 ] && grep -q "freshness: the newest restored write is 1100 s older" "${work}/stale/out"; then ok "drill-checks: a stale restore fails"; else fail "drill stale: rc=${rc} $(cat "${work}/stale/out")"; fi
+
 if [ "${fails}" -ne 0 ]; then echo "${fails} failed"; exit 1; fi
 echo "all passed"
