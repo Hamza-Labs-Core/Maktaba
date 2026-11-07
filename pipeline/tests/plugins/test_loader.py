@@ -104,3 +104,97 @@ def test_events_name_stages_of_the_graph() -> None:
         if e.get("trigger") is False:
             continue
         assert e["stage"] in names, e["name"]
+
+
+GRAPH_CASE = ROOT / "shared" / "plugins" / "testdata" / "manifests" / "valid" / "graph.toml"
+
+
+def graph_ext() -> PluginExtension:
+    doc = pm.validate(GRAPH_CASE.read_bytes(), _files)
+    return PluginExtension(doc["id"], doc["version"], "/data/plugins/g", doc)
+
+
+def test_a_stage_trigger_is_an_edge_and_a_published_event_is_not() -> None:
+    """54.39 §7: ``stage`` triggers wire an edge from the plugin's own stage; a trigger on
+    another plugin's event is delivered as a request (54.40), never as an edge."""
+    graph = build_full_graph([graph_ext()])
+    by = {s.name: s for s in graph}
+    pid = "dev.example.silence-chapters"
+    names = ("find_silences", "write_chapters", "mark_music")
+    find, write, music = (pm.queue_name(pid, n) for n in names)
+    assert any(e.to == write and e.map == "same" for e in by[find].edges)
+    assert not any(e.to == music for s in graph for e in s.edges)
+    assert any(e.to == find for e in by["extract"].edges)
+
+
+def _forged(**stage: object) -> PluginExtension:
+    doc = pm.validate(GRAPH_CASE.read_bytes(), _files)
+    doc["stage"][0].update(stage)
+    return PluginExtension(doc["id"], doc["version"], "/data/plugins/g", doc)
+
+
+@pytest.mark.parametrize(
+    "stage",
+    [
+        {"may_request": ["transcribe"]},
+        {"trigger": [{"stage": "extract"}]},
+        {"trigger": [{"event": "transcribe"}]},
+        {"trigger": [{"event": "plugin:dev.example.silence-chapters/silences.found"}]},
+    ],
+    ids=["request-core", "after-core-stage", "core-stage-as-event", "follows-itself"],
+)
+def test_check_leaves_refuses_a_manifest_that_reaches_core(stage: dict) -> None:
+    """54.39 T07: a stored manifest edited to reach a core stage is refused."""
+    from maktaba_pipeline.engine.graph import GraphViolation
+
+    with pytest.raises(GraphViolation):
+        _forged(**stage).check_leaves()
+
+
+def test_load_installed_leaves_out_a_plugin_that_breaks_the_leaf_rule() -> None:
+    import json
+
+    bad = pm.validate(GRAPH_CASE.read_bytes(), _files)
+    good = json.loads(json.dumps(bad))
+    good["id"] = "dev.example.good"
+    bad["stage"][0]["may_request"] = ["transcribe"]
+
+    class DB:
+        async def fetch(self, *_: object) -> list[dict]:
+            row = {"version": "1.4.0", "path": "/x", "review_level": "none"}
+            return [
+                {**row, "plugin_id": "dev.example.bad", "manifest": bad},
+                {**row, "plugin_id": "dev.example.good", "manifest": good},
+            ]
+
+    from maktaba_pipeline.plugins.loader import load_installed
+
+    # the fake never suspends, so the coroutine runs to its end on the first step (a unit
+    # test opens no event loop: its self-pipe is a socket)
+    coro = load_installed(DB())
+    with pytest.raises(StopIteration) as done:
+        coro.send(None)
+    got = done.value.value
+    assert [p.plugin_id for p in got] == ["dev.example.good"]
+
+
+def test_assert_plugin_leaves_refuses_an_edge_from_a_plugin_to_core() -> None:
+    from dataclasses import replace
+
+    from maktaba_pipeline.engine.graph import Edge, GraphViolation
+    from maktaba_pipeline.plugins.loader import assert_plugin_leaves
+
+    graph = list(build_full_graph([graph_ext()]))
+    assert_plugin_leaves(graph)
+    i = next(i for i, s in enumerate(graph) if s.extension and s.extension.startswith("plugin:"))
+    graph[i] = replace(graph[i], edges=(*graph[i].edges, Edge("transcribe", "same")))
+    with pytest.raises(GraphViolation):
+        assert_plugin_leaves(graph)
+    graph = list(build_full_graph([graph_ext()]))
+    event_stages = {e["stage"] for e in pm.events().values()}
+    core = next(
+        j for j, s in enumerate(graph) if s.extension is None and s.name not in event_stages
+    )
+    graph[core] = replace(graph[core], edges=(*graph[core].edges, Edge(graph[i].name, "same")))
+    with pytest.raises(GraphViolation):
+        assert_plugin_leaves(graph)

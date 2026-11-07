@@ -49,6 +49,8 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/developers\/prefixes$/, dev.claimPrefix],
   ["POST", /^\/v1\/developers\/prefixes\/([a-z0-9.-]+)\/check$/, dev.checkPrefixRoute],
   ["POST", /^\/v1\/submissions$/, dev.startSubmission],
+  ["POST", /^\/v1\/flow-submissions$/, dev.startFlowSubmission],
+  ["GET", /^\/v1\/flow-submissions\/([\w-]+)$/, dev.getFlowSubmission],
   ["POST", /^\/v1\/submissions\/([\w-]+)\/uploaded$/, dev.uploaded],
   ["GET", /^\/v1\/submissions\/([\w-]+)$/, dev.getSubmission],
   ["POST", /^\/v1\/plugins\/([a-z0-9.-]+)\/withdraw$/, dev.withdraw],

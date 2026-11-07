@@ -75,6 +75,8 @@ for code from other people.
   health.
 - [Queue stages and the plugin API](queue-and-api.md): events, schedules, how a job runs, the
   API interfaces, media handles, grants, settings, panels and local compute.
+- [Flows](flows.md): how plugins wire into the queue and into each other, `flow.toml`, the
+  leaf rule and the cycle check.
 - [Installing and managing plugins](installing.md): install from a file, grants and
   libraries, turning a plugin on and off, updates and rollback, removing it, settings, health
   and the Plugins page.

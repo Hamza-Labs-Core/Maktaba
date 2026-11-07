@@ -327,10 +327,10 @@ export async function buildPackage(
   id: string,
   version: string,
   key: Signer | null,
-  opts: { files?: Record<string, Uint8Array>; capabilities?: { required?: string[]; optional?: string[] } } = {},
+  opts: { files?: Record<string, Uint8Array>; capabilities?: { required?: string[]; optional?: string[] }; manifest?: string } = {},
 ): Promise<Uint8Array> {
   const files: Record<string, Uint8Array> = {
-    "manifest.toml": enc.encode(manifestOf(id, version, opts.capabilities)),
+    "manifest.toml": enc.encode(opts.manifest ?? manifestOf(id, version, opts.capabilities)),
     "i18n/en.json": enc.encode('{"plugin.name":"Tagger","plugin.summary":"Adds tags."}'),
     "i18n/ar.json": enc.encode('{"plugin.name":"الوسّام","plugin.summary":"يضيف الوسوم."}'),
     "plugin.wasm": new Uint8Array([0, 0x61, 0x73, 0x6d, 1, 2, 3]),
@@ -349,7 +349,7 @@ async function hexOf(b: Uint8Array): Promise<string> {
 }
 
 /** Submits pkg as dev: start, both uploads, uploaded. Answers the submission id. */
-export async function submit(dev: Dev, id: string, version: string, pkg: Uint8Array): Promise<string> {
+export async function submit(dev: Dev, id: string, version: string, pkg: Uint8Array, extra: Record<string, unknown> = {}): Promise<string> {
   const source = enc.encode("source archive");
   const s = await call("POST", "/v1/submissions", {
     cookie: dev.cookie,
@@ -361,6 +361,7 @@ export async function submit(dev: Dev, id: string, version: string, pkg: Uint8Ar
       source_size: source.length,
       notes_en: "First.",
       notes_ar: "الأول.",
+      ...extra,
     },
   });
   if (s.status !== 201) throw new Error(`submit ${s.status} ${JSON.stringify(s.body)}`);

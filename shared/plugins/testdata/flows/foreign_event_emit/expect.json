@@ -1,0 +1,71 @@
+{
+  "findings": [
+    {
+      "code": "flow_foreign_event",
+      "severity": "refuse",
+      "plugin": "dev.example.alpha",
+      "detail": "dev.example.alpha/one: b.done"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/one"
+      },
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.beta/two"
+      },
+      {
+        "from": "stage:dev.example.beta/two",
+        "kind": "emit",
+        "to": "event:dev.example.beta/b.done"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.beta/b.done",
+        "kind": "event",
+        "name": "b.done",
+        "plugin": "dev.example.beta",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.beta/two",
+        "kind": "stage",
+        "name": "two",
+        "plugin": "dev.example.beta",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تُطلق الإضافة ⁦dev.example.alpha⁩ حدثًا لا تنشره (⁦dev.example.alpha/one: b.done⁩)."
+    ],
+    "en": [
+      "dev.example.alpha emits an event it does not publish (dev.example.alpha/one: b.done)."
+    ]
+  }
+}

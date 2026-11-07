@@ -1,0 +1,37 @@
+schema = 1
+id = "dev.example.alpha"
+version = "1.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "scan"
+subject = "video"
+export = "run-0"
+version = 1
+may_request = ["write"]
+  [[stage.trigger]]
+  event = "audio.ready"
+  [[stage.trigger]]
+  event = "video.changed"
+
+[[stage]]
+name = "write"
+subject = "video"
+export = "run-1"
+version = 1
+  [[stage.trigger]]
+  stage = "scan"
+
+[[stage]]
+name = "season_pass"
+subject = "season"
+export = "run-2"
+version = 1
+  [[stage.trigger]]
+  event = "series.changed"

@@ -120,6 +120,10 @@ package comes from the CDN by its sha256 and is checked like any file.
 The routes, admin only (a viewer never makes the home fetch): `GET /api/plugins/catalog`,
 `GET /api/plugins/trust`, `PUT /api/plugins/{id}/auto-update {on}`.
 
+An offline home (`serve --offline`, `MAKTABA_OFFLINE=1`) fetches none of the lists and sends no
+`seen` report: the kept lists age, an expired one warns and stops no plugin, and installs and
+updates from the store answer `409 store_offline` until the home is online again.
+
 ## Browsing the store
 
 Settings → Plugins → Browse the store (admins only) reads the catalog this home already keeps:
@@ -136,7 +140,7 @@ store signed by this home, counted against the home's linked store account once 
 been installed for 24 hours) or reports it for malware, data misuse, not working, being
 misleading, offensive content, copyright or another reason. The routes: `POST
 /api/plugins/{id}/rate {stars, text}` and `POST /api/plugins/{id}/report {reason, details}`;
-a home that is not linked gets `409 store_not_linked`.
+a home that is not linked gets `409 store_not_linked`, and an offline one `409 store_offline`.
 
 The same catalog is public at plugins.maktaba.tv (and /ar, right to left): a page per plugin
 at `/p/<id>` with Open in my Maktaba (`maktaba://plugins/<id>`, which the installed apps open)
@@ -159,6 +163,9 @@ to leak. An account links up to 10 homes; **Unlink** works from either side.
 
 The routes, admin only: `GET /api/plugins/store-account`, `POST …/link`, `POST …/poll`,
 `DELETE /api/plugins/store-account`.
+
+An offline home (`maktaba-server serve --offline`, `MAKTABA_OFFLINE=1`) never reaches the
+store: linking and unlinking answer `409 store_offline` before any request is made.
 
 ## The admin's API
 

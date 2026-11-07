@@ -81,4 +81,14 @@ func TestRateAndReportGoToTheStoreSigned(t *testing.T) {
 	if !strings.HasPrefix(auths[0], "MKS-Home id=h_1, ") {
 		t.Fatalf("not signed: %q", auths[0])
 	}
+	// offline (MAKTABA_OFFLINE): refused at the home, the store gets nothing
+	link.Offline = func() bool { return true }
+	for _, c := range [][2]string{{"/api/plugins/dev.example.r/rate", `{"stars":5}`}, {"/api/plugins/dev.example.r/report", `{"reason":"malware"}`}} {
+		if w := call(c[0], c[1]); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "store_offline") {
+			t.Fatalf("%s offline: %d %s", c[0], w.Code, w.Body)
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("offline, the store got %d more request(s)", len(got)-2)
+	}
 }

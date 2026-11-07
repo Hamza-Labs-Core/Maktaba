@@ -1,0 +1,78 @@
+{
+  "findings": [],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.silences/find_silences"
+      },
+      {
+        "from": "event:dev.example.silences/silences.found",
+        "kind": "subscribe",
+        "to": "stage:dev.example.chapter-writer/write_chapters"
+      },
+      {
+        "from": "stage:dev.example.chapter-writer/write_chapters",
+        "kind": "after",
+        "to": "stage:dev.example.chapter-writer/tidy"
+      },
+      {
+        "from": "stage:dev.example.chapter-writer/write_chapters",
+        "kind": "request",
+        "to": "stage:dev.example.chapter-writer/tidy"
+      },
+      {
+        "from": "stage:dev.example.silences/find_silences",
+        "kind": "emit",
+        "to": "event:dev.example.silences/silences.found"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.silences/silences.found",
+        "kind": "event",
+        "name": "silences.found",
+        "plugin": "dev.example.silences",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.chapter-writer/tidy",
+        "kind": "stage",
+        "name": "tidy",
+        "plugin": "dev.example.chapter-writer",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.chapter-writer/write_chapters",
+        "kind": "stage",
+        "name": "write_chapters",
+        "plugin": "dev.example.chapter-writer",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.silences/find_silences",
+        "kind": "stage",
+        "name": "find_silences",
+        "plugin": "dev.example.silences",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [],
+    "en": []
+  }
+}

@@ -155,6 +155,9 @@ func (p *Problem) Error() string { return p.Code + ": " + p.Msg }
 // supervisor then verifies its signatures as for any file.
 func (s *Service) InstallFromStore(ctx context.Context, l Installer, id, version string, grants *plugins.InstallRequest, actor svc.Actor) (*plugins.InstallResult, error) {
 	t := s.Trust(ctx)
+	if t.Offline {
+		return nil, &Problem{Status: http.StatusConflict, Code: CodeOffline, Msg: "this home is offline (MAKTABA_OFFLINE): it reaches no store"}
+	}
 	if !t.StoreInstallsOK {
 		return nil, &Problem{Status: http.StatusConflict, Code: CodeListExpired, Msg: "installs from the store wait for a fresh list of withdrawn plugins"}
 	}
@@ -229,7 +232,7 @@ func (s *Service) SetAuto(a *Auto) { s.auto = a }
 // when the new version adds no capability; one that adds a capability waits for the admin
 // ("Needs your approval"), and a kept-off plugin is never turned on by it (54.17 §2, §3).
 func (s *Service) NightlyUpdates(ctx context.Context) {
-	if s.auto == nil || !NightWindow(s.now()) {
+	if s.auto == nil || s.offline() || !NightWindow(s.now()) {
 		return
 	}
 	c := s.Catalog()

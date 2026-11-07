@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
@@ -45,6 +46,8 @@ const (
 	CodeListExpired    = "store_list_stale"
 	CodeNotInCatalog   = "plugin_not_in_catalog"
 	CodeDownloadFailed = "plugin_download_failed"
+	// CodeOffline: MAKTABA_OFFLINE is on (serve --offline): the home reaches no store.
+	CodeOffline = "store_offline"
 )
 
 // Timings (54.17 §1).
@@ -71,6 +74,9 @@ type HTTPStore struct {
 }
 
 func (h *HTTPStore) Get(ctx context.Context, name string) ([]byte, error) {
+	if ports.Offline() {
+		return nil, errors.New(CodeOffline + ": this home is offline (MAKTABA_OFFLINE): it fetches nothing from the store")
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(h.Base, "/")+"/"+name, nil)
 	if err != nil {
 		return nil, err
@@ -106,6 +112,10 @@ type Service struct {
 	// Seen sends the store the installed plugins (54.15 §5, §10: once a day, only for a home
 	// linked to a store account and only with telemetry on; nil: never).
 	Seen func(ctx context.Context, plugins []SeenPlugin) error
+	// Offline reports whether the home makes no outbound call (ports.Offline when nil). Then
+	// the loop fetches nothing: the kept lists age, an expired one warns and never stops a
+	// plugin (N10, H10), and store installs wait.
+	Offline func() bool
 
 	auto *Auto
 
@@ -452,7 +462,7 @@ func (s *Service) Active(ctx context.Context) bool {
 // Tick is one pass of the loop: the head every 5 minutes, the list every hour, the catalog
 // every 6 hours while plugins are installed.
 func (s *Service) Tick(ctx context.Context) {
-	if !s.Active(ctx) {
+	if s.offline() || !s.Active(ctx) {
 		return
 	}
 	s.mu.Lock()
@@ -655,13 +665,23 @@ type TrustStatus struct {
 	StoreKeys       bool       `json:"store_keys"`
 	LastError       string     `json:"last_error,omitempty"`
 	StoreInstallsOK bool       `json:"store_installs_ok"`
+	// Offline: MAKTABA_OFFLINE is on, so the lists are not fetched (they age; an expired one
+	// warns and stops nothing) and store installs wait.
+	Offline bool `json:"offline"`
+}
+
+func (s *Service) offline() bool {
+	if s.Offline != nil {
+		return s.Offline()
+	}
+	return ports.Offline()
 }
 
 func (s *Service) Trust(ctx context.Context) TrustStatus {
 	st := s.State(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := TrustStatus{StoreKeys: s.keys != nil, LastError: s.lastErr}
+	out := TrustStatus{StoreKeys: s.keys != nil, LastError: s.lastErr, Offline: s.offline()}
 	if s.revoked != nil {
 		at := s.revoked.IssuedAt
 		out.RevokedVersion, out.RevokedIssued, out.RevokedExpired = s.revoked.Version, &at, s.revoked.Expired(st, s.now())
@@ -671,7 +691,7 @@ func (s *Service) Trust(ctx context.Context) TrustStatus {
 		out.CatalogVersion, out.CatalogIssued, out.CatalogExpired = s.catalog.Version, &at, s.catalog.Expired(st, s.now())
 	}
 	// installs and updates from the store wait for a fresh revocation list (54.14 §4)
-	out.StoreInstallsOK = s.revoked != nil && !out.RevokedExpired && s.keys != nil
+	out.StoreInstallsOK = s.revoked != nil && !out.RevokedExpired && s.keys != nil && !out.Offline
 	return out
 }
 

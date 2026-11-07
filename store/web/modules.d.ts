@@ -9,3 +9,8 @@ declare module "argon2id/lib/setup.js" {
   ) => Promise<unknown>;
   export default setup;
 }
+// the plugin SDK's manifest module (the flow check's, 54.16 C12) hashes with node:crypto,
+// which the Worker has through nodejs_compat
+declare module "node:crypto" {
+  export function createHash(algorithm: string): { update(data: string): { digest(encoding: "hex"): string } };
+}

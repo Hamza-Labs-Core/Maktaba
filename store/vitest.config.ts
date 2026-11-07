@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { testSigner } from "./scripts/gen-vectors";
 import { signEnvelope, toB64 } from "./signing/sig";
@@ -47,6 +48,19 @@ async function workers() {
             ]),
           ),
         ),
+        // two cases of the shared flow corpus (shared/plugins/testdata/flows, story 54.39) for
+        // C12 at verification: their flow.toml and member manifests
+        TEST_FLOWS: JSON.stringify(
+          Object.fromEntries(
+            ["cycle_three_store", "chain_two_store"].map((c) => {
+              const dir = `../shared/plugins/testdata/flows/${c}`;
+              const plugins = Object.fromEntries(
+                readdirSync(`${dir}/plugins`).map((f) => [f.replace(/\.toml$/, ""), readFileSync(`${dir}/plugins/${f}`, "utf8")]),
+              );
+              return [c, { flow: readFileSync(`${dir}/flow.toml`, "utf8"), plugins }];
+            }),
+          ),
+        ),
         RUNNER: "none",
         // the tests run the checks themselves (runChecks)
         CHECKS_FROM_QUEUE: "false",
@@ -61,12 +75,18 @@ async function workers() {
   });
 }
 
+// The flow check imports the plugin SDK's checker from its source (54.16 C12): its one
+// dependency, smol-toml, resolves from the store's own node_modules.
+const resolve = { alias: { "smol-toml": fileURLToPath(new URL("./node_modules/smol-toml/dist/index.js", import.meta.url)) } };
+
 export default defineConfig(async () => ({
+  resolve,
   test: {
     projects: [
-      { test: { name: "node", include: ["signing/test/**/*.test.ts", "test/*.test.ts", "commerce/**/*.test.ts", "payments/**/*.test.ts"] } },
+      { resolve, test: { name: "node", include: ["checks/**/*.test.ts", "signing/test/**/*.test.ts", "test/*.test.ts", "commerce/**/*.test.ts", "payments/**/*.test.ts"] } },
       { esbuild: { jsx: "automatic" }, test: { name: "console", environment: "jsdom", include: ["console/test/**/*.test.tsx"] } },
       {
+        resolve,
         plugins: [await workers()],
         // Argon2id runs in wasm for every account a test makes: slow on a loaded runner
         test: { name: "workers", include: ["test/workers/**/*.test.ts"], setupFiles: ["./test/workers/setup.ts"], testTimeout: 60_000 },
