@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"math/big"
@@ -174,42 +175,43 @@ func (h *ha) replica(node string) bool {
 	return resp.StatusCode == 200
 }
 
-// netDiag logs who is where on the Floating IP's network, and what the edge saw as the
-// attacker's address (X-Edge-Saw): the source checks mean something only if they agree.
-func (h *ha) netDiag(t *testing.T) {
-	t.Helper()
-	for _, c := range []string{"attacker", "edge"} {
-		out, _ := h.in(c, "ip -4 -o addr; ip -4 route")
-		t.Logf("%s:\n%s", c, out)
-	}
-	out, _ := h.in("attacker", "curl -s -D- -o /dev/null --max-time 5 http://"+edgeAddr+"/readyz")
-	t.Logf("the edge's answer to the attacker:\n%s", out)
-	inspect, _ := exec.Command("docker", "network", "inspect", h.project+"_fip", "--format",
-		"{{json .Options}} {{range .Containers}}{{.Name}}={{.IPv4Address}} {{end}}").CombinedOutput()
-	t.Logf("fip network: %s", inspect)
-}
-
 func (h *ha) edgeReady() bool { return h.status("attacker", "http://"+edgeAddr+"/readyz") == "200" }
 
 // checkForgedThroughEdge: a CF-Connecting-IP the attacker writes is replaced by the edge, and
-// the api (on the loopback, trusting only its local peer) logs the attacker's real address.
+// the api (on the loopback, trusting only its local peer) takes the edge's value. The edge
+// echoes the {remote_host} it writes as X-Edge-Saw. The shared log redaction zeroes an IPv4
+// address's last octet (shared/log/go/redact_rules.json), so the api's line holds the
+// attacker's address as 10.61.0.0: not the forged one (6.6.6.0), and not its TCP peer
+// (127.0.0.1, which the redaction keeps), which would mean the header was ignored.
 func (h *ha) checkForgedThroughEdge(t *testing.T, leader string) {
 	t.Helper()
 	probe := fmt.Sprintf("/origin-probe/edge-%d", time.Now().UnixNano())
-	h.status("attacker", fmt.Sprintf("-H 'CF-Connecting-IP: %s' http://%s%s", forgedIP, edgeAddr, probe))
+	headers, _ := h.in("attacker", fmt.Sprintf("curl -s -D- -o /dev/null --max-time 5 -H 'CF-Connecting-IP: %s' http://%s%s",
+		forgedIP, edgeAddr, probe))
+	if !strings.Contains(headers, "X-Edge-Saw: "+attackerAddr) {
+		t.Errorf("the edge saw the attacker as something other than %s:\n%s", attackerAddr, headers)
+	}
 	line := h.logLine(t, leader, "api.log", probe)
-	if !strings.Contains(line, attackerAddr) || strings.Contains(line, forgedIP) {
-		t.Errorf("the api's access log for a forged CF-Connecting-IP through the edge: want %s, never %s: %s",
-			attackerAddr, forgedIP, line)
+	var entry struct {
+		RemoteIP string `json:"remote_ip"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		t.Fatalf("the api's access log line is not JSON: %v: %s", err, line)
+	}
+	if want := redactedV4(attackerAddr); entry.RemoteIP != want {
+		t.Errorf("the api's access log for a forged CF-Connecting-IP through the edge: remote_ip %q, want %q (%s redacted), never %q (forged) or 127.0.0.1 (header ignored): %s",
+			entry.RemoteIP, want, attackerAddr, redactedV4(forgedIP), line)
 	}
 }
+
+// redactedV4 is an IPv4 address as the shared log redaction writes it: the last octet zeroed.
+func redactedV4(ip string) string { return ip[:strings.LastIndex(ip, ".")] + ".0" }
 
 // T06, T07: origin-only-via-edge.
 func originOnlyViaEdge(t *testing.T, _ *cluster) Result {
 	h := upOrigin(t, "origin-only-via-edge", "tunnel")
 	lead := h.leader()
 	waitFor(t, 2*time.Minute, "the api through the edge and the leader's connector", h.edgeReady)
-	h.netDiag(t)
 	if !h.connector(lead) || h.connector(other(lead)) {
 		t.Errorf("the connector runs on the leader only: %s %v, %s %v", lead, h.connector(lead), other(lead), h.connector(other(lead)))
 	}
@@ -291,7 +293,6 @@ func originAOP(t *testing.T, _ *cluster) Result {
 	h := upOrigin(t, "origin-aop", "aop")
 	lead := h.leader()
 	waitFor(t, 2*time.Minute, "the api through the edge's AOP connection", h.edgeReady)
-	h.netDiag(t)
 	ip := h.fip(t)
 	resolve := "--resolve api.maktaba.tv:443:" + ip + " https://api.maktaba.tv/readyz"
 	cert := "--cert /origin/client.crt --key /origin/client.key "
