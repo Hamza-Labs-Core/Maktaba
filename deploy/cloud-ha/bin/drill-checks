@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# The restore drill's checks (Epic 50 story 50.09 §4) on a restored database against the live
+# replica: the main tables' row counts within TOLERANCE % (1), and the newest write no more
+# than FRESH seconds (600) older than the restore's target. The newest write is the relay
+# processes' directory heartbeat (relay_nodes.heartbeat_at, every 5 s while a relay runs: a
+# quiet cloud still writes it), or FRESH_QUERY. Exits 1 naming each check that fails.
+#
+#   drill-checks <restored conninfo> <live conninfo> <target, unix seconds>
+# Env: PSQL (psql), TABLES ("users servers subscriptions"), TOLERANCE (1), FRESH (600).
+set -uo pipefail
+restored="${1:?}" live="${2:?}" target="${3:?}"
+psql="${PSQL:-psql}" tol="${TOLERANCE:-1}" fresh="${FRESH:-600}"
+q() { ${psql} "$1" -Atqc "$2"; }
+bad=0
+for t in ${TABLES:-users servers subscriptions}; do
+    r="$(q "${restored}" "SELECT count(*) FROM ${t}")" || { echo "drill: ${t}: cannot count on the restored database"; bad=1; continue; }
+    l="$(q "${live}" "SELECT count(*) FROM ${t}")" || { echo "drill: ${t}: cannot count on the live replica"; bad=1; continue; }
+    # |restored - live| <= tol % of live (at least one row of slack for tiny tables)
+    diff=$(( r > l ? r - l : l - r ))
+    allowed=$(( l * tol / 100 )); [ "${allowed}" -ge 1 ] || allowed=1
+    if [ "${diff}" -gt "${allowed}" ]; then
+        echo "drill: ${t}: ${r} rows restored, ${l} live (off by ${diff}, more than ${tol} %)"; bad=1
+    else
+        echo "drill: ${t}: ${r} rows restored, ${l} live: ok"
+    fi
+done
+fq="${FRESH_QUERY:-SELECT coalesce(extract(epoch FROM max(heartbeat_at))::bigint, 0) FROM relay_nodes}"
+newest="$(q "${restored}" "${fq}")" || newest=0
+if [ $(( target - newest )) -gt "${fresh}" ]; then
+    echo "drill: freshness: the newest restored write is $(( target - newest )) s older than the target (more than ${fresh} s)"; bad=1
+else
+    echo "drill: freshness: the newest restored write is $(( target - newest )) s before the target: ok"
+fi
+exit "${bad}"

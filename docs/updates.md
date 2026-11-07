@@ -512,13 +512,45 @@ next green commit's tag. A CI run that failed only on the flaky iPhone/iPad shar
 here, though the tag guard would let it through: the next green commit is tagged instead, or a
 session tags that commit by hand.
 
-A tag pushed with `GITHUB_TOKEN` starts no `on: push: tags` workflow, so auto-tag starts each
-tag workflow itself (`gh workflow run <workflow> --ref vX.Y.Z -f tag=vX.Y.Z`): `release.yml`,
-`desktop-release.yml`, `mobile-release.yml`, `tv-release.yml`, `play-bundles.yml`,
-`testflight.yml` and `relay.yml`. Each runs on the tag, and its tag guard runs first, as for a
-pushed tag (a dispatched run whose ref is not the tag is refused). A workflow that already has a
-run for the tag is not started again. `packages.yml` follows `release.yml` and
-`desktop-release.yml` as before, for dispatched runs too.
+Auto-tag pushes the tag over SSH with the repository's release deploy key (the secret
+`RELEASE_TAG_DEPLOY_KEY`, below), and the push itself starts every tag workflow
+(`on: push: tags`): `release.yml`, `desktop-release.yml`, `mobile-release.yml`, `tv-release.yml`,
+`play-bundles.yml`, `testflight.yml` and `relay.yml`, as for a tag pushed by hand. Auto-tag then
+checks that each has a push run for the tag, and fails if one is missing. `packages.yml` follows
+`release.yml` and `desktop-release.yml`.
+
+A tag pushed with `GITHUB_TOKEN` starts no workflow, and a release cannot be started with a
+dispatch instead. The release is signed keyless, the signing certificate records the run's
+trigger, and every home's updater (`shared/go/releaseverify`, `BuildTrigger`) accepts only `push`.
+A dispatched `release.yml` run would sign a release that its own verify step and every home
+refuse. That is how v0.3.85 was made, and its release was never published. So `release.yml` takes
+no dispatch, and auto-tag makes no tag while the key is missing: its first step fails, naming the
+secret. A failed `release.yml` run is re-run (a re-run keeps its `push` trigger). The other tag
+workflows still take a dispatch on their tag by hand (`gh workflow run <workflow> --ref vX.Y.Z -f
+tag=vX.Y.Z`) when their push run is missing.
+
+A tag with no push run of `release.yml` (v0.3.83, v0.3.84 and v0.3.85, made while auto-tag pushed
+with `GITHUB_TOKEN`) can never be given a release that homes accept, short of deleting and
+pushing the tag again. Those tags stay as tags with no release. Homes only take the newest
+release, so the next tag replaces them.
+
+### The release deploy key
+
+A deploy key with write access, used only by `auto-tag.yml` to push tags. To set it up (or
+replace it):
+
+1. Make a key pair, with no passphrase:
+   `ssh-keygen -t ed25519 -N "" -C "maktaba auto-tag" -f maktaba-auto-tag`
+2. In the repository's **Settings → Deploy keys → Add deploy key**: title `auto-tag`, the
+   contents of `maktaba-auto-tag.pub`, and tick **Allow write access**.
+3. In **Settings → Secrets and variables → Actions → New repository secret**: the name
+   `RELEASE_TAG_DEPLOY_KEY`, and the contents of the private key `maktaba-auto-tag` (from
+   `-----BEGIN OPENSSH PRIVATE KEY-----` to the end line, included).
+4. Delete both key files from the machine.
+
+The next green CI run or update rehearsal on main makes the tag, and the release follows. A
+deploy key with write access can push branches as well as tags, so the private key lives only in
+this secret.
 
 Tagging by hand still works (a tag pushed with a personal token starts the workflows itself):
 auto-tag then sees the commit tagged and leaves it. Play's release notes come from the tag's

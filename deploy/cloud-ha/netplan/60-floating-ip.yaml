@@ -1,0 +1,9 @@
+# The Floating IP on each of A and B (Epic 50 story 50.07 §3): always on the interface;
+# Hetzner routes it only to the node it is assigned to, and Patroni's role-change callback
+# assigns it to the leader. setup.sh writes the address.
+network:
+  version: 2
+  ethernets:
+    eth0:
+      addresses:
+        - ${FLOATING_IP}/32

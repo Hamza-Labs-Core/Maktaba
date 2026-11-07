@@ -269,6 +269,42 @@ build fails when the two differ.
   within 1 %). The later failover, deploy and restore scenarios have their places and join as
   their stories land. A cloud deploy is refused unless the rehearsal passed on its commit.
   `docs/cloud-rehearsal.md` says how to run one scenario locally.
+- **One wildcard certificate on every relay node instead of one per home (Epic 50, story
+  50.02).** The relay's Caddy is now Maktaba's own image (`deploy/caddy`: Caddy with the
+  Cloudflare DNS module) and gets a certificate for `*.relay.maktaba.tv` (and the apex) by a
+  DNS-01 challenge, so a standby node holds it before it is ever needed; Let's Encrypt's 50
+  new certificates a week could never have covered every home after a failover. ZeroSSL is
+  the fallback CA. The single-VPS deploy needs a `CF_API_TOKEN` (a Cloudflare token that can
+  edit the zone's DNS only); per-home on-demand certificates stay for one release as a
+  fallback. The witness checks both nodes' certificates daily and warns at 21 days. The cloud
+  rehearsal's `cert-on-standby` scenario proves it with Pebble.
+- **Two cloud machines that cover for each other, and a witness (Epic 50, story 50.07).**
+  `deploy/cloud-ha` sets up Maktaba Cloud's production pair: Postgres 16 under Patroni on nodes
+  A and B with synchronous replication (no committed write lost while both run), a 30-second
+  leader lease in a three-member etcd (A, B and a witness, so the two can never both lead), and
+  a role-change callback that moves the Hetzner Floating IP to the new leader and starts the
+  cloud there; a leader guard stops the cloud on a node as soon as it no longer leads. A
+  planned switchover script checks the replica and the other node first. In the cloud
+  rehearsal a killed leader is replaced in 38 s with remote play back in under a minute, a
+  leader cut off from the others stops taking writes in 19 s and never runs beside the new
+  one, and a switchover pauses play for 2 s, with no committed write lost in any of them.
+- **Cloud deploys with no downtime (Epic 50, story 50.08).** A release now reaches the cloud's
+  pair in order: the standby node tries it first against its own replica, the leader runs only
+  migrations that the running release survives (a new lint refuses a drop, rename, type change
+  or NOT NULL unless marked as a later "contract" release), then the new release starts beside
+  the old one, must stay healthy for 30 s, and the old one hands its homes over (DRAIN) before
+  it exits; a 10-minute watch rolls back by itself. In the cloud rehearsal a deploy under 1,000
+  homes and 100 streams failed no request, and a release that breaks 20 s after it starts is
+  stopped before anything changes for users. One deploy runs at a time.
+- **The cloud's database is backed up twice and restored every week (Epic 50, story 50.09).**
+  pgBackRest sends the write-ahead log at least every minute and a nightly backup (full on
+  Sunday) to Hetzner Object Storage and to Cloudflare R2, each encrypted with its own
+  passphrase, keeping 30 days to restore to any second; only the current leader backs up, so
+  it follows a failover. The witness restores last week's data to 5 minutes ago every Monday
+  and checks it against the live database, and an alert pages when a backup is a day late,
+  the log stops reaching the buckets, or a drill fails. A runbook covers losing the whole
+  zone. In the cloud rehearsal both nodes are destroyed and the database comes back on a new
+  machine with exactly the rows committed up to the chosen second, from either copy.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

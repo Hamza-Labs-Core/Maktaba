@@ -26,10 +26,11 @@ log and its JSON result as an artifact, whether it passed or not.
 |---|---|
 | nodes A and B, the relay as blue and green processes | `relay-blue` and `relay-green`: this commit's binary (`tools/rehearsal-cloud/Dockerfile`), each with its relay id and peer address |
 | Caddy in front, the private network | `edge` (Caddy, plain HTTP, the processes in order, a process out of rotation while its `/readyz` fails); a Docker network, `10.50.0.0/24` |
-| Postgres (Patroni from 50.07) | `postgres` (Postgres 16) |
+| Postgres | `postgres` (Postgres 16) for C01, C08; for C02–C04 the pair itself: node A, node B and the witness W, each a container of `deploy/cloud-ha`'s files (`Dockerfile.node`: Postgres 16, Patroni 4.1, etcd 3.6 with TLS, Caddy, the relay while leader), and `front`, the internet's side of the Floating IP |
 | homes | simulated homes (`cloud/internal/relay/simhome`): real cloudlink agents, each a real tunnel serving a fake home API, run by the test |
 | apps and the outside probe | the stream generator and the probe (`cloud/rehearsal/streamgen`): clients playing a segment loop through `<slug>.relay.test`, and a probe every 250 ms |
 | the Hetzner Floating IP API | `cloud/rehearsal/fakehcloud` (used from 50.07): moves a Docker network alias |
+| Let's Encrypt, ZeroSSL and Cloudflare's DNS API | an unreachable CA, then Pebble (Let's Encrypt's test CA), and `fakeacmedns`: the acme-dns API Caddy's `acmedns` module calls, and the DNS server Pebble resolves the challenge through |
 
 Nothing outside the runner is contacted except the image registries: no Hetzner,
 Cloudflare, Let's Encrypt or payment provider host. Homes are seeded with cheap argon2id
@@ -40,15 +41,15 @@ hashes (`cloud/rehearsal/seed`); the relay's check is the real one.
 | # | Scenario | Live since | Budget |
 |---|---|---|---|
 | C01 | `drain-1k`: 1,000 homes and 100 streams on blue; blue gets SIGTERM | 50.06 | every home on green ≤ 15 s, 0 failed requests, blue exits ≤ 150 s |
-| C02 | `failover-kill-leader` | 50.07 | 3 min |
-| C03 | `failover-network-partition` | 50.07 | 3 min, never two leaders |
-| C04 | `switchover` | 50.07 | 15 s |
-| C05 | `deploy-blue-green` | 50.08 | 0 s |
-| C06 | `deploy-bad-release-rollback` | 50.08 | 0 s |
+| C02 | `failover-kill-leader`: the pair (`compose-ha.yml`), 300 homes, 50 streams, a writer committing every 100 ms; the leader killed | 50.07 | the other node leads ≤ 45 s; remote play back ≤ 3 min; no acknowledged commit lost |
+| C03 | `failover-network-partition`: the leader cut from the other node and the witness, still running | 50.07 | it is read-only and its relay stopped ≤ 40 s; never two writable primaries (checked every 250 ms); no commit lost; the IP on the new leader; the old one back as a replica |
+| C04 | `switchover`: `deploy/cloud-ha/bin/switchover` under traffic | 50.07 | remote play pauses ≤ 15 s; no commit lost |
+| C05 | `deploy-blue-green`: `deploy/cloud-ha/bin/bluegreen` deploys a new release (`maktaba-cloud:rehearsal-new`) beside blue under 1,000 homes and 100 streams | 50.08 | 0 failed requests; every home on green; no tunnel force-closed; `/version` says new |
+| C06 | `deploy-bad-release-rollback`: a release built with `-tags rehearsalbad` (its readiness fails 20 s after it starts) | 50.08 | the deploy exits non-zero before blue is touched; green removed; 0 failed requests |
 | C07 | `migration-n-minus-1` | 50.08 | — |
 | C08 | `db-blip`: 300 homes streaming; the database container killed for 15 s | 50.06 | 0 failed requests, metering within 1 % of what the clients received |
-| C09 | `restore-pitr` | 50.09 | 4 h |
-| C10 | `cert-on-standby` | 50.02 | — |
+| C09 | `restore-pitr`: the pair archives WAL and backs up (`deploy/cloud-ha/bin/backup`) to two S3 repositories (SeaweedFS with TLS, standing in for Object Storage and R2); rows written for 80 s with repo1 down for 20 s of it; both nodes destroyed; `bin/restore` on a fresh machine to a time T, from repo1 and from repo2 | 50.09 | exactly the rows committed up to T from both; a wrong passphrase reads nothing; the bucket holds ciphertext; restore time against the 4 h RTO (7 s locally) |
+| C10 | `cert-on-standby`: two fresh node edges (this repository's Caddy), Pebble and a DNS-01 provider (`cloud/rehearsal/fakeacmedns`); the first CA unreachable | 50.02 | each node holds its own wildcard and apex certificate within 2 min, from the second CA; a home's name gets the wildcard; no per-home certificate |
 
 A scenario a later story builds is listed in `tools/rehearsal-cloud/expected-failures.txt`
 with that story: it reports itself as not built and is not counted. The story that builds it

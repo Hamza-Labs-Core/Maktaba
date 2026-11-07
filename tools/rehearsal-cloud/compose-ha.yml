@@ -1,0 +1,161 @@
+# The cloud rehearsal's Phase 1 pair (Epic 50 story 50.07): node A, node B and the witness W,
+# each a container built from deploy/cloud-ha (tools/rehearsal-cloud/Dockerfile.node), with
+# the fake Hetzner Floating IP API and the internet's side of the IP. The scenarios
+# failover-kill-leader, failover-network-partition and switchover (cloud/rehearsal) run on it.
+#
+#   private  10.60.0.0/24: the Hetzner private network (etcd, Patroni, Postgres, the relays' peers)
+#   fip      10.61.0.0/24: where the Floating IP lives; fakehcloud moves the alias relay.test
+#            here to the node it is assigned to, and front dials relay.test for each connection
+#
+# The scenario sets FAKEHCLOUD_SERVERS and FAKEHCLOUD_NETWORK (they name this project's
+# containers) and the host ports; etcd's certificates are made by deploy/cloud-ha/bin/make-etcd-certs
+# into .work/pki.
+name: maktaba-rehearsal-ha
+
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: 10.60.0.0/24
+  fip:
+    ipam:
+      config:
+        - subnet: 10.61.0.0/24
+
+x-machine-env: &machine-env
+  ETCD_INITIAL_CLUSTER: node-a=https://10.60.0.11:2380,node-b=https://10.60.0.12:2380,witness=https://10.60.0.13:2380
+  ETCD_HOSTS: 10.60.0.11:2379,10.60.0.12:2379,10.60.0.13:2379
+  PRIVATE_NET: 10.60.0.0/15
+  PG_SUPERUSER_PASSWORD: rehearsal-super
+  PG_REPLICATION_PASSWORD: rehearsal-repl
+  PG_REWIND_PASSWORD: rehearsal-rewind
+  PG_APP_PASSWORD: rehearsal
+  TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  HCLOUD_ENDPOINT: http://10.61.0.30:8080/v1
+  HCLOUD_TOKEN: rehearsal-hcloud-token
+  FLOATING_IP_ID: "7"
+  FIP_RETRY_FOR: ${FIP_RETRY_FOR:-60}
+  # pgBackRest (story 50.09): the restore-pitr scenario gives the two MinIO repositories
+  ARCHIVE_COMMAND: ${ARCHIVE_COMMAND:-/bin/true}
+  REPO1_ENDPOINT: ${REPO1_ENDPOINT:-}
+  REPO1_REGION: us-east-1
+  REPO1_BUCKET: maktaba-prod-pg
+  REPO1_KEY: rehearsal
+  REPO1_SECRET: rehearsal-secret
+  REPO1_CIPHER_PASS: rehearsal-cipher-one
+  REPO2_ENDPOINT: ${REPO2_ENDPOINT:-}
+  REPO2_REGION: us-east-1
+  REPO2_BUCKET: maktaba-prod-pg-r2
+  REPO2_KEY: rehearsal
+  REPO2_SECRET: rehearsal-secret
+  REPO2_CIPHER_PASS: rehearsal-cipher-two
+
+x-node: &node
+  image: ${NODE_IMAGE:-maktaba-node:rehearsal}
+  restart: "no"
+  stop_grace_period: 30s
+  volumes:
+    - ./.work/pki:/pki:ro
+
+services:
+  witness:
+    <<: *node
+    environment:
+      <<: *machine-env
+      ROLE: witness
+      NODE_NAME: witness
+      NODE_ADDR: 10.60.0.13
+    networks:
+      private:
+        ipv4_address: 10.60.0.13
+
+  node-a:
+    <<: *node
+    environment:
+      <<: *machine-env
+      NODE_NAME: node-a
+      NODE_ADDR: 10.60.0.11
+      SERVER_ID: "1"
+    networks:
+      private:
+        ipv4_address: 10.60.0.11
+      fip:
+        ipv4_address: 10.61.0.11
+    ports:
+      - "127.0.0.1:${A_PG_PORT:-25432}:5432"
+      - "127.0.0.1:${A_API_PORT:-28008}:8008"
+
+  node-b:
+    <<: *node
+    environment:
+      <<: *machine-env
+      NODE_NAME: node-b
+      NODE_ADDR: 10.60.0.12
+      SERVER_ID: "2"
+    networks:
+      private:
+        ipv4_address: 10.60.0.12
+      fip:
+        ipv4_address: 10.61.0.12
+    ports:
+      - "127.0.0.1:${B_PG_PORT:-25433}:5432"
+      - "127.0.0.1:${B_API_PORT:-28009}:8008"
+
+  fakehcloud:
+    image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+    entrypoint: ["/usr/local/bin/maktaba-rehearsal", "fakehcloud"]
+    user: root
+    environment:
+      FAKEHCLOUD_DELAY: ${FAKEHCLOUD_DELAY:-5s}
+      FAKEHCLOUD_TOKEN: rehearsal-hcloud-token
+      FAKEHCLOUD_NETWORK: ${FAKEHCLOUD_NETWORK:?the scenario names this project's fip network}
+      FAKEHCLOUD_ALIAS: relay.test
+      FAKEHCLOUD_SERVERS: ${FAKEHCLOUD_SERVERS:?the scenario names this project's node containers}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      fip:
+        ipv4_address: 10.61.0.30
+    ports:
+      - "127.0.0.1:${FAKEHCLOUD_PORT:-28080}:8080"
+
+  front:
+    image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+    entrypoint: ["/usr/local/bin/maktaba-rehearsal", "fipfront"]
+    environment:
+      FIPFRONT_LISTEN: ":80"
+      FIPFRONT_TARGET: relay.test:80
+    networks:
+      fip:
+        ipv4_address: 10.61.0.31
+    ports:
+      - "127.0.0.1:${EDGE_PORT:-28081}:80"
+
+  # the two backup repositories (story 50.09), standing in for Hetzner Object Storage and
+  # Cloudflare R2: SeaweedFS's S3 API with TLS (pgBackRest speaks S3 over TLS only), the test
+  # certificate the scenario makes into .work/s3-pki
+  s3-repo1:
+    profiles: [backup]
+    image: chrislusf/seaweedfs:3.97
+    command: ["server", "-dir=/data", "-s3", "-s3.port=9000", "-s3.config=/s3/s3.json",
+              "-s3.cert.file=/s3/public.crt", "-s3.key.file=/s3/private.key", "-master.volumeSizeLimitMB=256"]
+    volumes:
+      - ./.work/s3-pki:/s3:ro
+    networks:
+      private:
+        ipv4_address: 10.60.0.21
+    ports:
+      - "127.0.0.1:${S3_REPO1_PORT:-29001}:9000"
+
+  s3-repo2:
+    profiles: [backup]
+    image: chrislusf/seaweedfs:3.97
+    command: ["server", "-dir=/data", "-s3", "-s3.port=9000", "-s3.config=/s3/s3.json",
+              "-s3.cert.file=/s3/public.crt", "-s3.key.file=/s3/private.key", "-master.volumeSizeLimitMB=256"]
+    volumes:
+      - ./.work/s3-pki:/s3:ro
+    networks:
+      private:
+        ipv4_address: 10.60.0.22
+    ports:
+      - "127.0.0.1:${S3_REPO2_PORT:-29002}:9000"

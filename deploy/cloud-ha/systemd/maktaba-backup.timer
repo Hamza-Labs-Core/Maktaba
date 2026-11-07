@@ -1,0 +1,12 @@
+# Daily 03:00 UTC: full on Sunday, differential on the other days (both nodes run the timer;
+# only the leader backs up, so it follows a failover).
+[Unit]
+Description=Maktaba Cloud: daily database backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target

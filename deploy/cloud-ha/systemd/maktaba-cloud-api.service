@@ -1,0 +1,16 @@
+[Unit]
+Description=Maktaba Cloud API (the leading node only)
+PartOf=maktaba-cloud-active.target
+After=patroni.service
+
+[Service]
+User=maktaba
+EnvironmentFile=/etc/maktaba/cloud.env
+ExecStart=/usr/local/bin/maktaba-cloud serve --role api --config /etc/maktaba/cloud.toml
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=30
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

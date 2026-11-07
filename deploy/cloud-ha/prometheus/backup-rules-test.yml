@@ -1,0 +1,53 @@
+# promtool test rules backup-rules-test.yml (Epic 50 story 50.09): the alerts fire when they
+# should and only then.
+rule_files:
+  - backup-rules.yml
+evaluation_interval: 1m
+tests:
+  # a backup 27 h old: backup_stale
+  - interval: 1m
+    input_series:
+      - series: 'backup_last_success_timestamp_seconds{type="diff"}'
+        values: '0x1700'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: backup_stale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: backup_stale
+        exp_alerts:
+          - exp_labels: {severity: page, type: diff}
+            exp_annotations:
+              summary: "No database backup for 1d 3h 0m 0s"
+              runbook: docs/runbooks/cloud-backup-stale.md
+  # WAL 6 minutes old on the primary for a minute: wal_archive_failing; a replica's age never
+  - interval: 1m
+    input_series:
+      - series: 'pg_stat_archiver_last_archive_age{role="primary"}'
+        values: '60 120 360 420 480'
+      - series: 'pg_stat_archiver_last_archive_age{role="replica"}'
+        values: '9000x5'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: wal_archive_failing
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: wal_archive_failing
+        exp_alerts:
+          - exp_labels: {severity: page, role: primary}
+            exp_annotations:
+              summary: "WAL has not reached the backup repositories for 8m 0s"
+              runbook: docs/runbooks/cloud-backup-stale.md
+  # a failed drill
+  - interval: 1m
+    input_series:
+      - series: 'backup_restore_drill_ok{repo="2"}'
+        values: '0x3'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: restore_drill_failed
+        exp_alerts:
+          - exp_labels: {severity: page, repo: "2"}
+            exp_annotations:
+              summary: "The weekly restore drill failed (repo2)"
+              runbook: docs/runbooks/cloud-disaster-restore.md

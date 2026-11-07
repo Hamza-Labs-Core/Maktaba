@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# The planned switchover (Epic 50 story 50.07 §5): the other node becomes the leader, with no
+# lost commit. Checks first, and refuses with the reason when one fails:
+#   - the candidate replica is streaming with zero lag (Patroni's list)
+#   - the candidate's Caddy answers (its own wildcard certificate, 50.02)
+#   - the switchover was announced on the status page 48 h before (50.11): --announced, or
+#     --unannounced for an emergency (logged)
+# then `patronictl switchover --leader <current> --candidate <other> --force`, and waits
+# until the candidate leads.
+#
+# Usage: switchover --announced|--unannounced [--candidate <member>]
+# Env: PATRONICTL (patronictl -c /etc/patroni/patroni.yml), CADDY_CHECK_URL_<member> (the
+# candidate's edge health URL; default http://<its private address>:8081/, the Caddyfile's
+# own health site), WAIT (120).
+set -uo pipefail
+
+ctl="${PATRONICTL:-patronictl -c /etc/patroni/patroni.yml}"
+announced="" candidate=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --announced) announced=yes ;;
+        --unannounced) announced=no ;;
+        --candidate) candidate="$2"; shift ;;
+        *) echo "switchover: unknown argument $1" >&2; exit 2 ;;
+    esac
+    shift
+done
+refuse() { echo "switchover: refused: $*" >&2; exit 1; }
+[ -n "${announced}" ] || refuse "say --announced (posted on the status page 48 h ago, 50.11) or --unannounced (an emergency)"
+
+members="$(${ctl} list -f json 2>/dev/null)" || refuse "patronictl list failed: is Patroni running?"
+leader="$(jq -r '.[] | select(.Role == "Leader" or .Role == "leader") | .Member' <<<"${members}")"
+[ -n "${leader}" ] || refuse "the cluster has no leader"
+if [ -z "${candidate}" ]; then
+    candidate="$(jq -r '.[] | select(.Role != "Leader" and .Role != "leader") | .Member' <<<"${members}" | head -n1)"
+fi
+[ -n "${candidate}" ] || refuse "no replica to switch to"
+[ "${candidate}" != "${leader}" ] || refuse "${candidate} already leads"
+row="$(jq -c --arg m "${candidate}" '.[] | select(.Member == $m)' <<<"${members}")"
+[ -n "${row}" ] || refuse "${candidate} is not a member"
+state="$(jq -r '.State' <<<"${row}")"
+# Patroni 4 reports "Receive Lag" and "Replay Lag" (older: "Lag in MB"): the largest counts
+lag="$(jq -r '[."Lag in MB", ."Receive Lag", ."Replay Lag"] | map(select(. != null and . != "unknown")) | (max // 0)' <<<"${row}")"
+[ "${state}" = streaming ] || refuse "${candidate} is ${state}, not streaming"
+[ "${lag}" = 0 ] || refuse "${candidate} lags ${lag} MB behind ${leader}"
+host="$(jq -r '.Host' <<<"${row}")"; host="${host%%:*}"
+var="CADDY_CHECK_URL_${candidate//[^A-Za-z0-9]/_}"
+url="${!var:-http://${host}:8081/}"
+curl -fsS -k --max-time 5 -o /dev/null "${url}" || refuse "${candidate}'s Caddy does not answer at ${url}"
+
+[ "${announced}" = yes ] || echo "switchover: UNANNOUNCED (an emergency): no status page notice" >&2
+echo "switchover: ${leader} -> ${candidate} (streaming, lag 0, Caddy healthy)"
+${ctl} switchover --leader "${leader}" --candidate "${candidate}" --force || refuse "patronictl switchover failed"
+
+wait_s="${WAIT:-120}"
+for _ in $(seq 1 "${wait_s}"); do
+    now="$(${ctl} list -f json 2>/dev/null | jq -r '.[] | select(.Role == "Leader" or .Role == "leader") | .Member')"
+    if [ "${now}" = "${candidate}" ]; then
+        echo "switchover: ${candidate} leads"
+        exit 0
+    fi
+    sleep 1
+done
+refuse "${candidate} did not take the lead within ${wait_s} s"

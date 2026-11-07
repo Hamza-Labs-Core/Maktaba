@@ -132,3 +132,25 @@ func TestRelayReadyzWhileDraining(t *testing.T) {
 		t.Errorf("draining relay: %d %s", rec.Code, rec.Body.String())
 	}
 }
+
+// Story 50.08: the rehearsal's bad build fails its readiness badAfter seconds
+// after it starts; a normal build never does.
+func TestBadAfterFailsReadiness(t *testing.T) {
+	old := badAfter
+	defer func() { badAfter = old }()
+	badAfter = 1
+	reg := relaypkg.NewRegistry()
+	r := server.NewRouter(slog.New(slog.DiscardHandler), nil, nil, server.BuildInfo{}, nil, relayRouterOptions(config.Config{}, nil, reg)...)
+	probe := func() string {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		return rec.Body.String()
+	}
+	if strings.Contains(probe(), "draining") {
+		t.Error("draining at once")
+	}
+	time.Sleep(1100 * time.Millisecond)
+	if !strings.Contains(probe(), "draining") {
+		t.Error("not failing after badAfter")
+	}
+}

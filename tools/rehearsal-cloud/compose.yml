@@ -8,6 +8,10 @@
 #   relay-green  the same, process "a-green" (its peer: the tunnel directory, 50.04)
 #   edge         Caddy in front of both (deploy/cloud-ha's edge without TLS)
 #
+# Profile "certs" (scenario cert-on-standby, story 50.02): Pebble (Let's Encrypt's test CA),
+# fakeacmedns (the DNS-01 provider Pebble resolves through) and two node edges, cert-a and
+# cert-b, each this repository's Caddy image (deploy/caddy) getting its own wildcard.
+#
 # The network stands in for the Hetzner private network. Ports are published on
 # 127.0.0.1 only.
 name: maktaba-rehearsal
@@ -62,6 +66,9 @@ services:
 
   relay-blue:
     <<: *relay
+    image: ${BLUE_IMAGE:-maktaba-cloud:rehearsal}
+    ports:
+      - "127.0.0.1:${BLUE_PORT:-18443}:8443"
     environment:
       <<: *relay-env
       MAKTABA_NODE_ID: a-blue
@@ -73,6 +80,9 @@ services:
 
   relay-green:
     <<: *relay
+    image: ${GREEN_IMAGE:-maktaba-cloud:rehearsal}
+    ports:
+      - "127.0.0.1:${GREEN_PORT:-18453}:8443"
     environment:
       <<: *relay-env
       MAKTABA_NODE_ID: a-green
@@ -94,8 +104,64 @@ services:
         ipv4_address: 10.50.0.20
     ports:
       - "127.0.0.1:${EDGE_PORT:-18080}:80"
+      - "127.0.0.1:${EDGE_ADMIN_PORT:-12019}:2019"
     depends_on:
       relay-blue:
         condition: service_healthy
       relay-green:
         condition: service_healthy
+
+  pebble:
+    profiles: [certs]
+    image: ghcr.io/letsencrypt/pebble:2.8.0
+    command: ["-config", "/test/config/pebble-config.json", "-dnsserver", "10.50.0.40:53"]
+    environment:
+      PEBBLE_VA_NOSLEEP: "1"
+      PEBBLE_WFE_NONCEREJECT: "0"
+    networks:
+      private:
+        ipv4_address: 10.50.0.41
+
+  fakeacmedns:
+    profiles: [certs]
+    image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+    entrypoint: ["/usr/local/bin/maktaba-rehearsal", "fakeacmedns"]
+    environment:
+      FAKEACMEDNS_ZONE: relay.test
+      FAKEACMEDNS_USER: rehearsal
+      FAKEACMEDNS_KEY: rehearsal-key
+    networks:
+      private:
+        ipv4_address: 10.50.0.40
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/health"]
+      interval: 1s
+      retries: 30
+
+  cert-a:
+    profiles: [certs]
+    image: ${CADDY_IMAGE:-maktaba-caddy:rehearsal}
+    environment:
+      NODE: a
+    volumes:
+      - ./Caddyfile.certs:/etc/caddy/Caddyfile:ro
+      - ./.work:/work:ro
+    networks:
+      private:
+        ipv4_address: 10.50.0.51
+    ports:
+      - "127.0.0.1:${CERT_A_PORT:-18443}:443"
+
+  cert-b:
+    profiles: [certs]
+    image: ${CADDY_IMAGE:-maktaba-caddy:rehearsal}
+    environment:
+      NODE: b
+    volumes:
+      - ./Caddyfile.certs:/etc/caddy/Caddyfile:ro
+      - ./.work:/work:ro
+    networks:
+      private:
+        ipv4_address: 10.50.0.52
+    ports:
+      - "127.0.0.1:${CERT_B_PORT:-18444}:443"
