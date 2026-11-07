@@ -56,7 +56,10 @@ jobs:
           mkdir -p "$OUT"
           LOGBENCH_OUT="$OUT/go.json" go test -tags logbench -count=1 -v -timeout 30m ./internal/logbench/
 
+      # run whatever the Go benches did: a Go bench over budget skipped this, and the night
+      # then had no Python numbers at all (issue #744)
       - name: The Python logger bench
+        if: ${{ !cancelled() }}
         working-directory: pipeline
         run: |
           set -euo pipefail
