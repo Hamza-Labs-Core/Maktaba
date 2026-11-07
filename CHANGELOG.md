@@ -1008,7 +1008,7 @@ build fails when the two differ.
   were last checked and warns when the list has expired (plugins keep running; store installs
   wait). Store installs by `{store: {id, version}}`, with the download checked against its
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
-  home sends its daily `seen` report when telemetry is on. Migration 0202.
+  home sends its daily `seen` report when telemetry is on. Migration 0200.
 
 
 ### Fixed

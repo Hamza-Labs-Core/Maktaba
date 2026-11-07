@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0202 - plugins: the store's catalog and the kill switch on the home (Epic 54, stories
+-- Slot 0200 - plugins: the store's catalog and the kill switch on the home (Epic 54, stories
 -- 54.14 §3, §4 and 54.17).
 --
 --   plugin_installs.revoked          a store `disable` covers the installed version (the
@@ -110,7 +110,7 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0199): the lineage a plugin write leaves on its subject, the home's
         -- API alone reads and writes it
         'plugin_write_lineage',
-        -- plugins (slot 0202): the signed lists and the newest versions seen, the home's
+        -- plugins (slot 0200): the signed lists and the newest versions seen, the home's
         -- catalog loop alone writes them
         'plugin_trust', 'plugin_lists'
     ]::text[]
