@@ -19,6 +19,9 @@
 #           16.x run them (tools/rehearsal/venvs.sh); next and after run cur's
 #   packs/<version>/   this commit's tool.yt-dlp pack of each of cur, next and after for
 #           this machine's platform, and its components-<version>.json (story 51.18)
+#   plugins/   this commit's maktaba-plugind and its well-behaved test guest (hello.wasm),
+#           for scenario 15 (Epic 54, story 54.07 §8): one host serves cur, next and after,
+#           built from the same tree; none when cargo or the plugin host is missing
 #   versions.env   PREV, FAILED (PREV+1: the newer release the scenario of the live Mac's
 #           state has rolled back from), CUR, NEXT, AFTER, PLATFORM (the packs'), REV (this
 #           commit's newest migration)
@@ -151,6 +154,19 @@ if [ -f "$cur_src/tools/release/packs/build.sh" ]; then
     done
 else
     echo "build.sh: $cur_src has no pack build: no packs in the kit"
+fi
+
+# Epic 54 (story 54.07 §8, scenario 15): the plugin host and the test guest. A tree from
+# before the plugin host, or a machine without cargo, has none: scenario 15 then cannot run.
+if [ -f "$cur_src/plugind/Cargo.toml" ] && command -v cargo >/dev/null 2>&1; then
+    echo "build.sh: maktaba-plugind and the hello guest (from $cur_src)"
+    mkdir -p "$out/plugins"
+    (cd "$cur_src/plugind" && cargo build --locked --release -p maktaba-plugind)
+    cp "$cur_src/plugind/target/release/maktaba-plugind" "$out/plugins/maktaba-plugind"
+    (cd "$cur_src/plugind/guests" && cargo build --locked --release --target wasm32-wasip2 -p hello)
+    cp "$cur_src/plugind/guests/target/wasm32-wasip2/release/hello.wasm" "$out/plugins/hello.wasm"
+else
+    echo "build.sh: no plugin host (no cargo, or $cur_src has no plugind): no plugins in the kit"
 fi
 
 cat >"$out/versions.env" <<EOF

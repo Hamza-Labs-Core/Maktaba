@@ -79,8 +79,9 @@ that failed (`store_keys`, `store_sig`, `developer_sig` or `digest`), and
 5. **Every file** must match its sha256 and size in `files.json`.
 
 A home checks this offline, at install. A store-signed file copied on a USB stick installs on
-a home that never reached the store: each release carries the store's key list as of its
-build.
+a home that never reached the store: each release carries the store's key list and
+revocation list as of its build, fetched and verified while the release is made; a release
+whose lists cannot be fetched or verified is not published.
 
 ## The revocation list
 

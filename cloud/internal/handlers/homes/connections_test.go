@@ -40,3 +40,17 @@ func TestTheHomeViewKeepsTheOldFields(t *testing.T) {
 		}
 	}
 }
+
+// T08 (story 50.15): a home whose outside check passed lists its HTTPS name first; the plain
+// address stays for older apps, then the relay.
+func TestASecureDirectNameComesFirst(t *testing.T) {
+	got := connectionsFor("http://81.2.3.4:32400", "https://skylark.relay.maktaba.tv", true,
+		"https://81-2-3-4.0123456789abcdef0123456789abcdef.direct-a.example:32443")
+	if len(got) != 3 || got[0].Kind != "direct" || got[0].URL[:8] != "https://" || got[1].URL != "http://81.2.3.4:32400" || got[2].Kind != "relay" {
+		t.Fatalf("%+v", got)
+	}
+	// a Free home (no relay) still gets its direct name
+	if got := connectionsFor("", "https://skylark.relay.maktaba.tv", false, "https://x.direct-a.example:32443"); len(got) != 1 || got[0].Kind != "direct" {
+		t.Fatalf("free: %+v", got)
+	}
+}

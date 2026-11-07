@@ -34,6 +34,13 @@ on the runner) can't measure a Hetzner machine, so it checks regressions: the re
 CPU-seconds per Mbit relayed and its memory per tunnel, against main's last run. More than 20 %
 worse fails the pull request.
 
+The CPU figure is the relay containers' own CPU time, read from their cgroups' counters
+(`cpu.stat` `usage_usec`) at the ends of five one-minute rounds, divided by the Mbit relayed in
+each round; the median of the five is compared, and only with a baseline measured the same way.
+The first version integrated `docker stats` CPU shares sampled every 5 s over one 5-minute run:
+on a runner that shares its CPUs with the cluster, the same relay code measured anywhere from
+0.00048 to 0.00085 CPU-seconds per Mbit (#808).
+
 ## The Phase 2 trigger
 
 `relay_capacity_used` (relayed Mbit/s ÷ the measured figure) and `relay_tunnels_used` (open
