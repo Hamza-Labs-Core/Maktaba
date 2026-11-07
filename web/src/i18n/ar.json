@@ -7284,6 +7284,7 @@
   "plugins.error.store_not_linked": "هذا الجهاز الرئيسي غير مرتبط بحساب في المتجر.",
   "plugins.error.store_link_not_started": "ابدأ الربط أولًا.",
   "plugins.error.store_unreachable": "تعذّر الوصول إلى متجر الإضافات. حاول لاحقًا.",
+  "plugins.error.store_offline": "هذا الجهاز الرئيسي بلا إنترنت، فلا يصل إلى متجر الإضافات.",
   "plugins.error.store_unavailable": "لا يستطيع هذا الجهاز الرئيسي حفظ مفتاح المتجر (مخزن الأسرار غير متاح).",
   "plugins.fact.installed": "ثُبّتت",
   "plugins.fact.range": "تعمل مع مكتبة",

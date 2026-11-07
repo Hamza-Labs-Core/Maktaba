@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // DefaultStore is the store's address (MAKTABA_PLUGIN_STORE_URL overrides it: a local store
@@ -47,6 +48,8 @@ const (
 	CodeNoPending   = "store_link_not_started"
 	CodeUnreachable = "store_unreachable"
 	CodeExpired     = "code_expired"
+	// CodeOffline: MAKTABA_OFFLINE is on (serve --offline): the home calls no store.
+	CodeOffline = "store_offline"
 )
 
 // Secrets is the home's sealed store (secrets.DBStore; secrets.Memory in tests).
@@ -91,6 +94,9 @@ type Link struct {
 	// Name is the home's name shown on /link.
 	Name string
 	Now  func() time.Time
+	// Offline reports whether the home makes no outbound call (ports.Offline when nil):
+	// then every store request is refused before it is made.
+	Offline func() bool
 
 	mu      sync.Mutex
 	pending *Pending
@@ -195,7 +201,17 @@ func (l *Link) Status(ctx context.Context) (*Status, error) {
 	return out, nil
 }
 
+func (l *Link) offline() bool {
+	if l.Offline != nil {
+		return l.Offline()
+	}
+	return ports.Offline()
+}
+
 func (l *Link) do(ctx context.Context, method, path string, body []byte, sign *signer) (*http.Response, []byte, error) {
+	if l.offline() {
+		return nil, nil, &Error{Status: http.StatusConflict, Code: CodeOffline, Msg: "this home is offline (MAKTABA_OFFLINE): it calls no store"}
+	}
 	req, err := http.NewRequestWithContext(ctx, method, l.base()+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err

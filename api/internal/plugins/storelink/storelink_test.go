@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -166,5 +169,33 @@ func TestHomeSignatureVector(t *testing.T) {
 	got := s.headerWith(v.Method, v.Path, []byte(v.Body), time.Unix(v.TS, 0), v.Nonce)
 	if got != v.Header {
 		t.Fatalf("got %s\nwant %s", got, v.Header)
+	}
+}
+
+// Offline (serve --offline, MAKTABA_OFFLINE=1, #668): every store call is refused before it
+// is made: the store sees no request.
+func TestOfflineCallsNoStore(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	t.Setenv(ports.EnvOffline, "1")
+	l := &Link{DB: db, Secrets: secrets.NewMemory(), StoreURL: srv.URL, Version: "0.7.0", Platform: "darwin-arm64", Name: "Home"}
+	ctx := context.Background()
+	for name, call := range map[string]func() error{
+		"start":  func() error { _, err := l.Start(ctx); return err },
+		"poll":   func() error { _, err := l.Poll(ctx); return err },
+		"signed": func() error { _, _, err := l.Signed(ctx, http.MethodPost, "/v1/homes/h_1/seen", nil); return err },
+	} {
+		var e *Error
+		if err := call(); err == nil || (errors.As(err, &e) && e.Code != CodeOffline && e.Code != CodeNoPending && e.Code != CodeNotLinked) {
+			t.Errorf("%s offline: %v", name, err)
+		}
+	}
+	if _, err := l.Start(ctx); err == nil || err.(*Error).Code != CodeOffline {
+		t.Fatalf("start offline: %v", err)
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("offline, the store got %d request(s)", n)
 	}
 }
