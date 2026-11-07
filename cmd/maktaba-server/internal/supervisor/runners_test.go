@@ -58,7 +58,9 @@ func TestNoRunnerWithoutFirstPartyPlugins(t *testing.T) {
 }
 
 // Wave 1 on (story 54.28): this release's plugins name the light group, so a Postgres home
-// builds its runner (dormant, on demand), and a SQLite one none.
+// builds its runner (dormant, on demand), and a SQLite one none. Wave 3 (story 54.30): an
+// ml runner per transcription worker and the index runner, not dormant (their components',
+// transcription and search.semantic, start them).
 func TestTheReleaseBuildsTheRunnersItsPluginsName(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("no runner on Windows")
@@ -72,16 +74,56 @@ func TestTheReleaseBuildsTheRunnersItsPluginsName(t *testing.T) {
 	}
 	got := map[string]bool{}
 	for _, p := range ps {
-		if p.Role != RolePluginRunner || !p.Dormant {
+		if p.Role != RolePluginRunner {
 			t.Fatalf("%+v", p)
+		}
+		shared := containsString(RunnerGroups, p.Instance)
+		if p.Dormant != shared {
+			t.Fatalf("%s: dormant %v", p.Instance, p.Dormant)
 		}
 		got[p.Instance] = true
 	}
-	if !got["light"] || !got["fp"] {
+	if !got["light"] || !got["fp"] || !got["index"] {
 		t.Fatalf("runners %v", got)
+	}
+	ml := 0
+	for name := range got {
+		if name == GroupML || strings.HasPrefix(name, GroupML+"-") {
+			ml++
+		}
+	}
+	if want := max(PlanFor(Options{Config: cfg}).Workers, 1); ml != want {
+		t.Fatalf("%d ml runners for %d transcription workers: %v", ml, want, got)
 	}
 	cfg.Database.URL = "sqlite:///x.db"
 	if ps, _ := BuildPluginRunners(Options{Config: cfg}); len(ps) != 0 {
 		t.Fatalf("a SQLite home built %d runners", len(ps))
+	}
+}
+
+// An ml runner has its worker's slot and knobs, and no network for a model.
+func TestAnMLRunnerHasItsWorkersSlotAndIsOffline(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no runner on Windows")
+	}
+	cfg := config.Config{}
+	cfg.Database.URL = "postgres://h/db"
+	cfg.Server.DataDir = t.TempDir()
+	ps, err := BuildPluginRunners(Options{Config: cfg})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range ps {
+		env := map[string]string{}
+		for _, kv := range p.Cmd.Env {
+			k, v, _ := strings.Cut(kv, "=")
+			env[k] = v
+		}
+		if env["HF_HUB_OFFLINE"] != "1" || env["TRANSFORMERS_OFFLINE"] != "1" {
+			t.Fatalf("%s: not offline", p.Instance)
+		}
+		if n, ok := strings.CutPrefix(p.Instance, GroupML+"-"); ok && env["MAKTABA_STT_SLOT"] != "stt-"+n {
+			t.Fatalf("%s: slot %q", p.Instance, env["MAKTABA_STT_SLOT"])
+		}
 	}
 }

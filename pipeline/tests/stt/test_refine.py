@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from maktaba_fp_transcription.stages import transcribe as stage
 
 from maktaba_pipeline.classify.quran import verse_runs
-from maktaba_pipeline.engine.stages import transcribe as stage
 from maktaba_pipeline.stt import refine as rf
 from maktaba_pipeline.stt.settings import (
     HEARD_DIFFERENTLY,

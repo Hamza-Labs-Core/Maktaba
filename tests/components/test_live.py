@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from tests.components import rig as R
+from components import rig as R
 
 pytestmark = pytest.mark.skipif(not R.PG_URL, reason="MAKTABA_TEST_PG_URL not set")
 
