@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
+  Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request
+  through the relay gets no answer or a 502, 503 or 504 (at most once every 10 seconds), instead of
+  at the next 5-minute read, so the status strip says an outage as it starts. Android TV's strip,
+  the same shared one, now has a test of its own.
 - **Apps can reach a home on its own network by address when the router blocks its name
   (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
   network (DNS rebinding protection), which broke the home's secure LAN name. The home list now

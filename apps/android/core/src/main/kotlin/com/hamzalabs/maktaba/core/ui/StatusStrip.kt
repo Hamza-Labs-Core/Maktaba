@@ -46,6 +46,8 @@ import com.hamzalabs.maktaba.core.api.StatusStripRules
 import com.hamzalabs.maktaba.core.api.StripKey
 import com.hamzalabs.maktaba.core.api.StripLine
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -93,6 +95,8 @@ fun HomeStatusHost(
     enabled: Boolean = true,
     liveTvOff: Boolean = false,
     intervalMs: Long = STATUS_POLL_MS,
+    /** Reads Maktaba Cloud's `summary.json` (tests give their own). */
+    fetchCloud: suspend () -> CloudSummary? = { CloudStatusRules.fetch(ApiClient.defaultHttp) },
     content: @Composable () -> Unit,
 ) {
     var status by remember(client) { mutableStateOf<HomeStatusDoc?>(null) }
@@ -113,8 +117,9 @@ fun HomeStatusHost(
         if (!viaCloud) return@LaunchedEffect
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             while (true) {
-                CloudStatusRules.fetch(ApiClient.defaultHttp)?.let { cloud = it }
-                delay(CloudStatusRules.POLL_MS)
+                fetchCloud()?.let { cloud = it }
+                // the next read in 5 minutes, or at once when a request fails as the relay fails
+                withTimeoutOrNull(CloudStatusRules.POLL_MS) { CloudStatusRules.recheck.first() }
             }
         }
     }
