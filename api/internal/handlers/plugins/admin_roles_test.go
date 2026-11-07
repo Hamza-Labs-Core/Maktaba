@@ -16,6 +16,7 @@ import (
 var adminRoutes = []string{
 	"GET /api/plugins",
 	"GET /api/plugins/policy",
+	"GET /api/plugins/graph",
 	"PUT /api/plugins/policy",
 	"POST /api/plugins/install",
 	"GET /api/plugins/catalog",
@@ -35,6 +36,7 @@ var adminRoutes = []string{
 	"POST /api/plugins/dev.example.x/rollback",
 	"DELETE /api/plugins/dev.example.x",
 	"GET /api/plugins/dev.example.x/writes",
+	"GET /api/plugins/dev.example.x/downstream",
 	"POST /api/plugins/dev.example.x/writes/revert",
 	"GET /api/plugins/dev.example.x/settings",
 	"PUT /api/plugins/dev.example.x/settings",

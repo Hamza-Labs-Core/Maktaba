@@ -43,6 +43,10 @@ const (
 	CodeMissingFile               = "manifest_missing_file"
 	CodeBadSettings               = "manifest_bad_settings"
 	CodeNotTOML                   = "manifest_not_toml"
+	CodeBadEmit                   = "manifest_bad_emit"
+	CodeBadTrigger                = "manifest_bad_trigger"
+	CodeBadEvent                  = "manifest_bad_event"
+	CodeBadDepends                = "manifest_bad_depends"
 	MaxNameCodePoints             = 40
 	MaxSummaryCodePoints          = 140
 	SchemaVersion           int64 = 1
@@ -239,6 +243,12 @@ func Validate(src []byte, files Files) (map[string]any, Errors) {
 	}
 	m := schemaRoot.fill(raw).(map[string]any)
 	m["maktaba"] = normaliseRange(m["maktaba"].(string))
+	if deps, ok := m["depends"].([]any); ok {
+		for _, d := range deps {
+			dm := d.(map[string]any)
+			dm["version"] = normaliseRange(dm["version"].(string))
+		}
+	}
 	errs = rules(m, files)
 	if len(errs) > 0 {
 		return nil, errs

@@ -34,6 +34,8 @@ type fakeSup struct {
 	level  string
 	levels map[string]string
 	key    string
+	// flow, when set, is written as the package's flow.toml (54.39)
+	flow string
 }
 
 func (s *fakeSup) InstallPackage(_ context.Context, r io.Reader) (*Installed, error) {
@@ -55,6 +57,9 @@ func (s *fakeSup) InstallPackage(_ context.Context, r io.Reader) (*Installed, er
 	_ = os.WriteFile(filepath.Join(dir, "i18n", "ar.json"), []byte(`{"plugin.name":"دورة","plugin.summary":"اختبار.","s.t":"العتبة"}`), 0o644)
 	_ = os.MkdirAll(filepath.Join(dir, "ui"), 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "ui", "settings.schema.json"), []byte(s.schema), 0o644)
+	if s.flow != "" {
+		_ = os.WriteFile(filepath.Join(dir, "flow.toml"), []byte(s.flow), 0o644)
+	}
 	level := s.level
 	if l, ok := s.levels[version]; ok {
 		level = l

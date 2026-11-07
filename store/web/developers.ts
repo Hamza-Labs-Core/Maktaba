@@ -292,6 +292,18 @@ export async function startSubmission(ctx: Ctx): Promise<Response> {
     .bind(id, version)
     .first<{ status: string }>();
   if (v) refuse(409, "version_exists");
+  // a member of a flow submission (54.16 §1): the flow is checked and decided as a whole
+  const group = b.flow_submission === undefined || b.flow_submission === null ? null : str(b.flow_submission, "flow_submission", 64);
+  if (group) {
+    const fs = await ctx.env.DB_CATALOG.prepare("SELECT uploaded_by, members, status FROM flow_submissions WHERE id = ?")
+      .bind(group)
+      .first<{ uploaded_by: string; members: string; status: string }>();
+    if (!fs || fs.uploaded_by !== a.id) refuse(404, "not_found");
+    if (fs!.status !== "open") refuse(409, "flow_submission_state", { status: fs!.status });
+    if (!(JSON.parse(fs!.members) as string[]).includes(id)) refuse(400, "flow_not_member", { plugin_id: id });
+    const dup = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM submissions WHERE flow_submission = ? AND plugin = ?").bind(group, id).first();
+    if (dup) refuse(409, "flow_member_submitted", { plugin_id: id });
+  }
   const sid = newId("s");
   const at = iso(now());
   const pkgKey = `submissions/${sid}/package.mkplugin`;
@@ -310,9 +322,9 @@ export async function startSubmission(ctx: Ctx): Promise<Response> {
       optStr(b.notes_ar, "notes_ar", 4000) ?? "",
     ),
     ctx.env.DB_CATALOG.prepare(
-      `INSERT INTO submissions (id, plugin, version, uploaded_by, package_key, source_key, package_sha256, package_size, source_size, created, first_version)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM versions WHERE plugin = ? AND status = 'approved'))`,
-    ).bind(sid, id, version, a.id, pkgKey, srcKey, sha, size, sourceSize, at, id),
+      `INSERT INTO submissions (id, plugin, version, uploaded_by, package_key, source_key, package_sha256, package_size, source_size, created, first_version, flow_submission)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM versions WHERE plugin = ? AND status = 'approved'), ?)`,
+    ).bind(sid, id, version, a.id, pkgKey, srcKey, sha, size, sourceSize, at, id, group),
   ]);
   await audit(ctx, a.id, "submission.start", `${id}@${version}`);
   const origin = ctx.env.STORE_ORIGIN;
@@ -323,6 +335,52 @@ export async function startSubmission(ctx: Ctx): Promise<Response> {
     },
     201,
   );
+}
+
+/**
+ * POST /v1/flow-submissions {flow_id, flow_version, members}: one upload of a flow's changed
+ * members (54.16 §1). Each member is then submitted with `flow_submission`; C12 runs once
+ * all of them have passed their own checks, and the flow is approved or refused as a whole.
+ * Members not uploaded must already be in the store at a version the flow accepts.
+ */
+export async function startFlowSubmission(ctx: Ctx): Promise<Response> {
+  const a = developer(ctx);
+  reauthed(ctx);
+  if (ctx.env.SUBMISSIONS_OPEN !== "true") refuse(403, "submissions_closed");
+  const b = await body(ctx.req);
+  const flowId = str(b.flow_id, "flow_id", 128);
+  const flowVersion = str(b.flow_version, "flow_version", 64);
+  if (!ID.test(flowId)) refuse(400, "field_invalid", { field: "flow_id" });
+  if (!VERSION.test(flowVersion)) refuse(400, "version_invalid");
+  const members = Array.isArray(b.members) ? [...new Set(b.members.map(String))] : [];
+  if (members.length === 0 || members.length > 50 || members.some((m) => !ID.test(m))) refuse(400, "field_invalid", { field: "members" });
+  const prefixes = await ctx.env.DB_CATALOG.prepare(
+    "SELECT prefix FROM developer_prefixes WHERE account = ? AND verified_at IS NOT NULL AND lapsed_at IS NULL",
+  )
+    .bind(a.id)
+    .all<{ prefix: string }>();
+  const own = (id: string) => prefixes.results.some((p) => id.startsWith(p.prefix + "."));
+  if (!own(flowId) || !members.every(own)) refuse(403, "prefix_unverified");
+  const id = newId("f");
+  await ctx.env.DB_CATALOG.prepare(
+    "INSERT INTO flow_submissions (id, flow_id, flow_version, uploaded_by, members, created) VALUES (?, ?, ?, ?, ?, ?)",
+  )
+    .bind(id, flowId, flowVersion, a.id, JSON.stringify(members), iso(now()))
+    .run();
+  await audit(ctx, a.id, "flow_submission.start", `${flowId}@${flowVersion}`);
+  return json({ id, members }, 201);
+}
+
+/** GET /v1/flow-submissions/{id}: where the flow is, with C12's report once it ran. */
+export async function getFlowSubmission(ctx: Ctx, id: string): Promise<Response> {
+  const a = developer(ctx);
+  const fs = await ctx.env.DB_CATALOG.prepare("SELECT * FROM flow_submissions WHERE id = ?").bind(id).first<Record<string, unknown>>();
+  if (!fs || fs.uploaded_by !== a.id) refuse(404, "not_found");
+  const members = await ctx.env.DB_CATALOG.prepare("SELECT id, plugin, version, status, flow_state FROM submissions WHERE flow_submission = ?")
+    .bind(id)
+    .all();
+  const report = fs!.report_key ? JSON.parse((await (await ctx.env.PRIVATE.get(String(fs!.report_key)))?.text()) ?? "null") : null;
+  return json({ flow_submission: fs, submissions: members.results, report });
 }
 
 async function digest(obj: R2ObjectBody): Promise<string> {

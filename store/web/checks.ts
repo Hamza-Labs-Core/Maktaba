@@ -14,7 +14,9 @@ import { sha256hex, token } from "./crypto";
 import { type Env, iso, now } from "./env";
 import { sendMail } from "./mail";
 import { countersign } from "./publish";
-import { PackageRefused, inspect, type Inspected } from "./wasm";
+import { PackageRefused, extract, inspect, type Inspected } from "./wasm";
+import { type C12, checkFlowAtVerification } from "./flowcheck";
+import { graphJson, type Graph } from "../../tools/plugin-sdk/js/src/flow";
 
 export type Result = "pass" | "warn" | "block" | "skip" | "pending";
 
@@ -23,6 +25,9 @@ export interface Check {
   result: Result;
   code?: string;
   detail?: string;
+  /** C12: the refusal in Arabic too, and the cycle path or the bad edge */
+  detail_ar?: string;
+  path?: string[];
 }
 
 export interface Report {
@@ -39,6 +44,21 @@ export interface Report {
   diff?: { new_capabilities: string[]; new_panels: string[]; new_stages: string[]; size_ratio: number };
   imports: string[];
   runner?: RunnerReport;
+  /** C12: the flow this version is checked in (54.16 §1) */
+  flow?: FlowSummary;
+}
+
+export interface FlowSummary {
+  /** the flow's id and version, or the plugin's own for a plugin alone (a flow of one) */
+  id: string;
+  version: string;
+  members: string[];
+  events: string[];
+  subscriptions: string[];
+  graph: Graph;
+  findings: C12["findings"];
+  /** the flow submission it came in, if any */
+  group?: string;
 }
 
 /** What the isolated runner posts (store/check-runner/run.sh). */
@@ -131,6 +151,8 @@ interface Sub {
   package_key: string;
   source_key: string;
   package_size: number;
+  flow_submission: string | null;
+  flow_sha256: string;
 }
 
 async function saveReport(env: Env, r: Report): Promise<string> {
@@ -285,6 +307,17 @@ export async function runChecks(env: Env, submissionId: string): Promise<Report>
   report.rating = rating(declared, "automated");
   report.checks.push({ id: "C11", result: "pass", detail: `rating ${report.rating}` });
 
+  // C12's input: the flow.toml the package carries (byte-identical in every member; the
+  // signatures cover it, as every file in files.json). The check runs once the flow's
+  // members have all passed C1 to C11 (finish).
+  const flowFile = i.files.find((f) => f.path === "flow.toml");
+  if (s.flow_submission && !flowFile)
+    return block({ id: "C12", result: "block", code: "flow_invalid", detail: "a flow submission's package carries no flow.toml" });
+  if (flowFile) {
+    s.flow_sha256 = flowFile.sha256;
+    await env.DB_CATALOG.prepare("UPDATE submissions SET flow_sha256 = ? WHERE id = ?").bind(flowFile.sha256, s.id).run();
+  }
+
   // the isolated runner: C7 (ClamAV), C8 and C10
   if (env.RUNNER === "github" && env.RUNNER_DISPATCH_TOKEN) {
     await dispatchRunner(env, s);
@@ -334,12 +367,185 @@ async function routeReasons(env: Env, r: Report, first: boolean): Promise<string
 async function finish(env: Env, s: Sub, r: Report): Promise<Report> {
   r.finished = iso(now());
   const blocked = r.checks.find((c) => c.result === "block");
-  // no isolated runner ran (none configured): C8 never ran, so a person reviews
-  const runnerSkipped = !r.runner && r.checks.some((c) => c.id === "C8" && c.result === "skip");
-  if (!blocked) {
-    await routeReasons(env, r, !r.diff);
-    if (runnerSkipped && !r.route_reasons.includes("runner_unavailable")) r.route_reasons.push("runner_unavailable");
+  if (blocked) {
+    await settle(env, s, r, []);
+    // a flow is refused as a whole: the members that passed their own checks are refused too
+    if (s.flow_submission) await refuseFlow(env, s.flow_submission, `${s.plugin} ${s.version}: ${blocked.code ?? blocked.id}`);
+    return r;
   }
+  return flowGate(env, s, r);
+}
+
+/**
+ * C12 (54.16 §1): once every member of the submission's flow has passed C1 to C11 (a plugin
+ * alone at once), the flow check runs over all of them with the store's catalog; then the
+ * members are refused together, go to a person together, or are approved together.
+ */
+async function flowGate(env: Env, s: Sub, r: Report): Promise<Report> {
+  type Member = { s: Sub; r: Report };
+  let members: Member[] = [{ s, r }];
+  let flowId = s.plugin;
+  let flowVersion = s.version;
+  if (s.flow_submission) {
+    const fs = await env.DB_CATALOG.prepare("SELECT * FROM flow_submissions WHERE id = ?")
+      .bind(s.flow_submission)
+      .first<{ status: string; members: string; flow_id: string; flow_version: string }>();
+    r.checks.push({ id: "C12", result: "pending", detail: "waiting for the flow's other members" });
+    await env.DB_CATALOG.prepare("UPDATE submissions SET flow_state = 'waiting', report_key = ? WHERE id = ?")
+      .bind(await saveReport(env, r), s.id)
+      .run();
+    if (!fs || fs.status !== "open") return r;
+    const want = JSON.parse(fs.members) as string[];
+    const subs = await env.DB_CATALOG.prepare("SELECT * FROM submissions WHERE flow_submission = ? AND status = 'checking'")
+      .bind(s.flow_submission)
+      .all<Sub & { flow_state: string; report_key: string }>();
+    const waiting = subs.results.filter((x) => x.flow_state === "waiting");
+    if (!want.every((id) => waiting.some((x) => x.plugin === id))) return r;
+    // the last member in: this run checks the flow (a conditional update, so only one does)
+    const claim = await env.DB_CATALOG.prepare("UPDATE flow_submissions SET status = 'in_review' WHERE id = ? AND status = 'open'")
+      .bind(s.flow_submission)
+      .run();
+    if (!claim.meta.changes) return r;
+    members = [];
+    for (const x of waiting) {
+      const rep = x.id === s.id ? r : (JSON.parse((await (await env.PRIVATE.get(x.report_key))?.text()) ?? "null") as Report);
+      rep.checks = rep.checks.filter((c) => c.id !== "C12");
+      members.push({ s: x, r: rep });
+    }
+    flowId = fs.flow_id;
+    flowVersion = fs.flow_version;
+  }
+  // the flow.toml, the same bytes in every member
+  const sums = new Set(members.map((m) => m.s.flow_sha256));
+  let flowToml: Uint8Array | null = null;
+  const manifests: Record<string, unknown>[] = [];
+  for (const m of members) {
+    const pkg = new Uint8Array(await (await env.PRIVATE.get(m.s.package_key))!.arrayBuffer());
+    manifests.push(JSON.parse((await inspect(pkg)).manifest) as Record<string, unknown>);
+    if (m.s.flow_sha256 && !flowToml) flowToml = await extract(pkg, "flow.toml");
+  }
+  let c12: C12;
+  if (sums.size > 1) {
+    const f = { code: "flow_manifest_mismatch", severity: "refuse" as const, detail: "the members carry different flow.toml files" };
+    c12 = { ok: false, findings: [{ ...f, en: "The members carry different flow.toml files.", ar: "تحمل الأعضاء ملفات flow.toml مختلفة." }], graph: { nodes: [], edges: [] }, events: [], subscriptions: [], members: [] };
+  } else {
+    c12 = await checkFlowAtVerification(env, flowToml, manifests);
+  }
+  if (flowToml && !s.flow_submission) {
+    // a flow of several submitted one member at a time: its id and version are the flow's own
+    const head = new TextDecoder().decode(flowToml);
+    flowId = /^id\s*=\s*"([^"]+)"/m.exec(head)?.[1] ?? flowId;
+    flowVersion = /^version\s*=\s*"([^"]+)"/m.exec(head)?.[1] ?? flowVersion;
+  }
+  const refusal = c12.findings.find((f) => f.severity === "refuse");
+  const warns = c12.findings.filter((f) => f.severity === "warn");
+  const check: Check = refusal
+    ? { id: "C12", result: "block", code: refusal.code, detail: refusal.en, detail_ar: refusal.ar, ...(refusal.path ? { path: refusal.path } : {}) }
+    : warns.length
+      ? { id: "C12", result: "warn", code: warns[0]!.code, detail: warns.map((w) => w.en).join("; "), detail_ar: warns.map((w) => w.ar).join("؛ ") }
+      : { id: "C12", result: "pass", detail: `${c12.members.length} plugin(s), ${c12.events.length} published event(s), ${c12.subscriptions.length} subscription(s)` };
+  const summary: FlowSummary = {
+    id: flowId,
+    version: flowVersion,
+    members: c12.members,
+    events: c12.events,
+    subscriptions: c12.subscriptions,
+    graph: c12.graph,
+    findings: c12.findings,
+    ...(s.flow_submission ? { group: s.flow_submission } : {}),
+  };
+  for (const m of members) {
+    m.r.checks.push(check);
+    m.r.flow = summary;
+    m.r.finished = iso(now());
+  }
+  if (s.flow_submission) {
+    await env.PRIVATE.put(`reports/flow-${s.flow_submission}.json`, JSON.stringify(summary));
+    await env.DB_CATALOG.prepare("UPDATE flow_submissions SET report_key = ? WHERE id = ?")
+      .bind(`reports/flow-${s.flow_submission}.json`, s.flow_submission)
+      .run();
+  }
+  if (refusal) {
+    for (const m of members) await settle(env, m.s, m.r, []);
+    if (s.flow_submission) await env.DB_CATALOG.prepare("UPDATE flow_submissions SET status = 'rejected', decided_at = ? WHERE id = ?").bind(iso(now()), s.flow_submission).run();
+    return r;
+  }
+  // the route is the flow's: a person reviews all of it when any member or the flow needs one
+  const extra = flowToml ? await flowReasons(env, summary) : [];
+  const reasons = new Set(extra);
+  for (const m of members) {
+    for (const x of await routeReasons(env, m.r, !m.r.diff)) reasons.add(x);
+    const runnerSkipped = !m.r.runner && m.r.checks.some((c) => c.id === "C8" && c.result === "skip");
+    if (runnerSkipped) reasons.add("runner_unavailable");
+  }
+  for (const m of members) await settle(env, m.s, m.r, [...reasons]);
+  if (reasons.size === 0) {
+    await recordFlow(env, summary, [...sums][0] ?? "");
+    if (s.flow_submission) await env.DB_CATALOG.prepare("UPDATE flow_submissions SET status = 'approved', decided_at = ? WHERE id = ?").bind(iso(now()), s.flow_submission).run();
+    await env.CATALOG_WRITER.get(env.CATALOG_WRITER.idFromName("main")).regenerate();
+  }
+  return r;
+}
+
+/** Why a flow goes to a person (54.16 §2): a new flow, or a version adding a member, an
+ * event or a subscription to the newest approved one. */
+async function flowReasons(env: Env, f: FlowSummary): Promise<string[]> {
+  const prev = await env.DB_CATALOG.prepare("SELECT members, events, subscriptions FROM flows WHERE id = ? ORDER BY approved_at DESC LIMIT 1")
+    .bind(f.id)
+    .first<{ members: string; events: string; subscriptions: string }>();
+  if (!prev) return ["new_flow"];
+  const grew = (now: string[], before: string) => now.some((x) => !(JSON.parse(before) as string[]).includes(x));
+  const out: string[] = [];
+  if (grew(f.members, prev.members)) out.push("flow_new_member");
+  if (grew(f.events, prev.events)) out.push("flow_new_event");
+  if (grew(f.subscriptions, prev.subscriptions)) out.push("flow_new_subscription");
+  return out;
+}
+
+/** An approved flow, for the next version's comparison and the listing's chart. */
+export async function recordFlow(env: Env, f: FlowSummary, sha: string): Promise<void> {
+  const at = iso(now());
+  await env.DB_CATALOG.batch([
+    env.DB_CATALOG.prepare(
+      "INSERT OR REPLACE INTO flows (id, version, members, events, subscriptions, graph, flow_sha256, approved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).bind(f.id, f.version, JSON.stringify(f.members), JSON.stringify(f.events), JSON.stringify(f.subscriptions), graphJson(f.graph), sha, at),
+    ...f.members.map((m) =>
+      env.DB_CATALOG.prepare("INSERT OR REPLACE INTO flow_members (plugin, flow_id, version) VALUES (?, ?, ?)").bind(m, f.id, f.version),
+    ),
+  ]);
+}
+
+/** A member refused: every other member of its flow submission waiting on C12 is refused too. */
+async function refuseFlow(env: Env, group: string, why: string): Promise<void> {
+  await env.DB_CATALOG.prepare("UPDATE flow_submissions SET status = 'rejected', decided_at = ? WHERE id = ? AND status = 'open'")
+    .bind(iso(now()), group)
+    .run();
+  const waiting = await env.DB_CATALOG.prepare("SELECT * FROM submissions WHERE flow_submission = ? AND status = 'checking' AND flow_state = 'waiting'")
+    .bind(group)
+    .all<Sub & { report_key: string }>();
+  for (const x of waiting.results) {
+    const rep = JSON.parse((await (await env.PRIVATE.get(x.report_key))?.text()) ?? "null") as Report;
+    rep.checks = rep.checks.filter((c) => c.id !== "C12");
+    rep.checks.push({
+      id: "C12",
+      result: "block",
+      code: "flow_member_refused",
+      detail: `Another member of the flow was refused (${why}).`,
+      detail_ar: `رُفض عضو آخر في التدفق (${why}).`,
+    });
+    rep.finished = iso(now());
+    await settle(env, x, rep, []);
+  }
+}
+
+/**
+ * One version's outcome: blocked (the developer is told), to a person (reasons), or approved
+ * automatically and countersigned `automated`.
+ */
+async function settle(env: Env, s: Sub, r: Report, reasons: string[]): Promise<Report> {
+  const blocked = r.checks.find((c) => c.result === "block");
+  r.route_reasons = blocked ? [] : reasons;
+  await env.DB_CATALOG.prepare("UPDATE submissions SET flow_state = 'checked' WHERE id = ?").bind(s.id).run();
   const key = await saveReport(env, r);
   const route = blocked ? "blocked" : r.route_reasons.length ? "human" : "auto";
   const status = blocked ? "rejected" : route === "human" ? "in_review" : "approved";
@@ -364,10 +570,7 @@ async function finish(env: Env, s: Sub, r: Report): Promise<Report> {
       s.version,
     ),
   ]);
-  if (route === "auto") {
-    await countersign(env, s.id, "automated");
-    await env.CATALOG_WRITER.get(env.CATALOG_WRITER.idFromName("main")).regenerate();
-  }
+  if (route === "auto") await countersign(env, s.id, "automated");
   if (route !== "human") {
     const a = await env.DB_ACCOUNTS.prepare("SELECT email FROM accounts WHERE id = ?").bind(s.uploaded_by).first<{ email: string }>();
     if (a)

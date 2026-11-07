@@ -124,6 +124,9 @@
 المسارات، للمسؤول فقط: `GET /api/plugins/store-account`، و`POST …/link`، و`POST …/poll`،
 و`DELETE /api/plugins/store-account`.
 
+ولا يصل الجهاز الرئيسي الذي يعمل بلا إنترنت (`maktaba-server serve --offline`، `MAKTABA_OFFLINE=1`) إلى
+المتجر أبدًا: يجيب الربط وفكّه بـ`409 store_offline` قبل أي طلب.
+
 ## واجهة المسؤول البرمجية
 
 كلها للمسؤولين فقط (بلا تسجيل دخول 401؛ والمشاهد أو تسجيل الدخول للتشغيل عبر السحابة 403):

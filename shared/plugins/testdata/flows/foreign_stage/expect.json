@@ -1,0 +1,58 @@
+{
+  "findings": [
+    {
+      "code": "flow_foreign_stage",
+      "severity": "refuse",
+      "plugin": "dev.example.alpha",
+      "detail": "dev.example.alpha/one: two"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/one"
+      },
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.beta/two"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.beta/two",
+        "kind": "stage",
+        "name": "two",
+        "plugin": "dev.example.beta",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تسمّي الإضافة ⁦dev.example.alpha⁩ مرحلة ليست من مراحلها (⁦dev.example.alpha/one: two⁩)؛ ولا تشغّل الإضافات بعضها إلا عبر الأحداث المنشورة."
+    ],
+    "en": [
+      "dev.example.alpha names a stage that is not its own (dev.example.alpha/one: two); plugins start each other only through published events."
+    ]
+  }
+}

@@ -9,7 +9,8 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": { "smol-toml": ["./node_modules/smol-toml"] }
   },
   "include": ["web/**/*.ts", "objects/**/*.ts", "signing/*.ts", "test/workers/**/*.ts"]
 }

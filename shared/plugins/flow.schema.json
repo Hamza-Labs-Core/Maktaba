@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://maktaba.dev/plugins/flow.schema.json",
+  "title": "Maktaba plugin flow (flow.toml), schema 1",
+  "description": "Epic 54 story 54.39 §1. The declared graph of a set of plugins that work together, read with the same keyword subset as manifest.schema.json. The checks across fields and across plugins (membership, the manifest match, the leaf rule, existence, cycles, depth) are in the flow checkers, shared/plugins/pluginflow (Go) and tools/plugin-sdk/js/src/flow.ts (TypeScript), tested on shared/plugins/testdata/flows.",
+  "type": "object",
+  "x-code": "flow_invalid",
+  "x-unknown-code": "flow_unknown_key",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "strings", "plugin"],
+  "properties": {
+    "schema": { "type": "integer", "minimum": 1, "maximum": 1, "x-code": "flow_invalid" },
+    "id": {
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?){2,5}$",
+      "x-code": "flow_invalid"
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$",
+      "x-code": "flow_invalid"
+    },
+    "strings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "x-code": "flow_invalid",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z0-9_.-]{1,100}$", "x-code": "flow_invalid" }
+      }
+    },
+    "plugin": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "x-code": "flow_limit",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version", "stage"],
+        "x-code": "flow_invalid",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?){2,5}$",
+            "x-code": "flow_invalid"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^ *(>=|>|<=|<|=) *[0-9]+\\.[0-9]+\\.[0-9]+ *(, *(>=|>|<=|<|=) *[0-9]+\\.[0-9]+\\.[0-9]+ *)*$",
+            "x-code": "flow_invalid"
+          },
+          "stage": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "x-code": "flow_limit",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "subject"],
+              "x-code": "flow_invalid",
+              "properties": {
+                "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$", "x-code": "flow_invalid" },
+                "subject": { "type": "string", "enum": ["video", "series", "season", "library", "catalog"], "x-code": "flow_invalid" },
+                "triggers": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "uniqueItems": true,
+                  "default": [],
+                  "items": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "pattern": "^((plugin:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?){2,5}/)?[a-z][a-z0-9_.]{0,63}|stage:[a-z][a-z0-9_]{0,39})$"
+                  },
+                  "x-code": "flow_invalid"
+                },
+                "emits": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "uniqueItems": true,
+                  "default": [],
+                  "items": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$" },
+                  "x-code": "flow_invalid"
+                },
+                "may_request": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "uniqueItems": true,
+                  "default": [],
+                  "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,39}$" },
+                  "x-code": "flow_invalid"
+                }
+              }
+            }
+          },
+          "event": {
+            "type": "array",
+            "maxItems": 20,
+            "default": [],
+            "x-code": "flow_limit",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "subject", "payload"],
+              "x-code": "flow_invalid",
+              "properties": {
+                "name": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", "x-code": "flow_invalid" },
+                "subject": { "type": "string", "enum": ["video", "series", "season", "library", "catalog"], "x-code": "flow_invalid" },
+                "payload": { "type": "string", "pattern": "^events/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}\\.json$", "x-code": "flow_invalid" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

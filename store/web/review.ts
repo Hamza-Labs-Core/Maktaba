@@ -7,6 +7,8 @@ import { type Ctx, audit, developer, reauthed, reauthedPasskey, staff } from "./
 import { type Env, iso, now } from "./env";
 import { body, json, optStr, refuse, str } from "./http";
 import { sendMail } from "./mail";
+import { type FlowSummary, recordFlow } from "./checks";
+import { flowSVG } from "./flowchart";
 import { countersign } from "./publish";
 
 export const REJECT_REASONS = ["misleading", "does_not_work", "asks_too_much", "harmful_outputs", "malware", "policy", "strings"] as const;
@@ -97,10 +99,14 @@ export async function submission(ctx: Ctx, id: string): Promise<Response> {
     .bind(s!.uploaded_by)
     .first<{ display_name: string }>();
   await audit(ctx, a.id, "review.open", id);
+  const flow = (report as { flow?: FlowSummary } | null)?.flow;
+  const cycle = flow?.findings.find((f) => f.code === "flow_cycle")?.path;
   return json({
     submission: s,
     version: v,
     report,
+    // the whole flow, drawn (54.41): this plugin's stages outlined, a refusal's cycle in red
+    flow_chart: flow ? flowSVG(flow.graph, { title: flow.id, highlight: s!.plugin, ...(cycle ? { cycle } : {}) }) : "",
     developer: dev?.display_name ?? "",
     source: src ? { size: src.size, url: `/v1/admin/submissions/${id}/source` } : null,
   });
@@ -128,12 +134,42 @@ async function decided(env: Env, s: { plugin: string; version: string; uploaded_
 }
 
 async function reviewable(ctx: Ctx, id: string) {
-  const s = await ctx.env.DB_CATALOG.prepare("SELECT id, plugin, version, uploaded_by, status FROM submissions WHERE id = ?")
+  const s = await ctx.env.DB_CATALOG.prepare(
+    "SELECT id, plugin, version, uploaded_by, status, flow_submission, flow_sha256, report_key FROM submissions WHERE id = ?",
+  )
     .bind(id)
-    .first<{ id: string; plugin: string; version: string; uploaded_by: string; status: string }>();
+    .first<Reviewable>();
   if (!s) refuse(404, "not_found");
   if (s!.status !== "in_review" && s!.status !== "asked") refuse(409, "submission_state", { status: s!.status });
   return s!;
+}
+
+interface Reviewable {
+  id: string;
+  plugin: string;
+  version: string;
+  uploaded_by: string;
+  status: string;
+  flow_submission: string | null;
+  flow_sha256: string;
+  report_key: string;
+}
+
+/** A flow is decided as a whole (54.16 §1): the submission and every other member of its
+ * flow submission still in review. */
+async function flowOf(env: Env, s: Reviewable): Promise<Reviewable[]> {
+  if (!s.flow_submission) return [s];
+  const rows = await env.DB_CATALOG.prepare(
+    "SELECT id, plugin, version, uploaded_by, status, flow_submission, flow_sha256, report_key FROM submissions WHERE flow_submission = ? AND status IN ('in_review', 'asked')",
+  )
+    .bind(s.flow_submission)
+    .all<Reviewable>();
+  return rows.results.length ? rows.results : [s];
+}
+
+async function flowSummary(env: Env, s: Reviewable): Promise<FlowSummary | undefined> {
+  const r = s.report_key ? (JSON.parse((await (await env.PRIVATE.get(s.report_key))?.text()) ?? "null") as { flow?: FlowSummary } | null) : null;
+  return r?.flow;
 }
 
 /** POST /v1/admin/submissions/{id}/approve: countersigned `reviewed`, the catalog regenerates. */
@@ -142,16 +178,28 @@ export async function approve(ctx: Ctx, id: string): Promise<Response> {
   reauthedPasskey(ctx);
   const s = await reviewable(ctx, id);
   if (s.uploaded_by === a.id) refuse(403, "own_submission");
-  const out = await countersign(ctx.env, id, "reviewed");
-  await ctx.env.DB_CATALOG.prepare(
-    "UPDATE submissions SET status = 'approved', reviewer = ?, decision = 'approved', decided_at = ? WHERE id = ?",
-  )
-    .bind(a.id, iso(now()), id)
-    .run();
+  const all = await flowOf(ctx.env, s);
+  if (all.some((x) => x.uploaded_by === a.id)) refuse(403, "own_submission");
+  let sha256 = "";
+  for (const x of all) {
+    const out = await countersign(ctx.env, x.id, "reviewed");
+    if (x.id === id) sha256 = out.sha256;
+    await ctx.env.DB_CATALOG.prepare(
+      "UPDATE submissions SET status = 'approved', reviewer = ?, decision = 'approved', decided_at = ? WHERE id = ?",
+    )
+      .bind(a.id, iso(now()), x.id)
+      .run();
+    await audit(ctx, a.id, "review.approve", `${x.id}:${x.plugin}@${x.version}`);
+    await decided(ctx.env, x, "approved");
+  }
+  const flow = await flowSummary(ctx.env, s);
+  if (flow) await recordFlow(ctx.env, flow, s.flow_sha256);
+  if (s.flow_submission)
+    await ctx.env.DB_CATALOG.prepare("UPDATE flow_submissions SET status = 'approved', decided_at = ? WHERE id = ?")
+      .bind(iso(now()), s.flow_submission)
+      .run();
   const v = await ctx.env.CATALOG_WRITER.get(ctx.env.CATALOG_WRITER.idFromName("main")).regenerate();
-  await audit(ctx, a.id, "review.approve", `${id}:${s.plugin}@${s.version}`);
-  await decided(ctx.env, s, "approved");
-  return json({ status: "approved", sha256: out.sha256, catalog_version: v.catalog });
+  return json({ status: "approved", sha256, catalog_version: v.catalog, approved: all.map((x) => x.id) });
 }
 
 /** POST /v1/admin/submissions/{id}/reject {reasons, notes}. */
@@ -165,15 +213,22 @@ export async function reject(ctx: Ctx, id: string): Promise<Response> {
   const s = await reviewable(ctx, id);
   if (s.uploaded_by === a.id) refuse(403, "own_submission");
   const notes = optStr(b.notes, "notes", 4000) ?? "";
-  await ctx.env.DB_CATALOG.batch([
-    ctx.env.DB_CATALOG.prepare(
-      "UPDATE submissions SET status = 'rejected', reviewer = ?, decision = 'rejected', reasons = ?, notes = ?, decided_at = ? WHERE id = ?",
-    ).bind(a.id, JSON.stringify(reasons), notes, iso(now()), id),
-    ctx.env.DB_CATALOG.prepare("UPDATE versions SET status = 'rejected' WHERE plugin = ? AND version = ?").bind(s.plugin, s.version),
-  ]);
-  await audit(ctx, a.id, "review.reject", `${id}:${reasons.join(",")}`);
-  await decided(ctx.env, s, `rejected (${reasons.join(", ")})`);
-  return json({ status: "rejected" });
+  const all = await flowOf(ctx.env, s);
+  for (const x of all) {
+    await ctx.env.DB_CATALOG.batch([
+      ctx.env.DB_CATALOG.prepare(
+        "UPDATE submissions SET status = 'rejected', reviewer = ?, decision = 'rejected', reasons = ?, notes = ?, decided_at = ? WHERE id = ?",
+      ).bind(a.id, JSON.stringify(reasons), notes, iso(now()), x.id),
+      ctx.env.DB_CATALOG.prepare("UPDATE versions SET status = 'rejected' WHERE plugin = ? AND version = ?").bind(x.plugin, x.version),
+    ]);
+    await audit(ctx, a.id, "review.reject", `${x.id}:${reasons.join(",")}`);
+    await decided(ctx.env, x, `rejected (${reasons.join(", ")})`);
+  }
+  if (s.flow_submission)
+    await ctx.env.DB_CATALOG.prepare("UPDATE flow_submissions SET status = 'rejected', decided_at = ? WHERE id = ?")
+      .bind(iso(now()), s.flow_submission)
+      .run();
+  return json({ status: "rejected", rejected: all.map((x) => x.id) });
 }
 
 /** POST /v1/admin/submissions/{id}/ask {question}: the clock pauses until the developer answers. */

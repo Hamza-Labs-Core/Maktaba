@@ -7,26 +7,34 @@ loads or runs plugin code (that runs in maktaba-plugind).
 
 For each ``[[stage]]``: a ``StageDef`` named ``p_<hash>_<name>`` with
 ``extension = "plugin:<id>"``, pool ``plugins``, placement ``home``, two attempts; for each
-trigger an edge from the event's core stage (``shared/plugins/events.toml``); for each
-schedule an ``every_minutes_rule`` on the plugin's own settings key.
+trigger an edge from the event's core stage (``shared/plugins/events.toml``) or, for a
+``stage`` trigger, from the plugin's own stage (54.39); for each schedule an
+``every_minutes_rule`` on the plugin's own settings key. A trigger on another plugin's
+published event is not an edge: events are delivered as requests (54.40).
+
+The leaf rule (README §4.12, H24): a plugin stage is wired only after core events and its
+own stages, and reaches only its own stages. :func:`check_leaves` refuses a manifest that
+would break it (a plugin is then left out, never half-wired) and
+:func:`assert_plugin_leaves` checks the whole graph again after the build.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from ..engine.graph import GraphViolation
 from ..extensions.base import Manifest
 from ..log import get_logger
 from . import manifest as pm
 
 if TYPE_CHECKING:
-    from ..engine.graph import GraphBuilder
+    from ..engine.graph import GraphBuilder, StageDef
     from ..engine.stages.registry import StageImpl
 
-__all__ = ["PREFIX", "PluginExtension", "load_installed", "plugin_of"]
+__all__ = ["PREFIX", "PluginExtension", "assert_plugin_leaves", "load_installed", "plugin_of"]
 
 #: a plugin stage's ``StageDef.extension`` is ``plugin:<id>``
 PREFIX = "plugin:"
@@ -98,9 +106,43 @@ class PluginExtension:
                     every_minutes_rule=(f"plugins.{self.plugin_id}", setting) if setting else None,
                 )
             )
+        for s in self.doc["stage"]:
+            name = pm.queue_name(self.plugin_id, s["name"])
             for t in s.get("trigger", []):
+                if "stage" in t:
+                    # after another of its own stages, when its output changed (54.39)
+                    graph.add_edge(pm.queue_name(self.plugin_id, t["stage"]), Edge(name, "same"))
+                    continue
+                if str(t["event"]).startswith(PREFIX):
+                    continue  # another plugin's event: a request when it is emitted (54.40)
                 ev = events[t["event"]]
                 graph.add_edge(ev["stage"], Edge(name, ev["map"]))
+
+    def check_leaves(self) -> None:
+        """Raise GraphViolation when the manifest would wire a plugin stage anywhere but
+        after core events and its own stages, or let it reach a stage not its own."""
+        from ..engine.graph import GraphViolation
+
+        own = {s["name"] for s in self.doc["stage"]}
+        events = pm.events()
+        for s in self.doc["stage"]:
+            for r in s.get("may_request", []):
+                if r not in own:
+                    raise GraphViolation(f"plugin {self.plugin_id}: {s['name']} requests {r}")
+            for t in s.get("trigger", []):
+                if "stage" in t:
+                    if t["stage"] not in own:
+                        raise GraphViolation(
+                            f"plugin {self.plugin_id}: {s['name']} after {t['stage']}"
+                        )
+                    continue
+                ev = str(t.get("event", ""))
+                if ev.startswith(PREFIX):
+                    if ev[len(PREFIX) :].partition("/")[0] == self.plugin_id:
+                        raise GraphViolation(f"plugin {self.plugin_id}: {s['name']} follows itself")
+                    continue
+                if ev not in events or events[ev].get("trigger") is False:
+                    raise GraphViolation(f"plugin {self.plugin_id}: {s['name']} follows {ev}")
 
     def impls(self) -> Mapping[str, StageImpl]:
         from ..engine.stages.registry import StageImpl
@@ -119,7 +161,13 @@ class PluginExtension:
 
         doc = self.stage_doc(queue_name) or {}
         events = pm.events()
-        triggers = [events[t["event"]]["stage"] for t in doc.get("trigger", [])]
+        triggers = [
+            pm.queue_name(self.plugin_id, t["stage"])
+            if "stage" in t
+            else events[t["event"]]["stage"]
+            for t in doc.get("trigger", [])
+            if "stage" in t or t["event"] in events
+        ]
         plugin_id = self.plugin_id
 
         async def fp(db: Any, subject: Any) -> str | None:
@@ -174,12 +222,47 @@ async def load_installed(db: Any) -> list[PluginExtension]:
         except (pm.ManifestInvalid, ValueError) as exc:
             _log.warning("plugin_manifest_unreadable", plugin=r["plugin_id"], error=str(exc))
             continue
-        out.append(
-            PluginExtension(
-                str(r["plugin_id"]), str(r["version"]), str(r["path"]), doc, str(r["review_level"])
-            )
+        ext = PluginExtension(
+            str(r["plugin_id"]), str(r["version"]), str(r["path"]), doc, str(r["review_level"])
         )
+        try:
+            ext.check_leaves()
+        except GraphViolation as exc:
+            _log.warning("plugin_graph_violation", plugin=r["plugin_id"], error=str(exc))
+            continue
+        out.append(ext)
     return out
+
+
+def assert_plugin_leaves(graph: Sequence[StageDef]) -> None:
+    """The leaf rule over a built graph (README §4.12, H24): an edge from a plugin stage
+    goes only to the same plugin's stages, a plugin stage requests only its own, and an
+    edge into a plugin stage comes only from a core event's stage or the same plugin."""
+    from ..engine.graph import GraphViolation
+
+    by = {s.name: s for s in graph}
+    event_stages = {e["stage"] for e in pm.events().values() if e.get("stage")}
+
+    def leaf(stage: StageDef | None) -> str | None:
+        # a third-party plugin's id; Maktaba's own plugins (tv.maktaba.*, §15) are core
+        pid = plugin_of(getattr(stage, "extension", None))
+        first_party = pid is not None and pid.startswith("tv.maktaba.")
+        if pid is None or (first_party and not pid.startswith("tv.maktaba.community.")):
+            return None
+        return pid
+
+    for s in graph:
+        mine = leaf(s)
+        for e in s.edges:
+            theirs = leaf(by.get(e.to))
+            if mine is not None and theirs != mine:
+                raise GraphViolation(f"plugin stage {s.name} feeds {e.to}")
+            if theirs is not None and mine is None and s.name not in event_stages:
+                raise GraphViolation(f"core stage {s.name} feeds plugin stage {e.to} off events")
+        if mine is not None:
+            for r in s.may_request:
+                if leaf(by.get(r)) != mine:
+                    raise GraphViolation(f"plugin stage {s.name} requests {r}")
 
 
 def _toml_of(doc: Mapping[str, Any]) -> bytes:

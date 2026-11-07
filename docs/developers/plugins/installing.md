@@ -138,6 +138,9 @@ to leak. An account links up to 10 homes; **Unlink** works from either side.
 The routes, admin only: `GET /api/plugins/store-account`, `POST …/link`, `POST …/poll`,
 `DELETE /api/plugins/store-account`.
 
+An offline home (`maktaba-server serve --offline`, `MAKTABA_OFFLINE=1`) never reaches the
+store: linking and unlinking answer `409 store_offline` before any request is made.
+
 ## The admin's API
 
 All admin-only (no sign-in 401; a viewer or a cloud-linked play sign-in 403):
