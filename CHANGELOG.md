@@ -72,6 +72,11 @@ build fails when the two differ.
   supervisor's. The word check also runs off the pipeline's event loop and writes a
   transcript's flags in one batch, so it no longer holds its transaction open for minutes.
 
+- **The Mac app no longer says a part keeps stopping when that part is only turned off.** A
+  process whose component is off (the supervisor's `held` state, as the plugin host is with
+  no plugin installed) made the menu bar and the starting screen say "Some parts keep stopping:
+  plugins". The app now counts it as off, as the server does.
+
 - **The Player for Windows and Linux: seven fixes from the review of its sections (#667).**
   A quality or audio change that finished after the video was closed, or after another video
   started, no longer leaves an unseen player playing or replaces the new video (its stream
@@ -1008,6 +1013,15 @@ build fails when the two differ.
   low-memory kill go to the home at the next start as scrubbed envelopes with the app's log.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
+
+
+- **The desktop apps report problems and send crash reports to the home.** Maktaba's tray and
+  Help menu have **Report a problem…**, which opens the web app's form. A panic of the app
+  itself is kept, scrubbed, and the web app in its window sends it to the home only when
+  crash reports are on there. The Player for Windows and Linux asks once after signing in
+  whether to send crash reports, off until the person says yes (the Account menu keeps the
+  switch). It sends a kept crash at the next sign-in when on, and has **Report a problem…** and
+  **My reports** in its Help menu.
 
 ### Fixed
 
