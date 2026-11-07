@@ -145,6 +145,9 @@ a home that is not linked gets `409 store_not_linked`, and an offline one `409 s
 The same catalog is public at plugins.maktaba.tv (and /ar, right to left): a page per plugin
 at `/p/<id>` with Open in my Maktaba (`maktaba://plugins/<id>`, which the installed apps open)
 and Download file for an offline install from a file.
+The page of a plugin in a flow draws the whole flow (its plugins' stages, the Maktaba events
+they start from and the events between them, this plugin outlined) and lists the events the
+plugin publishes and the ones it listens to.
 
 ## Linking a home to a store account
 

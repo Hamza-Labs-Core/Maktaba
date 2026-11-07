@@ -6,6 +6,7 @@
 // install. Every text is escaped: a plugin's words or a review are text, never markup.
 import CAPS from "../checks/capabilities.json";
 import type { Env } from "./env";
+import { flowSVG } from "./flowchart";
 
 type Lang = "en" | "ar";
 
@@ -28,6 +29,11 @@ const W = {
     langHref: "/ar",
     reviews: "Reviews",
     home: "Your Maktaba's address (for example http://192.168.1.10:8096)",
+    flow: "How it works with Maktaba and other plugins",
+    flowAlt: "The flow {id}: its plugins' stages, the Maktaba events they start from and the events between them",
+    events: "Events it publishes",
+    subscriptions: "What it listens to",
+    none2: "None",
   },
   ar: {
     title: "إضافات مكتبة",
@@ -47,6 +53,11 @@ const W = {
     langHref: "/",
     reviews: "المراجعات",
     home: "عنوان مكتبتك (مثل http://192.168.1.10:8096)",
+    flow: "كيف تعمل مع مكتبة ومع إضافات أخرى",
+    flowAlt: "التدفق {id}: مراحل إضافاته، وأحداث مكتبة التي تبدأ منها، والأحداث بينها",
+    events: "الأحداث التي تنشرها",
+    subscriptions: "ما تستمع إليه",
+    none2: "لا شيء",
   },
 } as const;
 
@@ -166,6 +177,22 @@ export async function pluginPage(env: Env, lang: Lang, id: string): Promise<Resp
     .all<{ author: string; stars: number; text: string; reply: string }>()
     .then((r) => r.results)
     .catch(() => []);
+  // the plugin's flow (54.16 C12's record of the approved flow it is in): the whole flow
+  // drawn, this plugin's stages outlined, and its own published events and subscriptions
+  const flow = await env.DB_CATALOG.prepare(
+    "SELECT f.id, f.graph, f.events, f.subscriptions FROM flow_members m JOIN flows f ON f.id = m.flow_id AND f.version = m.version WHERE m.plugin = ? ORDER BY f.approved_at DESC LIMIT 1",
+  )
+    .bind(id)
+    .first<{ id: string; graph: string; events: string; subscriptions: string }>()
+    .catch(() => null);
+  const mine = (l: string[], at: (x: string) => string) => l.filter((x) => at(x).includes(id + "/") || at(x) === id);
+  const events = flow ? mine(JSON.parse(flow.events) as string[], (x) => x) : [];
+  const subs = flow ? mine(JSON.parse(flow.subscriptions) as string[], (x) => x.split(" -> ")[1] ?? "") : [];
+  const list = (l: string[]) => (l.length ? `<ul dir="ltr">${l.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>` : `<p class="muted">${esc(w.none2)}</p>`);
+  const flowHTML = flow
+    ? `<h2>${esc(w.flow)}</h2><figure style="overflow-x:auto;margin:0">${flowSVG(JSON.parse(flow.graph), { title: fill(w.flowAlt, { id: flow.id }), highlight: id })}</figure>
+<h3>${esc(w.events)}</h3>${list(events)}<h3>${esc(w.subscriptions)}</h3>${list(subs)}`
+    : "";
   const caps = (v?.capabilities ?? []).map((c) => `<li>${esc(capWords(c, lang))}</li>`).join("");
   const machine = lang === "ar" && p.machine_translated.includes("ar") ? ` <span class="badge">${esc(w.machine)}</span>` : "";
   const level = v?.review_level === "reviewed" ? w.reviewed : w.automated;
@@ -176,6 +203,7 @@ ${desc ? `<p style="white-space:pre-line">${esc(desc)}</p>` : ""}
 <p class="muted">${esc(fill(w.by, { dev: p.developer }))} · <span class="badge">${esc(level)}</span> · ${esc(ratingLine(p, lang))}</p>
 <p><a href="maktaba://plugins/${esc(p.id)}">${esc(w.open)}</a>${v ? ` · <a href="${esc(v.url)}" download>${esc(w.download)}</a> (${esc(v.version)})` : ""}</p>
 <h2>${esc(w.capabilities)}</h2><ul>${caps}</ul>
+${flowHTML}
 <h2>${esc(w.versions)}</h2><ul>${p.versions.map((x) => `<li dir="ltr">${esc(x.version)} · ${esc(x.maktaba)}</li>`).join("")}</ul>
 <h2>${esc(w.reviews)}</h2><ul>${reviews
     .map((r) => `<li>${"★".repeat(r.stars)}${"☆".repeat(5 - r.stars)} <bdi>${esc(r.author)}</bdi><p style="white-space:pre-line">${esc(r.text)}</p>${r.reply ? `<blockquote>${esc(r.reply)}</blockquote>` : ""}</li>`)
