@@ -1486,7 +1486,8 @@ that gives a plugin trusted rights, and no call that runs SQL text sent by the p
 
 **Runner groups.** One runner process per group of first-party plugins with the same sandbox
 profile, so a home does not run fifteen Python processes: `light` (core-media, thumbnails,
-classify's no-network stages, livetv, livetv-slots, subtitles, convert, dedup), `ml`
+classify's no-network stages, livetv, livetv-slots, subtitles), `files` (convert, dedup: they
+rewrite and move library files, which would widen `light`'s name-only library writes), `ml`
 (transcription, own process; it accepts up to the `gpu` pool's size of concurrent `Run`s and
 batches them into one Whisper, as the worker does today), `index` (semantic-search, own
 process, replacing `pipeline/index` for the queue part; the gRPC query server stays the
@@ -1500,8 +1501,8 @@ without spending an attempt (§4.9).
 
 Each runner is a supervisor process (role `plugin-runner`), so Epic 51 needs it in exactly one
 catalog component (`catalog_roles_test.go`): `plugin-runner/ml-*` belongs to `transcription`,
-`plugin-runner/index` to `search.semantic`, and the shared groups (`light`, `net`,
-`service`, `fp`) to a new core component, `core.plugin_runners` (`switchable = false`), whose
+`plugin-runner/index` to `search.semantic`, and the shared groups (`light`, `files`,
+`net`, `service`, `fp`) to a new core component, `core.plugin_runners` (`switchable = false`), whose
 processes run on demand: a group runs only while a component it serves is enabled (54.23,
 54.37 §4).
 
@@ -1862,6 +1863,42 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   in-process instead (`native.FALLBACKS`: an unregistered statement, a sandbox refusal,
   `choose()` declining); the parity harness fails on any for the stages under test, since
   the in-process rerun writes the same rows and the comparison alone would pass.
+- **What only the engine may write is relayed to the worker.** A plugin stage's job may
+  queue jobs (`enqueue`: the stage itself, a stage it may request, or a stage joined to it
+  by an edge of the graph, for a subject of the job's library), merge a duplicate group
+  (`dedup_commit`: re-pointing every table that references a video, built from the
+  catalogue, so no plugin role could hold it; only this job's group and its own members),
+  and bring a superseded video back (`unsupersede`: only one of the job's library). The
+  worker checks each against the job and writes it with its own connection; the in-process
+  path calls the same functions directly.
+- **The library's statements are fixed texts.** Wave 5's shared code built `IN (...)`
+  lists and optional `SET` columns at run time (for SQLite, which has no arrays). Each is now
+  one text per dialect: an array (`= ANY($1::uuid[])`) or a JSON list
+  (`IN (SELECT value FROM json_each($1))`), and the ledger's updates set each writable field
+  or keep it (`CASE WHEN $flag THEN $value ELSE field END`), so they are named statements.
+- **A move within the library is not yet checked against the job's subject** (story 54.32
+  §2, T02). The sandbox allows the library and its trash, and every database change a plugin
+  asks of the worker is checked; the job-scoped path check in the file-moving functions
+  follows (issue #796).
+- **The `net` group's hosts are declared, not filtered.** The sandbox gives the `net` runner
+  outbound network as a whole: neither Seatbelt nor Landlock and seccomp can filter by host
+  name, and YouTube's media hosts change from one download to the next. The manifest's `net`
+  list is reviewed with it and shown on the Plugins page; the nightly check of the hosts
+  yt-dlp actually contacts (story 54.33 T02) follows in issue #805.
+- **A stage that makes a subject may start its pipeline.** A relayed `enqueue` may also name
+  the stage where the graph starts a new subject (`probe` for a video, or a stage whose
+  `entry_for` has the kind). A download writes its video in the plugin's own transaction,
+  which the worker cannot see yet, so the worker holds such a request and queues it, with
+  the same checks, once the job's writes are committed; a failed job queues nothing.
+- **Rules sections are in the scope.** A stage reads `rules.<section>` only when the
+  manifest's `settings` lists the section (`exactdates`, `repair`); any other read is
+  refused `plugin_scope`.
+- **The downloads' work folder is `data.cache`** (`MAKTABA_YT_WORK`, else
+  `~/.maktaba/work/yt`): the `.part` files and sidecars, before a finished download is
+  placed in the library.
+- **The YouTube collections and the Tartube import stay with the core** until wave 9
+  (story 54.36): `youtube_collections` and `youtube_tartube` build series and playlists
+  from the library as a whole, as the core stages there do.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

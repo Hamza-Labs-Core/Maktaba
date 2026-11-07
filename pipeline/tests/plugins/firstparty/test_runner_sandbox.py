@@ -287,3 +287,93 @@ def test_the_light_group_writes_subtitles_by_name_and_thumbnails_in_full() -> No
     profile = seatbelt_profile(p)
     assert '(allow file-read* file-write* (subpath "/media/a"))' not in profile
     assert '(regex #"^/media/a/(.*/)?' in profile
+
+
+def test_the_files_group_rewrites_the_library_and_the_light_group_does_not() -> None:
+    """convert and dedup rewrite and move library files, so they run in their own group
+    (``files``): in ``light`` their write would cover subtitles' name-only rule."""
+    from maktaba_pipeline.plugins import firstparty
+    from maktaba_plugin_runner.sandbox import policy_for
+
+    def group(name: str) -> list[dict[str, object]]:
+        return [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == name]
+
+    assert {p.id for p in firstparty.plugins() if p.trusted.get("runner") == "files"} == {
+        "tv.maktaba.convert",
+        "tv.maktaba.dedup",
+    }
+    areas = {"library": "/media/a", "trash": "/media/.trash", "data.thumbnails": "/data/t"}
+    kw = {"api_socket": "/run/api.sock", "run_dir": "/run"}
+    files = policy_for(group("files"), areas=areas, own_socket="/run/runner-files.sock", **kw)
+    assert set(files.write) >= {"/media/a", "/media/.trash"}
+    light = policy_for(group("light"), areas=areas, own_socket="/run/runner-light.sock", **kw)
+    assert "/media/a" not in light.write and "/media/.trash" not in light.write
+
+
+def _tool(tmp_path: Path, name: str) -> Path:
+    t = tmp_path / "bin" / name
+    t.parent.mkdir(parents=True, exist_ok=True)
+    t.write_text("#!/bin/sh\n")
+    t.chmod(0o755)
+    return t
+
+
+def test_yt_dlp_is_what_the_stages_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The sandbox's yt-dlp is the program ``ytdlp_command()`` starts: MAKTABA_YTDLP's (a
+    command line), else this Python when it has the yt_dlp module, else one on PATH."""
+    import importlib.util
+
+    from maktaba_plugin_runner import sandbox
+
+    real = importlib.util.find_spec
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    # 1. MAKTABA_YTDLP is a command line: its program, found on PATH or as given
+    exe = _tool(tmp_path, "yt-dlp-wrapper")
+    monkeypatch.setenv("MAKTABA_YTDLP", f"{exe} --no-update")
+    assert sandbox.tool_path("yt-dlp") == os.path.realpath(exe)
+    monkeypatch.setenv("MAKTABA_YTDLP", "yt-dlp-wrapper --no-update")
+    assert sandbox.tool_path("yt-dlp") == os.path.realpath(exe)
+    monkeypatch.delenv("MAKTABA_YTDLP")
+    # 2. the module: ``python -m yt_dlp``, this interpreter
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda n, *a: object() if n == "yt_dlp" else real(n, *a)
+    )
+    assert sandbox.tool_path("yt-dlp") == os.path.realpath(sys.executable)
+    # 3. neither: a yt-dlp on PATH, else none
+    monkeypatch.setattr(
+        importlib.util, "find_spec", lambda n, *a: None if n == "yt_dlp" else real(n, *a)
+    )
+    assert sandbox.tool_path("yt-dlp") is None
+    on_path = _tool(tmp_path, "yt-dlp")
+    assert sandbox.tool_path("yt-dlp") == os.path.realpath(on_path)
+
+
+def test_only_the_net_group_reaches_the_network(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """youtube and repair (story 54.33) run in ``net``: sockets, yt-dlp, and the library, its
+    trash and the downloads' work folder; no other group has the network."""
+    from maktaba_pipeline.plugins import firstparty
+    from maktaba_plugin_runner.sandbox import _q, policy_for, seatbelt_profile
+
+    ytdlp = _tool(tmp_path, "yt-dlp")  # this machine's, as an Epic 51 asset would be
+    monkeypatch.setenv("MAKTABA_YTDLP", str(ytdlp))
+
+    def group(name: str) -> list[dict[str, object]]:
+        return [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == name]
+
+    assert {p.id for p in firstparty.plugins() if p.trusted.get("runner") == "net"} >= {
+        "tv.maktaba.youtube",
+        "tv.maktaba.repair",
+    }
+    areas = {"library": "/media/a", "trash": "/media/a/.maktaba/trash", "data.cache": "/w/yt"}
+    kw = {"api_socket": "/run/api.sock", "run_dir": "/run"}
+    net = policy_for(group("net"), areas=areas, own_socket="/run/runner-net.sock", **kw)
+    assert net.net and set(net.write) >= {"/media/a", "/media/a/.maktaba/trash", "/w/yt"}
+    assert os.path.realpath(ytdlp) in net.exec, net.exec
+    assert f"(allow process-exec (literal {_q(os.path.realpath(ytdlp))}))" in seatbelt_profile(net)
+    assert "(allow network-outbound)" in seatbelt_profile(net)
+    for other in ("light", "files"):
+        p = policy_for(group(other), areas=areas, own_socket=f"/run/runner-{other}.sock", **kw)
+        assert not p.net, other
+        assert "(allow network-outbound)" not in seatbelt_profile(p), other

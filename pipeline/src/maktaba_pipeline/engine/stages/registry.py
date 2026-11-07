@@ -50,7 +50,6 @@ CORE_MODULES: dict[str, str] = {
     "link": "maktaba_pipeline.engine.stages.link",
     "fingerprint": "maktaba_pipeline.engine.stages.fingerprint",
     "style_sample": "maktaba_pipeline.engine.stages.style_sample",
-    "youtube_sync": "maktaba_pipeline.engine.stages.youtube_sync",
     "youtube_tartube": "maktaba_pipeline.engine.stages.youtube_tartube",
     "detect": "maktaba_pipeline.engine.stages.detect",
     "fp_gate": "maktaba_pipeline.engine.stages.fp_gate",
@@ -65,21 +64,12 @@ CORE_MODULES: dict[str, str] = {
     "tv_swap": "maktaba_pipeline.engine.stages.tv_swap",
     "tv_gc": "maktaba_pipeline.engine.stages.tv_gc",
     "tv_rollback": "maktaba_pipeline.engine.stages.tv_rollback",
-    "exact_dates": "maktaba_pipeline.engine.stages.exact_dates",
-    "repair_broken": "maktaba_pipeline.engine.stages.repair_broken",
     "access_check": "maktaba_pipeline.engine.stages.access_check",
     "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",
     "enrich": "maktaba_pipeline.engine.stages.enrich",
     # Epic 47 (offline, MP4, no duplicates): shipped. A stage added before its story
     # ships is kept off by the graph (StageDef.unreleased); the web help test reads
     # this table and that flag
-    "convert_mp4": "maktaba_pipeline.engine.stages.convert_mp4",
-    "dedup_scan": "maktaba_pipeline.engine.stages.dedup_scan",
-    "dedup_apply": "maktaba_pipeline.engine.stages.dedup_apply",
-    "youtube_fetch": "maktaba_pipeline.engine.stages.youtube_fetch",
-    "youtube_backfill": "maktaba_pipeline.engine.stages.youtube_backfill",
-    "trash_purge": "maktaba_pipeline.engine.stages.trash_purge",
-    "file_restore": "maktaba_pipeline.engine.stages.file_restore",
 }
 _LEGACY_MODULE = "maktaba_pipeline.engine.stages.legacy"
 

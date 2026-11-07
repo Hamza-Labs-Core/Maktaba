@@ -106,6 +106,12 @@ class Relay:
         v = await self.ask("job_ref", job_id=job_id)
         return None if v is None else decode_any(v)
 
+    async def enqueue(self, **args: Any) -> dict[str, Any]:
+        """Queue a job: the worker enqueues it (only the queue engine writes the queue), and
+        only a stage this job's stage may request, for a subject of the job's library."""
+        v = await self.ask("enqueue", **args)
+        return dict(v or {})
+
 
 def runner_context(
     db: Any, job: Any, stage: Any, relay: Relay, write_mode: str, path_map: Any

@@ -563,6 +563,10 @@ class Parity:
             res = []
             for r in rows:
                 d = dict(r.items())
+                # a tool's own pointers in its error text (ffmpeg's "[mov,mp4 @ 0x7486c48000]")
+                # differ from run to run
+                if isinstance(d.get("message"), str):
+                    d["message"] = _ADDRESS.sub("0x…", d["message"])
                 k = tuple(d.values())
                 seen[k] = seen.get(k, 0) + 1
                 res.append({**d, "n": seen[k]})
@@ -735,6 +739,9 @@ async def parity(
             await admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
         await admin.close()
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+_ADDRESS = re.compile(r"0x[0-9a-f]{6,}")
 
 
 class SameIds:

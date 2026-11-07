@@ -9,10 +9,10 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from maktaba_fp_dedup.stages import dedup_scan
 
 from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.sql import loads
-from maktaba_pipeline.engine.stages import dedup_scan
 from maktaba_pipeline.identity.hasher import hash_full_file
 from maktaba_pipeline.library_mgmt.duplicates import (
     find_groups,

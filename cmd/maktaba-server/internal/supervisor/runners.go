@@ -3,7 +3,7 @@ package supervisor
 // maktaba-plugin-runner (Epic 54, story 54.23): Maktaba's own stages as first-party
 // plugins, one Python process per runner group with no database login and no secrets.
 //
-// The shared groups (light, net, service, fp) are instances of the core component
+// The shared groups (light, files, net, service, fp) are instances of the core component
 // core.plugin_runners (on_demand: they run while a component with a first-party plugin is
 // enabled); ml-* and index come with transcription and semantic search (wave 3). Only the
 // groups the release's first-party plugins name are built (shared/plugins FirstPartyGroups):
@@ -33,7 +33,7 @@ const RolePluginRunner Role = "plugin-runner"
 const PluginRunnersComponent = "core.plugin_runners"
 
 // RunnerGroups are core.plugin_runners' instances (the catalog's processes).
-var RunnerGroups = []string{"light", "net", "service", "fp"}
+var RunnerGroups = []string{"light", "files", "net", "service", "fp"}
 
 // The runner groups of their own components (story 54.30): ml, one per transcription
 // worker (transcription's plugin-runner/ml-*), and index (search.semantic's).
