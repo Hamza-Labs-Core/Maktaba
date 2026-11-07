@@ -15,7 +15,7 @@ summary = "fp.convert.summary"
 [trusted]
 runner    = "light"
 component = "library.convert"
-db.read   = ["libraries", "media_info"]
+db.read   = ["libraries", "media_info", "processing_jobs"]
 db.write  = ["audio_tracks", "file_actions", "video_copies", "videos"]
 settings  = []
 files.read  = ["library"]

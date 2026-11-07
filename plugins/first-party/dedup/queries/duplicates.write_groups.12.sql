@@ -1,5 +1,5 @@
 -- name: duplicates.write_groups.12
--- mode: write
--- scope: catalog
--- tables: duplicate_groups*
-DELETE FROM duplicate_groups WHERE id = $1
+-- mode: read
+-- scope: library $1
+-- tables: duplicate_groups
+SELECT id, members_key FROM duplicate_groups WHERE library_id = $1 AND status = 'open'

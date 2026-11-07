@@ -1,5 +1,5 @@
 -- name: duplicates.write_groups.7
 -- mode: write
--- scope: library $2
+-- scope: catalog
 -- tables: duplicate_groups*
-INSERT INTO duplicate_groups (id, library_id, tier, status, keeper_video_id, members_key, reason, created_at) VALUES ($1, $2, $3, 'open', $4, $5, $6, $7)
+UPDATE duplicate_groups SET library_id = $2, keeper_video_id = $3, members_key = $4, reason = $5 WHERE id = $1

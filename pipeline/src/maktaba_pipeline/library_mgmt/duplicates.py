@@ -77,6 +77,19 @@ FRAMES_MIN_SHARE = 0.8
 
 #: states whose row is not a candidate: merged already, or no file to compare
 _SKIP_STATES = ("superseded", "missing")
+#: _SKIP_STATES as SQL (a fixed text: a first-party plugin runs named statements)
+_SKIP_SQL = "'superseded', 'missing'"
+#: a list of ids in one parameter, as each dialect takes it: an array on Postgres, a JSON list
+#: on SQLite (fixed texts, whatever the list's length)
+_PG_IN_1 = "= ANY($1::uuid[])"
+_LITE_IN_1 = "IN (SELECT value FROM json_each($1))"
+_PG_IN_2 = "= ANY($2::uuid[])"
+_LITE_IN_2 = "IN (SELECT value FROM json_each($2))"
+_PG_IN_TEXT_1 = "= ANY($1::text[])"
+
+
+def _list_arg(db: Any, values: list[str]) -> Any:
+    return values if is_pg(db) else dumps(values)
 
 
 # ----------------------------------------------------------------------- data
@@ -229,37 +242,34 @@ def _subtitle_streams(raw: Any) -> int:
     return sum(1 for s in streams if isinstance(s, dict) and s.get("codec_type") == "subtitle")
 
 
-def _ids_sql(n: int, start: int = 1) -> str:
-    return ", ".join(f"${i}" for i in range(start, start + n))
-
-
 async def load_facts(db: Any, video_ids: Iterable[str]) -> dict[str, Facts]:
     """The keeper rule's facts of these rows (``media_info``, ``audio_tracks``, user data)."""
     ids = sorted(set(video_ids))
     if not ids:
         return {}
-    ph = _ids_sql(len(ids))
+    inn = _PG_IN_1 if is_pg(db) else _LITE_IN_1
+    arg = _list_arg(db, ids)
     rows = await db.fetch(
         "SELECT v.id AS id, v.library_id AS library_id, v.path AS path,"
         " v.created_at AS created_at, mi.container AS container,"
         " mi.video_codec AS video_codec, mi.width AS width, mi.height AS height,"
         " mi.bitrate_kbps AS bitrate_kbps, mi.raw_ffprobe AS raw_ffprobe"
-        f" FROM videos v LEFT JOIN media_info mi ON mi.video_id = v.id WHERE v.id IN ({ph})",
-        *ids,
+        f" FROM videos v LEFT JOIN media_info mi ON mi.video_id = v.id WHERE v.id {inn}",
+        arg,
     )
     audio: dict[str, list[str]] = {}
-    for r in await db.fetch(
-        f"SELECT video_id, codec FROM audio_tracks WHERE video_id IN ({ph})", *ids
-    ):
+    for r in await db.fetch(f"SELECT video_id, codec FROM audio_tracks WHERE video_id {inn}", arg):
         audio.setdefault(str(r["video_id"]), []).append(str(r["codec"] or "").lower())
     users: dict[str, int] = {}
-    for table in ("playback_state", "user_playlist_items", "user_favorites"):
-        for r in await db.fetch(
-            f"SELECT video_id, COUNT(*) AS n FROM {table} WHERE video_id IN ({ph})"
-            " GROUP BY video_id",
-            *ids,
-        ):
-            users[str(r["video_id"])] = users.get(str(r["video_id"]), 0) + int(r["n"])
+    for r in await db.fetch(
+        "SELECT video_id, COUNT(*) AS n FROM ("
+        f"SELECT video_id FROM playback_state WHERE video_id {inn}"
+        f" UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id {inn}"
+        f" UNION ALL SELECT video_id FROM user_favorites WHERE video_id {inn}"
+        ") u GROUP BY video_id",
+        arg,
+    ):
+        users[str(r["video_id"])] = users.get(str(r["video_id"]), 0) + int(r["n"])
     out: dict[str, Facts] = {}
     for r in rows:
         vid = str(r["id"])
@@ -314,15 +324,15 @@ class _Row:
 
 
 async def _rows(db: Any, library_id: str | None) -> list[_Row]:
-    where, args = ("v.library_id = $1", [uid(library_id)]) if library_id else ("1 = 1", [])
-    skip = ", ".join(f"'{s}'" for s in _SKIP_STATES)
+    where = "v.library_id = $1" if library_id else "1 = 1"
+    args = [uid(library_id)] if library_id else []
     rows = await db.fetch(
         "SELECT v.id AS id, v.library_id AS library_id, v.path AS path,"
         " v.content_hash AS content_hash, v.size_bytes AS size_bytes,"
         " COALESCE(v.display_title, v.title, v.filename) AS title,"
         " v.duration_sec AS duration, vs.frame_hashes AS frames"
         " FROM videos v LEFT JOIN video_signals vs ON vs.video_id = v.id"
-        f" WHERE {where} AND v.state NOT IN ({skip}) AND v.superseded_by IS NULL",
+        f" WHERE {where} AND v.state NOT IN ({_SKIP_SQL}) AND v.superseded_by IS NULL",
         *args,
     )
     return [
@@ -346,7 +356,8 @@ def _strip_ext(name: str) -> str:
 
 
 async def _copies(db: Any, library_id: str | None) -> dict[str, list[tuple[str, int]]]:
-    where, args = ("v.library_id = $1", [uid(library_id)]) if library_id else ("1 = 1", [])
+    where = "v.library_id = $1" if library_id else "1 = 1"
+    args = [uid(library_id)] if library_id else []
     out: dict[str, list[tuple[str, int]]] = {}
     for r in await db.fetch(
         "SELECT c.video_id AS video_id, c.path AS path, c.size_bytes AS size_bytes"
@@ -359,7 +370,8 @@ async def _copies(db: Any, library_id: str | None) -> dict[str, list[tuple[str, 
 
 
 async def _youtube_ids(db: Any, library_id: str | None) -> dict[str, list[str]]:
-    where, args = ("v.library_id = $1", [uid(library_id)]) if library_id else ("1 = 1", [])
+    where = "v.library_id = $1" if library_id else "1 = 1"
+    args = [uid(library_id)] if library_id else []
     out: dict[str, list[str]] = {}
     for r in await db.fetch(
         "SELECT DISTINCT e.external_id AS yt, e.video_id AS video_id"
@@ -375,12 +387,13 @@ async def _known_keys(db: Any, keys: Iterable[str]) -> dict[str, str]:
     """members_key -> status of the newest group with it."""
     ks = sorted(set(keys))
     out: dict[str, str] = {}
+    inn = _PG_IN_TEXT_1 if is_pg(db) else _LITE_IN_1
     for i in range(0, len(ks), 500):
         part = ks[i : i + 500]
         for r in await db.fetch(
             "SELECT members_key, status, created_at FROM duplicate_groups"
-            f" WHERE members_key IN ({_ids_sql(len(part))}) ORDER BY created_at",
-            *part,
+            f" WHERE members_key {inn} ORDER BY created_at",
+            _list_arg(db, part),
         ):
             out[str(r["members_key"])] = str(r["status"])
     return out
@@ -392,7 +405,8 @@ async def conversion_states(db: Any, library_id: str | None = None) -> dict[str,
     A video is a duplicate candidate only once this is ``done`` (converted, already an
     MP4, or skipped: Epic 47 "Pipeline order"); a video with no entry was never planned
     for conversion."""
-    where, args = ("AND v.library_id = $1", [uid(library_id)]) if library_id else ("", [])
+    where = "AND v.library_id = $1" if library_id else ""
+    args = [uid(library_id)] if library_id else []
     out: dict[str, str] = {}
     for r in await db.fetch(
         "SELECT j.subject_id AS vid, j.state AS state, j.payload AS payload"
@@ -668,15 +682,16 @@ async def write_groups(
                     )
                     report.reopened.append(gid)
             else:
-                vids = g.video_ids
+                vids = list(g.video_ids)
+                inn = _PG_IN_2 if is_pg(db) else _LITE_IN_2
                 overlap = await db.fetchval(
                     "SELECT d.id FROM duplicate_groups d"
                     " JOIN duplicate_members m ON m.group_id = d.id"
                     " WHERE d.status = 'open' AND d.tier = $1"
-                    f" AND m.video_id IN ({_ids_sql(len(vids), 2)})"
+                    f" AND m.video_id {inn}"
                     " ORDER BY d.created_at LIMIT 1",
                     g.tier,
-                    *vids,
+                    _list_arg(db, vids),
                 )
                 if overlap is not None:
                     gid = str(overlap)

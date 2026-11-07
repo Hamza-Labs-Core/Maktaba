@@ -33,12 +33,12 @@ from typing import Any, Literal
 from uuid import UUID
 
 from maktaba_pipeline.db.jobs import Job
-from maktaba_pipeline.library_mgmt.duplicates import conversion_states, find_groups, write_groups
 from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, Request, StageResult
 from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.library_mgmt.duplicates import conversion_states, find_groups, write_groups
 
 __all__ = ["IMPL", "run"]
 
@@ -46,7 +46,8 @@ __all__ = ["IMPL", "run"]
 PLAN_LIMIT = 200
 
 #: videos that are no candidates at all
-_SKIP_STATES = ("superseded", "missing")
+#: the states a duplicate check skips, as SQL (a fixed text: named statements)
+_SKIP_SQL = "'superseded', 'missing'"
 
 
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
@@ -76,12 +77,11 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
 async def _fan_out(
     db: Any, job: Job, ctx: StageContext, library_id: str, scope: Literal["library", "all"]
 ) -> StageResult:
-    skip = ", ".join(f"'{s}'" for s in _SKIP_STATES)
     videos = [
         str(r["id"])
         for r in await db.fetch(
             "SELECT id FROM videos WHERE library_id = $1"
-            f" AND state NOT IN ({skip}) AND superseded_by IS NULL ORDER BY id",
+            f" AND state NOT IN ({_SKIP_SQL}) AND superseded_by IS NULL ORDER BY id",
             library_id,
         )
     ]

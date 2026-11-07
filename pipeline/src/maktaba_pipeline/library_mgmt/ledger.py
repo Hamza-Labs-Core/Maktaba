@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Any, Literal, get_args
 from uuid import UUID
 
-from ..engine.sql import dumps, loads, now, parse_ts, to_ts, uid
+from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts, uid
 
 __all__ = [
     "KINDS",
@@ -126,6 +126,28 @@ def _field_args(db: Any, fields: dict[str, Any]) -> list[Any]:
     for name in FIELD_ORDER:
         out += [name in fields, _param(db, name, fields.get(name))]
     return out
+
+
+#: the open rows, optionally of one library or video, and unless $3 not those whose job may
+#: still work on them (OPEN_STATES, LIVE_JOB_STATES as fixed text; a test checks they agree)
+_OPEN_ACTIONS_SQL = (
+    "SELECT fa.* FROM file_actions fa"
+    " WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped')"
+    " AND ($1::uuid IS NULL OR fa.library_id = $1::uuid)"
+    " AND ($2::uuid IS NULL OR fa.video_id = $2::uuid)"
+    " AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id"
+    " AND pj.state IN ('claimed', 'running', 'resuming')))"
+    " ORDER BY fa.created_at, fa.id"
+)
+#: the same on SQLite (no casts)
+_OPEN_ACTIONS_LITE = (
+    "SELECT fa.* FROM file_actions fa"
+    " WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped')"
+    " AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2)"
+    " AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id"
+    " AND pj.state IN ('claimed', 'running', 'resuming')))"
+    " ORDER BY fa.created_at, fa.id"
+)
 
 
 class LedgerError(Exception):
@@ -319,24 +341,23 @@ async def open_actions(
     Unless ``include_live``, a row whose job is still claimed or running is left out: that
     job may be mid-swap on another worker.
     """
-    where = [f"fa.state IN ({', '.join(repr(s) for s in OPEN_STATES)})"]
-    args: list[Any] = []
-    if library_id is not None:
-        args.append(uid(library_id))
-        where.append(f"fa.library_id = ${len(args)}")
-    if video_id is not None:
-        args.append(uid(video_id))
-        where.append(f"fa.video_id = ${len(args)}")
-    if not include_live:
-        live = ", ".join(repr(s) for s in LIVE_JOB_STATES)
-        where.append(
-            "NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id"
-            f" AND pj.state IN ({live}))"
-        )
+    sql = _OPEN_ACTIONS_SQL if is_pg(db) else _OPEN_ACTIONS_LITE
     rows = await db.fetch(
-        f"SELECT fa.* FROM file_actions fa WHERE {' AND '.join(where)}"
-        " ORDER BY fa.created_at, fa.id",
-        *args,
+        sql,
+        None if library_id is None else uid(library_id),
+        None if video_id is None else uid(video_id),
+        bool(include_live) if is_pg(db) else int(bool(include_live)),
+    )
+    return [action_from_row(r) for r in rows]
+
+
+async def failed_actions(db: Any, kind: ActionKind, *, limit: int = 10_000) -> list[FileAction]:
+    """The newest ``failed`` rows of one kind (a group's file moves to try again)."""
+    rows = await db.fetch(
+        "SELECT * FROM file_actions WHERE kind = $1 AND state = 'failed'"
+        " ORDER BY created_at DESC, id DESC LIMIT $2",
+        kind,
+        int(limit),
     )
     return [action_from_row(r) for r in rows]
 

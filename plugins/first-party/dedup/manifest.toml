@@ -15,7 +15,7 @@ summary = "fp.dedup.summary"
 [trusted]
 runner    = "light"
 component = "library.dedup"
-db.read   = ["libraries"]
+db.read   = ["audio_tracks", "libraries", "media_info", "media_metadata_enrichment", "playback_state", "processing_jobs", "user_favorites", "user_playlist_items", "video_signals"]
 db.write  = ["duplicate_groups", "duplicate_members", "file_actions", "video_copies", "videos"]
 settings  = []
 files.read  = ["library"]

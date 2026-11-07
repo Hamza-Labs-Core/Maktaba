@@ -45,8 +45,8 @@ from .ledger import (
     FileAction,
     advance,
     create_action,
+    failed_actions,
     get_action,
-    list_actions,
     update_fields,
 )
 from .swap import _trash_target
@@ -671,11 +671,7 @@ async def _move_file(db: Any, a: FileAction, local: ToLocal, out: ApplyOutcome) 
 async def _retry_moves(db: Any, gid: str, local: ToLocal, *, dry_run: bool) -> ApplyOutcome:
     """An applied group: the file moves that failed are tried again."""
     out = ApplyOutcome("noop", gid, reason="applied already")
-    failed = [
-        a
-        for a in await list_actions(db, kinds=["dedup"], states=["failed"], limit=10_000)
-        if (a.verify or {}).get("group") == gid
-    ]
+    failed = [a for a in await failed_actions(db, "dedup") if (a.verify or {}).get("group") == gid]
     if not failed:
         return out
     out.status = "applied"

@@ -15,3 +15,18 @@ def test_the_fixed_updates_name_every_writable_field_in_order() -> None:
         assert [g[0] for g in got] == list(ledger.FIELD_ORDER)
         for i, (name, flag, value, kept) in enumerate(got):
             assert (int(flag), int(value), kept) == (first + 2 * i, first + 2 * i + 1, name)
+
+
+def test_the_open_actions_text_names_the_open_and_live_states() -> None:
+    for sql in (ledger._OPEN_ACTIONS_SQL, ledger._OPEN_ACTIONS_LITE):
+        for s in ledger.OPEN_STATES + ledger.LIVE_JOB_STATES:
+            assert f"'{s}'" in sql, s
+
+
+def test_the_skipped_states_text_is_the_tuple() -> None:
+    from maktaba_fp_dedup.stages import dedup_scan
+
+    from maktaba_pipeline.library_mgmt import duplicates
+
+    want = ", ".join(f"'{s}'" for s in duplicates._SKIP_STATES)
+    assert duplicates._SKIP_SQL == dedup_scan._SKIP_SQL == want

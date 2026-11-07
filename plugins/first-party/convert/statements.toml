@@ -1,8 +1,10 @@
 # The shared pipeline modules whose statements tv.maktaba.convert's stage runs (story 54.24 §1)
+# swap.unsupersede (videos.state) is the worker's, relayed; ledger.list_actions is the
+# admin API's: neither is listed
 modules = [
     "maktaba_pipeline.engine.stages._common:load_video,require_video",
     "maktaba_pipeline.library_mgmt.convert",
-    "maktaba_pipeline.library_mgmt.ledger",
-    "maktaba_pipeline.library_mgmt.swap",
+    "maktaba_pipeline.library_mgmt.ledger:create_action,get_action,advance,update_fields,open_actions,failed_actions",
+    "maktaba_pipeline.library_mgmt.swap:_trash_target,swap_in,_fail_before_swap,_finish_swapped,_roll_back_swapped,recover,_restore_convert,_restore_dedup,restore,_finish_restore",
     "maktaba_pipeline.library_mgmt.trash",
 ]

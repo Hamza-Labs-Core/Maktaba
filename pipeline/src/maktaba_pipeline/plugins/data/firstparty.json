@@ -1,5 +1,5 @@
 {
- "digest": "47209ccc0c9130ef70fee5d51196ba3742d5a2ba1d8214ff974820dd0f6e17e3",
+ "digest": "5d0148eafa98518b3ddbbcb6b821b4fb5267952054a22b548e0abd747e2b2ebb",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -464,10 +464,10 @@
    }
   },
   {
-   "digest": "87923f13c54bbba124673a788cf5b85b7da856007eb178352823eed69fca07b7",
+   "digest": "1b01bfbce23afa628c6558850d92fab98e0b635b2fbcb99d1958ee9423a5e082",
    "folder": "convert",
    "id": "tv.maktaba.convert",
-   "manifest": "# tv.maktaba.convert: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): rewrites a library video as MP4 and swaps it in, the original kept in the trash.\nschema     = 1\nid         = \"tv.maktaba.convert\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.convert.name\"\nsummary = \"fp.convert.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"library.convert\"\ndb.read   = [\"libraries\", \"media_info\"]\ndb.write  = [\"audio_tracks\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"convert_mp4\"\nsubject      = \"video\"\nexport       = \"convert-mp4\"\nversion      = 1\nlabel        = \"Convert to MP4\"\nsubject_kinds = [\"video\", \"library\"]\npool         = \"convert\"\nlane         = \"media\"\nlane_order   = 14\nmay_request  = [\"probe\", \"thumbnail\", \"thumb_small\"]\nexternal_write = true\nmax_attempts = 2\nplacement    = \"home\"\nedges        = [{ to = \"dedup_scan\", map = \"same_video\", when = \"always\" }]\nentry        = \"maktaba_fp_convert.stages.convert_mp4:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "manifest": "# tv.maktaba.convert: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): rewrites a library video as MP4 and swaps it in, the original kept in the trash.\nschema     = 1\nid         = \"tv.maktaba.convert\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.convert.name\"\nsummary = \"fp.convert.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"library.convert\"\ndb.read   = [\"libraries\", \"media_info\", \"processing_jobs\"]\ndb.write  = [\"audio_tracks\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"convert_mp4\"\nsubject      = \"video\"\nexport       = \"convert-mp4\"\nversion      = 1\nlabel        = \"Convert to MP4\"\nsubject_kinds = [\"video\", \"library\"]\npool         = \"convert\"\nlane         = \"media\"\nlane_order   = 14\nmay_request  = [\"probe\", \"thumbnail\", \"thumb_small\"]\nexternal_write = true\nmax_attempts = 2\nplacement    = \"home\"\nedges        = [{ to = \"dedup_scan\", map = \"same_video\", when = \"always\" }]\nentry        = \"maktaba_fp_convert.stages.convert_mp4:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
    "statements": [
     {
      "mode": "read",
@@ -591,6 +591,18 @@
     },
     {
      "mode": "write",
+     "name": "ledger.advance",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "8f03680b2280dcc66c321f47a347f848495eae06fd191c2e52b0654d37d2a12e",
+     "text": "UPDATE file_actions SET state = $3, updated_at = $4, error = CASE WHEN $5 THEN $6 ELSE error END, new_hash = CASE WHEN $7 THEN $8 ELSE new_hash END, new_path = CASE WHEN $9 THEN $10 ELSE new_path END, new_size = CASE WHEN $11 THEN $12 ELSE new_size END, old_hash = CASE WHEN $13 THEN $14 ELSE old_hash END, old_path = CASE WHEN $15 THEN $16 ELSE old_path END, old_size = CASE WHEN $17 THEN $18 ELSE old_size END, purge_after = CASE WHEN $19 THEN $20 ELSE purge_after END, purged_at = CASE WHEN $21 THEN $22 ELSE purged_at END, trash_path = CASE WHEN $23 THEN $24 ELSE trash_path END, verify = CASE WHEN $25 THEN $26 ELSE verify END, video_id = CASE WHEN $27 THEN $28 ELSE video_id END WHERE id = $1 AND state = $2 RETURNING id",
+     "writes": [
+      "file_actions"
+     ]
+    },
+    {
+     "mode": "write",
      "name": "ledger.create_action",
      "reads": [],
      "scope": "subject",
@@ -600,6 +612,18 @@
      "writes": [
       "file_actions"
      ]
+    },
+    {
+     "mode": "read",
+     "name": "ledger.failed_actions",
+     "reads": [
+      "file_actions"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c2bc25a6a3827f47e98755ab5a93050c1133b2b25445e334ec837938254ca8ed",
+     "text": "SELECT * FROM file_actions WHERE kind = $1 AND state = 'failed' ORDER BY created_at DESC, id DESC LIMIT $2",
+     "writes": []
     },
     {
      "mode": "read",
@@ -614,6 +638,44 @@
      "writes": []
     },
     {
+     "mode": "read",
+     "name": "ledger.open_actions",
+     "reads": [
+      "file_actions",
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "48d457d572d8f12e7af3f42f3fc5c8b806145ef46c0846a94ffc163847194e0e",
+     "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1::uuid IS NULL OR fa.library_id = $1::uuid) AND ($2::uuid IS NULL OR fa.video_id = $2::uuid) AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "ledger.open_actions.2",
+     "reads": [
+      "file_actions",
+      "processing_jobs"
+     ],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "247e2e79f4fd96a59e7dfa516a0b59cf108edc5f857197ee4b04bad395e1c087",
+     "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2) AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "ledger.update_fields",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "916cfa4e16ef1b2423c0979540f64f2b0029728f875ba4ae8e2b5fcd553a90a8",
+     "text": "UPDATE file_actions SET updated_at = $2, error = CASE WHEN $3 THEN $4 ELSE error END, new_hash = CASE WHEN $5 THEN $6 ELSE new_hash END, new_path = CASE WHEN $7 THEN $8 ELSE new_path END, new_size = CASE WHEN $9 THEN $10 ELSE new_size END, old_hash = CASE WHEN $11 THEN $12 ELSE old_hash END, old_path = CASE WHEN $13 THEN $14 ELSE old_path END, old_size = CASE WHEN $15 THEN $16 ELSE old_size END, purge_after = CASE WHEN $17 THEN $18 ELSE purge_after END, purged_at = CASE WHEN $19 THEN $20 ELSE purged_at END, trash_path = CASE WHEN $21 THEN $22 ELSE trash_path END, verify = CASE WHEN $23 THEN $24 ELSE verify END, video_id = CASE WHEN $25 THEN $26 ELSE video_id END WHERE id = $1",
+     "writes": [
+      "file_actions"
+     ]
+    },
+    {
      "mode": "write",
      "name": "swap.restore_dedup",
      "reads": [],
@@ -623,18 +685,6 @@
      "text": "INSERT INTO video_copies (video_id, path, size_bytes, mtime, seen_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (video_id, path) DO NOTHING",
      "writes": [
       "video_copies"
-     ]
-    },
-    {
-     "mode": "write",
-     "name": "swap.restore_dedup.2",
-     "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
-     "sha256": "b5b77191bc34895a71335d67680fde417e4053e012cdc5968d610656e76643e7",
-     "text": "UPDATE videos SET superseded_by = NULL, state = $2 WHERE id = $1 AND state = 'superseded'",
-     "writes": [
-      "videos"
      ]
     },
     {
@@ -722,10 +772,10 @@
    }
   },
   {
-   "digest": "af794550a726cb25f680aa128d46682067a90ddf75b745381d0294f507ac0db2",
+   "digest": "e79d0100c2c14e1a8573476e1bac348d5a05cee2d894981f36c70007cb2fc63c",
    "folder": "dedup",
    "id": "tv.maktaba.dedup",
-   "manifest": "# tv.maktaba.dedup: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): finds duplicates, merges a group into its keeper, empties and restores the file trash.\nschema     = 1\nid         = \"tv.maktaba.dedup\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.dedup.name\"\nsummary = \"fp.dedup.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"library.dedup\"\ndb.read   = [\"libraries\"]\ndb.write  = [\"duplicate_groups\", \"duplicate_members\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"dedup_scan\"\nsubject      = \"library\"\nexport       = \"dedup-scan\"\nversion      = 1\nlabel        = \"Find duplicates\"\nsubject_kinds = [\"library\", \"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 15\nmay_request  = [\"dedup_apply\"]\nentry        = \"maktaba_fp_dedup.stages.dedup_scan:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dedup_apply\"\nsubject      = \"dup_group\"\nexport       = \"dedup-apply\"\nversion      = 1\nlabel        = \"Merge duplicates\"\nsubject_kinds = [\"dup_group\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 16\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.dedup_apply:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"trash_purge\"\nsubject      = \"library\"\nexport       = \"trash-purge\"\nversion      = 1\nlabel        = \"Empty file trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 17\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.trash_purge:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"file_restore\"\nsubject      = \"library\"\nexport       = \"file-restore\"\nversion      = 1\nlabel        = \"Restore from trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 18\nexternal_write = true\nmax_attempts = 2\nentry        = \"maktaba_fp_dedup.stages.file_restore:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "manifest": "# tv.maktaba.dedup: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 5\n# (story 54.32): finds duplicates, merges a group into its keeper, empties and restores the file trash.\nschema     = 1\nid         = \"tv.maktaba.dedup\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.dedup.name\"\nsummary = \"fp.dedup.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"library.dedup\"\ndb.read   = [\"audio_tracks\", \"libraries\", \"media_info\", \"media_metadata_enrichment\", \"playback_state\", \"processing_jobs\", \"user_favorites\", \"user_playlist_items\", \"video_signals\"]\ndb.write  = [\"duplicate_groups\", \"duplicate_members\", \"file_actions\", \"video_copies\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"ffmpeg\", \"ffprobe\"]\n\n[[stage]]\nname         = \"dedup_scan\"\nsubject      = \"library\"\nexport       = \"dedup-scan\"\nversion      = 1\nlabel        = \"Find duplicates\"\nsubject_kinds = [\"library\", \"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 15\nmay_request  = [\"dedup_apply\"]\nentry        = \"maktaba_fp_dedup.stages.dedup_scan:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"dedup_apply\"\nsubject      = \"dup_group\"\nexport       = \"dedup-apply\"\nversion      = 1\nlabel        = \"Merge duplicates\"\nsubject_kinds = [\"dup_group\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 16\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.dedup_apply:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"trash_purge\"\nsubject      = \"library\"\nexport       = \"trash-purge\"\nversion      = 1\nlabel        = \"Empty file trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 17\nexternal_write = true\nentry        = \"maktaba_fp_dedup.stages.trash_purge:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"file_restore\"\nsubject      = \"library\"\nexport       = \"file-restore\"\nversion      = 1\nlabel        = \"Restore from trash\"\nsubject_kinds = [\"library\"]\npool         = \"nas_write\"\nlane         = \"media\"\nlane_order   = 18\nexternal_write = true\nmax_attempts = 2\nentry        = \"maktaba_fp_dedup.stages.file_restore:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
    "statements": [
     {
      "mode": "read",
@@ -814,6 +864,18 @@
     },
     {
      "mode": "read",
+     "name": "dedup_scan.fan_out",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "f965245befe7b4edce8eb4df0f1deb7c65a54ba69b3750b1b454dcdfe869d578",
+     "text": "SELECT id FROM videos WHERE library_id = $1 AND state NOT IN ('superseded', 'missing') AND superseded_by IS NULL ORDER BY id",
+     "writes": []
+    },
+    {
+     "mode": "read",
      "name": "duplicates.auto_exact",
      "reads": [
       "libraries"
@@ -822,6 +884,270 @@
      "scope_arg": 0,
      "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
      "text": "SELECT settings FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.conversion_states",
+     "reads": [
+      "processing_jobs",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "52e551bc1790f6479c2b57caa3c52dd0b9311da3525c2e2f821d1e9dbe1a3b8c",
+     "text": "SELECT j.subject_id AS vid, j.state AS state, j.payload AS payload FROM processing_jobs j JOIN videos v ON v.id = j.subject_id WHERE j.subject_kind = 'video' AND j.stage = 'convert_mp4' AND v.library_id = $1 ORDER BY j.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.conversion_states.2",
+     "reads": [
+      "processing_jobs",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ad2e37749c0642451ff5c727a98f75d9d42db82747288c62804d449dbdbec4b9",
+     "text": "SELECT j.subject_id AS vid, j.state AS state, j.payload AS payload FROM processing_jobs j JOIN videos v ON v.id = j.subject_id WHERE j.subject_kind = 'video' AND j.stage = 'convert_mp4'  ORDER BY j.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.copies",
+     "reads": [
+      "video_copies",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "172058704a9172b32cd67a89bb9664ab3830106fab41f95eaa5297a273f37815",
+     "text": "SELECT c.video_id AS video_id, c.path AS path, c.size_bytes AS size_bytes FROM video_copies c JOIN videos v ON v.id = c.video_id WHERE v.library_id = $1 ORDER BY c.path",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.copies.2",
+     "reads": [
+      "video_copies",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c073445db95a736a75fa5d65b567af2b8e40be15269f4186302c9ae192ddc6ec",
+     "text": "SELECT c.video_id AS video_id, c.path AS path, c.size_bytes AS size_bytes FROM video_copies c JOIN videos v ON v.id = c.video_id WHERE 1 = 1 ORDER BY c.path",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.known_keys",
+     "reads": [
+      "duplicate_groups"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "0e4e33acf44bcef409b69069c57efbe6ddca67ca8852c69bb30acecee5bf3305",
+     "text": "SELECT members_key, status, created_at FROM duplicate_groups WHERE members_key = ANY($1::text[]) ORDER BY created_at",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.known_keys.2",
+     "reads": [
+      "duplicate_groups"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e846359bb3626c48d63de0938523196136123902c888e2161a446f9213e4ccac",
+     "text": "SELECT members_key, status, created_at FROM duplicate_groups WHERE members_key IN (SELECT value FROM json_each($1)) ORDER BY created_at",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts",
+     "reads": [
+      "media_info",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "186ee66c1be2442814a885d67097b23f569badc3decbab6fb5cb8a62cc0f46b3",
+     "text": "SELECT v.id AS id, v.library_id AS library_id, v.path AS path, v.created_at AS created_at, mi.container AS container, mi.video_codec AS video_codec, mi.width AS width, mi.height AS height, mi.bitrate_kbps AS bitrate_kbps, mi.raw_ffprobe AS raw_ffprobe FROM videos v LEFT JOIN media_info mi ON mi.video_id = v.id WHERE v.id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.10",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "78260bb07c3b4126dd3182b19784fba7fbc27bf7391fb7800d040c2304039ece",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.11",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9c54b73cc71df96d9be5a438166ecdaf7749e84fd25fb3ecbbd9ec67beb72780",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.12",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ac153e8b272b5be0eca91d5619e91964f1767577d1e9be17d5cbb5349b40ed3a",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.2",
+     "reads": [
+      "media_info",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "da6f600368af6c835fb264e35f3c6c7f3200b2bb6ec57d56b5ce16c3a04551c5",
+     "text": "SELECT v.id AS id, v.library_id AS library_id, v.path AS path, v.created_at AS created_at, mi.container AS container, mi.video_codec AS video_codec, mi.width AS width, mi.height AS height, mi.bitrate_kbps AS bitrate_kbps, mi.raw_ffprobe AS raw_ffprobe FROM videos v LEFT JOIN media_info mi ON mi.video_id = v.id WHERE v.id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.3",
+     "reads": [
+      "audio_tracks"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "83560faff58ad2c193d43dd018a7f7d068b4f95cc16a2ae3d7f5519ba02f2c69",
+     "text": "SELECT video_id, codec FROM audio_tracks WHERE video_id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.4",
+     "reads": [
+      "audio_tracks"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6f9bbe39db16241fa33d5434527ed45ab5030fb8775f96296ce3e515b30e7e72",
+     "text": "SELECT video_id, codec FROM audio_tracks WHERE video_id IN (SELECT value FROM json_each($1))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.5",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "2721ef6504b1986ff32a6414b2e0020a9b04d40b3b71f0a8f58cdd8c7b152115",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.6",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "98ef0a2346ccaad3bd9e03da0e8920ad07df451ba1112e1d13b83676816dacad",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.7",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "4878c52c6f99492c60b04136032531940f6a5927a647ea6da6018804b7d836ed",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.8",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "6dbff030333a69cc2f7e853fa17194d359f82d8acef7e6899d62ce1869a168de",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_favorites WHERE video_id IN (SELECT value FROM json_each($1))) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.load_facts.9",
+     "reads": [
+      "playback_state",
+      "user_favorites",
+      "user_playlist_items"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "8c7165489ea1f1d9f18938b3349bef1e29de79803e293b4101f215c8462c6b87",
+     "text": "SELECT video_id, COUNT(*) AS n FROM (SELECT video_id FROM playback_state WHERE video_id IN (SELECT value FROM json_each($1)) UNION ALL SELECT video_id FROM user_playlist_items WHERE video_id = ANY($1::uuid[]) UNION ALL SELECT video_id FROM user_favorites WHERE video_id = ANY($1::uuid[])) u GROUP BY video_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.rows",
+     "reads": [
+      "video_signals",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "52524c23a2a8e35146530bee13f0386e9c69c55a8e8716cbcac024ff42cf5031",
+     "text": "SELECT v.id AS id, v.library_id AS library_id, v.path AS path, v.content_hash AS content_hash, v.size_bytes AS size_bytes, COALESCE(v.display_title, v.title, v.filename) AS title, v.duration_sec AS duration, vs.frame_hashes AS frames FROM videos v LEFT JOIN video_signals vs ON vs.video_id = v.id WHERE v.library_id = $1 AND v.state NOT IN ('superseded', 'missing') AND v.superseded_by IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.rows.2",
+     "reads": [
+      "video_signals",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "7d2ab9afc0cac60b4e788731814185f6bd9f2b7f6463b004cb74a60df32a954c",
+     "text": "SELECT v.id AS id, v.library_id AS library_id, v.path AS path, v.content_hash AS content_hash, v.size_bytes AS size_bytes, COALESCE(v.display_title, v.title, v.filename) AS title, v.duration_sec AS duration, vs.frame_hashes AS frames FROM videos v LEFT JOIN video_signals vs ON vs.video_id = v.id WHERE 1 = 1 AND v.state NOT IN ('superseded', 'missing') AND v.superseded_by IS NULL",
      "writes": []
     },
     {
@@ -835,8 +1161,33 @@
      "writes": []
     },
     {
-     "mode": "read",
+     "mode": "write",
      "name": "duplicates.write_groups.10",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "c1a4d9266d8ff0cda91362df8afc6405d3184ecd774b68c2a0563fe9e095b046",
+     "text": "INSERT INTO duplicate_members (group_id, video_id, path, is_copy, score) VALUES ($1, $2, $3, $4, $5)",
+     "writes": [
+      "duplicate_members"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.write_groups.11",
+     "reads": [
+      "duplicate_groups",
+      "duplicate_members"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "a61e85ca2379f693f6f1198fabcba142509586f7a5da1a71d28fe24b89f9afef",
+     "text": "SELECT DISTINCT d.id AS id, d.members_key AS members_key FROM duplicate_groups d JOIN duplicate_members m ON m.group_id = d.id WHERE d.status = 'open' AND m.video_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.write_groups.12",
      "reads": [
       "duplicate_groups"
      ],
@@ -848,7 +1199,7 @@
     },
     {
      "mode": "read",
-     "name": "duplicates.write_groups.11",
+     "name": "duplicates.write_groups.13",
      "reads": [
       "duplicate_groups"
      ],
@@ -860,7 +1211,7 @@
     },
     {
      "mode": "write",
-     "name": "duplicates.write_groups.12",
+     "name": "duplicates.write_groups.14",
      "reads": [],
      "scope": "catalog",
      "scope_arg": 0,
@@ -907,8 +1258,34 @@
      ]
     },
     {
-     "mode": "write",
+     "mode": "read",
      "name": "duplicates.write_groups.5",
+     "reads": [
+      "duplicate_groups",
+      "duplicate_members"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "5d36bd24c775e8d3d7c882e1af5edfab04abf7e898900582d77e35043b6d9d82",
+     "text": "SELECT d.id FROM duplicate_groups d JOIN duplicate_members m ON m.group_id = d.id WHERE d.status = 'open' AND d.tier = $1 AND m.video_id = ANY($2::uuid[]) ORDER BY d.created_at LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "duplicates.write_groups.6",
+     "reads": [
+      "duplicate_groups",
+      "duplicate_members"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "7fb2fca27249753a9252d5ba4c885ff9bda292240664c0c4badca85177ea3b1c",
+     "text": "SELECT d.id FROM duplicate_groups d JOIN duplicate_members m ON m.group_id = d.id WHERE d.status = 'open' AND d.tier = $1 AND m.video_id IN (SELECT value FROM json_each($2)) ORDER BY d.created_at LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "duplicates.write_groups.7",
      "reads": [],
      "scope": "catalog",
      "scope_arg": 0,
@@ -920,7 +1297,7 @@
     },
     {
      "mode": "write",
-     "name": "duplicates.write_groups.6",
+     "name": "duplicates.write_groups.8",
      "reads": [],
      "scope": "catalog",
      "scope_arg": 0,
@@ -932,7 +1309,7 @@
     },
     {
      "mode": "write",
-     "name": "duplicates.write_groups.7",
+     "name": "duplicates.write_groups.9",
      "reads": [],
      "scope": "library",
      "scope_arg": 2,
@@ -943,29 +1320,42 @@
      ]
     },
     {
-     "mode": "write",
-     "name": "duplicates.write_groups.8",
-     "reads": [],
-     "scope": "subject",
-     "scope_arg": 2,
-     "sha256": "c1a4d9266d8ff0cda91362df8afc6405d3184ecd774b68c2a0563fe9e095b046",
-     "text": "INSERT INTO duplicate_members (group_id, video_id, path, is_copy, score) VALUES ($1, $2, $3, $4, $5)",
-     "writes": [
-      "duplicate_members"
-     ]
+     "mode": "read",
+     "name": "duplicates.youtube_ids",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "d2a934c7aa068eb7395bab0275359b8b0c5bf6cd494b98fbb5c79019d8cd77c5",
+     "text": "SELECT DISTINCT e.external_id AS yt, e.video_id AS video_id FROM media_metadata_enrichment e JOIN videos v ON v.id = e.video_id WHERE v.library_id = $1 AND e.provider = 'youtube' AND NOT COALESCE(e.is_dismissed, false)",
+     "writes": []
     },
     {
      "mode": "read",
-     "name": "duplicates.write_groups.9",
+     "name": "duplicates.youtube_ids.2",
      "reads": [
-      "duplicate_groups",
-      "duplicate_members"
+      "media_metadata_enrichment",
+      "videos"
      ],
-     "scope": "subject",
-     "scope_arg": 1,
-     "sha256": "a61e85ca2379f693f6f1198fabcba142509586f7a5da1a71d28fe24b89f9afef",
-     "text": "SELECT DISTINCT d.id AS id, d.members_key AS members_key FROM duplicate_groups d JOIN duplicate_members m ON m.group_id = d.id WHERE d.status = 'open' AND m.video_id = $1",
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "a5b370a998505a1639ab4d2d08842de2c84ae52dfcdd192d81ec70aa3942fef3",
+     "text": "SELECT DISTINCT e.external_id AS yt, e.video_id AS video_id FROM media_metadata_enrichment e JOIN videos v ON v.id = e.video_id WHERE 1 = 1 AND e.provider = 'youtube' AND NOT COALESCE(e.is_dismissed, false)",
      "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "ledger.advance",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "8f03680b2280dcc66c321f47a347f848495eae06fd191c2e52b0654d37d2a12e",
+     "text": "UPDATE file_actions SET state = $3, updated_at = $4, error = CASE WHEN $5 THEN $6 ELSE error END, new_hash = CASE WHEN $7 THEN $8 ELSE new_hash END, new_path = CASE WHEN $9 THEN $10 ELSE new_path END, new_size = CASE WHEN $11 THEN $12 ELSE new_size END, old_hash = CASE WHEN $13 THEN $14 ELSE old_hash END, old_path = CASE WHEN $15 THEN $16 ELSE old_path END, old_size = CASE WHEN $17 THEN $18 ELSE old_size END, purge_after = CASE WHEN $19 THEN $20 ELSE purge_after END, purged_at = CASE WHEN $21 THEN $22 ELSE purged_at END, trash_path = CASE WHEN $23 THEN $24 ELSE trash_path END, verify = CASE WHEN $25 THEN $26 ELSE verify END, video_id = CASE WHEN $27 THEN $28 ELSE video_id END WHERE id = $1 AND state = $2 RETURNING id",
+     "writes": [
+      "file_actions"
+     ]
     },
     {
      "mode": "write",
@@ -981,6 +1371,18 @@
     },
     {
      "mode": "read",
+     "name": "ledger.failed_actions",
+     "reads": [
+      "file_actions"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c2bc25a6a3827f47e98755ab5a93050c1133b2b25445e334ec837938254ca8ed",
+     "text": "SELECT * FROM file_actions WHERE kind = $1 AND state = 'failed' ORDER BY created_at DESC, id DESC LIMIT $2",
+     "writes": []
+    },
+    {
+     "mode": "read",
      "name": "ledger.get_action",
      "reads": [
       "file_actions"
@@ -992,6 +1394,44 @@
      "writes": []
     },
     {
+     "mode": "read",
+     "name": "ledger.open_actions",
+     "reads": [
+      "file_actions",
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "48d457d572d8f12e7af3f42f3fc5c8b806145ef46c0846a94ffc163847194e0e",
+     "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1::uuid IS NULL OR fa.library_id = $1::uuid) AND ($2::uuid IS NULL OR fa.video_id = $2::uuid) AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "ledger.open_actions.2",
+     "reads": [
+      "file_actions",
+      "processing_jobs"
+     ],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "247e2e79f4fd96a59e7dfa516a0b59cf108edc5f857197ee4b04bad395e1c087",
+     "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2) AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "ledger.update_fields",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "916cfa4e16ef1b2423c0979540f64f2b0029728f875ba4ae8e2b5fcd553a90a8",
+     "text": "UPDATE file_actions SET updated_at = $2, error = CASE WHEN $3 THEN $4 ELSE error END, new_hash = CASE WHEN $5 THEN $6 ELSE new_hash END, new_path = CASE WHEN $7 THEN $8 ELSE new_path END, new_size = CASE WHEN $9 THEN $10 ELSE new_size END, old_hash = CASE WHEN $11 THEN $12 ELSE old_hash END, old_path = CASE WHEN $13 THEN $14 ELSE old_path END, old_size = CASE WHEN $15 THEN $16 ELSE old_size END, purge_after = CASE WHEN $17 THEN $18 ELSE purge_after END, purged_at = CASE WHEN $19 THEN $20 ELSE purged_at END, trash_path = CASE WHEN $21 THEN $22 ELSE trash_path END, verify = CASE WHEN $23 THEN $24 ELSE verify END, video_id = CASE WHEN $25 THEN $26 ELSE video_id END WHERE id = $1",
+     "writes": [
+      "file_actions"
+     ]
+    },
+    {
      "mode": "write",
      "name": "swap.restore_dedup",
      "reads": [],
@@ -1001,18 +1441,6 @@
      "text": "INSERT INTO video_copies (video_id, path, size_bytes, mtime, seen_at) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (video_id, path) DO NOTHING",
      "writes": [
       "video_copies"
-     ]
-    },
-    {
-     "mode": "write",
-     "name": "swap.restore_dedup.2",
-     "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
-     "sha256": "b5b77191bc34895a71335d67680fde417e4053e012cdc5968d610656e76643e7",
-     "text": "UPDATE videos SET superseded_by = NULL, state = $2 WHERE id = $1 AND state = 'superseded'",
-     "writes": [
-      "videos"
      ]
     },
     {

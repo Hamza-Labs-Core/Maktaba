@@ -461,6 +461,8 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             from ..library_mgmt.dedup_merge import uncovered_foreign_keys
 
             return [list(x) for x in await uncovered_foreign_keys(db)]
+        if op == "unsupersede":
+            return await _relayed_unsupersede(db, ctx, {k: decode_any(v) for k, v in a.items()})
         if op == "dedup_commit":
             return await _relayed_dedup_commit(db, ctx, {k: decode_any(v) for k, v in a.items()})
         raise ValueError(f"engine op {op!r}")
@@ -495,8 +497,10 @@ async def _relayed_enqueue(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, An
 
     job, sdef = ctx.job, ctx.stage
     stage = str(a["stage"])
-    if stage != sdef.name and stage not in (sdef.may_request or ()) and not _neighbours(
-        sdef.name, stage
+    if (
+        stage != sdef.name
+        and stage not in (sdef.may_request or ())
+        and not _neighbours(sdef.name, stage)
     ):
         raise EnqueueRefused(f"plugin_scope: {sdef.name} may not queue {stage}")
     kind, subject = str(a["subject_kind"]), str(a["subject_id"])
@@ -530,6 +534,25 @@ async def _relayed_enqueue(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, An
         max_attempts=a.get("max_attempts"),
     )
     return {"job_id": res.job_id, "outcome": res.outcome}
+
+
+async def _relayed_unsupersede(db: Any, ctx: Any, a: dict[str, Any]) -> None:
+    """A restored duplicate's video back in its state, by the worker for ``file_restore``:
+    only a superseded video of the job's library (the state is checked by the table's own
+    constraint)."""
+    from ..engine.sql import uid
+    from ..library_mgmt.swap import unsupersede
+
+    vid = str(a["video_id"])
+    lib = getattr(ctx.job, "library_id", None)
+    ok = lib is not None and await db.fetchval(
+        "SELECT 1 FROM videos WHERE id = $1 AND library_id = $2 AND state = 'superseded'",
+        uid(vid),
+        uid(lib),
+    )
+    if not ok:
+        raise EnqueueRefused(f"plugin_scope: video {vid} is not a superseded video of this library")
+    await unsupersede(db, vid, str(a["state"]))
 
 
 async def _relayed_dedup_commit(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:

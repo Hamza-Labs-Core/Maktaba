@@ -504,10 +504,21 @@ async def _restore_dedup(db: Any, orig: FileAction, row: FileAction, l_orig: str
         )
         return
     prior = (orig.verify or {}).get("prior_state") or "discovered"
+    await unsupersede(db, str(orig.video_id), str(prior))
+
+
+async def unsupersede(db: Any, video_id: str, state: str) -> None:
+    """A superseded video back in ``state`` (a restored duplicate). Only the engine writes
+    ``videos.state``: in a first-party plugin's runner the worker does it (Epic 54 wave 5,
+    relayed, for a video of the job's library)."""
+    relay = getattr(db, "engine_relay", None)
+    if relay is not None:
+        await relay.ask("unsupersede", video_id=video_id, state=state)
+        return
     await db.execute(
         "UPDATE videos SET superseded_by = NULL, state = $2 WHERE id = $1 AND state = 'superseded'",
-        uid(orig.video_id),
-        str(prior),
+        uid(video_id),
+        state,
     )
 
 

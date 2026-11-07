@@ -529,7 +529,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.convert",
       "processes": [],
       "requires": [],
       "resources": {
@@ -576,7 +576,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.dedup",
       "processes": [],
       "requires": [],
       "resources": {
