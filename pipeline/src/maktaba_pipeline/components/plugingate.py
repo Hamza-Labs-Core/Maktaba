@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 PLUGIN_API_MAJOR = 1
-PLUGIN_API_MINOR = 0
+PLUGIN_API_MINOR = 2
 
 
 @dataclass(frozen=True)

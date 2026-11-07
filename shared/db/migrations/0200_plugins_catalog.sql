@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0197 - plugins: the store's catalog and the kill switch on the home (Epic 54, stories
+-- Slot 0200 - plugins: the store's catalog and the kill switch on the home (Epic 54, stories
 -- 54.14 §3, §4 and 54.17).
 --
 --   plugin_installs.revoked          a store `disable` covers the installed version (the
@@ -52,7 +52,7 @@ $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- slot 0195's exclusion, with the trust state and the signed lists
+-- slot 0199's exclusion, with the trust state and the signed lists
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -104,7 +104,13 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0195): an admin's keep-off and each plugin's health and breaker,
         -- the home's API and its pipeline alone read and write them
         'plugin_keep_off', 'plugin_health',
-        -- plugins (slot 0197): the signed lists and the newest versions seen, the home's
+        -- plugins (slot 0197): each plugin's daily use of the home's models and the
+        -- lookup slots its questions hold; the home's API alone writes them
+        'plugin_compute_usage', 'compute_leases',
+        -- plugins (slot 0199): the lineage a plugin write leaves on its subject, the home's
+        -- API alone reads and writes it
+        'plugin_write_lineage',
+        -- plugins (slot 0200): the signed lists and the newest versions seen, the home's
         -- catalog loop alone writes them
         'plugin_trust', 'plugin_lists'
     ]::text[]
@@ -113,7 +119,7 @@ $f$;
 
 -- +goose Down
 -- +goose StatementBegin
--- slot 0195's exclusion again
+-- slot 0199's exclusion again
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -164,7 +170,13 @@ LANGUAGE sql IMMUTABLE AS $f$
         'plugin_writes', 'plugin_suggestions',
         -- plugins (slot 0195): an admin's keep-off and each plugin's health and breaker,
         -- the home's API and its pipeline alone read and write them
-        'plugin_keep_off', 'plugin_health'
+        'plugin_keep_off', 'plugin_health',
+        -- plugins (slot 0197): each plugin's daily use of the home's models and the
+        -- lookup slots its questions hold; the home's API alone writes them
+        'plugin_compute_usage', 'compute_leases',
+        -- plugins (slot 0199): the lineage a plugin write leaves on its subject, the home's
+        -- API alone reads and writes it
+        'plugin_write_lineage'
     ]::text[]
 $f$;
 -- +goose StatementEnd

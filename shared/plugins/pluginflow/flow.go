@@ -309,7 +309,11 @@ func eventID(p, e string) string { return "event:" + p + "/" + e }
 // checks 4 to 8). The members not active (installed but off, or missing) are left out of
 // the graph; a subscription to one is a missing upstream.
 func Check(members []Member, opts Options) (Graph, []Finding) {
-	b := &builder{nodes: map[string]Node{}, edges: map[Edge]bool{}}
+	n := 0
+	for _, m := range members {
+		n += len(m.Stages) + len(m.Events)
+	}
+	b := &builder{nodes: make(map[string]Node, n), edges: make(map[Edge]bool, 2*n)}
 	sorted := append([]Member(nil), members...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].ID < sorted[j].ID })
 	byID := map[string]Member{}
@@ -333,7 +337,7 @@ func Check(members []Member, opts Options) (Graph, []Finding) {
 		missingSeverity = Refuse
 	}
 	for _, m := range active {
-		own := map[string]Stage{}
+		own := make(map[string]Stage, len(m.Stages))
 		for _, s := range m.Stages {
 			own[s.Name] = s
 		}
@@ -483,8 +487,8 @@ func adjacency(g Graph) map[string][]string {
 // more nodes, or one with an edge to itself), each with its smallest stage first, ordered
 // by that stage.
 func cyclicComponents(g Graph, adj map[string][]string) [][]string {
-	index, low := map[string]int{}, map[string]int{}
-	onStack := map[string]bool{}
+	index, low := make(map[string]int, len(g.Nodes)), make(map[string]int, len(g.Nodes))
+	onStack := make(map[string]bool, len(g.Nodes))
 	var stack []string
 	var out [][]string
 	next := 0
@@ -586,8 +590,8 @@ func shortestCycle(comp []string, adj map[string][]string) []string {
 // longest: the path with the most stages, in topological order taking the smallest
 // ready node first; ties go to the smallest predecessor and the smallest end node.
 func longest(g Graph, adj map[string][]string) []string {
-	indeg := map[string]int{}
-	preds := map[string][]string{}
+	indeg := make(map[string]int, len(g.Nodes))
+	preds := make(map[string][]string, len(g.Nodes))
 	for _, n := range g.Nodes {
 		indeg[n.ID] += 0
 	}
@@ -603,8 +607,8 @@ func longest(g Graph, adj map[string][]string) []string {
 			heap.Push(ready, n.ID)
 		}
 	}
-	best := map[string]int{}
-	pred := map[string]string{}
+	best := make(map[string]int, len(g.Nodes))
+	pred := make(map[string]string, len(g.Nodes))
 	end := ""
 	for ready.Len() > 0 {
 		v := heap.Pop(ready).(string)
@@ -864,5 +868,49 @@ func Downstream(g Graph, id string) []string {
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// Lookup answers the plugin a store or a home holds under id, at the newest version a
+// range accepts ("" any): false when it holds none.
+type Lookup func(id, rng string) (Member, bool)
+
+// ResolveDepends adds to members every plugin they subscribe to that they do not hold,
+// from lookup, and then the plugins those subscribe to, and so on: a cycle or a missing
+// upstream two or more plugins away is then in the graph Check walks. A publisher lookup
+// does not hold stays out (Check reports it missing). It stops at MaxStages stages.
+func ResolveDepends(members []Member, lookup Lookup) []Member {
+	out := append([]Member(nil), members...)
+	have := map[string]bool{}
+	stages := 0
+	for _, m := range out {
+		have[m.ID] = true
+		stages += len(m.Stages)
+	}
+	asked := map[string]bool{}
+	for i := 0; i < len(out); i++ {
+		m := out[i]
+		var want []string
+		for _, s := range m.Stages {
+			for _, t := range s.Triggers {
+				if p, _, ok := subscription(t); ok && !have[p] && !asked[p] {
+					want = append(want, p)
+					asked[p] = true
+				}
+			}
+		}
+		sort.Strings(want)
+		for _, p := range want {
+			if stages > MaxStages {
+				return out
+			}
+			if up, ok := lookup(p, m.Depends[p]); ok {
+				up.State = ""
+				out = append(out, up)
+				have[p] = true
+				stages += len(up.Stages)
+			}
+		}
+	}
 	return out
 }

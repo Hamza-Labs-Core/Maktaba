@@ -30,6 +30,7 @@ type node struct {
 	UniqueItems   bool             `json:"uniqueItems"`
 	Default       json.RawMessage  `json:"default"`
 	Code          string           `json:"x-code"`
+	TrustedOnly   bool             `json:"x-trusted-only"`
 	UnknownCode   string           `json:"x-unknown-code"`
 	re            *regexp.Regexp
 	defaultValue  any
@@ -42,7 +43,7 @@ var allowedKeywords = map[string]bool{
 	"type": true, "properties": true, "additionalProperties": true, "required": true,
 	"enum": true, "pattern": true, "minLength": true, "maxLength": true,
 	"minimum": true, "maximum": true, "items": true, "minItems": true, "maxItems": true,
-	"uniqueItems": true, "default": true, "x-code": true, "x-unknown-code": true,
+	"uniqueItems": true, "default": true, "x-code": true, "x-unknown-code": true, "x-trusted-only": true,
 }
 
 func parseSchema(raw []byte) (*node, error) {
@@ -182,8 +183,9 @@ func (n *node) code(parent string) string {
 }
 
 // check validates v against n and appends what fails. parentCode is the code of the
-// nearest enclosing node with one.
-func (n *node) check(v any, path string, parentCode string, errs *[]Error) {
+// nearest enclosing node with one. trusted is false for every manifest but Maktaba's own
+// release-signed plugins: a key marked x-trusted-only is then plugin_trusted_field.
+func (n *node) check(v any, path string, parentCode string, trusted bool, errs *[]Error) {
 	code := n.code(parentCode)
 	t := typeOf(v)
 	if len(n.Type) > 0 {
@@ -244,7 +246,7 @@ func (n *node) check(v any, path string, parentCode string, errs *[]Error) {
 		}
 		if n.Items != nil {
 			for i, x := range a {
-				n.Items.check(x, join(path, strconv.Itoa(i)), code, errs)
+				n.Items.check(x, join(path, strconv.Itoa(i)), code, trusted, errs)
 			}
 		}
 	case "object":
@@ -267,7 +269,11 @@ func (n *node) check(v any, path string, parentCode string, errs *[]Error) {
 				}
 				continue
 			}
-			c.check(o[k], join(path, k), code, errs)
+			if c.TrustedOnly && !trusted {
+				*errs = append(*errs, Error{Code: CodeTrustedField, Path: join(path, k)})
+				continue
+			}
+			c.check(o[k], join(path, k), code, trusted, errs)
 		}
 	}
 }

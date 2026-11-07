@@ -17,13 +17,14 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 use crate::api::{ApiError, PluginApi};
 use crate::logging::{Logs, Origin};
-use crate::protocol::{QueueRequest, Subject as PSubject};
+use crate::protocol::{EmittedEvent, QueueRequest, Subject as PSubject};
 
 wasmtime::component::bindgen!({
     path: "../../../shared/plugins/wit",
     world: "plugin",
 });
 
+use maktaba::plugin::compute::{Embeddings, GenerateOptions};
 pub use maktaba::plugin::types::{CallError, Level, Subject, SubjectKind};
 use maktaba::plugin::write::Chapter;
 
@@ -32,6 +33,14 @@ pub const MAX_VALUE: usize = 64 << 10;
 pub const MAX_ARTIFACT: usize = 4 << 20;
 pub const MAX_READ: u32 = 8 << 20;
 pub const MAX_REQUESTS: usize = 1000;
+/// compute (story 54.21 §1): texts per embed call, characters per text, prompt bytes and
+/// the most tokens one generate call may ask for
+pub const MAX_EMBED_TEXTS: usize = 64;
+pub const MAX_EMBED_CHARS: usize = 2000;
+pub const MAX_PROMPT: usize = 32 << 10;
+pub const MAX_TOKENS: u32 = 1024;
+/// An emitted event's payload (README §4.7).
+pub const MAX_EVENT: usize = 16 << 10;
 
 /// Memory, table and instance caps of one job's store (54.02 §5). A component holds a few
 /// core instances, memories and tables (its module, shims, an adapter), so the counts are
@@ -101,6 +110,8 @@ pub struct JobState {
     /// progress (a percentage) and checkpoints, sent to the dispatcher as they come
     pub progress: Progress,
     pub requests: Vec<QueueRequest>,
+    /// events emitted (54.40), with the stages the API delivers each to
+    pub events: Vec<EmittedEvent>,
     /// the first refusal that fails a job (capability, scope, quota)
     pub refusal: Option<&'static str>,
     /// refusals made in the host without an API call
@@ -139,7 +150,8 @@ pub fn covers(granted: &BTreeSet<String>, interface: &str, function: &str) -> bo
 fn to_call_error(e: ApiError) -> CallError {
     match e {
         ApiError::Capability => CallError::Capability,
-        ApiError::Scope => CallError::Scope,
+        // a loop reads as scope to the guest; the job fails as plugin_loop (54.40)
+        ApiError::Scope | ApiError::Loop => CallError::Scope,
         ApiError::Quota => CallError::Quota,
         ApiError::Rate => CallError::Rate,
         ApiError::TooLarge => CallError::TooLarge,
@@ -411,7 +423,7 @@ impl maktaba::plugin::suggest::Host for JobState {
 impl maktaba::plugin::queue::Host for JobState {
     fn request(&mut self, stage: String, subject: Subject, payload: String) -> Result<(), CallError> {
         self.too_large(payload.len(), MAX_VALUE)?;
-        if self.requests.len() >= MAX_REQUESTS {
+        if self.requests.len() + self.events.len() >= MAX_REQUESTS {
             self.refusal.get_or_insert("plugin_quota");
             return Err(CallError::Quota);
         }
@@ -421,6 +433,30 @@ impl maktaba::plugin::queue::Host for JobState {
             stage,
             subject: PSubject { kind: s["kind"].as_str().unwrap_or("video").into(), id: subject.id },
             payload,
+        });
+        Ok(())
+    }
+}
+
+impl maktaba::plugin::events::Host for JobState {
+    fn emit(&mut self, name: String, subject: Subject, payload: String) -> Result<(), CallError> {
+        self.too_large(payload.len(), MAX_EVENT)?;
+        // requests and events share one budget per job (README §4.7)
+        if self.requests.len() + self.events.len() >= MAX_REQUESTS {
+            self.refusal.get_or_insert("plugin_quota");
+            return Err(CallError::Quota);
+        }
+        let s = subject_json(&subject);
+        let answer = self.json("events", "emit", json!({"name": name, "subject": s, "payload": payload}))?;
+        let stages = answer["stages"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        self.events.push(EmittedEvent {
+            name,
+            subject: PSubject { kind: s["kind"].as_str().unwrap_or("video").into(), id: subject.id },
+            payload,
+            stages,
         });
         Ok(())
     }
@@ -447,6 +483,44 @@ impl maktaba::plugin::exports::Host for JobState {
     }
 }
 
+impl maktaba::plugin::compute::Host for JobState {
+    fn embed(&mut self, texts: Vec<String>) -> Result<Embeddings, CallError> {
+        if texts.len() > MAX_EMBED_TEXTS || texts.iter().any(|t| t.chars().count() > MAX_EMBED_CHARS) {
+            return Err(CallError::TooLarge);
+        }
+        let v = self.json("compute", "embed", json!({"texts": texts}))?;
+        let model = v.get("model").and_then(Value::as_str).unwrap_or("").to_string();
+        let vectors = v
+            .get("vectors")
+            .and_then(Value::as_array)
+            .map(|rows| {
+                rows.iter()
+                    .map(|r| {
+                        r.as_array()
+                            .map(|xs| xs.iter().map(|x| x.as_f64().unwrap_or(0.0) as f32).collect())
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Embeddings { model, vectors })
+    }
+
+    fn generate(&mut self, prompt: String, options: GenerateOptions) -> Result<String, CallError> {
+        self.too_large(prompt.len() + options.json_schema.as_ref().map_or(0, String::len), MAX_PROMPT)?;
+        if options.max_tokens == 0 || options.max_tokens > MAX_TOKENS {
+            return Err(CallError::TooLarge);
+        }
+        let v = self.json(
+            "compute",
+            "generate",
+            json!({"prompt": prompt, "max_tokens": options.max_tokens,
+                   "temperature": options.temperature, "json_schema": options.json_schema}),
+        )?;
+        Ok(v.get("text").and_then(Value::as_str).unwrap_or("").to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,5 +537,9 @@ mod tests {
         assert!(covers(&g, "data", "put"));
         assert!(covers(&g, "exports", "read"));
         assert!(!covers(&g, "library", "video"));
+        assert!(!covers(&g, "compute", "embed"));
+        let g = granted_bases(&["compute.embed".into()]);
+        assert!(covers(&g, "compute", "embed"));
+        assert!(!covers(&g, "compute", "generate"));
     }
 }

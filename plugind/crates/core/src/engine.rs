@@ -309,6 +309,7 @@ impl Host {
             output_hash: String::new(),
             summary: String::new(),
             requests: vec![],
+            events: vec![],
             log_dropped: 0,
             fuel_used: 0,
             peak_memory: 0,
@@ -374,6 +375,7 @@ impl Host {
             scratch_cap: lim.scratch_bytes,
             progress,
             requests: vec![],
+            events: vec![],
             refusal: None,
             local_refusals: 0,
             logs: self.cfg.logs.clone(),
@@ -405,7 +407,14 @@ impl Host {
         res.fuel_used = lim.fuel.saturating_sub(fuel_left);
         res.peak_memory = state.limiter.peak_memory;
         res.requests = state.requests.clone();
+        res.events = state.events.clone();
         match outcome {
+            // a loop the API refused fails the job even when the guest carried on (54.40)
+            Ok(Ok(_)) if state.refusal == Some("plugin_loop") => {
+                res.outcome = Outcome::Refused;
+                res.error_code = "plugin_loop".into();
+                res.detail = "a request or event would loop".into();
+            }
             Ok(Ok(out)) => {
                 res.outcome = Outcome::Ok;
                 res.output_hash = out.output_hash;
@@ -439,6 +448,7 @@ impl Host {
         if res.outcome != Outcome::Ok {
             res.checkpoint = state.checkpoint.as_deref().map(b64);
             res.requests.clear();
+            res.events.clear();
         }
         for (pipe, level) in [(stdout, "info"), (stderr, "warn")] {
             let text = pipe.contents();
@@ -482,4 +492,26 @@ fn truncate(mut s: String, max: usize) -> String {
         s.truncate(cut);
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A plugin built for plugin API 1.0 links on this 1.1 host (story 54.21: a minor only
+    /// adds; the linker matches a 1.0 import against the 1.1 interfaces by semver).
+    #[test]
+    fn a_1_0_import_links_on_the_1_1_host() {
+        let engine = Engine::new(&engine_config()).unwrap();
+        let linker = build_linker(&engine).unwrap();
+        for version in ["1.0.0", "1.1.0"] {
+            let wat = format!(
+                r#"(component (import "maktaba:plugin/job@{version}" (instance (export "progress" (func (param "pct" u8))))))"#
+            );
+            let c = Component::new(&engine, wat).unwrap();
+            linker.instantiate_pre(&c).unwrap_or_else(|e| panic!("{version}: {e}"));
+        }
+        // a newer minor links by semver too: the import audit refuses it first
+        // (plugin_api_newer, audit::tests::newer_api_and_missing_run)
+    }
 }

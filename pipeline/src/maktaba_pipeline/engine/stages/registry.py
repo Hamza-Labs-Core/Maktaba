@@ -111,10 +111,25 @@ def reset_registry() -> None:
     _LEGACY_LOADED = False
 
 
+def first_party_entry(name: str) -> str | None:
+    """``module:IMPL`` of a stage Maktaba's first-party plugins define (Epic 54, story
+    54.25): its code is in the plugin's package, which the worker imports to run the stage
+    in-process (``job_stages.impl = 'inproc'``)."""
+    from ...plugins.firstparty import impl_entry
+
+    return impl_entry(name)
+
+
 def get_impl(name: str) -> StageImpl | None:
     global _LEGACY_LOADED
     if name in _IMPLS:
         return _IMPLS[name]
+    entry = first_party_entry(name)
+    if entry is not None:
+        module, _, attr = entry.partition(":")
+        impl = getattr(importlib.import_module(module), attr)
+        _IMPLS[name] = impl
+        return impl  # type: ignore[no-any-return]
     if name in CORE_MODULES:
         impl = importlib.import_module(CORE_MODULES[name]).IMPL
         _IMPLS[name] = impl

@@ -1,0 +1,24 @@
+schema = 1
+id = "dev.example.link5"
+version = "1.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "s"
+subject = "video"
+export = "run-0"
+version = 1
+emits = ["l.done"]
+  [[stage.trigger]]
+  event = "audio.ready"
+
+[[event]]
+name = "l.done"
+subject = "video"
+payload = "events/l.done.schema.json"

@@ -233,7 +233,7 @@ and the previous major for at least 12 months after a new major ships.
 | `write` | `set-field(video, field, value)`, `add-tags`, `set-chapters`, `add-subtitle(video, lang, vtt)`, `set-artwork(subject, kind, image)` | `metadata.write`, `tags.write`, `chapters.write`, `subtitles.write`, `artwork.write` |
 | `suggest` | `suggest(subject, field, value, reason)` into the admin's review queue | `suggest` |
 | `queue` | `request(stage, subject, payload)` for the plugin's own stages | `jobs.enqueue` |
-| `events` (1.1) | `emit(name, subject, payload)` of an event in the calling stage's `emits`, payload checked against its schema | none (only what the manifest declares) |
+| `events` (1.2) | `emit(name, subject, payload)` of an event in the calling stage's `emits`, payload checked against its schema | none (only what the manifest declares) |
 | `notify` | `admin(code, params)`: an in-app notice to admins, from the plugin's strings | `notify.admin` |
 | `exports` | `read(plugin, subject, key)` of data another plugin marked as exported | `plugin-data.read:<id>` |
 | `compute` (Phase 3) | `embed(texts)`, `generate(prompt, opts)` on the home's own models | `compute.embed`, `compute.llm` |
@@ -1731,3 +1731,52 @@ the migration that set `impl = plugin` is expand-only (an older release ignores 
 - **Tests per plugin.** Unit tests of its pure code; contract tests through the SDK harness with
   a fake API that serves its statements against a test Postgres under its role; parity
   (§15.8); and its stages in `plugins-e2e` with the real runner and API.
+
+### 15.12 Decisions taken while building the foundation (2026-11-06)
+
+These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
+
+- **Statement text stays in the moved code; only names cross the wire.** A moved stage keeps
+  the pipeline's database interface (`db.fetch(text, $1…)`, `db.execute`, `db.transaction()`),
+  so the same code runs in the worker (`inproc`) and in the runner (`plugin`), and the parity
+  proof compares two paths of one code base. In the runner, `StatementDB` looks each text up in
+  the plugin's `queries/*.sql` and sends the plugin API only the statement's name and its
+  arguments; the API runs the text it registered from the release. A text the plugin did not
+  register never leaves the runner: that one job runs in the worker instead, and the parity
+  job fails on any such fallback. `tools/plugins/statements_build.py` writes `queries/` from the
+  code's own statements (the AST of the plugin and of the shared modules its `statements.toml`
+  lists) and checks each statement's tables, mode and scope from its parse tree.
+- **Scope is checked, not bound.** A statement's header names the argument its scope checks
+  (`scope: subject $2`, `library $1`, `settings $1`, or `catalog`); the API compares that
+  argument with the job's token (a video of another library, another library, a settings
+  section the manifest does not list: `403 plugin_scope`). Reserved parameter names bound by
+  the API would have meant rewriting every moved statement.
+- **The API holds a plugin's transactions.** Besides one statement in its own transaction,
+  the plugin API opens a transaction for an invocation (`trusted/tx`: begin, savepoints,
+  commit, rollback), under the plugin's role and `maktaba.origin`, so moved code keeps its
+  `async with db.transaction()` blocks unchanged. An idle transaction is rolled back after two
+  minutes, and an ended invocation's on the spot.
+- **The plugin path is Postgres on macOS and Linux.** The statements run under a Postgres role,
+  and asyncio opens no unix socket on Windows. On a SQLite home, on Windows, or on any machine
+  whose runner does not serve the stage, a stage set to `plugin` runs in the worker, which
+  writes the same data; the per-stage switch is the same everywhere.
+- **Trust comes from the signed server binary and the signed pipeline wheel; per-plugin
+  packages are deferred.** The server embeds the bundle of first-party manifests, strings and
+  compiled statements (`shared/plugins/firstparty.json`), and the plugins' code ships inside the
+  pipeline wheel; both are release artifacts the release's Sigstore identity already signs and
+  every home already verifies. The runner checks its plugins' files against the wheel's
+  `RECORD` before it imports one, and the worker checks the runner's bundle digest against its
+  own. One signed artifact per kind keeps the homes' verification unchanged. Separate
+  `.mkplugin` packages per first-party plugin, with each `files.json` listed in
+  `checksums.txt`, need a change to the release workflow and its signing, so they wait for a
+  change of their own; `firstparty.CheckPackage` (the check of §15.6) is in place for them.
+- **The parity fixture is seeded at run time.** Each parity test seeds both databases with the
+  same deterministic Python seeding (fixed ids), so the fixture always follows the schema;
+  no `seed.sql` is committed. The runner runs in the test's process without its OS sandbox,
+  which has its own escape tests; the plugin API, its statements and its roles are the
+  release's (`api/tools/plugin-api-dev`).
+- **A core stage's name is not reserved.** A third-party stage's queue is always
+  `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
+  `tag`; refusing the name would only break existing plugins. The trusted-only keys and the
+  `dup_group` subject stay refused (`plugin_trusted_field`). `reserved_stages.txt` stays as
+  the golden graph's list of names.

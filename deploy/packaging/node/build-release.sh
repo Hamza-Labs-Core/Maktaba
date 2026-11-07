@@ -71,9 +71,12 @@ trap 'rm -rf "$WORK"' EXIT
 # --- the wheel: a stamped copy of the pipeline ---------------------------------------------
 src="$WORK/pipeline"
 mkdir -p "$src"
-cp "$PIPELINE/pyproject.toml" "$PIPELINE/uv.lock" "$PIPELINE/README.md" "$PIPELINE/.python-version" "$src/"
+cp "$PIPELINE/pyproject.toml" "$PIPELINE/uv.lock" "$PIPELINE/README.md" "$PIPELINE/.python-version" "$PIPELINE/hatch_build.py" "$src/"
 cp -R "$PIPELINE/src" "$src/src"
-find "$src/src" -name __pycache__ -type d -prune -exec rm -rf {} +
+# Maktaba's own stages as first-party plugins (Epic 54, story 54.27 §2): the SDK and every
+# plugin ride in this wheel; hatch_build.py reads them from ../plugins, beside the copy
+cp -R "$PIPELINE/../plugins" "$WORK/plugins"
+find "$src/src" "$WORK/plugins" -name __pycache__ -type d -prune -exec rm -rf {} +
 # The version lives in two places: the package metadata and `maktaba-pipeline --version`.
 stamp() {
     sed -i.bak -e "s/^version = \".*\"/version = \"$1\"/" "$src/pyproject.toml"

@@ -72,6 +72,24 @@ func runCase(t *testing.T, dir string) expect {
 				members = append(members, FromManifest(manifests[id], ""))
 			}
 		}
+		// the store's other plugins, reached only through the flow's publishers
+		catalog := map[string]map[string]any{}
+		cpaths, _ := filepath.Glob(filepath.Join(dir, "catalog", "*.toml"))
+		for _, p := range cpaths {
+			src, _ := os.ReadFile(p)
+			m, errs := pluginmanifest.Validate(src, nil)
+			if errs != nil {
+				t.Fatalf("%s: %v", p, errs)
+			}
+			catalog[m["id"].(string)] = m
+		}
+		members = ResolveDepends(members, func(id, _ string) (Member, bool) {
+			m, ok := catalog[id]
+			if !ok {
+				return Member{}, false
+			}
+			return FromManifest(m, ""), true
+		})
 	} else {
 		for _, id := range ids {
 			members = append(members, FromManifest(manifests[id], meta.States[id]))
@@ -145,7 +163,7 @@ func TestMessages(t *testing.T) {
 }
 
 // T09 (go): N22, the check over 100 plugins of 20 stages each in at most 50 ms.
-func TestBudget(t *testing.T) {
+func budgetMembers() []Member {
 	var members []Member
 	for p := 0; p < 100; p++ {
 		id := fmt.Sprintf("dev.example.p%03d", p)
@@ -170,10 +188,31 @@ func TestBudget(t *testing.T) {
 		m.Events = []Event{{Name: "p.done", Subject: "video", Payload: "events/p.json"}}
 		members = append(members, m)
 	}
-	start := time.Now()
-	_, fs := Check(members, Options{})
-	if took := time.Since(start); took > 50*time.Millisecond {
-		t.Fatalf("took %s", took)
+	return members
+}
+
+func TestBudget(t *testing.T) {
+	if raceOn {
+		t.Skip("N22 is timed without the race detector (the integration tier)")
+	}
+	members := budgetMembers()
+	// N22 is the check's own time on a home: warm (not the first read of events.toml), the
+	// best of five, and counted as this process's CPU time where the system gives it, so a
+	// runner busy with other jobs does not time its own queue
+	Check(members, Options{})
+	best := time.Hour
+	var fs []Finding
+	for i := 0; i < 5; i++ {
+		wall, cpu := time.Now(), cpuTime()
+		_, fs = Check(members, Options{})
+		took := time.Since(wall)
+		if c := cpuTime(); c > 0 {
+			took = c - cpu
+		}
+		best = min(best, took)
+	}
+	if best > 50*time.Millisecond {
+		t.Fatalf("took %s", best)
 	}
 	if !HasRefusal(fs) {
 		t.Fatal("a 2,000-stage chain must be too deep")

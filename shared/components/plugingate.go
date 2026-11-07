@@ -16,7 +16,7 @@ import (
 // audit.rs PLUGIN_API_MAJOR / PLUGIN_API_MINOR).
 const (
 	PluginAPIMajor = 1
-	PluginAPIMinor = 0
+	PluginAPIMinor = 2
 )
 
 // PluginGateInput is what a plugin's gates read: its installed manifest, its grants and

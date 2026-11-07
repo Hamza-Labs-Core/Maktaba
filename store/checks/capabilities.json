@@ -140,6 +140,36 @@
         "en": "Read another plugin's data",
         "ar": "قراءة بيانات إضافة أخرى"
       }
+    },
+    {
+      "name": "compute.embed",
+      "risk": "medium",
+      "interface": "compute",
+      "param": "",
+      "words": {
+        "en": "Use the home's embedding model",
+        "ar": "استخدام نموذج التضمين في الجهاز الرئيسي"
+      }
+    },
+    {
+      "name": "compute.llm",
+      "risk": "medium",
+      "interface": "compute",
+      "param": "",
+      "words": {
+        "en": "Use the home's language model",
+        "ar": "استخدام النموذج اللغوي في الجهاز الرئيسي"
+      }
+    },
+    {
+      "name": "events.subscribe",
+      "risk": "medium",
+      "interface": "events",
+      "param": "plugin_id",
+      "words": {
+        "en": "Start when another plugin publishes",
+        "ar": "البدء حين تنشر إضافة أخرى"
+      }
     }
   ]
 }

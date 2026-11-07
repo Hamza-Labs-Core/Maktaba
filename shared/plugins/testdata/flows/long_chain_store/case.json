@@ -1,0 +1,5 @@
+{
+  "about": "a flow over a six-deep chain of store plugins, each its own flow: allowed",
+  "mode": "store",
+  "states": {}
+}

@@ -13,8 +13,9 @@
 ///
 /// Versioning: a minor version only adds functions; a plugin built for 1.N runs
 /// on any 1.M host with M >= N. Reads answer JSON text so a minor version can
-/// add fields without a new WIT type.
-package maktaba:plugin@1.0.0;
+/// add fields without a new WIT type. 1.1 added `compute` (story 54.21), 1.2 `events`
+/// (story 54.40).
+package maktaba:plugin@1.2.0;
 
 interface types {
   /// Why a call was refused. The plugin API's refusal codes, one to one.
@@ -170,6 +171,18 @@ interface queue {
   request: func(stage: string, subject: subject, payload: string) -> result<_, call-error>;
 }
 
+/// Published events (1.2, story 54.40): emit an event the calling stage declares in its
+/// `emits`, about a subject in the job's scope, with a JSON object payload (<= 16 KB) that
+/// the event's declared schema accepts. The API delivers it to every subscribing plugin's
+/// stage the admin approved (`events.subscribe:<this plugin>`), only when the job ends
+/// well. No capability: a plugin emits only what its manifest declares. A request or event
+/// that would loop answers `scope` (the API's plugin_loop) and the job fails.
+interface events {
+  use types.{subject, call-error};
+
+  emit: func(name: string, subject: subject, payload: string) -> result<_, call-error>;
+}
+
 /// Capability notify.admin: an in-app notice from the plugin's own strings.
 interface notify {
   use types.{call-error};
@@ -184,6 +197,38 @@ interface exports {
   read: func(plugin: string, subject: subject, key: string) -> result<option<string>, call-error>;
 }
 
+/// Capabilities compute.embed and compute.llm (story 54.21, plugin API 1.1): the home's own
+/// models, asked through the plugin API. Never a model outside the home: the host still has
+/// no network, and the API refuses a language model that is not on the home or the LAN.
+interface compute {
+  use types.{call-error};
+
+  record embeddings {
+    /// the embedder's model id: vectors from another model do not compare
+    model: string,
+    /// one vector per text, in order, each of the embedder's dimension
+    vectors: list<list<f32>>,
+  }
+
+  record generate-options {
+    /// 1..=1024
+    max-tokens: u32,
+    /// 0.0..=2.0
+    temperature: f32,
+    /// a JSON schema (JSON text) the answer must follow, or none
+    json-schema: option<string>,
+  }
+
+  /// compute.embed: <= 64 texts, <= 2,000 characters each, with the embedder semantic
+  /// search uses. `unavailable` while search.semantic is off.
+  embed: func(texts: list<string>) -> result<embeddings, call-error>;
+  /// compute.llm: the language model the admin chose for plugins, prompt <= 32 KB.
+  /// `unavailable` while llm is off; `invalid("compute_remote")` when the model is not on
+  /// the home or the LAN; `invalid("compute_bad_output")` when the answer does not follow
+  /// json-schema after one retry.
+  generate: func(prompt: string, options: generate-options) -> result<string, call-error>;
+}
+
 world plugin {
   import job;
   import log;
@@ -194,8 +239,10 @@ world plugin {
   import write;
   import suggest;
   import queue;
+  import events;
   import notify;
   import exports;
+  import compute;
 
   record run-output {
     /// what the stage produced; equal hashes mean nothing changed

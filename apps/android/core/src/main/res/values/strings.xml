@@ -187,6 +187,8 @@
     <string name="feature_plex">Plex</string>
     <string name="feature_remote_access">Access away from home</string>
     <string name="feature_recommendations">Recommendations</string>
+    <string name="feature_plugin_panels">Plugin panels</string>
+    <string name="plugin_panels_title">From plugins</string>
     <!-- story 51.11: what an app says where a feature that is off would be -->
     <string name="feature_off_admin">The %1$s feature is off on this home.</string>
     <string name="feature_turn_on">Turn it on in Components</string>
@@ -200,6 +202,7 @@
     <string name="feature_off_plex">Plex is off on this home.</string>
     <string name="feature_off_remote_access">Access away from home is off on this home.</string>
     <string name="feature_off_recommendations">Recommendations are off on this home.</string>
+    <string name="feature_off_plugin_panels">Plugin panels are off on this home.</string>
     <string name="feature_unavailable_live_tv">Live TV isn\'t available on this home.</string>
     <string name="feature_unavailable_transcripts">Transcripts aren\'t available on this home.</string>
     <string name="feature_unavailable_subtitles">Subtitles aren\'t available on this home.</string>
@@ -209,6 +212,7 @@
     <string name="feature_unavailable_plex">Plex isn\'t available on this home.</string>
     <string name="feature_unavailable_remote_access">Access away from home isn\'t available on this home.</string>
     <string name="feature_unavailable_recommendations">Recommendations aren\'t available on this home.</string>
+    <string name="feature_unavailable_plugin_panels">Plugin panels aren\'t available on this home.</string>
     <string name="search_words_only">Searching by words only. Search by meaning is off.</string>
     <plurals name="parts_off">
         <item quantity="one">%d part is off</item>
@@ -265,4 +269,10 @@
     <string name="status_more">%1$d more</string>
     <string name="status_close">Close</string>
     <string name="status_player">Playback is unavailable right now. Try again in a few minutes.</string>
+    <!-- Maktaba Cloud's lines in the status strip (Epic 50 story 50.11) -->
+    <string name="banner_relay_degraded">Remote access is slower than usual. Playback at home is not affected.</string>
+    <string name="banner_relay_outage">Remote access is down. We\'re working on it. Playback at home still works.</string>
+    <string name="banner_api_degraded">Signing in with Maktaba Cloud is slower than usual.</string>
+    <string name="banner_api_outage">Signing in with Maktaba Cloud isn\'t working right now. You can sign in to your home with its password.</string>
+    <string name="banner_maintenance">Planned maintenance on %1$s, %2$s–%3$s. Remote play may pause for a few seconds.</string>
 </resources>

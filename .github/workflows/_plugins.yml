@@ -187,3 +187,93 @@ jobs:
           after=$(cat "$RUNNER_TEMP/canary.count")
           python3 tools/ci/plugins/check_probes.py --sandboxed "$RUNNER_TEMP/partial.txt" \
             --canary-before "$before" --canary-after-sandboxed "$after" --expect-missing namespaces
+
+  # Epic 54 Phase 4: Maktaba's own stages as first-party plugins (stories 54.22-54.27).
+  # graph-golden, the trusted manifest and its statements, the roles, the import contract,
+  # the runner's sandbox and protocol, and plugins-parity (the harness's self-tests and every
+  # migrated stage) with the real plugin API on Postgres.
+  first-party:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --extra dev
+
+      - name: The bundle the server embeds and the wheel carries is current (54.22)
+        run: python3 tools/plugins/bundle.py
+
+      - name: graph-golden (54.25 §2)
+        working-directory: pipeline
+        run: uv run python ../tools/plugins/graph_golden.py
+
+      - name: Each plugin's statements are what its code runs (54.24 §1)
+        working-directory: pipeline
+        run: uv run --with pglast==8.7 python ../tools/plugins/statements_build.py check --all
+
+      - name: The roles migration follows the manifests (54.24 §3)
+        run: python3 tools/plugins/roles.py check
+
+      - name: The import contract (54.27 §1)
+        run: python3 tools/plugins/import_contracts.py
+
+      - name: The SDK, the runner, its sandbox and protocol, and plugins-parity (54.23-54.26)
+        working-directory: pipeline
+        run: uv run --with pglast==8.7 pytest -q -p no:cacheprovider tests/plugins/firstparty $(ls -d ../plugins/first-party/*/tests 2>/dev/null)
+
+      - name: The plugin API's statements, trusted tokens and the flip (54.22, 54.24, 54.25)
+        working-directory: api
+        run: go test -count=1 ./internal/plugins/... ./internal/handlers/queues/ -run 'Statement|Trusted|FirstParty|Flip|CheckPackage|Bundle|Command'
+
+  # the runner's Seatbelt sandbox and protocol on macOS (no Postgres there)
+  first-party-macos:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --extra dev
+
+      - name: The runner's sandbox and protocol (54.23 T01, T03)
+        working-directory: pipeline
+        run: uv run pytest -q -p no:cacheprovider tests/plugins/firstparty

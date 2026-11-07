@@ -1,4 +1,4 @@
-# expect: manifest_bad_capability
+# expect: plugin_trusted_field
 schema = 1
 id = "dev.example.silence-chapters"
 version = "1.4.0"
@@ -16,6 +16,5 @@ subject = "video"
 export = "run-find-silences"
 version = 3
 
-
-[capabilities]
-optional = ["compute.llm"]
+[trusted]
+db.write = ["videos"]

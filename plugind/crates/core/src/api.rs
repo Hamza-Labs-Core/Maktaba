@@ -25,6 +25,8 @@ pub enum ApiError {
     Unavailable,
     NotFound,
     Ended,
+    /// a request or event that would loop (story 54.40): the guest sees `scope`
+    Loop,
     Invalid(String),
 }
 
@@ -35,11 +37,12 @@ impl ApiError {
             "plugin_capability" => Self::Capability,
             "plugin_scope" => Self::Scope,
             "plugin_quota" => Self::Quota,
+            "plugin_loop" => Self::Loop,
             "plugin_rate" => Self::Rate,
             "plugin_too_large" => Self::TooLarge,
             "plugin_field" => Self::Field,
             "media_changed" => Self::Changed,
-            "media_unavailable" => Self::Unavailable,
+            "media_unavailable" | "compute_unavailable" => Self::Unavailable,
             "not_found" => Self::NotFound,
             "plugin_token" | "plugin_grants_changed" => Self::Ended,
             other => Self::Invalid(other.to_string()),
@@ -52,6 +55,7 @@ impl ApiError {
             Self::Capability => Some("plugin_capability"),
             Self::Scope => Some("plugin_scope"),
             Self::Quota => Some("plugin_quota"),
+            Self::Loop => Some("plugin_loop"),
             _ => None,
         }
     }
@@ -207,6 +211,7 @@ mod tests {
             (403, "plugin_capability", ApiError::Capability),
             (403, "plugin_scope", ApiError::Scope),
             (403, "plugin_quota", ApiError::Quota),
+            (403, "plugin_loop", ApiError::Loop),
             (403, "plugin_rate", ApiError::Rate),
             (403, "plugin_field", ApiError::Field),
             (401, "plugin_grants_changed", ApiError::Ended),

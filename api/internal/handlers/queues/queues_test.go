@@ -144,6 +144,7 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{"GET", "/api/queues/{stage}/failures", "/api/queues/probe/failures", ""},
 		{"POST", "/api/queues/{stage}/pause", "/api/queues/probe/pause", ""},
 		{"POST", "/api/queues/{stage}/resume", "/api/queues/probe/resume", ""},
+		{"PUT", "/api/queues/{stage}/impl", "/api/queues/promo_links/impl", `{"impl":"plugin"}`},
 		{"POST", "/api/queues/{stage}/retry", "/api/queues/probe/retry", `{}`},
 		{"POST", "/api/queues/{stage}/apply", "/api/queues/probe/apply", `{}`},
 		{"GET", "/api/workers", "/api/workers", ""},
@@ -460,6 +461,10 @@ func TestDescribeCause(t *testing.T) {
 	}
 	if c := describeCause(CauseAwaitingReview); c.Action != ActionApply {
 		t.Errorf("awaiting_review action = %s", c.Action)
+	}
+	// Epic 54 story 54.40: a loop between plugins is fixed in the plugins' settings
+	if c := describeCause("plugin_loop"); c.Label != "Stopped a loop between plugins" || c.Action != ActionOpenSettings {
+		t.Errorf("plugin_loop = %+v", c)
 	}
 	// a generated cause ("kind:normalised message") is a grouping key: its
 	// label is the kind's, never the key with its <n> and <path>
