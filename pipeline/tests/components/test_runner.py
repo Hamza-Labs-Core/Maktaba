@@ -5,16 +5,21 @@ home's stage rows and the catch-up, the loops, the idle cost (T10) and the kill 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
 
 from maktaba_pipeline.cluster import stages as cluster_stages
 from maktaba_pipeline.cluster.stages import StageSelector
+from maktaba_pipeline.components import catalog as plugin_catalog
 from maktaba_pipeline.components import runner as runner_mod
 from maktaba_pipeline.components import store
 from maktaba_pipeline.components.catalog import default as default_catalog
 from maktaba_pipeline.components.runner import ComponentRunner, gate_open, instance_part
+from maktaba_pipeline.components.stages import gates as plugin_gates
+from maktaba_pipeline.components.stages import machine_reasons as plugin_machine_reasons
+from maktaba_pipeline.components.store import Desired, Hold
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads
 from maktaba_pipeline.engine.sync import sync_graph
@@ -628,3 +633,70 @@ async def test_a_loops_lines_carry_its_component(db: Database) -> None:
     comp = default_catalog().by_loop("pipeline", "channel-topup")
     assert comp is not None and seen == [comp.id]
     assert structlog.contextvars.get_contextvars().get("component") is None
+
+
+# -- Epic 54 (story 54.37 T04, 54.07 keep-off, 54.09 the breaker's hold): a plugin entry's
+# own gate closes its stages with the story's reason, and the status rows say it.
+
+PLUGIN_ID = "dev.example.gated"
+PLUGIN_CID = "plugin." + PLUGIN_ID
+PLUGIN_STAGE = plugin_catalog.plugin_queue_name(PLUGIN_ID, "work")
+
+
+def _plugin_cat() -> plugin_catalog.Catalog:
+    return plugin_catalog.with_entries(
+        plugin_catalog.default(), [plugin_catalog.plugin_entry(PLUGIN_ID, (PLUGIN_STAGE,))]
+    )
+
+
+def _plugin_row(
+    phase_of: dict[str, Desired], plugins: dict[str, tuple[str, dict[str, object]]]
+) -> tuple[str, str]:
+    cat = _plugin_cat()
+    r = ComponentRunner(None, catalog=cat, reconcile=True, graph=())
+    r._graph_names = {PLUGIN_STAGE}
+    r.gates = plugin_gates(phase_of, cat, None, plugins)
+    row = next(s for s in r.status_rows() if s.id == PLUGIN_CID)
+    reason = next((c.reason for c in row.conditions if c.reason), "")
+    return row.phase, reason
+
+
+@pytest.mark.unit
+def test_plugin_a_plugin_waits_on_its_own_gate() -> None:
+    on = {PLUGIN_CID: Desired(PLUGIN_CID, "enabled", 3)}
+    g = plugin_gates(
+        on, _plugin_cat(), None, {PLUGIN_CID: ("grants_needed", {"capabilities": "media.read"})}
+    )
+    assert not g[PLUGIN_CID].open and g[PLUGIN_CID].reason == "grants_needed"
+    assert plugin_machine_reasons(g, _plugin_cat())[PLUGIN_STAGE] == f"component_off:{PLUGIN_CID}"
+    assert _plugin_row(on, {PLUGIN_CID: ("grants_needed", {})}) == ("waiting", "grants_needed")
+    assert _plugin_row(on, {PLUGIN_CID: ("unreviewed_disallowed", {})}) == (
+        "waiting",
+        "unreviewed_disallowed",
+    )
+    assert _plugin_row(on, {PLUGIN_CID: ("", {})}) == ("running", "")
+
+
+@pytest.mark.unit
+def test_plugin_kept_off_and_the_breaker() -> None:
+    off = {PLUGIN_CID: Desired(PLUGIN_CID, "installed", 2)}
+    assert _plugin_row(off, {PLUGIN_CID: ("", {"kept_off": True})}) == ("off", "kept_off")
+    assert _plugin_row(off, {PLUGIN_CID: ("", {})}) == ("off", "")
+    held = {
+        PLUGIN_CID: Desired(PLUGIN_CID, "enabled", 4, Hold("plugin-breaker", datetime.now(UTC)))
+    }
+    assert _plugin_row(held, {PLUGIN_CID: ("plugin_crash_loop", {})}) == (
+        "stopped",
+        "plugin_crash_loop",
+    )
+    assert _plugin_row(held, {PLUGIN_CID: ("", {})}) == ("stopped", "held")
+
+
+@pytest.mark.unit
+def test_plugin_the_host_off_keeps_every_plugin_waiting() -> None:
+    desired = {
+        PLUGIN_CID: Desired(PLUGIN_CID, "enabled", 3),
+        "plugins.host": Desired("plugins.host", "installed", 1),
+    }
+    g = plugin_gates(desired, _plugin_cat(), None, {PLUGIN_CID: ("", {})})
+    assert not g[PLUGIN_CID].open and g[PLUGIN_CID].reason == "dependency_off"

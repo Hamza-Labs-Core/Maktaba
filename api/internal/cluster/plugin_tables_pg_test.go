@@ -8,7 +8,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 )
 
-// Epic 54 (slot 0194): a joined machine (maktaba_worker) keeps the default grants on the
+// Epic 54 (slots 0194, 0195): a joined machine (maktaba_worker) keeps the default grants on the
 // plugin tables (the previous release's worker-group check reads a revoke as a change)
 // and may read them, but cannot write a row: only the home's API writes them.
 func TestPluginTablesAreTheHomes(t *testing.T) {
@@ -36,6 +36,9 @@ func TestPluginTablesAreTheHomes(t *testing.T) {
 		`INSERT INTO plugin_data (plugin_id, subject_kind, subject_id, key, value, bytes) VALUES ('a','video','v','k','1',1)`,
 		`INSERT INTO plugin_suggestions (plugin_id, version, subject_kind, subject_id, field, value) VALUES ('a','1','video','v','f','x')`,
 		`UPDATE plugin_installs SET version = '2.0.0'`,
+		// slot 0195
+		`INSERT INTO plugin_keep_off (plugin_id) VALUES ('dev.example.x')`,
+		`INSERT INTO plugin_health (plugin_id) VALUES ('dev.example.x')`,
 		`DELETE FROM plugin_installs`,
 	} {
 		if _, err := conn.ExecContext(ctx, q); err == nil || !strings.Contains(err.Error(), "only the home writes plugin tables") {

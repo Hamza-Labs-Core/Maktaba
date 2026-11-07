@@ -19,7 +19,8 @@ func TestBundleSetCoreHasNoProcessComponent(t *testing.T) {
 	}
 	for _, id := range set {
 		c, _ := cat.Get(id)
-		if c.Switchable && c.HasPart(KindProcess) {
+		// an on-demand process (plugins.host) runs only while a plugin is on: none at first
+		if c.Switchable && c.HasPart(KindProcess) && !c.OnDemand {
 			t.Errorf("core enables the process component %s (N9: 4 processes)", id)
 		}
 		if c.Kind == KindAsset {

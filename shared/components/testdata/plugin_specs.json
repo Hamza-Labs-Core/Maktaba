@@ -1,0 +1,4 @@
+[
+  {"manifest": {"id": "dev.example.silence-chapters", "version": "1.4.0", "platforms": ["any"], "capabilities": {"required": ["media.read"], "optional": ["compute.embed"]}, "resources": {"timeout_s": 300}, "stage": [{"name": "find_silences"}, {"name": "x"}]}, "since": "0.3.83"},
+  {"manifest": {"id": "dev.example.llm-tags", "version": "0.2.0", "platforms": ["linux-amd64", "darwin-arm64"], "capabilities": {"required": ["compute.llm"], "optional": []}, "resources": {"timeout_s": 30}, "stage": [{"name": "tag"}]}, "since": "0.3.84"}
+]

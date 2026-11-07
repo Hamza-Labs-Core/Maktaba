@@ -45,10 +45,14 @@ func TestCantStartStopsAndOffersSafeMode(t *testing.T) {
 	cfg.LogPath, cfg.PageAddr = logPath, freeAddr(t)
 	startLauncher(t, cfg)
 	recPath := filepath.Join(l.UpdatesDir(), StartFailedFile)
-	waitFor(t, "start-failed.json", func() bool { _, err := os.Stat(recPath); return err == nil })
+	// whole, not only there: on Windows a read can meet the file while its rename lands
 	var rec StartFailed
-	b, _ := os.ReadFile(recPath)
-	if err := json.Unmarshal(b, &rec); err != nil || len(rec.Exits) != CantStartMax || rec.Version != "2.0.0" ||
+	var b []byte
+	waitFor(t, "start-failed.json", func() bool {
+		b, _ = os.ReadFile(recPath)
+		return json.Unmarshal(b, &rec) == nil
+	})
+	if len(rec.Exits) != CantStartMax || rec.Version != "2.0.0" ||
 		rec.Rollback != "1.0.0" {
 		t.Fatalf("record: %s", b)
 	}

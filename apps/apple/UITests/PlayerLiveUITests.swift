@@ -67,12 +67,16 @@ final class PlayerLiveUITests: PlayerUITestCase {
     func testLiveTVOffHidesItFromAViewer() {
         home.capabilities(off: ["live_tv"], admin: false)
         launchSignedIn(section: "live")
+        // the notice hides itself after 5 s (PlayerShell's overlay): look for it first and read
+        // its words once, before the slower checks; a loaded iPad simulator spent its 5 s on
+        // them (#695)
+        let notice = element("shell.unavailable")
+        XCTAssertTrue(notice.waitForExistence(timeout: 20), "the link into Live TV says it isn't available; the home saw \(home.seen)")
+        let words = notice.label
+        XCTAssertTrue(words.contains("Live TV isn't available on this home"), words)
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 20), "signed in: Home; the home saw \(home.seen)")
         XCTAssertTrue(home.seen.contains("GET /api/capabilities"), "the app asked what is on")
         XCTAssertTrue(sectionButton("Libraries").exists, "the other sections show")
-        XCTAssertTrue(element("shell.unavailable").waitForExistence(timeout: 10), "the link into Live TV says it isn't available")
-        XCTAssertTrue(element("shell.unavailable").label.contains("Live TV isn't available on this home"),
-                      element("shell.unavailable").label)
         XCTAssertFalse(app.tabBars.buttons["Live TV"].exists, "no Live TV tab")
         XCTAssertFalse(app.buttons["Live TV"].exists, "no Live TV section")
         XCTAssertFalse(element("home.row.live").exists, "no channel row on Home")

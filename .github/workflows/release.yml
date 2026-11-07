@@ -269,6 +269,47 @@ jobs:
           path: web/dist
           retention-days: 7
 
+  # The plugin host (Epic 54, story 54.03: plugins.host), Rust: built natively on each
+  # platform that runs plugins (the catalog's darwin-arm64, linux-amd64, linux-arm64; not
+  # Windows yet, whose pipeline cannot reach the host's unix socket). Uploaded as release-bin-plugind-*, so the archives' and
+  # the packages' release-bin-* downloads carry it.
+  build-plugind:
+    name: build maktaba-plugind (${{ matrix.os_name }}/${{ matrix.arch }})
+    needs: [guard]
+    if: needs.guard.outputs.published != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04,     os_name: linux,  arch: amd64, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, os_name: linux,  arch: arm64, target: aarch64-unknown-linux-gnu }
+          - { os: macos-15,         os_name: darwin, arch: arm64, target: aarch64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build maktaba-plugind
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          RUSTFLAGS="--remap-path-prefix=$PWD=." \
+            cargo build --locked --release --manifest-path plugind/Cargo.toml -p maktaba-plugind --target "$TARGET"
+          mkdir -p dist
+          install -m 0755 "plugind/target/$TARGET/release/maktaba-plugind" \
+            "dist/maktaba-plugind-${{ matrix.os_name }}-${{ matrix.arch }}"
+          "dist/maktaba-plugind-${{ matrix.os_name }}-${{ matrix.arch }}" --version
+      - name: Upload maktaba-plugind
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-bin-plugind-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 7
+
   # The unified maktaba-server binary embeds the (platform-independent)
   # web bundle, so it cross-compiles for every OS/arch on a single runner
   # once the bundle exists — no per-platform Node toolchain needed. Same
@@ -531,7 +572,7 @@ jobs:
   # windows. install.sh + the Homebrew formula consume these.
   package-archives:
     name: package archives
-    needs: [build-artifacts, build-server]
+    needs: [build-artifacts, build-server, build-plugind]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -640,6 +681,11 @@ jobs:
             # the build matrix; give them one inside windows archives.
             cp "bins/maktaba-api-${os}-${arch}"       "${stage}/maktaba-api${ext}"
             cp "bins/maktaba-streaming-${os}-${arch}" "${stage}/maktaba-streaming${ext}"
+            # Epic 54: the plugin host, where plugins run (plugins.host's platforms)
+            case "${os}/${arch}" in
+              linux/amd64|linux/arm64|darwin/arm64)
+                install -m 0755 "bins/maktaba-plugind-${os}-${arch}" "${stage}/maktaba-plugind" ;;
+            esac
             # Artifact download drops the +x bit (artifacts are re-zipped),
             # so restore it before archiving.
             chmod 0755 "${stage}/maktaba-server${ext}" "${stage}/maktaba-launcher${ext}" \
@@ -678,7 +724,7 @@ jobs:
   # referenced binaries must be staged under ./dist first.
   package-nfpm:
     name: package deb + rpm
-    needs: [build-artifacts, build-server]
+    needs: [build-artifacts, build-server, build-plugind]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
@@ -813,6 +859,7 @@ jobs:
             install -m 0755 "dist/maktaba-launcher-linux-${arch}"  pkgroot/maktaba-launcher
             install -m 0755 "dist/maktaba-api-linux-${arch}"       pkgroot/maktaba-api
             install -m 0755 "dist/maktaba-streaming-linux-${arch}" pkgroot/maktaba-streaming
+            install -m 0755 "dist/maktaba-plugind-linux-${arch}"   pkgroot/maktaba-plugind
             export ARCH="${arch}" VERSION="${TAG#v}"
             echo "==> nfpm ${arch}"
             nfpm package -f deploy/packaging/nfpm.yaml -p deb -t out/
@@ -1023,6 +1070,9 @@ jobs:
 
       # check.sh: no ffmpeg in the payload, and the server takes the runner's
       # (Ubuntu 22.04's, as the app's users get theirs from their distribution)
+      # the plugin host is built in the payload (payload.sh: cargo)
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Build the payload, check it, pack it
         env:
           TAG: ${{ github.ref_name }}

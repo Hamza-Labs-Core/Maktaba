@@ -3,6 +3,7 @@
 # story 36.7), for macOS arm64:
 #
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
+#              maktaba-plugind (Epic 54: the plugin host, Rust; cargo builds it)
 #   postgres/  bin/ lib/ share/          PostgreSQL 16, relocatable, with pgvector
 #   ffmpeg/    ffmpeg ffprobe            static
 #   ollama/    ollama llama-server       the language model server (arm64; the full flavour only)
@@ -60,7 +61,7 @@ while [ $# -gt 0 ]; do
 done
 case "$FLAVOUR" in full|core) ;; *) die "--flavour is full or core, not '$FLAVOUR'" ;; esac
 [ "$(uname -s)" = Darwin ] || die "the Mac app payload is built on macOS (codesign, ditto)"
-for t in go uv pnpm curl unzip shasum codesign file lipo make xcrun; do
+for t in go cargo uv pnpm curl unzip shasum codesign file lipo make xcrun; do
     command -v "$t" >/dev/null 2>&1 || die "$t is required"
 done
 [ -n "$VERSION" ] || VERSION="$(git -C "$REPO_ROOT" describe --tags --dirty --always 2>/dev/null || echo dev)"
@@ -97,6 +98,13 @@ cp "$REPO_ROOT/cmd/maktaba-server/bin/darwin-arm64/maktaba-server" \
 (cd "$REPO_ROOT/cmd/maktaba-launcher" && \
     GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
     go build -trimpath -ldflags "-s -w -X main.Version=$VERSION" -o "$OUT/bin/maktaba-launcher" .)
+
+# --- the plugin host (Epic 54, story 54.03: plugins.host; Wasmtime, its Seatbelt profile built in)
+log "building maktaba-plugind for darwin/arm64"
+[ "$(uname -m)" = arm64 ] || die "maktaba-plugind is built on an Apple silicon Mac (this is $(uname -m))"
+RUSTFLAGS="${RUSTFLAGS:-} --remap-path-prefix=$REPO_ROOT=." \
+    cargo build --locked --release --quiet --manifest-path "$REPO_ROOT/plugind/Cargo.toml" -p maktaba-plugind
+cp "$REPO_ROOT/plugind/target/release/maktaba-plugind" "$OUT/bin/"
 
 # --- PostgreSQL ----------------------------------------------------------------------------------
 log "PostgreSQL $POSTGRES_VERSION"
@@ -273,7 +281,10 @@ if [ -n "$IDENTITY" ]; then
     [ "$IDENTITY" = "-" ] && opts=(--force)
     while IFS= read -r f; do
         ent=()
-        case "$f" in "$OUT"/python/bin/python3*) ent=(--entitlements "$SCRIPT_DIR/entitlements/python.plist") ;; esac
+        case "$f" in
+            "$OUT"/python/bin/python3*) ent=(--entitlements "$SCRIPT_DIR/entitlements/python.plist") ;;
+            "$OUT"/bin/maktaba-plugind) ent=(--entitlements "$SCRIPT_DIR/entitlements/plugind.plist") ;;
+        esac
         codesign "${opts[@]}" ${ent[@]+"${ent[@]}"} --sign "$IDENTITY" "$f"
     done <"$machos"
     log "signed $(wc -l <"$machos" | tr -d ' ') files"

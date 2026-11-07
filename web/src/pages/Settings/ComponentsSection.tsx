@@ -50,6 +50,7 @@ import {
   joinNames,
   machinesApart,
   phaseTone,
+  descText,
   detailText,
   phaseWord,
   reasonText,
@@ -149,7 +150,7 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
   const [resetId, setResetId] = useState<string | null>(null);
 
   const views = useMemo(() => list?.components ?? [], [list]);
-  const titleOf = useMemo(() => titleFinder(t, views), [t, views]);
+  const titleOf = useMemo(() => titleFinder(t, views, locale), [t, views, locale]);
   const groups = useMemo(() => groupRows(views), [views]);
   const offline = error !== null && list !== null;
   const byId = useMemo(() => new Map(views.map((v) => [v.id, v])), [views]);
@@ -641,7 +642,7 @@ function Row({
     >
       <div className="mkt-comp-row__name">
         <span className="mkt-comp-row__title">{name}</span>
-        <span className="mkt-comp-row__desc">{t(v.desc_key)}</span>
+        <span className="mkt-comp-row__desc">{descText(t, v, locale)}</span>
       </div>
       <div className="mkt-comp-row__state">
         <Badge tone={phaseTone(v.phase, v.kind)} data-testid="comp-chip">
