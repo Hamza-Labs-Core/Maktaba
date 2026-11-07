@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **The relay enforces each plan (Epic 50 story 50.19, part 2).** A home on Free (no relay)
+  gets `402 relay_needs_plan` through the relay, and keeps its tunnel for direct access. With
+  `relay.plans.enforce` on, Basic's relayed requests carry `X-Maktaba-Relay-Cap-Kbps` (3000,
+  1500 past fair use) and its media is paced at the cap + 20 %, and a new relayed stream past
+  the plan's limit gets `429 stream_limit` (`relay_streams`, swept after 2 minutes of silence)
+  while the ones playing go on. Off (the default), paid homes play in full.
 - **Maktaba Cloud's plans are Free, Basic and Pro (Epic 50 story 50.19, part 1).** Only the
   relay is paid, and a paid plan never cuts remote play off. Free has no relay (direct access
   will be free on every plan); Basic relays at about 3 Mbps on 2 devices with 500 GB a month of

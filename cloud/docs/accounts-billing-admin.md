@@ -118,6 +118,29 @@ that wrote them (`manual` for a plan set by hand). The effective plan is mirrore
 `users.plan` and onto the plan of every server the account owns, which is
 what the relay's bandwidth gate reads.
 
+## The plans on the relay — Epic 50 story 50.19
+
+The relay decides each forwarded request's mode from the home's plan and this month's bytes by
+mode (`billing.ModeFor`, `relay_usage_monthly`), and counts the request's bytes in it:
+
+| Mode | When | What the relay does |
+|---|---|---|
+| `refused` | Free (no relay) | `402 relay_needs_plan` without forwarding, always; the tunnel stays (direct access, entitlements, push) |
+| `full` | Pro within its allowance or pay-as-you-go cap; any paid home while `relay.plans.enforce` is off | forwards untouched |
+| `capped` | Basic; Pro past its allowance and cap | adds `X-Maktaba-Relay-Cap-Kbps: 3000` (a client's own copy is removed) and paces media at the cap + 20 % |
+| `capped_slow` | past 500 GB of fair use in capped mode | the same with `1500` |
+
+- **Pacing** applies to media under `/stream/` (segments, a live stream, a file), never to
+  playlists, subtitles, artwork or the API. It slows, never stops.
+- **Streams at once.** A media stream is a session (`/stream/{session}/…`), or a channel or clip
+  with the client's address. A new one past the plan's limit (Basic 2; Pro N plus its extra
+  streams) is `429 stream_limit`; the ones playing go on. Counted in `relay_streams` (both relay
+  colours agree), touched once a minute, and swept by the worker after 2 minutes of silence. A
+  counting error admits the stream.
+- **Switches.** `relay.plans.enforce` (default false): capping, pacing and the stream limit.
+  `relay.stream_limit.enabled` (default true): the limit within them. Free is refused either
+  way.
+
 ## Licenses — Epic 16
 
 A paid plan becomes a **license** its homes verify: Ed25519-signed JSON
