@@ -92,7 +92,7 @@ import MaktabaKit
         let png = try #require(image.representation(using: .png, properties: [:]))
         Attachment.record(png, named: "\(c.name).png")
 
-        guard let refURL = Bundle(for: SnapshotBundle.self).url(forResource: c.name, withExtension: "png"),
+        guard let refURL = Bundle(for: SnapshotBundle.self).url(forResource: c.name, withExtension: "png", subdirectory: "Snapshots"),
               let refData = try? Data(contentsOf: refURL),
               let ref = NSBitmapImageRep(data: refData) else {
             Issue.record("no reference for \(c.name): commit the attached \(c.name).png as PlayerMacTests/Snapshots/\(c.name).png")

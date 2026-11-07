@@ -174,7 +174,11 @@ targets:
     # PlayerMacTests/Snapshots/*.png, which become this bundle's resources
     sources:
       - path: PlayerMacTests
-        excludes: ["UI/**"]
+        excludes: ["UI/**", "Snapshots/**"]
+      # a folder reference: a reference added to the folder ships without regenerating
+      - path: PlayerMacTests/Snapshots
+        type: folder
+        buildPhase: resources
       - path: UITests/MockHome.swift
       - path: UITests/Fixtures
     dependencies:
