@@ -1,5 +1,5 @@
 {
- "digest": "66b0b7d8b1ad5f1d242b05f80d92bd8fd7a15471ab59f8c2be5e37410c181c51",
+ "digest": "647450d3ea34e3efa65ac80d445cf54709df1418e1cb13f474127fae60c58e90",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -460,6 +460,174 @@
     "en": {
      "fp.classify.name": "Classify",
      "fp.classify.summary": "Finds the topics, promos and clip groups of each library, and rates each season's style."
+    }
+   }
+  },
+  {
+   "digest": "8cf1440b944d43ae1619fc3a01c0b705b739bca709913702e9a9b904885e3c28",
+   "folder": "subtitles",
+   "id": "tv.maktaba.subtitles",
+   "manifest": "# tv.maktaba.subtitles: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files.\nschema     = 1\nid         = \"tv.maktaba.subtitles\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.subtitles.name\"\nsummary = \"fp.subtitles.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"subtitles\"\ndb.read   = [\"transcript_segments\", \"transcripts\", \"videos\"]\ndb.write  = [\"subtitle_files\"]\nfiles.read  = [\"library\"]\nfiles.write = [\"library.subtitles\"]\n\n[[stage]]\nname         = \"subtitle_gen\"\nsubject      = \"video\"\nexport       = \"subtitle-gen\"\nversion      = 1\nlabel        = \"Subtitle files\"\nsubject_kinds = [\"video\"]\npool         = \"nas_write\"\nlane         = \"speech\"\nlane_order   = 4\nexternal_write = true\nentry        = \"maktaba_fp_subtitles.stages.subtitle_gen:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "common.load_video",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
+     "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "subtitle_gen.active",
+     "reads": [
+      "transcripts"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "c03ca43fc99a6e0a8db962605c346b3b16943a10e7e59d32a05f5fe24e9b18c5",
+     "text": "SELECT id, language FROM transcripts WHERE video_id = $1 AND is_active ORDER BY created_at DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "subtitle_gen.active.2",
+     "reads": [
+      "transcript_segments"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1b4106f239fd6fbb2def3eb78dec9336147784c4b1f78c6504c319bec9a1a4ec",
+     "text": "SELECT start_sec, end_sec, text FROM transcript_segments WHERE transcript_id = $1 ORDER BY seq",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "subtitle_gen.input_fingerprint",
+     "reads": [
+      "transcripts"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "e1ce3b3b6bd707ee67f0b9dd99883f5fd7961786c53fe659e1887d701baa43d3",
+     "text": "SELECT id, COALESCE(revision, 0) AS revision FROM transcripts WHERE video_id = $1 AND is_active ORDER BY created_at DESC LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "subtitle_gen.run",
+     "reads": [
+      "subtitle_files"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "cecc01df008342bb610b86ac819986e1041b278252ecba818bcd7e186ef126c2",
+     "text": "SELECT sha256 FROM subtitle_files WHERE video_id = $1 AND language = $2 AND format = $3 AND source = 'generated' AND deleted_at IS NULL",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "subtitle_gen.run.2",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "69c0d36bccc81afd3c6900bdcb0f89186d3a23d6221717b02c1ef070372ec9c2",
+     "text": "UPDATE subtitle_files SET deleted_at = $4 WHERE video_id = $1 AND language = $2 AND format = $3 AND source = 'generated' AND deleted_at IS NULL",
+     "writes": [
+      "subtitle_files"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "subtitle_gen.run.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "3bc8617f524e76c4bdb3bb8c1b601dfeb8893694f4037aaf207e0ef163f5676b",
+     "text": "INSERT INTO subtitle_files (video_id, transcript_id, language, format, source, path, byte_size, sha256, is_external, metadata) VALUES ($1, $2, $3, $4, 'generated', $5, $6, $7, true, $8)",
+     "writes": [
+      "subtitle_files"
+     ]
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.subtitles.name": "ملفات الترجمة",
+     "fp.subtitles.summary": "يكتب كل نص مفرّغ ملفاتِ ترجمة بجوار الفيديو."
+    },
+    "en": {
+     "fp.subtitles.name": "Subtitle files",
+     "fp.subtitles.summary": "Writes each transcript as subtitle files next to its video."
+    }
+   }
+  },
+  {
+   "digest": "4025bfcf185beb9690b1ef9f625fdc653d272cb7ea9316920a9e8980b1264762",
+   "folder": "thumbnails",
+   "id": "tv.maktaba.thumbnails",
+   "manifest": "# tv.maktaba.thumbnails: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2\n# (story 54.29): the first stages that read library files and write files.\nschema     = 1\nid         = \"tv.maktaba.thumbnails\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.thumbnails.name\"\nsummary = \"fp.thumbnails.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"media.thumbnails\"\ndb.read   = [\"chapters\", \"processing_jobs\", \"videos\"]\ndb.write  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"data.thumbnails\"]\nexec      = [\"ffmpeg\"]\n\n[[stage]]\nname         = \"thumb_small\"\nsubject      = \"video\"\nexport       = \"thumb-small\"\nversion      = 1\nlabel        = \"Small thumbnail\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"episodes\"\nlane_order   = 6\nentry_for    = [\"video\"]\nplacement    = \"home\"\nedges        = [{ to = \"review_pages\", map = \"library_of\" }]\nentry        = \"maktaba_fp_thumbnails.stages.thumb_small:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"chapter_thumbs\"\nsubject      = \"video\"\nexport       = \"chapter-thumbs\"\nversion      = 1\nlabel        = \"Chapter frames\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"speech\"\nlane_order   = 7\nplacement    = \"home\"\nentry        = \"maktaba_fp_thumbnails.stages.chapter_thumbs:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "chapter_thumbs.chapters",
+     "reads": [
+      "chapters"
+     ],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "9f7c7770653961609773b459c7b0160b038e11a5810bdfcb2dd057f4ee963ff6",
+     "text": "SELECT seq, start_sec FROM chapters WHERE video_id = $1 ORDER BY seq",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "chapter_thumbs.content_hash",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "412c577c04684b85e42de37340901937bc3e6902f98448ce91f92ad934a3519e",
+     "text": "SELECT content_hash FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "common.load_video",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
+     "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "thumb_small.made_from",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "84b012f766146a4e0e1d1de35a99fd0b805e29e8f5ad5788c524b360a4b1585d",
+     "text": "SELECT output_summary FROM processing_jobs WHERE subject_kind = 'video' AND subject_id = $1 AND stage = 'thumb_small' AND state = 'done' AND output_summary IS NOT NULL ORDER BY id DESC LIMIT 5",
+     "writes": []
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.thumbnails.name": "الصور المصغّرة",
+     "fp.thumbnails.summary": "يصنع الصورة الصغيرة لكل فيديو وإطارات فصوله."
+    },
+    "en": {
+     "fp.thumbnails.name": "Thumbnails",
+     "fp.thumbnails.summary": "Makes each video's small picture and its chapters' frames."
     }
    }
   }

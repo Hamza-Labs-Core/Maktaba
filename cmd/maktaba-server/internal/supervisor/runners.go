@@ -104,9 +104,10 @@ func RunnerEnv(cfg config.Config, base []string) []string {
 	return out
 }
 
-// RunnerAreas maps the [trusted] file areas to this machine's folders (story 54.23 §3).
-// The library area comes with the waves that read media (its share paths are the
-// machine's own mapping).
+// RunnerAreas maps the [trusted] file areas to this machine's folders (story 54.23 §3):
+// the defaults. The worker writes the folders it really uses (<runner dir>/areas.json: the
+// library roots through this machine's share-path mapping, the thumbnail cache), which a
+// runner reads over these (story 54.29).
 func RunnerAreas(cfg config.Config) map[string]string {
 	data := cfg.Server.DataDir
 	return map[string]string{

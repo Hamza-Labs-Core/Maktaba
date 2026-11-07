@@ -67,7 +67,7 @@ from ..classify.production_style import STYLE_VERSION, metrics_from_dict
 from ..classify.series_detector import DETECTOR_VERSION
 from ..engine.causes import classify
 from ..engine.enqueue import enqueue_job
-from ..engine.graph import SIG_VERSION, Subject
+from ..engine.graph import SIG_VERSION, THUMB_SMALL_VERSION, Subject
 from ..engine.hashing import canonical_hash
 from ..engine.ids import season_uuid, series_uuid
 from ..engine.paths import PathMap, set_active_path_map, to_db, to_local
@@ -81,15 +81,14 @@ from ..engine.stages import link as link_stage
 from ..engine.stages import style_sample as style_sample_stage
 from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
-from ..engine.stages import thumb_small as thumb_small_stage
 from ..engine.stages import youtube_sync as yt_stage
 from ..engine.stages._leftovers import library_name
 from ..engine.stages._tagging import season_tags_digest, video_tags_digest
 from ..engine.stages.content_hash import PENDING, is_pending
-from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path, staged_path
 from ..library_mgmt import youtube_derive
 from ..log import get_logger
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
+from ..thumbnail.small import small_path, staged_path
 
 
 async def _fingerprint(stage: str, db: Any, subject: Any) -> str | None:
@@ -1430,7 +1429,7 @@ async def _thumbs(
         if content_hash is None:
             continue  # thumb_small is not done until the real hash names its folder
         size = dst.stat().st_size if dst.is_file() else source.size(src)
-        ih = await thumb_small_stage.input_fingerprint(db, Subject("video", vid))
+        ih = await _fingerprint("thumb_small", db, Subject("video", vid))
         await _write_job(db, report, kind="video", subject_id=vid, library_id=lib, stage="thumb_small",
                          version=THUMB_SMALL_VERSION, input_hash=ih,
                          output_hash=canonical_hash({"small": dst.name, "size": size}))  # fmt: skip

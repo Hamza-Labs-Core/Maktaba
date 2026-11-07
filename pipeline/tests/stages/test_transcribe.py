@@ -240,7 +240,7 @@ async def test_a_subtitle_file_identical_to_ours_is_ours_even_unrecorded(
     db: Database, tmp_path: Path, fake: FakeTranscriber
 ) -> None:
     """A worker stopped between writing the file and recording it."""
-    from maktaba_pipeline.engine.stages.subtitle_gen import srt
+    from maktaba_fp_subtitles.stages.subtitle_gen import srt
 
     rt = await core_runtime(db)
     vid, media = await _one_video(db, tmp_path)

@@ -456,7 +456,7 @@ async def test_rule_changes_are_imported_checked_and_never_overwrite_maktaba(
 async def test_thumbnails_go_to_the_cache_and_thumb_small_is_done(
     db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, packed: bool
 ) -> None:
-    from maktaba_pipeline.engine.stages import thumb_small
+    from maktaba_pipeline.thumbnail import small as thumb_small
 
     monkeypatch.setattr(thumb_small, "ROOT", str(tmp_path / "cache"))
     _, vids = await _library(db)
@@ -491,8 +491,8 @@ async def test_create_makes_libraries_and_videos_and_the_queue_reads_the_files(
     """No scan first: the import makes the library and its videos from the cache with
     stand-in hashes, and queues one content_hash job per video; running the queue reads
     each file once, stores its real hash and moves the imported thumbnail in."""
-    from maktaba_pipeline.engine.stages import thumb_small
     from maktaba_pipeline.identity.hasher import hash_file
+    from maktaba_pipeline.thumbnail import small as thumb_small
 
     monkeypatch.setattr(thumb_small, "ROOT", str(tmp_path / "thumbcache"))
     media = tmp_path / "media" / "chan"
