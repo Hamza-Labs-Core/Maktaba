@@ -327,16 +327,34 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
     plugin_id = plugin_of(ext)
     if plugin_id is None:
         raise StageFailure("plugin_failed", f"{job.stage} is not a plugin stage", retryable=False)
+    from .loader import MIGRATE_STAGE_ARG, load_installed
+
+    installs = {p.plugin_id: p for p in await load_installed(db)}
+    install = installs.get(plugin_id)
+    if install is None:
+        raise JobDeferred("plugin_held: not installed", 60)
+    migrate = job.stage == install.migrate_stage
+    payload = {k: v for k, v in (job.payload or {}).items() if k != LINEAGE_KEY}
+    if migrate:
+        # story 54.07 §5 step 4: the data's version is the row's; nothing to do once it is
+        # up (a second job, or one a rollback left behind), and a plugin with no migrate
+        # step has its data taken as it is
+        if not install.migrating:
+            return StageResult(output_hash=f"data-{install.target_data_version}")
+        if not install.doc.get("migrate"):
+            await record_migrated(db, install)
+            return StageResult(output_hash=f"data-{install.target_data_version}")
+        payload = {"from": install.data_version, "to": install.target_data_version}
+    elif install.migrating:
+        # its other stages wait until the migrate job brings the data up
+        await ensure_migrate_job(db, install)
+        raise JobDeferred(
+            f"plugin_migrating: data {install.data_version} -> {install.target_data_version}", 30
+        )
     minted = await _mint(int(job.id))
     cause: str | None = None
     res_msg: dict[str, Any] = {}
     try:
-        from .loader import load_installed
-
-        installs = {p.plugin_id: p for p in await load_installed(db)}
-        install = installs.get(plugin_id)
-        if install is None:
-            raise JobDeferred("plugin_held: not installed", 60)
         sdoc = install.stage_doc(job.stage) or {}
         settings = await _settings(db, plugin_id)
         subject = job.subject
@@ -349,12 +367,10 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
             "export": sdoc.get("export", ""),
             "job": {
                 "id": str(job.id),
-                "stage": sdoc.get("name", job.stage),
+                "stage": MIGRATE_STAGE_ARG if migrate else sdoc.get("name", job.stage),
                 "subject": {"kind": str(subject.kind), "id": str(subject.id)},
                 # the lineage is Maktaba's: the guest reads its payload without it
-                "payload": json.dumps(
-                    {k: v for k, v in (job.payload or {}).items() if k != LINEAGE_KEY}
-                ),
+                "payload": json.dumps(payload),
                 "attempt": int(job.attempts),
                 "checkpoint": await _last_checkpoint(db, int(job.id)),
             },
@@ -392,6 +408,11 @@ async def run_plugin_stage(db: Any, job: Any, ctx: Any) -> StageResult:
                         cause = f.kind
                         raise
                     cause = ""
+                    if migrate:
+                        # the guest's run("__migrate") succeeded: the data is up to date,
+                        # and the plugin's other stages run again
+                        await record_migrated(db, install)
+                        return StageResult(output_hash=f"data-{install.target_data_version}")
                     return out
                 raise StageFailure(
                     "plugin_failed", f"host answered {msg.get('type')}", retryable=True
@@ -433,3 +454,35 @@ async def _settings(db: Any, plugin_id: str) -> str:
 
 def decode_checkpoint(cp: str | None) -> bytes | None:
     return None if not cp else base64.b64decode(cp)
+
+
+async def ensure_migrate_job(db: Any, install: Any) -> None:
+    """Enqueue the plugin's one migrate job (catalog subject; enqueueing twice is a no-op)."""
+    from ..engine.enqueue import enqueue_job
+    from ..engine.graph import CATALOG_ID
+
+    await enqueue_job(
+        db,
+        subject_kind="catalog",
+        subject_id=CATALOG_ID,
+        stage=install.migrate_stage,
+        reason={"why": "plugin_migrate", "by": "system", "plugin": install.plugin_id},
+    )
+
+
+async def record_migrated(db: Any, install: Any) -> None:
+    """The data is at the installed version's data_version now (story 54.07 §5 step 4):
+    clear the row's mark, only if it is still the version and data this job migrated."""
+    await db.execute(
+        "UPDATE plugin_installs SET data_version = NULL"
+        " WHERE plugin_id = $1 AND version = $2 AND data_version = $3",
+        install.plugin_id,
+        install.version,
+        install.data_version,
+    )
+    _log.info(
+        "plugin_data_migrated",
+        plugin=install.plugin_id,
+        version=install.version,
+        to=install.target_data_version,
+    )
