@@ -135,7 +135,8 @@ private struct VideoDetails: View {
                 }
                 // story 54.20: "From plugins", collapsed, below Maktaba's own sections
                 PluginPanelsSection<PlayerRoute>(panels: page.panels,
-                                                 seek: { PlayerRoute.watch(videoID: video.id, at: $0) })
+                                                 seek: { PlayerRoute.watch(videoID: video.id, at: $0) },
+                                                 search: { PlayerRoute.search(query: $0) })
                     .padding(.horizontal, gutter)
                 if !page.nextEpisodes.isEmpty {
                     Rail(Text("Next episodes", tableName: "Video", comment: "The episodes after this one, a row's title"),

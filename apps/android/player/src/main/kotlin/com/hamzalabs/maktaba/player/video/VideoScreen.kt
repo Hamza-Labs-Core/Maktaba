@@ -464,6 +464,7 @@ private fun VideoDetails(
                 page.panels,
                 Modifier.padding(horizontal = gutter),
                 onSeek = { onOpen(Route.Watch(video.id, it.toInt())) },
+                onSearch = { onOpen(Route.SearchFor(it)) },
             )
 
             if (page.nextEpisodes.isNotEmpty()) {

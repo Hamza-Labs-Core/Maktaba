@@ -438,6 +438,13 @@ build fails when the two differ.
   removed at sign-out); a new cloud sign-in that can't reach the cloud goes to the home's own
   sign-in. A request the relay answers `503 home_reconnecting` is tried again for up to a
   minute while the status strip says "Reconnecting to your home…".
+- **What one relay node carries is measured (Epic 50, story 50.14).** `maktaba-loadtest` ramps
+  simulated homes and players at a bitrate against a relay until a stop rule (CPU 70 %, 20 ms
+  added latency, 0.5 % stalls, a dropped tunnel, memory 75 %) holds for 2 minutes, and turns the
+  last good step into a row of `docs/cloud-sizing.md`; it refuses any target under maktaba.tv.
+  The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
+  CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
+  measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -1018,7 +1025,10 @@ build fails when the two differ.
   turned off shows none. Every value is plain text: the plugin API refuses a URL, HTML,
   markdown or a control character in a value a panel shows (`plugin_text_forbidden`), and
   every app escapes again and makes no request from one. `GET /api/panels` and the
-  capability `plugin_panels`, which apps read missing as off.
+  capability `plugin_panels`, which apps read missing as off. Series and library pages show
+  panels too, in every app; a chip opens Search with its text on Android and Apple as on the
+  web. The Apple TV and Android TV video pages show `kv`, `badges` and `markers`, open, and a
+  marker plays from its time.
 
 - **Automated checks and human review in the plugin store (Epic 54, story 54.16).** Every
   submitted version is checked by the home's own rules, compiled to WebAssembly for the store's
