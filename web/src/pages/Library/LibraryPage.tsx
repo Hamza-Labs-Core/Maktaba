@@ -20,6 +20,7 @@
 // the user may not see answers 404, the same as one that does not exist.
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { PluginPanels } from "../../components/PluginPanel/PluginPanel";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Tabs } from "@ds/components/Tabs/Tabs";
@@ -310,6 +311,8 @@ function LibraryPageOf({ libraryId }: { libraryId: string }) {
           },
         ]}
       />
+      {/* story 54.20: installed plugins' panels, below Maktaba's own sections */}
+      <PluginPanels subject={{ kind: "library", id: libraryId }} />
     </section>
   );
 }
