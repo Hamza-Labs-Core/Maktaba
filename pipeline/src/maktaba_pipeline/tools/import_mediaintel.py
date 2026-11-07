@@ -78,7 +78,6 @@ from ..engine.stages import check_tags as check_tags_stage
 from ..engine.stages import detect as detect_stage
 from ..engine.stages import fingerprint as fingerprint_stage
 from ..engine.stages import link as link_stage
-from ..engine.stages import rate_style as rate_style_stage
 from ..engine.stages import style_sample as style_sample_stage
 from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
@@ -91,6 +90,17 @@ from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path, staged_
 from ..library_mgmt import youtube_derive
 from ..log import get_logger
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
+
+
+async def _fingerprint(stage: str, db: Any, subject: Any) -> str | None:
+    """A stage's input fingerprint through the stage registry: a stage that moved into a
+    first-party plugin (Epic 54) is reached by its entry, not by importing its module."""
+    from ..engine.stages.registry import get_impl
+
+    impl = get_impl(stage)
+    assert impl is not None and impl.input_fingerprint is not None
+    return await impl.input_fingerprint(db, subject)
+
 
 __all__ = ["ImportReport", "main", "run_import"]
 
@@ -1313,7 +1323,7 @@ async def _jobs(
             "SELECT style, tier, style_version FROM season_style WHERE season_id = $1", uid(sid)
         )
         if st is not None and st["style"]:
-            ih = await rate_style_stage.input_fingerprint(db, Subject("season", sid))
+            ih = await _fingerprint("rate_style", db, Subject("season", sid))
             await _write_job(db, report, kind="season", subject_id=sid, library_id=lib, stage="rate_style",
                              version=int(st["style_version"] or STYLE_VERSION), input_hash=ih,
                              output_hash=canonical_hash({"style": st["style"], "tier": int(st["tier"])}))  # fmt: skip

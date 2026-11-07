@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -38,6 +39,62 @@ API_DIR = ROOT / "api"
 
 #: the plugin path's fixed cost of one job that N16 does not count (README §15.12)
 PERF_FLOOR_S = 0.025
+
+#: (step, seconds) of the plugin job being timed (the bench's breakdown)
+marks: list[tuple[str, float]] = []
+
+
+def _instrument() -> None:
+    """Time the steps of the plugin path: the token, the runner's run, each statement."""
+    from maktaba_plugin_sdk.native import transport
+
+    from maktaba_pipeline.engine import run
+    from maktaba_pipeline.plugins import native
+
+    if getattr(native, "_parity_timed", False):
+        return
+
+    def timed(name: str, fn: Any) -> Any:
+        async def wrapper(*a: Any, **kw: Any) -> Any:
+            t = time.perf_counter()
+            try:
+                return await fn(*a, **kw)
+            finally:
+                marks.append((name, time.perf_counter() - t))
+
+        return wrapper
+
+    from maktaba_plugin_runner import server
+
+    native._mint = timed("mint", native._mint)
+    server.Relay.ask = timed("relay", server.Relay.ask)  # type: ignore[method-assign]
+    native.run_native = timed("run_native", native.run_native)
+    inner = native.run_native
+
+    async def spans(*a: Any, **kw: Any) -> Any:
+        # where in the job the plugin's run starts and ends (the breakdown's before/after)
+        marks.append(("@start", time.perf_counter()))
+        try:
+            return await inner(*a, **kw)
+        finally:
+            marks.append(("@end", time.perf_counter()))
+
+    native.run_native = spans
+    native.choose = timed("choose", native.choose)
+    native.serving_group = timed("serving_fp", native.serving_group)
+    run._native_impl = timed("native_impl", run._native_impl)
+    call = transport.UnixTransport.call
+
+    async def tcall(self: Any, fn: str, body: dict[str, Any]) -> dict[str, Any]:
+        t = time.perf_counter()
+        try:
+            return await call(self, fn, body)
+        finally:
+            marks.append((f"api {body.get('name') or body.get('op')}", time.perf_counter() - t))
+
+    transport.UnixTransport.call = tcall  # type: ignore[method-assign]
+    native._parity_timed = True  # type: ignore[attr-defined]
+
 
 Seed = Callable[[Database], Awaitable[None]]
 
@@ -110,10 +167,35 @@ def _go_dsn(url: str) -> str:
     return urlunsplit(u._replace(query=urlencode(q)))
 
 
+def _cpu_of(pid: int) -> float | None:
+    """A process's CPU seconds, every thread (Linux ``/proc/<pid>/schedstat``, in ns; the
+    clock-tick counters of ``stat`` are 10 ms coarse). None elsewhere."""
+    if not pid:
+        return None
+    total = 0
+    try:
+        for task in Path(f"/proc/{pid}/task").iterdir():
+            try:
+                total += int((task / "schedstat").read_text().split()[0])
+            except (OSError, ValueError, IndexError):
+                continue
+    except OSError:
+        return None
+    return total / 1e9
+
+
+#: a timing line of perf_check (N16), as opposed to a difference in what was written
+_PERF_LINE = re.compile(r" p(50|95)( \(CPU\))?: plugin ")
+
+
 @dataclass
 class Side:
     db: Database
     times: dict[str, list[float]] = field(default_factory=dict)
+    #: N16's p95 samples: the CPU each benched job cost, this process (the worker and, in
+    #: the harness, the runner) and the plugin API's process; Postgres is left out, as both
+    #: sides run the same queries
+    cpu_times: dict[str, list[float]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
 
 
@@ -123,6 +205,11 @@ class Parity:
     b: Side
     graph: dict[str, StageDef]
     tmp: Path
+    breakdowns: list[tuple[float, str, list[tuple[str, float]]]] = field(default_factory=list)
+    #: the plugin API's process (its CPU time per job, on Linux)
+    api_pid: int = 0
+    #: every benched job, both sides: wall, CPU and spans (report())
+    jobs: list[dict[str, Any]] = field(default_factory=list)
 
     async def drain(self, side: Side, *, limit: int = 500) -> None:
         """Run every claimable job of the graph on one side, timing each."""
@@ -163,17 +250,65 @@ class Parity:
         await self.drain(self.a)
         await self.drain(self.b)
 
-    async def bench(self, stages: Sequence[str], *, rounds: int = 7) -> None:
+    def slowest(self, n: int = 3) -> str:
+        """Where the slowest plugin jobs spent their time (printed when N16 fails)."""
+        out = []
+        for took, st, ms in sorted(self.breakdowns, reverse=True)[:n]:
+            steps = ", ".join(f"{k} {v * 1000:.1f}" for k, v in ms)
+            out.append(f"{st} {took * 1000:.1f} ms: {steps}")
+        return "\n".join(out)
+
+    async def bench(self, stages: Sequence[str], *, rounds: int = 11) -> None:
         """N16's samples: each stage's job run again ``rounds`` times on each side, A and B
         taking turns (a busy machine slows both alike), forced so it does its work. The
         samples replace the drain's one run per job for the comparison."""
-        from maktaba_pipeline.engine.claim import claim_for_pool
-        from maktaba_pipeline.engine.enqueue import enqueue_job
+        import gc
 
         rt = EngineRuntime(graph=self.graph)
         for side in (self.a, self.b):
             for st in stages:
                 side.times[st] = []
+                side.cpu_times[st] = []
+        # the worker and the runner share this test's process and loop: a collector pause
+        # would land on whichever side runs then, so it is held off while both are timed
+        from dataclasses import replace
+
+        from maktaba_pipeline.engine.stages import registry
+
+        def spanned(fn: Any) -> Any:
+            async def run(*a: Any, **kw: Any) -> Any:
+                marks.append(("@start", time.perf_counter()))
+                try:
+                    return await fn(*a, **kw)
+                finally:
+                    marks.append(("@end", time.perf_counter()))
+
+            return run
+
+        # the in-process side's run span, as the plugin side's (run_native): the plugin side
+        # replaces the run, so this wrapper times only the in-process jobs
+        saved = {}
+        for st in stages:
+            impl = registry.get_impl(st)
+            if impl is not None and impl.run is not None:
+                saved[st] = registry._IMPLS.get(st)
+                registry._IMPLS[st] = replace(impl, run=spanned(impl.run))
+        gc.collect()
+        gc.disable()
+        try:
+            await self._bench(stages, rounds, rt)
+        finally:
+            gc.enable()
+            for st, old in saved.items():
+                if old is None:
+                    registry._IMPLS.pop(st, None)
+                else:
+                    registry._IMPLS[st] = old
+
+    async def _bench(self, stages: Sequence[str], rounds: int, rt: Any) -> None:
+        from maktaba_pipeline.engine.claim import claim_for_pool
+        from maktaba_pipeline.engine.enqueue import enqueue_job
+
         for st in stages:
             row = await self.a.db.fetchrow(
                 "SELECT subject_kind, subject_id FROM processing_jobs WHERE stage = $1"
@@ -202,9 +337,103 @@ class Parity:
                     )
                     if job is None:
                         continue
+                    marks.clear()
+                    cpu0, api0 = time.process_time(), _cpu_of(self.api_pid)
                     t0 = time.perf_counter()
                     await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
-                    side.times[st].append(time.perf_counter() - t0)
+                    t1 = time.perf_counter()
+                    cpu1, api1 = time.process_time(), _cpu_of(self.api_pid)
+                    took = t1 - t0
+                    side.times[st].append(took)
+                    at = {k: v for k, v in marks if k.startswith("@")}
+                    steps = [(k, v) for k, v in marks if not k.startswith("@")]
+                    spans: dict[str, float] = {}
+                    if "@start" in at and "@end" in at:
+                        named = sum(v for k, v in steps if k.startswith("api ") or k == "relay")
+                        spans = {
+                            "before": at["@start"] - t0,
+                            "run": at["@end"] - at["@start"],
+                            "after": t1 - at["@end"],
+                            "api_calls": float(sum(1 for k, _ in steps if k.startswith("api "))),
+                            "api": named,
+                            "unnamed": (at["@end"] - at["@start"]) - named,
+                        }
+                    side.cpu_times[st].append(
+                        (cpu1 - cpu0)
+                        + ((api1 - api0) if api0 is not None and api1 is not None else 0.0)
+                    )
+                    self.jobs.append(
+                        {
+                            "side": "plugin" if side is self.b else "in-process",
+                            "stage": st,
+                            "wall": took,
+                            "cpu": cpu1 - cpu0,
+                            "api_cpu": (api1 - api0)
+                            if api0 is not None and api1 is not None
+                            else None,
+                            **spans,
+                            "steps": [(k, round(v * 1000, 2)) for k, v in steps],
+                        }
+                    )
+                    if side is self.b:
+                        lead = [(k, spans[k]) for k in ("before", "after", "unnamed") if k in spans]
+                        self.breakdowns.append((took, st, [*lead, *steps]))
+
+    def report(self, name: str) -> str:
+        """N16's samples, every run (passing or not): per stage and side the p50 and p95 of
+        the wall time, this process's CPU, the plugin API's CPU and the plugin job's spans.
+        Written to ``$MAKTABA_PARITY_REPORT_DIR/<name>.{txt,json}`` when set (CI keeps it as
+        an artifact) and answered."""
+        import json as _json
+
+        def q(xs: list[float], f: float) -> float:
+            xs = sorted(xs)
+            return xs[min(len(xs) - 1, int(f * len(xs)))] if xs else float("nan")
+
+        lines = [f"N16 report: {name} (ms; p50 / p95 over each side's runs)"]
+        keys = ("wall", "cpu", "api_cpu", "before", "run", "after", "api", "unnamed", "api_calls")
+        for st in sorted({j["stage"] for j in self.jobs}):
+            for side in ("in-process", "plugin"):
+                js = [j for j in self.jobs if j["stage"] == st and j["side"] == side]
+                cells = []
+                for k in keys:
+                    xs = [float(j[k]) for j in js if j.get(k) is not None]
+                    if not xs:
+                        continue
+                    m = 1 if k == "api_calls" else 1000
+                    cells.append(f"{k} {q(xs, 0.5) * m:.1f}/{q(xs, 0.95) * m:.1f}")
+                lines.append(f"  {st:<20} {side:<10} n={len(js):<3} " + "  ".join(cells))
+        lines.append("slowest plugin jobs:")
+        lines.append(self.slowest(5))
+        text = "\n".join(lines) + "\n"
+        out = os.environ.get("MAKTABA_PARITY_REPORT_DIR", "").strip()
+        if out:
+            Path(out).mkdir(parents=True, exist_ok=True)
+            (Path(out) / f"{name}.txt").write_text(text, encoding="utf-8")
+            (Path(out) / f"{name}.json").write_text(
+                _json.dumps(self.jobs, indent=1), encoding="utf-8"
+            )
+        return text
+
+    async def compare_n16(
+        self,
+        tables: Sequence[tuple[str, Sequence[str]]],
+        *,
+        ignore: dict[str, Sequence[str]] | None = None,
+        stages: Sequence[str],
+        perf: bool = True,
+    ) -> list[str]:
+        """N16's samples (``bench``) and every difference. A failure that is only the timing
+        is measured once more and counts only when the second run fails too: with 11 runs a
+        side, p95 is about the slowest run, and one stall of a shared CI machine (on either
+        side's turn) is not the plugin's cost."""
+        await self.bench(stages)
+        problems = await self.compare(tables, ignore=ignore, stages=stages, perf=perf)
+        if problems and all(_PERF_LINE.search(p) for p in problems):
+            self.breakdowns.clear()
+            await self.bench(stages)
+            problems = await self.compare(tables, ignore=ignore, stages=stages, perf=perf)
+        return problems
 
     async def compare(
         self,
@@ -264,7 +493,12 @@ class Parity:
                 # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
                 # path's fixed cost of a job (its token, the hop to the runner), README §15.12
                 out += perf_check(
-                    s, self.a.times.get(s, []), self.b.times.get(s, []), floor_s=PERF_FLOOR_S
+                    s,
+                    self.a.times.get(s, []),
+                    self.b.times.get(s, []),
+                    floor_s=PERF_FLOOR_S,
+                    inproc_p95=self.a.cpu_times.get(s),
+                    plugin_p95=self.b.cpu_times.get(s),
                 )
         return out
 
@@ -377,8 +611,11 @@ async def parity(
             await asyncio.sleep(0.02)
         native.forget_hello()
         native._FP_TOKENS.clear()
-        yield Parity(a=Side(a), b=Side(b), graph=graph, tmp=tmp)
+        _instrument()
+        yield Parity(a=Side(a), b=Side(b), graph=graph, tmp=tmp, api_pid=proc.pid)
     finally:
+        native.forget_hello()
+        native._FP_TOKENS.clear()
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

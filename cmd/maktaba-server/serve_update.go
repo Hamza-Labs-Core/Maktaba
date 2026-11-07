@@ -957,6 +957,12 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		if p.Blocked && p.PID == 0 {
 			continue // its component is off (Epic 51): built dormant, it is not meant to run
 		}
+		if p.Role == supervisor.RolePluginRunner {
+			// a first-party plugin runner (Epic 54) judges nothing: while it does not run its
+			// stages run in the worker, and a runner the new release cannot start is shown
+			// on the Components page (core.plugin_runners), never a reason to go back
+			continue
+		}
 		if p.Role == supervisor.RoleTVSlot {
 			// a slot starting, stopped or between two starts is the TV's doing (its change's
 			// staging slot starts, its swap stops a slot: 2026-10-28, "tv-slot/amber is

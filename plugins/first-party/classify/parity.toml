@@ -1,0 +1,15 @@
+# The parity proof of tv.maktaba.classify (story 54.26): the tables its stages write, keyed,
+# with only the columns that hold the time of the write masked.
+tables = ["promo_links", "clip_groups", "clip_group_items", "topic_collections", "topic_items", "season_style"]
+
+[ignore]
+promo_links = ["updated_at"]
+clip_groups = ["updated_at"]
+topic_collections = ["updated_at"]
+season_style = ["updated_at"]
+
+[[cases]]
+name = "a channel library: two shows, a playlist across both, clips, questions, a promo, talks"
+
+[[failure_cases]]
+name = "a library with no series"

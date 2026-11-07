@@ -161,7 +161,42 @@ async def choose(db: Any, stage: str) -> ImplChoice:
     ok, _ = await serving(stage)
     if not ok:
         return ImplChoice("inproc", "runner_not_serving_here")
+    if not await role_usable(db, stage):
+        return ImplChoice("inproc", "role_unusable")
     return ImplChoice("plugin")
+
+
+# role -> (checked at, usable): a home whose migrations could not make or grant the
+# plugin's role (no right to create roles; a role another database's owner made on a
+# shared Postgres) runs the stage in-process; checked again every minute, so a later
+# migration run that grants it is picked up.
+_ROLE_OK: dict[str, tuple[float, bool]] = {}
+_ROLE_TTL = 60.0
+
+
+async def role_usable(db: Any, stage: str) -> bool:
+    """Whether this machine's login may SET ROLE to the stage's plugin role (the API that
+    runs the plugin's statements logs in as the same role as this worker)."""
+    fp = firstparty.by_stage(stage)
+    if fp is None:
+        return False
+    role = "maktaba_fp_" + fp.id.removeprefix("tv.maktaba.").replace("-", "_").replace(".", "_")
+    now = time.monotonic()
+    hit = _ROLE_OK.get(role)
+    if hit is not None and now - hit[0] < _ROLE_TTL:
+        return hit[1]
+    try:
+        ok = bool(
+            await db.fetchval(
+                "SELECT to_regrole($1::text) IS NOT NULL"
+                " AND pg_has_role(current_user, $1::text, 'MEMBER')",
+                role,
+            )
+        )
+    except Exception:  # noqa: BLE001 - an unreadable answer is "not usable", never a failure
+        ok = False
+    _ROLE_OK[role] = (now, ok)
+    return ok
 
 
 # --- the wire format of a job and its result ---------------------------------------------
