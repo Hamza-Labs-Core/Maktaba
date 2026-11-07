@@ -813,10 +813,14 @@ export function build() {
   // the Flows guide's example chart, drawn at build time from the flow corpus's two-plugin
   // chain, in each language
   const chain = JSON.parse(
-    fs.readFileSync(path.join(REPO, "shared/plugins/testdata/flows/chain_two_home/expect.json"), "utf8")
+    fs.readFileSync(
+      path.join(REPO, "shared/plugins/testdata/flows/chain_two_home/expect.json"),
+      "utf8"
+    )
   ).graph;
   for (const lang of LANGS) {
-    const words = lang === "ar" ? { "audio.ready": "صوته جاهز" } : { "audio.ready": "Its audio is ready" };
+    const words =
+      lang === "ar" ? { "audio.ready": "صوته جاهز" } : { "audio.ready": "Its audio is ready" };
     const svg = renderSvg(chain, {
       lang,
       highlight: "dev.example.chapter-writer",
