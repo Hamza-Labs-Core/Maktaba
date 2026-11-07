@@ -40,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/directaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -655,6 +656,13 @@ func runServe() error {
 					rep := cloudlink.NewReporter(agent, p9.Cloud.Store, logger)
 					p9.Cloud.Store.Changed = rep.Kick
 					loops.Declare("cloudlink_reporter", runner.Func(func(ctx context.Context) { rep.Run(ctx, 30*time.Minute) }))
+					// Epic 50 story 50.15: direct remote access (cloud.direct), through the same agent
+					if direct := directService(appDB, agent, logger); direct != nil {
+						loops.Declare("direct_listener", runner.Func(direct.RunListener))
+						loops.Declare("direct_portmap", runner.Func(direct.RunPortmap))
+						loops.Declare("direct_cert", runner.Func(direct.RunCert))
+						(&directaccess.Routes{Service: direct}).Mount(r)
+					}
 				}
 				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
