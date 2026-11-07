@@ -7,6 +7,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import { I18nProvider, useI18n } from "./i18n";
 import { isServiceAdmin, SessionProvider, useSession } from "./session";
 import { Loading } from "./ui";
+import { StatusStrip } from "./StatusStrip";
 import { SignIn } from "./pages/SignIn";
 import { ForgotPassword, Register, ResetPassword, SignedIn, VerifyEmail } from "./pages/AuthFlows";
 import { Account } from "./pages/Account";
@@ -79,6 +80,7 @@ function Shell() {
           )}
         </div>
       </header>
+      <StatusStrip />
       <main className="mkc-shell__main">
         <Outlet />
       </main>

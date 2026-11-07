@@ -27,7 +27,7 @@ func ValidateFlowDoc(src []byte) (map[string]any, Errors) {
 		return nil, Errors{{Code: "flow_invalid", Detail: "not TOML"}}
 	}
 	var errs []Error
-	flowRoot.check(raw, "", "", &errs)
+	flowRoot.check(raw, "", "", false, &errs) // a flow names no trusted key
 	if len(errs) > 0 {
 		for i := range errs {
 			if c, ok := flowRemaps[errs[i].Code]; ok {

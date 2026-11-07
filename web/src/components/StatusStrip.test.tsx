@@ -11,6 +11,7 @@ vi.mock("../lib/auth", () => ({ useAuth: () => authState }));
 
 import { I18nProvider } from "../lib/i18n";
 import { setHomeStatus, type HomeStatus } from "../lib/homeStatus";
+import { setCloudStatus, type CloudSummary } from "../lib/cloudStatus";
 import { StatusStrip } from "./StatusStrip";
 
 const base: HomeStatus = {
@@ -35,6 +36,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   setHomeStatus(null);
+  setCloudStatus(null);
   vi.restoreAllMocks();
 });
 
@@ -89,5 +91,75 @@ describe("StatusStrip", () => {
     const strip = screen.getByTestId("status-strip");
     localStorage.removeItem("mkt:locale");
     expect(strip.textContent).toMatch(/التشغيل والبث المباشر غير متاحين الآن/);
+  });
+
+  // Epic 50 story 50.11: the cloud's line, only through the cloud
+  const relayDown: CloudSummary = {
+    updated_at: "2026-11-03T10:15:00Z",
+    overall: "outage",
+    components: { relay: "outage", api: "operational", push: "operational" },
+    incident: {
+      id: "2026-11-03-relay-down",
+      state: "investigating",
+      components: ["relay"],
+      title: { en: "Remote access is down", ar: "الوصول عن بُعد متوقف" },
+      url: "https://status.maktaba.tv/i/2026-11-03-relay-down",
+    },
+    maintenance: [],
+  };
+  function showCloud(home: HomeStatus | null, cloud: CloudSummary | null, viaCloud: boolean) {
+    setHomeStatus(home);
+    setCloudStatus(cloud);
+    return render(
+      <I18nProvider>
+        <StatusStrip viaCloud={viaCloud} />
+      </I18nProvider>
+    );
+  }
+
+  it("through the cloud, says remote access is down, linking to the status page", () => {
+    showCloud(base, relayDown, true);
+    expect(screen.getByText(/Remote access is down. We're working on it/)).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: "Details" });
+    expect(link).toHaveAttribute("href", "https://status.maktaba.tv/i/2026-11-03-relay-down");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("on the home's own network, shows nothing for the cloud", () => {
+    showCloud(base, relayDown, false);
+    expect(screen.queryByTestId("status-strip")).toBeNull();
+  });
+
+  it("puts the home's own trouble first, the cloud's behind a tap", async () => {
+    showCloud(
+      { ...base, overall: "degraded", components: { ...base.components, streaming: "down" } },
+      relayDown,
+      true
+    );
+    expect(screen.getByText("Playback and Live TV are unavailable right now.")).toBeInTheDocument();
+    expect(screen.queryByText(/Remote access is down/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "1 more" }));
+    expect(screen.getByText(/Remote access is down/)).toBeInTheDocument();
+  });
+
+  it("shows the cloud's line before the home's status answered, and none for notifications", () => {
+    showCloud(null, relayDown, true);
+    expect(screen.getByText(/Remote access is down/)).toBeInTheDocument();
+    act(() =>
+      setCloudStatus({
+        ...relayDown,
+        incident: null,
+        components: { relay: "operational", api: "operational", push: "outage" },
+      })
+    );
+    expect(screen.queryByTestId("status-strip")).toBeNull();
+  });
+
+  it("the cloud's line in Arabic", () => {
+    localStorage.setItem("mkt:locale", "ar");
+    showCloud(base, relayDown, true);
+    const strip = screen.getByTestId("status-strip");
+    localStorage.removeItem("mkt:locale");
+    expect(strip.textContent).toMatch(/الوصول عن بُعد متوقف، ونعمل على إصلاحه/);
   });
 });

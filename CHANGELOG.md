@@ -14,6 +14,20 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba's own stages can run as built-in plugins (the foundation, Epic 54 Phase 4).** A
+  built-in plugin's stage runs in `maktaba-plugin-runner`, a sandboxed process with no database
+  password and no secrets (Seatbelt on macOS, Landlock and seccomp on Linux), and reaches the
+  database only by the names of the statements the release built, each run under the
+  plugin's own Postgres role, scope-checked against the job and attributed. A built-in
+  plugin's manifest keys are refused in any other plugin (`plugin_trusted_field`), and only
+  the manifests built into the server are trusted. Each stage has a switch,
+  `job_stages.impl` (`inproc` or `plugin`): Queues shows a built-in plugin's stage with a
+  **Runs in** menu for admins, and `maktaba-server stages impl <stage> <impl>` flips one; a
+  flip loses and reruns no job. The parity proof (`tools/plugins/parity.py`) runs a stage both
+  ways on two copies of one database and fails on any difference in rows, results,
+  fingerprints, enqueued jobs or speed. Settings → Plugins lists **Built into Maktaba** with
+  what each can do. No stage moves yet: every stage still runs in the worker until its wave.
+  Migration 0198.
 - **The second listen is a stage of its own, and an 8 GB card on Windows runs it.** Whisper's
   `transcribe` stores its transcript with each sentence's words (their timings), and a new
   `second_listen` stage (its own `listen` pool, per machine) reads that transcript and the
@@ -340,6 +354,14 @@ build fails when the two differ.
   the apps the same states. The witness gets one public site, behind a token, for the outside
   probe; the cloud rehearsal's `status-feed` proves an outage reaches the page within two
   rounds. maktaba.dev's cloud guide describes the page and `summary.json`.
+- **Every app says when Maktaba Cloud is down, but only away from home (Epic 50, story
+  50.11).** When the web app, the cloud web app, the Apple apps or the Android apps reach the
+  home through Maktaba Cloud, the status strip also reads status.maktaba.tv: remote access or
+  signing in with Maktaba Cloud down or slow, or maintenance from a day before it starts, with
+  Details to the status page. The home's own trouble comes first; notifications alone never
+  show; on the home's own network the cloud's line never shows; and a status page that can't
+  be reached shows nothing. The home's web app and the cloud's editions allow that one address
+  in their Content Security Policy.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -878,6 +900,17 @@ build fails when the two differ.
   with a code and a QR code (a home store key, sealed; each store request signed, replays
   refused; an offline home, `serve --offline`, calls no store). The store is built dark: sign-up and submissions stay closed until it is opened.
   maktaba.dev's Publishing and Installing pages describe it.
+
+- **Plugin panels in the apps (Epic 54, story 54.20).** A plugin can show a read-only panel on
+  a video's page, declared as data (`ui/panel.json`, ui@1: key–value rows, badges, chips that
+  search Maktaba, a table, markers on the timeline that play from their time, one image the
+  home serves, a paragraph) and drawn by each app with its own components: the web, the
+  iPhone, iPad and Mac Player, and the Android Player, under **From plugins**, collapsed.
+  Everyone who can see the video sees it, viewers included, in their language; a plugin
+  turned off shows none. Every value is plain text: the plugin API refuses a URL, HTML,
+  markdown or a control character in a value a panel shows (`plugin_text_forbidden`), and
+  every app escapes again and makes no request from one. `GET /api/panels` and the
+  capability `plugin_panels`, which apps read missing as off.
 
 ### Fixed
 

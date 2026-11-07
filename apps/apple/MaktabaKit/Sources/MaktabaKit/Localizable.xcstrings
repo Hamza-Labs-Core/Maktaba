@@ -389,6 +389,22 @@
         }
       }
     },
+    "From plugins" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من الإضافات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From plugins"
+          }
+        }
+      }
+    },
     "Idle" : {
       "localizations" : {
         "ar" : {
@@ -1124,6 +1140,22 @@
         }
       }
     },
+    "capabilities.off.plugin_panels" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لوحات الإضافات متوقفة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin panels are off on this home."
+          }
+        }
+      }
+    },
     "capabilities.off.recommendations" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1273,6 +1305,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plex isn't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.plugin_panels" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لوحات الإضافات غير متاحة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin panels aren't available on this home."
           }
         }
       }
@@ -8331,6 +8379,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "التشغيل غير متاح الآن. حاول مجددًا بعد دقائق."
+          }
+        }
+      }
+    },
+    "Remote access is slower than usual. Playback at home is not affected." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الوصول عن بُعد أبطأ من المعتاد. التشغيل داخل المنزل لا يتأثر."
+          }
+        }
+      }
+    },
+    "Remote access is down. We're working on it. Playback at home still works." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الوصول عن بُعد متوقف، ونعمل على إصلاحه. التشغيل داخل المنزل ما زال يعمل."
+          }
+        }
+      }
+    },
+    "Signing in with Maktaba Cloud is slower than usual." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الدخول عبر سحابة مكتبة أبطأ من المعتاد."
+          }
+        }
+      }
+    },
+    "Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. يمكنك تسجيل الدخول إلى الجهاز الرئيسي بكلمة مروره."
+          }
+        }
+      }
+    },
+    "Planned maintenance on %1$@, %2$@–%3$@. Remote play may pause for a few seconds." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صيانة مجدولة في %1$@، من %2$@ إلى %3$@. قد يتوقف التشغيل عن بُعد بضع ثوانٍ."
           }
         }
       }

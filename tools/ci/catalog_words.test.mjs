@@ -54,7 +54,8 @@ test("story 51.11: a feature's off sentence with no Arabic fails", () => {
 });
 
 test("every feature of the catalog has its words, Plex the same in both", () => {
-  assert.equal(dump.features.length, 9);
+  // the tenth is plugin_panels (story 54.20)
+  assert.equal(dump.features.length, 10);
   for (const f of dump.features) {
     assert.ok(en[`components.feature.${f}`], f);
     assert.ok(ar[`components.feature.${f}`], f);

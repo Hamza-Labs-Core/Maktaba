@@ -71,6 +71,9 @@ async def _execute(
     ctx: StageContext,
 ) -> None:
     impl = get_impl(stage.name)
+    native = await _native_impl(db, stage.name, impl)
+    if native is not None:
+        impl = native
     if impl is None or impl.run is None:
         job_events.claimed(job)
         await mark_failed_or_retry(
@@ -230,6 +233,46 @@ async def _execute(
             "failed",
             outcome=job_events.failure(type(exc).__name__, str(exc), retryable=True),
         )
+
+
+async def _native_impl(db: Any, name: str, inproc: Any) -> Any:
+    """The plugin runner's implementation of a first-party stage whose ``job_stages.impl``
+    is ``plugin`` and whose runner serves on this machine (Epic 54, story 54.25 §3); None:
+    in-process. A statement the plugin did not register runs that job in-process."""
+    from ..plugins import firstparty
+
+    if firstparty.by_stage(name) is None:
+        return None
+    from dataclasses import replace
+
+    from ..plugins import native
+
+    choice = await native.choose(db, name)
+    if choice.impl != "plugin":
+        return None
+
+    async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
+        try:
+            return await native.run_native(db, job, ctx)
+        except native.Unregistered as exc:
+            _log.error("plugin_statement_unregistered", job_id=job.id, stage=name, error=str(exc))
+            if inproc is None or inproc.run is None:
+                raise
+            result: StageResult = await inproc.run(db, job, ctx)
+            return result
+
+    if inproc is None:
+        return None
+    fp_ok, _ = await native.serving_group("fp", name)
+    return replace(
+        inproc,
+        run=run,
+        input_fingerprint=(
+            native.fingerprint_fn(name, "input", inproc.input_fingerprint)
+            if fp_ok
+            else inproc.input_fingerprint
+        ),
+    )
 
 
 async def _fail(db: Any, job: Job, stage: StageDef, error: StageError) -> None:

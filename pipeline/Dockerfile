@@ -46,6 +46,8 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-install-project
 
 COPY pipeline /src/pipeline
+# Epic 54: the plugin SDK and Maktaba's first-party plugins ride in the pipeline's wheel
+COPY plugins /src/plugins
 RUN --mount=type=cache,target=/root/.cache/uv \
     cd /src/pipeline && uv sync --frozen --no-dev
 
@@ -76,6 +78,7 @@ RUN groupadd --system --gid 1000 maktaba \
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /src/pipeline /src/pipeline
+COPY --from=builder /src/plugins /src/plugins
 
 WORKDIR /src/pipeline
 USER maktaba

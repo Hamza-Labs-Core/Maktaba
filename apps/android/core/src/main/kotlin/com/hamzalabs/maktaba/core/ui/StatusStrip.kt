@@ -37,11 +37,17 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.CloudStatusRules
+import com.hamzalabs.maktaba.core.api.CloudSummary
 import com.hamzalabs.maktaba.core.api.HomeStatusDoc
 import com.hamzalabs.maktaba.core.api.StatusStripRules
 import com.hamzalabs.maktaba.core.api.StripKey
 import com.hamzalabs.maktaba.core.api.StripLine
 import kotlinx.coroutines.delay
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 /** How often the home's status is read while the app is in front (story 53.06). */
 const val STATUS_POLL_MS = 10_000L
@@ -57,6 +63,18 @@ fun stripText(key: StripKey): Int = when (key) {
     StripKey.SEARCH -> R.string.status_search
     StripKey.PROCESSING -> R.string.status_processing
     StripKey.LOGS -> R.string.status_logs
+    StripKey.RELAY_DEGRADED -> R.string.banner_relay_degraded
+    StripKey.RELAY_OUTAGE -> R.string.banner_relay_outage
+    StripKey.API_DEGRADED -> R.string.banner_api_degraded
+    StripKey.API_OUTAGE -> R.string.banner_api_outage
+    StripKey.MAINTENANCE -> R.string.banner_maintenance
+}
+
+/** A moment's date and time in the device's language and time zone (the maintenance window). */
+fun localWhen(ms: Long): Pair<String, String> {
+    val t = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
+    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).format(t) to
+        DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(t)
 }
 
 /**
@@ -75,6 +93,7 @@ fun HomeStatusHost(
     content: @Composable () -> Unit,
 ) {
     var status by remember(client) { mutableStateOf<HomeStatusDoc?>(null) }
+    var cloud by remember(client) { mutableStateOf<CloudSummary?>(null) }
     var closed by remember(client) { mutableStateOf("") }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(client) {
@@ -85,8 +104,20 @@ fun HomeStatusHost(
             }
         }
     }
-    val lines = StatusStripRules.lines(status, online = true, admin = admin, liveTvOff = liveTvOff)
-    val sig = lines.joinToString("|") { it.key.name }
+    // Maktaba Cloud's status (story 50.11), only when the home is reached through the cloud
+    val viaCloud = CloudStatusRules.throughCloud(client.home)
+    LaunchedEffect(client, viaCloud) {
+        if (!viaCloud) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                CloudStatusRules.fetch(ApiClient.defaultHttp)?.let { cloud = it }
+                delay(CloudStatusRules.POLL_MS)
+            }
+        }
+    }
+    val cloudLine = if (viaCloud) CloudStatusRules.line(cloud, System.currentTimeMillis(), ::localWhen) else null
+    val lines = StatusStripRules.lines(status, online = true, admin = admin, liveTvOff = liveTvOff, cloud = cloudLine)
+    val sig = lines.joinToString("|") { "${it.key.name}${it.id ?: ""}${it.args}" }
     val shown = enabled && lines.isNotEmpty() && closed != sig
     Column(Modifier.fillMaxSize()) {
         if (shown) {
@@ -111,11 +142,14 @@ fun StatusStrip(lines: List<StripLine>, home: String, onClose: () -> Unit, modif
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (line in if (open) lines else lines.take(1)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(stripText(line.key)), Modifier.weight(1f, fill = false).testTag("strip.${line.key.name.lowercase()}"))
-                        line.details?.let { path ->
+                        Text(
+                            stringResource(stripText(line.key), *line.args.toTypedArray()),
+                            Modifier.weight(1f, fill = false).testTag("strip.${line.key.name.lowercase()}"),
+                        )
+                        (line.link ?: line.details?.let { home.trimEnd('/') + it })?.let { url ->
                             TextButton(onClick = {
                                 runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(home.trimEnd('/') + path)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                 }
                             }) { Text(stringResource(R.string.status_details)) }
                         }

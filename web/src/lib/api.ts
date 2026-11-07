@@ -15,6 +15,7 @@
 import { CLIENT_HEADER, clientHeaderValue } from "./clientHeader";
 import { logApiFailure } from "./errorLog";
 import { noteRequestFailed } from "./homeStatus";
+import { noteCloudRequestFailed } from "./cloudStatus";
 import { actionRequestId, noteRequest } from "./requestIds";
 import { routePattern } from "./errorLog";
 
@@ -94,6 +95,8 @@ function logApiError(
   logApiFailure(method, where, status, requestId);
   // a server error or no answer: the home's status is read now (Epic 53 story 53.06)
   noteRequestFailed(status);
+  // and the cloud's, when the relay may be what failed (Epic 50 story 50.11)
+  noteCloudRequestFailed(status);
 }
 
 // Epic 35 (story 35.10): a node answers 503 {code: "paused"} when its code
