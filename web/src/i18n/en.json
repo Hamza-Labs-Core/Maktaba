@@ -7384,6 +7384,7 @@
   "plugins.browse.report": "Report it",
   "plugins.browse.report_reason": "Reason",
   "plugins.browse.report_details": "Details (optional)",
+  "plugins.browse.report_logs": "Attach this plugin's log lines from the last day (passwords and keys removed), for the store's reviewers",
   "plugins.browse.send_report": "Send the report",
   "plugins.browse.reported": "Your report was sent to the store. It sends only the plugin's id and version.",
   "plugins.report.malware": "Malware",

@@ -3,19 +3,23 @@ package plugins
 // Rating and reporting a plugin from inside the home (story 54.18 §3, §4), admin only. The
 // home passes them to the store signed with its home store key; a home not linked to a store
 // account cannot rate (409 store_not_linked) and reports from the listing page instead. The
-// home sends the plugin's id and version and nothing else: no library data, no logs.
+// home sends the plugin's id and version, no library data; a report carries the plugin's own
+// recent log lines only when the admin ticks it (#758), scrubbed and capped (logs.PluginLines).
 //
 //	POST /api/plugins/{id}/rate    {stars, text}
-//	POST /api/plugins/{id}/report  {reason, details}
+//	POST /api/plugins/{id}/report  {reason, details, attach_logs}
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/logs"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
@@ -93,12 +97,29 @@ func (h *Admin) rate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Admin) reportPlugin(w http.ResponseWriter, r *http.Request) {
 	var b struct {
-		Reason  string `json:"reason"`
-		Details string `json:"details"`
+		Reason     string `json:"reason"`
+		Details    string `json:"details"`
+		AttachLogs bool   `json:"attach_logs"`
 	}
 	if err := readSmall(r, &b); err != nil || b.Reason == "" {
 		httperror.Write(w, r, problem(http.StatusBadRequest, "field_invalid", "a reason"))
 		return
 	}
-	h.toStore(w, r, "/reports", map[string]any{"reason": b.Reason, "details": b.Details}, false)
+	fields := map[string]any{"reason": b.Reason, "details": b.Details}
+	if b.AttachLogs {
+		lines := h.pluginLines(r.Context(), chi.URLParam(r, "id"))
+		if lines == nil {
+			lines = []json.RawMessage{}
+		}
+		fields["logs"] = lines
+	}
+	h.toStore(w, r, "/reports", fields, false)
+}
+
+// pluginLines are the plugin's recent lines, scrubbed and capped, for a report (#758).
+func (h *Admin) pluginLines(ctx context.Context, id string) []json.RawMessage {
+	if h.PluginLogs != nil {
+		return h.PluginLogs(ctx, id)
+	}
+	return logs.PluginLines(ctx, logs.IndexAddr(), id, time.Now())
 }

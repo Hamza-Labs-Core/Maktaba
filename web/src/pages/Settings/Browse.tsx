@@ -10,6 +10,7 @@ import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { Toggle } from "@ds/components/Choice/Toggle";
+import { Checkbox } from "@ds/components/Choice/Checkbox";
 import { fold } from "../../help/search";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { pluginsApi, type CatalogEntry, type CatalogView } from "../../lib/pluginsApi";
@@ -205,6 +206,7 @@ function StorePlugin({
   const [text, setText] = useState("");
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
+  const [attachLogs, setAttachLogs] = useState(false);
   const v = p.newest;
   const flow = flowOf(p);
   // the plugin's own published events and the subscriptions into its stages
@@ -368,11 +370,21 @@ function StorePlugin({
         value={details}
         onChange={(e) => setDetails(e.target.value)}
       />
+      {p.installed && (
+        <Checkbox
+          label={t("plugins.browse.report_logs")}
+          checked={attachLogs}
+          onChange={(e) => setAttachLogs(e.target.checked)}
+        />
+      )}
       <Button
         variant="ghost"
         disabled={!reason}
         onClick={() =>
-          void run(() => pluginsApi.report(p.id, reason, details), t("plugins.browse.reported"))
+          void run(
+            () => pluginsApi.report(p.id, reason, details, attachLogs && !!p.installed),
+            t("plugins.browse.reported")
+          )
         }
       >
         {t("plugins.browse.send_report")}
