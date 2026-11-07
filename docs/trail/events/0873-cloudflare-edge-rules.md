@@ -16,8 +16,6 @@ prs: [867]
 - The cloud's config parser ignores unknown keys, so a secret written in the file under a plausible key would be silently dropped: refuse such a key by name instead of letting it pass.
 - `MAKTABA_ENV` defaults to prod, so a new production-only requirement must be off by default and turned on in the nodes' config, or dev and CI break.
 - The owner's secret names (the GitHub environment's) and the binary's environment variables differ; the go-live list must name both and where each lives (`/etc/maktaba/cloud.env` on the nodes).
-
-## Problems on the way
 - A secret written in the config file as `turnstile.secret` was silently ignored, because the parser drops unknown keys; such a key is now refused by name (above).
 - The first Turnstile integration test (T05) expected a plain login success. That app login got 403 `email_not_verified` instead, so the test now asserts only that the answer isn't a Turnstile refusal.
 - The web test crashed (`.map` of undefined) when its session stub had no `ME`; it uses the harness's `ME`.
