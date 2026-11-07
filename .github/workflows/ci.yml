@@ -31,7 +31,9 @@
 # trigger's paths-ignore; it skips only when every changed file is the trail), so a trail
 # commit never joins the `ci-main` group and never replaces the pending run of the code
 # commit before it. Trail-only commits are never tagged: the tag goes on a code commit
-# (deploy/packaging/README.md, "Release flow"). update-rehearsal.yml does the same.
+# (deploy/packaging/README.md, "Release flow"). On main, update-rehearsal.yml runs after this
+# workflow: a push run of main that passes starts its rehearsal on the same commit (workflow_run),
+# so a trail-only push starts neither; a release/* push starts both, with the same paths-ignore.
 #
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that

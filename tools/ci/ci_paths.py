@@ -122,7 +122,7 @@ MARKERS = {"always-run", "push-only", "pr-only", "pr-event", "not-a-gate"}
 # true whenever a filter is.
 TRAIL = "docs/claude-trail.md"
 # A push to main changing only these starts no run (ci.yml's and update-rehearsal.yml's
-# paths-ignore): the frozen trail and trail v2's events and snapshots, the same list as
+# paths-ignore; on main the rehearsal follows CI's green run, so none follows either): the frozen trail and trail v2's events and snapshots, the same list as
 # .trail.toml's [trail_only] paths (tests/test_ci_paths.py keeps them equal). A pull request of
 # docs/trail/** alone still runs the lint job, whose repo checks run the agent-trail Action's
 # `trail check`; only the frozen file runs nothing at all.
