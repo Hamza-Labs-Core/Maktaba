@@ -193,7 +193,7 @@ placement = "any"   # "home" (the default), "any", or "gpu"
 
 Nothing else changes for your code. The home installs and approves the plugin; each
 machine that may run it fetches the package from the home and checks it (the digest the
-home recorded, the store's signature when there is one, every file) before it places
+home recorded, the signatures the home recorded it with, every file) before it places
 it, then runs it in its own sandboxed host. Reads and media are served by the machine
 itself; every write (tags, fields, chapters, subtitles, artwork, your own data,
 suggestions, notices, requests, events, and asks of the home's models) is applied by the home, with the same

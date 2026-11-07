@@ -11,7 +11,7 @@ prs: [759, 762, 763]
 
 ## What happened
 - A manifest's `placement` (`home`, `any`, `gpu`) says where a plugin's stages run; a joined machine with a Postgres home runs its own `maktaba-plugind` under the same sandbox, and gates what its placement does not fit (`plugin_home_only`, `plugin_no_gpu`).
-- A machine fetches an installed version's files from the home over its signed link and checks them against the digest in `plugin_installs`, the store's signature when there is one, and every file, before placing anything (`plugin_package_untrusted` otherwise).
+- A machine fetches an installed version's files from the home over its signed link and checks them against the digest in `plugin_installs`, every listed name against the pack path rule, the signatures against the review level the home recorded (an unsigned package only for an unreviewed install), and every file, before writing anything (`plugin_package_untrusted` otherwise).
 - The machine's plugin API serves reads and media itself and sends every write, quota, lineage and compute call to the home (`/internal/cluster/plugin-api/v1/…`), which answers it as a call on its own socket. The home mints and ends each token; the machine adopts it and checks the plugin is still on at every call, so off, hold and revocation reach it at its next call. Job outcomes go to the home's breaker with the dispatcher's own statements.
 - The two-machine rig (`api/twomachine_e2e_test.go`) runs plugin A on the home starting B on the machine, B's write applied by the home with a lineage of 2, and off refused at the machine's next call.
 

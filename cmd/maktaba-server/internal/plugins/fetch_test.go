@@ -47,7 +47,7 @@ func TestAMachineFetchesAVerifiedCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := Install{ID: in.PluginID, Version: in.Version, Digest: in.Digest, Path: in.Path}
+	row := Install{ID: in.PluginID, Version: in.Version, Digest: in.Digest, Path: in.Path, ReviewLevel: in.ReviewLevel}
 	machine := &Files{Layout: packs.Layout{Root: filepath.Join(t.TempDir(), "machine")}}
 	if ref := machine.FetchFromHome(ctx, &folderHome{dir: in.Path}, row); ref != nil {
 		t.Fatal(ref)
@@ -155,7 +155,7 @@ func TestAHostileFilesListWritesNothing(t *testing.T) {
 		fj, _ := json.Marshal(list)
 		h := &mapHome{files: map[string][]byte{componentpack.PluginFilesName: fj, componentpack.PluginManifestName: man, name: []byte("x")}}
 		m := &Files{Layout: packs.Layout{Root: filepath.Join(t.TempDir(), "plugins")}}
-		ref := m.FetchFromHome(ctx, h, Install{ID: testID, Version: "1.0.0", Digest: hexSum(fj), Path: "/home/" + testID + "/1.0.0-ab"})
+		ref := m.FetchFromHome(ctx, h, Install{ID: testID, Version: "1.0.0", Digest: hexSum(fj), Path: "/home/" + testID + "/1.0.0-ab", ReviewLevel: pluginsig.LevelNone})
 		if ref == nil || ref.Code != components.ReasonPluginUntrusted {
 			t.Errorf("%q: %v", name, ref)
 		}
@@ -184,7 +184,7 @@ func TestABadSignatureOrDigestWritesNothing(t *testing.T) {
 	for n, b := range good {
 		served[n] = b
 	}
-	row := Install{ID: testID, Version: "1.0.0", Digest: hexSum(fj), Path: "/home/" + testID + "/1.0.0-ab"}
+	row := Install{ID: testID, Version: "1.0.0", Digest: hexSum(fj), Path: "/home/" + testID + "/1.0.0-ab", ReviewLevel: pluginsig.LevelDeveloper}
 	h := &mapHome{files: served}
 	m := k.files(t, nil, pluginsig.State{})
 	if ref := m.FetchFromHome(ctx, h, row); ref == nil || ref.Code != components.ReasonPluginUntrusted {
@@ -227,5 +227,66 @@ func TestContained(t *testing.T) {
 	}
 	if p, err := contained(dir, "a/b.json"); err != nil || p != filepath.Join(dir, "a", "b.json") {
 		t.Errorf("a/b.json: %q %v", p, err)
+	}
+}
+
+// An unsigned package is placed only for an unreviewed install (the admin's opt-in, which
+// the gate holds on every machine); one the home installed signed, or from the store,
+// that arrives with its signatures stripped is refused, and nothing is written.
+func TestStrippedSignaturesAreRefused(t *testing.T) {
+	ctx := context.Background()
+	k := newKit()
+	good := pluginFiles("1.0.0")
+	fj := filesJSONOf(t, good)
+	unsigned := map[string][]byte{componentpack.PluginFilesName: fj}
+	for n, b := range good {
+		unsigned[n] = b
+	}
+	row := func(level string) Install {
+		return Install{ID: testID, Version: "1.0.0", Digest: hexSum(fj), Path: "/home/" + testID + "/1.0.0-ab", ReviewLevel: level}
+	}
+	for _, level := range []string{pluginsig.LevelNone, "development"} {
+		m := k.files(t, nil, pluginsig.State{})
+		if ref := m.FetchFromHome(ctx, &mapHome{files: unsigned}, row(level)); ref != nil {
+			t.Errorf("unsigned, installed %s: %v", level, ref)
+		}
+	}
+	for _, level := range []string{pluginsig.LevelDeveloper, pluginsig.LevelAutomated, pluginsig.LevelReviewed, "store", ""} {
+		m := k.files(t, nil, pluginsig.State{})
+		h := &mapHome{files: unsigned}
+		ref := m.FetchFromHome(ctx, h, row(level))
+		if ref == nil || ref.Code != components.ReasonPluginUntrusted {
+			t.Errorf("unsigned, installed %q: %v", level, ref)
+		}
+		if entries, _ := os.ReadDir(m.Layout.Root); len(entries) != 0 {
+			t.Errorf("unsigned, installed %q: wrote %v", level, entries)
+		}
+		for _, n := range h.asked {
+			if n == "plugin.wasm" || strings.HasPrefix(n, "i18n/") {
+				t.Errorf("unsigned, installed %q: fetched %s", level, n)
+			}
+		}
+	}
+	// a store install with store.sig stripped proves developer only: refused
+	v3 := k.storeKeys(t, 3, k.store1)
+	devSig, err := pluginsig.SignDeveloper(k.dev1, testID, "1.0.0", fj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stripped := map[string][]byte{componentpack.PluginDeveloperSig: devSig}
+	for n, b := range unsigned {
+		stripped[n] = b
+	}
+	m := k.files(t, v3, pluginsig.State{})
+	if ref := m.FetchFromHome(ctx, &mapHome{files: stripped}, row(pluginsig.LevelReviewed)); ref == nil || ref.Code != components.ReasonPluginUntrusted {
+		t.Errorf("store.sig stripped: %v", ref)
+	}
+	if entries, _ := os.ReadDir(m.Layout.Root); len(entries) != 0 {
+		t.Errorf("store.sig stripped: wrote %v", entries)
+	}
+	// the same package as the developer-signed install it is: placed
+	m = k.files(t, v3, pluginsig.State{})
+	if ref := m.FetchFromHome(ctx, &mapHome{files: stripped}, row(pluginsig.LevelDeveloper)); ref != nil {
+		t.Errorf("developer-signed: %v", ref)
 	}
 }

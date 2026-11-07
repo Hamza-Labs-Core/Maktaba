@@ -11,9 +11,9 @@ package plugins
 //     only the home writes that table);
 //   - every name it lists must be a safe pack path (componentpack.SafePluginPath: no
 //     absolute path, "..", backslash, colon or control character), each listed once;
-//   - the signatures over files.json, when the package has them, must verify against the
-//     trust root (pluginsig, as the home's install does: the store's keys for a
-//     store.sig);
+//   - the signatures over files.json must verify against the trust root (pluginsig, as
+//     the home's install does: the store's keys for a store.sig) and prove the review
+//     level the home recorded: an unsigned package only for an unreviewed install;
 //   - then each file is fetched, kept only when its size and sha256 are files.json's,
 //     and written only inside the staging folder.
 //
@@ -36,6 +36,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
 // HomeFiles reaches the home's package files (a homemirror.Client: signed GETs).
@@ -156,10 +157,15 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 	if len(errs) > 0 {
 		return untrusted("the manifest: %s", errs.Error())
 	}
-	if len(pkg.StoreSig) > 0 || len(pkg.DeveloperSig) > 0 {
-		if _, ref := f.verify(pkg, m, in.ID, in.Version); ref != nil {
-			return untrusted("%s", ref.Detail)
-		}
+	// always verified, as the home's install is: the level the signatures prove must be
+	// the one the home recorded, so a package whose signatures were stripped on the way
+	// never passes for the signed one the home installed
+	res, ref := f.verify(pkg, m, in.ID, in.Version)
+	if ref != nil {
+		return untrusted("%s", ref.Detail)
+	}
+	if !levelHolds(in.ReviewLevel, res.Level) {
+		return untrusted("the signatures prove %q, the home installed it as %q", res.Level, in.ReviewLevel)
 	}
 	if err := os.MkdirAll(f.Layout.Root, 0o755); err != nil {
 		return refuse(ReasonBusy, ReasonBusy, "%v", err)
@@ -173,8 +179,8 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 	}()
 	write := func(name string, b []byte) error {
 		p, err := contained(tmp, name)
-		if err != nil {
-			return err
+		if err != nil || !strings.HasPrefix(p, filepath.Clean(tmp)+string(os.PathSeparator)) {
+			return fmt.Errorf("%q is outside the package folder", name)
 		}
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return err
@@ -227,10 +233,26 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 // contained is name under dir, refused when it would land outside it (a name that passed
 // SafePluginPath never does; the check holds at the write itself).
 func contained(dir, name string) (string, error) {
-	p := filepath.Join(dir, filepath.FromSlash(name))
-	rel, err := filepath.Rel(dir, p)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	p := filepath.Clean(filepath.Join(dir, filepath.FromSlash(name)))
+	if !strings.HasPrefix(p, filepath.Clean(dir)+string(os.PathSeparator)) {
 		return "", fmt.Errorf("%q is outside the package folder", name)
 	}
 	return p, nil
+}
+
+// levelHolds reports whether a package whose signatures prove level proved is the one the
+// home installed at level recorded. An unreviewed install (none, or a development build's
+// development) needs no signature: the gate holds it behind the admin's opt-in to
+// unreviewed plugins (54.10 §3), on the home and on every machine. Any other level must
+// be proven exactly; the earlier "store" level is either store-signed one.
+func levelHolds(recorded, proved string) bool {
+	switch recorded {
+	case pluginsig.LevelNone, "development":
+		return true
+	case "store":
+		return proved == pluginsig.LevelAutomated || proved == pluginsig.LevelReviewed
+	case "":
+		return false
+	}
+	return proved == recorded
 }

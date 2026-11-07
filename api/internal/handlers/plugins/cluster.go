@@ -165,18 +165,17 @@ func (c *Cluster) files(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, ok := within(dir, clean)
-	if !ok {
+	if !ok || !strings.HasPrefix(p, filepath.Clean(dir)+string(os.PathSeparator)) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"code": "not_found"})
 		return
 	}
 	http.ServeFile(w, r, p)
 }
 
-// within is name under dir, ok false when the joined path would leave dir.
+// within is name under dir, cleaned, ok false when it would leave dir (or be dir).
 func within(dir, name string) (string, bool) {
-	p := filepath.Join(dir, filepath.FromSlash(name))
-	rel, err := filepath.Rel(dir, p)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+	p := filepath.Clean(filepath.Join(dir, filepath.FromSlash(name)))
+	if !strings.HasPrefix(p, filepath.Clean(dir)+string(os.PathSeparator)) {
 		return "", false
 	}
 	return p, true
@@ -189,7 +188,7 @@ func listed(dir, name string) bool {
 	switch name {
 	case componentpack.PluginFilesName, componentpack.PluginDeveloperSig, componentpack.PluginStoreSig, componentpack.PluginManifestName:
 		p, ok := within(dir, name)
-		if !ok {
+		if !ok || !strings.HasPrefix(p, filepath.Clean(dir)+string(os.PathSeparator)) {
 			return false
 		}
 		_, err := os.Stat(p)

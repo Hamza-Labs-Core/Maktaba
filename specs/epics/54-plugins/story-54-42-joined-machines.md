@@ -29,11 +29,14 @@ the workers of machines that serve the `gpu` pool.
 - A joined machine's plugins runner fetches the folder `plugin_installs` names for each
   plugin its placement fits, with the signed client it fetches release files with (over
   its cluster link first).
-- Before anything is placed it checks that `files.json`'s sha256 is the digest the home
+- Before anything is written it checks that `files.json`'s sha256 is the digest the home
   recorded in `plugin_installs` (the home's own word: only the home writes that table, read
-  over the machine's verified database link), that every file matches `files.json`, and,
-  when the package is signed, the chain of trust of 54.14 against the embedded trust root.
-  A failure places nothing and gates the plugin on that machine with
+  over the machine's verified database link), that every name it lists is a safe pack
+  path, and the chain of trust of 54.14 against the embedded trust root, which must prove
+  the review level the home recorded: an unsigned package only for an unreviewed install
+  (the admin's opt-in, held by the gate on every machine), so a signed or store package
+  whose signatures were stripped is refused. Each file is then kept only when it matches
+  `files.json`, and written only inside the staging folder. A failure places nothing and gates the plugin on that machine with
   `plugin_package_untrusted`.
 - It places the copy with the same layout code (54.38), points `current` at it, and removes
   versions and plugins the home no longer keeps. It writes no plugin table: an uninstall is
