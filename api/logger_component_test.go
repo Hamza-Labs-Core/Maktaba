@@ -36,6 +36,21 @@ func TestErrorsNotifierIsALoopOfTheLogIndex(t *testing.T) {
 	}
 }
 
+// Epic 53 story 53.16: the problem reports' forwarder is a loop of reports.share (off by
+// default, needing cloud.link), declared by main.
+func TestReportsForwarderIsALoopOfReportsShare(t *testing.T) {
+	c, ok := components.Default().ByLoop("api", "reports_forwarder")
+	if !ok || c.ID != "reports.share" || !slices.Contains(c.Requires, "cloud.link") || len(c.Bundles) != 0 {
+		t.Fatalf("api:reports_forwarder belongs to %+v (%v), want reports.share, in no bundle, needing cloud.link", c, ok)
+	}
+	loops := runner.New(runner.Options{Host: "api", Machine: "home"})
+	fw := (&logs.Handler{}).Forwarder()
+	wireReportsForwarder(loops, fw, nil)
+	if !slices.Contains(loops.Declared(), "reports_forwarder") {
+		t.Fatalf("declared %v", loops.Declared())
+	}
+}
+
 // Epic 53 stories 53.10 and 53.15: main declares the errors notifier and gives the problem
 // reports the notifications hub.
 func TestWireLogNotices(t *testing.T) {

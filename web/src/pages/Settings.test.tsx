@@ -167,6 +167,8 @@ function mockGets(over: Table = {}) {
       last_error: "",
       preview: {},
     },
+    // and whether people may send problem reports to Maktaba (story 53.16)
+    "/api/reports/maktaba": { available: true, enabled: false, delete: { state: "none" } },
     ...over,
   });
 }
@@ -521,7 +523,7 @@ describe("Settings account (test-cases/settings-account.md)", () => {
       [
         "/settings/privacy",
         () => screen.findByRole("heading", { name: "Activity tracking" }),
-        ["/api/me/", "/api/telemetry/server"],
+        ["/api/me/", "/api/telemetry/server", "/api/reports/maktaba"],
       ],
       [
         "/settings/models",
@@ -933,6 +935,27 @@ function historyWith(items: unknown) {
 }
 
 describe("Settings privacy (test-cases/settings-privacy.md)", () => {
+  // Epic 53 story 53.16: an admin's Privacy tab has the problem reports to Maktaba switch,
+  // off by default; a viewer's has none
+  it("an admin's Privacy has Let people send problem reports to Maktaba, off", async () => {
+    renderSettings("/settings/privacy", { user: adminUser });
+    const block = await screen.findByTestId("reports-to-maktaba");
+    expect(
+      within(block).getByRole("heading", { name: en["privacy.reportsToMaktaba"] })
+    ).toBeInTheDocument();
+    expect(
+      await within(block).findByRole("switch", { name: en["privacy.reportsToMaktaba"] })
+    ).not.toBeChecked();
+    expect(getPaths()).toContain("/api/reports/maktaba");
+  });
+
+  it("a viewer's Privacy has no problem reports to Maktaba switch", async () => {
+    renderSettings("/settings/privacy", { user: memberUser });
+    await screen.findByRole("heading", { name: "Activity tracking" });
+    expect(screen.queryByTestId("reports-to-maktaba")).toBeNull();
+    expect(getPaths()).not.toContain("/api/reports/maktaba");
+  });
+
   it("SPR-01: shows the tracking switch and the watch history table", async () => {
     renderSettings("/settings/privacy");
     expect(screen.getByRole("heading", { name: "Activity tracking" })).toBeInTheDocument();
