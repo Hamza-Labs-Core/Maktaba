@@ -822,6 +822,17 @@ build fails when the two differ.
   key rotation drill with test keys. maktaba.dev has a new page, Signing and the chain of
   trust. Migration 0196.
 
+- **Plugins can ask the home's own models (Epic 54, story 54.21).** Plugin API 1.1 adds
+  `compute`: `compute.embed` turns up to 64 texts into vectors with the model semantic search
+  uses (with its id), and `compute.llm` asks the language model chosen for plugins (Settings →
+  Rules → Plugin models; the tag check's model by default), up to 1,024 tokens, optionally held
+  to a JSON schema. Only a model on the home or the local network is ever asked: a server on the
+  internet is refused (`compute_remote`), checked on every connection. Plugins share the
+  `lookup` slot with Maktaba's own model stages, one question at a time, and get at most one
+  slot in three while Maktaba's work waits; each plugin may ask 2,000 questions and embed
+  50,000 texts a day by default. Prompts, texts and answers are never logged. Plugins built
+  for 1.0 keep running. Migration 0197 (`plugin_compute_usage`, `compute_leases`).
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

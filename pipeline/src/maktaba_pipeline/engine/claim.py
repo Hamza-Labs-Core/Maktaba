@@ -128,6 +128,9 @@ WITH heads AS (
                 FROM processing_jobs b
                 JOIN job_stages bs ON bs.stage = b.stage
                WHERE bs.pool = $2 AND b.state IN ('claimed', 'running', 'resuming'))
+             -- a plugin's question to the model holds a slot too (story 54.21 §2)
+             + (SELECT count(*) FROM compute_leases cl
+                 WHERE cl.pool = $2 AND cl.expires_at > now())
              < (SELECT COALESCE(size, default_size, 1) FROM worker_pools WHERE pool = $2)
        )
 ),
@@ -277,6 +280,8 @@ async def claim_for_pool(
                     if not names:
                         return None
                 claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names, URGENT_PRIORITY)
+                if claimed is not None and pool in PLUGIN_SHARE_POOLS:
+                    await db.execute(_PLUGIN_SHARE_COUNT, f"plugin_share:{pool}")
         else:
             claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names, URGENT_PRIORITY)
         return row_to_job(claimed) if claimed is not None else None
@@ -300,6 +305,17 @@ async def claim_for_pool(
 
 #: Epic 54: the third-party plugins' pool, where each plugin's own concurrency caps its share
 PLUGINS_POOL = "plugins"
+
+#: Epic 54 story 54.21 §2: the global pools plugins' compute questions share with core
+#: stages. Each core claim counts in ``claim_shares`` (owner ``plugin_share:<pool>``); the
+#: API lets a plugin take a slot while core work waits only after two core claims, and sets
+#: the count back to 0 when it does, so core stages keep at least 2 of every 3 slots.
+PLUGIN_SHARE_POOLS = frozenset({"lookup"})
+
+_PLUGIN_SHARE_COUNT = """
+INSERT INTO claim_shares (owner, pass) VALUES ($1, 1)
+ON CONFLICT (owner) DO UPDATE SET pass = claim_shares.pass + 1
+"""
 
 _PLUGIN_BUSY_PG = """
 SELECT s.stage

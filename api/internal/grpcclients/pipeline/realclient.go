@@ -24,6 +24,7 @@ var ErrNotImplemented = errors.New("pipeline gRPC client: not implemented")
 const (
 	pipelineService    = "maktaba.pipeline.v1.Pipeline"
 	methodEmbed        = "/" + pipelineService + "/Embed"
+	methodEmbedTexts   = "/" + pipelineService + "/EmbedTexts"
 	methodListBackends = "/" + pipelineService + "/ListBackends"
 	methodExtractSub   = "/" + pipelineService + "/ExtractEmbeddedSubtitle"
 	methodTranscribe   = "/" + pipelineService + "/Transcribe"
@@ -161,6 +162,42 @@ func (c *realClient) Embed(ctx context.Context, text string) ([]float32, error) 
 		vec = append(vec, float32(f))
 	}
 	return vec, nil
+}
+
+// EmbedTexts embeds texts as passages with the semantic search model, for a plugin's
+// compute.embed (Epic 54, story 54.21): the model id and one vector per text. While
+// search.semantic is off the pipeline answers component_off:search.semantic in band.
+func (c *realClient) EmbedTexts(ctx context.Context, texts []string) (string, [][]float32, error) {
+	if c.cfg.EmbedTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 4*c.cfg.EmbedTimeout)
+		defer cancel()
+	}
+	var resp map[string]any
+	if err := c.invoke(ctx, methodEmbedTexts, map[string]any{"texts": texts}, &resp); err != nil {
+		return "", nil, err
+	}
+	model, _ := resp["model"].(string)
+	rows, ok := resp["vectors"].([]any)
+	if !ok || len(rows) != len(texts) {
+		return "", nil, fmt.Errorf("pipeline EmbedTexts: malformed response (vectors)")
+	}
+	out := make([][]float32, len(rows))
+	for i, r := range rows {
+		xs, ok := r.([]any)
+		if !ok {
+			return "", nil, fmt.Errorf("pipeline EmbedTexts: vectors[%d] not a list", i)
+		}
+		out[i] = make([]float32, len(xs))
+		for j, x := range xs {
+			f, ok := x.(float64)
+			if !ok {
+				return "", nil, fmt.Errorf("pipeline EmbedTexts: vectors[%d][%d] not a number", i, j)
+			}
+			out[i][j] = float32(f)
+		}
+	}
+	return model, out, nil
 }
 
 // Transcribe runs the pipeline's STT backend over videoID's audio and

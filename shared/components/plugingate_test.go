@@ -27,6 +27,10 @@ func TestPluginGatesTable(t *testing.T) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		t.Fatal(err)
 	}
+	// story 54.21: this release serves plugin API 1.1 (compute), as the host's audit does
+	if fmt.Sprintf("%d.%d", PluginAPIMajor, PluginAPIMinor) != "1.1" {
+		t.Fatalf("serves %d.%d", PluginAPIMajor, PluginAPIMinor)
+	}
 	if len(doc.Cases) < 10 {
 		t.Fatalf("only %d cases", len(doc.Cases))
 	}

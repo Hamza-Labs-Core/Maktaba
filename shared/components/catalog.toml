@@ -355,6 +355,8 @@ title_key = "components.plugins.host.title"
 desc_key  = "components.plugins.host.desc"
 processes = ["plugins/"]
 placement = "home"
+# the language model plugins ask and their daily share of the home's models (story 54.21)
+settings  = ["rules.plugin_compute"]
 # not on Windows yet: the pipeline's dispatcher reaches the host on a unix socket, which
 # asyncio cannot open there
 platforms = ["darwin-arm64", "linux-amd64", "linux-arm64"]
