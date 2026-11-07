@@ -15,8 +15,9 @@
 > exact dates run in `tv.maktaba.youtube`, and the repair of broken downloads in
 > `tv.maktaba.repair`, the first stages that reach the network. **Wave 7 has moved**: the
 > channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
-> and cleaning up TV changes in `tv.maktaba.livetv-slots`. The other stages move wave by
-> wave.
+> and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: the Plex
+> stages run in `tv.maktaba.plex`, through the home's service door; the dizqueTV stages stay
+> in the worker for now. The other stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -202,6 +203,7 @@ against the job before it writes it with its own database connection:
 | `dedup_commit` (a duplicate group's merge) | the group is the job's subject, and the keeper and the others are its members |
 | `unsupersede` (a restored duplicate) | the video is a superseded video of the job's library |
 | `tv_commit`, `tv_rollback` (a TV change on the air, or the previous release back) | only `tv_swap` / `tv_rollback` may ask; the worker runs it for the change in the job's own payload, and the plugin sends nothing else |
+| `service_request` (a Plex call on a joined machine) | the service is one the stage's plugin lists; the worker forwards it through its channel to the home's service door |
 
 The same code runs in-process, where these calls write directly. Writes go only to the
 library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
@@ -261,6 +263,33 @@ they are.
 - **Parity** plans a library into channels with staging off (written to the air) and on (a
   staged TV change), and takes a TV change through stage, swap, rollback and clean-up, with
   the TV clock frozen on both sides.
+
+## Services through the home's door: `tv.maktaba.plex`
+
+Wave 8 moves the Plex stages (`plex_index`, `plex_collections_import`, `plex_collection`,
+`plex_groups`, `plex_livetv`) into the `service` runner, which has no network at all.
+
+```toml
+[trusted]
+runner    = "service"
+component = "ext.plex"            # the extension keeps its settings and its health check
+service   = ["plex"]              # the services its calls may reach, through the door
+```
+
+- **Every Plex call goes through the home's service door.** The plugin's Plex client sends
+  each request to the plugin API (`trusted/service`); the API hands it to the door, which
+  checks it against the allow-list, adds the Plex token and scrubs the token out of the
+  answer. On a joined machine the runner asks its worker, which forwards the call through its
+  channel to the home's door. A call off the allow-list is refused `plugin_service_path`.
+- **The plugin never learns the token or Plex's address.** Its jobs get the extension's
+  settings without secret fields, and `service:plex` in place of the address.
+- **Live TV is the home's.** The door allows the Live TV calls `plex_livetv` makes (DVRs,
+  tuners, the channel map, guide reloads) only for a caller on the home.
+- **dizqueTV stays in the worker for now.** Its programmes carry the Plex token in the body,
+  and dizqueTV stores them, so a plugin could read the token back. The dizqueTV stages move
+  once the door builds programmes on the home from Plex item ids.
+- **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
+  receives (method, path, query and the token) are identical, then N16.
 
 ## The repo layout
 

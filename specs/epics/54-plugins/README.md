@@ -1921,6 +1921,31 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   `tv_stage`, `tv_swap` and `tv_rollback` move a TV change from one state to the next and
   cannot run twice, and the swap and the rollback run in the worker. Their rows are
   compared after each step.
+- **Plex goes through the home's service door; dizqueTV waits.** `tv.maktaba.plex` runs in
+  the `service` runner, which has no network. Each Plex call is a plugin API call
+  (`trusted/service`) that the API hands to the door (story 31.R); on a joined machine the
+  runner asks its worker, which forwards it through its agent channel to the home's door. The
+  door checks the allow-list, adds the token and scrubs it out of every answer, so the plugin
+  holds neither the token nor Plex's address (its jobs get the extension's settings without
+  secrets, and `service:plex` for the address). The dizqueTV stages stay in the worker: their
+  programmes carry the Plex token in the request body, dizqueTV stores them, and the plugin
+  could read them back through the same paths, so a door that filled the token into a body
+  would also have to scrub every dizqueTV answer, transformed or partial copies included. They
+  move once the door builds programmes on the home from the plugin's Plex item ids (issue
+  #827). No body templating is added to the door.
+- **The door's Live TV calls are the home's only.** The Plex allow-list gains exactly the calls
+  `plex_livetv` makes (DVRs, tuners, lineups, the channel map, guide reloads), each marked for a
+  caller on the home; a node is never allowed them. A caller on the home is served whatever
+  the relay switch for nodes says, under the same rate limits.
+- **An extension's component hands its stages to one plugin.** `ext.plex` keeps its kind and
+  its settings and names `tv.maktaba.plex`; all five of its stages move, including
+  `plex_collections_import` (Epic 56), since the catalog's stages and the manifest's must
+  agree. The extension still adds the edges from other stages into them, and in-process its
+  own implementations run with its own client. The token mint takes a first-party stage
+  tagged with the extension whose component the plugin names.
+- **What the plugin never learns, its rows do not hold.** `plex_livetv` stored Plex's address
+  in its status (`server`); through the plugin it stores `service:plex`. Nothing reads the
+  field: the API and the Live TV page take the address from the extension's settings.
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

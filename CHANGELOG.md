@@ -14,6 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
+- **Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave
+  8).** Indexing Plex, writing collections, reading Plex's own collections back and keeping
+  Maktaba's channels in Plex Live TV run in `tv.maktaba.plex`, in a runner with no network:
+  every call to Plex goes through the home's service door, which adds the Plex token and
+  removes it from every answer, so the plugin never holds the token or Plex's address. The
+  dizqueTV stages stay in the worker for now. The parity proof compares the calls Plex receives
+  on both paths.
 - **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
   wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
   swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
