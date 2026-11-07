@@ -184,6 +184,10 @@ export const APPS = [
                 "**شريط الحالة**: حين يتوقف جزء من الجهاز الرئيسي، يقول ذلك كل تطبيق في شريط واحد أعلى الشاشة، ويسمّي ما لا يعمل (التشغيل أو البث المباشر أو البحث أو المعالجة)، ولا يعرض شيئًا ما دام كل شيء يعمل. وتقرأ التطبيقات ملف `/status.json` من الجهاز الرئيسي، وهو يجيب عنه حتى حين تتوقف واجهته البرمجية أو قاعدة بياناته."
               ),
               t(
+                "**Maktaba Cloud in the strip**: when an app reaches the home through Maktaba Cloud (away from home), the same strip also says when remote access or signing in with Maktaba Cloud is down or slow, and shows planned maintenance from a day before it starts, with **Details** to [status.maktaba.tv](https://status.maktaba.tv). The home's own trouble comes first. On the home's own network the cloud's line never shows, and if the status page can't be reached the apps show nothing and play as usual.",
+                "**سحابة مكتبة في الشريط**: حين يصل التطبيق إلى الجهاز الرئيسي عبر سحابة مكتبة (خارج المنزل)، يقول الشريط نفسه أيضًا متى يتوقف الوصول عن بُعد أو تسجيل الدخول عبر سحابة مكتبة أو يبطؤ، ويعرض الصيانة المجدولة قبل موعدها بيوم، مع **التفاصيل** إلى [status.maktaba.tv](https://status.maktaba.tv). وتأتي مشكلات الجهاز الرئيسي نفسه أولًا. ولا يظهر سطر السحابة أبدًا على شبكة المنزل، وإن تعذّر الوصول إلى صفحة الحالة لا تعرض التطبيقات شيئًا وتشغّل كالمعتاد."
+              ),
+              t(
                 "**The play queue**: **Play** and **Shuffle** on a library, a series, a season, a collection or a playlist start one queue that the home keeps for each person. **Play next** and **Add to queue** add a video to it, Up next plays from it first, and Home offers **Continue your queue** on every device.",
                 "**قائمة الانتظار**: يبدأ زرّا **تشغيل** و**تشغيل عشوائي** في مكتبة أو سلسلة أو موسم أو مجموعة أو قائمة تشغيل قائمةَ انتظار واحدة يحفظها الجهاز الرئيسي لكل شخص. ويضيف إليها **شغّل تاليًا** و**أضف إلى قائمة الانتظار** مقطعًا، ويبدأ «التالي» منها أولًا، وتعرض الرئيسية **تابع قائمة الانتظار** على كل جهاز."
               ),

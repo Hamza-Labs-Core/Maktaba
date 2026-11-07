@@ -1,0 +1,101 @@
+/* The console's look: light and dark (the system's, or the toggle's), logical properties so
+   Arabic reads right to left with no other change. */
+:root {
+  --bg: #fbfaf7;
+  --fg: #1c1b19;
+  --muted: #6b675f;
+  --line: #ddd8cc;
+  --accent: #1f6f5c;
+  --warn: #8a5a00;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141412;
+    --fg: #ecebe7;
+    --muted: #a39f95;
+    --line: #34322d;
+    --accent: #6cc4ad;
+    --warn: #f0b85a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141412;
+  --fg: #ecebe7;
+  --muted: #a39f95;
+  --line: #34322d;
+  --accent: #6cc4ad;
+  --warn: #f0b85a;
+  color-scheme: dark;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font:
+    16px/1.5 system-ui,
+    "Noto Naskh Arabic",
+    sans-serif;
+}
+.bar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding-block: 0.75rem;
+  padding-inline: 1rem;
+  border-block-end: 1px solid var(--line);
+}
+.bar nav {
+  display: flex;
+  gap: 0.75rem;
+}
+.spacer {
+  flex: 1;
+}
+main {
+  max-inline-size: 48rem;
+  margin-inline: auto;
+  padding: 1rem;
+}
+a {
+  color: var(--accent);
+}
+a[aria-current="page"] {
+  font-weight: 600;
+}
+label {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.5rem;
+}
+input,
+textarea,
+button {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+}
+button {
+  cursor: pointer;
+  margin-inline-end: 0.5rem;
+}
+.note {
+  color: var(--muted);
+}
+.warn,
+[role="alert"] {
+  color: var(--warn);
+}
+.dialog {
+  border: 1px solid var(--line);
+  padding: 1rem;
+  border-radius: 8px;
+  margin-block: 1rem;
+}
+code {
+  overflow-wrap: anywhere;
+}

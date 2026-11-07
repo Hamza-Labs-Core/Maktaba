@@ -42,6 +42,10 @@ public struct StripLine: Equatable, Sendable, Identifiable {
     public let key: String
     public let text: String
     public let details: String?
+    /// the words' values (the cloud's maintenance window), in order
+    public var args: [String] = []
+    /// an outside Details link for everyone (the cloud's status page, story 50.11)
+    public var link: URL? = nil
     public var id: String { key }
 }
 
@@ -50,10 +54,13 @@ public struct StripLine: Equatable, Sendable, Identifiable {
 /// search); admin-only parts (processing, log search). A feature that is off is no outage:
 /// an off group has no line, and Live TV is left out of the playback sentence when it is off.
 public enum StatusStripRules {
-    public static func lines(_ s: HomeStatusDoc?, online: Bool, admin: Bool, liveTVOff: Bool = false) -> [StripLine] {
+    /// `cloud` is Maktaba Cloud's line (story 50.11, `CloudStatusRules.line`) when the app
+    /// reaches the home through the cloud: after the home's own lines, before admin-only ones.
+    public static func lines(_ s: HomeStatusDoc?, online: Bool, admin: Bool, liveTVOff: Bool = false,
+                             cloud: StripLine? = nil) -> [StripLine] {
         var out: [StripLine] = []
         if !online { out.append(StripLine(key: "offline", text: StripWords.offline, details: nil)) }
-        guard let s, s.v == 1 else { return out }
+        guard let s, s.v == 1 else { return out + (cloud.map { [$0] } ?? []) }
         func bad(_ g: String) -> Bool { ["degraded", "restarting", "down"].contains(s.components[g] ?? "ok") }
         func adminLink(_ link: String) -> String? { admin ? link : nil }
         if bad("database") {
@@ -67,6 +74,7 @@ public enum StatusStripRules {
                                  details: adminLink("/admin/health")))
         }
         if bad("search") { out.append(StripLine(key: "search", text: StripWords.search, details: adminLink("/admin/health"))) }
+        if let cloud { out.append(cloud) }
         if admin && bad("processing") {
             out.append(StripLine(key: "processing", text: StripWords.processing, details: "/admin/health"))
         }
@@ -76,7 +84,7 @@ public enum StatusStripRules {
 
     /// What the strip shows, so a closed strip comes back when it changes.
     public static func signature(_ lines: [StripLine]) -> String {
-        lines.map { "\($0.key):\($0.text)" }.joined(separator: "|")
+        lines.map { "\($0.key):\($0.text)\($0.args.isEmpty ? "" : $0.args.joined(separator: ","))" }.joined(separator: "|")
     }
 
     /// Whether playback is down on the home: the player's error screen says so instead of a
@@ -102,6 +110,13 @@ public enum StripWords {
     public static let more = "%lld more"
     public static let close = "Close"
     public static let player = "Playback is unavailable right now. Try again in a few minutes."
+    // Maktaba Cloud's lines (Epic 50 story 50.11), the web's `banner.*`
+    public static let relayDegraded = "Remote access is slower than usual. Playback at home is not affected."
+    public static let relayOutage = "Remote access is down. We're working on it. Playback at home still works."
+    public static let apiDegraded = "Signing in with Maktaba Cloud is slower than usual."
+    public static let apiOutage =
+        "Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password."
+    public static let maintenance = "Planned maintenance on %1$@, %2$@–%3$@. Remote play may pause for a few seconds."
 
     /// `english` in the person's language (MaktabaKit's catalog), for an app's own view.
     public static func localized(_ english: String) -> String {
@@ -110,7 +125,8 @@ public enum StripWords {
 
     /// Every line's words (the catalog test checks each has its Arabic).
     public static let all = [offline, restarting, database, safe, streaming, streamingNoTV, search, processing, logs,
-                             details, more, close, player]
+                             details, more, close, player, relayDegraded, relayOutage, apiDegraded, apiOutage,
+                             maintenance]
 }
 
 extension APIClient {

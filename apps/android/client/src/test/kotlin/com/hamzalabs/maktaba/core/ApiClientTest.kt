@@ -429,4 +429,31 @@ class ApiClientTest {
         val id = seen.last().headers["X-Request-Id"]
         assertTrue("a v7 uuid: $id", id != null && Regex("^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$").matches(id))
     }
+
+    /** Epic 50 story 50.11: the home's status read here, the cloud's line goes after its own lines. */
+    @Test
+    fun `the cloud's line follows the home's own status`() = runBlocking {
+        route = { r ->
+            if (r.url.encodedPath == "/status.json") {
+                json(200, """{"v":1,"mode":"normal","overall":"degraded","components":{"search":"down","logs":"down"}}""")
+            } else {
+                json(404, "{}")
+            }
+        }
+        val doc = client(MemoryTokens()).homeStatus()
+        val cloud = com.hamzalabs.maktaba.core.api.StripLine(
+            com.hamzalabs.maktaba.core.api.StripKey.RELAY_OUTAGE, id = "cloud:i1", link = "https://status.maktaba.tv/i/i1",
+        )
+        val lines = com.hamzalabs.maktaba.core.api.StatusStripRules.lines(doc, online = true, admin = true, cloud = cloud)
+        assertEquals(
+            listOf(
+                com.hamzalabs.maktaba.core.api.StripKey.SEARCH,
+                com.hamzalabs.maktaba.core.api.StripKey.RELAY_OUTAGE,
+                com.hamzalabs.maktaba.core.api.StripKey.LOGS,
+            ),
+            lines.map { it.key },
+        )
+        assertEquals("https://status.maktaba.tv/i/i1", lines[1].link)
+        assertNull(lines[1].details)
+    }
 }

@@ -5,6 +5,12 @@ import SwiftUI
 /// Details, which opens the home's System health or recovery page. On tvOS it is a top
 /// strip that does not take focus.
 public struct StatusStripView: View {
+    /// A line's words in the person's language, with its values (the cloud's maintenance window).
+    private func words(_ line: StripLine) -> Text {
+        if line.args.isEmpty { return Text(LocalizedStringKey(line.text), bundle: .module) }
+        return Text(verbatim: String(format: StripWords.localized(line.text), arguments: line.args))
+    }
+
     let lines: [StripLine]
     let home: URL?
     let close: () -> Void
@@ -25,10 +31,10 @@ public struct StatusStripView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(open ? lines : [first]) { line in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(LocalizedStringKey(line.text), bundle: .module)
+                            words(line)
                                 .fixedSize(horizontal: false, vertical: true)
                             #if !os(tvOS)
-                            if let link = line.details, let home, let url = URL(string: link, relativeTo: home) {
+                            if let url = line.link ?? line.details.flatMap({ link in home.flatMap { URL(string: link, relativeTo: $0) } }) {
                                 Button { openURL(url) } label: { Text("Details", bundle: .module) }
                                     .buttonStyle(.borderless)
                             }
@@ -72,10 +78,14 @@ public struct HomeStatusStrip: ViewModifier {
     let admin: Bool
     let liveTVOff: Bool
     @State private var watcher = HomeStatusWatcher()
+    @State private var cloud = CloudStatusWatcher()
     @Environment(\.scenePhase) private var scenePhase
 
     public func body(content: Content) -> some View {
-        let lines = StatusStripRules.lines(watcher.status, online: true, admin: admin, liveTVOff: liveTVOff)
+        // Maktaba Cloud's line only when the home is reached through the cloud (story 50.11)
+        let viaCloud = CloudStatusRules.throughCloud(home ?? client.home)
+        let lines = StatusStripRules.lines(watcher.status, online: true, admin: admin, liveTVOff: liveTVOff,
+                                           cloud: viaCloud ? CloudStatusRules.line(cloud.summary) : nil)
         let sig = StatusStripRules.signature(lines)
         content
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -87,6 +97,10 @@ public struct HomeStatusStrip: ViewModifier {
             .task(id: scenePhase == .active) {
                 guard scenePhase == .active else { return }
                 await watcher.run(client)
+            }
+            .task(id: scenePhase == .active && viaCloud) {
+                guard scenePhase == .active && viaCloud else { return }
+                await cloud.run()
             }
     }
 }

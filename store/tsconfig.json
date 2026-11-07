@@ -10,8 +10,9 @@
     "noImplicitOverride": true,
     "exactOptionalPropertyTypes": false,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "resolveJsonModule": true
   },
-  "include": ["**/*.ts"],
-  "exclude": ["node_modules"]
+  "include": ["signing/**/*.ts", "scripts/**/*.ts", "test/*.ts", "commerce/**/*.ts", "payments/**/*.ts", "testing/**/*.ts"],
+  "exclude": ["node_modules", "scripts/decrypt-export.ts"]
 }
