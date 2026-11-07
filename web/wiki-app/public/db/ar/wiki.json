@@ -12487,7 +12487,8 @@
         "story-26.6",
         "story-27.10",
         "story-29.3",
-        "story-29.5"
+        "story-29.5",
+        "story-54.36"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

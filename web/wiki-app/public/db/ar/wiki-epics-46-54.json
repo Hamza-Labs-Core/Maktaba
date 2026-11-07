@@ -7189,6 +7189,7 @@
       ],
       "related": [
         "epic-54-plugins",
+        "entity-videos",
         "ep-get-queues",
         "ep-get-components"
       ],
@@ -7201,7 +7202,9 @@
         "GET /queues",
         "GET /components"
       ],
-      "db_tables": [],
+      "db_tables": [
+        "videos"
+      ],
       "metadata": {
         "slug": "wave9-core"
       },

@@ -1402,7 +1402,7 @@ for Maktaba (T13).
 
 | Plugin | Epic 51 component (kind) | Stages | Pools kept | What it needs beyond the plugin API (§15.4) | Wave |
 |---|---|---|---|---|---|
-| `tv.maktaba.core-media` (always on) | `core.pipeline` (`stages+process+loop`, not switchable) | `scan`, `probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`, `access_check`, `storage_canonicalize`, `categorize` | `nas_read`, `cpu` | read library files; run `ffprobe`, `ffmpeg`, `fpcalc` | 9 |
+| `tv.maktaba.core-media` (always on) | `core.pipeline` (`stages+process+loop`, not switchable) | `scan`, `probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`, `access_check`, `storage_canonicalize` (`categorize` stays in the core for now, §15.12) | `nas_read`, `cpu` | read library files and the thumbnail cache; run `ffprobe`, `ffmpeg` (chromaprint runs through `ffmpeg`) | 9 |
 | `tv.maktaba.thumbnails` | `media.thumbnails` (`stages`) | `thumbnail`, `thumb_small`, `chapter_thumbs` | `nas_read` | read library files; write the thumbnail folders; `ffmpeg` | 2 |
 | `tv.maktaba.convert` | `library.convert` (`stages`) | `convert_mp4` | `convert` | read and write library files; `ffmpeg` | 5 |
 | `tv.maktaba.dedup` | `library.dedup` (`stages`) | `dedup_scan`, `dedup_apply`, `trash_purge`, `file_restore` | `nas_read`, `nas_write` | read and write library files and the file trash | 5 |
@@ -1961,3 +1961,33 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the
   `dup_group` subject stay refused (`plugin_trusted_field`). `reserved_stages.txt` stays as
   the golden graph's list of names.
+- **Wave 9 places each stage with its component.** A plugin's stages are its component's
+  (the catalog checks it), so `thumbnail` joins `tv.maktaba.thumbnails` (`media.thumbnails`)
+  and `extract` joins `tv.maktaba.transcription`, as the table above lists them, rather than
+  `tv.maktaba.core-media`. `extract` therefore runs in the `ml` runner; a machine whose
+  workers have no plain `ml` runner runs it in the worker (`runner_not_serving_here`).
+- **`categorize` stays in the core until it is decided.** It is a placeholder in the graph
+  with no handler and no job ever runs it; whether it becomes a stage of
+  `tv.maktaba.core-media` or leaves the graph is an open decision, so wave 9 leaves it as it
+  is.
+- **The engine's writes for the core stages are relayed.** `videos.state` (probe's, and
+  `thumbnail`'s and `extract`'s transitions through `advance_after_stage`), a video's failed
+  stages queued again (`access_check`, and `scan` finding a missing file again) and the path
+  conversion (`storage_canonicalize`, which pauses stages and writes the share map) are the
+  queue engine's. In a runner the plugin asks the worker (`advance`, `requeue_failed`,
+  `storage_canonicalize`), which checks the stage, its trigger and the job's video or
+  library before it writes; in-process the same calls write directly.
+- **Shared helpers leave the stage modules.** What another plugin or the core also uses (the
+  file lookup by normalised name and the stand-in hash marker, `identity/on_disk.py`; the
+  thumbnail source and its fingerprint, `thumbnail/sidecar.py`; the failed stages' requeue,
+  `engine/requeue.py`) moved into library modules, since a plugin imports the pipeline,
+  never another plugin. The signal upserts that built their column list per call are three
+  fixed statements.
+- **Some writes by id keep the catalog scope.** A season row by its id (`fp_gate`), the
+  YouTube rows `link` upserts by their YouTube ids and an audio track by its id have no
+  scope kind that names them (the subject is a season, a video, or the track's video
+  through a join); like the earlier waves' writes of this kind, they rely on the role's
+  table grants and the trusted manifest. A scope kind for rows reached through the subject
+  is open.
+- **`fpcalc` is not needed.** The audio fingerprint runs through `ffmpeg`'s chromaprint
+  muxer, so the manifest lists `ffprobe` and `ffmpeg` only.

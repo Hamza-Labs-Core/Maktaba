@@ -14,6 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
+- **The core stages run as a first-party plugin (Epic 54 story 54.36, wave 9).** Finding the
+  videos, reading their length, identity, thumbnail and audio fingerprints, linking them to
+  their YouTube pages, the access check and the share path conversion run in
+  `tv.maktaba.core-media`, in the `light` runner, once the update syncs the graph. `thumbnail`
+  moves into `tv.maktaba.thumbnails` and `extract` into `tv.maktaba.transcription`. A video's
+  state, a failed stage queued again and the path conversion stay the queue engine's: the
+  worker writes them for the plugin's job after checking it. `core.pipeline` stays part of
+  the server and cannot be switched off; `categorize`, `component_catchup`, the watcher and
+  the manual scans stay in the core.
 - **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
   Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
   home's secure LAN names from the browser, and when none answers it explains that the router

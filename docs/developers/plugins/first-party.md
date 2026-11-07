@@ -17,7 +17,11 @@
 > channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
 > and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: the Plex
 > stages run in `tv.maktaba.plex`, through the home's service door; the dizqueTV stages stay
-> in the worker for now. The other stages move wave by wave.
+> in the worker for now. **Wave 9 has moved the core stages**: finding the videos, reading
+> their length, identity, thumbnail and audio fingerprints, linking them to their YouTube pages
+> and the access check run in `tv.maktaba.core-media`; `thumbnail` joins
+> `tv.maktaba.thumbnails` and `extract` joins `tv.maktaba.transcription`. Two stages stay in the
+> core: `component_catchup` and `categorize`.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -207,6 +211,9 @@ against the job before it writes it with its own database connection:
 | `unsupersede` (a restored duplicate) | the video is a superseded video of the job's library |
 | `tv_commit`, `tv_rollback` (a TV change on the air, or the previous release back) | only `tv_swap` / `tv_rollback` may ask; the worker runs it for the change in the job's own payload, and the plugin sends nothing else |
 | `service_request` (a Plex call on a joined machine) | the service is one the stage's plugin lists; the worker forwards it through its channel to the home's service door |
+| `advance` (a video's state, from `advance_after_stage`) | only `probe`, `thumbnail` and `extract` may ask, each by its own trigger, and only for the job's own video; the state machine checks the outcome |
+| `requeue_failed` (a video's failed stages queued again) | `access_check` for the job's own video, `scan` for a video of the job's library |
+| `storage_canonicalize` (the home's path conversion) | only that stage's job may ask; the worker runs the conversion with its own mounts, and the plugin sends nothing else |
 
 The same code runs in-process, where these calls write directly. Writes go only to the
 library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
@@ -308,6 +315,43 @@ service   = ["plex"]              # the services its calls may reach, through th
   once the door builds programmes on the home from Plex item ids.
 - **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
   receives (method, path, query and the token) are identical, then N16.
+
+## The core stages: `tv.maktaba.core-media`
+
+Wave 9 moves the stages every home always runs, the stages of `core.pipeline`: `scan`,
+`probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`,
+`storage_canonicalize` and `access_check`.
+
+```toml
+[trusted]
+runner      = "light"
+component   = "core.pipeline"          # part of the server: never switched off
+files.read  = ["library", "data.thumbnails"]
+files.write = []
+exec        = ["ffprobe", "ffmpeg"]    # chromaprint runs through ffmpeg
+settings    = ["queue_health"]
+```
+
+- **The component stays part of the server.** `core.pipeline` is not switchable: every write
+  to it on `/api/components` is `409 not_switchable`, whichever process runs its stages.
+- **Only the engine writes a video's state.** `probe` (and `thumbnail`, `extract`) move a
+  video along its states through `advance_after_stage`; in a runner the worker applies the
+  transition (`advance` above). The same is true of a failed stage queued again
+  (`requeue_failed`) and of the path conversion, which pauses stages and writes the share map
+  (`storage_canonicalize`).
+- **Each stage sits with its component.** A plugin's stages are its component's, so
+  `thumbnail` runs in `tv.maktaba.thumbnails` (`media.thumbnails`) and `extract` in
+  `tv.maktaba.transcription`. `extract` runs in the `ml` runner; a machine whose workers have
+  no plain `ml` runner runs it in the worker.
+- **What stays in the core.** The filesystem watcher and the manual scans only queue `scan`.
+  `component_catchup` is the engine's own upkeep. `categorize` is a placeholder in the graph
+  with no handler; whether it becomes a stage of this plugin is still to be decided.
+- **No SQL built at run time.** The signal upserts that built their column list per call are
+  three fixed statements, so each is a named statement of its own.
+- **Parity** scans a library of real files, probes it (a talk, a silent video, one ffprobe
+  cannot read), links a video from its yt-dlp sidecar, then runs each video's identity,
+  fingerprint, style sample and access check; the video's state is written by the engine on
+  both sides. Rows, the queue and the job log are compared, then N16.
 
 ## The repo layout
 
