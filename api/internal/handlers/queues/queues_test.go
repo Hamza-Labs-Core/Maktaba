@@ -461,6 +461,10 @@ func TestDescribeCause(t *testing.T) {
 	if c := describeCause(CauseAwaitingReview); c.Action != ActionApply {
 		t.Errorf("awaiting_review action = %s", c.Action)
 	}
+	// Epic 54 story 54.40: a loop between plugins is fixed in the plugins' settings
+	if c := describeCause("plugin_loop"); c.Label != "Stopped a loop between plugins" || c.Action != ActionOpenSettings {
+		t.Errorf("plugin_loop = %+v", c)
+	}
 	// a generated cause ("kind:normalised message") is a grouping key: its
 	// label is the kind's, never the key with its <n> and <path>
 	for cause, label := range map[string]string{
