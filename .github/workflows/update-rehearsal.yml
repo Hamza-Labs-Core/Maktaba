@@ -516,6 +516,7 @@ jobs:
           - { id: '01', name: normal update with migrations (full seed), test: TestUpdateRehearsal01NormalUpdate, profile: full }
           - { id: '02', name: the TV's change waits during the watch, test: TestUpdateRehearsal02WatchWithTVWaiting, profile: restore }
           - { id: '03', name: rollback after additive migrations, test: TestUpdateRehearsal03RollbackAdditive, profile: restore }
+          - { id: '03b', name: rollback by the Down scripts (a lossless migration the schema cannot keep), test: TestUpdateRehearsal03bRollbackDownScripts, profile: restore }
           - { id: '04', name: rollback after a destructive migration, test: TestUpdateRehearsal04RollbackDestructive, profile: restore }
           - { id: '05', name: the restore under concurrent logins, test: TestUpdateRehearsal05RestoreUnderLogins, profile: restore }
           - { id: '06', name: the restore killed part way, test: TestUpdateRehearsal06RestoreKilled, profile: restore }
