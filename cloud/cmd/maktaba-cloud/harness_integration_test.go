@@ -101,6 +101,12 @@ func newPaidEnv(t *testing.T) *env {
 
 func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	t.Helper()
+	return newEnvCfg(t, pay, nil)
+}
+
+// newEnvCfg is newEnvWith with a hook that adjusts the config before it is validated.
+func newEnvCfg(t *testing.T, pay *fakeProvider, adjust func(*config.Config)) *env {
+	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
 		t.Skip("MAKTABA_CLOUD_DB_URL not set")
@@ -133,6 +139,9 @@ func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	cfg.OAuthGoogle.ClientID = "google-test-client"
 	cfg.OAuthGoogle.ClientSecret = "google-test-secret"
 	cfg.Entitlement.PrivateKeyPath = e.entPath
+	if adjust != nil {
+		adjust(&cfg)
+	}
 	if err := config.Validate(cfg, config.RoleAPI); err != nil {
 		t.Fatal(err)
 	}
@@ -193,6 +202,7 @@ type client struct {
 	ip      string
 	token   string
 	cookies map[string]string
+	header  map[string]string // extra request headers
 }
 
 func (e *env) client() *client {
@@ -243,6 +253,9 @@ func (c *client) do(method, path string, body any) resp {
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	for k, v := range c.header {
+		req.Header.Set(k, v)
 	}
 	for k, v := range c.cookies {
 		req.AddCookie(&http.Cookie{Name: k, Value: v})
