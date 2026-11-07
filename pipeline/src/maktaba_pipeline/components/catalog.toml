@@ -601,7 +601,7 @@ placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full"]
 features  = []
-since     = "0.3.93"
+since     = "0.3.95"
 
 [[component]]
 id        = "cluster"
