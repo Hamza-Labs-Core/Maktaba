@@ -145,7 +145,7 @@ jobs:
   kit:
     name: kit (two releases' binaries, the bundled Postgres)
     runs-on: ubuntu-24.04
-    timeout-minutes: 35 # the binaries of four releases and three packs (story 51.18)
+    timeout-minutes: 45 # the binaries of four releases, three packs (story 51.18) and the plugin host (54.07)
     # main's run: only after CI's push run on the commit passed (a cancelled or failed CI
     # run's workflow_run runs nothing); every job after this one needs it
     if: >-
@@ -182,6 +182,20 @@ jobs:
         with:
           modules: api streaming cmd/maktaba-server cmd/maktaba-launcher tools/release
           offline: "false"
+
+      # the plugin host and its test guest (tools/rehearsal/build.sh: plugins/, scenario 15,
+      # Epic 54 story 54.07 §8)
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-wasip2
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            plugind
+            plugind/guests
+          # only main's run saves (pull requests and tags read main's entries)
+          save-if: ${{ github.event_name == 'workflow_run' }}
 
       # the release's pack build (tools/rehearsal/build.sh: the tool.yt-dlp pack of each of
       # this commit's releases, scenarios 13 and 14)
@@ -461,6 +475,7 @@ jobs:
           - { id: '12', name: no behaviour change (an update of a seeded home), test: TestUpdateRehearsal12NoBehaviourChange, profile: small }
           - { id: '13', name: an update carries the packs and a rollback finds the kept one, test: TestUpdateRehearsal13UpdateWithPacks, profile: small }
           - { id: '14', name: a pack that fails its verification stops the update, test: TestUpdateRehearsal14PackFailsVerification, profile: small }
+          - { id: '15', name: plugins follow an update and its rollback, test: TestUpdateRehearsal15Plugins, profile: small }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }

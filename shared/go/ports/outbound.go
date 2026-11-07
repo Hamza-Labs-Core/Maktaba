@@ -101,6 +101,9 @@ var Outbound = []Call{
 	{Name: "plugin-store-seen", Hosts: []string{"plugins.maktaba.tv"}, By: "auto",
 		What: "a linked home's daily list of the store plugins it has installed (54.15 §5)",
 		Off:  `[telemetry] enabled = "off", or no store link`},
+	{Name: "plugin-store-ratings", Hosts: []string{"plugins.maktaba.tv"}, By: "admin",
+		What: "an admin's rating or report of a store plugin, sent signed by this home (54.18)",
+		Off:  "never started by the server; offline, it answers store_offline"},
 	{Name: "cloudflare", Hosts: []string{"api.cloudflare.com"}, By: "admin",
 		What: "the TV remote's Cloudflare Stream, when an admin set it up", Off: "ext.cloudflare_stream off"},
 }

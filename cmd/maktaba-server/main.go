@@ -79,6 +79,7 @@ func newRootCmd() *cobra.Command {
 		newKeysCmd(),
 		newLicenseCmd(),
 		newComponentsCmd(),
+		newPluginsCmd(),
 		newMigrateFromDevCmd(),
 		newAdoptCmd(),
 		newServiceCmd(),

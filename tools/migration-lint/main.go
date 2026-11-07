@@ -133,6 +133,11 @@ func main() {
 		violations++
 	}
 
+	for _, v := range copyExcludedCheck(files, os.ReadFile) {
+		report(v)
+		violations++
+	}
+
 	for _, v := range manifestCheck(abs, files) {
 		report(v)
 		violations++

@@ -34,3 +34,8 @@
    test data), the Plugins section, or a guide. The `affected-tests` job warns when such a pull
    request leaves the portal alone (`tools/ci/devportal_follows.py`); a `No-Portal-Change:
    <reason>` trailer says it needs nothing.
+8. **Bring main in with `tools/dev/merge-main.sh`:** it merges origin/main and keeps both sides
+   of `CHANGELOG.md` and `CHANGELOG.ar.md` entry by entry (never line by line: two entries that
+   share a line would interleave), and stops, the merge left in progress, on any other conflict
+   or a CHANGELOG change it cannot place. Never resolve a CHANGELOG hunk by hand without reading
+   the lines around it, and never use `merge=union` on them.

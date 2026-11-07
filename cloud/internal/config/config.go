@@ -30,6 +30,31 @@ type Config struct {
 	Telemetry   TelemetryConfig
 	Relay       RelayConfig
 	Auth        AuthConfig
+	Direct      DirectConfig
+}
+
+// DirectConfig is direct remote access (Epic 50 story 50.15): the direct-name domains (never
+// maktaba.tv; adding one is configuration only), their name servers, and the ACME CAs.
+type DirectConfig struct {
+	Enabled    bool          // direct.enabled: list direct connections, run the checks (default false)
+	Domains    []string      // direct.domains = ["direct-a.example", ...]
+	DNSListen  string        // direct.dns_listen, default ":53" (the dns role)
+	NS1, NS2   string        // direct.ns1, direct.ns2: nodes A's and B's primary IPs
+	Budget     int           // direct.weekly_budget, default 45 new certificates a domain a week
+	CheckEvery time.Duration // direct.check_every, default 15m
+	// ACME is each CA's settings by name (letsencrypt, zerossl, google): [direct.acme.<ca>].
+	ACME map[string]DirectACME
+}
+
+// DirectACME is one CA: its directory, the account's key file (made on first use) and, for
+// ZeroSSL and Google, the external account binding (its HMAC from the environment:
+// MAKTABA_CLOUD_DIRECT_<CA>_EAB_HMAC, never the file).
+type DirectACME struct {
+	Directory  string
+	AccountKey string
+	EABKeyID   string
+	EABHMAC    string
+	Contact    string
 }
 
 type ServerConfig struct {
@@ -160,6 +185,7 @@ type RelayConfig struct {
 // keys absent from the TOML file so the file stays minimal.
 func defaultConfig() Config {
 	return Config{
+		Direct: DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
 		Server: ServerConfig{
 			ListenAddr:    "0.0.0.0:8080",
 			ReadTimeout:   30 * time.Second,
@@ -240,6 +266,13 @@ func applyEnvOverrides(c *Config) {
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
 	}
+	// the direct CAs' EAB secrets (story 50.15) are never in the file
+	for name, a := range c.Direct.ACME {
+		if v := os.Getenv("MAKTABA_CLOUD_DIRECT_" + strings.ToUpper(name) + "_EAB_HMAC"); v != "" {
+			a.EABHMAC = v
+			c.Direct.ACME[name] = a
+		}
+	}
 	// Relay public host is operator-specific (their own domain), so the
 	// VPS deploy can drive it purely from env without a config file.
 	if v := os.Getenv("MAKTABA_CLOUD_RELAY_PUBLIC_HOST"); v != "" {
@@ -298,8 +331,56 @@ func stripInlineComment(s string) string {
 	return s
 }
 
+// parseList reads a TOML string array as the flat parser leaves it (its quotes trimmed at the
+// ends): ["a", "b"] or a", "b.
+func parseList(v string) []string {
+	v = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(v), "["), "]"))
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		p = strings.TrimSpace(strings.Trim(strings.TrimSpace(p), `"`))
+		if p != "" {
+			out = append(out, strings.ToLower(p))
+		}
+	}
+	return out
+}
+
 func assign(c *Config, section, key, val string) error {
+	if ca, ok := strings.CutPrefix(section, "direct.acme."); ok {
+		if c.Direct.ACME == nil {
+			c.Direct.ACME = map[string]DirectACME{}
+		}
+		a := c.Direct.ACME[ca]
+		switch key {
+		case "directory":
+			a.Directory = val
+		case "account_key":
+			a.AccountKey = val
+		case "eab_kid":
+			a.EABKeyID = val
+		case "contact":
+			a.Contact = val
+		default:
+			return fmt.Errorf("unknown key %s.%s", section, key)
+		}
+		c.Direct.ACME[ca] = a
+		return nil
+	}
 	switch section + "." + key {
+	case "direct.enabled":
+		return setBool(&c.Direct.Enabled, val)
+	case "direct.domains":
+		c.Direct.Domains = parseList(val)
+	case "direct.dns_listen":
+		c.Direct.DNSListen = val
+	case "direct.ns1":
+		c.Direct.NS1 = val
+	case "direct.ns2":
+		c.Direct.NS2 = val
+	case "direct.weekly_budget":
+		return setInt(&c.Direct.Budget, val)
+	case "direct.check_every":
+		return setDur(&c.Direct.CheckEvery, val)
 	case "server.listen_addr":
 		c.Server.ListenAddr = val
 	case "server.public_url":

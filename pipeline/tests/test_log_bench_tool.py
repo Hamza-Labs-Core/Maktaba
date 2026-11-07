@@ -31,9 +31,22 @@ def test_the_factor_is_the_slower_loop_clamped(
     lb = _tool()
     times = iter([lb.REFERENCE_HASH_S * hash_x, lb.REFERENCE_LINES_S * lines_x])
     monkeypatch.setattr(lb, "_best_of_three", lambda _work: next(times))
+    monkeypatch.setattr(lb, "_tail_p99_ns", lambda: lb.REFERENCE_TAIL_P99_NS)
     got, raw = lb.calibrate()
     assert got == pytest.approx(factor)
-    assert set(raw) == {"hash_s", "lines_s"}
+    assert set(raw) == {"hash_s", "lines_s", "tail_p99_ns"}
+
+
+@pytest.mark.unit
+def test_a_heavy_tail_raises_the_factor(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a runner as fast as the reference on the whole but 3.3 times slower at the tail: the
+    # budget, on a p99, follows the tail
+    lb = _tool()
+    times = iter([lb.REFERENCE_HASH_S * 2.7, lb.REFERENCE_LINES_S * 2.7])
+    monkeypatch.setattr(lb, "_best_of_three", lambda _work: next(times))
+    monkeypatch.setattr(lb, "_tail_p99_ns", lambda: int(lb.REFERENCE_TAIL_P99_NS * 3.3))
+    got, _ = lb.calibrate()
+    assert got == pytest.approx(3.3, rel=0.01)
 
 
 @pytest.mark.unit
@@ -41,3 +54,15 @@ def test_the_loops_run() -> None:
     lb = _tool()
     lb._lines_work()
     assert 0 < lb._best_of_three(lambda: None) < 1
+    assert lb._tail_p99_ns(200) > 0
+
+
+@pytest.mark.unit
+def test_the_best_of_its_rounds_is_judged(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a shared runner's other tenants only add time: the round with the lowest p99 is the
+    # logger's own cost, and every round is in the report
+    lb = _tool()
+    got = lb.run(400, rounds=3)
+    assert got["rounds"] == 3 and len(got["p99_ns_rounds"]) == 3
+    assert got["p99_ns"] == min(got["p99_ns_rounds"])
+    assert 0 < got["p50_ns"] <= got["p99_ns"]

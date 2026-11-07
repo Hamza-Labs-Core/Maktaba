@@ -135,6 +135,11 @@ They report within about 30 minutes:
 | Source archive present and, for reproducible toolchains (Rust, TinyGo), builds to the same hash | missing source blocks; otherwise a badge |
 | The flow ([Flows](flows.md)): `flow.toml`'s schema, each manifest matching its member exactly, the leaf rule (no edge into a core stage or another plugin's stage), events that exist with payload schemas, every plugin it names in the store at a version it accepts, no cycle through it and the published flows it subscribes to, chains within 16 hops | any refusal, named with its cycle path or bad edge, in English and Arabic |
 
+The malware scan, the sandbox run and the reproducible build run in an isolated runner with
+no network and no secret: a container started for your submission alone (Cloudflare
+Containers), or a GitHub Actions job where the store runs without them. Nothing your plugin
+does there can reach the internet.
+
 ### Submitting a flow
 
 A flow of several plugins is submitted together: `POST /v1/flow-submissions {flow_id,
@@ -206,6 +211,12 @@ a home that has had the plugin installed for at least 24 hours. You can reply on
 Moderation is done by the store's reviewers, on store accounts, never by home admins. Anyone can report a plugin for malware,
 data misuse, not working, being misleading, offensive content or copyright. Malware and data
 misuse reports are triaged within 24 hours.
+
+Ratings show on your listing page once a plugin has 5 of them. Reviews are plain text: links
+and markup show as typed, never as links. A report's reporter hears the outcome by email.
+Your listing's words come from your package's string tables at countersign, the keys your
+manifest names under `strings` (`name`, `summary`, `description`); when the version's release
+notes say the Arabic is machine translated, the Arabic page shows a badge saying so.
 
 ## Paid plugins (Phase 3)
 

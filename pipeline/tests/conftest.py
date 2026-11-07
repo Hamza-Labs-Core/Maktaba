@@ -199,6 +199,15 @@ def _app_cache_in_tmp(tmp_path_factory: pytest.TempPathFactory) -> object:
 
 
 @pytest.fixture(autouse=True)
+def _runner_dir_in_tmp(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The worker writes its plugin runners' areas (areas.json) to the runner folder, which
+    is <data>/run/runners when MAKTABA_RUNNER_DIR is unset: in the checkout, for a test.
+    Each test gets its own; one that binds a runner's socket sets a shorter one itself (a
+    socket path must stay under 100 bytes)."""
+    monkeypatch.setenv("MAKTABA_RUNNER_DIR", str(tmp_path / "runners"))
+
+
+@pytest.fixture(autouse=True)
 def _no_cluster_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     """Workers started by tests run without the cluster agent (no home to dial, no
     files on a share); the agent's own tests build one explicitly."""

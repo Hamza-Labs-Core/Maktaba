@@ -13,7 +13,7 @@
     "directory": "console/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/v1/*", "/admin", "/admin/*"],
+    "run_worker_first": ["/v1/*", "/admin", "/admin/*", "/", "/p/*", "/ar", "/ar/*"],
   },
   "limits": { "cpu_ms": 1000 },
   "vars": {
@@ -48,6 +48,12 @@
       "database_id": "00000000-0000-0000-0000-000000000003",
       "migrations_dir": "migrations/installs",
     },
+    {
+      "binding": "DB_COMMERCE",
+      "database_name": "store-commerce",
+      "database_id": "00000000-0000-0000-0000-000000000004",
+      "migrations_dir": "migrations/commerce",
+    },
   ],
   "r2_buckets": [
     { "binding": "BUCKET", "bucket_name": "maktaba-plugins" },
@@ -59,9 +65,15 @@
       { "name": "IP_BUCKET", "class_name": "IpBucket" },
       { "name": "PAIRING_CODE", "class_name": "PairingCode" },
       { "name": "CATALOG_WRITER", "class_name": "CatalogWriter" },
+      // the isolated runner on Cloudflare Containers (#756): without the containers deploy
+      // config (scripts/containers-config.mjs) it has no container and RUNNER stays "github"
+      { "name": "CHECK_RUNNER", "class_name": "CheckRunner" },
     ],
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountGuard", "IpBucket", "PairingCode", "CatalogWriter"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["AccountGuard", "IpBucket", "PairingCode", "CatalogWriter"] },
+    { "tag": "v2", "new_sqlite_classes": ["CheckRunner"] }
+  ],
   "queues": {
     "producers": [
       { "binding": "Q_CHECKS", "queue": "store-checks" },

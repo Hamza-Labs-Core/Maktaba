@@ -80,6 +80,13 @@ jobs:
           done < <(git diff --name-only --diff-filter=AM "$base" HEAD)
           exit $bad
 
+      # tools/dev/merge-main.sh: merging main keeps both sides of the CHANGELOGs entry by
+      # entry, and stops on any other conflict (CONTRIBUTING.md, Bringing main into a branch)
+      - name: merge-main keeps both sides of the CHANGELOGs (tools/dev/merge-main-test.sh)
+        run: |
+          shellcheck tools/dev/merge-main.sh tools/dev/merge-main-test.sh
+          bash tools/dev/merge-main-test.sh
+
       # Story 50.01: no host name under a domain that is not ours (maktaba.app), on the lines
       # the pull request adds; app identifiers (com.maktaba.app) pass.
       - name: No foreign domains (tools/lint/no-foreign-domains.sh)
