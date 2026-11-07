@@ -25,7 +25,7 @@ import { errorText } from "../../lib/errorText";
 import { useI18n } from "../../lib/i18n";
 import { useBytes } from "../../components/queue/offline";
 import { LinesPlaceholder } from "../../components/Placeholders";
-import { joinNames, phaseWord, reasonText } from "./componentWords";
+import { descText, joinNames, phaseWord, reasonText } from "./componentWords";
 import type { Action } from "./ComponentConfirm";
 
 export function ComponentDrawer({
@@ -100,7 +100,7 @@ export function ComponentDrawer({
       className="mkt-comp-drawer"
       closeLabel={t("common.close")}
     >
-      <p className="mkt-comp-drawer__desc">{t(view.desc_key)}</p>
+      <p className="mkt-comp-drawer__desc">{descText(t, view, locale)}</p>
       {/* Epic 53 story 53.11: this component's lines and errors */}
       <p className="mkt-comp-drawer__links">
         <Link to={logsPageLink({ components: view.id })}>{t("nav.admin.logs")}</Link>

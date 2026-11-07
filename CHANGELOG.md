@@ -209,6 +209,12 @@ build fails when the two differ.
   the whole time off again (or all history). A worker that loses the lead also stops reporting
   the component as off once it is on again, so Admin > Components no longer shows it off.
 
+- **The desktop app's tray keeps offering the can't-start choices while the launcher writes
+  its record (Epic 53, story 53.05).** On Windows, opening `start-failed.json` at the moment the
+  launcher replaced it could fail, and the tray then dropped Try again, Safe mode and Roll back
+  for one refresh. The tray now reads the record again for a moment before it treats it as
+  gone.
+
 ### Security
 
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
@@ -288,6 +294,35 @@ build fails when the two differ.
   and Play and Shuffle on `/big`. OpenAPI describes every library, series, playlist and queue
   route (a test fails on an undescribed one). Migrations 0191-0193. Every new word in English
   and Arabic.
+- **Plugins, part 4: the Plugins page, settings and the SDK (Epic 54, stories 54.10–54.13).**
+  Settings → Plugins (admins) lists each plugin with its badges (Unreviewed, Development), its
+  rating, what it is doing and why, and its jobs; a plugin's page shows its permissions in
+  Maktaba's own words with its libraries (none until you tick one), its status and stages, its
+  settings, what it wrote (revert what you choose), its versions (roll back, update from a file)
+  and turning it off or removing it. Install from a file asks you to type an unreviewed
+  plugin's name; allowing unreviewed plugins asks for your password. A plugin's settings are a
+  form drawn from its own description, checked by the server (no password or key fields), kept
+  through updates. Plugin queues have their own lane on the Queues page, and the Components page
+  shows a plugin's own name. For developers, `mkp` makes a Rust plugin, checks it as the server
+  does, runs it in a test harness with the plugin host's own code and packs it. Every new word in
+  English and Arabic.
+- **Plugins, part 3: install, turn on, run and remove a plugin (Epic 54, stories 54.03,
+  54.07–54.09, 54.37, 54.38).** An admin installs a plugin package on a Postgres home with
+  `POST /api/plugins/install` (Allow unreviewed plugins on: every file is unreviewed before the
+  store), ticks what it may do and which libraries it may see (none until ticked), and turns it
+  on; the Plugins and Components routes switch it the same way, and every change is audited.
+  The supervisor runs the sandboxed plugin host, `maktaba-plugind`, only while a plugin is on
+  (Plugin host reads running and idle otherwise), never restarts it when its sandbox cannot
+  start, and the host ships in the macOS and Linux payloads, archives and packages. Each
+  plugin's stages are its component's: off, held, or waiting with the reason (needs a newer
+  Maktaba, waiting for new permissions, unreviewed plugins not allowed). Turning a plugin off
+  keeps it off through updates, reinstalls and restores until an admin turns it on. An update
+  keeps the previous version for a rollback (refused when its data is newer, unless the data
+  is cleared); removing a plugin drops its queued jobs, and with purge its data and every change
+  it made that no one changed since. A plugin that keeps failing (five crashes in ten minutes,
+  most of its last twenty jobs, or fifty refused calls) stops itself and tells the admins.
+  Plugin log lines have their own log segments. Migration 0195. Every new word in English and
+  Arabic.
 - **Plugins, part 2: the plugin API and plugin stages in the queue (Epic 54, stories
   54.04–54.06).** Still dark until a plugin is installed (part 3). The API serves the plugin
   API on a unix socket only, never on a network port. Each plugin job gets a token minted
@@ -686,6 +721,14 @@ build fails when the two differ.
   people per day and the most played videos: counts only). The range runs from 1 hour to 90
   days, each chart shows its values under the pointer and a sentence for screen readers, and
   Open in Logs opens the same time. `GET /api/admin/dashboards/{board}` is admin only.
+
+- **A performance budget for logging (Epic 53, story 53.13).** A new CI job, `log-bench`, runs on
+  every change to the log path. It measures the keeper's cost per line under a burst (and that
+  no line, and no warning or error, is lost), the index's catch-up and lag, search with
+  filters, full text and by request over a seeded 7-day corpus, the dashboards' 30 days, the
+  Go logger's cost per call and the disk caps through a day. A bench over its budget fails
+  with its numbers. The budgets follow the runner's speed, and the numbers are kept as the
+  job's artifact (`docs/performance/logs.md`).
 
 ### Fixed
 

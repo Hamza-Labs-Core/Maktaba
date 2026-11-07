@@ -20,6 +20,7 @@
       "kind": "process",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -78,6 +79,7 @@
         "api:browse_rowcache_listen",
         "api:play_queue_sweep"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -135,6 +137,7 @@
         "streaming:vod_purge",
         "streaming:share_map"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -189,6 +192,7 @@
         "pipeline:claim-lease",
         "pipeline:index-close"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -263,6 +267,7 @@
         "api:clusterauth_node_read",
         "streaming:node_tv_checks"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -312,6 +317,7 @@
         "api:updates_health_sampler",
         "api:update_disconnect_machines"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -363,6 +369,7 @@
         "api:switchover_after_cancel",
         "api:switchover_retry_thaw"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -407,6 +414,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -455,6 +463,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -500,6 +509,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -547,6 +557,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -598,6 +609,7 @@
       "kind": "stages+process",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -663,6 +675,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -712,6 +725,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -769,6 +783,7 @@
       "kind": "stages+process",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -828,6 +843,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -894,6 +910,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -944,6 +961,7 @@
       "loops": [
         "api:enrichment_auto_accept"
       ],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -990,6 +1008,7 @@
       "kind": "process",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1029,6 +1048,51 @@
     {
       "bundles": [
         "full",
+        "core"
+      ],
+      "conflicts": [],
+      "desc_key": "components.plugins.host.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "plugins",
+      "id": "plugins.host",
+      "in_payload": false,
+      "kind": "process",
+      "licence": "",
+      "loops": [],
+      "on_demand": true,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "plugins/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.83",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.plugins.host.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
         "worker"
       ],
       "conflicts": [],
@@ -1047,6 +1111,7 @@
       "kind": "stages",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1101,6 +1166,7 @@
       "kind": "extension",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1149,6 +1215,7 @@
       "kind": "extension",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1199,6 +1266,7 @@
       "kind": "extension",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1258,6 +1326,7 @@
         "streaming:push_relay",
         "streaming:viewings"
       ],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1318,6 +1387,7 @@
         "streaming:slots_frontdoor",
         "streaming:slots_ops"
       ],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1379,6 +1449,7 @@
         "streaming:channel_engine",
         "streaming:channel_fences"
       ],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1427,6 +1498,7 @@
       "loops": [
         "streaming:hdhr_ssdp"
       ],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1476,6 +1548,7 @@
       "loops": [
         "api:errors_notifier"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1520,6 +1593,7 @@
       "kind": "process",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1568,6 +1642,7 @@
       "loops": [
         "api:cloudlink_reporter"
       ],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1626,6 +1701,7 @@
         "pipeline:health",
         "pipeline:cluster-agent"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1674,6 +1750,7 @@
       "loops": [
         "supervisor:mdns"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1719,6 +1796,7 @@
       "loops": [
         "pipeline:queue-health"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1767,6 +1845,7 @@
         "api:watch_reaper",
         "api:usage_counter"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1809,6 +1888,7 @@
       "loops": [
         "api:telemetry_sender"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1854,6 +1934,7 @@
       "loops": [
         "supervisor:backups"
       ],
+      "on_demand": false,
       "placement": "home",
       "platforms": [
         "darwin-arm64",
@@ -1905,6 +1986,7 @@
         "api:updates_scheduler",
         "api:updates_driver"
       ],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1950,6 +2032,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -1993,6 +2076,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2035,6 +2119,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2078,6 +2163,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2124,6 +2210,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2170,6 +2257,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2219,6 +2307,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2266,6 +2355,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2313,6 +2403,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2359,6 +2450,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2406,6 +2498,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2446,6 +2539,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "linux-amd64",
@@ -2487,6 +2581,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2534,6 +2629,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2578,6 +2674,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2622,6 +2719,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2666,6 +2764,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2710,6 +2809,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2754,6 +2854,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2798,6 +2899,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2842,6 +2944,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2886,6 +2989,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2930,6 +3034,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -2974,6 +3079,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -3018,6 +3124,7 @@
       "kind": "asset",
       "licence": "",
       "loops": [],
+      "on_demand": false,
       "placement": "any",
       "platforms": [
         "darwin-arm64",
@@ -3086,6 +3193,7 @@
     "runtime.ollama",
     "model.llm.qwen2_5-7b",
     "llm",
+    "plugins.host",
     "tool.yt-dlp",
     "youtube",
     "ext.plex",
@@ -3168,7 +3276,19 @@
     "install_failed",
     "busy",
     "not_configured",
-    "offline_verify_failed"
+    "offline_verify_failed",
+    "incompatible",
+    "grants_needed",
+    "revoked",
+    "unreviewed_disallowed",
+    "entitlement_missing",
+    "plugin_crash_loop",
+    "sandbox_partial",
+    "sandbox_unavailable",
+    "runner_crash_loop",
+    "plugin_trusted_unsigned",
+    "plugin_trusted_version",
+    "kept_off"
   ],
   "schema": 1
 }

@@ -1,0 +1,173 @@
+{
+  "components": [
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "plugin.dev.example.silence-chapters.summary",
+      "drain": {
+        "checkpoint": true,
+        "grace_s": 120
+      },
+      "features": [],
+      "gated": false,
+      "group": "plugins",
+      "id": "plugin.dev.example.silence-chapters",
+      "in_payload": false,
+      "kind": "plugin",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "plugins.host"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "plugins.dev.example.silence-chapters"
+      ],
+      "since": "0.3.83",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "p_e8dd3c9e_find_silences",
+        "p_e8dd3c9e_x"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "plugin.dev.example.silence-chapters.name",
+      "wants": [
+        "search.semantic"
+      ]
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "plugin.dev.example.llm-tags.summary",
+      "drain": {
+        "checkpoint": true,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "plugins",
+      "id": "plugin.dev.example.llm-tags",
+      "in_payload": false,
+      "kind": "plugin",
+      "licence": "",
+      "loops": [],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "linux-amd64",
+        "darwin-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "plugins.host"
+        ],
+        [
+          "llm"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "plugins.dev.example.llm-tags"
+      ],
+      "since": "0.3.84",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "p_64aed00b_tag"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "plugin.dev.example.llm-tags.name",
+      "wants": []
+    }
+  ],
+  "order": [
+    "core.postgres",
+    "core.api",
+    "core.streaming",
+    "core.pipeline",
+    "core.node",
+    "core.updates",
+    "core.switchover",
+    "media.thumbnails",
+    "library.convert",
+    "library.dedup",
+    "library.repair",
+    "runtime.ml",
+    "model.whisper-turbo",
+    "model.whisper-large-v3",
+    "model.whisper-medium",
+    "transcription",
+    "subtitles",
+    "runtime.lang",
+    "review.words",
+    "model.embedder",
+    "search.semantic",
+    "classify",
+    "collections.youtube",
+    "enrich",
+    "runtime.ollama",
+    "model.llm.qwen2_5-7b",
+    "llm",
+    "plugins.host",
+    "tool.yt-dlp",
+    "youtube",
+    "ext.plex",
+    "livetv",
+    "ext.dizquetv",
+    "ext.cloudflare_stream",
+    "livetv.slots",
+    "livetv.inprocess",
+    "livetv.hdhomerun",
+    "logs.index",
+    "cloud.link",
+    "cloud.relay",
+    "cluster",
+    "discovery.mdns",
+    "queue_health",
+    "analytics",
+    "telemetry",
+    "backups",
+    "updates.auto",
+    "model.cohere-arabic",
+    "model.refine",
+    "tool.ffmpeg",
+    "lang.ar",
+    "lang.en",
+    "lang.hunspell.fr",
+    "lang.hunspell.de",
+    "lang.hunspell.es",
+    "lang.hunspell.it",
+    "lang.hunspell.pt",
+    "lang.hunspell.nl",
+    "lang.hunspell.tr",
+    "lang.hunspell.ru",
+    "lang.hunspell.id",
+    "lang.hunspell.sv",
+    "lang.hunspell.pl",
+    "plugin.dev.example.silence-chapters",
+    "plugin.dev.example.llm-tags"
+  ]
+}

@@ -7,6 +7,12 @@
 //!
 //!   maktaba-plugind --data <dir> [--plugins-dir <dir>] [--cache-dir <dir>] [--run-dir <dir>]
 //!                   [--api-socket <path>] [--dispatch-socket <path>] [--pool <n>]
+//!   maktaba-plugind --data <dir> [...] --preload <package dir> --plugin-id <id> --plugin-version <v>
+//!
+//! `--preload` is the install's check (story 54.07 §4 step 4): in the same sandbox, the
+//! package is validated, audited and compiled into the cache, one JSON line says how it
+//! went (`{"ok":true}` or `{"ok":false,"error_code":…,"detail":…}`), and the host exits
+//! (0 or 1) without binding its socket.
 //!
 //! Exit 78 with `sandbox_unavailable:<step>` on stderr: the sandbox could not be applied
 //! and no plugin ran. A test build (`--features escape-probes`) also takes
@@ -31,6 +37,9 @@ struct Flags {
     api_socket: Option<PathBuf>,
     dispatch_socket: Option<PathBuf>,
     pool: usize,
+    preload: Option<PathBuf>,
+    plugin_id: String,
+    plugin_version: String,
     probes: bool,
     no_sandbox: bool,
 }
@@ -50,6 +59,9 @@ fn flags() -> Flags {
         api_socket: None,
         dispatch_socket: None,
         pool: 1,
+        preload: None,
+        plugin_id: String::new(),
+        plugin_version: String::new(),
         probes: false,
         no_sandbox: false,
     };
@@ -64,6 +76,9 @@ fn flags() -> Flags {
             "--api-socket" => f.api_socket = Some(val().into()),
             "--dispatch-socket" => f.dispatch_socket = Some(val().into()),
             "--pool" => f.pool = val().parse().unwrap_or_else(|_| usage("--pool takes a number")),
+            "--preload" => f.preload = Some(val().into()),
+            "--plugin-id" => f.plugin_id = val(),
+            "--plugin-version" => f.plugin_version = val(),
             "--version" => {
                 println!(
                     "maktaba-plugind {} (wasmtime {})",
@@ -81,6 +96,9 @@ fn flags() -> Flags {
     }
     if f.data.as_os_str().is_empty() {
         usage("--data is required");
+    }
+    if f.preload.is_some() && (f.plugin_id.is_empty() || f.plugin_version.is_empty()) {
+        usage("--preload needs --plugin-id and --plugin-version");
     }
     f
 }
@@ -101,14 +119,20 @@ fn main() {
     // resolved now: once sandboxed, the host may not stat the folders above its own
     let real = |p: &PathBuf| p.canonicalize().unwrap_or_else(|_| p.clone());
     let (plugins_dir, cache_dir, run_dir) = (real(&plugins_dir), real(&cache_dir), real(&run_dir));
-    // the only listener, bound before the sandbox closes everything else
-    let listener = match plugind_core::uds::bind(&dispatch_socket) {
-        Ok(l) => l,
-        Err(e) => {
-            eprintln!("maktaba-plugind: bind {}: {e}", dispatch_socket.display());
-            std::process::exit(1);
+    // the only listener, bound before the sandbox closes everything else (a preload binds
+    // none: it answers on stdout)
+    let listener = if f.preload.is_some() {
+        None
+    } else {
+        match plugind_core::uds::bind(&dispatch_socket) {
+            Ok(l) => Some(l),
+            Err(e) => {
+                eprintln!("maktaba-plugind: bind {}: {e}", dispatch_socket.display());
+                std::process::exit(1);
+            }
         }
     };
+    let step_file = run_dir.join("sandbox_unavailable");
     let paths = sandbox::Paths {
         plugins_dir: plugins_dir.clone(),
         cache_dir: cache_dir.clone(),
@@ -124,6 +148,8 @@ fn main() {
             Ok(a) => a,
             Err(e) => {
                 eprintln!("{e}");
+                // the supervisor reads the failed step from here (its status params)
+                let _ = std::fs::write(&step_file, &e.step);
                 std::process::exit(sandbox::EXIT_UNAVAILABLE);
             }
         }
@@ -152,6 +178,15 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if let Some(dir) = &f.preload {
+        let out = match host.preload(&f.plugin_id, &f.plugin_version, &dir.to_string_lossy()) {
+            Ok(()) => serde_json::json!({"ok": true}),
+            Err(e) => serde_json::json!({"ok": false, "error_code": e.code, "detail": e.detail}),
+        };
+        println!("{out}");
+        std::process::exit(if out["ok"] == true { 0 } else { 1 });
+    }
+    let Some(listener) = listener else { unreachable!("a host without --preload binds its socket") };
     let level = if applied.missing.is_empty() { "info" } else { "warn" };
     logs.host(
         level,

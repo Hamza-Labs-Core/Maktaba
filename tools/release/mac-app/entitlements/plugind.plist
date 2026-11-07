@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  maktaba-plugind (Epic 54) compiles each plugin's WebAssembly to machine code with Wasmtime
+  (Cranelift) and maps it executable, also from its compile cache: under the hardened runtime
+  that needs these two. Library validation stays on (it loads no library but the system's),
+  and it puts itself in its own Seatbelt sandbox before reading any plugin.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+</dict>
+</plist>

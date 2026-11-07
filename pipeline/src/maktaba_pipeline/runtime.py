@@ -653,6 +653,15 @@ async def _start_engine(
 
     # Epic 51: the components' gates, read before the sync and the first selection, so a
     # restarted worker never claims (nor the sync turns back on) a stage that is off
+    # Epic 54 (story 54.37 §2): the catalog with the installed plugins' entries, so each
+    # plugin's stages are its component's (plugin.<id>) and gated by it
+    from .components import catalog as comp_catalog
+
+    plugin_catalog, skipped = comp_catalog.with_plugins(
+        comp_catalog.default(), [comp_catalog.plugin_entry_of(p.doc) for p in plugin_exts]
+    )
+    for why in skipped:
+        _log.warning("plugin_left_out_of_the_catalog", detail=why)
     components = ComponentRunner(
         database,
         machine=cfg.node_id if is_node and cfg.node_id else HOME,
@@ -662,6 +671,7 @@ async def _start_engine(
         worker_id=worker_id,
         version=__version__,
         extension_states=extension_states,
+        catalog=plugin_catalog,
     )
     home_gates = await components.prime()
     if is_node:

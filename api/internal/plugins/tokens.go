@@ -300,6 +300,13 @@ func (t *Tokens) Check(ctx context.Context, token string) (*Invocation, *Refusal
 
 // End ends an invocation (the job finished or was cancelled). Answers false if unknown.
 func (t *Tokens) End(ctx context.Context, id string) bool {
+	ok, _ := t.EndCounting(ctx, id)
+	return ok
+}
+
+// EndCounting is End, answering also how many of the job's calls were refused (the
+// pipeline's circuit breaker counts them, story 54.09 §2).
+func (t *Tokens) EndCounting(ctx context.Context, id string) (bool, int64) {
 	t.mu.Lock()
 	inv := t.byID[id]
 	if inv != nil {
@@ -312,7 +319,7 @@ func (t *Tokens) End(ctx context.Context, id string) bool {
 	}
 	t.mu.Unlock()
 	if inv == nil {
-		return false
+		return false, 0
 	}
 	inv.mu.Lock()
 	inv.ended = true
@@ -324,7 +331,7 @@ func (t *Tokens) End(ctx context.Context, id string) bool {
 	inv.mu.Unlock()
 	_, _ = t.DB.ExecContext(ctx, `UPDATE plugin_invocations SET ended_at = now(), calls = calls + $2, bytes_written = bytes_written + $3
 		WHERE id = $1`, id, calls, written)
-	return true
+	return true, int64(calls)
 }
 
 // EndPlugin ends every invocation of a plugin (a drain, an uninstall: 54.07).

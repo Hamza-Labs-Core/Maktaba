@@ -286,6 +286,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 
 	// Build the supervised processes.
 	var procs []supervisor.Process
+	var pluginsHost *supervisor.PluginsHealth
 	if pg != nil {
 		p, err := supervisor.BuildPostgres(*pg)
 		if err != nil {
@@ -318,6 +319,16 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		}
 	}
 	sopts := supervisor.Options{Config: cfg, BinDir: opts.binDir, ReleaseDir: releaseDir}
+	// Epic 54: the plugin host (plugins.host), built dormant on a home that runs plugins;
+	// the reconciler starts it while a plugin is on (story 54.37 §4)
+	if wholeMachine && supervisor.PluginsHere(cfg) && containsRole(roles, supervisor.RolePipeline) {
+		if p, h, err := supervisor.BuildPlugins(sopts); err != nil {
+			fmt.Fprintf(os.Stderr, "[serve] level=warn the plugin host does not run: %v\n", err)
+		} else {
+			procs = append(procs, p)
+			pluginsHost = h
+		}
+	}
 	// the cloud relay agent runs on the home (its credentials moved with it, Epic 37)
 	if wholeMachine && supervisor.RelayWanted(cfg) {
 		if p, err := supervisor.BuildRelay(sopts); err != nil {
@@ -392,7 +403,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		if webSrv == nil {
 			return fmt.Errorf("nothing to run: --role web with --no-web leaves no services")
 		}
-		startComponents(ctx, cfg, nil, false, compLoops, releaseDir, os.Stderr)
+		startComponents(ctx, cfg, nil, false, compLoops, releaseDir, os.Stderr, nil)
 		<-ctx.Done()
 		return shutdownWeb(webSrv)
 	}
@@ -469,7 +480,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	sup := supervisor.New(procs, policy, supOpts...)
 	// Epic 51 story 51.04: the gates of the processes set before any starts (the last
 	// desired state seen, cached), then reconciled while serve runs
-	packsRoutes := startComponents(ctx, cfg, sup, wholeMachine, compLoops, releaseDir, os.Stderr)
+	packsRoutes := startComponents(ctx, cfg, sup, wholeMachine, compLoops, releaseDir, os.Stderr, pluginsOpts(cfg, sopts, pluginsHost))
 	// Epic 53 story 53.03: /status.json on the web port, from the supervisor alone
 	startStatusBoard(ctx, cfg, sup, packsRoutes.rec, node)
 	// Epic 53 story 53.04: the recovery console, and the tray's one-time link
