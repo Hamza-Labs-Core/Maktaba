@@ -2,7 +2,7 @@
 // address shows the error and stores nothing; a good one is remembered (its origin only, in
 // this browser) and the page goes to the home's Settings → Plugins → Browse on the plugin.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { OPEN_SCRIPT } from "../../web/listing";
+import { OPEN_SCRIPT } from "../../web/open-script";
 
 function mount(plugin: string): { input: HTMLInputElement; form: HTMLFormElement; bad: HTMLElement } {
   document.body.innerHTML = `<form id="home-open" data-plugin="${plugin}"><input id="home-addr"><button type="submit">Open</button><span id="home-bad" hidden></span></form>`;
