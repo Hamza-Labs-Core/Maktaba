@@ -76,7 +76,7 @@ func metrics() {
 // from capabilities.toml. media/info answers to library.read (54.05 §1).
 func capabilityOf(iface, fn string) []string {
 	switch iface {
-	case "job", "log", "data":
+	case "job", "log", "data", "events":
 		return nil
 	}
 	if iface == "media" && fn == "info" {
@@ -114,6 +114,7 @@ func (s *Server) init() {
 		s.libraryRoutes()
 		s.writeRoutes()
 		s.otherRoutes()
+		s.eventRoutes()
 		s.mediaRoutes()
 	})
 }

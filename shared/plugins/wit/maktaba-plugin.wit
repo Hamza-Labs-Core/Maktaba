@@ -14,7 +14,7 @@
 /// Versioning: a minor version only adds functions; a plugin built for 1.N runs
 /// on any 1.M host with M >= N. Reads answer JSON text so a minor version can
 /// add fields without a new WIT type.
-package maktaba:plugin@1.0.0;
+package maktaba:plugin@1.1.0;
 
 interface types {
   /// Why a call was refused. The plugin API's refusal codes, one to one.
@@ -170,6 +170,18 @@ interface queue {
   request: func(stage: string, subject: subject, payload: string) -> result<_, call-error>;
 }
 
+/// Published events (1.1, story 54.40): emit an event the calling stage declares in its
+/// `emits`, about a subject in the job's scope, with a JSON object payload (<= 16 KB) that
+/// the event's declared schema accepts. The API delivers it to every subscribing plugin's
+/// stage the admin approved (`events.subscribe:<this plugin>`), only when the job ends
+/// well. No capability: a plugin emits only what its manifest declares. A request or event
+/// that would loop answers `scope` (the API's plugin_loop) and the job fails.
+interface events {
+  use types.{subject, call-error};
+
+  emit: func(name: string, subject: subject, payload: string) -> result<_, call-error>;
+}
+
 /// Capability notify.admin: an in-app notice from the plugin's own strings.
 interface notify {
   use types.{call-error};
@@ -194,6 +206,7 @@ world plugin {
   import write;
   import suggest;
   import queue;
+  import events;
   import notify;
   import exports;
 

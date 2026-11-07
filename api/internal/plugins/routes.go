@@ -79,7 +79,11 @@ func (c *call) attribute(ctx context.Context, tx *sql.Tx, target, subject, field
 	a, _ := json.Marshal(after)
 	_, err := tx.ExecContext(ctx, `INSERT INTO plugin_writes (plugin_id, version, job_id, target, subject_id, field, before, after)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, c.inv.PluginID, c.inv.Version, c.inv.JobID, target, subject, field, b, a)
-	return err
+	if err != nil {
+		return err
+	}
+	// every plugin write is on a video: the write leaves its lineage there (54.40 §3)
+	return c.stampWrite(ctx, tx, "video", subject)
 }
 
 func dbErr(err error) *Refusal { return refuse(503, CodeMediaGone, err.Error()) }
@@ -690,6 +694,12 @@ func (s *Server) otherRoutes() {
 		}
 		if !allowed {
 			return nil, refuse(403, CodeScope, "only this stage's may_request")
+		}
+		if strings.Contains(in.Payload, `"`+LineageKey+`"`) {
+			return nil, refuse(400, CodeInvalid, LineageKey+" is Maktaba's")
+		}
+		if _, ok := c.inv.Lineage.Next(target, subjectKey(in.Subject.Kind, in.Subject.ID)); !ok {
+			return nil, refuse(403, CodeLoop, target+" on "+in.Subject.Kind+":"+in.Subject.ID+" would loop")
 		}
 		if in.Subject.Kind == "video" {
 			if ref := c.readScope(in.Subject.ID); ref != nil {

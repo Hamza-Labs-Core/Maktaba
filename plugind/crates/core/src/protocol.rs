@@ -116,6 +116,18 @@ pub struct QueueRequest {
     pub payload: String,
 }
 
+/// An event the job emitted (story 54.40): delivered to `stages`, the subscribing stages
+/// the plugin API named, when the job ends well.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EmittedEvent {
+    pub name: String,
+    pub subject: Subject,
+    /// JSON text
+    pub payload: String,
+    #[serde(default)]
+    pub stages: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Response {
@@ -156,6 +168,8 @@ pub struct RunResult {
     pub summary: String,
     #[serde(default)]
     pub requests: Vec<QueueRequest>,
+    #[serde(default)]
+    pub events: Vec<EmittedEvent>,
     #[serde(default)]
     pub log_dropped: u64,
     #[serde(default)]

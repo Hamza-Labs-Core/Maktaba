@@ -17,7 +17,7 @@ use wasmtime_wasi::{WasiCtx, WasiCtxView, WasiView};
 
 use crate::api::{ApiError, PluginApi};
 use crate::logging::{Logs, Origin};
-use crate::protocol::{QueueRequest, Subject as PSubject};
+use crate::protocol::{EmittedEvent, QueueRequest, Subject as PSubject};
 
 wasmtime::component::bindgen!({
     path: "../../../shared/plugins/wit",
@@ -32,6 +32,8 @@ pub const MAX_VALUE: usize = 64 << 10;
 pub const MAX_ARTIFACT: usize = 4 << 20;
 pub const MAX_READ: u32 = 8 << 20;
 pub const MAX_REQUESTS: usize = 1000;
+/// An emitted event's payload (README §4.7).
+pub const MAX_EVENT: usize = 16 << 10;
 
 /// Memory, table and instance caps of one job's store (54.02 §5). A component holds a few
 /// core instances, memories and tables (its module, shims, an adapter), so the counts are
@@ -101,6 +103,8 @@ pub struct JobState {
     /// progress (a percentage) and checkpoints, sent to the dispatcher as they come
     pub progress: Progress,
     pub requests: Vec<QueueRequest>,
+    /// events emitted (54.40), with the stages the API delivers each to
+    pub events: Vec<EmittedEvent>,
     /// the first refusal that fails a job (capability, scope, quota)
     pub refusal: Option<&'static str>,
     /// refusals made in the host without an API call
@@ -411,7 +415,7 @@ impl maktaba::plugin::suggest::Host for JobState {
 impl maktaba::plugin::queue::Host for JobState {
     fn request(&mut self, stage: String, subject: Subject, payload: String) -> Result<(), CallError> {
         self.too_large(payload.len(), MAX_VALUE)?;
-        if self.requests.len() >= MAX_REQUESTS {
+        if self.requests.len() + self.events.len() >= MAX_REQUESTS {
             self.refusal.get_or_insert("plugin_quota");
             return Err(CallError::Quota);
         }
@@ -421,6 +425,30 @@ impl maktaba::plugin::queue::Host for JobState {
             stage,
             subject: PSubject { kind: s["kind"].as_str().unwrap_or("video").into(), id: subject.id },
             payload,
+        });
+        Ok(())
+    }
+}
+
+impl maktaba::plugin::events::Host for JobState {
+    fn emit(&mut self, name: String, subject: Subject, payload: String) -> Result<(), CallError> {
+        self.too_large(payload.len(), MAX_EVENT)?;
+        // requests and events share one budget per job (README §4.7)
+        if self.requests.len() + self.events.len() >= MAX_REQUESTS {
+            self.refusal.get_or_insert("plugin_quota");
+            return Err(CallError::Quota);
+        }
+        let s = subject_json(&subject);
+        let answer = self.json("events", "emit", json!({"name": name, "subject": s, "payload": payload}))?;
+        let stages = answer["stages"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default();
+        self.events.push(EmittedEvent {
+            name,
+            subject: PSubject { kind: s["kind"].as_str().unwrap_or("video").into(), id: subject.id },
+            payload,
+            stages,
         });
         Ok(())
     }

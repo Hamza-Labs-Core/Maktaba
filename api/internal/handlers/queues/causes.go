@@ -47,6 +47,7 @@ var causeLabels = map[string]causeInfo{
 	"plugin_quota":      {"The plugin used up its quota", ActionRetry},
 	"plugin_failed":     {"The plugin reported an error", ActionRetry},
 	"plugin_held":       {"The plugin is stopped", ActionOpenSettings},
+	"plugin_loop":       {"Stopped a loop between plugins", ActionOpenSettings},
 	"no_handler":        {"No worker handles this stage", ActionShowWorkers},
 	"graph_violation":   {"Stage requested work its graph does not allow", ActionRetry},
 	"db_error":          {"Database error", ActionRetry},
