@@ -133,7 +133,7 @@ func runStagesImpl(ctx context.Context, out io.Writer, db *sql.DB, stage, impl s
 	}
 	payload, _ := json.Marshal(map[string]any{"from": cur, "to": impl, "paused": paused})
 	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log (category, action, target_id, target_kind, actor_source, payload)
-		VALUES ('queues', 'impl', $1, 'stage', 'cli', $2)`, stage, string(payload)); err != nil {
+		VALUES ('components', 'stage.impl', $1, 'stage', 'cli', $2)`, stage, string(payload)); err != nil {
 		return err
 	}
 	_, _ = tx.ExecContext(ctx, `SELECT pg_notify('job_stages_changed', $1)`, stage)

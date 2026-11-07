@@ -16,6 +16,7 @@ package queues
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -91,13 +92,17 @@ func (h *Handler) PutImpl(w http.ResponseWriter, r *http.Request) {
 
 // auditImpl records a flip in audit_log (category queues, action impl).
 func (h *Handler) auditImpl(ctx context.Context, r *http.Request, stage, from, to string, paused int64) {
-	var userID any
-	if p := principal.FromContext(r.Context()); p != nil && p.UserID != "" {
+	userID := ""
+	if p := principal.FromContext(r.Context()); p != nil {
 		userID = p.UserID
 	}
 	payload, _ := json.Marshal(map[string]any{"from": from, "to": to, "paused": paused})
-	_, _ = h.DB.ExecContext(ctx, `INSERT INTO audit_log (category, action, actor_user_id, target_id, target_kind,
-		actor_source, payload) VALUES ('queues', 'impl', $1, $2, 'stage', 'admin', $3)`, userID, stage, string(payload))
+	// the actor as a user id only while that user exists (the column is a reference)
+	if _, err := h.DB.ExecContext(ctx, `INSERT INTO audit_log (category, action, actor_user_id, target_id, target_kind,
+		actor_source, payload) VALUES ('components', 'stage.impl', (SELECT id FROM users WHERE CAST(id AS text) = $1), $2,
+		'stage', 'admin', $3)`, userID, stage, string(payload)); err != nil {
+		slog.Default().Warn("queues_impl_audit_failed", "stage", stage, "err", err)
+	}
 }
 
 func (h *Handler) flipGrace() time.Duration {
