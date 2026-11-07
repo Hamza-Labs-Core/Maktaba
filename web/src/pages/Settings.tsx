@@ -32,6 +32,7 @@ import { AboutPanel } from "./Settings/AboutPanel";
 import { HomeNameSettings } from "./Settings/HomeNameSettings";
 import { ExperimentsSection } from "./Settings/ExperimentsSection";
 import { ServerUsageData } from "./Settings/ServerUsageData";
+import { ReportsToMaktaba } from "./Settings/ReportsToMaktaba";
 import { SubscriptionSettings } from "./Settings/SubscriptionSettings";
 import { StorageSettings } from "./Settings/StorageSettings";
 import { AccountPanel, AppearancePanel, PrivacyPanel, SessionsPanel } from "./Profile/Preferences";
@@ -125,7 +126,18 @@ function AccountTab() {
 
 function PrivacyTab() {
   const { user } = useAuth();
-  return <PrivacyPanel serverUsage={user?.is_admin ? <ServerUsageData /> : undefined} />;
+  return (
+    <PrivacyPanel
+      serverUsage={
+        user?.is_admin ? (
+          <>
+            <ServerUsageData />
+            <ReportsToMaktaba />
+          </>
+        ) : undefined
+      }
+    />
+  );
 }
 
 // Advanced: the beta cohorts, and how often this app looks for a new version of itself
