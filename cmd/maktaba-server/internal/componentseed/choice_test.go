@@ -132,3 +132,40 @@ func TestSeedFromCustomChoice(t *testing.T) {
 		}
 	}
 }
+
+// Story 50.15: core has no direct access and no cloud link; a custom bundle that ticks direct
+// access gets it with the link only where the relay is wanted, and never turns the link on by
+// itself; a ticked cloud relay still brings the link.
+func TestSeedDirectAccessFollowsTheRelay(t *testing.T) {
+	cat := components.Default()
+	for _, c := range []struct {
+		name         string
+		choice       Choice
+		relay        bool
+		direct, link string
+	}{
+		{"core, relay", Choice{Bundle: "core"}, true, "installed", "enabled"},
+		{"core, no relay", Choice{Bundle: "core"}, false, "installed", "installed"},
+		{"custom with direct, no relay", Choice{Bundle: "custom", Base: "core", Enable: []string{"cloud.direct"}}, false, "installed", "installed"},
+		{"custom with direct, relay", Choice{Bundle: "custom", Base: "core", Enable: []string{"cloud.direct"}}, true, "enabled", "enabled"},
+		{"custom from full, no relay", Choice{Bundle: "custom", Base: "full", Enable: []string{"subtitles"}}, false, "installed", "installed"},
+	} {
+		f := today()
+		f.Relay = c.relay
+		f.Choice = &c.choice
+		w := PlanChoice(cat, f, c.choice)
+		if w["cloud.direct"] != c.direct || w["cloud.link"] != c.link {
+			t.Errorf("%s: cloud.direct %q cloud.link %q, want %q %q", c.name, w["cloud.direct"], w["cloud.link"], c.direct, c.link)
+		}
+	}
+	// a ticked cloud relay brings the link, as before
+	f := today()
+	ch := Choice{Bundle: "custom", Base: "core", Enable: []string{"cloud.relay"}}
+	if w := PlanChoice(cat, f, ch); w["cloud.link"] != "enabled" || w["cloud.relay"] != "enabled" {
+		t.Errorf("a ticked relay: link %q relay %q", w["cloud.link"], w["cloud.relay"])
+	}
+	// Full without a relay: neither (Plan)
+	if w := Plan(cat, today()); w["cloud.direct"] != "installed" || w["cloud.link"] != "installed" {
+		t.Errorf("full, no relay: direct %q link %q", w["cloud.direct"], w["cloud.link"])
+	}
+}

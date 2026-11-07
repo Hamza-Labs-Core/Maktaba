@@ -3,6 +3,7 @@ dist
 .pnpm-store
 *.tsbuildinfo
 dist-cloud
+dist-admin
 dist-play
 dist-manage
 

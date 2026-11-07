@@ -1,7 +1,7 @@
 # Installing and managing plugins
 
 > **Status: on `main`.** Everything on this page is built. Plugins run on a home with
-> Postgres, on macOS and Linux; Windows is not supported yet. A home checks a file's signatures
+> Postgres, on macOS, Linux and Windows. A home checks a file's signatures
 > ([Signing and the chain of trust](trust.md)); until the store opens, every file is
 > **unreviewed**.
 
@@ -57,6 +57,15 @@ is kept for a rollback. An update that adds a required capability needs the admi
 in the same step. Rolling back to a version with a lower `data_version` than the data's is
 refused (`plugin_data_newer`) unless the admin chooses to clear the plugin's data; tags,
 chapters and subtitles it wrote are kept.
+
+### When Maktaba itself updates
+
+A Maktaba release outside your manifest's `maktaba` range pauses your plugin: after the
+update it waits as *incompatible*, its queue kept, and resumes when a version of it whose
+range takes that release is installed. The update is never blocked by a plugin. Before the
+update, the admin's Updates page lists the plugins it will pause, each with its version and
+range, so give your range an upper bound you have tested and publish a new version before
+a release you know you support.
 
 ## Removing it
 
@@ -155,9 +164,13 @@ while the catalog has expired or the store's signing is not trusted.
 From the same page an admin rates the plugin (1 to 5 stars and optional text, sent to the
 store signed by this home, counted against the home's linked store account once the plugin has
 been installed for 24 hours) or reports it for malware, data misuse, not working, being
-misleading, offensive content, copyright or another reason. The routes: `POST
-/api/plugins/{id}/rate {stars, text}` and `POST /api/plugins/{id}/report {reason, details}`;
-a home that is not linked gets `409 store_not_linked`, and an offline one `409 store_offline`.
+misleading, offensive content, copyright or another reason. A report of a plugin installed here
+can attach its log lines from the last day, when the admin ticks it: only the plugin's own
+lines, with passwords, tokens and keys removed by the same rules as problem reports, at most
+200 lines and 256 KB, read only by the store's reviewers. The routes: `POST
+/api/plugins/{id}/rate {stars, text}` and `POST /api/plugins/{id}/report {reason, details,
+attach_logs}`; a home that is not linked gets `409 store_not_linked`, and an offline one `409
+store_offline`.
 
 The same catalog is public at plugins.maktaba.tv (and /ar, right to left): a page per plugin
 at `/p/<id>` with Open in my Maktaba (`maktaba://plugins/<id>`, which the installed apps open)

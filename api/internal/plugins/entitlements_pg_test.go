@@ -139,12 +139,15 @@ func TestEntitlementsBurst(t *testing.T) {
 	if d := e.next(); d < EntitlementsEvery || d > EntitlementsEvery+time.Hour {
 		t.Fatalf("daily: %v", d)
 	}
+	if e.Bursting() {
+		t.Fatal("bursting before a Buy")
+	}
 	e.Burst()
-	if d := e.next(); d != EntitlementsBurst {
-		t.Fatalf("after a Buy: %v", d)
+	if d := e.next(); d != EntitlementsBurst || !e.Bursting() {
+		t.Fatalf("after a Buy: %v, bursting %v", d, e.Bursting())
 	}
 	now = now.Add(EntitlementsBurstFor + time.Second)
-	if d := e.next(); d < EntitlementsEvery {
-		t.Fatalf("after the burst: %v", d)
+	if d := e.next(); d < EntitlementsEvery || e.Bursting() {
+		t.Fatalf("after the burst: %v, bursting %v", d, e.Bursting())
 	}
 }

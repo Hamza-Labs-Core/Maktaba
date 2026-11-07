@@ -88,6 +88,7 @@ func newRootCmd() *cobra.Command {
 		newContainerCmd(),
 		newReleaseOfflineCmd(),
 		newLogsCmd(),
+		newPluginsSandboxRunCmd(),
 	)
 	return root
 }

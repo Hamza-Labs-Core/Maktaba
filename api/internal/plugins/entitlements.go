@@ -200,6 +200,13 @@ func (e *Entitlements) Burst() {
 	}
 }
 
+// Bursting reports whether the refresher is in a Buy's 15-minute burst.
+func (e *Entitlements) Bursting() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.now().Before(e.burstUntil)
+}
+
 // Last is the last refresh that ran (nil: none since the API started).
 func (e *Entitlements) Last() *RefreshResult {
 	e.mu.Lock()

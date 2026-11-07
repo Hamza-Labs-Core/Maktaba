@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -132,6 +133,18 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 				return err
 			}}
 		platform := catalog.Platform(runtime.GOOS + "-" + runtime.GOARCH)
+		if link != nil {
+			// 54.19 §6: a paid plugin's package, by a URL the store signs against this home's
+			// entitlement
+			cat.Paid = func(ctx context.Context, id, sha string) ([]byte, error) {
+				b, err := link.PaidPackage(ctx, cdn, id, sha, 60<<20)
+				var e *storelink.Error
+				if errors.As(err, &e) {
+					return nil, &catalog.Problem{Status: e.Status, Code: e.Code, Msg: e.Msg}
+				}
+				return b, err
+			}
+		}
 		if link != nil {
 			// 54.15 §10: only a linked home, and only with telemetry on
 			cat.Seen = func(ctx context.Context, list []catalog.SeenPlugin) error {

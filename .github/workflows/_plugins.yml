@@ -83,14 +83,15 @@ jobs:
             echo "MKP_JCO=$RUNNER_TEMP/jco/node_modules/.bin/jco"
           } >> "$GITHUB_ENV"
 
-      # in release, as a developer's mkp and a home's host are: a debug build's Cranelift
-      # compiles the Python hello (18 MB) in minutes on this runner, past the compile cap
-      # (54.02 §6, 180 s), where a release build takes seconds
+      # in release, as a developer's mkp and a home's host are, and one at a time: three
+      # compiles of large components at once on this runner's 4 cores ran past the compile
+      # cap (54.02 §6, 180 s) in a debug build. Debug builds now optimize Wasmtime and
+      # Cranelift too (plugind/Cargo.toml), so either way a compile takes seconds
       - name: The Python and JavaScript templates (mkp new, build, test, pack)
         working-directory: plugind
         env:
           MKP_TEST_TOOLCHAINS: '1'
-        run: cargo test --locked --release -p mkp --test templates
+        run: cargo test --locked --release -p mkp --test templates -- --test-threads=1
 
       # story 54.12 T02: the Go template is tier 2 (a template and a smoke test, best effort),
       # so its steps do not fail the job. TinyGo's wasm-unknown target, wit-bindgen-go's
@@ -177,6 +178,63 @@ jobs:
       - name: The sandboxed host runs a job
         working-directory: plugind
         run: cargo test --locked --release -p maktaba-plugind
+
+      # #710: on Windows the pipeline reaches the host through the supervisor's named pipe
+      # relay (cmd/maktaba-server/internal/pluginrelay): bytes both ways unchanged, a squatted
+      # name not served, a closed client when the host is down, another local user refused,
+      # and the pipeline's own connect (pipe.py) through it. The second user is made here
+      # with a random password, never printed
+      - uses: actions/setup-python@v6.2.0
+        if: runner.os == 'Windows'
+        with:
+          python-version: '3.12'
+
+      - name: A second local user for the relay's refusal test
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bytes = New-Object byte[] 24
+          [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+          $pass = 'Aa1!' + [Convert]::ToBase64String($bytes)
+          Write-Output "::add-mask::$pass"
+          $secure = ConvertTo-SecureString $pass -AsPlainText -Force
+          New-LocalUser -Name 'mkrelayprobe' -Password $secure -PasswordNeverExpires | Out-Null
+          "MAKTABA_RELAY_TEST_USER=mkrelayprobe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_RELAY_TEST_PASS=$pass" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: The pipeline's relay to the host (#710)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_RELAY_TEST_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          MAKTABA_RELAY_TEST_PYTHON="$(command -v python)" go test -count=1 -v ./internal/pluginrelay/
+
+      # #710: on Windows the supervisor starts the host inside its AppContainer through the
+      # launcher (here CI's aclaunch, the same code as `maktaba-server plugins-sandbox-run`)
+      # and the pipeline reaches it through the relay: the release host built above answers
+      # a health frame sent through the relay's pipe
+      - name: The plugin host through the supervisor and its relay (#710)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_PLUGINS_E2E_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/aclaunch-e2e.exe" ./internal/appcontainer/aclaunch
+          MAKTABA_PLUGIND_BIN="$(cygpath -w "$GITHUB_WORKSPACE/plugind/target/release/maktaba-plugind.exe")" \
+          MAKTABA_PLUGINS_SANDBOX_RUN="$(cygpath -w "$RUNNER_TEMP/aclaunch-e2e.exe")" \
+            go test -count=1 -v -run '^TestThePluginHostOnWindowsThroughTheRelay$' ./internal/supervisor/
+
+      # 54.03 §4 (#710): a guest can open no socket on Windows either (the host links no
+      # wasi:sockets: the audit refuses it, and the linker without the audit)
+      - name: A guest can open no socket (Windows)
+        if: runner.os == 'Windows'
+        working-directory: plugind
+        run: cargo test --locked --release -p plugind-core --test host -- a_guest_can_open_no_socket
 
       - name: The hostile components inside the sandboxed host (54.03 T07)
         if: runner.os != 'Windows'
