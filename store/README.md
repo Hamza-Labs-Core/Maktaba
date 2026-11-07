@@ -117,7 +117,7 @@ Postmark's HTTP API (`MAIL_PROVIDER = "postmark"`); another provider is a small 
 
 ### 7. Worker secrets
 
-Each typed by the owner at `npm run exec wrangler secret put <NAME>` in `store/`. None is ever in a
+Each typed by the owner at `npx wrangler secret put <NAME>` in `store/`. None is ever in a
 file, a log, a commit or a chat.
 
 | Secret                                                      | What                                                                                                                                                                                                                                        |
@@ -147,6 +147,6 @@ empty. To open it:
 
 ### Rollback
 
-`npm run exec wrangler rollback` returns to the previous Worker version (migrations are additive);
+`npx wrangler rollback` returns to the previous Worker version (migrations are additive);
 D1 Time Travel restores data (`docs/runbooks/store-restore.md`). Delisting everything empties
 the catalog; homes keep their installed plugins.
