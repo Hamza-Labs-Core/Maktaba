@@ -14,6 +14,20 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba's own stages can run as built-in plugins (the foundation, Epic 54 Phase 4).** A
+  built-in plugin's stage runs in `maktaba-plugin-runner`, a sandboxed process with no database
+  password and no secrets (Seatbelt on macOS, Landlock and seccomp on Linux), and reaches the
+  database only by the names of the statements the release built, each run under the
+  plugin's own Postgres role, scope-checked against the job and attributed. A built-in
+  plugin's manifest keys are refused in any other plugin (`plugin_trusted_field`), and only
+  the manifests built into the server are trusted. Each stage has a switch,
+  `job_stages.impl` (`inproc` or `plugin`): Queues shows a built-in plugin's stage with a
+  **Runs in** menu for admins, and `maktaba-server stages impl <stage> <impl>` flips one; a
+  flip loses and reruns no job. The parity proof (`tools/plugins/parity.py`) runs a stage both
+  ways on two copies of one database and fails on any difference in rows, results,
+  fingerprints, enqueued jobs or speed. Settings → Plugins lists **Built into Maktaba** with
+  what each can do. No stage moves yet: every stage still runs in the worker until its wave.
+  Migration 0198.
 - **The second listen is a stage of its own, and an 8 GB card on Windows runs it.** Whisper's
   `transcribe` stores its transcript with each sentence's words (their timings), and a new
   `second_listen` stage (its own `listen` pool, per machine) reads that transcript and the

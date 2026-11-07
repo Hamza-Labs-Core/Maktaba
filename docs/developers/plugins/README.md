@@ -5,7 +5,8 @@
 > from a file, grants, the lifecycle, health and the circuit breaker, settings, the admin's
 > Plugins page, and `mkp` with its test harness (Rust). Plugins run on a home with Postgres, on
 > macOS and Linux (not Windows yet). Phase 2 is being built: signing is on `main`. Phase 3 is planned. The [plugin reference](reference.md) is generated from
-> the code when this site is built, so it always matches `main`.
+> the code when this site is built, so it always matches `main`. Maktaba's own stages are
+> becoming first-party plugins on the same interface: see [Maktaba's own plugins](first-party.md).
 
 ## What a plugin is
 

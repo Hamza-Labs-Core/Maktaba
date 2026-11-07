@@ -70,6 +70,7 @@ func newRootCmd() *cobra.Command {
 		newUpdateCmd(),
 		newRestoreCmd(),
 		newStorageCmd(),
+		newStagesCmd(),
 		newBackupsCmd(),
 		newUninstallCmd(),
 		newModelsCmd(),

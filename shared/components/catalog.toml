@@ -55,7 +55,9 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
            # third-party plugins (Epic 54, story 54.37 §3)
            "incompatible", "grants_needed", "revoked", "unreviewed_disallowed",
            "entitlement_missing", "plugin_crash_loop", "sandbox_partial", "sandbox_unavailable",
-           "runner_crash_loop", "plugin_trusted_unsigned", "plugin_trusted_version", "kept_off"]
+           "runner_crash_loop", "plugin_trusted_unsigned", "plugin_trusted_version", "kept_off",
+           # Maktaba's own plugin runners (Epic 54, story 54.23)
+           "runner_env"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".
@@ -124,6 +126,24 @@ loops      = ["pipeline:worker-hb", "pipeline:stage-selection", "pipeline:reconc
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
 since      = "0.3.66"
+
+# Maktaba's own stages as first-party plugins (Epic 54, story 54.23): the shared runner
+# groups, each a maktaba-plugin-runner with no database login and no secrets. They run
+# while a component whose stages a first-party plugin implements is on; ml-* and index
+# belong to transcription and search.semantic. Not on Windows: there the stages run in the
+# worker, as before.
+[[component]]
+id         = "core.plugin_runners"
+kind       = "process"
+switchable = false
+group      = "core"
+title_key  = "components.core.plugin_runners.title"
+desc_key   = "components.core.plugin_runners.desc"
+processes  = ["plugin-runner/light", "plugin-runner/net", "plugin-runner/service", "plugin-runner/fp"]
+platforms  = ["darwin-arm64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+on_demand  = true
+since      = "0.3.88"
 
 [[component]]
 id         = "core.node"

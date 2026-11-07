@@ -1,0 +1,84 @@
+{
+ "digest": "fe5d35cf2db1781dd666d1ae6693ee93a02d758e7b0f92f7665fa4c72c79d77f",
+ "plugins": [
+  {
+   "digest": "6a600129b6f7365d09f197f22bc16f4698bb1be2baac5ae29ce79ea82e86985f",
+   "folder": "toy",
+   "id": "tv.maktaba.toy",
+   "manifest": "# A toy first-party plugin for the Phase 4 tests (Epic 54, stories 54.22-54.26): one\n# library stage that reads the library's videos and writes one row per video.\nschema     = 1\nid         = \"tv.maktaba.toy\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"toy.name\"\nsummary = \"toy.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"classify\"\ndb.write  = [\"fp_toy_out\"]\nsettings  = [\"groups\"]\ndb.read   = [\"videos\", \"app_settings\"]\n\n[[stage]]\nname        = \"fp_toy\"\nsubject     = \"library\"\nexport      = \"fp-toy\"\nversion     = 1\nlabel       = \"Toy\"\npool        = \"cpu\"\nlane        = \"seasons\"\nlane_order  = 99\nplacement   = \"any\"\nentry       = \"fp_toy.stage:IMPL\"\nfingerprint = { input = true }\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "stage.input_fingerprint",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "d7fd78694543fc56e40535d61438dfe90335829289d4c28fdb22b34e7ddea65d",
+     "text": "SELECT id, size_bytes FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "stage.run",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "08cfb669bde876dd2a732f5023d25f0ccc1fe0d9567acc8d94d6c870530d3a09",
+     "text": "SELECT id, title, size_bytes FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "stage.run.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "5143d3273c614b6f7ee23746ee35d5aa82c628d4dc80299eab10ae2fb8c9fd0d",
+     "text": "DELETE FROM fp_toy_out WHERE library_id = $1",
+     "writes": [
+      "fp_toy_out"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "stage.run.3",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "88d79b9b0f520eb56ff7e8566d2b875b887313c8b3f98d9299f26913a72d1760",
+     "text": "INSERT INTO fp_toy_out (library_id, video_id, title, n) VALUES ($1, $2, $3, $4)",
+     "writes": [
+      "fp_toy_out"
+     ]
+    }
+   ],
+   "strings": {
+    "ar": {
+     "toy.name": "لعبة",
+     "toy.summary": "مرحلة تجريبية للاختبارات."
+    },
+    "en": {
+     "toy.name": "Toy",
+     "toy.summary": "A toy stage for the tests."
+    }
+   }
+  }
+ ],
+ "schema": 1
+}

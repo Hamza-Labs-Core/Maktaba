@@ -1,0 +1,2 @@
+# shared modules whose statements the plugin runs (story 54.24 §1)
+modules = ["maktaba_pipeline.rules:read"]
