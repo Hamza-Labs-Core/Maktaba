@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Patroni's post_bootstrap (Epic 50 story 50.07): once, on the node that creates the cluster,
+# the cloud's role and database. Patroni passes a superuser connection URL.
+#   post-bootstrap <connection url>
+# Env (/etc/maktaba/cloud-ha.env or the rehearsal's): PG_APP_USER (maktaba), PG_APP_PASSWORD,
+# PG_APP_DB (maktaba).
+set -euo pipefail
+env_file="${CLOUD_HA_ENV:-/etc/maktaba/cloud-ha.env}"
+# shellcheck disable=SC1090
+[ -r "${env_file}" ] && . "${env_file}"
+url="${1:?post-bootstrap: Patroni passes the connection URL}"
+user="${PG_APP_USER:-maktaba}" db="${PG_APP_DB:-maktaba}"
+: "${PG_APP_PASSWORD:?PG_APP_PASSWORD is required}"
+psql "${url}" -v ON_ERROR_STOP=1 -v user="${user}" -v pass="${PG_APP_PASSWORD}" -v db="${db}" <<'SQL'
+SELECT format('CREATE ROLE %I LOGIN PASSWORD %L', :'user', :'pass') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = :'user') \gexec
+SELECT format('CREATE DATABASE %I OWNER %I', :'db', :'user') WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = :'db') \gexec
+SQL

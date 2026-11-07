@@ -1,0 +1,7 @@
+# The cloud processes of the leading node (Epic 50 story 50.07): started by Patroni's
+# role-change callback when this node becomes the database leader, stopped when it is not.
+# The relay's colour (blue or green) is 50.08's: maktaba-cloud-relay@<colour>.service.
+[Unit]
+Description=Maktaba Cloud: the processes of the leading node
+Wants=maktaba-cloud-api.service maktaba-cloud-worker.service maktaba-cloud-relay@blue.service
+After=network-online.target patroni.service

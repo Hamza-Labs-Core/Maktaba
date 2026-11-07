@@ -272,6 +272,16 @@ build fails when the two differ.
   edit the zone's DNS only); per-home on-demand certificates stay for one release as a
   fallback. The witness checks both nodes' certificates daily and warns at 21 days. The cloud
   rehearsal's `cert-on-standby` scenario proves it with Pebble.
+- **Two cloud machines that cover for each other, and a witness (Epic 50, story 50.07).**
+  `deploy/cloud-ha` sets up Maktaba Cloud's production pair: Postgres 16 under Patroni on nodes
+  A and B with synchronous replication (no committed write lost while both run), a 30-second
+  leader lease in a three-member etcd (A, B and a witness, so the two can never both lead), and
+  a role-change callback that moves the Hetzner Floating IP to the new leader and starts the
+  cloud there; a leader guard stops the cloud on a node as soon as it no longer leads. A
+  planned switchover script checks the replica and the other node first. In the cloud
+  rehearsal a killed leader is replaced in 38 s with remote play back in under a minute, a
+  leader cut off from the others stops taking writes in 19 s and never runs beside the new
+  one, and a switchover pauses play for 2 s, with no committed write lost in any of them.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

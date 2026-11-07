@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# The etcd CA and the members' certificates (Epic 50 story 50.07 §2), made on the OWNER's
+# machine, never on a node: the CA's key stays there and in the password manager.
+#
+#   make-etcd-certs <out-dir> a=10.50.0.2 b=10.50.0.3 w=10.50.0.4
+#
+# Writes <out-dir>/ca.crt, ca.key and, per member, <name>.crt and <name>.key (server and
+# client auth, the member's private address and 127.0.0.1 as SANs, 10 years). Copy ca.crt and
+# a member's pair to that node's /etc/etcd/pki/ before setup.sh. Existing files are kept.
+set -euo pipefail
+out="${1:?usage: make-etcd-certs <out-dir> <name>=<ip> ...}"; shift
+[ $# -gt 0 ] || { echo "make-etcd-certs: name at least one member" >&2; exit 2; }
+mkdir -p "${out}"; chmod 0700 "${out}"
+if [ ! -s "${out}/ca.key" ]; then
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout "${out}/ca.key" -out "${out}/ca.crt" \
+        -days 3650 -subj "/CN=maktaba-etcd-ca" >/dev/null 2>&1
+fi
+for m in "$@"; do
+    name="${m%%=*}" ip="${m#*=}"
+    [ -s "${out}/${name}.crt" ] && continue
+    openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout "${out}/${name}.key" -out "${out}/${name}.csr" \
+        -subj "/CN=${name}" >/dev/null 2>&1
+    printf 'subjectAltName=IP:%s,IP:127.0.0.1,DNS:%s\nextendedKeyUsage=serverAuth,clientAuth\n' "${ip}" "${name}" >"${out}/${name}.ext"
+    openssl x509 -req -in "${out}/${name}.csr" -CA "${out}/ca.crt" -CAkey "${out}/ca.key" -CAcreateserial \
+        -out "${out}/${name}.crt" -days 3650 -extfile "${out}/${name}.ext" >/dev/null 2>&1
+    rm -f "${out}/${name}.csr" "${out}/${name}.ext"
+    chmod 0600 "${out}/${name}.key"
+    echo "made ${out}/${name}.crt (${ip})"
+done
