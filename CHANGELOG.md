@@ -2121,6 +2121,13 @@ build fails when the two differ.
   the length and frame size it reports, as it did. Its run now notes how many audio tracks it
   found and the video's new state.
 
+- **The home's dashboards show every joined machine (Epic 53 story 53.12).** The Overview's
+  memory, disk free and load, and its components and restarts, now carry a line for each joined
+  machine beside the home's. The home asks each machine's own agent over the cluster channel at
+  most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
+  never holds the dashboards back. Component series keep their cap per machine, and come last on a
+  board so each machine's memory, disk and load stay within its 50 lines.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
