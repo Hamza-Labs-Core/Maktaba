@@ -103,7 +103,7 @@ at 03:00 UTC; only the leader backs up (full on Sunday, differential otherwise),
 failover. 30 days of point-in-time restore. The witness restores the latest backup to 5 minutes
 ago every Monday (`maktaba-restore-drill.timer`, from R2 on the first Monday of a month) and
 checks it against the live replica; `backup_stale`, `wal_archive_failing` and
-`restore_drill_failed` page (`prometheus/backup-rules.yml`, tested by promtool in relay.yml).
+`restore_drill_failed` page (`monitoring/backup-rules.yml`, tested by promtool in relay.yml).
 A whole-zone loss: [docs/runbooks/cloud-disaster-restore.md](../../docs/runbooks/cloud-disaster-restore.md).
 The secrets: `bin/backup-secrets` (age, the owner's key) puts an encrypted copy in both
 repositories; the password manager keeps the originals.
@@ -112,6 +112,31 @@ What the owner creates for it: an Object Storage bucket `maktaba-prod-pg` in **H
 bucket `maktaba-prod-pg-r2`, each with an access key limited to it, and the two passphrases
 (`openssl rand -base64 48`) in the password manager; they go in `cloud-ha.env` (`REPO1_*`,
 `REPO2_*`).
+
+## Monitoring (story 50.10)
+
+The witness runs Prometheus (30 days), Alertmanager, Grafana, the blackbox exporter and a
+Pushgateway as Docker guests at a lower CPU and IO weight than etcd ([`monitoring/`](monitoring/)).
+It scrapes each node over the private network: the leading relay's `/metrics` and Caddy's
+through the node's private `:9443` site, Patroni's `/metrics`, postgres_exporter and node_exporter
+(with the textfile collector for the backup and the callback's alerts). It probes the
+**canary home** (`maktaba-canary`, a real cloudlink on W, slug `canary`) through the relay and
+the API every 30 s, checks each node's own certificate, and checks every minute that the
+Floating IP is on the leader (`bin/fip-check`). **Network 2** is GitHub Actions
+(`.github/workflows/cloud-probe.yml`, on when the repository variable `CLOUD_PROBE` is `true`):
+outside Hetzner, it probes the same URLs every 30 s and pushes the results to the witness.
+The alert rules are [`monitoring/alerts.yml`](monitoring/alerts.yml) and `backup-rules.yml`,
+each with a runbook in `docs/runbooks/`; `monitoring/check.sh` (relay.yml) runs promtool,
+amtool and the rules' unit tests. Pages go to the owner's phone by ntfy, repeated every 15 min;
+warnings by email.
+
+What the owner sets up for it: the canary account (`canary`, Pro, excluded from revenue) and
+its claim on W (`/etc/maktaba/canary.secret`, `CANARY_SERVER_ID`); an ntfy topic and token
+(`NTFY_URL`, `NTFY_TOKEN`) or a Telegram bot; SMTP for the warning email (`SMTP_HOST`,
+`SMTP_USER`, `SMTP_PASSWORD`, `ALERT_EMAIL`, `ALERT_EMAIL_FROM`); a read-only Hetzner token for
+the Floating IP check on W; the hosted probe of network 1 (UptimeRobot or Better Stack, the
+owner's choice) on the same three URLs; and, for network 2, the GitHub secrets
+`PUSHGATEWAY_URL` and `PUSHGATEWAY_TOKEN` and the variable `CLOUD_PROBE=true`.
 
 ## Day to day
 

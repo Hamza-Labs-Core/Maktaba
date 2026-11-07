@@ -5282,7 +5282,7 @@
       "title": "Paid plugins",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, 54.37, the Phase 3 payment provider decision ·\n> Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). Both free and paid plugins are required. The store sells them **on its own**:\nits own payment provider account and seller-of-record choice, its own payouts, tax records and\nrefunds, and its own signed entitlements that homes check offline. Nothing here uses Maktaba\nCloud's billing (Epic 50.19), its licence issuer or its accounts, and no home c",
+      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.14, 54.15, 54.18, 54.37 ·\n> Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). Both free and paid plugins are required. The store sells them **on its own**:\nits own payment provider accounts, its own payouts, tax records and refunds, and its own\nsigned entitlements that homes check offline. Nothing here uses Maktaba\nCloud's billing (Epic 50.19), its licence issuer or its accounts, and no home calls the cloud to\nuse a paid plugin.\n\nDecisions of 2026-11-",
       "tags": [
         "story",
         "54-plugins",

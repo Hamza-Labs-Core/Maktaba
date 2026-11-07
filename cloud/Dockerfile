@@ -86,7 +86,9 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
             -X main.Version=${VERSION} \
             -X main.Commit=${COMMIT} \
             -X main.BuiltAt=${SOURCE_DATE_EPOCH}" \
-        -o /out/maktaba-cloud ./cmd/maktaba-cloud
+        -o /out/maktaba-cloud ./cmd/maktaba-cloud && \
+    GOARCH=${TARGETARCH:-amd64} go build -trimpath -ldflags "-buildid= -s -w" \
+        -o /out/maktaba-canary ./cmd/maktaba-canary
 
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
@@ -101,6 +103,8 @@ LABEL org.opencontainers.image.title="maktaba-cloud"
 LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 COPY --from=builder /out/maktaba-cloud /usr/local/bin/maktaba-cloud
+# the canary home (Epic 50 story 50.10), run on the witness from this signed image
+COPY --from=builder /out/maktaba-canary /usr/local/bin/maktaba-canary
 COPY --from=builder /out/healthcheck /usr/local/bin/healthcheck
 # the player and remote the relay serves for each connected home (Epic 42.9)
 COPY --from=web /out/editions /usr/share/maktaba-cloud/editions
