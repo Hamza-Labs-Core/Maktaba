@@ -340,6 +340,10 @@ build fails when the two differ.
 
 ### Security
 
+- **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
+  network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
+  a channel listing and a download and fails on one the plugin's reviewed `net` list does not
+  name (story 54.33 T02, issue 805).
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
   field that saved what was typed into the browser's storage in plain text and never used it
   (the server reads `OPENAI_API_KEY`). The field is gone, the page says where the key is set,
@@ -358,6 +362,12 @@ build fails when the two differ.
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
+- **A file job in a plugin's runner moves only its own subject's files (Epic 54 wave 5, story
+  54.32 §2).** The runner's sandbox lets the file plugins write anywhere in the library, so a
+  merge, a conversion or a restore could move a file that is not its own. Now, before such a
+  job starts, the runner reads its subject's files (a duplicate group's members, a video's file
+  and its MP4, the ledger rows a restore names), and refuses any other library file with
+  `plugin_scope`: the job fails, not retried, and the file stays where it is.
 
 ### Added
 
@@ -1881,6 +1891,14 @@ build fails when the two differ.
   by a hash, never its address, and never logs an email or a token. Every process serves its
   error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
   each runbook's Check step links to a saved search.
+
+- **Cloudflare deploys from CI only (Epic 50, story 50.34).** The cloud's Cloudflare
+  configuration (the zone's rules, the Tunnel's ingress, the two web Workers) has its own
+  workflows. Pull requests only check the files offline. A push to `main` deploys, after a
+  token check that names any missing permission before anything is written, and a smoke check
+  of the live hosts follows. Each job skips with a notice until its secrets are set. A weekly job
+  proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
+  each piece's token permissions.
 
 - **A plugin's data migrates before its new version runs (Epic 54, story 54.07 §5).** When
   an update raises a plugin's `data_version`, its other stages wait while one migrate job
