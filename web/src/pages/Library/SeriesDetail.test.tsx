@@ -637,3 +637,17 @@ describe("SeriesDetail (test-cases/series-detail.md)", () => {
     expect(screen.getByRole("link", { name: "▶ متابعة المشاهدة" })).toBeInTheDocument();
   });
 });
+
+// Story 54.20: a home that does not answer plugin_panels "on" is never asked for panels.
+describe("SeriesDetail plugin panels", () => {
+  it("asks no panels while the home does not serve them", async () => {
+    get.mockReset();
+    serve();
+    renderDetail();
+    await waitFor(() => expect(get).toHaveBeenCalled());
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThanOrEqual(3));
+    expect(
+      get.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith("/api/panels"))
+    ).toEqual([]);
+  });
+});

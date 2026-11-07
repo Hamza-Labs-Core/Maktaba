@@ -95,8 +95,9 @@ override characters) and asserts plain text, truncation and no network request.
   `mtime`.
 - Renderers: web `PluginPanel` (on the video page), MaktabaKit `PluginPanelView` and
   `PluginPanelsSection` (the Player's video screen), Android core `PluginPanel` and
-  `PluginPanels` (the Player's video screen). The series and library pages and the TV apps
-  take the same components in a follow-up. On Android, chips are shown, not tappable,
+  `PluginPanels` (the Player's video screen). On the web the series and library pages show
+  them too; the native series and library pages and the TV apps take the same components in
+  a follow-up (issue #741). On Android, chips are shown, not tappable,
   until the Search route takes a query.
 - T07 holds the median of 40 calls to 30 ms and logs the p95: on shared runners the tail
   measures the machine.
