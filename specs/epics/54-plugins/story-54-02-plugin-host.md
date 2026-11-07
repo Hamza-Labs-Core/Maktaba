@@ -94,10 +94,16 @@ a unit test lists the linker's names and compares them with an allow-list.
 - **Engine config:** `consume_fuel(true)`, `epoch_interruption(true)`, pooling allocator sized
   from `resources.concurrency` totals, copy-on-write memory images, `cranelift_opt_level(Speed)`,
   no WASI threads, no shared memory, `wasm_backtrace_details(Enable)` for logs.
-- **Per job:** a new `Store` with `StoreLimitsBuilder` (`memory_size`, `instances(1)`,
-  `tables(10)`, `memories(1)`), fuel from `limits.fuel` (default: 2×10⁹ per 60 s of timeout),
+- **Per job:** a new `Store` with a resource limiter (each memory at most the job's
+  `memory_mb`; at most 64 core instances, 16 tables of at most 100,000 elements and 4
+  memories), fuel from `limits.fuel` (default: 2×10⁹ per 60 s of timeout),
   and an epoch deadline of `timeout_s` at a 100 ms tick from one ticker thread. A deadline
   trap ends the job with `timeout` within one tick plus unwind (N7: ≤ 200 ms).
+  A component holds several core instances (its module, shims, an adapter); a Python one
+  (componentize-py, 54.12) holds one per module of its runtime, 38 measured, so the
+  instance cap leaves room above that. An instance owns no memory beyond the counted
+  memories, so a job's memory stays at most 4 × `memory_mb` whatever its instances; memory
+  and fuel are the real bounds.
 - **Scratch:** when `scratch_mb > 0`, a host-side in-memory byte store reachable only through
   `job.scratch-*` calls (not a filesystem preopen), capped and dropped at job end.
 - **Concurrency:** a semaphore per plugin (`resources.concurrency`) and one for the host (the

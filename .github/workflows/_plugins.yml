@@ -66,6 +66,29 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm test
 
+      # story 54.12 T01, T05: the Python and JavaScript templates, new to build to test in
+      # the harness, the Python package's size, and a call no capability covers refused at
+      # build. Each toolchain in an environment of its own, pinned to what the templates
+      # were made with
+      - name: The SDK templates' toolchains
+        run: |
+          set -euo pipefail
+          python3 -m venv "$RUNNER_TEMP/componentize-py"
+          "$RUNNER_TEMP/componentize-py/bin/pip" install --quiet componentize-py==0.25.1
+          mkdir -p "$RUNNER_TEMP/jco"
+          npm install --prefix "$RUNNER_TEMP/jco" --no-fund --no-audit --silent \
+            @bytecodealliance/jco@1.41.0 @bytecodealliance/componentize-js@0.23.0
+          {
+            echo "MKP_COMPONENTIZE_PY=$RUNNER_TEMP/componentize-py/bin/componentize-py"
+            echo "MKP_JCO=$RUNNER_TEMP/jco/node_modules/.bin/jco"
+          } >> "$GITHUB_ENV"
+
+      - name: The Python and JavaScript templates (mkp new, build, test, pack)
+        working-directory: plugind
+        env:
+          MKP_TEST_TOOLCHAINS: '1'
+        run: cargo test --locked -p mkp --test templates
+
   plugins-sandbox:
     strategy:
       fail-fast: false

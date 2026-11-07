@@ -1163,6 +1163,15 @@ build fails when the two differ.
   Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
   review is plain text.
 
+- **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
+  `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
+  accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
+  builds with jco, every optional feature off. Each is built against a plugin world cut to the
+  interfaces its manifest's capabilities cover, so a call it did not declare does not build;
+  `mkp world` writes that world alone. The plugin host now allows 64 core instances per job,
+  up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
+  maktaba.dev: Testing and packaging, *Python and JavaScript*.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

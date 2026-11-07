@@ -1,14 +1,14 @@
 # الاختبار والتحزيم
 
-> **الحالة: مبنيّ للغة Rust (المرحلة 1).** تصنع أداة `mkp` (في `plugind/crates/mkp`) مشروع Rust
-> (`mkp new rust <id> <folder>`)، وتفحص الحزمة كما يفحصها الجهاز الرئيسي (`mkp check`)، وتشغّل
+> **الحالة: مبنيّ للغات Rust وPython وJavaScript.** تصنع أداة `mkp` (في `plugind/crates/mkp`)
+> مشروعًا (`mkp new rust|python|js <id> <folder>`)، وتبني مشروع Python أو JavaScript مكوّنًا
+> وتفحصه (`mkp build`)، وتفحص الحزمة كما يفحصها الجهاز الرئيسي (`mkp check`)، وتشغّل
 > مرحلة في بيئة الاختبار، أي شيفرة المضيف نفسها مع واجهة إضافات وهمية تجيب من ملف بيانات
 > (`mkp test --stage <name> --fixtures api.json`)، وتحزّم ملف `.mkplugin` (`mkp pack`)، وتوقّعه
 > بمفتاحك (`mkp keys new`، `mkp pack <folder> <out> --key <id>`)، وتثبّت مجلدًا على جهاز رئيسي في
 > وضع المطوّر (`mkp run`). ويثبّت المسؤول الملف من الإعدادات، الإضافات، أو بالأمر
 > `maktaba-server plugins`، مع تفعيل «السماح بالإضافات غير المراجَعة»؛ ويعيد
-> `maktaba-server plugins dev <folder>` تحميل المجلد عند كل حفظ. ولم تُبنَ بعد قوالب TypeScript
-> وPython وGo. والبيان في [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في
+> `maktaba-server plugins dev <folder>` تحميل المجلد عند كل حفظ. ولم يُبنَ بعد قالب Go. والبيان في [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في
 > [مرجع الإضافات](reference.ar.md). وبقية هذه الصفحة هي التصميم الوارد في
 > [القصة 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > و
@@ -36,8 +36,9 @@
 
 | الأمر | ما يفعله |
 |---|---|
-| `mkp new <template> <id>` | مشروع يضم `manifest.toml` و`i18n/en.json` و`i18n/ar.json` وعنصرًا نائبًا للأيقونة ومرحلة نموذجية وبيانات اختبار ثابتة واختبارًا |
-| `mkp build` | يشغّل سلسلة أدواتك، ثم التحقق نفسه من البيان وتدقيق الواردات اللذين يجريهما الخادم المنزلي والمتجر |
+| `mkp new <rust\|python\|js> <id> <folder>` | مشروع يضم `package/manifest.toml` و`package/i18n/en.json` و`package/i18n/ar.json` ومرحلة نموذجية ومصدرها |
+| `mkp build <project> [--entry <file.js>]` | يشغّل سلسلة أدواتك فيكتب `package/plugin.wasm`، ثم التحقق نفسه من البيان وتدقيق الواردات اللذين يجريهما الخادم المنزلي والمتجر |
+| `mkp world <project>` | يكتب مجلد `wit/` في مشروعك وعالم الإضافة مقصور على ما يجيز بيانك استيراده (Python وJavaScript؛ ويبدأ به `mkp build`) |
 | `mkp test` | يشغّل إضافتك في بيئة الاختبار المحلية على بيانات الاختبار الثابتة الخاصة بها |
 | `mkp keys new`، `list`، `export-public` | مفتاح التوقيع Ed25519 الخاص بك |
 | `mkp pack <folder> <out.mkplugin> --key <id>` | يكتب `files.json` ويوقّعه بمفتاحك ويصنع ملف `.mkplugin` (بلا `--key`: غير موقّع) |
@@ -53,14 +54,36 @@
 ## البدء
 
 ```sh
-mkp new rust dev.example.silence-chapters
-cd silence-chapters
-mkp build
-mkp test
+mkp new python dev.example.silence-chapters silence-chapters   # أو rust أو js
+mkp build silence-chapters
+mkp test silence-chapters/package --stage hello
 ```
 
 ثم عدّل `manifest.toml` (راجع [البيان والحزمة](manifest.ar.md))، وصرّح فقط عن القدرات التي
 تستخدمها، وأضف النصوص بالإنجليزية والعربية معًا.
+
+## Python وJavaScript
+
+يشغّل الخادم المنزلي مكوّنك بلا نظام ملفات ولا شبكة ولا مدخل قياسي: لا يربط إلا واجهة الإضافات
+والساعات والأرقام العشوائية والمخرج القياسي ومخرج الأخطاء والبيئة. وسلاسل أدوات Python
+وJavaScript تستورد أكثر من ذلك افتراضيًا، فيبنيها `mkp build` بحيث لا تفعل:
+
+- **Python** (`componentize-py`، في بيئة افتراضية خاصة بها): يُستبدل بكل استيراد من WASI بديلٌ
+  يفشل عند استدعائه. فتفشل `print` و`open` والمقابس والمدخل القياسي، وتُبذَر `random` عند بناء
+  الإضافة، فلا تستعملها لأي شيء سرّي أبدًا. وسجّل بـ`log.write`. وPython الخالصة فقط: لا تُبنى حزمة
+  فيها امتداد مكتوب بلغة C.
+- **JavaScript** (`jco componentize` مع `@bytecodealliance/componentize-js`): تُبنى وكل ميزة
+  اختيارية معطّلة (`--disable all`): لا `fetch` ولا مخرجات للطرفية ولا ساعات ولا أرقام عشوائية من
+  WASI. ولـTypeScript، حوّل الشيفرة أولًا إلى وحدة ES واحدة ثم شغّل
+  `mkp build <project> --entry dist/plugin.js`.
+- **العالم يتبع بيانك.** تستورد هذه الأدوات كل واجهة في العالم الذي تُبنى عليه، ويرفض الخادم
+  المنزلي واجهةً لا تغطيها قدرة مصرّح بها. لذا يكتب `mkp build` (أو `mkp world`) مجلد `wit/`
+  في مشروعك بالواجهات التي تغطيها قدراتك وحدها، مع الواجهات المتاحة لكل إضافة (`job` و`log`
+  و`data` و`events`). صرّح بقدرة في `package/manifest.toml` ثم ابنِ من جديد لتستعمل واجهتها؛
+  واستدعاء واجهة لم تصرّح بها لا يُبنى.
+
+تُوجَد سلاسل الأدوات في `PATH`، أو تُسمّى بالمتغيّرين `MKP_COMPONENTIZE_PY` و`MKP_JCO`. ويبلغ حجم
+مثال «مرحبًا» بلغة Python نحو 18 ميغابايت، دون حدّ 25 ميغابايت الذي يستهدفه قالبه.
 
 ## بيئة الاختبار
 

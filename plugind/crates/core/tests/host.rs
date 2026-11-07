@@ -497,3 +497,75 @@ fn the_stores_names_are_wasmtimes() {
         assert_eq!((si, se), (wi, we), "{name}");
     }
 }
+
+/// A component whose store holds `instances` core instances, `memories` of them with a
+/// one-page memory of their own: its `run` answers like hello's. The first instance is the
+/// one `run` lifts from; the rest are instantiated only to count.
+fn counted(instances: usize, memories: usize) -> Vec<u8> {
+    assert!(instances >= 1 && memories >= 1 && memories <= instances);
+    let mut w = String::from(
+        r#"(component
+  (core module $m
+    (memory (export "memory") 1)
+    (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32) i32.const 1024)
+    (func (export "run") (param i32 i32) (result i32)
+      (i32.store (i32.const 2048) (i32.const 0))
+      i32.const 2048))
+  (core module $plain)
+  (core module $mem (memory 1))
+  (core instance $i (instantiate $m))
+"#,
+    );
+    for k in 1..instances {
+        let module = if k < memories { "$mem" } else { "$plain" };
+        w.push_str(&format!("  (core instance (instantiate {module}))\n"));
+    }
+    w.push_str(
+        r#"  (type $ro (record (field "output-hash" string) (field "summary" string)))
+  (export $ro2 "run-output" (type $ro))
+  (type $re (record (field "code" string) (field "message" string)))
+  (export $re2 "run-error" (type $re))
+  (func $run (param "stage" string) (result (result $ro2 (error $re2)))
+    (canon lift (core func $i "run") (memory (core memory $i "memory")) (realloc (core func $i "cabi_realloc"))))
+  (export "run" (func $run)))
+"#,
+    );
+    wat::parse_str(&w).unwrap()
+}
+
+/// 54.02 §5: a store holds up to MAX_INSTANCES core instances (a Python component needs 38);
+/// one more traps the job, not the host.
+#[test]
+fn instances_are_capped() {
+    use plugind_core::host::MAX_INSTANCES;
+    for (n, ok) in [(MAX_INSTANCES, true), (MAX_INSTANCES + 1, false)] {
+        let f = Fixture::new(false);
+        let p = f.package(&format!("inst{n}"), &counted(n, 1), &[]);
+        let r = f.run(&p, "x", &[], Limits::default());
+        if ok {
+            assert_eq!(r.outcome, Outcome::Ok, "{n} instances: {r:?}");
+        } else {
+            assert_eq!(r.outcome, Outcome::Trap, "{n} instances: {r:?}");
+            assert!(r.detail.contains("instance count"), "{n} instances: {r:?}");
+        }
+    }
+}
+
+/// 54.02 §5: the instance cap does not loosen the memory bound. However many instances a
+/// component has, its memories are at most MAX_MEMORIES (each at most the job's memory cap):
+/// one more memory traps, even with every instance the cap allows.
+#[test]
+fn memories_are_capped_whatever_the_instances() {
+    use plugind_core::host::{MAX_INSTANCES, MAX_MEMORIES};
+    for (m, ok) in [(MAX_MEMORIES, true), (MAX_MEMORIES + 1, false)] {
+        let f = Fixture::new(false);
+        let p = f.package(&format!("mem{m}"), &counted(MAX_INSTANCES, m), &[]);
+        let r = f.run(&p, "x", &[], Limits::default());
+        if ok {
+            assert_eq!(r.outcome, Outcome::Ok, "{m} memories: {r:?}");
+        } else {
+            assert_eq!(r.outcome, Outcome::Trap, "{m} memories: {r:?}");
+            assert!(r.detail.contains("memory count"), "{m} memories: {r:?}");
+        }
+    }
+}

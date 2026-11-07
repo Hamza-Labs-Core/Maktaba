@@ -31,7 +31,24 @@ smoke test; best effort. Other languages that make components (C, C#) work but g
   - `mkp new <template> <id>`: a project with `manifest.toml`, `i18n/en.json`, `i18n/ar.json`,
     an icon placeholder, a sample stage, a fixture and a test;
   - `mkp build`: runs the language toolchain, then the same validation and import audit as the
-    home and the store (54.01, 54.02);
+    home and the store (54.01, 54.02); as built (`mkp build <project> [--entry <file.js>]`):
+    - **the world follows the manifest:** componentize-py and jco import every interface of
+      the world they are built against, which the audit refuses for a gated interface no
+      capability covers. So a Python or JS project is built against the SDK's WIT with the
+      `plugin` world's imports cut to the ungated interfaces and those its capabilities
+      cover, from the audit's own tables (`mkp world <project>` writes it alone); a call to
+      an undeclared interface does not build;
+    - **no WASI:** the host links no filesystem, socket or stdin (#683). Python builds with
+      `componentize-py --stub-wasi` (every WASI import a stub that fails when called: `print`
+      and files fail, `random` is seeded at build); JS with `jco componentize --disable all`
+      (no WASI feature, so none imported). Both components then import only
+      `maktaba:plugin`;
+    - a Python component holds one core instance per module of its runtime (38 measured),
+      which the host's store caps allow since 54.02 §5 raised them to 64;
+    - Go (TinyGo) imports stdin and the filesystem whatever the program does. Its template
+      (a PR of its own, after Python's and JS's) composes in a stub component that exports
+      both (no preopens, stdin at its end, every call an error), and `mkp build` fails if
+      the composed component still imports anything the host refuses;
   - `mkp test`: runs the plugin in the **harness** (§3) against its fixtures;
   - `mkp keys new|list|export-public` (Ed25519, stored in the OS keychain or a passphrase file);
   - `mkp pack --sign`: writes `files.json`, signs it, makes the `.mkplugin`;
