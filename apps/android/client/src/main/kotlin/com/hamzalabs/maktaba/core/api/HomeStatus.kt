@@ -23,6 +23,8 @@ enum class StripKey {
     OFFLINE, RESTARTING, DATABASE, SAFE, STREAMING, STREAMING_NO_TV, SEARCH, PROCESSING, LOGS,
     // Maktaba Cloud's lines (Epic 50 story 50.11)
     RELAY_DEGRADED, RELAY_OUTAGE, API_DEGRADED, API_OUTAGE, MAINTENANCE,
+    // a request waiting for the home behind the relay (story 50.13)
+    RECONNECTING,
 }
 
 /**
@@ -51,9 +53,16 @@ object StatusStripRules {
      * [cloud] is Maktaba Cloud's line (story 50.11, [CloudStatusRules.line]) when the app reaches
      * the home through the cloud: after the home's own lines, before the admin-only ones.
      */
-    fun lines(s: HomeStatusDoc?, online: Boolean, admin: Boolean, liveTvOff: Boolean = false, cloud: StripLine? = null): List<StripLine> {
+    fun lines(
+        s: HomeStatusDoc?,
+        online: Boolean,
+        admin: Boolean,
+        liveTvOff: Boolean = false,
+        cloud: StripLine? = null,
+        reconnecting: Boolean = false,
+    ): List<StripLine> {
         val out = mutableListOf<StripLine>()
-        if (!online) out += StripLine(StripKey.OFFLINE)
+        if (!online) out += StripLine(StripKey.OFFLINE) else if (reconnecting) out += StripLine(StripKey.RECONNECTING)
         if (s == null || s.v != 1) return out + listOfNotNull(cloud)
         fun bad(g: String) = (s.components[g] ?: "ok") in bad
         fun admin(link: String) = if (admin) link else null

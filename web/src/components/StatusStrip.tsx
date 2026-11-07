@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { cloudLine, throughCloud, useCloudStatus } from "../lib/cloudStatus";
+import { useReconnecting } from "../lib/reconnect";
 import { useCapabilities } from "../lib/capabilities";
 import { stripLines, stripSignature, useHomeStatus } from "../lib/homeStatus";
 import { useI18n } from "../lib/i18n";
@@ -17,6 +18,7 @@ export function StatusStrip({ viaCloud = throughCloud() }: { viaCloud?: boolean 
   const online = useOnline();
   const { t, formatDate } = useI18n();
   const cloud = useCloudStatus(viaCloud);
+  const reconnecting = useReconnecting();
   const { user } = useAuth();
   const caps = useCapabilities();
   const status = useHomeStatus();
@@ -26,6 +28,7 @@ export function StatusStrip({ viaCloud = throughCloud() }: { viaCloud?: boolean 
     online,
     admin: !!user?.is_admin,
     liveTvOff: caps.features.live_tv === "off",
+    reconnecting,
     cloud: cloudLine(cloud, Date.now(), {
       date: (d) => formatDate(d, { dateStyle: "medium" }),
       time: (d) => formatDate(d, { timeStyle: "short" }),

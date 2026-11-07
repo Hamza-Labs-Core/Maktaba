@@ -16,6 +16,19 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
+/** One way to reach a home (story 50.13): `local`, `direct`, `relay_hint` or `relay`. */
+@Serializable
+data class CloudConnection(val url: String, val kind: String) {
+    companion object {
+        /** The order apps try (story 50.13 §2): local, direct, relay hint, relay. */
+        val ORDER = listOf("local", "direct", "relay_hint", "relay")
+
+        /** [cs] in that order; a kind this build doesn't know is left out. */
+        fun ordered(cs: List<CloudConnection>): List<CloudConnection> =
+            cs.filter { it.kind in ORDER }.sortedBy { ORDER.indexOf(it.kind) }
+    }
+}
+
 /** A home this cloud account reaches (`GET /v1/homes`). */
 @Serializable
 data class CloudHome(
@@ -31,11 +44,66 @@ data class CloudHome(
     val linked: Boolean = false,
     /** This cloud account owns the home's registration (no account in the home by that). */
     val owned: Boolean = false,
+    /** Every way to reach it (story 50.13); empty from a cloud older than the list. */
+    val connections: List<CloudConnection> = emptyList(),
 ) {
-    /** Its addresses: its own first (on its network it answers there, faster), then the relay. */
+    /** Its connections in the order apps try, or from the older fields. */
+    val ordered: List<CloudConnection>
+        get() = if (connections.isNotEmpty()) {
+            CloudConnection.ordered(connections)
+        } else {
+            listOfNotNull(
+                directUrl?.takeIf { it.isNotBlank() }?.let { CloudConnection(it, "direct") },
+                relayUrl.takeIf { it.isNotBlank() }?.let { CloudConnection(it, "relay") },
+            )
+        }
+
+    /** Its addresses in the order apps try: local, its own, the relay hint, the relay. */
     val addresses: List<String>
-        get() = listOfNotNull(directUrl, relayUrl).filter { it.isNotBlank() }
-            .mapNotNull { Home.normalizeWithPath(it) }.distinct()
+        get() = ordered.mapNotNull { Home.normalizeWithPath(it.url) }.distinct()
+}
+
+/**
+ * The cloud's home list as last answered, kept per account (story 50.13): names and addresses,
+ * never a token. Shown while the cloud can't be reached; 30 days, then marked old; removed at
+ * sign-out.
+ */
+@Serializable
+data class SavedCloudHomes(val user: CloudUser, @SerialName("saved_at") val savedAtMs: Long, val homes: List<CloudHome>) {
+    fun isOld(nowMs: Long = System.currentTimeMillis()): Boolean = nowMs - savedAtMs > OLD_AFTER_MS
+
+    companion object {
+        const val OLD_AFTER_MS = 30L * 24 * 3600 * 1000
+        private const val PREFIX = "cloud_homes:"
+        private const val INDEX = "cloud_homes_index"
+
+        private fun key(email: String) = PREFIX + email.trim().lowercase()
+
+        fun save(store: KeyValueStore, user: CloudUser, homes: List<CloudHome>, nowMs: Long = System.currentTimeMillis()) {
+            store.put(key(user.email), ApiClient.json.encodeToString(serializer(), SavedCloudHomes(user, nowMs, homes)))
+            val index = store.get(INDEX)?.split('\n')?.filter { it.isNotBlank() }.orEmpty()
+            if (key(user.email) !in index) store.put(INDEX, (index + key(user.email)).joinToString("\n"))
+        }
+
+        fun load(store: KeyValueStore, email: String): SavedCloudHomes? =
+            store.get(key(email))?.let { runCatching { ApiClient.json.decodeFromString(serializer(), it) }.getOrNull() }
+
+        /** Every account's list (sign-out). */
+        fun forgetAll(store: KeyValueStore) {
+            store.get(INDEX)?.split('\n')?.filter { it.isNotBlank() }?.forEach { store.put(it, null) }
+            store.put(INDEX, null)
+        }
+    }
+}
+
+/**
+ * The cloud couldn't be reached (story 50.13): no answer, a server error, or an answer that
+ * isn't the cloud's JSON (a captive portal). Not a refusal, which is the cloud's word.
+ */
+fun isCloudOutage(e: Throwable): Boolean = when (e) {
+    is com.hamzalabs.maktaba.core.api.ApiException.Transport -> true
+    is CloudException -> e.status == 0 && e.code in setOf("unexpected", "cloud_down") || e.status >= 500
+    else -> false
 }
 
 @Serializable

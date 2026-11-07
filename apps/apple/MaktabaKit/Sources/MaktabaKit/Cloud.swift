@@ -45,8 +45,26 @@ public struct CloudUser: Decodable, Equatable, Sendable {
     public let email: String
 }
 
+/// One way to reach a home (story 50.13): `local`, `direct`, `relay_hint` or `relay`.
+public struct CloudConnection: Codable, Equatable, Sendable {
+    public let url: URL
+    public let kind: String
+    public init(url: URL, kind: String) { self.url = url; self.kind = kind }
+
+    /// The order apps try (story 50.13 §2): local, direct, relay hint, relay.
+    public static let order = ["local", "direct", "relay_hint", "relay"]
+
+    /// `cs` in that order; a kind this build doesn't know is left out.
+    public static func ordered(_ cs: [CloudConnection]) -> [CloudConnection] {
+        cs.filter { order.contains($0.kind) }
+            .enumerated()
+            .sorted { (order.firstIndex(of: $0.element.kind)!, $0.offset) < (order.firstIndex(of: $1.element.kind)!, $1.offset) }
+            .map(\.element)
+    }
+}
+
 /// A home the cloud account reaches (`GET /v1/homes`).
-public struct CloudHome: Decodable, Identifiable, Equatable, Sendable {
+public struct CloudHome: Codable, Identifiable, Equatable, Sendable {
     public var id: String { serverID }
     /// The home's id in the cloud (not the home's own instance id).
     public let serverID: String
@@ -61,16 +79,19 @@ public struct CloudHome: Decodable, Identifiable, Equatable, Sendable {
     public let linked: Bool
     /// This account holds the home's cloud registration, which is no account in the home.
     public let owned: Bool
+    /// Every way to reach it, in the order apps try (story 50.13); from `direct_url` and
+    /// `relay_url` when the cloud is older than the list.
+    public let connections: [CloudConnection]
 
     enum CodingKeys: String, CodingKey {
-        case name, slug, online, linked, owned
+        case name, slug, online, linked, owned, connections
         case serverID = "server_id"
         case relayURL = "relay_url"
         case directURL = "direct_url"
     }
 
     public init(serverID: String, name: String, slug: String = "", relayURL: URL?, directURL: URL? = nil,
-                online: Bool = true, linked: Bool, owned: Bool = false) {
+                online: Bool = true, linked: Bool, owned: Bool = false, connections: [CloudConnection]? = nil) {
         self.serverID = serverID
         self.name = name
         self.slug = slug
@@ -79,6 +100,25 @@ public struct CloudHome: Decodable, Identifiable, Equatable, Sendable {
         self.online = online
         self.linked = linked
         self.owned = owned
+        self.connections = connections.map(CloudConnection.ordered) ?? Self.fromOldFields(directURL, relayURL)
+    }
+
+    static func fromOldFields(_ direct: URL?, _ relay: URL?) -> [CloudConnection] {
+        [direct.map { CloudConnection(url: $0, kind: "direct") }, relay.map { CloudConnection(url: $0, kind: "relay") }]
+            .compactMap { $0 }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(serverID, forKey: .serverID)
+        try c.encode(name, forKey: .name)
+        try c.encode(slug, forKey: .slug)
+        try c.encodeIfPresent(relayURL?.absoluteString, forKey: .relayURL)
+        try c.encodeIfPresent(directURL?.absoluteString, forKey: .directURL)
+        try c.encode(online, forKey: .online)
+        try c.encode(linked, forKey: .linked)
+        try c.encode(owned, forKey: .owned)
+        try c.encode(connections, forKey: .connections)
     }
 
     public init(from decoder: Decoder) throws {
@@ -92,13 +132,24 @@ public struct CloudHome: Decodable, Identifiable, Equatable, Sendable {
         online = try c.decodeIfPresent(Bool.self, forKey: .online) ?? false
         linked = try c.decodeIfPresent(Bool.self, forKey: .linked) ?? false
         owned = try c.decodeIfPresent(Bool.self, forKey: .owned) ?? false
+        // each address normalised as the old fields are; one that isn't an address is dropped
+        let given = (try? c.decodeIfPresent([RawConnection].self, forKey: .connections)) ?? nil
+        connections = given.map { list in
+            CloudConnection.ordered(list.compactMap { r in Home.normalizeBase(r.url).map { CloudConnection(url: $0, kind: r.kind) } })
+        } ?? Self.fromOldFields(directURL, relayURL)
     }
 
-    /// The addresses the cloud gives for this home, the direct one first. Only these are
-    /// handed an assertion for it: the cloud vouches for them, the home's own list does not.
+    private struct RawConnection: Decodable {
+        let url: String
+        let kind: String
+    }
+
+    /// The addresses the cloud gives for this home, in the order apps try them (local,
+    /// direct, relay hint, relay). Only these are handed an assertion for it: the cloud
+    /// vouches for them, the home's own list does not.
     public var addresses: [URL] {
         var out: [URL] = []
-        for u in [directURL, relayURL].compactMap({ $0 }) where !out.contains(u) { out.append(u) }
+        for u in connections.map(\.url) where !out.contains(u) { out.append(u) }
         return out
     }
 
@@ -152,6 +203,9 @@ public enum CloudError: LocalizedError, Equatable {
     case transport(String)
     case status(Int, String)
     case decoding(String)
+    /// Maktaba Cloud can't be reached for a new sign-in (story 50.13): the home's own sign-in
+    /// works without it.
+    case cloudDown
 
     public var errorDescription: String? {
         switch self {
@@ -163,6 +217,7 @@ public enum CloudError: LocalizedError, Equatable {
         case let .transport(why): "Could not reach Maktaba Cloud: \(why)"
         case let .status(code, message): "Maktaba Cloud answered \(code): \(message.prefix(300))"
         case let .decoding(why): "Unexpected answer from Maktaba Cloud: \(why)"
+        case .cloudDown: "Signing in with Maktaba Cloud isn't working right now. Sign in to your home with its username and password, or with a code."
         }
     }
 }
@@ -310,3 +365,52 @@ public actor CloudClient {
         }
     }
 }
+
+extension CloudError {
+    /// The cloud couldn't be reached (story 50.13): no answer, a server error, or an answer
+    /// that isn't the cloud's JSON (a captive portal). Not a refusal, which is the cloud's word.
+    public var isOutage: Bool {
+        switch self {
+        case .transport, .decoding, .cloudDown: true
+        case let .status(code, _): code >= 500 || code == 0
+        default: false
+        }
+    }
+}
+
+/// The cloud's home list as last answered, kept per account (story 50.13): names and addresses,
+/// never a token. Shown while the cloud can't be reached; 30 days, then marked old; removed at
+/// sign-out.
+public struct SavedCloudHomes: Codable, Equatable, Sendable {
+    public let user: CloudSavedUser
+    public let savedAt: Date
+    public let homes: [CloudHome]
+
+    public static let oldAfter: TimeInterval = 30 * 24 * 3600
+    static let prefix = "cloud.homes."
+
+    public func isOld(now: Date = .now) -> Bool { now.timeIntervalSince(savedAt) > Self.oldAfter }
+
+    static func key(_ email: String) -> String { prefix + email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+
+    public static func save(_ homes: [CloudHome], for user: CloudUser, in defaults: UserDefaults, now: Date = .now) {
+        let list = SavedCloudHomes(user: CloudSavedUser(id: user.id, email: user.email), savedAt: now, homes: homes)
+        if let data = try? JSONEncoder().encode(list) { defaults.set(data, forKey: key(user.email)) }
+    }
+
+    public static func load(email: String, from defaults: UserDefaults) -> SavedCloudHomes? {
+        defaults.data(forKey: key(email)).flatMap { try? JSONDecoder().decode(SavedCloudHomes.self, from: $0) }
+    }
+
+    /// Every account's list (sign-out).
+    public static func forgetAll(in defaults: UserDefaults) {
+        for k in defaults.dictionaryRepresentation().keys where k.hasPrefix(prefix) { defaults.removeObject(forKey: k) }
+    }
+}
+
+/// Who a saved list belongs to.
+public struct CloudSavedUser: Codable, Equatable, Sendable {
+    public let id: String
+    public let email: String
+}
+
