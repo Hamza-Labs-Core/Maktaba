@@ -1,4 +1,4 @@
-// /admin/abuse — recent abuse signals and the blocklist, with block / unblock.
+// /abuse — recent abuse signals and the blocklist, with block / unblock.
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -8,9 +8,9 @@ import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { Textarea } from "@ds/components/Textarea/Textarea";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "../../api";
-import { useI18n } from "../../i18n";
-import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "../../ui";
+import { api } from "@cloud-shared/api";
+import { useI18n } from "@cloud-shared/i18n";
+import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "@cloud-shared/ui";
 import { ReasonDialog } from "./ReasonDialog";
 
 export interface AbuseSignal {

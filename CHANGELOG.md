@@ -1901,6 +1901,12 @@ build fails when the two differ.
   this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
   too many devices playing, or the home too busy to prepare the video.
 
+- **The operator console is its own web app (Epic 50 story 50.32, part 1).** Maktaba Cloud's
+  console moved out of the account web app into `web/admin` (`pnpm dev:admin`, `pnpm build:admin`),
+  for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
+  new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
+  or staff API path, an admin string or a console module.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

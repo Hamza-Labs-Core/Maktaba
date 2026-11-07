@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "../api";
+import { setAccessToken } from "@cloud-shared/api";
 import { renderAt, session, stubFetch, user } from "../test/harness";
 
 beforeEach(() => setAccessToken(null));
@@ -32,7 +32,7 @@ describe("admin problem reports", () => {
       "POST /v1/auth/refresh": session(user({ role: "user" })),
       "GET /v1/admin/reports": [403, { error: "admin_access_denied", message: "denied" }],
     });
-    renderAt("/admin/reports");
+    renderAt("/reports");
     expect(await screen.findByText("Access denied")).toBeInTheDocument();
   });
 
@@ -41,14 +41,11 @@ describe("admin problem reports", () => {
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
       "GET /v1/admin/reports": [200, { reports: [REPORT], total: 1 }],
     });
-    renderAt("/admin/reports?app=apple.player");
+    renderAt("/reports?app=apple.player");
     const row = await screen.findByTestId("cloud-report-row");
     expect(row).toHaveTextContent("darwish-home");
     expect(row).toHaveTextContent("0.3.95");
-    expect(within(row).getByRole("link", { name: "#41" })).toHaveAttribute(
-      "href",
-      "/admin/reports/41"
-    );
+    expect(within(row).getByRole("link", { name: "#41" })).toHaveAttribute("href", "/reports/41");
     expect(f.find("GET", "/v1/admin/reports")[0].path).toContain("app=apple.player");
     const u = userEvent.setup();
     await u.selectOptions(screen.getByLabelText("Status"), "fixed");
@@ -76,7 +73,7 @@ describe("admin problem reports", () => {
       "POST /v1/admin/reports/41/issue": [204, null],
       "POST /v1/admin/reports/41/reply": [204, null],
     });
-    renderAt("/admin/reports/41");
+    renderAt("/reports/41");
     const tl = await screen.findByTestId("cloud-report-timeline");
     const rows = within(tl).getAllByRole("listitem");
     expect(rows[0]).toHaveTextContent("home_side");
@@ -113,11 +110,11 @@ describe("admin problem reports", () => {
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
       "GET /v1/admin/reports": [200, { reports: [], total: 0 }],
     });
-    renderAt("/admin/reports");
+    renderAt("/reports");
     const nav = await screen.findByRole("navigation", { name: "Admin" });
     expect(within(nav).getByRole("link", { name: "Problem reports" })).toHaveAttribute(
       "href",
-      "/admin/reports"
+      "/reports"
     );
     expect(await screen.findByText("No reports match.")).toBeInTheDocument();
   });

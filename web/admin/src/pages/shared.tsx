@@ -1,6 +1,6 @@
 // Small pieces shared by the admin pages.
 import { Pagination } from "@ds/components/Pagination/Pagination";
-import { useI18n } from "../../i18n";
+import { useI18n } from "@cloud-shared/i18n";
 
 export function statusTone(status: string): "success" | "warn" | "error" | "neutral" {
   if (status === "active") return "success";

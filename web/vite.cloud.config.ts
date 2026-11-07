@@ -22,6 +22,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "src"),
       "@ds": path.resolve(__dirname, "design-system"),
       "@maktaba/tvplayer": path.resolve(__dirname, "packages/tvplayer/src"),
+      "@cloud-shared": path.resolve(__dirname, "cloud/src/shared"),
     },
   },
   server: {

@@ -1,4 +1,4 @@
-// /admin/reports — the problem reports homes chose to send to Maktaba (Epic 53 story 53.16),
+// /reports — the problem reports homes chose to send to Maktaba (Epic 53 story 53.16),
 // for the service admin only (a home admin's token gets 403: a home has its reports at home).
 // The list across homes (home, app, version, category, status, age) with filters; a report:
 // its text, device and merged timeline (the app's lines and the home's by time), status (New,
@@ -14,9 +14,9 @@ import { Input } from "@ds/components/Input/Input";
 import { Textarea } from "@ds/components/Textarea/Textarea";
 import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Select } from "@ds/components/Select/Select";
-import { api, fetchApi, withQuery } from "../../api";
-import { useI18n } from "../../i18n";
-import { LoadError, Loading, Page, useErrorMessage, useLoad } from "../../ui";
+import { api, fetchApi, withQuery } from "@cloud-shared/api";
+import { useI18n } from "@cloud-shared/i18n";
+import { LoadError, Loading, Page, useErrorMessage, useLoad } from "@cloud-shared/ui";
 import { Pager } from "./shared";
 
 export const REPORT_STATUSES = ["new", "triaged", "fixed", "closed"] as const;
@@ -154,7 +154,7 @@ export function AdminReports() {
               {data.data.reports.map((r) => (
                 <tr key={r.id} data-testid="cloud-report-row">
                   <td>
-                    <Link to={`/admin/reports/${r.id}`}>#{r.id}</Link>
+                    <Link to={`/reports/${r.id}`}>#{r.id}</Link>
                   </td>
                   <td>
                     <bdi>{r.home || "—"}</bdi>
@@ -252,7 +252,7 @@ export function AdminReportDetail() {
   return (
     <Page title={t("admin.reports.one", { id: d.id })}>
       <p>
-        <Link to="/admin/reports">{t("admin.reports.back")}</Link>
+        <Link to="/reports">{t("admin.reports.back")}</Link>
       </p>
       <dl className="mkc-kv" data-testid="cloud-report">
         <dt>{t("admin.reports.home")}</dt>
@@ -278,7 +278,7 @@ export function AdminReportDetail() {
             <dt>{t("admin.reports.group")}</dt>
             <dd className="mkc-mono">
               {d.fingerprints.map((fp) => (
-                <Link key={fp} to={`/admin/reports?fp=${encodeURIComponent(fp)}`}>
+                <Link key={fp} to={`/reports?fp=${encodeURIComponent(fp)}`}>
                   {fp}{" "}
                 </Link>
               ))}
