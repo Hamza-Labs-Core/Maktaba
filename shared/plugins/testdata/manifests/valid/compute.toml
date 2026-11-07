@@ -1,0 +1,22 @@
+# plugin API 1.1 (story 54.21): a required compute.embed is a requires of the plugin's
+# component (search.semantic), an optional compute.llm a wants (llm)
+schema = 1
+id = "dev.example.topics"
+version = "1.0.0"
+plugin_api = "1.1"
+maktaba = ">=0.4.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[capabilities]
+required = ["compute.embed", "library.read"]
+optional = ["compute.llm"]
+
+[[stage]]
+name = "group_topics"
+subject = "library"
+export = "run-group-topics"
+version = 1

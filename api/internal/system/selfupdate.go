@@ -343,14 +343,7 @@ func (s *SelfUpdater) StatusHandler(base http.Handler) http.Handler {
 		base.ServeHTTP(rec, r)
 		var doc map[string]any
 		if (rec.code != 0 && rec.code != http.StatusOK) || json.Unmarshal(rec.body, &doc) != nil {
-			for k, v := range rec.header {
-				w.Header()[k] = v
-			}
-			if rec.code == 0 {
-				rec.code = http.StatusOK
-			}
-			w.WriteHeader(rec.code)
-			_, _ = w.Write(rec.body)
+			common.WritePassthrough(w, rec.code, rec.header, rec.body)
 			return
 		}
 		doc["install"] = s.InstallName()

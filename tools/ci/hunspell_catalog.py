@@ -26,7 +26,7 @@ EN = ROOT / "web" / "src" / "i18n" / "en.json"
 AR = ROOT / "web" / "src" / "i18n" / "ar.json"
 BEGIN = "# ---- BEGIN lang.hunspell"
 END = "# ---- END lang.hunspell"
-SINCE = "0.3.82"
+SINCE = "0.3.86"
 
 
 def entries(langs: list[dict[str, str]]) -> str:

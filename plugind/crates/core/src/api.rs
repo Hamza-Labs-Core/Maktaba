@@ -42,7 +42,7 @@ impl ApiError {
             "plugin_too_large" => Self::TooLarge,
             "plugin_field" => Self::Field,
             "media_changed" => Self::Changed,
-            "media_unavailable" => Self::Unavailable,
+            "media_unavailable" | "compute_unavailable" => Self::Unavailable,
             "not_found" => Self::NotFound,
             "plugin_token" | "plugin_grants_changed" => Self::Ended,
             other => Self::Invalid(other.to_string()),

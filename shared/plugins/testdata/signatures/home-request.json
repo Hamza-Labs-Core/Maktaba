@@ -1,0 +1,11 @@
+{
+  "_comment": "Story 54.15 §5: one request signed with a home store key (a TEST key from a public label). The home's Go signer (api/internal/plugins/storelink) makes this header; the store (store/web/homes.ts) accepts it.",
+  "seed": "a05863ecd29ca1ae12bcdf131b2dae82b4973f5398aaee994418af72fb9b00b5",
+  "home_id": "h_test",
+  "method": "POST",
+  "path": "/v1/homes/h_test/seen",
+  "ts": 1794000000,
+  "nonce": "bm9uY2Utbm9uY2Utbm9uY2U",
+  "body": "{\"plugins\":[]}",
+  "header": "MKS-Home id=h_test, ts=1794000000, nonce=bm9uY2Utbm9uY2Utbm9uY2U, sig=ap50svWwpsw76AgrUQwtnYaKZaUy12FbaTMsqJ5iBEjSDZC+YKPS7z5ebPcMSkKDkox8O+Xobtvwcbw2uQ3kBw=="
+}

@@ -37,6 +37,7 @@ import {
 import { ApiError } from "../../lib/api";
 import { logsPageLink } from "../../lib/logIndex";
 import { phaseTone, phaseWord, reasonText } from "./componentWords";
+import { StoreAccount } from "./StoreAccount";
 import "./plugins.css";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -133,6 +134,7 @@ function PluginsInner() {
         ))}
       </ul>
       <PolicySection policy={policy} onChange={setPolicy} />
+      <StoreAccount />
       {installing && (
         <InstallDialog
           onClose={() => setInstalling(false)}

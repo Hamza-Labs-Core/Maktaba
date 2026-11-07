@@ -385,17 +385,22 @@ describe("VideoPlayer — hls.js (no native HLS)", () => {
         renderPlayer();
         const hls = await hlsReady();
         expect(hls.loadSource).toHaveBeenCalledTimes(1);
+        // each reload's time on the fake clock: a timer runs with the clock at the
+        // time it was set for, so this is exact even though real time moves the clock
+        // too (shouldAdvanceTime). Advancing to `wait - 1` and checking nothing had run
+        // yet was not: under load, real time alone passed the last millisecond (#697).
+        const loadedAt: number[] = [];
+        hls.loadSource.mockImplementation(() => loadedAt.push(Date.now()));
         // two 404s, then it loads (no further error)
         for (const wait of [1000, 2000]) {
+          const before = hls.loadSource.mock.calls.length;
+          const failedAt = Date.now();
           act(() => hls.emit("hlsError", notReady));
           await act(async () => {
-            await vi.advanceTimersByTimeAsync(wait - 1);
-          });
-          const before = hls.loadSource.mock.calls.length;
-          await act(async () => {
-            await vi.advanceTimersByTimeAsync(1);
+            await vi.advanceTimersByTimeAsync(wait);
           });
           expect(hls.loadSource).toHaveBeenCalledTimes(before + 1);
+          expect(loadedAt.at(-1)! - failedAt).toBe(wait);
         }
         expect(hls.loadSource).toHaveBeenLastCalledWith(SIGNED);
         await act(async () => {

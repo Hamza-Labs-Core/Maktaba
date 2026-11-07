@@ -1,0 +1,18 @@
+# The plugin store's weekly CI (Epic 54, story 54.15 §9 T13): the restore drill (an export
+# decrypted and restored into Miniflare's D1, then the integration tests) runs with the rest
+# of the store's tests every week, as well as on every change to the store. No live
+# Cloudflare call: a live restore is docs/runbooks/store-restore.md.
+
+name: Store weekly
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    uses: ./.github/workflows/_store.yml

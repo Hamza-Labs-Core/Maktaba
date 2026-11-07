@@ -38,8 +38,10 @@ type Server struct {
 	Media *Media
 	// ArtifactsDir is <data>/plugins/artifacts: subtitles and artwork plugins write.
 	ArtifactsDir string
-	routes       map[string]route
-	once         sync.Once
+	// Compute answers compute.embed and compute.llm (54.21; nil: unavailable).
+	Compute *Compute
+	routes  map[string]route
+	once    sync.Once
 }
 
 // call is one plugin call, checked: its invocation and its JSON body.
@@ -116,6 +118,7 @@ func (s *Server) init() {
 		s.otherRoutes()
 		s.eventRoutes()
 		s.mediaRoutes()
+		s.computeRoutes()
 	})
 }
 

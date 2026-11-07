@@ -43,6 +43,20 @@ describe("C12, the flow check (54.16 T09, T10)", () => {
     expect(r.graph?.edges.some((e) => e.kind === "subscribe")).toBe(true);
   });
 
+  // a loop through two store plugins the flow never names is found by walking publishers
+  it("refuses a loop through store plugins two steps away", () => {
+    const dir = join(corpus, "cycle_through_store_plugins");
+    const held = new Map(
+      readdirSync(join(dir, "catalog")).map((f) => {
+        const m = validate(readFileSync(join(dir, "catalog", f))) as Record<string, unknown>;
+        return [String(m.id), m] as const;
+      }),
+    );
+    const r = checkFlow(readFileSync(join(dir, "flow.toml")), upload("cycle_through_store_plugins"), (id) => held.get(id));
+    expect(r.ok).toBe(false);
+    expect(r.findings.find((f) => f.code === "flow_cycle")?.path).toContain("dev.example.yankee/y");
+  });
+
   it("accepts a member not uploaded when the store has it, and refuses it when not", () => {
     const flow = readFileSync(join(corpus, "chain_two_store", "flow.toml"));
     const [writer, silences] = upload("chain_two_store");
@@ -66,7 +80,14 @@ describe("C12, the flow check (54.16 T09, T10)", () => {
       const flow = readFileSync(join(corpus, name, "flow.toml"), "utf8");
       // the corpus's flow members not uploaded are in the store; nothing else is
       const listed = new Set([...flow.matchAll(/^id = "([^"]+)"$/gm)].map((m) => m[1]));
-      const r = checkFlow(flow, upload(name), (id) => (listed.has(id) ? { id } : undefined));
+      // the store's other plugins: the case's catalog, found by walking publishers
+      const cdir = join(corpus, name, "catalog");
+      const held = new Map<string, Record<string, unknown>>();
+      for (const f of existsSync(cdir) ? readdirSync(cdir).filter((x) => x.endsWith(".toml")) : []) {
+        const m = validate(readFileSync(join(cdir, f))) as Record<string, unknown>;
+        held.set(String(m.id), m);
+      }
+      const r = checkFlow(flow, upload(name), (id) => held.get(id) ?? (listed.has(id) ? { id } : undefined));
       expect(r.findings.map(({ en: _en, ar: _ar, ...f }) => f)).toEqual(want.findings);
     });
   }
