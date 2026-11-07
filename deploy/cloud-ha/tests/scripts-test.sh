@@ -242,5 +242,28 @@ if [ "${rc}" = 0 ]; then ok "drill-checks: within 1 % and fresh passes"; else fa
 rc="$(drill stale NEWEST=999000)"
 if [ "${rc}" = 1 ] && grep -q "freshness: the newest restored write is 1100 s older" "${work}/stale/out"; then ok "drill-checks: a stale restore fails"; else fail "drill stale: rc=${rc} $(cat "${work}/stale/out")"; fi
 
+# fip-check (story 50.10): the holder from the API and the leader from Patroni, pushed
+mkdir -p "${work}/fipbin"
+cat >"${work}/fipbin/curl" <<'STUB'
+#!/usr/bin/env bash
+url="${*: -1}"
+case "${url}" in
+    *floating_ips/7) echo '{"floating_ip":{"server":2}}' ;;
+    http://10.0.0.3:8008/primary) printf 200 ;;
+    *:8008/primary) printf 503 ;;
+    */metrics/job/fip_check) cat >"${STATE}/pushed" ;;
+esac
+STUB
+chmod +x "${work}/fipbin/curl"
+rm -rf "${work:?}/fip"; mkdir -p "${work}/fip"
+env PATH="${work}/fipbin:${PATH}" STATE="${work}/fip" CLOUD_HA_ENV=/nonexistent HCLOUD_TOKEN_FILE="${work}/token" FLOATING_IP_ID=7 \
+    NODE_A_ADDR=10.0.0.2 NODE_B_ADDR=10.0.0.3 SERVER_ID_A=1 SERVER_ID_B=2 bash "${here}/bin/fip-check" >/dev/null 2>&1
+if grep -q 'fip_holder{node="node-b"} 1' "${work}/fip/pushed" && grep -q 'patroni_primary{node="node-b"} 1' "${work}/fip/pushed" \
+    && grep -q 'fip_holder{node="node-a"} 0' "${work}/fip/pushed"; then
+    ok "fip-check: pushes the holder and the leader per node"
+else
+    fail "fip-check: $(cat "${work}/fip/pushed" 2>/dev/null)"
+fi
+
 if [ "${fails}" -ne 0 ]; then echo "${fails} failed"; exit 1; fi
 echo "all passed"

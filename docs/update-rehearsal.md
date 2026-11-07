@@ -20,9 +20,10 @@ fails.
   `release.yml` and of every other tag workflow) refuses a tag unless the update rehearsal
   passed on **that exact commit**, as it does for CI. A run still going is waited for; a
   failed one refuses the tag. Nothing is published without it.
-- **It makes the release.** Tags are automatic: when CI and the rehearsal have both passed on
-  a commit of main, `auto-tag.yml` tags the newest such commit as the next patch version and
-  starts every tag workflow on it (see [updates.md](updates.md#how-a-release-is-made)).
+- **It makes the release.** A session pushes each tag: when CI and the rehearsal have both
+  passed on a commit of main, the scheduled release session tags the newest such commit as the
+  next patch version, and that tag push starts every tag workflow on it (see
+  [updates.md](updates.md#how-a-release-is-made)).
 - By hand: Actions → Update rehearsal → Run workflow (`prev_tag` to update from another
   release; `cur_ref` to rehearse another ref's code with this checkout's harness).
 

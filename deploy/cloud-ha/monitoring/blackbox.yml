@@ -1,0 +1,16 @@
+# The witness's blackbox exporter (story 50.10): the canary and the API over HTTPS, and each
+# node's own wildcard certificate (a home's name as SNI, against the node's private address).
+modules:
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      fail_if_not_ssl: true
+  tls_wildcard:
+    prober: tcp
+    timeout: 10s
+    tcp:
+      tls: true
+      tls_config:
+        server_name: x.relay.maktaba.tv

@@ -1,0 +1,36 @@
+# Network 2 of the outside probes (Epic 50 story 50.10): from GitHub's runners, outside
+# Hetzner, so a Hetzner-wide outage still pages. Every 5 minutes (Actions' minimum), each run
+# probing every 30 s for 5 minutes (deploy/cloud-ha/monitoring/probe.sh): the canary home
+# through the relay, the API and the status page; results to the witness's Pushgateway.
+# Two failed probes in a row fail the run, and GitHub mails the owner. Off until the pair
+# runs: set the repository variable CLOUD_PROBE to 'true'.
+name: Cloud probe
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    if: vars.CLOUD_PROBE == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Probe from outside Hetzner
+        env:
+          CANARY_URL: https://canary.relay.maktaba.tv/api/health
+          API_URL: https://api.maktaba.tv/readyz
+          STATUS_URL: https://status.maktaba.tv
+          FILE_URL: https://canary.relay.maktaba.tv/canary/10mb.bin
+          PUSHGATEWAY_URL: ${{ secrets.PUSHGATEWAY_URL }}
+          PUSHGATEWAY_TOKEN: ${{ secrets.PUSHGATEWAY_TOKEN }}
+        run: bash deploy/cloud-ha/monitoring/probe.sh
