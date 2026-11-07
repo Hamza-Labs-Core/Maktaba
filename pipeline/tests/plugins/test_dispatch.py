@@ -336,18 +336,23 @@ async def test_windows_reaches_the_host_through_the_relay(monkeypatch: pytest.Mo
     """#710: on Windows _connect opens the supervisor's relay pipe (pipe.py), not the unix
     socket; with no relay named it raises an OSError, which the dispatcher already takes as
     plugin_host_unavailable (the worker's fallback)."""
+    import sys
+
     from maktaba_pipeline.plugins import pipe
 
-    monkeypatch.setattr(dispatch.sys, "platform", "win32")
+    monkeypatch.setattr(sys, "platform", "win32")
     opened: list[str] = []
+    reader: Any = object()
+    writer: Any = object()
 
     async def open_pipe(name: str, **_: Any) -> tuple[Any, Any]:
         opened.append(name)
-        return "reader", "writer"
+        return reader, writer
 
     monkeypatch.setattr(pipe, "open_pipe", open_pipe)
     monkeypatch.setenv(pipe.ENV, r"\\.\pipe\maktaba-plugind-test")
-    assert await dispatch._connect("/ignored/plugind.sock") == ("reader", "writer")
+    got_reader, got_writer = await dispatch._connect("/ignored/plugind.sock")
+    assert got_reader is reader and got_writer is writer
     assert opened == [r"\\.\pipe\maktaba-plugind-test"]
 
     monkeypatch.delenv(pipe.ENV)
