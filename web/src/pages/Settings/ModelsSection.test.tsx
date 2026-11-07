@@ -339,7 +339,7 @@ describe("Settings models (test-cases/settings-models.md)", () => {
     await waitFor(() => expect(screen.getAllByText("No models in this category.")).toHaveLength(3));
     const select = screen.getByRole("combobox", { name: "Active STT backend" });
     expect(within(select).queryAllByRole("option")).toHaveLength(0);
-    expect(screen.getByLabelText("OpenAI API key")).toBeEnabled();
+    expect(screen.getByText(/OPENAI_API_KEY/)).toBeInTheDocument();
     await tick(3000);
     expect(modelCalls()).toBe(1);
   });
@@ -446,21 +446,16 @@ describe("Settings models (test-cases/settings-models.md)", () => {
     expect(modelCalls()).toBeGreaterThanOrEqual(10);
   });
 
-  it("SMD-17: the OpenAI API key is saved to storage and prefilled", async () => {
-    const user = userEvent.setup();
-    const { unmount } = renderModels();
-    const input = screen.getByLabelText("OpenAI API key");
-    expect(input).toHaveAttribute("type", "password");
-    expect(input).toHaveAttribute("autocomplete", "off");
-    expect(input).toHaveAttribute("placeholder", "sk-…");
-    await user.type(input, "sk-test-123");
-    await user.click(screen.getByRole("button", { name: "Save" }));
-    expect(localStorage.getItem("mkt:openai_api_key")).toBe("sk-test-123");
-    unmount();
+  it("SMD-17: the OpenAI API key is never typed into or kept by the browser", async () => {
+    // an earlier build kept a typed key here, in plain text (CodeQL
+    // js/clear-text-storage-of-sensitive-data, alert 36)
+    localStorage.setItem("mkt:openai_api_key", "sk-old");
     renderModels();
-    expect(screen.getByLabelText("OpenAI API key")).toHaveValue("sk-test-123");
-    // recorded: the key never goes to the server
-    expect([...post.mock.calls, ...patch.mock.calls]).toEqual([]);
+    await waitFor(() => expect(localStorage.getItem("mkt:openai_api_key")).toBeNull());
+    expect(screen.queryByLabelText("OpenAI API key")).toBeNull();
+    expect(document.querySelector('input[type="password"]')).toBeNull();
+    expect(screen.getByText(/set on the server \(OPENAI_API_KEY\)/)).toBeInTheDocument();
+    expect(Object.keys(localStorage).filter((k) => /api_key/i.test(k))).toEqual([]);
   });
 
   // Security gap: every user sees Download / Delete / Activate / Test, and the server
@@ -509,11 +504,10 @@ describe("Settings models (test-cases/settings-models.md)", () => {
     expect(document.body.textContent).not.toMatch(/settings\.models\./);
   });
 
-  it("SMD-23: the select, key field, progress bar and alert are labelled", async () => {
+  it("SMD-23: the select, progress bar and alert are labelled", async () => {
     answers([{ ...large, status: "downloading", progress: 40 }]);
     renderModels();
     expect(screen.getByRole("combobox", { name: "Active STT backend" })).toBeInTheDocument();
-    expect(screen.getByLabelText("OpenAI API key")).toBeInTheDocument();
     const bar = await screen.findByRole("progressbar", { name: "Downloading" });
     expect(bar).toHaveAttribute("aria-valuemin", "0");
     expect(bar).toHaveAttribute("aria-valuemax", "100");
