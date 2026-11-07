@@ -200,6 +200,12 @@ func (h *ManifestHandler) ServeRenditionIndex(w http.ResponseWriter, r *http.Req
 		httpx.Write(w, http.StatusBadRequest, "missing-rendition", "rendition path missing", "")
 		return
 	}
+	// a rendition is one folder's name: a ".." in it is never one (CanonicalUnder
+	// refuses the walk out as well; this check is the one CodeQL's path model reads)
+	if strings.Contains(rendition, "..") {
+		httpx.Write(w, http.StatusNotFound, "rendition-not-found", "rendition index not on disk", "")
+		return
+	}
 	// Story 23.5 AC-2: rendition is an untrusted URL segment — route
 	// it through the single canonicalizer so `..`/symlink-escape
 	// cannot read outside this session's HLS directory.
@@ -274,6 +280,13 @@ func (h *ManifestHandler) ServeSegment(w http.ResponseWriter, r *http.Request) {
 	segment := chiURLParam(r, "segment")
 	if segment == "" {
 		httpx.Write(w, http.StatusBadRequest, "missing-segment", "segment path incomplete", "")
+		return
+	}
+	// a rendition and a segment are one name each: a ".." in either is never one
+	// (CanonicalUnder refuses the walk out as well; this check is the one CodeQL's path
+	// model reads)
+	if strings.Contains(rendition, "..") || strings.Contains(segment, "..") {
+		httpx.Write(w, http.StatusNotFound, "segment-not-found", "not a segment", "")
 		return
 	}
 	parts := []string{rendition, segment}
