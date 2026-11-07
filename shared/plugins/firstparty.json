@@ -1,5 +1,5 @@
 {
- "digest": "6db7e4a7ec5a8a030b791ecc439f5354d76ebe006ecfe7e3db8b49c646e2c097",
+ "digest": "d30cdb62c85a7182a37e75bafa2eb589573765c4a699ac5578669a543f456029",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -1528,10 +1528,10 @@
    }
   },
   {
-   "digest": "1fc446a1f8a571bd0adf1bba7e2858af8a11ed3eb4da7e784255231a2be3a69d",
+   "digest": "e3d4f9255b8253fb022f947fe212cba11334e2c43f0cf006a59499c8b3707b10",
    "folder": "livetv",
    "id": "tv.maktaba.livetv",
-   "manifest": "# tv.maktaba.livetv: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): plans the live TV channels and writes them (or stages them as a TV change).\nschema     = 1\nid         = \"tv.maktaba.livetv\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv.name\"\nsummary = \"fp.livetv.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"clip_group_items\", \"clip_groups\", \"collection_items\", \"episode_tags\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"promo_links\", \"season_style\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"tv_slots\", \"video_topic_tags\", \"videos\", \"youtube_channels\", \"youtube_videos\"]\ndb.write  = [\"channel_plans\", \"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"filler_items\", \"filler_pools\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"planner\", \"detect\", \"tv\", \"tv_output\", \"tv_staging\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = [\"data.review\"]\n\n[[stage]]\nname         = \"plan_channels\"\nsubject      = \"catalog\"\nexport       = \"plan-channels\"\nversion      = 5\nlabel        = \"Plan channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 1\nentry_for    = [\"catalog\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nplacement    = \"home\"\nedges        = [{ to = \"write_channels\", map = \"same\" }]\nentry        = \"maktaba_fp_livetv.stages.plan_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"write_channels\"\nsubject      = \"catalog\"\nexport       = \"write-channels\"\nversion      = 5\nlabel        = \"Write channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 2\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv.stages.write_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n",
+   "manifest": "# tv.maktaba.livetv: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): plans the live TV channels and writes them (or stages them as a TV change).\nschema     = 1\nid         = \"tv.maktaba.livetv\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv.name\"\nsummary = \"fp.livetv.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"clip_group_items\", \"clip_groups\", \"collection_items\", \"episode_tags\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"promo_links\", \"season_style\", \"season_tags\", \"series\", \"series_episodes\", \"series_seasons\", \"tv_slots\", \"video_topic_tags\", \"videos\", \"youtube_channels\", \"youtube_videos\"]\ndb.write  = [\"channel_plans\", \"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"filler_items\", \"filler_pools\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"planner\", \"detect\", \"tv\", \"tv_output\", \"tv_staging\", \"dizquetv\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = [\"data.review\"]\n\n[[stage]]\nname         = \"plan_channels\"\nsubject      = \"catalog\"\nexport       = \"plan-channels\"\nversion      = 5\nlabel        = \"Plan channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 1\nentry_for    = [\"catalog\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nplacement    = \"home\"\nedges        = [{ to = \"write_channels\", map = \"same\" }]\nentry        = \"maktaba_fp_livetv.stages.plan_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"write_channels\"\nsubject      = \"catalog\"\nexport       = \"write-channels\"\nversion      = 5\nlabel        = \"Write channels\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 2\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv.stages.write_channels:IMPL\"\nfingerprint  = { input = true, output = false }\n",
    "statements": [
     {
      "mode": "read",
@@ -1685,6 +1685,34 @@
      "scope_arg": 0,
      "sha256": "6c779d0cf183838694630b5155e9da10b884d99812cdce255556d0c83a53daed",
      "text": "SELECT MAX(gen) FROM tv_sched_gen_seq",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "display.display_info",
+     "reads": [
+      "series",
+      "series_episodes",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "2b43e13e74bdf6ee37276f5a331c0ab2cbd0c3ce1a11f2ed4706733963d66364",
+     "text": "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '') AS manual, v.display_title IS NOT NULL AS done, COALESCE(s.display_name, s.name_override, s.name) AS series, COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep, se.series_id AS sid FROM videos v LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN series s ON s.id = se.series_id WHERE v.id = ANY($1::uuid[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "display.display_info.2",
+     "reads": [
+      "series",
+      "series_episodes",
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "0fb8d879bed0575c744dc9d0fe3d37fa6a0d4567e37d085cc75fde9b410feb15",
+     "text": "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '') AS manual, v.display_title IS NOT NULL AS done, COALESCE(s.display_name, s.name_override, s.name) AS series, COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep, se.series_id AS sid FROM videos v LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN series s ON s.id = se.series_id WHERE v.id IN (SELECT value FROM json_each($1))",
      "writes": []
     },
     {
@@ -1874,6 +1902,16 @@
      "scope_arg": 0,
      "sha256": "bb53ca59e3f9fdb01fb4935a3c485c7e905bdc64449c7531a901b20298092943",
      "text": "SELECT id, library_id, number, name, slug, logo_path, category, mode, mode_config, source_filter, transition, enabled, sort_order FROM channels WHERE lifecycle = 'live'",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "pass.topup_once",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "22f0a656b0f587265aba05520690b54be7a7014994ff7e8bef318e24551cb327",
+     "text": "SELECT pg_try_advisory_xact_lock($1, $2)",
      "writes": []
     },
     {
@@ -2964,10 +3002,10 @@
    }
   },
   {
-   "digest": "492053ea04925e36877d996703798d41a1cd75aaaadbb70adcc5299bdbf80c3e",
+   "digest": "d0c8d269c442360ebd6b0030534efe8fc59dcc51ad337344592cbe3a3c2a3b49",
    "folder": "livetv-slots",
    "id": "tv.maktaba.livetv-slots",
-   "manifest": "# tv.maktaba.livetv-slots: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): stages, swaps, rolls back and cleans up TV changes (Epic 33's slots).\nschema     = 1\nid         = \"tv.maktaba.livetv-slots\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv-slots.name\"\nsummary = \"fp.livetv-slots.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv.slots\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"channel_plans\", \"collection_items\", \"filler_items\", \"filler_pools\", \"job_stages\", \"series\", \"series_episodes\", \"tv_slots\", \"videos\"]\ndb.write  = [\"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"tv\", \"tv_output\", \"tv_staging\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = []\n\n[[stage]]\nname         = \"tv_stage\"\nsubject      = \"catalog\"\nexport       = \"tv-stage\"\nversion      = 1\nlabel        = \"Stage TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 3\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_stage:IMPL\"\n\n[[stage]]\nname         = \"tv_swap\"\nsubject      = \"catalog\"\nexport       = \"tv-swap\"\nversion      = 1\nlabel        = \"Swap TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 4\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_livetv_slots.stages.tv_swap:IMPL\"\n\n[[stage]]\nname         = \"tv_gc\"\nsubject      = \"catalog\"\nexport       = \"tv-gc\"\nversion      = 1\nlabel        = \"TV staging clean-up\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 5\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv_slots.stages.tv_gc:IMPL\"\n\n[[stage]]\nname         = \"tv_rollback\"\nsubject      = \"catalog\"\nexport       = \"tv-rollback\"\nversion      = 1\nlabel        = \"Roll back TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 6\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_rollback:IMPL\"\n",
+   "manifest": "# tv.maktaba.livetv-slots: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 7\n# (story 54.34): stages, swaps, rolls back and cleans up TV changes (Epic 33's slots).\nschema     = 1\nid         = \"tv.maktaba.livetv-slots\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.livetv-slots.name\"\nsummary = \"fp.livetv-slots.summary\"\n\n[trusted]\nrunner    = \"light\"\ncomponent = \"livetv.slots\"\ndb.read   = [\"app_settings\", \"channel_art_overrides\", \"channel_plans\", \"collection_items\", \"filler_items\", \"filler_pools\", \"job_stages\", \"series\", \"series_episodes\", \"tv_slots\", \"videos\"]\ndb.write  = [\"channel_programs\", \"channel_schedule_state\", \"channels\", \"external_links\", \"tv_change_events\", \"tv_changes\", \"tv_release_channels\", \"tv_releases\", \"tv_routing\", \"tv_sched_gen_seq\"]\nsettings  = [\"tv\", \"tv_output\", \"tv_staging\", \"dizquetv\", \"display_titles\"]\nfiles.read  = [\"data.channels\"]\nfiles.write = []\n\n[[stage]]\nname         = \"tv_stage\"\nsubject      = \"catalog\"\nexport       = \"tv-stage\"\nversion      = 1\nlabel        = \"Stage TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 3\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_stage:IMPL\"\n\n[[stage]]\nname         = \"tv_swap\"\nsubject      = \"catalog\"\nexport       = \"tv-swap\"\nversion      = 1\nlabel        = \"Swap TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 4\nplacement    = \"home\"\nmax_attempts = 1\nentry        = \"maktaba_fp_livetv_slots.stages.tv_swap:IMPL\"\n\n[[stage]]\nname         = \"tv_gc\"\nsubject      = \"catalog\"\nexport       = \"tv-gc\"\nversion      = 1\nlabel        = \"TV staging clean-up\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 5\nplacement    = \"home\"\nentry        = \"maktaba_fp_livetv_slots.stages.tv_gc:IMPL\"\n\n[[stage]]\nname         = \"tv_rollback\"\nsubject      = \"catalog\"\nexport       = \"tv-rollback\"\nversion      = 1\nlabel        = \"Roll back TV change\"\nsubject_kinds = [\"catalog\"]\npool         = \"cpu\"\nlane         = \"channels\"\nlane_order   = 6\nplacement    = \"home\"\nmax_attempts = 2\nentry        = \"maktaba_fp_livetv_slots.stages.tv_rollback:IMPL\"\n",
    "statements": [
     {
      "mode": "read",

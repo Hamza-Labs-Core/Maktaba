@@ -4,6 +4,8 @@ modules = [
     "maktaba_pipeline.rules:read",
     "maktaba_pipeline.schedule.plan_inputs",
     "maktaba_pipeline.channels.repo",
+    "maktaba_pipeline.channels.pass_",
+    "maktaba_pipeline.channels.display",
     "maktaba_pipeline.tvrelease.build",
     "maktaba_pipeline.tvrelease.generation",
     "maktaba_pipeline.tvrelease.merge",

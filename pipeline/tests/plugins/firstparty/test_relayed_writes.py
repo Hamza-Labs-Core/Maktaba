@@ -90,3 +90,48 @@ async def test_a_download_starts_its_new_videos_pipeline(db: Database) -> None:
                                           "subject_id": str(v)},
     )  # fmt: skip
     assert got["job_id"] is not None
+
+
+async def test_only_tv_swap_commits_and_only_its_own_change(db: Database) -> None:
+    """The swap commit and the rollback (story 54.34) are the worker's: asked by another
+    stage they are refused, and the change is always the job's own payload's."""
+    ctx = SimpleNamespace(
+        job=SimpleNamespace(id=7, stage="tv_stage", payload={"change_id": "x"}),
+    )
+    with pytest.raises(native.EnqueueRefused, match="tv_commit is tv_swap's"):
+        await native._relayed_tv(db, ctx, "tv_commit")
+    with pytest.raises(native.EnqueueRefused, match="tv_rollback is tv_rollback's"):
+        await native._relayed_tv(db, ctx, "tv_rollback")
+    # tv_swap for a change that is not swapping: the lookup comes back, nothing is written
+    ctx.job.stage = "tv_swap"
+    ctx.job.payload = {"change_id": "00000000-0000-4000-8000-000000000077"}
+    got = await native._relayed_tv(db, ctx, "tv_commit")
+    assert set(got) == {"lookup"}
+    ctx.job.payload = {}
+    assert await native._relayed_tv(db, ctx, "tv_commit") == {
+        "lookup": "no change_id in the job's payload"
+    }
+
+
+async def test_the_areas_carry_the_reports_and_the_channels_art(
+    db: Database, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """tv.maktaba.livetv (story 54.34) writes the plan's page to the reports folder and reads
+    the channels' art: what an admin uploaded and the folders the planner's rules name."""
+    import os
+
+    from maktaba_pipeline.engine.sql import dumps
+
+    monkeypatch.setenv("MAKTABA_REVIEWS_ROOT", str(tmp_path / "reviews"))
+    monkeypatch.setenv("MAKTABA_DATA_DIR", str(tmp_path / "data"))
+    await db.execute(
+        "INSERT INTO app_settings (key, value) VALUES ('rules.planner', $1)",
+        dumps({"dz_logo_dir": str(tmp_path / "logos"),
+               "dz_watermark_file": str(tmp_path / "marks" / "corner.png")}),
+    )  # fmt: skip
+    doc = await native.areas_doc(db)
+    real = os.path.realpath
+    assert doc["data.review"] == real(tmp_path / "reviews")
+    assert doc["data.channels"].split(";") == sorted(
+        real(tmp_path / p) for p in ("data/channel-art", "logos", "marks")
+    )
