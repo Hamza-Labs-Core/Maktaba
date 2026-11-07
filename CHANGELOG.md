@@ -209,6 +209,12 @@ build fails when the two differ.
   the whole time off again (or all history). A worker that loses the lead also stops reporting
   the component as off once it is on again, so Admin > Components no longer shows it off.
 
+- **The desktop app's tray keeps offering the can't-start choices while the launcher writes
+  its record (Epic 53, story 53.05).** On Windows, opening `start-failed.json` at the moment the
+  launcher replaced it could fail, and the tray then dropped Try again, Safe mode and Roll back
+  for one refresh. The tray now reads the record again for a moment before it treats it as
+  gone.
+
 ### Security
 
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
