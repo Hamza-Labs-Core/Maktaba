@@ -14,17 +14,13 @@ package main
 // v0.3.80 when v0.3.81 was tagged; componentseed's tests keep it.)
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -127,24 +123,6 @@ func (m *appMachine) componentsHome(db *sql.DB) componentsHome {
 	return h
 }
 
-// loopsFullHome reads tools/rehearsal/loops-full-home.txt.
-func loopsFullHome(t *testing.T) []string {
-	t.Helper()
-	f, err := os.Open(filepath.Join("..", "tools", "rehearsal", "loops-full-home.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	var out []string
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		if l := strings.TrimSpace(sc.Text()); l != "" && !strings.HasPrefix(l, "#") {
-			out = append(out, l)
-		}
-	}
-	return out
-}
-
 func diffLists(t *testing.T, what string, before, after []string) {
 	t.Helper()
 	if !reflect.DeepEqual(before, after) {
@@ -181,32 +159,6 @@ func keptProcesses(t *testing.T, before, after []string, bundle string) []string
 		}
 	}
 	return out
-}
-
-// releaseAfter reports whether release a (0.3.83) is later than b (v0.3.82); an
-// unreadable one is not.
-func releaseAfter(a, b string) bool {
-	parse := func(v string) []int {
-		var out []int
-		for _, p := range strings.Split(strings.TrimPrefix(strings.SplitN(v, "-", 2)[0], "v"), ".") {
-			n, err := strconv.Atoi(p)
-			if err != nil {
-				return nil
-			}
-			out = append(out, n)
-		}
-		return out
-	}
-	x, y := parse(a), parse(b)
-	if x == nil || y == nil {
-		return false
-	}
-	for i := 0; i < len(x) && i < len(y); i++ {
-		if x[i] != y[i] {
-			return x[i] > y[i]
-		}
-	}
-	return len(x) > len(y)
 }
 
 // keptStages is after's rows for the stages before had. A stage new with this release (a
@@ -275,6 +227,41 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 		id, rest, _ := strings.Cut(row, " ")
 		compBefore[id] = rest
 	}
+	// the loops the previous release runs here, as component_status reports them on the
+	// API and streaming (the pipeline is the rehearsal's stand-in): read once every
+	// switchable component it left enabled with a loop on those hosts reports one running,
+	// so the snapshot is the previous release's own, with no list to keep per release
+	cat := components.Default()
+	var waitLoops []string
+	for _, c := range cat.Components() {
+		if !c.Switchable || strings.Fields(compBefore[c.ID]+" ")[0] != components.WantEnabled {
+			continue
+		}
+		for _, l := range c.Loops {
+			if host, _, _ := strings.Cut(l, ":"); host == "api" || host == "streaming" {
+				waitLoops = append(waitLoops, host+" "+c.ID)
+			}
+		}
+	}
+	runningLoops := func() map[string]bool {
+		out := map[string]bool{}
+		for _, s := range stringsOf(t, db, `SELECT part || ' ' || id FROM component_status
+			WHERE machine = 'home' AND phase = 'running' AND part IN ('api', 'streaming')`) {
+			out[s] = true
+		}
+		return out
+	}
+	loopsBefore := map[string]bool{}
+	waitFor(t, "the previous release's loops in component_status", 2*time.Minute, func() bool {
+		loopsBefore = runningLoops()
+		for _, k := range waitLoops {
+			if !loopsBefore[k] {
+				return false
+			}
+		}
+		return true
+	})
+	r.logf("before the update: loops running %v", sortedKeysOf(loopsBefore))
 	logFrom := len(home.log.String())
 
 	run, mon, _ := r.update(home, k.curSpec(), 20*time.Minute)
@@ -333,7 +320,6 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 			t.Errorf("%s's row went in the update (it was %s)", id, compBefore[id])
 		}
 	}
-	cat := components.Default()
 	for id, want := range map[string]string{
 		"livetv.slots": "enabled", "livetv.inprocess": "installed", "livetv.hdhomerun": "installed",
 		"ext.plex": "enabled", "ext.dizquetv": "installed", "ext.cloudflare_stream": "installed",
@@ -348,24 +334,14 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 		}
 	}
 
-	// the loops the previous release ran are running, and no other switchable loop
-	expected := map[string]bool{}
-	for _, l := range loopsFullHome(t) {
-		host, name, _ := strings.Cut(l, ":")
-		c, ok := cat.ByLoop(host, name)
-		if !ok {
-			t.Fatalf("loops-full-home.txt: %s is no loop of the catalog", l)
-		}
-		expected[host+" "+c.ID] = true
-	}
+	// the loops the previous release ran are running, and no other switchable loop of those
+	// hosts, but a component's this release adds when the home's bundle has it (story 52.17's
+	// rule): one the previous release had no row for (its seed writes every component of its
+	// catalog that has a loop)
 	running := map[string]bool{}
 	waitFor(t, "the loops' component_status", 2*time.Minute, func() bool {
-		running = map[string]bool{}
-		for _, s := range stringsOf(t, db, `SELECT part || ' ' || id FROM component_status
-			WHERE machine = 'home' AND phase = 'running' AND part IN ('api', 'streaming')`) {
-			running[s] = true
-		}
-		for k := range expected {
+		running = runningLoops()
+		for k := range loopsBefore {
 			if !running[k] {
 				return false
 			}
@@ -376,13 +352,12 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 		if !c.Switchable {
 			continue
 		}
+		_, had := compBefore[c.ID]
+		added := !had && slices.Contains(c.Bundles, "full")
 		for _, l := range c.Loops {
 			host, _, _ := strings.Cut(l, ":")
 			k := host + " " + c.ID
-			// a component this release adds may run when the home's bundle has it (story
-			// 52.17's rule; the log index's notifier, 53.10, is on in Full)
-			added := releaseAfter(c.Since, r.kit.prev) && slices.Contains(c.Bundles, "full")
-			if (host == "api" || host == "streaming") && running[k] && !expected[k] && !added {
+			if (host == "api" || host == "streaming") && running[k] && !loopsBefore[k] && !added {
 				t.Errorf("%s runs on %s after the update; the previous release did not run it here", c.ID, host)
 			}
 		}
@@ -409,26 +384,46 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 		AND NOT COALESCE((payload::jsonb ->> 'new')::boolean, false)`); n != 1 {
 		t.Errorf("%d seeds in the audit log, want 1", n)
 	}
-	// story 52.17: the components this release adds over the seeded one got one seed of
-	// their own, as the home's bundle says (on in it, off outside it), and a restart adds
-	// no other
+	// story 52.17: the components this release adds over the seeded one (those the previous
+	// release had no row for) got one seed of their own, as the home's bundle says (on in
+	// it, off outside it; an asset outside it is downloaded when a component that seed
+	// turned on requires it), and a restart adds no other. A component the previous release
+	// seeded keeps its row as it was (checked above), whatever the bundle says: its first
+	// seed found an asset absent when it was not on disk.
 	if n := queryInt(t, db, `SELECT count(*) FROM audit_log WHERE action = 'component.seed'
 		AND COALESCE((payload::jsonb ->> 'new')::boolean, false)`); n > 1 {
 		t.Errorf("%d seeds of new components, want at most 1", n)
 	}
-	for _, s := range stringsOf(t, db, `SELECT id || ' ' || want FROM components WHERE updated_by = 'seed'
-		AND id IN ('review.words', 'runtime.lang', 'lang.ar', 'lang.en')`) {
+	newWants := map[string]string{}
+	for _, s := range stringsOf(t, db, `SELECT id || ' ' || want FROM components WHERE updated_by = 'seed'`) {
 		id, want, _ := strings.Cut(s, " ")
+		if _, had := compBefore[id]; !had {
+			newWants[id] = want
+		}
+	}
+	r.logf("components this release added: %v", newWants)
+	for id, want := range newWants {
 		c, ok := cat.Get(id)
 		if !ok {
+			t.Errorf("the update seeded %s, no component of the catalog", id)
 			continue
 		}
 		in := slices.Contains(c.Bundles, bundle.String)
+		required := false
+		for other, w := range newWants {
+			if w != components.WantEnabled {
+				continue
+			}
+			for _, req := range cat.Requires(other) {
+				required = required || slices.Contains(req.AnyOf, id)
+			}
+		}
 		switch {
-		case c.Kind == components.KindAsset && in && want != components.WantInstalled,
-			c.Kind == components.KindAsset && !in && want != components.WantAbsent,
-			c.Kind != components.KindAsset && in && want != components.WantEnabled,
-			c.Kind != components.KindAsset && !in && want != components.WantInstalled:
+		case !c.Switchable && want != components.WantEnabled,
+			c.Switchable && c.Kind == components.KindAsset && (in || required) && want != components.WantInstalled,
+			c.Switchable && c.Kind == components.KindAsset && !in && !required && want != components.WantAbsent,
+			c.Switchable && c.Kind != components.KindAsset && in && want != components.WantEnabled,
+			c.Switchable && c.Kind != components.KindAsset && !in && want != components.WantInstalled:
 			t.Errorf("new component %s is %s on a %s home", id, want, bundle.String)
 		}
 	}
