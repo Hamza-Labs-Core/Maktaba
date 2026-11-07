@@ -15,15 +15,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...db.jobs import Job
-from ...library_mgmt.topics import TopicModel, assign_topics
-from ..context import StageContext
-from ..graph import TOPIC_ASSIGN_VERSION, StageResult, Subject
-from ..hashing import canonical_hash
-from ..sql import uid
-from ._analysis import library_setting, load_embedding, unpack_vec
-from ._common import load_video, require_video
-from .registry import StageImpl
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.engine.context import StageContext
+from maktaba_pipeline.engine.graph import TOPIC_ASSIGN_VERSION, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.sql import uid
+from maktaba_pipeline.engine.stages._analysis import library_setting, load_embedding, unpack_vec
+from maktaba_pipeline.engine.stages._common import load_video, require_video
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.library_mgmt.topics import TopicModel, assign_topics
 
 __all__ = ["IMPL", "TOPIC_ASSIGN_VERSION", "library_topics_signature"]
 

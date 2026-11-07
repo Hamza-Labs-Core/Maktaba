@@ -18,8 +18,8 @@ from typing import Any
 import huggingface_hub  # noqa: F401 - imported once here, not inside a timed test
 import numpy as np
 import pytest
+from maktaba_fp_transcription.stages import transcribe as stage
 
-from maktaba_pipeline.engine.stages import transcribe as stage
 from maktaba_pipeline.stt import batched, ct2, engine
 from maktaba_pipeline.stt.settings import SAMPLE_RATE, FileProgress, WhisperSettings, Word
 
@@ -682,6 +682,10 @@ async def test_the_legacy_faster_whisper_backend_runs_on_the_engine(
         return np.zeros(SAMPLE_RATE * 2, np.float32)
 
     monkeypatch.setattr(stage, "decode_audio", decode)
+    # the backend decodes through the pipeline's own (maktaba_pipeline.stt.env)
+    from maktaba_pipeline.stt import env as stt_env
+
+    monkeypatch.setattr(stt_env, "decode_audio", decode)
     monkeypatch.setattr(ct2, "get_transcriber", Engine)
     backend = FasterWhisperBackend(device="cuda", force_ready=True)
     hints = TranscriptionHints(word_timestamps=True, initial_prompt="نبيل")

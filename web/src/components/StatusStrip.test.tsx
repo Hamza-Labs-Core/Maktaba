@@ -162,4 +162,27 @@ describe("StatusStrip", () => {
     localStorage.removeItem("mkt:locale");
     expect(strip.textContent).toMatch(/الوصول عن بُعد متوقف، ونعمل على إصلاحه/);
   });
+
+  // Epic 50 story 50.13: a request waiting for the home behind the relay
+  it("says it is reconnecting while a request waits for the home", async () => {
+    const { rideOutReconnect } = await import("../lib/reconnect");
+    show(base);
+    expect(screen.queryByTestId("status-strip")).toBeNull();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const answers = [
+      new Response(JSON.stringify({ error: "home_reconnecting" }), { status: 503 }),
+      new Response("{}", { status: 200 }),
+    ];
+    const done = rideOutReconnect(
+      async () => answers.shift() as Response,
+      () => gate
+    );
+    expect(await screen.findByText("Reconnecting to your home…")).toBeInTheDocument();
+    release();
+    await act(async () => {
+      await done;
+    });
+    expect(screen.queryByText("Reconnecting to your home…")).toBeNull();
+  });
 });

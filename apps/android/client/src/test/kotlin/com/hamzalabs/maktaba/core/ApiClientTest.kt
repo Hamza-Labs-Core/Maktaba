@@ -456,4 +456,41 @@ class ApiClientTest {
         assertEquals("https://status.maktaba.tv/i/i1", lines[1].link)
         assertNull(lines[1].details)
     }
+
+    /** Epic 50 story 50.13 (T05): the relay's home_reconnecting three times, then the page. */
+    @Test
+    fun aHomeReconnectingIsWaitedFor() = runBlocking {
+        var calls = 0
+        route = { r ->
+            if (r.url.encodedPath == "/api/libraries") {
+                calls++
+                if (calls <= 3) json(503, """{"error":"home_reconnecting","message":""}""") else json(200, """{"items":[],"next":null}""")
+            } else {
+                json(404, "{}")
+            }
+        }
+        val waits = mutableListOf<Long>()
+        val seenWaiting = mutableListOf<Int>()
+        val c = ApiClient(server.url("/"), MemoryTokens(), pause = { waits += it; seenWaiting += com.hamzalabs.maktaba.core.api.HomeReconnect.waiting.value })
+        c.libraries()
+        assertEquals(4, calls)
+        assertEquals(listOf(2_000L, 4_000L, 8_000L), waits)
+        assertTrue("the strip is told while it waits", seenWaiting.all { it > 0 })
+        assertEquals(0, com.hamzalabs.maktaba.core.api.HomeReconnect.waiting.value)
+    }
+
+    @Test
+    fun serverOfflineIsNotRetried() = runBlocking {
+        var calls = 0
+        route = { calls++; json(502, """{"error":"server_offline","message":""}""") }
+        val c = ApiClient(server.url("/"), MemoryTokens(), pause = { fail("no wait for server_offline") })
+        try {
+            c.libraries()
+            fail("a 502 is an error")
+        } catch (e: ApiException.Status) {
+            assertEquals(502, e.code)
+        }
+        assertEquals(1, calls)
+    }
 }
+

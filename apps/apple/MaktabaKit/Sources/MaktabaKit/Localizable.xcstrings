@@ -8902,6 +8902,16 @@
           }
         }
       }
+    },
+    "Reconnecting to your home…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ إعادة الاتصال بالجهاز الرئيسي…"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

@@ -56,10 +56,15 @@ public struct StripLine: Equatable, Sendable, Identifiable {
 public enum StatusStripRules {
     /// `cloud` is Maktaba Cloud's line (story 50.11, `CloudStatusRules.line`) when the app
     /// reaches the home through the cloud: after the home's own lines, before admin-only ones.
+    /// `reconnecting`: a request is waiting for the home behind the relay (story 50.13).
     public static func lines(_ s: HomeStatusDoc?, online: Bool, admin: Bool, liveTVOff: Bool = false,
-                             cloud: StripLine? = nil) -> [StripLine] {
+                             cloud: StripLine? = nil, reconnecting: Bool = false) -> [StripLine] {
         var out: [StripLine] = []
-        if !online { out.append(StripLine(key: "offline", text: StripWords.offline, details: nil)) }
+        if !online {
+            out.append(StripLine(key: "offline", text: StripWords.offline, details: nil))
+        } else if reconnecting {
+            out.append(StripLine(key: "reconnecting", text: StripWords.reconnecting, details: nil))
+        }
         guard let s, s.v == 1 else { return out + (cloud.map { [$0] } ?? []) }
         func bad(_ g: String) -> Bool { ["degraded", "restarting", "down"].contains(s.components[g] ?? "ok") }
         func adminLink(_ link: String) -> String? { admin ? link : nil }
@@ -117,6 +122,8 @@ public enum StripWords {
     public static let apiOutage =
         "Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password."
     public static let maintenance = "Planned maintenance on %1$@, %2$@–%3$@. Remote play may pause for a few seconds."
+    /// A request waiting for the home behind the relay (Epic 50 story 50.13).
+    public static let reconnecting = "Reconnecting to your home…"
 
     /// `english` in the person's language (MaktabaKit's catalog), for an app's own view.
     public static func localized(_ english: String) -> String {
@@ -126,7 +133,7 @@ public enum StripWords {
     /// Every line's words (the catalog test checks each has its Arabic).
     public static let all = [offline, restarting, database, safe, streaming, streamingNoTV, search, processing, logs,
                              details, more, close, player, relayDegraded, relayOutage, apiDegraded, apiOutage,
-                             maintenance]
+                             maintenance, reconnecting]
 }
 
 extension APIClient {

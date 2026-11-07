@@ -285,7 +285,8 @@ def test_the_home_loads_from_hf_and_publishes(
 def test_the_stage_records_the_source(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_mlx: dict[str, Any]
 ) -> None:
-    from maktaba_pipeline.engine.stages import transcribe as stage
+    from maktaba_fp_transcription.stages import transcribe as stage
+
     from maktaba_pipeline.stt import refine as rf
 
     class Stats:

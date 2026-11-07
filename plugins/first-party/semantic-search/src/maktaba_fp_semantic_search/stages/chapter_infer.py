@@ -29,12 +29,25 @@ from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
-from ...db.jobs import Job
-from ...library_mgmt.chapter import Segment, extractive_title, infer_topic_chapters
-from ...search import gate
-from ...search.embedder import embed_id_for
-from ...search.pgstore import PgVectorStore, store_state
-from ...search.semantic import (
+from maktaba_fp_semantic_search.stages.index import active_transcript, unavailable
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import CHAPTER_VERSION, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.sql import dumps, uid
+from maktaba_pipeline.engine.stages._analysis import (
+    VideoEmbedding,
+    drop_embedding,
+    library_setting,
+    store_embedding,
+)
+from maktaba_pipeline.engine.stages._common import load_video, require_video
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.library_mgmt.chapter import Segment, extractive_title, infer_topic_chapters
+from maktaba_pipeline.search import gate
+from maktaba_pipeline.search.embedder import embed_id_for
+from maktaba_pipeline.search.pgstore import PgVectorStore, store_state
+from maktaba_pipeline.search.semantic import (
     SemanticUnavailable,
     StoredVector,
     VectorCollection,
@@ -42,14 +55,6 @@ from ...search.semantic import (
     open_collection,
     video_vectors,
 )
-from ..context import StageContext, StageFailure
-from ..graph import CHAPTER_VERSION, StageResult, Subject
-from ..hashing import canonical_hash
-from ..sql import dumps, uid
-from ._analysis import VideoEmbedding, drop_embedding, library_setting, store_embedding
-from ._common import load_video, require_video
-from .index import active_transcript, unavailable
-from .registry import StageImpl
 
 __all__ = [
     "CHAPTER_VERSION",

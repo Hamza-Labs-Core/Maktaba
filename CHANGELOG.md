@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **Transcription and semantic search run as Maktaba's built-in plugins (Epic 54 wave 3).**
+  Whisper and the second listen run in `tv.maktaba.transcription`, in an `ml` runner beside
+  each transcription worker that holds the model and opens the GPU; the search index,
+  chapters and topics run in `tv.maktaba.semantic-search`, in an `index` runner beside the
+  search worker. Both write what they wrote in the worker (the parity proof compares both
+  ways). Runners have no network: a model not downloaded yet is fetched by the worker, which
+  runs that job itself. While a home's search vectors are still in Chroma, the index and
+  chapters stay in the worker.
 - **Thumbnails and subtitle files are made by Maktaba's built-in plugins (Epic 54 wave 2).**
   The small thumbnail and the chapter frames run in `tv.maktaba.thumbnails`, and subtitle
   files in `tv.maktaba.subtitles`, in the sandboxed `light` runner: it reads the library,
@@ -423,6 +431,13 @@ build fails when the two differ.
   rehearsal against its own pair. Status updates come from English and Arabic templates; a SEV1
   without a postmortem after 5 days opens a reminder; the Billing page states the 99.9 % target
   and that no credit is given, and CI keeps any template or string from offering one.
+- **The apps ride out a Maktaba Cloud outage (Epic 50, story 50.13).** `GET /v1/homes` gives
+  each home's `connections` (direct, then the relay; a plan without the relay lists none) beside
+  the old fields. The web, cloud web, Apple and Android apps keep each account's list on the
+  device and show it, with its time, when the cloud can't be reached (marked old after 30 days,
+  removed at sign-out); a new cloud sign-in that can't reach the cloud goes to the home's own
+  sign-in. A request the relay answers `503 home_reconnecting` is tried again for up to a
+  minute while the status strip says "Reconnecting to your home…".
 - **What one relay node carries is measured (Epic 50, story 50.14).** `maktaba-loadtest` ramps
   simulated homes and players at a bitrate against a relay until a stop rule (CPU 70 %, 20 ms
   added latency, 0.5 % stalls, a dropped tunnel, memory 75 %) holds for 2 minutes, and turns the
@@ -1051,6 +1066,10 @@ build fails when the two differ.
   whether to send crash reports, off until the person says yes (the Account menu keeps the
   switch). It sends a kept crash at the next sign-in when on, and has **Report a problem…** and
   **My reports** in its Help menu.
+
+- **The admin orders plugin panels (Epic 54, story 54.20).** Settings → Plugins → Panel order
+  lists the plugins that declare panels; pages show at most three, in that order, then in
+  install order. `GET`/`PUT /api/plugins/panel-order` (admin only, audited).
 
 ### Fixed
 

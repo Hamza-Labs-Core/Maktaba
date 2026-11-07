@@ -32,17 +32,17 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import uuid4
 
-from ...db.jobs import Job
-from ...log import get_logger
-from ...stt.settings import SAMPLE_RATE, Sentence, Transcript, Word
-from ...stt.word_data import unpack
-from ..context import JobDeferred, StageContext, StageFailure
-from ..graph import SECOND_LISTEN_VERSION, StageResult, Subject
-from ..hashing import canonical_hash
-from ..sql import dumps, is_pg, loads, now, to_ts, uid
-from . import transcribe as tr
-from ._common import require_video
-from .registry import StageImpl
+from maktaba_fp_transcription.stages import transcribe as tr
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.engine.context import JobDeferred, StageContext, StageFailure
+from maktaba_pipeline.engine.graph import SECOND_LISTEN_VERSION, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.sql import dumps, is_pg, loads, now, to_ts, uid
+from maktaba_pipeline.engine.stages._common import require_video
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.log import get_logger
+from maktaba_pipeline.stt.settings import SAMPLE_RATE, Sentence, Transcript
+from maktaba_pipeline.stt.word_data import stored_words
 
 __all__ = ["IMPL", "PASS_ON_AFTER_S", "input_fingerprint", "run", "unavailable"]
 
@@ -124,21 +124,6 @@ def _sentences(rows: list[Any]) -> tuple[list[Sentence], bool]:
             )
         )
     return out, words_all
-
-
-def stored_words(row: Any, meta: Any) -> list[Word] | None:
-    """A stored sentence's words: its ``word_data`` (Epic 52, story 52.1), else the
-    ``metadata.words`` of a transcript stored before it, else None."""
-    data = row["word_data"]
-    if data:
-        try:
-            return unpack(str(row["text"] or ""), bytes(data), float(row["start_sec"])) or None
-        except ValueError:
-            return None
-    words = meta.get("words") if isinstance(meta, dict) else None
-    if not words:
-        return None
-    return [Word(float(a), float(b), str(w)) for a, b, w in words]
 
 
 def _texts_hash(sentences: list[Sentence]) -> str:
@@ -242,7 +227,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
 
 async def speller_terms(db: Any, library_id: Any) -> list[str]:
     """The vocabulary's spellings the speller prefers (Epic 52, story 52.10)."""
-    from ...word_review.vocabulary import load
+    from maktaba_pipeline.word_review.vocabulary import load
 
     v = await load(db, library_id)
     return sorted({t for terms in v.terms.values() for t in terms.values()})
@@ -255,10 +240,10 @@ async def listen(
     it take turns (:mod:`maktaba_pipeline.stt.gpu_turns`). Where they were to share it but
     the GPU has no room beside Whisper after all, they take turns from then on, and this
     one is heard again in its turn."""
-    from ...stt import gpu_turns
-    from ...stt.cohere import loaded
-    from ...stt.cohere import unavailable as no_second_listen
-    from ...stt.model_share import resolve_models_dir
+    from maktaba_pipeline.stt import gpu_turns
+    from maktaba_pipeline.stt.cohere import loaded
+    from maktaba_pipeline.stt.cohere import unavailable as no_second_listen
+    from maktaba_pipeline.stt.model_share import resolve_models_dir
 
     settings = tr.settings_from_env()
     # the share is looked for until the model is loaded (a stale mount can be slow)
@@ -274,7 +259,7 @@ async def listen(
             )  # fmt: skip
             seconds = asyncio.get_running_loop().time() - t0
         if refined.get("no_room") and mode == gpu_turns.TOGETHER:
-            from ...stt import cohere
+            from maktaba_pipeline.stt import cohere
 
             gpu_turns.take_turns(model)
             cohere.forget_failure(model)
