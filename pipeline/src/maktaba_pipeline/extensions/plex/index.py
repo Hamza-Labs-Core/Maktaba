@@ -31,7 +31,6 @@ from .collection import ITEM_TARGET, PlexService, item_content_hash, path_map_of
 __all__ = ["run_index", "sections_for"]
 
 
-
 def _norm(path: str) -> str:
     return path.replace("\\", "/")
 

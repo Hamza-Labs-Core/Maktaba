@@ -16,7 +16,6 @@ from ..engine.sql import dumps, is_pg, now, to_ts
 __all__ = ["Link", "delete_link", "get_link", "get_links", "put_link"]
 
 
-
 @dataclass(frozen=True, slots=True)
 class Link:
     target: str
