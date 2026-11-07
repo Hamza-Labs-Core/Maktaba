@@ -132,6 +132,8 @@ services:
     image: maktaba/web:dev
     volumes:
       - ../../web:/src/web:cached
+      # the plugin flow chart's drawing, imported from source as @maktaba/flowchart
+      - ../../tools/plugin-sdk/js/src:/src/tools/plugin-sdk/js/src:ro
       - pnpm-store:/root/.local/share/pnpm/store
       - web-node-modules:/src/web/node_modules
     working_dir: /src/web

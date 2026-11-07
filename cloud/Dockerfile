@@ -40,6 +40,8 @@ RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 COPY web/package.json web/pnpm-lock.yaml ./
 RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
+# the plugin flow chart's drawing (story 54.41), imported from source as @maktaba/flowchart
+COPY tools/plugin-sdk/js/src/flowchart.ts /src/tools/plugin-sdk/js/src/flowchart.ts
 COPY web ./
 RUN node design-system/build/build-tokens.mjs \
     && VERSION=${VERSION} COMMIT=${COMMIT} SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} pnpm build:player:cloud \
