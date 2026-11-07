@@ -19,6 +19,11 @@ const put = (dir, rel, v) => {
 const post = (fm, en = "What happened.", ar = "ما حدث.") =>
   `---\n${Object.entries(fm).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n## English\n\n${en}\n\n## العربية\n\n${ar}\n`;
 const read = (dir, rel) => fs.readFileSync(path.join(dir, rel), "utf8");
+// the page's one inline stylesheet or script cut out (the builder writes them exactly so)
+const withoutBlock = (html, open, close) => {
+  const i = html.indexOf(open), j = html.indexOf(close, i);
+  return i < 0 || j < 0 ? html : html.slice(0, i) + html.slice(j + close.length);
+};
 
 test("T02 the worst component sets the headline", () => {
   assert.equal(worst(["degraded", "outage"]), "outage");
@@ -121,7 +126,7 @@ test("T04 the Arabic build is right to left, with no English left in the templat
   for (const f of ["ar/index.html", "ar/i/2026-11-03-relay-slow/index.html", "ar/i/2026-11-04-db-upgrade/index.html"]) {
     const html = read(out, f);
     assert.match(html, /<html lang="ar" dir="rtl">/, f);
-    const text = html.replace(/<style>[\s\S]*?<\/style>|<script>[\s\S]*?<\/script>/g, "");
+    const text = withoutBlock(withoutBlock(html, "<style>", "</style>"), "<script>", "</script>");
     for (const [k, en] of Object.entries(strings.en)) {
       if (en === strings.ar[k] || !/[A-Za-z]{3}/.test(en.replace(/\{\w+\}/g, ""))) continue;
       assert.ok(!text.includes(en.replace(/\{\w+\}.*$/, "")), `${f}: English ${k} left: ${en}`);
