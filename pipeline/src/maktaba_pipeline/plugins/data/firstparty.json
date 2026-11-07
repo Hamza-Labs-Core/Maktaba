@@ -1,5 +1,5 @@
 {
- "digest": "5d0148eafa98518b3ddbbcb6b821b4fb5267952054a22b548e0abd747e2b2ebb",
+ "digest": "6a5eb11b1ac5cdf13bc794b0468458c5bf9a515a9fbeaab4423d565cb97575b5",
  "plugins": [
   {
    "digest": "986816a1b4ccd5017bc0494c3846cc2a8a324d93c45e91ad3a5380134d744ff3",
@@ -1528,6 +1528,112 @@
    }
   },
   {
+   "digest": "46fa70ba1cc3a89b264b68ed35e52597fe703254e5110dd9fc439a6faaacdcbf",
+   "folder": "repair",
+   "id": "tv.maktaba.repair",
+   "manifest": "# tv.maktaba.repair: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6\n# (story 54.33): downloads a broken video again from where it came from and swaps the good copy in.\nschema     = 1\nid         = \"tv.maktaba.repair\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.repair.name\"\nsummary = \"fp.repair.summary\"\n\n[trusted]\nrunner    = \"net\"\ncomponent = \"library.repair\"\ndb.read   = [\"app_settings\", \"media_metadata_enrichment\", \"processing_jobs\"]\ndb.write  = [\"item_requests\", \"video_repairs\", \"videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\nfiles.write = [\"library\", \"trash\"]\nexec      = [\"yt-dlp\", \"ffmpeg\", \"ffprobe\"]\nnet       = [\"www.youtube.com\", \"youtube.com\", \"*.googlevideo.com\", \"www.googleapis.com\", \"i.ytimg.com\"]\n\n[[stage]]\nname         = \"repair_broken\"\nsubject      = \"library\"\nexport       = \"repair-broken\"\nversion      = 1\nlabel        = \"Repair broken files\"\nsubject_kinds = [\"library\"]\npool         = \"repairs\"\nlane         = \"media\"\nlane_order   = 10\nmay_request  = [\"probe\", \"content_hash\"]\nexternal_write = true\nmax_attempts = 1\nentry        = \"maktaba_fp_repair.stages.repair_broken:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "common.load_video",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
+     "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "repair_broken.broken_files",
+     "reads": [
+      "media_metadata_enrichment",
+      "processing_jobs",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "d8a142c553400bd218acde6651ac61d5fe720c6f51ce513646678ea6b3d979f3",
+     "text": "SELECT v.id AS id, v.path AS path, m.external_id AS youtube_id\n  FROM videos v\n  LEFT JOIN media_metadata_enrichment m\n    ON m.video_id = v.id AND m.provider = 'youtube' AND NOT m.is_dismissed\n WHERE v.library_id = $1 AND v.deleted_at IS NULL\n   AND (SELECT j.state FROM processing_jobs j\n         WHERE j.video_id = v.id AND j.stage = 'probe' ORDER BY j.id DESC LIMIT 1) = 'failed'\n ORDER BY v.path",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "repair_broken.close_requests",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "5dcd263f706a82dd2e10066022ba0ef3e135d0f95eb405f4ac3528f599c15085",
+     "text": "UPDATE item_requests SET done_at = $2, result = $3 WHERE video_id = $1 AND action = 'redownload' AND done_at IS NULL",
+     "writes": [
+      "item_requests"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "repair_broken.record",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "dc6e785716a089e6270713fd9fdb6e9a00dda3347131a11728df434e92bb00cd",
+     "text": "INSERT INTO video_repairs (video_id, library_id, youtube_id, state, message, backup_path, attempts, updated_at) VALUES ($1,$2,$3,$4,$5,$6,1,$7) ON CONFLICT (video_id) DO UPDATE SET library_id = EXCLUDED.library_id, youtube_id = EXCLUDED.youtube_id, state = EXCLUDED.state, message = EXCLUDED.message, backup_path = EXCLUDED.backup_path, attempts = video_repairs.attempts + 1, updated_at = EXCLUDED.updated_at",
+     "writes": [
+      "video_repairs"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "repair_broken.requested",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "909b34cb3c44be081537f104bc9b82554aaac72e9e8df5ff15d7abb9bd741f83",
+     "text": "UPDATE videos SET missing_confirmed_at = NULL WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "repair_broken.requested_files",
+     "reads": [
+      "item_requests",
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4da8bf389eaa21b94395f033db9f214b6b8bd64a8ebb6f60adadab392d022366",
+     "text": "SELECT r.id AS request_id, v.id AS id, v.path AS path, m.external_id AS youtube_id\n  FROM item_requests r\n  JOIN videos v ON v.id = r.video_id\n  LEFT JOIN media_metadata_enrichment m\n    ON m.video_id = v.id AND m.provider = 'youtube' AND NOT m.is_dismissed\n WHERE v.library_id = $1 AND r.action = 'redownload' AND r.done_at IS NULL\n ORDER BY r.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.repair.name": "إصلاح الملفات",
+     "fp.repair.summary": "ينزّل الفيديو التالف من مصدره مرة أخرى ويضع النسخة السليمة مكانه."
+    },
+    "en": {
+     "fp.repair.name": "Repairing files",
+     "fp.repair.summary": "Downloads a broken video again from where it came from and puts the good copy in its place."
+    }
+   }
+  },
+  {
    "digest": "8a08f8bf2554c0259ff2af62f71cdd0353d0fa05f0c6aa6dd8833bbc3e34517f",
    "folder": "semantic-search",
    "id": "tv.maktaba.semantic-search",
@@ -2594,6 +2700,953 @@
     "en": {
      "fp.transcription.name": "Transcription",
      "fp.transcription.summary": "Writes down what is said in each video, then listens a second time to check the words."
+    }
+   }
+  },
+  {
+   "digest": "41455a051026d7bc97612fe5dca3f9a39def6bfb1eaba0f76bbd9b838f494af9",
+   "folder": "youtube",
+   "id": "tv.maktaba.youtube",
+   "manifest": "# tv.maktaba.youtube: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6\n# (story 54.33): lists a library's YouTube channels and downloads their videos, newest first, then the back catalogue.\nschema     = 1\nid         = \"tv.maktaba.youtube\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.youtube.name\"\nsummary = \"fp.youtube.summary\"\n\n[trusted]\nrunner    = \"net\"\ncomponent = \"youtube\"\ndb.read   = [\"app_settings\", \"job_stages\", \"libraries\", \"media_metadata_enrichment\", \"processing_jobs\", \"series_episodes\"]\ndb.write  = [\"file_actions\", \"video_copies\", \"videos\", \"youtube_channels\", \"youtube_downloads\", \"youtube_playlist_items\", \"youtube_playlists\", \"youtube_sources\", \"youtube_videos\"]\nsettings  = []\nfiles.read  = [\"library\"]\n# the downloads' work folder (MAKTABA_YT_WORK) is the data.cache area\nfiles.write = [\"library\", \"data.cache\"]\nexec      = [\"yt-dlp\", \"ffmpeg\", \"ffprobe\"]\n# the hosts YouTube's API and yt-dlp's YouTube extractor reach (reviewed; the nightly\n# recording run checks no other is contacted, story 54.33 T02)\nnet       = [\"www.youtube.com\", \"youtube.com\", \"*.googlevideo.com\", \"www.googleapis.com\", \"i.ytimg.com\"]\n\n[[stage]]\nname         = \"youtube_sync\"\nsubject      = \"library\"\nexport       = \"youtube-sync\"\nversion      = 1\nlabel        = \"YouTube listing\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 0\nmay_request  = [\"youtube_fetch\", \"youtube_backfill\"]\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"link\", map = \"videos_of\" }, { to = \"detect\", map = \"same\" }, { to = \"exact_dates\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.youtube_sync:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_fetch\"\nsubject      = \"library\"\nexport       = \"youtube-fetch\"\nversion      = 1\nlabel        = \"YouTube downloads\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 2\nmay_request  = [\"convert_mp4\", \"youtube_fetch\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_fetch:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"youtube_backfill\"\nsubject      = \"library\"\nexport       = \"youtube-backfill\"\nversion      = 1\nlabel        = \"YouTube back catalogue\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 3\nmay_request  = [\"convert_mp4\", \"youtube_backfill\"]\nexternal_write = true\nentry        = \"maktaba_fp_youtube.stages.youtube_backfill:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"exact_dates\"\nsubject      = \"library\"\nexport       = \"exact-dates\"\nversion      = 1\nlabel        = \"Exact dates\"\nsubject_kinds = [\"library\"]\npool         = \"network_yt\"\nlane         = \"sources\"\nlane_order   = 1\nentry_for    = [\"library\"]\ndebounce_sec = 300\ndebounce_max_sec = 3600\nedges        = [{ to = \"detect\", map = \"same\" }]\nentry        = \"maktaba_fp_youtube.stages.exact_dates:IMPL\"\nfingerprint  = { input = true, output = false }\n\n",
+   "statements": [
+    {
+     "mode": "read",
+     "name": "common.load_video",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "ecbe04f6971ee07d657685b11f7a6682a04e4c12497dad189e2c224fa9e3ab87",
+     "text": "SELECT id, library_id, path, filename, title, size_bytes, mtime, duration_sec, poster_path, metadata FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "exact_dates.candidates",
+     "reads": [
+      "media_metadata_enrichment",
+      "series_episodes",
+      "videos",
+      "youtube_playlist_items",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "be8d8e5a098cb218a1315abca753718f2e2d3924e655471081bbf6619013d7c9",
+     "text": "SELECT yv.youtube_id AS yid, MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) AS in_series, MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) AS in_playlist FROM youtube_videos yv JOIN media_metadata_enrichment m ON m.external_id = yv.youtube_id AND m.provider = 'youtube' AND m.is_dismissed = false JOIN videos v ON v.id = m.video_id AND v.library_id = $1 AND v.deleted_at IS NULL LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN youtube_playlist_items pi ON pi.youtube_id = yv.youtube_id WHERE yv.date_quality IS NULL OR yv.date_quality <> 'exact' GROUP BY yv.youtube_id  ORDER BY in_series DESC, yv.youtube_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "exact_dates.candidates.2",
+     "reads": [
+      "media_metadata_enrichment",
+      "series_episodes",
+      "videos",
+      "youtube_playlist_items",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "02885673484f1ec5dcb8305def7b930506bd3d5dfe0aee12b2aca5f136bf8340",
+     "text": "SELECT yv.youtube_id AS yid, MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) AS in_series, MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) AS in_playlist FROM youtube_videos yv JOIN media_metadata_enrichment m ON m.external_id = yv.youtube_id AND m.provider = 'youtube' AND m.is_dismissed = false JOIN videos v ON v.id = m.video_id AND v.library_id = $1 AND v.deleted_at IS NULL LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN youtube_playlist_items pi ON pi.youtube_id = yv.youtube_id WHERE yv.date_quality IS NULL OR yv.date_quality <> 'exact' GROUP BY yv.youtube_id HAVING MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) = 1 OR MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) = 1 ORDER BY in_series DESC, yv.youtube_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "exact_dates.candidates.3",
+     "reads": [
+      "media_metadata_enrichment",
+      "series_episodes",
+      "videos",
+      "youtube_playlist_items",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "97a7e2e282cccadaebcc4c093d7b1ba62f51d4cd5325ab1435ac5937aaef80dc",
+     "text": "SELECT yv.youtube_id AS yid, MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) AS in_series, MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) AS in_playlist FROM youtube_videos yv JOIN media_metadata_enrichment m ON m.external_id = yv.youtube_id AND m.provider = 'youtube' AND m.is_dismissed = 0 JOIN videos v ON v.id = m.video_id AND v.library_id = $1 AND v.deleted_at IS NULL LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN youtube_playlist_items pi ON pi.youtube_id = yv.youtube_id WHERE yv.date_quality IS NULL OR yv.date_quality <> 'exact' GROUP BY yv.youtube_id  ORDER BY in_series DESC, yv.youtube_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "exact_dates.candidates.4",
+     "reads": [
+      "media_metadata_enrichment",
+      "series_episodes",
+      "videos",
+      "youtube_playlist_items",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "11265ba329d543b15838a9057597f68b812ce7ed5660ba6b29e8363d0faa1567",
+     "text": "SELECT yv.youtube_id AS yid, MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) AS in_series, MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) AS in_playlist FROM youtube_videos yv JOIN media_metadata_enrichment m ON m.external_id = yv.youtube_id AND m.provider = 'youtube' AND m.is_dismissed = 0 JOIN videos v ON v.id = m.video_id AND v.library_id = $1 AND v.deleted_at IS NULL LEFT JOIN series_episodes se ON se.video_id = v.id LEFT JOIN youtube_playlist_items pi ON pi.youtube_id = yv.youtube_id WHERE yv.date_quality IS NULL OR yv.date_quality <> 'exact' GROUP BY yv.youtube_id HAVING MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) = 1 OR MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) = 1 ORDER BY in_series DESC, yv.youtube_id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "exact_dates.store",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "df6d3348ff8988e7f690e01a7950c02727cd96f8135e48795cb85d800eac538a",
+     "text": "UPDATE youtube_videos SET upload_date = $2, date_quality = 'exact', description = COALESCE(description, $3) WHERE youtube_id = $1",
+     "writes": [
+      "youtube_videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "exact_dates.store.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "2a71748c361377d906f0495b2f62b014a91e3e3b0e624d8aea5e9f261d721efb",
+     "text": "UPDATE youtube_videos SET description = COALESCE(description, $2) WHERE youtube_id = $1",
+     "writes": [
+      "youtube_videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "jobs_state.read_flags",
+     "reads": [
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d93f2ec3ecd4cc326bff8916d7ac448ae065ac6020278d3c46ab28388d511be7",
+     "text": "SELECT pause_requested, cancel_requested\n  FROM processing_jobs\n WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "ledger.advance",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "8f03680b2280dcc66c321f47a347f848495eae06fd191c2e52b0654d37d2a12e",
+     "text": "UPDATE file_actions SET state = $3, updated_at = $4, error = CASE WHEN $5 THEN $6 ELSE error END, new_hash = CASE WHEN $7 THEN $8 ELSE new_hash END, new_path = CASE WHEN $9 THEN $10 ELSE new_path END, new_size = CASE WHEN $11 THEN $12 ELSE new_size END, old_hash = CASE WHEN $13 THEN $14 ELSE old_hash END, old_path = CASE WHEN $15 THEN $16 ELSE old_path END, old_size = CASE WHEN $17 THEN $18 ELSE old_size END, purge_after = CASE WHEN $19 THEN $20 ELSE purge_after END, purged_at = CASE WHEN $21 THEN $22 ELSE purged_at END, trash_path = CASE WHEN $23 THEN $24 ELSE trash_path END, verify = CASE WHEN $25 THEN $26 ELSE verify END, video_id = CASE WHEN $27 THEN $28 ELSE video_id END WHERE id = $1 AND state = $2 RETURNING id",
+     "writes": [
+      "file_actions"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "ledger.create_action",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 3,
+     "sha256": "f4c7525ab1ab292914778ee57c8aa35608cd5421b8ddc8f18246056b3f02231f",
+     "text": "INSERT INTO file_actions (id, library_id, video_id, job_id, kind, state, old_path, new_path, trash_path, old_hash, new_hash, old_size, new_size, verify, purge_after, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$16)",
+     "writes": [
+      "file_actions"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "ledger.get_action",
+     "reads": [
+      "file_actions"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b64d28818d230a6b08d00a16d2cd200b4426670b3728cb198e0efdeff1c829e8",
+     "text": "SELECT * FROM file_actions WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "ledger.open_actions",
+     "reads": [
+      "file_actions",
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "48d457d572d8f12e7af3f42f3fc5c8b806145ef46c0846a94ffc163847194e0e",
+     "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1::uuid IS NULL OR fa.library_id = $1::uuid) AND ($2::uuid IS NULL OR fa.video_id = $2::uuid) AND ($3::boolean OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "ledger.open_actions.2",
+     "reads": [
+      "file_actions",
+      "processing_jobs"
+     ],
+     "scope": "subject",
+     "scope_arg": 2,
+     "sha256": "247e2e79f4fd96a59e7dfa516a0b59cf108edc5f857197ee4b04bad395e1c087",
+     "text": "SELECT fa.* FROM file_actions fa WHERE fa.state IN ('planned', 'staged', 'verified', 'swapped') AND ($1 IS NULL OR fa.library_id = $1) AND ($2 IS NULL OR fa.video_id = $2) AND ($3 OR NOT EXISTS (SELECT 1 FROM processing_jobs pj WHERE pj.id = fa.job_id AND pj.state IN ('claimed', 'running', 'resuming'))) ORDER BY fa.created_at, fa.id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "ledger.update_fields",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "916cfa4e16ef1b2423c0979540f64f2b0029728f875ba4ae8e2b5fcd553a90a8",
+     "text": "UPDATE file_actions SET updated_at = $2, error = CASE WHEN $3 THEN $4 ELSE error END, new_hash = CASE WHEN $5 THEN $6 ELSE new_hash END, new_path = CASE WHEN $7 THEN $8 ELSE new_path END, new_size = CASE WHEN $9 THEN $10 ELSE new_size END, old_hash = CASE WHEN $11 THEN $12 ELSE old_hash END, old_path = CASE WHEN $13 THEN $14 ELSE old_path END, old_size = CASE WHEN $15 THEN $16 ELSE old_size END, purge_after = CASE WHEN $17 THEN $18 ELSE purge_after END, purged_at = CASE WHEN $19 THEN $20 ELSE purged_at END, trash_path = CASE WHEN $21 THEN $22 ELSE trash_path END, verify = CASE WHEN $23 THEN $24 ELSE verify END, video_id = CASE WHEN $25 THEN $26 ELSE video_id END WHERE id = $1",
+     "writes": [
+      "file_actions"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "rules.read",
+     "reads": [
+      "app_settings"
+     ],
+     "scope": "settings",
+     "scope_arg": 1,
+     "sha256": "ee2788811521c36000e70c683028eea361a5329e30e4566e65e3b99fdc19ea07",
+     "text": "SELECT value FROM app_settings WHERE key = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "store.find_video_by_path",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "9b9d501e7d1be280e2973c6488b6870c7bfea22599127a0af141eb384f82812b",
+     "text": "SELECT id, size_bytes, mtime, content_hash\n  FROM videos\n WHERE library_id = $1\n   AND path       = $2\n LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "store.find_video_by_path.2",
+     "reads": [
+      "video_copies",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "278ec9eb59c3b55a9b4b4621817083689e9dc0a463c1cb6dae26563524ee7b2d",
+     "text": "SELECT c.video_id AS id, c.size_bytes AS size_bytes, c.mtime AS mtime,\n       v.content_hash AS content_hash\n  FROM video_copies c\n  JOIN videos v ON v.id = c.video_id\n WHERE v.library_id = $1\n   AND c.path       = $2\n   AND c.size_bytes = v.size_bytes\n LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "store.get_library",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1f70d8d3c32ad050fcef24fa9b5a6868fcfbf3c1b9b375847cde783280b70c15",
+     "text": "SELECT id, name, roots, settings\n  FROM libraries\n WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "store.save_candidate",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4767cc8ba0b9804303c62120c2f48faa834d6a8d3fae2036b669fc3da255e099",
+     "text": "SELECT id, path FROM videos\n WHERE library_id = $1\n   AND content_hash = $2\n LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b7ac914df324c6a483ed08c590aed19d6c54f226b18bc38bd2222f5caf64d801",
+     "text": "UPDATE videos SET last_seen_at = $2 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.3",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "aa91ee1f888ec109292d52c8844f6bbeb2da08e70cbc65e42ecc8f8c2e258786",
+     "text": "INSERT INTO videos\n       (library_id, content_hash, path, filename, size_bytes, mtime,\n        last_seen_at, state)\nVALUES ($1, $2, $3, $4, $5, $6, $7, 'discovered')\nON CONFLICT (library_id, content_hash) DO UPDATE SET\n    path         = EXCLUDED.path,\n    filename     = EXCLUDED.filename,\n    size_bytes   = EXCLUDED.size_bytes,\n    mtime        = EXCLUDED.mtime,\n    last_seen_at = EXCLUDED.last_seen_at,\n    updated_at   = now()\nRETURNING id, (xmax = 0) AS inserted",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.4",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "1260deb4dc06ebe167ae8d9b8d0450109e948c39e3b507e062d64f4fe6b6caca",
+     "text": "INSERT INTO videos\n       (library_id, content_hash, path, filename, size_bytes, mtime,\n        last_seen_at, state, id)\nVALUES ($1, $2, $3, $4, $5, $6, $7, 'discovered', $8)\nON CONFLICT (content_hash) DO UPDATE SET\n    path         = excluded.path,\n    filename     = excluded.filename,\n    size_bytes   = excluded.size_bytes,\n    mtime        = excluded.mtime,\n    last_seen_at = excluded.last_seen_at,\n    updated_at   = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')\n WHERE videos.library_id = excluded.library_id\nRETURNING id",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.5",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 1,
+     "sha256": "8d5e966c20e9c20177c7f745c382d97d7c69809e69ac8cd547500e4b7e51f210",
+     "text": "DELETE FROM video_copies WHERE video_id = $1 AND path = $2",
+     "writes": [
+      "video_copies"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "store.save_candidate.6",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 3,
+     "sha256": "b29f7bade80d88517eb9c7e05e194858ee3b8420fd45899928e67a9f16d41aca",
+     "text": "DELETE FROM video_copies\n WHERE path = $1 AND video_id <> $2\n   AND video_id IN (SELECT id FROM videos WHERE library_id = $3)",
+     "writes": [
+      "video_copies"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "swap.roll_back_swapped",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "1a32f997412fdcac9dca5865752945c2b3cbe15c9d804fdcac70f928023235c6",
+     "text": "UPDATE videos SET path = $2, filename = $3, content_hash = $4, size_bytes = $5, mtime = $6 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "swap.swap_in",
+     "reads": [
+      "videos"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "f036b864180ece87e603847df462c9c38d392793f116e05b31ed3223f27b974c",
+     "text": "SELECT id, library_id, path, content_hash, size_bytes FROM videos WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "swap.swap_in.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c5ddd515ea282ab1b64eade3e39aad13309a1388d8e8fff5ae93505ddf10b127",
+     "text": "UPDATE videos SET path = $2, filename = $3, content_hash = $4, size_bytes = $5, mtime = $6, updated_at = $7 WHERE id = $1",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "trash.due_actions",
+     "reads": [
+      "file_actions"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "6fe79a05c17170930cc42025e20fdfa26d57d0c2a8fcdd61a721c32676215454",
+     "text": "SELECT * FROM file_actions WHERE library_id = $1 AND trash_path IS NOT NULL AND purged_at IS NULL AND state = 'done' AND purge_after IS NOT NULL AND purge_after <= $2 ORDER BY purge_after, id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "trash.purge_due",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "e851052ca2a27203b0797aef85157e04da7e689389c7b3430c923103266773fe",
+     "text": "DELETE FROM videos WHERE id = $1 AND state = 'superseded' RETURNING id",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "trash.trash_days",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "9abbb6d9ac64b65f0e3e985b8552ac47d438b6b72d1b68c2770f49d4ab5c27d6",
+     "text": "SELECT settings FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.backfill_progress",
+     "reads": [
+      "youtube_downloads",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "e73e486fd094576e76374bee13b70b8d7cb09bd5aa6474d6aafea33a9d3399f4",
+     "text": "SELECT count(*) AS total, sum(CASE WHEN d.state = 'wanted' THEN 0 ELSE 1 END) AS done FROM youtube_downloads d JOIN youtube_sources s ON s.id = d.source_id WHERE d.library_id = $1 AND d.backfill = $2 AND s.mode = 'new_and_backfill'",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_drain.drain",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "1409e5f3a882749bd5e52cb4df007a25b693cb2ebe22461bbdf65125f7127d58",
+     "text": "UPDATE youtube_downloads SET state = 'wanted' WHERE library_id = $1 AND state = 'downloading'",
+     "writes": [
+      "youtube_downloads"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_drain.drain.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "87577c71ec0fbc425cade5d15d127b70debd6bfa2e9e4eeb245329d9563c690b",
+     "text": "UPDATE youtube_sources SET last_fetched_at = $2, status = 'ok', error = NULL WHERE id = $1",
+     "writes": [
+      "youtube_sources"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.items",
+     "reads": [
+      "youtube_downloads",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4f2d88e84c038fa8b8dfe80a5322ccc0472eb34a4bf50a9ca02ece68d3c55373",
+     "text": "SELECT d.youtube_id AS yid, d.source_id AS sid, d.upload_date AS d, s.folder AS folder, s.options AS options, s.external_id AS ext FROM youtube_downloads d JOIN youtube_sources s ON s.id = d.source_id WHERE d.library_id = $1 AND d.state = 'wanted' AND s.mode IN ('new_and_backfill') AND d.backfill = $2 AND (d.not_before IS NULL OR d.not_before <= $3) ORDER BY (d.upload_date IS NULL), d.upload_date ASC, d.requested_at, d.youtube_id LIMIT $4",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.items.2",
+     "reads": [
+      "youtube_downloads",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "12126a5e1a6843fdf38b3fe88e31b7bd0c2fba7aea491da19b5702b1eb56c971",
+     "text": "SELECT d.youtube_id AS yid, d.source_id AS sid, d.upload_date AS d, s.folder AS folder, s.options AS options, s.external_id AS ext FROM youtube_downloads d JOIN youtube_sources s ON s.id = d.source_id WHERE d.library_id = $1 AND d.state = 'wanted' AND s.mode IN ('new_and_backfill') AND d.backfill = $2 AND (d.not_before IS NULL OR d.not_before <= $3) ORDER BY (d.upload_date IS NULL), d.upload_date DESC, d.requested_at, d.youtube_id LIMIT $4",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.items.3",
+     "reads": [
+      "youtube_downloads",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "f8bec9d6f4cc17e583fff290875188cef35b91f74bbd7bc721153d9a8ddcdcb8",
+     "text": "SELECT d.youtube_id AS yid, d.source_id AS sid, d.upload_date AS d, s.folder AS folder, s.options AS options, s.external_id AS ext FROM youtube_downloads d JOIN youtube_sources s ON s.id = d.source_id WHERE d.library_id = $1 AND d.state = 'wanted' AND s.mode IN ('new_and_backfill','new_only') AND d.backfill = $2 AND (d.not_before IS NULL OR d.not_before <= $3) ORDER BY (d.upload_date IS NULL), d.upload_date ASC, d.requested_at, d.youtube_id LIMIT $4",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.items.4",
+     "reads": [
+      "youtube_downloads",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "0a57abe816f9a1004a8ea8e7f9bd551f978d651ccebcd3f8010a2b9d69e6ebe5",
+     "text": "SELECT d.youtube_id AS yid, d.source_id AS sid, d.upload_date AS d, s.folder AS folder, s.options AS options, s.external_id AS ext FROM youtube_downloads d JOIN youtube_sources s ON s.id = d.source_id WHERE d.library_id = $1 AND d.state = 'wanted' AND s.mode IN ('new_and_backfill','new_only') AND d.backfill = $2 AND (d.not_before IS NULL OR d.not_before <= $3) ORDER BY (d.upload_date IS NULL), d.upload_date DESC, d.requested_at, d.youtube_id LIMIT $4",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.roots",
+     "reads": [
+      "libraries"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "766654592d3ff9c847be8128029a90b70256ce3a6654fe4b52332d4d297cbdef",
+     "text": "SELECT roots FROM libraries WHERE id = $1",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_drain.set_item",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "241ded08df5587ac1edb76713ec4611d4b3e258996dd2b2a02f3516a70a7f5fb",
+     "text": "UPDATE youtube_downloads SET state = $3, attempts = attempts + $4, bytes = CASE WHEN $5 THEN $6 ELSE bytes END, done_at = CASE WHEN $7 THEN $8 ELSE done_at END, error = CASE WHEN $9 THEN $10 ELSE error END, failure_class = CASE WHEN $11 THEN $12 ELSE failure_class END, not_before = CASE WHEN $13 THEN $14 ELSE not_before END, reason = CASE WHEN $15 THEN $16 ELSE reason END, video_id = CASE WHEN $17 THEN $18 ELSE video_id END WHERE library_id = $1 AND youtube_id = $2",
+     "writes": [
+      "youtube_downloads"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.upsert_sqlite",
+     "reads": [
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "b27f61f9d04849571a92122a7f342bbeba4df69225f157cc4dc719e96d46792e",
+     "text": "SELECT id FROM videos WHERE library_id = $1 AND content_hash = $2",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_drain.upsert_sqlite.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "1456dc787c7bb891b4deeeace067510a53ac953f568067e9999413fe85a39ea3",
+     "text": "INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime, last_seen_at, state) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'discovered')",
+     "writes": [
+      "videos"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.yield_reason",
+     "reads": [
+      "job_stages"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b29456736ee1e8ec7266867f814836f21dc4506845caa05583bbe142c0336e70",
+     "text": "SELECT paused FROM job_stages WHERE stage = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_drain.yield_reason.2",
+     "reads": [
+      "job_stages",
+      "processing_jobs"
+     ],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c50ab12f982f0dbdb04ad904f195bbc5a0b7551230a61f0feb34e9db6c254812",
+     "text": "SELECT j.stage AS stage FROM processing_jobs j JOIN job_stages s ON s.stage = j.stage WHERE s.pool = (SELECT pool FROM job_stages WHERE stage = $1) AND j.id <> $2 AND j.state = 'pending' AND j.priority < $3 AND s.enabled AND NOT s.paused AND j.parked_on IS NULL AND NOT j.cancel_requested AND NOT j.pause_requested AND (j.not_before IS NULL OR j.not_before <= $4) ORDER BY j.priority, j.id LIMIT 1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_snapshot.snapshot",
+     "reads": [
+      "youtube_channels",
+      "youtube_videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "349696c860265be322708a2cdfa327e6fe41009a797f3b1fbc1aec9348d51a94",
+     "text": "SELECT youtube_id, channel_id, title, CAST(upload_date AS TEXT) AS d, date_quality, duration_s, tab FROM youtube_videos WHERE channel_id IN (SELECT channel_id FROM youtube_channels WHERE library_id = $1) ORDER BY youtube_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_snapshot.snapshot.2",
+     "reads": [
+      "youtube_channels",
+      "youtube_playlists"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "4d8a29455c38b3b69f324cacaffbf282d073067d77bf2b7b3d6c0264c25a987a",
+     "text": "SELECT playlist_id, channel_id, title, item_count, is_real FROM youtube_playlists WHERE channel_id IN (SELECT channel_id FROM youtube_channels WHERE library_id = $1) ORDER BY playlist_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_snapshot.snapshot.3",
+     "reads": [
+      "youtube_channels",
+      "youtube_playlist_items",
+      "youtube_playlists"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "24db39cbface61a234234a02c99009c1d0a22acb0c72b983dd2118fa3cf6ad5c",
+     "text": "SELECT i.playlist_id AS playlist_id, i.youtube_id AS youtube_id, i.position AS position FROM youtube_playlist_items i JOIN youtube_playlists p ON p.playlist_id = i.playlist_id WHERE p.channel_id IN (SELECT channel_id FROM youtube_channels WHERE library_id = $1) ORDER BY i.playlist_id, i.youtube_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.ensure_channel_sources",
+     "reads": [
+      "youtube_channels",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "9fd8fca6cfca201dd1a60afc40c3ee2f3b69a320c29c2c1ea893bcafc071df70",
+     "text": "SELECT c.channel_id AS cid, c.url AS url, c.title AS title FROM youtube_channels c WHERE c.library_id = $1 AND NOT EXISTS (SELECT 1 FROM youtube_sources s  WHERE s.kind = 'channel' AND s.external_id = c.channel_id)",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sources.ensure_channel_sources.2",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "52742bc0f10c17f01302c2a4a40b6d8a7cb3107846721ce11265858a0bac3f5e",
+     "text": "INSERT INTO youtube_sources (library_id, kind, url, external_id, mode, added_at) VALUES ($1, 'channel', $2, $3, 'off', $4) ON CONFLICT (library_id, kind, external_id) DO NOTHING",
+     "writes": [
+      "youtube_sources"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.existing",
+     "reads": [
+      "youtube_downloads"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "feb40cde838aee4a01b35ab3e65fe2c9e0351ca409b8238525b29e497077c3a8",
+     "text": "SELECT youtube_id FROM youtube_downloads WHERE library_id = $1 AND youtube_id = ANY($2::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.existing.2",
+     "reads": [
+      "youtube_downloads"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "7a85040b21f5e4789acd4aed4178dcd8648693959f606121ab02ea3a75ace0f2",
+     "text": "SELECT youtube_id FROM youtube_downloads WHERE library_id = $1 AND youtube_id IN (SELECT value FROM json_each($2))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.known_ids",
+     "reads": [
+      "youtube_downloads"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "f03cba23abe53d4fe8b015a584e0d458d8efe66cca207c7e03215689bacfcc49",
+     "text": "SELECT youtube_id AS y FROM youtube_downloads WHERE library_id = $1",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.linked_ids",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "259f697a8b444ee9e74e143878ee461cf2c806298a25c4dce94a359696b91fae",
+     "text": "SELECT DISTINCT m.external_id AS y FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL AND m.provider = 'youtube' AND m.external_id IS NOT NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.linked_video_ids",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "9419e6f08d6a2e18e20923ff2c16cdb9782e4dea96405d082e3d9f0276e3a107",
+     "text": "SELECT m.external_id AS y, m.video_id AS v FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL AND m.provider = 'youtube' AND m.external_id IS NOT NULL",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.load_sources",
+     "reads": [
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "59bd9c3ddb4809a55c94a2e24d31079d4f3d7d550100998fb095cbbc541d9b2f",
+     "text": "SELECT id, library_id, kind, url, external_id, folder, mode, added_at, options, status, last_checked_at FROM youtube_sources WHERE library_id = $1 AND mode <> 'off' ORDER BY kind, external_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.load_sources.2",
+     "reads": [
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "a3b50e1e6d643c2cfd51ef51b20631ab5d7aec2d2c4a932eee91b6d7e5ac6b0a",
+     "text": "SELECT id, library_id, kind, url, external_id, folder, mode, added_at, options, status, last_checked_at FROM youtube_sources WHERE library_id = $1 ORDER BY kind, external_id",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.local_ids",
+     "reads": [
+      "youtube_downloads"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "a3bb864fa165abc2cc44736fa03550680d593e0f8c19a0c50cec00a52d0fa9c3",
+     "text": "SELECT youtube_id AS y FROM youtube_downloads WHERE library_id = $1 AND state = 'done'",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sources.mark_listed",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "574c9a82bbf3b47c8f42423a68f370e738180fa18ab61a5ccd1c1a34fba9ea4d",
+     "text": "INSERT INTO youtube_downloads (library_id, youtube_id, source_id, state, backfill, reason, upload_date, requested_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (library_id, youtube_id) DO NOTHING",
+     "writes": [
+      "youtube_downloads"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sources.seed_done",
+     "reads": [],
+     "scope": "subject",
+     "scope_arg": 5,
+     "sha256": "32e1b1eebc78ff8a53454fc0522cceb4fca6b781fe1b1e3331b0ae775d6c3e12",
+     "text": "INSERT INTO youtube_downloads (library_id, youtube_id, state, backfill, reason, video_id, requested_at, done_at) VALUES ($1,$2,'done',$3,$4,$5,$6,$6) ON CONFLICT (library_id, youtube_id) DO UPDATE SET state = 'done', reason = EXCLUDED.reason, done_at = EXCLUDED.done_at, video_id = COALESCE(youtube_downloads.video_id, EXCLUDED.video_id), failure_class = NULL, error = NULL, not_before = NULL WHERE youtube_downloads.state NOT IN ('done', 'downloading') RETURNING youtube_id",
+     "writes": [
+      "youtube_downloads"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.seed_from_library",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos",
+      "youtube_downloads"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "b0301ccfa2cd7a5c3a3f2dcee290282ba07587150dada7298adaa21c5b312074",
+     "text": "SELECT m.external_id AS y, m.video_id AS v FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL AND m.provider = 'youtube' AND m.external_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM youtube_downloads d WHERE d.library_id = v.library_id   AND d.youtube_id = m.external_id AND d.state = 'done')",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sources.set_source_status",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "700a7ee0767c4919a545053171f2dac252373ac22a251d975cdc26c7d426215c",
+     "text": "UPDATE youtube_sources SET status = $2, error = $3, updated_at = $4, last_checked_at = CASE WHEN $5 THEN $4 ELSE last_checked_at END, folder = COALESCE(folder, $6) WHERE id = $1",
+     "writes": [
+      "youtube_sources"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.wanted_count",
+     "reads": [
+      "youtube_downloads",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "1470f3eec06c2956844a4730d6513a8117f4901a16480505e3651b00713a3fdd",
+     "text": "SELECT count(*) FROM youtube_downloads d JOIN youtube_sources s ON s.id = d.source_id WHERE d.library_id = $1 AND d.state = 'wanted' AND s.mode IN ('new_and_backfill') AND d.backfill = $2 AND (d.not_before IS NULL OR d.not_before <= $3)",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sources.wanted_count.2",
+     "reads": [
+      "youtube_downloads",
+      "youtube_sources"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "c4d7e8bff1ce392f4919379b82120e9e01c2c51d905b0da4b0dfc9ac328e93a0",
+     "text": "SELECT count(*) FROM youtube_downloads d JOIN youtube_sources s ON s.id = d.source_id WHERE d.library_id = $1 AND d.state = 'wanted' AND s.mode IN ('new_and_backfill','new_only') AND d.backfill = $2 AND (d.not_before IS NULL OR d.not_before <= $3)",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sync.linked_videos",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "bc5951601d49e7940ea82a3152f2870c40267cec6d2600375a64e389ead8d6d7",
+     "text": "SELECT m.video_id AS id FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL AND m.provider = 'youtube' AND m.external_id = ANY($2::text[])",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sync.linked_videos.2",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "52dd5a67917ccf5627495fb604146c2dfd6df118b35d0a2137f840bb39fead92",
+     "text": "SELECT m.video_id AS id FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL AND m.provider = 'youtube' AND m.external_id IN (SELECT value FROM json_each($2))",
+     "writes": []
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sync.run",
+     "reads": [
+      "youtube_channels"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "f8d481934b732123422c37015f8cd81d7257491a7fc113fbe14d10aa7ec94af0",
+     "text": "SELECT channel_id, url, status FROM youtube_channels WHERE library_id = $1 ORDER BY channel_id",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.set_channel_status",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b3b696d39ae5c71d1442912440a06efddf96eb3eeaa208a043e2506302413719",
+     "text": "UPDATE youtube_channels SET status = $2, error = $3, title = COALESCE($4, title), fetched_at = $5 WHERE channel_id = $1",
+     "writes": [
+      "youtube_channels"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.store_listing",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d959a13fcffbd5cd567d77afba0964ffb5ed0b4c0488cac9e051abce42b74978",
+     "text": "INSERT INTO youtube_videos (youtube_id, channel_id, title, upload_date, date_quality, duration_s, tab, source, fetched_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'youtube',$8) ON CONFLICT (youtube_id) DO UPDATE SET duration_s = COALESCE(youtube_videos.duration_s, EXCLUDED.duration_s), channel_id = COALESCE(youtube_videos.channel_id, EXCLUDED.channel_id), tab = COALESCE(youtube_videos.tab, EXCLUDED.tab), upload_date = CASE WHEN youtube_videos.date_quality IS NULL   THEN EXCLUDED.upload_date ELSE youtube_videos.upload_date END, date_quality = CASE WHEN youtube_videos.date_quality IS NULL   THEN EXCLUDED.date_quality ELSE youtube_videos.date_quality END, title = CASE WHEN youtube_videos.source = 'info_json'   THEN youtube_videos.title ELSE EXCLUDED.title END",
+     "writes": [
+      "youtube_videos"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.store_listing.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "cadb1462c5cfe8cccaaa870cb7b8f0a9786e270fbfc18a9ca4e43d9b63bf4005",
+     "text": "INSERT INTO youtube_playlists (playlist_id, channel_id, title, item_count, is_real, source, fetched_at) VALUES ($1,$2,$3,$4,$5,'youtube',$6) ON CONFLICT (playlist_id) DO UPDATE SET title = EXCLUDED.title, item_count = EXCLUDED.item_count, source = 'youtube', channel_id = COALESCE(youtube_playlists.channel_id, EXCLUDED.channel_id)",
+     "writes": [
+      "youtube_playlists"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.store_listing.3",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "71891d4aca6f594ea7c8aea6e952006840c2c5b7c80c8be83dc5e8c54d1c6a93",
+     "text": "DELETE FROM youtube_playlist_items WHERE playlist_id = $1",
+     "writes": [
+      "youtube_playlist_items"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.store_listing.4",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "d386585d9e2e284a9e40e569a6f5b9a110fb8f5b7a52653f8c9037348289a78f",
+     "text": "UPDATE youtube_channels SET status = 'ok', error = NULL, title = COALESCE($2, title), url = $3, fetched_at = $4 WHERE channel_id = $1",
+     "writes": [
+      "youtube_channels"
+     ]
+    },
+    {
+     "mode": "read",
+     "name": "youtube_sync.unlinked_videos",
+     "reads": [
+      "media_metadata_enrichment",
+      "videos"
+     ],
+     "scope": "library",
+     "scope_arg": 1,
+     "sha256": "5f394ad4cbc2ff9ab589f8052a074a2f39bc2108e318e4629287492d9bae6fea",
+     "text": "SELECT v.id AS id FROM videos v WHERE v.library_id = $1 AND v.deleted_at IS NULL AND NOT EXISTS (SELECT 1 FROM media_metadata_enrichment m  WHERE m.video_id = v.id AND m.provider = 'youtube')",
+     "writes": []
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.upsert_discovered_channel",
+     "reads": [],
+     "scope": "library",
+     "scope_arg": 2,
+     "sha256": "66755b40401a96181976ef036333cdc5b54c148fdcf3b497f0d67f8c61e26631",
+     "text": "INSERT INTO youtube_channels (channel_id, library_id, url, title, fetched_at) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (channel_id) DO UPDATE SET library_id = COALESCE(youtube_channels.library_id, EXCLUDED.library_id), title = COALESCE(youtube_channels.title, EXCLUDED.title)",
+     "writes": [
+      "youtube_channels"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.upsert_sidecar_playlist",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "b6195e13bbb2b648f9f1ab76d9f95e525c4a26f27aa3145be9685f8140fea438",
+     "text": "INSERT INTO youtube_playlists (playlist_id, channel_id, title, item_count, is_real, source, fetched_at) VALUES ($1,$2,$3,$4,$5,'info_json',$6) ON CONFLICT (playlist_id) DO UPDATE SET title = EXCLUDED.title, item_count = COALESCE(EXCLUDED.item_count, youtube_playlists.item_count), channel_id = COALESCE(youtube_playlists.channel_id, EXCLUDED.channel_id)",
+     "writes": [
+      "youtube_playlists"
+     ]
+    },
+    {
+     "mode": "write",
+     "name": "youtube_sync.upsert_sidecar_playlist.2",
+     "reads": [],
+     "scope": "catalog",
+     "scope_arg": 0,
+     "sha256": "c000887dc8e1f34aee0ba28d2f348c9e83c9dfcc6d095af8d9ed1a30b277f560",
+     "text": "INSERT INTO youtube_playlist_items (playlist_id, youtube_id, position) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+     "writes": [
+      "youtube_playlist_items"
+     ]
+    }
+   ],
+   "strings": {
+    "ar": {
+     "fp.youtube.name": "يوتيوب",
+     "fp.youtube.summary": "يجرد قنوات يوتيوب في المكتبة وينزّل فيديوهاتها، الأحدث أولًا ثم الأرشيف."
+    },
+    "en": {
+     "fp.youtube.name": "YouTube",
+     "fp.youtube.summary": "Lists a library's YouTube channels and downloads their videos, newest first, then the back catalogue."
     }
    }
   }

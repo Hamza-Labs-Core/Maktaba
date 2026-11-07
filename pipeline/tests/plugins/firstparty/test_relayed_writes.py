@@ -75,3 +75,18 @@ async def test_only_a_superseded_video_of_the_library_comes_back(db: Database) -
         await native._relayed_unsupersede(
             db, _ctx("file_restore", lib), {"video_id": str(v), "state": "ready"}
         )
+
+
+async def test_a_download_starts_its_new_videos_pipeline(db: Database) -> None:
+    """youtube_fetch queues probe for a video it downloaded, as the scanner does."""
+    from maktaba_pipeline.engine.graph import bound_graph
+    from maktaba_pipeline.engine.sync import sync_graph
+
+    await sync_graph(db, bound_graph())
+    lib = await make_library(db)
+    v = await make_video(db, lib)
+    got = await native._relayed_enqueue(
+        db, _ctx("youtube_fetch", lib), {"stage": "probe", "subject_kind": "video",
+                                          "subject_id": str(v)},
+    )  # fmt: skip
+    assert got["job_id"] is not None

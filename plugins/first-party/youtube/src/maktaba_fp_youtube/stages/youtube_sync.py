@@ -45,8 +45,12 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from ...discovery.ytdlp_sidecars import PlaylistInfo, VideoInfo, parse_info_json
-from ...integrations.youtube import (
+from maktaba_pipeline.discovery.ytdlp_sidecars import PlaylistInfo, VideoInfo, parse_info_json
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, Request, StageResult, SubjectKind
+from maktaba_pipeline.engine.sql import dumps, is_pg, loads, now, to_ts, uid
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.integrations.youtube import (
     BotCheck,
     ChannelListing,
     ChannelUnavailable,
@@ -54,15 +58,14 @@ from ...integrations.youtube import (
     YtDlpFetcher,
     list_channel,
 )
-from ...integrations.youtube_errors import BOT_CHECK_KIND, RATE_LIMITED_KIND
-from ...library_mgmt import tartube_import
-from ...library_mgmt import youtube_sources as ys
-from ...scanner.walker import DEFAULT_IGNORE_DIRNAMES, DEFAULT_VIDEO_EXTENSIONS
-from ..context import StageContext, StageFailure
-from ..graph import EPIC47_PRIORITIES, Request, StageResult, SubjectKind
-from ..hashing import canonical_hash
-from ..sql import is_pg, loads, now, to_ts, uid
-from .registry import StageImpl
+from maktaba_pipeline.integrations.youtube_errors import BOT_CHECK_KIND, RATE_LIMITED_KIND
+from maktaba_pipeline.library_mgmt import tartube_import
+from maktaba_pipeline.library_mgmt import youtube_sources as ys
+from maktaba_pipeline.library_mgmt.youtube_snapshot import (
+    _snapshot,
+    changed_youtube_ids,
+)
+from maktaba_pipeline.scanner.walker import DEFAULT_IGNORE_DIRNAMES, DEFAULT_VIDEO_EXTENSIONS
 
 __all__ = [
     "IMPL",
@@ -172,85 +175,8 @@ async def _roots(db: Any, library_id: UUID) -> list[str]:
     return [str(r) for r in roots]
 
 
-_OWN_CHANNELS = "(SELECT channel_id FROM youtube_channels WHERE library_id = $1)"
-
-
-@dataclass(slots=True)
-class Snapshot:
-    videos: dict[str, tuple[Any, ...]]
-    playlists: dict[str, tuple[Any, ...]]
-    items: dict[str, tuple[tuple[str, int | None], ...]]
-
-    def digest(self) -> str:
-        return canonical_hash(
-            {
-                "videos": sorted([k, *v] for k, v in self.videos.items()),
-                "playlists": sorted([k, *v] for k, v in self.playlists.items()),
-                "items": sorted([k, [list(i) for i in v]] for k, v in self.items.items()),
-            }
-        )
-
-
-async def _snapshot(db: Any, library_id: UUID) -> Snapshot:
-    lib = uid(library_id)
-    vrows = await db.fetch(
-        "SELECT youtube_id, channel_id, title, CAST(upload_date AS TEXT) AS d, date_quality,"
-        " duration_s, tab FROM youtube_videos"
-        f" WHERE channel_id IN {_OWN_CHANNELS} ORDER BY youtube_id",
-        lib,
-    )
-    videos = {
-        str(r["youtube_id"]): (
-            r["channel_id"],
-            r["title"],
-            None if r["d"] is None else str(r["d"])[:10],
-            r["date_quality"],
-            None if r["duration_s"] is None else round(float(r["duration_s"]), 3),
-            r["tab"],
-        )
-        for r in vrows
-    }
-    prows = await db.fetch(
-        "SELECT playlist_id, channel_id, title, item_count, is_real FROM youtube_playlists"
-        f" WHERE channel_id IN {_OWN_CHANNELS} ORDER BY playlist_id",
-        lib,
-    )
-    playlists = {
-        str(r["playlist_id"]): (
-            r["channel_id"],
-            r["title"],
-            None if r["item_count"] is None else int(r["item_count"]),
-            bool(r["is_real"]),
-        )
-        for r in prows
-    }
-    irows = await db.fetch(
-        "SELECT i.playlist_id AS playlist_id, i.youtube_id AS youtube_id, i.position AS position"
-        " FROM youtube_playlist_items i JOIN youtube_playlists p ON p.playlist_id = i.playlist_id"
-        f" WHERE p.channel_id IN {_OWN_CHANNELS} ORDER BY i.playlist_id, i.youtube_id",
-        lib,
-    )
-    items: dict[str, list[tuple[str, int | None]]] = {}
-    for r in irows:
-        items.setdefault(str(r["playlist_id"]), []).append(
-            (str(r["youtube_id"]), None if r["position"] is None else int(r["position"]))
-        )
-    return Snapshot(videos, playlists, {k: tuple(v) for k, v in items.items()})
-
-
-def changed_youtube_ids(before: Snapshot, after: Snapshot) -> set[str]:
-    """YouTube ids whose own row changed, plus every member of a changed playlist."""
-    changed = {k for k, v in after.videos.items() if before.videos.get(k) != v}
-    for pid in set(before.playlists) | set(after.playlists):
-        if before.playlists.get(pid) == after.playlists.get(pid) and before.items.get(
-            pid
-        ) == after.items.get(pid):
-            continue
-        for snap in (before, after):
-            changed.update(y for y, _ in snap.items.get(pid, ()))
-    return changed
-
-
+# a library's listing as stored, and what changed between two (maktaba_pipeline's: the
+# mediaintel import computes the same digest)
 async def _upsert_discovered_channel(
     db: Any, library_id: UUID, channel_id: str, url: str | None, title: str | None
 ) -> None:
@@ -376,16 +302,16 @@ async def _linked_videos(db: Any, library_id: UUID, youtube_ids: Sequence[str]) 
     """Library videos linked (provider ``youtube``) to any of ``youtube_ids``."""
     found: set[UUID] = set()
     ids = sorted(youtube_ids)
+    inn = "= ANY($2::text[])" if is_pg(db) else "IN (SELECT value FROM json_each($2))"
     for i in range(0, len(ids), _IN_CHUNK):
-        chunk = ids[i : i + _IN_CHUNK]
-        marks = ",".join(f"${n + 2}" for n in range(len(chunk)))
+        chunk = list(ids[i : i + _IN_CHUNK])
         rows = await db.fetch(
             "SELECT m.video_id AS id FROM media_metadata_enrichment m"
             " JOIN videos v ON v.id = m.video_id"
-            f" WHERE v.library_id = $1 AND v.deleted_at IS NULL AND m.provider = 'youtube'"
-            f" AND m.external_id IN ({marks})",
+            " WHERE v.library_id = $1 AND v.deleted_at IS NULL AND m.provider = 'youtube'"
+            f" AND m.external_id {inn}",
             uid(library_id),
-            *chunk,
+            chunk if is_pg(db) else dumps(chunk),
         )
         found.update(UUID(str(r["id"])) for r in rows)
     return found
@@ -444,7 +370,7 @@ async def _import_tartube(
 
 
 def _listing_archive(library_id: UUID) -> str:
-    from ._youtube_drain import work_root
+    from maktaba_fp_youtube.stages._youtube_drain import work_root
 
     folder = work_root() / str(library_id)
     folder.mkdir(parents=True, exist_ok=True)

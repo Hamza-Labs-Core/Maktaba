@@ -104,11 +104,8 @@ SELECT pause_requested, cancel_requested
  WHERE id = $1
 """
 
-_READ_FLAGS_SQLITE = """
-SELECT pause_requested, cancel_requested
-  FROM processing_jobs
- WHERE id = ?
-"""
+# the same text on SQLite ($1 there too: the database wrapper binds it), one named statement
+_READ_FLAGS_SQLITE = _READ_FLAGS_PG
 
 
 async def read_flags(db: DBConn, *, job_id: int) -> FlagState:

@@ -470,6 +470,17 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
     return handle
 
 
+def _entry_for(stage: str, kind: str) -> bool:
+    """Whether ``stage`` is where the graph starts a new subject of ``kind`` (``probe`` for a
+    video): a stage that makes one (a download) starts its pipeline."""
+    from ..db.jobs import Stage
+    from ..engine.graph import GRAPH
+
+    if kind == "video" and stage == Stage.PROBE:
+        return True  # where the scanner starts a new file (scanner/store.py)
+    return any(s.name == stage and kind in (s.entry_for or ()) for s in GRAPH)
+
+
 def _neighbours(a: str, b: str) -> bool:
     """Whether an edge of the graph joins the two stages, either way (``dedup_scan`` queues
     ``convert_mp4``, whose edge leads to it, for a video never planned for conversion)."""
@@ -497,13 +508,14 @@ async def _relayed_enqueue(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, An
 
     job, sdef = ctx.job, ctx.stage
     stage = str(a["stage"])
+    kind, subject = str(a["subject_kind"]), str(a["subject_id"])
     if (
         stage != sdef.name
         and stage not in (sdef.may_request or ())
         and not _neighbours(sdef.name, stage)
+        and not _entry_for(stage, kind)
     ):
         raise EnqueueRefused(f"plugin_scope: {sdef.name} may not queue {stage}")
-    kind, subject = str(a["subject_kind"]), str(a["subject_id"])
     lib = getattr(job, "library_id", None)
     if lib is None:
         raise EnqueueRefused("plugin_scope: this job has no library")
@@ -766,6 +778,10 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
         "trash": ";".join(f"{r}/.maktaba/trash" for r in sorted(roots)),
         "data.thumbnails": thumbs,
         "models": ";".join(_model_folders()),
+        # the YouTube downloads' work folder (MAKTABA_YT_WORK, else ~/.maktaba/work/yt)
+        "data.cache": os.path.realpath(
+            os.path.expanduser(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt")
+        ),
         "data.index": os.path.realpath(
             os.path.expanduser(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma")
         ),

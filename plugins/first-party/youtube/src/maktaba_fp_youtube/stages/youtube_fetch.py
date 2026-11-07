@@ -12,11 +12,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...integrations.youtube_download import unavailable
-from ..context import StageContext
-from ..graph import StageResult
-from ._youtube_drain import drain
-from .registry import StageImpl
+from maktaba_fp_youtube.stages._youtube_drain import drain
+from maktaba_pipeline.engine.context import StageContext
+from maktaba_pipeline.engine.graph import StageResult
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.integrations.youtube_download import unavailable
 
 __all__ = ["IMPL", "run"]
 

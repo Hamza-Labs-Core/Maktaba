@@ -37,16 +37,16 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from ...library_mgmt import repair
-from ...schedule.tv_settings import RepairConfig
-from ..changes import ChangeSet, apply_or_review
-from ..context import StageContext
-from ..graph import Request, StageResult, Subject
-from ..hashing import canonical_hash
-from ..media import ffmpeg, ffprobe
-from ..paths import to_db
-from ..sql import is_pg, now, to_ts, uid
-from .registry import StageImpl
+from maktaba_pipeline.engine.changes import ChangeSet, apply_or_review
+from maktaba_pipeline.engine.context import StageContext
+from maktaba_pipeline.engine.graph import Request, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.media import ffmpeg, ffprobe
+from maktaba_pipeline.engine.paths import to_db
+from maktaba_pipeline.engine.sql import now, to_ts, uid
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.library_mgmt import repair
+from maktaba_pipeline.schedule.tv_settings import RepairConfig
 
 __all__ = ["IMPL", "Broken", "broken_files", "requested_files", "set_runner"]
 
@@ -74,7 +74,7 @@ _BROKEN = """
 SELECT v.id AS id, v.path AS path, m.external_id AS youtube_id
   FROM videos v
   LEFT JOIN media_metadata_enrichment m
-    ON m.video_id = v.id AND m.provider = 'youtube' AND m.is_dismissed = {false}
+    ON m.video_id = v.id AND m.provider = 'youtube' AND NOT m.is_dismissed
  WHERE v.library_id = $1 AND v.deleted_at IS NULL
    AND (SELECT j.state FROM processing_jobs j
          WHERE j.video_id = v.id AND j.stage = 'probe' ORDER BY j.id DESC LIMIT 1) = 'failed'
@@ -84,7 +84,7 @@ SELECT v.id AS id, v.path AS path, m.external_id AS youtube_id
 
 async def broken_files(db: Any, library_id: UUID) -> list[Broken]:
     """The library's videos whose latest ``probe`` job failed, with their YouTube id."""
-    sql = _BROKEN.replace("{false}", "false" if is_pg(db) else "0")
+    sql = _BROKEN
     return [
         Broken(
             UUID(str(r["id"])),
@@ -100,7 +100,7 @@ SELECT r.id AS request_id, v.id AS id, v.path AS path, m.external_id AS youtube_
   FROM item_requests r
   JOIN videos v ON v.id = r.video_id
   LEFT JOIN media_metadata_enrichment m
-    ON m.video_id = v.id AND m.provider = 'youtube' AND m.is_dismissed = {false}
+    ON m.video_id = v.id AND m.provider = 'youtube' AND NOT m.is_dismissed
  WHERE v.library_id = $1 AND r.action = 'redownload' AND r.done_at IS NULL
  ORDER BY r.id
 """
@@ -109,7 +109,7 @@ SELECT r.id AS request_id, v.id AS id, v.path AS path, m.external_id AS youtube_
 async def requested_files(db: Any, library_id: UUID) -> list[Broken]:
     """The library's videos an admin asked to download again (open requests, oldest first;
     one per video)."""
-    sql = _REQUESTED.replace("{false}", "false" if is_pg(db) else "0")
+    sql = _REQUESTED
     out: dict[str, Broken] = {}
     for r in await db.fetch(sql, uid(library_id)):
         key = str(r["id"])
@@ -134,7 +134,7 @@ async def _close_requests(db: Any, video_id: UUID, result: str) -> None:
 
 
 async def _cfg(db: Any) -> tuple[RepairConfig, dict[str, Any]]:
-    from ... import rules
+    from maktaba_pipeline import rules
 
     cfg, changes, _ = await rules.read(db, "repair")
     return cfg, changes

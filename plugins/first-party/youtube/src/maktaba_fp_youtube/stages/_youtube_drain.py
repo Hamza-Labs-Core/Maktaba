@@ -35,12 +35,17 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
-from ...db.jobs import Stage, enqueue
-from ...db.jobs_state import read_flags
-from ...db.pubsub import VIDEOS_NEW, get_bus
-from ...discovery.ytdlp_sidecars import VideoInfo, parse_info_json
-from ...identity import hash_file
-from ...integrations.youtube_download import (
+from maktaba_pipeline.db.jobs import Stage, enqueue
+from maktaba_pipeline.db.jobs_state import read_flags
+from maktaba_pipeline.db.pubsub import VIDEOS_NEW, get_bus
+from maktaba_pipeline.discovery.ytdlp_sidecars import VideoInfo, parse_info_json
+from maktaba_pipeline.engine import media
+from maktaba_pipeline.engine.context import JobCancelled, StageContext, StageFailure
+from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, Request, StageResult
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.sql import is_pg, loads, now, to_ts, uid
+from maktaba_pipeline.identity import hash_file
+from maktaba_pipeline.integrations.youtube_download import (
     DownloadOptions,
     download_argv,
     parse_progress,
@@ -48,23 +53,23 @@ from ...integrations.youtube_download import (
     sanitize_name,
     video_filename,
 )
-from ...integrations.youtube_errors import (
+from maktaba_pipeline.integrations.youtube_errors import (
     BOT_CHECK_KIND,
     RATE_LIMITED_KIND,
     Classified,
     classify,
 )
-from ...library_mgmt import youtube_sources as ys
-from ...library_mgmt.repair import plain_name
-from ...library_mgmt.swap import SwapError, SwapVerifyFailed, swap_in
-from ...library_mgmt.verify import ProbeInfo, VerifyResult, moov_before_mdat, verify_media
-from ...scanner.service import SaveCandidateParams
-from ...scanner.store import SqlScanStore
-from .. import media
-from ..context import JobCancelled, StageContext, StageFailure
-from ..graph import EPIC47_PRIORITIES, Request, StageResult
-from ..hashing import canonical_hash
-from ..sql import is_pg, loads, now, to_ts, uid
+from maktaba_pipeline.library_mgmt import youtube_sources as ys
+from maktaba_pipeline.library_mgmt.repair import plain_name
+from maktaba_pipeline.library_mgmt.swap import SwapError, SwapVerifyFailed, swap_in
+from maktaba_pipeline.library_mgmt.verify import (
+    ProbeInfo,
+    VerifyResult,
+    moov_before_mdat,
+    verify_media,
+)
+from maktaba_pipeline.scanner.service import SaveCandidateParams
+from maktaba_pipeline.scanner.store import SqlScanStore
 
 __all__ = [
     "BACKFILL_BATCH",
@@ -183,10 +188,12 @@ async def _items(db: Any, library_id: UUID, *, backfill: bool, limit: int | None
         f" WHERE d.library_id = $1 AND d.state = 'wanted' AND s.mode IN {modes}"
         " AND d.backfill = $2 AND (d.not_before IS NULL OR d.not_before <= $3)"
         f" ORDER BY (d.upload_date IS NULL), d.upload_date {order}, d.requested_at, d.youtube_id"
-        + ("" if limit is None else f" LIMIT {int(limit)}"),
+        " LIMIT $4",
         uid(library_id),
         backfill if is_pg(db) else int(backfill),
         to_ts(db, now()),
+        # no limit: NULL on Postgres, -1 on SQLite
+        int(limit) if limit is not None else (None if is_pg(db) else -1),
     )
     return [
         Item(
@@ -200,24 +207,34 @@ async def _items(db: Any, library_id: UUID, *, backfill: bool, limit: int | None
     ]
 
 
+#: the columns _set_item may write besides the state, each set when given, else kept: one
+#: fixed text whatever is written (Epic 54 wave 6: the runner runs named statements)
+_ITEM_COLS = ("bytes", "done_at", "error", "failure_class", "not_before", "reason", "video_id")
+_SET_ITEM_SQL = (
+    "UPDATE youtube_downloads SET state = $3, attempts = attempts + $4, "
+    "bytes = CASE WHEN $5 THEN $6 ELSE bytes END, "
+    "done_at = CASE WHEN $7 THEN $8 ELSE done_at END, "
+    "error = CASE WHEN $9 THEN $10 ELSE error END, "
+    "failure_class = CASE WHEN $11 THEN $12 ELSE failure_class END, "
+    "not_before = CASE WHEN $13 THEN $14 ELSE not_before END, "
+    "reason = CASE WHEN $15 THEN $16 ELSE reason END, "
+    "video_id = CASE WHEN $17 THEN $18 ELSE video_id END WHERE library_id = $1 AND youtube_id = $2"
+)
+
+
 async def _set_item(db: Any, library_id: UUID, youtube_id: str, state: str, **cols: Any) -> None:
-    sets = ["state = $3"]
-    args: list[Any] = [uid(library_id), youtube_id, state]
-    for k, v in cols.items():
-        if k == "attempts_delta":
-            args.append(int(v))
-            sets.append(f"attempts = attempts + ${len(args)}")
-            continue
+    bad = set(cols) - set(_ITEM_COLS) - {"attempts_delta"}
+    if bad:
+        raise ValueError(f"youtube_downloads columns not written here: {sorted(bad)}")
+    args: list[Any] = [uid(library_id), youtube_id, state, int(cols.get("attempts_delta") or 0)]
+    for k in _ITEM_COLS:
+        v = cols.get(k)
         if isinstance(v, datetime):
             v = to_ts(db, v)
         elif isinstance(v, UUID):
             v = uid(v)
-        args.append(v)
-        sets.append(f"{k} = ${len(args)}")
-    await db.execute(
-        f"UPDATE youtube_downloads SET {', '.join(sets)} WHERE library_id = $1 AND youtube_id = $2",
-        *args,
-    )
+        args += [k in cols, v]
+    await db.execute(_SET_ITEM_SQL, *args)
 
 
 async def _roots(db: Any, library_id: UUID) -> list[str]:

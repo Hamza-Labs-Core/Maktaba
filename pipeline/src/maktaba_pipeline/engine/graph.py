@@ -348,54 +348,15 @@ def _fp(name: str) -> StageDef:
 #: Stages in lane order. Edge and request wiring is exactly plan 06-11 section 3.2.
 GRAPH: tuple[StageDef, ...] = (
     # ---- sources -------------------------------------------------------
-    StageDef(
-        name="youtube_sync",
-        label="YouTube listing",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=0,
-        version=YT_SYNC_VERSION,
-        edges=(
-            Edge("link", "videos_of"),
-            Edge("detect", "same"),
-            Edge("exact_dates", "same"),
-        ),
-        # Epic 47: the listing queues the downloads of what the library lacks
-        may_request=("youtube_fetch", "youtube_backfill"),
-        entry_for=("library",),
-        debounce_sec=300,
-        debounce_max_sec=3600,
-    ),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("youtube_sync"),
     # Epic 47: download what youtube_sync listed and the library lacks: new uploads, and
     # (its own tile, so it pauses alone) the back catalogue. One pool for both: one stream
     # of requests per home.
-    StageDef(
-        name="youtube_fetch",
-        label="YouTube downloads",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=2,
-        version=YT_FETCH_VERSION,
-        external_write=True,
-        # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (download, convert, dedup; decided 2026-10-28)
-        may_request=("convert_mp4", "youtube_fetch"),
-    ),
-    StageDef(
-        name="youtube_backfill",
-        label="YouTube back catalogue",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=3,
-        version=YT_BACKFILL_VERSION,
-        external_write=True,
-        # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (download, convert, dedup; decided 2026-10-28)
-        may_request=("convert_mp4", "youtube_backfill"),
-    ),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("youtube_fetch"),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("youtube_backfill"),
     # slot 0175: every library's YouTube sources from Tartube's records (off), and what
     # Tartube downloaded seeded done. An admin runs it (Admin > Libraries); on the home,
     # where Tartube's database is.
@@ -412,19 +373,8 @@ GRAPH: tuple[StageDef, ...] = (
     ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the
     # "exactdates" rules enable it. Detect runs again on the dates it finds.
-    StageDef(
-        name="exact_dates",
-        label="Exact dates",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=1,
-        version=EXACT_DATES_VERSION,
-        edges=(Edge("detect", "same"),),
-        entry_for=("library",),
-        debounce_sec=300,
-        debounce_max_sec=3600,
-    ),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("exact_dates"),
     # ---- episodes lane -------------------------------------------------
     StageDef(
         name="content_hash",
@@ -811,19 +761,8 @@ GRAPH: tuple[StageDef, ...] = (
     ),
     # Files whose probe failed, fetched from YouTube again and swapped in on the share
     # (mediaintel repair-broken). Writes to the share: off until the "repair" rules enable it.
-    StageDef(
-        name="repair_broken",
-        label="Repair broken files",
-        subject_kinds=("library",),
-        pool="repairs",
-        lane="media",
-        lane_order=10,
-        version=REPAIR_VERSION,
-        may_request=("probe", "content_hash"),
-        # not an entry queue: a library retrigger never starts it, an operator runs it
-        external_write=True,
-        max_attempts=1,
-    ),
+    # Epic 54: defined by tv.maktaba.repair's manifest
+    _fp("repair_broken"),
     # Story 31.3: the home converts the stored paths to canonical share paths by itself
     # (sharepath/auto.py). Its own agent enqueues it (catalog subject) when there may be
     # work, an admin asks for it on the Machines page, or a run was cut short; the home's

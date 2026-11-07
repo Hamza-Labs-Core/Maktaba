@@ -12,10 +12,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from maktaba_fp_repair.stages import repair_broken
 
 from maktaba_pipeline.engine.graph import GRAPH, POOLS
 from maktaba_pipeline.engine.sql import dumps, now, to_ts
-from maktaba_pipeline.engine.stages import repair_broken
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 from tests.extensions.harness import error_of, events, run_stage, setup_runtime

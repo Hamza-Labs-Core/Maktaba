@@ -1,0 +1,93 @@
+# tv.maktaba.youtube: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6
+# (story 54.33): lists a library's YouTube channels and downloads their videos, newest first, then the back catalogue.
+schema     = 1
+id         = "tv.maktaba.youtube"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.youtube.name"
+summary = "fp.youtube.summary"
+
+[trusted]
+runner    = "net"
+component = "youtube"
+db.read   = ["app_settings", "job_stages", "libraries", "media_metadata_enrichment", "processing_jobs", "series_episodes"]
+db.write  = ["file_actions", "video_copies", "videos", "youtube_channels", "youtube_downloads", "youtube_playlist_items", "youtube_playlists", "youtube_sources", "youtube_videos"]
+settings  = []
+files.read  = ["library"]
+# the downloads' work folder (MAKTABA_YT_WORK) is the data.cache area
+files.write = ["library", "data.cache"]
+exec      = ["yt-dlp", "ffmpeg", "ffprobe"]
+# the hosts YouTube's API and yt-dlp's YouTube extractor reach (reviewed; the nightly
+# recording run checks no other is contacted, story 54.33 T02)
+net       = ["www.youtube.com", "youtube.com", "*.googlevideo.com", "www.googleapis.com", "i.ytimg.com"]
+
+[[stage]]
+name         = "youtube_sync"
+subject      = "library"
+export       = "youtube-sync"
+version      = 1
+label        = "YouTube listing"
+subject_kinds = ["library"]
+pool         = "network_yt"
+lane         = "sources"
+lane_order   = 0
+may_request  = ["youtube_fetch", "youtube_backfill"]
+entry_for    = ["library"]
+debounce_sec = 300
+debounce_max_sec = 3600
+edges        = [{ to = "link", map = "videos_of" }, { to = "detect", map = "same" }, { to = "exact_dates", map = "same" }]
+entry        = "maktaba_fp_youtube.stages.youtube_sync:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "youtube_fetch"
+subject      = "library"
+export       = "youtube-fetch"
+version      = 1
+label        = "YouTube downloads"
+subject_kinds = ["library"]
+pool         = "network_yt"
+lane         = "sources"
+lane_order   = 2
+may_request  = ["convert_mp4", "youtube_fetch"]
+external_write = true
+entry        = "maktaba_fp_youtube.stages.youtube_fetch:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "youtube_backfill"
+subject      = "library"
+export       = "youtube-backfill"
+version      = 1
+label        = "YouTube back catalogue"
+subject_kinds = ["library"]
+pool         = "network_yt"
+lane         = "sources"
+lane_order   = 3
+may_request  = ["convert_mp4", "youtube_backfill"]
+external_write = true
+entry        = "maktaba_fp_youtube.stages.youtube_backfill:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "exact_dates"
+subject      = "library"
+export       = "exact-dates"
+version      = 1
+label        = "Exact dates"
+subject_kinds = ["library"]
+pool         = "network_yt"
+lane         = "sources"
+lane_order   = 1
+entry_for    = ["library"]
+debounce_sec = 300
+debounce_max_sec = 3600
+edges        = [{ to = "detect", map = "same" }]
+entry        = "maktaba_fp_youtube.stages.exact_dates:IMPL"
+fingerprint  = { input = true, output = false }
+

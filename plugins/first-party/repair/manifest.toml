@@ -1,0 +1,41 @@
+# tv.maktaba.repair: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 6
+# (story 54.33): downloads a broken video again from where it came from and swaps the good copy in.
+schema     = 1
+id         = "tv.maktaba.repair"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.repair.name"
+summary = "fp.repair.summary"
+
+[trusted]
+runner    = "net"
+component = "library.repair"
+db.read   = ["app_settings", "media_metadata_enrichment", "processing_jobs"]
+db.write  = ["item_requests", "video_repairs", "videos"]
+settings  = []
+files.read  = ["library"]
+files.write = ["library", "trash"]
+exec      = ["yt-dlp", "ffmpeg", "ffprobe"]
+net       = ["www.youtube.com", "youtube.com", "*.googlevideo.com", "www.googleapis.com", "i.ytimg.com"]
+
+[[stage]]
+name         = "repair_broken"
+subject      = "library"
+export       = "repair-broken"
+version      = 1
+label        = "Repair broken files"
+subject_kinds = ["library"]
+pool         = "repairs"
+lane         = "media"
+lane_order   = 10
+may_request  = ["probe", "content_hash"]
+external_write = true
+max_attempts = 1
+entry        = "maktaba_fp_repair.stages.repair_broken:IMPL"
+fingerprint  = { input = true, output = false }
+

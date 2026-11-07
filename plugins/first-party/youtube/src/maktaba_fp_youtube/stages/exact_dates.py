@@ -26,14 +26,14 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
-from ...integrations.youtube import BotCheck, VideoInfoFetcher, exact_info
-from ...schedule.tv_settings import ExactDatesConfig
-from ..context import StageContext, StageFailure
-from ..graph import StageResult, Subject
-from ..hashing import canonical_hash
-from ..sql import is_pg, uid
-from . import youtube_sync
-from .registry import StageImpl
+from maktaba_fp_youtube.stages import youtube_sync
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.sql import is_pg, uid
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.integrations.youtube import BotCheck, VideoInfoFetcher, exact_info
+from maktaba_pipeline.schedule.tv_settings import ExactDatesConfig
 
 __all__ = ["IMPL", "candidates", "set_sleep"]
 
@@ -48,23 +48,6 @@ def set_sleep(fn: Callable[[float], Awaitable[None]] | None) -> Callable[[float]
     return previous
 
 
-_CANDIDATES = """
-SELECT yv.youtube_id AS yid,
-       MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) AS in_series,
-       MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) AS in_playlist
-  FROM youtube_videos yv
-  JOIN media_metadata_enrichment m
-    ON m.external_id = yv.youtube_id AND m.provider = 'youtube' AND m.is_dismissed = {false}
-  JOIN videos v ON v.id = m.video_id AND v.library_id = $1 AND v.deleted_at IS NULL
-  LEFT JOIN series_episodes se ON se.video_id = v.id
-  LEFT JOIN youtube_playlist_items pi ON pi.youtube_id = yv.youtube_id
- WHERE yv.date_quality IS NULL OR yv.date_quality <> 'exact'
- GROUP BY yv.youtube_id
-{having}
- ORDER BY in_series DESC, yv.youtube_id
-"""
-
-
 async def candidates(db: Any, library_id: UUID, cfg: ExactDatesConfig) -> list[str]:
     """YouTube ids of the library's linked videos that still lack an exact date, series
     members first, at most ``max_per_run`` of them (0: all)."""
@@ -74,7 +57,22 @@ async def candidates(db: Any, library_id: UUID, cfg: ExactDatesConfig) -> list[s
         else "HAVING MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) = 1"
         " OR MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) = 1"
     )
-    sql = _CANDIDATES.replace("{false}", "false" if is_pg(db) else "0").replace("{having}", having)
+    false = "false" if is_pg(db) else "0"
+    # one fixed text per dialect and scope (a first-party plugin runs named statements)
+    sql = (
+        "SELECT yv.youtube_id AS yid,"
+        " MAX(CASE WHEN se.video_id IS NOT NULL THEN 1 ELSE 0 END) AS in_series,"
+        " MAX(CASE WHEN pi.youtube_id IS NOT NULL THEN 1 ELSE 0 END) AS in_playlist"
+        " FROM youtube_videos yv"
+        " JOIN media_metadata_enrichment m"
+        f" ON m.external_id = yv.youtube_id AND m.provider = 'youtube' AND m.is_dismissed = {false}"
+        " JOIN videos v ON v.id = m.video_id AND v.library_id = $1 AND v.deleted_at IS NULL"
+        " LEFT JOIN series_episodes se ON se.video_id = v.id"
+        " LEFT JOIN youtube_playlist_items pi ON pi.youtube_id = yv.youtube_id"
+        " WHERE yv.date_quality IS NULL OR yv.date_quality <> 'exact'"
+        f" GROUP BY yv.youtube_id {having}"
+        " ORDER BY in_series DESC, yv.youtube_id"
+    )
     ids = [str(r["yid"]) for r in await db.fetch(sql, uid(library_id))]
     return ids[: cfg.max_per_run] if cfg.max_per_run > 0 else ids
 
@@ -87,7 +85,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
 
 
 async def _cfg(db: Any) -> tuple[ExactDatesConfig, dict[str, Any]]:
-    from ... import rules
+    from maktaba_pipeline import rules
 
     cfg, changes, _ = await rules.read(db, "exactdates")
     return cfg, changes
