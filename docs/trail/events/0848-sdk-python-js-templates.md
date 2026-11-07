@@ -20,9 +20,8 @@ agent: claude-code
 - componentize-py and jco import every interface of the world they are built against, unlike Rust's bindings. Against the full world, the audit refuses them with `plugin_undeclared_import`. Narrowing the world from the audit's own tables makes the build and the home agree.
 - A componentize-py component needs 38 core instances: one per module of its runtime, measured by building plugind with the cap read from the environment. Tables and memories fit the old caps.
 - plugind's memory cap is per memory, and memories are counted (4). So the instance cap does not loosen the memory bound; a test holds both.
-- TinyGo's wasip2 runtime imports `wasi:cli/stdin` and `wasi:filesystem` even without `fmt` or `os`. The Go template needs a stub component composed in (the next PR).
+- TinyGo's wasip2 runtime imports `wasi:cli/stdin` and `wasi:filesystem` even without `fmt` or `os` (the Go template, #851, builds for `wasm-unknown` instead).
 - A negative test can pass for the wrong reason: the first undeclared-import test called `setTags`, which does not exist. It now calls `addTags`, and a positive control declares `tags.write` and builds.
-
 - CI found that a job's time limit started before the host compiled a package it had not loaded and before the job waited for a slot. The Python hello (compile 15 s in a debug build, over 30 s on a 2-vCPU runner) timed out at 89 fuel.
   - The fix: the job's clock starts at its store; a compile has its own cap (180 s, the package refused after) on 2 workers; the cache is named by Wasmtime version and engine settings, and warms at start.
 - Wasmtime checks a store's deadline only at epoch ticks (100 ms here). A guest that ends inside its first tick passes even with its deadline gone, so a test of the deadline needs guest work spanning ticks. The tests time the machine first.
@@ -32,4 +31,4 @@ agent: claude-code
 - Before raising a limit a test hits, measure which phase uses the time.
 
 ## Open
-- The Go template, with a composed stub for stdin and the filesystem, and `mkp build go` failing if anything refused is left (#718).
+- The Go template (#851).
