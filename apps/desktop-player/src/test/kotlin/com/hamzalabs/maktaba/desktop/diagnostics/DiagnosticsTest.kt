@@ -9,6 +9,15 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.runComposeUiTest
+import com.hamzalabs.maktaba.desktop.ErrorBox
+import com.hamzalabs.maktaba.desktop.Lang
+import com.hamzalabs.maktaba.desktop.PlayerTheme
+import com.hamzalabs.maktaba.desktop.Texts
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
@@ -69,5 +78,31 @@ class DiagnosticsTest {
         val p = DiagnosticsStrings.part
         assertEquals(p.en.keys, p.ar.keys)
         p.ar.values.forEach { v -> assertTrue(v, v.any { it in '؀'..'ۿ' }) }
+    }
+
+    /** An error box offers "Report this" under the player's report action (signed in), with that call's reference. */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun anErrorBoxOffersReportThisWithItsReference() = runComposeUiTest {
+        com.hamzalabs.maktaba.core.api.RequestId.next()
+        val opened = mutableListOf<String?>()
+        setContent {
+            PlayerTheme(Texts(Lang.En), big = false) {
+                androidx.compose.runtime.CompositionLocalProvider(LocalReportProblem provides { ref: String? -> opened += ref }) {
+                    ErrorBox("The library could not load", RuntimeException("x"), onRetry = {})
+                }
+            }
+        }
+        onNodeWithText("Report this").performClick()
+        assertEquals(1, opened.size)
+        assertEquals(lastReference(), opened.single())
+        assertEquals(8, opened.single()!!.length)
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun withoutTheActionThereIsNoReportThis() = runComposeUiTest {
+        setContent { PlayerTheme(Texts(Lang.Ar), big = false) { ErrorBox("x", null, onRetry = null) } }
+        assertTrue(onAllNodes(androidx.compose.ui.test.hasTestTag("error-report")).fetchSemanticsNodes().isEmpty())
     }
 }
