@@ -28,6 +28,10 @@ export const CODES = {
   missingFile: "manifest_missing_file",
   badSettings: "manifest_bad_settings",
   notToml: "manifest_not_toml",
+  badEmit: "manifest_bad_emit",
+  badTrigger: "manifest_bad_trigger",
+  badEvent: "manifest_bad_event",
+  badDepends: "manifest_bad_depends",
 } as const;
 
 const SCHEMA_VERSION = 1;
@@ -302,10 +306,8 @@ export function validate(src: Uint8Array | string, files?: Files): Obj {
   check(schema, raw, "", "", errs);
   if (errs.length) throw new ManifestInvalid(errs);
   const m = fill(schema, raw) as Obj;
-  m.maktaba = (m.maktaba as string)
-    .split(",")
-    .map((p) => p.replaceAll(" ", ""))
-    .join(", ");
+  m.maktaba = normRange(m.maktaba as string);
+  for (const d of (m.depends as Obj[] | undefined) ?? []) d.version = normRange(d.version as string);
   errs = rules(m, files);
   if (errs.length) throw new ManifestInvalid(errs);
   return m;
@@ -314,6 +316,17 @@ export function validate(src: Uint8Array | string, files?: Files): Obj {
 /** The one JSON text of a valid manifest: keys sorted, no spaces, UTF-8. */
 export function normalised(m: Obj): string {
   return canonical(m);
+}
+
+function normRange(r: string): string {
+  return r
+    .split(",")
+    .map((p) => p.replaceAll(" ", ""))
+    .join(", ");
+}
+
+function lowerBound(r: string): boolean {
+  return r.split(", ").some((p) => p.startsWith(">") || p.startsWith("="));
 }
 
 function reserved(id: string): boolean {
@@ -338,7 +351,7 @@ function rules(m: Obj, files?: Files): ManifestError[] {
   if (reserved(m.id as string)) push(CODES.reservedId, "id");
   const platforms = m.platforms as string[];
   if (platforms.length > 1 && platforms.includes("any")) push(CODES.badPlatform, "platforms", "any stands alone");
-  if (!(m.maktaba as string).split(", ").some((p) => p.startsWith(">") || p.startsWith("="))) {
+  if (!lowerBound(m.maktaba as string)) {
     push(CODES.badRange, "maktaba", "no lower bound");
   }
   const caps = m.capabilities as Obj;
@@ -360,18 +373,57 @@ function rules(m: Obj, files?: Files): ManifestError[] {
     if (subjects.has(st.name as string)) push(CODES.duplicateStage, `stage/${i}/name`, st.name as string);
     subjects.set(st.name as string, st.subject as string);
   });
+  // the graph fields (54.39): published events, dependencies on other plugins' events
+  const published = new Map<string, string>();
+  ((m.event as Obj[] | undefined) ?? []).forEach((e, i) => {
+    if (published.has(e.name as string)) push(CODES.badEvent, `event/${i}/name`, e.name as string);
+    published.set(e.name as string, e.subject as string);
+  });
+  const depends = new Set<string>();
+  const used = new Set<string>();
+  const dependsList = (m.depends as Obj[] | undefined) ?? [];
+  dependsList.forEach((d, i) => {
+    const p = d.plugin as string;
+    if (p === m.id || depends.has(p)) push(CODES.badDepends, `depends/${i}/plugin`, p);
+    else if (!lowerBound(d.version as string)) push(CODES.badDepends, `depends/${i}/version`, "no lower bound");
+    depends.add(p);
+  });
   const evs = load().events;
   stages.forEach((st, i) => {
     (st.may_request as string[]).forEach((r, j) => {
       if (!subjects.has(r)) push(CODES.badRequest, `stage/${i}/may_request/${j}`, r);
     });
     (st.trigger as Obj[]).forEach((t, j) => {
+      const tpath = `stage/${i}/trigger/${j}`;
+      if (("event" in t) === ("stage" in t)) {
+        push(CODES.badTrigger, tpath, "event or stage");
+        return;
+      }
+      if ("stage" in t) {
+        const after = t.stage as string;
+        if (!subjects.has(after)) push(CODES.badTrigger, `${tpath}/stage`, after);
+        else if (subjects.get(after) !== st.subject) push(CODES.subjectMismatch, `${tpath}/stage`, after);
+        return;
+      }
       const ev = t.event as string;
-      const path = `stage/${i}/trigger/${j}/event`;
+      const path = `${tpath}/event`;
+      if (ev.startsWith("plugin:")) {
+        const publisher = ev.slice("plugin:".length).split("/")[0] ?? "";
+        if (publisher === m.id) push(CODES.badTrigger, path, ev);
+        else if (!depends.has(publisher)) push(CODES.badDepends, path, publisher);
+        else used.add(publisher);
+        return;
+      }
       const e = evs.get(ev);
       if (!e || e.trigger === false) push(CODES.unknownEvent, path, ev);
       else if (e.subject !== st.subject) push(CODES.subjectMismatch, path, ev);
     });
+    ((st.emits as string[] | undefined) ?? []).forEach((e, j) => {
+      if (!published.has(e)) push(CODES.badEmit, `stage/${i}/emits/${j}`, e);
+    });
+  });
+  dependsList.forEach((d, i) => {
+    if (!used.has(d.plugin as string)) push(CODES.badDepends, `depends/${i}`, d.plugin as string);
   });
   (m.schedule as Obj[]).forEach((s, i) => {
     if (subjects.get(s.stage as string) !== "catalog") push(CODES.badSchedule, `schedule/${i}/stage`, s.stage as string);
@@ -412,6 +464,14 @@ function packageRules(m: Obj, files: Files): ManifestError[] {
       else if ([...w].length > most) push(CODES.stringTooLong, `strings/${key}`, lang);
     }
   }
+  ((m.event as Obj[] | undefined) ?? []).forEach((e, i) => {
+    const path = e.payload as string;
+    const r = readJson(files, path);
+    if (!r.found) push(CODES.missingFile, `event/${i}/payload`, path);
+    else if (typeOf(r.value) !== "object" || (r.value as Obj).type !== "object") {
+      push(CODES.badEvent, `event/${i}/payload`, path);
+    }
+  });
   let props: Obj = {};
   const settings = m.settings as Obj | undefined;
   if (settings) {
