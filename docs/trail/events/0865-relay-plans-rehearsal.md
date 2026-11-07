@@ -23,7 +23,7 @@ prs: [856]
 - One rehearsal account per pay-as-you-go setting. Pay-as-you-go is per account, so a capped Pro home owned by the same account would have played in full (`seed.HomesOf`).
 - The meters flush every 30 s. A scenario that reads usage waits for the flush rather than sleeping a fixed time.
 
-## Keep / stop
+## Keep doing
 - Keep running the affected-tests gate after every follow-up commit, not only before the first push. #856's desktop fix went up without its test and the gate blocked it.
 
 ## Open
