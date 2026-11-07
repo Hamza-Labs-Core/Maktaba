@@ -63,6 +63,7 @@ const GUIDES = {
     "manifest.md",
     "sandbox.md",
     "queue-and-api.md",
+    "installing.md",
     "testing-and-packaging.md",
     "publishing.md",
   ],
