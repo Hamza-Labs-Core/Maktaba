@@ -132,11 +132,11 @@ ufw default deny incoming >/dev/null
 ufw default allow outgoing >/dev/null
 for src in ${SSH_FROM:-}; do ufw allow from "${src}" to any port 22 proto tcp >/dev/null; done
 [ -n "${SSH_FROM:-}" ] || ufw allow 22/tcp >/dev/null
-if [ "${role}" != witness ]; then
-	ufw allow 80/tcp >/dev/null
-	ufw allow 443/tcp >/dev/null
-	ufw allow 443/udp >/dev/null
-fi
+# 80 and 443 on the witness too: its one site, behind a token (the probe's Pushgateway and
+# network 1's view for the status page, monitoring/Caddyfile.witness)
+ufw allow 80/tcp >/dev/null
+ufw allow 443/tcp >/dev/null
+[ "${role}" = witness ] || ufw allow 443/udp >/dev/null
 for port in 2379 2380 5432 8008 8081 8444 8454 9100 9187 9443; do
 	ufw allow from "${PRIVATE_NET}" to any port "${port}" proto tcp >/dev/null
 done
@@ -176,7 +176,31 @@ setup_monitoring() {
 		envsubst <"${here}/monitoring/${f}" >"/etc/maktaba/monitoring/${f}"
 	done
 	install -m 0644 "${here}/monitoring/alerts.yml" "${here}/monitoring/backup-rules.yml" "${here}/monitoring/blackbox.yml" /etc/maktaba/monitoring/
+	install -m 0644 "${here}/monitoring/Caddyfile.witness" /etc/maktaba/monitoring/Caddyfile
+	# the token GitHub's probe uses (the repository secret PUSHGATEWAY_TOKEN holds the same)
+	[ -s /etc/maktaba/witness.token ] || (umask 077 && openssl rand -hex 32 >/etc/maktaba/witness.token)
+	(umask 077 && printf 'WITNESS_DOMAIN=%s\nACME_EMAIL=%s\nWITNESS_TOKEN=%s\n' "${WITNESS_DOMAIN:?}" "${ACME_EMAIL:?}" \
+		"$(cat /etc/maktaba/witness.token)" >/etc/maktaba/monitoring/front.env)
+	install -d -m 0755 /var/lib/maktaba/status/status
 	docker compose -f "${here}/monitoring/compose.yml" up -d
+	# network 1's view for the status page (story 50.11), every 30 s
+	install -m 0755 "${here}/bin/status-export" /usr/local/bin/maktaba-status-export
+	cat >/etc/systemd/system/maktaba-status-export.service <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the witness's view for the status page
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/maktaba-status-export
+UNIT
+	cat >/etc/systemd/system/maktaba-status-export.timer <<'UNIT'
+[Unit]
+Description=Maktaba Cloud: the status page's view, every 30 seconds
+[Timer]
+OnCalendar=*-*-* *:*:00,30
+AccuracySec=1s
+[Install]
+WantedBy=timers.target
+UNIT
 	install -m 0755 "${here}/bin/fip-check" /usr/local/bin/maktaba-fip-check
 	cat >/etc/systemd/system/maktaba-fip-check.service <<'UNIT'
 [Unit]
@@ -209,7 +233,7 @@ WantedBy=multi-user.target
 UNIT
 	fi
 	systemctl daemon-reload
-	systemctl enable --now maktaba-fip-check.timer
+	systemctl enable --now maktaba-fip-check.timer maktaba-status-export.timer
 	[ ! -s /etc/maktaba/canary.secret ] || systemctl enable --now maktaba-canary
 }
 

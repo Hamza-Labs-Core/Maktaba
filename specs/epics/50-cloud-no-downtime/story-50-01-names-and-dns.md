@@ -29,7 +29,8 @@ back.
 | `relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | homes' tunnel (`/v1/relay/ws`) | 1 |
 | `*.relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | apps reaching a home: `<slug>.relay.maktaba.tv` | 1 |
 | `canary.relay.maktaba.tv` | covered by the wildcard | DNS only | — | the canary home (50.10); a reserved slug | 1 |
-| `status.maktaba.tv` | status page host **off Hetzner** (50.11) | provider's choice | 300 s | people, apps' banner | 1 |
+| `status.maktaba.tv` | GitHub Pages, **off Hetzner** (50.11) | DNS only | 300 s | people, apps' banner | 1 |
+| `witness.maktaba.tv` | the witness's IPv4 | DNS only | 300 s | the outside probe and the status page, behind a token (50.10, 50.11) | 1 |
 | `r<N>.relay.maktaba.tv` | relay N's own primary IPv4 | DNS only | 60 s | homes' tunnel to an assigned relay | 2 |
 | `*.r<N>.relay.maktaba.tv` | relay N's own primary IPv4 | DNS only | 60 s | relay hints for apps (50.16) | 2 |
 | `relay.maktaba.tv`, `*.relay.maktaba.tv` | round robin over healthy relays | DNS only | **60 s** | stable names in Phase 2 | 2 |

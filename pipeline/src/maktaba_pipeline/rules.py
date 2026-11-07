@@ -38,6 +38,7 @@ from .classify.topic_tags import TaggerConfig
 from .cluster.machines_settings import ClusterMachinesConfig
 from .engine.failure_classes import QueueHealthConfig
 from .enrich.config import EnrichConfig
+from .plugins.compute_settings import PluginComputeConfig
 from .relay import RelayConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
@@ -222,6 +223,8 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "search": (SearchConfig, "Search", "how search results are grouped per video, how many "
                "show on a page, how long a search's results are kept and how many recent "
                "searches each user keeps"),
+    "plugin_compute": (PluginComputeConfig, "Plugin models", "which language model plugins "
+                       "ask, and how much of the home's models each plugin may use a day"),
 }  # fmt: skip
 
 

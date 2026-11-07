@@ -1,0 +1,5 @@
+{
+  "about": "a flow whose stage requests another plugin's stage",
+  "mode": "store",
+  "states": {}
+}

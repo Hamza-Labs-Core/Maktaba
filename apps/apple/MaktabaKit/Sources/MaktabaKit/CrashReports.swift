@@ -7,9 +7,11 @@ import MetricKit
 /// Crash reports, kept on this device: MetricKit hands the app its own diagnostics
 /// (a crash's exception, signal and call stack) on the next launch. Each is logged
 /// (`Log.crash`, at fault level: Console.app and a sysdiagnose keep it) and written, the
-/// last `keep` of them, under Application Support/CrashReports, where a person can find one
-/// to attach to a bug report. Nothing leaves the device: no third-party service, nothing
-/// sent to the home. tvOS has no MetricKit: there the system's own crash logs are all.
+/// last `keep` of them, under Application Support/CrashReports (Caches on tvOS), where a
+/// problem report can attach one (Epic 53 story 53.15). No third-party service sees them;
+/// they go to the home only when the person turned crash reports on for it (`CrashOutbox`,
+/// story 53.14). tvOS has no MetricKit: the Apple TV app keeps PLCrashReporter's reports
+/// here instead (`store(crash:)`).
 public final class CrashReports: NSObject, @unchecked Sendable {
     public static let shared = CrashReports()
 
@@ -31,10 +33,31 @@ public final class CrashReports: NSObject, @unchecked Sendable {
         #endif
     }
 
+    /// Posted when a crash was kept (MetricKit hands it over some time after the launch):
+    /// the app then sends what is due.
+    public static let didStore = Notification.Name("maktaba.crashReports.didStore")
+
     /// Where the reports are written.
     public static var directory: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+        #if os(tvOS)
+        let base = FileManager.SearchPathDirectory.cachesDirectory
+        #else
+        let base = FileManager.SearchPathDirectory.applicationSupportDirectory
+        #endif
+        return FileManager.default.urls(for: base, in: .userDomainMask).first?
             .appending(path: "CrashReports", directoryHint: .isDirectory)
+    }
+
+    /// Keeps a crash the app read itself (the Apple TV's PLCrashReporter report).
+    public static func store(crash: KeptCrash) {
+        Log.crash.fault("crashed at a previous launch: \(crash.type, privacy: .public) \(crash.reason, privacy: .private)")
+        guard let dir = directory else { return }
+        do {
+            try store(crash.data(), in: dir, now: crash.at)
+            NotificationCenter.default.post(name: didStore, object: nil)
+        } catch {
+            Log.crash.error("keeping a crash report failed: \(String(describing: error), privacy: .private)")
+        }
     }
 
     /// One line per crash in a diagnostic payload's JSON: what it was (exception type and
@@ -85,6 +108,7 @@ public final class CrashReports: NSObject, @unchecked Sendable {
         guard let dir = Self.directory else { return }
         do {
             try Self.store(payloadJSON, in: dir)
+            NotificationCenter.default.post(name: Self.didStore, object: nil)
         } catch {
             Log.crash.error("keeping a crash report failed: \(String(describing: error), privacy: .private)")
         }

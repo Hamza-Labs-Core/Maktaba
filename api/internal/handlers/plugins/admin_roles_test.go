@@ -3,6 +3,7 @@ package plugins
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -10,14 +11,20 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 )
 
 // adminRoutes are every route of Admin.Mount (method and path, a parameter filled).
 var adminRoutes = []string{
 	"GET /api/plugins",
 	"GET /api/plugins/policy",
+	"GET /api/plugins/graph",
 	"PUT /api/plugins/policy",
 	"POST /api/plugins/install",
+	"GET /api/plugins/store-account",
+	"POST /api/plugins/store-account/link",
+	"POST /api/plugins/store-account/poll",
+	"DELETE /api/plugins/store-account",
 	"GET /api/plugins/dev.example.x",
 	"PUT /api/plugins/dev.example.x/grants",
 	"POST /api/plugins/dev.example.x/enable",
@@ -28,6 +35,7 @@ var adminRoutes = []string{
 	"POST /api/plugins/dev.example.x/rollback",
 	"DELETE /api/plugins/dev.example.x",
 	"GET /api/plugins/dev.example.x/writes",
+	"GET /api/plugins/dev.example.x/downstream",
 	"POST /api/plugins/dev.example.x/writes/revert",
 	"GET /api/plugins/dev.example.x/settings",
 	"PUT /api/plugins/dev.example.x/settings",
@@ -72,5 +80,20 @@ func TestEveryPluginRouteIsAdminOnly(t *testing.T) {
 				t.Errorf("%s as %s: %d, want %d", rt, who.name, rec.Code, who.want)
 			}
 		}
+	}
+}
+
+// Story 54.22 §4: GET /api/plugins lists Maktaba's own plugins under built_in, with their
+// names in both languages, their component and what each can do.
+func TestBuiltInListsTheFirstPartyPlugins(t *testing.T) {
+	raw, err := os.ReadFile("../../plugins/firstparty/testdata/toy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer firstparty.UseBundle(raw)()
+	got := builtIn()
+	if len(got) != 1 || got[0].ID != "tv.maktaba.toy" || got[0].Name != "Toy" || got[0].NameAr != "لعبة" ||
+		got[0].Component != "classify" || len(got[0].Stages) != 1 || len(got[0].Capabilities) == 0 {
+		t.Fatalf("built_in %+v", got)
 	}
 }

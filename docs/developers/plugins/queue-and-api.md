@@ -1,8 +1,8 @@
 # Queue stages and the plugin API
 
 > **Status:** plugin stages in the queue, the plugin API and media handles are **on `main`**.
-> Grants and roles and settings are **on `main`** too; panels and local compute
-> are planned for Phase 3. The exact functions, capabilities, events and refusal codes are in
+> Grants and roles and settings are **on `main`** too, and so are local compute (plugin API
+> 1.1) and panels, both coming in the next release. The exact functions, capabilities, events and refusal codes are in
 > the [plugin reference](reference.md), generated from the WIT and the API's code.
 
 ## Stages and events
@@ -74,7 +74,7 @@ current and previous major for at least 12 months after a new major.
 | `queue` | `request(stage, subject, payload)` for your own stages | `jobs.enqueue` |
 | `notify` | `admin(code, params)`, a notice from your strings | `notify.admin` |
 | `exports` | `read(plugin, subject, key)` of data another plugin exported | `plugin-data.read:<id>` |
-| `compute` (Phase 3) | `embed(texts)`, `generate(prompt, opts)` | `compute.embed`, `compute.llm` |
+| `compute` (1.1) | `embed(texts)`, `generate(prompt, options)` | `compute.embed`, `compute.llm` |
 
 Every signature is in the [plugin reference](reference.md#the-plugin-api).
 
@@ -147,19 +147,82 @@ the schema at install (`settings_secret_forbidden`, `settings_schema_invalid`) a
 on save (`settings_invalid`); after an update, a field whose type changed goes back to its
 default. Try the form's values with `mkp test --settings '{"threshold": 3}'`.
 
-## Panels (Phase 3)
+## Panels
 
-`[[panel]]` with `on = "video"` (or `series`, `library`) and a `ui/panel.json` schema declares
-read-only blocks drawn natively by every app: `kv`, `badges`, `chips`, `table` (up to 50
-rows), `markers` on the timeline, one `image` artifact, and `text`. Values come from your
-`data` for the subject. Everything is plain text: no URLs, HTML or markdown. Panels are shown
-to everyone in the home who can see the subject, and every panel addition gets a human review
-in the store.
+A panel is a read-only view of a video, series, season or library that every app draws
+natively (web, iPhone, iPad, Mac, Apple TV, Android phone, tablet and TV) from data you
+declare. It is never code: the apps never run anything of yours.
 
-## Local compute (Phase 3)
+```toml
+[[panel]]
+on = "video"               # or series, season, library
+schema = "ui/panel.json"
+```
 
-- `compute.embed`: embeddings from the home's search model, up to 64 texts per call.
-- `compute.llm`: `generate` on the home's own language model, up to 1,024 tokens.
+`ui/panel.json` (schema [`panel.schema.json`](https://maktaba.dev/plugins/panel.schema.json), `ui@1`):
 
-Calls go through the plugin API to services on the home, never a remote model. If the model is
-off, the call answers `unavailable`. Daily quotas apply, and prompts are not logged.
+```json
+{"ui": 1, "title": "panel.title", "blocks": [
+  {"type": "kv", "key": "loudness", "label": "panel.levels"},
+  {"type": "markers", "key": "silences", "label": "panel.silences"},
+  {"type": "text", "key": "summary"}
+]}
+```
+
+`title`, `label` and a table's `columns` are keys of your `i18n` files. Each block's `key` is
+a key of your `data` for the subject (`data.put`); the value it holds:
+
+| Block | Value | Limit |
+|---|---|---|
+| `kv` | `[{"label": text, "value": text or number}]` | 20 rows |
+| `badges` | `[{"text": text, "tone": "neutral" \| "good" \| "warning"}]` | 10 |
+| `chips` | `[text]`; tapping one searches Maktaba for it | 20 |
+| `table` | `[[cell, …]]`, at most one cell per column (`columns`, up to 6) | 50 rows |
+| `markers` | `[{"t_ms": integer, "label": text}]`; tapping one plays from there | 200 |
+| `image` | no key: the PNG or JPEG you set with `artwork.write`, kind `panel` | 1 MB |
+| `text` | text | 1,000 characters |
+
+Other text is at most 200 characters. **Everything is plain text**: when you write a key a
+panel uses, the plugin API refuses a URL, HTML, markdown, a control or direction character
+(`plugin_text_forbidden`), a value of the wrong shape (`plugin_invalid`) or one over its
+limit (`plugin_too_large`), and every app escapes again when it draws. A key no panel uses is
+your own data, unchecked.
+
+- **Who sees it**: everyone in the home who can see the subject, viewers included, in their
+  language, under **From plugins** (collapsed) below Maktaba's own sections. At most three
+  panels a page. A plugin turned off, held or withdrawn shows no panel.
+- **When it shows**: only for a subject with data for at least one of its keys. Markers
+  written before the video's file last changed are not shown.
+- **Apple TV and Android TV** show `kv`, `badges` and `markers` only.
+- **Apps learn** from `GET /api/capabilities`: `plugin_panels: "on"` while the plugin host
+  runs. An app reads a missing key as off, so it never asks an older server.
+- The store gives every first version, and every version that adds a panel, a human review.
+
+## Local compute (plugin API 1.1)
+
+A plugin can ask the home's own models, through the plugin API, and never a model outside the
+home. Set `plugin_api = "1.1"` in the manifest.
+
+| Capability | Function | What it asks |
+|---|---|---|
+| `compute.embed` | `embed(texts) -> embeddings {model, vectors}` | the embedding model semantic search uses (component `search.semantic`): up to 64 texts of up to 2,000 characters, one vector per text, with the model's id so you can tell when the admin changed the model |
+| `compute.llm` | `generate(prompt, options {max-tokens, temperature, json-schema?}) -> string` | the language model the admin chose for plugins (component `llm`; Settings → Rules → Plugin models, the tag check's model by default): a prompt up to 32 KB, up to 1,024 tokens |
+
+- **Required or optional.** A required compute capability makes its component a requirement
+  of your plugin: with `llm` off the plugin is *Waiting* (`dependency_off:llm`). An optional
+  one is a want: the plugin runs *Degraded* and the call answers `unavailable`, so you decide
+  what to do without it.
+- **Only on the home or the LAN.** If the admin points the model server at a machine on the
+  internet, `generate` answers `invalid("compute_remote")`, and nothing is sent. The address is
+  checked on every connection, not only by name.
+- **`json-schema`.** Ollama is asked to follow it; an answer that still does not follow it
+  (type, properties, required, items, enum) is retried once, then answers
+  `invalid("compute_bad_output")`.
+- **Fair use.** Your questions share the home's `lookup` slot with Maktaba's own model stages,
+  one question at a time; while Maktaba's own work waits, plugins get at most one slot in
+  three. Each plugin may ask 2,000 questions and embed 50,000 texts a day by default (the admin
+  can change both); over that, `quota` until the next day (UTC).
+- **Nothing is logged** but sizes and timings: Maktaba never writes your prompts, texts or
+  answers to its logs.
+- What you write from the answers (a field, tags, panel data) follows the same rules as any
+  plugin write: the field allow-list, plain text, attributed to your plugin.

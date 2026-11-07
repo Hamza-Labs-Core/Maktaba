@@ -65,12 +65,14 @@ public struct ErrorStrings: Sendable {
         "live_tv": "Live TV", "transcripts": "Transcripts", "subtitles": "Subtitles",
         "semantic_search": "Search by meaning", "chapters": "Chapters", "youtube": "YouTube",
         "plex": "Plex", "remote_access": "Access away from home", "recommendations": "Recommendations",
+        "plugin_panels": "Plugin panels",
     ]
 
     static let featuresAR: [String: String] = [
         "live_tv": "البث المباشر", "transcripts": "نصوص الفيديو", "subtitles": "الترجمة",
         "semantic_search": "البحث بالمعنى", "chapters": "الفصول", "youtube": "يوتيوب",
         "plex": "Plex", "remote_access": "الوصول من خارج المنزل", "recommendations": "الاقتراحات",
+        "plugin_panels": "لوحات الإضافات",
     ]
 
     public func action(_ a: ErrorAction) -> String {

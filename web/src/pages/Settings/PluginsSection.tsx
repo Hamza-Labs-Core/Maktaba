@@ -26,6 +26,7 @@ import {
   pluginErrorCode,
   pluginWord,
   pluginsApi,
+  type BuiltInPlugin,
   type Grants,
   type Plugin,
   type PluginDetail,
@@ -37,6 +38,7 @@ import {
 import { ApiError } from "../../lib/api";
 import { logsPageLink } from "../../lib/logIndex";
 import { phaseTone, phaseWord, reasonText } from "./componentWords";
+import { StoreAccount } from "./StoreAccount";
 import "./plugins.css";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -62,7 +64,9 @@ export function capabilityTitle(t: T, cap: string): { title: string; detail: str
   return { title: title + param, detail };
 }
 
-export const unreviewed = (level: string) => level !== "store";
+// anything the store did not countersign (story 54.14 §2; "store" is Phase 1's name)
+export const unreviewed = (level: string) =>
+  level !== "store" && level !== "automated" && level !== "reviewed";
 
 export function PluginsSection() {
   const { user } = useAuth();
@@ -82,6 +86,7 @@ export function PluginsSection() {
 function PluginsInner() {
   const { t } = useI18n();
   const [plugins, setPlugins] = useState<Plugin[] | null>(null);
+  const [builtIn, setBuiltIn] = useState<BuiltInPlugin[]>([]);
   const [policy, setPolicy] = useState<Policy>({ allow_unreviewed: false });
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -91,6 +96,7 @@ function PluginsInner() {
     try {
       const r = await pluginsApi.list();
       setPlugins(r.plugins ?? []);
+      setBuiltIn(r.built_in ?? []);
       setPolicy(r.policy);
       setError("");
     } catch (e) {
@@ -130,7 +136,9 @@ function PluginsInner() {
           </li>
         ))}
       </ul>
+      {builtIn.length > 0 && <BuiltInSection plugins={builtIn} />}
       <PolicySection policy={policy} onChange={setPolicy} />
+      <StoreAccount />
       {installing && (
         <InstallDialog
           onClose={() => setInstalling(false)}
@@ -141,6 +149,46 @@ function PluginsInner() {
         />
       )}
     </div>
+  );
+}
+
+/** "Built into Maktaba" (story 54.22 §4): Maktaba's own stages as first-party plugins, each
+ * with what it can do in Maktaba's words. Its component is its switch (Components page). */
+export function BuiltInSection({ plugins }: { plugins: BuiltInPlugin[] }) {
+  const { t, locale } = useI18n();
+  return (
+    <section className="mkt-plugins__builtin" aria-labelledby="pl-builtin">
+      <h3 id="pl-builtin">{t("plugins.builtin.title")}</h3>
+      <p>{t("plugins.builtin.lead")}</p>
+      <ul className="mkt-plugins__cards">
+        {plugins.map((p) => {
+          const name = (locale === "ar" ? p.name_ar : p.name) || p.name || p.id;
+          const summary = (locale === "ar" ? p.summary_ar : p.summary) || p.summary;
+          return (
+            <li key={p.id}>
+              <article className="mkt-plugins__card" aria-label={name}>
+                <h4 className="mkt-plugins__name">{bidiIsolate(name)}</h4>
+                {summary && <p>{summary}</p>}
+                <details>
+                  <summary>{t("plugins.builtin.can")}</summary>
+                  <ul>
+                    {p.capabilities.map((c) => (
+                      <li key={c.key + c.param}>
+                        {t(c.key)}
+                        {c.param && <> · {bidiIsolate(c.param)}</>}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+                <p className="mkt-plugins__switch">
+                  {t("plugins.builtin.switch", { component: t(`components.${p.component}.title`) })}
+                </p>
+              </article>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 
@@ -168,8 +216,14 @@ export function PluginCard({ plugin: p, onOpen }: { plugin: Plugin; onOpen: () =
       <div className="mkt-plugins__badges">
         {p.review_level === "development" ? (
           <Badge tone="warn">{t("plugins.badge.development")}</Badge>
+        ) : unreviewed(p.review_level) ? (
+          <Badge tone="error">{t("plugins.badge.unreviewed")}</Badge>
         ) : (
-          unreviewed(p.review_level) && <Badge tone="error">{t("plugins.badge.unreviewed")}</Badge>
+          <Badge tone="success">
+            {t(
+              p.review_level === "automated" ? "plugins.badge.automated" : "plugins.badge.reviewed"
+            )}
+          </Badge>
         )}
         {p.reason === "incompatible" && (
           <Badge tone="warn">{t("plugins.badge.incompatible")}</Badge>

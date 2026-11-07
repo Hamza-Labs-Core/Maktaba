@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
+
+	plugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
 )
 
 // The rules across fields (story 54.01 §2), run after the schema passed, in this order in
@@ -12,15 +15,18 @@ import (
 //
 //	R1 reserved ids            R4 capabilities           R7 strings in both i18n files
 //	R2 platforms               R5 stages, requests,      R8 the settings schema file
-//	R3 a lower bound in           triggers               R9 schedule settings
-//	   the maktaba range       R6 schedules on catalog
+//	R3 a lower bound in           triggers, emits,       R9 schedule settings
+//	   the maktaba range          published events and   R10 event payload schemas
+//	                              dependencies (54.39)
+//	                           R6 schedules on catalog
 //	                              stages
 //
 // R7–R9 need the package's files and are skipped when files is nil.
-func rules(m map[string]any, files Files) Errors {
+func rules(m map[string]any, files Files, trusted bool) Errors {
 	var errs Errors
 	id := m["id"].(string)
-	if reservedID(id) {
+	firstParty := strings.HasPrefix(id, "tv.maktaba.") && !strings.HasPrefix(id, "tv.maktaba.community.")
+	if trusted && !firstParty || !trusted && reservedID(id) {
 		errs = append(errs, Error{Code: CodeReservedID, Path: "id"})
 	}
 	platforms := m["platforms"].([]any)
@@ -60,18 +66,81 @@ func rules(m map[string]any, files Files) Errors {
 			errs = append(errs, Error{Code: CodeDuplicateStage, Path: "stage/" + strconv.Itoa(i) + "/name", Detail: name})
 		}
 		subjects[name] = st["subject"].(string)
+		// R5a: the dup_group subject is Maktaba's own (54.22 §1). A core stage's name is not
+		// reserved: a third-party stage's queue is p_<hash>_<name>, never a core stage's
+		if !trusted && subjects[name] == "dup_group" {
+			errs = append(errs, Error{Code: CodeTrustedField, Path: "stage/" + strconv.Itoa(i) + "/name", Detail: name})
+		}
+	}
+	// the graph fields (54.39): published events, dependencies on other plugins' events
+	published := map[string]string{}
+	events, _ := m["event"].([]any)
+	for i, e := range events {
+		em := e.(map[string]any)
+		name := em["name"].(string)
+		if _, dup := published[name]; dup {
+			errs = append(errs, Error{Code: CodeBadEvent, Path: "event/" + strconv.Itoa(i) + "/name", Detail: name})
+		}
+		published[name] = em["subject"].(string)
+	}
+	depends := map[string]bool{}
+	used := map[string]bool{}
+	dependsList, _ := m["depends"].([]any)
+	for i, d := range dependsList {
+		dm := d.(map[string]any)
+		p := dm["plugin"].(string)
+		path := "depends/" + strconv.Itoa(i)
+		switch {
+		case p == id || depends[p]:
+			errs = append(errs, Error{Code: CodeBadDepends, Path: path + "/plugin", Detail: p})
+		case !hasLowerBound(dm["version"].(string)):
+			errs = append(errs, Error{Code: CodeBadDepends, Path: path + "/version", Detail: "no lower bound"})
+		}
+		depends[p] = true
 	}
 	for i, s := range stages {
 		st := s.(map[string]any)
 		base := "stage/" + strconv.Itoa(i)
 		for j, r := range st["may_request"].([]any) {
-			if _, ok := subjects[r.(string)]; !ok {
+			// a first-party stage requests other core stages by their exact names: the
+			// assembled graph checks them (54.25 §1)
+			if _, ok := subjects[r.(string)]; !ok && !trusted {
 				errs = append(errs, Error{Code: CodeBadRequest, Path: base + "/may_request/" + strconv.Itoa(j), Detail: r.(string)})
 			}
 		}
 		for j, t := range st["trigger"].([]any) {
-			ev := t.(map[string]any)["event"].(string)
-			path := base + "/trigger/" + strconv.Itoa(j) + "/event"
+			tm := t.(map[string]any)
+			tpath := base + "/trigger/" + strconv.Itoa(j)
+			ev, hasEvent := tm["event"].(string)
+			after, hasStage := tm["stage"].(string)
+			if hasEvent == hasStage {
+				errs = append(errs, Error{Code: CodeBadTrigger, Path: tpath, Detail: "event or stage"})
+				continue
+			}
+			if hasStage {
+				subject, own := subjects[after]
+				switch {
+				case !own:
+					errs = append(errs, Error{Code: CodeBadTrigger, Path: tpath + "/stage", Detail: after})
+				case subject != st["subject"].(string):
+					errs = append(errs, Error{Code: CodeSubjectMismatch, Path: tpath + "/stage", Detail: after})
+				}
+				continue
+			}
+			path := tpath + "/event"
+			if rest, ok := strings.CutPrefix(ev, "plugin:"); ok {
+				// another plugin's published event (54.39): never its own, always a dependency
+				publisher, _, _ := strings.Cut(rest, "/")
+				switch {
+				case publisher == id:
+					errs = append(errs, Error{Code: CodeBadTrigger, Path: path, Detail: ev})
+				case !depends[publisher]:
+					errs = append(errs, Error{Code: CodeBadDepends, Path: path, Detail: publisher})
+				default:
+					used[publisher] = true
+				}
+				continue
+			}
 			e, ok := eventByName[ev]
 			switch {
 			case !ok || !e.Triggerable():
@@ -79,6 +148,17 @@ func rules(m map[string]any, files Files) Errors {
 			case e.Subject != st["subject"].(string):
 				errs = append(errs, Error{Code: CodeSubjectMismatch, Path: path, Detail: ev})
 			}
+		}
+		emits, _ := st["emits"].([]any)
+		for j, e := range emits {
+			if _, ok := published[e.(string)]; !ok {
+				errs = append(errs, Error{Code: CodeBadEmit, Path: base + "/emits/" + strconv.Itoa(j), Detail: e.(string)})
+			}
+		}
+	}
+	for i, d := range dependsList {
+		if p := d.(map[string]any)["plugin"].(string); !used[p] {
+			errs = append(errs, Error{Code: CodeBadDepends, Path: "depends/" + strconv.Itoa(i), Detail: p})
 		}
 	}
 	for i, s := range m["schedule"].([]any) {
@@ -119,6 +199,19 @@ func packageRules(m map[string]any, files Files) Errors {
 			case utf8.RuneCountInString(w) > f.max:
 				errs = append(errs, Error{Code: CodeStringTooLong, Path: "strings/" + f.key, Detail: lang})
 			}
+		}
+	}
+	events, _ := m["event"].([]any)
+	for i, e := range events {
+		path := e.(map[string]any)["payload"].(string)
+		raw, ok := files(path)
+		if !ok {
+			errs = append(errs, Error{Code: CodeMissingFile, Path: "event/" + strconv.Itoa(i) + "/payload", Detail: path})
+			continue
+		}
+		var doc map[string]any
+		if json.Unmarshal(raw, &doc) != nil || doc["type"] != "object" {
+			errs = append(errs, Error{Code: CodeBadEvent, Path: "event/" + strconv.Itoa(i) + "/payload", Detail: path})
 		}
 	}
 	var props map[string]any
@@ -201,4 +294,24 @@ func hasLowerBound(r string) bool {
 		}
 	}
 	return false
+}
+
+var (
+	reservedOnce   sync.Once
+	reservedStages map[string]bool
+)
+
+// ReservedStage reports whether name is a stage of Maktaba's own graph
+// (shared/plugins/reserved_stages.txt), which only first-party plugins may define.
+func ReservedStage(name string) bool {
+	reservedOnce.Do(func() {
+		reservedStages = map[string]bool{}
+		for _, line := range strings.Split(string(plugins.ReservedStages), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" && !strings.HasPrefix(line, "#") {
+				reservedStages[line] = true
+			}
+		}
+	})
+	return reservedStages[name]
 }

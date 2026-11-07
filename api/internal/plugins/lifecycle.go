@@ -72,6 +72,11 @@ type Installed struct {
 	Manifest json.RawMessage `json:"manifest"`
 	Signed   bool            `json:"signed"`
 	Already  bool            `json:"already"`
+	// ReviewLevel is what the package's signatures prove (story 54.14 §2), checked by the
+	// supervisor: none, developer, automated or reviewed.
+	ReviewLevel    string     `json:"review_level"`
+	DeveloperKeyID string     `json:"developer_key_id,omitempty"`
+	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
 }
 
 // Supervisor is this home's supervisor as the lifecycle uses it: it puts a package on
@@ -289,7 +294,7 @@ func (l *Lifecycle) Check(ctx context.Context, ch svc.Change) error {
 		p.Params = map[string]any{"capabilities": missing}
 		return p
 	}
-	return nil
+	return l.checkFlow(ctx, id, in.Manifest, in.Path)
 }
 
 func missingOf(required, granted []string) []string {
@@ -347,8 +352,8 @@ type InstallRequest struct {
 	// ConfirmName is the plugin's name as the admin typed it, in English or Arabic: an
 	// unreviewed plugin installs only with it (54.10 §3).
 	ConfirmName string
-	// ReviewLevel is the package's: none, developer or development (Phase 1: a file is
-	// never store-reviewed).
+	// ReviewLevel overrides the level the package's signatures prove (the supervisor's
+	// check, story 54.14); "" uses the package's. Only a development build sets it.
 	ReviewLevel string
 }
 
@@ -375,17 +380,9 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 	if l.Sup == nil {
 		return nil, problem(http.StatusServiceUnavailable, CodeNoSupervisor, "this server runs under no supervisor")
 	}
-	level := req.ReviewLevel
-	if level == "" {
-		level = "none"
-	}
 	pol, err := LoadPolicy(ctx, l.DB)
 	if err != nil {
 		return nil, err
-	}
-	if components.Unreviewed(level) && !pol.AllowUnreviewed {
-		return nil, problem(http.StatusBadRequest, CodeUnreviewed,
-			"turn on Allow unreviewed plugins (Settings, Plugins) to install a file no store reviewed")
 	}
 	in, err := l.Sup.InstallPackage(ctx, req.Package)
 	if err != nil {
@@ -400,6 +397,18 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 			}
 		}
 	}()
+	// the level the signatures prove (the supervisor verified them, story 54.14 §3)
+	level := in.ReviewLevel
+	if req.ReviewLevel != "" {
+		level = req.ReviewLevel
+	}
+	if level == "" {
+		level = "none"
+	}
+	if components.Unreviewed(level) && !pol.AllowUnreviewed {
+		return nil, problem(http.StatusBadRequest, CodeUnreviewed,
+			"turn on Allow unreviewed plugins (Settings, Plugins) to install a file no store reviewed")
+	}
 	if req.ExpectID != "" && in.PluginID != req.ExpectID {
 		return nil, problem(http.StatusBadRequest, CodeWrongPackage, "the package is %s, not %s", in.PluginID, req.ExpectID)
 	}
@@ -419,6 +428,15 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 		}
 	}
 	if err := checkAsked(req.Grants, m); err != nil {
+		return nil, err
+	}
+	// every [[panel]] is a valid ui/panel.json in the package (story 54.20 §2)
+	if err := CheckPanels(in.Path, in.Manifest); err != nil {
+		return nil, problem(http.StatusBadRequest, "manifest_bad_panel", "%v", err)
+	}
+	// the flow check (54.39 §6): a change that would close a cycle, or reach a core stage,
+	// is refused before anything is written
+	if err := l.checkFlow(ctx, in.PluginID, in.Manifest, in.Path); err != nil {
 		return nil, err
 	}
 	if err := l.checkLibraries(ctx, req.Libraries); err != nil {
@@ -472,13 +490,16 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 		return nil, p
 	}
 	if old == nil {
-		_, err = tx.ExecContext(ctx, `INSERT INTO plugin_installs (plugin_id, version, digest, path, manifest, review_level)
-			VALUES ($1, $2, $3, $4, $5, $6)`, in.PluginID, in.Version, in.Digest, in.Path, string(in.Manifest), level)
+		_, err = tx.ExecContext(ctx, `INSERT INTO plugin_installs (plugin_id, version, digest, path, manifest, review_level,
+			developer_key_id, reviewed_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+			in.PluginID, in.Version, in.Digest, in.Path, string(in.Manifest), level, in.DeveloperKeyID, in.ReviewedAt)
 	} else {
 		_, err = tx.ExecContext(ctx, `UPDATE plugin_installs SET previous_version = version, previous_digest = digest,
-			previous_path = path, previous_manifest = manifest, version = $2, digest = $3, path = $4, manifest = $5,
-			review_level = $6, installed_at = now() WHERE plugin_id = $1`,
-			in.PluginID, in.Version, in.Digest, in.Path, string(in.Manifest), level)
+			previous_path = path, previous_manifest = manifest, previous_review_level = review_level,
+			previous_developer_key_id = developer_key_id, previous_reviewed_at = reviewed_at,
+			version = $2, digest = $3, path = $4, manifest = $5,
+			review_level = $6, developer_key_id = $7, reviewed_at = $8, installed_at = now() WHERE plugin_id = $1`,
+			in.PluginID, in.Version, in.Digest, in.Path, string(in.Manifest), level, in.DeveloperKeyID, in.ReviewedAt)
 	}
 	if err != nil {
 		return nil, err
@@ -505,7 +526,8 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 		action, before = "plugin.update", map[string]any{"version": old.Version, "digest": old.Digest}
 	}
 	if err := audit(ctx, tx, action, components.PluginPrefix+in.PluginID, actor, before,
-		map[string]any{"version": in.Version, "digest": in.Digest, "review_level": level, "grants": grants}, nil); err != nil {
+		map[string]any{"version": in.Version, "digest": in.Digest, "review_level": level, "developer_key_id": in.DeveloperKeyID,
+			"grants": grants}, nil); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -718,7 +740,7 @@ func (l *Lifecycle) SetPolicy(ctx context.Context, p Policy, actor svc.Actor) (P
 // holdUnreviewed holds every enabled unreviewed plugin (the policy turned off).
 func (l *Lifecycle) holdUnreviewed(ctx context.Context) {
 	rows, err := l.DB.QueryContext(ctx, `SELECT i.plugin_id FROM plugin_installs i JOIN components c ON c.id = 'plugin.' || i.plugin_id
-		WHERE c.want = 'enabled' AND c.hold_by IS NULL AND i.review_level <> 'store'`)
+		WHERE c.want = 'enabled' AND c.hold_by IS NULL AND i.review_level NOT IN ('store', 'automated', 'reviewed')`)
 	if err != nil {
 		l.logger().Warn("plugin_policy_hold_failed", "err", err)
 		return
@@ -770,6 +792,12 @@ func (l *Lifecycle) Rollback(ctx context.Context, id string, clearData bool, act
 	if err != nil {
 		return err
 	}
+	if l.enabled(ctx, id) {
+		// the kept version is wired again: it must keep the home's graph valid (54.39 §6)
+		if err := l.checkFlow(ctx, id, in.PrevManifest, in.PrevPath.String); err != nil {
+			return err
+		}
+	}
 	if prev.DataVersion < cur.DataVersion {
 		if !clearData {
 			p := problem(http.StatusConflict, CodeDataNewer, "the data is version %d; %s keeps %d", cur.DataVersion,
@@ -781,9 +809,16 @@ func (l *Lifecycle) Rollback(ctx context.Context, id string, clearData bool, act
 			return err
 		}
 	}
+	// the review level, key and review time go back with the version (54.14: the previous
+	// version's own signatures); a row from before slot 0196 has none and keeps its level
 	if _, err := tx.ExecContext(ctx, `UPDATE plugin_installs SET version = previous_version, digest = previous_digest,
-		path = previous_path, manifest = previous_manifest, previous_version = version, previous_digest = digest,
-		previous_path = path, previous_manifest = manifest, installed_at = now() WHERE plugin_id = $1`, id); err != nil {
+		path = previous_path, manifest = previous_manifest,
+		review_level = COALESCE(previous_review_level, review_level), developer_key_id = previous_developer_key_id,
+		reviewed_at = previous_reviewed_at,
+		previous_version = version, previous_digest = digest,
+		previous_path = path, previous_manifest = manifest, previous_review_level = review_level,
+		previous_developer_key_id = developer_key_id, previous_reviewed_at = reviewed_at,
+		installed_at = now() WHERE plugin_id = $1`, id); err != nil {
 		return err
 	}
 	if err := audit(ctx, tx, "plugin.rollback", components.PluginPrefix+id, actor, map[string]any{"version": in.Version},

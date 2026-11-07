@@ -312,7 +312,7 @@ func (r *Resolver) SignOutHere(w http.ResponseWriter, req *http.Request) bool {
 			r.Logger.Info("node: a sign-out of a session this machine does not know; its cookies cleared, nothing kept",
 				"event", "node_sign_out_unknown")
 		}
-		r.setCookies(w, "", "", time.Time{})
+		r.setCookies(w, req, "", "", time.Time{})
 		w.WriteHeader(http.StatusNoContent)
 		return true
 	}
@@ -350,7 +350,7 @@ func (r *Resolver) SignOutHere(w http.ResponseWriter, req *http.Request) bool {
 		r.Logger.Info("node: signed out on this machine; the home is told when it answers", "user_id", user,
 			"everywhere", all, "event", "node_sign_out_here")
 	}
-	r.setCookies(w, "", "", time.Time{})
+	r.setCookies(w, req, "", "", time.Time{})
 	w.WriteHeader(http.StatusNoContent)
 	return true
 }

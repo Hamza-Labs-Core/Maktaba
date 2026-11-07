@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "exactOptionalPropertyTypes": false,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "paths": { "smol-toml": ["./node_modules/smol-toml"] }
+  },
+  "include": ["checks/**/*.ts", "signing/**/*.ts", "scripts/**/*.ts", "test/*.ts", "commerce/**/*.ts", "payments/**/*.ts", "testing/**/*.ts"],
+  "exclude": ["node_modules", "scripts/decrypt-export.ts"]
+}

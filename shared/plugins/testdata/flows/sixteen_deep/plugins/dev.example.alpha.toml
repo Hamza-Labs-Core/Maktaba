@@ -1,0 +1,138 @@
+schema = 1
+id = "dev.example.alpha"
+version = "1.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "s01"
+subject = "video"
+export = "run-0"
+version = 1
+  [[stage.trigger]]
+  event = "audio.ready"
+
+[[stage]]
+name = "s02"
+subject = "video"
+export = "run-1"
+version = 1
+  [[stage.trigger]]
+  stage = "s01"
+
+[[stage]]
+name = "s03"
+subject = "video"
+export = "run-2"
+version = 1
+  [[stage.trigger]]
+  stage = "s02"
+
+[[stage]]
+name = "s04"
+subject = "video"
+export = "run-3"
+version = 1
+  [[stage.trigger]]
+  stage = "s03"
+
+[[stage]]
+name = "s05"
+subject = "video"
+export = "run-4"
+version = 1
+  [[stage.trigger]]
+  stage = "s04"
+
+[[stage]]
+name = "s06"
+subject = "video"
+export = "run-5"
+version = 1
+  [[stage.trigger]]
+  stage = "s05"
+
+[[stage]]
+name = "s07"
+subject = "video"
+export = "run-6"
+version = 1
+  [[stage.trigger]]
+  stage = "s06"
+
+[[stage]]
+name = "s08"
+subject = "video"
+export = "run-7"
+version = 1
+  [[stage.trigger]]
+  stage = "s07"
+
+[[stage]]
+name = "s09"
+subject = "video"
+export = "run-8"
+version = 1
+  [[stage.trigger]]
+  stage = "s08"
+
+[[stage]]
+name = "s10"
+subject = "video"
+export = "run-9"
+version = 1
+  [[stage.trigger]]
+  stage = "s09"
+
+[[stage]]
+name = "s11"
+subject = "video"
+export = "run-10"
+version = 1
+  [[stage.trigger]]
+  stage = "s10"
+
+[[stage]]
+name = "s12"
+subject = "video"
+export = "run-11"
+version = 1
+  [[stage.trigger]]
+  stage = "s11"
+
+[[stage]]
+name = "s13"
+subject = "video"
+export = "run-12"
+version = 1
+  [[stage.trigger]]
+  stage = "s12"
+
+[[stage]]
+name = "s14"
+subject = "video"
+export = "run-13"
+version = 1
+  [[stage.trigger]]
+  stage = "s13"
+
+[[stage]]
+name = "s15"
+subject = "video"
+export = "run-14"
+version = 1
+  [[stage.trigger]]
+  stage = "s14"
+
+[[stage]]
+name = "s16"
+subject = "video"
+export = "run-15"
+version = 1
+  [[stage.trigger]]
+  stage = "s15"

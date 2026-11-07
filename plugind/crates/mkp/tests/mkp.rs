@@ -67,3 +67,74 @@ fn a_bad_manifest_and_a_missing_stage_are_refused() {
     let out = mkp(&["new", "rust", "not-an-id", dir.path().join("p").to_str().unwrap()]);
     assert!(!out.status.success());
 }
+
+/// Story 54.14 §1, §2: `mkp keys new` makes a key whose private half is the owner's only,
+/// `export-public` prints the public half, and `mkp pack --key` signs files.json: the
+/// home's verifier (here its Rust twin) accepts it at level developer, and a byte changed
+/// in a file after packing fails at the digest step.
+#[test]
+fn keys_and_a_signed_pack() {
+    let dir = tempfile::tempdir().unwrap();
+    let keys = dir.path().join("keys");
+    let run =
+        |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_mkp")).args(args).env("MKP_KEYS_DIR", &keys).output().unwrap();
+    let out = run(&["keys", "new"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let id = String::from_utf8_lossy(&out.stdout).split_whitespace().next().unwrap().to_string();
+    assert_eq!(id.len(), 32);
+    let seed = std::fs::read_to_string(keys.join(format!("{id}.key"))).unwrap();
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(seed.trim()), "the private key was printed");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(keys.join(format!("{id}.key"))).unwrap().permissions().mode();
+        assert_eq!(mode & 0o077, 0, "the key file is readable by others: {mode:o}");
+    }
+    let out = run(&["keys", "export-public"]);
+    let public: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(public["id"], id.as_str());
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(seed.trim()));
+
+    let proj = dir.path().join("p");
+    assert!(run(&["new", "rust", "dev.example.signed", proj.to_str().unwrap()]).status.success());
+    let pkg = proj.join("package");
+    std::fs::write(pkg.join("plugin.wasm"), b"\0asm-not-really").unwrap();
+    let file = dir.path().join("s.mkplugin");
+    let out = run(&["pack", pkg.to_str().unwrap(), file.to_str().unwrap(), "--key", &id]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+
+    let dec = zstd::stream::read::Decoder::new(std::fs::File::open(&file).unwrap()).unwrap();
+    let mut tar = tar::Archive::new(dec);
+    let mut entries: std::collections::BTreeMap<String, Vec<u8>> = Default::default();
+    let mut order = Vec::new();
+    for e in tar.entries().unwrap() {
+        let mut e = e.unwrap();
+        let name = e.path().unwrap().to_string_lossy().into_owned();
+        let mut b = Vec::new();
+        e.read_to_end(&mut b).unwrap();
+        order.push(name.clone());
+        entries.insert(name, b);
+    }
+    assert_eq!(&order[..3], ["manifest.toml", "files.json", "signatures/developer.sig"]);
+    let fj = entries.remove("files.json").unwrap();
+    let dev = entries.remove("signatures/developer.sig").unwrap();
+    let pkgv = |files: &std::collections::BTreeMap<String, Vec<u8>>| {
+        maktaba_plugin_sig::verify_package(
+            &maktaba_plugin_sig::Package {
+                files_json: &fj,
+                developer_sig: Some(&dev),
+                store_sig: None,
+                plugin_id: "dev.example.signed",
+                version: "0.1.0",
+                capabilities_sha256: "",
+                files: Some(files),
+            },
+            None,
+        )
+    };
+    let v = pkgv(&entries).unwrap();
+    assert_eq!((v.level, v.developer_key_id.as_str()), ("developer", id.as_str()));
+    entries.get_mut("plugin.wasm").unwrap()[0] ^= 1;
+    let e = pkgv(&entries).unwrap_err();
+    assert_eq!((e.code, e.step), ("plugin_signature_invalid", "digest"));
+}

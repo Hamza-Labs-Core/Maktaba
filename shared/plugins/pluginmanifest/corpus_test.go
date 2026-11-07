@@ -131,3 +131,79 @@ func TestEveryCodeHasAnInvalidCase(t *testing.T) {
 		}
 	}
 }
+
+// 54.39 §1: a flow.toml is read with the manifest's schema reader, against flow.schema.json;
+// its refusals carry flow_* codes and say where.
+func TestValidateFlowDoc(t *testing.T) {
+	src, err := os.ReadFile(filepath.Join("..", "testdata", "flows", "chain_two_store", "flow.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, errs := ValidateFlowDoc(src)
+	if errs != nil {
+		t.Fatalf("refused: %v", errs)
+	}
+	members := doc["plugin"].([]any)
+	stage := members[1].(map[string]any)["stage"].([]any)[1].(map[string]any)
+	if len(members) != 2 || len(stage["emits"].([]any)) != 0 {
+		t.Fatalf("defaults not filled: %v", stage)
+	}
+	for src, code := range map[string]string{
+		strings.Replace(string(src), "schema = 1", "schema = 1\nnetwork = true", 1):         "flow_unknown_key",
+		strings.Replace(string(src), `subject = "video"`, `subject = "user"`, 1):            "flow_invalid",
+		strings.Replace(string(src), `triggers = ["audio.ready"]`, `triggers = ["Bad"]`, 1): "flow_invalid",
+		"not toml = = =": "flow_invalid",
+	} {
+		_, errs := ValidateFlowDoc([]byte(src))
+		if !errs.Has(code) {
+			t.Errorf("want %s, got %v", code, errs)
+		}
+	}
+}
+
+// Story 54.22: a built-in plugin's manifest is read with its trusted keys only in the
+// trusted mode, which only the release's own bundle gets; its id must be Maktaba's.
+func TestValidateTrusted(t *testing.T) {
+	src := []byte(`schema = 1
+id = "tv.maktaba.toy"
+version = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba = ">=0.0.0"
+licence = "AGPL-3.0-only"
+runtime = "native-python"
+
+[strings]
+name = "toy.name"
+summary = "toy.summary"
+
+[trusted]
+runner = "light"
+db.write = ["fp_toy_out"]
+
+[[stage]]
+name = "promo_links"
+subject = "dup_group"
+export = "x"
+version = 1
+pool = "cpu"
+entry = "fp_toy.stage:IMPL"
+may_request = ["clip_groups"]
+`)
+	m, errs := ValidateTrusted(src, nil)
+	if len(errs) > 0 {
+		t.Fatalf("a built-in manifest: %v", errs)
+	}
+	if m["runtime"] != "native-python" {
+		t.Fatalf("normalised %v", m)
+	}
+	if _, errs := Validate(src, nil); !errs.Has(CodeTrustedField) {
+		t.Fatalf("the same manifest as a third party's: %v", errs)
+	}
+	third := []byte(strings.Replace(string(src), "tv.maktaba.toy", "dev.example.toy", 1))
+	if _, errs := ValidateTrusted(third, nil); !errs.Has(CodeReservedID) {
+		t.Fatalf("a trusted manifest outside tv.maktaba.: %v", errs)
+	}
+	if !ReservedStage("transcribe") || ReservedStage("find_silences") {
+		t.Fatal("reserved stages")
+	}
+}

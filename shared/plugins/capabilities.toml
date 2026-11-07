@@ -14,8 +14,8 @@
 #   param       "plugin_id" when the name takes a plugin id
 #   since       the plugin API minor (1.x) that added it
 #
-# Phase 3's compute.embed and compute.llm (story 54.21) are not listed yet: a manifest
-# asking for them is refused with manifest_bad_capability until that story adds them.
+# compute.embed and compute.llm (story 54.21) came with plugin API 1.1: a required one is
+# a `requires` of the plugin's component (search.semantic, llm), an optional one a `wants`.
 
 schema = 1
 
@@ -145,3 +145,21 @@ param     = "plugin_id"
 title_key = "plugins.capability.plugin_data_read.title"
 detail_key = "plugins.capability.plugin_data_read.detail"
 since     = "1.0"
+
+[[capability]]
+name      = "compute.embed"
+risk      = "medium"
+interface = "compute"
+functions = ["embed"]
+title_key = "plugins.capability.compute_embed.title"
+detail_key = "plugins.capability.compute_embed.detail"
+since     = "1.1"
+
+[[capability]]
+name      = "compute.llm"
+risk      = "medium"
+interface = "compute"
+functions = ["generate"]
+title_key = "plugins.capability.compute_llm.title"
+detail_key = "plugins.capability.compute_llm.detail"
+since     = "1.1"

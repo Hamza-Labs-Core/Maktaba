@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SHARED = ROOT / "shared" / "plugins"
 CORPUS = SHARED / "testdata" / "manifests"
-CODE = re.compile(r"^# expect: (manifest_[a-z_]+)( [a-z0-9/._-]+)?$")
+CODE = re.compile(r"^# expect: (manifest_[a-z_]+|plugin_trusted_field)( [a-z0-9/._-]+)?$")
 
 
 def test_every_invalid_case_names_one_code() -> None:
@@ -60,3 +60,18 @@ def test_capability_words_exist() -> None:
     for c in caps:
         for key in (c["title_key"], c["detail_key"]):
             assert key in en and key in ar, key
+
+
+def test_every_signature_code_has_english_and_arabic_words() -> None:
+    """Story 54.14: each refusal code of the chain of trust (pluginsig) has words, and so
+    does each step a refusal names."""
+    en = json.loads((ROOT / "web" / "src" / "i18n" / "en.json").read_text())
+    ar = json.loads((ROOT / "web" / "src" / "i18n" / "ar.json").read_text())
+    src = (SHARED / "pluginsig" / "sig.go").read_text()
+    codes = re.findall(r'\bCode\w+\s+=\s+"([a-z_]+)"', src)
+    steps = re.findall(r'\bStep\w+\s+=\s+"([a-z_]+)"', src)
+    assert codes and steps
+    for code in codes:
+        assert f"plugins.error.{code}" in en and f"plugins.error.{code}" in ar, code
+    for step in steps:
+        assert f"plugins.signature.step.{step}" in en and f"plugins.signature.step.{step}" in ar, step

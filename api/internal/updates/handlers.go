@@ -520,14 +520,7 @@ func (h *Handler) ExtendStatus(base http.Handler) http.Handler {
 		base.ServeHTTP(rec, r)
 		var doc map[string]any
 		if (rec.code != 0 && rec.code != http.StatusOK) || json.Unmarshal(rec.body.Bytes(), &doc) != nil {
-			for k, v := range rec.header {
-				w.Header()[k] = v
-			}
-			if rec.code == 0 {
-				rec.code = http.StatusOK
-			}
-			w.WriteHeader(rec.code)
-			_, _ = w.Write(rec.body.Bytes())
+			common.WritePassthrough(w, rec.code, rec.header, rec.body.Bytes())
 			return
 		}
 		ctx := r.Context()

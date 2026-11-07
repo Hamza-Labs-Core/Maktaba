@@ -1,0 +1,33 @@
+# A toy first-party plugin for the Phase 4 tests (Epic 54, stories 54.22-54.26): one
+# library stage that reads the library's videos and writes one row per video.
+schema     = 1
+id         = "tv.maktaba.toy"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "toy.name"
+summary = "toy.summary"
+
+[trusted]
+runner    = "light"
+component = "classify"
+db.write  = ["fp_toy_out"]
+settings  = ["groups"]
+db.read   = ["videos", "app_settings"]
+
+[[stage]]
+name        = "fp_toy"
+subject     = "library"
+export      = "fp-toy"
+version     = 1
+label       = "Toy"
+pool        = "cpu"
+lane        = "seasons"
+lane_order  = 99
+placement   = "any"
+entry       = "fp_toy.stage:IMPL"
+fingerprint = { input = true }

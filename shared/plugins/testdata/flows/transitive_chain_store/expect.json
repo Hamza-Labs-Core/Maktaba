@@ -1,0 +1,104 @@
+{
+  "findings": [],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.xray/x"
+      },
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.yankee/y"
+      },
+      {
+        "from": "event:dev.example.xray/x.done",
+        "kind": "subscribe",
+        "to": "stage:dev.example.alpha/one"
+      },
+      {
+        "from": "event:dev.example.yankee/y.done",
+        "kind": "subscribe",
+        "to": "stage:dev.example.xray/x"
+      },
+      {
+        "from": "stage:dev.example.alpha/one",
+        "kind": "emit",
+        "to": "event:dev.example.alpha/a.done"
+      },
+      {
+        "from": "stage:dev.example.xray/x",
+        "kind": "emit",
+        "to": "event:dev.example.xray/x.done"
+      },
+      {
+        "from": "stage:dev.example.yankee/y",
+        "kind": "emit",
+        "to": "event:dev.example.yankee/y.done"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.alpha/a.done",
+        "kind": "event",
+        "name": "a.done",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.xray/x.done",
+        "kind": "event",
+        "name": "x.done",
+        "plugin": "dev.example.xray",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.yankee/y.done",
+        "kind": "event",
+        "name": "y.done",
+        "plugin": "dev.example.yankee",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.xray/x",
+        "kind": "stage",
+        "name": "x",
+        "plugin": "dev.example.xray",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.yankee/y",
+        "kind": "stage",
+        "name": "y",
+        "plugin": "dev.example.yankee",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [],
+    "en": []
+  }
+}

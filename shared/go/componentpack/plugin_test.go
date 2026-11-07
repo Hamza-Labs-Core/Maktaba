@@ -170,3 +170,36 @@ func TestUnpackPluginPackedLimit(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+// 54.14 §2: files.json is written in canonical JSON (nothing escaped but what must be), so
+// the Go writer, mkp pack and the store make the same bytes for the same files.
+func TestBuildPluginWritesCanonicalFilesJSON(t *testing.T) {
+	files := map[string][]byte{PluginManifestName: []byte("schema = 1\n"), "a<b>&c.txt": []byte("x")}
+	var buf bytes.Buffer
+	if _, err := BuildPlugin(&buf, files, nil); err != nil {
+		t.Fatal(err)
+	}
+	pkg, err := UnpackPlugin(bytes.NewReader(buf.Bytes()), filepath.Join(t.TempDir(), "p"), PluginExpect{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(pkg.FilesJSON), `"path":"a<b>&c.txt"`) || strings.Contains(string(pkg.FilesJSON), `\u003c`) {
+		t.Fatalf("files.json is not canonical: %s", pkg.FilesJSON)
+	}
+}
+
+// 54.14 T02's home side: a file that does not match files.json still answers the head, so a
+// signed package's refusal can name the digest step.
+func TestUnpackPluginDigestMismatchAnswersTheHead(t *testing.T) {
+	man := []byte("schema = 1\n")
+	wasm := []byte("\x00asm component")
+	list := []PluginFile{fileOf(PluginManifestName, man), fileOf("plugin.wasm", wasm)}
+	pkg := rawPlugin(t, list, []rawEntry{
+		{tar.Header{Name: PluginDeveloperSig, Typeflag: tar.TypeReg}, []byte("sig")},
+		{tar.Header{Name: "plugin.wasm", Typeflag: tar.TypeReg}, []byte("\x01asm component")},
+	}, man)
+	got, err := UnpackPlugin(bytes.NewReader(pkg), filepath.Join(t.TempDir(), "p"), PluginExpect{})
+	if PluginCode(err) != CodePackageDigestMismatch || got == nil || string(got.DeveloperSig) != "sig" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+}

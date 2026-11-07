@@ -21,7 +21,7 @@ __all__ = [
 ]
 
 PLUGIN_API_MAJOR = 1
-PLUGIN_API_MINOR = 0
+PLUGIN_API_MINOR = 1
 
 
 @dataclass(frozen=True)
@@ -39,7 +39,7 @@ class GateInput:
 
 def unreviewed(level: str) -> bool:
     """A review level that needs the home's opt-in (54.10): anything but a store review."""
-    return level != "store"
+    return level not in ("store", "automated", "reviewed")
 
 
 def _semver(s: str) -> tuple[int, int, int] | None:

@@ -4,6 +4,8 @@ package plugins
 //
 //	GET    /api/plugins                      installed plugins
 //	GET    /api/plugins/policy               the home's policy (allow_unreviewed)
+//	GET    /api/plugins/graph                the home's plugin graph and its findings (54.39, 54.41)
+//	GET    /api/plugins/{id}/downstream      other plugins' stages that go idle when it is off
 //	PUT    /api/plugins/policy               change it
 //	POST   /api/plugins/install              multipart: file, grants, libraries, all_libraries, enable, confirm_name
 //	GET    /api/plugins/{id}                 one plugin's detail
@@ -16,6 +18,7 @@ package plugins
 //	DELETE /api/plugins/{id}                 ?purge=true
 //	GET    /api/plugins/{id}/writes          ?before=&limit=
 //	POST   /api/plugins/{id}/writes/revert   {ids: [...]}
+//	…/api/plugins/store-account              linking to a store account (store.go, 54.15 §5)
 //
 // Every one is admin-only: no sign-in 401; a viewer, a cloud-linked play sign-in (its
 // scope clears IsAdmin) and a token without the admin scope 403. Switches go through the
@@ -39,6 +42,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
@@ -53,6 +58,8 @@ type Admin struct {
 	// VerifyPassword checks the signed-in admin's password again (story 54.10 §2: turning
 	// on Allow unreviewed plugins asks for it); nil: none is asked.
 	VerifyPassword func(ctx context.Context, userID, password string) error
+	// Store links this home to a plugin store account (story 54.15 §5; nil: 503).
+	Store *storelink.Link
 }
 
 // Mount adds the routes to r.
@@ -61,8 +68,13 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Use(adminOnly)
 		r.Get("/api/plugins", h.list)
 		r.Get("/api/plugins/policy", h.getPolicy)
+		r.Get("/api/plugins/graph", h.graph)
 		r.Put("/api/plugins/policy", h.putPolicy)
 		r.Post("/api/plugins/install", h.install)
+		r.Get("/api/plugins/store-account", h.storeStatus)
+		r.Post("/api/plugins/store-account/link", h.storeLink)
+		r.Post("/api/plugins/store-account/poll", h.storePoll)
+		r.Delete("/api/plugins/store-account", h.storeUnlink)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
 		r.Post("/api/plugins/{id}/enable", h.switchTo(components.WantEnabled))
@@ -73,6 +85,7 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Post("/api/plugins/{id}/rollback", h.rollback)
 		r.Delete("/api/plugins/{id}", h.remove)
 		r.Get("/api/plugins/{id}/writes", h.writes)
+		r.Get("/api/plugins/{id}/downstream", h.downstream)
 		r.Get("/api/plugins/{id}/settings", h.getSettings)
 		r.Put("/api/plugins/{id}/settings", h.putSettings)
 		r.Post("/api/plugins/{id}/writes/revert", h.revert)
@@ -168,7 +181,59 @@ func (h *Admin) list(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": v, "policy": pol})
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"plugins": v, "policy": pol, "built_in": builtIn()})
+}
+
+// BuiltIn is one of Maktaba's own first-party plugins as the Plugins page lists it under
+// "Built into Maktaba" (story 54.22 §4): its name in both languages, its component (the
+// Components page's switch is its switch: no grants dialog), its stages, and what it can do
+// (fp.trusted.<capability> words with their parameter).
+type BuiltIn struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	NameAr       string              `json:"name_ar"`
+	Summary      string              `json:"summary"`
+	SummaryAr    string              `json:"summary_ar"`
+	Component    string              `json:"component"`
+	Stages       []string            `json:"stages"`
+	Capabilities []map[string]string `json:"capabilities"`
+}
+
+func builtIn() []BuiltIn {
+	list, err := firstparty.Plugins()
+	if err != nil {
+		return []BuiltIn{}
+	}
+	out := make([]BuiltIn, 0, len(list))
+	for _, fp := range list {
+		strs, _ := fp.Manifest["strings"].(map[string]any)
+		word := func(lang, key string) string {
+			k, _ := strs[key].(string)
+			return fp.Strings[lang][k]
+		}
+		out = append(out, BuiltIn{ID: fp.ID, Name: word("en", "name"), NameAr: word("ar", "name"),
+			Summary: word("en", "summary"), SummaryAr: word("ar", "summary"), Component: fp.Trusted.Component,
+			Stages: fp.Stages, Capabilities: fp.Capabilities()})
+	}
+	return out
+}
+
+func (h *Admin) graph(w http.ResponseWriter, r *http.Request) {
+	g, err := h.L.Graph(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, g)
+}
+
+func (h *Admin) downstream(w http.ResponseWriter, r *http.Request) {
+	d, err := h.L.Downstream(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, map[string]any{"stages": d})
 }
 
 func (h *Admin) show(w http.ResponseWriter, r *http.Request) {

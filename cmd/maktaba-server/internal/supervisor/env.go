@@ -253,7 +253,8 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// API runs a switch of the home: specs/epics/37-node-replica)
 		add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
 		// Epic 54: the plugin API's unix socket, on a home that runs plugins (54.04 §1)
-		if PluginsHere(cfg) {
+		// and on every machine that runs Maktaba's own plugin runners (54.24 §5)
+		if PluginsHere(cfg) || RunnersHere(cfg) {
 			add(EnvPluginAPISocket, PluginsPaths(cfg).API)
 		}
 		// the cloud relay agent's state (a switch checks it moved with the home)
@@ -361,6 +362,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// per-boot local token the dispatcher mints a plugin job's token with (54.04 §2)
 		if PluginsHere(cfg) {
 			add(EnvPluginDSocket, PluginsPaths(cfg).Dispatch)
+			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+		}
+		// Epic 54 Phase 4: where Maktaba's own plugin runners listen (story 54.23); the
+		// worker mints their jobs' tokens with the same local token
+		if RunnersHere(cfg) {
+			add("MAKTABA_RUNNER_DIR", RunnerDir(cfg))
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
 		}
 		// Recent-logs HTTP endpoint drained by the api's diagnostics

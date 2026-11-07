@@ -28,3 +28,15 @@ func TestRatingTable(t *testing.T) {
 		}
 	}
 }
+
+// Story 54.14 §2: a store countersignature of either level counts as reviewed.
+func TestRatingCountsAStoreCountersignature(t *testing.T) {
+	for _, level := range []string{"automated", "reviewed", "store"} {
+		if r := Rating(nil, level); r != 6 {
+			t.Errorf("%s: %d", level, r)
+		}
+	}
+	if r := Rating(nil, "developer"); r != 5 {
+		t.Errorf("developer: %d", r)
+	}
+}

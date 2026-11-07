@@ -16,6 +16,8 @@ use sha2::{Digest, Sha256};
 pub const MANIFEST_SCHEMA: &str = include_str!("../../../../shared/plugins/manifest.schema.json");
 pub const CAPABILITIES_TOML: &str = include_str!("../../../../shared/plugins/capabilities.toml");
 pub const EVENTS_TOML: &str = include_str!("../../../../shared/plugins/events.toml");
+/// The stage names only Maktaba's own plugins may define (story 54.22 §1).
+pub const RESERVED_STAGES: &str = include_str!("../../../../shared/plugins/reserved_stages.txt");
 pub const WIT: &str = include_str!("../../../../shared/plugins/wit/maktaba-plugin.wit");
 
 pub const CODE_INVALID: &str = "manifest_invalid";
@@ -37,6 +39,13 @@ pub const CODE_STRING_TOO_LONG: &str = "manifest_string_too_long";
 pub const CODE_MISSING_FILE: &str = "manifest_missing_file";
 pub const CODE_BAD_SETTINGS: &str = "manifest_bad_settings";
 pub const CODE_NOT_TOML: &str = "manifest_not_toml";
+pub const CODE_BAD_EMIT: &str = "manifest_bad_emit";
+pub const CODE_BAD_TRIGGER: &str = "manifest_bad_trigger";
+pub const CODE_BAD_EVENT: &str = "manifest_bad_event";
+pub const CODE_BAD_DEPENDS: &str = "manifest_bad_depends";
+/// A key, a stage name or a subject only Maktaba's own release-signed plugins may use
+/// (story 54.22 §1): never in a manifest this host loads.
+pub const CODE_TRUSTED_FIELD: &str = "plugin_trusted_field";
 
 const SCHEMA_VERSION: i64 = 1;
 const MAX_NAME: usize = 40;
@@ -64,6 +73,7 @@ const KEYWORDS: &[&str] = &[
     "default",
     "x-code",
     "x-unknown-code",
+    "x-trusted-only",
 ];
 
 /// One refusal: a code, a slash path into the manifest and a detail (a language, a file).
@@ -223,9 +233,14 @@ pub fn validate(src: &[u8], files: Option<&dyn Files>) -> Result<Map<String, Val
     }
     fill(&l.schema, &mut v);
     let Value::Object(mut m) = v else { unreachable!() };
-    let range =
-        m["maktaba"].as_str().unwrap_or("").split(',').map(|p| p.replace(' ', "")).collect::<Vec<_>>().join(", ");
+    let range = norm_range(m["maktaba"].as_str().unwrap_or(""));
     m.insert("maktaba".into(), Value::String(range));
+    if let Some(Value::Array(deps)) = m.get_mut("depends") {
+        for d in deps.iter_mut() {
+            let r = norm_range(d.get("version").and_then(Value::as_str).unwrap_or(""));
+            d["version"] = Value::String(r);
+        }
+    }
     let errs = rules(&m, files);
     if !errs.is_empty() {
         return Err(errs);
@@ -410,6 +425,9 @@ fn check(n: &Value, v: &Value, path: &str, parent: &str, errs: &mut Vec<Manifest
             let props = n.get("properties").and_then(Value::as_object);
             for (k, x) in o {
                 match props.and_then(|p| p.get(k)) {
+                    Some(c) if c.get("x-trusted-only") == Some(&Value::Bool(true)) => {
+                        errs.push(ManifestError::new(CODE_TRUSTED_FIELD, &join(path, k), ""));
+                    }
                     Some(c) => check(c, x, &join(path, k), code, errs),
                     None => {
                         if n.get("additionalProperties") == Some(&Value::Bool(false)) {
@@ -450,6 +468,14 @@ fn fill(n: &Value, v: &mut Value) {
     }
 }
 
+fn norm_range(r: &str) -> String {
+    r.split(',').map(|p| p.replace(' ', "")).collect::<Vec<_>>().join(", ")
+}
+
+fn lower_bound(r: &str) -> bool {
+    r.split(", ").any(|p| p.starts_with('>') || p.starts_with('='))
+}
+
 fn reserved(id: &str) -> bool {
     let mut labels: Vec<&str> = id.split('.').collect();
     if id.starts_with("tv.maktaba.community.") {
@@ -458,6 +484,11 @@ fn reserved(id: &str) -> bool {
         return true;
     }
     labels.iter().any(|l| *l == "maktaba" || *l == "official")
+}
+
+/// Whether `name` is a stage of Maktaba's own graph (shared/plugins/reserved_stages.txt).
+pub fn reserved_stage(name: &str) -> bool {
+    RESERVED_STAGES.lines().map(str::trim).any(|l| !l.is_empty() && !l.starts_with('#') && l == name)
 }
 
 fn known_capability(name: &str) -> bool {
@@ -492,7 +523,7 @@ fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError
     if platforms.len() > 1 && platforms.iter().any(|p| p == "any") {
         errs.push(ManifestError::new(CODE_BAD_PLATFORM, "platforms", "any stands alone"));
     }
-    if !s(&mv, "maktaba").split(", ").any(|p| p.starts_with('>') || p.starts_with('=')) {
+    if !lower_bound(s(&mv, "maktaba")) {
         errs.push(ManifestError::new(CODE_BAD_RANGE, "maktaba", "no lower bound"));
     }
     let caps = &mv["capabilities"];
@@ -518,6 +549,32 @@ fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError
             errs.push(ManifestError::new(CODE_DUPLICATE_STAGE, &format!("stage/{i}/name"), name));
         }
         subjects.insert(name.into(), s(st, "subject").into());
+        // R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
+        // reserved (a third-party stage's queue is p_<hash>_<name>)
+        if s(st, "subject") == "dup_group" {
+            errs.push(ManifestError::new(CODE_TRUSTED_FIELD, &format!("stage/{i}/name"), name));
+        }
+    }
+    // the graph fields (54.39): published events, dependencies on other plugins' events
+    let id = s(&mv, "id");
+    let mut published: BTreeMap<String, String> = BTreeMap::new();
+    for (i, e) in arr(&mv, "event").iter().enumerate() {
+        let name = s(e, "name");
+        if published.contains_key(name) {
+            errs.push(ManifestError::new(CODE_BAD_EVENT, &format!("event/{i}/name"), name));
+        }
+        published.insert(name.into(), s(e, "subject").into());
+    }
+    let mut depends = std::collections::BTreeSet::new();
+    let mut used = std::collections::BTreeSet::new();
+    for (i, d) in arr(&mv, "depends").iter().enumerate() {
+        let p = s(d, "plugin");
+        if p == id || depends.contains(p) {
+            errs.push(ManifestError::new(CODE_BAD_DEPENDS, &format!("depends/{i}/plugin"), p));
+        } else if !lower_bound(s(d, "version")) {
+            errs.push(ManifestError::new(CODE_BAD_DEPENDS, &format!("depends/{i}/version"), "no lower bound"));
+        }
+        depends.insert(p.to_string());
     }
     for (i, st) in stages.iter().enumerate() {
         for (j, r) in arr(st, "may_request").iter().enumerate() {
@@ -527,16 +584,54 @@ fn rules(m: &Map<String, Value>, files: Option<&dyn Files>) -> Vec<ManifestError
             }
         }
         for (j, t) in arr(st, "trigger").iter().enumerate() {
-            let ev = s(t, "event");
-            let path = format!("stage/{i}/trigger/{j}/event");
-            match l.events.get(ev) {
-                Some(e) if e.trigger != Some(false) => {
-                    if e.subject != s(st, "subject") {
-                        errs.push(ManifestError::new(CODE_SUBJECT_MISMATCH, &path, ev));
+            let tpath = format!("stage/{i}/trigger/{j}");
+            let (ev, after) = (t.get("event").and_then(Value::as_str), t.get("stage").and_then(Value::as_str));
+            match (ev, after) {
+                (Some(_), Some(_)) | (None, None) => {
+                    errs.push(ManifestError::new(CODE_BAD_TRIGGER, &tpath, "event or stage"));
+                }
+                (None, Some(a)) => match subjects.get(a) {
+                    None => errs.push(ManifestError::new(CODE_BAD_TRIGGER, &format!("{tpath}/stage"), a)),
+                    Some(sub) if sub != s(st, "subject") => {
+                        errs.push(ManifestError::new(CODE_SUBJECT_MISMATCH, &format!("{tpath}/stage"), a))
+                    }
+                    _ => {}
+                },
+                (Some(ev), None) => {
+                    let path = format!("{tpath}/event");
+                    if let Some(rest) = ev.strip_prefix("plugin:") {
+                        let publisher = rest.split('/').next().unwrap_or("");
+                        if publisher == id {
+                            errs.push(ManifestError::new(CODE_BAD_TRIGGER, &path, ev));
+                        } else if !depends.contains(publisher) {
+                            errs.push(ManifestError::new(CODE_BAD_DEPENDS, &path, publisher));
+                        } else {
+                            used.insert(publisher.to_string());
+                        }
+                        continue;
+                    }
+                    match l.events.get(ev) {
+                        Some(e) if e.trigger != Some(false) => {
+                            if e.subject != s(st, "subject") {
+                                errs.push(ManifestError::new(CODE_SUBJECT_MISMATCH, &path, ev));
+                            }
+                        }
+                        _ => errs.push(ManifestError::new(CODE_UNKNOWN_EVENT, &path, ev)),
                     }
                 }
-                _ => errs.push(ManifestError::new(CODE_UNKNOWN_EVENT, &path, ev)),
             }
+        }
+        for (j, e) in arr(st, "emits").iter().enumerate() {
+            let e = e.as_str().unwrap_or("");
+            if !published.contains_key(e) {
+                errs.push(ManifestError::new(CODE_BAD_EMIT, &format!("stage/{i}/emits/{j}"), e));
+            }
+        }
+    }
+    for (i, d) in arr(&mv, "depends").iter().enumerate() {
+        let p = s(d, "plugin");
+        if !used.contains(p) {
+            errs.push(ManifestError::new(CODE_BAD_DEPENDS, &format!("depends/{i}"), p));
         }
     }
     for (i, sc) in arr(&mv, "schedule").iter().enumerate() {
@@ -572,6 +667,16 @@ fn package_rules(m: &Value, files: &dyn Files) -> Vec<ManifestError> {
                 }
                 _ => errs.push(ManifestError::new(CODE_MISSING_STRING, &format!("strings/{key}"), lang)),
             }
+        }
+    }
+    for (i, e) in arr(m, "event").iter().enumerate() {
+        let path = s(e, "payload");
+        match files.get(path) {
+            None => errs.push(ManifestError::new(CODE_MISSING_FILE, &format!("event/{i}/payload"), path)),
+            Some(raw) => match serde_json::from_slice::<Value>(&raw) {
+                Ok(Value::Object(doc)) if doc.get("type").and_then(Value::as_str) == Some("object") => {}
+                _ => errs.push(ManifestError::new(CODE_BAD_EVENT, &format!("event/{i}/payload"), path)),
+            },
         }
     }
     let mut props = Map::new();

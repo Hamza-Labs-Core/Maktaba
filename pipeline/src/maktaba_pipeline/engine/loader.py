@@ -29,6 +29,9 @@ def build_full_graph(extensions: Sequence[Extension] = ()) -> tuple[StageDef, ..
             )
     graph = tuple(_tag(s, extensions) for s in builder.build())
     validate(graph)
+    from ..plugins.loader import assert_plugin_leaves
+
+    assert_plugin_leaves(graph)
     return graph
 
 

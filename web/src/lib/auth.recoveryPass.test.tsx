@@ -43,6 +43,8 @@ describe("the recovery pass", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     renderIt();
     expect(await screen.findByText("signed in")).toBeInTheDocument();
+    // the ask runs in a passive effect, then a microtask: flush both before counting
+    await act(async () => {});
     expect(passCalls()).toBe(1);
     await act(async () => {
       vi.advanceTimersByTime(RECOVERY_PASS_EVERY_MS);
@@ -54,6 +56,7 @@ describe("the recovery pass", () => {
     get.mockResolvedValue({ user: { id: "u2", username: "sara", is_admin: false } });
     renderIt();
     expect(await screen.findByText("signed in")).toBeInTheDocument();
+    await act(async () => {});
     expect(passCalls()).toBe(0);
   });
 });

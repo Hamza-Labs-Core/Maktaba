@@ -1,0 +1,53 @@
+{
+  "findings": [
+    {
+      "code": "flow_cycle",
+      "severity": "refuse",
+      "plugin": "dev.example.alpha",
+      "path": [
+        "dev.example.alpha/again",
+        "dev.example.alpha/again"
+      ]
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/again"
+      },
+      {
+        "from": "stage:dev.example.alpha/again",
+        "kind": "request",
+        "to": "stage:dev.example.alpha/again"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/again",
+        "kind": "stage",
+        "name": "again",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "ستشغّل هذه الإضافات بعضها بعضًا في حلقة: ⁦dev.example.alpha/again → dev.example.alpha/again⁩."
+    ],
+    "en": [
+      "These plugins would start each other in a loop: dev.example.alpha/again → dev.example.alpha/again."
+    ]
+  }
+}

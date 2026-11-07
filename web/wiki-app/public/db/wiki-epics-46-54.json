@@ -5201,7 +5201,7 @@
       "title": "Automated checks and human review",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.16 — Automated checks and human review\n\n> Epic 54 · Phase 2 · Depends on: 54.03, 54.12, 54.15 · Needed by: —\n\n## Why\n\nThe sandbox makes a malicious plugin harmless to the network and the disk, but it can still\nwrite wrong data, waste the server, mislead its users, or squat a name. Every version gets the\nsame automated checks the home runs and more; people review what machines cannot judge: first\nsubmissions, new permissions, and anything flagged. Review must be fast enough that developers\nstay (N11, N12).\n\n## Description\n\n### 1. The pipeline of checks\n\nOn upload, a check job runs in",
+      "content": "# Story 54.16 — Automated checks and human review\n\n> Epic 54 · Phase 2 · Depends on: 54.03, 54.12, 54.15, 54.39 · Needed by: —\n\n## Why\n\nThe sandbox makes a malicious plugin harmless to the network and the disk, but it can still\nwrite wrong data, waste the server, mislead its users, or squat a name. Every version gets the\nsame automated checks the home runs and more; people review what machines cannot judge: first\nsubmissions, new permissions, and anything flagged. Review must be fast enough that developers\nstay (N11, N12).\n\n## Description\n\n### 1. The pipeline of checks\n\nOn upload, a check job ",
       "tags": [
         "story",
         "54-plugins",
@@ -5282,7 +5282,7 @@
       "title": "Paid plugins",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, 54.37, the Phase 3 payment provider decision ·\n> Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). Both free and paid plugins are required. The store sells them **on its own**:\nits own payment provider account and seller-of-record choice, its own payouts, tax records and\nrefunds, and its own signed entitlements that homes check offline. Nothing here uses Maktaba\nCloud's billing (Epic 50.19), its licence issuer or its accounts, and no home c",
+      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.14, 54.15, 54.18, 54.37 ·\n> Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). Both free and paid plugins are required. The store sells them **on its own**:\nits own payment provider accounts, its own payouts, tax records and refunds, and its own\nsigned entitlements that homes check offline. Nothing here uses Maktaba\nCloud's billing (Epic 50.19), its licence issuer or its accounts, and no home calls the cloud to\nuse a paid plugin.\n\nDecisions of 2026-11-",
       "tags": [
         "story",
         "54-plugins",
@@ -5910,6 +5910,126 @@
       "db_tables": [],
       "metadata": {
         "slug": "plugin-files"
+      }
+    },
+    {
+      "id": "story-54.39",
+      "type": "story",
+      "title": "Flows: the declared graph, the leaf rule and the cycle check",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# Story 54.39 — Flows: the declared graph, the leaf rule and the cycle check\n\n> Epic 54 · Phase 1 · Depends on: 54.01, 54.06, 54.07 · Needed by: 54.40, 54.41, 54.42, 54.16\n\n## Why\n\nA plugin that wires itself into the queue from code is a plugin no one can check before it\nruns. Plugins that trigger each other can close a loop no single plugin shows, and a plugin\nthat sits before a core stage can stall every library. The graph a set of plugins builds is\ntherefore declared, signed and checked before anything runs: the flow is the configuration,\nand nothing outside it is wired (README §4.12, H24, ",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-39-flows.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "flows"
+      }
+    },
+    {
+      "id": "story-54.40",
+      "type": "story",
+      "title": "Published events, cross-plugin triggers and run-time lineage",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# Story 54.40 — Published events, cross-plugin triggers and run-time lineage\n\n> Epic 54 · Phase 1 · Depends on: 54.04, 54.06, 54.08, 54.39 · Needed by: 54.42\n\n## Why\n\nPlugins that work together need to hand work to each other: one finds silences, another\nwrites chapters from them. Doing that by naming each other's stages would break with every\nplugin release and let a plugin reach into another's internals, so it goes through events the\npublisher declares, with a payload it promises, and a grant the admin gives. The static cycle\ncheck of 54.39 sees only the declared graph; a loop through data (",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "entity-events",
+        "ep-get-queues",
+        "ep-get-capabilities"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-40-events-lineage.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /queues",
+        "GET /capabilities"
+      ],
+      "db_tables": [
+        "events"
+      ],
+      "metadata": {
+        "slug": "events-lineage"
+      }
+    },
+    {
+      "id": "story-54.41",
+      "type": "story",
+      "title": "The flow chart",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# Story 54.41 — The flow chart\n\n> Epic 54 · Phase 1 · Depends on: 54.13, 54.39 · Needed by: 54.18\n\n## Why\n\nAn admin approving a plugin should see what it attaches to, what it starts and which other\nplugins it works with before it runs, and a developer should see the same picture the store's\nreviewer sees. The declared graph is already checked (54.39); this story draws it, from the\nsame normalised graph, wherever someone decides about it (README §4.12).\n\n## Description\n\n### 1. One layout\n\n`tools/plugin-sdk/js/src/flowchart.ts` lays out a normalised graph (54.39 §3) and returns an\nSVG string, so",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-settings",
+        "ep-put-settings"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-41-flow-chart.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /settings",
+        "PUT /settings"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "flow-chart"
+      }
+    },
+    {
+      "id": "story-54.42",
+      "type": "story",
+      "title": "Third-party plugins on joined machines",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# Story 54.42 — Third-party plugins on joined machines\n\n> Epic 54 · Phase 1 · Depends on: 54.07, 54.09, 54.37, 54.38, 54.40, Epic 35, Epic 53 · Needed by: —\n\n## Why\n\nA home with a joined machine that has a GPU or more cores should be able to give plugin work\nto it, as it gives core work. First-party plugins already run on any machine (README §15.4,\n`placement:any`), because every machine is a full Maktaba with its own API. Third-party\nplugins use the same model, with the home still the one place where they are installed and\napproved (README §4.13, H12).\n\n## Description\n\n### 1. Placement\n\nThe m",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-42-joined-machines.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "joined-machines"
       }
     }
   ]
