@@ -44,7 +44,12 @@ type Meter struct {
 	// down (default 30 s); what is left is logged as relay_meter_lost_bytes.
 	FinalWait time.Duration
 	Logger    *slog.Logger
-	now       func() time.Time
+	// PAYG is the accounts' pay-as-you-go (story 50.19 §5; nil: off), read at most every 30 s
+	// per home and never while the database is away.
+	PAYG interface {
+		ForServer(ctx context.Context, serverID string, now time.Time) (PAYG, error)
+	}
+	now func() time.Time
 	// writer writes a flush batch (nil: the database; tests fail it)
 	writer func(ctx context.Context, id string, batch map[bucketKey]counter) error
 	// inflight is the batch a failed flush tried to write: retried as it is, under its
@@ -60,6 +65,7 @@ type Meter struct {
 	// without asking (a request must not wait on a database that is away)
 	dbDownUntil time.Time
 	refreshing  map[string]bool // month reads in the background, by server id
+	paygs       map[string]paygRead
 
 	stop       chan struct{}
 	stopped    chan struct{} // closed when the flush loop has made its last flush
@@ -110,6 +116,11 @@ type flushBatch struct {
 type bucketKey struct {
 	server string
 	bucket time.Time // 5-minute bucket start (UTC)
+}
+
+type paygRead struct {
+	p  PAYG
+	at time.Time
 }
 
 type monthTotal struct {
@@ -250,7 +261,43 @@ func (m *Meter) Decide(ctx context.Context, sv stores.Server) Decision {
 	u.PAYG += x.PAYG
 	u.Capped += x.Capped
 	u.CappedSlow += x.CappedSlow
-	return ModeFor(sv.Plan, u, PAYG{})
+	p := PAYG{}
+	if t, ok := Tiers[sv.Plan]; ok && t.PayAsYouGo {
+		p = m.payg(ctx, sv.ID)
+		// this home's pay-as-you-go not flushed yet counts against the cap too
+		p.SpentCentsAlready += PAYGSpentCents(x.PAYG, p.PricePerGBCents)
+	}
+	return ModeFor(sv.Plan, u, p)
+}
+
+// payg is a home's pay-as-you-go, read at most every 30 s; while the database is away (or the
+// read fails), the last one read.
+func (m *Meter) payg(ctx context.Context, serverID string) PAYG {
+	if m.PAYG == nil {
+		return PAYG{}
+	}
+	now := m.now()
+	m.mu.Lock()
+	if m.paygs == nil {
+		m.paygs = map[string]paygRead{}
+	}
+	last, ok := m.paygs[serverID]
+	down := now.Before(m.dbDownUntil)
+	m.mu.Unlock()
+	if (ok && now.Sub(last.at) < 30*time.Second) || down {
+		return last.p
+	}
+	rctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	p, err := m.PAYG.ForServer(rctx, serverID, now)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err != nil {
+		m.dbDownUntil = now.Add(5 * time.Second)
+		return last.p
+	}
+	m.paygs[serverID] = paygRead{p: p, at: now}
+	return p
 }
 
 // Usage is a home's usage this month by mode, as Decide sees it.

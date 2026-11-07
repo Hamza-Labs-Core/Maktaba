@@ -178,6 +178,8 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 		if set, ok := h.subtitles(r); ok {
 			data = WithSubtitleRenditions(data, set.Langs)
 		}
+		// story 50.19: a relayed request on a capped plan lists only what fits the cap
+		data = FitMasterToCap(data, relayCapBits(r))
 	}
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		if wantDASH {

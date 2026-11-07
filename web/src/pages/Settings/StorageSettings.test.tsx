@@ -112,6 +112,20 @@ describe("StorageSettings", () => {
     expect(rows[2]).toHaveTextContent("Not reachable: not-found");
   });
 
+  // Epic 50 story 50.15: direct access from the internet, on a home linked to the cloud
+  it("shows direct access from the internet when the home has it", async () => {
+    routeGet(get, {
+      "/api/server/storage": NO_STORAGE,
+      "/api/server/backups": NO_BACKUPS,
+      "/api/server/settings": () => DOC,
+      "/api/system/version": { version: "1.0.0" },
+      "/api/direct": { enabled: false, state: "off", listening: false, online: true },
+      "/api/rules": { sections: [] },
+    });
+    renderPage(<StorageSettings />, { path: "/settings/storage" });
+    expect(await screen.findByText("Direct access from the internet")).toBeInTheDocument();
+  });
+
   it("explains calmly when the server has no settings to change", async () => {
     open({ available: false, reason: "no supervisor: this API runs without maktaba-server" });
     expect(await screen.findByText(/can only be changed when Maktaba runs/)).toBeInTheDocument();

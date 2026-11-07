@@ -10,11 +10,13 @@ import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { Toggle } from "@ds/components/Choice/Toggle";
+import { Checkbox } from "@ds/components/Choice/Checkbox";
 import { fold } from "../../help/search";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { pluginsApi, type CatalogEntry, type CatalogView } from "../../lib/pluginsApi";
 import { capabilityTitle, refusalWords } from "./PluginsSection";
 import { PluginFlowChart } from "./PluginFlowChart";
+import { BuyPlugin, isPaid } from "./BuyPlugin";
 import type { FlowGraph } from "../../lib/pluginsApi";
 
 /** The plugin's approved flow, as the signed catalog carries it (54.16 C12, 54.41). */
@@ -205,6 +207,7 @@ function StorePlugin({
   const [text, setText] = useState("");
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
+  const [attachLogs, setAttachLogs] = useState(false);
   const v = p.newest;
   const flow = flowOf(p);
   // the plugin's own published events and the subscriptions into its stages
@@ -311,6 +314,8 @@ function StorePlugin({
           ? t("plugins.browse.update", { version: v?.version ?? "" })
           : t("plugins.browse.install")}
       </Button>
+      {/* story 54.19 §5: a paid plugin's price, and Buy or "Link this home to buy" */}
+      {isPaid(p) && <BuyPlugin entry={p} />}
 
       <h4>{t("plugins.browse.rate")}</h4>
       <div role="radiogroup" aria-label={t("plugins.browse.rate")}>
@@ -368,11 +373,21 @@ function StorePlugin({
         value={details}
         onChange={(e) => setDetails(e.target.value)}
       />
+      {p.installed && (
+        <Checkbox
+          label={t("plugins.browse.report_logs")}
+          checked={attachLogs}
+          onChange={(e) => setAttachLogs(e.target.checked)}
+        />
+      )}
       <Button
         variant="ghost"
         disabled={!reason}
         onClick={() =>
-          void run(() => pluginsApi.report(p.id, reason, details), t("plugins.browse.reported"))
+          void run(
+            () => pluginsApi.report(p.id, reason, details, attachLogs && !!p.installed),
+            t("plugins.browse.reported")
+          )
         }
       >
         {t("plugins.browse.send_report")}

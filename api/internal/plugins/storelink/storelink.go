@@ -123,6 +123,10 @@ func (l *Link) base() string {
 	return DefaultStore
 }
 
+// Base is the store's origin (MAKTABA_PLUGIN_STORE_URL, or plugins.maktaba.tv): the only
+// place a buy page may be.
+func (l *Link) Base() string { return l.base() }
+
 // key loads the home store key, making it on the first link.
 func (l *Link) key(ctx context.Context, create bool) (ed25519.PrivateKey, error) {
 	seed, err := l.Secrets.Get(ctx, KeyName)

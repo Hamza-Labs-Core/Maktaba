@@ -14,6 +14,23 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
+  `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
+  enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
+  streams, Pro past its allowance plays at Basic's quality, and pay-as-you-go's usage reaches a
+  fake payment provider once, through an outage. No stream stops in any.
+- **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
+  keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
+  (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
+  month's relayed use by quality, the limit and what was spent, and says at 80 % and 100 %; the
+  account is emailed too. Usage goes to the payment provider hourly, queued through an outage and
+  never billed twice or past the limit. Prices are not set yet, so it stays off.
+- **The relay enforces each plan (Epic 50 story 50.19, part 2).** A home on Free (no relay)
+  gets `402 relay_needs_plan` through the relay, and keeps its tunnel for direct access. With
+  `relay.plans.enforce` on, Basic's relayed requests carry `X-Maktaba-Relay-Cap-Kbps` (3000,
+  1500 past fair use) and its media is paced at the cap + 20 %, and a new relayed stream past
+  the plan's limit gets `429 stream_limit` (`relay_streams`, swept after 2 minutes of silence)
+  while the ones playing go on. Off (the default), paid homes play in full.
 - **Maktaba Cloud's plans are Free, Basic and Pro (Epic 50 story 50.19, part 1).** Only the
   relay is paid, and a paid plan never cuts remote play off. Free has no relay (direct access
   will be free on every plan); Basic relays at about 3 Mbps on 2 devices with 500 GB a month of
@@ -291,16 +308,6 @@ build fails when the two differ.
   started, on a circular import, and was marked failed after five restarts; the worker ran
   the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
   runner. The runners start again, and a test imports each entry point in a fresh process.
-
-- **A plugin's first job after an update no longer times out while its package compiles
-  (Epic 54, story 54.02).** A job's time limit used to start before the host compiled a
-  package it had not loaded and before the job waited for a free slot, so a large plugin (a
-  Python one: about 15 s to compile on a slow machine) could time out before its code ran.
-  Now the limit counts only the plugin's own work. Compiling has a limit of its own (3
-  minutes per package; a package that goes over is refused with
-  `plugin_compile_timeout`), and the host compiles every installed plugin in the background
-  when it starts, so an update that changes the plugin engine recompiles each one before its
-  first job. maktaba.dev: Testing and packaging.
 
 ### Security
 
@@ -1110,6 +1117,18 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Buying a paid plugin (Epic 54, story 54.19).** A paid plugin's page in Settings →
+  Plugins → Browse shows its price and **Buy**, or **Link this home to buy** on a home not
+  linked to a store account, which links it right there. Buy asks the store for a one-time
+  purchase intent signed by the home (the plugin and the language only, never the home's
+  address) and opens the store's buy page in a new tab: the buyer signs in to the store
+  account the home is linked to, sees the price in a currency an enabled payment provider
+  sells to their country, and pays on that provider's page; the home picks up the purchase
+  within 15 seconds. The store's buy pages run no script, sign-in returns only to a buy page
+  or the admin pages of the store itself, and the catalog carries each paid plugin's product
+  and prices. The store now runs its payment providers' webhooks. Nothing can be bought until
+  the store admin enables a provider.
+
 - **Paid plugins wait for their purchase (Epic 54, story 54.19).** A home linked to a store
   account fetches its entitlements from the store daily, signed with its own home store key
   (and every 15 seconds for 15 minutes after a Buy), checks each offline against the store
@@ -1200,6 +1219,11 @@ build fails when the two differ.
 - **Open in my Maktaba works without an app (Epic 54, story 54.18, #757).** A plugin's page on
   plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
   remembers it in that browser only, and opens the home's Browse on the plugin.
+
+- **A plugin report can carry the plugin's logs (Epic 54, story 54.18, #758).** Reporting an
+  installed plugin to the store from Browse, the admin can attach its log lines from the last
+  day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
+  reviewers alone and deleted after 90 days.
 
 ### Fixed
 
@@ -1764,6 +1788,15 @@ build fails when the two differ.
   http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
   developer's machine. maktaba.dev: Testing and packaging.
 
+- **Direct access from the internet, the home's side (Epic 50 story 50.15, part 2).** In
+  Settings → Storage & discovery an admin turns it on: the home opens a port on its router
+  (UPnP-IGD, NAT-PMP or PCP, renewed every 20 minutes, or a port forwarded by hand), notices a
+  shared address (CGNAT), makes its own key and asks Maktaba Cloud for a certificate for
+  `*.<home id>.<domain>` (the key never leaves it), and serves the same pages and API over HTTPS
+  on port 8444. The page shows the cloud's outside check, with Check now. Free on every plan:
+  `remote_access` is on with either the relay or direct access (`feature_any`). Off by default;
+  the `cloud.direct` component is on in the Full bundle where the home is linked to the cloud.
+
 - **Plugins in Python and JavaScript (Epic 54, story 54.12).** `mkp new python` and
   `mkp new js` make a plugin project, and `mkp build` turns it into a component the home
   accepts. Python builds with componentize-py, every WASI call a stub that fails; JavaScript
@@ -1851,6 +1884,14 @@ build fails when the two differ.
   been copied.
 - On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
+
+- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
+  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
+  lists only what fits; on the home's network and over direct access nothing is capped. A
+  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
+  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
+  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
+  too many devices playing, or the home too busy to prepare the video.
 
 ### Fixed
 
@@ -2317,6 +2358,16 @@ build fails when the two differ.
   the runner's sandbox named the first and was refused the second, so the runner exited
   about 10 s after it started and its stages ran in the worker. The sandbox now names the
   sockets and the run folder by their real paths.
+
+- **A plugin's first job after an update no longer times out while its package compiles
+  (Epic 54, story 54.02).** A job's time limit used to start before the host compiled a
+  package it had not loaded and before the job waited for a free slot, so a large plugin (a
+  Python one: about 15 s to compile on a slow machine) could time out before its code ran.
+  Now the limit counts only the plugin's own work. Compiling has a limit of its own (3
+  minutes per package; a package that goes over is refused with
+  `plugin_compile_timeout`), and the host compiles every installed plugin in the background
+  when it starts, so an update that changes the plugin engine recompiles each one before its
+  first job. maktaba.dev: Testing and packaging.
 
 ## [0.2.0] - 2026-10-19
 

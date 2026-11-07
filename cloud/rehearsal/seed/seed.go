@@ -24,21 +24,26 @@ var cheap = func() argon2id.Params {
 // Homes makes simulated homes first..first+n-1 (simhome.Creds), on plan, and
 // returns their server ids by slug. Rows that exist are kept.
 func Homes(ctx context.Context, db *sql.DB, first, n int, plan string) (map[string]string, error) {
-	var owner string
-	err := db.QueryRowContext(ctx, `
+	_, ids, err := HomesOf(ctx, db, "rehearsal@example.test", first, n, plan)
+	return ids, err
+}
+
+// HomesOf is Homes owned by the account email (made if new), and that account's id.
+func HomesOf(ctx context.Context, db *sql.DB, email string, first, n int, plan string) (owner string, ids map[string]string, err error) {
+	err = db.QueryRowContext(ctx, `
         INSERT INTO users (email, password_hash, display_name, email_verified)
-        VALUES ('rehearsal@example.test', '', 'Rehearsal', true)
+        VALUES ($1, '', 'Rehearsal', true)
         ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name
-        RETURNING id`).Scan(&owner)
+        RETURNING id`, email).Scan(&owner)
 	if err != nil {
-		return nil, fmt.Errorf("seed: owner: %w", err)
+		return "", nil, fmt.Errorf("seed: owner: %w", err)
 	}
-	ids := make(map[string]string, n)
+	ids = make(map[string]string, n)
 	for i := first; i < first+n; i++ {
 		_, secret, slug := simhome.Creds(i)
 		hash, err := argon2id.Hash(secret, cheap)
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		var id string
 		err = db.QueryRowContext(ctx, `
@@ -47,9 +52,9 @@ func Homes(ctx context.Context, db *sql.DB, first, n int, plan string) (map[stri
             ON CONFLICT (slug) DO UPDATE SET server_secret_hash = EXCLUDED.server_secret_hash, plan = EXCLUDED.plan
             RETURNING id`, owner, slug, hash, plan).Scan(&id)
 		if err != nil {
-			return nil, fmt.Errorf("seed: %s: %w", slug, err)
+			return "", nil, fmt.Errorf("seed: %s: %w", slug, err)
 		}
 		ids[slug] = id
 	}
-	return ids, nil
+	return owner, ids, nil
 }

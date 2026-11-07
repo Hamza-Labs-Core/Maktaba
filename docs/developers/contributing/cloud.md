@@ -132,6 +132,7 @@ breaks them on purpose:
 | `status-feed` | stops every relay process | the status page's `summary.json` says remote access is down within two probe rounds, and working again after two passing ones |
 | `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | runs the one-click recovery workflows' scripts; for the DNS swap, with the Hetzner API down | each does what its runbook says against the real pair: a new leader, the old one fenced, the relay's names on the new leader |
 | `load-small` | 1,000 homes and 50 players at 5 Mbit/s, with the base commit's relay and then this commit's, on one runner | the relay's CPU per Mbit (its own CPU time, the median of three rounds) and memory per tunnel no more than 20 % worse than the base's |
+| `relay-plans` | homes on Free, Basic and Pro behind the relay with the plans enforced; a test build sets the plans' numbers not chosen yet, and the payment provider is a fake | Free is refused with its tunnel kept; Basic is asked to fit 3 Mbit/s, paced to it, and a third stream is refused while two play on; Pro past its allowance plays at Basic's quality; pay-as-you-go plays in full and its gigabyte reaches the provider once, through an outage |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,
 Cloudflare or Let's Encrypt host is ever contacted: a fake Hetzner API moves the address,

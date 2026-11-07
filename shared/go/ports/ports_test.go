@@ -142,3 +142,14 @@ func TestLogsIndexIsLoopback(t *testing.T) {
 		t.Fatalf("logs index: %+v", LogsIndex)
 	}
 }
+
+// Epic 50 story 50.15: direct access's listener is the api's, on every interface, and not the
+// web port's own HTTPS (8443).
+func TestDirectHTTPS(t *testing.T) {
+	if DirectHTTPS.Port != 8444 || DirectHTTPS.Owner != "api" || DirectHTTPS.Host != AllInterfaces || DirectHTTPS.Port == WebHTTPS.Port {
+		t.Fatalf("%+v", DirectHTTPS)
+	}
+	if e, _, ok := Lookup(8444); !ok || e.Name != "direct https" {
+		t.Fatalf("lookup 8444: %+v %v", e, ok)
+	}
+}

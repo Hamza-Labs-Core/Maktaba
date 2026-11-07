@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -81,6 +82,26 @@ func TestRateAndReportGoToTheStoreSigned(t *testing.T) {
 	if !strings.HasPrefix(auths[0], "MKS-Home id=h_1, ") {
 		t.Fatalf("not signed: %q", auths[0])
 	}
+	// #758: the plugin's lines go only when the admin ticks it
+	h.PluginLogs = func(_ context.Context, id string) []json.RawMessage {
+		return []json.RawMessage{json.RawMessage(`{"service":"plugin.` + id + `","msg":"scrubbed"}`)}
+	}
+	if w := call("/api/plugins/dev.example.r/report", `{"reason":"does_not_work","attach_logs":true}`); w.Code != http.StatusOK {
+		t.Fatalf("report with logs: %d %s", w.Code, w.Body)
+	}
+	last := got[len(got)-1]
+	ls, ok := last["logs"].([]any)
+	if !ok || len(ls) != 1 || !strings.Contains(fmt.Sprint(ls[0]), "plugin.dev.example.r") {
+		t.Fatalf("the logs sent: %v", last)
+	}
+	if w := call("/api/plugins/dev.example.r/report", `{"reason":"does_not_work"}`); w.Code != http.StatusOK {
+		t.Fatal(w.Body)
+	}
+	if _, has := got[len(got)-1]["logs"]; has {
+		t.Fatal("logs sent without the admin ticking it")
+	}
+	got = got[:2]
+
 	// offline (MAKTABA_OFFLINE): refused at the home, the store gets nothing
 	link.Offline = func() bool { return true }
 	for _, c := range [][2]string{{"/api/plugins/dev.example.r/rate", `{"stars":5}`}, {"/api/plugins/dev.example.r/report", `{"reason":"malware"}`}} {

@@ -22,12 +22,17 @@ import (
 //	0x42  DIRECT_CERT      cloud → home  JSON CertPayload: the chain issued
 //	0x43  DIRECT_CHECK     cloud → home  JSON CheckPayload: the outside check's result
 //	0x44  DIRECT_CHECK_NOW home → cloud  empty: the admin pressed Check now
+//	0x45  DIRECT_NAME      home → cloud  empty: which name is mine? The home asks before its
+//	                       first CSR, which must name *.<home id>.<its domain>
+//	                       cloud → home  JSON NamePayload: its home id and domain (assigned now
+//	                       on the first ask, the same ever after)
 const (
 	KindMetaEndpoints  byte = 0x40
 	KindDirectCSR      byte = 0x41
 	KindDirectCert     byte = 0x42
 	KindDirectCheck    byte = 0x43
 	KindDirectCheckNow byte = 0x44
+	KindDirectName     byte = 0x45
 )
 
 // FeatureDirect: the home speaks the direct frames.
@@ -54,6 +59,12 @@ type CertPayload struct {
 	HomeID string `json:"home_id"`
 }
 
+// NamePayload is the home's name: its certificate is for *.<home id>.<domain>.
+type NamePayload struct {
+	Domain string `json:"domain"`
+	HomeID string `json:"home_id"`
+}
+
 // CheckPayload is the outside check's result.
 type CheckPayload struct {
 	Result string    `json:"result"`
@@ -66,6 +77,8 @@ type DirectHandler interface {
 	Endpoints(ctx context.Context, serverID string, from netip.Addr, p EndpointsPayload) error
 	CSR(ctx context.Context, serverID string, csr []byte) error
 	CheckNow(ctx context.Context, serverID string) error
+	// Name assigns the home its domain (once) and says it.
+	Name(ctx context.Context, serverID string) (NamePayload, error)
 	// Deliveries are the frames owed to the home now (a new chain, a changed result).
 	Deliveries(ctx context.Context, serverID string) ([]Frame, error)
 }
@@ -96,6 +109,12 @@ func (t *Tunnel) onDirect(f Frame) {
 		}
 	case KindDirectCheckNow:
 		err = t.direct.CheckNow(ctx, t.ServerID)
+	case KindDirectName:
+		var p NamePayload
+		if p, err = t.direct.Name(ctx, t.ServerID); err == nil {
+			b, _ := json.Marshal(p)
+			err = t.writeFrame(Frame{Kind: KindDirectName, Payload: b})
+		}
 	}
 	if err != nil && t.logger != nil {
 		t.logger.Warn("relay: a direct frame failed", "server_id", t.ServerID, "kind", f.Kind, "err", err, "event", "direct_frame_failed")
@@ -192,18 +211,34 @@ func (d *DBDirect) Endpoints(ctx context.Context, serverID string, from netip.Ad
 	return d.Store.SetEndpoints(ctx, serverID, from, p.Port, state)
 }
 
-// CSR queues the home's CSR for the worker; a new home gets its domain and CA here.
-func (d *DBDirect) CSR(ctx context.Context, serverID string, csr []byte) error {
-	if len(csr) == 0 || len(csr) > 16<<10 {
-		return errBadCSR
-	}
+// pick chooses a new home's domain and CA (the most room this week).
+func (d *DBDirect) pick(use []direct.DomainUse) (string, string, bool) {
 	budget := d.Budget
 	if budget <= 0 {
 		budget = direct.WeeklyBudget
 	}
-	c, overflow, err := d.Store.PutCSR(ctx, serverID, csr, func(use []direct.DomainUse) (string, string, bool) {
-		return direct.Pick(d.Domains(), use, budget)
-	}, d.now())
+	return direct.Pick(d.Domains(), use, budget)
+}
+
+// Name assigns a new home its domain and CA, and says the home's name.
+func (d *DBDirect) Name(ctx context.Context, serverID string) (NamePayload, error) {
+	c, overflow, err := d.Store.Assign(ctx, serverID, d.pick, d.now())
+	if err != nil {
+		return NamePayload{}, err
+	}
+	if overflow && d.Overflow != nil {
+		d.Overflow(c.Domain, c.CA)
+	}
+	return NamePayload{Domain: c.Domain, HomeID: c.HomeID}, nil
+}
+
+// CSR queues the home's CSR for the worker; a home that never asked its name gets its domain
+// and CA here.
+func (d *DBDirect) CSR(ctx context.Context, serverID string, csr []byte) error {
+	if len(csr) == 0 || len(csr) > 16<<10 {
+		return errBadCSR
+	}
+	c, overflow, err := d.Store.PutCSR(ctx, serverID, csr, d.pick, d.now())
 	if err == nil && overflow && d.Overflow != nil {
 		d.Overflow(c.Domain, c.CA)
 	}

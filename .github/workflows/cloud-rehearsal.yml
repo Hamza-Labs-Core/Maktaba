@@ -53,13 +53,15 @@ jobs:
           # the releases the deploy scenarios deploy (story 50.08): a new one, and a bad one
           docker build -f tools/rehearsal-cloud/Dockerfile --build-arg VERSION=new -t maktaba-cloud:rehearsal-new .
           docker build -f tools/rehearsal-cloud/Dockerfile --build-arg VERSION=bad --build-arg BUILD_TAGS=rehearsalbad -t maktaba-cloud:rehearsal-bad .
+          # the plans build (story 50.19 T13, relay-plans): the paid plans' TBD numbers set
+          docker build -f tools/rehearsal-cloud/Dockerfile --build-arg BUILD_TAGS=rehearsalplans -t maktaba-cloud:rehearsal-plans .
           # Maktaba's Caddy (deploy/caddy, story 50.02) for the cert-on-standby scenario
           docker build -t maktaba-caddy:rehearsal deploy/caddy
           # a machine of the Phase 1 pair (deploy/cloud-ha, story 50.07) for the failover scenarios
           docker build -f tools/rehearsal-cloud/Dockerfile.node -t maktaba-node:rehearsal \
             --build-arg CLOUD_IMAGE=maktaba-cloud:rehearsal --build-arg CADDY_IMAGE=maktaba-caddy:rehearsal .
       - name: Save
-        run: docker save maktaba-cloud:rehearsal maktaba-cloud:rehearsal-new maktaba-cloud:rehearsal-bad maktaba-caddy:rehearsal maktaba-node:rehearsal | gzip -1 > /tmp/image.tar.gz
+        run: docker save maktaba-cloud:rehearsal maktaba-cloud:rehearsal-new maktaba-cloud:rehearsal-bad maktaba-cloud:rehearsal-plans maktaba-caddy:rehearsal maktaba-node:rehearsal | gzip -1 > /tmp/image.tar.gz
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: rehearsal-image
@@ -96,6 +98,7 @@ jobs:
           - runbook-forced-failover
           - runbook-dns-swap
           - load-small
+          - relay-plans
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: actions/setup-go@v6.4.0
