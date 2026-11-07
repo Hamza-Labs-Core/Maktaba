@@ -45,14 +45,22 @@ public struct CloudUser: Decodable, Equatable, Sendable {
     public let email: String
 }
 
-/// One way to reach a home (story 50.13): `local`, `direct`, `relay_hint` or `relay`.
+/// One way to reach a home (story 50.13): `local`, `local_ip`, `direct`, `relay_hint` or `relay`.
+/// A `local_ip` entry is a LAN address by its IP (story 50.15 §3, for a router blocking DNS
+/// rebinding); `tlsName` is the home's name its certificate is checked against there.
 public struct CloudConnection: Codable, Equatable, Sendable {
     public let url: URL
     public let kind: String
-    public init(url: URL, kind: String) { self.url = url; self.kind = kind }
+    public let tlsName: String?
+    public init(url: URL, kind: String, tlsName: String? = nil) { self.url = url; self.kind = kind; self.tlsName = tlsName }
 
-    /// The order apps try (story 50.13 §2): local, direct, relay hint, relay.
-    public static let order = ["local", "direct", "relay_hint", "relay"]
+    enum CodingKeys: String, CodingKey {
+        case url, kind
+        case tlsName = "tls_name"
+    }
+
+    /// The order apps try (story 50.13 §2): local, local by address, direct, relay hint, relay.
+    public static let order = ["local", "local_ip", "direct", "relay_hint", "relay"]
 
     /// `cs` in that order; a kind this build doesn't know is left out.
     public static func ordered(_ cs: [CloudConnection]) -> [CloudConnection] {
@@ -101,6 +109,15 @@ public struct CloudHome: Codable, Identifiable, Equatable, Sendable {
         self.linked = linked
         self.owned = owned
         self.connections = connections.map(CloudConnection.ordered) ?? Self.fromOldFields(directURL, relayURL)
+        pinNames()
+    }
+
+    /// Pins its `local_ip` entries to their names (`PinnedNames`), so the app can use them.
+    /// Every list decoded, the cloud's answer or a saved one, pins its own.
+    public func pinNames(_ names: PinnedNames = .shared) {
+        for c in connections where c.kind == "local_ip" {
+            if let n = c.tlsName { names.pin(c.url, name: n) }
+        }
     }
 
     static func fromOldFields(_ direct: URL?, _ relay: URL?) -> [CloudConnection] {
@@ -135,13 +152,21 @@ public struct CloudHome: Codable, Identifiable, Equatable, Sendable {
         // each address normalised as the old fields are; one that isn't an address is dropped
         let given = (try? c.decodeIfPresent([RawConnection].self, forKey: .connections)) ?? nil
         connections = given.map { list in
-            CloudConnection.ordered(list.compactMap { r in Home.normalizeBase(r.url).map { CloudConnection(url: $0, kind: r.kind) } })
+            CloudConnection.ordered(list.compactMap { r in
+                Home.normalizeBase(r.url).map { CloudConnection(url: $0, kind: r.kind, tlsName: r.tlsName) }
+            })
         } ?? Self.fromOldFields(directURL, relayURL)
+        pinNames()
     }
 
     private struct RawConnection: Decodable {
         let url: String
         let kind: String
+        let tlsName: String?
+        enum CodingKeys: String, CodingKey {
+            case url, kind
+            case tlsName = "tls_name"
+        }
     }
 
     /// The addresses the cloud gives for this home, in the order apps try them (local,
@@ -400,6 +425,15 @@ public struct SavedCloudHomes: Codable, Equatable, Sendable {
 
     public static func load(email: String, from defaults: UserDefaults) -> SavedCloudHomes? {
         defaults.data(forKey: key(email)).flatMap { try? JSONDecoder().decode(SavedCloudHomes.self, from: $0) }
+    }
+
+    /// Pins every saved list's `local_ip` entries (story 50.15 §3) at start, so a home last
+    /// reached by its LAN address is reached there again before the cloud answers. (Decoding
+    /// a list pins it.)
+    public static func pinAll(in defaults: UserDefaults) {
+        for (k, v) in defaults.dictionaryRepresentation() where k.hasPrefix(prefix) {
+            if let data = v as? Data { _ = try? JSONDecoder().decode(SavedCloudHomes.self, from: data) }
+        }
     }
 
     /// Every account's list (sign-out).

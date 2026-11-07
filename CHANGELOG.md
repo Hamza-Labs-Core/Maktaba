@@ -23,6 +23,9 @@ build fails when the two differ.
   network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
   carries each LAN address both by name and by address, the address checked against the home's
   own certificate, so an app on that network still proves it reached this home.
+- **Android and the Apple apps use those LAN addresses (Epic 50 story 50.15 §3).** They try a
+  home's `local_ip` entries after its LAN name and before the direct and relay paths, and accept
+  one only when its certificate holds the home's own name for that same address (`tls_name`).
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
