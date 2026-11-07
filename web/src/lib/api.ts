@@ -15,6 +15,7 @@
 import { CLIENT_HEADER, clientHeaderValue } from "./clientHeader";
 import { logApiFailure } from "./errorLog";
 import { noteRequestFailed } from "./homeStatus";
+import { rideOutReconnect } from "./reconnect";
 import { noteCloudRequestFailed } from "./cloudStatus";
 import { actionRequestId, noteRequest } from "./requestIds";
 import { routePattern } from "./errorLog";
@@ -262,13 +263,16 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}`, {
-      ...opts,
-      method,
-      headers,
-      body,
-      credentials: "include",
-    });
+    // a home reconnecting behind the relay is waited for (Epic 50 story 50.13)
+    res = await rideOutReconnect(() =>
+      fetch(`${BASE}${path}`, {
+        ...opts,
+        method,
+        headers,
+        body,
+        credentials: "include",
+      })
+    );
   } catch (e) {
     // Network-level failure (offline, DNS, CORS) never reaches the
     // status-based branch below — log it so it isn't swallowed.

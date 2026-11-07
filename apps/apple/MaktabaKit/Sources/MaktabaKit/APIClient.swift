@@ -26,6 +26,26 @@ public actor APIClient {
     private let tokens: TokenStore
     let session: URLSession
     private var refreshing: Task<String, Error>?
+    /// How a request waits between tries while the relay says the home is reconnecting (tests
+    /// pass one that returns at once).
+    var reconnectSleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+
+    /// Posted when a request starts waiting for a home that is reconnecting behind the relay
+    /// (`userInfo["waiting"] == true`) and when it stops (false): the status strip says so.
+    public static let reconnectingChanged = Notification.Name("maktaba.home.reconnecting")
+    /// The waits between tries (story 50.13 §4): 2, 4, 8, then 15 s, 60 s in all.
+    nonisolated static let reconnectWaits: [Duration] = [.seconds(2), .seconds(4), .seconds(8), .seconds(15), .seconds(15), .seconds(15)]
+
+    /// The relay held the request for the home and the home did not come back in time:
+    /// `503 {"error": "home_reconnecting"}`. The home never saw the request, so it is safe to
+    /// send again whatever its method.
+    nonisolated static func isReconnecting(_ code: Int, _ data: Data) -> Bool {
+        guard code == 503, let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
+        return body["error"] as? String == "home_reconnecting" || body["code"] as? String == "home_reconnecting"
+    }
+
+    /// For tests: the waits returned at once.
+    func setReconnectSleep(_ f: @escaping @Sendable (Duration) async throws -> Void) { reconnectSleep = f }
 
     public init(home: URL, tokens: TokenStore, session: URLSession = .shared) {
         self.home = home
@@ -456,14 +476,29 @@ public actor APIClient {
         if authorized, let access = tokens.access {
             r.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
         }
-        let data: Data, response: URLResponse
-        do {
-            (data, response) = try await session.data(for: r, delegate: redirects)
-        } catch {
-            // the screen went away (its task was cancelled): nothing went wrong
-            if Log.isCancellation(error) { throw CancellationError() }
-            Log.network.error("\(Self.describe(r), privacy: .public): no answer (URLError \((error as? URLError)?.code.rawValue ?? 0, privacy: .public))")
-            throw APIError.transport(error.localizedDescription)
+        var data = Data(), response: URLResponse = URLResponse()
+        var waited = 0
+        defer {
+            if waited > 0 { NotificationCenter.default.post(name: Self.reconnectingChanged, object: nil, userInfo: ["waiting": false]) }
+        }
+        while true {
+            do {
+                (data, response) = try await session.data(for: r, delegate: redirects)
+            } catch {
+                // the screen went away (its task was cancelled): nothing went wrong
+                if Log.isCancellation(error) { throw CancellationError() }
+                Log.network.error("\(Self.describe(r), privacy: .public): no answer (URLError \((error as? URLError)?.code.rawValue ?? 0, privacy: .public))")
+                throw APIError.transport(error.localizedDescription)
+            }
+            // a home reconnecting behind the relay is waited for (Epic 50 story 50.13)
+            let answered = (response as? HTTPURLResponse)?.statusCode ?? 0
+            guard Self.isReconnecting(answered, data), waited < Self.reconnectWaits.count else { break }
+            if waited == 0 {
+                NotificationCenter.default.post(name: Self.reconnectingChanged, object: nil, userInfo: ["waiting": true])
+                Log.network.notice("\(Self.describe(r), privacy: .public): the home is reconnecting; trying again")
+            }
+            do { try await reconnectSleep(Self.reconnectWaits[waited]) } catch { throw CancellationError() }
+            waited += 1
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, authorized, !retried, tokens.refresh != nil {

@@ -44,6 +44,8 @@ type Install struct {
 	Manifest     json.RawMessage
 	ReviewLevel  string
 	InstalledAt  time.Time
+	// Revoked: a store `disable` covers it (story 54.17 §3): the revoked gate.
+	Revoked bool
 }
 
 // state is what one pass reads.
@@ -222,7 +224,7 @@ func (st *state) gate(id, version string) (string, map[string]any) {
 	}
 	return components.PluginGate(components.PluginGateInput{ServerVersion: version, Range: m.Maktaba,
 		PluginAPI: m.PluginAPI, Required: m.Capabilities.Required, Granted: st.grants[id],
-		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, EntitlementMissing: missing})
+		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked, EntitlementMissing: missing})
 }
 
 // Overlay adds the host's sandbox to plugins.host's row (supervisor.Reconciler.Overlay):
@@ -327,14 +329,14 @@ func (r *Runner) load(ctx context.Context) (*state, error) {
 	st := &state{installs: map[string]Install{}, grants: map[string][]string{}, keepOff: map[string]bool{},
 		entitledUntil: map[string]time.Time{}, at: r.now()}
 	rows, err := r.DB.QueryContext(ctx, `SELECT plugin_id, version, digest, path, COALESCE(previous_path, ''),
-		manifest, review_level, installed_at FROM plugin_installs`)
+		manifest, review_level, installed_at, revoked FROM plugin_installs`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var in Install
 		var raw []byte
-		if err := rows.Scan(&in.ID, &in.Version, &in.Digest, &in.Path, &in.PreviousPath, &raw, &in.ReviewLevel, &in.InstalledAt); err != nil {
+		if err := rows.Scan(&in.ID, &in.Version, &in.Digest, &in.Path, &in.PreviousPath, &raw, &in.ReviewLevel, &in.InstalledAt, &in.Revoked); err != nil {
 			rows.Close()
 			return nil, err
 		}

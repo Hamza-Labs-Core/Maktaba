@@ -14,7 +14,7 @@
 --
 -- As slot 0194's tables: the default grants, plugin_tables_guard() refuses writes by a
 -- joined machine (maktaba_worker), and a machine's copy leaves it out
--- (cluster_copy_excluded() is slot 0199's list and this one). Additive.
+-- (cluster_copy_excluded() is slot 0203's list and this one). Additive.
 --
 CREATE TABLE IF NOT EXISTS plugin_entitlements (
     purchase_id  text        PRIMARY KEY,
@@ -39,7 +39,7 @@ CREATE OR REPLACE TRIGGER plugin_entitlements_guard_trg BEFORE INSERT OR UPDATE 
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- slot 0199's exclusion, with the entitlements
+-- slot 0203's exclusion, with the entitlements
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -97,6 +97,9 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0199): the lineage a plugin write leaves on its subject, the home's
         -- API alone reads and writes it
         'plugin_write_lineage',
+        -- plugins (slot 0203): the signed lists and the newest versions seen, the home's
+        -- catalog loop alone writes them
+        'plugin_trust', 'plugin_lists',
         -- plugins (slot 0204): the entitlements of paid plugins this home holds, signed by
         -- the store for this home and its store key; a machine's copy has no use for them
         'plugin_entitlements'
@@ -106,7 +109,7 @@ $f$;
 
 -- +goose Down
 -- +goose StatementBegin
--- slot 0199's exclusion again
+-- slot 0203's exclusion again
 CREATE OR REPLACE FUNCTION cluster_copy_excluded() RETURNS text[]
 LANGUAGE sql IMMUTABLE AS $f$
     SELECT ARRAY[
@@ -163,7 +166,10 @@ LANGUAGE sql IMMUTABLE AS $f$
         'plugin_compute_usage', 'compute_leases',
         -- plugins (slot 0199): the lineage a plugin write leaves on its subject, the home's
         -- API alone reads and writes it
-        'plugin_write_lineage'
+        'plugin_write_lineage',
+        -- plugins (slot 0203): the signed lists and the newest versions seen, the home's
+        -- catalog loop alone writes them
+        'plugin_trust', 'plugin_lists'
     ]::text[]
 $f$;
 DROP TABLE IF EXISTS plugin_entitlements;

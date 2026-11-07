@@ -97,6 +97,11 @@ type View struct {
 	Optional     []string          `json:"optional"`
 	Previous     string            `json:"previous_version,omitempty"`
 	Health       Health            `json:"health"`
+	// Revoked: a store `disable` covers it; Revocation the entry that applies (a `warn`
+	// shows too, 54.17 §3). AutoUpdate is the admin's choice (54.17 §2).
+	Revoked    bool            `json:"revoked"`
+	Revocation json.RawMessage `json:"revocation,omitempty"`
+	AutoUpdate bool            `json:"auto_update"`
 }
 
 // Detail is GET /api/plugins/{id}: the view, its manifest's summary, its stages and their
@@ -109,6 +114,8 @@ type Detail struct {
 	DataRows  int64           `json:"data_rows"`
 	DataBytes int64           `json:"data_bytes"`
 	DataMB    int             `json:"data_mb"`
+	// ReportLogs: an admin ticked "Include its logs in problem reports" (54.09 §3).
+	ReportLogs bool `json:"report_logs"`
 }
 
 // List is every installed plugin, by id.
@@ -155,6 +162,13 @@ func (l *Lifecycle) view(ctx context.Context, id string) (*View, error) {
 		InstalledAt: in.InstalledAt, Required: nonNil(m.Capabilities.Required), Optional: nonNil(m.Capabilities.Optional),
 		Previous: in.PrevVersion.String, Grants: GrantSet{Capabilities: []string{}, Libraries: []string{}},
 		Health: Health{Recent: json.RawMessage("[]")}}
+	var rev []byte
+	if err := l.DB.QueryRowContext(ctx, `SELECT revoked, revocation, auto_update FROM plugin_installs WHERE plugin_id = $1`, id).Scan(&v.Revoked, &rev, &v.AutoUpdate); err != nil {
+		return nil, err
+	}
+	if len(rev) > 0 && string(rev) != "null" {
+		v.Revocation = rev
+	}
 	if g, err := loadGrantSet(ctx, l.DB, id); err != nil {
 		return nil, err
 	} else if g != nil {
@@ -229,6 +243,9 @@ func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
 		d.Stages = append(d.Stages, sv)
 	}
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*) FROM plugin_writes WHERE plugin_id = $1 AND reverted_at IS NULL`, id).Scan(&d.Writes)
+	if set, err := ReportLogPlugins(ctx, l.DB); err == nil {
+		d.ReportLogs = set[id]
+	}
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(bytes), 0) FROM plugin_data WHERE plugin_id = $1`, id).
 		Scan(&d.DataRows, &d.DataBytes)
 	return d, nil

@@ -55,7 +55,10 @@ Kept by the pipeline's plugin dispatcher (one place sees every result), persiste
   counted and one `log_dropped` line per minute says how many.
 - **Plugin text is data.** Log fields from a plugin are stored and shown escaped; the logs page
   marks them "from plugin {name}". Problem reports (Epic 53.15) leave plugin logs out unless the
-  admin ticks "Include plugin logs" per plugin (README §9 T2).
+  admin ticks "Include plugin logs" per plugin (README §9 T2). As built: the tick is on the
+  plugin's page ("Include its logs in problem reports", `PUT /api/plugins/{id}/report-logs`,
+  audited as `plugin.report_logs`), kept in the app setting `plugins_report_logs`; a report
+  drops each `plugin.<id>` line of a plugin not ticked and keeps `plugins.host`'s.
 - The host's own lines use `service = "plugins.host"`.
 
 ### 4. Health
@@ -77,6 +80,11 @@ reads the same rows; the plugin counters below are this story's:
 Metrics on the API and host `/metrics`: `maktaba_plugin_jobs_total{plugin,outcome}`,
 `maktaba_plugin_job_seconds{plugin}`, `maktaba_plugin_memory_peak_bytes{plugin}`,
 `maktaba_plugin_refusals_total{plugin,code}`, `maktaba_plugin_log_dropped_total{plugin}`.
+As built: the pipeline has no `/metrics`, so the home's API reads the first three from
+`plugin_health` at each scrape (`plugins.RegisterHealthMetrics`): `jobs_total` with
+`outcome` `ok` or `failed` from `jobs_done` and `jobs_failed`, `job_seconds` as gauges with a
+`quantile` label (0.5, 0.95) over the row's last 20 jobs, and `memory_peak_bytes` as the
+highest of those jobs. Only the home registers them (a machine would report the same rows).
 Epic 53's dashboards gain a Plugins row (53.12).
 
 ### 5. Status mapping (Epic 53 §10)

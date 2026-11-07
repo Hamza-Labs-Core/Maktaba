@@ -53,6 +53,30 @@ export interface Plugin {
   optional: string[];
   previous_version?: string;
   health: PluginHealth;
+  /** A store `disable` covers it (story 54.17 §3); revocation is the entry that applies. */
+  revoked?: boolean;
+  revocation?: {
+    action: "disable" | "warn" | "delist";
+    reason_code: string;
+    versions: string;
+    issued: string;
+  } | null;
+  auto_update?: boolean;
+}
+
+/** The store's signed lists on this home (GET /api/plugins/trust). */
+export interface TrustStatus {
+  revoked_version: number;
+  revoked_issued?: string;
+  revoked_expired: boolean;
+  /** MAKTABA_OFFLINE: the lists are not fetched (they age; plugins keep running) */
+  offline?: boolean;
+  catalog_version: number;
+  catalog_issued?: string;
+  catalog_expired: boolean;
+  store_keys: boolean;
+  store_installs_ok: boolean;
+  last_error?: string;
 }
 
 export interface PluginStage {
@@ -73,6 +97,8 @@ export interface PluginDetail extends Plugin {
   data_rows: number;
   data_bytes: number;
   data_mb: number;
+  /** an admin ticked "Include its logs in problem reports" (54.09 §3) */
+  report_logs?: boolean;
 }
 
 /** One of Maktaba's own built-in (first-party) plugins (Epic 54, story 54.22 §4). Its
@@ -229,6 +255,9 @@ export const pluginsApi = {
     api.get<{ plugins: PanelPlugin[]; order: string[] }>("/api/plugins/panel-order"),
   setPanelOrder: (order: string[]) =>
     api.put<{ order: string[] }>("/api/plugins/panel-order", { order }),
+  trust: () => api.get<TrustStatus>("/api/plugins/trust"),
+  setAutoUpdate: (id: string, on: boolean) =>
+    api.put<PluginDetail>(`/api/plugins/${enc(id)}/auto-update`, { on }),
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),
   storeLink: () =>
     api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),
@@ -249,6 +278,10 @@ export const pluginsApi = {
   flow: (id: string) => api.get<PluginFlow>(`/api/plugins/${enc(id)}/flow`),
   downstream: (id: string) => api.get<{ stages: string[] }>(`/api/plugins/${enc(id)}/downstream`),
   show: (id: string) => api.get<PluginDetail>(`/api/plugins/${enc(id)}`),
+  setReportLogs: (id: string, include: boolean) =>
+    api.put<{ plugin_id: string; report_logs: boolean }>(`/api/plugins/${enc(id)}/report-logs`, {
+      include,
+    }),
   install: (f: InstallForm, onProgress?: (fraction: number) => void) =>
     uploadWithProgress<InstallResult>("/api/plugins/install", installBody(f), onProgress),
   update: (id: string, f: InstallForm, onProgress?: (fraction: number) => void) =>

@@ -268,6 +268,11 @@
     <string name="banner_api_degraded">تسجيل الدخول عبر سحابة مكتبة أبطأ من المعتاد.</string>
     <string name="banner_api_outage">تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. يمكنك تسجيل الدخول إلى الجهاز الرئيسي بكلمة مروره.</string>
     <string name="banner_maintenance">صيانة مجدولة في %1$s، من %2$s إلى %3$s. قد يتوقف التشغيل عن بُعد بضع ثوانٍ.</string>
+    <!-- Riding out a cloud outage (Epic 50 story 50.13) -->
+    <string name="cloud_homes_saved">تعذّر الوصول إلى سحابة مكتبة. نعرض أجهزتك الرئيسية كما كانت في %1$s.</string>
+    <string name="cloud_homes_saved_old">عمر هذه القائمة أكثر من 30 يومًا، وقد تكون بعض العناوين تغيّرت.</string>
+    <string name="cloud_sign_in_cloud_down">تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. سجّل الدخول إلى الجهاز الرئيسي باسم المستخدم وكلمة المرور، أو برمز.</string>
+    <string name="home_reconnecting">جارٍ إعادة الاتصال بالجهاز الرئيسي…</string>
     <!-- Epic 53: crash reports to the home (53.14) and Report a problem (53.15) -->
     <string name="crash_question_title">هل تريد مساعدة %1$s في إصلاح المشكلات؟</string>
     <string name="crash_question_body">إذا توقف التطبيق فجأة، يمكنه إرسال تقرير عطل إلى %1$s ليتمكّن المشرف من إصلاحه. لا يحتوي التقرير على فيديوهات أو رسائل. هذه الميزة متوقفة ما لم تشغّلها.</string>

@@ -34,6 +34,34 @@ final class ConnectUITests: XCTestCase {
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
+    /// Epic 50 story 50.13 (T11): Maktaba Cloud is down (MockHome answers its sign-in 503) and
+    /// this account's home list was saved before: signing in to the cloud shows the saved homes
+    /// with their time instead of an error.
+    func testTheCloudDownShowsTheSavedHomes() throws {
+        home.stub("POST", "/v1/auth/login", status: 503, body: #"{"error":"unavailable","message":""}"#)
+        let savedAt = Date().timeIntervalSinceReferenceDate - 3600
+        let saved = #"{"user":{"id":"cu1","email":"sara@example.com"},"savedAt":\#(savedAt),"homes":[{"server_id":"srv-1","name":"Kitchen","slug":"kitchen","relay_url":"https://kitchen.relay.maktaba.tv","online":true,"linked":true,"owned":false,"connections":[{"url":"https://kitchen.relay.maktaba.tv","kind":"relay"}]}]}"#
+        let hex = Data(saved.utf8).map { String(format: "%02x", $0) }.joined()
+        app.terminate()
+        app.launchArguments += ["-cloud.api", home.url, "-cloud.homes.sara@example.com", "<\(hex)>"]
+        app.launch()
+        dismissWalkthrough()
+
+        let cloud = element("picker.cloud")
+        try XCTSkipUnless(cloud.waitForExistence(timeout: 10), "an app with no cloud sign-in on its picker")
+        cloud.tap()
+        let email = app.textFields["cloud.email"]
+        XCTAssertTrue(email.waitForExistence(timeout: 10))
+        email.typeExactly("sara@example.com", in: app)
+        app.secureTextFields["cloud.password"].typeExactly("pw", in: app, secure: true)
+        app.buttons["cloud.signin"].tap()
+
+        XCTAssertTrue(element("cloud.saved").waitForExistence(timeout: 15), "the saved list, with its time; the home saw \(home.seen)")
+        XCTAssertTrue(element("cloud.home.srv-1").exists, "the saved home is listed")
+        XCTAssertTrue(home.seen.contains("POST /v1/auth/login"), "the sign-in went to the (down) cloud first")
+        shot("cloud-down-saved-homes")
+    }
+
     /// A wrong address says so; the mock home's address leads to signing in; its code,
     /// approved elsewhere, signs the app in.
     func testTypedAddressThenSignInByCode() {
