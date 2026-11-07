@@ -41,7 +41,7 @@ var seriesJSON []byte
 // SeriesDef is one allowed series.
 type SeriesDef struct {
 	Name     string `json:"name"`
-	Kind     string `json:"kind"` // counter or gauge
+	Kind     string `json:"kind"` // counter, gauge or latency (a histogram: requests and p95)
 	Board    string `json:"board"`
 	IDLabels bool   `json:"id_labels"`
 }
@@ -155,12 +155,13 @@ type metricsState struct {
 	dropped float64                    // series or label sets not stored
 	allowed map[string]SeriesDef       // the allow-list
 	caps    [2]int                     // label cap, id label cap
+	hist    map[string]*histState      // the latency histograms, by name
 }
 
 func newMetricsState() *metricsState {
 	a, c, ic := AllowedSeries()
 	return &metricsState{last: map[string]float64{}, sets: map[string]map[string]bool{}, allowed: a,
-		caps: [2]int{c, ic}}
+		caps: [2]int{c, ic}, hist: map[string]*histState{}}
 }
 
 func minuteOf(t time.Time) int64 { return t.Unix() / 60 }
@@ -178,9 +179,21 @@ func (ix *Index) Record(ctx context.Context, samples []sample, at time.Time) err
 		add          bool
 	}
 	var rows []row
+	for name, def := range st.allowed {
+		if def.Kind != LatencyKind {
+			continue
+		}
+		if n, p95, hasP95, ok := st.latencyRows(name, samples, minute); ok {
+			countName, p95Name := LatencySeries(name)
+			rows = append(rows, row{countName, "", n, true})
+			if hasP95 {
+				rows = append(rows, row{p95Name, "", p95, false})
+			}
+		}
+	}
 	for _, s := range samples {
 		def, ok := st.allowed[s.name]
-		if !ok {
+		if !ok || def.Kind == LatencyKind {
 			continue // not on the list: not counted as dropped (most metrics are not wanted)
 		}
 		set := st.sets[s.name]
@@ -373,10 +386,17 @@ func (ix *Index) Board(ctx context.Context, board, rng string) (BoardDoc, error)
 	var names []string
 	kinds := map[string]string{}
 	for _, s := range allowed {
-		if s.Board == board {
-			names = append(names, s.Name)
-			kinds[s.Name] = s.Kind
+		if s.Board != board {
+			continue
 		}
+		if s.Kind == LatencyKind { // kept as its requests per minute and its p95
+			count, p95 := LatencySeries(s.Name)
+			names = append(names, count, p95)
+			kinds[count], kinds[p95] = "counter", "gauge"
+			continue
+		}
+		names = append(names, s.Name)
+		kinds[s.Name] = s.Kind
 	}
 	sort.Strings(names)
 	now := ix.now()

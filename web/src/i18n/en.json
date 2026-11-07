@@ -6846,6 +6846,8 @@
   "dash.series.maktaba_pipeline_jobs_last_hour": "Jobs finished in the last hour",
   "dash.series.maktaba_pipeline_audio_seconds_last_hour": "Audio transcribed in the last hour (seconds)",
   "dash.series.maktaba_pipeline_realtime_factor": "Speed (× real time)",
+  "dash.series.http_request_duration_seconds_count": "API requests per minute",
+  "dash.series.http_request_duration_seconds_p95": "API response time, p95 (seconds)",
   "dash.series.maktaba_logs_segments_bytes": "Log files",
   "dash.series.maktaba_logs_index_bytes": "Log search index",
   "dash.series.maktaba_plays_per_day": "Plays per day",
