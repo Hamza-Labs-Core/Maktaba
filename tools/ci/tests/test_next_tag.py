@@ -71,6 +71,14 @@ def test_trail_paths_are_the_workflows_paths_ignore(workflow: str) -> None:
     assert tuple(on(load(workflow))["push"]["paths-ignore"]) == nt.TRAIL_ONLY
 
 
+def test_trail_paths_are_the_trails_own_trail_only_list() -> None:
+    # .trail.toml's [trail_only]: what `trail is-trail-only` (agent-trail) calls trail-only
+    import tomllib
+
+    conf = tomllib.loads((ROOT / ".trail.toml").read_text(encoding="utf-8"))
+    assert tuple(conf["trail_only"]["paths"]) == nt.TRAIL_ONLY
+
+
 # --- the decision (a linear main: a <- b <- c <- d) --------------------------------------------
 
 ORDER = ["a", "b", "c", "d"]

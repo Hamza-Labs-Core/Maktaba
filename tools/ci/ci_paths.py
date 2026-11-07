@@ -92,7 +92,7 @@ NOT_IN_CI: dict[str, str] = {
     ".githooks/**": "the pre-push hook: the affected-tests job shellchecks it on every pull request",
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
     "tools/lint/**": "the foreign-domain check (story 50.01): the lint job's repo checks run it and its test on every pull request",
-    "tools/trail/**": "the Claude trail's checker and hook: the lint job runs the checker and its tests (tools/ci/tests) on every pull request",
+    ".trail.toml": "the agent trail's settings: the lint job's trail check (the agent-trail Action) reads them on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
     "tools/ci/devportal_follows.py": "run by the affected-tests job on every pull request (a warning); its tests (tools/ci/tests) run on every pull request",
     "tools/ci/tests/**": "the guard's tests: the lint job runs them on every pull request",
@@ -122,9 +122,10 @@ MARKERS = {"always-run", "push-only", "pr-only", "pr-event", "not-a-gate"}
 # true whenever a filter is.
 TRAIL = "docs/claude-trail.md"
 # A push to main changing only these starts no run (ci.yml's and update-rehearsal.yml's
-# paths-ignore): the frozen trail and trail v2's events and snapshots. A pull request of
-# docs/trail/** alone still runs the lint job, whose repo checks run tools/trail/trail.py check;
-# only the frozen file runs nothing at all.
+# paths-ignore): the frozen trail and trail v2's events and snapshots, the same list as
+# .trail.toml's [trail_only] paths (tests/test_ci_paths.py keeps them equal). A pull request of
+# docs/trail/** alone still runs the lint job, whose repo checks run the agent-trail Action's
+# `trail check`; only the frozen file runs nothing at all.
 PUSH_IGNORE = [TRAIL, "docs/trail/**"]
 REPO = "repo"
 REPO_FILTERS = {REPO: [f"!{TRAIL}"]}

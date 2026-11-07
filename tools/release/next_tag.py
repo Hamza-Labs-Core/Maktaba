@@ -33,7 +33,8 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
 # The paths a push to main may change without a CI run or a rehearsal: ci.yml's and
-# update-rehearsal.yml's push paths-ignore (tools/ci/tests/test_next_tag.py keeps the three the same).
+# update-rehearsal.yml's push paths-ignore and .trail.toml's [trail_only] paths, which `trail
+# is-trail-only` (agent-trail) reads (tools/ci/tests/test_next_tag.py keeps the four the same).
 TRAIL_ONLY: tuple[str, ...] = ("docs/claude-trail.md", "docs/trail/**")
 
 STABLE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
