@@ -278,10 +278,12 @@ since     = "<the release that ships this story>"
 
 | File | Change |
 |---|---|
-| `cloud/internal/direct/` (new) | Name codec, home ID, DNS responder (`--role=dns`) for every configured domain, domain picker (§4), ACME DNS-01 ordering for CSRs against Let's Encrypt with ZeroSSL and Google Trust Services as overflow, outside check. |
+| `cloud/internal/direct/` (new) | Name codec, home ID, DNS responder (`--role=dns`) for every configured domain (with the apex's `CAA`, which CAs ask the authoritative server for), domain picker (§4), ACME DNS-01 ordering for CSRs against Let's Encrypt with ZeroSSL and Google Trust Services as overflow, outside check. |
+| `cloud/internal/directjobs/` (new) | The worker's issuing (a first certificate moves to the next CA when one refuses; a renewal stays with its CA) and outside checks. |
+| `cloud/internal/relay/direct.go` (new) | The tunnel's frames for a home that announces the `direct` feature: `0x40 META_ENDPOINTS`, `0x41 DIRECT_CSR` (home → cloud), `0x42 DIRECT_CERT`, `0x43 DIRECT_CHECK` (cloud → home), `0x44 DIRECT_CHECK_NOW`; the relay stores what the home sends and hands it what the worker produced. The public address is the tunnel's source, never the home's claim. |
 | `cloud/configs/cloud.example.toml` | `direct.domains` list, per-domain weekly budget, overflow CA settings. |
 | `cloud/cmd/maktaba-cloud/main.go`, `role_dns.go` (new), `role_worker.go` | New role; worker runs the outside check. |
-| `cloud/migrations/` (new migration) | `direct_certs` (home ID, domain, CA, issued_at, not-after), `direct_checks` (result, at), `acme_challenges` (TXT values). |
+| `cloud/migrations/00500005_direct_access.sql` | `direct_certs` (home ID, domain, CA, the pending CSR, the chain, issued_at, renewed_at, not-after), `direct_checks` (result, port, at, requested, delivered), `acme_challenges` (TXT values), `servers.direct_state`. |
 | `cloud/internal/stores/servers.go` | Write `direct_ip` / `direct_port` from `META_ENDPOINTS` and the tunnel's source address. |
 | `cloud/internal/handlers/homes/homes.go` | `direct` connection with `https` when the last check passed. |
 | `cloud/internal/cloudlink/` (`frame.go`, `health.go`), `api/internal/auth/cloudlink/reporter.go` | Report endpoints; send CSRs; receive certificates and check results. |
