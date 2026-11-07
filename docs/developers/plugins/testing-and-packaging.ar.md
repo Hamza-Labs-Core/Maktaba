@@ -1,11 +1,12 @@
 # الاختبار والتحزيم
 
-> **الحالة: مُخطَّط (لم يُبنَ بعد، المرحلة 1).** حزمة تطوير البرمجيات (SDK)، وأداة `mkp`،
-> والقوالب، وبيئة الاختبار، والتثبيت من ملف، كلها لم تُبنَ بعد. تصف هذه الصفحة التصميم الوارد في
+> **الحالة: في الإصدار القادم.** حزمة التطوير، وأداة `mkp`، والقوالب، وبيئة الاختبار المحلية،
+> والتثبيت من ملف هي الجزء الأخير من المرحلة 1. أما ما تُبنى عليه الإضافة فموجود في `main` من
+> الآن: [البيان](manifest.ar.md)، وملف WIT والواجهة البرمجية في [مرجع الإضافات](reference.ar.md).
+> تصف هذه الصفحة التصميم الوارد في
 > [القصة 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > و
-> [القصة 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md)،
-> وهو قابل للتغيير.
+> [القصة 54.10](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-10-file-install.md).
 
 ## اللغات
 
