@@ -227,6 +227,31 @@ func (st *state) gate(id, version string) (string, map[string]any) {
 		ReviewLevel: in.ReviewLevel, AllowUnreviewed: st.allowUnreviewed, Revoked: in.Revoked, EntitlementMissing: missing})
 }
 
+// reasonHeld is the reason a held component's row gives (the reconciler's and the
+// pipeline's word).
+const reasonHeld = "held"
+
+// gatePhase is an enabled plugin's phase as the home decides it: held (stopped), refused
+// by its gate (waiting, with the gate's reason and params), or running.
+func (r *Runner) gatePhase(st *state, id string, d store.Desired, inst store.Condition) (string, []store.Condition) {
+	if d.Hold != nil {
+		return components.PhaseStopped, []store.Condition{inst,
+			{Type: "Ready", Status: "false", Reason: reasonHeld}}
+	}
+	reason, params := "", map[string]any(nil)
+	if r.Home != nil {
+		reason = r.machineGate(st, id)
+	}
+	if reason == "" {
+		reason, params = st.gate(id, r.Version)
+	}
+	if reason != "" {
+		return components.PhaseWaiting, []store.Condition{inst,
+			{Type: components.CondRequirementsMet, Status: "false", Reason: reason, Params: params}}
+	}
+	return components.PhaseRunning, []store.Condition{inst, {Type: components.CondRequirementsMet, Status: "true"}}
+}
+
 // Overlay adds the host's sandbox to plugins.host's row (supervisor.Reconciler.Overlay):
 // running with part of its sandbox is degraded, sandbox_partial, with what is missing; a
 // failed sandbox names its step.
@@ -603,9 +628,18 @@ func (r *Runner) restartIfChanged(st *state) {
 	r.RestartPipeline()
 }
 
-// report writes the files part of every plugin installed or being removed: off when its
-// files are in place (the stage group's phase is the pipeline's), failed with
-// pack_missing when its folder is gone, removing while a removal waits for the drain.
+// report writes this machine's part of every plugin installed or being removed: its files
+// and the home's decision on it, so the home shows the plugin's state even while the
+// pipeline is down (story 54.07 §8). Failed with pack_missing when its folder is gone,
+// removing while a removal waits for the drain, off when it is not wanted on, stopped
+// (held) while an admin or its breaker holds it, waiting with the gate's reason when its
+// gate refuses it (incompatible, grants_needed, unreviewed_disallowed, revoked,
+// entitlement_missing, a machine's placement), and running when its gate passes.
+//
+// Which one wins: a machine's parts roll up worst first (store.Rollup), so a refusal or a
+// hold written here outranks the pipeline's running, and when the gate passes the
+// pipeline's own phase (starting, degraded, failed) outranks this part's running. With no
+// pipeline report (the pipeline down, or a machine without one), this part is the state.
 func (r *Runner) report(ctx context.Context, st *state, desired map[string]store.Desired) {
 	if r.Status == nil {
 		return
@@ -654,6 +688,9 @@ func (r *Runner) report(ctx context.Context, st *state, desired map[string]store
 			}
 		}
 		row.Conditions = []store.Condition{inst}
+		if row.Phase == components.PhaseOff && d.Want == components.WantEnabled {
+			row.Phase, row.Conditions = r.gatePhase(st, id, d, inst)
+		}
 		rows = append(rows, row)
 	}
 	if rows == nil {

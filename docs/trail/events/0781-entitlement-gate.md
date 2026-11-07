@@ -10,6 +10,7 @@ prs: [735, 743, 753, 733]
 
 ## What happened
 - With the home link (#753) and the chain of trust (#733) on main: the store's signed entitlements route, `pluginsig.CheckEntitlement`, the supervisor's check route, the API's daily refresh into `plugin_entitlements` (migration 0204; #773 took 0201 and #789 took 0202 and #778 took 0203 first), the `entitlement_missing` gate in both runners, and the purchases list on the Store account page.
+- With #814, the supervisor's own status part shows a paid plugin with no entitlement as waiting, `entitlement_missing`, and as running once a purchase holds (`TestRunnerGatesPaidPlugins`).
 
 ## What we learned
 - #743's entitlement format (one signature, no kind) predated 54.14's envelope, which already had a kind and a key use for entitlements. Merging Phase 2 retired it. When two phases build toward one format, check the other phase's constants (`KindEntitlement`, `UseEntitlement`) before writing your own.
