@@ -183,12 +183,17 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
 | `pro` ($5, 4 streams, 100 GiB) → `home` | `basic` |
 | `family` ($10, 10 streams, 500 GiB, 6 seats) → `pro` | `pro` |
 
-- **One expand-only migration** (50.08's rule): widen each CHECK to allow `basic`, then rewrite
-  `pro` → `basic` **before** `family` → `pro` in one transaction (the names overlap, so the order
-  matters), then a later release drops `family` and the old meaning of `pro` from the CHECKs once
-  no running process writes them.
-- **The license tier becomes the plan name.** `TierForPlan` is the identity for the three new
-  plans; license tier `home` is read as `basic` for 7 days (the entitlement grace, 25.26) so a
+- **Two migrations.** `00500006_relay_usage.sql` only adds `relay_usage_monthly` (expand). The
+  rename, `00500007_plan_names.sql`, is marked a contract migration (50.08's lint): widening a
+  CHECK drops and re-adds it, and the release running beside it during a deploy reads `basic` as
+  a plan it doesn't know. It widens each CHECK to allow `basic`, then rewrites `pro` → `basic`
+  **before** `family` → `pro` in one transaction (the names overlap, so the order matters). Paid
+  plans aren't on before the launch gate, so only admin-granted accounts move. A later release
+  drops `family` from the CHECKs once no running process writes it.
+- **The license tier becomes the plan name.** `TierForPlan` becomes the identity for the three new
+  plans once homes read `basic`: a home released before this story refuses a license naming a
+  tier it doesn't know, so the cloud first issues `home` for Basic (part 1) and switches to
+  `basic` after the home release that reads it (part 4). License tier `home` is read as `basic` for 7 days (the entitlement grace, 25.26) so a
   home on an older release keeps working, and homes learn the new names in the next release.
   Whatever else the license already gates on the home keeps its meaning under the new names
   (Basic gets what `home` gave, Pro what `pro` gave), with one change from decision 6: **remote

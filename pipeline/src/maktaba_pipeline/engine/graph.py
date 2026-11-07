@@ -24,7 +24,6 @@ from ..classify.production_style import STYLE_VERSION
 from ..classify.series_detector import DETECTOR_VERSION
 from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
 from ..classify.topic_tags import TAGGER_VERSION
-from ..schedule.channel_planner import PLANNER_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -350,54 +349,15 @@ def _fp(name: str) -> StageDef:
 #: Stages in lane order. Edge and request wiring is exactly plan 06-11 section 3.2.
 GRAPH: tuple[StageDef, ...] = (
     # ---- sources -------------------------------------------------------
-    StageDef(
-        name="youtube_sync",
-        label="YouTube listing",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=0,
-        version=YT_SYNC_VERSION,
-        edges=(
-            Edge("link", "videos_of"),
-            Edge("detect", "same"),
-            Edge("exact_dates", "same"),
-        ),
-        # Epic 47: the listing queues the downloads of what the library lacks
-        may_request=("youtube_fetch", "youtube_backfill"),
-        entry_for=("library",),
-        debounce_sec=300,
-        debounce_max_sec=3600,
-    ),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("youtube_sync"),
     # Epic 47: download what youtube_sync listed and the library lacks: new uploads, and
     # (its own tile, so it pauses alone) the back catalogue. One pool for both: one stream
     # of requests per home.
-    StageDef(
-        name="youtube_fetch",
-        label="YouTube downloads",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=2,
-        version=YT_FETCH_VERSION,
-        external_write=True,
-        # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (download, convert, dedup; decided 2026-10-28)
-        may_request=("convert_mp4", "youtube_fetch"),
-    ),
-    StageDef(
-        name="youtube_backfill",
-        label="YouTube back catalogue",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=3,
-        version=YT_BACKFILL_VERSION,
-        external_write=True,
-        # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (download, convert, dedup; decided 2026-10-28)
-        may_request=("convert_mp4", "youtube_backfill"),
-    ),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("youtube_fetch"),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("youtube_backfill"),
     # slot 0175: every library's YouTube sources from Tartube's records (off), and what
     # Tartube downloaded seeded done. An admin runs it (Admin > Libraries); on the home,
     # where Tartube's database is.
@@ -414,19 +374,8 @@ GRAPH: tuple[StageDef, ...] = (
     ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the
     # "exactdates" rules enable it. Detect runs again on the dates it finds.
-    StageDef(
-        name="exact_dates",
-        label="Exact dates",
-        subject_kinds=("library",),
-        pool="network_yt",
-        lane="sources",
-        lane_order=1,
-        version=EXACT_DATES_VERSION,
-        edges=(Edge("detect", "same"),),
-        entry_for=("library",),
-        debounce_sec=300,
-        debounce_max_sec=3600,
-    ),
+    # Epic 54: defined by tv.maktaba.youtube's manifest
+    _fp("exact_dates"),
     # ---- episodes lane -------------------------------------------------
     StageDef(
         name="content_hash",
@@ -659,86 +608,26 @@ GRAPH: tuple[StageDef, ...] = (
         placement="home",
     ),
     # ---- channels lane -------------------------------------------------
-    StageDef(
-        name="plan_channels",
-        label="Plan channels",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=1,
-        version=PLANNER_VERSION,
-        edges=(Edge("write_channels", "same"),),
-        entry_for=("catalog",),
-        debounce_sec=300,
-        debounce_max_sec=3600,
-        # the logo / watermark / loading pictures are files on the home (dz_logo_dir,
-        # dz_watermark_*), and the plan page is written there
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.livetv's manifest
+    _fp("plan_channels"),
     # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
     # the dizqueTV channel export is the dizquetv extension's own stage.
-    StageDef(
-        name="write_channels",
-        label="Write channels",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=2,
-        version=CH_WRITE_VERSION,
-        # the art it stores is looked up as files on the home (dz_logo_dir,
-        # dz_watermark_*): on a node the paths would not exist
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.livetv's manifest
+    _fp("write_channels"),
     # Epic 33: TV changes. The API's change controller enqueues them (payload
     # {"change_id"}): build a change's release and schedule generation, put an approved
     # change on the air (the swap commit; the front door switches the streams), the daily
     # GC.
-    StageDef(
-        name="tv_stage",
-        label="Stage TV change",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=3,
-        version=1,
-        # the art checksums of a release are read from the files on the home
-        placement="home",
-        max_attempts=2,
-    ),
-    StageDef(
-        name="tv_swap",
-        label="Swap TV change",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=4,
-        version=1,
-        placement="home",
-        max_attempts=1,
-    ),
-    StageDef(
-        name="tv_gc",
-        label="TV staging clean-up",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=5,
-        version=1,
-        placement="home",
-    ),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_stage"),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_swap"),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_gc"),
     # story 33.9: the reverse commit of a rollback (warm: the front door switches the
     # streams back; the API or the controller enqueues it)
-    StageDef(
-        name="tv_rollback",
-        label="Roll back TV change",
-        subject_kinds=("catalog",),
-        pool="cpu",
-        lane="channels",
-        lane_order=6,
-        version=1,
-        placement="home",
-        max_attempts=2,
-    ),
+    # Epic 54: defined by tv.maktaba.livetv-slots's manifest
+    _fp("tv_rollback"),
     # ---- media lane (legacy) -------------------------------------------
     # Epic 54 story 54.36 §2: on the engine. Its new videos are its changed subjects and
     # the edge queues their probes (before, the scanner's store queued each by hand)
@@ -817,19 +706,8 @@ GRAPH: tuple[StageDef, ...] = (
     ),
     # Files whose probe failed, fetched from YouTube again and swapped in on the share
     # (mediaintel repair-broken). Writes to the share: off until the "repair" rules enable it.
-    StageDef(
-        name="repair_broken",
-        label="Repair broken files",
-        subject_kinds=("library",),
-        pool="repairs",
-        lane="media",
-        lane_order=10,
-        version=REPAIR_VERSION,
-        may_request=("probe", "content_hash"),
-        # not an entry queue: a library retrigger never starts it, an operator runs it
-        external_write=True,
-        max_attempts=1,
-    ),
+    # Epic 54: defined by tv.maktaba.repair's manifest
+    _fp("repair_broken"),
     # Story 31.3: the home converts the stored paths to canonical share paths by itself
     # (sharepath/auto.py). Its own agent enqueues it (catalog subject) when there may be
     # work, an admin asks for it on the Machines page, or a run was cut short; the home's
@@ -867,69 +745,20 @@ GRAPH: tuple[StageDef, ...] = (
     # order"). Nothing downstream of the content hash (transcribe, index, embeddings)
     # runs again: the words and the picture are the same; only probe reads the new
     # container, and the thumbnails are made again only when their folder cannot move.
-    StageDef(
-        name="convert_mp4",
-        label="Convert to MP4",
-        subject_kinds=("video", "library"),
-        pool="convert",
-        lane="media",
-        lane_order=14,
-        version=CONVERT_VERSION,
-        edges=(Edge("dedup_scan", "same_video", when="always"),),
-        may_request=("probe", "thumbnail", "thumb_small"),
-        external_write=True,
-        max_attempts=2,
-        placement="home",
-    ),
-    StageDef(
-        name="dedup_scan",
-        label="Find duplicates",
-        # a video: its own check, queued by its conversion (the edge above); a library:
-        # "Find duplicates" queues each converted video's check and the conversion of
-        # every video never converted (enqueue_job, as convert's library job does)
-        subject_kinds=("library", "video"),
-        pool="nas_read",
-        lane="media",
-        lane_order=15,
-        version=DEDUP_SCAN_VERSION,
-        # an exact group of a library with auto_exact on is merged at once
-        may_request=("dedup_apply",),
-    ),
+    # Epic 54: defined by tv.maktaba.convert's manifest
+    _fp("convert_mp4"),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("dedup_scan"),
     # merges one duplicate group: user data to the keeper, the loser's file to the trash
-    StageDef(
-        name="dedup_apply",
-        label="Merge duplicates",
-        subject_kinds=("dup_group",),
-        pool="nas_write",
-        lane="media",
-        lane_order=16,
-        version=DEDUP_APPLY_VERSION,
-        external_write=True,
-    ),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("dedup_apply"),
     # deletes the trash entries whose grace period has passed (library_mgmt/trash.py)
-    StageDef(
-        name="trash_purge",
-        label="Empty file trash",
-        subject_kinds=("library",),
-        pool="nas_write",
-        lane="media",
-        lane_order=17,
-        version=TRASH_PURGE_VERSION,
-        external_write=True,
-    ),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("trash_purge"),
     # undoes ledger rows from the file-actions page (library_mgmt/swap.py restore): the
     # trashed file goes back and the DB change is reversed; the API only queues it
-    StageDef(
-        name="file_restore",
-        label="Restore from trash",
-        subject_kinds=("library",),
-        pool="nas_write",
-        lane="media",
-        lane_order=18,
-        version=FILE_RESTORE_VERSION,
-        external_write=True,
-        max_attempts=2,
-    ),
+    # Epic 54: defined by tv.maktaba.dedup's manifest
+    _fp("file_restore"),
     _legacy("categorize", "Categorize", ("video",), "cpu", 8),
     # Stub audit #4 (Story 26.5): a video's metadata suggestions from Maktaba's own intel
     # and, when configured, a web search a language model reads. The API (Find metadata,

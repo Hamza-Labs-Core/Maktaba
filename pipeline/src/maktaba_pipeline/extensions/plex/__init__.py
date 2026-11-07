@@ -22,7 +22,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from ... import relay
-from ...engine.graph import Edge, GraphBuilder, StageDef, StageResult, Subject
+from ...engine.graph import Edge, GraphBuilder, StageResult, Subject
 from ...engine.stages.registry import StageImpl
 from ...integrations.plex import PlexClient
 from ..base import Manifest, SettingField
@@ -102,113 +102,33 @@ class PlexExtension:
         return bool(settings.get("url")) and bool(settings.get("token"))
 
     def register(self, graph: GraphBuilder) -> None:
-        # one Plex listing per library, saved (plex_items): later stages read it
-        # instead of asking Plex item by item
-        graph.add_stage(
-            StageDef(
-                name="plex_index",
-                label="Plex index",
-                subject_kinds=("library",),
-                pool="network_plex",
-                lane="sources",
-                lane_order=1,
-                version=PLEX_INDEX_VERSION,
-                edges=(Edge("plex_collection", "seasons_changed"),),
-                entry_for=("library",),
-                debounce_sec=60,
-                debounce_max_sec=600,
-                # the Plex token is in home_secrets (slot 0120), which only the home
-                # reads: a node runs it through the home's extension relay (rules
-                # "relay", on by default), else it stays on the home
-                placement="home",
-                relay="plex",
-            )
-        )
+        """The Plex stages are tv.maktaba.plex's (Epic 54 story 54.35): each is its
+        manifest's ``[[stage]]`` (the stage's own edges included); what leads into them from
+        other stages is added here, as before."""
+        from ...engine.graph import _fp
+
+        for stage in (
+            _fp("plex_index"),
+            _fp("plex_collections_import"),
+            _fp("plex_collection"),
+            _fp("plex_groups"),
+            _fp("plex_livetv"),
+        ):
+            graph.add_stage(stage)
         if graph.has_stage("scan"):  # a rescan may add, move or drop files Plex lists
             graph.add_edge("scan", Edge("plex_index", "same"))
-        # Epic 56 story 56.07: Plex's own collections, read into Maktaba after each index
-        graph.add_stage(
-            StageDef(
-                name="plex_collections_import",
-                label="Read Plex collections",
-                subject_kinds=("library",),
-                pool="network_plex",
-                lane="sources",
-                lane_order=2,
-                version=PLEX_COLLECTIONS_IMPORT_VERSION,
-                entry_for=("library",),
-                debounce_sec=60,
-                debounce_max_sec=600,
-                placement="home",  # needs the Plex token (home_secrets) ...
-                relay="plex",  # ... which the home's relay adds for a node
-            )
-        )
-        graph.add_edge("plex_index", Edge("plex_collections_import", "same"))
-        graph.add_stage(
-            StageDef(
-                name="plex_collection",
-                label="Plex collection",
-                subject_kinds=("season",),
-                pool="network_plex",
-                lane="seasons",
-                lane_order=4,
-                version=PLEX_EXPORT_VERSION,
-                external_write=True,
-                entry_for=("season",),
-                placement="home",  # needs the Plex token (home_secrets) ...
-                relay="plex",  # ... which the home's relay adds for a node
-            )
-        )
         graph.add_edge("detect", Edge("plex_collection", "seasons_changed"))
-        # topic ("ملف") and clip collections, same safety rules, labelled, retired when gone
-        graph.add_stage(
-            StageDef(
-                name="plex_groups",
-                label="Plex topic and clip collections",
-                subject_kinds=("library",),
-                pool="network_plex",
-                lane="seasons",
-                lane_order=4,
-                version=PLEX_GROUPS_VERSION,
-                external_write=True,
-                entry_for=("library",),
-                debounce_sec=60,
-                debounce_max_sec=600,
-                placement="home",  # needs the Plex token (home_secrets) ...
-                relay="plex",  # ... which the home's relay adds for a node
-            )
-        )
-        for src in ("topic_collections", "clip_groups", "plex_index"):
+        for src in ("topic_collections", "clip_groups"):
             if graph.has_stage(src):
                 graph.add_edge(src, Edge("plex_groups", "same"))
-        # Maktaba's channels in Plex Live TV: the channel map and the guide after the lineup
-        # changes (write_channels) and after the scheduler's top-up extends the guide
-        # (after_topup); the rules section "plexlive" decides what runs (livetv.py)
-        graph.add_stage(
-            StageDef(
-                name="plex_livetv",
-                label="Plex Live TV",
-                subject_kinds=("catalog",),
-                pool="network_plex",
-                lane="channels",
-                lane_order=3,
-                version=PLEX_LIVETV_VERSION,
-                external_write=True,
-                entry_for=("catalog",),
-                debounce_sec=30,
-                debounce_max_sec=300,
-                # beside write_channels: one place reads the lineup the home just wrote
-                placement="home",
-                after_topup=True,
-                # and every rules.plexlive.drift_check_minutes: another program (dizqueTV's
-                # Plex refresh) may have replaced Maktaba's channel map in Plex
-                every_minutes_rule=("plexlive", "drift_check_minutes"),
-            )
-        )
+        # the channel map and the guide after the lineup changes (write_channels)
         if graph.has_stage("write_channels"):
             graph.add_edge("write_channels", Edge("plex_livetv", "same"))
 
     def impls(self) -> Mapping[str, StageImpl]:
+        """In-process, each Plex stage runs here with this extension's client (direct with
+        the token on the home, the relay on a node); in tv.maktaba.plex's runner its entry
+        runs the same functions through the service door (story 54.35)."""
         return {
             "plex_index": StageImpl(
                 run=self._run_index, input_fingerprint=None, output_fingerprint=None

@@ -28,6 +28,7 @@ from ..engine.sql import loads
 
 __all__ = [
     "DEF_COLUMNS",
+    "DEF_SELECT",
     "SETTINGS_SECTIONS",
     "content_digest",
     "live_snapshot",
@@ -56,9 +57,14 @@ DEF_COLUMNS = (
     "enabled",
     "sort_order",
 )
+#: DEF_COLUMNS as one select list, written out so each statement that reads a definition is
+#: a fixed text (a first-party plugin's named statement; tests check the two agree)
+DEF_SELECT = (
+    "id, library_id, number, name, slug, logo_path, category, mode, mode_config,"
+    " source_filter, transition, enabled, sort_order"
+)
 #: the rules sections a release snapshots (README R2.1, plan 33.2 D4)
 SETTINGS_SECTIONS = ("tv", "tv_output")
-_ART_TABLE = "channel_art_overrides"
 
 
 def _def(row: Any) -> dict[str, Any]:
@@ -77,16 +83,6 @@ def _def(row: Any) -> dict[str, Any]:
     return out
 
 
-async def _has_table(db: Any, name: str) -> bool:
-    if db.dialect == "postgres":
-        return bool(await db.fetchval("SELECT to_regclass($1) IS NOT NULL", name))
-    return bool(
-        await db.fetchval(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = $1", name
-        )
-    )
-
-
 def _sha256(path: Any) -> str | None:
     try:
         p = Path(str(path))
@@ -100,21 +96,21 @@ def _sha256(path: Any) -> str | None:
 async def live_snapshot(db: Any) -> dict[str, Any]:
     """The live lineup (``lifecycle = 'live'``), its hand-set art and the stored TV
     settings."""
-    cols = ", ".join(DEF_COLUMNS)
-    rows = await db.fetch(f"SELECT {cols} FROM channels WHERE lifecycle = 'live'")
+    rows = await db.fetch(f"SELECT {DEF_SELECT} FROM channels WHERE lifecycle = 'live'")
     defs = {str(r["id"]): _def(r) for r in rows}
     art: dict[str, dict[str, Any]] = {}
-    if await _has_table(db, _ART_TABLE):
-        for r in await db.fetch(f"SELECT channel_id, kind, path, settings, base FROM {_ART_TABLE}"):
-            cid = str(r["channel_id"])
-            if cid not in defs:
-                continue
-            art.setdefault(cid, {})[str(r["kind"])] = {
-                "path": r["path"],
-                "settings": loads(r["settings"]) if r["settings"] else None,
-                "base": loads(r["base"]) if r["base"] else None,
-                "sha256": _sha256(r["path"]) if r["path"] else None,
-            }
+    for r in await db.fetch(
+        "SELECT channel_id, kind, path, settings, base FROM channel_art_overrides"
+    ):
+        cid = str(r["channel_id"])
+        if cid not in defs:
+            continue
+        art.setdefault(cid, {})[str(r["kind"])] = {
+            "path": r["path"],
+            "settings": loads(r["settings"]) if r["settings"] else None,
+            "base": loads(r["base"]) if r["base"] else None,
+            "sha256": _sha256(r["path"]) if r["path"] else None,
+        }
     settings: dict[str, Any] = {}
     for section in SETTINGS_SECTIONS:
         row = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", f"rules.{section}")

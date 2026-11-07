@@ -14,6 +14,22 @@ import { fold } from "../../help/search";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { pluginsApi, type CatalogEntry, type CatalogView } from "../../lib/pluginsApi";
 import { capabilityTitle, refusalWords } from "./PluginsSection";
+import { PluginFlowChart } from "./PluginFlowChart";
+import type { FlowGraph } from "../../lib/pluginsApi";
+
+/** The plugin's approved flow, as the signed catalog carries it (54.16 C12, 54.41). */
+interface CatalogFlow {
+  id: string;
+  version: string;
+  graph: FlowGraph;
+  events: string[];
+  subscriptions: string[];
+}
+
+function flowOf(p: CatalogEntry): CatalogFlow | null {
+  const f = (p.extra as { flow?: CatalogFlow } | undefined)?.flow;
+  return f && Array.isArray(f.graph?.nodes) && f.graph.nodes.length > 0 ? f : null;
+}
 
 type Sort = "rating" | "installs" | "newest";
 
@@ -174,6 +190,10 @@ function StorePlugin({
   const [reason, setReason] = useState("");
   const [details, setDetails] = useState("");
   const v = p.newest;
+  const flow = flowOf(p);
+  // the plugin's own published events and the subscriptions into its stages
+  const mine = (l: string[], at: (x: string) => string) =>
+    l.filter((x) => at(x).includes(`${p.id}/`));
   const machine = locale === "ar" && (p.machine_translated ?? []).includes("ar");
   const canInstall =
     !!v &&
@@ -226,6 +246,33 @@ function StorePlugin({
           <li key={c}>{capabilityTitle(t, c).title}</li>
         ))}
       </ul>
+      {flow && (
+        <>
+          <h4>{t("plugins.browse.flow")}</h4>
+          <PluginFlowChart
+            graph={flow.graph}
+            highlight={p.id}
+            names={(id) => word(view.plugins.find((x) => x.id === id)?.names, locale) || id}
+            title={t("plugins.browse.flow")}
+          />
+          <h5>{t("plugins.browse.flow_events")}</h5>
+          <ul dir="ltr">
+            {mine(flow.events, (x) => x).map((e) => (
+              <li key={e}>
+                <code>{e}</code>
+              </li>
+            ))}
+          </ul>
+          <h5>{t("plugins.browse.flow_subscriptions")}</h5>
+          <ul dir="ltr">
+            {mine(flow.subscriptions, (x) => x.split(" -> ")[1] ?? "").map((e) => (
+              <li key={e}>
+                <code>{e}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <h4>{t("plugins.section.versions")}</h4>
       <ul>
         {p.versions.map((x) => (

@@ -399,16 +399,12 @@ class SqlRepo:
                 ids,
             )
             return {str(r["id"]): r["title"] or "" for r in rows}
-        live: dict[str, str] = {}
-        for i in range(0, len(ids), 500):
-            part = ids[i : i + 500]
-            marks = ",".join(f"${n}" for n in range(1, len(part) + 1))
-            rows = await self._c.fetch(
-                f"SELECT id, title FROM videos WHERE id IN ({marks}) AND deleted_at IS NULL",
-                *part,
-            )
-            live.update((str(r["id"]), r["title"] or "") for r in rows)
-        return live
+        rows = await self._c.fetch(
+            "SELECT id, title FROM videos WHERE id IN (SELECT value FROM json_each($1))"
+            " AND deleted_at IS NULL",
+            json.dumps(ids),
+        )
+        return {str(r["id"]): r["title"] or "" for r in rows}
 
     async def load_filler(self, channel: ChannelDef) -> FillerSet:
         """The channel's filler (slots 0085/0113): its weighted lists
@@ -483,35 +479,40 @@ class SqlRepo:
             return {}
         items: dict[str, list[FillerItem]] = {pid: [] for pid in ids}
         hand_items: dict[str, Any] = hand.get("items") or {}
-        cast = "::uuid" if self._pg else ""
-        for i in range(0, len(ids), 200):
-            part = ids[i : i + 200]
-            marks = ",".join(f"${n}{cast}" for n in range(1, len(part) + 1))
+        if self._pg:
             got = await self._c.fetch(
                 "SELECT fi.id, fi.pool_id, fi.video_id, fi.type, fi.duration_ms,"
                 " v.duration_sec, v.title FROM filler_items fi JOIN videos v ON v.id = fi.video_id"
-                f" WHERE fi.pool_id IN ({marks}) AND v.deleted_at IS NULL"
+                " WHERE fi.pool_id = ANY($1::uuid[]) AND v.deleted_at IS NULL"
                 " ORDER BY fi.pool_id, fi.id",
-                *part,
+                ids,
             )
-            for r in got:
-                if str(r["id"]) in hand_items and hand_items[str(r["id"])] is None:
-                    continue  # the change removes this clip
-                ms = r["duration_ms"]
-                if ms is None and r["duration_sec"] is not None:
-                    ms = int(float(r["duration_sec"]) * 1000)
-                if not ms or int(ms) <= 0:
-                    continue
-                kind = BlockKind.BUMPER if r["type"] == "bumper" else BlockKind.FILLER
-                items[str(r["pool_id"])].append(
-                    FillerItem(
-                        filler_item_id=UUID(str(r["id"])),
-                        video_id=UUID(str(r["video_id"])),
-                        duration_ms=int(ms),
-                        kind=kind,
-                        snapshot={"title": _bare(r["title"] or ""), "duration_ms": int(ms)},
-                    )
+        else:
+            got = await self._c.fetch(
+                "SELECT fi.id, fi.pool_id, fi.video_id, fi.type, fi.duration_ms,"
+                " v.duration_sec, v.title FROM filler_items fi JOIN videos v ON v.id = fi.video_id"
+                " WHERE fi.pool_id IN (SELECT value FROM json_each($1)) AND v.deleted_at IS NULL"
+                " ORDER BY fi.pool_id, fi.id",
+                json.dumps(ids),
+            )
+        for r in got:
+            if str(r["id"]) in hand_items and hand_items[str(r["id"])] is None:
+                continue  # the change removes this clip
+            ms = r["duration_ms"]
+            if ms is None and r["duration_sec"] is not None:
+                ms = int(float(r["duration_sec"]) * 1000)
+            if not ms or int(ms) <= 0:
+                continue
+            kind = BlockKind.BUMPER if r["type"] == "bumper" else BlockKind.FILLER
+            items[str(r["pool_id"])].append(
+                FillerItem(
+                    filler_item_id=UUID(str(r["id"])),
+                    video_id=UUID(str(r["video_id"])),
+                    duration_ms=int(ms),
+                    kind=kind,
+                    snapshot={"title": _bare(r["title"] or ""), "duration_ms": int(ms)},
                 )
+            )
         await self._hand_items(hand_items, items)
         out = {ref: (pid, tuple(items[pid])) for ref, pid in by_ref.items()}
         for key, clips in staged.items():  # a pool the staged change writes (Epic 33)

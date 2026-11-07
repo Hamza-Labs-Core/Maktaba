@@ -491,7 +491,10 @@ func validate(c *Component, where string, features []string, bad func(string, ..
 	if c.OnDemand && !c.HasPart(KindProcess) {
 		bad("%s: on_demand is for a component with a process", where)
 	}
-	if c.Plugin != "" && (!strings.HasPrefix(c.Plugin, "tv.maktaba.") || !c.HasPart(KindStages)) {
+	// an extension component with stages (ext.plex) keeps its kind and names its plugin
+	// too (story 54.27 §3)
+	ownsStages := c.HasPart(KindStages) || (c.Kind == KindExtension && len(c.Stages) > 0)
+	if c.Plugin != "" && (!strings.HasPrefix(c.Plugin, "tv.maktaba.") || !ownsStages) {
 		bad("%s: plugin names a first-party plugin (tv.maktaba.*) of a component with stages", where)
 	}
 	core := strings.HasPrefix(c.ID, "core.")
