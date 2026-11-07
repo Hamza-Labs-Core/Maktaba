@@ -285,6 +285,26 @@
         }
       }
     },
+    "API requests per minute" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طلبات الواجهة البرمجية في الدقيقة"
+          }
+        }
+      }
+    },
+    "API response time, p95 (seconds)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "زمن استجابة الواجهة البرمجية، p95 (ثوانٍ)"
+          }
+        }
+      }
+    },
     "Accept as is" : {
       "localizations" : {
         "ar" : {

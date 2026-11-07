@@ -10,7 +10,9 @@ FROM golang:${GO_VERSION}-bookworm AS builder
 WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux
 COPY cloud/go.mod cloud/go.sum ./cloud/
-COPY shared/log/go ./shared/log/go
+# the shared modules cloud/go.mod replaces (the logger, the log keeper): the whole folder, so
+# this Dockerfile also builds main's tree for load-small's baseline, which may lack one of them
+COPY shared ./shared
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go mod download

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logfiles"
 )
 
 // channelLogBytes bounds a node's answer to logs.files: the machine channel's frames are

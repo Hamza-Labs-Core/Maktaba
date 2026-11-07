@@ -119,6 +119,8 @@ enum DashWords {
         case "process_cpu_seconds_total": String(localized: "CPU of the API (seconds per minute)")
         case "go_goroutines": String(localized: "API goroutines")
         case "maktaba_supervisor_children": String(localized: "Processes running")
+        case "http_request_duration_seconds_count": String(localized: "API requests per minute")
+        case "http_request_duration_seconds_p95": String(localized: "API response time, p95 (seconds)")
         case "maktaba_update_machines_behind": String(localized: "Machines behind on updates")
         case "maktaba_tv_channels_on_air": String(localized: "TV channels on air")
         case "maktaba_tv_frontdoor_bytes_total": String(localized: "TV bytes out per minute")

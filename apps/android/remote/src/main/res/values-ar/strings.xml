@@ -753,6 +753,8 @@
     <string name="dash_errors_per_hour">الأخطاء في الساعة</string>
     <string name="dash_api_memory">ذاكرة الواجهة البرمجية</string>
     <string name="dash_processes">العمليات العاملة</string>
+    <string name="dash_api_requests">طلبات الواجهة البرمجية في الدقيقة</string>
+    <string name="dash_api_p95">زمن استجابة الواجهة البرمجية، p95 (ثوانٍ)</string>
     <string name="dash_log_files">ملفات السجلات</string>
     <string name="dash_log_index">فهرس البحث في السجلات</string>
     <string name="dash_backups">نسخ التحديث الاحتياطية</string>

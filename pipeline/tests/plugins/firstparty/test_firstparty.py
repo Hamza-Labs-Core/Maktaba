@@ -25,15 +25,24 @@ from maktaba_plugin_runner import sandbox, trust
 from maktaba_plugin_runner.server import Runner, load_impl
 from maktaba_plugin_runner.__main__ import members
 assert firstparty.stage_names(), "the bundle has no stage"
-for group in ("light", "fp", "ml", "index"):
+for group in ("light", "fp", "ml", "index", "service"):
     members(group)
 """,
-    # the bundle alone, then the graph after it
+    # the bundle alone, then the graph after it: every first-party stage is in the graph the
+    # worker builds, the core's (get_stage) or, for a stage an extension's component hands to
+    # its plugin (ext.plex: tv.maktaba.plex, story 54.35), the extension's
     """
 from maktaba_pipeline.plugins import firstparty
 from maktaba_pipeline.engine.graph import get_stage
+from maktaba_pipeline.engine.loader import build_full_graph
+from maktaba_pipeline.extensions import discover
+full = {s.name: s for s in build_full_graph(discover())}
 for name in firstparty.stage_names():
-    assert get_stage(name).name == name
+    p = firstparty.by_stage(name)
+    if str(p.trusted.get("component") or "").startswith("ext."):
+        assert get_stage(name) is None and full[name].name == name, name
+    else:
+        assert get_stage(name).name == name, name
 """,
     # the graph first (the worker's order) still works
     """

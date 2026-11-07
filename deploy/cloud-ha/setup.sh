@@ -252,6 +252,31 @@ UNIT
 	[ ! -s /etc/maktaba/canary.secret ] || systemctl enable --now maktaba-canary
 }
 
+# ---------------------------------------------------------------------------------------
+# The cloud's logs on the witness (Epic 53 story 53.17): every node's lines, kept 14 days and
+# indexed, taken over the private network with a token A and B also hold (copy
+# /etc/maktaba/logs.token to them). Started once the release's maktaba-cloud is on W.
+# ---------------------------------------------------------------------------------------
+setup_logs() {
+	id maktaba >/dev/null 2>&1 || useradd --system --home /var/lib/maktaba --shell /usr/sbin/nologin maktaba
+	[ -s /etc/maktaba/logs.token ] || (umask 077 && openssl rand -hex 32 >/etc/maktaba/logs.token)
+	chown root:maktaba /etc/maktaba/logs.token && chmod 0640 /etc/maktaba/logs.token
+	cat >/etc/maktaba/logs.env <<ENV
+MAKTABA_NODE_ID=W
+MAKTABA_CLOUD_LOGS_DIR=/var/lib/maktaba-cloud/logs
+MAKTABA_CLOUD_LOGS_LISTEN=${NODE_ADDR}:9610
+MAKTABA_CLOUD_LOGS_TOKEN_FILE=/etc/maktaba/logs.token
+ENV
+	ufw allow from "${PRIVATE_NET}" to any port 9610 proto tcp >/dev/null
+	install -m 0644 "${here}/systemd/maktaba-cloud-logs.service" /etc/systemd/system/
+	systemctl daemon-reload
+	if [ -x /usr/local/bin/maktaba-cloud ]; then
+		systemctl enable --now maktaba-cloud-logs
+	else
+		log "logs: /usr/local/bin/maktaba-cloud is not on the witness yet; start maktaba-cloud-logs once it is"
+	fi
+}
+
 if [ "${role}" = witness ]; then
 	if [ -n "${REPO1_ENDPOINT:-}" ]; then
 		# the drill restores with the same Postgres major
@@ -271,7 +296,8 @@ if [ "${role}" = witness ]; then
 	# the monitoring (story 50.10): Prometheus, Alertmanager, Grafana, the blackbox exporter and
 	# the Pushgateway in Docker (guests, lower weights), the canary home, the Floating IP check
 	setup_monitoring
-	log "witness ${NODE_NAME} is up: etcd, with the restore drill and the monitoring as guests"
+	setup_logs
+	log "witness ${NODE_NAME} is up: etcd, with the restore drill, the monitoring and the logs as guests"
 	exit 0
 fi
 
@@ -377,6 +403,18 @@ command -v docker >/dev/null || apt-get install -y -qq docker.io >/dev/null
 systemctl daemon-reload
 grep -q '^PATRONI_URL=' "${ENV_FILE}" || echo "PATRONI_URL=http://${NODE_ADDR}:8008" >>"${ENV_FILE}"
 grep -q '^ALERT_CMD=.' "${ENV_FILE}" || echo "ALERT_CMD=/usr/local/bin/maktaba-alert" >>"${ENV_FILE}"
+# this node's logs (53.17): kept here, and sent to the witness once its address and token are
+# set (LOGS_W_ADDR in cloud-ha.env, /etc/maktaba/logs.token copied from W)
+if [ -f /etc/maktaba/cloud.env ]; then
+	grep -q '^MAKTABA_CLOUD_LOGS_DIR=' /etc/maktaba/cloud.env ||
+		echo "MAKTABA_CLOUD_LOGS_DIR=/var/lib/maktaba-cloud/logs" >>/etc/maktaba/cloud.env
+	grep -q '^MAKTABA_NODE_ID=' /etc/maktaba/cloud.env || echo "MAKTABA_NODE_ID=${NODE_NAME}" >>/etc/maktaba/cloud.env
+	if [ -n "${LOGS_W_ADDR:-}" ] && [ -s /etc/maktaba/logs.token ]; then
+		chown root:maktaba /etc/maktaba/logs.token && chmod 0640 /etc/maktaba/logs.token
+		grep -q '^MAKTABA_CLOUD_LOGS_URL=' /etc/maktaba/cloud.env ||
+			printf 'MAKTABA_CLOUD_LOGS_URL=http://%s\nMAKTABA_CLOUD_LOGS_TOKEN_FILE=/etc/maktaba/logs.token\n' "${LOGS_W_ADDR}" >>/etc/maktaba/cloud.env
+	fi
+fi
 apt-get install -y -qq prometheus-postgres-exporter >/dev/null || true
 systemctl enable --now patroni maktaba-caddy maktaba-leader-guard
 # The direct-name DNS (story 50.15), on A and B always, once the owner has the domains

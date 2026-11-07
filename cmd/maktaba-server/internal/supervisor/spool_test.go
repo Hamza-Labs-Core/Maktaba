@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logkeeper"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 )
 
 // Epic 53 story 53.02 T06: with the log keeper, each child writes its output to its own

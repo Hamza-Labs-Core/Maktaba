@@ -22,7 +22,6 @@ from ..channels.repo import live_gen
 from ..engine.sql import is_pg, loads, now, parse_ts, to_ts
 from ..log import get_logger
 from .generation import GC_LOCK
-from .store import IN_FLIGHT
 
 __all__ = ["ENDED", "collect", "trim_ended"]
 
@@ -31,16 +30,20 @@ __all__ = ["ENDED", "collect", "trim_ended"]
 #: pending edits: its re-stage draft is made from them.
 ENDED = ("failed", "cancelled", "superseded")
 _NEVER_AIRED = "(state <> 'superseded' OR swapped_at IS NULL)"
+#: ENDED and IN_FLIGHT (with and without draft) as SQL lists, written out so each
+#: statement is a fixed text (a test checks they agree)
+_ENDED_MARKS = "'failed','cancelled','superseded'"
+_IN_FLIGHT_MARKS = "'staged','verifying','ready','approved','swapping'"
+_IN_FLIGHT_OR_DRAFT = "'staged','verifying','ready','approved','swapping','draft'"
 
 _log = get_logger()
 
 
 async def _kept_generations(db: Any, clock: datetime, retention: timedelta) -> set[int]:
     keep = {await live_gen(db)}
-    marks = ",".join(f"'{s}'" for s in (*IN_FLIGHT, "draft"))
     for r in await db.fetch(
         "SELECT r.sched_gen AS g FROM tv_changes c JOIN tv_releases r ON r.id = c.release_id"
-        f" WHERE c.state IN ({marks})"
+        f" WHERE c.state IN ({_IN_FLIGHT_OR_DRAFT})"
     ):
         keep.add(int(r["g"]))
     route = await db.fetchrow(
@@ -94,11 +97,10 @@ async def _sweep(db: Any, clock: datetime, retention: timedelta) -> dict[str, in
         await db.execute("DELETE FROM channels WHERE id = $1", str(r["id"]))
         out["retired_channels"] += 1
     wanted: set[str] = set()
-    marks = ",".join(f"'{s}'" for s in IN_FLIGHT)
     for r in await db.fetch(
         "SELECT rc.channel_id AS cid FROM tv_changes c"
         " JOIN tv_release_channels rc ON rc.release_id = c.release_id"
-        f" WHERE c.state IN ({marks})"
+        f" WHERE c.state IN ({_IN_FLIGHT_MARKS})"
     ):
         wanted.add(str(r["cid"]))
     for r in await db.fetch("SELECT diff FROM tv_changes WHERE state = 'draft'"):
@@ -114,16 +116,16 @@ async def _sweep(db: Any, clock: datetime, retention: timedelta) -> dict[str, in
 async def trim_ended(db: Any) -> int:
     """Drop the filler pool writes of the :data:`ENDED` changes (in SQL: the rows are
     never read whole). Returns how many changes were trimmed."""
-    marks = ",".join(f"'{s}'" for s in ENDED)
     if is_pg(db):
-        sql = (
+        rows = await db.fetch(
             "UPDATE tv_changes SET diff = diff #- '{pending,pools}'"
-            f" WHERE state IN ({marks}) AND {_NEVER_AIRED} AND diff -> 'pending' ? 'pools'"
+            f" WHERE state IN ({_ENDED_MARKS}) AND {_NEVER_AIRED}"
+            " AND diff -> 'pending' ? 'pools' RETURNING id"
         )
     else:
-        sql = (
+        rows = await db.fetch(
             "UPDATE tv_changes SET diff = json_remove(diff, '$.pending.pools')"
-            f" WHERE state IN ({marks}) AND {_NEVER_AIRED}"
-            " AND json_type(diff, '$.pending.pools') IS NOT NULL"
+            f" WHERE state IN ({_ENDED_MARKS}) AND {_NEVER_AIRED}"
+            " AND json_type(diff, '$.pending.pools') IS NOT NULL RETURNING id"
         )
-    return len(await db.fetch(sql + " RETURNING id"))
+    return len(rows)

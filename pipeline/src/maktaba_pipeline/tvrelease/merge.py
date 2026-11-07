@@ -51,7 +51,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .snapshot import DEF_COLUMNS, _def
+from .snapshot import DEF_SELECT, _def
 
 __all__ = [
     "PLAN_CHANNELS",
@@ -77,8 +77,7 @@ _Hand = tuple[str, Any]
 
 async def live_defs(db: Any) -> dict[str, dict[str, Any]]:
     """The live channels' definitions (what the editor edits over)."""
-    cols = ", ".join(DEF_COLUMNS)
-    rows = await db.fetch(f"SELECT {cols} FROM channels WHERE lifecycle = 'live'")
+    rows = await db.fetch(f"SELECT {DEF_SELECT} FROM channels WHERE lifecycle = 'live'")
     return {str(r["id"]): _def(r) for r in rows}
 
 

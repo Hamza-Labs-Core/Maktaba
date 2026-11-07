@@ -9,7 +9,7 @@
 
 ## Check
 
-1. Hetzner's status page; the callback's log on the leader (`journalctl -u patroni | grep fip`), and the cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines).
+1. Hetzner's status page; the callback's log on the leader (`journalctl -u patroni | grep fip`), and the cloud's logs and error groups in the service admin's cloud log view ([Floating IP warnings, last hour](https://admin.maktaba.tv/logs?q=fip&level=warn&last=1h); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17; the witness keeps a dead node's last lines).
 2. The token: `/etc/maktaba/hcloud-token` on the leader still works (`curl -fsS -H "Authorization: Bearer $(sudo cat /etc/maktaba/hcloud-token)" https://api.hetzner.cloud/v1/floating_ips`).
 
 ## Do

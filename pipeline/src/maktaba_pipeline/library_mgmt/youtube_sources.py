@@ -26,7 +26,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from ..discovery.ytdlp_sidecars import parse_upload_date
-from ..engine.sql import is_pg, loads, now, parse_ts, to_date, to_ts, uid
+from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
 from ..integrations.youtube_download import (
     DownloadOptions,
     listing_argv,
@@ -168,10 +168,6 @@ async def set_source_status(
 # ------------------------------------------------------------------ ids
 
 
-async def _ids(db: Any, sql: str, library_id: UUID) -> set[str]:
-    return {str(r["y"]) for r in await db.fetch(sql, uid(library_id))}
-
-
 _LINKED = (
     "SELECT DISTINCT m.external_id AS y FROM media_metadata_enrichment m"
     " JOIN videos v ON v.id = m.video_id WHERE v.library_id = $1 AND v.deleted_at IS NULL"
@@ -181,7 +177,7 @@ _LINKED = (
 
 async def linked_ids(db: Any, library_id: UUID) -> set[str]:
     """YouTube ids of the library's videos (the ``link`` stage's rows)."""
-    return await _ids(db, _LINKED, library_id)
+    return {str(r["y"]) for r in await db.fetch(_LINKED, uid(library_id))}
 
 
 async def linked_video_ids(db: Any, library_id: UUID) -> dict[str, UUID]:
@@ -200,20 +196,26 @@ async def linked_video_ids(db: Any, library_id: UUID) -> dict[str, UUID]:
 
 async def local_ids(db: Any, library_id: UUID) -> set[str]:
     """What the library has: downloads that are ``done`` and linked videos."""
-    done = await _ids(
-        db,
-        "SELECT youtube_id AS y FROM youtube_downloads WHERE library_id = $1 AND state = 'done'",
-        library_id,
-    )
+    done = {
+        str(r["y"])
+        for r in await db.fetch(
+            "SELECT youtube_id AS y FROM youtube_downloads"
+            " WHERE library_id = $1 AND state = 'done'",
+            uid(library_id),
+        )
+    }
     return done | await linked_ids(db, library_id)
 
 
 async def known_ids(db: Any, library_id: UUID) -> set[str]:
     """Every id the library already decided about (any download state, or linked): the
     listing archive, where a refresh stops."""
-    rows = await _ids(
-        db, "SELECT youtube_id AS y FROM youtube_downloads WHERE library_id = $1", library_id
-    )
+    rows = {
+        str(r["y"])
+        for r in await db.fetch(
+            "SELECT youtube_id AS y FROM youtube_downloads WHERE library_id = $1", uid(library_id)
+        )
+    }
     return rows | await linked_ids(db, library_id)
 
 
@@ -437,14 +439,13 @@ async def mark_listed(
 
 async def _existing(db: Any, library_id: UUID, ids: Sequence[str]) -> set[str]:
     found: set[str] = set()
+    inn = "= ANY($2::text[])" if is_pg(db) else "IN (SELECT value FROM json_each($2))"
     for i in range(0, len(ids), _CHUNK):
         chunk = list(ids[i : i + _CHUNK])
-        marks = ",".join(f"${n + 2}" for n in range(len(chunk)))
         rows = await db.fetch(
-            "SELECT youtube_id FROM youtube_downloads WHERE library_id = $1"
-            f" AND youtube_id IN ({marks})",
+            f"SELECT youtube_id FROM youtube_downloads WHERE library_id = $1 AND youtube_id {inn}",
             uid(library_id),
-            *chunk,
+            chunk if is_pg(db) else dumps(chunk),
         )
         found.update(str(r["youtube_id"]) for r in rows)
     return found

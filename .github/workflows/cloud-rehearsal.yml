@@ -18,6 +18,7 @@ on:
     paths:
       - 'cloud/**'
       - 'shared/log/go/**'
+      - 'shared/logkeeper/go/**'
       - 'deploy/cloud-ha/**'
       - 'deploy/cloud-relay/**'
       - 'deploy/caddy/**'
