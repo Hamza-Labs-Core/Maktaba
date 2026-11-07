@@ -73,7 +73,7 @@ class PluginExtension:
     doc: dict[str, Any]
     review_level: str = "none"
     #: the data_version the plugin's data is at while it is behind the manifest's (slot
-    #: 0202; story 54.07 §5 step 4): its stages wait for its migrate job. None: up to date.
+    #: 0203; story 54.07 §5 step 4): its stages wait for its migrate job. None: up to date.
     data_version: int | None = None
     manifest: Manifest = field(init=False)
 

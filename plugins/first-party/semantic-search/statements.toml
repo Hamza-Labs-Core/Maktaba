@@ -1,0 +1,6 @@
+# The shared pipeline modules whose statements tv.maktaba.semantic-search's stages run (story 54.24 §1)
+modules = [
+    "maktaba_pipeline.engine.stages._common:load_video,require_video",
+    "maktaba_pipeline.engine.stages._analysis:library_setting,load_embedding,store_embedding,drop_embedding",
+    "maktaba_pipeline.search.pgstore:store_state,write_vectors,delete_video,keep_only,has_vectors,video_vectors",
+]

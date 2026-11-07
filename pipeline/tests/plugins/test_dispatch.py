@@ -41,7 +41,7 @@ STAGE = pm.queue_name(PID, "find_silences")
 @dataclass
 class FakeDB:
     executed: list[tuple[str, tuple[Any, ...]]] = field(default_factory=list)
-    #: the row's data_version (slot 0202) and the manifest's, with its migrate flag
+    #: the row's data_version (slot 0203) and the manifest's, with its migrate flag
     data_version: int | None = None
     doc: dict[str, Any] = field(default_factory=lambda: DOC)
 

@@ -270,3 +270,22 @@ func TestBlockArgs_RealFFmpegVariants(t *testing.T) {
 		})
 	}
 }
+
+// Issue #790: the muxer reads the blocks' timestamps as they are. ffmpeg's wrap
+// correction (on by default) takes 2^33 off a stream that starts within 60 s before the
+// 33-bit wrap; it must be off for the input, before -i.
+func TestMuxerArgsReadTimestampsAsTheyAre(t *testing.T) {
+	a := MuxerArgs(OutputProfile{}, "/tmp/hls", true)
+	off, in := -1, -1
+	for i, x := range a {
+		if x == "-correct_ts_overflow" && i+1 < len(a) && a[i+1] == "0" {
+			off = i
+		}
+		if x == "-i" && in < 0 {
+			in = i
+		}
+	}
+	if off < 0 || in < 0 || off > in {
+		t.Fatalf("the input's wrap correction is not off before -i: %v", a)
+	}
+}

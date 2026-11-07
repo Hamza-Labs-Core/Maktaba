@@ -113,7 +113,7 @@ own semver and a `maktaba` range and `plugin_api` version (54.01).
 4. Data migration: if `data_version` grew, the first job of the new version is preceded by one
    `migrate` job (`p_<hash>__migrate`, catalog subject, run on the home) calling the
    plugin's optional migrate step; until it succeeds, the other stages wait. As built:
-   `plugin_installs.data_version` (slot 0202) holds the data's version while it is behind
+   `plugin_installs.data_version` (slot 0203) holds the data's version while it is behind
    the manifest's (the update writes it; NULL when up to date). A job of another stage of the
    plugin enqueues the migrate job and is paused (`JobDeferred`, no attempt). The migrate job
    calls the guest's `run("__migrate")` with the payload `{"from", "to"}` when the manifest

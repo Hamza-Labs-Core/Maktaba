@@ -9,7 +9,7 @@ agent: claude-code
 ---
 
 ## What happened
-- `plugin_installs.data_version` (migration 0202) holds the data's version while it is behind the manifest's; a plugin's other stages pause and enqueue its one migrate job (`p_<hash>__migrate`, catalog, home only), which calls the guest's `run("__migrate")` with `{from, to}` when the manifest says `migrate = true` and clears the column on success. Rollback compares with the data's own version. Closes #712.
+- `plugin_installs.data_version` (migration 0203) holds the data's version while it is behind the manifest's; a plugin's other stages pause and enqueue its one migrate job (`p_<hash>__migrate`, catalog, home only), which calls the guest's `run("__migrate")` with `{from, to}` when the manifest says `migrate = true` and clears the column on success. Rollback compares with the data's own version. Closes #712.
 
 ## What we learned
 - A plugin component has one export, `run(stage)`, and the host passes `job.stage` straight to it: the spec's "optional `migrate(from-version)` export" became a reserved stage name, `__migrate`, plus a manifest flag that says the plugin handles it (a plugin that does not would fail the job forever).

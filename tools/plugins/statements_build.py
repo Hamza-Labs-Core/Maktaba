@@ -106,14 +106,36 @@ def _const(node: ast.AST, names: dict[str, list[ast.AST]]) -> list[str] | None:
     if isinstance(node, ast.Name) and node.id not in names and node.id in _IMPORTED:
         return [_IMPORTED[node.id]]
     if isinstance(node, ast.Name) and node.id in names:
+        others = {k: x for k, x in names.items() if k != node.id}
         out: list[str] = []
+        appends: list[list[str]] = []
         for v in names[node.id]:
-            c = _const(v, {k: x for k, x in names.items() if k != node.id})
+            if isinstance(v, _Append):
+                c = _const(v.value, others)
+                if c is None:
+                    return None
+                appends.append(c)
+                continue
+            c = _const(v, others)
             if c is None:
                 return None
             out += c
+        # ``name += <text>`` in a branch: each append taken or not, in order (a statement
+        # with an optional clause, as ``AND s.transcript_id = $2``)
+        for suffixes in appends:
+            out = out + [x + y for x in out for y in suffixes]
+            if len(out) > 64:
+                return None
         return out
     return None
+
+
+class _Append(ast.AST):
+    """``name += value``: a text the name may have had appended (see :func:`_const`)."""
+
+    def __init__(self, value: ast.AST) -> None:
+        super().__init__()
+        self.value = value
 
 
 #: names a scanned module imported as constant strings (``from ..x import SUCCESS``)
@@ -189,6 +211,12 @@ def scan_source(
                         local.setdefault(n.targets[0].id, [])
                         if n.value not in local[n.targets[0].id]:
                             local[n.targets[0].id].append(n.value)
+                    elif (
+                        isinstance(n, ast.AugAssign)
+                        and isinstance(n.op, ast.Add)
+                        and isinstance(n.target, ast.Name)
+                    ):
+                        local.setdefault(n.target.id, []).append(_Append(n.value))
                 visit(child, child.name, local)
                 continue
             if (
@@ -243,11 +271,25 @@ def sources(plugin: Path) -> Iterator[tuple[Path, str, str, set[str] | None]]:
             yield _module_file(dotted), dotted, dotted, only
 
 
+def worker_functions(plugin: Path) -> set[str]:
+    """``worker`` of statements.toml: the plugin's functions that run in the worker, never
+    in the runner (a stage's ``refresh``: rules read and upkeep queued before each stage
+    selection). They use the worker's own database connection, so their statements are
+    neither registered nor checked."""
+    cfg = plugin / "statements.toml"
+    if not cfg.is_file():
+        return set()
+    return {str(x) for x in tomllib.loads(cfg.read_text()).get("worker", [])}
+
+
 def extract(plugin: Path) -> tuple[list[Found], list[Found]]:
     ok: list[Found] = []
     bad: list[Found] = []
+    worker = worker_functions(plugin)
     for f, label, mod, only in sources(plugin):
         for x in scan_source(f.read_text(encoding="utf-8"), label, module=mod, only=only):
+            if only is None and x.func in worker:
+                continue
             (bad if x.text is None else ok).append(x)
     return ok, bad
 

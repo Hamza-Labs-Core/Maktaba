@@ -5,3 +5,7 @@ dist
 dist-cloud
 dist-play
 dist-manage
+
+# Playwright (web-ui.yml, story 50.13)
+test-results/
+playwright-report/

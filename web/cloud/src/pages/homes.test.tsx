@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { setAccessToken } from "../api";
 import { renderAt, session, stubFetch, user } from "../test/harness";
 import { editionUrl, type CloudHome } from "./Homes";
+import { forgetSavedHomes, loadHomes, ordered, saveHomes } from "../savedHomes";
 
 const { navigateExternal } = vi.hoisted(() => ({ navigateExternal: vi.fn() }));
 vi.mock("../nav", () => ({ navigateExternal }));
@@ -106,5 +107,100 @@ describe("your homes", () => {
     expect(() =>
       editionUrl({ ...KITCHEN, relay_url: "javascript:alert(1)" }, "play", "x")
     ).toThrow();
+  });
+});
+
+// Epic 50 story 50.13: the saved list while Maktaba Cloud can't be reached
+describe("your homes while the cloud is down", () => {
+  afterEach(() => forgetSavedHomes());
+  const WITH_DIRECT: CloudHome = {
+    ...KITCHEN,
+    direct_url: "http://81.2.3.4:32400",
+    connections: [
+      { url: "https://kitchen.relay.maktaba.tv", kind: "relay" },
+      { url: "http://81.2.3.4:32400", kind: "direct" },
+    ],
+  };
+
+  it("saves a good list, then shows it from its time when the API fails (T03)", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user()),
+      "GET /v1/homes": [200, { homes: [WITH_DIRECT] }],
+    });
+    renderAt("/homes");
+    expect(await screen.findByRole("heading", { name: "Kitchen" })).toBeInTheDocument();
+    expect(loadHomes("u1")?.homes[0].connections.map((c) => c.kind)).toEqual(["direct", "relay"]);
+    vi.unstubAllGlobals();
+
+    stubFetch({
+      "POST /v1/auth/refresh": session(user()),
+      "GET /v1/homes": [503, { error: "unavailable" }],
+    });
+    renderAt("/homes");
+    expect(
+      await screen.findByText(/Maktaba Cloud can't be reached. Showing your homes from/)
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Kitchen" }).length).toBeGreaterThan(0);
+    const direct = screen.getByRole("link", { name: "Open directly" });
+    expect(direct).toHaveAttribute("href", "http://81.2.3.4:32400");
+    expect(screen.queryByText(/more than 30 days old/)).not.toBeInTheDocument();
+  });
+
+  it("a captive portal's 200 page is not the API: the saved list shows", async () => {
+    saveHomes("u1", [WITH_DIRECT]);
+    stubFetch({
+      "POST /v1/auth/refresh": session(user()),
+      "GET /v1/homes": () => new Response("<html>Hotel Wi-Fi</html>", { status: 200 }),
+    });
+    renderAt("/homes");
+    expect(await screen.findByText(/Showing your homes from/)).toBeInTheDocument();
+  });
+
+  it("marks a list over 30 days old, and shows it still", async () => {
+    saveHomes("u1", [WITH_DIRECT], new Date(Date.now() - 31 * 24 * 3600_000));
+    stubFetch({
+      "POST /v1/auth/refresh": session(user()),
+      "GET /v1/homes": () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+    renderAt("/homes");
+    expect(await screen.findByText(/more than 30 days old/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open directly" })).toBeInTheDocument();
+  });
+
+  it("a refusal (4xx) is not an outage: it says why, no saved list", async () => {
+    saveHomes("u1", [WITH_DIRECT]);
+    stubFetch({
+      "POST /v1/auth/refresh": session(user()),
+      "GET /v1/homes": [422, { error: "bad_request", message: "no" }],
+    });
+    renderAt("/homes");
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.queryByText(/Showing your homes from/)).not.toBeInTheDocument();
+  });
+
+  it("orders connections local, direct, relay hint, relay (T04)", () => {
+    expect(
+      ordered([
+        { url: "r", kind: "relay" },
+        { url: "h", kind: "relay_hint" },
+        { url: "d", kind: "direct" },
+        { url: "l", kind: "local" },
+      ]).map((c) => c.kind)
+    ).toEqual(["local", "direct", "relay_hint", "relay"]);
+  });
+
+  it("is deleted at sign-out", async () => {
+    saveHomes("u1", [WITH_DIRECT]);
+    saveHomes("u2", [WITH_DIRECT]);
+    stubFetch({
+      "POST /v1/auth/refresh": session(user()),
+      "POST /v1/auth/logout": [204],
+      "GET /v1/homes": [200, { homes: [WITH_DIRECT] }],
+    });
+    renderAt("/homes");
+    await screen.findByRole("heading", { name: "Kitchen" });
+    await userEvent.setup().click(await screen.findByRole("button", { name: "Sign out" }));
+    await waitFor(() => expect(loadHomes("u1")).toBeNull());
+    expect(loadHomes("u2")).toBeNull();
   });
 });
