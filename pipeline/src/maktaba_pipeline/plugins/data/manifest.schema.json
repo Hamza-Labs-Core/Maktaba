@@ -340,6 +340,7 @@
                     "season_of",
                     "seasons_changed",
                     "videos_of",
+                    "videos_changed",
                     "catalog",
                     "payload_seasons"
                   ]

@@ -145,6 +145,8 @@ EdgeMap = Literal[
     "season_of",
     "seasons_changed",
     "videos_of",
+    # only the videos the job names as changed (a scan's new files); none when it names none
+    "videos_changed",
     "catalog",
     "payload_seasons",
 ]
@@ -738,13 +740,17 @@ GRAPH: tuple[StageDef, ...] = (
         max_attempts=2,
     ),
     # ---- media lane (legacy) -------------------------------------------
-    _legacy(
-        "scan",
-        "Scan folders",
-        ("library",),
-        "nas_read",
-        0,
-        edges=(Edge("probe", "videos_of", legacy=True),),
+    # Epic 54 story 54.36 §2: on the engine. Its new videos are its changed subjects and
+    # the edge queues their probes (before, the scanner's store queued each by hand)
+    StageDef(
+        name="scan",
+        label="Scan folders",
+        subject_kinds=("library",),
+        pool="nas_read",
+        lane="media",
+        lane_order=0,
+        version=1,
+        edges=(Edge("probe", "videos_changed", when="always"),),
     ),
     # the WAV a backend that reads a file needs (openai-api): only transcribe asks for it
     # (may_request), and the extract handler queues transcribe again once it is written.
