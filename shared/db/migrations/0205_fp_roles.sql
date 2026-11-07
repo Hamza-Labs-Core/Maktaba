@@ -1,6 +1,6 @@
 -- +goose Up
 --
--- Slot 0203 - the Postgres roles of Maktaba's first-party plugins (Epic 54, story 54.24 §3),
+-- Slot 0205 - the Postgres roles of Maktaba's first-party plugins (Epic 54, story 54.24 §3),
 -- written by tools/plugins/roles.py from the manifests (CI checks they agree: roles.py check).
 --
 -- Each maktaba_fp_<plugin> is NOLOGIN, with SELECT on its [trusted] db.read tables and
@@ -10,7 +10,7 @@
 -- maktaba_worker (every joined machine's login role) are members, so every machine's API may
 -- SET ROLE; a member gains no right without it.
 --
--- Waves 1 to 3 as in 0202. Wave 5 (story 54.32): tv.maktaba.convert and tv.maktaba.dedup.
+-- Waves 1 to 3 as in 0202 (0203 and 0204 are the store's). Wave 5 (story 54.32): tv.maktaba.convert and tv.maktaba.dedup.
 --
 -- Where the migration may not make the role (no right to create roles) or not grant it (a
 -- role another database's owner made on a shared Postgres), it says so with a NOTICE and goes
