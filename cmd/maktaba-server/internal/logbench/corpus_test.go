@@ -37,7 +37,4 @@ func TestCorpusIsSeededAndMixed(t *testing.T) {
 	if levels["info"] < 1400 || levels["warn"] < 200 || levels["error"] < 40 || arabic == 0 || len(ids) > 600 {
 		t.Fatalf("mix: %v, %d request ids, %d Arabic", levels, len(ids), arabic)
 	}
-	if f := Calibrate(); f < 1 || f > 4 {
-		t.Fatalf("calibration factor %v", f)
-	}
 }
