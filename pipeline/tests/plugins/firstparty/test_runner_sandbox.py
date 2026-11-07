@@ -255,12 +255,17 @@ def test_subtitles_write_only_subtitle_names_next_to_a_video(tmp_path: Path, gua
     if str(got["applied"]).startswith("unavailable"):
         pytest.skip(f"this machine cannot apply the sandbox: {got['applied']}")
     assert got["subtitle"] == got["vtt"] == got["read_video"] == "allowed", got
+    assert (library / "show" / "ep1.ar.srt").read_text() == "1"
     if guarded:
         assert got["evil"] == got["over_video"] == "denied:PluginRefused:plugin_scope", got
     elif sys.platform == "darwin":
         assert got["evil"].startswith("denied:PermissionError"), got
         assert got["over_video"].startswith("denied:PermissionError"), got
-    assert (library / "show" / "ep1.ar.srt").read_text() == "1"
+    else:
+        # Landlock matches folders, never names: without the guard any name is writable,
+        # which is why the runner always installs it (sandbox.guard_names)
+        assert got["evil"] == got["over_video"] == "allowed", got
+        return
     assert (library / "show" / "ep1.mp4").read_bytes() == b"video"
 
 
