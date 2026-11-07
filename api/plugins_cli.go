@@ -102,9 +102,13 @@ type pluginsCLI struct {
 	tty    bool
 	user   string
 	values map[string]string
-	// dev mode: how often the folder is read, and when it stops (nil: SIGINT and SIGTERM)
-	poll time.Duration
-	stop <-chan struct{}
+	// dev mode: how often the folder is read, and when it stops (nil: SIGINT and SIGTERM);
+	// a test drives the reads through tick (nil: a ticker of poll) and hears each one done
+	// on ticked
+	poll   time.Duration
+	stop   <-chan struct{}
+	tick   <-chan time.Time
+	ticked chan<- struct{}
 }
 
 // pluginsValueFlags are the plugins CLI's flags that take a value.
@@ -537,13 +541,13 @@ func (c *pluginsCLI) policy(ctx context.Context, yes bool) int {
 
 // ---- developer mode (story 54.10 §4) ----
 
-// folderPackage packs an unpacked plugin folder as `mkp pack` does (every file but the
-// package's own, hidden files and the build's target folder): the package, its plugin id
-// and its English name, and a fingerprint of the files (their paths, sizes and times).
-func folderPackage(dir string) (pkg []byte, id, name, fingerprint string, err error) {
+// folderFiles reads an unpacked plugin folder as `mkp pack` packs it (every file but the
+// package's own, hidden files and a build's target or node_modules folder), and its
+// fingerprint: a hash of each file's path and content. No packing: the dev loop reads the
+// folder on every tick and packs it only when it changed.
+func folderFiles(dir string) (map[string][]byte, string, error) {
 	files := map[string][]byte{}
-	h := sha256.New()
-	err = filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
 		}
@@ -571,26 +575,42 @@ func folderPackage(dir string) (pkg []byte, id, name, fingerprint string, err er
 		return nil
 	})
 	if err != nil {
-		return nil, "", "", "", err
+		return nil, "", err
 	}
 	names := make([]string, 0, len(files))
 	for n := range files {
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	h := sha256.New()
 	for _, n := range names {
 		sum := sha256.Sum256(files[n])
 		fmt.Fprintf(h, "%s %x\n", n, sum)
 	}
+	return files, hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// packFolderFiles is the package of a folder's files, its plugin id and its English name.
+func packFolderFiles(files map[string][]byte) (pkg []byte, id, name string, err error) {
 	var buf bytes.Buffer
 	if _, err := componentpack.BuildPlugin(&buf, files, nil); err != nil {
-		return nil, "", "", "", err
+		return nil, "", "", err
 	}
 	id, nameKey := manifestIDAndNameKey(files[componentpack.PluginManifestName])
 	var words map[string]any
 	_ = json.Unmarshal(files["i18n/en.json"], &words)
 	name, _ = words[nameKey].(string)
-	return buf.Bytes(), id, name, hex.EncodeToString(h.Sum(nil)), nil
+	return buf.Bytes(), id, name, nil
+}
+
+// folderPackage packs a folder: the package, its id, its English name, its fingerprint.
+func folderPackage(dir string) (pkg []byte, id, name, fingerprint string, err error) {
+	files, fingerprint, err := folderFiles(dir)
+	if err != nil {
+		return nil, "", "", "", err
+	}
+	pkg, id, name, err = packFolderFiles(files)
+	return pkg, id, name, fingerprint, err
 }
 
 // manifestIDAndNameKey reads the manifest's id and its strings.name key (the validator
@@ -643,17 +663,27 @@ func (c *pluginsCLI) dev(ctx context.Context, folder string, keep bool) int {
 		go func() { <-sig; close(ch) }()
 		stop = ch
 	}
-	installed, last, id := false, "", ""
-	load := func() int {
-		pkg, pid, name, fingerprint, err := folderPackage(folder)
+	installed, last, seen, id := false, "", "", ""
+	// load installs the folder when it changed since the last install and has stayed the
+	// same since the tick before (settled: an editor's save of several files is never read
+	// half written); the first load does not wait. Only a change is packed.
+	load := func(first bool) int {
+		files, fingerprint, err := folderFiles(folder)
 		if err != nil {
 			fmt.Fprintf(c.errOut, "plugins dev: %v\n", err)
 			return exitComponentsFailed
 		}
-		if fingerprint == last {
+		settled := first || fingerprint == seen
+		seen = fingerprint
+		if fingerprint == last || !settled {
 			return 0
 		}
 		last = fingerprint
+		pkg, pid, name, err := packFolderFiles(files)
+		if err != nil {
+			fmt.Fprintf(c.errOut, "plugins dev: %v\n", err)
+			return exitComponentsFailed
+		}
 		expect := ""
 		if installed {
 			expect = pid
@@ -676,12 +706,16 @@ func (c *pluginsCLI) dev(ctx context.Context, folder string, keep bool) int {
 		fmt.Fprintf(c.out, "%s %s loaded in %s (Development)\n", res.PluginID, res.Version, time.Since(start).Round(time.Millisecond))
 		return 0
 	}
-	if code := load(); code != 0 {
+	if code := load(true); code != 0 {
 		return code
 	}
 	fmt.Fprintf(c.out, "Watching %s: every save reloads it. Stop with Ctrl-C.\n", folder)
-	t := time.NewTicker(poll)
-	defer t.Stop()
+	tick := c.tick
+	if tick == nil {
+		t := time.NewTicker(poll)
+		defer t.Stop()
+		tick = t.C
+	}
 	for {
 		select {
 		case <-stop:
@@ -695,8 +729,11 @@ func (c *pluginsCLI) dev(ctx context.Context, folder string, keep bool) int {
 			}
 			fmt.Fprintf(c.out, "%s removed (developer mode keeps nothing without --keep).\n", id)
 			return 0
-		case <-t.C:
-			_ = load()
+		case <-tick:
+			_ = load(false)
+			if c.ticked != nil {
+				c.ticked <- struct{}{}
+			}
 		}
 	}
 }

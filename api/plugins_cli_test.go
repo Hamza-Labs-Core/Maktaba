@@ -205,8 +205,13 @@ version = 1
 }
 
 // Story 54.10 §4 (#719): developer mode installs the folder as Development, turned on, with
-// its name; a save reinstalls it (an update of the same plugin); stopping removes it, unless
-// --keep; and it refuses to start while unreviewed plugins are not allowed.
+// its name; a save reinstalls it (an update of the same plugin) once the folder has settled
+// (two reads alike: a save of several files is never installed half written); a read with
+// nothing changed installs nothing; stopping removes it, unless --keep; and it refuses to
+// start while unreviewed plugins are not allowed. The test drives each read of the folder
+// (tick) and waits for it to be done (ticked): no wall-clock timing, so a slow runner,
+// coverage or the race detector change nothing. At the default 0.5 s a save is installed
+// at most two reads after it, within story 54.10's 5 s.
 func TestPluginsDevMode(t *testing.T) {
 	dir := t.TempDir()
 	writePluginFolder(t, dir, "First.")
@@ -214,44 +219,77 @@ func TestPluginsDevMode(t *testing.T) {
 	if code, _, errOut := pluginsRun(t, f, false, "", "dev", dir); code != exitComponentsFailed || !strings.Contains(errOut, "allow-unreviewed") {
 		t.Fatalf("policy off: %d %q", code, errOut)
 	}
+	const guard = time.Minute // a failure's limit, never a timing
 	for _, keep := range []bool{false, true} {
+		writePluginFolder(t, dir, "First.")
 		f = &fakePlugins{policy: plugins.Policy{AllowUnreviewed: true}}
-		stop := make(chan struct{})
-		var out bytes.Buffer
-		c := &pluginsCLI{ops: f, in: strings.NewReader(""), out: &syncWriter{w: &out}, errOut: io.Discard, user: "ci",
-			values: map[string]string{}, poll: 20 * time.Millisecond, stop: stop}
-		done := make(chan int)
+		stop, tick, ticked := make(chan struct{}), make(chan time.Time), make(chan struct{})
+		c := &pluginsCLI{ops: f, in: strings.NewReader(""), out: io.Discard, errOut: io.Discard, user: "ci",
+			values: map[string]string{}, stop: stop, tick: tick, ticked: ticked}
+		done := make(chan int, 1)
 		go func() { done <- c.dev(context.Background(), dir, keep) }()
-		waitUntil(t, func() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.installs) == 1 })
-		first := f.installs[0]
-		if first.ReviewLevel != "development" || !first.Enable || first.ConfirmName != "Notes" || first.ExpectID != "" {
+		installs := func() int { f.mu.Lock(); defer f.mu.Unlock(); return len(f.installs) }
+		read := func() { // one read of the folder, done
+			t.Helper()
+			select {
+			case tick <- time.Now():
+			case <-time.After(guard):
+				t.Fatal("the dev loop does not read the folder")
+			}
+			select {
+			case <-ticked:
+			case <-time.After(guard):
+				t.Fatal("a read of the folder did not end")
+			}
+		}
+		read() // the first load has run before the loop reads
+		if installs() != 1 {
+			t.Fatalf("first load: %d installs", installs())
+		}
+		if first := f.installs[0]; first.ReviewLevel != "development" || !first.Enable || first.ConfirmName != "Notes" ||
+			first.ExpectID != "" {
 			t.Fatalf("first load: %+v", first)
 		}
-		time.Sleep(60 * time.Millisecond) // nothing changed: no reload
-		f.mu.Lock()
-		n := len(f.installs)
-		f.mu.Unlock()
-		if n != 1 {
-			t.Fatalf("reloaded with nothing changed: %d", n)
+		read()
+		read()
+		if installs() != 1 {
+			t.Fatalf("reloaded with nothing changed: %d", installs())
 		}
 		writePluginFolder(t, dir, "Second, after a save.")
-		start := time.Now()
-		waitUntil(t, func() bool { f.mu.Lock(); defer f.mu.Unlock(); return len(f.installs) == 2 })
-		if took := time.Since(start); took > 5*time.Second {
-			t.Fatalf("the reload took %s (5 s at most)", took)
+		read() // seen, not yet settled
+		if installs() != 1 {
+			t.Fatalf("installed a save before it settled: %d", installs())
 		}
-		if f.installs[1].ExpectID != "dev.example.notes" {
-			t.Fatalf("the reload: %+v", f.installs[1])
+		read() // settled: the reload
+		if installs() != 2 || f.installs[1].ExpectID != "dev.example.notes" {
+			t.Fatalf("the reload: %d %+v", installs(), f.installs)
+		}
+		// a save of two files a read catches between them: one install, of both
+		if err := os.WriteFile(filepath.Join(dir, "i18n", "en.json"), []byte(`{"plugin.name":"Notes","plugin.summary":"Third."}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		read()
+		if err := os.WriteFile(filepath.Join(dir, "plugin.wasm"), []byte("\x00asm-third"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		read()
+		read()
+		if installs() != 3 {
+			t.Fatalf("a save in two writes: %d installs, want 3", installs())
 		}
 		close(stop)
-		if code := <-done; code != 0 {
-			t.Fatalf("stop: %d", code)
+		select {
+		case code := <-done:
+			if code != 0 {
+				t.Fatalf("stop: %d", code)
+			}
+		case <-time.After(guard):
+			t.Fatal("the dev loop did not stop")
 		}
 		removed := len(f.applied) == 1 && f.applied[0].Want == catalog.WantAbsent && f.applied[0].ID == catalog.PluginPrefix+"dev.example.notes"
 		if removed == keep {
 			t.Fatalf("keep %v: applied %+v", keep, f.applied)
 		}
-		writePluginFolder(t, dir, "First.")
 	}
 }
 
@@ -272,27 +310,4 @@ func TestFolderPackage(t *testing.T) {
 	if again != fingerprint || changed == fingerprint {
 		t.Fatalf("fingerprints: %s %s %s", fingerprint, again, changed)
 	}
-}
-
-type syncWriter struct {
-	mu sync.Mutex
-	w  io.Writer
-}
-
-func (s *syncWriter) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.w.Write(p)
-}
-
-func waitUntil(t *testing.T, ok func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if ok() {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("timed out")
 }
