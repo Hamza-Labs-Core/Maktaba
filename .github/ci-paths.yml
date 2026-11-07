@@ -576,6 +576,8 @@ store:
   - *ci
   - 'store/**'
   - 'tools/ci/payment_provider_allowlist.py'
+  # the entitlement vectors the store's signer and the home's verifier share
+  - 'shared/plugins/testdata/entitlements/**'
 
 devportal:
   - *ci
