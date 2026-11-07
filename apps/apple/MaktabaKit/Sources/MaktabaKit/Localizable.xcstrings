@@ -309,6 +309,16 @@
         }
       }
     },
+    "App version, device model and system version" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إصدار التطبيق وطراز الجهاز وإصدار النظام"
+          }
+        }
+      }
+    },
     "Approving…" : {
       "localizations" : {
         "ar" : {
@@ -339,6 +349,26 @@
         }
       }
     },
+    "Cancel" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء"
+          }
+        }
+      }
+    },
+    "Category" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفئة"
+          }
+        }
+      }
+    },
     "Choose the home you run." : {
       "localizations" : {
         "ar" : {
@@ -359,6 +389,16 @@
         }
       }
     },
+    "Closed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مغلق"
+          }
+        }
+      }
+    },
     "Code %@ · %@ left" : {
       "localizations" : {
         "ar" : {
@@ -375,6 +415,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "داكن"
+          }
+        }
+      }
+    },
+    "Describe it (optional)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صِف ما حدث (اختياري)"
+          }
+        }
+      }
+    },
+    "Done" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم"
+          }
+        }
+      }
+    },
+    "Earlier today" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في وقت سابق اليوم"
+          }
+        }
+      }
+    },
+    "Fixed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم الإصلاح"
           }
         }
       }
@@ -405,12 +485,52 @@
         }
       }
     },
+    "Help %@ fix problems?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد مساعدة %@ في إصلاح المشكلات؟"
+          }
+        }
+      }
+    },
     "Idle" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "خامل"
+          }
+        }
+      }
+    },
+    "If the app crashes, it can send a crash report to %@ so its admin can fix it. It contains no videos or messages. It is off unless you turn it on." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إذا توقف التطبيق فجأة، يمكنه إرسال تقرير عطل إلى %@ ليتمكّن المشرف من إصلاحه. لا يحتوي التقرير على فيديوهات أو رسائل. هذه الميزة متوقفة ما لم تشغّلها."
+          }
+        }
+      }
+    },
+    "Include a screenshot" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرفاق لقطة شاشة"
+          }
+        }
+      }
+    },
+    "Include recent crashes of this app (%lld)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرفاق الأعطال الأخيرة لهذا التطبيق (%lld)"
           }
         }
       }
@@ -505,12 +625,32 @@
         }
       }
     },
+    "Just now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الآن"
+          }
+        }
+      }
+    },
     "Light" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "فاتح"
+          }
+        }
+      }
+    },
+    "Live TV" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث المباشر"
           }
         }
       }
@@ -535,6 +675,16 @@
         }
       }
     },
+    "Looking into it" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد المتابعة"
+          }
+        }
+      }
+    },
     "Looking up the code…" : {
       "localizations" : {
         "ar" : {
@@ -555,12 +705,42 @@
         }
       }
     },
+    "My reports" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بلاغاتي"
+          }
+        }
+      }
+    },
+    "New" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جديد"
+          }
+        }
+      }
+    },
     "Next try in %@" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "المحاولة التالية بعد %@"
+          }
+        }
+      }
+    },
+    "No lines in the last 30 minutes." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد أسطر في آخر 30 دقيقة."
           }
         }
       }
@@ -585,6 +765,16 @@
         }
       }
     },
+    "Not now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ليس الآن"
+          }
+        }
+      }
+    },
     "Not set up" : {
       "localizations" : {
         "ar" : {
@@ -605,12 +795,42 @@
         }
       }
     },
+    "OK" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حسنًا"
+          }
+        }
+      }
+    },
     "Off" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "متوقف"
+          }
+        }
+      }
+    },
+    "Off by default. When on, a report goes to %@ after a crash, never to Maktaba." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف افتراضيًا. عند تشغيله، يُرسل تقرير إلى %@ بعد العطل، ولا يُرسل أبدًا إلى مكتبة."
+          }
+        }
+      }
+    },
+    "Off unless you tick it. You'll see the screenshot here before sending." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف ما لم تحدده. سترى لقطة الشاشة هنا قبل الإرسال."
           }
         }
       }
@@ -631,6 +851,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "متوقف مؤقتًا (الكل)"
+          }
+        }
+      }
+    },
+    "Playback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل"
           }
         }
       }
@@ -675,6 +905,46 @@
         }
       }
     },
+    "Remove screenshot" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة لقطة الشاشة"
+          }
+        }
+      }
+    },
+    "Reply: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرد: %@"
+          }
+        }
+      }
+    },
+    "Report a problem" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإبلاغ عن مشكلة"
+          }
+        }
+      }
+    },
+    "Report this" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإبلاغ عن هذا"
+          }
+        }
+      }
+    },
     "Retry" : {
       "localizations" : {
         "ar" : {
@@ -705,12 +975,92 @@
         }
       }
     },
+    "Search" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث"
+          }
+        }
+      }
+    },
     "Searching by words only. Search by meaning is off." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "البحث بالكلمات فقط. البحث بالمعنى متوقف."
+          }
+        }
+      }
+    },
+    "Send" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرسال"
+          }
+        }
+      }
+    },
+    "Send crash reports" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرسال تقارير الأعطال"
+          }
+        }
+      }
+    },
+    "Send crash reports to %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرسال تقارير الأعطال إلى %@"
+          }
+        }
+      }
+    },
+    "Send to the admin of %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإرسال إلى مشرف %@"
+          }
+        }
+      }
+    },
+    "Sent to %@ (#%lld)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُرسل إلى %1$@ (رقم %2$lld)"
+          }
+        }
+      }
+    },
+    "Show" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض"
+          }
+        }
+      }
+    },
+    "Signing in" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الدخول"
           }
         }
       }
@@ -731,6 +1081,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "جارٍ تسجيل الدخول إلى Maktaba Cloud…"
+          }
+        }
+      }
+    },
+    "Something else" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شيء آخر"
           }
         }
       }
@@ -879,12 +1239,52 @@
         }
       }
     },
+    "The admin's reply will show in My reports." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سيظهر ردّ المشرف في «بلاغاتي»."
+          }
+        }
+      }
+    },
+    "The app closed unexpectedly last time. A report was sent to %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُغلق التطبيق بشكل غير متوقع في المرة السابقة. أُرسل تقرير إلى %@."
+          }
+        }
+      }
+    },
+    "The app closed unexpectedly last time. The crash is kept on this device; you can attach it to a problem report." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُغلق التطبيق بشكل غير متوقع في المرة السابقة. حُفظ العطل على هذا الجهاز، ويمكنك إرفاقه ببلاغ عن مشكلة."
+          }
+        }
+      }
+    },
     "The home gave it new access; it is following it." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "منحه الجهاز الرئيسي وصولاً جديداً، وهو يتّبعه."
+          }
+        }
+      }
+    },
+    "The last %lld requests to the home" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر %lld طلبًا إلى الجهاز الرئيسي"
           }
         }
       }
@@ -939,12 +1339,32 @@
         }
       }
     },
+    "This app's log for the last 30 minutes (%lld lines)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سجل هذا التطبيق لآخر 30 دقيقة (%lld سطرًا)"
+          }
+        }
+      }
+    },
     "This machine can't reach the home's database: %@" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الجهاز الرئيسي: %@"
+          }
+        }
+      }
+    },
+    "Time" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الوقت"
           }
         }
       }
@@ -1035,6 +1455,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "في انتظار الموافقة على جهاز آخر"
+          }
+        }
+      }
+    },
+    "What happened?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ماذا حدث؟"
+          }
+        }
+      }
+    },
+    "What will be sent" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما الذي سيُرسل"
+          }
+        }
+      }
+    },
+    "When?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متى؟"
+          }
+        }
+      }
+    },
+    "You haven't sent a report." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ترسل أي بلاغ بعد."
+          }
+        }
+      }
+    },
+    "You've sent many reports today. Try again tomorrow." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أرسلت بلاغات كثيرة اليوم. حاول مجددًا غدًا."
           }
         }
       }

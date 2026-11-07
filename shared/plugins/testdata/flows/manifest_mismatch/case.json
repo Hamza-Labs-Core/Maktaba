@@ -1,0 +1,6 @@
+{
+  "about": "a manifest whose trigger differs from its flow entry",
+  "mode": "store",
+  "package": "dev.example.alpha",
+  "states": {}
+}

@@ -101,6 +101,8 @@ type Invocation struct {
 	ReadOnly   bool
 	// the stages of this plugin, by queue name, and what each may request
 	MayRequest map[string][]string
+	// Lineage is the job's (54.40 §3): every request and event it makes extends it
+	Lineage Lineage
 	// counters for the budgets of 54.05 and the rate of 54.04 §5
 	mu            sync.Mutex
 	ended         bool
@@ -149,6 +151,8 @@ type Minted struct {
 	Libraries    []string  `json:"libraries"`
 	AllLibraries bool      `json:"all_libraries"`
 	Exp          time.Time `json:"exp"`
+	// Lineage is the job's; the pipeline extends it for each request and event it enqueues
+	Lineage Lineage `json:"lineage"`
 }
 
 // Tokens keeps the running invocations in memory (a map lookup by the token's sha256)
@@ -198,10 +202,11 @@ type installedManifest struct {
 // Mint makes a token for a plugin job (54.04 §2): the job's stage must belong to an
 // installed plugin; grants and libraries come from plugin_grants alone.
 func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
-	var stage, kind, subject string
+	var stage, kind, subject, payload string
 	var ext sql.NullString
-	err := t.DB.QueryRowContext(ctx, `SELECT j.stage, j.subject_kind, COALESCE(CAST(j.subject_id AS text), ''), s.extension
-		FROM processing_jobs j JOIN job_stages s ON s.stage = j.stage WHERE j.id = $1`, jobID).Scan(&stage, &kind, &subject, &ext)
+	err := t.DB.QueryRowContext(ctx, `SELECT j.stage, j.subject_kind, COALESCE(CAST(j.subject_id AS text), ''), s.extension,
+		COALESCE(CAST(j.payload AS text), '')
+		FROM processing_jobs j JOIN job_stages s ON s.stage = j.stage WHERE j.id = $1`, jobID).Scan(&stage, &kind, &subject, &ext, &payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, refuse(404, CodeNotFound, "no such job")
 	}
@@ -232,6 +237,10 @@ func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
 	if err != nil {
 		return nil, err
 	}
+	lineage, ref := lineageOf(ctx, t.DB, []byte(payload), stage, kind, subject, t.Now())
+	if ref != nil {
+		return nil, ref
+	}
 	timeout := m.Resources.TimeoutS
 	if timeout <= 0 {
 		timeout = 300
@@ -252,6 +261,7 @@ func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
 		Exp:             now.Add(time.Duration(timeout)*time.Second + 30*time.Second),
 		DataBytes:       m.Resources.DataMB << 20,
 		MayRequest:      map[string][]string{},
+		Lineage:         lineage,
 		bucket:          RateBurst,
 		bucketAt:        now,
 		handles:         map[uint64]*handle{},
@@ -272,7 +282,7 @@ func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
 	t.byHash[h], t.byID[inv.ID] = inv, inv
 	t.mu.Unlock()
 	return &Minted{InvocationID: inv.ID, Token: token, PluginID: pluginID, Version: version, Grants: nonNil(g.Capabilities),
-		Libraries: nonNil(g.Libraries), AllLibraries: g.AllLibraries, Exp: inv.Exp}, nil
+		Libraries: nonNil(g.Libraries), AllLibraries: g.AllLibraries, Exp: inv.Exp, Lineage: lineage}, nil
 }
 
 // trustedTTL is how long a first-party token lives: its job's lease, not a plugin's

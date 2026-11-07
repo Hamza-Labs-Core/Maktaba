@@ -1,0 +1,67 @@
+{
+  "findings": [
+    {
+      "code": "flow_cycle",
+      "severity": "refuse",
+      "plugin": "dev.example.alpha",
+      "path": [
+        "dev.example.alpha/one",
+        "dev.example.alpha/two",
+        "dev.example.alpha/one"
+      ]
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/one"
+      },
+      {
+        "from": "stage:dev.example.alpha/one",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/two"
+      },
+      {
+        "from": "stage:dev.example.alpha/two",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/one"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/two",
+        "kind": "stage",
+        "name": "two",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "ستشغّل هذه الإضافات بعضها بعضًا في حلقة: ⁦dev.example.alpha/one → dev.example.alpha/two → dev.example.alpha/one⁩."
+    ],
+    "en": [
+      "These plugins would start each other in a loop: dev.example.alpha/one → dev.example.alpha/two → dev.example.alpha/one."
+    ]
+  }
+}

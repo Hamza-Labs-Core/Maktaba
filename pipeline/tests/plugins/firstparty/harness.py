@@ -69,6 +69,17 @@ def _instrument() -> None:
     native._mint = timed("mint", native._mint)
     server.Relay.ask = timed("relay", server.Relay.ask)  # type: ignore[method-assign]
     native.run_native = timed("run_native", native.run_native)
+    inner = native.run_native
+
+    async def spans(*a: Any, **kw: Any) -> Any:
+        # where in the job the plugin's run starts and ends (the breakdown's before/after)
+        marks.append(("@start", time.perf_counter()))
+        try:
+            return await inner(*a, **kw)
+        finally:
+            marks.append(("@end", time.perf_counter()))
+
+    native.run_native = spans
     native.choose = timed("choose", native.choose)
     native.serving_group = timed("serving_fp", native.serving_group)
     run._native_impl = timed("native_impl", run._native_impl)
@@ -89,18 +100,31 @@ Seed = Callable[[Database], Awaitable[None]]
 
 
 def plugin_api_dev() -> str | None:
-    """The dev API binary (``MAKTABA_PLUGIN_API_DEV``), built once with go when unset."""
+    """The dev API binary (``MAKTABA_PLUGIN_API_DEV``), else built with go for this checkout
+    (``None``: no go here). A build that fails skips the calling test, saying why."""
     explicit = os.environ.get("MAKTABA_PLUGIN_API_DEV", "").strip()
     if explicit:
         return explicit
     go = shutil.which("go")
     if go is None:
         return None
-    out = Path(tempfile.gettempdir()) / "maktaba-plugin-api-dev"
-    if not out.exists():
-        subprocess.run(
-            [go, "build", "-o", str(out), "./tools/plugin-api-dev"], cwd=API_DIR, check=True
-        )
+    import hashlib
+
+    # one binary per checkout, built every time (go's cache makes an unchanged one quick):
+    # a binary left by another worktree or an older checkout serves other routes
+    tag = hashlib.sha256(str(API_DIR.resolve()).encode()).hexdigest()[:12]
+    out = Path(tempfile.gettempdir()) / f"maktaba-plugin-api-dev-{tag}"
+    built = subprocess.run(
+        [go, "build", "-o", str(out), "./tools/plugin-api-dev"],
+        cwd=API_DIR,
+        capture_output=True,
+        text=True,
+    )
+    if built.returncode != 0:
+        import pytest
+
+        tail = (built.stderr or built.stdout).strip().splitlines()[-3:]
+        pytest.skip("the plugin API's dev server did not build: " + " | ".join(tail))
     return str(out)
 
 
@@ -125,8 +149,22 @@ def _untimed(v: Any) -> Any:
 
 
 def _swap_db(url: str, name: str) -> str:
-    base, _, _ = url.rpartition("/")
-    return f"{base}/{name}"
+    """``url`` naming database ``name`` instead, its query (``sslmode``, …) kept."""
+    from urllib.parse import urlsplit, urlunsplit
+
+    u = urlsplit(url)
+    return urlunsplit(u._replace(path="/" + name))
+
+
+def _go_dsn(url: str) -> str:
+    """The plugin API's DSN: lib/pq requires TLS unless told otherwise, and the test
+    servers have none, so ``sslmode=disable`` is added when the URL does not set it."""
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    u = urlsplit(url)
+    q = dict(parse_qsl(u.query))
+    q.setdefault("sslmode", "disable")
+    return urlunsplit(u._replace(query=urlencode(q)))
 
 
 #: a timing line of perf_check (N16), as opposed to a difference in what was written
@@ -275,10 +313,26 @@ class Parity:
                     t0 = time.perf_counter()
                     marks.clear()
                     await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
-                    took = time.perf_counter() - t0
+                    t1 = time.perf_counter()
+                    took = t1 - t0
                     side.times[st].append(took)
                     if side is self.b:
-                        self.breakdowns.append((took, st, list(marks)))
+                        at = {k: v for k, v in marks if k.startswith("@")}
+                        steps = [(k, v) for k, v in marks if not k.startswith("@")]
+                        if "@start" in at and "@end" in at:
+                            steps = [
+                                ("before", at["@start"] - t0),
+                                ("after", t1 - at["@end"]),
+                                (
+                                    "unnamed",
+                                    (at["@end"] - at["@start"])
+                                    - sum(
+                                        v for k, v in steps if k.startswith("api ") or k == "relay"
+                                    ),
+                                ),
+                                *steps,
+                            ]
+                        self.breakdowns.append((took, st, steps))
 
     async def compare_n16(
         self,
@@ -447,7 +501,7 @@ async def parity(
             [
                 binary,
                 "-dsn",
-                _swap_db(pg_url, names[1]) + ("&" if "?" in pg_url else "?") + "sslmode=disable",
+                _go_dsn(_swap_db(pg_url, names[1])),
                 "-socket",
                 str(api_sock),
                 "-bundle",

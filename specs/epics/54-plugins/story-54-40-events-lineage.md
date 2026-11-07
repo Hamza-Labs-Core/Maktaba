@@ -16,9 +16,9 @@ lineage and a loop is stopped where it happens (README §4.12, H26).
 
 ### 1. Emitting
 
-- WIT `maktaba:plugin@1.1.0` adds the interface `events` with
+- WIT `maktaba:plugin@1.2.0` adds the interface `events` with
   `emit: func(name: string, subject: subject, payload: string) -> result<_, call-error>`.
-  A 1.0 guest keeps running: the host links 1.0 and 1.1.
+  A 1.0 guest keeps running: the host links 1.0, 1.1 and 1.2.
 - The host forwards it as `events/emit`. The API allows it only when `name` is in the
   calling stage's `emits`, the subject's kind is the event's, a video subject is in the
   job's read scope, and the payload is a JSON object of at most 16 KB that the event's
@@ -122,9 +122,9 @@ and says how to fix it (turn off one of the plugins on the path, or ask its deve
 
 | File | Change |
 |---|---|
-| `shared/plugins/wit/maktaba-plugin.wit` | 1.1: `events` |
+| `shared/plugins/wit/maktaba-plugin.wit` | 1.2: `events` |
 | `shared/plugins/capabilities.toml` | `events.subscribe` |
-| `plugind/crates/core` | link 1.0 and 1.1; forward `events/emit`; `events` in `result` |
+| `plugind/crates/core` | link 1.0, 1.1 and 1.2; forward `events/emit`; `events` in `result` |
 | `api/internal/plugins/routes.go`, `tokens.go` | `events/emit`, lineage in the token, the refusals, the write stamps |
 | `shared/db/migrations/` | `plugin_write_lineage` (the #693 table pattern) |
 | `pipeline/src/maktaba_pipeline/plugins/dispatch.py`, `loader.py` | events to requests, `_lineage`, the second-line check |

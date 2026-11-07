@@ -1,0 +1,8 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["silences"],
+  "properties": {
+    "silences": { "type": "integer", "minimum": 0, "maximum": 10000 }
+  }
+}

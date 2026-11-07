@@ -245,6 +245,13 @@
             "default": [],
             "x-code": "manifest_bad_request"
           },
+          "emits": {
+            "type": "array",
+            "maxItems": 20,
+            "uniqueItems": true,
+            "items": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$" },
+            "x-code": "manifest_bad_emit"
+          },
           "trigger": {
             "type": "array",
             "maxItems": 10,
@@ -253,13 +260,18 @@
             "items": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["event"],
-              "x-code": "manifest_unknown_event",
+              "x-code": "manifest_bad_trigger",
               "properties": {
                 "event": {
                   "type": "string",
-                  "pattern": "^[a-z][a-z0-9_.]{0,63}$",
+                  "maxLength": 200,
+                  "pattern": "^(plugin:[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?){2,5}/)?[a-z][a-z0-9_.]{0,63}$",
                   "x-code": "manifest_unknown_event"
+                },
+                "stage": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,39}$",
+                  "x-code": "manifest_bad_trigger"
                 }
               }
             }
@@ -458,6 +470,47 @@
             },
             "x-code": "manifest_bad_stage",
             "x-trusted-only": true
+          }
+        }
+      }
+    },
+    "event": {
+      "type": "array",
+      "maxItems": 20,
+      "x-code": "manifest_bad_event",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "subject", "payload"],
+        "x-code": "manifest_bad_event",
+        "properties": {
+          "name": { "type": "string", "maxLength": 64, "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$", "x-code": "manifest_bad_event" },
+          "subject": { "type": "string", "enum": ["video", "series", "season", "library", "catalog"], "x-code": "manifest_bad_event" },
+          "payload": { "type": "string", "pattern": "^events/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}\\.json$", "x-code": "manifest_bad_event" }
+        }
+      }
+    },
+    "depends": {
+      "type": "array",
+      "maxItems": 20,
+      "x-code": "manifest_bad_depends",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["plugin", "version"],
+        "x-code": "manifest_bad_depends",
+        "properties": {
+          "plugin": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?){2,5}$",
+            "x-code": "manifest_bad_depends"
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^ *(>=|>|<=|<|=) *[0-9]+\\.[0-9]+\\.[0-9]+ *(, *(>=|>|<=|<|=) *[0-9]+\\.[0-9]+\\.[0-9]+ *)*$",
+            "x-code": "manifest_bad_depends"
           }
         }
       }

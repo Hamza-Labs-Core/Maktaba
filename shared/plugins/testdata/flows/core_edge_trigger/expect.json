@@ -1,0 +1,31 @@
+{
+  "findings": [
+    {
+      "code": "flow_core_edge",
+      "severity": "refuse",
+      "plugin": "dev.example.alpha",
+      "detail": "dev.example.alpha/one: stage:extract"
+    }
+  ],
+  "graph": {
+    "edges": [],
+    "nodes": [
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تصل الإضافة ⁦dev.example.alpha⁩ إلى مرحلة أساسية (⁦dev.example.alpha/one: stage:extract⁩)؛ ولا تعمل مراحل الإضافات إلا بعد المراحل الأساسية."
+    ],
+    "en": [
+      "dev.example.alpha reaches a core stage (dev.example.alpha/one: stage:extract); plugin stages run only after core stages."
+    ]
+  }
+}

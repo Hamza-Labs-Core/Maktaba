@@ -27,6 +27,7 @@ _KNOWN: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
         ("plugin_quota", r"\bplugin_quota\b"),
         ("plugin_failed", r"\bplugin_failed\b"),
         ("plugin_held", r"\bplugin_held\b"),
+        ("plugin_loop", r"\bplugin_loop\b"),
         ("youtube_bot_check", r"confirm you.?re not a bot|sign in to confirm(?! your age)"),
         ("youtube_rate_limited", r"youtube_rate_limited|too many requests|http error 429"),
         (

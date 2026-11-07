@@ -1,0 +1,128 @@
+# Epic 53 story 53.13 §2: the log benches every night on a macOS arm64 runner, for the
+# absolute numbers (the reference machine is an Apple M2). The Go benches and the Python
+# logger bench run at the CI loads; their numbers are kept as an artifact for 90 days, and a
+# cost more than 20 % over the last successful night's (each normalised by its runner factor,
+# tools/logbench/compare.py) opens an issue, or comments on the open one. A bench over its
+# budget fails the run. PRs run the same benches in _unit.yml's log-bench job.
+
+name: Nightly log benches
+
+on:
+  schedule:
+    - cron: '17 4 * * *' # nightly, 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-perf
+  cancel-in-progress: false
+
+jobs:
+  log-bench:
+    name: Log benches (macOS arm64)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      actions: read # the last night's numbers
+      issues: write # a regression's issue
+    env:
+      OUT: ${{ github.workspace }}/build/logbench
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cmd/maktaba-server/go.mod
+          cache: false
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+
+      - name: The Go log benches
+        working-directory: cmd/maktaba-server
+        run: |
+          set -euo pipefail
+          mkdir -p "$OUT"
+          LOGBENCH_OUT="$OUT/go.json" go test -tags logbench -count=1 -v -timeout 30m ./internal/logbench/
+
+      - name: The Python logger bench
+        working-directory: pipeline
+        run: |
+          set -euo pipefail
+          uv sync --frozen
+          LOGBENCH_PY_OUT="$OUT/python.json" uv run --frozen python tools/log_bench.py
+
+      - name: One file of numbers
+        if: always()
+        run: |
+          set -euo pipefail
+          python3 - "$OUT" <<'PY'
+          import json, pathlib, sys
+          out = pathlib.Path(sys.argv[1])
+          merged = {}
+          for name in ("go.json", "python.json"):
+              f = out / name
+              if f.exists():
+                  d = json.loads(f.read_text())
+                  runner = d.pop("_runner", {})
+                  merged.update(d)
+                  merged.setdefault("_runner", {}).update(runner)
+          (out / "logbench.json").write_text(json.dumps(merged, indent=2))
+          PY
+
+      - name: The last successful night's numbers
+        id: last
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow nightly-perf.yml --branch main --status success \
+            --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run" ]; then echo "no earlier night: nothing to compare"; exit 0; fi
+          mkdir -p "$RUNNER_TEMP/last"
+          if gh run download "$run" --repo "$GITHUB_REPOSITORY" -n logbench-nightly -D "$RUNNER_TEMP/last"; then
+            echo "file=$RUNNER_TEMP/last/logbench.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::the last night's numbers (run $run) could not be downloaded"
+          fi
+
+      - name: Compare with the last night (a regression opens an issue)
+        if: steps.last.outputs.file != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LAST: ${{ steps.last.outputs.file }}
+        run: |
+          set -euo pipefail
+          if python3 tools/logbench/compare.py "$LAST" "$OUT/logbench.json" --markdown "$OUT/regression.md"; then
+            echo "no cost grew by more than 20 %"
+            exit 0
+          fi
+          body="$OUT/regression.md"
+          printf '\nRun: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$body"
+          title="Log benches: a cost grew by more than 20 % overnight"
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body"
+          fi
+
+      - name: Keep the numbers (90 days)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: logbench-nightly
+          path: build/logbench
+          if-no-files-found: warn
+          retention-days: 90

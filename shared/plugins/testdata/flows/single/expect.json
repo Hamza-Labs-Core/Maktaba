@@ -1,0 +1,86 @@
+{
+  "findings": [],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/scan"
+      },
+      {
+        "from": "core:series.changed",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/season_pass"
+      },
+      {
+        "from": "core:video.changed",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/scan"
+      },
+      {
+        "from": "stage:dev.example.alpha/scan",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/write"
+      },
+      {
+        "from": "stage:dev.example.alpha/scan",
+        "kind": "request",
+        "to": "stage:dev.example.alpha/write"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "core:series.changed",
+        "kind": "core",
+        "name": "series.changed",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "season"
+      },
+      {
+        "id": "core:video.changed",
+        "kind": "core",
+        "name": "video.changed",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/scan",
+        "kind": "stage",
+        "name": "scan",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/season_pass",
+        "kind": "stage",
+        "name": "season_pass",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "season"
+      },
+      {
+        "id": "stage:dev.example.alpha/write",
+        "kind": "stage",
+        "name": "write",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [],
+    "en": []
+  }
+}

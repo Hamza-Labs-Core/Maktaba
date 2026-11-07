@@ -3,6 +3,7 @@ package tvchange
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -228,5 +229,24 @@ func TestTVJobsRunAheadOfTheBacklog(t *testing.T) {
 	}
 	if err := db.QueryRow(`SELECT priority FROM processing_jobs WHERE stage = 'tv_gc' AND state = 'pending'`).Scan(&prio); err != nil || prio != 100 {
 		t.Fatalf("tv_gc priority %d %v", prio, err)
+	}
+}
+
+// A ping that fails because Run is stopping keeps the lead, so the deferred unlock gives the
+// lock back before Run returns; only a ping that fails while Run runs drops it
+// (TestControllerGivesItsLockBackWhenItStops failed when a stop cut the ping short).
+func TestLeadLostOnlyWhileRunning(t *testing.T) {
+	live := context.Background()
+	stopped, cancel := context.WithCancel(context.Background())
+	cancel()
+	dead := errors.New("driver: bad connection")
+	if !leadLost(live, dead) {
+		t.Fatal("a failed ping while running: the connection is gone")
+	}
+	if leadLost(stopped, context.Canceled) || leadLost(stopped, dead) {
+		t.Fatal("a ping cut short by stopping: the lead is kept for its unlock")
+	}
+	if leadLost(live, nil) {
+		t.Fatal("a ping that worked: kept")
 	}
 }

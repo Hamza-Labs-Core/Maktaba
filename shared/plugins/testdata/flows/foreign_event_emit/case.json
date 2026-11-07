@@ -1,0 +1,5 @@
+{
+  "about": "a flow whose stage emits an event its plugin does not publish",
+  "mode": "store",
+  "states": {}
+}

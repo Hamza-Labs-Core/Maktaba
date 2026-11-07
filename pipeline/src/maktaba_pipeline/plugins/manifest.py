@@ -41,6 +41,10 @@ CODE_STRING_TOO_LONG = "manifest_string_too_long"
 CODE_MISSING_FILE = "manifest_missing_file"
 CODE_BAD_SETTINGS = "manifest_bad_settings"
 CODE_NOT_TOML = "manifest_not_toml"
+CODE_BAD_EMIT = "manifest_bad_emit"
+CODE_BAD_TRIGGER = "manifest_bad_trigger"
+CODE_BAD_EVENT = "manifest_bad_event"
+CODE_BAD_DEPENDS = "manifest_bad_depends"
 #: a key, a stage name or a subject only Maktaba's own release-signed plugins may use
 #: (story 54.22 §1)
 CODE_TRUSTED_FIELD = "plugin_trusted_field"
@@ -283,11 +287,21 @@ def validate(src: bytes, files: Files | None = None, *, trusted: bool = False) -
     if errs:
         raise ManifestInvalid(errs)
     m: dict[str, Any] = _fill(_schema(), raw)
-    m["maktaba"] = ", ".join(p.replace(" ", "") for p in m["maktaba"].split(","))
+    m["maktaba"] = _range(m["maktaba"])
+    for d in m.get("depends", []):
+        d["version"] = _range(d["version"])
     errs = _rules(m, files, trusted)
     if errs:
         raise ManifestInvalid(errs)
     return m
+
+
+def _range(r: str) -> str:
+    return ", ".join(p.replace(" ", "") for p in r.split(","))
+
+
+def _lower_bound(r: str) -> bool:
+    return any(p.startswith((">", "=")) for p in r.split(", "))
 
 
 def normalised(m: dict[str, Any]) -> bytes:
@@ -332,7 +346,7 @@ def _rules(m: dict[str, Any], files: Files | None, trusted: bool = False) -> lis
         errs.append(ManifestError(CODE_RESERVED_ID, "id"))
     if len(m["platforms"]) > 1 and "any" in m["platforms"]:
         errs.append(ManifestError(CODE_BAD_PLATFORM, "platforms", "any stands alone"))
-    if not any(p.startswith((">", "=")) for p in m["maktaba"].split(", ")):
+    if not _lower_bound(m["maktaba"]):
         errs.append(ManifestError(CODE_BAD_RANGE, "maktaba", "no lower bound"))
     seen: set[str] = set()
     for lst in ("required", "optional"):
@@ -353,19 +367,60 @@ def _rules(m: dict[str, Any], files: Files | None, trusted: bool = False) -> lis
         # reserved (a third-party stage's queue is p_<hash>_<name>)
         if not trusted and st["subject"] == "dup_group":
             errs.append(ManifestError(CODE_TRUSTED_FIELD, f"stage/{i}/name", st["name"]))
+    # the graph fields (54.39): published events, dependencies on other plugins' events
+    published: dict[str, str] = {}
+    for i, e in enumerate(m.get("event", [])):
+        if e["name"] in published:
+            errs.append(ManifestError(CODE_BAD_EVENT, f"event/{i}/name", e["name"]))
+        published[e["name"]] = e["subject"]
+    depends: set[str] = set()
+    used: set[str] = set()
+    for i, d in enumerate(m.get("depends", [])):
+        p = d["plugin"]
+        if p == m["id"] or p in depends:
+            errs.append(ManifestError(CODE_BAD_DEPENDS, f"depends/{i}/plugin", p))
+        elif not _lower_bound(d["version"]):
+            errs.append(ManifestError(CODE_BAD_DEPENDS, f"depends/{i}/version", "no lower bound"))
+        depends.add(p)
     evs = events()
     for i, st in enumerate(m["stage"]):
         for j, r in enumerate(st["may_request"]):
             if r not in subjects and not trusted:
                 errs.append(ManifestError(CODE_BAD_REQUEST, f"stage/{i}/may_request/{j}", r))
         for j, t in enumerate(st["trigger"]):
+            tpath = f"stage/{i}/trigger/{j}"
+            if ("event" in t) == ("stage" in t):
+                errs.append(ManifestError(CODE_BAD_TRIGGER, tpath, "event or stage"))
+                continue
+            if "stage" in t:
+                after = t["stage"]
+                if after not in subjects:
+                    errs.append(ManifestError(CODE_BAD_TRIGGER, f"{tpath}/stage", after))
+                elif subjects[after] != st["subject"]:
+                    errs.append(ManifestError(CODE_SUBJECT_MISMATCH, f"{tpath}/stage", after))
+                continue
             ev = t["event"]
-            path = f"stage/{i}/trigger/{j}/event"
+            path = f"{tpath}/event"
+            if ev.startswith("plugin:"):
+                publisher = ev[len("plugin:") :].partition("/")[0]
+                if publisher == m["id"]:
+                    errs.append(ManifestError(CODE_BAD_TRIGGER, path, ev))
+                elif publisher not in depends:
+                    errs.append(ManifestError(CODE_BAD_DEPENDS, path, publisher))
+                else:
+                    used.add(publisher)
+                continue
             e = evs.get(ev)
             if e is None or e.get("trigger") is False:
                 errs.append(ManifestError(CODE_UNKNOWN_EVENT, path, ev))
             elif e["subject"] != st["subject"]:
                 errs.append(ManifestError(CODE_SUBJECT_MISMATCH, path, ev))
+        for j, name in enumerate(st.get("emits", [])):
+            if name not in published:
+                errs.append(ManifestError(CODE_BAD_EMIT, f"stage/{i}/emits/{j}", name))
+    for i, d in enumerate(m.get("depends", [])):
+        if d["plugin"] not in used:
+            errs.append(ManifestError(CODE_BAD_DEPENDS, f"depends/{i}", d["plugin"]))
     for i, s in enumerate(m["schedule"]):
         if subjects.get(s["stage"]) != "catalog":
             errs.append(ManifestError(CODE_BAD_SCHEDULE, f"schedule/{i}/stage", s["stage"]))
@@ -395,6 +450,18 @@ def _package_rules(m: dict[str, Any], files: Files) -> list[ManifestError]:
                 errs.append(ManifestError(CODE_MISSING_STRING, f"strings/{key}", lang))
             elif len(w) > most:
                 errs.append(ManifestError(CODE_STRING_TOO_LONG, f"strings/{key}", lang))
+    for i, e in enumerate(m.get("event", [])):
+        path = e["payload"]
+        raw = files(path)
+        if raw is None:
+            errs.append(ManifestError(CODE_MISSING_FILE, f"event/{i}/payload", path))
+            continue
+        try:
+            doc = json.loads(raw)
+        except ValueError:
+            doc = None
+        if not isinstance(doc, dict) or doc.get("type") != "object":
+            errs.append(ManifestError(CODE_BAD_EVENT, f"event/{i}/payload", path))
     props: dict[str, Any] = {}
     if "settings" in m:
         path = m["settings"]["schema"]

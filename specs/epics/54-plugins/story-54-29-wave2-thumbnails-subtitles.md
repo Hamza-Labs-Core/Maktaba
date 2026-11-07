@@ -109,7 +109,7 @@ Per stage switch; per release Epic 51 rollback.
 ## Built (2026-11-07)
 
 Wave 2 moved `thumb_small` and `chapter_thumbs` into `tv.maktaba.thumbnails` and
-`subtitle_gen` into `tv.maktaba.subtitles` (runner group `light`; roles in migration 0200).
+`subtitle_gen` into `tv.maktaba.subtitles` (runner group `light`; roles in migration 0201).
 The small copy's paths moved to `maktaba_pipeline.thumbnail.small`, which the convert, the
 review pages and the mediaintel import read too; the chapter frames use the same cache root
 (`MAKTABA_THUMBNAIL_ROOT`), which the API already read them from. The legacy `thumbnail`

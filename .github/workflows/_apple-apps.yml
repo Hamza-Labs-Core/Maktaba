@@ -499,3 +499,74 @@ jobs:
             build/player-results
           if-no-files-found: warn
           retention-days: 14
+
+  # The Remote's diagnostics (Epic 53: Errors, Logs, dashboards, problem reports) against the
+  # mock home, on a throwaway iPhone simulator made, settled and deleted here. Its
+  # screenshots are the maktaba.dev Remote page's (web/packages/devportal).
+  remote-ui-tests:
+    name: Remote UI tests
+    if: inputs.player_ui
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DERIVED: ${{ github.workspace }}/build/remote-ui-derived
+      SHOTS: ${{ github.workspace }}/build/remote-shots
+      RESULTS: ${{ github.workspace }}/build/remote-results
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Make, boot and settle the iPhone simulator
+        run: |
+          set -euo pipefail
+          mkdir -p "$SHOTS" "$RESULTS"
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
+          import json, re, sys
+          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(r'^iPhone (\d+)$', d['name']))]
+          print(max(t)[1])")
+          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-remote" "$devtype" "$runtime")
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          xcrun simctl ui "$udid" appearance dark
+          xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.remote --mode "level:debug,persist:debug"
+          for key in KeyboardAutocorrection KeyboardPrediction KeyboardShowPredictionBar KeyboardCheckSpelling \
+                     KeyboardAutocapitalization KeyboardContinuousPathEnabled; do
+            xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
+          done
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
+          python3 tools/apple/sim-settle.py "$udid" "$RESULTS/remote-settle.log" --max 480
+
+      - name: Run the Remote's diagnostics UI tests
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote" \
+            -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/remote.xcresult" \
+            CODE_SIGNING_ALLOWED=NO -only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"
+
+      - name: Keep the app's log, delete the simulator
+        if: always() && env.UDID != ''
+        run: |
+          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/remote-app.log" || true
+          xcrun simctl shutdown "$UDID" || true
+          xcrun simctl delete "$UDID" || true
+
+      - name: Keep the screenshots, results and the app's log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: remote-ui-tests
+          path: |
+            build/remote-shots
+            build/remote-results
+          if-no-files-found: warn
+          retention-days: 14
