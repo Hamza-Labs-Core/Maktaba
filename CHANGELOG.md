@@ -327,6 +327,18 @@ build fails when the two differ.
 
 ### Added
 
+- **Problem reports can also go to Maktaba, when the home allows it and the sender chooses it
+  (Epic 53 story 53.16).** A home's admin turns on **Let people send problem reports to
+  Maktaba** in Settings → Privacy (off by default; it needs the home linked to Maktaba Cloud).
+  Then **Report a problem** on the web, Apple and Android apps offers **Also send to Maktaba**,
+  unticked, and an admin can send any report after seeing exactly what leaves the home.
+  Names, video titles, file names, library folders and addresses are removed first, and the
+  person shows as user-1. The home sends it through its relay agent and keeps trying for 7
+  days when the cloud can't be reached. Maktaba keeps it for 90 days; its reply shows in the
+  report and in the sender's **My reports**; **Delete what Maktaba has** deletes every report
+  of the home there. The cloud's service admin reads, triages and answers them at
+  **/admin/reports**; a home admin's cloud account cannot.
+
 - **The Player for Windows and Linux has Report this on its error screens and says what
   happened to its last crash.** An error's **Report this** opens Report a problem with that
   call's reference, and after signing in the player says once whether its last crash went to
@@ -1181,6 +1193,15 @@ build fails when the two differ.
   English and Arabic (right to left), rendered on the server from the signed catalog, with
   Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
   review is plain text.
+
+- **The store browser draws a plugin's flow (Epic 54, stories 54.18 and 54.41).** Settings →
+  Plugins → Browse the store shows, for a plugin in a flow, the whole flow drawn with the events
+  it publishes and the ones it listens to, from the store's signed catalog. The store's review
+  and listing pages now draw flows with the same chart as the home.
+
+- **Open in my Maktaba works without an app (Epic 54, story 54.18, #757).** A plugin's page on
+  plugins.maktaba.tv asks for the home's own address when no Maktaba app is installed,
+  remembers it in that browser only, and opens the home's Browse on the plugin.
 
 ### Fixed
 
@@ -2283,6 +2304,12 @@ build fails when the two differ.
 - **No stale page after an update.** The service worker carries each build's stamp, pages load
   from the network first, and a page an older release left open reloads once instead of going
   blank.
+
+- **A plugin runner starts on a Mac whose data folder has a long path (Epic 54, story
+  54.23).** A runner's socket then lives under `/tmp`, which macOS keeps at `/private/tmp`;
+  the runner's sandbox named the first and was refused the second, so the runner exited
+  about 10 s after it started and its stages ran in the worker. The sandbox now names the
+  sockets and the run folder by their real paths.
 
 ## [0.2.0] - 2026-10-19
 

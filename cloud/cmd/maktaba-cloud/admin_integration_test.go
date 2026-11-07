@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -55,6 +56,10 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 	anon := e.client()
 
 	routes := adminRoutes(t, e.router)
+	// the problem reports homes sent (53.16): a home admin's cloud token reads none of them
+	if !slices.ContainsFunc(routes, func(rt [2]string) bool { return rt[1] == "/v1/admin/reports" }) {
+		t.Fatalf("the walk missed /v1/admin/reports: %v", routes)
+	}
 	for _, rt := range routes {
 		method, path := rt[0], concrete(rt[1], victimID)
 		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
