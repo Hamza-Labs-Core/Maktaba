@@ -44,6 +44,8 @@ async function workers() {
         ),
         // the fake payment provider's webhook secret (story 54.19 §2), a TEST value
         PAYMENTS_FAKE_WEBHOOK_SECRET: "test-webhook-secret",
+        // the key of paid packages' download URLs (story 54.19 §6), a TEST value
+        PAID_URL_KEY: "dGVzdC1wYWlkLXVybC1rZXktbmV2ZXItZm9yLXByb2R1Y3Rpb24",
         MFA_ENC_KEY: toB64(crypto.getRandomValues(new Uint8Array(32))),
         BOOTSTRAP_ADMIN_TOKEN: "test-bootstrap-token-0123456789abcdef",
         TEST_STORE_KEYS: storeKeys,

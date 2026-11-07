@@ -3,6 +3,7 @@
 // (catalog-<api major>.json, revoked.json, revoked-head.json) that the CatalogWriter
 // regenerates on every change and on a timer. store-keys.json is the owner's, signed offline
 // with a root key, and uploaded beside them; the store only checks that its own key is in it.
+import { isPaidPlugin, paidKey } from "./paid";
 import { Root, StoreKeys, emptyState } from "../signing/verify";
 import { Signer, capabilitiesSHA256, filesSHA256, sha256Hex, signEnvelope, signFile } from "../signing/sig";
 import { parseJSON } from "../signing/canonical";
@@ -101,7 +102,13 @@ async function countersignPackage(
   });
   if (verified.level !== level) throw new PublishError("countersign_failed", "the re-packed file does not verify");
   const sha = await sha256Hex(out);
-  if (!(await env.BUCKET.head(`${sha}.mkplugin`))) {
+  // a paid plugin's package is never public (story 54.19 §6): the private bucket, served by
+  // signed URL only (paid.ts)
+  if (await isPaidPlugin(env, m.id)) {
+    if (!(await env.PRIVATE.head(paidKey(sha)))) {
+      await env.PRIVATE.put(paidKey(sha), out, { httpMetadata: { contentType: "application/vnd.maktaba.plugin" } });
+    }
+  } else if (!(await env.BUCKET.head(`${sha}.mkplugin`))) {
     await env.BUCKET.put(`${sha}.mkplugin`, out, {
       httpMetadata: { contentType: "application/vnd.maktaba.plugin", cacheControl: PACKAGE_CACHE },
     });
@@ -173,7 +180,7 @@ export async function resignPage(env: Env, after: string, page = 20): Promise<st
     .bind(signer.id, after, page)
     .all<{ plugin: string; version: string; sha256: string; review_level: "automated" | "reviewed"; developer: string }>();
   for (const r of rows.results) {
-    const obj = await env.BUCKET.get(`${r.sha256}.mkplugin`);
+    const obj = (await env.BUCKET.get(`${r.sha256}.mkplugin`)) ?? (await env.PRIVATE.get(paidKey(r.sha256)));
     if (!obj) continue;
     try {
       await countersignPackage(env, new Uint8Array(await obj.arrayBuffer()), r.plugin, r.version, r.developer, r.review_level);
@@ -315,7 +322,8 @@ export async function buildCatalog(env: Env, apiMajor: number, version: number, 
         version: v.version,
         sha256: v.sha256,
         size: v.size,
-        url: `${env.CDN_ORIGIN}/${v.sha256}.mkplugin`,
+        // a paid plugin's package by signed URL only (story 54.19 §6)
+        url: sale.has(v.plugin) ? `${env.CDN_ORIGIN}/paid/${v.sha256}` : `${env.CDN_ORIGIN}/${v.sha256}.mkplugin`,
         maktaba: v.maktaba,
         plugin_api: v.plugin_api,
         platforms: JSON.parse(v.platforms) as string[],
