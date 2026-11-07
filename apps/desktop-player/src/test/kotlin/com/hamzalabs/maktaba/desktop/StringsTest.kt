@@ -51,6 +51,14 @@ class StringsTest {
         for (part in Strings.parts.drop(1)) for (v in part.ar.values) assertFalse(v, v.contains("الخادم الرئيسي"))
     }
 
+    /** Epic 53's words are in the merged table: the menus and dialogs read them through Texts. */
+    @Test
+    fun theDiagnosticsWordsAreJoinedInBothLanguages() {
+        assertEquals("Send crash reports to Test Home", Texts(Lang.En)["menu.crashReports", "Test Home"])
+        assertEquals("إرسال تقارير الأعطال إلى البيت", Texts(Lang.Ar)["menu.crashReports", "البيت"])
+        assertEquals("أُرسل إلى البيت (رقم 27)", Texts(Lang.Ar)["report.sentTo", "البيت", 27])
+    }
+
     @Test
     fun arabicIsRightToLeft() {
         assertEquals(LayoutDirection.Rtl, Lang.Ar.direction)

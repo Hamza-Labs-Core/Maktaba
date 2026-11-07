@@ -22,8 +22,8 @@ import java.time.Instant
 class CrashOutboxTest {
     @get:Rule val tmp = TemporaryFolder()
 
-    /** A stand-in for the shared rules: what the tests look for is masked. */
-    private val scrub: (String) -> String = { it.replace(Regex("Bearer [A-Za-z0-9._-]+"), "Bearer [REDACTED]").replace("someone@example.com", "[EMAIL]") }
+    /** The shared rules (shared/redact/rules.json), in this portable module since the desktop Player sends crashes too. */
+    private val scrub: (String) -> String = com.hamzalabs.maktaba.core.diagnostics.Redact::scrub
     private val header = Envelope.Header("android.remote", "0.3.90", "android", "15", "Pixel 9", "install-1")
 
     private val crashLog = """
