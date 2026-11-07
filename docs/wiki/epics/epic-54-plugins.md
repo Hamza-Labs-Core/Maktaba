@@ -1,6 +1,6 @@
 # Epic 54 — Plugins: new functions from the queue, with no internet, from a Maktaba store
 
-> **Status:** spec (2026-11-03). **Source:** [`specs/epics/54-plugins/`](../../../specs/epics/54-plugins/README.md).
+> **Status:** spec (2026-11-03; flows, cross-plugin events, loop checks and joined machines added 2026-11-06). **Source:** [`specs/epics/54-plugins/`](../../../specs/epics/54-plugins/README.md).
 > **Anchors:** [research](../../../specs/epics/54-plugins/research.md) · [Epic 51](epic-51-configurable-components.md) (components and lifecycle) · [Epic 53](epic-53-logs-errors-reports.md) (logs and health per plugin) · the store is independent of [Epic 50](epic-50-cloud-no-downtime.md)'s Maktaba Cloud (README §6.0).
 
 ## Goal
@@ -23,12 +23,23 @@ WebAssembly, with a trusted capability set that only Maktaba's release signature
 move stage by stage with a switch per stage and a CI proof that each writes exactly what it
 wrote before.
 
+Added on 2026-11-06 (README §4.12, §4.13): **the graph is the configuration.** Each set of
+plugins that works together submits one signed flow (`flow.toml`) naming its plugins, their
+stages, the core events they attach to, the events they publish and who subscribes to what;
+each manifest matches it exactly. Third-party stages are leaves after core stages. Plugins
+trigger each other only through published events, with an admin's grant. Cycles are refused
+at the store's verification and again on the home at install, enable and update, by one
+check built in Go and TypeScript on one corpus; a loop through data is stopped at run time
+by each job's lineage (16 hops, no re-entry, cause `plugin_loop`). The flow is drawn as a
+chart on the install screen, the Plugins page, the store listing and maktaba.dev. Plugins
+can run on joined machines, installed and approved on the home.
+
 ## The design in one table
 
 | | Choice |
 |---|---|
 | Plugin code | a WebAssembly component (WASI 0.2), from Rust, JS/TS, Python (componentize-py) or Go (TinyGo) |
-| Where it runs | `maktaba-plugind`, one Rust process per home embedding Wasmtime, supervised as the Epic 51 component `plugins.host` (on demand: no process while no plugin is enabled); a fresh store per job |
+| Where it runs | `maktaba-plugind`, one Rust process per machine running plugins (the home, and joined machines a plugin's `placement` allows) embedding Wasmtime, supervised as the Epic 51 component `plugins.host` (on demand: no process while no plugin is enabled); a fresh store per job |
 | No internet | layer 1: sockets, HTTP and files are never linked into the component; layer 2: the host runs in Seatbelt (macOS), namespaces + seccomp + Landlock (Linux), AppContainer + Job Object (Windows); CI escape probes with a canary must log 0 connections |
 | Queue | the pipeline claims plugin stages from a `plugins` pool and hands each job to the host; retries, drain and parking are Epic 40/51's |
 | Plugin API | `maktaba:plugin@1.x` (WIT), forwarded by the host to the Go API over a unix socket with a per-job token the plugin never sees; every call checked for capability, subject, library and quota |
@@ -39,6 +50,8 @@ wrote before.
 | Offline | files install offline; store-signed files as from the store; others only with "Allow unreviewed plugins" and a red Unreviewed badge |
 | Admin's switch | an admin's disable is a "keep off" that sticks through updates, restores and reinstalls; the store's malware switch-off is separate and can't be undone |
 | Permissions dialog | library checkboxes start empty; the admin ticks each |
+| Flows | a signed `flow.toml` per set of plugins is the only wiring; leaves after core; published events between plugins with `events.subscribe:<id>`; the cycle check at the store (54.16 C12) and on the home; run-time lineage capped at 16 hops; a chart wherever someone decides (54.39–54.41) |
+| Joined machines | the home installs, approves and distributes the signed package; each machine verifies it and runs its own sandboxed host and plugin API (54.42) |
 | Panels | read-only, data-only, shown to everyone in the home (viewers included) once installed; no separate viewer approval |
 | Store listings | English and Arabic required (machine translation allowed, labelled); every version's source goes to reviewers, kept private |
 | Maktaba's own stages | 15 first-party plugins, one per Epic 51 component that owns stages (`core.pipeline`, `media.thumbnails`, `library.convert`, `library.dedup`, `library.repair`, `transcription`, `subtitles`, `search.semantic`, `classify`, `enrich`, `youtube`, `livetv`, `livetv.slots`, `ext.plex`, `ext.dizquetv`), which keep their ids and kinds, covering all 56 stages; native Python runners; named SQL statements under per-plugin Postgres roles; exact stage names; lock-step with the server; nine migration waves |
@@ -87,6 +100,10 @@ wrote before.
 | 54.36 | [Wave 9: the core stages, and removing the in-process path](../../../specs/epics/54-plugins/story-54-36-wave9-core.md) | 4 |
 | 54.37 | [The component catalog takes plugin entries](../../../specs/epics/54-plugins/story-54-37-catalog-plugin-entries.md) | 1 |
 | 54.38 | [Plugin files on disk, on Epic 51's packs code](../../../specs/epics/54-plugins/story-54-38-plugin-files.md) | 1 |
+| 54.39 | [Flows: the declared graph, the leaf rule and the cycle check](../../../specs/epics/54-plugins/story-54-39-flows.md) | 1 |
+| 54.40 | [Published events, cross-plugin triggers and run-time lineage](../../../specs/epics/54-plugins/story-54-40-events-lineage.md) | 1 |
+| 54.41 | [The flow chart](../../../specs/epics/54-plugins/story-54-41-flow-chart.md) | 1 |
+| 54.42 | [Third-party plugins on joined machines](../../../specs/epics/54-plugins/story-54-42-joined-machines.md) | 1 |
 
 ## Key numbers
 
@@ -102,6 +119,8 @@ wrote before.
 | A home with no plugins | 0 extra processes |
 | First-party stage vs in-process | p50 ≤ 1.10×, p95 ≤ 1.15×; rows, files and fingerprints identical |
 | Stage flip | 0 lost jobs, 0 reruns over 100 flips |
+| Flow check over a home's plugins | ≤ 50 ms for 100 plugins of 20 stages |
+| Lineage hops | at most 16 |
 
 ## Hard calls (details in the README §11)
 
@@ -116,5 +135,6 @@ entries of a new kind; first-party plugins implement existing components, which 
 kinds. The store shares nothing
 with Maktaba Cloud and runs on Cloudflare only. First-party plugins are
 native and trusted behind the same interface, reach the database through named statements, move
-with the server version, keep their stage names and prove identity, not similarity. Unreviewed installs allowed behind an opt-in. Home-only
-placement for now. Heavy compute stays a host service.
+with the server version, keep their stage names and prove identity, not similarity. Unreviewed installs allowed behind an opt-in. Third-party
+plugins run on joined machines, approved on the home. Third-party stages are leaves after
+core; the flow is the configuration; loops are refused statically and at run time. Heavy compute stays a host service.
