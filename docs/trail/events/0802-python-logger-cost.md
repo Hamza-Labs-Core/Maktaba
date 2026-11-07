@@ -14,11 +14,12 @@ issue: 744
 - The ring keeps the console's line instead of encoding it again (`make_json_ring_renderer`), and `ts` is formatted once a second.
 - `log_bench.py`'s calibration reference was 0.20 s, about 3.6 times the reference machine's 0.055 s, so CI came out at factor 1 although it is 2.8 times slower at logging. The factor is now the slower of two loops, as Go's `Calibrate` does, and the report shows both loops' times.
 - The nightly workflow skipped the Python bench whenever a Go bench failed. It now runs unless the run is cancelled.
+- CI's Linux runner went from p50 55 µs and p99 82 µs to 12.4 and 18.0 µs, so its `log-bench` job is now strict (`LOGBENCH_PY_STRICT=1`). The nightly Mac's p99 (138.8 µs, p50 14.9 µs) is mostly the runner's tail, so there the bench stays a warning (issue #807).
 
 ## What we learned
 - In CPython's `re`, an alternation of literals with `IGNORECASE` is slow; `any()` over a generator costs twice a plain loop. Measure with `timeit` before reaching for a regex in a hot path.
 - A calibration constant must be measured, and its raw times reported: a clamp at 1 hides a wrong reference.
-- On the nightly macOS runner, the Go logger's p99 was 40 µs against a 22.5 µs budget (p50 3.8 µs). That is its own problem, not this PR's.
+- On the nightly macOS runner a p99 is 6–10 times its p50 for Go and Python alike: Go's failed once (40 µs against 22.5) and passed the next run. A best-of-three calibration doesn't capture a noisy runner's tail.
 
 ## Open
-- The Go logger's p99 on the macOS nightly runner (an issue of its own).
+- Issue #807: how the nightly judges a p99 on the noisy macOS runner.

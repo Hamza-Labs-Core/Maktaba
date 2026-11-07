@@ -8,10 +8,10 @@ The budget is 20 µs at the 99th percentile on the reference machine (an Apple M
 runner's speed against it: the slower of a hashing and JSON loop and a loop of the logger's
 own work (the report shows both times), clamped to 1–4, as the Go benches'
 ``logbench.Calibrate`` does. Over budget it warns (a GitHub
-``::warning::`` with the numbers) and exits 1 only with ``LOGBENCH_PY_STRICT=1``: the
-story's rollout starts a budget as a warning, and the Python logger is over it today (see
-docs/performance/logs.md). The numbers are printed as JSON (and written to ``--out``) either
-way, and the nightly run compares them night to night.
+``::warning::`` with the numbers) and exits 1 only with ``LOGBENCH_PY_STRICT=1``: CI's
+``log-bench`` job sets it; the nightly Mac warns only, its p99 being the runner's noise as
+much as the logger's (docs/performance/logs.md, issue #807). The numbers are printed as
+JSON (and written to ``--out``) either way, and the nightly run compares them night to night.
 """
 
 from __future__ import annotations
