@@ -5,7 +5,9 @@
 # leading, the api on the loopback with its stand-in connector. Two more machines:
 #   edge      the stand-in Cloudflare edge: 10.61.0.40 on the Floating IP's network (the test
 #             "Cloudflare ranges" in aop mode), 10.60.0.40 on the private one (the connectors)
-#   attacker  anyone on the internet: 10.61.0.66, nothing but curl and bash
+#   attacker  anyone on the internet: 10.61.7.66, nothing but curl and bash; another /24 from
+#             the edge and the gateway, so the attacker's address redacted in a log (10.61.7.0)
+#             is one neither of them can produce
 # The scenario (cloud/rehearsal/origin_test.go) writes .work/origin first: the AOP test CA
 # and the client certificate it signed.
 networks:
@@ -19,7 +21,7 @@ networks:
 x-origin-env: &origin-env
   ORIGIN_MODE: ${ORIGIN_MODE:?tunnel or aop}
   ORIGIN_RANGES: 10.61.0.40/32
-  FIREWALL_PUBLIC_NET: 10.61.0.0/24
+  FIREWALL_PUBLIC_NET: 10.61.0.0/16
   FIREWALL_HOST: 10.61.0.1
 
 services:
@@ -56,4 +58,4 @@ services:
       - ./.work/origin:/origin:ro
     networks:
       fip:
-        ipv4_address: 10.61.0.66
+        ipv4_address: 10.61.7.66

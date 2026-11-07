@@ -31,7 +31,7 @@ import (
 
 const (
 	edgeAddr     = "10.61.0.40" // the stand-in edge on the Floating IP's network (the test "Cloudflare ranges")
-	attackerAddr = "10.61.0.66"
+	attackerAddr = "10.61.7.66" // another /24 from the edge and the gateway (10.61.0.1)
 	forgedIP     = "6.6.6.6"
 )
 
@@ -181,8 +181,9 @@ func (h *ha) edgeReady() bool { return h.status("attacker", "http://"+edgeAddr+"
 // the api (on the loopback, trusting only its local peer) takes the edge's value. The edge
 // echoes the {remote_host} it writes as X-Edge-Saw. The shared log redaction zeroes an IPv4
 // address's last octet (shared/log/go/redact_rules.json), so the api's line holds the
-// attacker's address as 10.61.0.0: not the forged one (6.6.6.0), and not its TCP peer
-// (127.0.0.1, which the redaction keeps), which would mean the header was ignored.
+// attacker's address as 10.61.7.0: not the forged one (6.6.6.0), not its TCP peer (127.0.0.1,
+// which the redaction keeps: the header ignored), and not the edge's or the gateway's
+// 10.61.0.0 (a hop that rewrote the header with its own peer).
 func (h *ha) checkForgedThroughEdge(t *testing.T, leader string) {
 	t.Helper()
 	probe := fmt.Sprintf("/origin-probe/edge-%d", time.Now().UnixNano())
@@ -241,8 +242,8 @@ func originOnlyViaEdge(t *testing.T, _ *cluster) Result {
 	h.checkForgedThroughEdge(t, lead)
 	probe := fmt.Sprintf("/origin-probe/relay-%d", time.Now().UnixNano())
 	h.status("attacker", fmt.Sprintf("-k -H 'CF-Connecting-IP: %s' https://relay.test%s", forgedIP, probe))
-	if line := h.logLine(t, lead, "relay.log", probe); strings.Contains(line, forgedIP) {
-		t.Errorf("the relay logged the forged CF-Connecting-IP: %s", line)
+	if line := h.logLine(t, lead, "relay.log", probe); strings.Contains(line, redactedV4(forgedIP)) {
+		t.Errorf("the relay logged the forged CF-Connecting-IP (%s, redacted): %s", redactedV4(forgedIP), line)
 	}
 
 	// T07: power off the leader; the connector moves with the lead, the api is back through the edge
