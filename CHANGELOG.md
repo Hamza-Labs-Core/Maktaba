@@ -1872,6 +1872,16 @@ build fails when the two differ.
   **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
   queue and data.
 
+- **The cloud keeps and searches its own logs (Epic 53 story 53.17).** Each Maktaba Cloud node
+  keeps its processes' lines for 14 days and sends them to the witness: warnings within a
+  second, the rest every 10 seconds, with no gap or duplicate when the network drops. The
+  witness indexes every node's lines, so the service admin's **Logs** and **Errors** pages
+  search the whole cloud even while a node is down. Errors shows the cloud's own groups beside
+  the homes' anonymous ones, with the problem reports that name each. A line names a home only
+  by a hash, never its address, and never logs an email or a token. Every process serves its
+  error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
+  each runbook's Check step links to a saved search.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being

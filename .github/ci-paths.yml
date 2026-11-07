@@ -212,8 +212,8 @@ unit_tokens:
 log_bench:
   - *ci
   - 'shared/log/**'
-  - 'cmd/maktaba-server/internal/logkeeper/**'
-  - 'cmd/maktaba-server/internal/logindex/**'
+  # the keeper and the index (shared since 53.17: the cloud runs them too)
+  - 'shared/logkeeper/**'
   - 'cmd/maktaba-server/internal/logbench/**'
   - 'cmd/maktaba-server/internal/supervisor/**'
   - 'cmd/maktaba-server/go.mod'
@@ -362,7 +362,7 @@ components:
   - 'plugind/**'
   - 'cmd/maktaba-server/internal/supervisor/plugins.go'
   - 'cmd/maktaba-server/internal/plugins/**'
-  - 'cmd/maktaba-server/internal/logkeeper/**'
+  - 'shared/logkeeper/**'
   - 'api/internal/plugins/**'
   - 'api/internal/handlers/plugins/**'
   - 'api/internal/router/p54_plugins.go'

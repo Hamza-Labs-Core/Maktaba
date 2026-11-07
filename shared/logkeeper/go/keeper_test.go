@@ -502,3 +502,34 @@ func TestPluginLinesHaveSegmentsOfTheirOwn(t *testing.T) {
 		t.Fatalf("the host's own lines: %v", own)
 	}
 }
+
+// Epic 53 story 53.17: W writes a folder per node and service the nodes name; no name leads
+// out of segments/.
+func TestASegmentFolderNeverLeavesSegments(t *testing.T) {
+	root := t.TempDir()
+	k := New(Config{Root: root, Node: "W", Free: func(string) int64 { return -1 }})
+	line := []byte(`{"ts":"2026-11-07T12:00:00Z","level":"warn","msg":"x"}`)
+	for _, svc := range []string{"../../escape", "..", "a/../b", `c\..\d`, "a/.b", "cloud.relay"} {
+		k.Ingest(Origin{Service: svc, Instance: "A"}, line)
+	}
+	k.Close()
+	err := filepath.Walk(root, func(p string, _ os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(root, p)
+		if strings.HasPrefix(rel, "..") {
+			t.Errorf("%s is outside the keeper's root", p)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "segments", "cloud.relay.A")); err != nil {
+		t.Fatalf("a good name keeps its folder: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(root), "escape")); err == nil {
+		t.Fatal("a folder was made outside the root")
+	}
+}

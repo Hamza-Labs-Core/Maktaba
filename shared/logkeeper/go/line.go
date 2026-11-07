@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logfiles"
 )
 
 // MaxLine is the longest line kept; a longer one is cut and marked attrs.cut.

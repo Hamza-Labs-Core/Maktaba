@@ -1,0 +1,22 @@
+[Unit]
+Description=Maktaba Cloud logs on the witness: every node's lines, kept 14 days and indexed (story 53.17)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=maktaba
+EnvironmentFile=/etc/maktaba/logs.env
+ExecStart=/usr/local/bin/maktaba-cloud logs
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+StateDirectory=maktaba-cloud
+# a guest on the witness: etcd's heartbeats come first (50.10)
+CPUWeight=50
+MemoryMax=1G
+
+[Install]
+WantedBy=multi-user.target
