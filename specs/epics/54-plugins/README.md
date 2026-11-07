@@ -532,6 +532,7 @@ version = ">=1.4.0, <2.0.0"
 
   [[plugin.stage]]
   name        = "find_silences"
+  subject     = "video"
   triggers    = ["audio.ready"]                 # a core event (§4.2)
   emits       = ["silences.found"]
   may_request = []
@@ -547,11 +548,13 @@ version = ">=1.0.0, <2.0.0"
 
   [[plugin.stage]]
   name        = "write_chapters"
+  subject     = "video"
   triggers    = ["plugin:dev.example.silences/silences.found"]
   may_request = ["tidy"]
 
   [[plugin.stage]]
   name     = "tidy"
+  subject  = "video"
   triggers = ["stage:write_chapters"]           # after another of its own stages
 ```
 
@@ -568,8 +571,8 @@ A trigger is one of three forms, and nothing else parses:
 `may_request`, and gains `emits`; `[[event]]` declares what the plugin publishes; `[[depends]]`
 names each other plugin whose events it subscribes to (id and version range), so a missing
 or disabled upstream is shown, never a silent break; `placement` says where it may run
-(§4.13). The checker projects each manifest onto its flow member (stages, triggers, emits,
-requests, events and their payload digests, dependencies) and refuses any difference with
+(§4.13). The checker projects each manifest onto its flow member (stages and their subjects,
+triggers, emits, requests, events and their payload schemas, dependencies) and refuses any difference with
 `flow_manifest_mismatch`. A package with no `flow.toml` (one built before flows) is read as
 the trivial flow of its manifest; the store requires `flow.toml` in every submission.
 

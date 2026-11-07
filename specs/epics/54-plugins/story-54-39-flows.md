@@ -25,7 +25,7 @@ the trivial flow of one member. Fields, with their limits:
 | `version` | semver; any change to the flow is a new version | — |
 | `[strings] name` | a key into each member's `i18n/en.json` and `i18n/ar.json` | both languages |
 | `[[plugin]] id`, `version` | a member, and the version range of it this flow describes | 1–20 members |
-| `[[plugin.stage]] name` | a stage of that member | ≤ 20 per member |
+| `[[plugin.stage]] name`, `subject` | a stage of that member and its subject kind | ≤ 20 per member |
 | `triggers` | core events (`audio.ready`), own stages (`stage:<name>`), published events (`plugin:<id>/<event>`) | ≤ 10 |
 | `emits` | the member's own published events this stage may emit | ≤ 20 |
 | `may_request` | the member's own stages it may request | ≤ 20 |
@@ -83,8 +83,8 @@ The normalised graph is JSON with sorted nodes and edges, identical in Go and Ty
    `flow_unknown_key`, `flow_payload_schema`).
 2. **Membership**: the package's own plugin is a member, and its version is in the member's
    range (`flow_not_member`).
-3. **Match**: the manifest's projection (stages; their triggers, emits and may_request as
-   sets; events with subject and the sha256 of the payload schema; dependencies) equals the
+3. **Match**: the manifest's projection (stages with their subjects; their triggers, emits
+   and may_request as sets; events with subject and payload path; dependencies) equals the
    flow member's entry (`flow_manifest_mismatch`, naming the plugin and the first field that
    differs).
 4. **Leaves**: a trigger, a `stage:` reference or a `may_request` that names a core stage or
