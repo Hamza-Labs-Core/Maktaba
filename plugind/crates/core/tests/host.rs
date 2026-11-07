@@ -108,6 +108,10 @@ version = 1
 
 impl Fixture {
     fn new(skip_audit: bool) -> Self {
+        Self::with_compile_timeout(skip_audit, plugind_core::engine::COMPILE_TIMEOUT)
+    }
+
+    fn with_compile_timeout(skip_audit: bool, compile_timeout: Duration) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("plugins");
         std::fs::create_dir_all(&root).unwrap();
@@ -122,6 +126,7 @@ impl Fixture {
             skip_audit,
             sandbox: "none".into(),
             sandbox_missing: vec![],
+            compile_timeout,
         })
         .unwrap();
         Self { _dir: dir, root, host, api, sink }
@@ -293,7 +298,11 @@ fn compile_cache() {
     let files: Vec<_> = std::fs::read_dir(&cache).unwrap().map(|e| e.unwrap().path()).collect();
     assert_eq!(files.len(), 1);
     let name = files[0].file_name().unwrap().to_string_lossy().into_owned();
-    assert!(name.ends_with(&format!("-{}.cwasm", plugind_core::engine::WASMTIME_VERSION)), "{name}");
+    // <sha256>-<wasmtime>-<engine settings>.cwasm (cache_file_name)
+    assert!(
+        name.ends_with(".cwasm") && name.contains(&format!("-{}-", plugind_core::engine::WASMTIME_VERSION)),
+        "{name}"
+    );
     std::fs::write(&files[0], b"not a compiled component").unwrap();
     f.host.compile(&wasm).unwrap();
     assert!(std::fs::read(&files[0]).unwrap().len() > 100, "the stale file was rewritten");
@@ -567,5 +576,178 @@ fn memories_are_capped_whatever_the_instances() {
             assert_eq!(r.outcome, Outcome::Trap, "{m} memories: {r:?}");
             assert!(r.detail.contains("memory count"), "{m} memories: {r:?}");
         }
+    }
+}
+
+/// A component whose `run` counts down `iterations` (time in the guest, across epoch ticks)
+/// and that holds `filler` more functions (time in the compile); its run answers like hello's.
+fn slow(iterations: u64, filler: usize) -> Vec<u8> {
+    let mut m = String::from(
+        "(component\n  (core module $m\n    (memory (export \"memory\") 1)\n    \
+         (func (export \"cabi_realloc\") (param i32 i32 i32 i32) (result i32) i32.const 1024)\n",
+    );
+    m.push_str(&format!(
+        "    (func (export \"run\") (param i32 i32) (result i32) (local $n i64)\n      \
+         (local.set $n (i64.const {iterations}))\n      \
+         (block $done (loop $l (br_if $done (i64.eqz (local.get $n)))\n        \
+         (local.set $n (i64.sub (local.get $n) (i64.const 1))) (br $l)))\n      \
+         (i32.store (i32.const 2048) (i32.const 0)) i32.const 2048)\n"
+    ));
+    for k in 0..filler {
+        // enough work per function that Cranelift spends time on each
+        m.push_str(&format!(
+            "    (func $f{k} (param i64) (result i64) (local i64 i64)\n      \
+             (local.set 1 (i64.mul (local.get 0) (i64.const {k})))\n      \
+             (local.set 2 (i64.xor (local.get 1) (i64.rotl (local.get 0) (i64.const 7))))\n      \
+             (if (result i64) (i64.gt_u (local.get 2) (local.get 1))\n        \
+             (then (i64.add (local.get 2) (i64.popcnt (local.get 1))))\n        \
+             (else (i64.sub (local.get 1) (i64.clz (local.get 2))))))\n"
+        ));
+    }
+    m.push_str(
+        "  )\n  (core instance $i (instantiate $m))\n  \
+         (type $ro (record (field \"output-hash\" string) (field \"summary\" string)))\n  \
+         (export $ro2 \"run-output\" (type $ro))\n  \
+         (type $re (record (field \"code\" string) (field \"message\" string)))\n  \
+         (export $re2 \"run-error\" (type $re))\n  \
+         (func $run (param \"stage\" string) (result (result $ro2 (error $re2)))\n    \
+         (canon lift (core func $i \"run\") (memory (core memory $i \"memory\")) \
+         (realloc (core func $i \"cabi_realloc\"))))\n  (export \"run\" (func $run)))\n",
+    );
+    wat::parse_str(&m).unwrap()
+}
+
+/// 54.02 §5: compiling a package the host had not loaded is not the job's time. Its compile
+/// takes longer than the job's whole limit (the filler), and its guest spans epoch ticks:
+/// the stage still runs, and the compile is reported on its own.
+#[test]
+fn a_compile_is_not_the_jobs_time() {
+    let f = Fixture::new(false);
+    let timeout_ms = 400;
+    let p = f.package("slowcompile", &slow(200_000_000, 80_000), &[]);
+    let r = f.run(&p, "x", &[], Limits { timeout_ms, fuel: 10_000_000_000_000, ..Default::default() });
+    assert!(
+        r.compile_ms > timeout_ms,
+        "the compile took {} ms, not more than the job's {timeout_ms} ms: add filler",
+        r.compile_ms
+    );
+    assert_eq!(r.outcome, Outcome::Ok, "{r:?}");
+    assert!(r.wall_ms < timeout_ms, "{r:?}");
+}
+
+/// 54.02 §5: a job waiting for its plugin's slots keeps its whole limit. The plugin runs two
+/// jobs at once; the third waits for one of them to end, then runs. Each job's limit is half
+/// as long again as one job takes here (measured first): a wait and a run together exceed it,
+/// a run alone does not.
+#[test]
+fn a_wait_for_a_slot_is_not_the_jobs_time() {
+    let f = Fixture::new(false);
+    let p = f.package("busy", &slow(1_000_000_000, 0), &[]);
+    f.host.preload(ID, VERSION, &p).unwrap();
+    let fuel = 10_000_000_000_000;
+    let first = f.run(&p, "x", &[], Limits { timeout_ms: 60_000, fuel, ..Default::default() });
+    assert_eq!(first.outcome, Outcome::Ok, "{first:?}");
+    let busy = first.wall_ms.max(1);
+    let lim = || Limits { timeout_ms: busy * 3 / 2, fuel, ..Default::default() };
+    let results: Vec<protocol::RunResult> = std::thread::scope(|sc| {
+        let a = sc.spawn(|| f.run(&p, "x", &[], lim()));
+        let b = sc.spawn(|| f.run(&p, "x", &[], lim()));
+        std::thread::sleep(Duration::from_millis(busy / 10));
+        let c = sc.spawn(|| f.run(&p, "x", &[], lim()));
+        vec![a.join().unwrap(), b.join().unwrap(), c.join().unwrap()]
+    });
+    for r in &results {
+        assert_eq!(r.outcome, Outcome::Ok, "busy {busy} ms: {r:?}");
+    }
+    let waited = results.iter().map(|r| r.wait_ms).max().unwrap();
+    // the third waited for most of a job: with the clock from its arrival, it would overrun
+    assert!(waited * 4 >= busy * 3, "the third job waited only {waited} ms (busy {busy} ms): {results:?}");
+}
+
+/// 54.02 §6: a compile has a cap of its own. A package whose compile overruns it fails with
+/// plugin_compile_timeout, and is refused at once afterwards (never compiled again).
+#[test]
+fn a_compile_over_its_cap_is_refused() {
+    let f = Fixture::with_compile_timeout(false, Duration::from_millis(20));
+    let p = f.package("hugecompile", &slow(0, 20_000), &[]);
+    let e = f.host.preload(ID, VERSION, &p).unwrap_err();
+    assert_eq!(e.code, plugind_core::engine::CODE_COMPILE_TIMEOUT, "{e:?}");
+    let t = Instant::now();
+    let e = f.host.preload(ID, VERSION, &p).unwrap_err();
+    assert_eq!(e.code, plugind_core::engine::CODE_COMPILE_TIMEOUT, "{e:?}");
+    assert!(t.elapsed() < Duration::from_millis(500), "the refused package was compiled again ({:?})", t.elapsed());
+    let r = f.run(&p, "x", &[], Limits::default());
+    assert_eq!(r.error_code, plugind_core::engine::CODE_COMPILE_TIMEOUT, "{r:?}");
+    // a host with the default cap compiles the same package
+    let g = Fixture::new(false);
+    let q = g.package("hugecompile", &slow(0, 20_000), &[]);
+    g.host.preload(ID, VERSION, &q).unwrap();
+}
+
+/// 54.02 §6: the compile cache names bind the Wasmtime version and the engine's settings, and
+/// an artifact the engine does not take is compiled again, never used.
+#[test]
+fn the_compile_cache_never_reuses_a_stale_artifact() {
+    use plugind_core::engine::{cache_file_name, WASMTIME_VERSION};
+    let a = cache_file_name("abc", WASMTIME_VERSION, "0123");
+    assert_ne!(a, cache_file_name("abc", "0.0.1", "0123"), "another Wasmtime version");
+    assert_ne!(a, cache_file_name("abc", WASMTIME_VERSION, "4567"), "other engine settings");
+    assert_ne!(a, cache_file_name("abd", WASMTIME_VERSION, "0123"), "another component");
+
+    let f = Fixture::new(false);
+    let wasm = guest("hello");
+    let p = f.package("cached", &wasm, ALL);
+    f.host.preload(ID, VERSION, &p).unwrap();
+    let cache = f.root.join("cache");
+    let names = || -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(&cache)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".cwasm"))
+            .collect();
+        v.sort();
+        v
+    };
+    let made = names();
+    assert_eq!(made.len(), 1, "{made:?}");
+    assert!(made[0].contains(&format!("-{WASMTIME_VERSION}-")), "{made:?}");
+    // a stale artifact under the current name (an engine that changed in place): refused by
+    // Wasmtime, compiled again, the job runs
+    std::fs::write(cache.join(&made[0]), b"not a compiled component").unwrap();
+    let h = Fixture::new(false);
+    std::fs::create_dir_all(h.root.join("cache")).unwrap();
+    std::fs::copy(cache.join(&made[0]), h.root.join("cache").join(&made[0])).unwrap();
+    let q = h.package("cached", &wasm, ALL);
+    let r = h.run(&q, "hello", ALL, Limits::default());
+    assert_eq!(r.outcome, Outcome::Ok, "{r:?}");
+    let rewritten = std::fs::read(h.root.join("cache").join(&made[0])).unwrap();
+    assert_ne!(rewritten, b"not a compiled component", "the stale artifact was kept");
+}
+
+/// 54.02 §6: the host warms its compile cache at start, in the background: every installed
+/// package is compiled once, and the host answers meanwhile.
+#[test]
+fn the_cache_warms_in_the_background() {
+    let f = Fixture::new(false);
+    f.package("warm-a", &guest("hello"), ALL);
+    f.package("warm-b", &slow(0, 20_000), &[]);
+    let t = Instant::now();
+    f.host.warm();
+    assert!(t.elapsed() < Duration::from_millis(100), "warm() waited for the compiles");
+    assert!(f.host.health().ready);
+    let cache = f.root.join("cache");
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        let n = std::fs::read_dir(&cache)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".cwasm"))
+            .count();
+        if n == 2 && f.sink.0.lock().unwrap().iter().any(|l| l.contains("plugin_cache_warm")) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the cache did not warm: {n} artifacts");
+        std::thread::sleep(Duration::from_millis(50));
     }
 }

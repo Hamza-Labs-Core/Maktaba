@@ -114,9 +114,32 @@ a unit test lists the linker's names and compares them with an allow-list.
 On `Preload`, the host validates `plugin.wasm` is a component, runs the **import audit**
 (imports ⊆ the linked set; every `maktaba:plugin` interface imported is covered by a declared
 capability, else `plugin_undeclared_import`), compiles it with `Engine::precompile_component`
-to `<data>/plugins/cache/<sha256>-<wasmtime version>.cwasm`, and builds an `InstancePre`. A
-cache file is loaded only if its name matches the component's sha256 and the running Wasmtime
-version; anything else is recompiled. Cache files are written atomically.
+to `<data>/plugins/cache/<sha256>-<wasmtime version>-<engine settings hash>.cwasm`, and
+builds an `InstancePre`. A cache file is loaded only if its name matches the component's
+sha256, the running Wasmtime version and the engine's compatibility hash
+(`Engine::precompile_compatibility_hash`), and Wasmtime takes it; anything else is
+recompiled. Cache files are written atomically.
+
+As built, a compile is never a job's time:
+
+- **The job's clock** (its time limit, `wall_ms`) starts when its store is made, just before
+  instantiation. A package the host had not loaded is compiled first, and a job waits for its
+  pool and plugin slots first; both are reported on their own (`compile_ms`, `wait_ms`). The
+  guest's start code (instantiation) stays inside the limit.
+- **A compile has its own cap**, 180 s per package, on at most 2 compile workers. Cranelift
+  cannot be stopped part way and the sandbox lets the host start no process, so an overrun
+  keeps its worker until it ends; its caller gets `plugin_compile_timeout` at the cap, and
+  the package is refused from then on (not compiled again, never cached). The package size
+  caps (54.01) bound what is compiled. One package is compiled once at a time: a second job
+  waits for the first's compile.
+- **The cache warms at start**: in the background, one package at a time, the host compiles
+  every installed package missing from the cache, so an update that changes Wasmtime or its
+  settings recompiles each once, before its first job. The host is ready meanwhile; a job
+  whose package is not warm yet compiles it then.
+- Measured on the Python hello (18 MB, componentize-py): compile 1.1 s in a release build
+  and 15 s in a debug one on an Apple M-series machine, instantiation 2–11 ms, its stage
+  about 1 ms; before this, a cold compile was counted in the job's limit and a debug build
+  on a 2-vCPU runner timed out at 89 fuel.
 
 ## Acceptance criteria
 
