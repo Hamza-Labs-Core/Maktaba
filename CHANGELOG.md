@@ -1886,7 +1886,7 @@ build fails when the two differ.
   an update raises a plugin's `data_version`, its other stages wait while one migrate job
   runs on the home first: the plugin's `run` gets the stage `__migrate` with `{"from", "to"}`
   when its manifest says `migrate = true`, and nothing runs when it does not. The new
-  `plugin_installs.data_version` keeps the data's own version until then (migration 0208),
+  `plugin_installs.data_version` keeps the data's own version until then (migration 0209),
   and a rollback before the migration ran no longer needs the plugin's data cleared.
   maktaba.dev: Queue stages and the plugin API, *Migrating your data*; the manifest's
   `migrate` field.

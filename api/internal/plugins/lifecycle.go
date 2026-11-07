@@ -160,7 +160,7 @@ type installRow struct {
 	PrevVersion, PrevDigest, PrevPath      sql.NullString
 	PrevManifest                           []byte
 	// DataVersion is the data_version the plugin's data is at while it is behind the
-	// manifest's (slot 0208; story 54.07 §5 step 4): its migrate job has not run yet.
+	// manifest's (slot 0209; story 54.07 §5 step 4): its migrate job has not run yet.
 	DataVersion sql.NullInt64
 }
 
