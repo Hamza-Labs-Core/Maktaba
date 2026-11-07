@@ -461,7 +461,7 @@ func TestUpdateRehearsal03bRollbackDownScripts(t *testing.T) {
 	if df, _ := all["down_from"].(string); layoutVersion(df) != layoutVersion(k.next) {
 		t.Errorf("the record does not say %s's Down scripts brought it back: %v", k.next, all)
 	}
-	for _, want := range []string{"'s Down scripts, back to slot", "nothing is put back"} {
+	for _, want := range []string{"'s migrations with their Down scripts, back to slot", "nothing is put back"} {
 		if !strings.Contains(home.log.String(), want) {
 			t.Errorf("the rollback did not run the Down scripts: no %q in the log", want)
 		}
