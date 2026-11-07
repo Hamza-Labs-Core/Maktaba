@@ -24,10 +24,10 @@ from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, bound_graph
 from maktaba_pipeline.engine.sql import loads
-from maktaba_pipeline.engine.stages import thumb_small
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.library_mgmt import convert as cv
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.thumbnail import small as thumb_small
 from tests.library_mgmt.dedup_world import probe_into_db, scan, video_at
 from tests.library_mgmt.epic47_world import World, make_world
 from tests.library_mgmt.media_fixtures import mp4_faststart, needs_ffmpeg, reencode_to_mp4

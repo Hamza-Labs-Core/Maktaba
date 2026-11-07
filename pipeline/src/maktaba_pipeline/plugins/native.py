@@ -161,6 +161,13 @@ async def choose(db: Any, stage: str) -> ImplChoice:
     ok, _ = await serving(stage)
     if not ok:
         return ImplChoice("inproc", "runner_not_serving_here")
+    if files_stage(stage):
+        group = firstparty.runner_group(stage) or ""
+        h = await hello(group)
+        if not _AREAS_WRITTEN or (h or {}).get("areas") != _AREAS_WRITTEN[-1]:
+            # the runner's sandbox is from other folders than this machine's now (a library
+            # was added): this job runs here while the runner restarts on the new areas
+            return ImplChoice("inproc", "runner_areas_stale")
     return ImplChoice("plugin")
 
 
@@ -504,3 +511,71 @@ def fingerprint_fn(stage: str, kind: str, inproc: Any) -> Any:
             return await inproc(db, subject)
 
     return fn
+
+
+# --- the runners' file areas (story 54.23 §3) --------------------------------------------
+
+AREAS_FILE = "areas.json"
+
+
+async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
+    """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
+    library roots through this machine's share-path mapping, and the data folders the
+    stages' own settings name. A runner applies its sandbox from them."""
+    from ..thumbnail.generator import thumbnail_dir_for
+
+    roots: set[str] = set()
+    try:
+        rows = await db.fetch("SELECT roots FROM libraries")
+    except Exception:  # noqa: BLE001 - a database without libraries: no library area
+        rows = []
+    for r in rows:
+        raw = r["roots"]
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                raw = [raw]
+        for root in raw or ():
+            local = path_map.to_local(str(root)) if path_map is not None else str(root)
+            roots.add(os.path.realpath(local) if os.path.isabs(local) else local)
+    thumbs = str(
+        thumbnail_dir_for("x", root=os.environ.get("MAKTABA_THUMBNAIL_ROOT") or None).parent
+    )
+    return {"library": ";".join(sorted(roots)), "data.thumbnails": thumbs}
+
+
+def areas_digest(doc: dict[str, str]) -> str:
+    import hashlib
+
+    return hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()[:16]
+
+
+_AREAS_WRITTEN: list[str] = []
+
+
+async def write_areas(db: Any, path_map: Any = None) -> str:
+    """Write the areas for the runners (``<runner dir>/areas.json``) when they changed; a
+    runner that started with others restarts itself (story 54.23 §3). Answers the digest."""
+    from maktaba_plugin_runner import runner_dir
+
+    doc = await areas_doc(db, path_map)
+    digest = areas_digest(doc)
+    if _AREAS_WRITTEN and _AREAS_WRITTEN[-1] == digest:
+        return digest
+    d = runner_dir()
+    with contextlib.suppress(OSError):
+        d.mkdir(parents=True, exist_ok=True)
+        tmp = d / (AREAS_FILE + ".tmp")
+        tmp.write_text(json.dumps({"digest": digest, "areas": doc}, sort_keys=True))
+        os.replace(tmp, d / AREAS_FILE)
+        _AREAS_WRITTEN.append(digest)
+    return digest
+
+
+def files_stage(stage: str) -> bool:
+    """Whether a first-party stage reads or writes files (its runner must have this
+    machine's current areas to serve it)."""
+    p = firstparty.by_stage(stage)
+    files = (p.trusted.get("files") or {}) if p is not None else {}
+    return bool(files.get("read") or files.get("write"))

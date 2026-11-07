@@ -51,12 +51,12 @@ from ...library_mgmt.ledger import advance, create_action
 from ...library_mgmt.swap import SwapError, SwapVerifyFailed, swap_in
 from ...library_mgmt.unicode_open import open_fallback
 from ...library_mgmt.verify import ProbeInfo, VerifyResult, count_frames, verify_media
+from ...thumbnail import small as thumb_small
 from ..context import StageContext, StageFailure
 from ..enqueue import enqueue_job
 from ..graph import EPIC47_PRIORITIES, Request, StageResult
 from ..hashing import canonical_hash
 from ..sql import uid
-from . import thumb_small
 from ._common import require_video
 from .registry import StageImpl
 

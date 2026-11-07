@@ -1,0 +1,36 @@
+# tv.maktaba.subtitles: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2
+# (story 54.29): the first stages that read library files and write files.
+schema     = 1
+id         = "tv.maktaba.subtitles"
+version    = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba    = ">=0.0.0"
+licence    = "AGPL-3.0-only"
+runtime    = "native-python"
+
+[strings]
+name    = "fp.subtitles.name"
+summary = "fp.subtitles.summary"
+
+[trusted]
+runner    = "light"
+component = "subtitles"
+db.read   = ["transcript_segments", "transcripts", "videos"]
+db.write  = ["subtitle_files"]
+files.read  = ["library"]
+files.write = ["library"]
+
+[[stage]]
+name         = "subtitle_gen"
+subject      = "video"
+export       = "subtitle-gen"
+version      = 1
+label        = "Subtitle files"
+subject_kinds = ["video"]
+pool         = "nas_write"
+lane         = "speech"
+lane_order   = 4
+external_write = true
+entry        = "maktaba_fp_subtitles.stages.subtitle_gen:IMPL"
+fingerprint  = { input = true, output = false }
+

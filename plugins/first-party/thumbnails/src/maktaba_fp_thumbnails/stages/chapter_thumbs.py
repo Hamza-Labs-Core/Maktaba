@@ -16,19 +16,19 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from ...db.jobs import Job
-from ...thumbnail.generator import (
+from maktaba_pipeline.db.jobs import Job
+from maktaba_pipeline.engine.causes import brief
+from maktaba_pipeline.engine.context import StageContext, StageFailure
+from maktaba_pipeline.engine.graph import CHAPTER_THUMBS_VERSION, StageResult, Subject
+from maktaba_pipeline.engine.hashing import canonical_hash
+from maktaba_pipeline.engine.sql import uid
+from maktaba_pipeline.engine.stages._common import load_video, require_video
+from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.thumbnail.generator import (
     DEFAULT_CONFIG,
     generate_chapter_thumbs,
     thumbnail_dir_for,
 )
-from ..causes import brief
-from ..context import StageContext, StageFailure
-from ..graph import CHAPTER_THUMBS_VERSION, StageResult, Subject
-from ..hashing import canonical_hash
-from ..sql import uid
-from ._common import load_video, require_video
-from .registry import StageImpl
 
 __all__ = ["IMPL", "reset_frame_runner", "set_frame_runner"]
 

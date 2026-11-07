@@ -190,7 +190,7 @@ def _no_web_metadata_calls() -> object:
 @pytest.fixture(autouse=True)
 def _app_cache_in_tmp(tmp_path_factory: pytest.TempPathFactory) -> object:
     """thumb_small and review_pages write the app's media cache: never the real home."""
-    from maktaba_pipeline.engine.stages import thumb_small
+    from maktaba_pipeline.thumbnail import small as thumb_small
 
     old = thumb_small.ROOT
     thumb_small.ROOT = str(tmp_path_factory.mktemp("cache") / "thumbnails")
