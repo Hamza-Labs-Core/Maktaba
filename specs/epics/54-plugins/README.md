@@ -1862,6 +1862,23 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   in-process instead (`native.FALLBACKS`: an unregistered statement, a sandbox refusal,
   `choose()` declining); the parity harness fails on any for the stages under test, since
   the in-process rerun writes the same rows and the comparison alone would pass.
+- **What only the engine may write is relayed to the worker.** A plugin stage's job may
+  queue jobs (`enqueue`: the stage itself, a stage it may request, or a stage joined to it
+  by an edge of the graph, for a subject of the job's library), merge a duplicate group
+  (`dedup_commit`: re-pointing every table that references a video, built from the
+  catalogue, so no plugin role could hold it; only this job's group and its own members),
+  and bring a superseded video back (`unsupersede`: only one of the job's library). The
+  worker checks each against the job and writes it with its own connection; the in-process
+  path calls the same functions directly.
+- **The library's statements are fixed texts.** Wave 5's shared code built `IN (...)`
+  lists and optional `SET` columns at run time (for SQLite, which has no arrays). Each is now
+  one text per dialect: an array (`= ANY($1::uuid[])`) or a JSON list
+  (`IN (SELECT value FROM json_each($1))`), and the ledger's updates set each writable field
+  or keep it (`CASE WHEN $flag THEN $value ELSE field END`), so they are named statements.
+- **A move within the library is not yet checked against the job's subject** (story 54.32
+  §2, T02). The sandbox allows the library and its trash, and every database change a plugin
+  asks of the worker is checked; the job-scoped path check in the file-moving functions
+  follows (issue #796).
 - **A core stage's name is not reserved.** A third-party stage's queue is always
   `p_<hash>_<name>` (story 54.01 §4), so a plugin stage named `tag` can never be the core
   `tag`; refusing the name would only break existing plugins. The trusted-only keys and the

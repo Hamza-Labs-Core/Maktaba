@@ -102,3 +102,14 @@ Per stage switch; per release Epic 51 rollback.
 ### Dependencies
 
 54.31.
+
+## Built (2026-11-07)
+
+Wave 5 moved `convert_mp4` into `tv.maktaba.convert` and `dedup_scan`, `dedup_apply`,
+`trash_purge` and `file_restore` into `tv.maktaba.dedup` (runner group `light`; roles in the
+wave's `NNNN_fp_roles` migration). Queuing jobs, the merge's re-pointing of every table that
+references a video, and bringing a superseded video back are the worker's, relayed and
+checked against the job (README §15.12). The library's statements are fixed texts per
+dialect. Parity compares the library and its trash byte for byte, the journal (the same
+run-time ids on both sides), the groups and the videos, through a merge, a restore and a
+purge. The job-scoped path check of §2 (T02) follows in issue #796.

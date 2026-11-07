@@ -9,7 +9,9 @@
 > `subtitle_gen` in `tv.maktaba.subtitles`, the first stages that read media, run ffmpeg and
 > write files. **Wave 3 has moved**: `transcribe` and `second_listen` run in
 > `tv.maktaba.transcription`, and the search index, chapters and topics in
-> `tv.maktaba.semantic-search`. The other stages move wave by wave.
+> `tv.maktaba.semantic-search`. **Wave 5 has moved**: the conversion to MP4 runs in
+> `tv.maktaba.convert`, and finding and merging duplicates, the file trash and restoring
+> from it in `tv.maktaba.dedup`. The other stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -181,6 +183,22 @@ shared ones:
 - **Upkeep stays in the worker.** A stage's `refresh` (rules read and jobs queued before
   each selection) runs in the worker; `statements.toml` names such functions under `worker`
   so their statements are not registered.
+
+## Changing the owner's media: what the worker does for a plugin
+
+A stage that rewrites, merges or moves media writes some things no plugin role may hold.
+The plugin asks the worker for them over the run's connection, and the worker checks each
+against the job before it writes it with its own database connection:
+
+| Ask | What the worker checks |
+|---|---|
+| `enqueue` (from `enqueue_job`) | the stage is the job's own, one it may request, or joined to it by an edge; the subject is of the job's library |
+| `dedup_commit` (a duplicate group's merge) | the group is the job's subject, and the keeper and the others are its members |
+| `unsupersede` (a restored duplicate) | the video is a superseded video of the job's library |
+
+The same code runs in-process, where these calls write directly. Writes go only to the
+library's folders and their trash (`files.write = ["library", "trash"]`), each move recorded
+in the file-action journal first.
 
 ## The repo layout
 
