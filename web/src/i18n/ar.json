@@ -5133,7 +5133,7 @@
   "settings.section.subscription": "الاشتراك",
   "subscription.plan": "الخطة",
   "subscription.tier.free": "مجانية",
-  "subscription.tier.home": "المنزل",
+  "subscription.tier.home": "الأساسية",
   "subscription.tier.pro": "احترافية",
   "subscription.status.active": "فعّال",
   "subscription.status.grace": "منتهٍ: يتوقف خلال 3 أيام",
@@ -7567,5 +7567,9 @@
   "plugins.error.settings_schema_invalid": "نموذج إعدادات الإضافة غير صالح.",
   "plugins.error.settings_secret_forbidden": "تطلب الإضافة كلمة مرور أو مفتاحًا، ولا يُسمح لأي إضافة بحفظهما.",
   "plugins.error.reauth_required": "اكتب كلمة مرورك مجددًا للسماح بالإضافات غير المراجَعة.",
-  "plugins.error.plugin_install_form": "اختر ملف إضافة لتثبيته."
+  "plugins.error.plugin_install_form": "اختر ملف إضافة لتثبيته.",
+  "relay.needsPlan": "التشغيل عن بُعد عبر الوسيط يتطلب الخطة الأساسية أو الاحترافية. الوصول المباشر من الإنترنت مجاني: فعّله من إعدادات هذا الجهاز الرئيسي.",
+  "relay.streamLimit": "يوجد {count} أجهزة تشغّل عبر الوسيط، وهو الحد الأقصى في خطتك. أوقف أحدها، أو شغّل في المنزل أو عبر اتصال مباشر.",
+  "relay.homeBusy": "جهازك الرئيسي مشغول جدًا لتجهيز هذا الفيديو للتشغيل عن بُعد الآن. حاول بعد قليل.",
+  "relay.transcodeNote": "في الخطة الأساسية، تُحوَّل الفيديوهات المشغَّلة عبر الوسيط على هذا الجهاز الرئيسي إلى نحو 3 ميغابت في الثانية، وهذا يستخدم معالجه أو شريحة الرسوميات أثناء التشغيل."
 }

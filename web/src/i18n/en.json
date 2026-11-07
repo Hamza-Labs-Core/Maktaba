@@ -5120,7 +5120,7 @@
   "settings.section.subscription": "Subscription",
   "subscription.plan": "Plan",
   "subscription.tier.free": "Free",
-  "subscription.tier.home": "Home",
+  "subscription.tier.home": "Basic",
   "subscription.tier.pro": "Pro",
   "subscription.status.active": "Active",
   "subscription.status.grace": "Expired: ends in 3 days",
@@ -7554,5 +7554,9 @@
   "plugins.error.settings_schema_invalid": "The plugin's settings form is not valid.",
   "plugins.error.settings_secret_forbidden": "The plugin asks for a password or a key, which no plugin may keep.",
   "plugins.error.reauth_required": "Type your password again to allow unreviewed plugins.",
-  "plugins.error.plugin_install_form": "Choose a plugin file to install."
+  "plugins.error.plugin_install_form": "Choose a plugin file to install.",
+  "relay.needsPlan": "Remote play through the relay needs a Basic or Pro plan. Direct access from the internet is free: turn it on in this home's settings.",
+  "relay.streamLimit": "{count} devices are already playing through the relay, the most your plan allows. Stop one, or play at home or over a direct connection.",
+  "relay.homeBusy": "Your home is too busy to prepare this video for remote play right now. Try again shortly.",
+  "relay.transcodeNote": "On the Basic plan, videos played through the relay are converted on this home to about 3 Mbps. This uses its processor or graphics chip while they play."
 }
