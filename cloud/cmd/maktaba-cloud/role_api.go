@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -42,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/telemetry"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 )
 
 func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migrator, build server.BuildInfo) {
@@ -68,6 +71,7 @@ type apiOverrides struct {
 	BillingProvider billingpkg.Provider // replaces cfg.Billing.Provider
 	Google          *oauth.GoogleConfig // endpoints only; ids come from cfg
 	Apple           *oauth.AppleConfig
+	Turnstile       turnstile.Verifier // replaces siteverify (story 50.30)
 }
 
 // newAPI builds the api role's router. stop releases its background
@@ -81,6 +85,13 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		return nil, nil, err
 	}
 	signer := token.NewSigner(secret)
+
+	// The bot check on the auth pages (story 50.30 §4): on without its secret, the role
+	// refuses to start rather than sign people in unchecked.
+	tsGuard, err := turnstileGuard(cfg, o.Turnstile)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// The payment provider is not chosen yet; "none" takes no payments.
 	payments, err := billingpkg.New(cfg.Billing.Provider)
@@ -245,8 +256,10 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			WebURL:    cfg.Server.WebURL,
 			// Host-only: a Domain=.maktaba.tv cookie would also go to
 			// every home server behind *.relay.maktaba.tv.
-			CookieDomain: "",
-			Secure:       true,
+			CookieDomain:     "",
+			Secure:           true,
+			Turnstile:        tsGuard,
+			TurnstileSiteKey: cfg.Turnstile.SiteKey,
 		})
 
 		billing := &billingh.Deps{
@@ -342,4 +355,33 @@ func blockedIPs(d *abuse.Detector, logger *slog.Logger) func(http.Handler) http.
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// turnstileGuard is the auth pages' bot check from the config (story 50.30 §4): nil when off;
+// refused when on without its secret, or without a web origin to ask.
+func turnstileGuard(cfg config.Config, fake turnstile.Verifier) (*turnstile.Guard, error) {
+	t := cfg.Turnstile
+	if !t.Enabled {
+		return nil, nil
+	}
+	if t.Secret == "" && fake == nil {
+		return nil, fmt.Errorf("turnstile.enabled is on but MAKTABA_CLOUD_TURNSTILE_SECRET is not set")
+	}
+	if len(t.WebOrigins) == 0 {
+		return nil, fmt.Errorf("turnstile.enabled is on but turnstile.web_origins (or server.web_url) names no web origin")
+	}
+	hosts := make([]string, 0, len(t.WebOrigins))
+	for _, o := range t.WebOrigins {
+		u, err := url.Parse(o)
+		if err != nil || u.Host == "" {
+			return nil, fmt.Errorf("turnstile.web_origins: %q is not an origin", o)
+		}
+		hosts = append(hosts, u.Hostname())
+	}
+	var v turnstile.Verifier = &turnstile.Client{Secret: t.Secret, Hostnames: hosts}
+	if fake != nil {
+		v = fake
+	}
+	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: t.WebOrigins,
+		ClientIP: func(r *http.Request) string { return cmw.GetClientIP(r.Context()) }}, nil
 }

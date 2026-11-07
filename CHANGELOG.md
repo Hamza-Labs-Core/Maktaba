@@ -1281,6 +1281,14 @@ build fails when the two differ.
   can open; a plugin still gets no network, no files and no sockets of its own. maktaba.dev:
   Building Maktaba plugins, Installing and managing plugins, The sandbox.
 
+- **Cloudflare in front of the cloud (Epic 50, story 50.30).** The zone's TLS settings, the WAF
+  managed rules, four custom rules and two rate limits are written in
+  `deploy/cloudflare/zone.maktaba.tv.json`; CI checks the file against its plan and 50.34's
+  workflow applies it. Signing up, signing in and asking for a password reset on the web can ask
+  for a Cloudflare Turnstile check, turned on in the production config; the api verifies the
+  token and answers `turnstile_failed` or `turnstile_unavailable`. The web app explains those
+  and the edge's `rate_limited` in English and Arabic.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
