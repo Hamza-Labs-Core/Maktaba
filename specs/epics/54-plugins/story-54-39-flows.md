@@ -97,9 +97,10 @@ The normalised graph is JSON with sorted nodes and edges, identical in Go and Ty
    home** (`flow_missing_plugin`).
 6. **Cycles**: Tarjan's strongly connected components; any component of two or more nodes,
    or a node with an edge to itself, is a cycle (`flow_cycle`). The path is deterministic:
-   take the component whose smallest node id sorts first, start at that node, and walk the
-   shortest cycle back to it by breadth-first search inside the component, visiting
-   neighbours in sorted order. Both languages print it the same way:
+   in each such component take its smallest stage node (a cycle always passes through a
+   stage), order the components by it, start at it, and walk the shortest cycle back to it
+   by breadth-first search inside the component, visiting neighbours in sorted order. Both
+   languages print it the same way:
    `dev.example.a/tag → plugin:dev.example.a/tagged → dev.example.b/check → dev.example.a/tag`.
 7. **Depth**: the longest path from a `core:` node (or a schedule's stage) through stages is
    at most 16 stages, the lineage hop cap (`flow_too_deep`, with the path).
