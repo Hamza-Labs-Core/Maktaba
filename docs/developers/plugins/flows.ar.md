@@ -55,7 +55,9 @@ version = ">=1.0.0, <2.0.0"
   triggers = ["stage:write_chapters"]
 ```
 
-وهذا التدفّق مرسومًا:
+وهذا التدفّق مرسومًا (وترسم مكتبة المخطط نفسه على شاشة التثبيت وصفحة الإضافات، من الشيفرة نفسها):
+
+![مثال تدفّق من إضافتين: الصوت جاهز، ثم تُطلق silences/find_silences الحدث silences.found، فيشغّل chapter-writer/write_chapters، ثم chapter-writer/tidy](example.svg)
 
 ```
 audio.ready ──► silences/find_silences ──► ◆ silences.found ──► chapter-writer/write_chapters ──► chapter-writer/tidy

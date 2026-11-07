@@ -446,7 +446,9 @@ function longest(g: Graph, adj: Map<string, string[]>): string[] {
   for (const [from, tos] of adj) {
     for (const to of tos) {
       indeg.set(to, (indeg.get(to) ?? 0) + 1);
-      preds.set(to, [...(preds.get(to) ?? []), from]);
+      const ps = preds.get(to);
+      if (ps) ps.push(from);
+      else preds.set(to, [from]);
     }
   }
   const ready = new IdHeap();

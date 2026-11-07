@@ -151,8 +151,45 @@ function installBody(f: InstallForm): FormData {
   return form;
 }
 
+/** A flow check's finding, with its words (54.39). */
+export interface FlowFinding {
+  code: string;
+  severity: "refuse" | "warn";
+  plugin?: string;
+  detail?: string;
+  path?: string[];
+  message: string;
+  message_ar: string;
+}
+
+/** The normalised graph a chart draws (54.39 §3). */
+export interface FlowGraph {
+  nodes: {
+    id: string;
+    kind: string;
+    name: string;
+    plugin: string;
+    state: string;
+    subject: string;
+  }[];
+  edges: { from: string; kind: string; to: string }[];
+}
+
+/** GET /api/plugins/{id}/flow: the plugin's flow as this home has it (54.41). */
+export interface PluginFlow {
+  id: string;
+  version: string;
+  name: string;
+  graph: FlowGraph;
+  missing: { id: string; version: string }[];
+  findings: FlowFinding[] | null;
+}
+
 export const pluginsApi = {
   list: () => api.get<{ plugins: Plugin[]; policy: Policy }>("/api/plugins"),
+  graph: () => api.get<{ graph: FlowGraph; findings: FlowFinding[] | null }>("/api/plugins/graph"),
+  flow: (id: string) => api.get<PluginFlow>(`/api/plugins/${enc(id)}/flow`),
+  downstream: (id: string) => api.get<{ stages: string[] }>(`/api/plugins/${enc(id)}/downstream`),
   show: (id: string) => api.get<PluginDetail>(`/api/plugins/${enc(id)}`),
   install: (f: InstallForm, onProgress?: (fraction: number) => void) =>
     uploadWithProgress<InstallResult>("/api/plugins/install", installBody(f), onProgress),

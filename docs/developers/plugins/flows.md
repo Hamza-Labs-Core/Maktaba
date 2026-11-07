@@ -56,7 +56,10 @@ version = ">=1.0.0, <2.0.0"
   triggers = ["stage:write_chapters"]
 ```
 
-Drawn, this flow is:
+Drawn, this flow is (Maktaba draws the same chart on the install screen and the Plugins
+page, from the same code):
+
+![An example flow of two plugins: audio is ready, then silences/find_silences emits silences.found, which starts chapter-writer/write_chapters, then chapter-writer/tidy](example.svg)
 
 ```
 audio.ready ──► silences/find_silences ──► ◆ silences.found ──► chapter-writer/write_chapters ──► chapter-writer/tidy

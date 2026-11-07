@@ -238,3 +238,64 @@ version = ">=1.0.0"
 		t.Fatal(err)
 	}
 }
+
+// 54.41 T03 (API side): a plugin of a two-plugin flow installed alone: its flow names the
+// other member as missing, and the chart's graph holds both, the other one marked missing.
+func TestFlowViewNamesMissingMembers(t *testing.T) {
+	f := newLC(t)
+	f.allowUnreviewed(t)
+	f.sup.flow = `schema = 1
+id = "dev.example.flow"
+version = "1.0.0"
+
+[strings]
+name = "flow.name"
+
+[[plugin]]
+id = "` + fa + `"
+version = ">=1.0.0"
+
+  [[plugin.stage]]
+  name = "work"
+  subject = "video"
+  triggers = ["audio.ready"]
+  emits = ["alpha.done"]
+
+  [[plugin.event]]
+  name = "alpha.done"
+  subject = "video"
+  payload = "events/done.schema.json"
+
+[[plugin]]
+id = "` + fb + `"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name = "work"
+  subject = "video"
+  triggers = ["audio.ready", "plugin:` + fa + `/alpha.done"]
+  emits = ["beta.done"]
+
+  [[plugin.event]]
+  name = "beta.done"
+  subject = "video"
+  payload = "events/done.schema.json"
+`
+	if _, err := f.installFlow(t, flowManifest(fa, ""), false); err != nil {
+		t.Fatal(err)
+	}
+	v, err := f.l.Flow(context.Background(), fa)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.ID != "dev.example.flow" || len(v.Missing) != 1 || v.Missing[0].ID != fb || v.Missing[0].Version != ">=1.0.0, <2.0.0" {
+		t.Fatalf("view %+v", v)
+	}
+	states := map[string]string{}
+	for _, n := range v.Graph.Nodes {
+		states[n.Plugin] = n.State
+	}
+	if states[fa] != "installed" || states[fb] != "missing" {
+		t.Fatalf("states %v", states)
+	}
+}

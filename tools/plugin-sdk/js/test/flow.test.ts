@@ -99,7 +99,8 @@ test("T09: N22, 100 plugins of 20 stages in at most 50 ms", () => {
     }
     members.push(m);
   }
-  checkMembers(members.slice(0, 2)); // warm the event list
+  // N22 is the check's own time on a home, not V8's first compile of it: one run warms it
+  checkMembers(members);
   const start = performance.now();
   const { findings } = checkMembers(members);
   const took = performance.now() - start;

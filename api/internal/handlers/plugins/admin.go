@@ -6,6 +6,7 @@ package plugins
 //	GET    /api/plugins/policy               the home's policy (allow_unreviewed)
 //	GET    /api/plugins/graph                the home's plugin graph and its findings (54.39, 54.41)
 //	GET    /api/plugins/{id}/downstream      other plugins' stages that go idle when it is off
+//	GET    /api/plugins/{id}/flow            its flow: the whole set, each member's state, the missing (54.41)
 //	PUT    /api/plugins/policy               change it
 //	POST   /api/plugins/install              multipart: file, grants, libraries, all_libraries, enable, confirm_name
 //	GET    /api/plugins/{id}                 one plugin's detail
@@ -77,6 +78,7 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Delete("/api/plugins/{id}", h.remove)
 		r.Get("/api/plugins/{id}/writes", h.writes)
 		r.Get("/api/plugins/{id}/downstream", h.downstream)
+		r.Get("/api/plugins/{id}/flow", h.flow)
 		r.Get("/api/plugins/{id}/settings", h.getSettings)
 		r.Put("/api/plugins/{id}/settings", h.putSettings)
 		r.Post("/api/plugins/{id}/writes/revert", h.revert)
@@ -191,6 +193,15 @@ func (h *Admin) downstream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"stages": d})
+}
+
+func (h *Admin) flow(w http.ResponseWriter, r *http.Request) {
+	v, err := h.L.Flow(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	common.WriteJSON(w, r, http.StatusOK, v)
 }
 
 func (h *Admin) show(w http.ResponseWriter, r *http.Request) {

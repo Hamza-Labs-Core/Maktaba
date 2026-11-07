@@ -16,7 +16,8 @@
     "paths": {
       "@/*": ["src/*"],
       "@ds/*": ["design-system/*"],
-      "@maktaba/tvplayer": ["packages/tvplayer/src/index.ts"]
+      "@maktaba/tvplayer": ["packages/tvplayer/src/index.ts"],
+      "@maktaba/flowchart": ["../tools/plugin-sdk/js/src/flowchart.ts"]
     }
   },
   "include": ["src", "cloud/src", "design-system/components", "packages"],
