@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -213,3 +214,56 @@ func (m *Meter) add(got Machine, t time.Time) {
 // CPUSeconds and PeakMem are what the meter saw.
 func (m *Meter) CPUSeconds() float64 { return m.cpuSecs }
 func (m *Meter) PeakMem() float64    { return m.peakMem }
+
+// CgroupCPU reads a container's own CPU time, the total its cgroup has charged since it started
+// (cgroup v2 cpu.stat usage_usec, else v1 cpuacct.usage): the relay process's CPU-seconds,
+// whatever else the machine runs. A sampled share (Docker) integrates instants and swings
+// with what else is busy; two reads of this counter give the exact CPU used between them.
+type CgroupCPU struct {
+	Container string
+}
+
+// Seconds is the container's CPU time so far.
+func (c CgroupCPU) Seconds(ctx context.Context) (float64, error) {
+	out, err := exec.CommandContext(ctx, "docker", "exec", c.Container, "cat", "/sys/fs/cgroup/cpu.stat").Output()
+	if err == nil {
+		return ParseCPUStat(string(out))
+	}
+	out, err2 := exec.CommandContext(ctx, "docker", "exec", c.Container, "cat", "/sys/fs/cgroup/cpuacct/cpuacct.usage").Output()
+	if err2 != nil {
+		return 0, fmt.Errorf("the cgroup's CPU time of %s: %w (v1: %v)", c.Container, err, err2)
+	}
+	ns, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 64)
+	if err != nil {
+		return 0, fmt.Errorf("cpuacct.usage %q", out)
+	}
+	return ns / 1e9, nil
+}
+
+// ParseCPUStat reads usage_usec from a cgroup v2 cpu.stat, in seconds.
+func ParseCPUStat(s string) (float64, error) {
+	for _, line := range strings.Split(s, "\n") {
+		f := strings.Fields(line)
+		if len(f) == 2 && f[0] == "usage_usec" {
+			us, err := strconv.ParseFloat(f[1], 64)
+			if err != nil {
+				return 0, fmt.Errorf("usage_usec %q", f[1])
+			}
+			return us / 1e6, nil
+		}
+	}
+	return 0, fmt.Errorf("no usage_usec in cpu.stat")
+}
+
+// Median is the middle of xs (the mean of the two middle ones for an even count); 0 for none.
+func Median(xs []float64) float64 {
+	if len(xs) == 0 {
+		return 0
+	}
+	s := append([]float64(nil), xs...)
+	sort.Float64s(s)
+	if len(s)%2 == 1 {
+		return s[len(s)/2]
+	}
+	return (s[len(s)/2-1] + s[len(s)/2]) / 2
+}

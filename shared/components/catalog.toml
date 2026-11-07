@@ -68,6 +68,12 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
 features = ["live_tv", "transcripts", "subtitles", "semantic_search", "chapters", "youtube",
             "plex", "remote_access", "recommendations", "plugin_panels"]
 
+# Feature groups (story 50.35): for a feature, components that count as one, on when any member
+# is on, beside the rule that every component listing a feature is on. Each member lists the
+# feature itself. Story 50.15 adds remote_access = [["cloud.relay", "cloud.direct"]] with
+# cloud.direct.
+feature_any = {}
+
 # ---- core: always on, shown for their health -----------------------------------------
 
 [[component]]

@@ -80,6 +80,13 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A rollback no longer keeps the home down for half a day building the search index.**
+  Putting a backup back rebuilt semantic search's vector index among the other indexes with
+  64 MB of memory; for 28 million transcript lines that was some fourteen hours, the home
+  down all the while (the rollback of 0.3.90 on 2026-11-07). The vector index is now built
+  in a step of its own, with a third of the machine's memory (at most 32 GB) and parallel
+  workers; if that is refused it is built again with less, so a rollback never fails on it.
+
 - **An update no longer rolls back because the transcription pipeline is busy.** The update's
   watch asked every pipeline process for its version on every check, with three seconds to
   answer; on a busy home the answer sometimes came late, the watch never saw ten healthy
@@ -457,6 +464,13 @@ build fails when the two differ.
   The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
   CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
   measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
+- **Direct remote access, the cloud's side (Epic 50, story 50.15, part 1).** Maktaba Cloud can
+  give each home its own HTTPS names under separate direct-name domains (never maktaba.tv): a
+  name server (`--role dns`) that computes each name's address and serves the ACME challenges
+  and CAA, certificates ordered from a home's own CSR (Let's Encrypt within each domain's weekly
+  budget, then ZeroSSL, then Google Trust Services; a home keeps its domain), an outside check
+  every 15 minutes, and the home list's HTTPS `direct` connection once it passes. Free on every
+  plan. Off until the domains exist; the home's side follows.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -1109,6 +1123,27 @@ build fails when the two differ.
   wait). Store installs by `{store: {id, version}}`, with the download checked against its
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
   home sends its daily `seen` report when telemetry is on. Migration 0203.
+
+- **A plugin's state shows while the pipeline is down (Epic 54, story 54.07 §8).** The
+  supervisor reports what the home decides of each plugin: waiting with the reason when its
+  gate refuses it (a Maktaba version outside its range, a grant missing, unreviewed while not
+  allowed), stopped while held, running when it may run. Before, a plugin read *Off* until the
+  pipeline reported its stages. While the pipeline runs, its own state of the stages
+  (starting, failed) shows when the gate lets the plugin run. maktaba.dev: Installing a
+  plugin, *Health and logs*.
+
+- **The plugin store's isolated runner can run on Cloudflare Containers (Epic 54, #756).** The
+  malware scan, the sandbox run and the reproducible build of each submission run in a
+  container of its own, started with its internet off and handed the package by the store,
+  instead of a GitHub Actions job. It is turned on by a deploy setting; the GitHub Actions
+  runner stays the default, and a runner that fails refuses the version.
+
+- **Each release embeds the plugin store's current lists (Epic 54, #755).** The release run
+  fetches the store's key list and revocation list, verifies them by the chain of trust and
+  builds them into every binary of the release, so a home that never reaches the store still
+  trusts store-signed files and knows the plugins the store withdrew. It fails closed: a list
+  that cannot be fetched, does not verify, has expired or is older than the committed copy
+  stops the release. Until the plugin root keys exist it embeds nothing.
 
 ### Fixed
 
