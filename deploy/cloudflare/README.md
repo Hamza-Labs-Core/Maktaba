@@ -25,7 +25,7 @@ The tools are in `tools/cloudflare/` (Node 22, no dependency):
 | `ips.mjs` | Fetches Cloudflare's published ranges and checks each line |
 | `zone.mjs`, `tunnel.mjs` | `check` (offline), `plan`, `apply` (50.30, 50.31) |
 
-Their tests run against a local fake of Cloudflare's API (`node --test tools/cloudflare/`).
+Their tests run against a local fake of Cloudflare's API (`node --test 'tools/cloudflare/*.test.mjs'`).
 
 ## The workflows
 
