@@ -298,7 +298,7 @@ fi
 # 6. Patroni, its callback, and what the callback may do (sudo for exactly these)
 # ---------------------------------------------------------------------------------------
 log "Patroni"
-install -m 0755 "${here}/bin/on-role-change" "${here}/bin/switchover" "${here}/bin/leader-guard" "${here}/bin/bluegreen" "${here}/bin/dns-update" /usr/local/bin/
+install -m 0755 "${here}/bin/on-role-change" "${here}/bin/switchover" "${here}/bin/leader-guard" "${here}/bin/bluegreen" "${here}/bin/dns-update" "${here}/bin/app-update" /usr/local/bin/
 install -d -o postgres -g postgres -m 0700 /var/lib/postgresql/16/maktaba
 [ -s /etc/maktaba/hcloud-token ] || die "/etc/maktaba/hcloud-token is missing (the maktaba-prod project's API token)"
 chown postgres:postgres /etc/maktaba/hcloud-token && chmod 0600 /etc/maktaba/hcloud-token

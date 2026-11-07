@@ -312,5 +312,56 @@ env PATH="${work}/dnsbin:${PATH}" STATE="${work}/dnsmissing" RELEASES="${work}/d
     bash "${here}/bin/dns-update" v9 >/dev/null 2>&1; rc=$?
 if [ "${rc}" = 2 ] && [ ! -e "${work}/dnsmissing/bin" ]; then ok "dns-update: a missing release changes nothing"; else fail "dns-update missing: rc=${rc}"; fi
 
+# app-update: the release's binary under the api and worker, the old one kept; on the leader
+# the running units restart (the worker first) and one that doesn't stay up gets the old
+# binary back and fails; on the standby (nothing running) it only installs
+mkdir -p "${work}/appbin"
+cat >"${work}/appbin/systemctl" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"${STATE}/systemctl"
+case "$1" in
+    is-active)
+        if [ -e "${STATE}/restarted" ]; then [ "$(cat "${BIN}")" != broken ]; else [ "${RUNNING:-yes}" = yes ]; fi ;;
+    restart) touch "${STATE}/restarted" ;;
+    *) exit 0 ;;
+esac
+STUB
+printf '#!/usr/bin/env bash\nexit 0\n' >"${work}/appbin/sleep"
+chmod +x "${work}/appbin/"*
+appupdate() { # appupdate <case> <new binary's text> [env...]: old binary "v1", then app-update v2
+    local name=$1 text=$2; shift 2
+    rm -rf "${work:?}/${name:?}"; mkdir -p "${work}/${name}/releases/v2"
+    printf '%s' "${text}" >"${work}/${name}/releases/v2/maktaba-cloud"; chmod +x "${work}/${name}/releases/v2/maktaba-cloud"
+    printf v1 >"${work}/${name}/bin"
+    env PATH="${work}/appbin:${PATH}" STATE="${work}/${name}" RELEASES="${work}/${name}/releases" BIN="${work}/${name}/bin" \
+        "$@" bash "${here}/bin/app-update" v2 >/dev/null 2>&1
+    echo $?
+}
+rc="$(appupdate appgood good)"
+restarts="$(grep '^restart' "${work}/appgood/systemctl" 2>/dev/null | tr '\n' ' ')"
+if [ "${rc}" = 0 ] && [ "$(cat "${work}/appgood/bin")" = good ] && [ "$(cat "${work}/appgood/bin.prev")" = v1 ] \
+    && [ "${restarts}" = "restart maktaba-cloud-worker.service restart maktaba-cloud-api.service " ]; then
+    ok "app-update: the leader runs the new binary, worker then api restarted, the old one kept"
+else
+    fail "app-update good: rc=${rc} restarts=${restarts}"
+fi
+rc="$(appupdate appbad broken)"
+if [ "${rc}" = 1 ] && [ "$(cat "${work}/appbad/bin")" = v1 ] \
+    && [ "$(grep -c '^restart maktaba-cloud-api.service' "${work}/appbad/systemctl")" = 2 ]; then
+    ok "app-update: an api or worker that doesn't stay up gets the old binary back, restarted, and fails"
+else
+    fail "app-update bad: rc=${rc} bin=$(cat "${work}/appbad/bin") $(cat "${work}/appbad/systemctl" 2>/dev/null)"
+fi
+rc="$(appupdate appstandby good RUNNING=no)"
+if [ "${rc}" = 0 ] && [ "$(cat "${work}/appstandby/bin")" = good ] && ! grep -q restart "${work}/appstandby/systemctl"; then
+    ok "app-update: on the standby it installs and restarts nothing"
+else
+    fail "app-update standby: rc=${rc} $(cat "${work}/appstandby/systemctl" 2>/dev/null)"
+fi
+rm -rf "${work:?}/appmissing"; mkdir -p "${work}/appmissing"
+env PATH="${work}/appbin:${PATH}" STATE="${work}/appmissing" RELEASES="${work}/appmissing" BIN="${work}/appmissing/bin" \
+    bash "${here}/bin/app-update" v9 >/dev/null 2>&1; rc=$?
+if [ "${rc}" = 2 ] && [ ! -e "${work}/appmissing/bin" ]; then ok "app-update: a missing release changes nothing"; else fail "app-update missing: rc=${rc}"; fi
+
 if [ "${fails}" -ne 0 ]; then echo "${fails} failed"; exit 1; fi
 echo "all passed"
