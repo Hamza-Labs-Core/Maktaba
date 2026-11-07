@@ -1,0 +1,21 @@
+# The stand-in Cloudflare edge of the origin-only-via-edge scenario (Epic 50 story 50.31,
+# rehearsal T06, T07). Like Cloudflare, it writes CF-Connecting-IP itself, over any copy the
+# client sent. It reaches the api only through a node's stand-in connector (socat on :7844, which
+# only the leader runs), as Cloudflare reaches it only through the leader's cloudflared.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	reverse_proxy 10.60.0.11:7844 10.60.0.12:7844 {
+		header_up CF-Connecting-IP {remote_host}
+		lb_policy first
+		lb_try_duration 5s
+		lb_try_interval 250ms
+		health_uri /readyz
+		health_interval 1s
+		health_timeout 1s
+		fail_duration 2s
+	}
+}

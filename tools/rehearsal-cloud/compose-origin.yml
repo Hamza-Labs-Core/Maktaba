@@ -1,0 +1,59 @@
+# Story 50.31's scenarios (origin-only-via-edge, origin-aop) on top of compose-ha.yml:
+#   docker compose -f compose-ha.yml -f compose-origin.yml ...   (ORIGIN_MODE=tunnel|aop)
+#
+# The nodes run production's Caddyfile and UFW (node/origin.sh, node/firewall.sh) and, while
+# leading, the api on the loopback with its stand-in connector. Two more machines:
+#   edge      the stand-in Cloudflare edge: 10.61.0.40 on the Floating IP's network (the test
+#             "Cloudflare ranges" in aop mode), 10.60.0.40 on the private one (the connectors)
+#   attacker  anyone on the internet: 10.61.0.66, nothing but curl and bash
+# The scenario (cloud/rehearsal/origin_test.go) writes .work/origin first: the AOP test CA
+# and the client certificate it signed.
+networks:
+  fip:
+    # No masquerade on the network the edge and the attacker share: Docker's MASQUERADE rule
+    # would show every forwarded source as the bridge's address, and the checks on who the
+    # api and the relay saw (and the AOP range check) would prove nothing (as compose-direct.yml).
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+
+x-origin-env: &origin-env
+  ORIGIN_MODE: ${ORIGIN_MODE:?tunnel or aop}
+  ORIGIN_RANGES: 10.61.0.40/32
+  FIREWALL_PUBLIC_NET: 10.61.0.0/24
+  FIREWALL_HOST: 10.61.0.1
+
+services:
+  node-a:
+    cap_add: [NET_ADMIN] # the firewall
+    environment: *origin-env
+    volumes:
+      - ./.work/origin:/origin:ro
+
+  node-b:
+    cap_add: [NET_ADMIN]
+    environment: *origin-env
+    volumes:
+      - ./.work/origin:/origin:ro
+
+  edge:
+    image: ${NODE_IMAGE:-maktaba-node:rehearsal}
+    restart: "no"
+    entrypoint: ["caddy", "run", "--adapter", "caddyfile", "--config", "/edge/Caddyfile"]
+    volumes:
+      - ./origin-edge-${ORIGIN_MODE}.Caddyfile:/edge/Caddyfile:ro
+      - ./.work/origin:/origin:ro
+    networks:
+      private:
+        ipv4_address: 10.60.0.40
+      fip:
+        ipv4_address: 10.61.0.40
+
+  attacker:
+    image: ${NODE_IMAGE:-maktaba-node:rehearsal}
+    restart: "no"
+    entrypoint: ["sleep", "infinity"]
+    volumes:
+      - ./.work/origin:/origin:ro
+    networks:
+      fip:
+        ipv4_address: 10.61.0.66
