@@ -2,21 +2,27 @@
 // story 50.06) inside its Docker cluster. It is never deployed.
 //
 //	maktaba-rehearsal fakehcloud   the fake Hetzner Floating IP API (fakehcloud)
+//	maktaba-rehearsal fakeacmedns  the DNS-01 provider for Pebble (fakeacmedns)
 //
 // fakehcloud reads: FAKEHCLOUD_ADDR (:8080), FAKEHCLOUD_DELAY (5s),
 // FAKEHCLOUD_TOKEN, DOCKER_SOCKET (/var/run/docker.sock), FAKEHCLOUD_NETWORK,
 // FAKEHCLOUD_ALIAS (relay.test), FAKEHCLOUD_SERVERS ("1=node-a@10.50.0.11,2=node-b@10.50.0.12").
+//
+// fakeacmedns reads: FAKEACMEDNS_ZONE (relay.test), FAKEACMEDNS_USER, FAKEACMEDNS_KEY,
+// FAKEACMEDNS_HTTP (:80), FAKEACMEDNS_DNS (:53).
 package main
 
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakeacmedns"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/rehearsal/fakehcloud"
 )
 
@@ -28,10 +34,39 @@ func env(k, def string) string {
 }
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] != "fakehcloud" {
-		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud")
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns")
 		os.Exit(2)
 	}
+	switch os.Args[1] {
+	case "fakehcloud":
+		runFakeHCloud()
+	case "fakeacmedns":
+		runFakeACMEDNS()
+	default:
+		fmt.Fprintln(os.Stderr, "usage: maktaba-rehearsal fakehcloud|fakeacmedns")
+		os.Exit(2)
+	}
+}
+
+// newFakeACMEDNS is the server the env describes.
+func newFakeACMEDNS() *fakeacmedns.Server {
+	return &fakeacmedns.Server{Zone: env("FAKEACMEDNS_ZONE", "relay.test"), User: os.Getenv("FAKEACMEDNS_USER"), Key: os.Getenv("FAKEACMEDNS_KEY")}
+}
+
+func runFakeACMEDNS() {
+	s := newFakeACMEDNS()
+	pc, err := net.ListenPacket("udp", env("FAKEACMEDNS_DNS", ":53"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	go func() { log.Fatal(s.ServeDNS(pc)) }()
+	addr := env("FAKEACMEDNS_HTTP", ":80")
+	log.Printf("fakeacmedns: DNS on %s, API on %s, zone %s", pc.LocalAddr(), addr, s.Zone)
+	log.Fatal(http.ListenAndServe(addr, s))
+}
+
+func runFakeHCloud() {
 	delay, err := time.ParseDuration(env("FAKEHCLOUD_DELAY", "5s"))
 	if err != nil {
 		log.Fatal(err)

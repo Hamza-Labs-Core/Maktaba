@@ -263,6 +263,15 @@ build fails when the two differ.
   within 1 %). The later failover, deploy and restore scenarios have their places and join as
   their stories land. A cloud deploy is refused unless the rehearsal passed on its commit.
   `docs/cloud-rehearsal.md` says how to run one scenario locally.
+- **One wildcard certificate on every relay node instead of one per home (Epic 50, story
+  50.02).** The relay's Caddy is now Maktaba's own image (`deploy/caddy`: Caddy with the
+  Cloudflare DNS module) and gets a certificate for `*.relay.maktaba.tv` (and the apex) by a
+  DNS-01 challenge, so a standby node holds it before it is ever needed; Let's Encrypt's 50
+  new certificates a week could never have covered every home after a failover. ZeroSSL is
+  the fallback CA. The single-VPS deploy needs a `CF_API_TOKEN` (a Cloudflare token that can
+  edit the zone's DNS only); per-home on-demand certificates stay for one release as a
+  fallback. The witness checks both nodes' certificates daily and warns at 21 days. The cloud
+  rehearsal's `cert-on-standby` scenario proves it with Pebble.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

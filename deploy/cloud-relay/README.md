@@ -132,20 +132,31 @@ to `["serve", "--role", "api"]`.
 
 ## Wildcard TLS
 
-The default Caddyfile uses **on-demand TLS**: a Let's Encrypt cert is
-issued (via HTTP-01) the first time each `<slug>.<RELAY_DOMAIN>` is
-requested. This works with the stock `caddy:2-alpine` image and your
-wildcard DNS record, with no DNS-provider plugin.
+Caddy holds **one wildcard certificate** for `RELAY_DOMAIN` and `*.RELAY_DOMAIN` (Epic 50
+story 50.02), not one per home. It proves it controls the domain with a **DNS-01** challenge
+through the Cloudflare API, so the image is
+[`ghcr.io/hamza-labs-core/maktaba-caddy`](../caddy/Dockerfile) (Caddy with the
+`caddy-dns/cloudflare` module; the stock image has no DNS modules), and `.env` needs
+`CF_API_TOKEN`: a Cloudflare API token with **Zone → DNS → Edit on the relay domain's zone
+only**. `setup.sh` does not start the stack while it holds the template value.
 
-Issuance is gated by an `ask` to the relay's `/v1/relay/tls-ask`, which
-answers `200` only for the bare `RELAY_DOMAIN` and the subdomain of a
-claimed server (story 25.23), so a random name pointed at your VPS cannot
-spend your Let's Encrypt quota. To avoid per-subdomain issuance entirely:
-
-- switch to a **DNS-01 wildcard certificate** — build a Caddy image
-  with your DNS provider module
-  ([caddy-dns](https://github.com/caddy-dns)) and replace the catch-all
-  block with a `*.{$RELAY_DOMAIN}` site using `tls { dns <provider> }`.
+- Let's Encrypt allows 50 new certificates per domain per week: per-home certificates could
+  never follow a failover to a standby. The wildcard is on each node before it is needed.
+- Caddy keeps one certificate per name: the wildcard (every home) and the apex. Each is
+  renewed about every 60 days on each node, far inside Let's Encrypt's 5 duplicates a week.
+- Issuers: Let's Encrypt, then ZeroSSL (Caddy's defaults, with `ACME_EMAIL`). The CAA records
+  in [`docs/cloud-dns.md`](../../docs/cloud-dns.md) allow both.
+- **Transition:** the on-demand catch-all (gated by the relay's `/v1/relay/tls-ask`, story
+  25.23) stays below the wildcard site for one release, for any name outside it; it is
+  removed once Caddy's logs show no on-demand issuance for 7 days.
+- **Rotating the token:** make a new token, put it in `.env`, `docker compose up -d caddy`,
+  revoke the old one.
+- The HA pair's edge is [`deploy/cloud-ha/caddy/Caddyfile`](../cloud-ha/caddy/Caddyfile);
+  its witness checks both nodes' certificates daily
+  ([`check-certs.sh`](../cloud-ha/witness/check-certs.sh), alert at 21 days).
+- Proven in CI: relay.yml's caddy job (the module is in, both Caddyfiles validate) and the
+  cloud rehearsal's `cert-on-standby` scenario (two fresh nodes each get their own wildcard
+  from Pebble by DNS-01 after the first CA fails; no per-home certificate).
 
 ## CI/CD
 

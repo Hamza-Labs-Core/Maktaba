@@ -233,9 +233,14 @@ systemctl daemon-reload
 # ---------------------------------------------------------------------
 domain="$(get_env RELAY_DOMAIN)"
 acme="$(get_env ACME_EMAIL)"
+# The Cloudflare DNS-edit token for the wildcard certificate (Epic 50 story
+# 50.02) is never generated: only the owner can make it. Caddy is not started
+# on the template value, which would fail every DNS-01 challenge.
+cf="$(get_env CF_API_TOKEN)"
 if [ "$domain" = "relay.example.com" ] || is_placeholder "$domain" \
-   || [ "$acme" = "ops@example.com" ] || is_placeholder "$acme"; then
-	warn "RELAY_DOMAIN / ACME_EMAIL still hold template values."
+   || [ "$acme" = "ops@example.com" ] || is_placeholder "$acme" || is_placeholder "$cf"; then
+	warn "RELAY_DOMAIN / ACME_EMAIL / CF_API_TOKEN still hold template values."
+	warn "CF_API_TOKEN: a Cloudflare API token with Zone -> DNS -> Edit on the relay domain's zone only."
 	warn "Edit $ENV_FILE, then: systemctl enable --now maktaba-relay"
 	log  "Setup complete (stack NOT started — finish .env first)."
 	exit 0

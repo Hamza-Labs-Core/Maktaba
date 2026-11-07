@@ -30,6 +30,7 @@ log and its JSON result as an artifact, whether it passed or not.
 | homes | simulated homes (`cloud/internal/relay/simhome`): real cloudlink agents, each a real tunnel serving a fake home API, run by the test |
 | apps and the outside probe | the stream generator and the probe (`cloud/rehearsal/streamgen`): clients playing a segment loop through `<slug>.relay.test`, and a probe every 250 ms |
 | the Hetzner Floating IP API | `cloud/rehearsal/fakehcloud` (used from 50.07): moves a Docker network alias |
+| Let's Encrypt, ZeroSSL and Cloudflare's DNS API | an unreachable CA, then Pebble (Let's Encrypt's test CA), and `fakeacmedns`: the acme-dns API Caddy's `acmedns` module calls, and the DNS server Pebble resolves the challenge through |
 
 Nothing outside the runner is contacted except the image registries: no Hetzner,
 Cloudflare, Let's Encrypt or payment provider host. Homes are seeded with cheap argon2id
@@ -48,7 +49,7 @@ hashes (`cloud/rehearsal/seed`); the relay's check is the real one.
 | C07 | `migration-n-minus-1` | 50.08 | — |
 | C08 | `db-blip`: 300 homes streaming; the database container killed for 15 s | 50.06 | 0 failed requests, metering within 1 % of what the clients received |
 | C09 | `restore-pitr` | 50.09 | 4 h |
-| C10 | `cert-on-standby` | 50.02 | — |
+| C10 | `cert-on-standby`: two fresh node edges (this repository's Caddy), Pebble and a DNS-01 provider (`cloud/rehearsal/fakeacmedns`); the first CA unreachable | 50.02 | each node holds its own wildcard and apex certificate within 2 min, from the second CA; a home's name gets the wildcard; no per-home certificate |
 
 A scenario a later story builds is listed in `tools/rehearsal-cloud/expected-failures.txt`
 with that story: it reports itself as not built and is not counted. The story that builds it
