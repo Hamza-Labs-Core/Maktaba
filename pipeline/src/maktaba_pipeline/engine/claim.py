@@ -121,6 +121,7 @@ WITH heads AS (
        AND s.stage = ANY($3::text[])
        AND s.enabled
        AND NOT s.paused
+       AND NOT s.flipping
        AND NOT COALESCE((SELECT paused FROM queue_control WHERE id = 1), false)
        AND (
              (SELECT scope FROM worker_pools WHERE pool = $2) = 'per_worker'
@@ -192,6 +193,7 @@ WITH cand AS (
        AND s.stage IN ({stages})
        AND s.enabled = 1
        AND s.paused = 0
+       AND s.flipping = 0
        AND COALESCE((SELECT paused FROM queue_control WHERE id = 1), 0) = 0
        AND (
              (SELECT scope FROM worker_pools WHERE pool = $1) = 'per_worker'
