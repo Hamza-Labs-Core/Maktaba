@@ -83,14 +83,15 @@ jobs:
             echo "MKP_JCO=$RUNNER_TEMP/jco/node_modules/.bin/jco"
           } >> "$GITHUB_ENV"
 
-      # in release, as a developer's mkp and a home's host are: a debug build's Cranelift
-      # compiles the Python hello (18 MB) in minutes on this runner, past the compile cap
-      # (54.02 §6, 180 s), where a release build takes seconds
+      # in release, as a developer's mkp and a home's host are, and one at a time: three
+      # compiles of large components at once on this runner's 4 cores ran past the compile
+      # cap (54.02 §6, 180 s) in a debug build. Debug builds now optimize Wasmtime and
+      # Cranelift too (plugind/Cargo.toml), so either way a compile takes seconds
       - name: The Python and JavaScript templates (mkp new, build, test, pack)
         working-directory: plugind
         env:
           MKP_TEST_TOOLCHAINS: '1'
-        run: cargo test --locked --release -p mkp --test templates
+        run: cargo test --locked --release -p mkp --test templates -- --test-threads=1
 
   plugins-sandbox:
     strategy:
