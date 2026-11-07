@@ -1,0 +1,7 @@
+{
+  "about": "the three-plugin loop with one plugin turned off: no cycle, a warning",
+  "mode": "home",
+  "states": {
+    "dev.example.gamma": "installed"
+  }
+}

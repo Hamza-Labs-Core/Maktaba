@@ -1,0 +1,66 @@
+{
+  "findings": [
+    {
+      "code": "flow_subject_mismatch",
+      "severity": "refuse",
+      "plugin": "dev.example.chapter-writer",
+      "detail": "dev.example.chapter-writer/write_chapters: plugin:dev.example.silences/silences.found"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.silences/find_silences"
+      },
+      {
+        "from": "stage:dev.example.silences/find_silences",
+        "kind": "emit",
+        "to": "event:dev.example.silences/silences.found"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.silences/silences.found",
+        "kind": "event",
+        "name": "silences.found",
+        "plugin": "dev.example.silences",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.chapter-writer/write_chapters",
+        "kind": "stage",
+        "name": "write_chapters",
+        "plugin": "dev.example.chapter-writer",
+        "state": "enabled",
+        "subject": "season"
+      },
+      {
+        "id": "stage:dev.example.silences/find_silences",
+        "kind": "stage",
+        "name": "find_silences",
+        "plugin": "dev.example.silences",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تتبع الإضافة ⁦dev.example.chapter-writer⁩ حدثًا عن شيء غير الذي تعمل عليه مرحلتها: ⁦dev.example.chapter-writer/write_chapters: plugin:dev.example.silences/silences.found⁩."
+    ],
+    "en": [
+      "dev.example.chapter-writer follows an event about something else than its stage works on: dev.example.chapter-writer/write_chapters: plugin:dev.example.silences/silences.found."
+    ]
+  }
+}

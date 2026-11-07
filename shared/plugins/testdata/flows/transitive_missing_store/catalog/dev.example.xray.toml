@@ -1,0 +1,28 @@
+schema = 1
+id = "dev.example.xray"
+version = "1.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "x"
+subject = "video"
+export = "run-0"
+version = 1
+emits = ["x.done"]
+  [[stage.trigger]]
+  event = "plugin:dev.example.zulu/z.done"
+
+[[event]]
+name = "x.done"
+subject = "video"
+payload = "events/x.done.schema.json"
+
+[[depends]]
+plugin = "dev.example.zulu"
+version = ">=1.0.0, <2.0.0"

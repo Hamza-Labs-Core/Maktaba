@@ -1,0 +1,229 @@
+{
+  "findings": [],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/s01"
+      },
+      {
+        "from": "stage:dev.example.alpha/s01",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s02"
+      },
+      {
+        "from": "stage:dev.example.alpha/s02",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s03"
+      },
+      {
+        "from": "stage:dev.example.alpha/s03",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s04"
+      },
+      {
+        "from": "stage:dev.example.alpha/s04",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s05"
+      },
+      {
+        "from": "stage:dev.example.alpha/s05",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s06"
+      },
+      {
+        "from": "stage:dev.example.alpha/s06",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s07"
+      },
+      {
+        "from": "stage:dev.example.alpha/s07",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s08"
+      },
+      {
+        "from": "stage:dev.example.alpha/s08",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s09"
+      },
+      {
+        "from": "stage:dev.example.alpha/s09",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s10"
+      },
+      {
+        "from": "stage:dev.example.alpha/s10",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s11"
+      },
+      {
+        "from": "stage:dev.example.alpha/s11",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s12"
+      },
+      {
+        "from": "stage:dev.example.alpha/s12",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s13"
+      },
+      {
+        "from": "stage:dev.example.alpha/s13",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s14"
+      },
+      {
+        "from": "stage:dev.example.alpha/s14",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s15"
+      },
+      {
+        "from": "stage:dev.example.alpha/s15",
+        "kind": "after",
+        "to": "stage:dev.example.alpha/s16"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s01",
+        "kind": "stage",
+        "name": "s01",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s02",
+        "kind": "stage",
+        "name": "s02",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s03",
+        "kind": "stage",
+        "name": "s03",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s04",
+        "kind": "stage",
+        "name": "s04",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s05",
+        "kind": "stage",
+        "name": "s05",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s06",
+        "kind": "stage",
+        "name": "s06",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s07",
+        "kind": "stage",
+        "name": "s07",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s08",
+        "kind": "stage",
+        "name": "s08",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s09",
+        "kind": "stage",
+        "name": "s09",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s10",
+        "kind": "stage",
+        "name": "s10",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s11",
+        "kind": "stage",
+        "name": "s11",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s12",
+        "kind": "stage",
+        "name": "s12",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s13",
+        "kind": "stage",
+        "name": "s13",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s14",
+        "kind": "stage",
+        "name": "s14",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s15",
+        "kind": "stage",
+        "name": "s15",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/s16",
+        "kind": "stage",
+        "name": "s16",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [],
+    "en": []
+  }
+}

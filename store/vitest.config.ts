@@ -1,4 +1,5 @@
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-pool-workers";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { testSigner } from "./scripts/gen-vectors";
 import { signEnvelope, toB64 } from "./signing/sig";
@@ -48,9 +49,14 @@ async function workers() {
 }
 
 export default defineConfig(async () => ({
+  // the flow check (checks/, 54.16 C12) imports the plugin SDK's checker from its source:
+  // its one dependency, smol-toml, resolves from the store's own node_modules
+  resolve: {
+    alias: { "smol-toml": fileURLToPath(new URL("./node_modules/smol-toml/dist/index.js", import.meta.url)) },
+  },
   test: {
     projects: [
-      { test: { name: "node", include: ["signing/test/**/*.test.ts", "test/*.test.ts", "commerce/**/*.test.ts", "payments/**/*.test.ts"] } },
+      { test: { name: "node", include: ["checks/**/*.test.ts", "signing/test/**/*.test.ts", "test/*.test.ts", "commerce/**/*.test.ts", "payments/**/*.test.ts"] } },
       { esbuild: { jsx: "automatic" }, test: { name: "console", environment: "jsdom", include: ["console/test/**/*.test.tsx"] } },
       {
         plugins: [await workers()],

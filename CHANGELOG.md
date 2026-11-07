@@ -852,6 +852,18 @@ build fails when the two differ.
   CI's new `store` job runs the tests and keeps each provider's code in its own module; the
   store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
   adding a provider).
+- Plugins, flows (Epic 54, story 54.39): a set of plugins that work together declares one
+  flow (`flow.toml` in each package): every plugin's stages, the core events they follow,
+  the events they publish and who subscribes to what; each manifest declares its part
+  (`emits`, a trigger after its own `stage`, a trigger on another plugin's
+  `plugin:<id>/<event>`, `[[event]]`, `[[depends]]`) and must match it. Plugin stages stay
+  leaves after core stages. The home refuses an install, enable, update or rollback that
+  would close a loop among plugins or reach a core stage (`409 plugin_flow_cycle`, the loop
+  named in English and Arabic), shows a missing upstream as a warning, and answers its whole
+  plugin graph (`GET /api/plugins/graph`) and what goes idle when a plugin is off
+  (`GET /api/plugins/{id}/downstream`). The check is one algorithm in Go and TypeScript on
+  one shared corpus; the store's verification (C12) runs the TypeScript one. maktaba.dev:
+  Flows.
 
 - **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
   two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)
