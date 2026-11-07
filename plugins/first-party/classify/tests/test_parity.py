@@ -118,4 +118,5 @@ async def test_classify_wave_1_is_identical(template: str, monkeypatch: pytest.M
             stages=selected(),
             perf=cfg.perf,
         )
-    assert problems == [], "\n".join(problems[:20])
+        slowest = p.slowest()
+    assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest

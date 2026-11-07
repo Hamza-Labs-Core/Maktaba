@@ -39,6 +39,47 @@ API_DIR = ROOT / "api"
 #: the plugin path's fixed cost of one job that N16 does not count (README §15.12)
 PERF_FLOOR_S = 0.025
 
+#: (step, seconds) of the plugin job being timed (the bench's breakdown)
+marks: list[tuple[str, float]] = []
+
+
+def _instrument() -> None:
+    """Time the steps of the plugin path: the token, the runner's run, each statement."""
+    from maktaba_plugin_sdk.native import transport
+
+    from maktaba_pipeline.engine import run
+    from maktaba_pipeline.plugins import native
+
+    if getattr(native, "_parity_timed", False):
+        return
+
+    def timed(name: str, fn: Any) -> Any:
+        async def wrapper(*a: Any, **kw: Any) -> Any:
+            t = time.perf_counter()
+            try:
+                return await fn(*a, **kw)
+            finally:
+                marks.append((name, time.perf_counter() - t))
+
+        return wrapper
+
+    native._mint = timed("mint", native._mint)
+    native.choose = timed("choose", native.choose)
+    native.serving_group = timed("serving_fp", native.serving_group)
+    run._native_impl = timed("native_impl", run._native_impl)
+    call = transport.UnixTransport.call
+
+    async def tcall(self: Any, fn: str, body: dict[str, Any]) -> dict[str, Any]:
+        t = time.perf_counter()
+        try:
+            return await call(self, fn, body)
+        finally:
+            marks.append((f"api {body.get('name') or body.get('op')}", time.perf_counter() - t))
+
+    transport.UnixTransport.call = tcall  # type: ignore[method-assign]
+    native._parity_timed = True  # type: ignore[attr-defined]
+
+
 Seed = Callable[[Database], Awaitable[None]]
 
 
@@ -96,6 +137,7 @@ class Parity:
     b: Side
     graph: dict[str, StageDef]
     tmp: Path
+    breakdowns: list[tuple[float, str, list[tuple[str, float]]]] = field(default_factory=list)
 
     async def drain(self, side: Side, *, limit: int = 500) -> None:
         """Run every claimable job of the graph on one side, timing each."""
@@ -135,6 +177,14 @@ class Parity:
     async def run(self) -> None:
         await self.drain(self.a)
         await self.drain(self.b)
+
+    def slowest(self, n: int = 3) -> str:
+        """Where the slowest plugin jobs spent their time (printed when N16 fails)."""
+        out = []
+        for took, st, ms in sorted(self.breakdowns, reverse=True)[:n]:
+            steps = ", ".join(f"{k} {v * 1000:.1f}" for k, v in ms)
+            out.append(f"{st} {took * 1000:.1f} ms: {steps}")
+        return "\n".join(out)
 
     async def bench(self, stages: Sequence[str], *, rounds: int = 7) -> None:
         """N16's samples: each stage's job run again ``rounds`` times on each side, A and B
@@ -176,8 +226,12 @@ class Parity:
                     if job is None:
                         continue
                     t0 = time.perf_counter()
+                    marks.clear()
                     await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
-                    side.times[st].append(time.perf_counter() - t0)
+                    took = time.perf_counter() - t0
+                    side.times[st].append(took)
+                    if side is self.b:
+                        self.breakdowns.append((took, st, list(marks)))
 
     async def compare(
         self,
@@ -350,6 +404,7 @@ async def parity(
             await asyncio.sleep(0.02)
         native.forget_hello()
         native._FP_TOKENS.clear()
+        _instrument()
         yield Parity(a=Side(a), b=Side(b), graph=graph, tmp=tmp)
     finally:
         native.forget_hello()
