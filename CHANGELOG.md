@@ -1233,6 +1233,15 @@ build fails when the two differ.
   proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
   each piece's token permissions.
 
+- **The cloud's API is reached only through Cloudflare (Epic 50, story 50.31).** The leading
+  node runs a Cloudflare Tunnel connector beside the API, and Caddy serves relay names only. CI
+  writes the Tunnel's routes and the names' DNS records from
+  `deploy/cloudflare/tunnel.maktaba.tv.json`. The API believes `CF-Connecting-IP` only from a
+  peer listed in the new `server.trusted_proxies` (the local connector) and never reads
+  `X-Forwarded-For`, so rate limits, the blocklist, the audit log and the access log can no
+  longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
+  production the API refuses a public listener.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

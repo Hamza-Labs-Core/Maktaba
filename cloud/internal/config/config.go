@@ -8,6 +8,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -63,13 +64,24 @@ type ServerConfig struct {
 	// WebURL is the cloud web app's origin (mail links and OAuth
 	// landings point there). Defaults to PublicURL.
 	WebURL string
-	// TrustProxyHeaders makes the client IP come from CF-Connecting-IP /
-	// X-Forwarded-For. Only turn it on behind a proxy that overwrites
-	// them; otherwise any client can pick its own rate-limit key.
-	TrustProxyHeaders bool
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	ShutdownGrace     time.Duration
+	// Env is "production" on the cloud's nodes (server.env); anything else is a development
+	// or CI run. Production refuses a public listener and an empty TrustedProxies (50.31).
+	Env string
+	// AdminListenAddr is the operator console's own listener (server.admin_listen_addr,
+	// served by Epic 50 story 50.32); empty means none.
+	AdminListenAddr string
+	// TrustedProxies are the peers whose CF-Connecting-IP is believed (server.trusted_proxies,
+	// CIDRs): the local cloudflared, or Caddy after its origin checks. Empty means the client
+	// IP is always the TCP peer. It replaces server.trust_proxy_headers (Epic 50 story 50.31).
+	TrustedProxies []netip.Prefix
+	// OriginMode is how Cloudflare reaches the api (server.origin_mode): "tunnel" (the
+	// default) or "aop", the fallback (authenticated origin pulls plus Cloudflare's ranges, at
+	// Caddy). AOPCAFile is the CA Caddy checks Cloudflare's client certificate against.
+	OriginMode    string
+	AOPCAFile     string
+	ReadTimeout   time.Duration
+	WriteTimeout  time.Duration
+	ShutdownGrace time.Duration
 }
 
 // AuthConfig holds the HMAC secret used to sign short-lived access
@@ -196,6 +208,7 @@ func defaultConfig() Config {
 		Direct: DirectConfig{DNSListen: ":53", Budget: 45, CheckEvery: 15 * time.Minute},
 		Server: ServerConfig{
 			ListenAddr:    "0.0.0.0:8080",
+			OriginMode:    OriginTunnel,
 			ReadTimeout:   30 * time.Second,
 			WriteTimeout:  60 * time.Second,
 			ShutdownGrace: 20 * time.Second,
@@ -436,7 +449,21 @@ func assign(c *Config, section, key, val string) error {
 	case "server.web_url":
 		c.Server.WebURL = val
 	case "server.trust_proxy_headers":
-		return setBool(&c.Server.TrustProxyHeaders, val)
+		return ErrTrustProxyHeaders
+	case "server.trusted_proxies":
+		ps, err := ParsePrefixes(parseList(val))
+		if err != nil {
+			return fmt.Errorf("config: server.trusted_proxies: %w", err)
+		}
+		c.Server.TrustedProxies = ps
+	case "server.env":
+		c.Server.Env = val
+	case "server.admin_listen_addr":
+		c.Server.AdminListenAddr = val
+	case "server.origin_mode":
+		c.Server.OriginMode = val
+	case "server.aop_ca_file":
+		c.Server.AOPCAFile = val
 	case "billing.provider":
 		c.Billing.Provider = val
 	case "mail.driver":
@@ -528,3 +555,26 @@ func setFloat(dst *float64, v string) error {
 
 // ErrMissing reports a required section that did not load.
 var ErrMissing = errors.New("config: missing required section")
+
+// ErrTrustProxyHeaders refuses the old switch: it believed CF-Connecting-IP from any peer.
+var ErrTrustProxyHeaders = errors.New("config: server.trust_proxy_headers was replaced by server.trusted_proxies " +
+	"(the CIDRs whose CF-Connecting-IP is believed, e.g. [\"127.0.0.1/32\", \"::1/128\"] behind the local cloudflared)")
+
+// The origin modes (server.origin_mode, Epic 50 story 50.31).
+const (
+	OriginTunnel = "tunnel"
+	OriginAOP    = "aop"
+)
+
+// ParsePrefixes reads CIDRs; a bare address is refused, so a list says what it means.
+func ParsePrefixes(vs []string) ([]netip.Prefix, error) {
+	out := make([]netip.Prefix, 0, len(vs))
+	for _, v := range vs {
+		p, err := netip.ParsePrefix(strings.TrimSpace(v))
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a CIDR", v)
+		}
+		out = append(out, p.Masked())
+	}
+	return out, nil
+}

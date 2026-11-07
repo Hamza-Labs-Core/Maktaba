@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
+	"os"
 )
 
 // Role identifies which set of features this process is providing.
@@ -30,6 +32,9 @@ func Validate(c Config, role Role) error {
 			return fmt.Errorf("config: [mail].driver %q: the only driver is \"log\"", c.Mail.Driver)
 		}
 		if err := validateBilling(c.Billing); err != nil {
+			return err
+		}
+		if err := validateOrigin(c.Server); err != nil {
 			return err
 		}
 	case RoleRelay:
@@ -91,4 +96,67 @@ func ValidatePeerAddr(addr string) error {
 		return fmt.Errorf("%w (got %q)", ErrPublicPeerAddr, addr)
 	}
 	return nil
+}
+
+// Production is server.env = "production": the cloud's nodes.
+func (s ServerConfig) Production() bool { return s.Env == "production" }
+
+// validateOrigin is the api's side of Epic 50 story 50.31: in production its listeners are
+// on loopback (or a private address, Phase 2's load balancer) and only Cloudflare reaches
+// them, so it needs the peers whose CF-Connecting-IP it believes; the aop fallback needs its
+// CA.
+func validateOrigin(s ServerConfig) error {
+	switch s.OriginMode {
+	case OriginTunnel, "":
+	case OriginAOP:
+		if s.AOPCAFile == "" {
+			return fmt.Errorf("%w: server.aop_ca_file (server.origin_mode = \"aop\" checks Cloudflare's client certificate against it)", ErrMissing)
+		}
+		if _, err := os.Stat(s.AOPCAFile); err != nil {
+			return fmt.Errorf("config: server.aop_ca_file %q: %w", s.AOPCAFile, err)
+		}
+	default:
+		return fmt.Errorf("config: server.origin_mode %q: it is \"tunnel\" or \"aop\"", s.OriginMode)
+	}
+	if !s.Production() {
+		return nil
+	}
+	for _, l := range []struct{ key, addr string }{
+		{"server.listen_addr", s.ListenAddr},
+		{"server.admin_listen_addr", s.AdminListenAddr},
+	} {
+		if l.addr == "" {
+			continue
+		}
+		if err := ValidateOriginListen(l.addr); err != nil {
+			return fmt.Errorf("config: %s %q in production: %w", l.key, l.addr, err)
+		}
+	}
+	if len(s.TrustedProxies) == 0 {
+		return fmt.Errorf("%w: server.trusted_proxies (in production the api is reached only through Cloudflare: list the local cloudflared, [\"127.0.0.1/32\", \"::1/128\"])", ErrMissing)
+	}
+	return nil
+}
+
+// ValidateOriginListen accepts host:port with a loopback or private IP host: never a
+// wildcard, a name or a public address.
+func ValidateOriginListen(addr string) error {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return err
+	}
+	ip, err := netip.ParseAddr(host)
+	if err != nil || ip.IsUnspecified() || (!ip.IsLoopback() && !ip.IsPrivate()) {
+		return errors.New("it must be a loopback or private address: only the Tunnel reaches the api")
+	}
+	return nil
+}
+
+// Warnings are settings that do nothing where they are (logged at start).
+func Warnings(c Config) []string {
+	var w []string
+	if c.Server.OriginMode != OriginAOP && c.Server.AOPCAFile != "" {
+		w = append(w, "server.aop_ca_file is set but server.origin_mode is not \"aop\": it is not used")
+	}
+	return w
 }

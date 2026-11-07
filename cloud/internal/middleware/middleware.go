@@ -16,7 +16,6 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -185,17 +184,13 @@ func Logging(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
+// clientIP is the address WithClientIP resolved, or the TCP peer when it did not run (the
+// relay's router, or a request answered before it): never a header the client wrote.
 func clientIP(r *http.Request) string {
-	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		if i := strings.IndexByte(v, ','); i > 0 {
-			return strings.TrimSpace(v[:i])
-		}
-		return strings.TrimSpace(v)
+	if ip := GetClientIP(r.Context()); ip != "" {
+		return ip
 	}
-	if v := r.Header.Get("X-Real-IP"); v != "" {
-		return v
-	}
-	return r.RemoteAddr
+	return ClientIP(r, nil)
 }
 
 // CORS allows the public Maktaba origins for browser-facing endpoints.

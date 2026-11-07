@@ -200,13 +200,14 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.
-	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg))
+	// The client IP is resolved first, the access log included: CF-Connecting-IP only from a
+	// peer in server.trusted_proxies (Epic 50 story 50.31).
+	r := server.NewRouter(logger, pool, mig, build, server.DefaultOrigins(cfg),
+		server.WithTrustedProxies(cfg.Server.TrustedProxies))
 	// NewRouter has already registered the health probes, and chi
 	// refuses Use after a route, so the app routes and their middleware
 	// live in a group.
 	r.Group(func(app chi.Router) {
-		app.Use(cmw.WithClientIP(cfg.Server.TrustProxyHeaders))
-
 		// Per-IP rate limits on the unauthenticated auth routes: burst 30,
 		// refill 5/s — plenty for the sign-in form, harsh for credential
 		// stuffing — and burst 5, one per 12 s for the routes that send mail.

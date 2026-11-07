@@ -56,9 +56,12 @@ Rate limits: register, login, refresh, verify, resend, forgot, reset and
 the OAuth starts are limited per client IP (burst 30, 5/s; the mail-sending
 ones burst 5, 1 per 12 s). Ten failed logins for one account in 15
 minutes lock it for 30 minutes. A blocklisted IP or account gets `403
-blocked`. The client IP is the TCP peer unless `server.trust_proxy_headers`
-is on (then `CF-Connecting-IP`, else the right-most `X-Forwarded-For` entry,
-the one the proxy appended).
+blocked`. The client IP is `CF-Connecting-IP` only when the TCP peer is in
+`server.trusted_proxies` (CIDRs: in production the local `cloudflared`,
+`127.0.0.1/32` and `::1/128`) and the header holds one valid IP; otherwise it is
+the TCP peer. `X-Forwarded-For` is never read. The rate limits, the blocklist,
+the lockout, the audit log and the access log all use it (Epic 50 story 50.31).
+The old `server.trust_proxy_headers` is refused at start.
 
 ## Account — `/v1/account/*` (bearer token)
 
@@ -262,7 +265,7 @@ What the account side had before this change, and what it has now.
 | Apple `id_token` decoded without any check; no `state` on the Apple callback; `email_verified` parsed as bool (Apple sends a string) | login CSRF; parse failures | same verifier, state + nonce cookies (`SameSite=None` for Apple's form_post) |
 | OAuth callbacks answered JSON to a browser redirect | the browser showed a JSON blob | callbacks set the refresh cookie and redirect to the web app |
 | Refresh cookie was scoped to `.maktaba.tv` (found in review) | every home server behind `*.relay.maktaba.tv` received it: account takeover | host-only cookie |
-| Rate-limit key was `X-Forwarded-For` or `RemoteAddr` with its port | a client picked its own key; every new connection was a new bucket | TCP peer without port, proxy headers only when `trust_proxy_headers` |
+| Rate-limit key was `X-Forwarded-For` or `RemoteAddr` with its port | a client picked its own key; every new connection was a new bucket | TCP peer without port, proxy headers only when `trust_proxy_headers` (since 50.31: only from a peer in `trusted_proxies`) |
 | Webhook: `checkout.session.completed` mapped to plan `free`; subscription events carried no user id; duplicate events re-applied; no ordering | a successful checkout downgraded the payer; later events were dropped | metadata `user_id` on the subscription, customer-id fallback, event + apply in one transaction, `last_event_at` ordering |
 | Suspension (`status`) was never checked | an account the old `BlockUser` blocked could sign straight back in | login, refresh, OAuth and every bearer request check it |
 | CORS did not allow `PATCH` | the profile update failed cross-origin | added |

@@ -18,7 +18,8 @@
 # Env: RELAY_HOST_A, RELAY_HOST_B (the nodes' SSH addresses), RELAY_SSH_USER, RELAY_SSH_KEY (a
 # private key's text) or SSH (the command to reach a node: "ssh -i key user@"; NODE_EXEC
 # replaces it entirely: a command given <host> <shell command>), IMAGE
-# (ghcr.io/hamza-labs-core/maktaba-cloud).
+# (ghcr.io/hamza-labs-core/maktaba-cloud), CLOUDFLARE_TUNNEL_TOKEN (optional: the Tunnel's
+# connector token, written to /etc/maktaba/tunnel.token on both nodes, story 50.31).
 set -euo pipefail
 
 tag="${1:?usage: deploy.sh <tag>}"
@@ -44,6 +45,21 @@ done
 [ -n "${leader}" ] || { log "no node leads: refusing to deploy"; exit 1; }
 standby="${RELAY_HOST_A}"; [ "${leader}" = "${RELAY_HOST_A}" ] && standby="${RELAY_HOST_B}"
 log "${leader} leads; ${standby} is the standby"
+
+# The Tunnel's token (story 50.31), from the production environment, on both nodes (a failover
+# starts the connector on the standby). It goes over SSH's stdin, never on a command line, and is
+# replaced only when it changed; the leader's connector then restarts with it.
+if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+    for h in "${leader}" "${standby}"; do
+        printf '%s' "${CLOUDFLARE_TUNNEL_TOKEN}" | on "${h}" "set -e; t=/etc/maktaba/tunnel.token
+            n=\$(sudo mktemp /etc/maktaba/.tunnel.token.XXXXXX); sudo tee \$n >/dev/null
+            sudo chgrp cloudflared \$n; sudo chmod 0640 \$n
+            if sudo cmp -s \$n \$t; then sudo rm -f \$n; exit 0; fi
+            sudo mv \$n \$t
+            if systemctl is-active -q maktaba-cloud-api.service; then sudo systemctl restart maktaba-cloudflared.service; fi"
+    done
+    log "the Tunnel's token is on both nodes"
+fi
 
 fetch() { # the release's binary, from its signed image, under /opt/maktaba-cloud/releases/<tag>
     on "$1" "set -e; d=/opt/maktaba-cloud/releases/${tag}; [ -x \$d/maktaba-cloud ] && exit 0
