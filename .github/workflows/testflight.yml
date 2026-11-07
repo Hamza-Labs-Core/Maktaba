@@ -43,8 +43,8 @@ on:
   push:
     tags:
       - 'v*'
-  # by hand from a branch (no guard), or on a tag: auto-tag.yml starts it on each tag it makes
-  # (`--ref vX.Y.Z -f tag=vX.Y.Z`: a tag pushed with GITHUB_TOKEN starts no push run)
+  # by hand from a branch (no guard), or on a tag (`--ref vX.Y.Z -f tag=vX.Y.Z`) when its push
+  # run is missing (auto-tag.yml's tag push starts the push run)
   workflow_dispatch:
     inputs:
       tag:

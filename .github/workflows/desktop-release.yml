@@ -91,9 +91,9 @@ on:
   push:
     tags:
       - 'v*'
-  # auto-tag.yml starts it on each tag it makes (a tag pushed with GITHUB_TOKEN starts no
-  # push run): `gh workflow run <this> --ref vX.Y.Z -f tag=vX.Y.Z`. The tag guard refuses a
-  # dispatched run whose ref is not that tag.
+  # A tag's run by hand, when its push run is missing or failed for good: `gh workflow run
+  # <this> --ref vX.Y.Z -f tag=vX.Y.Z` (auto-tag.yml's tag push starts the push run). The tag
+  # guard refuses a dispatched run whose ref is not that tag.
   workflow_dispatch:
     inputs:
       tag:
@@ -665,9 +665,13 @@ jobs:
           # the step above checks the wrapper jar
           validate-wrappers: false
 
-      - name: Packaging tools (rpm)
+      # rpm and fakeroot package; libGL, libEGL, libX11 and fontconfig are what Skiko's native
+      # library links to, which the Compose UI tests load (the ubuntu-22.04-arm image has none
+      # of them: v0.3.85's linux-aarch64 leg failed every UI test with an UnsatisfiedLinkError;
+      # the x64 image has them already)
+      - name: Packaging tools (rpm), Skiko's libraries
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm fakeroot
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm fakeroot libgl1 libegl1 libx11-6 libfontconfig1
 
       # the version from the tag (the installers take its numeric core) and the apps' updater
       # key, against which the player checks its updates
