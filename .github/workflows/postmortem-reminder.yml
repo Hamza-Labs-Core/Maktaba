@@ -1,0 +1,36 @@
+# Postmortem reminder (Epic 50 story 50.12, docs/runbooks/cloud/README.md): every SEV1 gets a
+# postmortem within 5 days. Daily, an incident on the status page marked `severity: sev1`,
+# resolved over 5 days ago, with no docs/postmortems/<incident id>.md opens a SEV3 issue
+# (once: an open issue with the same title is not repeated).
+name: Postmortem reminder
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  remind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: Open an issue for each postmortem due
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 tools/runbooks/postmortems.py > "${RUNNER_TEMP}/due"
+          while read -r id; do
+            [ -n "${id}" ] || continue
+            title="Postmortem due: ${id}"
+            if gh issue list --state open --search "\"${title}\" in:title" --json title -q '.[].title' | grep -qxF "${title}"; then
+              echo "already open: ${title}"; continue
+            fi
+            gh issue create --title "${title}" --body "SEV3 (docs/runbooks/cloud/README.md): the SEV1 incident \`${id}\` was resolved over 5 days ago and has no postmortem. Write docs/postmortems/${id}.md from docs/runbooks/cloud/postmortem-template.md."
+          done < "${RUNNER_TEMP}/due"

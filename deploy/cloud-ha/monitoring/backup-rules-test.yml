@@ -16,10 +16,10 @@ tests:
       - eval_time: 27h
         alertname: backup_stale
         exp_alerts:
-          - exp_labels: {severity: page, type: diff}
+          - exp_labels: {severity: sev2, type: diff}
             exp_annotations:
               summary: "No database backup for 1d 3h 0m 0s"
-              runbook: docs/runbooks/cloud-backup-stale.md
+              runbook_url: docs/runbooks/cloud/backup-stale.md
   # WAL 6 minutes old on the primary for a minute: wal_archive_failing; a replica's age never
   - interval: 1m
     input_series:
@@ -34,10 +34,10 @@ tests:
       - eval_time: 4m
         alertname: wal_archive_failing
         exp_alerts:
-          - exp_labels: {severity: page, role: primary}
+          - exp_labels: {severity: sev2, role: primary}
             exp_annotations:
               summary: "WAL has not reached the backup repositories for 8m 0s"
-              runbook: docs/runbooks/cloud-backup-stale.md
+              runbook_url: docs/runbooks/cloud/backup-stale.md
   # a failed drill
   - interval: 1m
     input_series:
@@ -47,7 +47,7 @@ tests:
       - eval_time: 1m
         alertname: restore_drill_failed
         exp_alerts:
-          - exp_labels: {severity: page, repo: "2"}
+          - exp_labels: {severity: sev2, repo: "2"}
             exp_annotations:
               summary: "The weekly restore drill failed (repo2)"
-              runbook: docs/runbooks/cloud-disaster-restore.md
+              runbook_url: docs/runbooks/cloud/restore.md

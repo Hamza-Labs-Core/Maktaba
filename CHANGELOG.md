@@ -381,6 +381,14 @@ build fails when the two differ.
   show; on the home's own network the cloud's line never shows; and a status page that can't
   be reached shows nothing. The home's web app and the cloud's editions allow that one address
   in their Content Security Policy.
+- **Maktaba Cloud's incidents are handled by runbook and one click (Epic 50, story 50.12).**
+  Every alert carries a severity (SEV1 pages the phone every 5 minutes until acknowledged,
+  SEV2 once, SEV3 is a daily email) and links to a runbook in `docs/runbooks/cloud/`, each with
+  When, Check, Do, Done when and Tell users. Switchover, forced failover and the DNS swap (when
+  the Hetzner API is down) are one-click GitHub Actions workflows, proven first by the cloud
+  rehearsal against its own pair. Status updates come from English and Arabic templates; a SEV1
+  without a postmortem after 5 days opens a reminder; the Billing page states the 99.9 % target
+  and that no credit is given, and CI keeps any template or string from offering one.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a

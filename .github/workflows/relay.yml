@@ -378,6 +378,10 @@ jobs:
           bash deploy/cloud-ha/monitoring/probe-test.sh
           bash deploy/cloud-ha/monitoring/status-export-test.sh
           shellcheck deploy/cloud-ha/monitoring/*.sh
+      - name: The one-click runbook actions (Epic 50 story 50.12)
+        run: |
+          shellcheck -x deploy/cloud-ha/runbook/*.sh
+          bash deploy/cloud-ha/runbook/runbook-test.sh
       - name: T05 the witness's certificate check
         run: |
           shellcheck deploy/cloud-ha/witness/check-certs.sh deploy/cloud-ha/witness/check-certs-test.sh
