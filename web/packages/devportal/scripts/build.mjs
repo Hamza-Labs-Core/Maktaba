@@ -66,6 +66,7 @@ const GUIDES = {
     "installing.md",
     "testing-and-packaging.md",
     "publishing.md",
+    "selling.md",
   ],
   contributing: [
     "README.md",

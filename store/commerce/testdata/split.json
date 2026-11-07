@@ -1,0 +1,13 @@
+{
+  "cases": [
+    {"price": 1000, "currency": "USD", "maktaba": 150, "developer": 850},
+    {"price": 100, "currency": "USD", "maktaba": 15, "developer": 85},
+    {"price": 199, "currency": "USD", "maktaba": 29, "developer": 170},
+    {"price": 1, "currency": "USD", "maktaba": 0, "developer": 1},
+    {"price": 20000, "currency": "USD", "maktaba": 3000, "developer": 17000},
+    {"price": 3999, "currency": "SAR", "maktaba": 599, "developer": 3400},
+    {"price": 3700, "currency": "AED", "maktaba": 555, "developer": 3145},
+    {"price": 49999, "currency": "EGP", "maktaba": 7499, "developer": 42500},
+    {"price": 0, "currency": "EUR", "maktaba": 0, "developer": 0}
+  ]
+}
