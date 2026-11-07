@@ -52,7 +52,5 @@ export function client({ token, base = DEFAULT_BASE, fetchImpl = fetch }) {
   };
 }
 
-/** Masks a value in GitHub Actions' log (the account id), when running there. */
-export function mask(value) {
-  if (value && process.env.GITHUB_ACTIONS === "true") console.log(`::add-mask::${value}`);
-}
+// The workflows mask the account id (::add-mask::) before any tool runs; the tools never print
+// it or a token.
