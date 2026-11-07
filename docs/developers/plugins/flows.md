@@ -2,9 +2,9 @@
 
 > **Status:** the flow format, the manifest's graph fields and the flow check are **on
 > `main`**: the home checks every install, enable, update and rollback, and the store's
-> verification uses the same check. Emitting events and run-time lineage, the drawn chart
-> and plugins on joined machines follow in the next releases of Epic 54. The exact fields
-> and codes are in the [plugin reference](reference.md).
+> verification uses the same check. Emitting events (plugin API 1.1) and run-time lineage
+> are **on `main`** too; the drawn chart and plugins on joined machines follow in the next
+> releases of Epic 54. The exact fields and codes are in the [plugin reference](reference.md).
 
 A plugin wires into the queue only through the graph it declares. There is no other way in:
 no edge, request or event outside the declared graph is ever made, and the plugin API, the
@@ -137,6 +137,42 @@ every enabled plugin: a home can combine flows the store never saw together, and
 install skips the store. A plugin whose upstream is missing still installs; its subscribing
 stages are idle and its page says which plugin is missing.
 
+## Emitting an event
+
+A stage emits an event it declares in `emits`, about a subject in its job's scope, with a
+JSON object payload (at most 16 KB) that the event's schema accepts:
+
+```rust
+events::emit("silences.found", &job::job_subject(), r#"{"silences": 4}"#)?;
+```
+
+The schema is a small JSON Schema: an object's `properties`, `required` and
+`additionalProperties`, and for each value `type`, `enum`, `minimum`, `maximum`,
+`maxLength`, `items` and `maxItems`. A payload it refuses answers `invalid` and nothing is
+sent. The event goes to every subscriber stage the admin approved, and only when your job
+ends well: a job that fails sends nothing. The subscriber reads it with `job::payload()`:
+
+```json
+{"event": "silences.found", "from": "dev.example.silences", "payload": {"silences": 4}}
+```
+
+Requests and events share one budget of 1,000 a job. Emitting needs plugin API 1.1:
+declare `plugin_api = "1.1"`; a 1.0 plugin keeps running unchanged.
+
+## Loops at run time
+
+The flow check refuses every loop the declared graph shows, but a loop can also run
+through data: your plugin writes a tag, Maktaba reruns a step because its input changed,
+and the core event that step fires starts your plugin again on the same video. So every
+plugin job carries its **lineage**: where its chain started, how many plugin jobs it has
+passed through, and which (stage, subject) pairs. Maktaba refuses a request or an event
+that would make a chain longer than **16** plugin jobs, or start a stage again on a subject
+it already ran on in the same chain; a write leaves the writer's lineage on its video for
+**10 minutes**, so a job a core event starts there inherits it. The call answers `scope`,
+nothing is enqueued, and the job fails with the cause **`plugin_loop`**: it is not
+retried, and the item's next real change runs your stage again. The lineage is Maktaba's:
+your job's payload never shows it, and a payload of yours that names `_lineage` is refused.
+
 ## Codes
 
 | Code | When |
@@ -151,6 +187,7 @@ stages are idle and its page says which plugin is missing.
 | `flow_too_deep` | a chain is longer than 16 stages |
 | `flow_manifest_mismatch` | the manifest differs from its flow entry |
 | `flow_not_member` | the plugin is not in its own flow at this version |
+| `plugin_loop` | at run time: a request or event would loop (a failure cause) |
 
 On a home a refusal answers `409 plugin_flow_cycle` (a cycle) or `409 plugin_flow_invalid`,
 with every finding in English and Arabic.

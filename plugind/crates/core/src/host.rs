@@ -143,7 +143,8 @@ pub fn covers(granted: &BTreeSet<String>, interface: &str, function: &str) -> bo
 fn to_call_error(e: ApiError) -> CallError {
     match e {
         ApiError::Capability => CallError::Capability,
-        ApiError::Scope => CallError::Scope,
+        // a loop reads as scope to the guest; the job fails as plugin_loop (54.40)
+        ApiError::Scope | ApiError::Loop => CallError::Scope,
         ApiError::Quota => CallError::Quota,
         ApiError::Rate => CallError::Rate,
         ApiError::TooLarge => CallError::TooLarge,

@@ -203,7 +203,9 @@ mod tests {
 
     #[test]
     fn newer_api_and_missing_run() {
-        assert_eq!(audit(&s(&["maktaba:plugin/job@1.1.0"]), &s(&["run"]), &[]).unwrap_err().code, CODE_API_NEWER);
+        assert_eq!(audit(&s(&["maktaba:plugin/job@1.2.0"]), &s(&["run"]), &[]).unwrap_err().code, CODE_API_NEWER);
+        // a 1.0 guest runs on this 1.1 host (wasmtime links semver-compatible names)
+        audit(&s(&["maktaba:plugin/job@1.0.0"]), &s(&["run"]), &[]).unwrap();
         assert_eq!(audit(&s(&["maktaba:plugin/job@2.0.0"]), &s(&["run"]), &[]).unwrap_err().code, CODE_API_NEWER);
         assert_eq!(audit(&[], &s(&["other"]), &[]).unwrap_err().code, CODE_MISSING_EXPORT);
     }
