@@ -51,6 +51,7 @@ import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.CloudException
 import com.hamzalabs.maktaba.core.session.CloudHome
 import com.hamzalabs.maktaba.core.session.CloudSession
+import com.hamzalabs.maktaba.core.session.isCloudOutage
 import com.hamzalabs.maktaba.core.session.NotAHome
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -111,13 +112,18 @@ private fun CloudSignIn(session: AppSession, onSignedIn: () -> Unit) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: CloudException) {
-                problem = when (e.status) {
-                    400, 401 -> wrong
-                    429 -> tooMany
-                    else -> e.message
+                // story 50.13: the cloud can't be reached; this account's saved homes, if any
+                if (isCloudOutage(e) && session.showSavedCloudHomes(email)) {
+                    onSignedIn()
+                } else {
+                    problem = when (e.status) {
+                        400, 401 -> wrong
+                        429 -> tooMany
+                        else -> e.message
+                    }
                 }
             } catch (e: Exception) {
-                problem = e.message
+                if (isCloudOutage(e) && session.showSavedCloudHomes(email)) onSignedIn() else problem = e.message
             } finally {
                 busy = false
             }
@@ -174,7 +180,10 @@ private fun CloudSignIn(session: AppSession, onSignedIn: () -> Unit) {
 
 @Composable
 private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
-    val cloud = session.cloud ?: return onSignedOut()
+    val cloud = session.cloud
+    // story 50.13: without a cloud sign-in, the saved list a sign-in fell back to
+    val saved by session.cloudSaved.collectAsState()
+    if (cloud == null && saved == null) return onSignedOut()
     var homes by remember { mutableStateOf<List<CloudHome>?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf<String?>(null) }
@@ -186,10 +195,16 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
     val locked = stringResource(R.string.cloud_home_locked)
     val changePassword = stringResource(R.string.cloud_home_change_password)
 
+    val cloudDown = stringResource(R.string.cloud_sign_in_cloud_down)
+
     LaunchedEffect(reload) {
         problem = null
+        if (cloud == null) {
+            homes = saved?.homes
+            return@LaunchedEffect
+        }
         try {
-            homes = cloud.homes()
+            homes = session.cloudHomes(cloud)
         } catch (e: CancellationException) {
             throw e
         } catch (e: CloudException) {
@@ -217,7 +232,11 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
                     else -> refused
                 }
             } catch (e: CloudException) {
-                if (!cloud.signedIn) onSignedOut() else problem = e.message
+                problem = when {
+                    e.code == "cloud_down" -> cloudDown
+                    cloud == null || !cloud.signedIn -> return@launch onSignedOut()
+                    else -> e.message
+                }
             } catch (e: Exception) {
                 problem = e.message
             } finally {
@@ -226,8 +245,15 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
         }
     }
 
-    cloud.user?.email?.let {
+    (cloud?.user ?: saved?.user)?.email?.let {
         Text(stringResource(R.string.cloud_signed_in_as, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    saved?.let { list ->
+        val at = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(list.savedAtMs))
+        Text(stringResource(R.string.cloud_homes_saved, at), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("cloud-saved"))
+        if (list.isOld(session.now())) {
+            Text(stringResource(R.string.cloud_homes_saved_old), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
     Text(stringResource(R.string.cloud_your_homes), style = MaterialTheme.typography.titleMedium)
     val list = homes
@@ -265,7 +291,7 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
     problem?.let { Problem(it) }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { homes = null; reload++ }, enabled = opening == null) { Text(stringResource(R.string.cloud_refresh)) }
-        TextButton(onClick = { cloud.signOut(); session.cloud = null; onSignedOut() }, enabled = opening == null) {
+        TextButton(onClick = { session.cloudSignOut(); onSignedOut() }, enabled = opening == null) {
             Text(stringResource(R.string.cloud_sign_out))
         }
     }

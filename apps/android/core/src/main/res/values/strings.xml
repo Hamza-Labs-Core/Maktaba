@@ -275,6 +275,11 @@
     <string name="banner_api_degraded">Signing in with Maktaba Cloud is slower than usual.</string>
     <string name="banner_api_outage">Signing in with Maktaba Cloud isn\'t working right now. You can sign in to your home with its password.</string>
     <string name="banner_maintenance">Planned maintenance on %1$s, %2$s–%3$s. Remote play may pause for a few seconds.</string>
+    <!-- Riding out a cloud outage (Epic 50 story 50.13) -->
+    <string name="cloud_homes_saved">Maktaba Cloud can\'t be reached. Showing your homes from %1$s.</string>
+    <string name="cloud_homes_saved_old">This list is more than 30 days old. Some addresses may have changed.</string>
+    <string name="cloud_sign_in_cloud_down">Signing in with Maktaba Cloud isn\'t working right now. Sign in to your home with its username and password, or with a code.</string>
+    <string name="home_reconnecting">Reconnecting to your home…</string>
     <!-- Epic 53: crash reports to the home (53.14) and Report a problem (53.15) -->
     <string name="crash_question_title">Help %1$s fix problems?</string>
     <string name="crash_question_body">If the app crashes, it can send a crash report to %1$s so its admin can fix it. It contains no videos or messages. It is off unless you turn it on.</string>

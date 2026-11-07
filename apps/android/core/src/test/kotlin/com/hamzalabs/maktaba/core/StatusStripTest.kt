@@ -88,4 +88,14 @@ class StatusStripTest {
         val (date, time) = localWhen(java.time.Instant.parse("2026-11-04T02:00:00Z").toEpochMilli())
         assertTrue(date.isNotBlank() && time.isNotBlank())
     }
+
+    /** Epic 50 story 50.13: a request waiting for the home behind the relay has its line, first. */
+    @Test
+    fun `reconnecting comes first while online, and has its words`() {
+        val lines = StatusStripRules.lines(with("streaming" to "down"), online = true, admin = false, reconnecting = true)
+        assertEquals(listOf(StripKey.RECONNECTING, StripKey.STREAMING), lines.map { it.key })
+        assertEquals(listOf(StripKey.OFFLINE), StatusStripRules.lines(null, online = false, admin = false, reconnecting = true).map { it.key })
+        assertEquals(R.string.home_reconnecting, stripText(StripKey.RECONNECTING))
+    }
 }
+

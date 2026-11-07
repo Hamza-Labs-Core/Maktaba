@@ -603,6 +603,47 @@ class AppSession(
     /** Signed in to Maktaba Cloud (in memory only: the app asks again after it restarts). */
     var cloud: CloudSession? = null
 
+    private val _cloudSaved = MutableStateFlow<SavedCloudHomes?>(null)
+
+    /**
+     * The saved home list shown because Maktaba Cloud can't be reached (story 50.13), with the
+     * time it was saved; null when the list is the cloud's own answer.
+     */
+    val cloudSaved: StateFlow<SavedCloudHomes?> = _cloudSaved.asStateFlow()
+
+    /** The homes [cloud] reaches, kept for when it can't be reached; then the saved ones. */
+    suspend fun cloudHomes(cloud: CloudSession): List<CloudHome> = try {
+        cloud.homes().also { list ->
+            cloud.user?.let { SavedCloudHomes.save(store, it, list, now()) }
+            _cloudSaved.value = null
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        val saved = cloud.user?.let { SavedCloudHomes.load(store, it.email) }
+        if (!isCloudOutage(e) || saved == null) throw e
+        _cloudSaved.value = saved
+        saved.homes
+    }
+
+    /**
+     * A sign-in Maktaba Cloud couldn't answer: this account's saved list, if there is one. Its
+     * homes are opened at their saved addresses and signed in to with the home's own sign-in.
+     */
+    fun showSavedCloudHomes(email: String): Boolean {
+        val saved = SavedCloudHomes.load(store, email) ?: return false
+        _cloudSaved.value = saved
+        return true
+    }
+
+    /** Signs out of Maktaba Cloud: its token and the saved home lists (story 50.13). */
+    fun cloudSignOut() {
+        cloud?.signOut()
+        cloud = null
+        _cloudSaved.value = null
+        SavedCloudHomes.forgetAll(store)
+    }
+
     /** The cloud's API address: the hosted one, or one the person chose. */
     var cloudApi: String
         get() = store.get(CloudSession.KEY_API) ?: CloudSession.DEFAULT_API
@@ -650,12 +691,21 @@ class AppSession(
      */
     suspend fun signInWithCloud() {
         val c = client ?: return
+        // story 50.13: the cloud can't vouch now; the home's own sign-in is showing
+        if (this.cloud == null && _cloudSaved.value != null) throw CloudException(0, "cloud_down", "Maktaba Cloud can't be reached.")
         val cloud = this.cloud ?: throw CloudException(401, "signed_out", "Sign in to Maktaba Cloud.")
         val home = _current.value
         val server = home?.cloudServer ?: throw CloudException(0, "not_in_cloud", "This home was not chosen in Maktaba Cloud.")
         // only to an address the cloud gave for this home (Home.cloudAddresses)
         if (home.url !in home.cloudAddresses) throw CloudException(0, "not_a_cloud_address", "Sign in at this address with your password or a code.")
-        val assertion = cloud.assertion(server)
+        val assertion = try {
+            cloud.assertion(server)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (isCloudOutage(e)) throw CloudException(0, "cloud_down", "Maktaba Cloud can't be reached.")
+            throw e
+        }
         if (c !== client) return
         c.signInWithAssertion(assertion)
         signedIn(c, c.whoami())

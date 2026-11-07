@@ -106,6 +106,7 @@ private extension View {
             case let .series(id): SeriesScreen(context: context, id: id)
             case let .library(id): LibraryScreen(context: context, id: id)
             case let .channel(id): ChannelScreen(context: context, id: id)
+            case let .search(q): SearchScreen(context: context, query: q)
             }
         }
     }

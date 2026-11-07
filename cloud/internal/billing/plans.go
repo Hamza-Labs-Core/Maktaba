@@ -63,6 +63,18 @@ var Tiers = map[string]Tier{
 	},
 }
 
+// RelayNone is a tier's RelayQoS when it has no relay (Epic 50 story 50.19's Free plan: direct
+// remote is free, the relay is paid).
+const RelayNone = "none"
+
+// RelayIncluded says whether a plan reaches its home through the relay. An unknown plan keeps
+// the relay (a plan this build doesn't know is never cut off by it). Story 50.13: a home whose
+// plan has no relay lists no relay connections.
+func RelayIncluded(plan string) bool {
+	t, ok := Tiers[plan]
+	return !ok || t.RelayQoS != RelayNone
+}
+
 // FreeOverageGrace is the soft buffer applied before we 402. Avoids
 // jarring cutoffs at the exact byte boundary.
 const FreeOverageGrace = 100 * 1024 * 1024 // 100 MiB
