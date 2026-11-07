@@ -29,7 +29,8 @@ jobs:
           while read -r id; do
             [ -n "${id}" ] || continue
             title="Postmortem due: ${id}"
-            if gh issue list --state open --search "\"${title}\" in:title" --json title -q '.[].title' | grep -qxF "${title}"; then
+            open_titles="$(gh issue list --state open --search "\"${title}\" in:title" --json title)"
+            if jq -e --arg t "${title}" 'any(.[]; .title == $t)' <<<"${open_titles}" >/dev/null; then
               echo "already open: ${title}"; continue
             fi
             gh issue create --title "${title}" --body "SEV3 (docs/runbooks/cloud/README.md): the SEV1 incident \`${id}\` was resolved over 5 days ago and has no postmortem. Write docs/postmortems/${id}.md from docs/runbooks/cloud/postmortem-template.md."

@@ -19,7 +19,8 @@ ctl="${PATRONICTL:-patronictl -c /etc/patroni/patroni.yml}"
 
 find_pair || die "no node leads: Patroni already failed over or both are down (see restore.md)"
 # the candidate's member name, from Patroni itself (the one that does not lead)
-candidate="$(on "${standby}" "${SUDO} ${ctl} list -f json" | jq -r '.[] | select(.Role != "Leader" and .Role != "leader") | .Member' | head -n1)"
+members="$(on "${standby}" "${SUDO} ${ctl} list -f json")" || die "patronictl list failed on ${standby}"
+candidate="$(jq -r 'first(.[] | select(.Role != "Leader" and .Role != "leader") | .Member) // empty' <<<"${members}")"
 [ -n "${candidate}" ] || die "Patroni lists no replica: no failover is possible"
 log "${leader} leads; failing over to ${candidate} on ${standby}"
 on "${standby}" "${SUDO} ${ctl} failover --candidate ${candidate} --force" || die "Patroni refused the failover (its reason is above)"
