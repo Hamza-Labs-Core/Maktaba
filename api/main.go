@@ -727,7 +727,8 @@ func runServe() error {
 			// service, the plugin API's invocation and breaker routes, and the plugin API
 			// on its unix socket when the supervisor names one
 			router.MountP54(r, router.P54Deps{DB: appDB, Logger: logger, DataDir: statsDataDir, Components: componentsSvc,
-				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets})
+				DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), Version: version.Version, Secrets: homeSecrets,
+				Capabilities: capabilities, Embedder: embedderClient(pipelineClient, searchPipelineClient)})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
@@ -1289,4 +1290,16 @@ func warmPeriod() time.Duration {
 		return 30 * time.Second
 	}
 	return d
+}
+
+// embedderClient is the pipeline worker a plugin's compute.embed asks (Epic 54, story
+// 54.21): the one holding the search index when there is one, as semantic search does.
+func embedderClient(pipelineClient, searchPipelineClient grpcpipeline.Client) any {
+	if searchPipelineClient != nil {
+		return searchPipelineClient
+	}
+	if pipelineClient != nil {
+		return pipelineClient
+	}
+	return nil
 }

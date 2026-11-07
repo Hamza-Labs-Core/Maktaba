@@ -39,6 +39,36 @@ func WriteJSON(w http.ResponseWriter, r *http.Request, status int, v any) {
 	_, _ = w.Write(data)
 }
 
+// WritePassthrough relays a response a wrapping handler captured from the one it
+// wraps (a status the wrapper does not decorate, or a body it cannot read as JSON):
+// its headers and status, and its body under a content type that is never HTML.
+// A JSON or problem+json response keeps its type; anything else goes out as
+// text/plain, and nosniff stops a browser guessing otherwise, so a body that echoes
+// part of the request can never run as a page.
+func WritePassthrough(w http.ResponseWriter, status int, header http.Header, body []byte) {
+	for k, v := range header {
+		if http.CanonicalHeaderKey(k) == "Content-Type" {
+			continue
+		}
+		w.Header()[k] = v
+	}
+	ct := strings.ToLower(strings.TrimSpace(header.Get("Content-Type")))
+	switch {
+	case strings.HasPrefix(ct, "application/problem+json"):
+		w.Header().Set("Content-Type", "application/problem+json")
+	case strings.HasPrefix(ct, "application/json"):
+		w.Header().Set("Content-Type", "application/json")
+	default:
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
+}
+
 // WriteNoContent renders 204 with no body — used by DELETE handlers
 // and by control endpoints that have no useful response payload.
 func WriteNoContent(w http.ResponseWriter) {

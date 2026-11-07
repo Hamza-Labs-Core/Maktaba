@@ -49,6 +49,29 @@ Plugins may ask those, on the home, and never anything outside it.
 Generated text written to fields or panels goes through the same rules as any plugin write
 (54.04: field allow-list, plain text, attribution).
 
+### 4. As built
+
+- **WIT.** `maktaba:plugin@1.1.0` adds the interface `compute`: `embed(texts) ->
+  result<embeddings {model, vectors}, call-error>` and `generate(prompt, generate-options
+  {max-tokens, temperature, json-schema: option<string>}) -> result<string, call-error>`. The
+  `call-error` variant is unchanged, so a plugin built for 1.0 links on a 1.1 host (the
+  linker matches 1.x imports by semver; the import audit refuses a newer minor). The refusals
+  `compute_remote` and `compute_bad_output` reach the plugin as `invalid(<code>)`;
+  `compute_unavailable` is `unavailable`. The prompt is at most 32 KB.
+- **Embeddings** go to the pipeline's `EmbedTexts` RPC (the worker holding the search index),
+  as e5 passages with the semantic search model; they do not take a `lookup` slot.
+- **The model plugins ask** is `rules.plugin_compute` (`url`, `model`, both empty by default:
+  the tag check's server and model), owned by `plugins.host`, with `generate_per_day`,
+  `embed_texts_per_day` and `timeout_s`. The server's address is checked on every connection
+  (resolved, then dialled by address), not only by name: loopback, RFC 1918, IPv6
+  unique-local and link-local count as local.
+- **The share of `lookup`.** A question holds a `compute_leases` row (migration 0197) while it
+  runs, which the claim counts as busy; each core claim of `lookup` counts in `claim_shares`
+  (`plugin_share:lookup`), and while core work waits a plugin takes a slot only after two of
+  them. Daily use is `plugin_compute_usage`, per plugin and UTC day.
+- **`json-schema`** is checked on the answer for `type`, `properties`, `required`, `items` and
+  `enum`; other keywords are passed to Ollama and not checked again.
+
 ## Acceptance criteria
 
 - **Given** a plugin with `compute.embed` and `search.semantic` running,

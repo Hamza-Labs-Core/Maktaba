@@ -84,6 +84,18 @@
       "risk": "medium",
       "interface": "exports",
       "param": "plugin_id"
+    },
+    {
+      "name": "compute.embed",
+      "risk": "medium",
+      "interface": "compute",
+      "param": ""
+    },
+    {
+      "name": "compute.llm",
+      "risk": "medium",
+      "interface": "compute",
+      "param": ""
     }
   ]
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -268,5 +269,39 @@ func TestOwnedByHashOrOldID(t *testing.T) {
 	}
 	if ownedBy([]byte(`{"user_h":""}`), "u-alice", "") {
 		t.Error("no key: an empty user_h is no one's")
+	}
+}
+
+// TestExportForwardsOnlyTheFilter: a peer's /logs/recent is asked for the parsed
+// filter alone; a parameter the caller adds (or one meant for the export itself)
+// never reaches the internal service (CodeQL go/request-forgery, alert 16).
+func TestExportForwardsOnlyTheFilter(t *testing.T) {
+	got := make(chan string, 1)
+	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got <- r.URL.RawQuery
+		_, _ = io.WriteString(w, "")
+	}))
+	defer peer.Close()
+
+	h := &Handler{Ring: seedRing(t), Peers: []PeerLog{{Service: "streaming", URL: peer.URL + "/logs/recent?token=cfg"}}}
+	r := chi.NewRouter()
+	h.Mount(r)
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/diagnostics/export?format=json&level=warn&limit=5&q=boom&evil=1&token=hijack&node=x", nil)
+	req = req.WithContext(principal.WithPrincipal(req.Context(),
+		&principal.Principal{UserID: "u-alice", IsAdmin: false}))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	q, err := url.ParseQuery(<-got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := url.Values{"level": {"warn"}, "limit": {"5"}, "q": {"boom"}, "token": {"cfg"}}
+	if q.Encode() != want.Encode() {
+		t.Errorf("peer asked for %q, want %q", q.Encode(), want.Encode())
 	}
 }
