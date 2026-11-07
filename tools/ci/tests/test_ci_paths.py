@@ -618,6 +618,19 @@ def test_coverage_map_skips_a_cancelled_ci_run_in_a_group_of_its_own() -> None:
         assert ci_paths.evaluate(cond, ctx("cancelled")) is False, job
 
 
+def test_a_caddyfile_change_runs_the_deny_first_check() -> None:
+    # tools/ci/caddy_deny_first.py runs in lint's repo job, which every pull request but a
+    # trail-only one runs: a change to any tracked Caddyfile, or to the check, runs it
+    import caddy_deny_first
+
+    files = caddy_deny_first.tracked(ci_paths.ROOT)
+    assert len(files) >= 9
+    for f in [*files, "tools/ci/caddy_deny_first.py"]:
+        assert "lint" in ran(run(f)), f
+    steps = yaml.safe_load((WORKFLOWS / "_lint.yml").read_text(encoding="utf-8"))["jobs"]["repo"]["steps"]
+    assert any(s.get("run") == "python3 tools/ci/caddy_deny_first.py" for s in steps)
+
+
 def test_loop_start_files_run_the_catalog_check() -> None:
     # Epic 51 (story 51.05): where the API and streaming declare their loops, and the
     # runner itself, run the catalog job's loop check

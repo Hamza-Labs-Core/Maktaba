@@ -112,6 +112,12 @@ jobs:
       - name: CI runs what a change touches (the guard)
         run: uv run --no-project --python 3.12 --with pyyaml==6.0.3 python tools/ci/ci_paths.py guard
 
+      # Caddy orders handle before respond, reverse_proxy, file_server, abort and error: a bare
+      # one beside handle blocks never runs behind a catch-all, as two deny rules never did
+      # (#927, #930). Every tracked Caddyfile, on every pull request (tools/ci/caddy_deny_first.py)
+      - name: No Caddyfile hides a deny behind its handle blocks
+        run: python3 tools/ci/caddy_deny_first.py
+
       - name: CI runs what a change touches (which jobs a change runs)
         run: >-
           uv run --no-project --python 3.12 --with pyyaml==6.0.3 --with pytest==8.4.2
