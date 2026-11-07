@@ -142,7 +142,8 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         let restart = element("recovery.restart.core.postgres")
         XCTAssertTrue(restart.waitForExistence(timeout: 5))
         restart.tap()
-        let confirm = app.alerts.buttons["Restart"]
+        // the alert names its action twice (its title and its button): any one of them, the POST below proves the tap
+        let confirm = app.alerts.buttons["Restart"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "asked to confirm")
         confirm.tap()
         let posted = { self.home.requests.contains { $0.method == "POST" && $0.path == "/recovery/api/action" } }
