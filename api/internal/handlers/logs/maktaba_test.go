@@ -267,6 +267,12 @@ func TestAnAdminSendsAReportWithTheirPreview(t *testing.T) {
 	if rec := rg.do("POST", "/api/reports/1/share", nil, "", sara); rec.Code != http.StatusForbidden {
 		t.Fatalf("a viewer: %d", rec.Code)
 	}
+	if rec := rg.do("GET", "/api/reports/1/screenshot", nil, "", admin); rec.Code != 200 || rec.Body.String() != "png" {
+		t.Fatalf("the admin sees the screenshot first: %d", rec.Code)
+	}
+	if rec := rg.do("GET", "/api/reports/1/screenshot", nil, "", sara); rec.Code != http.StatusForbidden {
+		t.Fatalf("a viewer reads no screenshot here: %d", rec.Code)
+	}
 	prev := rg.do("GET", "/api/reports/1/maktaba-preview", nil, "", admin)
 	if prev.Code != 200 || strings.Contains(prev.Body.String(), "Seerah") || !strings.Contains(prev.Body.String(), `"user_h":"user-1"`) {
 		t.Fatalf("the preview: %d %s", prev.Code, prev.Body)

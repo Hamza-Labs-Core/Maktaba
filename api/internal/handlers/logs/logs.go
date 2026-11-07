@@ -140,6 +140,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.With(authmw.RequireAdmin).Delete("/api/reports/maktaba", h.deleteAtMaktaba)
 	r.With(authmw.RequireAdmin).Post("/api/reports/{id}/share", h.shareReport)
 	r.With(authmw.RequireAdmin).Get("/api/reports/{id}/maktaba-preview", h.previewReport)
+	r.With(authmw.RequireAdmin).Get("/api/reports/{id}/screenshot", h.reportScreenshot)
 }
 
 func (h *Handler) client() *http.Client {

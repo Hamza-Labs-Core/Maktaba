@@ -508,6 +508,23 @@ func (h *Handler) changeReport(field string) http.HandlerFunc {
 	}
 }
 
+// reportScreenshot is a report's screenshot, for the admin's own preview before sending it
+// to Maktaba (story 53.16).
+func (h *Handler) reportScreenshot(w http.ResponseWriter, r *http.Request) {
+	rep, _, ok := h.reportOf(w, r)
+	if !ok {
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(h.reportsDir(), strconv.Itoa(rep.ID), "screenshot.png"))
+	if err != nil {
+		httperror.Write(w, r, httperror.NotFound("this report has no screenshot"))
+		return
+	}
+	w.Header().Set("Content-Type", http.DetectContentType(b))
+	w.Header().Set("Cache-Control", "private, no-store")
+	_, _ = w.Write(b)
+}
+
 func (h *Handler) reportBundle(w http.ResponseWriter, r *http.Request) {
 	rep, _, ok := h.reportOf(w, r)
 	if !ok {
