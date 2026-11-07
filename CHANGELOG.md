@@ -734,6 +734,18 @@ build fails when the two differ.
   envelope). The home refuses an envelope without that consent, scrubs it again, keeps it, and
   groups it on the Errors page.
 
+- **The Apple apps send crash reports to the home, report problems, and the Remote reads the
+  home's diagnostics.** Maktaba Remote's Home tab has **Errors** (the error groups with their
+  14 days, a group's chart and lines, Mark seen, Resolve and Mute), **Logs** (search, and
+  Follow a request from a reference), **Dashboards** (Overview and Storage) and **Problem
+  reports** (the inbox: status and reply), through the web's routes. Every Apple app asks once
+  after signing in whether to **send crash reports** to the home, off until the person says
+  yes; when on, a kept crash (MetricKit on iPhone, iPad and Mac, PLCrashReporter on Apple TV)
+  goes to the home at the next launch as a scrubbed envelope with the app's log. **Report a
+  problem** (Profile, the Remote's Home tab, the TV's Settings, and **Report this** on error
+  screens) previews what it sends and says the report's number; **My reports** shows the
+  admin's reply. `docs/app-privacy.md` keeps the App Store and Play privacy answers.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

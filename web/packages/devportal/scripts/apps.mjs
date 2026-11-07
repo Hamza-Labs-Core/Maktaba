@@ -340,6 +340,10 @@ export const APPS = [
                 "**The status strip**: when the home's streaming is down, the Player says so before you press play.",
                 "**شريط الحالة**: حين يتوقف البث في الجهاز الرئيسي، يقول المشغّل ذلك قبل أن تضغط على التشغيل."
               ),
+              t(
+                "**Crash reports and Report a problem** (iPhone, iPad and Mac): after signing in, the Player asks once whether to **send crash reports** to the home, with two equal buttons; it stays off until you say yes, and **Profile** keeps the switch. **Report a problem** in Profile (and **Report this** on an error screen) shows everything it will send before it does: the app's log of the last 30 minutes, already scrubbed, the last requests, the crashes kept on the device, and a screenshot only when you tick it and see it. It goes to the home's admin, who can reply in **My reports**.",
+                "**تقارير الأعطال والإبلاغ عن مشكلة** (آيفون وآيباد والماك): بعد تسجيل الدخول يسأل المشغّل مرة واحدة هل **يرسل تقارير الأعطال** إلى الجهاز الرئيسي، بزرّين متساويين؛ وتبقى متوقفة حتى توافق، ومفتاحها في **الملف الشخصي**. ويعرض **الإبلاغ عن مشكلة** في الملف الشخصي (و**الإبلاغ عن هذا** في شاشة الخطأ) كل ما سيُرسله قبل الإرسال: سجل التطبيق لآخر 30 دقيقة منقّحًا، وآخر الطلبات، والأعطال المحفوظة على الجهاز، ولقطة شاشة فقط إن حدّدتها ورأيتها. ويصل البلاغ إلى مشرف الجهاز الرئيسي، ويمكنه الرد عليك في **بلاغاتي**."
+              ),
             ],
           },
           {
@@ -615,6 +619,10 @@ export const APPS = [
                 "**مراجعة الكلمات**، من **ما يحتاج إلى انتباه**: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، كلمةً كلمة. استمع إلى المقطع، ثم اقبل الكلمة أو صحّحها أو علّمها اسمًا أو أضفها إلى القاموس أو تخطَّها، ويمكنك التراجع؛ واتجاه السحب يتبع اتجاه اللغة."
               ),
               t(
+                "**Diagnostics** (iPhone), on the **Home** tab, through the same routes as the web's admin pages: **Errors** (what keeps failing, grouped, with its last 14 days; a group's chart and recent lines, **Mark seen**, **Resolve** and **Mute**), **Logs** (search by words, level and time; a reference from someone's error screen opens **Follow a request**, every line of that request in time order), **Dashboards** (Overview and Storage, read only) and **Problem reports** (people's reports: the device, what they wrote and one timeline of the app's and the home's lines; set a status and write back).",
+                "**التشخيص** (آيفون)، في تبويب **الجهاز الرئيسي**، عبر مسارات صفحات الإدارة في الويب نفسها: **الأخطاء** (ما يتكرر فشله، مجمّعًا، بأيامه الأربعة عشر الأخيرة؛ ومخطط المجموعة وأسطرها الأخيرة، و**التعليم كمرئي** و**الحل** و**الكتم**)، و**السجلات** (البحث بالكلمات والمستوى والوقت؛ والمرجع من شاشة خطأ لدى شخص ما يفتح **تتبّع طلب**، أي كل أسطر ذلك الطلب بترتيبها الزمني)، و**لوحات المتابعة** (النظرة العامة والتخزين، للقراءة فقط)، و**بلاغات المشكلات** (بلاغات الناس: الجهاز وما كتبوه وخط زمني واحد لأسطر التطبيق والجهاز الرئيسي؛ وتعيين الحالة والرد)."
+              ),
+              t(
                 "**The status strip**: what is down on the home, at the top of every screen.",
                 "**شريط الحالة**: ما توقف في الجهاز الرئيسي، أعلى كل شاشة."
               ),
@@ -736,6 +744,10 @@ export const APPS = [
               t(
                 "Videos play in the system's player, with scrubbing and the choice of audio and subtitles.",
                 "تُشغَّل المقاطع في مشغّل النظام، مع التنقل في المقطع واختيار الصوت والترجمة."
+              ),
+              t(
+                "**Crash reports and Report a problem** (Apple TV): the TV asks once after signing in whether to send crash reports to the home, off until you say yes; **Settings** keeps the switch, **Report a problem** (a category and Send are enough with the remote; the log it sends can be read first) and **My reports**.",
+                "**تقارير الأعطال والإبلاغ عن مشكلة** (آبل تي في): يسأل التلفاز مرة واحدة بعد تسجيل الدخول هل يرسل تقارير الأعطال إلى الجهاز الرئيسي، وتبقى متوقفة حتى توافق؛ وفي **الإعدادات** مفتاحها، و**الإبلاغ عن مشكلة** (تكفي الفئة وزر الإرسال بجهاز التحكم؛ ويمكن قراءة السجل الذي سيُرسل أولًا)، و**بلاغاتي**."
               ),
             ],
           },

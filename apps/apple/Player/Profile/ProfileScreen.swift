@@ -15,6 +15,7 @@ struct ProfileScreen: View {
     @State private var model: ProfileModel
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.dark
     @State private var confirmSignOut = false
+    @Environment(\.reportProblem) private var reportProblem
     /// The page shown in the first screen's place (nil: the first screen). The pages are not
     /// pushed: the section's stack holds `PlayerRoute`s only, and a view pushed beside them
     /// would be put under a video opened from it.
@@ -87,6 +88,7 @@ struct ProfileScreen: View {
         case .sessions: SessionsPage(model: model)
         case .playback: PlaybackPage()
         case .diagnostics: DiagnosticsPage()
+        case .myReports: MyReportsView(client: context.client)
         }
     }
 
@@ -160,6 +162,8 @@ struct ProfileScreen: View {
                 .accessibilityHint(Text("Opens the system's settings for this app", tableName: "Profile",
                                         comment: "What the Language row does, spoken"))
                 pageRow(.playback, Text("Playback", tableName: "Profile", comment: "The playback settings page"), "play.rectangle")
+                // Privacy: crash reports to the home, off until the person turns them on (53.14)
+                CrashReportsToggle(session: context.session)
             } header: {
                 sectionTitle(Text("Settings on this device", tableName: "Profile", comment: "A Profile group: theme, language, playback"))
             }
@@ -171,6 +175,14 @@ struct ProfileScreen: View {
                     row(Text("Help", tableName: "Profile", comment: "Opens the home's help page for this app"), "questionmark.circle")
                 }
                 .accessibilityIdentifier("profile.help")
+                // Report a problem to the home's admin, and the person's own reports (53.15)
+                Button {
+                    reportProblem?()
+                } label: {
+                    row(Text(verbatim: ReportWords.title), "exclamationmark.bubble")
+                }
+                .accessibilityIdentifier("profile.reportProblem")
+                pageRow(.myReports, Text(verbatim: ReportWords.mine), "person.crop.rectangle.stack")
                 about
                 pageRow(.diagnostics, Text("Diagnostics", tableName: "Profile", comment: "The crash reports kept on this device"), "stethoscope")
             } header: {
@@ -329,7 +341,7 @@ enum ProfileLinks {
 
 /// The Profile's pages.
 enum ProfilePage: Hashable, Identifiable {
-    case history, favorites, playlists, sessions, playback, diagnostics
+    case history, favorites, playlists, sessions, playback, diagnostics, myReports
     case playlist(PlaylistSummary)
 
     var id: String {
@@ -340,6 +352,7 @@ enum ProfilePage: Hashable, Identifiable {
         case .sessions: "sessions"
         case .playback: "playback"
         case .diagnostics: "diagnostics"
+        case .myReports: "myReports"
         case let .playlist(p): "playlist.\(p.id)"
         }
     }
@@ -347,7 +360,7 @@ enum ProfilePage: Hashable, Identifiable {
     /// A page a launch opens on (`-maktaba-profile`, by its `id`); a playlist needs its
     /// summary, so it is not one.
     init?(launchID: String) {
-        guard let page = [ProfilePage.history, .favorites, .playlists, .sessions, .playback, .diagnostics]
+        guard let page = [ProfilePage.history, .favorites, .playlists, .sessions, .playback, .diagnostics, .myReports]
             .first(where: { $0.id == launchID }) else { return nil }
         self = page
     }

@@ -67,9 +67,31 @@ calls the Remote makes (`Admin.swift`).
   read-only pages: *Updates*, the plan and what holds it, blocked releases, a TV held, the run
   under way or the last with its steps and machines, every machine's release; *Processes*,
   the supervised processes and their recent events). The queue also lists the jobs running
-  now and how long each has run. The home
+  now and how long each has run. *Home* also has **Diagnostics** (Epic 53, the web's admin
+  pages through the same routes): *Errors* (the error groups, new and seen by default, with
+  their 14 days; a group's chart, recent lines, releases and machines, and Mark seen, Resolve
+  and Mute for 24 hours, 7 days or until resolved; the row shows how many are new), *Logs*
+  (search by words, level and time; a reference from an error screen or a request id opens
+  **Follow a request**, every line of it in time order with gaps marked; a line's fields and
+  **Lines around this**; no live tail), *Dashboards* (Overview and Storage, read only, from 1
+  hour to 90 days, time left to right in Arabic too) and *Problem reports* (the inbox: a
+  report's device, text and one timeline of the app's and the home's lines; set its status,
+  write back). The home
   enforces every one of these for its admins (403 to anyone else); a non-admin who signs in
   sees "For the home's admins".
+- **Crash reports and Report a problem** (every app, Epic 53 stories 53.14 and 53.15, in
+  MaktabaKit: `Envelope`, `CrashSender`, `ReportProblem`, `DiagnosticsViews`): after signing in
+  to a home the app asks once, with two equal buttons, whether to **send crash reports** to
+  it; the answer is kept on the device per home and changed in the app's settings (the
+  Player's Profile, the Remote's Home tab, the TV's Settings). Off, nothing leaves the
+  device. On, each kept crash (MetricKit on iPhone, iPad and Mac; PLCrashReporter on Apple
+  TV, which has no MetricKit) goes to `POST /api/diagnostics/envelope` at the next launch as a
+  Sentry envelope with the consent in its header and the app's log (≤ 512 KB, the envelope
+  ≤ 1 MB), scrubbed with the shared rules; a 429 keeps it for at most 3 retries over 7 days.
+  **Report a problem** (and an error screen's **Report this**) shows what will be sent before
+  it is (the log of the last 30 minutes, the last requests, the kept crashes, a screenshot
+  only when ticked and seen) and says the report's number; **My reports** shows its status
+  and the admin's reply. What the stores are told is in `docs/app-privacy.md`.
 
 ## English and Arabic
 
