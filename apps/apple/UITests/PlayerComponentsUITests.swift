@@ -165,16 +165,15 @@ final class PlayerComponentsUITests: PlayerUITestCase {
     /// sampled the moving light between two frames, failed a node it could not name (#608's
     /// iPhone AX3 run, an audit of 13.5 s), and there is no text in it to measure.
     func testShimmer() {
-        home.delay("GET", "/api/videos/slow/poster", by: 60)
+        // the gallery's card asks for no picture at all (`neverLoads`): a 60 s delay here once
+        // lost to the picture's 15 s timeout, and the card's shimmer went before the count
         eachVariant("shimmer", extra: ["-maktaba-gallery-still"]) { language, _ in
             let shimmer = element("shimmer")
             XCTAssertTrue(shimmer.waitForExistence(timeout: 5))
             XCTAssertEqual(shimmer.label, language == "ar" ? "جارٍ التحميل…" : "Loading…")
-            // the first placeholder exists before the others are laid out: wait for them (a
-            // count read at once saw 3 of the 4 on an iPad run of #742)
-            let deadline = Date().addingTimeInterval(5)
-            while all("shimmer").count < 4, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
-            XCTAssertGreaterThanOrEqual(all("shimmer").count, 4, "the blocks and the card still loading")
+            // the first placeholder exists before the others are laid out (the card's after
+            // 0.4 s): wait for them, in looks as well as seconds
+            XCTAssertTrue(waitUntil { self.all("shimmer").count >= 4 }, "the blocks and the card still loading")
         }
     }
 
