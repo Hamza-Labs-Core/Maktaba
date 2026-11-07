@@ -83,3 +83,42 @@ describe("Store account", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("Paid plugins on this home (story 54.19 §6)", () => {
+  it("lists the purchases held and checks with the store on request", async () => {
+    get.mockImplementation(async (path: string) =>
+      path.endsWith("/entitlements")
+        ? {
+            entitlements: [
+              {
+                plugin_id: "dev.example.loudness",
+                product: "one_time",
+                purchase_id: "pur-1",
+                valid_until: "2026-12-20T00:00:00Z",
+                refreshed_at: "2026-11-20T00:00:00Z",
+              },
+            ],
+          }
+        : { linked: true, home_id: "h_1", store: "https://plugins.maktaba.tv" }
+    );
+    post.mockResolvedValue({ linked: true, valid: 1 });
+    render(
+      <I18nProvider>
+        <StoreAccount />
+      </I18nProvider>
+    );
+    expect(await screen.findByText(/dev\.example\.loudness/)).toBeInTheDocument();
+    await act(async () =>
+      fireEvent.click(
+        await screen.findByRole("button", { name: EN["plugins.store.purchases.check"] })
+      )
+    );
+    expect(post).toHaveBeenCalledWith("/api/plugins/store-account/entitlements/refresh", {
+      after_buy: false,
+    });
+    expect(
+      await screen.findByText(EN["plugins.store.purchases.checked"].replace("{n}", "1"))
+    ).toBeInTheDocument();
+    expect(AR["plugins.store.purchases.check"]).toBeTruthy();
+  });
+});

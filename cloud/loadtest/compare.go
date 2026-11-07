@@ -4,11 +4,13 @@ import "fmt"
 
 // Baseline is what CI's load-small measured (story 50.14 §3): the relay's CPU per Mbit/s
 // relayed and its memory per tunnel. CI can't measure a Hetzner machine's network, so it checks
-// these for regressions against main's last run; the staging runs give the absolute numbers.
+// these for regressions: the base commit's relay and this commit's run in the same job, on the
+// same runner, and are compared (a figure from another run is another machine: the same code
+// measured 0.00045 to 0.00087 across runners, #832); the staging runs give the absolute numbers.
 //
 // CPUSecondsPerMbit is the median of the rounds' (CPURounds), each the relay containers' own
 // CPU time (their cgroups' counters) over the Mbit relayed in that round: one long sampled
-// figure swung 1.8 times on the same code (#808).
+// figure swung 1.8 times on the same code and runner (#808).
 type Baseline struct {
 	Sha               string    `json:"sha"`
 	Method            string    `json:"method,omitempty"`
@@ -43,7 +45,7 @@ func Compare(base, cur Baseline, tol float64) (ok bool, report string) {
 	if base.Method == cur.Method {
 		report = line("CPU seconds per Mbit relayed", base.CPUSecondsPerMbit, cur.CPUSecondsPerMbit)
 	} else {
-		report = fmt.Sprintf("%-28s main measured %q, this %q: not compared (main's next run is the baseline)\n",
+		report = fmt.Sprintf("%-28s the base measured %q, this %q: not compared\n",
 			"CPU seconds per Mbit relayed", base.Method, cur.Method)
 	}
 	report += line("memory bytes per tunnel", base.MemBytesPerTunnel, cur.MemBytesPerTunnel)
