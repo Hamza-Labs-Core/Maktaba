@@ -362,6 +362,12 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		if PluginsHere(cfg) {
 			add(EnvPluginDSocket, PluginsPaths(cfg).Dispatch)
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
+			// on a joined machine the packages are its own copies (story 54.42 §2): the
+			// dispatcher names this folder to the host, and sends outcomes to the home
+			if n, err := NodeOf(cfg); err == nil && NodeMode(cfg, n) {
+				add(EnvPluginsRoot, PluginsPaths(cfg).Root)
+				add("MAKTABA_PLUGINS_VIA_HOME", "1")
+			}
 		}
 		// Recent-logs HTTP endpoint drained by the api's diagnostics
 		// export proxy (see MAKTABA_LOG_PEERS on the api role).

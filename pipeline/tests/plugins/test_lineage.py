@@ -123,3 +123,61 @@ def test_an_event_goes_from_a_plugin_stage_to_another_plugin_only() -> None:
     )
     assert not _plugin_event(a, own, graph)  # type: ignore[arg-type]
     assert not _plugin_event(core, ev, graph)  # type: ignore[arg-type]
+
+
+def test_a_joined_machine_names_its_own_copy_of_the_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """54.42 §2: the home's folder on the home; this machine's copy on a joined one."""
+    home = "/Users/x/Library/Maktaba/state/plugins/dev.example.a/1.0.0_aaaaaaaaaaaa"
+    monkeypatch.delenv("MAKTABA_PLUGINS_ROOT", raising=False)
+    assert dispatch.package_path("dev.example.a", home) == home
+    monkeypatch.setenv("MAKTABA_PLUGINS_ROOT", "/var/lib/maktaba/plugins")
+    assert (
+        dispatch.package_path("dev.example.a", home)
+        == "/var/lib/maktaba/plugins/dev.example.a/1.0.0_aaaaaaaaaaaa"
+    )
+
+
+def test_a_joined_machine_sends_its_outcomes_to_the_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    """54.42 §4: the breaker on a joined machine posts the outcome; the home records it."""
+    from maktaba_pipeline.plugins import breaker
+
+    sent: list[tuple[str, str, dict]] = []
+
+    def fake(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:
+        sent.append((method, path, body or {}))
+        return 200, {"tripped": "crashes"}
+
+    monkeypatch.setenv("MAKTABA_PLUGINS_VIA_HOME", "1")
+    monkeypatch.setattr(dispatch, "_api", fake)
+
+    class NoDB:
+        dialect = "postgres"
+
+        async def fetchrow(self, *_: object) -> None:
+            raise AssertionError("a joined machine never writes plugin_health")
+
+    async def direct(fn, *a, **k):  # type: ignore[no-untyped-def]
+        return fn(*a, **k)
+
+    monkeypatch.setattr(breaker.asyncio, "to_thread", direct)
+    coro = breaker.record(NoDB(), "dev.example.a", "plugin_trap", ms=5, refusals=2)
+    # nothing suspends: one step runs it (a unit test opens no event loop)
+    with pytest.raises(StopIteration) as done:
+        coro.send(None)
+    why = done.value.value
+    assert why == "crashes"
+    assert sent == [
+        (
+            "POST",
+            "/internal/plugins/outcome",
+            {
+                "plugin_id": "dev.example.a",
+                "cause": "plugin_trap",
+                "ms": 5,
+                "memory": 0,
+                "refusals": 2,
+            },
+        )
+    ]

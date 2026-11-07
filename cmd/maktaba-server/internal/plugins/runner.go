@@ -93,6 +93,12 @@ type Runner struct {
 	Poll time.Duration
 	// Now is the clock (nil: time.Now).
 	Now func() time.Time
+	// Home is set on a joined machine (story 54.42): its packages are fetched from the
+	// home and verified, it runs only the plugins its placement fits (GPU: it serves the
+	// gpu pool), and it writes no plugin table (an uninstall is the home's; it removes
+	// its own copies when the home's row is gone).
+	Home HomeFiles
+	GPU  bool
 
 	mu       sync.Mutex
 	st       *state
@@ -150,8 +156,37 @@ func (r *Runner) Gate(id string) string {
 	if st == nil {
 		return components.ReasonIncompatible
 	}
-	reason, _ := st.gate(strings.TrimPrefix(id, components.PluginPrefix), r.Version)
+	pid := strings.TrimPrefix(id, components.PluginPrefix)
+	if r.Home != nil {
+		if why := r.machineGate(st, pid); why != "" {
+			return why
+		}
+	}
+	reason, _ := st.gate(pid, r.Version)
 	return reason
+}
+
+// machineGate is why a joined machine does not run a plugin: its placement, or a copy
+// that did not verify.
+func (r *Runner) machineGate(st *state, id string) string {
+	in, ok := st.installs[id]
+	if !ok {
+		return ""
+	}
+	var m struct {
+		Placement string `json:"placement"`
+	}
+	_ = json.Unmarshal(in.Manifest, &m)
+	if why := components.RunsOnMachine(m.Placement, r.GPU); why != "" {
+		return why
+	}
+	r.mu.Lock()
+	ref := r.failed[id]
+	r.mu.Unlock()
+	if ref != nil && ref.Code == components.ReasonPluginUntrusted {
+		return components.ReasonPluginUntrusted
+	}
+	return ""
 }
 
 func (st *state) gate(id, version string) (string, map[string]any) {
@@ -370,6 +405,10 @@ func (r *Runner) sweepStaging() {
 // switch, a rollback) and deletes its folders but that one and the previous version's
 // (story 54.07 §5 step 5).
 func (r *Runner) follow(ctx context.Context, st *state) {
+	if r.Home != nil {
+		r.followHome(ctx, st)
+		return
+	}
 	for id, in := range st.installs {
 		lay := r.Files.Layout
 		want := filepath.Base(in.Path)
@@ -408,6 +447,9 @@ func (r *Runner) follow(ctx context.Context, st *state) {
 // plugin_installs row, its grants and its queued jobs (the only path that drops jobs: no
 // code will run them). Its data, writes and settings stay (a purge is the API's).
 func (r *Runner) removeAbsent(ctx context.Context, st *state, desired map[string]store.Desired) {
+	if r.Home != nil {
+		return // the home uninstalls; followHome removes this machine's copies
+	}
 	r.mu.Lock()
 	if r.absentAt == nil {
 		r.absentAt = map[string]time.Time{}
@@ -625,4 +667,65 @@ func (r *Runner) Kept(id string) []string {
 		out = append(out, filepath.Base(in.PreviousPath))
 	}
 	return out
+}
+
+// followHome is follow on a joined machine: each plugin it may run gets its verified copy
+// of the home's current folder (FetchFromHome), current points at it, and copies of
+// plugins the home no longer has, or of versions it no longer keeps, are deleted.
+func (r *Runner) followHome(ctx context.Context, st *state) {
+	lay := r.Files.Layout
+	for id, in := range st.installs {
+		var m struct {
+			Placement string `json:"placement"`
+		}
+		_ = json.Unmarshal(in.Manifest, &m)
+		if components.RunsOnMachine(m.Placement, r.GPU) != "" {
+			continue
+		}
+		want := filepath.Base(in.Path)
+		if ref := r.Files.FetchFromHome(ctx, r.Home, in); ref != nil {
+			r.mu.Lock()
+			if r.failed == nil {
+				r.failed = map[string]*Refusal{}
+			}
+			r.failed[id] = ref
+			r.mu.Unlock()
+			r.logf("level=warn %s: the home's package is not here: %s", id, ref.Error())
+			continue
+		}
+		r.mu.Lock()
+		delete(r.failed, id)
+		r.mu.Unlock()
+		if lay.Current(id) != want {
+			if unlock, err := lay.Lock(ctx, id); err == nil {
+				if err := lay.SetCurrent(id, want); err == nil {
+					r.logf("%s: current now names %s", id, want)
+				}
+				unlock()
+			}
+		}
+		keep := []string{want}
+		if in.PreviousPath != "" {
+			keep = append(keep, filepath.Base(in.PreviousPath))
+		}
+		for _, f := range lay.Folders(id) {
+			if !slices.Contains(keep, f) {
+				_, _ = r.Files.Discard(ctx, id, f, keep...)
+			}
+		}
+	}
+	entries, err := os.ReadDir(lay.Root)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		if _, ok := st.installs[e.Name()]; !ok {
+			if err := r.Files.Remove(ctx, e.Name()); err == nil {
+				r.logf("%s: removed this machine's copy (the home uninstalled it)", e.Name())
+			}
+		}
+	}
 }
