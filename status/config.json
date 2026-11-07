@@ -1,0 +1,9 @@
+{
+  "site": "https://status.maktaba.tv",
+  "target": 99.9,
+  "components": ["relay", "api", "push"],
+  "probed": ["relay", "api", "push"],
+  "payments_status_url": null,
+  "plugins_listed": false,
+  "days": 90
+}

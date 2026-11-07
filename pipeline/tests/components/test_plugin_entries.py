@@ -90,3 +90,11 @@ def test_gates_table_matches_go() -> None:
         assert reason == c["reason"], c["name"]
         for k, v in (c.get("params") or {}).items():
             assert str(params[k]) == v, c["name"]
+
+
+def test_only_a_store_countersignature_needs_no_opt_in() -> None:
+    """Story 54.14 §2: automated and reviewed (and Phase 1's "store") are reviewed."""
+    from maktaba_pipeline.components.plugingate import unreviewed
+
+    assert [unreviewed(lv) for lv in ("automated", "reviewed", "store")] == [False, False, False]
+    assert all(unreviewed(lv) for lv in ("none", "developer", "development", ""))

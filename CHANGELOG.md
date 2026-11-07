@@ -330,6 +330,16 @@ build fails when the two differ.
   a runbook; pages reach the owner's phone and repeat until acknowledged.
   maktaba.dev's new guide, Maktaba Cloud: how it stays up, says what an owner sees and how
   the cloud is built and rehearsed.
+- **status.maktaba.tv says whether remote access is working (Epic 50, story 50.11).** A
+  static page on GitHub Pages, off Hetzner, in English and Arabic: Remote access, Sign-in and
+  accounts and Notifications, each Working, Slow, Down or Maintenance with a 90-day uptime
+  bar; current incidents, maintenance notices and the past 90 days; and the 99.9 % monthly
+  target for remote access beside last month's figure, a target with no credit. Its states
+  come from the probes inside and outside Hetzner, never by hand: both failing twice in a row
+  is Down, one alone is Slow, and a change is published within minutes. `summary.json` gives
+  the apps the same states. The witness gets one public site, behind a token, for the outside
+  probe; the cloud rehearsal's `status-feed` proves an outage reaches the page within two
+  rounds. maktaba.dev's cloud guide describes the page and `summary.json`.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -794,6 +804,38 @@ build fails when the two differ.
   once. When it is on, an uncaught error is sent to `POST /api/diagnostics/envelope` (a Sentry
   envelope). The home refuses an envelope without that consent, scrubs it again, keeps it, and
   groups it on the Errors page.
+
+- **Paid plugins go through pluggable payment providers (Epic 54, story 54.19).** The plugin
+  store gets its payments side: one `PaymentProvider` interface (checkout, webhooks verified
+  with each provider's own secret, refunds, payouts to developers, tax and dispute hooks, and
+  a descriptor of what the provider can do) and a registry the store admin configures, with
+  several providers at once, chosen by the buyer's country, the currency and the admin's
+  order. Sales, refunds, disputes and payouts go into the store's own ledger whatever provider
+  took them; the 85/15 split rounds Maktaba's share down; homes get store-signed entitlements
+  and never see a provider. Two modules, neither connected to a live account: a test provider
+  for CI and Adyen for Platforms (split payments to each developer's balance account). A
+  provider is used live only after its written confirmation that it allows plugin resale.
+  CI's new `store` job runs the tests and keeps each provider's code in its own module; the
+  store never uses Stripe. maktaba.dev: Selling a plugin (payouts, refunds, entitlements,
+  adding a provider).
+
+- **Plugin signing and the chain of trust (Epic 54, story 54.14).** A plugin package carries
+  two Ed25519 signatures over its `files.json`: the developer's (`signatures/developer.sig`)
+  and, once the store opens, the store's (`signatures/store.sig`, which names the developer's
+  key, the review level and the capabilities it reviewed). The home checks them offline at
+  install against a root built into the server (`plugins-root.json`, two root keys held
+  offline, none committed yet), the store's key list it signs (`store-keys.json`, refused when
+  older than the newest seen or expired) and every file's checksum, and records the level:
+  none, developer, automated or reviewed. A store-countersigned plugin needs no "Allow
+  unreviewed plugins" and shows Reviewed or Automated checks on its card; a file whose
+  signature does not check out is refused, naming the step (`plugin_signature_invalid`,
+  `developer_key_mismatch`). The same rules verify the revocation list, its head and the
+  catalog (anti-rollback, 48-hour and 7-day expiry, a clock in the past cannot make an old
+  list fresh). For developers, `mkp keys new`, `mkp keys export-public` and
+  `mkp pack --key` sign a package. Go (the home), Rust (the SDK) and TypeScript (the store's
+  signer, `store/signing`) agree on one set of vectors, and a new `store` CI job runs the online
+  key rotation drill with test keys. maktaba.dev has a new page, Signing and the chain of
+  trust. Migration 0196.
 
 ### Fixed
 

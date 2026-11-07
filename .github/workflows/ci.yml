@@ -31,7 +31,9 @@
 # trigger's paths-ignore; it skips only when every changed file is the trail), so a trail
 # commit never joins the `ci-main` group and never replaces the pending run of the code
 # commit before it. Trail-only commits are never tagged: the tag goes on a code commit
-# (deploy/packaging/README.md, "Release flow"). update-rehearsal.yml does the same.
+# (deploy/packaging/README.md, "Release flow"). On main, update-rehearsal.yml runs after this
+# workflow: a push run of main that passes starts its rehearsal on the same commit (workflow_run),
+# so a trail-only push starts neither; a release/* push starts both, with the same paths-ignore.
 #
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
@@ -95,6 +97,7 @@ jobs:
       unit_tokens: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
       plugins: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.plugins == 'true' }}
+      store: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.store == 'true' }}
       mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
       log_bench: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.log_bench == 'true' }}
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
@@ -252,6 +255,13 @@ jobs:
     if: needs.changes.outputs.plugins == 'true'
     uses: ./.github/workflows/_plugins.yml
 
+  store:
+    # Epic 54: the plugin store, its signer and the home's verifiers on the shared vectors,
+    # the key rotation drill, and paid plugins' payment providers (see _store.yml)
+    needs: [changes]
+    if: needs.changes.outputs.store == 'true'
+    uses: ./.github/workflows/_store.yml
+
   e2e:
     needs: [changes, integration]
     # After integration (not when it failed); also when integration was not needed. Fork
@@ -398,6 +408,10 @@ jobs:
     with:
       upload: ${{ github.event_name == 'pull_request' }}
 
+  # The plugin store (Epic 54, story 54.19): its TypeScript typechecks, its tests run the
+  # store-commerce migrations on node:sqlite with the fake and the recorded Adyen shapes (no
+  # network, no keys), and every payment provider stays in its own module.
+
   # The in-repo wiki app (web/wiki-app): its database matches the specs it is generated
   # from (docs/wiki/db/generate_wiki.py --check, and the generator's tests), and it builds.
   wiki:
@@ -543,6 +557,7 @@ jobs:
       - replica
       - components
       - plugins
+      - store
       - e2e
       - media-e2e
       - perf-ci
