@@ -581,7 +581,9 @@ since     = "0.3.66"
 # Direct remote access (Epic 50 story 50.15): the port on the router, the TLS listener and its
 # certificate. Free on every plan (no licence). It joins remote_access as either-is-enough with
 # cloud.relay through feature_any (story 50.35); until then it lists no feature, so a home's
-# capabilities are as before.
+# capabilities are as before. In full only: core turns on no process (N9), and without the
+# cloud.link process direct access does nothing. A custom bundle choosing it brings cloud.link;
+# turned on where the link is off, it waits (dependency_off).
 [[component]]
 id        = "cloud.direct"
 kind      = "loop"
@@ -594,7 +596,7 @@ requires  = ["cloud.link"]
 settings  = ["rules.direct", "toml:direct.listen"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
-bundles   = ["full", "core"]
+bundles   = ["full"]
 features  = []
 since     = "0.3.93"
 

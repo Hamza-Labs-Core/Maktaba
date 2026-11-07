@@ -148,7 +148,7 @@ requires  = ["cloud.link"]
 settings  = ["rules.direct", "toml:direct.listen"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
-bundles   = ["full", "core"]
+bundles   = ["full"]
 features  = ["remote_access"]
 since     = "<the release that ships this story>"
 ```
@@ -158,9 +158,16 @@ since     = "<the release that ships this story>"
 - **Requires `cloud.link`.** The CSR, the certificate and the outside check's result travel over
   the tunnel. With the relay agent off, `cloud.direct` is *Waiting* (`dependency_off`) and the
   listener is closed.
-- **On by bundle.** In `full` and `core`; [52.17](../52-transcript-word-review/story-52-17-new-component-defaults.md)'s
-  seed gives seeded homes a row as their bundle says. A Worker machine never runs it
-  (`placement = "home"`).
+- **On by bundle.** In `full` only; [52.17](../52-transcript-word-review/story-52-17-new-component-defaults.md)'s
+  seed gives seeded homes a row as their bundle says, enabled only where the home's relay is
+  wanted: the seed never turns `cloud.link` on for direct access, since the link follows
+  `[cloud] enabled`. A Worker machine never runs it (`placement = "home"`).
+- **Not in `core`.** `core` turns on no process component (its four processes, N9), and
+  `cloud.direct` needs `cloud.link`, a process, so a `core` home has no cloud link and direct
+  access would do nothing there. In `core` it is available but off. Choosing it in a custom
+  bundle brings `cloud.link` with it, as a bundle brings every requirement; turned on later on a
+  home whose cloud link is off, it waits (*Waiting*, `dependency_off`) until the home is linked
+  to the cloud (`[cloud] enabled`).
 - **Turning it off** (`PUT /api/components/cloud.direct`, `want = installed`) closes the
   listener within the loops' stop grace, deletes the port mapping, keeps the certificate and the
   settings, and the next `META_ENDPOINTS` frame drops the direct endpoints so the cloud stops

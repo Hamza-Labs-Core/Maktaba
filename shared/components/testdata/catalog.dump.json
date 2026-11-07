@@ -1763,8 +1763,7 @@
     },
     {
       "bundles": [
-        "full",
-        "core"
+        "full"
       ],
       "conflicts": [],
       "desc_key": "components.cloud.direct.desc",
