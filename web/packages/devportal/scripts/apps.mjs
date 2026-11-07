@@ -188,8 +188,8 @@ export const APPS = [
                 "**قائمة الانتظار**: يبدأ زرّا **تشغيل** و**تشغيل عشوائي** في مكتبة أو سلسلة أو موسم أو مجموعة أو قائمة تشغيل قائمةَ انتظار واحدة يحفظها الجهاز الرئيسي لكل شخص. ويضيف إليها **شغّل تاليًا** و**أضف إلى قائمة الانتظار** مقطعًا، ويبدأ «التالي» منها أولًا، وتعرض الرئيسية **تابع قائمة الانتظار** على كل جهاز."
               ),
               t(
-                "**Report a problem** from any app, and crash reports sent to the home: coming in the next release.",
-                "**الإبلاغ عن مشكلة** من أي تطبيق، وتقارير الأعطال المرسلة إلى الجهاز الرئيسي: في الإصدار القادم."
+                "**Report a problem** in the web app and the Apple and Android apps (Settings or Profile, the account menu, the TVs' settings, and **Report this** on an error screen): it shows everything it will send before it does (the app's log of the last 30 minutes, already scrubbed, the last requests, crashes kept on the device, a screenshot only when you tick it and see it), and the home's admin can reply in **My reports**. **Crash reports to the home** are off until each person turns them on: every app asks once after signing in, with two equal buttons, and nothing leaves the device while the answer is no.",
+                "**الإبلاغ عن مشكلة** في تطبيق الويب وتطبيقات آبل وأندرويد (الإعدادات أو الملف الشخصي، وقائمة الحساب، وإعدادات التلفاز، و**الإبلاغ عن هذا** في شاشة الخطأ): يعرض كل ما سيُرسله قبل الإرسال (سجل التطبيق لآخر 30 دقيقة منقّحًا، وآخر الطلبات، والأعطال المحفوظة على الجهاز، ولقطة شاشة فقط إن حدّدتها ورأيتها)، ويمكن لمشرف الجهاز الرئيسي الرد في **بلاغاتي**. أما **تقارير الأعطال إلى الجهاز الرئيسي** فمتوقفة حتى يشغّلها كل شخص: يسأل كل تطبيق مرة واحدة بعد تسجيل الدخول بزرّين متساويين، ولا يغادر الجهازَ شيءٌ ما دام الجواب لا."
               ),
             ],
           },
@@ -615,6 +615,10 @@ export const APPS = [
                 "**مراجعة الكلمات**، من **ما يحتاج إلى انتباه**: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، كلمةً كلمة. استمع إلى المقطع، ثم اقبل الكلمة أو صحّحها أو علّمها اسمًا أو أضفها إلى القاموس أو تخطَّها، ويمكنك التراجع؛ واتجاه السحب يتبع اتجاه اللغة."
               ),
               t(
+                "**Diagnostics** (Android: in the account menu), through the same routes as the web's admin pages: **Errors** (what keeps failing, grouped, with its last 14 days; a group's chart and recent lines, **Mark seen**, **Resolve** and **Mute**), **Logs** (search by words, level and time; a reference from someone's error screen opens **Follow a request**, every line of that request in time order), **Dashboards** (Overview and Storage, read only) and **Problem reports** (people's reports: the device, what they wrote and one timeline of the app's and the home's lines; set a status and write back).",
+                "**التشخيص** (أندرويد: في قائمة الحساب)، عبر مسارات صفحات الإدارة في الويب نفسها: **الأخطاء** (ما يتكرر فشله، مجمّعًا، بأيامه الأربعة عشر الأخيرة؛ ومخطط المجموعة وأسطرها الأخيرة، و**التعليم كمرئي** و**الحل** و**الكتم**)، و**السجلات** (البحث بالكلمات والمستوى والوقت؛ والمرجع من شاشة خطأ لدى شخص ما يفتح **تتبّع طلب**، أي كل أسطر ذلك الطلب بترتيبها الزمني)، و**لوحات المتابعة** (النظرة العامة والتخزين، للقراءة فقط)، و**بلاغات المشكلات** (بلاغات الناس: الجهاز وما كتبوه وخط زمني واحد لأسطر التطبيق والجهاز الرئيسي؛ وتعيين الحالة والرد)."
+              ),
+              t(
                 "**The status strip**: what is down on the home, at the top of every screen.",
                 "**شريط الحالة**: ما توقف في الجهاز الرئيسي، أعلى كل شاشة."
               ),
@@ -669,6 +673,18 @@ export const APPS = [
                 "phone",
                 "The Remote's Updates page on an iPhone: a TV held on an older release, a blocked release, this home's release",
                 "صفحة التحديثات في تطبيق الإدارة عن بُعد على آيفون: تلفاز باقٍ على إصدار أقدم، وإصدار محظور، وإصدار هذا الجهاز الرئيسي"
+              ),
+              shot(
+                "android-remote-errors",
+                "phone",
+                "The Remote's Errors on an Android phone: two error groups with their last 14 days, made-up data",
+                "الأخطاء في تطبيق الإدارة عن بُعد على هاتف أندرويد: مجموعتا أخطاء بأيامهما الأربعة عشر الأخيرة، على بيانات مختلَقة"
+              ),
+              shot(
+                "android-remote-dashboards",
+                "phone",
+                "The Remote's Overview dashboard on an Android phone: errors per hour and the components up over 24 hours",
+                "لوحة النظرة العامة في تطبيق الإدارة عن بُعد على هاتف أندرويد: الأخطاء في الساعة والمكوّنات العاملة خلال 24 ساعة"
               ),
               shot(
                 "android-remote-attention",
