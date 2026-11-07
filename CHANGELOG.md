@@ -1846,6 +1846,13 @@ build fails when the two differ.
   up from 16: a Python plugin's runtime needs 38. Memory and fuel stay the bounds.
   maktaba.dev: Testing and packaging, *Python and JavaScript*.
 
+- **Move a paid plugin to another home (Epic 54 story 54.19).** The store's account page has
+  a **Purchases** section: each plugin bought with the account, the home it is on, and
+  **Move** to another home linked to the same account, after confirming it's you. A purchase
+  can move twice in any 365 days. The new home gets the plugin at its next daily check (or with
+  **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
+  queue and data.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
