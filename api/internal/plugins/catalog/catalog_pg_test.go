@@ -4,8 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +18,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
@@ -501,5 +502,57 @@ func TestHostileCatalogsAreRefused(t *testing.T) {
 	k.cdn.files["catalog-1.json"] = k.catalogBy(s2, 7, "rotated")
 	if err := k.svc.FetchCatalog(ctx); err != nil {
 		t.Fatalf("the new key's catalog: %v", err)
+	}
+}
+
+// Offline (serve --offline, MAKTABA_OFFLINE=1, #668): the loop asks the CDN nothing and sends
+// no seen report; the kept list ages into the expired warning and stops no plugin (N10, H10);
+// a store install and the nightly update wait (store_offline); the CDN client refuses too.
+func TestOfflineFetchesNothing(t *testing.T) {
+	k := newKit(t)
+	ctx := context.Background()
+	k.install("dev.example.p", "1.0.0", "")
+	k.publish()
+	_ = k.svc.Load(ctx)
+	k.svc.Tick(ctx)
+	k.catalog(k.version("1.1.0", []byte("x")))
+	_ = k.svc.FetchCatalog(ctx)
+	seen := 0
+	k.svc.Seen = func(context.Context, []SeenPlugin) error { seen++; return nil }
+	off := true
+	k.svc.Offline = func() bool { return off }
+	before := len(k.cdn.gets)
+	for i := 0; i < 12; i++ {
+		k.now = k.now.Add(HeadEvery)
+		k.svc.Tick(ctx)
+	}
+	k.now = k.now.Add(5 * 24 * time.Hour)
+	k.svc.Tick(ctx)
+	k.svc.NightlyUpdates(ctx)
+	if n := len(k.cdn.gets) - before; n != 0 || seen != 0 {
+		t.Fatalf("offline: %d CDN request(s), %d seen report(s)", n, seen)
+	}
+	tr := k.svc.Trust(ctx)
+	if !tr.Offline || !tr.RevokedExpired || tr.StoreInstallsOK || strings.Contains(tr.LastError, CodeOffline) {
+		t.Fatalf("offline trust %+v", tr)
+	}
+	if r, _ := k.revoked("dev.example.p"); r {
+		t.Fatal("offline, an expired list stopped a plugin")
+	}
+	_, err := k.svc.InstallFromStore(ctx, &installer{}, "dev.example.p", "1.1.0", nil, svc.Actor{By: "owner"})
+	var p *Problem
+	if !errors.As(err, &p) || p.Code != CodeOffline {
+		t.Fatalf("a store install offline: %v", err)
+	}
+	t.Setenv(ports.EnvOffline, "1")
+	if _, err := (&HTTPStore{Base: "http://127.0.0.1:1"}).Get(ctx, "revoked-head.json"); err == nil || !strings.HasPrefix(err.Error(), CodeOffline) {
+		t.Fatalf("the CDN client offline: %v", err)
+	}
+	// back online, the loop fetches again
+	off = false
+	k.publish()
+	k.svc.Tick(ctx)
+	if len(k.cdn.gets) == before {
+		t.Fatal("back online, nothing fetched")
 	}
 }

@@ -966,6 +966,12 @@ function TrustBanner() {
   if (!trust || !trust.store_keys) return null;
   if (!trust.revoked_issued) return <p className="mkt-plugins__hint">{t("plugins.trust.never")}</p>;
   const date = formatDate(trust.revoked_issued);
+  if (trust.offline)
+    return (
+      <p role={trust.revoked_expired ? "alert" : undefined} className="mkt-plugins__hint">
+        {t("plugins.trust.offline", { date })}
+      </p>
+    );
   return trust.revoked_expired ? (
     <p role="alert">{t("plugins.trust.expired", { date })}</p>
   ) : (

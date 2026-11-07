@@ -7373,6 +7373,7 @@
   "plugins.revocation.reason.key_compromised": "its developer's signing key was compromised",
   "plugins.trust.checked": "Withdrawn plugins last checked: {date}",
   "plugins.trust.expired": "Couldn't check for withdrawn plugins since {date}. Plugins keep running; installs and updates from the store wait until this home reaches the store again.",
+  "plugins.trust.offline": "This home is offline, so it doesn't check the store for withdrawn plugins (last checked {date}). Plugins keep running; installs and updates from the store wait.",
   "plugins.trust.never": "This home has not checked the store's list of withdrawn plugins yet.",
   "plugins.auto_update.label": "Update automatically at night",
   "plugins.auto_update.explain": "Updates that ask for no new permission install at night. An update that asks for more always waits for you.",

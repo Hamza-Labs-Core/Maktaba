@@ -120,6 +120,10 @@ package comes from the CDN by its sha256 and is checked like any file.
 The routes, admin only (a viewer never makes the home fetch): `GET /api/plugins/catalog`,
 `GET /api/plugins/trust`, `PUT /api/plugins/{id}/auto-update {on}`.
 
+An offline home (`serve --offline`, `MAKTABA_OFFLINE=1`) fetches none of the lists and sends no
+`seen` report: the kept lists age, an expired one warns and stops no plugin, and installs and
+updates from the store answer `409 store_offline` until the home is online again.
+
 ## Linking a home to a store account
 
 A home needs a **plugin store account** only to rate plugins (and, in Phase 3, to buy them).

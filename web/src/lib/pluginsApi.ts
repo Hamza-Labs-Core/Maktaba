@@ -69,6 +69,8 @@ export interface TrustStatus {
   revoked_version: number;
   revoked_issued?: string;
   revoked_expired: boolean;
+  /** MAKTABA_OFFLINE: the lists are not fetched (they age; plugins keep running) */
+  offline?: boolean;
   catalog_version: number;
   catalog_issued?: string;
   catalog_expired: boolean;

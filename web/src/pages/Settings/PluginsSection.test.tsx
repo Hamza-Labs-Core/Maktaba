@@ -202,6 +202,32 @@ describe("Settings → Plugins", () => {
     };
   });
 
+  it("offline (MAKTABA_OFFLINE): the banner says the home doesn't check, and plugins keep running", async () => {
+    trust = {
+      store_keys: true,
+      revoked_version: 9,
+      revoked_issued: "2026-11-01T10:00:00Z",
+      revoked_expired: true,
+      catalog_version: 0,
+      catalog_expired: false,
+      store_installs_ok: false,
+      offline: true,
+    };
+    routes(detail(), [plugin()]);
+    open();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      EN["plugins.trust.offline"].split("(")[0]!.trim()
+    );
+    trust = {
+      store_keys: false,
+      revoked_version: 0,
+      revoked_expired: false,
+      catalog_version: 0,
+      catalog_expired: false,
+      store_installs_ok: false,
+    };
+  });
+
   it("54.17: a store warning shows on the plugin's page; auto-update is a switch", async () => {
     const revocation = {
       action: "warn",
