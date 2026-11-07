@@ -1464,3 +1464,18 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   no `seed.sql` is committed. The runner runs in the test's process without its OS sandbox,
   which has its own escape tests; the plugin API, its statements and its roles are the
   release's (`api/tools/plugin-api-dev`).
+- **The flip at update is the graph sync.** Each worker's graph sync sets a first-party stage
+  to `impl = 'plugin'` on a Postgres home once the release that moved it runs, unless the
+  stage's impl was set by hand (`impl_changed_at`: an admin's flip back, which every later
+  update keeps). A fresh install and an update then behave the same, and no wave needs a
+  migration of its own for the flip; each wave's migration is the roles of its plugins
+  (`NNNN_fp_roles`, written by `tools/plugins/roles.py`).
+- **`display_title` moves with wave 4, not wave 1.** It asks the language model at
+  `rules.tagcheck.url` when the model is on, so it waits for `compute.generate` (story 54.21,
+  wave 4) instead of running in the `light` runner, which has no network. Wave 1 is
+  `promo_links`, `clip_groups`, `topic_collections` and `rate_style`.
+- **N16 counts a job's own work.** Each moved stage's job is run several times on both copies,
+  in turns, and the p50 and p95 ratios are taken over those runs; a difference under 25 ms is
+  the plugin path's fixed cost of one job (its token and the hop to the runner) and does not
+  count. Every statement runs on a connection already set to the plugin's role and origin, so
+  a statement outside a transaction is one round trip to Postgres.

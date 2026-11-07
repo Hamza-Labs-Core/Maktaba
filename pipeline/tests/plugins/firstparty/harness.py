@@ -352,6 +352,8 @@ async def parity(
         native._FP_TOKENS.clear()
         yield Parity(a=Side(a), b=Side(b), graph=graph, tmp=tmp)
     finally:
+        native.forget_hello()
+        native._FP_TOKENS.clear()
         if task is not None:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

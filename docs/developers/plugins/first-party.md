@@ -2,8 +2,10 @@
 
 > **Status: the foundation is on `main`** (Epic 54 Phase 4, stories 54.22-54.27): the trusted
 > manifest, the native runner and its sandbox, the named statements and their roles, the
-> graph from manifests with the per-stage switch, and the parity proof. No stage has moved
-> yet: every stage still runs in the pipeline worker until its wave ships (story 54.28 on).
+> graph from manifests with the per-stage switch, and the parity proof. **Wave 1 has moved**:
+> `promo_links`, `clip_groups`, `topic_collections` and `rate_style` run in
+> `tv.maktaba.classify` ([its folder](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/plugins/first-party/classify)).
+> The other stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -106,6 +108,25 @@ table the plugin writes, the files under its areas, each job's result and the jo
 enqueued, every subject's fingerprints, and the job times (p50 at most 1.10 times, p95 at most
 1.15 times the in-process path). Any difference fails, naming the table, the key and the
 column.
+
+## An example: `tv.maktaba.classify`
+
+`plugins/first-party/classify/` is a whole first-party plugin:
+
+- `manifest.toml`: four `[[stage]]` entries, each field the stage had in the graph, and the
+  tables its statements read and write (`db.read`, `db.write`), the `rules.*` sections it reads
+  (`groups`, `detect`), runner group `light`.
+- `src/maktaba_fp_classify/stages/`: the four stages' code, moved from the pipeline unchanged
+  but for its imports.
+- `statements.toml`: the shared pipeline modules whose statements the stages also run (the
+  leftovers loader, the season helpers, the rules reader).
+- `queries/`: 36 named statements, written by `statements_build.py sync classify`.
+- `parity.toml` and `tests/test_parity.py`: a seeded channel library (two shows, a playlist
+  across both, clips, questions, a promo, talks) drained through the whole graph on two
+  databases, the four stages in-process on one and through the plugin on the other.
+
+When the release that moved a stage starts, each worker's graph sync sets the stage to run in
+its plugin (a stage set back by hand stays as it was).
 
 ## The repo layout
 
