@@ -16,6 +16,10 @@ import (
 func TestPluginLines(t *testing.T) {
 	var asked string
 	idx := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" { // a stray request: not the index's search
+			http.NotFound(w, r)
+			return
+		}
 		asked = r.URL.RawQuery
 		lines := []string{
 			`{"service":"plugin.dev.example.p","level":"warn","msg":"fetch https://home.lan/api?token=abc failed"}`,
