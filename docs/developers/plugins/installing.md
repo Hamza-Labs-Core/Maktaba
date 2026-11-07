@@ -58,6 +58,15 @@ in the same step. Rolling back to a version with a lower `data_version` than the
 refused (`plugin_data_newer`) unless the admin chooses to clear the plugin's data; tags,
 chapters and subtitles it wrote are kept.
 
+### When Maktaba itself updates
+
+A Maktaba release outside your manifest's `maktaba` range pauses your plugin: after the
+update it waits as *incompatible*, its queue kept, and resumes when a version of it whose
+range takes that release is installed. The update is never blocked by a plugin. Before the
+update, the admin's Updates page lists the plugins it will pause, each with its version and
+range, so give your range an upper bound you have tested and publish a new version before
+a release you know you support.
+
 ## Removing it
 
 Remove drops your plugin's queued jobs (the dialog says how many), deletes its files, and
