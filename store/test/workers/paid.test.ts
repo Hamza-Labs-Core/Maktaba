@@ -131,6 +131,10 @@ describe("a paid plugin's package", () => {
     expect((await cdn(`${CDN}/paid/${out.sha256}?t=${encodeURIComponent(late)}`, a.homeId)).status).toBe(403);
     expect((await cdn(`${CDN}/paid/${"f".repeat(64)}?t=${encodeURIComponent(t)}`, a.homeId)).status).toBe(403);
     expect((await cdn(`${CDN}/paid/${out.sha256}`, a.homeId)).status).toBe(403);
+    // a payload that is not UTF-8, or a part outside base64url
+    const notUtf8 = b64url(new Uint8Array([0xff, 0xfe, 0x2e, 0x61]));
+    expect((await cdn(`${CDN}/paid/${out.sha256}?t=${notUtf8}.${t.split(".")[1]}`, a.homeId)).status).toBe(403);
+    expect((await cdn(`${CDN}/paid/${out.sha256}?t=${encodeURIComponent(`${payload}+/=.${t.split(".")[1]}`)}`, a.homeId)).status).toBe(403);
     // the rest of the CDN's host is not this Worker's
     expect((await cdn(`${CDN}/${out.sha256}.mkplugin`, a.homeId)).status).toBe(404);
   });

@@ -22,6 +22,10 @@ export const PAID_URL_MS = 10 * 60_000;
 export const HOME_HEADER = "X-Maktaba-Home";
 const SHA = /^[0-9a-f]{64}$/;
 const HOME = /^[\w-]{1,64}$/;
+/** A token's two parts: base64url, nothing else. */
+const B64URL = /^[A-Za-z0-9_-]{1,400}$/;
+/** A token's payload: home id, sha256, expiry (unix seconds), ASCII only. */
+const PAYLOAD = /^[\w-]{1,64}\.[0-9a-f]{64}\.\d{1,12}$/;
 
 /** The private object of a paid package. */
 export const paidKey = (sha: string) => `paid/${sha}.mkplugin`;
@@ -48,14 +52,17 @@ export async function paidToken(secret: string, homeId: string, sha: string, exp
 export async function checkPaidToken(secret: string, token: string, sha: string, at: Date): Promise<string | null> {
   if (token.length > 512) return null;
   const parts = token.split(".");
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+  if (parts.length !== 2 || !B64URL.test(parts[0] ?? "") || !B64URL.test(parts[1] ?? "")) return null;
   let payload: string;
   try {
-    payload = new TextDecoder("utf-8", { fatal: true }).decode(fromB64url(parts[0]));
+    payload = new TextDecoder().decode(fromB64url(parts[0]!));
   } catch {
     return null;
   }
-  if (!safeEqual(parts[1], await mac(secret, payload))) return null;
+  // strict: the payload is ASCII only (the home id, the sha256, the expiry); a byte that is
+  // not valid UTF-8 decodes to U+FFFD and fails here, before the MAC is even compared
+  if (!PAYLOAD.test(payload)) return null;
+  if (!safeEqual(parts[1]!, await mac(secret, payload))) return null;
   const [home, s, exp, ...rest] = payload.split(".");
   if (rest.length || !home || !HOME.test(home) || s !== sha || !/^\d{1,12}$/.test(exp ?? "")) return null;
   if (Number(exp) * 1000 <= at.getTime()) return null;
