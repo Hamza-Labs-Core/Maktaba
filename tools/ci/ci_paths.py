@@ -80,6 +80,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/testflight.yml": "runs on a tag",
     ".github/workflows/packages.yml": "runs after a release",
     ".github/workflows/relay.yml": "its own workflow (cloud relay)",
+    ".github/workflows/cloud-probe.yml": "its own scheduled workflow (the outside probe, Epic 50 story 50.10)",
     ".github/workflows/cloud-rehearsal.yml": "its own workflow and path filter (the cloud rehearsal, Epic 50 story 50.06)",
     ".github/workflows/trusted-root.yml": "its own scheduled workflow",
     ".github/workflows/components-nightly.yml": "its own scheduled workflow (components-chaos)",

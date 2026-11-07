@@ -305,6 +305,16 @@ build fails when the two differ.
   the log stops reaching the buckets, or a drill fails. A runbook covers losing the whole
   zone. In the cloud rehearsal both nodes are destroyed and the database comes back on a new
   machine with exactly the rows committed up to the chosen second, from either copy.
+- **The cloud is watched from inside and outside, and pages before users notice (Epic 50,
+  story 50.10).** A canary home (the same link code every home runs) answers through the relay,
+  and the cloud's witness machine probes it and the API every 30 seconds, scrapes both nodes
+  (the relay, Patroni, Postgres, the machines) and keeps 30 days; GitHub's runners probe the
+  same addresses from outside Hetzner so a Hetzner-wide outage still pages. Alerts cover remote
+  play down (within 90 s), the month's downtime budget burning, a failover, a missing replica,
+  the Floating IP away from the leader, certificates, disks, errors and the backups, each with
+  a runbook; pages reach the owner's phone and repeat until acknowledged.
+  maktaba.dev's new guide, Maktaba Cloud: how it stays up, says what an owner sees and how
+  the cloud is built and rehearsed.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
