@@ -59,10 +59,13 @@ class UnixTransport:
                     raise
                 continue  # a kept-alive connection the API closed meanwhile: once more
             try:
-                n = int(headers.get("content-length", "0"))
-                if n > MAX_RESPONSE:
-                    raise PluginRefused(413, "plugin_too_large", "response over 1 GB")
-                raw = await r.readexactly(n) if n else b"{}"
+                if "chunked" in headers.get("transfer-encoding", "").lower():
+                    raw = await _read_chunked(r)
+                else:
+                    n = int(headers.get("content-length", "0"))
+                    if n > MAX_RESPONSE:
+                        raise PluginRefused(413, "plugin_too_large", "response over 1 GB")
+                    raw = await r.readexactly(n) if n else b"{}"
             except BaseException:
                 w.close()
                 raise
@@ -97,3 +100,22 @@ async def _read_head(r: asyncio.StreamReader) -> tuple[int, dict[str, str]]:
             return status, headers
         k, _, v = h.decode("latin-1").partition(":")
         headers[k.strip().lower()] = v.strip()
+
+
+async def _read_chunked(r: asyncio.StreamReader) -> bytes:
+    """A chunked body (Go's server streams an answer it did not size beforehand)."""
+    parts: list[bytes] = []
+    total = 0
+    while True:
+        size_line = await r.readuntil(b"\r\n")
+        size = int(size_line.split(b";", 1)[0].strip() or b"0", 16)
+        if size == 0:
+            # trailers, then the blank line
+            while await r.readuntil(b"\r\n") != b"\r\n":
+                pass
+            return b"".join(parts) or b"{}"
+        total += size
+        if total > MAX_RESPONSE:
+            raise PluginRefused(413, "plugin_too_large", "response over 1 GB")
+        parts.append(await r.readexactly(size))
+        await r.readexactly(2)  # the chunk's CRLF

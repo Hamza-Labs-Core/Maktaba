@@ -253,7 +253,7 @@ def failure_to_wire(exc: BaseException) -> dict[str, Any]:
         return {"status": "cancelled", "message": str(exc)}
     if isinstance(exc, GraphViolation):
         return {"status": "graph_violation", "message": str(exc)}
-    return {"status": "error", "type": type(exc).__name__, "message": str(exc)}
+    return {"status": "error", "error_type": type(exc).__name__, "message": str(exc)}
 
 
 _ERRORS: dict[str, type[Exception]] = {}
@@ -277,7 +277,7 @@ def raise_failure(d: dict[str, Any]) -> None:
         )
     # any other exception: one of the same class name and message, so the failure's kind
     # and cause are the in-process handler's (run.py names a failure by its class)
-    name = str(d.get("type") or "Exception")
+    name = str(d.get("error_type") or "Exception")
     cls = _ERRORS.get(name)
     if cls is None:
         cls = type(name, (Exception,), {})
@@ -312,6 +312,9 @@ async def _end(invocation_id: str) -> None:
     with contextlib.suppress(Exception):
         await asyncio.to_thread(_api, "DELETE", f"/internal/plugins/invocations/{invocation_id}")
 
+
+#: the token ends in flight (kept so a task is not collected before it ran)
+_ENDING: set[asyncio.Future[None]] = set()
 
 EngineHandler = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
@@ -420,7 +423,9 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
         finally:
             w.close()
     finally:
-        await _end(str(minted["invocation_id"]))
+        # the token ends on its own when the job is done; nothing waits for the answer
+        _ENDING.add(t := asyncio.ensure_future(_end(str(minted["invocation_id"]))))
+        t.add_done_callback(_ENDING.discard)
 
 
 # --- fingerprints through the fp runner (story 54.23 §4) ---------------------------------

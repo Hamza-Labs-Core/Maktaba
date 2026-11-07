@@ -36,6 +36,9 @@ from maktaba_pipeline.runtime import Database
 ROOT = Path(__file__).resolve().parents[4]
 API_DIR = ROOT / "api"
 
+#: the plugin path's fixed cost of one job that N16 does not count (README §15.12)
+PERF_FLOOR_S = 0.025
+
 Seed = Callable[[Database], Awaitable[None]]
 
 
@@ -110,7 +113,19 @@ class Parity:
                 if job is not None:
                     break
             if job is None:
-                return
+                # a debounce or back-off window elapses once nothing else is claimable,
+                # as tests.stages.world.drain_core does
+                waiting = await side.db.fetchval(
+                    "SELECT count(*) FROM processing_jobs WHERE state = 'pending'"
+                    " AND not_before IS NOT NULL AND parked_on IS NULL"
+                )
+                if not waiting:
+                    return
+                await side.db.execute(
+                    "UPDATE processing_jobs SET not_before = NULL WHERE state = 'pending'"
+                    " AND parked_on IS NULL"
+                )
+                continue
             t0 = time.perf_counter()
             await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
             side.times.setdefault(job.stage, []).append(time.perf_counter() - t0)
@@ -120,6 +135,49 @@ class Parity:
     async def run(self) -> None:
         await self.drain(self.a)
         await self.drain(self.b)
+
+    async def bench(self, stages: Sequence[str], *, rounds: int = 7) -> None:
+        """N16's samples: each stage's job run again ``rounds`` times on each side, A and B
+        taking turns (a busy machine slows both alike), forced so it does its work. The
+        samples replace the drain's one run per job for the comparison."""
+        from maktaba_pipeline.engine.claim import claim_for_pool
+        from maktaba_pipeline.engine.enqueue import enqueue_job
+
+        rt = EngineRuntime(graph=self.graph)
+        for side in (self.a, self.b):
+            for st in stages:
+                side.times[st] = []
+        for st in stages:
+            row = await self.a.db.fetchrow(
+                "SELECT subject_kind, subject_id FROM processing_jobs WHERE stage = $1"
+                " AND state = 'done' ORDER BY id LIMIT 1",
+                st,
+            )
+            if row is None:
+                continue
+            for _ in range(rounds):
+                for side in (self.a, self.b):
+                    await enqueue_job(
+                        side.db,
+                        subject_kind=row["subject_kind"],
+                        subject_id=row["subject_id"],
+                        stage=st,
+                        force=True,
+                    )
+                    await side.db.execute(
+                        "UPDATE processing_jobs SET not_before = NULL WHERE stage = $1"
+                        " AND state = 'pending'",
+                        st,
+                    )
+                    pool = self.graph[st].pool
+                    job = await claim_for_pool(
+                        side.db, worker_id="parity", pool=pool, stages=[st], scope="per_worker"
+                    )
+                    if job is None:
+                        continue
+                    t0 = time.perf_counter()
+                    await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
+                    side.times[st].append(time.perf_counter() - t0)
 
     async def compare(
         self,
@@ -176,9 +234,10 @@ class Parity:
         )
         if perf:
             for s in stages:
-                # a job of a few milliseconds is the noise of two event loops: 5 ms floor
+                # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
+                # path's fixed cost of a job (its token, the hop to the runner), README §15.12
                 out += perf_check(
-                    s, self.a.times.get(s, []), self.b.times.get(s, []), floor_s=0.005
+                    s, self.a.times.get(s, []), self.b.times.get(s, []), floor_s=PERF_FLOOR_S
                 )
         return out
 
@@ -246,6 +305,11 @@ async def parity(
         for d in sides:
             await sync_graph(d, list(graph.values()))
             await seed(d)
+        # A is the in-process side: its graph sync flips first-party stages to their plugin
+        # (the flip at update), so they are set back by hand; B runs them as plugins
+        await a.execute(
+            "UPDATE job_stages SET impl = 'inproc', impl_changed_at = now(), impl_changed_by = 'parity'"
+        )
         for name in stages:
             await b.execute("UPDATE job_stages SET impl = 'plugin' WHERE stage = $1", name)
         (tmp / "bundle.json").write_bytes(bundle)
