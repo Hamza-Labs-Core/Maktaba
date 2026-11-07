@@ -319,6 +319,24 @@ export async function runChecks(env: Env, submissionId: string): Promise<Report>
   }
 
   // the isolated runner: C7 (ClamAV), C8 and C10
+  if (env.RUNNER === "containers" && env.CHECK_RUNNER) {
+    report.checks.push({ id: "C8", result: "pending" }, { id: "C10", result: "pending" });
+    await env.DB_CATALOG.prepare("UPDATE submissions SET runner_state = 'dispatched', report_key = ? WHERE id = ?")
+      .bind(await saveReport(env, report), s.id)
+      .run();
+    let runner: RunnerReport;
+    try {
+      runner = await env.CHECK_RUNNER.get(env.CHECK_RUNNER.idFromName(s.id)).run(s.package_key, s.source_key);
+    } catch (e) {
+      // as the CI fallback's post step: the runner failed, so C8 blocks and a person sees why
+      runner = {
+        c7: { result: "skip", detail: "the runner failed" },
+        c8: { result: "block", code: "runner_failed", detail: `the isolated runner did not finish: ${(e as Error).message}`.slice(0, 500) },
+        c10: { result: "skip" },
+      };
+    }
+    return acceptRunnerReport(env, s, runner);
+  }
   if (env.RUNNER === "github" && env.RUNNER_DISPATCH_TOKEN) {
     await dispatchRunner(env, s);
     report.checks.push({ id: "C8", result: "pending" }, { id: "C10", result: "pending" });

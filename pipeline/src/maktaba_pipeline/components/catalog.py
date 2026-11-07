@@ -95,7 +95,7 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 _HF_SOURCE = re.compile(r"hf:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*@[0-9a-f]{40}")
 _OLLAMA_SOURCE = re.compile(r"ollama:[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}")
 
-_TOP_KEYS = ("schema", "phases", "reasons", "features", "component")
+_TOP_KEYS = ("schema", "phases", "reasons", "features", "feature_any", "component")
 _COMPONENT_KEYS = (
     "id",
     "kind",
@@ -249,11 +249,14 @@ class Catalog:
         reasons: tuple[str, ...],
         features: tuple[str, ...],
         components: list[Component],
+        feature_any: dict[str, list[list[str]]] | None = None,
     ) -> None:
         self.schema = schema
         self.phases = phases
         self.reasons = reasons
         self.features = features
+        #: story 50.35: per feature, groups of components that count as one (any member on)
+        self.feature_any = feature_any or {}
         self._components = components
         self._by_id = {c.id: c for c in components}
         self._by_stage = {s: c for c in components for s in c.stages}
@@ -388,6 +391,7 @@ class Catalog:
             "phases": list(self.phases),
             "reasons": list(self.reasons),
             "features": list(self.features),
+            "feature_any": self.feature_any,
             "components": comps,
             "order": self._order,
         }
@@ -675,9 +679,42 @@ def load(data: bytes | str) -> Catalog:
                         f"component {c.id} conflicts with {oid} but {oid} does not list "
                         f"{c.id}: conflicts must be listed on both sides"
                     )
+    feature_any = _feature_any(doc.get("feature_any", {}), features, by_id, bad)
     if bad:
         raise CatalogError("catalog: " + "\ncatalog: ".join(bad))
-    return Catalog(int(schema), phases, reasons, features, comps)
+    return Catalog(int(schema), phases, reasons, features, comps, feature_any)
+
+
+def _feature_any(
+    raw: Any, features: tuple[str, ...], by_id: dict[str, Component], bad: list[str]
+) -> dict[str, list[list[str]]]:
+    """``feature_any`` (story 50.35), checked as Go's loader checks it: a known feature, known
+    ids that list it, each id in one group of a feature, two members or more a group."""
+    out: dict[str, list[list[str]]] = {}
+    if not isinstance(raw, dict):
+        bad.append("feature_any must be a table")
+        return out
+    for f in sorted(raw):
+        if f not in features:
+            bad.append(f"feature_any: {f!r} is not a feature")
+            continue
+        seen: set[str] = set()
+        groups: list[list[str]] = []
+        for g in raw[f]:
+            if len(g) < 2:
+                bad.append(f"feature_any.{f}: a group needs two members or more, got {g}")
+            for cid in g:
+                c = by_id.get(cid)
+                if c is None:
+                    bad.append(f"feature_any.{f}: unknown component {cid!r}")
+                elif f not in c.features:
+                    bad.append(f"feature_any.{f}: component {cid} does not list the feature {f}")
+                elif cid in seen:
+                    bad.append(f"feature_any.{f}: component {cid} is in two groups")
+                seen.add(cid)
+            groups.append([str(x) for x in g])
+        out[f] = groups
+    return out
 
 
 def raw() -> bytes:
@@ -768,6 +805,7 @@ def with_entries(static: Catalog, entries: list[Component]) -> Catalog:
         static.reasons,
         static.features,
         [*static.components(), *entries],
+        static.feature_any,
     )
 
 

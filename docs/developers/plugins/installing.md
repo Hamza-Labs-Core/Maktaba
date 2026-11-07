@@ -74,7 +74,11 @@ with your words in the admin's language. The home checks every value on save. Se
 ## Health and logs
 
 The plugin's page shows its phase and why, jobs done and failed, its last error, its data use
-against its quota, and each stage's queue. Your log lines (`log.write`) are kept in a log
+against its quota, and each stage's queue. The phase is the home's decision even while the
+pipeline is down: *Waiting* with the reason when its gate refuses it (a Maktaba version
+outside your range, a capability not granted, unreviewed while the home does not allow it),
+*Stopped* while held, *Running* when it may run. While the pipeline runs, its own state of
+your stages (starting, failed) shows when the gate lets the plugin run. Your log lines (`log.write`) are kept in a log
 segment of their own and open from **Its logs**. Your plugin's queues are the **Plugins** lane
 on the Queues page.
 
@@ -134,6 +138,31 @@ The routes, admin only (a viewer never makes the home fetch): `GET /api/plugins/
 An offline home (`serve --offline`, `MAKTABA_OFFLINE=1`) fetches none of the lists and sends no
 `seen` report: the kept lists age, an expired one warns and stops no plugin, and installs and
 updates from the store answer `409 store_offline` until the home is online again.
+
+## Browsing the store
+
+Settings → Plugins → Browse the store (admins only) reads the catalog this home already keeps:
+opening it makes no store call of its own. It shows each plugin's newest version that this
+server's version, plugin API and platform can run; the switch "Show plugins that need a newer
+Maktaba" adds the rest, marked. Search matches names, summaries and tags in English and Arabic
+(letter forms and diacritics folded); filter by category, sort by rating, installs or newest.
+A plugin's page shows its description, what it can do in Maktaba's own words, its review
+level, the rating (shown from 5 ratings), its versions and Install (or Update). Install waits
+while the catalog has expired or the store's signing is not trusted.
+
+From the same page an admin rates the plugin (1 to 5 stars and optional text, sent to the
+store signed by this home, counted against the home's linked store account once the plugin has
+been installed for 24 hours) or reports it for malware, data misuse, not working, being
+misleading, offensive content, copyright or another reason. The routes: `POST
+/api/plugins/{id}/rate {stars, text}` and `POST /api/plugins/{id}/report {reason, details}`;
+a home that is not linked gets `409 store_not_linked`, and an offline one `409 store_offline`.
+
+The same catalog is public at plugins.maktaba.tv (and /ar, right to left): a page per plugin
+at `/p/<id>` with Open in my Maktaba (`maktaba://plugins/<id>`, which the installed apps open)
+and Download file for an offline install from a file.
+The page of a plugin in a flow draws the whole flow (its plugins' stages, the Maktaba events
+they start from and the events between them, this plugin outlined) and lists the events the
+plugin publishes and the ones it listens to.
 
 ## Linking a home to a store account
 

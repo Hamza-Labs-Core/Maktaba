@@ -122,6 +122,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 		Tickets:   tickets,
 		Drain:     cfg.Relay.DrainEnabled,
 		Directory: directory,
+		Direct:    directHandler(cfg, pool, logger),
 	}).ServeHTTP)
 
 	// All non-control paths fall through to the proxy. We deliberately

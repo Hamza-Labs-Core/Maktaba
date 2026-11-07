@@ -53,6 +53,11 @@ encode it) against their times on the reference, clamped to 1–4, as `logbench.
 does. The report shows both loops' times (`_runner.calibration`). The `log-bench` job runs
 it after the Go benches and keeps its numbers (`logbench-python.json`).
 
+It runs three rounds and is judged on the one with the lowest p99 (`LOGBENCH_PY_ROUNDS`; every
+round's p99 is in the report): a shared runner's other tenants only add time, as the
+calibration's best of three says. One noisy round on a slow runner failed a pull request that
+did not touch the logger (p99 56.5 µs against 54).
+
 Over budget it fails in CI's `log-bench` job (`LOGBENCH_PY_STRICT=1`) and warns elsewhere,
 as the story's rollout starts a budget. The nightly Mac only warns: on that 3-core VM a p99
 is 6–10 times its p50 for the Go and the Python logger alike (issue #807).

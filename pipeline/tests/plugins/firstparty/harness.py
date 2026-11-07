@@ -646,7 +646,7 @@ async def parity(
     for n in names:
         await admin.execute(f'CREATE DATABASE "{n}" TEMPLATE "{template}"')
     await admin.close()
-    tmp = Path(tempfile.mkdtemp(prefix="mkp-", dir="/tmp"))
+    tmp = Path(tempfile.mkdtemp(prefix="mkp-"))
     proc: subprocess.Popen[str] | None = None
     task: asyncio.Task[None] | None = None
     sides: list[Database] = []

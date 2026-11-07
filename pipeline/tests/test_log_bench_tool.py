@@ -41,3 +41,14 @@ def test_the_loops_run() -> None:
     lb = _tool()
     lb._lines_work()
     assert 0 < lb._best_of_three(lambda: None) < 1
+
+
+@pytest.mark.unit
+def test_the_best_of_its_rounds_is_judged(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a shared runner's other tenants only add time: the round with the lowest p99 is the
+    # logger's own cost, and every round is in the report
+    lb = _tool()
+    got = lb.run(400, rounds=3)
+    assert got["rounds"] == 3 and len(got["p99_ns_rounds"]) == 3
+    assert got["p99_ns"] == min(got["p99_ns_rounds"])
+    assert 0 < got["p50_ns"] <= got["p99_ns"]

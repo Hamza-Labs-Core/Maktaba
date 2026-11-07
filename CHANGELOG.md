@@ -310,6 +310,12 @@ build fails when the two differ.
   for one refresh. The tray now reads the record again for a moment before it treats it as
   gone.
 
+- **Maktaba's built-in plugins run in their runners again (Epic 54, story 54.23).** Since
+  0.3.93 every first-party runner (light, fp, ml, index) exited about 0.2 s after it
+  started, on a circular import, and was marked failed after five restarts; the worker ran
+  the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
+  runner. The runners start again, and a test imports each entry point in a fresh process.
+
 ### Security
 
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
@@ -483,6 +489,13 @@ build fails when the two differ.
   The cloud rehearsal's `load-small` fails a pull request whose relay uses more than 20 % more
   CPU per Mbit or memory per tunnel than main's; the witness alerts at 60 % of a node's
   measured capacity for a week (start Phase 2) and pages at 80 % for an hour (resize).
+- **Direct remote access, the cloud's side (Epic 50, story 50.15, part 1).** Maktaba Cloud can
+  give each home its own HTTPS names under separate direct-name domains (never maktaba.tv): a
+  name server (`--role dns`) that computes each name's address and serves the ACME challenges
+  and CAA, certificates ordered from a home's own CSR (Let's Encrypt within each domain's weekly
+  budget, then ZeroSSL, then Google Trust Services; a home keeps its domain), an outside check
+  every 15 minutes, and the home list's HTTPS `direct` connection once it passes. Free on every
+  plan. Off until the domains exist; the home's side follows.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
@@ -1136,6 +1149,42 @@ build fails when the two differ.
   sha256; per-plugin automatic updates at night for versions that ask for nothing new. A linked
   home sends its daily `seen` report when telemetry is on. Migration 0203.
 
+- **A plugin's state shows while the pipeline is down (Epic 54, story 54.07 §8).** The
+  supervisor reports what the home decides of each plugin: waiting with the reason when its
+  gate refuses it (a Maktaba version outside its range, a grant missing, unreviewed while not
+  allowed), stopped while held, running when it may run. Before, a plugin read *Off* until the
+  pipeline reported its stages. While the pipeline runs, its own state of the stages
+  (starting, failed) shows when the gate lets the plugin run. maktaba.dev: Installing a
+  plugin, *Health and logs*.
+
+- **The plugin store's isolated runner can run on Cloudflare Containers (Epic 54, #756).** The
+  malware scan, the sandbox run and the reproducible build of each submission run in a
+  container of its own, started with its internet off and handed the package by the store,
+  instead of a GitHub Actions job. It is turned on by a deploy setting; the GitHub Actions
+  runner stays the default, and a runner that fails refuses the version.
+
+- **Each release embeds the plugin store's current lists (Epic 54, #755).** The release run
+  fetches the store's key list and revocation list, verifies them by the chain of trust and
+  builds them into every binary of the release, so a home that never reaches the store still
+  trusts store-signed files and knows the plugins the store withdrew. It fails closed: a list
+  that cannot be fetched, does not verify, has expired or is older than the committed copy
+  stops the release. Until the plugin root keys exist it embeds nothing.
+
+- **The plugin store browser, listing pages, ratings and reports (Epic 54, story 54.18).**
+  Settings → Plugins → Browse the store shows the catalog this home keeps, only the versions
+  this server's version, plugin API and platform can run (a switch shows those that need a
+  newer Maktaba), searched in English and Arabic with letter forms and diacritics folded, by
+  category, sorted by rating, installs or newest. A plugin's page shows its words, what it can
+  do in Maktaba's own words, its review level, the rating (shown from 5 ratings), its versions
+  and Install. A store account linked to a home that has had the plugin for 24 hours can rate
+  it once (1 to 5 stars, optional text, editable); the developer can reply once; a review can
+  be reported and hidden by the store's reviewers. Anyone can report a plugin; malware and
+  data misuse reports alert the store admins and lead the moderation queue, and the reporter
+  hears the outcome. plugins.maktaba.tv lists every plugin and has a page per plugin, in
+  English and Arabic (right to left), rendered on the server from the signed catalog, with
+  Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
+  review is plain text.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -1689,6 +1738,15 @@ build fails when the two differ.
   Resume and Stop server work from the tray, or from the window's Server menu where the desktop
   shows no tray; the tray starts at login when it can be shown. The tray, the Server menu and the
   app's dialogs follow the session's language (English or Arabic).
+
+- **Plugins from the command line, developer mode and `mkp run` (Epic 54, stories 54.10 §4,
+  §5 and 54.12).** `maktaba-server plugins list|show|install|update|enable|disable|start|stop|
+  rollback|remove|grants|policy` does what Settings → Plugins does, for a home without a
+  browser, with the components CLI's `--yes`, `--json`, `--dsn` and exit codes.
+  `maktaba-server plugins dev <folder>` installs a plugin folder as Development and reloads it
+  on every save (removed when it stops, unless `--keep`). `mkp run <folder> --home
+  http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
+  developer's machine. maktaba.dev: Testing and packaging.
 
 ### Changed
 
