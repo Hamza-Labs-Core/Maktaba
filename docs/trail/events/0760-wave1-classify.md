@@ -23,9 +23,10 @@ prs: [750]
   - The roles migration must not fail where it may not make or grant a role (no CREATEROLE; a role another database's owner made on a shared Postgres). It notices, and the worker runs those stages in-process (`role_unusable`).
   - A runner that cannot start must judge neither the update's start nor its watch, like a TV slot. The update e2e's fake release has no runner module, and its runners crash looped.
   - A test that "no runner is built" must set an empty bundle; the release's own now has one.
-- With 11 runs a side, N16's p95 is about the slowest run. One CI stall failed a stage whose measured steps summed to 15 ms, so a timing-only failure is measured once more.
+- N16's intermittent failures were not the plugin. Every run now reports both sides' wall time, CPU, the plugin API's CPU and the run's spans (the `parity-report` artifact). A failing CI run showed 30-180 ms stalls in the worker's code before or after the run, on both sides (in-process `promo_links` p95 133 ms against a 15 ms p50), with the process's CPU flat. The plugin's run stayed within 3 ms of its p50. So p95 is now taken over the job's own run, and p50 over the whole job. The real per-job cost of the plugin path is about 0.55 ms per statement round trip plus 2.3 ms for the token.
 
 ## Keep doing
+- Before blaming a timing gate on noise, make it print both sides' spans and CPU on every run, and find a failing sample.
 - Run the replica, updates and unit jobs' suites (`go test ./...` in cmd/maktaba-server and api) before pushing a wave, not only the plugin jobs.
 
 ## Open

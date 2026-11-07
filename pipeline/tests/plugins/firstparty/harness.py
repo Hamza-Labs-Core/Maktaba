@@ -179,13 +179,15 @@ def _cpu_of(pid: int) -> float | None:
 
 
 #: a timing line of perf_check (N16), as opposed to a difference in what was written
-_PERF_LINE = re.compile(r" p(50|95): plugin ")
+_PERF_LINE = re.compile(r" p(50|95)( \(its run\))?: plugin ")
 
 
 @dataclass
 class Side:
     db: Database
     times: dict[str, list[float]] = field(default_factory=dict)
+    #: N16's p95 samples: each benched job's own run (the stage through its path)
+    run_times: dict[str, list[float]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
 
 
@@ -258,6 +260,7 @@ class Parity:
         for side in (self.a, self.b):
             for st in stages:
                 side.times[st] = []
+                side.run_times[st] = []
         # the worker and the runner share this test's process and loop: a collector pause
         # would land on whichever side runs then, so it is held off while both are timed
         from dataclasses import replace
@@ -347,6 +350,8 @@ class Parity:
                             "api": named,
                             "unnamed": (at["@end"] - at["@start"]) - named,
                         }
+                    if "run" in spans:
+                        side.run_times[st].append(spans["run"])
                     self.jobs.append(
                         {
                             "side": "plugin" if side is self.b else "in-process",
@@ -478,7 +483,12 @@ class Parity:
                 # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
                 # path's fixed cost of a job (its token, the hop to the runner), README §15.12
                 out += perf_check(
-                    s, self.a.times.get(s, []), self.b.times.get(s, []), floor_s=PERF_FLOOR_S
+                    s,
+                    self.a.times.get(s, []),
+                    self.b.times.get(s, []),
+                    floor_s=PERF_FLOOR_S,
+                    inproc_p95=self.a.run_times.get(s),
+                    plugin_p95=self.b.run_times.get(s),
                 )
         return out
 
