@@ -177,6 +177,10 @@
     <string name="error_server">Something went wrong on your home. Try again in a moment.</string>
     <!-- a part of the home that is off (Epic 51 story 51.09) and the features' names -->
     <string name="error_off">This feature is turned off on this home.</string>
+    <!-- Maktaba Cloud's relay refusing a plan's play (Epic 50 story 50.19) -->
+    <string name="error_relay_needs_plan">Remote play through the relay needs a Basic or Pro plan. Direct access from the internet is free: turn it on in this home\'s settings.</string>
+    <string name="error_relay_stream_limit">The most devices your plan allows are already playing through the relay. Stop one, or play at home or over a direct connection.</string>
+    <string name="error_relay_home_busy">Your home is too busy to prepare this video for remote play right now. Try again shortly.</string>
     <string name="error_off_admin">%1$s Turn it on in Components.</string>
     <string name="feature_live_tv">Live TV</string>
     <string name="feature_transcripts">Transcripts</string>

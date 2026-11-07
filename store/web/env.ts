@@ -50,6 +50,8 @@ export interface Env {
   STORE_SIGNING_KEY?: string;
   /** The entitlement key E (54.14 `use: "entitlement"`), a base64 Ed25519 seed (story 54.19 §6). */
   STORE_ENTITLEMENT_KEY?: string;
+  /** The key of paid packages' download URLs (story 54.19 §6), 32 random bytes in base64. */
+  PAID_URL_KEY?: string;
   MFA_ENC_KEY?: string;
   BOOTSTRAP_ADMIN_TOKEN?: string;
   MAIL_API_KEY?: string;

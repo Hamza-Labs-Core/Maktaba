@@ -123,3 +123,23 @@ func TestRestartRequestExits75(t *testing.T) {
 		t.Fatal("the request was not consumed")
 	}
 }
+
+// An on-demand process nobody asked for (a first-party plugin runner, idle or held) is never
+// waited on: not by a release's confirmation (healthyFor) nor by an adoption, which waits on
+// the same check. One that was asked for counts like any other.
+func TestHealthyForIgnoresAnOnDemandProcessNotAskedFor(t *testing.T) {
+	ok := supervisor.ChildStatus{Wanted: true, State: supervisor.StateRunning, UptimeSec: 200,
+		StartMode: supervisor.StartAlways}
+	idle := supervisor.ChildStatus{Role: supervisor.RolePluginRunner, Instance: "light",
+		StartMode: supervisor.StartOnDemand, State: supervisor.StateStopped}
+	held := supervisor.ChildStatus{Role: supervisor.RolePluginRunner, Instance: "service",
+		StartMode: supervisor.StartOnDemand, State: supervisor.StateHeld, Blocked: true}
+	if !healthyFor(supervisor.Snapshot{Processes: []supervisor.ChildStatus{ok, idle, held}}, time.Minute) {
+		t.Fatal("an idle or held on-demand runner kept the release from being confirmed")
+	}
+	asked := idle
+	asked.Wanted, asked.State = true, supervisor.StateStarting
+	if healthyFor(supervisor.Snapshot{Processes: []supervisor.ChildStatus{ok, asked}}, time.Minute) {
+		t.Fatal("a runner asked for and still starting counted as healthy")
+	}
+}

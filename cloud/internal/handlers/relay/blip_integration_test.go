@@ -218,6 +218,21 @@ func TestPlanChangeReachesTheCache(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	// story 50.19 T08: extra streams bought reach the cached home within a second (tier_changed)
+	if _, err := w.direct.DB.ExecContext(ctx, `UPDATE servers SET extra_streams = 2 WHERE id = $1`, w.sv.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(time.Second)
+	for {
+		sv, err := w.cache.BySlug(ctx, w.sv.Slug)
+		if err == nil && sv.ExtraStreams == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after 1 s the relay still sees %d extra streams", sv.ExtraStreams)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	// an owner's suspension drops it too (server_changed)
 	if _, err := w.direct.DB.ExecContext(ctx, `UPDATE users SET status = 'suspended' WHERE id = (SELECT owner_user_id FROM servers WHERE id = $1)`, w.sv.ID); err != nil {
 		t.Fatal(err)

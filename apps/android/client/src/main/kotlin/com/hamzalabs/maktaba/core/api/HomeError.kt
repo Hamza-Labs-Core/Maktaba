@@ -27,6 +27,12 @@ enum class ErrorKind {
     Server,
     /** The part of the home this needs is turned off: 409 `component_off` (Epic 51 story 51.09). */
     Off,
+    /** Maktaba Cloud's relay: no relay on this plan (402 `relay_needs_plan`, Epic 50 story 50.19). */
+    RelayNeedsPlan,
+    /** Maktaba Cloud's relay: the most devices the plan allows already play (429 `stream_limit`). */
+    RelayStreamLimit,
+    /** The home can't prepare a capped relayed stream now (503 `home_busy`). */
+    RelayHomeBusy,
 }
 
 /**
@@ -42,6 +48,8 @@ data class Problem(
     val code: String = "",
     val component: String = "",
     val feature: String = "",
+    /** The relay's answers name their reason in `error` (story 50.19). */
+    val error: String = "",
 ) {
     /** The last part of [type] (`rendition-not-found`): the home's domain differs by install. */
     val slug: String get() = type.substringAfter("/problems/", "").trimEnd('/')
@@ -54,8 +62,8 @@ data class Problem(
             val o = runCatching { ApiClient.json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return null
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
             val p = Problem(s("type"), s("title"), s("status").toDoubleOrNull()?.toInt() ?: 0, s("detail"), s("code"),
-                s("component"), s("feature"))
-            return if (p.type.isEmpty() && p.title.isEmpty() && p.code.isEmpty()) null else p
+                s("component"), s("feature"), s("error"))
+            return if (p.type.isEmpty() && p.title.isEmpty() && p.code.isEmpty() && p.error.isEmpty()) null else p
         }
     }
 }
@@ -67,8 +75,13 @@ private val notReadySlugs = setOf("manifest-not-found", "rendition-not-found")
 fun errorKind(status: Int, problem: Problem?): ErrorKind {
     val slug = problem?.slug.orEmpty()
     val code = problem?.code.orEmpty()
+    // the relay names its reason in `error`, the home in `code` (story 50.19)
+    val reason = code.ifEmpty { problem?.error.orEmpty() }
     return when {
         status == 409 && code == "component_off" -> ErrorKind.Off
+        status == 402 && reason == "relay_needs_plan" -> ErrorKind.RelayNeedsPlan
+        status == 429 && reason == "stream_limit" -> ErrorKind.RelayStreamLimit
+        status == 503 && reason == "home_busy" -> ErrorKind.RelayHomeBusy
         code == "home_unreachable" || code == "home_timeout" -> ErrorKind.Unreachable
         slug == "home-unreachable" || slug == "home-timeout" || slug == "video-unavailable-offline" -> ErrorKind.Unreachable
         status == 404 && slug in notReadySlugs -> ErrorKind.NotReady

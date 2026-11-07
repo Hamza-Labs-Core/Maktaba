@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -241,13 +243,20 @@ func TestQueuesWorkersLibraryTopics(t *testing.T) {
 	a.send(map[string]any{"t": "job", "event": "done", "job_id": 1})
 	waitFor(t, "rebuild", func() bool { return builds.Load() > before })
 
-	// the queue and library lines land in the home's folder
-	day := time.Now().UTC().Format("2006-01-02")
+	// the queue and library lines land in the home's folder. The writer takes its records
+	// from a channel, so each is waited for (flushed each time): the queues and library
+	// loops write their first lines at start, either first, and a library line counted once
+	// right after the queue line raced its write (#847). Every day folder is read: the
+	// writer dates a line by its own clock when it writes it
 	waitFor(t, "queue file", func() bool {
 		f.hub.files.Flush()
-		return countLines(t, f.dir+"/"+testHomeIP+"/queues/"+day+"/hub.jsonl") > 0
+		return len(dayLines(t, f.dir, KindQueues)) > 0
 	})
-	line := readLines(t, f.dir+"/"+testHomeIP+"/queues/"+day+"/hub.jsonl")[0]
+	waitFor(t, "library file", func() bool {
+		f.hub.files.Flush()
+		return len(dayLines(t, f.dir, KindLibrary)) > 0
+	})
+	line := dayLines(t, f.dir, KindQueues)[0]
 	// the web app's charts read snapshot.queues[].counts.pending and
 	// rate_per_min; the CLI reads the flat rows
 	var ql struct {
@@ -271,9 +280,24 @@ func TestQueuesWorkersLibraryTopics(t *testing.T) {
 		ql.Pools[0].Pool != "gpu" || ql.Pools[0].Size != 2 {
 		t.Fatalf("queue line = %s", line)
 	}
-	if countLines(t, f.dir+"/"+testHomeIP+"/library/"+day+"/hub.jsonl") != 1 {
-		t.Fatal("library line missing")
+	if n := len(dayLines(t, f.dir, KindLibrary)); n != 1 {
+		t.Fatalf("library lines: %d, want 1 (it is written again every %s)", n, libraryEvery)
 	}
+}
+
+// dayLines is the hub's lines of kind in the home's folder, across its day folders.
+func dayLines(t *testing.T, dir, kind string) []string {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(dir, testHomeIP, kind, "*", "hub.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Strings(files)
+	var out []string
+	for _, p := range files {
+		out = append(out, readLines(t, p)...)
+	}
+	return out
 }
 
 func TestSendQueueDropsOldest(t *testing.T) {

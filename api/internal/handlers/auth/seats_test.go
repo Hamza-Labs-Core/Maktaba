@@ -139,7 +139,7 @@ func TestSeatGate_RefusalIsPlain(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.AdminCreateUser(rec, adminReq(http.MethodPost, "/api/users", `{"username":"e","password":"pw-correct-horse"}`))
 	body := rec.Body.String()
-	if rec.Code != http.StatusForbidden || !contains(body, "Home plan allows 4 users and it has 4") ||
+	if rec.Code != http.StatusForbidden || !contains(body, "Basic plan allows 4 users and it has 4") ||
 		!contains(body, "Pro license") || !contains(body, `"seats_allowed":4`) {
 		t.Fatalf("%d %s", rec.Code, body)
 	}

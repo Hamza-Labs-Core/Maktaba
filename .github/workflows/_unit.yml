@@ -105,6 +105,16 @@ jobs:
         if: inputs.web
         run: make test-unit-web
 
+      # Story 50.32 (T06): the cloud user app's build carries no operator console code (admin
+      # and staff API paths, admin keys, web/admin modules), and the console builds on its own
+      - name: The cloud user bundle has no admin code
+        if: inputs.web
+        run: |
+          node --test tools/lint/no-admin-in-user-bundle.test.mjs
+          pnpm -C web run build:cloud
+          node tools/lint/no-admin-in-user-bundle.mjs web/dist-cloud
+          pnpm -C web exec vite build --config vite.admin.config.ts
+
       # Story 48.2: one token source. Fails when the committed Tokens.swift /
       # Tokens.kt are stale against web/design-system/tokens/, when
       # web/src/styles/tokens.css drifts from the JSON, or when a text colour is
@@ -327,6 +337,27 @@ jobs:
           cache-dependency-glob: pipeline/uv.lock
           # restore main's uv cache; only a push to main saves it
           save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      # the logger of the commit this one goes onto (a pull request's base, a merge group's,
+      # a push's previous tip), measured beside it on this runner: over the budget fails a
+      # change only when it is also slower than that (issue #807: the runner's factor follows
+      # the logger only within ~15 % across CI's CPUs). With none, the budget alone.
+      - name: The base's logger, to measure beside this one
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo "no base commit: the budget alone"
+            exit 0
+          fi
+          if ! git fetch --no-tags --depth=1 origin "$BASE"; then
+            echo "::warning::the base commit $BASE could not be fetched: the budget alone"
+            exit 0
+          fi
+          mkdir -p "$RUNNER_TEMP/base"
+          git archive FETCH_HEAD pipeline/src | tar -x -C "$RUNNER_TEMP/base"
+          echo "LOGBENCH_PY_BASE_SRC=$RUNNER_TEMP/base/pipeline/src" >> "$GITHUB_ENV"
 
       - name: The Python logger bench
         working-directory: pipeline

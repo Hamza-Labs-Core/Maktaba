@@ -9,10 +9,18 @@ import { Input } from "@ds/components/Input/Input";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Select } from "@ds/components/Select/Select";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api, fetchApi, type CloudUser } from "../api";
-import { useI18n, type Locale } from "../i18n";
-import { useSession } from "../session";
-import { Banner, LoadError, Loading, Page, passwordProblem, useErrorMessage, useLoad } from "../ui";
+import { api, fetchApi, type CloudUser } from "../shared/api";
+import { useI18n, type Locale } from "../shared/i18n";
+import { useSession } from "../shared/session";
+import {
+  Banner,
+  LoadError,
+  Loading,
+  Page,
+  passwordProblem,
+  useErrorMessage,
+  useLoad,
+} from "../shared/ui";
 
 export interface Me extends CloudUser {
   locale: string;

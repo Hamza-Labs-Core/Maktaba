@@ -27,6 +27,18 @@ export interface UpdatesPolicy {
   keep_versions: number;
 }
 
+/** An installed plugin a release would pause (api updates.PausedPlugin). */
+export interface PausedPlugin {
+  id: string;
+  version: string;
+  /** its maktaba range, which the release is outside */
+  range: string;
+  /** its own name by language */
+  name?: Record<string, string>;
+  /** it runs now */
+  enabled: boolean;
+}
+
 export interface CatalogRelease {
   version: string;
   tag: string;
@@ -43,6 +55,10 @@ export interface CatalogRelease {
    * admin tries it again (unblock) or installs it now */
   blocked_reason?: string;
   attempts?: number;
+  /** the installed plugins this release would pause (story 54.07 §3): their maktaba range
+   * excludes it, so they wait incompatible after the update, their queues kept. The update
+   * is not blocked. */
+  plugins_paused?: PausedPlugin[];
   manifest?: {
     breaks_previous_home?: boolean;
     min_upgrade_from?: string;

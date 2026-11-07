@@ -13,11 +13,11 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
-import { api } from "../api";
-import { useI18n } from "../i18n";
+import { api } from "../shared/api";
+import { useI18n } from "../shared/i18n";
 import { navigateExternal } from "../nav";
-import { useSession } from "../session";
-import { Banner, Page, useErrorMessage } from "../ui";
+import { useSession } from "../shared/session";
+import { Banner, Page, useErrorMessage } from "../shared/ui";
 
 /** The home's page to go back to: an http(s) address with a host and no credentials. */
 export function linkReturn(raw: string | null): URL | null {

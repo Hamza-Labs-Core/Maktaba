@@ -1,0 +1,5 @@
+# The relay-plans scenario's relay config (story 50.19 §3): paid plans capped, paced and
+# stream-limited as their plan says (the rest comes from compose.yml's environment).
+[relay]
+plans.enforce = true
+stream_limit.enabled = true

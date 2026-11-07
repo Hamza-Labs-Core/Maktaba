@@ -150,13 +150,51 @@ def forget_hello() -> None:
     _HELLO.clear()
 
 
+#: when this worker last asked the supervisor for each runner group (group -> monotonic)
+_ASKED: dict[str, float] = {}
+#: the asks in flight (a task with no reference may be collected before it runs)
+_ASKING: set[asyncio.Task[None]] = set()
+#: how often a group not up is asked for again
+ASK_EVERY_SEC = 60.0
+
+
+def want_runner(group: str) -> None:
+    """Ask the supervisor to start a shared group's runner (it starts on demand and stops
+    when idle, so an idle home runs none). In the background: the job that found it down
+    runs in the worker meanwhile, and the next ones go to the runner once it is up. At most
+    once a minute per group; nothing without a supervisor (tests, a bare worker)."""
+    base = os.environ.get("MAKTABA_SUPERVISOR_URL", "").strip()
+    if not base:
+        return
+    now = time.monotonic()
+    if now - _ASKED.get(group, -ASK_EVERY_SEC) < ASK_EVERY_SEC:
+        return
+    _ASKED[group] = now
+
+    def post() -> None:
+        import urllib.request
+
+        req = urllib.request.Request(base.rstrip("/") + f"/runners/{group}/start", method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as res:  # noqa: S310 - the local supervisor
+                res.read()
+        except Exception:  # noqa: BLE001 - asked again later; the worker runs the job
+            _log.debug("plugin_runner_ask_failed", group=group, exc_info=True)
+
+    task = asyncio.ensure_future(asyncio.to_thread(post))
+    _ASKING.add(task)
+    task.add_done_callback(_ASKING.discard)
+
+
 async def serving(stage: str) -> tuple[bool, str | None]:
-    """Whether the stage's runner serves it here, and its unavailable reason if it said one."""
+    """Whether the stage's runner serves it here, and its unavailable reason if it said one.
+    A runner that is not up is asked for (:func:`want_runner`)."""
     group = firstparty.runner_instance(stage)
     if group is None:
         return False, None
     h = await hello(group)
     if h is None:
+        want_runner(group)
         return False, None
     stages = h.get("stages") or {}
     if stage not in stages:
@@ -168,6 +206,8 @@ async def serving(stage: str) -> tuple[bool, str | None]:
 async def serving_group(group: str, stage: str) -> tuple[bool, str | None]:
     """Whether ``group`` (``fp``, the fingerprint runner) serves the stage here."""
     h = await hello(group)
+    if h is None:
+        want_runner(group)
     if h is None or stage not in (h.get("stages") or {}):
         return False, None
     reason = (h.get("stages") or {}).get(stage)
