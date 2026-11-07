@@ -9,6 +9,10 @@
 #   tools/ci/integration-go.sh <module dir>...
 #
 # -vet=off: the unit tier's go test and the lint job vet every package already.
+#
+# Each module runs with -json (issue #855): its output reads as without it (each package's
+# line, and the whole output of a test that failed), then its ten slowest tests, so the
+# job's log shows where the tier's time went.
 set -uo pipefail
 
 jobs="${MAKTABA_INTEGRATION_JOBS:-4}"
@@ -22,17 +26,36 @@ for mod in "$@"; do
 done | OUT="$out" xargs -P "$jobs" -n 2 sh -c '
     n="$1"; mod="$2"
     start="$(date +%s)"
-    (cd "$mod" && go test -tags=integration -vet=off -count=1 ./...) >"$OUT/$n.log" 2>&1
+    (cd "$mod" && go test -json -tags=integration -vet=off -count=1 ./...) >"$OUT/$n.json" 2>"$OUT/$n.err"
     echo "$?" >"$OUT/$n.rc"
     echo "$(( $(date +%s) - start ))" >"$OUT/$n.secs"
 ' _
+
+# show prints a module's run as go test without -json would (each package's line, a
+# failed test's output, build errors), then its ten slowest tests; a line that is not
+# JSON is printed as it is
+show() {
+    jq -Rjn '
+        [inputs | (fromjson? // {Action: "output", Output: (. + "\n")})] as $e
+        | ($e | map(select(.Action == "fail" and .Test) | {key: "\(.Package) \(.Test)", value: true}) | from_entries) as $failed
+        | $e[]
+        | select(.Action == "build-output"
+            or (.Action == "output" and .Output != "PASS\n" and (.Test == null or $failed["\(.Package) \(.Test)"])))
+        | .Output' "$1.json" || cat "$1.json"
+    cat "$1.err"
+    echo "--> the ten slowest tests"
+    jq -Rr 'fromjson? // empty
+        | select((.Action == "pass" or .Action == "fail") and .Test and (.Test | contains("/") | not))
+        | "\(.Elapsed)s\t\(.Package | sub("^github.com/Hamza-Labs-Core/Maktaba/"; ""))\t\(.Test)"' "$1.json" |
+        sort -rn | head -n 10
+}
 
 rc=0
 i=0
 for mod in "$@"; do
     i=$((i + 1))
     echo "==> go test -tags=integration ./... ($mod, $(cat "$out/$i.secs" 2>/dev/null || echo ?)s)"
-    cat "$out/$i.log" 2>/dev/null
+    show "$out/$i"
     r="$(cat "$out/$i.rc" 2>/dev/null || echo 1)"
     if [ "$r" != 0 ]; then
         echo "FAIL: go test in $mod (exit $r)"
