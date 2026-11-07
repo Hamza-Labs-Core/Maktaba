@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.core.api
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import okhttp3.HttpUrl
 import java.time.OffsetDateTime
 
@@ -82,6 +83,12 @@ data class StreamSession(
     val ladder: List<Rendition> = emptyList(),
     /** The quality this session plays at, when the home says. */
     @SerialName("current_rendition") val currentRendition: Rendition? = null,
+    /**
+     * The id of the call that opened the session (this app's `X-Request-Id`, not the home's
+     * answer; Epic 53 story 53.08): an HLS playlist's URL carries it as `rid`, so streaming's
+     * lines for the playback share the id of the API's.
+     */
+    @Transient val requestId: String? = null,
 ) {
     /** When the signed URL stops working, in epoch milliseconds (null: the home did not say). */
     val expiresMillis: Long?
@@ -95,7 +102,12 @@ data class StreamSession(
     fun playbackUrl(home: HttpUrl): HttpUrl? = (directUrl ?: manifestUrl)?.let {
         val base = home.encodedPath.trimEnd('/')
         val path = if (base.isNotEmpty() && it.startsWith("/") && !it.startsWith("//") && !it.startsWith("$base/")) base + it else it
-        home.resolve(path)
+        val url = home.resolve(path)
+        if (directUrl == null && !requestId.isNullOrEmpty() && url?.queryParameter("rid") == null) {
+            url?.newBuilder()?.addQueryParameter("rid", requestId)?.build()
+        } else {
+            url
+        }
     }
 
     val isHls: Boolean get() = directUrl == null && manifestUrl != null

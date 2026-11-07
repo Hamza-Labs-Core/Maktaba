@@ -79,6 +79,11 @@ func HashUser(id string) string {
 	return UserHash(k, id)
 }
 
+// HashHome is home_h for a home's server id (the cloud only, Epic 53 story 53.17): the same
+// HMAC under the cloud's own log key, so a cloud line never names a home by its id or slug.
+// "" when there is no key (the id is then not written at all).
+func HashHome(serverID string) string { return HashUser(serverID) }
+
 // ReadLogKey reads a key file; a file of the wrong size is an error.
 func ReadLogKey(path string) ([]byte, error) {
 	b, err := os.ReadFile(path)

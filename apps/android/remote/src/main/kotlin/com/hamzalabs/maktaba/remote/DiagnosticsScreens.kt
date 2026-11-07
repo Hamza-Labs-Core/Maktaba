@@ -413,7 +413,14 @@ private fun seriesTitle(name: String): Int? = when (name) {
     "maktaba_component_restarts_total" -> R.string.dash_restarts
     "maktaba_errors_per_hour" -> R.string.dash_errors_per_hour
     "process_resident_memory_bytes" -> R.string.dash_api_memory
+    "maktaba_host_load1" -> R.string.dash_host_load
+    "maktaba_host_cpus" -> R.string.dash_host_cpus
+    "maktaba_host_memory_bytes" -> R.string.dash_host_memory
+    "maktaba_host_memory_free_bytes" -> R.string.dash_host_memory_free
+    "maktaba_host_disk_free_bytes" -> R.string.dash_host_disk_free
     "maktaba_supervisor_children" -> R.string.dash_processes
+    "http_request_duration_seconds_count" -> R.string.dash_api_requests
+    "http_request_duration_seconds_p95" -> R.string.dash_api_p95
     "maktaba_logs_segments_bytes" -> R.string.dash_log_files
     "maktaba_logs_index_bytes" -> R.string.dash_log_index
     "maktaba_update_backup_bytes" -> R.string.dash_backups

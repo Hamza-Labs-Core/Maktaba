@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -40,6 +41,10 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 	r := chi.NewRouter()
 	r.Use(middleware.Recover(logger))
 	r.Use(middleware.RequestID)
+	if o.clientIP {
+		// before the logger, so its remote_ip is the resolved client (50.31)
+		r.Use(middleware.WithClientIP(o.trusted))
+	}
 	r.Use(middleware.Logging(logger))
 	r.Use(middleware.CORS(allowedOrigins))
 
@@ -75,6 +80,16 @@ type RouterOption func(*routerOptions)
 type routerOptions struct {
 	lenient  *LenientReadiness
 	draining func() bool
+	clientIP bool
+	trusted  []netip.Prefix
+}
+
+// WithTrustedProxies resolves each request's client IP (middleware.WithClientIP) before
+// anything else reads it, the access log included: CF-Connecting-IP from a peer in trusted,
+// else the TCP peer (Epic 50 story 50.31). The api role sets it from
+// server.trusted_proxies; the relay never does.
+func WithTrustedProxies(trusted []netip.Prefix) RouterOption {
+	return func(o *routerOptions) { o.clientIP, o.trusted = true, trusted }
 }
 
 // WithDraining makes /readyz answer 503 "draining" while draining() is true:

@@ -133,4 +133,42 @@ async def test_dedup_wave_5_is_identical(
             [], ignore=ignore, stages=STAGES, perf=cfg.perf, timing_only=True
         )
         slowest = p.report("tv.maktaba.dedup")
+        # 3. T02 (story 54.32 §2): the merged group's job asked to move a file that is not
+        # one of its members (a failed move in the ledger that names another video's file,
+        # which a retry would carry out) is refused with plugin_scope in the runner, and
+        # the file stays where it is
+        await forged_move_refused(p, p.b)
     assert problems == [], "\n".join(problems[:20]) + "\nslowest plugin jobs:\n" + slowest
+
+
+async def forged_move_refused(p: Any, side: Any) -> None:
+    from maktaba_pipeline.engine.sql import dumps, uid
+
+    db = side.db
+    root = Path(str(await db.fetchval("SELECT roots[1] FROM libraries")))
+    foreign = root / "أخرى" / "محاضرة ثانية.mp4"
+    foreign.parent.mkdir(parents=True, exist_ok=True)
+    foreign.write_bytes(b"another lecture")
+    g = await db.fetchrow("SELECT id, library_id, status FROM duplicate_groups")
+    assert g["status"] == "applied", g["status"]
+    member = await db.fetchval(
+        "SELECT video_id FROM duplicate_members WHERE group_id = $1 LIMIT 1", g["id"]
+    )
+    await db.execute(
+        "INSERT INTO file_actions (id, library_id, video_id, kind, state, old_path, verify,"
+        " created_at, updated_at) VALUES ($1, $2, $3, 'dedup', 'failed', $4, $5, now(), now())",
+        uid(uuid.uuid4()), g["library_id"], member, str(foreign), dumps({"group": str(g["id"])}),
+    )  # fmt: skip
+    queued = await enqueue_job(
+        db, subject_kind="dup_group", subject_id=g["id"], stage="dedup_apply",
+        payload={"apply": True, "group_id": str(g["id"])},
+    )  # fmt: skip
+    assert queued.job_id is not None, queued
+    side.ran.clear()
+    await p.drain(side)
+    assert "dedup_apply" in side.ran, side.ran
+    row = await db.fetchrow(
+        "SELECT state, error_cause FROM processing_jobs WHERE id = $1", queued.job_id
+    )
+    assert (row["state"], row["error_cause"]) == ("failed", "plugin_scope"), dict(row)
+    assert foreign.read_bytes() == b"another lecture", "the foreign file was moved"

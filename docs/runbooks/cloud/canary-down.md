@@ -11,7 +11,7 @@
 
 ## Check
 
-1. The cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines): the saved search `relay errors, last 30 min`.
+1. The cloud's logs and error groups in the service admin's cloud log view ([relay errors, last 30 min](https://admin.maktaba.tv/logs?service=cloud.relay&level=error&last=30m); [Errors](https://admin.maktaba.tv/errors)) (Epic 53.17; the witness keeps a dead node's last lines): the saved search `relay errors, last 30 min`.
 2. **Is it us or the probe?** A real outage fails from both networks (the witness and GitHub's runners). One alone: look at that network first.
 3. **Who leads?** `patronictl -c /etc/patroni/patroni.yml list` on A or B. A failover in progress takes up to 3 minutes by itself (`failover_happened` says when it started).
 4. **Does the Floating IP point at the leader?** `fip_mismatch` says no: [hetzner-api-down.md](hetzner-api-down.md).

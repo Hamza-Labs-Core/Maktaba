@@ -29,6 +29,22 @@ extension BrowseClient {
             #expect(s.currentRendition?.bitrateKbps == 6000)
         }
 
+        /// Epic 53 story 53.08: the session keeps the open call's own id, and an HLS playlist's
+        /// URL carries it as `rid` (after the signature); a direct file gets none.
+        @Test func thePlaylistCarriesTheOpenCallsID() async throws {
+            BrowseStub.on("POST", "/api/stream/sessions", (201, Self.session))
+            let s = try await BrowseHome.client().0.openStream(video: BrowseHome.v1)
+            let sent = try #require(BrowseStub.last?.requestID)
+            #expect(s.requestID == sent)
+            let url = try #require(s.playbackURL(home: URL(string: "http://h:8088")!))
+            #expect(url.absoluteString == "http://h:8088/stream/ss-1/manifest.m3u8?sig=x&rid=\(sent)")
+
+            BrowseStub.on("POST", "/api/stream/sessions", (201, #"{"session_id":"ss-2","mode":"direct","direct_url":"/stream/ss-2/file?sig=y"}"#))
+            let d = try await BrowseHome.client().0.openStream(video: BrowseHome.v1)
+            #expect(d.requestID != nil)
+            #expect(d.playbackURL(home: URL(string: "http://h:8088")!)?.absoluteString == "http://h:8088/stream/ss-2/file?sig=y")
+        }
+
         @Test func noQualityLetsTheHomeChooseAndNoLadderReads() async throws {
             BrowseStub.on("POST", "/api/stream/sessions", (201, #"{"session_id":"ss-2","mode":"direct","direct_url":"/stream/ss-2/file"}"#))
             let s = try await BrowseHome.client().0.openStream(video: BrowseHome.v1)

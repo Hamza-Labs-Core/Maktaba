@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     from maktaba_pipeline.plugins import firstparty
 
     from . import sandbox, trust
-    from .server import Runner, load_impl
+    from .server import Runner, library_roots, load_impl
 
     served = members(group)
     packages = sorted({entry.split(".", 1)[0] for entry, _ in served.values()})
@@ -109,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))
         return EXIT_SANDBOX
     sandbox.guard_names(policy.write_named)
+    sandbox.guard_scope()  # a file stage's job changes only its subject's files (54.32 §2)
     unavailable: dict[str, str] = {}
     entries: dict[str, str] = {}
     for stage, (entry, _) in served.items():
@@ -131,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
         bundle=firstparty.bundle_digest(),
         unavailable=unavailable,
         areas=areas_digest,
+        library_roots=library_roots(areas),
     )
     log(
         "plugin_runner_serving",
