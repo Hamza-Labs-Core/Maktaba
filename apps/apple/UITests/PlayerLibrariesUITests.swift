@@ -179,6 +179,26 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         XCTAssertTrue(String(decoding: sent?.body ?? Data(), as: UTF8.self).contains("Hijra"), "searched for the chip's text")
     }
 
+    /// Story 54.20: a library's page asks for `library:<id>` and shows From plugins with a
+    /// panel; a page whose home answers no panel adds nothing (no empty section, no gap).
+    func testALibraryShowsFromPluginsOnlyWithAPanel() {
+        let features = MockHome.features.map { #""\#($0)":"on""# }.joined(separator: ",")
+        home.stub("GET", "/api/capabilities", body: #"{"etag":"c-ui-p","features":{\#(features),"plugin_panels":"on"}}"#,
+                  headers: ["ETag": #""c-ui-p""#])
+        home.stub("GET", "/api/panels", body: #"{"panels":[{"plugin_id":"topics","plugin":"Topics","title":"Topics","blocks":[{"type":"kv","value":[{"label":"Era","value":"7th century"}]}]}]}"#)
+        launchSignedIn(section: "libraries", open: "library/lib-docs")
+        XCTAssertTrue(element("library.row.continue").waitForExistence(timeout: 20), "the library")
+        let asked = waitForRequest { $0.method == "GET" && $0.path == "/api/panels" }
+        XCTAssertEqual(asked?.value("subject"), "library:lib-docs")
+        XCTAssertTrue(app.staticTexts["From plugins"].firstMatch.waitForExistence(timeout: 10), "a panel: From plugins shows")
+
+        home.stub("GET", "/api/panels", body: #"{"panels":[]}"#)
+        launchSignedIn(section: "libraries", open: "series/s-seerah")
+        XCTAssertTrue(element("series.continue").waitForExistence(timeout: 20), "the series")
+        XCTAssertNotNil(waitForRequest { $0.method == "GET" && $0.path == "/api/panels" && $0.value("subject") == "series:s-seerah" })
+        XCTAssertFalse(app.staticTexts["From plugins"].firstMatch.exists, "no panel: nothing added")
+    }
+
     /// Mark watched on the season marks each of its episodes; on one episode, that one.
     func testMarkWatchedOnASeasonMarksEachEpisode() {
         launchSignedIn(section: "libraries", open: "series/s-seerah")
