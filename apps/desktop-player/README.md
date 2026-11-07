@@ -110,7 +110,10 @@ cd apps/desktop-player
   `POST /api/diagnostics/envelope` as a scrubbed Sentry envelope (the Android apps' `client`
   code: `Envelope`, `CrashOutbox`, the shared `Redact`). **Help → Report a problem…** shows
   what it will send first (the device line, the last requests, the kept crashes as a tick box)
-  and says the report's number; **Help → My reports** shows the admin's reply. A desktop window
+  and says the report's number; **Help → My reports** shows the admin's reply. Every error box
+  has **Report this**, which opens the form with the failed call's reference, and the player
+  says once, after signing in, whether the last crash went to the home or stays on the
+  computer. A desktop window
   cannot be captured without the system's screen recording, so no screenshot is offered (as the
   web app's form).
 - **Languages:** English and Arabic, Arabic laid out right to left. `Strings.kt` holds the start

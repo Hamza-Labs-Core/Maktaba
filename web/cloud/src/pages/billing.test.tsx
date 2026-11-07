@@ -160,4 +160,24 @@ describe("billing", () => {
     renderAt("/billing?billing=ok");
     expect(await screen.findByText(/Your subscription is being activated/)).toBeInTheDocument();
   });
+
+  // Epic 50 story 50.12: the uptime target, plainly a target with no credit
+  it("states the uptime target and that there is no credit, with a link to the status page", async () => {
+    stubFetch(routes({ status: "inactive" }, false));
+    renderAt("/billing");
+    expect(
+      await screen.findByText(
+        /This is a target, not a guarantee: we don't give credits or refunds for downtime\./
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "See how we did on the status page" })).toHaveAttribute(
+      "href",
+      "https://status.maktaba.tv"
+    );
+    // nothing else on the page offers one
+    const text = document.body.textContent ?? "";
+    expect(
+      text.replace(/We aim to keep remote access available[^.]*\.[^.]*\.[^.]*downtime\./, "")
+    ).not.toMatch(/credit|refund/i);
+  });
 });

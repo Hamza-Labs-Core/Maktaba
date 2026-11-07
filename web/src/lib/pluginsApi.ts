@@ -217,7 +217,18 @@ export interface HeldEntitlement {
   refreshed_at: string;
 }
 
+/** A plugin that declares panels, in the order pages show them (story 54.20 §1). */
+export interface PanelPlugin {
+  id: string;
+  names: PluginNames;
+  on: string[];
+}
+
 export const pluginsApi = {
+  panelOrder: () =>
+    api.get<{ plugins: PanelPlugin[]; order: string[] }>("/api/plugins/panel-order"),
+  setPanelOrder: (order: string[]) =>
+    api.put<{ order: string[] }>("/api/plugins/panel-order", { order }),
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),
   storeLink: () =>
     api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),

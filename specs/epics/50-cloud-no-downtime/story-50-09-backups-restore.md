@@ -62,7 +62,7 @@ Every Monday 04:00 UTC on the witness W:
 
 ### 5. Disaster runbook (the whole zone or Hetzner is gone)
 
-In `docs/runbooks/cloud-disaster-restore.md` (50.12 owns the runbook set): rebuild two nodes in
+In `docs/runbooks/cloud/restore.md` (50.12 owns the runbook set): rebuild two nodes in
 another location or provider with `deploy/cloud-ha/setup.sh`, restore from repo1 (or from repo2 on
 R2 when Hetzner is down or its Object Storage is lost), put the secrets back from the password manager, point the DNS names at the
 new address through Cloudflare. Target **RTO 4 h**, **RPO ≤ 60 s** (README §4.2).
@@ -124,7 +124,7 @@ new address through Cloudflare. Target **RTO 4 h**, **RPO ≤ 60 s** (README §4
 | `deploy/cloud-ha/systemd/pg-backup.{service,timer}` (new) | Full/diff, leader only. |
 | `deploy/cloud-ha/bin/restore-drill` (new) and `systemd/restore-drill.{service,timer}` (new) | §4, on W. |
 | `deploy/cloud-ha/setup.sh` | Install pgBackRest, create the stanza. |
-| `docs/runbooks/cloud-disaster-restore.md` (new) | §5. |
+| `docs/runbooks/cloud/restore.md` (new) | §5. |
 | `deploy/cloud-relay/README.md` | Replace the `pg_dump` line with a pointer to this setup. |
 
 ### Tests

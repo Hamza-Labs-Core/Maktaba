@@ -37,7 +37,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.util.Base64
-import java.util.Collections
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Epic 56 on Android TV (stories 56.02-56.05, 56.08, 56.10, 56.11): a library's five tabs, its
@@ -51,7 +51,9 @@ class LibraryViewTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var server: MockWebServer
-    private val urls: MutableList<String> = Collections.synchronizedList(mutableListOf())
+    // the fake server adds from its own thread while a waitUntil reads: a synchronizedList is not
+    // safe to iterate unlocked (ConcurrentModificationException), a copy-on-write list is
+    private val urls: MutableList<String> = CopyOnWriteArrayList()
     private val played = mutableListOf<Pair<QueueSource, Boolean>>()
 
     private class Tokens(var a: String?, var r: String?) : TokenStore {

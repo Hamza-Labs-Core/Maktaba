@@ -199,6 +199,13 @@ fun ErrorBox(title: String, error: Throwable?, onRetry: (() -> Unit)?, modifier:
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         error?.let { Text(t.sentenceFor(it), color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center) }
         if (onRetry != null) Button(onClick = onRetry) { Text(t["common.retry"]) }
+        // the form, with the reference of the call that failed (Epic 53 story 53.15)
+        com.hamzalabs.maktaba.desktop.diagnostics.LocalReportProblem.current?.let { report ->
+            androidx.compose.material3.TextButton(
+                onClick = { report(com.hamzalabs.maktaba.desktop.diagnostics.lastReference()) },
+                modifier = Modifier.testTag("error-report"),
+            ) { Text(t["report.this"]) }
+        }
     }
 }
 
