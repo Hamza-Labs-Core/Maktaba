@@ -1220,6 +1220,14 @@ build fails when the two differ.
   day: only that plugin's lines, with secrets removed, at most 200 lines, kept for the store's
   reviewers alone and deleted after 90 days.
 
+- **Cloudflare deploys from CI only (Epic 50, story 50.34).** The cloud's Cloudflare
+  configuration (the zone's rules, the Tunnel's ingress, the two web Workers) has its own
+  workflows. Pull requests only check the files offline. A push to `main` deploys, after a
+  token check that names any missing permission before anything is written, and a smoke check
+  of the live hosts follows. Each job skips with a notice until its secrets are set. A weekly job
+  proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
+  each piece's token permissions.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

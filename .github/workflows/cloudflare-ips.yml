@@ -1,0 +1,56 @@
+# Cloudflare's published IP ranges, weekly (Epic 50, stories 50.31, 50.34): the list the
+# fallback origin mode's Caddy allows (deploy/cloudflare/ips-v4.txt, ips-v6.txt). Fetched
+# without a token; when they change, a pull request carries the new lists for review. Never
+# writes to main itself.
+
+name: Cloudflare IP ranges
+
+on:
+  schedule:
+    - cron: '23 5 * * 1' # Mondays, 05:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-ips
+  cancel-in-progress: false
+
+jobs:
+  ranges:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: tools/cloudflare/.nvmrc
+          package-manager-cache: false
+
+      - name: Fetch the ranges
+        id: fetch
+        run: echo "result=$(node tools/cloudflare/ips.mjs --dir deploy/cloudflare)" >> "$GITHUB_OUTPUT"
+
+      - name: Open a pull request when they changed
+        if: steps.fetch.outputs.result == 'changed'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch="chore/cloudflare-ips-$(date -u +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add deploy/cloudflare/ips-v4.txt deploy/cloudflare/ips-v6.txt
+          git commit -m "chore(cloudflare): Cloudflare's published IP ranges changed" \
+            -m "Fetched by cloudflare-ips.yml from https://www.cloudflare.com/ips-v4 and ips-v6; the aop fallback's Caddy allows these (Epic 50, story 50.31)." \
+            -m "No-Test-Change: data the fallback reads; tools/cloudflare/ips.mjs checked every line" \
+            -m "No-Portal-Change: an IP list for the cloud's fallback origin mode"
+          git push origin "$branch"
+          gh pr create --title "chore(cloudflare): Cloudflare's published IP ranges changed" \
+            --body "Cloudflare's published ranges changed. Each line was checked as a CIDR of its family. Review the diff; the \`aop\` origin mode's Caddy allows exactly these ranges (Epic 50, story 50.31)." \
+            --base main --head "$branch"
