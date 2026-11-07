@@ -34,6 +34,7 @@ var adminRoutes = []string{
 	"DELETE /api/plugins/store-account",
 	"GET /api/plugins/dev.example.x",
 	"PUT /api/plugins/dev.example.x/grants",
+	"PUT /api/plugins/dev.example.x/report-logs",
 	"POST /api/plugins/dev.example.x/enable",
 	"POST /api/plugins/dev.example.x/disable",
 	"POST /api/plugins/dev.example.x/start",

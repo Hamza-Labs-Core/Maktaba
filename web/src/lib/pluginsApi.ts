@@ -137,6 +137,8 @@ export interface PluginDetail extends Plugin {
   data_rows: number;
   data_bytes: number;
   data_mb: number;
+  /** an admin ticked "Include its logs in problem reports" (54.09 §3) */
+  report_logs?: boolean;
 }
 
 /** One of Maktaba's own built-in (first-party) plugins (Epic 54, story 54.22 §4). Its
@@ -305,6 +307,10 @@ export const pluginsApi = {
   flow: (id: string) => api.get<PluginFlow>(`/api/plugins/${enc(id)}/flow`),
   downstream: (id: string) => api.get<{ stages: string[] }>(`/api/plugins/${enc(id)}/downstream`),
   show: (id: string) => api.get<PluginDetail>(`/api/plugins/${enc(id)}`),
+  setReportLogs: (id: string, include: boolean) =>
+    api.put<{ plugin_id: string; report_logs: boolean }>(`/api/plugins/${enc(id)}/report-logs`, {
+      include,
+    }),
   install: (f: InstallForm, onProgress?: (fraction: number) => void) =>
     uploadWithProgress<InstallResult>("/api/plugins/install", installBody(f), onProgress),
   update: (id: string, f: InstallForm, onProgress?: (fraction: number) => void) =>

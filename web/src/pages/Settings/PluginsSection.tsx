@@ -555,6 +555,18 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
           </tbody>
         </table>
         <Link to={logsPageLink({ services: d.component })}>{t("plugins.health.logs")}</Link>
+        <Toggle
+          label={t("plugins.report_logs.label")}
+          checked={!!d.report_logs}
+          onChange={(e) => {
+            const on = e.target.checked;
+            void act(
+              () => pluginsApi.setReportLogs(d.id, on),
+              t(on ? "plugins.report_logs.on" : "plugins.report_logs.off")
+            );
+          }}
+        />
+        <p className="mkt-plugins__hint">{t("plugins.report_logs.hint")}</p>
       </section>
 
       <FlowSection id={d.id} names={(pid) => (pid === d.id ? name : pid)} />
