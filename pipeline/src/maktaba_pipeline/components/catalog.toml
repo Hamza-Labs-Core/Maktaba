@@ -86,7 +86,10 @@ processes  = ["api/"]
 loops      = ["api:process_recorder", "api:license_refresher", "api:license_reload",
               "api:eventbus_run", "api:eventbus_pruner", "api:idempotency_sweep",
               "api:jwt_key_reaper", "api:queues_snapshots", "api:sharepath_reload",
-              "api:browse_rowcache_listen", "api:play_queue_sweep"]
+              "api:browse_rowcache_listen", "api:play_queue_sweep",
+              # the plugin store's signed lists and the kill switch (story 54.17 §1): idle
+              # unless a plugin is installed or Browse was opened in the last 7 days
+              "api:plugins_catalog"]
 settings   = ["rules.audit", "rules.storage", "rules.system_health", "rules.search"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]

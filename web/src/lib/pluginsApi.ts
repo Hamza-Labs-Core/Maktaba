@@ -53,6 +53,28 @@ export interface Plugin {
   optional: string[];
   previous_version?: string;
   health: PluginHealth;
+  /** A store `disable` covers it (story 54.17 §3); revocation is the entry that applies. */
+  revoked?: boolean;
+  revocation?: {
+    action: "disable" | "warn" | "delist";
+    reason_code: string;
+    versions: string;
+    issued: string;
+  } | null;
+  auto_update?: boolean;
+}
+
+/** The store's signed lists on this home (GET /api/plugins/trust). */
+export interface TrustStatus {
+  revoked_version: number;
+  revoked_issued?: string;
+  revoked_expired: boolean;
+  catalog_version: number;
+  catalog_issued?: string;
+  catalog_expired: boolean;
+  store_keys: boolean;
+  store_installs_ok: boolean;
+  last_error?: string;
 }
 
 export interface PluginStage {
@@ -161,6 +183,9 @@ export interface StoreLinkStatus {
 }
 
 export const pluginsApi = {
+  trust: () => api.get<TrustStatus>("/api/plugins/trust"),
+  setAutoUpdate: (id: string, on: boolean) =>
+    api.put<PluginDetail>(`/api/plugins/${enc(id)}/auto-update`, { on }),
   storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),
   storeLink: () =>
     api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),

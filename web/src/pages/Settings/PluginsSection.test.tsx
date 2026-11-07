@@ -91,6 +91,15 @@ function problem(status: number, code: string, extra: Record<string, unknown> = 
   } as never);
 }
 
+let trust: unknown = {
+  store_keys: false,
+  revoked_version: 0,
+  revoked_expired: false,
+  catalog_version: 0,
+  catalog_expired: false,
+  store_installs_ok: false,
+};
+
 function routes(d: PluginDetail = detail(), list: Plugin[] = [plugin()]) {
   get.mockImplementation(async (path: string) => {
     if (path === "/api/plugins") return { plugins: list, policy: { allow_unreviewed: false } };
@@ -121,6 +130,9 @@ function routes(d: PluginDetail = detail(), list: Plugin[] = [plugin()]) {
         ],
       };
     if (path === `/api/plugins/${d.id}/settings`) return { schema: null, values: {}, strings: {} };
+    if (path === "/api/plugins/trust") return trust;
+    if (path === "/api/plugins/store-account")
+      return { linked: false, store: "https://plugins.maktaba.tv" };
     if (path === "/api/libraries/summary")
       return {
         items: [{ id: "lib-1", name: "Films", videos: 1, poster_video_ids: [], pinned: false }],
@@ -155,6 +167,58 @@ describe("Settings → Plugins", () => {
     expect(screen.getAllByText(EN["plugins.badge.unreviewed"])).toHaveLength(2);
     expect(screen.getByText(EN["components.reason.plugin_crash_loop"])).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: EN["plugins.action.start"] })).toHaveLength(1);
+  });
+
+  it("54.17: an expired list of withdrawn plugins warns; a withdrawn plugin says so and cannot be started", async () => {
+    trust = {
+      store_keys: true,
+      revoked_version: 9,
+      revoked_issued: "2026-11-01T10:00:00Z",
+      revoked_expired: true,
+      catalog_version: 0,
+      catalog_expired: false,
+      store_installs_ok: false,
+    };
+    const revocation = {
+      action: "disable",
+      reason_code: "malware",
+      versions: "<1.3.0",
+      issued: "2026-11-06T10:00:00Z",
+    };
+    const d = detail({ revoked: true, revocation } as never);
+    routes(d, [plugin({ revoked: true, revocation } as never)]);
+    open();
+    expect(await screen.findByText(EN["plugins.badge.withdrawn"])).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      EN["plugins.trust.expired"].split("{date}")[0]!.trim()
+    );
+    trust = {
+      store_keys: false,
+      revoked_version: 0,
+      revoked_expired: false,
+      catalog_version: 0,
+      catalog_expired: false,
+      store_installs_ok: false,
+    };
+  });
+
+  it("54.17: a store warning shows on the plugin's page; auto-update is a switch", async () => {
+    const revocation = {
+      action: "warn",
+      reason_code: "severe_bug",
+      versions: "*",
+      issued: "2026-11-06T10:00:00Z",
+    };
+    const d = detail({ review_level: "reviewed", revocation, auto_update: false } as never);
+    routes(d, [plugin({ review_level: "reviewed", revocation } as never)]);
+    put.mockResolvedValue(d);
+    open();
+    expect(await screen.findByText(EN["plugins.badge.store_warning"])).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: EN["plugins.action.open"] }));
+    expect(await screen.findByText(/warns about this plugin \(a severe bug\)/)).toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: EN["plugins.auto_update.label"] }));
+    expect(put).toHaveBeenCalledWith(`/api/plugins/${d.id}/auto-update`, { on: true });
   });
 
   it("54.14 §2: a store-countersigned plugin shows its review level, not Unreviewed", async () => {

@@ -97,6 +97,11 @@ type View struct {
 	Optional     []string          `json:"optional"`
 	Previous     string            `json:"previous_version,omitempty"`
 	Health       Health            `json:"health"`
+	// Revoked: a store `disable` covers it; Revocation the entry that applies (a `warn`
+	// shows too, 54.17 §3). AutoUpdate is the admin's choice (54.17 §2).
+	Revoked    bool            `json:"revoked"`
+	Revocation json.RawMessage `json:"revocation,omitempty"`
+	AutoUpdate bool            `json:"auto_update"`
 }
 
 // Detail is GET /api/plugins/{id}: the view, its manifest's summary, its stages and their
@@ -155,6 +160,13 @@ func (l *Lifecycle) view(ctx context.Context, id string) (*View, error) {
 		InstalledAt: in.InstalledAt, Required: nonNil(m.Capabilities.Required), Optional: nonNil(m.Capabilities.Optional),
 		Previous: in.PrevVersion.String, Grants: GrantSet{Capabilities: []string{}, Libraries: []string{}},
 		Health: Health{Recent: json.RawMessage("[]")}}
+	var rev []byte
+	if err := l.DB.QueryRowContext(ctx, `SELECT revoked, revocation, auto_update FROM plugin_installs WHERE plugin_id = $1`, id).Scan(&v.Revoked, &rev, &v.AutoUpdate); err != nil {
+		return nil, err
+	}
+	if len(rev) > 0 && string(rev) != "null" {
+		v.Revocation = rev
+	}
 	if g, err := loadGrantSet(ctx, l.DB, id); err != nil {
 		return nil, err
 	} else if g != nil {

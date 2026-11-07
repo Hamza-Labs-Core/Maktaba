@@ -12,6 +12,8 @@ package router
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -24,7 +26,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	pluginsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/catalog"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // P54Deps bundles the Epic 54 routes.
@@ -49,6 +53,9 @@ type P54Deps struct {
 	// Secrets is the home's sealed store: the home store key of a store link (54.15 §5).
 	// nil: no store link.
 	Secrets storelink.Secrets
+	// Loops is the API's Epic 51 loop runner: api:plugins_catalog runs on it while
+	// plugins.host is on (story 54.17 §1). nil: the loop runs as a plain goroutine.
+	Loops *runner.Runner
 }
 
 // MountP54 mounts the invocation routes on r and, when a socket is named, serves the
@@ -83,13 +90,64 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 			link = &storelink.Link{DB: d.DB, Secrets: d.Secrets, StoreURL: os.Getenv("MAKTABA_PLUGIN_STORE_URL"),
 				Version: d.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH, Name: host}
 		}
-		(&pluginsh.Admin{L: l, Logger: logger, Store: link, VerifyPassword: func(ctx context.Context, id, pw string) error {
-			u, err := accounts.GetByID(ctx, id)
-			if err != nil {
+		stateDir := os.Getenv("MAKTABA_STATE_DIR")
+		if stateDir == "" && d.DataDir != "" {
+			stateDir = filepath.Join(d.DataDir, "state")
+		}
+		cdn := os.Getenv("MAKTABA_PLUGIN_CDN_URL")
+		if cdn == "" {
+			cdn = catalog.DefaultCDN
+		}
+		comps := d.Components
+		cat := &catalog.Service{DB: d.DB, StateDir: stateDir, Logger: logger, Store: &catalog.HTTPStore{Base: cdn, Version: d.Version},
+			Hold: func(ctx context.Context, id string, held bool, by string) error {
+				_, err := comps.Apply(ctx, components.Request{Changes: []components.Change{{ID: "plugin." + id, Hold: &held}}},
+					components.Actor{By: by, Source: "system"})
 				return err
+			}}
+		platform := catalog.Platform(runtime.GOOS + "-" + runtime.GOARCH)
+		if link != nil {
+			// 54.15 §10: only a linked home, and only with telemetry on
+			cat.Seen = func(ctx context.Context, list []catalog.SeenPlugin) error {
+				if !TelemetryEnabled() {
+					return nil
+				}
+				st, err := link.LoadState(ctx)
+				if err != nil || st == nil {
+					return err
+				}
+				body, _ := json.Marshal(map[string]any{"server_version": d.Version, "platform": string(platform), "plugins": list})
+				resp, _, err := link.Signed(ctx, http.MethodPost, "/v1/homes/"+st.HomeID+"/seen", body)
+				if err != nil {
+					return err
+				}
+				if resp.StatusCode != http.StatusOK {
+					return fmt.Errorf("the store answered %d", resp.StatusCode)
+				}
+				return nil
 			}
-			return u.VerifyPassword(pw)
-		}}).Mount(r)
+		}
+		cat.SetAuto(&catalog.Auto{L: l, Server: d.Version, Platform: platform})
+		l.Revoked = func(id, version, key string) (string, bool) {
+			if r := cat.Revoked(id, version, key); r != nil {
+				return r.ReasonCode, true
+			}
+			return "", false
+		}
+		// story 54.17 §1: the store's lists, on the API's loop runner while plugins.host is on
+		ctxLoop := d.Ctx
+		if ctxLoop == nil {
+			ctxLoop = context.Background()
+		}
+		d.Loops.Declare("plugins_catalog", runner.Bound(ctxLoop, runner.Func(cat.Run)))
+		(&pluginsh.Admin{L: l, Logger: logger, Store: link, Catalog: cat, Server: d.Version, Platform: platform,
+			VerifyPassword: func(ctx context.Context, id, pw string) error {
+				u, err := accounts.GetByID(ctx, id)
+				if err != nil {
+					return err
+				}
+				return u.VerifyPassword(pw)
+			}}).Mount(r)
 		ctx := d.Ctx
 		if ctx == nil {
 			ctx = context.Background()

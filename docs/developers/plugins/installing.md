@@ -88,6 +88,38 @@ Every change your plugin makes to the library (a field, a tag, chapters, subtitl
 recorded with the value before and after. The admin can select changes and revert them; a
 change someone made after your plugin wins.
 
+## The store's lists, updates and withdrawn plugins
+
+A home fetches the store's signed files straight from `plugins-cdn.maktaba.tv`, never through
+Maktaba Cloud, and only while a plugin is installed or an admin opened Browse in the last 7
+days: a tiny `revoked-head.json` every 5 minutes, `revoked.json` when it changed (and every
+hour), `catalog-1.json` every 6 hours, and `store-keys.json` with each. Each is verified
+([Signing and the chain of trust](trust.md)) and kept in `<data>/state/plugins-lists/` and in
+Postgres; a copy older than the newest seen is refused. The Plugins page says when withdrawn
+plugins were last checked, and warns when the list has expired: plugins keep running, but
+installs and updates from the store wait (`409 store_list_stale`) until a fresh list arrives.
+
+When the store withdraws a plugin:
+
+| Action | On this home |
+|---|---|
+| `disable` | held at once (*Waiting* `revoked`, its jobs kept), admins told why; it cannot be started (`409 plugin_revoked`), only removed. An install, update or rollback to a covered version is refused too. |
+| `warn` | it keeps running with a warning on its card and page; the admin may turn it off |
+| `delist` | nothing changes for the installed copy; no more updates |
+
+A `disable` is separate from the admin's own keep-off: turning a plugin on never lifts it. If
+the store lifts it later, the plugin stays held until an admin starts it, with a notice saying
+so.
+
+**Updates.** A store-signed plugin whose newer compatible version is in the catalog shows
+Update. **Update automatically at night** (per plugin, off by default) installs, between 02:00
+and 05:00, the updates that ask for no new capability; one that asks for more waits for the
+admin. A store install is `POST /api/plugins/install` with JSON `{store: {id, version}}`; the
+package comes from the CDN by its sha256 and is checked like any file.
+
+The routes, admin only (a viewer never makes the home fetch): `GET /api/plugins/catalog`,
+`GET /api/plugins/trust`, `PUT /api/plugins/{id}/auto-update {on}`.
+
 ## Linking a home to a store account
 
 A home needs a **plugin store account** only to rate plugins (and, in Phase 3, to buy them).

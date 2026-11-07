@@ -77,7 +77,8 @@
         "api:queues_snapshots",
         "api:sharepath_reload",
         "api:browse_rowcache_listen",
-        "api:play_queue_sweep"
+        "api:play_queue_sweep",
+        "api:plugins_catalog"
       ],
       "on_demand": false,
       "placement": "any",

@@ -96,6 +96,10 @@ type Lifecycle struct {
 	// ArtifactsDir is <data>/plugins/artifacts (a purge deletes the plugin's there).
 	ArtifactsDir string
 	Logger       *slog.Logger
+	// Revoked says whether a store `disable` covers a version of a plugin with its developer
+	// key (story 54.17: the catalog loop's list); nil: no list. An install, update or
+	// rollback to such a version is refused (409 plugin_revoked).
+	Revoked func(id, version, devKey string) (reason string, revoked bool)
 }
 
 func (l *Lifecycle) logger() *slog.Logger {
@@ -266,10 +270,22 @@ func touch(ctx context.Context, q interface {
 // Check refuses an enable whose required capabilities are not all granted (story 54.08
 // §1: plugin_required_capability) or of a plugin no longer installed.
 func (l *Lifecycle) Check(ctx context.Context, ch svc.Change) error {
+	id := strings.TrimPrefix(ch.ID, components.PluginPrefix)
+	releasing := ch.Hold != nil && !*ch.Hold
+	if ch.Want == components.WantEnabled || releasing {
+		// a store `disable` cannot be undone here (54.17 §3, README H10): only removed
+		var revoked bool
+		err := l.DB.QueryRowContext(ctx, `SELECT revoked FROM plugin_installs WHERE plugin_id = $1`, id).Scan(&revoked)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if revoked {
+			return problem(http.StatusConflict, CodeRevoked, "the plugin store withdrew %s: it can only be removed", id)
+		}
+	}
 	if ch.Want != components.WantEnabled {
 		return nil
 	}
-	id := strings.TrimPrefix(ch.ID, components.PluginPrefix)
 	in, err := loadInstall(ctx, l.DB, id, false)
 	if err != nil {
 		return err
@@ -397,6 +413,13 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 			}
 		}
 	}()
+	if l.Revoked != nil {
+		if reason, revoked := l.Revoked(in.PluginID, in.Version, in.DeveloperKeyID); revoked {
+			p := problem(http.StatusConflict, CodeRevoked, "the plugin store withdrew %s %s", in.PluginID, in.Version)
+			p.Params = map[string]any{"reason": reason}
+			return nil, p
+		}
+	}
 	// the level the signatures prove (the supervisor verified them, story 54.14 §3)
 	level := in.ReviewLevel
 	if req.ReviewLevel != "" {
@@ -774,6 +797,16 @@ func (l *Lifecycle) Rollback(ctx context.Context, id string, clearData bool, act
 	}
 	if !in.PrevPath.Valid || in.PrevPath.String == "" || !dirExists(in.PrevPath.String) {
 		return problem(http.StatusConflict, CodeNoPrevious, "no previous version of %s is kept", id)
+	}
+	if l.Revoked != nil {
+		// a revocation whose range covers the previous version refuses the rollback too
+		var prevKey string
+		_ = tx.QueryRowContext(ctx, `SELECT previous_developer_key_id FROM plugin_installs WHERE plugin_id = $1`, id).Scan(&prevKey)
+		if reason, revoked := l.Revoked(id, in.PrevVersion.String, prevKey); revoked {
+			p := problem(http.StatusConflict, CodeRevoked, "the plugin store withdrew %s %s", id, in.PrevVersion.String)
+			p.Params = map[string]any{"reason": reason}
+			return p
+		}
 	}
 	cur, err := parseManifest(in.Manifest)
 	if err != nil {
