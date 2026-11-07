@@ -20,6 +20,7 @@ prs: [832, 849, 854, 845]
 - The web port's `/stream/` proxy let a LAN client's `X-Maktaba-Via` through; only `/api/` dropped it. Any header that means "from the relay" must be filtered on every proxy that forwards it.
 - A license tier alias belongs after the signature check, in a local variable. `Verify` takes a pointer, and changing the signed struct breaks the next verify of the stored copy. The stored row's `tier` must be the normalised one too, because the licenses table has a CHECK.
 - The apps' error kinds are shared words (web, Apple, Android). A new server answer gets a kind per app, read from both `code` (the home) and `error` (the relay).
+- The desktop player reads the Android client's `ErrorKind` and its `StringsTest` wants a sentence for every kind: CI's Desktop Player job failed on the three new ones until `Strings.kt` had them in English and Arabic. A new `ErrorKind` needs the desktop player's tests run too.
 - zsh has no `PIPESTATUS`: check a command's exit code without a pipe.
 - Before blaming a change for a local failure, run the same test on a clean origin/main checkout: here a full disk failed `cmd/maktaba-server`'s restore tests on both.
 
