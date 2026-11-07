@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
+  `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
+  enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
+  streams, Pro past its allowance plays at Basic's quality, and pay-as-you-go's usage reaches a
+  fake payment provider once, through an outage. No stream stops in any.
+- **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
+  keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
+  (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
+  month's relayed use by quality, the limit and what was spent, and says at 80 % and 100 %; the
+  account is emailed too. Usage goes to the payment provider hourly, queued through an outage and
+  never billed twice or past the limit. Prices are not set yet, so it stays off.
 - **The relay enforces each plan (Epic 50 story 50.19, part 2).** A home on Free (no relay)
   gets `402 relay_needs_plan` through the relay, and keeps its tunnel for direct access. With
   `relay.plans.enforce` on, Basic's relayed requests carry `X-Maktaba-Relay-Cap-Kbps` (3000,
@@ -1106,6 +1117,18 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Buying a paid plugin (Epic 54, story 54.19).** A paid plugin's page in Settings →
+  Plugins → Browse shows its price and **Buy**, or **Link this home to buy** on a home not
+  linked to a store account, which links it right there. Buy asks the store for a one-time
+  purchase intent signed by the home (the plugin and the language only, never the home's
+  address) and opens the store's buy page in a new tab: the buyer signs in to the store
+  account the home is linked to, sees the price in a currency an enabled payment provider
+  sells to their country, and pays on that provider's page; the home picks up the purchase
+  within 15 seconds. The store's buy pages run no script, sign-in returns only to a buy page
+  or the admin pages of the store itself, and the catalog carries each paid plugin's product
+  and prices. The store now runs its payment providers' webhooks. Nothing can be bought until
+  the store admin enables a provider.
+
 - **Paid plugins wait for their purchase (Epic 54, story 54.19).** A home linked to a store
   account fetches its entitlements from the store daily, signed with its own home store key
   (and every 15 seconds for 15 minutes after a Buy), checks each offline against the store
@@ -1772,6 +1795,15 @@ build fails when the two differ.
   on every save (removed when it stops, unless `--keep`). `mkp run <folder> --home
   http://<home>:<port> --user <admin>` installs a folder on a home in developer mode from the
   developer's machine. maktaba.dev: Testing and packaging.
+
+- **Direct access from the internet, the home's side (Epic 50 story 50.15, part 2).** In
+  Settings → Storage & discovery an admin turns it on: the home opens a port on its router
+  (UPnP-IGD, NAT-PMP or PCP, renewed every 20 minutes, or a port forwarded by hand), notices a
+  shared address (CGNAT), makes its own key and asks Maktaba Cloud for a certificate for
+  `*.<home id>.<domain>` (the key never leaves it), and serves the same pages and API over HTTPS
+  on port 8444. The page shows the cloud's outside check, with Check now. Free on every plan:
+  `remote_access` is on with either the relay or direct access (`feature_any`). Off by default;
+  the `cloud.direct` component is on in the Full bundle where the home is linked to the cloud.
 
 ### Changed
 

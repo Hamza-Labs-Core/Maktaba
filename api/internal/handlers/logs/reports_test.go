@@ -129,6 +129,10 @@ func TestReports(t *testing.T) {
 	var asked []string
 	var mu sync.Mutex
 	index := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/search" { // a stray request: not the index's search
+			http.NotFound(w, r)
+			return
+		}
 		mu.Lock()
 		asked = append(asked, r.URL.RawQuery)
 		mu.Unlock()

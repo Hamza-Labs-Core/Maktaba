@@ -60,6 +60,8 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 	serversStore := stores.NewServers(pool.DB)
 	meter := billingpkg.NewMeter(pool.DB)
 	meter.Logger = logger
+	// story 50.19 §5: Pro's pay-as-you-go up to its owner's cap
+	meter.PAYG = &billingpkg.PAYGStore{DB: pool.DB}
 	meter.Start(context.Background())
 	defer meter.Close()
 

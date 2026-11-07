@@ -15,7 +15,9 @@ import (
 )
 
 // cloud is a fake Maktaba Cloud: it records each envelope and answers with
-// status (a func of the envelope).
+// status (a func of the envelope). Anything but the ingest post is answered 404 and
+// not recorded: its 127.0.0.1 port may be one another process probes (a stray
+// GET /healthz once counted as an envelope here).
 type cloud struct {
 	mu        sync.Mutex
 	envelopes []envelope
@@ -30,8 +32,9 @@ type envelope struct {
 func (c *cloud) serve(t *testing.T) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != IngestPath || r.Method != http.MethodPost {
-			t.Errorf("%s %s", r.Method, r.URL.Path)
+		if !isIngest(r) {
+			http.NotFound(w, r)
+			return
 		}
 		raw, _ := io.ReadAll(r.Body)
 		var e envelope
@@ -49,6 +52,11 @@ func (c *cloud) serve(t *testing.T) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// isIngest is the sender's post: the one request the fakes record.
+func isIngest(r *http.Request) bool {
+	return r.Method == http.MethodPost && r.URL.Path == IngestPath
 }
 
 func (c *cloud) batches() []map[string]any {
@@ -227,7 +235,9 @@ func TestNothingButTheAllowList(t *testing.T) {
 	var headers http.Header
 	c := &cloud{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		headers = r.Header.Clone()
+		if isIngest(r) {
+			headers = r.Header.Clone()
+		}
 		c.serve(t).Config.Handler.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
@@ -337,6 +347,10 @@ func TestSenderDropsComponentsForAnOlderCloud(t *testing.T) {
 	var mu sync.Mutex
 	var reports []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !isIngest(r) {
+			http.NotFound(w, r)
+			return
+		}
 		raw, _ := io.ReadAll(r.Body)
 		var e envelope
 		_ = json.Unmarshal(raw, &e)
@@ -405,4 +419,35 @@ func isRange(v any) bool {
 		}
 	}
 	return false
+}
+
+// A request that is not the sender's post (another process probing a recycled
+// 127.0.0.1 port: GET /healthz) is answered 404 and never counted as an envelope.
+func TestTheFakeCloudIgnoresStrayRequests(t *testing.T) {
+	c := &cloud{}
+	srv := c.serve(t)
+	for _, req := range []struct{ method, path string }{{"GET", "/healthz"}, {"GET", IngestPath}, {"POST", "/other"}} {
+		r, err := http.NewRequest(req.method, srv.URL+req.path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := srv.Client().Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("%s %s: %d, want 404", req.method, req.path, resp.StatusCode)
+		}
+	}
+	resp, err := srv.Client().Post(srv.URL+IngestPath, "application/json", strings.NewReader(`{"schema":1,"batches":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if resp.StatusCode != http.StatusNoContent || len(c.envelopes) != 1 {
+		t.Fatalf("the ingest post: %d, %d envelopes recorded", resp.StatusCode, len(c.envelopes))
+	}
 }

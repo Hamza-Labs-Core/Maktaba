@@ -255,6 +255,8 @@ plugins:
   # the Epic 53 line the host's log lines follow (a test reads its plugind example)
   - 'shared/log/schema/**'
   - 'cmd/maktaba-server/internal/appcontainer/**'
+  # the pipeline's relay to the host on Windows (#710)
+  - 'cmd/maktaba-server/internal/pluginrelay/**'
   - 'cmd/maktaba-server/go.mod'
   - 'web/src/i18n/**'
   - '.github/workflows/_plugins.yml'

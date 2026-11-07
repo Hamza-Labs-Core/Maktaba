@@ -33,6 +33,7 @@ import {
 } from "../../lib/serverSettingsApi";
 import { HelpLink } from "../../help/HelpLink";
 import { BackupsSection } from "./BackupsSection";
+import { DirectAccessSection } from "./DirectAccessSection";
 import { DataLocationSection } from "./DataLocationSection";
 import "../../styles/libraryAdmin.css";
 import { LinesPlaceholder, Loading } from "../../components/Placeholders";
@@ -486,6 +487,8 @@ function StorageInner({ pollMs, onReload }: { pollMs: number; onReload: () => vo
       <Reachability rows={doc.reachability} />
 
       <DataLocationSection pollMs={pollMs} />
+
+      <DirectAccessSection />
 
       <BackupsSection onRestartNeeded={setBackupsRestart} />
 

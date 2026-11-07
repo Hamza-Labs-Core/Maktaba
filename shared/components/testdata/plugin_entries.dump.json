@@ -147,6 +147,7 @@
     "logs.index",
     "cloud.link",
     "cloud.relay",
+    "cloud.direct",
     "cluster",
     "discovery.mdns",
     "queue_health",
