@@ -124,9 +124,9 @@ def _cohere_patterns() -> list[str] | None:
 
 def items(only: set[str] | None = None) -> list[Item]:
     """The models this machine's workers load, from the same settings they read."""
-    from ..engine.stages.transcribe import refine_model, settings_from_env
     from ..search.semantic import embed_model
     from ..stt import cohere, engine
+    from ..stt.env import refine_model, settings_from_env
 
     whisper = settings_from_env().model
     refine = refine_model()

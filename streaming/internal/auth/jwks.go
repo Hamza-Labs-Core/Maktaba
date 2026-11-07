@@ -60,9 +60,9 @@ type JWKSCache struct {
 	// NewKeyFileCache) when a token names a key it does not hold: the API
 	// makes the file as it starts, which may be after this process read it,
 	// and a first playback must not wait for the next look. At most every
-	// reloadEvery (reloadedAt, the last read, on the monotonic clock: a wall
-	// clock set back holds up no read); a request that finds a read under way
-	// waits for it (reloadMu), then looks again.
+	// reloadEvery (reloadedAt, when the last read returned, on the monotonic
+	// clock: a wall clock set back holds up no read); a request that finds a read
+	// under way waits for it (reloadMu) and uses it, however long it took.
 	reload     func() bool
 	reloadMu   sync.Mutex
 	reloadedAt time.Time
@@ -79,9 +79,12 @@ func (c *JWKSCache) reloadOnMiss() bool {
 	if c.reload == nil {
 		return false
 	}
+	arrived := time.Now()
 	c.reloadMu.Lock()
 	defer c.reloadMu.Unlock()
-	if !c.reloadedAt.IsZero() && time.Since(c.reloadedAt) < reloadEvery {
+	// a read that returned after this request arrived is the one it waited for: used
+	// whatever it took (a slow read once made the waiter read again, issue #681)
+	if !c.reloadedAt.IsZero() && (c.reloadedAt.After(arrived) || time.Since(c.reloadedAt) < reloadEvery) {
 		return true
 	}
 	return c.reloadLocked()
@@ -97,8 +100,10 @@ func (c *JWKSCache) readKeys() bool {
 
 // reloadLocked reads the static key set (reloadMu held).
 func (c *JWKSCache) reloadLocked() bool {
+	ok := c.reload()
+	// when it returned: a request that waited for this read (reloadOnMiss) uses it
 	c.reloadedAt = time.Now()
-	return c.reload()
+	return ok
 }
 
 // NewJWKSCache builds a cache and immediately performs one fetch.

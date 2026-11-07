@@ -15,9 +15,9 @@ from typing import Any
 import numpy as np
 import pytest
 from huggingface_hub import snapshot_download  # noqa: F401 - loaded here, not in a timed test
+from maktaba_fp_transcription.stages import transcribe as stage
 
 from maktaba_pipeline.classify.quran import verse_runs
-from maktaba_pipeline.engine.stages import transcribe as stage
 from maktaba_pipeline.stt import cohere, cohere_cuda, ct2, engine, model_share
 from maktaba_pipeline.stt.settings import SAMPLE_RATE, Sentence, Transcript, WhisperSettings, Word
 from tests.conftest import NO_TEST_GPU

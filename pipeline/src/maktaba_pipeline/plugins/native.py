@@ -45,6 +45,8 @@ from ..log import get_logger
 from . import firstparty
 
 __all__ = [
+    "FALLBACKS",
+    "note_fallback",
     "ImplChoice",
     "SandboxRefused",
     "Unregistered",
@@ -61,6 +63,16 @@ _log = get_logger()
 MAX_FRAME = 256 << 20
 #: how long a runner's hello is believed
 HELLO_TTL = 15.0
+
+
+#: (stage, why) -> how many of a plugin stage's jobs ran in the worker instead (a statement
+#: the plugin did not register, a file its sandbox refused, or choose() declining: the
+#: runner not serving, the role unusable …). A parity run fails on any for its stages.
+FALLBACKS: dict[tuple[str, str], int] = {}
+
+
+def note_fallback(stage: str, why: str) -> None:
+    FALLBACKS[(stage, why)] = FALLBACKS.get((stage, why), 0) + 1
 
 
 class Unregistered(Exception):
@@ -140,7 +152,7 @@ def forget_hello() -> None:
 
 async def serving(stage: str) -> tuple[bool, str | None]:
     """Whether the stage's runner serves it here, and its unavailable reason if it said one."""
-    group = firstparty.runner_group(stage)
+    group = firstparty.runner_instance(stage)
     if group is None:
         return False, None
     h = await hello(group)
@@ -187,14 +199,32 @@ async def choose(db: Any, stage: str) -> ImplChoice:
         return ImplChoice("inproc", "runner_not_serving_here")
     if not await role_usable(db, stage):
         return ImplChoice("inproc", "role_unusable")
+    if stage in CHROMA_STAGES and not await _postgres_index(db):
+        return ImplChoice("inproc", "index_store_chroma")
     if files_stage(stage):
-        group = firstparty.runner_group(stage) or ""
+        group = firstparty.runner_instance(stage) or ""
         h = await hello(group)
         if not _AREAS_WRITTEN or (h or {}).get("areas") != _AREAS_WRITTEN[-1]:
             # the runner's sandbox is from other folders than this machine's now (a library
             # was added): this job runs here while the runner restarts on the new areas
             return ImplChoice("inproc", "runner_areas_stale")
     return ImplChoice("plugin")
+
+
+#: the stages that open the search index: while it is Chroma (a folder one process may
+#: open), they stay in the worker beside the query server; once search reads Postgres
+#: (semantic_store_state), the runner writes it like any table (story 54.30)
+CHROMA_STAGES = frozenset({"index", "chapter_infer"})
+
+
+async def _postgres_index(db: Any) -> bool:
+    from ..search.pgstore import store_state
+
+    try:
+        st = await store_state(db)
+    except Exception:  # noqa: BLE001 - unreadable: the worker keeps the stage
+        return False
+    return st.read_postgres and not st.write_chroma
 
 
 # role -> (checked at, usable): a home whose migrations could not make or grant the
@@ -433,7 +463,7 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
 async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> StageResult:
     """One job of a first-party stage in its runner (``impl = 'plugin'``)."""
     stage = job.stage
-    group = firstparty.runner_group(stage)
+    group = firstparty.runner_instance(stage)
     entry = firstparty.impl_entry(stage)
     if group is None or entry is None:
         raise StageFailure("plugin_failed", f"{stage} is not a first-party stage", retryable=False)
@@ -605,7 +635,29 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     thumbs = str(thumbnail_dir_for("x", root=small.ROOT).parent)
     lib = ";".join(sorted(roots))
     # library.subtitles is the library's folders, written only by subtitle names
-    return {"library": lib, "library.subtitles": lib, "data.thumbnails": thumbs}
+    return {
+        "library": lib,
+        "library.subtitles": lib,
+        "data.thumbnails": thumbs,
+        "models": ";".join(_model_folders()),
+        "data.index": os.path.realpath(
+            os.path.expanduser(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma")
+        ),
+    }
+
+
+def _model_folders() -> list[str]:
+    """Where this machine's models are: the Hugging Face cache (``HF_HOME``, else its
+    default), CAMeL Tools' data, the model cache root and the share's models folder."""
+    env = os.environ
+    hf = env.get("HF_HOME") or os.path.join(
+        env.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "huggingface"
+    )
+    out = {hf}
+    for k in ("CAMELTOOLS_DATA", "MAKTABA_MODEL_CACHE_DIR", "MAKTABA_MODELS_DIR"):
+        if (env.get(k) or "").strip():
+            out.add(env[k].strip())
+    return sorted(os.path.realpath(os.path.expanduser(x)) for x in out)
 
 
 def areas_digest(doc: dict[str, str]) -> str:
