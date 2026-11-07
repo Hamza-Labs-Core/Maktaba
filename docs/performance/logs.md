@@ -43,8 +43,33 @@ Each bench prints its numbers as JSON at the end (`LOGBENCH_OUT=<file>` also wri
 a file, which the CI job keeps as an artifact). The corpus is seeded (`logbench.Corpus`), so
 two runs read the same lines.
 
+## The Python logger
+
+`pipeline/tools/log_bench.py` times the pipeline's logger (contextvars, the shared redaction,
+the ring, the JSON renderer) writing to `/dev/null`: 200,000 calls at the CI load
+(`LOGBENCH_SCALE` scales it), ≤ 20 µs at p99 on the reference, times the runner's factor
+(its own hashing and JSON loop, clamped to 1–4). The `log-bench` job runs it after the Go
+benches and keeps its numbers (`logbench-python.json`).
+
+Writing it found two costs in the redaction, both fixed:
+
+- `Rules.key_sensitive` was an `lru_cache` keyed on the rules themselves, so every field of
+  every line hashed the whole frozen rule set (about 90 hash calls a line). The answer is now
+  kept on the instance by key.
+- Every string field went through all eight value rules, even the logger's own fields (time,
+  level, service, version, env, node, component, the event's literal name). Those are skipped,
+  and a value that matches none of the rules' literal `needs` (one compiled pattern), with
+  too few digits, dots and colons for a card or an address, is returned at once.
+
+## Every night on a Mac
+
+`.github/workflows/nightly-perf.yml` runs the Go and Python benches at 04:17 UTC on a
+macOS arm64 runner (the reference class), keeps the numbers for 90 days (`logbench-nightly`),
+and compares them with the last successful night's (`tools/logbench/compare.py`). Each run is
+divided by its runner factor first. A cost more than 20 % higher opens the issue "Log benches:
+a cost grew by more than 20 % overnight", or comments on it while it is open. A bench over its
+budget fails the run.
+
 ## Not measured here yet
 
-- The Python logger's cost per call.
 - The `logs` role's CPU share and memory at a steady 500 lines/s on a live home.
-- A nightly run on a Mac runner, with an issue opened on a regression over 20 %.

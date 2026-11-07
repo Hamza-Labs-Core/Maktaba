@@ -273,6 +273,15 @@ def _make_redact_processor(redact_set: frozenset[str]) -> structlog.types.Proces
     return processor
 
 
+# Fields the logger writes itself, never from a caller's data: the time, the level, the
+# process's own service, version, env, node and component, and the event's name (a literal:
+# ``make lint-log`` refuses a formatted one). Scrubbing them cost ~11 µs a line for nothing
+# (Epic 53 story 53.13's Python logger bench).
+_OWN_FIELDS = frozenset(
+    {"ts", "timestamp", "level", "service", "version", "env", "node", "component", "event"}
+)
+
+
 def _redact_in_place(
     event_dict: MutableMapping[str, Any],
     redact_set: frozenset[str],
@@ -283,6 +292,8 @@ def _redact_in_place(
         if user_h:
             event_dict["user_h"] = user_h
     for key, value in list(event_dict.items()):
+        if key in _OWN_FIELDS:
+            continue
         lowered = key.lower()
         if lowered in redact_set or _redact.RULES.key_sensitive(lowered, isinstance(value, str)):
             event_dict[key] = REDACTED_VALUE
