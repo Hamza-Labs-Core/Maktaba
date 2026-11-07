@@ -151,7 +151,21 @@ function installBody(f: InstallForm): FormData {
   return form;
 }
 
+/** The link of this home to a plugin store account (story 54.15 §5). */
+export interface StoreLinkStatus {
+  linked: boolean;
+  home_id?: string;
+  linked_at?: string;
+  store: string;
+  pending?: { user_code: string; verification_uri: string; expires_at: string; interval: number };
+}
+
 export const pluginsApi = {
+  storeStatus: () => api.get<StoreLinkStatus>("/api/plugins/store-account"),
+  storeLink: () =>
+    api.post<NonNullable<StoreLinkStatus["pending"]>>("/api/plugins/store-account/link"),
+  storePoll: () => api.post<StoreLinkStatus>("/api/plugins/store-account/poll"),
+  storeUnlink: () => api.delete<{ linked: boolean }>("/api/plugins/store-account"),
   list: () => api.get<{ plugins: Plugin[]; policy: Policy }>("/api/plugins"),
   show: (id: string) => api.get<PluginDetail>(`/api/plugins/${enc(id)}`),
   install: (f: InstallForm, onProgress?: (fraction: number) => void) =>

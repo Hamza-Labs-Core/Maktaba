@@ -170,7 +170,8 @@ describe("Search (test-cases/search.md)", () => {
     expect(link).toHaveAttribute("href", "/videos/vid-1/watch?t=72");
     expect(link).toHaveTextContent("[1:12 → 1:18]");
     expect(within(link).getByText("quick").tagName).toBe("MARK");
-    expect(loc()).toBe("/search?q=quick&mode=hybrid&sid=sid-1");
+    // the sid reaches the URL after the results show (#697)
+    await waitFor(() => expect(loc()).toBe("/search?q=quick&mode=hybrid&sid=sid-1"));
     expect(screen.getByRole("heading", { name: "In transcripts" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "In titles" })).toBeNull();
   });
@@ -237,7 +238,8 @@ describe("Search (test-cases/search.md)", () => {
     expect(searchCalls()).toHaveLength(2);
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "go back" }));
-    expect(loc()).toBe("/search?q=one&mode=hybrid&sid=sid-1");
+    // the sid reaches the URL after the results show (#697)
+    await waitFor(() => expect(loc()).toBe("/search?q=one&mode=hybrid&sid=sid-1"));
     expect(await screen.findByText("one first")).toBeInTheDocument();
     expect(rowTitles(titlesSection())).toEqual(["one first", "one second"]);
     expect(screen.getByRole("combobox", { name: "Search" })).toHaveValue("one");
@@ -1054,7 +1056,8 @@ describe("Search results redesign (test-cases/search.md SRC-28..)", () => {
     const user = userEvent.setup();
     await user.click(within(status).getByRole("button", { name: "Back to page 1" }));
     await waitFor(() => expect(rowTitles(titlesSection())[0]).toBe("New 1"));
-    expect(loc()).toBe("/search?q=fox&mode=hybrid&sid=sid-1");
+    // the sid reaches the URL after the results show (#697)
+    await waitFor(() => expect(loc()).toBe("/search?q=fox&mode=hybrid&sid=sid-1"));
     expect(screen.queryByRole("status")).toBeNull();
     expect(runs).toBe(1);
   });
@@ -1147,7 +1150,8 @@ describe("Search results redesign (test-cases/search.md SRC-28..)", () => {
     const user = userEvent.setup();
     await user.click(live);
     await waitFor(() => expect(rowTitles(titlesSection())).toEqual(["Old A", "Old B"]));
-    expect(loc()).toBe("/search?q=kahf&mode=fts&sid=sid-live");
+    // the sid reaches the URL after the results show (#697)
+    await waitFor(() => expect(loc()).toBe("/search?q=kahf&mode=fts&sid=sid-live"));
     expect(searchCalls()).toHaveLength(0);
     expect(screen.getByRole("combobox", { name: "Search" })).toHaveValue("kahf");
 

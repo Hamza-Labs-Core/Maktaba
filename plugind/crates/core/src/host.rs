@@ -24,6 +24,7 @@ wasmtime::component::bindgen!({
     world: "plugin",
 });
 
+use maktaba::plugin::compute::{Embeddings, GenerateOptions};
 pub use maktaba::plugin::types::{CallError, Level, Subject, SubjectKind};
 use maktaba::plugin::write::Chapter;
 
@@ -32,6 +33,12 @@ pub const MAX_VALUE: usize = 64 << 10;
 pub const MAX_ARTIFACT: usize = 4 << 20;
 pub const MAX_READ: u32 = 8 << 20;
 pub const MAX_REQUESTS: usize = 1000;
+/// compute (story 54.21 §1): texts per embed call, characters per text, prompt bytes and
+/// the most tokens one generate call may ask for
+pub const MAX_EMBED_TEXTS: usize = 64;
+pub const MAX_EMBED_CHARS: usize = 2000;
+pub const MAX_PROMPT: usize = 32 << 10;
+pub const MAX_TOKENS: u32 = 1024;
 
 /// Memory, table and instance caps of one job's store (54.02 §5). A component holds a few
 /// core instances, memories and tables (its module, shims, an adapter), so the counts are
@@ -447,6 +454,44 @@ impl maktaba::plugin::exports::Host for JobState {
     }
 }
 
+impl maktaba::plugin::compute::Host for JobState {
+    fn embed(&mut self, texts: Vec<String>) -> Result<Embeddings, CallError> {
+        if texts.len() > MAX_EMBED_TEXTS || texts.iter().any(|t| t.chars().count() > MAX_EMBED_CHARS) {
+            return Err(CallError::TooLarge);
+        }
+        let v = self.json("compute", "embed", json!({"texts": texts}))?;
+        let model = v.get("model").and_then(Value::as_str).unwrap_or("").to_string();
+        let vectors = v
+            .get("vectors")
+            .and_then(Value::as_array)
+            .map(|rows| {
+                rows.iter()
+                    .map(|r| {
+                        r.as_array()
+                            .map(|xs| xs.iter().map(|x| x.as_f64().unwrap_or(0.0) as f32).collect())
+                            .unwrap_or_default()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Embeddings { model, vectors })
+    }
+
+    fn generate(&mut self, prompt: String, options: GenerateOptions) -> Result<String, CallError> {
+        self.too_large(prompt.len() + options.json_schema.as_ref().map_or(0, String::len), MAX_PROMPT)?;
+        if options.max_tokens == 0 || options.max_tokens > MAX_TOKENS {
+            return Err(CallError::TooLarge);
+        }
+        let v = self.json(
+            "compute",
+            "generate",
+            json!({"prompt": prompt, "max_tokens": options.max_tokens,
+                   "temperature": options.temperature, "json_schema": options.json_schema}),
+        )?;
+        Ok(v.get("text").and_then(Value::as_str).unwrap_or("").to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,5 +508,9 @@ mod tests {
         assert!(covers(&g, "data", "put"));
         assert!(covers(&g, "exports", "read"));
         assert!(!covers(&g, "library", "video"));
+        assert!(!covers(&g, "compute", "embed"));
+        let g = granted_bases(&["compute.embed".into()]);
+        assert!(covers(&g, "compute", "embed"));
+        assert!(!covers(&g, "compute", "generate"));
     }
 }

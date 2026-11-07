@@ -18,6 +18,7 @@ package plugins
 //	DELETE /api/plugins/{id}                 ?purge=true
 //	GET    /api/plugins/{id}/writes          ?before=&limit=
 //	POST   /api/plugins/{id}/writes/revert   {ids: [...]}
+//	…/api/plugins/store-account              linking to a store account (store.go, 54.15 §5)
 //
 // Every one is admin-only: no sign-in 401; a viewer, a cloud-linked play sign-in (its
 // scope clears IsAdmin) and a token without the admin scope 403. Switches go through the
@@ -41,6 +42,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
@@ -55,6 +57,8 @@ type Admin struct {
 	// VerifyPassword checks the signed-in admin's password again (story 54.10 §2: turning
 	// on Allow unreviewed plugins asks for it); nil: none is asked.
 	VerifyPassword func(ctx context.Context, userID, password string) error
+	// Store links this home to a plugin store account (story 54.15 §5; nil: 503).
+	Store *storelink.Link
 }
 
 // Mount adds the routes to r.
@@ -66,6 +70,10 @@ func (h *Admin) Mount(r chi.Router) {
 		r.Get("/api/plugins/graph", h.graph)
 		r.Put("/api/plugins/policy", h.putPolicy)
 		r.Post("/api/plugins/install", h.install)
+		r.Get("/api/plugins/store-account", h.storeStatus)
+		r.Post("/api/plugins/store-account/link", h.storeLink)
+		r.Post("/api/plugins/store-account/poll", h.storePoll)
+		r.Delete("/api/plugins/store-account", h.storeUnlink)
 		r.Get("/api/plugins/{id}", h.show)
 		r.Put("/api/plugins/{id}/grants", h.grants)
 		r.Post("/api/plugins/{id}/enable", h.switchTo(components.WantEnabled))

@@ -342,8 +342,21 @@ export function subGroups(fields: RuleField[], minGroup = 8, minFamily = 3): Sub
   return out;
 }
 
-/** Localised short and long weekday names, Monday first. */
+const weekdayNamesByLocale = new Map<string, { short: string; long: string }[]>();
+
+/** Localised short and long weekday names, Monday first. Kept per locale: every rule
+ * row asks on every render, and 14 Intl.DateTimeFormat objects a row made typing in the
+ * page slow (#697). */
 export function weekdayNames(locale: string): { short: string; long: string }[] {
+  let names = weekdayNamesByLocale.get(locale);
+  if (!names) {
+    names = makeWeekdayNames(locale);
+    weekdayNamesByLocale.set(locale, names);
+  }
+  return names;
+}
+
+function makeWeekdayNames(locale: string): { short: string; long: string }[] {
   return WEEKDAYS.map((_, i) => {
     // 2024-01-01 is a Monday
     const d = new Date(Date.UTC(2024, 0, 1 + i));

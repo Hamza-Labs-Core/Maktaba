@@ -238,11 +238,13 @@ func windowsPieces(old, cur Dirs, getenv func(string) string) ([]piece, error) {
 			piece{filepath.Join(old.Config, "server.toml"), filepath.Join(cur.Config, "server.toml"), false},
 			piece{filepath.Join(old.Keys, "secrets.key"), filepath.Join(cur.Keys, "secrets.key"), true},
 			piece{filepath.Join(old.Keys, "stream-signing.key"), filepath.Join(cur.Keys, "stream-signing.key"), true})
-		passwords, err := filepath.Glob(filepath.Join(old.Keys, "postgres-*.password"))
+		// the database's credential files, by name: what is copied (and, on uninstall,
+		// printed) is where they are, never what they hold
+		pgFiles, err := filepath.Glob(filepath.Join(old.Keys, "postgres-*.password"))
 		if err != nil {
 			return nil, err
 		}
-		for _, p := range passwords {
+		for _, p := range pgFiles {
 			ps = append(ps, piece{p, filepath.Join(cur.Keys, filepath.Base(p)), true})
 		}
 	}
