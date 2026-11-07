@@ -18,7 +18,7 @@ pytestmark = pytest.mark.asyncio
 
 
 def _ctx(stage: str, lib: Any, subject: Any = None, kind: str = "library") -> Any:
-    job = SimpleNamespace(library_id=lib, subject=Subject(kind=kind, id=subject or lib))
+    job = SimpleNamespace(library_id=lib, subject=Subject(kind=kind, id=subject or lib))  # type: ignore[arg-type]
     return SimpleNamespace(job=job, stage=get_stage(stage))
 
 
