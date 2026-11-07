@@ -251,3 +251,23 @@ test("publish-data.sh commits and pushes the data, and publishes at once only on
   const pushed = git(path.join(root, "origin.git"), "show", "status-data:checks/relay/2026-11-03.json");
   assert.deepEqual(JSON.parse(pushed), { date: "2026-11-03", rounds: 4, operational: 3, degraded: 0, outage: 1 });
 });
+
+test("every template for users (docs/runbooks/cloud/templates, story 50.12) is a post the build takes", () => {
+  const here = path.dirname(new URL(import.meta.url).pathname);
+  const dir = path.join(here, "..", "..", "docs", "runbooks", "cloud", "templates");
+  const inc = tmp();
+  const names = fs.readdirSync(dir).filter((n) => n.endsWith(".md"));
+  assert.ok(names.length >= 5, "the four stages and maintenance");
+  names.forEach((n, i) => fs.copyFileSync(path.join(dir, n), path.join(inc, `2026-01-0${i + 1}-${n}`)));
+  const posts = loadPosts(inc);
+  assert.equal(posts.length, names.length);
+  for (const p of posts) assert.ok(p.title.ar && p.body.ar && p.body.en, p.id);
+  assert.ok(posts.some((p) => p.kind === "maintenance"));
+});
+
+test("a post's severity is sev1, sev2 or sev3", () => {
+  const inc = tmp();
+  put(inc, "2026-11-03-x.md", post({ component: "relay", state: "investigating", started: "2026-11-03T10:00:00Z", title_en: "a", title_ar: "ب", severity: "critical" }));
+  assert.throws(() => loadPosts(inc), /2026-11-03-x\.md: severity must be sev1, sev2 or sev3/);
+});
+

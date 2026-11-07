@@ -68,7 +68,28 @@ A state is `operational`, `degraded`, `outage` or `maintenance`; `overall` is th
 Add the minute to the address (`summary.json?t=<unix minute>`): GitHub Pages lets caches keep
 a copy for 10 minutes. The page's source, its tests and the posts are in
 [status/](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/status); how to post is in
-[docs/runbooks/cloud-status-page.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/runbooks/cloud-status-page.md).
+[docs/runbooks/cloud/status-page.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/runbooks/cloud/status-page.md).
+
+## When something goes wrong
+
+Failover and alerts handle the failures that were planned for; the rest need a person. Every
+alert carries a severity and links to a runbook in
+[docs/runbooks/cloud](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/docs/runbooks/cloud),
+each laid out the same way: **When**, **Check**, **Do**, **Done when**, **Tell users**.
+
+| Severity | Means | Response | Users hear |
+|---|---|---|---|
+| SEV1 | paying users can't play remotely, or data is at risk | within 15 minutes, any hour; the phone is paged every 5 minutes until acknowledged | the status page within 15 minutes, then every 30 minutes |
+| SEV2 | degraded, or one safety net gone | within the hour by day | the status page if they notice |
+| SEV3 | no user impact yet | the next working day | nothing |
+
+Recovery is one click, never a terminal session: **Cloud switchover**, **Cloud failover** and
+**Cloud DNS swap** are GitHub Actions workflows, approved by the owner, that run the same
+scripts the cloud rehearsal runs first against its own pair (`runbook-switchover`,
+`runbook-forced-failover`, `runbook-dns-swap`). Updates for users come from templates in
+English and Arabic, and every SEV1 and every automatic failover gets a blameless postmortem
+within 5 days. The 99.9 % target is a target, not a guarantee: no credit or refund is given
+for downtime, and a check in CI keeps any page or template from offering one.
 
 ## How it is built
 
@@ -109,6 +130,7 @@ breaks them on purpose:
 | `restore-pitr` | destroys both nodes | the database comes back with exactly the rows up to the chosen time |
 | `cert-on-standby` | fresh nodes | each holds its own wildcard certificate before any traffic |
 | `status-feed` | stops every relay process | the status page's `summary.json` says remote access is down within two probe rounds, and working again after two passing ones |
+| `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | runs the one-click recovery workflows' scripts; for the DNS swap, with the Hetzner API down | each does what its runbook says against the real pair: a new leader, the old one fenced, the relay's names on the new leader |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,
 Cloudflare or Let's Encrypt host is ever contacted: a fake Hetzner API moves the address,

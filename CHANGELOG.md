@@ -287,6 +287,12 @@ build fails when the two differ.
 
 ### Added
 
+- **The Player for Windows and Linux has Report this on its error screens and says what
+  happened to its last crash.** An error's **Report this** opens Report a problem with that
+  call's reference, and after signing in the player says once whether its last crash went to
+  the home or stays on the computer. maktaba.dev's Player page shows the crash-report question
+  and Report a problem on an iPhone and an Android phone.
+
 - **The Apple apps send crash reports to the home, report problems, and the Remote reads the
   home's diagnostics.** Maktaba Remote's Home tab has **Errors** (the error groups with their
   14 days, a group's chart and lines, Mark seen, Resolve and Mute), **Logs** (search, and
@@ -409,6 +415,14 @@ build fails when the two differ.
   show; on the home's own network the cloud's line never shows; and a status page that can't
   be reached shows nothing. The home's web app and the cloud's editions allow that one address
   in their Content Security Policy.
+- **Maktaba Cloud's incidents are handled by runbook and one click (Epic 50, story 50.12).**
+  Every alert carries a severity (SEV1 pages the phone every 5 minutes until acknowledged,
+  SEV2 once, SEV3 is a daily email) and links to a runbook in `docs/runbooks/cloud/`, each with
+  When, Check, Do, Done when and Tell users. Switchover, forced failover and the DNS swap (when
+  the Hetzner API is down) are one-click GitHub Actions workflows, proven first by the cloud
+  rehearsal against its own pair. Status updates come from English and Arabic templates; a SEV1
+  without a postmortem after 5 days opens a reminder; the Billing page states the 99.9 % target
+  and that no credit is given, and CI keeps any template or string from offering one.
 - **The apps ride out a Maktaba Cloud outage (Epic 50, story 50.13).** `GET /v1/homes` gives
   each home's `connections` (direct, then the relay; a plan without the relay lists none) beside
   the old fields. The web, cloud web, Apple and Android apps keep each account's list on the
