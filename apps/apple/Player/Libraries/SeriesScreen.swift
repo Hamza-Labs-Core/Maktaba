@@ -10,6 +10,7 @@ struct SeriesScreen: View {
     let id: String
 
     @State private var model: SeriesModel
+    @State private var pluginPanels: [PanelView] = []
     @Environment(\.dynamicTypeSize) private var typeSize
 
     init(context: PlayerContext, id: String) {
@@ -32,8 +33,9 @@ struct SeriesScreen: View {
                     seasons
                     episodes
                     // story 54.20: "From plugins", collapsed, below the series' own sections
-                    SubjectPanels<PlayerRoute>(client: client, caps: context.session.capabilities.current,
-                                               kind: "series", id: id, search: { .search(query: $0) })
+                    if !pluginPanels.isEmpty {
+                        PluginPanelsSection<PlayerRoute>(panels: pluginPanels, search: { .search(query: $0) })
+                    }
                 }
             }
             .padding(MaktabaTokens.Spacing.s4)
@@ -42,6 +44,7 @@ struct SeriesScreen: View {
         .maktabaSurface()
         .refreshable { await model.load() }
         .task { await model.load() }
+        .subjectPanels(client: client, caps: context.session.capabilities.current, kind: "series", id: id, into: $pluginPanels)
         .alert(Text("Could not save the watched mark. Try again.", tableName: "Libraries",
                     comment: "Marking an episode or a season watched did not work"),
                isPresented: $model.markFailed) {
