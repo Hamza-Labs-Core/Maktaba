@@ -129,7 +129,7 @@ async def enqueue_job(
         job_id = got.get("job_id")
         return EnqueueResult(
             job_id=None if job_id is None else int(job_id),
-            outcome=got.get("outcome", "disabled"),  # type: ignore[arg-type]
+            outcome=got.get("outcome", "disabled"),
         )
     if is_pg(db):
         row = await db.fetchrow(
