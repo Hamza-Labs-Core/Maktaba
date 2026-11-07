@@ -579,8 +579,11 @@ fn memories_are_capped_whatever_the_instances() {
     }
 }
 
-/// A component whose `run` counts down `iterations` (time in the guest, across epoch ticks)
-/// and that holds `filler` more functions (time in the compile); its run answers like hello's.
+/// A component whose `run` counts down `iterations` times the stage name's length (time in
+/// the guest, across epoch ticks: stage "x" one unit, "xxxxxxxxxx" ten)
+/// and that holds `filler` more functions in a core module of their own, compiled with the
+/// component but never instantiated (time in the compile, none in the job); its run answers
+/// like hello's.
 fn slow(iterations: u64, filler: usize) -> Vec<u8> {
     let mut m = String::from(
         "(component\n  (core module $m\n    (memory (export \"memory\") 1)\n    \
@@ -588,11 +591,12 @@ fn slow(iterations: u64, filler: usize) -> Vec<u8> {
     );
     m.push_str(&format!(
         "    (func (export \"run\") (param i32 i32) (result i32) (local $n i64)\n      \
-         (local.set $n (i64.const {iterations}))\n      \
+         (local.set $n (i64.mul (i64.const {iterations}) (i64.extend_i32_u (local.get 1))))\n      \
          (block $done (loop $l (br_if $done (i64.eqz (local.get $n)))\n        \
          (local.set $n (i64.sub (local.get $n) (i64.const 1))) (br $l)))\n      \
          (i32.store (i32.const 2048) (i32.const 0)) i32.const 2048)\n"
     ));
+    m.push_str("  )\n  (core module $filler\n");
     for k in 0..filler {
         // enough work per function that Cranelift spends time on each
         m.push_str(&format!(
@@ -617,51 +621,67 @@ fn slow(iterations: u64, filler: usize) -> Vec<u8> {
     wat::parse_str(&m).unwrap()
 }
 
-/// 54.02 §5: compiling a package the host had not loaded is not the job's time. Its compile
-/// takes longer than the job's whole limit (the filler), and its guest spans epoch ticks:
-/// the stage still runs, and the compile is reported on its own.
+/// 54.02 §5: compiling a package the host had not loaded is not the job's time. The guest's
+/// work is timed first (a package without filler, already loaded); the job's limit is twice
+/// that. The package under test has filler compiled with it but never instantiated, so its
+/// compile takes longer than the whole limit: the stage still runs, and the compile is
+/// reported on its own.
 #[test]
 fn a_compile_is_not_the_jobs_time() {
     let f = Fixture::new(false);
-    let timeout_ms = 400;
-    let p = f.package("slowcompile", &slow(200_000_000, 80_000), &[]);
-    let r = f.run(&p, "x", &[], Limits { timeout_ms, fuel: 10_000_000_000_000, ..Default::default() });
+    let fuel = 10_000_000_000_000;
+    let iterations = 200_000_000;
+    let warm = f.package("busy-only", &slow(iterations, 0), &[]);
+    f.host.preload(ID, VERSION, &warm).unwrap();
+    let solo = f.run(&warm, "x", &[], Limits { timeout_ms: 60_000, fuel, ..Default::default() });
+    assert_eq!(solo.outcome, Outcome::Ok, "{solo:?}");
+    let timeout_ms = (solo.wall_ms * 2).max(300);
+
+    let g = Fixture::new(false);
+    let p = g.package("slowcompile", &slow(iterations, 80_000), &[]);
+    let r = g.run(&p, "x", &[], Limits { timeout_ms, fuel, ..Default::default() });
     assert!(
         r.compile_ms > timeout_ms,
         "the compile took {} ms, not more than the job's {timeout_ms} ms: add filler",
         r.compile_ms
     );
-    assert_eq!(r.outcome, Outcome::Ok, "{r:?}");
-    assert!(r.wall_ms < timeout_ms, "{r:?}");
+    assert_eq!(r.outcome, Outcome::Ok, "a limit of {timeout_ms} ms (the guest alone took {} ms): {r:?}", solo.wall_ms);
 }
 
-/// 54.02 §5: a job waiting for its plugin's slots keeps its whole limit. The plugin runs two
-/// jobs at once; the third waits for one of them to end, then runs. Each job's limit is half
-/// as long again as one job takes here (measured first): a wait and a run together exceed it,
-/// a run alone does not.
+/// 54.02 §5: a job waiting for its plugin's slots keeps its whole limit. One unit of guest
+/// work is timed first: longer than two epoch ticks, so a deadline that passed is seen while
+/// the guest runs (the host checks it only at a tick). Two long jobs (six units, a generous
+/// limit) take the plugin's two slots; then a short one (one unit) comes, with a limit of
+/// three units: it waits about four units and runs one. With its clock from its arrival it
+/// would need five and time out; it runs within its three.
 #[test]
 fn a_wait_for_a_slot_is_not_the_jobs_time() {
     let f = Fixture::new(false);
-    let p = f.package("busy", &slow(1_000_000_000, 0), &[]);
+    let p = f.package("busy", &slow(400_000_000, 0), &[]);
     f.host.preload(ID, VERSION, &p).unwrap();
     let fuel = 10_000_000_000_000;
-    let first = f.run(&p, "x", &[], Limits { timeout_ms: 60_000, fuel, ..Default::default() });
-    assert_eq!(first.outcome, Outcome::Ok, "{first:?}");
-    let busy = first.wall_ms.max(1);
-    let lim = || Limits { timeout_ms: busy * 3 / 2, fuel, ..Default::default() };
-    let results: Vec<protocol::RunResult> = std::thread::scope(|sc| {
-        let a = sc.spawn(|| f.run(&p, "x", &[], lim()));
-        let b = sc.spawn(|| f.run(&p, "x", &[], lim()));
-        std::thread::sleep(Duration::from_millis(busy / 10));
-        let c = sc.spawn(|| f.run(&p, "x", &[], lim()));
-        vec![a.join().unwrap(), b.join().unwrap(), c.join().unwrap()]
+    let unit = f.run(&p, "x", &[], Limits { timeout_ms: 60_000, fuel, ..Default::default() });
+    assert_eq!(unit.outcome, Outcome::Ok, "{unit:?}");
+    let unit_ms = unit.wall_ms;
+    assert!(unit_ms >= 200, "one unit took {unit_ms} ms: under two epoch ticks, a passed deadline might never be seen");
+    let long = || f.run(&p, "xxxxxx", &[], Limits { timeout_ms: 600_000, fuel, ..Default::default() });
+    let short_limit = unit_ms * 3;
+    let (longs, short) = std::thread::scope(|sc| {
+        let a = sc.spawn(long);
+        let b = sc.spawn(long);
+        // both long jobs hold their slots before the short one comes
+        std::thread::sleep(Duration::from_millis(unit_ms * 2));
+        let short = f.run(&p, "x", &[], Limits { timeout_ms: short_limit, fuel, ..Default::default() });
+        ([a.join().unwrap(), b.join().unwrap()], short)
     });
-    for r in &results {
-        assert_eq!(r.outcome, Outcome::Ok, "busy {busy} ms: {r:?}");
+    for r in &longs {
+        assert_eq!(r.outcome, Outcome::Ok, "a long job (unit {unit_ms} ms): {r:?}");
     }
-    let waited = results.iter().map(|r| r.wait_ms).max().unwrap();
-    // the third waited for most of a job: with the clock from its arrival, it would overrun
-    assert!(waited * 4 >= busy * 3, "the third job waited only {waited} ms (busy {busy} ms): {results:?}");
+    assert!(
+        short.wait_ms + short.wall_ms > short_limit,
+        "the short job did not wait long enough to show it (unit {unit_ms} ms, limit {short_limit} ms): {short:?}"
+    );
+    assert_eq!(short.outcome, Outcome::Ok, "the short job (unit {unit_ms} ms, limit {short_limit} ms): {short:?}");
 }
 
 /// 54.02 §6: a compile has a cap of its own. A package whose compile overruns it fails with
