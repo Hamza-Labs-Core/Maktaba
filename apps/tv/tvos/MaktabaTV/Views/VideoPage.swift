@@ -13,6 +13,9 @@ struct VideoPage: View {
     @State private var played: TVPlayback?
     @State private var seriesID: String?
     @Environment(\.queuePlayer) private var queue
+    @Environment(\.appSession) private var session
+    /// Story 54.20: installed plugins' panels, the TV's subset (kv, badges, markers).
+    @State private var panels: [PanelView] = []
 
     var body: some View {
         Group {
@@ -47,6 +50,8 @@ struct VideoPage: View {
                                 .foregroundStyle(Theme.muted)
                                 .lineLimit(8)
                         }
+                        // story 54.20: "From plugins", open on the TV; a marker plays from its time
+                        PluginPanelsSection<String>(panels: panels, play: { play(video, from: $0) })
                     }
                 }
                 .padding(80)
@@ -93,6 +98,9 @@ struct VideoPage: View {
             video = try await client.video(id)
             seriesID = try? await client.myVideo(id).series?.id
             problem = nil
+            panels = session?.capabilities.current.panels == true
+                ? ((try? await client.panels(kind: "video", id: id, language: SubjectPanels<String>.language)) ?? [])
+                : []
         } catch {
             problem = HomeFailure.shown("load video", error) ?? problem
         }

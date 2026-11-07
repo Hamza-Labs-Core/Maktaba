@@ -116,6 +116,23 @@ fun SearchScreen(nav: PlayerNavigator) {
     SearchContent(model, home.client, nav, wordsOnly = home.features().explains(Feature.SEMANTIC_SEARCH))
 }
 
+/**
+ * Search with [q] run at once, pushed on the current section's stack (a plugin panel's chip,
+ * story 54.20 §2: "tappable chips that run a Maktaba search for their text").
+ */
+@Composable
+fun SearchForScreen(q: String, nav: PlayerNavigator) {
+    val home = LocalPlayerHome.current
+    val model = home.keep("search.for.$q") {
+        SearchModel(home.client, home.session::signedOut).apply {
+            meaningOn = { home.capabilities.value.isOn(Feature.SEMANTIC_SEARCH) }
+            query = q
+        }
+    }
+    LaunchedEffect(model) { if (model.query == q) model.submit(q) }
+    SearchContent(model, home.client, nav, wordsOnly = home.features().explains(Feature.SEMANTIC_SEARCH))
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNavigator, wordsOnly: Boolean = false) {

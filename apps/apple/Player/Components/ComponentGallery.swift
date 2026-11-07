@@ -160,7 +160,7 @@ struct ComponentGallery: View {
     }
 
     /// A row loading: shimmering blocks in its shape, and a card whose poster never comes
-    /// (the tests hold `/api/videos/slow/poster`).
+    /// (`neverLoads`).
     private var shimmer: some View {
         VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s4) {
             Shimmer(cornerRadius: MaktabaTokens.Radius.sm).frame(width: 160, height: 22)
@@ -170,8 +170,18 @@ struct ComponentGallery: View {
                 }
             }
             PosterCard(title: say("Still loading", "ما زال يُحمَّل"), poster: poster("slow"))
+                .environment(\.imageSource, Self.neverLoads)
         }
         .padding(.horizontal, MaktabaTokens.Spacing.s4)
+    }
+
+    /// Pictures that never come (until the page goes): the shimmer stays as long as the test
+    /// looks. A slow answer from the tests' home did not keep it: the picture's 15 s timeout
+    /// (NFR-15) ended the load, the card showed its title instead, and a loaded iPad counted
+    /// three shimmers of four 25 s after the launch (#695).
+    private static let neverLoads = ImageSource(cache: .shared) { _ in
+        try await Task.sleep(for: .seconds(24 * 3600))
+        return [:]
     }
 }
 

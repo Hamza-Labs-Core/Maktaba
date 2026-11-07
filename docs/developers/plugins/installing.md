@@ -82,11 +82,58 @@ The **circuit breaker** stops a plugin that keeps failing: 5 traps, timeouts or 
 10 minutes, more than half of its last 20 jobs failing, or 50 refused API calls in 10 minutes.
 It is held, the admins get one notice, and its jobs stay queued until an admin presses Start.
 
+**Problem reports** leave your log lines out: they are your plugin's own text, and a report
+goes to whoever reads it. An admin who wants them in ticks **Include its logs in problem
+reports** on your plugin's page. Maktaba's host lines about your plugin (`plugins.host`) are
+always included.
+
+**Metrics.** The home's `/metrics` has, for each plugin: `maktaba_plugin_jobs_total{plugin,
+outcome}` (`ok`, `failed`), `maktaba_plugin_job_seconds{plugin, quantile}` (0.5 and 0.95 over
+its last 20 jobs), `maktaba_plugin_memory_peak_bytes{plugin}` (the highest of those jobs), and
+`maktaba_plugin_refusals_total{plugin, code}` and `maktaba_plugin_api_calls_total{plugin,
+route}` from the plugin API.
+
 ## What it wrote
 
 Every change your plugin makes to the library (a field, a tag, chapters, subtitles, artwork) is
 recorded with the value before and after. The admin can select changes and revert them; a
 change someone made after your plugin wins.
+
+## The store's lists, updates and withdrawn plugins
+
+A home fetches the store's signed files straight from `plugins-cdn.maktaba.tv`, never through
+Maktaba Cloud, and only while a plugin is installed or an admin opened Browse in the last 7
+days: a tiny `revoked-head.json` every 5 minutes, `revoked.json` when it changed (and every
+hour), `catalog-1.json` every 6 hours, and `store-keys.json` with each. Each is verified
+([Signing and the chain of trust](trust.md)) and kept in `<data>/state/plugins-lists/` and in
+Postgres; a copy older than the newest seen is refused. The Plugins page says when withdrawn
+plugins were last checked, and warns when the list has expired: plugins keep running, but
+installs and updates from the store wait (`409 store_list_stale`) until a fresh list arrives.
+
+When the store withdraws a plugin:
+
+| Action | On this home |
+|---|---|
+| `disable` | held at once (*Waiting* `revoked`, its jobs kept), admins told why; it cannot be started (`409 plugin_revoked`), only removed. An install, update or rollback to a covered version is refused too. |
+| `warn` | it keeps running with a warning on its card and page; the admin may turn it off |
+| `delist` | nothing changes for the installed copy; no more updates |
+
+A `disable` is separate from the admin's own keep-off: turning a plugin on never lifts it. If
+the store lifts it later, the plugin stays held until an admin starts it, with a notice saying
+so.
+
+**Updates.** A store-signed plugin whose newer compatible version is in the catalog shows
+Update. **Update automatically at night** (per plugin, off by default) installs, between 02:00
+and 05:00, the updates that ask for no new capability; one that asks for more waits for the
+admin. A store install is `POST /api/plugins/install` with JSON `{store: {id, version}}`; the
+package comes from the CDN by its sha256 and is checked like any file.
+
+The routes, admin only (a viewer never makes the home fetch): `GET /api/plugins/catalog`,
+`GET /api/plugins/trust`, `PUT /api/plugins/{id}/auto-update {on}`.
+
+An offline home (`serve --offline`, `MAKTABA_OFFLINE=1`) fetches none of the lists and sends no
+`seen` report: the kept lists age, an expired one warns and stops no plugin, and installs and
+updates from the store answer `409 store_offline` until the home is online again.
 
 ## Linking a home to a store account
 
@@ -118,6 +165,7 @@ All admin-only (no sign-in 401; a viewer or a cloud-linked play sign-in 403):
 | `GET /api/plugins`, `GET /api/plugins/{id}` | the plugins, one plugin's detail |
 | `POST /api/plugins/install`, `POST /api/plugins/{id}/update` | install or update from a file |
 | `PUT /api/plugins/{id}/grants` | capabilities, libraries, all libraries |
+| `PUT /api/plugins/{id}/report-logs` | `{"include": true}`: problem reports carry its log lines |
 | `POST /api/plugins/{id}/enable`, `/disable`, `/start`, `/stop` | the switches |
 | `POST /api/plugins/{id}/rollback` | to the kept version (`?clear_data=true`) |
 | `DELETE /api/plugins/{id}` | remove (`?purge=true`: and clear what it wrote) |
