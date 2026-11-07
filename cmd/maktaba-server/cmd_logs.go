@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logindex"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logindex"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 

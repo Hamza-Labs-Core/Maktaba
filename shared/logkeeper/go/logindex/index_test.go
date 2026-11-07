@@ -16,7 +16,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logkeeper"
+	logkeeper "github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go"
 )
 
 var t0 = time.Date(2026, 11, 6, 10, 15, 0, 0, time.UTC)

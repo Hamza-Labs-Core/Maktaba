@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/logfiles"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/logkeeper/go/logfiles"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 )
 
