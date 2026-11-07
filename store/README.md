@@ -143,10 +143,30 @@ empty. To open it:
    add a passkey, and call `POST /v1/admin/bootstrap {token}` once with `BOOTSTRAP_ADMIN_TOKEN`:
    that account is the first `store_admin`. Delete the secret afterwards.
 4. Grant `store_reviewer` to the reviewers (each with a passkey), then set
-   `SUBMISSIONS_OPEN = "true"`. The isolated runner is the GitHub Actions fallback
-   (`RUNNER = "github"`); Cloudflare Containers (`check-runner/Dockerfile`) needs the spike of
-   README §14 item 11 first, and is not wired.
+   `SUBMISSIONS_OPEN = "true"`. The isolated runner starts as the GitHub Actions fallback
+   (`RUNNER = "github"`, with `RUNNER_DISPATCH_TOKEN`).
 5. Once the root keys are in a server release (step 1), homes accept the store's signatures.
+
+### The isolated runner on Cloudflare Containers (optional, #756)
+
+The checks' runner (C7's ClamAV scan, C8 the sandbox run, C10 the reproducible build) can run
+on Cloudflare Containers instead of GitHub Actions: one container per submission, its
+outbound internet off, no secret and no binding, handed the package and source by the
+`CheckRunner` Durable Object (`objects/check-runner.ts`, `check-runner/serve.py`). To turn it
+on:
+
+1. Turn on Containers for the Cloudflare account (Workers Paid includes it; billed by use: one
+   `standard-2` instance per submission while its checks run, at most 4 at once).
+2. Give the CI token `CLOUDFLARE_API_TOKEN` the **Containers: Edit** permission on this account
+   (the deploy builds `check-runner/Dockerfile` and pushes it to Cloudflare's registry). No new
+   secret.
+3. Set the repository variable **`STORE_RUNNER`** to `containers`. The next `store-v*` deploy
+   uses `scripts/containers-config.mjs`'s config (the committed one, plus the container and
+   `RUNNER = "containers"`).
+4. Check one submission end to end on the admin pages (its report shows C7, C8 and C10 from
+   the container). Then `RUNNER_DISPATCH_TOKEN` can be deleted.
+
+To go back, set `STORE_RUNNER` to anything else and deploy again: the CI fallback runs.
 
 ### Rollback
 
