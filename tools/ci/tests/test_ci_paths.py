@@ -450,7 +450,20 @@ def _pr(number: int, sha: str) -> dict[str, object]:
     }
 
 
-@pytest.mark.parametrize(("workflow", "name"), [("ci.yml", "ci"), ("update-rehearsal.yml", "update-rehearsal")])
+def _after_ci(sha: str, conclusion: str = "success", attempt: str = "1", run_id: str = "77") -> dict[str, object]:
+    # update-rehearsal.yml's main run: started by CI's run of a push to main finishing; its own
+    # sha is main's head (the newest), the commit it rehearses is the CI run's head_sha
+    return {
+        "event_name": "workflow_run",
+        "ref": "refs/heads/main",
+        "sha": "fff",
+        "run_attempt": attempt,
+        "run_id": run_id,
+        "event": {"workflow_run": {"conclusion": conclusion, "event": "push", "head_sha": sha}},
+    }
+
+
+@pytest.mark.parametrize(("workflow", "name"), [("ci.yml", "ci")])
 def test_main_pushes_share_one_group_that_never_cancels_the_running_run(workflow: str, name: str) -> None:
     # two main commits: one group, NOT cancel-in-progress: the running run finishes and the
     # newer commit's run only replaces an older pending one (with cancel-in-progress a merge
@@ -466,15 +479,78 @@ def test_main_pushes_share_one_group_that_never_cancels_the_running_run(workflow
     assert _concurrency(workflow, **_push("aaa", attempt="2")) == (f"{name}-aaa", False)
 
 
+def test_main_rehearsals_after_ci_share_one_group_that_never_cancels_the_running_run() -> None:
+    # main's rehearsal runs after CI's green push run: one group, NOT cancel-in-progress, so the
+    # running one finishes and the newest CI-green commit's run replaces an older pending one
+    name = "update-rehearsal"
+    assert _concurrency("update-rehearsal.yml", **_after_ci("aaa")) == (f"{name}-main", False)
+    assert _concurrency("update-rehearsal.yml", **_after_ci("bbb")) == (f"{name}-main", False)
+    # a CI run that did not pass (most are cancelled while pending) starts a run that runs
+    # nothing: in a group of its own, so it never replaces main's pending rehearsal
+    for conclusion in ("cancelled", "failure", "skipped"):
+        got = _concurrency("update-rehearsal.yml", **_after_ci("ccc", conclusion=conclusion, run_id="78"))
+        assert got == (f"{name}-skip-78", False)
+    # a re-run gets its commit's own group
+    assert _concurrency("update-rehearsal.yml", **_after_ci("aaa", attempt="2")) == (f"{name}-aaa", False)
+    # pull requests: each its own group, cancelled by its own newer push only
+    assert _concurrency("update-rehearsal.yml", **_pr(12, "ccc")) == (f"{name}-12", True)
+    # a release/** push keeps its commit's own group, never cancelled
+    assert _concurrency("update-rehearsal.yml", **_push("eee", ref="refs/heads/release/0.3")) == (f"{name}-eee", False)
+
+
+def test_the_rehearsal_of_main_starts_after_ci_passes_on_the_same_commit() -> None:
+    # On main the rehearsal starts when CI's run of a push to main succeeds, and every job checks
+    # out that run's head_sha: two workflows each replacing their pending main run had finished
+    # on different commits, so no commit had both green and nothing could be tagged
+    wf = yaml.safe_load((WORKFLOWS / "update-rehearsal.yml").read_text(encoding="utf-8"))
+    on = wf.get("on", wf.get(True))
+    assert on["workflow_run"] == {"workflows": ["CI"], "types": ["completed"], "branches": ["main"]}
+    ci = yaml.safe_load(ci_paths.CI_YML.read_text(encoding="utf-8"))
+    assert ci["name"] == "CI"
+    # no push trigger for main any more (release/** keeps one); the rest stays
+    assert "main" not in on["push"]["branches"]
+    assert on["pull_request"]["branches"] == ["main", "release/**"] and on["pull_request"]["paths"]
+    assert on["schedule"] and "prev_tag" in on["workflow_dispatch"]["inputs"]
+    # the first job runs only for a passed CI run of a push (every other job needs it)
+    kit = wf["jobs"]["kit"]
+    cond = kit["if"]
+
+    def runs(conclusion: str, event: str = "push", name: str = "workflow_run") -> bool:
+        ctx = {
+            "github": {
+                "event_name": name,
+                "repository": "o/r",
+                "event": {"workflow_run": {"conclusion": conclusion, "event": event, "head_repository": {"full_name": "o/r"}}},
+            }
+        }
+        return ci_paths.evaluate(cond, ctx) is True
+
+    assert runs("success")
+    assert not runs("cancelled") and not runs("failure")
+    assert not runs("success", event="pull_request")
+    assert runs("", name="pull_request") and runs("", name="schedule")
+    for job_name, job in wf["jobs"].items():
+        if job_name != "kit" and job_name != "update-rehearsal":
+            assert "kit" in job["needs"], job_name
+        for step in job.get("steps", []):
+            if str(step.get("uses", "")).startswith("actions/checkout@"):
+                assert step["with"]["ref"] == "${{ github.event.workflow_run.head_sha }}", job_name
+    verdict = wf["jobs"]["update-rehearsal"]
+    assert "needs.kit.result != 'skipped'" in verdict["if"]
+    assert verdict["permissions"]["statuses"] == "write"
+
+
 @pytest.mark.parametrize("workflow", ["ci.yml", "update-rehearsal.yml"])
 def test_a_trail_only_push_starts_no_run_so_it_never_cancels_the_code_commits(workflow: str) -> None:
+    # (the rehearsal's main run follows CI's: a trail-only push to main starts no CI run, so
+    # no rehearsal either; its own push trigger is release/**'s)
     # A trail commit merged straight to main would join the main group and replace the
     # pending run of the code commit before it, the one the tag guard waits on. paths-ignore
     # skips a push only when every changed file matches, so a push with code still runs.
     wf = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))
     on = wf.get("on", wf.get(True))
     push = on["push"]
-    assert push["branches"] == ["main", "release/**"]
+    assert push["branches"] == (["main", "release/**"] if workflow == "ci.yml" else ["release/**"])
     assert push["paths-ignore"] == ci_paths.PUSH_IGNORE
     assert "paths" not in push  # paths and paths-ignore cannot be combined on one event
     assert ci_paths.push_paths_ignore(WORKFLOWS / workflow) == ci_paths.PUSH_IGNORE
