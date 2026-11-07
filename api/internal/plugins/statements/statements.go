@@ -322,16 +322,16 @@ func commandTag(text string, n int64) string {
 		return false
 	}
 	for _, r := range text {
-		switch {
-		case r == '(':
+		switch r {
+		case '(':
 			if flush() {
 				break
 			}
 			depth++
-		case r == ')':
+		case ')':
 			flush()
 			depth--
-		case r == ' ' || r == '\n' || r == '\t' || r == '\r' || r == ',':
+		case ' ', '\n', '\t', '\r', ',':
 			flush()
 		default:
 			word.WriteRune(r)

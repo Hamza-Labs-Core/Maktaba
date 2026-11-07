@@ -126,14 +126,21 @@ describe("QueueDetail", () => {
       "/api/queues/libraries": { items: librariesFixture },
       "/api/activity": { items: [], next: null },
     });
-    put.mockResolvedValue({ stage: "link", impl: "inproc", plugin: "tv.maktaba.core-media", paused: 0 });
+    put.mockResolvedValue({
+      stage: "link",
+      impl: "inproc",
+      plugin: "tv.maktaba.core-media",
+      paused: 0,
+    });
     renderAt(<QueueDetail />, "/queue/link", "/queue/:stage");
     const box = await screen.findByTestId("queue-builtin-plugin");
     expect(within(box).getByText("Built-in plugin")).toBeInTheDocument();
     const menu = within(box).getByRole("combobox", { name: "Runs in" });
     expect(menu).toHaveValue("plugin");
     await userEvent.selectOptions(menu, "inproc");
-    await waitFor(() => expect(put).toHaveBeenCalledWith("/api/queues/link/impl", { impl: "inproc" }));
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith("/api/queues/link/impl", { impl: "inproc" })
+    );
   });
 
   it("shows no built-in plugin box for the core's own stages", async () => {

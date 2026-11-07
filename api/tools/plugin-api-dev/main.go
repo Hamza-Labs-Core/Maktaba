@@ -90,6 +90,6 @@ func main() {
 	})
 	srv := &http.Server{Handler: mux}
 	go func() { <-ctx.Done(); _ = srv.Close() }()
-	fmt.Printf("ready %s\n", l.Addr())
+	fmt.Fprintf(os.Stdout, "ready %s\n", l.Addr())
 	_ = srv.Serve(l)
 }
