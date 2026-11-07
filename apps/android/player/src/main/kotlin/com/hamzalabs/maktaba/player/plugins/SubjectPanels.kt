@@ -17,12 +17,13 @@ import com.hamzalabs.maktaba.player.shell.features
 import kotlinx.coroutines.CancellationException
 
 /**
- * A series' or library's plugin panels (story 54.20 §1): "From plugins", below the page's own
- * sections, only while the home answers `plugin_panels: on`. A chip searches Maktaba for its
- * text; a failure is no panels (they are extras, never the page).
+ * A series' or library's plugin panels (story 54.20 §1), asked for `<kind>:<id>` only while the
+ * home answers `plugin_panels: on`; a failure is no panels (they are extras, never the page).
+ * Loaded by the page itself, so a page adds its "From plugins" item only when there is a panel:
+ * an empty item would still take the list's spacing.
  */
 @Composable
-fun SubjectPanels(kind: String, id: String, nav: PlayerNavigator, modifier: Modifier = Modifier, tv: Boolean = false) {
+fun rememberSubjectPanels(kind: String, id: String): List<PanelView> {
     val home = LocalPlayerHome.current
     val features = home.features()
     var panels by remember(kind, id) { mutableStateOf<List<PanelView>>(emptyList()) }
@@ -39,5 +40,11 @@ fun SubjectPanels(kind: String, id: String, nav: PlayerNavigator, modifier: Modi
             }
         }
     }
-    PluginPanels(panels, modifier, tv = tv, onSearch = { nav.open(Route.SearchFor(it)) })
+    return panels
+}
+
+/** "From plugins" for [panels]; a chip searches Maktaba for its text. */
+@Composable
+fun SubjectPanels(panels: List<PanelView>, nav: PlayerNavigator, modifier: Modifier = Modifier) {
+    PluginPanels(panels, modifier, onSearch = { nav.open(Route.SearchFor(it)) })
 }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import com.hamzalabs.maktaba.player.plugins.SubjectPanels
+import com.hamzalabs.maktaba.player.plugins.rememberSubjectPanels
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -78,6 +79,7 @@ import kotlinx.coroutines.launch
 internal fun SeriesPage(id: String, nav: PlayerNavigator, embedded: Boolean) {
     val home = LocalPlayerHome.current
     val state = home.keep("libraries.series.$id") { SeriesState(home.client, id, home.session::signedOut) }
+    val pluginPanels = rememberSubjectPanels("series", id)
     val scope = rememberCoroutineScope()
     val open = LocalOpenVideo.current
     LaunchedEffect(state) { state.load() }
@@ -115,8 +117,10 @@ internal fun SeriesPage(id: String, nav: PlayerNavigator, embedded: Boolean) {
                         )
                     }
                     // story 54.20: installed plugins' panels, below the series' own sections
-                    item(key = "plugin-panels") {
-                        SubjectPanels("series", id, nav, Modifier.padding(horizontal = MaktabaTokens.Spacing.s4))
+                    if (pluginPanels.isNotEmpty()) {
+                        item(key = "plugin-panels") {
+                            SubjectPanels(pluginPanels, nav, Modifier.padding(horizontal = MaktabaTokens.Spacing.s4))
+                        }
                     }
                 }
             }
