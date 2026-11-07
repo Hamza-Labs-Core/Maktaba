@@ -169,6 +169,43 @@ def _interp_p99_ns(calls: int = 20_000) -> int:
     return best
 
 
+def _stock_p99_ns(calls: int = 20_000) -> tuple[int, int]:
+    """structlog's stock JSON pipeline (its context merge, the level, an ISO timestamp, the
+    JSON renderer) to /dev/null, timed call by call: (p50, p99) of the round with the
+    lowest p99, of three. The same library and interpreter paths as the logger, with none of
+    its processors, so a slower logger does not move it."""
+    import structlog
+
+    devnull = open(os.devnull, "w")  # noqa: SIM115 - closed below
+    logger = structlog.wrap_logger(
+        structlog.PrintLogger(devnull),
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.JSONRenderer(),
+        ],
+        context_class=dict,
+    )
+    for _ in range(2_000):
+        logger.info("http_request", path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2)
+    clock = time.perf_counter_ns
+    best = (0, 0)
+    for _ in range(3):
+        times = [0] * calls
+        for i in range(calls):
+            start = clock()
+            logger.info(
+                "http_request", path="/api/videos/123", status=200, user_id="u-1", took_ms=1.2
+            )
+            times[i] = clock() - start
+        times.sort()
+        got = (percentile(times, 0.5), percentile(times, 0.99))
+        best = got if best == (0, 0) or got[1] < best[1] else best
+    devnull.close()
+    return best
+
+
 def calibrate() -> tuple[float, dict[str, float]]:
     """The runner's speed against the reference (the slowest of the three loops, 1–4) and the
     loops' times, which the report shows."""
@@ -179,6 +216,7 @@ def calibrate() -> tuple[float, dict[str, float]]:
         "interp_s": _best_of_three(_interp_work),
         "interp_p99_ns": float(_interp_p99_ns()),
     }
+    raw["stock_p50_ns"], raw["stock_p99_ns"] = (float(v) for v in _stock_p99_ns())
     f = max(
         raw["hash_s"] / REFERENCE_HASH_S,
         raw["lines_s"] / REFERENCE_LINES_S,
