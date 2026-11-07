@@ -522,6 +522,30 @@ func TestStoreSignedInstallRecordsItsLevel(t *testing.T) {
 	}
 }
 
+// 54.17 §3 and its edge cases: an install, an update and a rollback to a version a store
+// `disable` covers are refused (409 plugin_revoked).
+func TestRevokedVersionsAreRefused(t *testing.T) {
+	f := newLC(t)
+	ctx := context.Background()
+	f.allowUnreviewed(t)
+	f.l.Revoked = func(id, version, _ string) (string, bool) { return "malware", id == lcPlugin && version == "1.0.0" }
+	_, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin)
+	if p := asProblem(err); p == nil || p.Code != CodeRevoked || p.Status != 409 {
+		t.Fatalf("installing a revoked version: %v", err)
+	}
+	f.l.Revoked = nil
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.1.0", nil, nil, 1)), ExpectID: lcPlugin}, admin); err != nil {
+		t.Fatal(err)
+	}
+	f.l.Revoked = func(_, version, _ string) (string, bool) { return "malware", version == "1.0.0" }
+	if err := f.l.Rollback(ctx, lcPlugin, false, admin); asProblem(err) == nil || asProblem(err).Code != CodeRevoked {
+		t.Fatalf("a rollback to a revoked version: %v", err)
+	}
+}
+
 // 54.09 §3 (#711): "Include its logs in problem reports" is off until an admin ticks it on
 // the plugin's page; it is audited, and an id not installed is refused.
 func TestReportLogsOptIn(t *testing.T) {
