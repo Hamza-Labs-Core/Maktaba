@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# on-role-change's ALERT_CMD on A and B (Epic 50 story 50.10): an alert the callback raises
+# (fip_assign_failed) becomes a series node_exporter's textfile collector serves, so the
+# witness's Prometheus pages on it.
+#   alert-textfile <alert name> <text>
+set -uo pipefail
+dir="${TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+name="${1:?}"
+mkdir -p "${dir}" || exit 0
+printf '# HELP maktaba_%s An alert the node raised itself (%s).\n# TYPE maktaba_%s gauge\nmaktaba_%s 1\n' \
+    "${name}" "${2:-}" "${name}" "${name}" >"${dir}/maktaba_${name}.prom.tmp" && mv "${dir}/maktaba_${name}.prom.tmp" "${dir}/maktaba_${name}.prom"
+logger -t maktaba-alert -- "${name}: ${2:-}" 2>/dev/null || true

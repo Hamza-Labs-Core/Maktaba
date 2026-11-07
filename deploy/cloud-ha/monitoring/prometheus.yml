@@ -1,0 +1,85 @@
+# The witness's Prometheus (Epic 50 story 50.10): scrapes A and B over the private network,
+# probes the canary and the API from W, and keeps 30 days (compose: --storage.tsdb.retention.time=30d).
+# ${...} are rendered by setup.sh (envsubst) from cloud-ha.env.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: maktaba-prod
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+  - /etc/prometheus/backup-rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:9093"]
+
+scrape_configs:
+  # the cloud's own series (the relay's, the meter's, Epic 53.17's maktaba_* application metrics):
+  # each node's Caddy serves the leading relay process's /metrics on the private address
+  - job_name: cloud
+    static_configs:
+      - targets: ["${NODE_A_ADDR}:9443"]
+        labels: {node: node-a}
+      - targets: ["${NODE_B_ADDR}:9443"]
+        labels: {node: node-b}
+  # Patroni: patroni_primary, patroni_replica, patroni_failovers_total
+  - job_name: patroni
+    static_configs:
+      - targets: ["${NODE_A_ADDR}:8008"]
+        labels: {node: node-a}
+      - targets: ["${NODE_B_ADDR}:8008"]
+        labels: {node: node-b}
+  - job_name: postgres
+    static_configs:
+      - targets: ["${NODE_A_ADDR}:9187"]
+        labels: {node: node-a}
+      - targets: ["${NODE_B_ADDR}:9187"]
+        labels: {node: node-b}
+  # node_exporter, with the textfile collector (the backup's and the drill's times, 50.09)
+  - job_name: node
+    static_configs:
+      - targets: ["${NODE_A_ADDR}:9100"]
+        labels: {node: node-a}
+      - targets: ["${NODE_B_ADDR}:9100"]
+        labels: {node: node-b}
+      - targets: ["127.0.0.1:9100"]
+        labels: {node: witness}
+  # the probes from network 2 (GitHub Actions, cloud-probe.yml) and the Floating IP check
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ["127.0.0.1:9091"]
+  # the canary home through the relay, the API, and each node's own certificate
+  - job_name: canary
+    metrics_path: /probe
+    params: {module: [http_2xx]}
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["https://canary.${RELAY_DOMAIN}/api/health"]
+        labels: {instance: witness}
+    relabel_configs: &blackbox
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+  - job_name: api
+    metrics_path: /probe
+    params: {module: [http_2xx]}
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["https://api.maktaba.tv/readyz"]
+        labels: {instance: witness}
+    relabel_configs: *blackbox
+  - job_name: certs
+    metrics_path: /probe
+    params: {module: [tls_wildcard]}
+    scrape_interval: 1h
+    static_configs:
+      - targets: ["${NODE_A_ADDR}:443"]
+        labels: {instance: node-a}
+      - targets: ["${NODE_B_ADDR}:443"]
+        labels: {instance: node-b}
+    relabel_configs: *blackbox

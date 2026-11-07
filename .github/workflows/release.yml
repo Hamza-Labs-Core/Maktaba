@@ -95,8 +95,8 @@ on:
   # Only a tag push, never a dispatch: the release is signed keyless, the certificate records
   # the run's trigger, and every home's updater (shared/go/releaseverify, BuildTrigger) accepts
   # only `push`. A dispatched run (v0.3.85's) signs a release that fails its own verify step
-  # and every home's. auto-tag.yml pushes each tag with the release deploy key, which starts
-  # this run; a failed run is re-run (a re-run keeps its push trigger).
+  # and every home's. The release session pushes each tag with the owner's git credentials,
+  # which starts this run; a failed run is re-run (a re-run keeps its push trigger).
 
 permissions:
   contents: read

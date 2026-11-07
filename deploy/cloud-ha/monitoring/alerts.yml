@@ -1,0 +1,136 @@
+# Maktaba Cloud's alert rules (Epic 50 story 50.10), evaluated by the witness's Prometheus.
+# Every alert links to its runbook (50.12). The backup alerts are in backup-rules.yml (50.09).
+# Severity: page (the owner's phone, repeated every 15 min until acknowledged) or warn (email).
+groups:
+  - name: maktaba-availability
+    rules:
+      # the canary home through the relay, from the witness (blackbox) and network 2 (Actions)
+      - alert: canary_down
+        expr: max by (instance) (probe_success{job="canary"}) == 0
+        for: 1m   # two failed probes in a row at 30 s
+        labels: {severity: page}
+        annotations:
+          summary: "Remote play is down: the canary home does not answer through the relay"
+          runbook_url: docs/runbooks/cloud-canary-down.md
+      - alert: api_down
+        expr: max by (instance) (probe_success{job="api"}) == 0
+        for: 1m
+        labels: {severity: page}
+        annotations:
+          summary: "api.maktaba.tv/readyz fails"
+          runbook_url: docs/runbooks/cloud-canary-down.md
+      # the SLO: 99.9 % a month = 43.8 min; 2 % of it in 1 h, 5 % in 6 h. An instant is down
+      # when every probing network fails it (README §4.2): the best of the probes counts
+      - record: canary:up
+        expr: max(probe_success{job="canary"})
+      - record: canary:error_ratio:rate1h
+        expr: 1 - avg_over_time(canary:up[1h])
+      - record: canary:error_ratio:rate6h
+        expr: 1 - avg_over_time(canary:up[6h])
+      - alert: slo_burn_fast
+        # 2 % of 43.8 min = 52.6 s down in an hour: an error ratio over 0.0146
+        expr: canary:error_ratio:rate1h > 0.0146
+        labels: {severity: page}
+        annotations:
+          summary: "The month's downtime budget burns fast: {{ $value | humanizePercentage }} of the last hour down"
+          runbook_url: docs/runbooks/cloud-canary-down.md
+      - alert: slo_burn_slow
+        # 5 % of 43.8 min = 131 s in 6 h: an error ratio over 0.00608
+        expr: canary:error_ratio:rate6h > 0.00608
+        labels: {severity: page}
+        annotations:
+          summary: "The month's downtime budget burns: {{ $value | humanizePercentage }} of the last 6 h down"
+          runbook_url: docs/runbooks/cloud-canary-down.md
+
+  - name: maktaba-pair
+    rules:
+      - alert: failover_happened
+        expr: increase(patroni_failovers_total[10m]) > 0 or changes(patroni_primary{node="node-a"}[10m]) > 0
+        labels: {severity: page}
+        annotations:
+          summary: "The database leader changed: confirm the new leader is healthy"
+          runbook_url: docs/runbooks/cloud-failover.md
+      - alert: replica_missing
+        expr: sum(patroni_replica{state="streaming"} or vector(0)) < 1
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "No streaming replica: RPO is not 0 until it is back"
+          runbook_url: docs/runbooks/cloud-failover.md
+      - alert: replication_lag
+        expr: max(pg_replication_lag_seconds) > 10
+        for: 2m
+        labels: {severity: warn}
+        annotations:
+          summary: "The replica is {{ $value }} s behind"
+          runbook_url: docs/runbooks/cloud-failover.md
+      - alert: fip_mismatch
+        # the node Hetzner says holds the Floating IP is not the database leader
+        expr: sum by (node) (fip_holder) != on (node) sum by (node) (patroni_primary)
+        for: 2m
+        labels: {severity: page}
+        annotations:
+          summary: "The Floating IP is not on the leader ({{ $labels.node }})"
+          runbook_url: docs/runbooks/cloud-dns-swap.md
+      - alert: fip_assign_failed
+        expr: max(maktaba_fip_assign_failed) > 0
+        labels: {severity: page}
+        annotations:
+          summary: "The leader could not take the Floating IP"
+          runbook_url: docs/runbooks/cloud-dns-swap.md
+
+  - name: maktaba-machines
+    rules:
+      - alert: cert_expiring
+        expr: min by (instance) (probe_ssl_earliest_cert_expiry - time()) < 14 * 86400
+        labels: {severity: warn}
+        annotations:
+          summary: "A relay certificate expires in {{ $value | humanizeDuration }} ({{ $labels.instance }})"
+          runbook_url: docs/runbooks/cloud-certificate.md
+      - alert: cert_expiring_soon
+        expr: min by (instance) (probe_ssl_earliest_cert_expiry - time()) < 7 * 86400
+        labels: {severity: page}
+        annotations:
+          summary: "A relay certificate expires in {{ $value | humanizeDuration }} ({{ $labels.instance }})"
+          runbook_url: docs/runbooks/cloud-certificate.md
+      - alert: disk_filling
+        expr: 1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} > 0.8
+        for: 5m
+        labels: {severity: warn}
+        annotations:
+          summary: "{{ $labels.instance }}'s disk is {{ $value | humanizePercentage }} full"
+          runbook_url: docs/runbooks/cloud-disk.md
+      - alert: disk_full
+        expr: 1 - node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} > 0.9
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: "{{ $labels.instance }}'s disk is {{ $value | humanizePercentage }} full"
+          runbook_url: docs/runbooks/cloud-disk.md
+
+  - name: maktaba-relay
+    rules:
+      - alert: held_requests_timing_out
+        expr: |
+          sum(increase(maktaba_relay_held_total{result="timeout"}[10m]))
+            / clamp_min(sum(increase(maktaba_relay_held_total[10m])), 1) > 0.01
+        labels: {severity: warn}
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of held requests time out: homes are slow to come back"
+          runbook_url: docs/runbooks/cloud-canary-down.md
+      - alert: cloud_error_spike
+        expr: |
+          sum by (service) (rate(maktaba_errors_total[10m]))
+            > 5 * sum by (service) (rate(maktaba_errors_total[7d] offset 10m)) and sum by (service) (rate(maktaba_errors_total[10m])) > 0.01
+        for: 10m
+        labels: {severity: warn}
+        annotations:
+          summary: "{{ $labels.service }} errors at 5× their usual rate"
+          runbook_url: docs/runbooks/cloud-errors.md
+      - alert: log_forward_lagging
+        expr: max by (node) (maktaba_log_forward_lag_seconds) > 60
+        for: 5m
+        labels: {severity: warn}
+        annotations:
+          summary: "{{ $labels.node }}'s logs are not reaching the witness"
+          runbook_url: docs/runbooks/cloud-errors.md
