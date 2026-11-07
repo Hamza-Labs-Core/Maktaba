@@ -1,6 +1,13 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { ApiError } from "./api";
-import { componentOffText, errorText, inputDetail, plainDetail, userErrorKind } from "./errorText";
+import {
+  componentOffText,
+  errorText,
+  inputDetail,
+  plainDetail,
+  relayPlanText,
+  userErrorKind,
+} from "./errorText";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
 
@@ -186,5 +193,28 @@ describe("component_off (Epic 51)", () => {
     expect(
       componentOffText(problem(409, "a playlist with this name already exists"), t)
     ).toBeNull();
+  });
+});
+
+// Epic 50 story 50.19: the relay's refusals of a plan's play, in the app's words
+describe("relayPlanText", () => {
+  const t = (k: string, v?: Record<string, string | number>) =>
+    v ? `${k}:${JSON.stringify(v)}` : k;
+  const err = (status: number, body: Record<string, unknown>) =>
+    new ApiError({ type: "about:blank", title: "x", status, ...body } as never);
+  it("names relay_needs_plan, stream_limit with its count, and home_busy", () => {
+    expect(relayPlanText(err(402, { error: "relay_needs_plan", message: "x" }), t)).toBe(
+      "relay.needsPlan"
+    );
+    expect(
+      relayPlanText(
+        err(429, { error: "stream_limit", message: "2 devices are already playing" }),
+        t
+      )
+    ).toBe('relay.streamLimit:{"count":"2"}');
+    expect(relayPlanText(err(503, { code: "home_busy" }), t)).toBe("relay.homeBusy");
+    expect(relayPlanText(err(429, { code: "rate_limited" }), t)).toBeNull();
+    expect(relayPlanText(new Error("x"), t)).toBeNull();
+    expect(errorText(err(402, { error: "relay_needs_plan" }), t)).toBe("relay.needsPlan");
   });
 });

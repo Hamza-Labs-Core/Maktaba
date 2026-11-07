@@ -1,14 +1,14 @@
 # Testing and packaging
 
-> **Status: built for Rust (Phase 1).** `mkp` (in `plugind/crates/mkp`) makes a Rust project
-> (`mkp new rust <id> <folder>`), checks a package the way the home does (`mkp check`), runs a
+> **Status: built for Rust, Python, JavaScript and Go.** `mkp` (in `plugind/crates/mkp`) makes a
+> project (`mkp new rust|python|js|go <id> <folder>`), builds it into a component and checks it
+> (`mkp build`), checks a package the way the home does (`mkp check`), runs a
 > stage in the harness, the host's own code against a mock plugin API answering from a fixtures
 > file (`mkp test --stage <name> --fixtures api.json`), packs the `.mkplugin` (`mkp pack`),
 > signs it with your key (`mkp keys new`, `mkp pack <folder> <out> --key <id>`), and installs a
 > folder on a home in developer mode (`mkp run`). An admin installs the file from Settings,
 > Plugins, or with `maktaba-server plugins`, with Allow unreviewed plugins on; `maktaba-server
-> plugins dev <folder>` reloads a folder on every save. The TypeScript, Python and Go templates
-> are not built yet. The manifest is in [manifest](manifest.md), the WIT and the
+> plugins dev <folder>` reloads a folder on every save. The manifest is in [manifest](manifest.md), the WIT and the
 > API in the [plugin reference](reference.md). The rest of this page is the design in
 > [story 54.12](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/story-54-12-sdk-harness.md)
 > and
@@ -36,8 +36,9 @@ One CLI for every language:
 
 | Command | What it does |
 |---|---|
-| `mkp new <template> <id>` | a project with `manifest.toml`, `i18n/en.json`, `i18n/ar.json`, an icon placeholder, a sample stage, a fixture and a test |
-| `mkp build` | runs your toolchain, then the same manifest validation and import audit as the home and the store |
+| `mkp new <rust\|python\|js\|go> <id> <folder>` | a project with `package/manifest.toml`, `package/i18n/en.json`, `package/i18n/ar.json`, a sample stage and its source |
+| `mkp build <project> [--entry <file.js>]` | runs your toolchain into `package/plugin.wasm`, then the same manifest validation and import audit as the home and the store |
+| `mkp world <project>` | writes the project's `wit/` with the plugin world narrowed to what your manifest may import (Python, JavaScript, Go; `mkp build` does it first) |
 | `mkp test` | runs your plugin in the local harness against its fixtures |
 | `mkp keys new`, `list`, `export-public` | your Ed25519 signing key |
 | `mkp pack <folder> <out.mkplugin> --key <id>` | writes `files.json`, signs it with your key and makes the `.mkplugin` (without `--key`: unsigned) |
@@ -54,14 +55,45 @@ codes.
 ## Getting started
 
 ```sh
-mkp new rust dev.example.silence-chapters
-cd silence-chapters
-mkp build
-mkp test
+mkp new python dev.example.silence-chapters silence-chapters   # or rust, js
+mkp build silence-chapters
+mkp test silence-chapters/package --stage hello
 ```
 
 Then edit `manifest.toml` (see [The manifest and the package](manifest.md)), declare only the
 capabilities you use, and add both English and Arabic strings.
+
+## Python, JavaScript and Go
+
+The home runs your component with no filesystem, no network and no stdin: it links only the
+plugin API, clocks, random, stdout, stderr and the environment. Python, JavaScript and Go
+toolchains import more than that by default, so `mkp build` builds them so they don't:
+
+- **Python** (`componentize-py`, in a virtual environment of its own): every WASI import is
+  replaced by a stub that fails when called. `print`, `open`, sockets and stdin fail, and
+  `random` is seeded when the plugin is built, so never use it for anything secret. Log with
+  `log.write`. Pure Python only: a package with a C extension does not build.
+- **JavaScript** (`jco componentize`, with `@bytecodealliance/componentize-js`): built with
+  every optional feature off (`--disable all`): no `fetch`, no console output, no clocks or
+  random from WASI. For TypeScript, compile to one ES module first and run
+  `mkp build <project> --entry dist/plugin.js`.
+- **The world follows your manifest.** These toolchains import every interface of the world
+  they are built against, and the home refuses an interface no declared capability covers.
+  So `mkp build` (or `mkp world`) writes your project's `wit/` with only the interfaces your
+  capabilities cover, plus the ones every plugin may use (`job`, `log`, `data`, `events`).
+  Declare a capability in `package/manifest.toml`, then build again to use its interface; a
+  call to an interface you did not declare does not build.
+
+- **Go** (TinyGo, `wit-bindgen-go` and `wasm-tools`; tier 2, best effort): built for TinyGo's
+  `wasm-unknown` target, which links no WASI. File, stdin and network calls always fail, and
+  `fmt.Print` writes nowhere: log with `log.Write`. TinyGo's `wasip2` target is not used: its
+  runtime asks for stdin at every start, which the home never gives. Keep the template's
+  `realloc.go`: it is the allocator the home calls to pass strings in. `mkp build` fails if the
+  component imports anything the home refuses.
+
+The toolchains are found on your `PATH`, or named by `MKP_COMPONENTIZE_PY`, `MKP_JCO`,
+`MKP_TINYGO`, `MKP_WIT_BINDGEN_GO`, `MKP_WASM_TOOLS` and `MKP_GO`.
+The Python hello world is about 18 MB, under the 25 MB its template targets.
 
 ## The test harness
 
@@ -76,6 +108,11 @@ in the same process.
   them with stored goldens.
 - It uses your manifest's limits. `--limits strict` uses the store's review limits; run with
   it before you submit.
+- Your time limit counts only your plugin's work, as at home: compiling the component (the
+  first run of a new build, which for a Python plugin can take several seconds) and waiting
+  for a free slot come first and are reported apart (`compile_ms`, `wait_ms`). Compiled
+  components are kept between runs in your cache folder (`MKP_CACHE_DIR` to choose another),
+  named by the component, the Wasmtime version and its settings.
 
 The store's automated checks run your fixtures through the same harness, so keep them
 representative.

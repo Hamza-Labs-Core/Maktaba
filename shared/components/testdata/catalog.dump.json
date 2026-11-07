@@ -1765,6 +1765,63 @@
     },
     {
       "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.cloud.direct.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "remote_access"
+      ],
+      "gated": false,
+      "group": "system",
+      "id": "cloud.direct",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:direct_listener",
+        "api:direct_portmap",
+        "api:direct_cert"
+      ],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "cloud.link"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.direct",
+        "toml:direct.listen"
+      ],
+      "since": "0.3.95",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.cloud.direct.title",
+      "wants": []
+    },
+    {
+      "bundles": [
         "full",
         "worker"
       ],
@@ -2006,6 +2063,54 @@
       "stop_grace_s": 5,
       "switchable": true,
       "title_key": "components.telemetry.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.reports.share.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "reports.share",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:reports_forwarder"
+      ],
+      "on_demand": false,
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "plugin": "",
+      "processes": [],
+      "requires": [
+        [
+          "cloud.link"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.94",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.reports.share.title",
       "wants": []
     },
     {
@@ -3276,7 +3381,14 @@
       "wants": []
     }
   ],
-  "feature_any": {},
+  "feature_any": {
+    "remote_access": [
+      [
+        "cloud.relay",
+        "cloud.direct"
+      ]
+    ]
+  },
   "features": [
     "live_tv",
     "transcripts",
@@ -3331,11 +3443,13 @@
     "logs.index",
     "cloud.link",
     "cloud.relay",
+    "cloud.direct",
     "cluster",
     "discovery.mdns",
     "queue_health",
     "analytics",
     "telemetry",
+    "reports.share",
     "backups",
     "updates.auto",
     "model.cohere-arabic",

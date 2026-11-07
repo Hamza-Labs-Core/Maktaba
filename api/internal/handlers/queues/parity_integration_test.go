@@ -15,20 +15,16 @@ package queues
 
 import (
 	"database/sql"
-	"fmt"
 	"net/http"
-	neturl "net/url"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	_ "github.com/lib/pq"
-	"github.com/pressly/goose/v3"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/testpg"
 )
@@ -36,103 +32,21 @@ import (
 // parityDB is a fresh database on the server MAKTABA_TEST_PG_URL (else
 // DATABASE_URL, CI's integration job) names, with every migration applied and
 // dropped afterwards, so the test's DELETEs never touch the tables other
-// packages' integration tests use.
+// packages' integration tests use. It is a copy of clustertest's migrated
+// template: goose ran every migration again for each of this package's 20
+// tests (issue #855).
 func parityDB(t *testing.T) *sql.DB {
 	t.Helper()
-	base := testpg.Get()
-	if base == "" {
-		base = os.Getenv("DATABASE_URL")
+	if testpg.Get() == "" {
+		if base := os.Getenv("DATABASE_URL"); base != "" {
+			t.Setenv(testpg.Env, base)
+		}
 	}
-	if base == "" {
+	if testpg.Get() == "" {
 		t.Skip("neither MAKTABA_TEST_PG_URL nor DATABASE_URL is set")
 	}
-	u, err := neturl.Parse(base)
-	if err != nil {
-		t.Fatalf("Postgres URL: %v", err)
-	}
-	admin := openPG(t, base)
-	name := fmt.Sprintf("maktaba_parity_%d_%d", os.Getpid(), time.Now().UnixNano())
-	mustExec(t, admin, `CREATE DATABASE `+name)
-	t.Cleanup(func() { _, _ = admin.Exec(`DROP DATABASE IF EXISTS ` + name + ` WITH (FORCE)`) })
-	u.Path = "/" + name
-	db := openPG(t, u.String())
-	applyMigrations(t, db)
+	db, _ := clustertest.ScratchDB(t)
 	return db
-}
-
-func openPG(t *testing.T, url string) *sql.DB {
-	t.Helper()
-	db, err := sql.Open("postgres", url)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := db.Ping(); err != nil {
-		t.Fatalf("ping: %v", err)
-	}
-	return db
-}
-
-// applyMigrations applies shared/db/migrations the way `maktaba-api migrate
-// up` does: slot 0000 by hand (goose refuses version 0), then every
-// Postgres migration (the .sqlite.sql siblings left out) through goose.
-func applyMigrations(t *testing.T, db *sql.DB) {
-	t.Helper()
-	dir := migrationsDir(t)
-	if raw, err := os.ReadFile(filepath.Join(dir, "0000_schema_version.sql")); err == nil {
-		up := string(raw)
-		if i := strings.Index(up, "-- +goose Down"); i >= 0 {
-			up = up[:i]
-		}
-		if _, err := db.Exec(up); err != nil {
-			t.Fatalf("0000_schema_version: %v", err)
-		}
-	}
-	stage := t.TempDir()
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		n := e.Name()
-		if e.IsDir() || filepath.Ext(n) != ".sql" || strings.HasSuffix(n, ".sqlite.sql") || strings.HasPrefix(n, "0000_") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(dir, n))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(stage, n), raw, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	goose.SetLogger(goose.NopLogger())
-	if err := goose.SetDialect("postgres"); err != nil {
-		t.Fatal(err)
-	}
-	if err := goose.Up(db, stage); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-}
-
-// migrationsDir finds shared/db/migrations above the package directory.
-func migrationsDir(t *testing.T) string {
-	t.Helper()
-	cur, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for {
-		dir := filepath.Join(cur, "shared", "db", "migrations")
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			return dir
-		}
-		parent := filepath.Dir(cur)
-		if parent == cur {
-			t.Fatal("shared/db/migrations not found")
-		}
-		cur = parent
-	}
 }
 
 func mustExec(t *testing.T, db *sql.DB, q string, args ...any) {

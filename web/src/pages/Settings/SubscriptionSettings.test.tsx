@@ -108,6 +108,30 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
     expect(screen.queryByTestId("subscription-message")).toBeNull();
   });
 
+  // Epic 50 story 50.19: on Basic (the home tier) through Maktaba Cloud, the note that relayed
+  // videos are converted on this home; never on Pro
+  it("SUB-02b: a Basic plan says relayed videos are converted on this home", async () => {
+    routeGet(get, {
+      "/api/admin/license": {
+        ...PRO_CLOUD,
+        tier: "home",
+        license: { ...PRO_CLOUD.license!, tier: "home" },
+      },
+    });
+    open();
+    expect(await screen.findByTestId("relay-transcode-note")).toHaveTextContent(
+      "On the Basic plan, videos played through the relay are converted on this home"
+    );
+    expect(screen.getAllByText("Basic").length).toBeGreaterThan(0);
+  });
+
+  it("SUB-02c: Pro has no conversion note", async () => {
+    routeGet(get, { "/api/admin/license": PRO_CLOUD });
+    open();
+    expect(await screen.findByTestId("subscription-seats")).toBeInTheDocument();
+    expect(screen.queryByTestId("relay-transcode-note")).toBeNull();
+  });
+
   it("SUB-03: applying a license sends the parsed JSON, clears the box and shows the new view", async () => {
     post.mockResolvedValue(PRO_CLOUD);
     open();

@@ -21,6 +21,7 @@ var notCalled = map[string]string{
 	"fulcio.localhost":                    "the test Sigstore",
 	"cloud.test":                          "a test placeholder",
 	"schemas.microsoft.com":               "an XML namespace (the Windows task)",
+	"schemas.xmlsoap.org":                 "the SOAP envelope's XML namespace (direct access's UPnP client asks the router on the LAN, story 50.15)",
 	"www.apple.com":                       "a plist DTD (the launchd job)",
 	"customer-":                           "a Cloudflare Stream customer subdomain built from the account (api.cloudflare.com listed)",
 	"status.maktaba.tv":                   "the cloud's status page in the web app's CSP: the browser reads it, never a server (Epic 50 story 50.11)",
@@ -128,8 +129,8 @@ func TestOffline(t *testing.T) {
 	}
 }
 
-// Epic 54's plugin store calls (54.15, 54.17, 54.18): each is listed with its host, and each
-// says what turns it off besides MAKTABA_OFFLINE.
+// Epic 54's plugin store calls (54.15, 54.17, 54.18, 54.19): each is listed with its host, and
+// each says what turns it off besides MAKTABA_OFFLINE.
 func TestPluginStoreCallsAreListed(t *testing.T) {
 	want := map[string]string{
 		"plugin-store-link":      "plugins.maktaba.tv",
@@ -137,6 +138,9 @@ func TestPluginStoreCallsAreListed(t *testing.T) {
 		"plugin-store-downloads": "plugins-cdn.maktaba.tv",
 		"plugin-store-seen":      "plugins.maktaba.tv",
 		"plugin-store-ratings":   "plugins.maktaba.tv",
+		// 54.19: the paid plugins' entitlement refresh and an admin's Buy
+		"plugin-store-entitlements": "plugins.maktaba.tv",
+		"plugin-store-buy":          "plugins.maktaba.tv",
 	}
 	for _, c := range Outbound {
 		host, ok := want[c.Name]

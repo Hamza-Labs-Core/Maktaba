@@ -1,0 +1,12 @@
+# The relay-plans scenario's relays (Epic 50 story 50.19 T13), over compose.yml: the plans build
+# (BUILD_TAGS=rehearsalplans: the paid plans' TBD numbers set to the rehearsal's) with the plans
+# enforced (relay-plans.toml).
+x-plans: &plans
+  image: ${PLANS_IMAGE:-maktaba-cloud:rehearsal-plans}
+  command: ["serve", "--role", "relay", "--config", "/etc/maktaba-cloud/relay-plans.toml"]
+  volumes:
+    - ./relay-plans.toml:/etc/maktaba-cloud/relay-plans.toml:ro
+
+services:
+  relay-blue: *plans
+  relay-green: *plans

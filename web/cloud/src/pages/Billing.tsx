@@ -9,9 +9,10 @@ import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "../api";
-import { useI18n, type I18nState } from "../i18n";
+import { api } from "../shared/api";
+import { useI18n, type I18nState } from "../shared/i18n";
 import { navigateExternal } from "../nav";
+import { ProExtras, UsageByModePanel, type UsageByMode } from "./BillingPayg";
 import {
   Banner,
   LoadError,
@@ -21,7 +22,7 @@ import {
   useErrorMessage,
   useLoad,
   useMoney,
-} from "../ui";
+} from "../shared/ui";
 
 /** A plan of the catalog (Epic 50 story 50.19): free, basic and pro. A null number is a value
  * not set yet (the price, Pro's allowance and device count): "Price coming soon". */
@@ -36,7 +37,9 @@ export interface Plan {
   fair_use_bytes_per_month: number;
   allowance_bytes_per_month: number | null;
   pay_as_you_go: boolean;
+  payg_price_per_gb_cents?: number | null;
   extra_streams: boolean;
+  extra_stream_price_cents?: number | null;
   max_servers: number;
   purchasable: boolean;
   /** The tier the license gives this account's homes ("" for free). */
@@ -58,6 +61,8 @@ export interface Usage {
   limit_bytes: number;
   used_bytes: number;
   servers: { id: string; name: string; bytes_in: number; bytes_out: number }[];
+  /** story 50.19: this month's relayed bytes by quality */
+  by_mode?: UsageByMode;
 }
 
 interface BillingData {
@@ -118,6 +123,7 @@ function BillingBody({ data }: { data: BillingData }) {
   const [busy, setBusy] = useState<string | null>(null);
   const { me, plans, usage, paymentsEnabled } = data;
   const planName = (id: string) => plans.find((p) => p.id === id)?.name ?? id;
+  const proPlan = plans.find((p) => p.id === "pro");
 
   async function upgrade(plan: string) {
     setBusy(plan);
@@ -203,6 +209,9 @@ function BillingBody({ data }: { data: BillingData }) {
       </div>
 
       {usage && <UsagePanel usage={usage} />}
+
+      {/* Epic 50 story 50.19: Pro's pay-as-you-go and extra streams */}
+      {me.plan === "pro" && paymentsEnabled && proPlan && <ProExtras pro={proPlan} />}
 
       {/* Epic 50 story 50.12: the uptime target, a target with no credit (uptime.policy) */}
       <Card header={<h2>{t("billing.uptime.title")}</h2>}>
@@ -308,6 +317,7 @@ function UsagePanel({ usage }: { usage: Usage }) {
           : t("billing.usage.unlimited", { used: bytes(usage.used_bytes) })}
       </p>
       {limited && <ProgressBar label={t("billing.usage.bar")} value={pct} />}
+      {usage.by_mode && <UsageByModePanel by={usage.by_mode} />}
       {usage.servers.length > 0 && (
         <table className="mkc-table">
           <thead>

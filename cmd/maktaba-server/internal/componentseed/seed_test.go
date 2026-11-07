@@ -72,6 +72,9 @@ func TestPlanRules(t *testing.T) {
 		{"relay wanted: relay", func(f *Facts) { f.Relay = true }, "cloud.relay", "enabled"},
 		{"no relay", func(*Facts) {}, "cloud.link", "installed"},
 		{"no relay: relay", func(*Facts) {}, "cloud.relay", "installed"},
+		// story 50.15: direct access in Full, only where the relay is; it never turns the link on
+		{"relay wanted: direct", func(f *Facts) { f.Relay = true }, "cloud.direct", "enabled"},
+		{"no relay: direct", func(*Facts) {}, "cloud.direct", "installed"},
 		{"mdns default", func(*Facts) {}, "discovery.mdns", "enabled"},
 		{"mdns off", func(f *Facts) { f.Config.Server.MDNS = "off" }, "discovery.mdns", "installed"},
 		{"backups default", func(*Facts) {}, "backups", "enabled"},

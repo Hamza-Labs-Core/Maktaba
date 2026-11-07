@@ -37,6 +37,9 @@ func (f *fakeDirect) CheckNow(context.Context, string) error {
 	f.checkNow++
 	return nil
 }
+func (f *fakeDirect) Name(context.Context, string) (NamePayload, error) {
+	return NamePayload{Domain: "direct-a.example", HomeID: "h"}, nil
+}
 func (f *fakeDirect) Deliveries(context.Context, string) ([]Frame, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -87,6 +90,23 @@ func TestTheDirectFrames(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("csr %v, check now %d", h.csrs, h.checkNow)
+}
+
+// A home asks its name before its first CSR, and is told it on the tunnel.
+func TestAHomeIsToldItsName(t *testing.T) {
+	conn := newChanConn()
+	tun := NewTunnel("srv", "slug", conn, WithDirect(&fakeDirect{}, netip.MustParseAddr("81.2.3.4"), nil))
+	defer tun.Close()
+	conn.in <- Frame{Kind: KindDirectName}
+	select {
+	case f := <-conn.out:
+		var n NamePayload
+		if f.Kind != KindDirectName || json.Unmarshal(f.Payload, &n) != nil || n.Domain != "direct-a.example" || n.HomeID != "h" {
+			t.Fatalf("answered %#x %s", f.Kind, f.Payload)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no name")
+	}
 }
 
 // A tunnel with no handler (an older relay, or direct off) ignores the frames.

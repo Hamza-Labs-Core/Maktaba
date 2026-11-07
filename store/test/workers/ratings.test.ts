@@ -107,8 +107,22 @@ describe("the listing pages (T05, T08)", () => {
     expect(ar).toContain("نزّل الملف");
     // Maktaba's own Arabic words for the capability
     expect(ar).toMatch(/الوسوم|وسوم/);
-    const list = await (await exports_fetch("/")).text();
+    const listRes = await exports_fetch("/");
+    const list = await listRes.text();
     expect(list).toContain(`/p/${id}`);
+    // #757: only a plugin page carries the open-at-my-address script, allowed by its hash alone
+    expect(list).not.toContain("<script>");
+    expect(listRes.headers.get("Content-Security-Policy")).not.toContain("script-src");
+    const pageRes = await exports_fetch(`/p/${id}`);
+    const pageHtml = await pageRes.text();
+    const { OPEN_SCRIPT, openScriptHash } = await import("../../web/open-script");
+    expect(pageHtml).toContain(`<script>${OPEN_SCRIPT}</script>`);
+    expect(pageHtml).toContain(`data-plugin="${id}"`);
+    const csp = pageRes.headers.get("Content-Security-Policy") ?? "";
+    expect(csp).toContain(`script-src ${await openScriptHash()}`);
+    expect(csp).toContain("default-src 'none'");
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(OPEN_SCRIPT)));
+    expect(await openScriptHash()).toBe(`'sha256-${btoa(String.fromCharCode(...digest))}'`);
   });
 });
 

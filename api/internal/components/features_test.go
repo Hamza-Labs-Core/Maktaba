@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
 	"testing"
 	"time"
 
@@ -117,9 +116,13 @@ func TestFeatureDependencyAndLicence(t *testing.T) {
 	if !Resolve(components.Default(), d, func(string) bool { return true }, false).Features["remote_access"] {
 		t.Fatal("remote_access off with the relay on and licensed")
 	}
-	r = Resolve(components.Default(), d, func(string) bool { return false }, false)
+	// story 50.15: direct access is enough without the relay's licence (a Free home)
+	if !Resolve(components.Default(), d, func(string) bool { return false }, false).Features["remote_access"] {
+		t.Fatal("remote_access off on a Free home with direct access on")
+	}
+	r = Resolve(components.Default(), setWant(d, "cloud.direct", components.WantInstalled, false), func(string) bool { return false }, false)
 	if r.Features["remote_access"] || r.Off["remote_access"].Reason != ReasonLicenceMissing {
-		t.Fatalf("unlicensed relay: %+v", r.Off["remote_access"])
+		t.Fatalf("unlicensed relay, direct off: %+v", r.Off["remote_access"])
 	}
 	// the kill switch: all on
 	if r := Resolve(components.Default(), d, func(string) bool { return false }, true); len(r.Off) != 0 || len(r.Components) != 0 {
@@ -259,30 +262,13 @@ func BenchmarkCapabilities(b *testing.B) {
 	}
 }
 
-// withDirect is the embedded catalog with story 50.15's cloud.direct and its remote_access
-// group (story 50.35), as 50.15 adds them.
+// withDirect is the embedded catalog: story 50.15 added cloud.direct and its remote_access
+// group (story 50.35).
 func withDirect(t *testing.T) *components.Catalog {
 	t.Helper()
-	raw := string(components.Raw())
-	raw = strings.Replace(raw, "feature_any = {}", `feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }`, 1)
-	raw += `
-[[component]]
-id        = "cloud.direct"
-kind      = "loop"
-group     = "system"
-title_key = "components.cloud.direct.title"
-desc_key  = "components.cloud.direct.desc"
-loops     = ["api:direct_listener"]
-requires  = ["cloud.link"]
-placement = "home"
-platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
-bundles   = ["full"]
-features  = ["remote_access"]
-since     = "0.3.93"
-`
-	cat, err := components.Load([]byte(raw))
-	if err != nil {
-		t.Fatal(err)
+	cat := components.Default()
+	if _, ok := cat.Get("cloud.direct"); !ok {
+		t.Fatal("no cloud.direct in the catalog")
 	}
 	return cat
 }
