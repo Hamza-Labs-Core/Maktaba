@@ -28,6 +28,10 @@ func TestRelayIgnoresCFConnectingIP(t *testing.T) {
 			if got := clientIP(r); got != c.want {
 				t.Errorf("got %q, want %q", got, c.want)
 			}
+			// the access log reads the same rule through ClientIP (story 50.32)
+			if got := ClientIP(r); got != c.want {
+				t.Errorf("ClientIP: got %q, want %q", got, c.want)
+			}
 		})
 	}
 }

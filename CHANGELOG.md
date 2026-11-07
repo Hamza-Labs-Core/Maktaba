@@ -348,6 +348,14 @@ build fails when the two differ.
 
 ### Security
 
+- **The cloud's operator console has its own listener and name (Epic 50 story 50.32).** Every
+  `/v1/admin/*` route is served only by the api role's admin listener, for `admin.maktaba.tv`
+  alone: on the user names each one is the same 404 as a route that doesn't exist. The console
+  listener allows no cross-origin call, and a change from it must carry the console's own
+  Origin and header, or it is refused before anything runs. The user API answers only its own
+  names, and the sign-in cookie is now `__Host-maktaba_refresh`, which a browser never shares
+  with another name. The relay's access log records the visitor's address instead of the
+  proxy's.
 - **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
   network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
   a channel listing and a download and fails on one the plugin's reviewed `net` list does not
@@ -2097,6 +2105,15 @@ build fails when the two differ.
   downloads from each home directly, never through the relay. The cloud's name server now
   starts: its role was refused as unknown.
 
+- **The cloud rehearsal proves the origin is reached only through Cloudflare (Epic 50 story
+  50.31, T06–T08).** Two new scenarios run the pair with production's Caddyfile and firewall,
+  the api behind the loopback, and a stand-in for Cloudflare's edge and its connector. In
+  `origin-only-via-edge`, the Floating IP answers only 80 and 443 from the internet, refuses
+  the api's name on 443, and a forged client address never reaches the api or the relay; with
+  the leader powered off, the connector moves to the new leader and the api is back within the
+  3-minute RTO. In `origin-aop`, the fallback origin answers only with the client certificate
+  and only from the test Cloudflare ranges.
+
 - **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
   queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
   admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
@@ -2108,6 +2125,17 @@ build fails when the two differ.
   the new videos it found, and the queue starts each one's checks from that, instead of the
   scanner queuing them itself. What a scan finds and what runs after it are unchanged; a scan
   that finds nothing new starts nothing.
+- **Reading a video's length and audio tracks is a queue stage like the others (Epic 54,
+  story 54.36).** It saves what it reads as before, and the queue decides what runs next from
+  the length and frame size it reports, as it did. Its run now notes how many audio tracks it
+  found and the video's new state.
+
+- **The home's dashboards show every joined machine (Epic 53 story 53.12).** The Overview's
+  memory, disk free and load, and its components and restarts, now carry a line for each joined
+  machine beside the home's. The home asks each machine's own agent over the cluster channel at
+  most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
+  never holds the dashboards back. Component series keep their cap per machine, and come last on a
+  board so each machine's memory, disk and load stay within its 50 lines.
 
 ### Fixed
 

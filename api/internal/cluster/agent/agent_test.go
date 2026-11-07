@@ -390,7 +390,7 @@ func TestCommandRoundTripREST(t *testing.T) {
 	// errors
 	// the home's own commands never come from a request: a machine's database access, a
 	// switch, an update
-	for _, name := range []string{"home.access", "home.database", "switch.promote", "update.apply", "logs.files"} {
+	for _, name := range []string{"home.access", "home.database", "switch.promote", "update.apply", "logs.files", "metrics"} {
 		body := `{"name":"` + name + `","args":{"role":"maktaba_node_x","password":"p","db_host":"evil","db_port":5432}}`
 		if r := f.do("POST", "/api/cluster/processes/"+a.Session+"/cmd", body, "admin"); r.StatusCode != 400 {
 			t.Errorf("%s from the admin endpoint = %d", name, r.StatusCode)

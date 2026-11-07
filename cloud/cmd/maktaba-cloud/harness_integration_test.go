@@ -35,6 +35,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
+	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
@@ -57,7 +58,8 @@ const (
 type env struct {
 	t       *testing.T
 	h       http.Handler
-	router  *chi.Mux
+	router  *chi.Mux // the user listener's router (story 50.32)
+	admin   *chi.Mux // the operator console's listener's router
 	pool    *db.Pool
 	mail    *mail.Recorder
 	pay     *fakeProvider // nil: the "none" provider
@@ -145,6 +147,8 @@ func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust f
 	cfg.Server.ListenAddr = "127.0.0.1:0"
 	cfg.Server.PublicURL = "https://api.example.test"
 	cfg.Server.WebURL = testWebURL
+	cfg.Server.AdminListenAddr = "127.0.0.1:0"
+	cfg.Server.AdminHost = testAdminHost
 	cfg.Auth.TokenSecret = testTokenSecret
 	cfg.Mail.Driver = "log"
 	cfg.Billing.Provider = "none"
@@ -177,13 +181,39 @@ func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust f
 		o.BillingProvider = pay
 	}
 	o.Turnstile = ts
-	r, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, o)
+	a, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, o)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(stop)
-	e.h, e.router = r, r
+	e.router, e.admin = a.User, a.Admin
+	e.h = consoleOrUser(a)
 	return e
+}
+
+// testAdminHost is the console's name in these tests (server.admin_host).
+const testAdminHost = "admin.example.test"
+
+// consoleOrUser stands in for the two hostnames in front of the api's two listeners (story
+// 50.32): an admin path goes to the admin router as the console sends it (its Host, its
+// Origin, X-Maktaba-Staff), anything else to the user router. The listeners' own rules are
+// tested on e.router and e.admin directly.
+func consoleOrUser(a apiRouters) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !server.IsAdminPath(r.URL.Path) {
+			a.User.ServeHTTP(w, r)
+			return
+		}
+		r = r.Clone(r.Context())
+		r.Host = testAdminHost
+		if r.Header.Get("Origin") == "" {
+			r.Header.Set("Origin", "https://"+testAdminHost)
+		}
+		if r.Header.Get(cmw.StaffHeader) == "" {
+			r.Header.Set(cmw.StaffHeader, "1")
+		}
+		a.Admin.ServeHTTP(w, r)
+	})
 }
 
 // scratchDB creates a database of its own for the test (CI's shared

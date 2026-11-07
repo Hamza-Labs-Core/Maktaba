@@ -12,6 +12,7 @@ tests check the heartbeat never waits for the pass and a cancelled pass rolls ba
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
@@ -22,7 +23,7 @@ import pytest
 from maktaba_pipeline.db.jobs_state import mark_done
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.enqueue import enqueue_job
-from maktaba_pipeline.engine.graph import GRAPH
+from maktaba_pipeline.engine.graph import GRAPH as CORE_GRAPH
 from maktaba_pipeline.engine.reconcile import (
     LEADER_KEY,
     THUMBS_SWEEP_WHY,
@@ -81,6 +82,11 @@ async def thumbs_sweep_videos(db: Database, n: int) -> list[UUID]:
         '{"source": "poster.jpg"}',
     )
     return vids
+
+
+#: the core graph with ``probe`` legacy, as it was before it moved onto the engine (story
+#: 54.36 §2): the reconciler's repair of a legacy job is the same for any legacy stage
+GRAPH = tuple(dataclasses.replace(s, legacy=True) if s.name == "probe" else s for s in CORE_GRAPH)
 
 
 async def unpropagated_probes(db: Database, n: int) -> list[int]:

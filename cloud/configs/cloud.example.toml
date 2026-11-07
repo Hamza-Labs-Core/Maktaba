@@ -20,6 +20,19 @@ trusted_proxies = []
 # How Cloudflare reaches the api: "tunnel" (default), or "aop" (the fallback: Caddy
 # checks Cloudflare's client certificate against aop_ca_file and Cloudflare's ranges).
 origin_mode = "tunnel"
+# The operator console's own listener (Epic 50 story 50.32): every /v1/admin/* route is
+# served here and only here (404 on listen_addr), for exactly admin_host; any other Host is
+# 404. A change (POST, PUT, PATCH, DELETE) must carry Origin: admin_origin and
+# X-Maktaba-Staff: 1, else 403 bad_origin. Production: "127.0.0.1:8091", "admin.maktaba.tv"
+# (admin_origin then defaults to https://admin.maktaba.tv). Unset: no console at all.
+# For dev, `pnpm dev:admin` serves the console on :5175 and proxies /v1 here with
+# Host: admin.localhost.
+admin_listen_addr = "127.0.0.1:8091"
+admin_host        = "admin.localhost"
+admin_origin      = "http://localhost:5175"
+# The names listen_addr answers (any other Host is 404; /healthz, /readyz and /metrics answer
+# on any). Production: ["api.maktaba.tv", "app.maktaba.tv", "maktaba.tv"]. Empty: any name.
+user_hosts = []
 read_timeout  = "30s"
 write_timeout = "60s"
 shutdown_grace = "20s"

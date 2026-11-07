@@ -1296,7 +1296,7 @@
    "label": "Length",
    "lane": "episodes",
    "lane_order": 1,
-   "legacy": true,
+   "legacy": false,
    "max_attempts": 3,
    "may_request": [],
    "model_rules": null,
