@@ -28,6 +28,7 @@ import {
 } from "./registry";
 import { HELP_TOPICS, STANDARD_ANCHORS, isHelpTopic } from "./topics";
 import { DOC_SECTIONS } from "../pages/Admin/LiveTV/docs";
+import { firstPartyStages } from "../test/firstPartyStages";
 
 const FILES = import.meta.glob<string>("./content/*/*.md", {
   query: "?raw",
@@ -207,9 +208,13 @@ describe("help links from the app", () => {
     // graph's StageDef.unreleased flag: a stage still unreleased may say it comes later
     const registry = read("../pipeline/src/maktaba_pipeline/engine/stages/registry.py");
     const core = /CORE_MODULES[^=]*=\s*\{([\s\S]*?)\n\}/.exec(registry)?.[1] ?? "";
-    const shipped = [...core.matchAll(/^\s+"([a-z0-9_]+)":\s*"maktaba_pipeline\./gm)].map(
-      (m) => m[1]!
-    );
+    // and the stages Maktaba's own first-party plugins implement (an entry in their
+    // manifests, Epic 54 Phase 4): each wave moves stages there out of CORE_MODULES
+    const fp = firstPartyStages();
+    const shipped = [
+      ...[...core.matchAll(/^\s+"([a-z0-9_]+)":\s*"maktaba_pipeline\./gm)].map((m) => m[1]!),
+      ...[...fp].filter(([, s]) => typeof s.entry === "string").map(([name]) => name),
+    ];
     expect(shipped.length).toBeGreaterThan(40);
     const graph = read("../pipeline/src/maktaba_pipeline/engine/graph.py");
     const unreleased = new Set(
@@ -219,6 +224,7 @@ describe("help links from the app", () => {
         ),
       ].map((m) => m[1]!)
     );
+    for (const [name, st] of fp) if (st.unreleased === true) unreleased.add(name);
     const LATER: Record<(typeof LOCALES)[number], RegExp> = {
       en: /not set up yet|later version|not built yet|coming soon/i,
       ar: /غير مُعدّ بعد|غير معد بعد|إصدار لاحق/,

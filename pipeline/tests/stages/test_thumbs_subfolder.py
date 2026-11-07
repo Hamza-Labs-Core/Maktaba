@@ -17,6 +17,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from maktaba_fp_thumbnails.stages import thumb_small
 
 from maktaba_pipeline.discovery.ytdlp_sidecars import THUMBS_DIR, find_sidecar_thumbnail
 from maktaba_pipeline.engine.enqueue import enqueue_job
@@ -25,7 +26,7 @@ from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.media import ProcResult, reset_runner, set_runner
 from maktaba_pipeline.engine.reconcile import _thumbs_dir_sweep
 from maktaba_pipeline.engine.sql import dumps, loads
-from maktaba_pipeline.engine.stages import thumb_hash, thumb_small
+from maktaba_pipeline.engine.stages import thumb_hash
 from maktaba_pipeline.engine.stages._common import load_video
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.scanner.walker import DEFAULT_IGNORE_DIRNAMES

@@ -1,0 +1,4 @@
+# The shared pipeline modules whose statements tv.maktaba.thumbnails runs (story 54.24 §1)
+modules = [
+    "maktaba_pipeline.engine.stages._common:load_video,require_video",
+]

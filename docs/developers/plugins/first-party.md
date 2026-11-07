@@ -5,7 +5,9 @@
 > graph from manifests with the per-stage switch, and the parity proof. **Wave 1 has moved**:
 > `promo_links`, `clip_groups`, `topic_collections` and `rate_style` run in
 > `tv.maktaba.classify` ([its folder](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/plugins/first-party/classify)).
-> The other stages move wave by wave.
+> **Wave 2 has moved**: `thumb_small` and `chapter_thumbs` run in `tv.maktaba.thumbnails`, and
+> `subtitle_gen` in `tv.maktaba.subtitles`, the first stages that read media, run ffmpeg and
+> write files. The other stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -122,12 +124,41 @@ column.
 - `statements.toml`: the shared pipeline modules whose statements the stages also run (the
   leftovers loader, the season helpers, the rules reader).
 - `queries/`: 36 named statements, written by `statements_build.py sync classify`.
-- `parity.toml` and `tests/test_parity.py`: a seeded channel library (two shows, a playlist
+- `parity.toml` and `tests/test_classify_parity.py`: a seeded channel library (two shows, a playlist
   across both, clips, questions, a promo, talks) drained through the whole graph on two
   databases, the four stages in-process on one and through the plugin on the other.
 
 When the release that moved a stage starts, each worker's graph sync sets the stage to run in
 its plugin (a stage set back by hand stays as it was).
+
+## Files and tools: `tv.maktaba.thumbnails` and `tv.maktaba.subtitles`
+
+A stage that reads media or writes files names its **file areas** and its **tools**:
+
+```toml
+[trusted]
+runner      = "light"
+files.read  = ["library"]
+files.write = ["data.thumbnails"]   # tv.maktaba.subtitles: ["library.subtitles"]
+exec        = ["ffmpeg"]
+```
+
+- **The areas are this machine's folders.** The worker writes them for its runners
+  (`areas.json`: the library roots through the machine's share-path mapping, the thumbnail
+  cache). A runner builds its sandbox from them, and starts again when they change (a library
+  was added); until it has, a stage that reads or writes files runs in the worker.
+- **`library.subtitles`** is the library's folders, written only by the names Maktaba gives
+  subtitle files (`<video stem>.<lang>.srt|vtt`). On macOS the sandbox matches the name; on
+  both systems the runner refuses any other name there, and the job fails `plugin_scope`.
+- **`exec`** lets the runner start only those tools (and loads their own libraries); a shell
+  or any other program is refused.
+- **A file the sandbox refuses** for another reason (a folder the runner was not started
+  with) runs the job in the worker instead (`plugin_sandbox_refused` in the log), so the job
+  still writes what it always wrote.
+
+The parity proof of a file-writing plugin gives each side the same files to start from, and
+compares the files each side leaves (`files` in `parity.toml`, a sha256 per file), along with
+the rows, jobs and log lines.
 
 ## The repo layout
 

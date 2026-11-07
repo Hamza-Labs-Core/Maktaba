@@ -409,7 +409,9 @@ async def test_vocabulary_does_not_change_the_transcribe_fingerprint(db: Databas
 
 @pytest.mark.asyncio
 async def test_a_fix_s_revision_moves_the_subtitles_and_the_index(db: Database) -> None:
-    from maktaba_pipeline.engine.stages import index, subtitle_gen
+    from maktaba_fp_subtitles.stages import subtitle_gen
+
+    from maktaba_pipeline.engine.stages import index
 
     vid, tid, _ = await _transcript(db, [("قال الشيخ", None, None)])
     subs = await subtitle_gen.input_fingerprint(db, Subject("video", vid))
