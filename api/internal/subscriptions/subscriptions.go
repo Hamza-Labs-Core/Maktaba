@@ -51,6 +51,10 @@ const (
 	// It maps to the pro feature set. New code must use TierHome /
 	// TierPro; the verifier rejects the literal "premium" wire string.
 	TierPremium = TierPro
+
+	// TierBasic is Maktaba Cloud's name for the entry paid plan (Epic 50 story 50.19): read
+	// as TierHome.
+	TierBasic Tier = "basic"
 )
 
 // SeatsUnlimited is the SeatLimit() sentinel for tiers with no seat
@@ -234,8 +238,16 @@ func (v *Verifier) VerifySignature(lic *License) (*Entitlements, error) {
 	if !ed25519.Verify(v.PublicKey, payload, sig) {
 		return nil, ErrBadSignature
 	}
-	if !validTiers[lic.License.Tier] {
-		return nil, fmt.Errorf("unknown tier %q (must be free/home/pro)", lic.License.Tier)
+	// Epic 50 story 50.19 §7: Maktaba Cloud's entry paid plan is Basic. A license naming
+	// "basic" is this home's home tier (the same seats and features): homes from this release
+	// take it, so the cloud can name it once they are out. The license itself is left as it
+	// was signed (it may be stored and verified again).
+	tier := lic.License.Tier
+	if tier == TierBasic {
+		tier = TierHome
+	}
+	if !validTiers[tier] {
+		return nil, fmt.Errorf("unknown tier %q (must be free/basic/home/pro)", lic.License.Tier)
 	}
 	if lic.License.Seats < 0 {
 		return nil, errors.New("seats must be >= 0")
@@ -251,11 +263,11 @@ func (v *Verifier) VerifySignature(lic *License) (*Entitlements, error) {
 	for _, f := range lic.License.Features {
 		features[f] = true
 	}
-	for _, f := range tierFeatures[lic.License.Tier] {
+	for _, f := range tierFeatures[tier] {
 		features[f] = true
 	}
 	return &Entitlements{
-		Tier:      lic.License.Tier,
+		Tier:      tier,
 		LicenseID: lic.License.LicenseID,
 		Seats:     lic.License.Seats,
 		IssuedAt:  lic.License.IssuedAt,

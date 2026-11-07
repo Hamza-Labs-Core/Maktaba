@@ -194,6 +194,10 @@ func TestOnlyTheCDNIsAsked(t *testing.T) {
 	var hosts []string
 	var agents []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/revoked-head.json") { // a stray request: not the store's
+			http.NotFound(w, r)
+			return
+		}
 		hosts = append(hosts, r.Host)
 		agents = append(agents, r.UserAgent()+"|"+r.Header.Get("Authorization")+"|"+r.Header.Get("Cookie"))
 		w.WriteHeader(http.StatusNotFound)

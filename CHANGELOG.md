@@ -14,10 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
-- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
-  none of them: a runner starts when the first job of its kind arrives (that job runs in the
-  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
-  processes and its memory budget at rest.
+- **The cloud rehearsal plays each plan through the relay (Epic 50 story 50.19 T13).** Its
+  `relay-plans` scenario runs homes on Free, Basic and Pro behind the relay with the plans
+  enforced: Free is refused with its tunnel kept, Basic is capped, paced and limited to two
+  streams, Pro past its allowance plays at Basic's quality, and pay-as-you-go's usage reaches a
+  fake payment provider once, through an outage. No stream stops in any.
 - **Pay as you go and extra devices on Pro (Epic 50 story 50.19, part 3).** A Pro account can
   keep full quality past its monthly allowance at a price a GB, up to a monthly limit it sets
   (off unless turned on), and buy relayed streams beyond its plan's. The Billing page shows this
@@ -1874,6 +1875,19 @@ build fails when the two differ.
   been copied.
 - On Windows the pipeline writes its logs in UTF-8 (`PYTHONUTF8`), so an Arabic title can no
   longer raise `UnicodeEncodeError`.
+
+- **The home plays Maktaba Cloud's plans (Epic 50 story 50.19, part 4).** A video opened through
+  the relay on a capped plan fits the cap: the home transcodes a file above it, and its playlist
+  lists only what fits; on the home's network and over direct access nothing is capped. A
+  license naming the Basic plan is read as the home's paid tier (4 users), which Settings now
+  calls Basic, and on Basic the subscription settings say that relayed videos are converted on
+  this home. The web, Apple and Android apps say why the relay refused: no plan with the relay,
+  too many devices playing, or the home too busy to prepare the video.
+
+- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
+  none of them: a runner starts when the first job of its kind arrives (that job runs in the
+  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
+  processes and its memory budget at rest.
 
 ### Fixed
 

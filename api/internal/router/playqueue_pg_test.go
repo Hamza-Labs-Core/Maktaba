@@ -102,31 +102,51 @@ func TestPGPlayQueue(t *testing.T) {
 	if q["shuffle"] != true || q["version"] != float64(1) || q["device_id"] != "tv-1" {
 		t.Errorf("created %v", q)
 	}
-	seen := map[string]bool{pqCurrent(t, q).id: true}
+	// each move goes to the last item of the window, which shows the 30 after the current
+	// one: every position is seen, in ~44 moves rather than 1,300 (issue #855: one move a
+	// position took a minute of the integration tier), and each chunk is still written as
+	// the current item nears the end of what is held
+	byPos := map[int]string{}
+	posOf := map[string]int{}
+	note := func(moves int, doc map[string]any) {
+		t.Helper()
+		for _, it := range pqWindow(doc) {
+			if id, ok := byPos[it.pos]; ok && id != it.id {
+				t.Fatalf("move %d: position %d was %s, now %s", moves, it.pos, id, it.id)
+			}
+			if p, ok := posOf[it.id]; ok && p != it.pos {
+				t.Fatalf("move %d: %s again, at %d and %d", moves, it.id, p, it.pos)
+			}
+			byPos[it.pos], posOf[it.id] = it.id, it.pos
+		}
+	}
 	doc := q
+	note(0, doc)
 	start := time.Now()
-	for moves := 0; ; moves++ {
-		nx, ok := pqNext(doc)
-		if !ok {
+	moves := 0
+	for {
+		items := pqWindow(doc)
+		last := items[len(items)-1]
+		if last.pos <= int(doc["current_pos"].(float64)) {
 			break
 		}
-		doc = pqMove(t, e, "member", doc, nx.pos)
-		cur := pqCurrent(t, doc)
-		if seen[cur.id] {
-			t.Fatalf("move %d: %s again", moves, cur.id)
+		moves++
+		doc = pqMove(t, e, "member", doc, last.pos)
+		if pqCurrent(t, doc).id != last.id {
+			t.Fatalf("move %d: the current item is not the one moved to", moves)
 		}
-		seen[cur.id] = true
+		note(moves, doc)
 		if held := count(`SELECT count(*) FROM play_queue_items WHERE queue_id = $1`, qid); held > playqueue.MaxHeld {
 			t.Fatalf("held %d", held)
 		}
 	}
-	if len(seen) != 1301 {
-		t.Fatalf("walked %d videos, want 1301", len(seen))
+	if len(posOf) != 1301 || len(byPos) != 1301 {
+		t.Fatalf("walked %d videos at %d positions, want 1301", len(posOf), len(byPos))
 	}
 	if doc["source_done"] != true {
 		t.Errorf("the walk's end left the source open: %v", doc["source_done"])
 	}
-	t.Logf("1,300 moves in %s", time.Since(start))
+	t.Logf("%d moves in %s", moves, time.Since(start))
 
 	// T02: the same seed reads the same order; reshuffle keeps the current item
 	shuf := e.want(http.StatusCreated, "member", "POST", "/api/me/play-queues", map[string]any{
