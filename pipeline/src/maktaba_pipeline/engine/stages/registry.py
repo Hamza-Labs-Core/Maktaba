@@ -45,7 +45,6 @@ CORE_MODULES: dict[str, str] = {
     "component_catchup": "maktaba_pipeline.engine.stages.component_catchup",
     "word_check": "maktaba_pipeline.engine.stages.word_check",
     "thumb_hash": "maktaba_pipeline.engine.stages.thumb_hash",
-    "review_pages": "maktaba_pipeline.engine.stages.review_pages",
     "youtube_collections": "maktaba_pipeline.engine.stages.youtube_collections",
     "link": "maktaba_pipeline.engine.stages.link",
     "fingerprint": "maktaba_pipeline.engine.stages.fingerprint",

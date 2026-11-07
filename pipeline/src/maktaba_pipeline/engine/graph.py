@@ -563,19 +563,8 @@ GRAPH: tuple[StageDef, ...] = (
     # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
     _fp("rate_style"),
     # Its own pool and no edges out: nothing waits for a review page (plan 06-11 section 18).
-    StageDef(
-        name="review_pages",
-        label="Review pages",
-        subject_kinds=("library",),
-        pool="reports",
-        lane="seasons",
-        lane_order=6,
-        version=REVIEW_VERSION,
-        entry_for=("library",),
-        debounce_sec=120,
-        debounce_max_sec=900,
-        placement="home",
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("review_pages"),
     # ---- channels lane -------------------------------------------------
     # Epic 54: defined by tv.maktaba.livetv's manifest
     _fp("plan_channels"),

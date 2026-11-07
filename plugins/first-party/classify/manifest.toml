@@ -26,6 +26,9 @@ db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processi
 db.write  = ["clip_checks", "clip_group_items", "clip_groups", "promo_links", "season_style", "season_tags", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
 settings  = ["groups", "detect", "tagcheck"]
 compute   = ["llm"]
+# review_pages: reads the small thumbnails, writes the library's page in the reports folder
+files.read  = ["data.thumbnails"]
+files.write = ["data.review"]
 
 [[stage]]
 name         = "promo_links"
@@ -134,4 +137,22 @@ edges        = [{ to = "clip_groups", map = "same" }, { to = "plan_channels", ma
 placement    = "home"
 model_rules  = "tagcheck"
 entry        = "maktaba_fp_classify.stages.check_clips:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "review_pages"
+subject      = "library"
+export       = "review-pages"
+version      = 1
+label        = "Review pages"
+subject_kinds = ["library"]
+pool         = "reports"
+lane         = "seasons"
+lane_order   = 6
+entry_for    = ["library"]
+debounce_sec = 120
+debounce_max_sec = 900
+# the reports folder is the home's (the API serves it)
+placement    = "home"
+entry        = "maktaba_fp_classify.stages.review_pages:IMPL"
 fingerprint  = { input = true, output = false }

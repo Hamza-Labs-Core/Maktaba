@@ -10,7 +10,7 @@ import pytest
 
 from maktaba_pipeline.engine.graph import CATALOG_ID, Subject
 from maktaba_pipeline.engine.sql import loads
-from maktaba_pipeline.engine.stages import review_pages
+from maktaba_pipeline.engine.stages import _review_pages as review_pages
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.schedule.channel_planner import PlannerConfig
 from tests.extensions.harness import error_of, run_stage, setup_runtime, summary_of

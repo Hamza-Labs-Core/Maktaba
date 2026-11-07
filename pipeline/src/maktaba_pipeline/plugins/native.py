@@ -884,7 +884,7 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
     library roots through this machine's share-path mapping, and the data folders the
     stages' own settings name. A runner applies its sandbox from them."""
-    from ..engine.stages.review_pages import reviews_dir
+    from ..engine.stages._review_pages import reviews_dir
     from ..thumbnail import small
     from ..thumbnail.generator import thumbnail_dir_for
 

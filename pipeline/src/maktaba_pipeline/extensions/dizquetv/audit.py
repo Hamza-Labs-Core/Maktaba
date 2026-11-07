@@ -29,7 +29,7 @@ from ...engine.context import StageContext, StageFailure
 from ...engine.graph import StageResult, Subject
 from ...engine.hashing import canonical_hash
 from ...engine.sql import dumps, loads, now, to_ts
-from ...engine.stages import review_pages
+from ...engine.stages import _review_pages as review_pages
 from ...integrations.dizquetv import DizqueError, DizqueTV
 from ...integrations.plex import TransportError
 from ...schedule.channel_audit import (
