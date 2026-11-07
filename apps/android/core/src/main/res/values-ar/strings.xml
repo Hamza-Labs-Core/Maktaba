@@ -180,6 +180,8 @@
     <string name="feature_plex">Plex</string>
     <string name="feature_remote_access">الوصول من خارج المنزل</string>
     <string name="feature_recommendations">الاقتراحات</string>
+    <string name="feature_plugin_panels">لوحات الإضافات</string>
+    <string name="plugin_panels_title">من الإضافات</string>
     <string name="feature_off_admin">ميزة %1$s متوقفة على الجهاز الرئيسي.</string>
     <string name="feature_turn_on">شغّل من صفحة المكوّنات</string>
     <string name="feature_unavailable">ميزة %1$s غير متاحة على الجهاز الرئيسي.</string>
@@ -192,6 +194,7 @@
     <string name="feature_off_plex">Plex متوقف على الجهاز الرئيسي.</string>
     <string name="feature_off_remote_access">الوصول من خارج المنزل متوقف على الجهاز الرئيسي.</string>
     <string name="feature_off_recommendations">الاقتراحات متوقفة على الجهاز الرئيسي.</string>
+    <string name="feature_off_plugin_panels">لوحات الإضافات متوقفة على الجهاز الرئيسي.</string>
     <string name="feature_unavailable_live_tv">البث المباشر غير متاح على الجهاز الرئيسي.</string>
     <string name="feature_unavailable_transcripts">نصوص الفيديو غير متاحة على الجهاز الرئيسي.</string>
     <string name="feature_unavailable_subtitles">الترجمة غير متاحة على الجهاز الرئيسي.</string>
@@ -201,6 +204,7 @@
     <string name="feature_unavailable_plex">Plex غير متاح على الجهاز الرئيسي.</string>
     <string name="feature_unavailable_remote_access">الوصول من خارج المنزل غير متاح على الجهاز الرئيسي.</string>
     <string name="feature_unavailable_recommendations">الاقتراحات غير متاحة على الجهاز الرئيسي.</string>
+    <string name="feature_unavailable_plugin_panels">لوحات الإضافات غير متاحة على الجهاز الرئيسي.</string>
     <string name="search_words_only">البحث بالكلمات فقط. البحث بالمعنى متوقف.</string>
     <plurals name="parts_off">
         <item quantity="zero">لا أجزاء متوقفة</item>

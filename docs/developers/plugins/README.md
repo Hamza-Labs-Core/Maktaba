@@ -50,7 +50,7 @@ The design ships in phases. Each guide marks which phase a feature belongs to.
 | 1 | Lifecycle, grants and roles, health, install from a file, settings, the Plugins page, SDK and test harness | On `main` (the SDK for Rust only) |
 | 2 | Signing and trust | On `main` ([Signing and the chain of trust](trust.md)) |
 | 2 | The Maktaba store, automated checks and review, catalog, updates and the kill switch | Being built |
-| 3 | Paid plugins, panels in every app, local compute (embeddings and the home's language model) | Local compute on `main` (next release); the rest planned |
+| 3 | Paid plugins, panels in every app, local compute (embeddings and the home's language model) | Local compute and panels on `main` (next release); paid plugins: the store's payments on `main`, buying waits for the store ([Selling a plugin](selling.md)) |
 
 Maktaba's own queue stages are also planned to move behind the same manifest, dispatch and
 plugin API as first-party plugins. That work does not change what third-party plugins can do.

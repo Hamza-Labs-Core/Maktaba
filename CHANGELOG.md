@@ -889,6 +889,17 @@ build fails when the two differ.
   refused; an offline home, `serve --offline`, calls no store). The store is built dark: sign-up and submissions stay closed until it is opened.
   maktaba.dev's Publishing and Installing pages describe it.
 
+- **Plugin panels in the apps (Epic 54, story 54.20).** A plugin can show a read-only panel on
+  a video's page, declared as data (`ui/panel.json`, ui@1: key–value rows, badges, chips that
+  search Maktaba, a table, markers on the timeline that play from their time, one image the
+  home serves, a paragraph) and drawn by each app with its own components: the web, the
+  iPhone, iPad and Mac Player, and the Android Player, under **From plugins**, collapsed.
+  Everyone who can see the video sees it, viewers included, in their language; a plugin
+  turned off shows none. Every value is plain text: the plugin API refuses a URL, HTML,
+  markdown or a control character in a value a panel shows (`plugin_text_forbidden`), and
+  every app escapes again and makes no request from one. `GET /api/panels` and the
+  capability `plugin_panels`, which apps read missing as off.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription

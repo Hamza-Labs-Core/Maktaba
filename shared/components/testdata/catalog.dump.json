@@ -1125,7 +1125,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "plugin_panels"
+      ],
       "gated": false,
       "group": "plugins",
       "id": "plugins.host",
@@ -3278,7 +3280,8 @@
     "youtube",
     "plex",
     "remote_access",
-    "recommendations"
+    "recommendations",
+    "plugin_panels"
   ],
   "order": [
     "core.postgres",
