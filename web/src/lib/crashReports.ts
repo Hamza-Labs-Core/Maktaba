@@ -5,6 +5,7 @@
 // header (the home refuses one without it), with the app's recent lines, already scrubbed.
 // Nothing leaves the device while it is off.
 import { apiUrl, csrfHeaders } from "./api";
+import { isDesktop } from "./desktop";
 import { describeThrown, logAppVersion, logLines } from "./errorLog";
 import { scrub } from "./redact";
 import { uuidv7 } from "./requestIds";
@@ -136,13 +137,106 @@ export function reportCrash(thrown: unknown, appVersion = logAppVersion()): Prom
     .catch(() => false);
 }
 
+/** A crash of the desktop shell itself (apps/desktop/src-tauri/src/crashes.rs), kept scrubbed. */
+export interface ShellCrash {
+  id: string;
+  at: number;
+  thread: string;
+  message: string;
+  location: string;
+  app_version: string;
+  platform: string;
+  log: string[];
+}
+
+/** The shell's crash as an envelope (app "desktop"): the panic's message and its place. */
+export function shellEnvelope(c: ShellCrash): string {
+  const event = JSON.stringify({
+    platform: "native",
+    level: "fatal",
+    timestamp: new Date(c.at).toISOString(),
+    release: c.app_version,
+    exception: {
+      values: [
+        {
+          type: "panic",
+          value: scrub(c.message),
+          mechanism: { type: "panic", handled: false },
+          stacktrace: { frames: [{ function: scrub(c.location || c.thread), in_app: true }] },
+        },
+      ],
+    },
+  });
+  const log = c.log
+    .map(scrub)
+    .join("\n")
+    .slice(-512 * 1024);
+  const header = JSON.stringify({
+    event_id: uuidv7().replace(/-/g, ""),
+    consent: CONSENT,
+    app: "desktop",
+    app_version: c.app_version,
+    platform: c.platform,
+    install_id: installId(),
+  });
+  const enc = new TextEncoder();
+  return [
+    header,
+    JSON.stringify({ type: "event", length: enc.encode(event).length }),
+    event,
+    JSON.stringify({ type: "attachment", length: enc.encode(log).length }),
+    log,
+    "",
+  ].join("\n");
+}
+
+type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T | undefined>;
+
+async function shellInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T | undefined> {
+  if (!isDesktop()) return undefined;
+  try {
+    const core = await import("@tauri-apps/api/core");
+    return await core.invoke<T>(cmd, args);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The desktop shell's own crashes (Epic 53 story 53.14, the desktop row): when crash reports
+ * are on here, each one the shell kept is sent to the home, then the shell is told which went
+ * (it keeps them, never offering them again). Off: nothing leaves. Answers how many went.
+ */
+export async function sendShellCrashes(invoke: Invoke = shellInvoke): Promise<number> {
+  if (!crashReportsOn()) return 0;
+  const crashes = (await invoke<ShellCrash[]>("shell_crashes")) ?? [];
+  const sent: string[] = [];
+  for (const c of crashes) {
+    const ok = await fetch(apiUrl("/api/diagnostics/envelope"), {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/x-sentry-envelope", ...csrfHeaders() },
+      body: shellEnvelope(c),
+    })
+      .then((r) => r.ok)
+      .catch(() => false);
+    if (ok) sent.push(c.id);
+  }
+  if (sent.length) await invoke<number>("shell_crashes_sent", { ids: sent });
+  return sent.length;
+}
+
 /** Starts sending uncaught errors (when on); returns the undo. */
 export function installCrashReports(): () => void {
+  // the desktop shell's own crashes, at this start and whenever the switch turns on
+  void sendShellCrashes();
+  const offSwitch = onCrashReportsChange(() => void sendShellCrashes());
   const onError = (ev: ErrorEvent) => void reportCrash(ev.error ?? ev.message);
   const onRejection = (ev: PromiseRejectionEvent) => void reportCrash(ev.reason);
   window.addEventListener("error", onError);
   window.addEventListener("unhandledrejection", onRejection);
   return () => {
+    offSwitch();
     window.removeEventListener("error", onError);
     window.removeEventListener("unhandledrejection", onRejection);
   };

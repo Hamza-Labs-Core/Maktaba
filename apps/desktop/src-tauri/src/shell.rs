@@ -1204,6 +1204,12 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             focus_main(app);
             app.emit("menu", "preferences").map_err(|e| e.to_string())
         }
+        // the web app's form (web/src/lib/desktop.ts: report-problem)
+        "report-problem" => {
+            focus_main(app);
+            app.emit("menu", "report-problem")
+                .map_err(|e| e.to_string())
+        }
         "server-pause" => {
             sh.mark_paused();
             agent::control(Action::Pause)

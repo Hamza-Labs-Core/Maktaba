@@ -44,17 +44,29 @@ pub fn install_panic_hook() {
             .location()
             .map(|l| format!("{}:{}", l.file(), l.line()));
         crate::attempts::log(&panic_line(thread.name(), info.payload(), at.as_deref()));
+        // kept for the home too, scrubbed: sent at the next start only when crash reports
+        // are on (Epic 53 story 53.14; crashes.rs)
+        crate::crashes::keep(
+            thread.name().unwrap_or("unnamed"),
+            panic_message(info.payload()),
+            at.as_deref().unwrap_or(""),
+        );
         previous(info);
     }));
 }
 
-/// The panic's line: its thread, its message and where in the source it was.
-fn panic_line(thread: Option<&str>, payload: &(dyn Any + Send), at: Option<&str>) -> String {
-    let msg = payload
+/// A panic's message ("(no message)" when it carries none).
+fn panic_message(payload: &(dyn Any + Send)) -> &str {
+    payload
         .downcast_ref::<&str>()
         .copied()
         .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
-        .unwrap_or("(no message)");
+        .unwrap_or("(no message)")
+}
+
+/// The panic's line: its thread, its message and where in the source it was.
+fn panic_line(thread: Option<&str>, payload: &(dyn Any + Send), at: Option<&str>) -> String {
+    let msg = panic_message(payload);
     let mut out = format!(
         "error: panic in thread {}: {msg}",
         thread.unwrap_or("unnamed")
