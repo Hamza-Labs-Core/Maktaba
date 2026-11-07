@@ -89,3 +89,15 @@ export async function homeEntitlements(
   }
   return out;
 }
+
+/** Whether a home holds a valid entitlement to a plugin now (the same rules as homeEntitlements). */
+export async function holds(db: DB, homeId: string, pluginId: string, now: Date): Promise<boolean> {
+  const { results } = await db
+    .prepare(
+      `SELECT e.product, e.period_end FROM entitlements e JOIN purchases p ON p.id = e.purchase_id
+        WHERE e.home_id = ? AND e.plugin_id = ? AND e.ended_at IS NULL AND p.status IN ('paid', 'disputed')`,
+    )
+    .bind(homeId, pluginId)
+    .all<{ product: "one_time" | "yearly"; period_end: string | null }>();
+  return results.some((r) => r.product !== "yearly" || !r.period_end || new Date(r.period_end) > now);
+}

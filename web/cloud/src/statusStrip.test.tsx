@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { setCloudStatus, type CloudSummary } from "../../src/lib/cloudStatus";
-import { I18nProvider } from "./i18n";
+import { I18nProvider } from "./shared/i18n";
+import { MESSAGES } from "./catalogs";
 import { StatusStrip } from "./StatusStrip";
 
 const apiDown: CloudSummary = {
@@ -24,7 +25,7 @@ const apiDown: CloudSummary = {
 
 function show() {
   return render(
-    <I18nProvider>
+    <I18nProvider messages={MESSAGES}>
       <StatusStrip />
     </I18nProvider>
   );

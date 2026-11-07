@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { setAccessToken } from "../api";
+import { setAccessToken } from "../shared/api";
 import { renderAt, session, stubFetch, user } from "../test/harness";
 
 const { navigateExternal } = vi.hoisted(() => ({ navigateExternal: vi.fn() }));

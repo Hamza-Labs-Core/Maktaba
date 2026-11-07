@@ -105,6 +105,16 @@ jobs:
         if: inputs.web
         run: make test-unit-web
 
+      # Story 50.32 (T06): the cloud user app's build carries no operator console code (admin
+      # and staff API paths, admin keys, web/admin modules), and the console builds on its own
+      - name: The cloud user bundle has no admin code
+        if: inputs.web
+        run: |
+          node --test tools/lint/no-admin-in-user-bundle.test.mjs
+          pnpm -C web run build:cloud
+          node tools/lint/no-admin-in-user-bundle.mjs web/dist-cloud
+          pnpm -C web exec vite build --config vite.admin.config.ts
+
       # Story 48.2: one token source. Fails when the committed Tokens.swift /
       # Tokens.kt are stale against web/design-system/tokens/, when
       # web/src/styles/tokens.css drifts from the JSON, or when a text colour is

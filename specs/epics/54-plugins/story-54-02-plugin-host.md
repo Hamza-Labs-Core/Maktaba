@@ -94,10 +94,16 @@ a unit test lists the linker's names and compares them with an allow-list.
 - **Engine config:** `consume_fuel(true)`, `epoch_interruption(true)`, pooling allocator sized
   from `resources.concurrency` totals, copy-on-write memory images, `cranelift_opt_level(Speed)`,
   no WASI threads, no shared memory, `wasm_backtrace_details(Enable)` for logs.
-- **Per job:** a new `Store` with `StoreLimitsBuilder` (`memory_size`, `instances(1)`,
-  `tables(10)`, `memories(1)`), fuel from `limits.fuel` (default: 2×10⁹ per 60 s of timeout),
+- **Per job:** a new `Store` with a resource limiter (each memory at most the job's
+  `memory_mb`; at most 64 core instances, 16 tables of at most 100,000 elements and 4
+  memories), fuel from `limits.fuel` (default: 2×10⁹ per 60 s of timeout),
   and an epoch deadline of `timeout_s` at a 100 ms tick from one ticker thread. A deadline
   trap ends the job with `timeout` within one tick plus unwind (N7: ≤ 200 ms).
+  A component holds several core instances (its module, shims, an adapter); a Python one
+  (componentize-py, 54.12) holds one per module of its runtime, 38 measured, so the
+  instance cap leaves room above that. An instance owns no memory beyond the counted
+  memories, so a job's memory stays at most 4 × `memory_mb` whatever its instances; memory
+  and fuel are the real bounds.
 - **Scratch:** when `scratch_mb > 0`, a host-side in-memory byte store reachable only through
   `job.scratch-*` calls (not a filesystem preopen), capped and dropped at job end.
 - **Concurrency:** a semaphore per plugin (`resources.concurrency`) and one for the host (the
@@ -108,9 +114,32 @@ a unit test lists the linker's names and compares them with an allow-list.
 On `Preload`, the host validates `plugin.wasm` is a component, runs the **import audit**
 (imports ⊆ the linked set; every `maktaba:plugin` interface imported is covered by a declared
 capability, else `plugin_undeclared_import`), compiles it with `Engine::precompile_component`
-to `<data>/plugins/cache/<sha256>-<wasmtime version>.cwasm`, and builds an `InstancePre`. A
-cache file is loaded only if its name matches the component's sha256 and the running Wasmtime
-version; anything else is recompiled. Cache files are written atomically.
+to `<data>/plugins/cache/<sha256>-<wasmtime version>-<engine settings hash>.cwasm`, and
+builds an `InstancePre`. A cache file is loaded only if its name matches the component's
+sha256, the running Wasmtime version and the engine's compatibility hash
+(`Engine::precompile_compatibility_hash`), and Wasmtime takes it; anything else is
+recompiled. Cache files are written atomically.
+
+As built, a compile is never a job's time:
+
+- **The job's clock** (its time limit, `wall_ms`) starts when its store is made, just before
+  instantiation. A package the host had not loaded is compiled first, and a job waits for its
+  pool and plugin slots first; both are reported on their own (`compile_ms`, `wait_ms`). The
+  guest's start code (instantiation) stays inside the limit.
+- **A compile has its own cap**, 180 s per package, on at most 2 compile workers. Cranelift
+  cannot be stopped part way and the sandbox lets the host start no process, so an overrun
+  keeps its worker until it ends; its caller gets `plugin_compile_timeout` at the cap, and
+  the package is refused from then on (not compiled again, never cached). The package size
+  caps (54.01) bound what is compiled. One package is compiled once at a time: a second job
+  waits for the first's compile.
+- **The cache warms at start**: in the background, one package at a time, the host compiles
+  every installed package missing from the cache, so an update that changes Wasmtime or its
+  settings recompiles each once, before its first job. The host is ready meanwhile; a job
+  whose package is not warm yet compiles it then.
+- Measured on the Python hello (18 MB, componentize-py): compile 1.1 s in a release build
+  and 15 s in a debug one on an Apple M-series machine, instantiation 2–11 ms, its stage
+  about 1 ms; before this, a cold compile was counted in the job's limit and a debug build
+  on a 2-vCPU runner timed out at 89 fuel.
 
 ## Acceptance criteria
 

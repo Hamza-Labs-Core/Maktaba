@@ -59,6 +59,8 @@ type kit struct {
 	holds []string
 	rev   int64
 	cat   int64
+	// price is the catalog's price for dev.example.p ("" is free)
+	price string
 }
 
 func newKit(t *testing.T) *kit {
@@ -304,11 +306,18 @@ func (k *kit) catalog(versions ...pluginsig.CatalogVersion) {
 	raw, err := pluginsig.SignEnvelope(pluginsig.KindCatalog, pluginsig.CatalogSigned{Version: k.cat, Issued: pluginsig.FormatTime(k.now.Add(-time.Minute)),
 		Expires: pluginsig.FormatTime(k.now.Add(6 * 24 * time.Hour)), APIMajor: 1, Plugins: []pluginsig.CatalogPlugin{{
 			ID: "dev.example.p", Developer: "Dev", Names: map[string]string{"en": "P", "ar": "ب"}, Summaries: map[string]string{"en": "", "ar": ""},
-			Tags: []string{}, Price: "free", Machine: []string{}, Versions: versions}}}, k.store)
+			Tags: []string{}, Price: k.priceOr(), Machine: []string{}, Versions: versions}}}, k.store)
 	if err != nil {
 		k.t.Fatal(err)
 	}
 	k.cdn.files["catalog-1.json"] = raw
+}
+
+func (k *kit) priceOr() string {
+	if k.price == "" {
+		return "free"
+	}
+	return k.price
 }
 
 func (k *kit) version(v string, body []byte, caps ...string) pluginsig.CatalogVersion {
@@ -558,5 +567,52 @@ func TestOfflineFetchesNothing(t *testing.T) {
 	k.svc.Tick(ctx)
 	if len(k.cdn.gets) == before {
 		t.Fatal("back online, nothing fetched")
+	}
+}
+
+// Story 54.19 §6: a paid plugin's package comes through Paid (a URL the store signs against
+// this home's entitlement), never from the public CDN; without Paid it cannot be installed,
+// the store's refusal (entitlement_missing) is the answer, and the digest is still checked.
+func TestAPaidPluginDownloadsThroughItsEntitlement(t *testing.T) {
+	k := newKit(t)
+	ctx := context.Background()
+	k.publish()
+	_ = k.svc.Load(ctx)
+	k.svc.Tick(ctx)
+	_ = k.svc.FetchRevoked(ctx, nil)
+	k.price = "one_time"
+	v := k.version("2.0.0", []byte("paid-bytes"))
+	delete(k.cdn.files, v.SHA256+".mkplugin") // not on the public CDN
+	k.catalog(v)
+	if err := k.svc.FetchCatalog(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f := &installer{}
+	var p *Problem
+	if _, err := k.svc.InstallFromStore(ctx, f, "dev.example.p", "2.0.0", nil, svc.Actor{By: "owner"}); !errors.As(err, &p) || p.Code != CodePaidUnavailable {
+		t.Fatalf("no Paid: %v", err)
+	}
+	var asked []string
+	k.svc.Paid = func(_ context.Context, id, sha string) ([]byte, error) {
+		asked = append(asked, id+"@"+sha)
+		return nil, &Problem{Status: http.StatusForbidden, Code: "entitlement_missing", Msg: "buy it first"}
+	}
+	if _, err := k.svc.InstallFromStore(ctx, f, "dev.example.p", "2.0.0", nil, svc.Actor{By: "owner"}); !errors.As(err, &p) || p.Code != "entitlement_missing" || p.Status != http.StatusForbidden {
+		t.Fatalf("not bought: %v", err)
+	}
+	k.svc.Paid = func(_ context.Context, id, sha string) ([]byte, error) {
+		asked = append(asked, id+"@"+sha)
+		return []byte("paid-bytes"), nil
+	}
+	if _, err := k.svc.InstallFromStore(ctx, f, "dev.example.p", "2.0.0", nil, svc.Actor{By: "owner"}); err != nil || len(f.calls) != 1 {
+		t.Fatalf("bought: %v (calls %v)", err, f.calls)
+	}
+	if len(asked) != 2 || asked[1] != "dev.example.p@"+v.SHA256 {
+		t.Fatalf("asked %v", asked)
+	}
+	// the wrong bytes are refused as from the CDN
+	k.svc.Paid = func(context.Context, string, string) ([]byte, error) { return []byte("evil"), nil }
+	if _, err := k.svc.InstallFromStore(ctx, f, "dev.example.p", "2.0.0", nil, svc.Actor{By: "owner"}); !errors.As(err, &p) || p.Code != "package_digest_mismatch" {
+		t.Fatalf("bad bytes: %v", err)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -166,10 +167,12 @@ func (s *Service) InstallFromStore(ctx context.Context, l Installer, id, version
 		return nil, &Problem{Status: http.StatusConflict, Code: CodeNotInCatalog, Msg: "no catalog yet"}
 	}
 	var v *pluginsig.CatalogVersion
+	paid := false
 	for _, p := range c.Plugins {
 		if p.ID != id {
 			continue
 		}
+		paid = p.Price != "" && p.Price != "free"
 		for i := range p.Versions {
 			if p.Versions[i].Version == version {
 				v = &p.Versions[i]
@@ -185,9 +188,27 @@ func (s *Service) InstallFromStore(ctx context.Context, l Installer, id, version
 	if !strings.HasPrefix(v.URL, "https://") && !strings.HasPrefix(v.URL, "http://127.0.0.1") && !strings.HasPrefix(v.URL, "http://localhost") {
 		return nil, &Problem{Status: http.StatusBadGateway, Code: CodeDownloadFailed, Msg: "not an https URL"}
 	}
-	body, err := s.Store.Get(ctx, v.SHA256+".mkplugin")
-	if err != nil {
-		return nil, &Problem{Status: http.StatusBadGateway, Code: CodeDownloadFailed, Msg: err.Error()}
+	var body []byte
+	var err error
+	if paid {
+		// a paid plugin's package is never public (54.19 §6): a signed URL against this
+		// home's entitlement
+		if s.Paid == nil {
+			return nil, &Problem{Status: http.StatusConflict, Code: CodePaidUnavailable, Msg: "this server cannot download paid plugins"}
+		}
+		body, err = s.Paid(ctx, id, v.SHA256)
+		if err != nil {
+			var p *Problem
+			if errors.As(err, &p) {
+				return nil, p
+			}
+			return nil, &Problem{Status: http.StatusBadGateway, Code: CodeDownloadFailed, Msg: err.Error()}
+		}
+	} else {
+		body, err = s.Store.Get(ctx, v.SHA256+".mkplugin")
+		if err != nil {
+			return nil, &Problem{Status: http.StatusBadGateway, Code: CodeDownloadFailed, Msg: err.Error()}
+		}
 	}
 	sum := sha256.Sum256(body)
 	if hex.EncodeToString(sum[:]) != v.SHA256 || int64(len(body)) != v.Size {
