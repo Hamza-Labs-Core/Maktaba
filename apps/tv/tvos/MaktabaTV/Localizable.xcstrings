@@ -308,6 +308,16 @@
         }
       }
     },
+    "Help" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المساعدة"
+          }
+        }
+      }
+    },
     "Home" : {
       "localizations" : {
         "ar" : {
@@ -684,6 +694,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "السابق"
+          }
+        }
+      }
+    },
+    "Privacy" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخصوصية"
           }
         }
       }

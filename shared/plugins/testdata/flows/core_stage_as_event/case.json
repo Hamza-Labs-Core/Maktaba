@@ -1,0 +1,5 @@
+{
+  "about": "a flow that names a core stage as if it were an event",
+  "mode": "store",
+  "states": {}
+}

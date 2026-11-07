@@ -55,8 +55,13 @@ impl PluginApi for MockApi {
     fn call(&self, token: &str, interface: &str, function: &str, body: &Value) -> Result<Answer, ApiError> {
         assert_eq!(token, "secret-token", "the host must attach the job's token");
         self.calls.lock().unwrap().push((interface.into(), function.into(), body.clone()));
+        // a request of a stage for itself would loop (54.40): the API refuses it
+        if (interface, function) == ("queue", "request") && body["stage"] == "loop_self" {
+            return Err(ApiError::Loop);
+        }
         Ok(Answer::Json(match (interface, function) {
             ("data", "get") => json!({"value": null}),
+            ("events", "emit") => json!({"stages": ["p_0123abcd_hear"]}),
             _ => json!({}),
         }))
     }
@@ -350,6 +355,25 @@ fn progress_requests_and_job_data_reach_their_places() {
     assert_eq!(s, json!({"payload": {"a": 1}, "settings": {"threshold": 3}, "grants": 2, "last": 7}));
 }
 
+/// 54.40 T02, T06 (host side): an emitted event comes back in the result with the stages
+/// the API named; a guest that keeps asking for itself after the API refused the loop
+/// still fails with plugin_loop, and nothing it asked for is kept.
+#[test]
+fn events_and_loops() {
+    let f = Fixture::new(false);
+    let p = f.package("hostile", &guest("hostile"), ALL);
+    let r = f.run(&p, "emit", &[], Limits::default());
+    assert_eq!(r.outcome, Outcome::Ok, "{r:?}");
+    assert_eq!(r.events.len(), 1);
+    assert_eq!(r.events[0].name, "hostile.done");
+    assert_eq!(r.events[0].stages, vec!["p_0123abcd_hear".to_string()]);
+
+    let r = f.run(&p, "loop_self", &["jobs.enqueue"], Limits::default());
+    assert_eq!(r.outcome, Outcome::Refused, "{r:?}");
+    assert_eq!(r.error_code, "plugin_loop");
+    assert!(r.requests.is_empty() && r.events.is_empty());
+}
+
 /// 54.09 T04 (host side): a log flood is cut to the limit and counted; the job finishes.
 #[test]
 fn log_flood_is_throttled() {
@@ -411,7 +435,7 @@ fn dispatch_over_the_socket() {
     protocol::write_frame(&mut c, &Request::Health).unwrap();
     let Response::Health(h) = protocol::read_frame(&mut c).unwrap() else { panic!() };
     assert!(h.ok && h.ready);
-    assert_eq!(h.plugin_api, "1.1");
+    assert_eq!(h.plugin_api, "1.2");
 
     let mut c = plugind_core::uds::connect(&sock).unwrap();
     protocol::write_frame(&mut c, &Request::Run(Box::new(req(&p, "progress", &[], Limits::default())))).unwrap();

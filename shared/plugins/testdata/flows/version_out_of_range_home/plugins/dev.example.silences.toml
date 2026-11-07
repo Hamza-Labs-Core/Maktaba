@@ -1,0 +1,24 @@
+schema = 1
+id = "dev.example.silences"
+version = "2.0.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name = "find_silences"
+subject = "video"
+export = "run-0"
+version = 1
+emits = ["silences.found"]
+  [[stage.trigger]]
+  event = "audio.ready"
+
+[[event]]
+name = "silences.found"
+subject = "video"
+payload = "events/silences.found.schema.json"

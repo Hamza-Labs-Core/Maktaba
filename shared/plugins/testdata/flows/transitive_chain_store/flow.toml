@@ -1,0 +1,21 @@
+schema = 1
+id = "dev.example.flow"
+version = "1.0.0"
+
+[strings]
+name = "flow.name"
+
+[[plugin]]
+id = "dev.example.alpha"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name = "one"
+  subject = "video"
+  triggers = ["plugin:dev.example.xray/x.done"]
+  emits = ["a.done"]
+
+  [[plugin.event]]
+  name = "a.done"
+  subject = "video"
+  payload = "events/a.done.schema.json"

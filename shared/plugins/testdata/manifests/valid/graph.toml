@@ -1,0 +1,45 @@
+schema = 1
+id = "dev.example.silence-chapters"
+version = "1.4.0"
+plugin_api = "1.0"
+maktaba = ">=0.6.0, <0.9.0"
+licence = "MIT"
+
+[strings]
+name = "plugin.name"
+summary = "plugin.summary"
+
+[[stage]]
+name        = "find_silences"
+subject     = "video"
+export      = "run-find-silences"
+version     = 3
+may_request = ["write_chapters"]
+emits       = ["silences.found"]
+  [[stage.trigger]]
+  event = "audio.ready"
+
+[[stage]]
+name    = "write_chapters"
+subject = "video"
+export  = "run-write-chapters"
+version = 1
+  [[stage.trigger]]
+  stage = "find_silences"
+
+[[stage]]
+name    = "mark_music"
+subject = "video"
+export  = "run-mark-music"
+version = 1
+  [[stage.trigger]]
+  event = "plugin:dev.example.music-finder/music.found"
+
+[[event]]
+name    = "silences.found"
+subject = "video"
+payload = "events/silences.found.schema.json"
+
+[[depends]]
+plugin  = "dev.example.music-finder"
+version = " >= 2.1.0 , <3.0.0"

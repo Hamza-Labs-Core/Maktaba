@@ -155,6 +155,7 @@ export const KNOWN_CAUSES = [
   "readback_mismatch",
   "no_handler",
   "graph_violation",
+  "plugin_loop",
   "db_error",
   "shm_full",
   "disk_full",

@@ -1,0 +1,45 @@
+{
+  "findings": [
+    {
+      "code": "flow_manifest_mismatch",
+      "severity": "refuse",
+      "plugin": "dev.example.alpha",
+      "detail": "stage one triggers"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/one"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "بيان الإضافة ⁦dev.example.alpha⁩ لا يطابق تدفّقها: ⁦stage one triggers⁩ مختلف."
+    ],
+    "en": [
+      "The manifest of dev.example.alpha does not match its flow: stage one triggers differs."
+    ]
+  }
+}

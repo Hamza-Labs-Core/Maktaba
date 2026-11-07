@@ -1,0 +1,71 @@
+{
+  "findings": [
+    {
+      "code": "flow_missing_plugin",
+      "severity": "refuse",
+      "plugin": "dev.example.xray",
+      "detail": "dev.example.zulu >=1.0.0, <2.0.0"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "event:dev.example.xray/x.done",
+        "kind": "subscribe",
+        "to": "stage:dev.example.alpha/one"
+      },
+      {
+        "from": "stage:dev.example.alpha/one",
+        "kind": "emit",
+        "to": "event:dev.example.alpha/a.done"
+      },
+      {
+        "from": "stage:dev.example.xray/x",
+        "kind": "emit",
+        "to": "event:dev.example.xray/x.done"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "event:dev.example.alpha/a.done",
+        "kind": "event",
+        "name": "a.done",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.xray/x.done",
+        "kind": "event",
+        "name": "x.done",
+        "plugin": "dev.example.xray",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.xray/x",
+        "kind": "stage",
+        "name": "x",
+        "plugin": "dev.example.xray",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تعمل الإضافة ⁦dev.example.xray⁩ مع ⁦dev.example.zulu >=1.0.0, <2.0.0⁩، وهي غير موجودة هنا بإصدار تقبله."
+    ],
+    "en": [
+      "dev.example.xray works with dev.example.zulu >=1.0.0, <2.0.0, which is not here at a version it accepts."
+    ]
+  }
+}

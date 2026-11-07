@@ -6,6 +6,7 @@ import SwiftUI
 struct HomeStatusView: View {
     let user: User
     @Environment(RemoteModel.self) private var model
+    @Environment(\.reportProblem) private var reportProblem
 
     var body: some View {
         List {
@@ -57,6 +58,49 @@ struct HomeStatusView: View {
                 if let held = model.updates?.tvHeld, held.tv.held {
                     Label(held.summary, systemImage: "tv").foregroundStyle(Color.brass)
                 }
+            }
+            // Epic 53: what went wrong on the home, its lines, its charts, people's reports
+            Section("Diagnostics") {
+                NavigationLink {
+                    ErrorsView()
+                } label: {
+                    Label("Errors", systemImage: "exclamationmark.octagon")
+                        .badge(model.newErrors ?? 0)
+                }
+                .accessibilityIdentifier("home.errors")
+                NavigationLink {
+                    LogsView()
+                } label: {
+                    Label("Logs", systemImage: "text.magnifyingglass")
+                }
+                .accessibilityIdentifier("home.logs")
+                NavigationLink {
+                    DashboardsView()
+                } label: {
+                    Label("Dashboards", systemImage: "chart.xyaxis.line")
+                }
+                .accessibilityIdentifier("home.dashboards")
+                NavigationLink {
+                    ReportsInboxView()
+                } label: {
+                    Label("Problem reports", systemImage: "tray")
+                }
+                .accessibilityIdentifier("home.reports")
+            }
+            Section("This device") {
+                CrashReportsToggle(session: model.session)
+                Button {
+                    reportProblem?()
+                } label: {
+                    Label { Text(verbatim: ReportWords.title) } icon: { Image(systemName: "exclamationmark.bubble") }
+                }
+                .accessibilityIdentifier("home.reportProblem")
+                NavigationLink {
+                    MyReportsView(client: model.client)
+                } label: {
+                    Label { Text(verbatim: ReportWords.mine) } icon: { Image(systemName: "person.crop.rectangle.stack") }
+                }
+                .accessibilityIdentifier("home.myReports")
             }
             if let q = model.queue {
                 Section("Processing") {

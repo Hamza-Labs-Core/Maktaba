@@ -9,7 +9,7 @@ prs: [750]
 ---
 
 ## What happened
-- `promo_links`, `clip_groups`, `topic_collections` and `rate_style` moved into `tv.maktaba.classify`. They run in the `light` runner through 36 named statements under `maktaba_fp_classify` (migration 0199). The parity proof drains a seeded channel library both ways and compares rows, queue records and job logs.
+- `promo_links`, `clip_groups`, `topic_collections` and `rate_style` moved into `tv.maktaba.classify`. They run in the `light` runner through 36 named statements under `maktaba_fp_classify` (migration 0200). The parity proof drains a seeded channel library both ways and compares rows, queue records and job logs.
 - The flip at update is each worker's graph sync: a first-party stage never set by hand becomes `plugin` on Postgres.
 
 ## What we learned

@@ -1,0 +1,36 @@
+schema = 1
+id = "dev.example.flow"
+version = "1.0.0"
+
+[strings]
+name = "flow.name"
+
+[[plugin]]
+id = "dev.example.silences"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name = "find_silences"
+  subject = "video"
+  triggers = ["audio.ready"]
+  emits = ["silences.found"]
+
+  [[plugin.event]]
+  name = "silences.found"
+  subject = "video"
+  payload = "events/silences.found.schema.json"
+
+[[plugin]]
+id = "dev.example.chapter-writer"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name = "write_chapters"
+  subject = "video"
+  triggers = ["plugin:dev.example.silences/silences.found"]
+  may_request = ["tidy"]
+
+  [[plugin.stage]]
+  name = "tidy"
+  subject = "video"
+  triggers = ["stage:write_chapters"]

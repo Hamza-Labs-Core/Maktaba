@@ -163,3 +163,15 @@ functions = ["generate"]
 title_key = "plugins.capability.compute_llm.title"
 detail_key = "plugins.capability.compute_llm.detail"
 since     = "1.1"
+
+# 54.40: subscribing to another plugin's published events. It unlocks no import (the
+# subscriber is only started); the admin's grant is what wires the subscription.
+[[capability]]
+name      = "events.subscribe"
+risk      = "medium"
+interface = "events"
+functions = []
+param     = "plugin_id"
+title_key = "plugins.capability.events_subscribe.title"
+detail_key = "plugins.capability.events_subscribe.detail"
+since     = "1.2"

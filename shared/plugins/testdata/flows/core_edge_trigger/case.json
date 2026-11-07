@@ -1,0 +1,5 @@
+{
+  "about": "a flow whose stage runs after a core stage by name",
+  "mode": "store",
+  "states": {}
+}

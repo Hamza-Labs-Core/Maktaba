@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.ui.screens
 
+import androidx.compose.ui.platform.testTag
 import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
@@ -63,6 +64,26 @@ fun AccountScreen(app: MaktabaTVApp, user: User, onPlaylists: () -> Unit = {}) {
                 modifier = Modifier.padding(top = 12.dp),
             ) {
                 Text(stringResource(R.string.settings_autoplay_next) + ": " + stringResource(if (autoplay) R.string.on else R.string.off))
+            }
+            // Epic 53: crash reports to the home (off until turned on), Report a problem, My reports
+            home?.let { h ->
+                val consent = remember { com.hamzalabs.maktaba.core.diagnostics.CrashConsent(context) }
+                var crashes by remember(h) { mutableStateOf(consent.isOn(h)) }
+                MaktabaButton(onClick = { crashes = !crashes; consent.set(crashes, h) }, modifier = Modifier.padding(top = 24.dp)) {
+                    Text(stringResource(com.hamzalabs.maktaba.core.R.string.crash_setting, h.label) + ": " + stringResource(if (crashes) R.string.on else R.string.off))
+                }
+            }
+            val report = com.hamzalabs.maktaba.core.ui.LocalReportProblem.current
+            var mine by remember { mutableStateOf(false) }
+            val client = (app.session.phase.collectAsState().value as? com.hamzalabs.maktaba.core.session.AppSession.Phase.SignedIn)?.client
+            if (mine && client != null) com.hamzalabs.maktaba.core.ui.MyReportsDialog(client) { mine = false }
+            Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (report != null) {
+                    MaktabaButton(onClick = { report(null) }, modifier = Modifier.testTag("account-report")) {
+                        Text(stringResource(com.hamzalabs.maktaba.core.R.string.report_title))
+                    }
+                }
+                if (client != null) MaktabaButton(onClick = { mine = true }) { Text(stringResource(com.hamzalabs.maktaba.core.R.string.report_mine)) }
             }
             Text(stringResource(R.string.licences), style = MaterialTheme.typography.labelMedium, color = MaktabaPalette.Faint, modifier = Modifier.padding(top = 32.dp))
         }

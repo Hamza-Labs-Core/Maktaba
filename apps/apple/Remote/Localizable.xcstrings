@@ -51,6 +51,16 @@
         }
       }
     },
+    "%@: now %@; highest %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: الآن %2$@؛ الأعلى %3$@."
+          }
+        }
+      }
+    },
     "%lld blocked" : {
       "localizations" : {
         "ar" : {
@@ -67,6 +77,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "فشل: %lld"
+          }
+        }
+      }
+    },
+    "%lld in 24 h · %lld in all · %lld people" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld خلال 24 ساعة · %2$lld في المجموع · %3$lld أشخاص"
+          }
+        }
+      }
+    },
+    "%lld in the last 7 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld خلال آخر 7 أيام"
           }
         }
       }
@@ -135,6 +165,16 @@
         }
       }
     },
+    "%lld s later" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بعد %lld ث"
+          }
+        }
+      }
+    },
     "%lld waiting" : {
       "localizations" : {
         "ar" : {
@@ -145,12 +185,72 @@
         }
       }
     },
+    "1 hour" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ساعة"
+          }
+        }
+      }
+    },
     "123 456" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "123 456"
+          }
+        }
+      }
+    },
+    "24 hours" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24 ساعة"
+          }
+        }
+      }
+    },
+    "30 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "30 يومًا"
+          }
+        }
+      }
+    },
+    "7 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 أيام"
+          }
+        }
+      }
+    },
+    "90 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "90 يومًا"
+          }
+        }
+      }
+    },
+    "A screenshot is attached (see it on the web)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مرفقة لقطة شاشة (اعرضها على الويب)"
           }
         }
       }
@@ -171,6 +271,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "قد تكون كلمة من الآية ناقصة: %@"
+          }
+        }
+      }
+    },
+    "API goroutines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إجراءات الواجهة البرمجية المتزامنة"
           }
         }
       }
@@ -215,6 +325,16 @@
         }
       }
     },
+    "All" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الكل"
+          }
+        }
+      }
+    },
     "An earlier fix" : {
       "localizations" : {
         "ar" : {
@@ -241,6 +361,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "سبب آخر"
+          }
+        }
+      }
+    },
+    "App" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التطبيق"
           }
         }
       }
@@ -389,6 +519,16 @@
         }
       }
     },
+    "Board" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اللوحة"
+          }
+        }
+      }
+    },
     "CPU" : {
       "localizations" : {
         "ar" : {
@@ -399,12 +539,32 @@
         }
       }
     },
+    "CPU of the API (seconds per minute)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معالج الواجهة البرمجية (ثوانٍ في الدقيقة)"
+          }
+        }
+      }
+    },
     "Cancel" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إلغاء"
+          }
+        }
+      }
+    },
+    "Category" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفئة"
           }
         }
       }
@@ -429,6 +589,26 @@
         }
       }
     },
+    "Code" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرمز"
+          }
+        }
+      }
+    },
+    "Components up" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكوّنات العاملة"
+          }
+        }
+      }
+    },
     "Correct" : {
       "localizations" : {
         "ar" : {
@@ -439,12 +619,72 @@
         }
       }
     },
+    "Count" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العدد"
+          }
+        }
+      }
+    },
     "Crash loop: it keeps exiting soon after it starts. The other processes keep running, and this one is retried slowly." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "تعطّل متكرر: تتوقف العملية بعد وقت قصير من تشغيلها. تستمر العمليات الأخرى في العمل، وتُعاد محاولة تشغيل هذه العملية ببطء."
+          }
+        }
+      }
+    },
+    "Crash reports" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقارير الأعطال"
+          }
+        }
+      }
+    },
+    "Dashboards" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لوحات المتابعة"
+          }
+        }
+      }
+    },
+    "Day" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اليوم"
+          }
+        }
+      }
+    },
+    "Device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز"
+          }
+        }
+      }
+    },
+    "Diagnostics" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشخيص"
           }
         }
       }
@@ -479,6 +719,46 @@
         }
       }
     },
+    "Error" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخطأ"
+          }
+        }
+      }
+    },
+    "Errors" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأخطاء"
+          }
+        }
+      }
+    },
+    "Errors per hour" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأخطاء في الساعة"
+          }
+        }
+      }
+    },
+    "Every level" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل المستويات"
+          }
+        }
+      }
+    },
     "Every stage is paused. Running jobs finish; nothing new starts." : {
       "localizations" : {
         "ar" : {
@@ -509,6 +789,26 @@
         }
       }
     },
+    "Fields" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحقول"
+          }
+        }
+      }
+    },
+    "First seen" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أول ظهور"
+          }
+        }
+      }
+    },
     "Fix in Settings" : {
       "localizations" : {
         "ar" : {
@@ -529,12 +829,62 @@
         }
       }
     },
+    "Follow a request" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتبّع طلب"
+          }
+        }
+      }
+    },
+    "Follow this request" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتبّع هذا الطلب"
+          }
+        }
+      }
+    },
+    "For 24 hours" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لمدة 24 ساعة"
+          }
+        }
+      }
+    },
+    "For 7 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لمدة 7 أيام"
+          }
+        }
+      }
+    },
     "For the home's admins" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "لمسؤولي الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "From" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من"
           }
         }
       }
@@ -579,6 +929,36 @@
         }
       }
     },
+    "Hour" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الساعة"
+          }
+        }
+      }
+    },
+    "In 24 hours" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خلال 24 ساعة"
+          }
+        }
+      }
+    },
+    "In all" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في المجموع"
+          }
+        }
+      }
+    },
     "It stops working for the home at once; its jobs go back to the queue. To use it again it must ask to join again." : {
       "localizations" : {
         "ar" : {
@@ -595,6 +975,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "أُبقيت «%@» كما هي"
+          }
+        }
+      }
+    },
+    "Last 15 minutes" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر 15 دقيقة"
+          }
+        }
+      }
+    },
+    "Last 24 hours" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر 24 ساعة"
+          }
+        }
+      }
+    },
+    "Last 7 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر 7 أيام"
           }
         }
       }
@@ -629,6 +1039,36 @@
         }
       }
     },
+    "Last hour" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر ساعة"
+          }
+        }
+      }
+    },
+    "Last seen" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر ظهور"
+          }
+        }
+      }
+    },
+    "Last seen %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر ظهور %@"
+          }
+        }
+      }
+    },
     "Last update" : {
       "localizations" : {
         "ar" : {
@@ -659,12 +1099,92 @@
         }
       }
     },
+    "Level" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المستوى"
+          }
+        }
+      }
+    },
     "Libraries" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "المكتبات"
+          }
+        }
+      }
+    },
+    "Line" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السطر"
+          }
+        }
+      }
+    },
+    "Lines around this" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأسطر المحيطة"
+          }
+        }
+      }
+    },
+    "Log files" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملفات السجلات"
+          }
+        }
+      }
+    },
+    "Log search index" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فهرس البحث في السجلات"
+          }
+        }
+      }
+    },
+    "Log search is off. Turn it on in Settings → Components on the web." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث في السجلات متوقف. شغّله من الإعدادات ← المكوّنات على الويب."
+          }
+        }
+      }
+    },
+    "Log search is restarting. Try again in a minute." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث في السجلات يُعاد تشغيله. حاول مجددًا بعد دقيقة."
+          }
+        }
+      }
+    },
+    "Logs" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السجلات"
           }
         }
       }
@@ -685,6 +1205,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الأجهزة"
+          }
+        }
+      }
+    },
+    "Machines behind on updates" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأجهزة المتأخرة في التحديث"
           }
         }
       }
@@ -715,6 +1245,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تعليم كاسم"
+          }
+        }
+      }
+    },
+    "Mark seen" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم كمرئي"
+          }
+        }
+      }
+    },
+    "Memory of the API" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ذاكرة الواجهة البرمجية"
+          }
+        }
+      }
+    },
+    "More" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المزيد"
+          }
+        }
+      }
+    },
+    "Mute" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كتم"
+          }
+        }
+      }
+    },
+    "Muted" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتوم"
+          }
+        }
+      }
+    },
+    "Muted until" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتوم حتى"
           }
         }
       }
@@ -769,6 +1359,26 @@
         }
       }
     },
+    "New" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جديد"
+          }
+        }
+      }
+    },
+    "New and seen" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجديدة والمرئية"
+          }
+        }
+      }
+    },
     "Next" : {
       "localizations" : {
         "ar" : {
@@ -785,6 +1395,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الكلمة التالية"
+          }
+        }
+      }
+    },
+    "No data for this time yet" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد بيانات لهذه الفترة بعد"
+          }
+        }
+      }
+    },
+    "No errors to show." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا أخطاء هنا."
           }
         }
       }
@@ -819,12 +1449,62 @@
         }
       }
     },
+    "No line of it is kept any more." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يعد أي سطر منه محفوظًا."
+          }
+        }
+      }
+    },
+    "No line of this request is kept any more." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يعد أي سطر من هذا الطلب محفوظًا."
+          }
+        }
+      }
+    },
+    "No lines match." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد أسطر مطابقة."
+          }
+        }
+      }
+    },
+    "No lines." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا أسطر."
+          }
+        }
+      }
+    },
     "No machines. This home works alone." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "لا أجهزة. يعمل هذا الجهاز الرئيسي وحده."
+          }
+        }
+      }
+    },
+    "No problem reports." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا بلاغات عن مشكلات."
           }
         }
       }
@@ -969,6 +1649,26 @@
         }
       }
     },
+    "Overview" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نظرة عامة"
+          }
+        }
+      }
+    },
+    "Part" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجزء"
+          }
+        }
+      }
+    },
     "Pause" : {
       "localizations" : {
         "ar" : {
@@ -1029,6 +1729,26 @@
         }
       }
     },
+    "People" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأشخاص"
+          }
+        }
+      }
+    },
+    "Person" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الشخص"
+          }
+        }
+      }
+    },
     "Picked by a reviewer" : {
       "localizations" : {
         "ar" : {
@@ -1069,12 +1789,32 @@
         }
       }
     },
+    "Problem reports" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بلاغات المشكلات"
+          }
+        }
+      }
+    },
     "Processes" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "العمليات"
+          }
+        }
+      }
+    },
+    "Processes running" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العمليات العاملة"
           }
         }
       }
@@ -1129,6 +1869,16 @@
         }
       }
     },
+    "Recent lines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأسطر الأخيرة"
+          }
+        }
+      }
+    },
     "Release" : {
       "localizations" : {
         "ar" : {
@@ -1139,12 +1889,52 @@
         }
       }
     },
+    "Releases" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدارات"
+          }
+        }
+      }
+    },
     "Replay" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إعادة التشغيل"
+          }
+        }
+      }
+    },
+    "Resolve" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حلّ"
+          }
+        }
+      }
+    },
+    "Resolved" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محلول"
+          }
+        }
+      }
+    },
+    "Restarts per minute" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادات التشغيل في الدقيقة"
           }
         }
       }
@@ -1249,6 +2039,56 @@
         }
       }
     },
+    "Search logs" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث في السجلات"
+          }
+        }
+      }
+    },
+    "Seen" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مرئي"
+          }
+        }
+      }
+    },
+    "Send reply" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إرسال الرد"
+          }
+        }
+      }
+    },
+    "Series" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السلسلة"
+          }
+        }
+      }
+    },
+    "Show" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض"
+          }
+        }
+      }
+    },
     "Sign out" : {
       "localizations" : {
         "ar" : {
@@ -1285,6 +2125,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تُخطّيت «%@»"
+          }
+        }
+      }
+    },
+    "Sort by" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترتيب حسب"
           }
         }
       }
@@ -1329,6 +2179,16 @@
         }
       }
     },
+    "Status" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحالة"
+          }
+        }
+      }
+    },
     "Step" : {
       "localizations" : {
         "ar" : {
@@ -1345,6 +2205,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الخطوات"
+          }
+        }
+      }
+    },
+    "Storage" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التخزين"
           }
         }
       }
@@ -1369,12 +2239,42 @@
         }
       }
     },
+    "TV bytes out per minute" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بايتات التلفاز الصادرة في الدقيقة"
+          }
+        }
+      }
+    },
     "TV change #%lld" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "تغيير التلفاز رقم %lld"
+          }
+        }
+      }
+    },
+    "TV channels on air" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قنوات التلفاز على الهواء"
+          }
+        }
+      }
+    },
+    "TV failovers per minute" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحويلات التلفاز الاحتياطية في الدقيقة"
           }
         }
       }
@@ -1419,6 +2319,16 @@
         }
       }
     },
+    "The last 7 days" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر 7 أيام"
+          }
+        }
+      }
+    },
     "The last update check did not work." : {
       "localizations" : {
         "ar" : {
@@ -1459,6 +2369,16 @@
         }
       }
     },
+    "This device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الجهاز"
+          }
+        }
+      }
+    },
     "This home" : {
       "localizations" : {
         "ar" : {
@@ -1489,12 +2409,42 @@
         }
       }
     },
+    "Time" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الوقت"
+          }
+        }
+      }
+    },
     "Time left" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الوقت المتبقي"
+          }
+        }
+      }
+    },
+    "Time range" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفترة"
+          }
+        }
+      }
+    },
+    "Timeline" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخط الزمني"
           }
         }
       }
@@ -1549,12 +2499,42 @@
         }
       }
     },
+    "Type a reference from an error screen to follow that request." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اكتب مرجعًا من شاشة خطأ لتتبّع ذلك الطلب."
+          }
+        }
+      }
+    },
     "Undo" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "تراجع"
+          }
+        }
+      }
+    },
+    "Unknown user" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مستخدم غير معروف"
+          }
+        }
+      }
+    },
+    "Until it is resolved" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حتى يُحلّ"
           }
         }
       }
@@ -1575,6 +2555,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تحديث"
+          }
+        }
+      }
+    },
+    "Update backups" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخ التحديث الاحتياطية"
           }
         }
       }
@@ -1609,6 +2599,26 @@
         }
       }
     },
+    "Value" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القيمة"
+          }
+        }
+      }
+    },
+    "Viewers away from home" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المشاهدون من خارج المنزل"
+          }
+        }
+      }
+    },
     "Waiting" : {
       "localizations" : {
         "ar" : {
@@ -1629,6 +2639,26 @@
         }
       }
     },
+    "Warnings and errors" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التحذيرات والأخطاء"
+          }
+        }
+      }
+    },
+    "When" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متى"
+          }
+        }
+      }
+    },
     "Whisper was unsure" : {
       "localizations" : {
         "ar" : {
@@ -1645,6 +2675,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مراجعة الكلمات"
+          }
+        }
+      }
+    },
+    "Write back to the sender" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اكتب ردًا إلى المرسل"
+          }
+        }
+      }
+    },
+    "Your reply" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ردّك"
           }
         }
       }
