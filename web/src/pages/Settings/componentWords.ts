@@ -19,6 +19,7 @@ export const GROUP_ORDER = [
   "models",
   "tools",
   "languages",
+  "plugins",
   "core",
 ] as const;
 
