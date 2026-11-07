@@ -53,6 +53,8 @@ type PluginHooks interface {
 	// Written runs in the batch's transaction after each plugin row is written, with who
 	// asked: an admin's disable sets keep-off, an enable clears it (story 54.07 §1).
 	Written(ctx context.Context, tx *sql.Tx, after store.Desired, actor Actor) error
+	// Names are a plugin's own name and summary by language ({"name": {"en": …}, …}).
+	Names(id string) map[string]map[string]string
 	// Purge deletes what a plugin stored and wrote (story 54.07 §7): its settings, data,
 	// artifacts, and the writes no one changed since. It answers how many writes it reverted.
 	Purge(ctx context.Context, id string, actor Actor) (int, error)
@@ -299,6 +301,9 @@ type View struct {
 	// Health is the home's (machines[0] when it is the home); nil with no status row
 	// from the home yet.
 	Health *Health `json:"health,omitempty"`
+	// Names, on a plugin entry, are its own name and summary by language (the web shows
+	// them in place of title_key and desc_key, which are the plugin's keys).
+	Names map[string]map[string]string `json:"names,omitempty"`
 	// Progress is this machine's last or running install or removal of an asset, as its
 	// supervisor reports it (story 51.16); nil when there was none or no supervisor answers.
 	Progress *InstallProgress `json:"progress,omitempty"`
@@ -470,6 +475,10 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		Want:     components.WantEnabled, Machines: []MachineView{}}
 	if v.Conflicts == nil {
 		v.Conflicts = []string{}
+	}
+	if c.Kind == components.KindPlugin && s.Plugins != nil {
+		// a plugin's name and summary are its own words, not Maktaba's (54.37 §1)
+		v.Names = s.Plugins.Names(c.ID)
 	}
 	for _, r := range cat.Requires(c.ID) {
 		v.Requires = append(v.Requires, r.AnyOf)

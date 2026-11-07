@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	pluginsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
@@ -69,7 +70,14 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		}
 		d.Components.Plugins = l
 		inv.Trip = func(r *http.Request, id, reason string) (bool, error) { return l.Trip(r.Context(), id, reason) }
-		(&pluginsh.Admin{L: l, Logger: logger}).Mount(r)
+		accounts := users.New(d.DB)
+		(&pluginsh.Admin{L: l, Logger: logger, VerifyPassword: func(ctx context.Context, id, pw string) error {
+			u, err := accounts.GetByID(ctx, id)
+			if err != nil {
+				return err
+			}
+			return u.VerifyPassword(pw)
+		}}).Mount(r)
 		ctx := d.Ctx
 		if ctx == nil {
 			ctx = context.Background()

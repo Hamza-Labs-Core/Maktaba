@@ -70,10 +70,17 @@ export function phaseWord(t: T, phase: string, kind = ""): string {
 }
 
 /** A component's title from its id, for ids that come back in effects and refusals. */
-export function titleFinder(t: T, views: readonly ComponentView[]): (id: string) => string {
+export function titleFinder(
+  t: T,
+  views: readonly ComponentView[],
+  locale: Locale = "en"
+): (id: string) => string {
   const byId = new Map(views.map((v) => [v.id, v]));
   return (id: string) => {
     const v = byId.get(id);
+    // a plugin's name is its own (Epic 54): the API sends it by language
+    const own = v?.names?.name;
+    if (own) return own[locale] || own.en || id;
     const key = v?.title_key ?? `components.${id}.title`;
     const hit = t(key);
     return hit === key ? id : hit;
@@ -241,4 +248,11 @@ export function machinesApart(v: ComponentView): string[] {
   if (v.machines.length < 2) return [];
   const home = v.machines.find((m) => m.machine === "home")?.phase ?? v.phase;
   return v.machines.filter((m) => m.machine !== "home" && m.phase !== home).map((m) => m.machine);
+}
+
+/** A component's description: Maktaba's words, a plugin's own summary (Epic 54). */
+export function descText(t: T, v: ComponentView, locale: Locale): string {
+  const own = v.names?.summary;
+  if (own) return own[locale] || own.en || "";
+  return t(v.desc_key);
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
@@ -231,4 +232,20 @@ func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(bytes), 0) FROM plugin_data WHERE plugin_id = $1`, id).
 		Scan(&d.DataRows, &d.DataBytes)
 	return d, nil
+}
+
+// Names are a plugin entry's own name and summary by language (the components service's
+// PluginHooks): read from its package's words.
+func (l *Lifecycle) Names(cid string) map[string]map[string]string {
+	id := strings.TrimPrefix(cid, components.PluginPrefix)
+	in, err := loadInstall(context.Background(), l.DB, id, false)
+	if err != nil || in == nil {
+		return nil
+	}
+	m, err := parseManifest(in.Manifest)
+	if err != nil {
+		return nil
+	}
+	n := namesOf(in.Path, m)
+	return map[string]map[string]string{"name": n.Name, "summary": n.Summary}
 }

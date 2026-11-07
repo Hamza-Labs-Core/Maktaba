@@ -30,7 +30,28 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsettings"
 )
+
+// wordsOf are a package's i18n words by language.
+func wordsOf(files func(string) ([]byte, bool)) map[string]map[string]string {
+	out := map[string]map[string]string{}
+	for _, lang := range []string{"en", "ar"} {
+		out[lang] = map[string]string{}
+		b, ok := files("i18n/" + lang + ".json")
+		if !ok {
+			continue
+		}
+		var words map[string]any
+		_ = json.Unmarshal(b, &words)
+		for k, v := range words {
+			if s, ok := v.(string); ok {
+				out[lang][k] = s
+			}
+		}
+	}
+	return out
+}
 
 // Reasons of a refused install (the API passes them on; each has words,
 // plugins.error.<code>). The packs reasons are 51.16's.
@@ -123,6 +144,17 @@ func (f *Files) Install(ctx context.Context, r io.Reader) (*Installed, error) {
 	m, errs := pluginmanifest.Validate(pkg.Manifest, files)
 	if len(errs) > 0 {
 		return nil, refuse(errs[0].Code, ReasonUnpackRefused, "%s", errs.Error())
+	}
+	if set, ok := m["settings"].(map[string]any); ok {
+		// story 54.11 §1: the settings schema's subset (no secret field, defaults, words)
+		raw, _ := files(set["schema"].(string))
+		if _, err := pluginsettings.Parse(raw, wordsOf(files)); err != nil {
+			var se *pluginsettings.Error
+			if errors.As(err, &se) {
+				return nil, refuse(se.Code, ReasonUnpackRefused, "%s", se.Error())
+			}
+			return nil, err
+		}
 	}
 	id, _ := m["id"].(string)
 	version, _ := m["version"].(string)

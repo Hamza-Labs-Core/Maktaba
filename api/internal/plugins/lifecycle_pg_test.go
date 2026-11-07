@@ -28,11 +28,15 @@ type fakeSup struct {
 	t         *testing.T
 	root      string
 	discarded []string
+	schema    string
 }
 
 func (s *fakeSup) InstallPackage(_ context.Context, r io.Reader) (*Installed, error) {
 	src, _ := io.ReadAll(r)
 	m, errs := pluginmanifest.Validate(src, nil)
+	if len(errs) == 0 && s.schema != "" {
+		m["settings"] = map[string]any{"schema": "ui/settings.schema.json"}
+	}
 	if len(errs) > 0 {
 		return nil, &Problem{Status: 400, Code: errs[0].Code, Detail: errs.Error()}
 	}
@@ -42,8 +46,10 @@ func (s *fakeSup) InstallPackage(_ context.Context, r io.Reader) (*Installed, er
 	if err := os.MkdirAll(filepath.Join(dir, "i18n"), 0o755); err != nil {
 		s.t.Fatal(err)
 	}
-	_ = os.WriteFile(filepath.Join(dir, "i18n", "en.json"), []byte(`{"plugin.name":"Lifecycle","plugin.summary":"Tests."}`), 0o644)
-	_ = os.WriteFile(filepath.Join(dir, "i18n", "ar.json"), []byte(`{"plugin.name":"دورة","plugin.summary":"اختبار."}`), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "i18n", "en.json"), []byte(`{"plugin.name":"Lifecycle","plugin.summary":"Tests.","s.t":"Threshold"}`), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "i18n", "ar.json"), []byte(`{"plugin.name":"دورة","plugin.summary":"اختبار.","s.t":"العتبة"}`), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "ui"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "ui", "settings.schema.json"), []byte(s.schema), 0o644)
 	return &Installed{PluginID: id, Version: version, Digest: strings.Repeat("d", 60) + version[:1] + version[2:3] + "00",
 		Folder: folder, Path: dir, Manifest: pluginmanifest.Normalised(m)}, nil
 }
@@ -142,12 +148,12 @@ func TestInstallWritesTheRows(t *testing.T) {
 	f := newLC(t)
 	ctx := context.Background()
 	pkg := lcManifest("1.0.0", nil, []string{"tags.write"}, 1)
-	_, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(pkg)}, admin)
+	_, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(pkg)}, admin)
 	if p := asProblem(err); p == nil || p.Code != CodeUnreviewed {
 		t.Fatalf("with the policy off: %v", err)
 	}
 	f.allowUnreviewed(t)
-	_, err = f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(pkg), Grants: []string{"media.read"}, GrantsSet: true}, admin)
+	_, err = f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(pkg), Grants: []string{"media.read"}, GrantsSet: true}, admin)
 	if p := asProblem(err); p == nil || p.Code != CodeUnknownCapability {
 		t.Fatalf("a grant not asked for: %v", err)
 	}
@@ -155,7 +161,7 @@ func TestInstallWritesTheRows(t *testing.T) {
 		(SELECT count(*) FROM components WHERE id LIKE 'plugin.%')`); n != 0 || len(f.sup.discarded) != 1 {
 		t.Fatalf("a refused install left %d rows (discarded %v)", n, f.sup.discarded)
 	}
-	res, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(pkg)}, admin)
+	res, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(pkg)}, admin)
 	if err != nil || res.Already || res.Enabled {
 		t.Fatalf("install: %+v %v", res, err)
 	}
@@ -176,13 +182,18 @@ func TestInstallWritesTheRows(t *testing.T) {
 	if _, ok := components.Live().Get(cid); !ok {
 		t.Fatal("the live catalog has no entry for the plugin")
 	}
-	again, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(pkg)}, admin)
+	again, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(pkg)}, admin)
 	if err != nil || !again.Already {
 		t.Fatalf("again: %+v %v", again, err)
 	}
 	d, err := f.l.Show(ctx, lcPlugin)
 	if err != nil || d.Names.Name["ar"] != "دورة" || d.Rating != 5 || len(d.Stages) != 1 {
 		t.Fatalf("detail %+v %v", d, err)
+	}
+	// the Components page shows the plugin's own name (its title_key is the plugin's key)
+	cv, err := f.l.Components.Show(ctx, cid)
+	if err != nil || cv.Names["name"]["en"] != "Lifecycle" || cv.Names["summary"]["ar"] != "اختبار." {
+		t.Fatalf("component names %+v %v", cv.Names, err)
 	}
 }
 
@@ -195,11 +206,11 @@ func TestGrantsEnableAndKeepOff(t *testing.T) {
 	ctx := context.Background()
 	f.allowUnreviewed(t)
 	cid := components.PluginPrefix + lcPlugin
-	if _, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.0.0", []string{"media.read"}, nil, 1)),
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", []string{"media.read"}, nil, 1)),
 		Enable: true}, admin); err == nil || asProblem(err).Code != CodeRequiredCapability {
 		t.Fatalf("install and turn on without the required grant: %v", err)
 	}
-	if _, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.0.0", []string{"media.read"}, nil, 1))}, admin); err != nil {
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", []string{"media.read"}, nil, 1))}, admin); err != nil {
 		t.Fatal(err)
 	}
 	on := svc.Request{Changes: []svc.Change{{ID: cid, Want: components.WantEnabled}}}
@@ -229,7 +240,7 @@ func TestGrantsEnableAndKeepOff(t *testing.T) {
 	if _, err := f.db.Exec(`DELETE FROM plugin_installs; DELETE FROM plugin_grants`); err != nil {
 		t.Fatal(err)
 	}
-	res, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.0.0", []string{"media.read"}, nil, 1)),
+	res, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", []string{"media.read"}, nil, 1)),
 		Grants: []string{"media.read"}, GrantsSet: true, Enable: true}, admin)
 	if err != nil || res.KeptOff == nil || res.Enabled {
 		t.Fatalf("a kept-off reinstall: %+v %v", res, err)
@@ -248,13 +259,13 @@ func TestRollbackAcrossDataVersions(t *testing.T) {
 	f := newLC(t)
 	ctx := context.Background()
 	f.allowUnreviewed(t)
-	if _, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 2))}, admin); err != nil {
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 2))}, admin); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.l.Rollback(ctx, lcPlugin, false, admin); asProblem(err) == nil || asProblem(err).Code != CodeNoPrevious {
 		t.Fatalf("no previous: %v", err)
 	}
-	res, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.1.0", nil, nil, 3)), ExpectID: lcPlugin}, admin)
+	res, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.1.0", nil, nil, 3)), ExpectID: lcPlugin}, admin)
 	if err != nil || !res.Updated {
 		t.Fatalf("update %+v %v", res, err)
 	}
@@ -281,7 +292,7 @@ func TestPurgeRevertsOnlyUntouchedWrites(t *testing.T) {
 	f := newLC(t)
 	ctx := context.Background()
 	f.allowUnreviewed(t)
-	if _, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.0.0", nil, []string{"metadata.write"}, 1))}, admin); err != nil {
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, []string{"metadata.write"}, 1))}, admin); err != nil {
 		t.Fatal(err)
 	}
 	video := func(hash string) string {
@@ -333,7 +344,7 @@ func TestBreakerHoldsOnce(t *testing.T) {
 	f := newLC(t)
 	ctx := context.Background()
 	f.allowUnreviewed(t)
-	if _, err := f.l.Install(ctx, InstallRequest{Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1)), Enable: true}, admin); err != nil {
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1)), Enable: true}, admin); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.db.Exec(`INSERT INTO plugin_health (plugin_id, tripped, trip_reason) VALUES ($1, true, 'traps')`, lcPlugin); err != nil {
@@ -400,5 +411,60 @@ func TestCatalogFollowsTheInstalls(t *testing.T) {
 			t.Fatal("an uninstall stayed in the live catalog")
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// 54.10 T02: an unreviewed install needs the plugin's name typed (English or Arabic).
+func TestUnreviewedInstallNeedsTheName(t *testing.T) {
+	f := newLC(t)
+	ctx := context.Background()
+	f.allowUnreviewed(t)
+	for _, name := range []string{"", "Other"} {
+		_, err := f.l.Install(ctx, InstallRequest{ConfirmName: name, Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin)
+		if p := asProblem(err); p == nil || p.Code != CodeNameMismatch {
+			t.Fatalf("name %q: %v", name, err)
+		}
+	}
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "دورة", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin); err != nil {
+		t.Fatalf("the Arabic name: %v", err)
+	}
+}
+
+// 54.11 T03, T04: settings are checked on the server, stored with their version, audited,
+// and move the desired row; an update carries them to the new schema.
+func TestSettingsAreCheckedAndCarried(t *testing.T) {
+	f := newLC(t)
+	ctx := context.Background()
+	f.allowUnreviewed(t)
+	f.sup.schema = `{"type":"object","properties":{"threshold":{"type":"integer","minimum":1,"maximum":100,"default":30,"x-maktaba-title":"s.t"}}}`
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin); err != nil {
+		t.Fatal(err)
+	}
+	got, err := f.l.GetSettings(ctx, lcPlugin)
+	if err != nil || got.Values["threshold"] != float64(30) || got.Strings["ar"]["s.t"] != "العتبة" {
+		t.Fatalf("defaults %+v %v", got, err)
+	}
+	if _, err := f.l.PutSettings(ctx, lcPlugin, map[string]any{"threshold": float64(500)}, admin); asProblem(err) == nil || asProblem(err).Code != "settings_invalid" {
+		t.Fatalf("out of range: %v", err)
+	}
+	var gen0 int64
+	_ = f.db.QueryRow(`SELECT generation FROM components WHERE id = $1`, components.PluginPrefix+lcPlugin).Scan(&gen0)
+	if _, err := f.l.PutSettings(ctx, lcPlugin, map[string]any{"threshold": float64(70)}, admin); err != nil {
+		t.Fatal(err)
+	}
+	var gen1 int64
+	_ = f.db.QueryRow(`SELECT generation FROM components WHERE id = $1`, components.PluginPrefix+lcPlugin).Scan(&gen1)
+	if gen1 <= gen0 || f.count(t, `SELECT count(*) FROM audit_log WHERE action = 'plugin.settings'`) != 1 ||
+		f.count(t, `SELECT count(*) FROM app_settings WHERE key IN ('plugins.`+lcPlugin+`', 'plugins_version.`+lcPlugin+`')`) != 2 {
+		t.Fatalf("saved: generation %d -> %d", gen0, gen1)
+	}
+	// 1.1.0 makes threshold a string: it falls back to its default and is named
+	f.sup.schema = `{"type":"object","properties":{"threshold":{"type":"string","default":"x","x-maktaba-title":"s.t"}}}`
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.1.0", nil, nil, 1))}, admin); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = f.l.GetSettings(ctx, lcPlugin)
+	if got.Values["threshold"] != "x" || len(got.Reset) != 1 {
+		t.Fatalf("carried %+v", got)
 	}
 }

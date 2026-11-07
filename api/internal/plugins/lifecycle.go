@@ -344,8 +344,8 @@ type InstallRequest struct {
 	Enable bool
 	// ExpectID, when set, is the plugin the package must be (an update of that plugin).
 	ExpectID string
-	// ConfirmName, when set, must be the plugin's English name (54.10 §3: typed by the
-	// admin for an unreviewed plugin).
+	// ConfirmName is the plugin's name as the admin typed it, in English or Arabic: an
+	// unreviewed plugin installs only with it (54.10 §3).
 	ConfirmName string
 	// ReviewLevel is the package's: none, developer or development (Phase 1: a file is
 	// never store-reviewed).
@@ -407,9 +407,15 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 	if err != nil {
 		return nil, err
 	}
-	if req.ConfirmName != "" {
-		if name := DisplayName(in.Path, m.Strings.Name, "en"); !strings.EqualFold(strings.TrimSpace(req.ConfirmName), name) {
-			return nil, problem(http.StatusBadRequest, CodeNameMismatch, "type the plugin's name, %q, to confirm", name)
+	if components.Unreviewed(level) {
+		// an unreviewed plugin is confirmed by typing its name (story 54.10 §3)
+		name := DisplayName(in.Path, m.Strings.Name, "en")
+		ar := DisplayName(in.Path, m.Strings.Name, "ar")
+		typed := strings.TrimSpace(req.ConfirmName)
+		if typed == "" || (!strings.EqualFold(typed, name) && typed != ar) {
+			p := problem(http.StatusBadRequest, CodeNameMismatch, "type the plugin's name, %q, to confirm", name)
+			p.Params = map[string]any{"name": name, "name_ar": ar}
+			return nil, p
 		}
 	}
 	if err := checkAsked(req.Grants, m); err != nil {
@@ -508,6 +514,9 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 	ok = true
 	if err := ReloadCatalog(ctx, l.DB, l.Logger); err != nil {
 		return nil, err
+	}
+	if old != nil {
+		l.carrySettings(ctx, in.PluginID, actor)
 	}
 	res.KeptOff = l.keptOff(ctx, in.PluginID)
 	res.Enabled = wasOn

@@ -219,3 +219,24 @@ func TestRecoverWithPerPluginVersion(t *testing.T) {
 		t.Fatalf("Recover(version) answered %s", got)
 	}
 }
+
+// 54.11 T01: a settings schema with a secret field is refused at install.
+func TestASecretSettingIsRefused(t *testing.T) {
+	f, _ := newFiles(t)
+	var buf bytes.Buffer
+	_, err := componentpack.BuildPlugin(&buf, map[string][]byte{
+		"manifest.toml":           []byte(manifest(testID, "1.0.0") + "\n[settings]\nschema = \"ui/settings.schema.json\"\n"),
+		"i18n/en.json":            []byte(`{"plugin.name":"Hello","plugin.summary":"Says hello.","s.k":"Key"}`),
+		"i18n/ar.json":            []byte(`{"plugin.name":"مرحبا","plugin.summary":"يقول مرحبا.","s.k":"مفتاح"}`),
+		"ui/settings.schema.json": []byte(`{"type":"object","properties":{"api_key":{"type":"string","default":"","x-maktaba-title":"s.k"}}}`),
+		"plugin.wasm":             []byte("\x00asm-not-really"),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = f.Install(context.Background(), bytes.NewReader(buf.Bytes()))
+	var ref *Refusal
+	if !errors.As(err, &ref) || ref.Code != "settings_secret_forbidden" {
+		t.Fatalf("%v", err)
+	}
+}
