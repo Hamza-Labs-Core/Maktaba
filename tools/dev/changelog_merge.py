@@ -52,7 +52,10 @@ class Doc:
         return [p for p in self.parts if isinstance(p, Entry)]
 
     def prose(self) -> list[str]:
-        return [p for p in self.parts if isinstance(p, str)]
+        """The text between entries, without the blank lines that only separate entries: an
+        entry added brings its separator, which is no change of the text (each side adds
+        as many as it adds entries)."""
+        return [p for p in self.parts if isinstance(p, str) and p.strip()]
 
 
 def parse(text: str) -> Doc:

@@ -190,7 +190,7 @@ export async function pluginPage(env: Env, lang: Lang, id: string): Promise<Resp
   const subs = flow ? mine(JSON.parse(flow.subscriptions) as string[], (x) => x.split(" -> ")[1] ?? "") : [];
   const list = (l: string[]) => (l.length ? `<ul dir="ltr">${l.map((x) => `<li><code>${esc(x)}</code></li>`).join("")}</ul>` : `<p class="muted">${esc(w.none2)}</p>`);
   const flowHTML = flow
-    ? `<h2>${esc(w.flow)}</h2><figure style="overflow-x:auto;margin:0">${flowSVG(JSON.parse(flow.graph), { title: fill(w.flowAlt, { id: flow.id }), highlight: id })}</figure>
+    ? `<h2>${esc(w.flow)}</h2><figure style="overflow-x:auto;margin:0">${flowSVG(JSON.parse(flow.graph), { title: fill(w.flowAlt, { id: flow.id }), highlight: id, lang })}</figure>
 <h3>${esc(w.events)}</h3>${list(events)}<h3>${esc(w.subscriptions)}</h3>${list(subs)}`
     : "";
   const caps = (v?.capabilities ?? []).map((c) => `<li>${esc(capWords(c, lang))}</li>`).join("");

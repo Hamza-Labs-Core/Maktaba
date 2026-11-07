@@ -1176,6 +1176,11 @@ build fails when the two differ.
   Open in my Maktaba (`maktaba://plugins/<id>`) and Download file; every plugin text and
   review is plain text.
 
+- **The store browser draws a plugin's flow (Epic 54, stories 54.18 and 54.41).** Settings →
+  Plugins → Browse the store shows, for a plugin in a flow, the whole flow drawn with the events
+  it publishes and the ones it listens to, from the store's signed catalog. The store's review
+  and listing pages now draw flows with the same chart as the home.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2277,6 +2282,12 @@ build fails when the two differ.
 - **No stale page after an update.** The service worker carries each build's stamp, pages load
   from the network first, and a page an older release left open reloads once instead of going
   blank.
+
+- **A plugin runner starts on a Mac whose data folder has a long path (Epic 54, story
+  54.23).** A runner's socket then lives under `/tmp`, which macOS keeps at `/private/tmp`;
+  the runner's sandbox named the first and was refused the second, so the runner exited
+  about 10 s after it started and its stages ran in the worker. The sandbox now names the
+  sockets and the run folder by their real paths.
 
 ## [0.2.0] - 2026-10-19
 
