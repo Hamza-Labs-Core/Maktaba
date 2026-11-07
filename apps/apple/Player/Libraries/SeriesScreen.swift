@@ -116,8 +116,8 @@ struct SeriesScreen: View {
 
     /// "3 episodes · 2024" in `locale`'s language and digits (the page's), the year ungrouped.
     static func details(episodes: Int, year: Int?, _ locale: Locale) -> String {
-        var parts = [SeriesGrid.episodes(episodes).string(in: locale)]
-        if let year { parts.append(year.formatted(.number.grouping(.never).locale(locale))) }
+        var parts = [String(localized: SeriesGrid.episodes(episodes))]
+        if let year { parts.append(year.formatted(.number.grouping(.never))) }
         return parts.joined(separator: " · ")
     }
 
