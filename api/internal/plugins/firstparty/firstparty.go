@@ -55,9 +55,9 @@ type FirstParty struct {
 	Version string
 	Digest  string
 	// Manifest is the normalised manifest (defaults filled).
-	Manifest   map[string]any
-	Trusted    Trusted
-	Stages     []string
+	Manifest map[string]any
+	Trusted  Trusted
+	Stages   []string
 	// ModelRules maps a stage to the rules section whose model server and model it asks
 	// (its manifest's model_rules, story 54.31 §2); stages without one are absent.
 	ModelRules map[string]string
