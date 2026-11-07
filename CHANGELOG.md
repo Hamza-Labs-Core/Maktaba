@@ -2095,6 +2095,11 @@ build fails when the two differ.
   playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
   lines for the same action. Streaming's failure lines also carried no request id until now.
 
+- **A folder scan is a queue stage like the others (Epic 54, story 54.36).** The scan reports
+  the new videos it found, and the queue starts each one's checks from that, instead of the
+  scanner queuing them itself. What a scan finds and what runs after it are unchanged; a scan
+  that finds nothing new starts nothing.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
