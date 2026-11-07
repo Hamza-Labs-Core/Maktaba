@@ -27,6 +27,28 @@ The tools are in `tools/cloudflare/` (Node 22, no dependency):
 
 Their tests run against a local fake of Cloudflare's API (`node --test 'tools/cloudflare/*.test.mjs'`).
 
+## The Tunnel (50.31)
+
+`tunnel.maktaba.tv.json` names the tunnel (`maktaba-cloud-production`, which the owner
+creates), its mode and each name's loopback listener. `tunnel.mjs check` refuses a relay name, a
+wildcard, a service that is not `http://127.0.0.1:<port>` or `http://[::1]:<port>`, a missing
+`api`, `app` or `admin`, a rule without a reason, and an unknown field. What it writes:
+
+- the ingress: each name to its listener with its own `Host` header, then `http_status:404` for
+  everything else (the tool adds it, so no file can leave it out);
+- each name's DNS record: a proxied `CNAME` to `<tunnel id>.cfargotunnel.com` (the ingress first,
+  so a name never reaches a tunnel that does not route it). The web Workers (50.32) therefore
+  attach by Workers Routes on these proxied names, not by Custom Domains.
+
+Before the owner creates the tunnel, `plan` and `apply` write nothing and say so with a notice.
+
+**The fallback, `"mode": "aop"`** (50.31 §3), switched by a pull request and never automatically:
+`tunnel.mjs apply` uploads Maktaba's own client certificate (`CLOUDFLARE_AOP_CERT`,
+`CLOUDFLARE_AOP_KEY` in the `production` environment), turns per-hostname Authenticated Origin
+Pulls on for each name, and then points the names at `aop.origin_ipv4` (the Floating IP) as
+proxied `A` records. The nodes must already run Caddy's aop sites (`ORIGIN_MODE=aop` in
+`/etc/maktaba/cloud-ha.env`, `server.origin_mode = "aop"`; `deploy/cloud-ha/README.md`).
+
 ## The workflows
 
 | Workflow | Pull request | Push to `main` (or by hand) |

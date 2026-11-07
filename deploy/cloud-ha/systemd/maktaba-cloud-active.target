@@ -2,8 +2,9 @@
 # role-change callback when this node becomes the database leader, stopped when it is not.
 # The relay's colour (blue or green, 50.08) is started beside it by the callback: the one
 # /opt/maktaba-cloud/colour names (maktaba-cloud-relay@<colour>.service is PartOf this target,
-# so stopping the target stops whichever colours run).
+# so stopping the target stops whichever colours run). The Tunnel's connector follows the leader
+# with them (maktaba-cloudflared.service, story 50.31).
 [Unit]
 Description=Maktaba Cloud: the processes of the leading node
-Wants=maktaba-cloud-api.service maktaba-cloud-worker.service
+Wants=maktaba-cloud-api.service maktaba-cloud-worker.service maktaba-cloudflared.service
 After=network-online.target patroni.service

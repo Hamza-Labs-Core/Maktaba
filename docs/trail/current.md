@@ -1,18 +1,18 @@
 ---
 schema: 1
-tag: v0.3.97
-up_to_commit: b8e737b25
-built_from: v0.3.96
+tag: v0.3.99
+up_to_commit: adbfc23cd
+built_from: v0.3.98
 ---
 
-# Trail snapshot: v0.3.97
-
+# Trail snapshot: v0.3.99
 
 ## Keep doing
 
 **Working**
 - Run the PR flow to the merge without asking; ask only for real product decisions (costly backfill, deleting data). Follow-ups start at once as parallel worktree agents. (d20261031-standing-rules, d20261102-coordinator-rules)
 - Verify every claim yourself before acting on it, and check a spec's claims against the code: read the code a spec section describes before relying on it (the code was right and the spec stale, twice). Before writing a fix for an issue, or its options, check that it is not already fixed or decided; before blaming one PR, check the PRs merged around it. (d20261014-pc-dizquetv-origin-and-rules, d20261031-standing-rules, #587, #795, #879, #888, d20261107-test-infra-missteps)
+- When a check can't be made directly, look for what the context already proves: a page reached over the LAN address already proves the raw IP works. (#906)
 - Build tools for the work instead of doing it by hand; a recurring manual step becomes a feature; rules are settings with a UI, not code. (d20261014-pc-dizquetv-origin-and-rules, d20261020-pc-coordinator-merge-rules)
 - No placeholder features: a feature is built or it is not shown. (#128, d20261014-pc-dizquetv-origin-and-rules)
 - Review every PR yourself; the Copilot reviewer check and its quota comment are noise. Merge with a merge commit on the reviewed head, every check present and green (main has no branch protection). Watchers only report: merge by hand after reading `gh pr checks`, and count a check that could not be read as not green: one JSON read with jq, every check completed SUCCESS, SKIPPED or NEUTRAL, at least one, the merge pinned to the read head. When a gate fails, stop any watcher before rerunning anything, or it merges a lucky rerun. A merge check also refuses any PR whose base is not main (a PR into a branch runs 3 checks, all green, and its merge never reaches main), requires by name the checks the change is for (one skipped by a path filter counts as passing), and stops when the head moves. Write it in bash with arrays and run read-then-merge sequences in `bash -c`, never zsh; never wrap the read in `|| true`; start it with a 7200000 ms background limit (the default 30 minutes kills it). Never edit a script a background process is running (bash reads it as it runs and resumed at a shifted offset onto the merge line): copy it under a new name. Adopting another session's watchers, read them, stop them by PID and replace them. (d20261031-standing-rules, d20261020-pc-coordinator-merge-rules, #314, #212, d20261107-watcher-merged-early, #813, #808, #810, #815, #879, #877, d20261107-paid-plugins-merge-problems, d20261107-stacked-pr-merged-into-its-base, d20261107-plugin-stream-takeover, d20261107-test-infra-missteps)
@@ -79,6 +79,9 @@ built_from: v0.3.96
 - Apple UI screenshots have no goldens: a layout change there needs a test asserting what is absent. A test of a committed placeholder (an empty plugin root) uses its own copy of the placeholder's form. (#813, #819)
 - Before fixing a wall-clock test that fails near the 33-bit PTS wrap, check whether the product is wrong: shift the station's clock with `ptsShiftTicks` to reproduce on demand. (#797)
 - Before each first-party wave, list every `maktaba_pipeline` module the moved code imports, at any depth, that runs SQL (`grep -n "from maktaba_pipeline" stages/*.py`), before writing `statements.toml`. (#789)
+- Parity proofs (waves 5-8): give both sides the same ids (replace the `uuid` module's name with one whose `uuid4` is `SameIds`; an id from a column default needs the same sequence-backed default seeded in each test database); seed rules on for every stage that has them (a stage off by default passes without reading its rules, and a section read deep in shared code shows up only when the proof runs that path; an empty `plugin_scope` refusal is the settings check); mask a placed file's mtime, the stages whose input hash reads it, and ffmpeg's `@ 0x…` pointers; freeze `now` in each module that imported it by name; pass the plugin's new `group=` after a move, or everything falls back; every plugin test measures N16 (`compare_n16`). Rebuild the bundle (`tools/plugins/bundle.py --write`) after every `statements_build.py sync`. (#800, #806, #823)
+- A sandbox's `exec` must name the program a stage really starts (yt-dlp runs as `MAKTABA_YTDLP` or `python -m yt_dlp`); parity fakes never exec, and a dev machine with Homebrew's tool on PATH hides the gap that CI caught. Capture the exact requests a client sends and use them as an allow-list's test cases. (#806, #844)
+- `migration-lint` refuses a slot gap not listed as permanent: a PR taking a slot after two open PRs' slots is red until they land. (#800)
 - Run a test harness's own tests with the URL forms dev machines use (with and without a query), not only CI's. (#769)
 - Check a guide written before its code against the code (the WIT, `capabilityOf`), not the spec. (#704)
 - A PR that ships user-facing work updates maktaba.dev in the same PR, in English and Arabic (`devportal_follows.py` warns; `No-Portal-Change:` says it needs nothing); run `npm run build`, `npm run scan` and `npm test` in `web/packages/devportal` before pushing. (#703, #723)
@@ -247,6 +250,9 @@ built_from: v0.3.96
 - ffmpeg's `correct_ts_overflow` (on by default) takes 2^33 off a stream starting in the last 60 s before the PTS wrap, so with `-copyts` a muxer started then ran 30-40 s ahead of the wall clock for viewers too; `MuxerArgs` passes `-correct_ts_overflow 0`, and ffprobe needs the same flag near the wrap. A muxer that runs across the wrap is unaffected. (#797)
 - A "last done at" stamp taken at the start of slow work makes its waiters think it stale: stamp it when the work returns and compare with when the waiter arrived (the JWKS cache). (#792)
 - Python loads one top-level `tests` package per session, so two test trees each with a `tests` package cannot share a session; the root `tests/` has no `__init__.py` and its folders are the packages. (#794)
+- First-party waves 5-8 (#800, #806, #823, #844): what only the engine may write (`enqueue`, a duplicate merge `dedup_commit`, `unsupersede`, the TV swap's `tv_commit` and `tv_rollback`) the worker writes for a plugin's job after checking it against the job, as one relayed op, rather than granting tables; a relayed enqueue of a row in the plugin's uncommitted transaction is held until the job succeeds. `may_request` is a graph rule: a new edge can make a cycle the graph refuses. Move core code a stage module imports that the core itself needs into a core module before moving the stage. A runner has no per-process registry: send names with the job and fall back when one does not resolve. A joined machine reaches the home only through its Python worker's agent. Code telling first-party from extension stages by `job_stages`' `extension` tag must learn the handover (the token mint, the catalog's plugin rule). Per-job work in `run_native` costs every plugin job. `$1 IS NULL` does not type a parameter on Postgres: cast per dialect. A secret a door adds can come back when the far side stores what it was sent (dizqueTV programme bodies), so ask whether a plugin can read that body back before filling one. (#800, #806, #823, #844)
+- The cloud's logs (53.17): each process keeps its lines on its node and forwards them to W numbered and acknowledged; lines name a home by `home_h`. A server that returns while background writers run loses their last writes and fails `t.TempDir` cleanup: wait for them and cancel an inner context on every return path. A role test calling every admin route needs a rule for an honest 503. promtool refuses a 7-day rate over 1-minute samples; sample every 5 minutes. (#852)
+- A `no-cors` fetch tells "answers" from "doesn't" with no CORS headers on the target (opaque response resolves; DNS refusal, refused connection or bad certificate rejects); a browser cannot test a certificate against a name other than the URL's. (#906)
 - First-party wave 3 (#789): a plugin job that falls back to the worker writes the same rows, so parity passes without the plugin path; the worker counts fallbacks (`native.FALLBACKS`) and parity fails on any. Lazy imports inside stage functions are invisible to the statement scan, and two such helpers swallow every exception; `sql += " AND …"` is a second statement. MLX on Metal works in Seatbelt once the profile opens the GPU's user clients (else "No Metal device"). (#789)
 - Random bytes are not reliably corrupt media; build fixtures from a real header plus seeded junk. (#526, #537)
 
@@ -299,9 +305,9 @@ built_from: v0.3.96
 - Epic 52: the real gold set and calibration curves; the rehearsal's "one component more" step. (#672)
 - Epic 54: the migrate job (issue #712); first-party runners on Windows still run in the worker (third-party plugins run in the AppContainer). Whether a home should report runners stuck in `failed` while their stages are `plugin`. (#683, #693, #704, #707, #717, #833, #879)
 - Epic 54 Phase 2 and paid plugins (signing ships dark, no root keys): Phase 2 is built through the store browser, and buying, entitlements, private paid packages and purchase moves are in; the store is not deployed (its go-live list, with `PAID_URL_KEY`, the email provider, the Cloudflare resources, DNS and secrets, and the 90-day lifecycle rule on `report-logs/`, is in `store/README.md`); once the root keys are committed a release fails while the store's CDN is down (re-run); the isolated runner waits for Containers on the account; Apple snapshot references for the plugin panels (issue #876). (#733, #735, #743, #751, #753, #770, #778, #819, #820, #815, #837, #861, #886)
-- Epic 54 Phase 4: waves 1-3 are in, and the rehearsal's wave rows 16.4–16.9 skip until their plugins merge (each brings its own checks); YouTube's download swap is not file-scoped; the nightly YouTube hosts check meets a bot wall on data-centre runners, and yt-dlp needs a JS runtime the plugin cannot run (issue #900); `rate_style` has no subject in the small seed; the legacy `extract` and `thumbnail` stages with their hand chaining turned into edges (54.29), waves 4-9 (54.31-54.36; `display_title` moves with wave 4), a runner call for a stage's `refresh` (still run from the worker), and removal of the in-process path; per-plugin `.mkplugin` packages in `checksums.txt` wait for a release-workflow change. (#731, #750, #760, #773, #789, #842, #890, #899)
+- Epic 54 Phase 4: waves 1-3 and 5-8 are in, and the rehearsal's wave rows 16.4–16.9 skip until their plugins merge (each brings its own checks); YouTube's download swap is not file-scoped; the nightly YouTube hosts check meets a bot wall on data-centre runners, and yt-dlp needs a JS runtime the plugin cannot run (issue #900); `rate_style` has no subject in the small seed; the legacy `extract` and `thumbnail` stages with their hand chaining turned into edges (54.29), waves 4 and 9 (54.31, 54.36; `display_title` moves with wave 4), the job-scoped path check (issue #796), every wave's rehearsal scenarios (issue #804), dizqueTV behind the service door (issue #827), N16 for `tv_stage`, `tv_swap` and `tv_rollback` (the bench cannot rerun a state transition), a runner call for a stage's `refresh` (still run from the worker), and removal of the in-process path; per-plugin `.mkplugin` packages in `checksums.txt` wait for a release-workflow change. (#731, #750, #760, #773, #789, #800, #806, #823, #842, #844, #890, #899)
 - Epic 54 joined machines: a machine's plugin compute always asks the home's models; its own GPU models are not offered to plugins. (#767)
-- Epic 50: the cloud status line is in every app's strip, but Apple and Android read the feed only at start and every 5 minutes, not at once after a failed request; the Android TV app has no status strip (53.06's TV part); series that 53.17 emits for the monitoring alerts and status page; 50.15's direct-remote rehearsal (T06, T10, T12, with the dns role's start fix; `DIRECT_DNS` stays `no` until it merges), the apps' use of the raw-IP LAN entry and the `direct.rebinding` notice; 50.19 is in, with the owner's prices, Pro's allowance and the payment provider on the go-live list, the cloud issuing `basic` once homes that read it are out, and the rehearsal's plan numbers removed when real ones are set; 50.31's rehearsal scenarios T06–T08 (issue #884); 50.32 §1 and §3–§5 after 50.31; the api and worker in 50.08's blue/green (a restart costs about a second per deploy); 50.30, 50.33, 50.34 and 53.18 follow (50.12 to 50.15 parts 1–2, 50.35 and the console's own bundle are in); the direct-name domains, their NS delegation and the ACME EAB accounts are on the go-live list. 50.13's T09 waits for a home stack in the cloud rehearsal; 50.14's absolute numbers, the epic's sizing figures and `RELAY_MEASURED_*` wait for a `loadtest.yml` run on the staging pair. 50.12's incident handling is in; `tunnel_connections_low` and the `staff_*` alerts come with 50.31 and 50.33, and the game day waits for the real pair. `nodecopy`'s tests still build maktaba-api per test. (#727, #739, #752, #780, #791, #798, #808, #825, #845, #856, #865, #871, #877, #883, #895, #897, #858)
+- Epic 50: the cloud status line is in every app's strip, but Apple and Android read the feed only at start and every 5 minutes, not at once after a failed request; the Android TV app has no status strip (53.06's TV part); series that 53.17 emits for the status page; W gets the `maktaba-cloud` binary with 50.07 (`deploy.sh` ships to A and B only); 50.15's direct-remote rehearsal (T06, T10, T12, with the dns role's start fix; `DIRECT_DNS` stays `no` until it merges), the apps' use of the raw-IP LAN entry (the `direct.rebinding` probe cannot tell a blocked name from a LAN firewall on the port; the advice holds either way); 50.19 is in, with the owner's prices, Pro's allowance and the payment provider on the go-live list, the cloud issuing `basic` once homes that read it are out, and the rehearsal's plan numbers removed when real ones are set; 50.31's rehearsal scenarios T06–T08 (issue #884); 50.32 §1 and §3–§5 after 50.31; the api and worker in 50.08's blue/green (a restart costs about a second per deploy); 50.30, 50.33, 50.34 and 53.18 follow (50.12 to 50.15 parts 1–2, 50.35 and the console's own bundle are in); the direct-name domains, their NS delegation and the ACME EAB accounts are on the go-live list. 50.13's T09 waits for a home stack in the cloud rehearsal; 50.14's absolute numbers, the epic's sizing figures and `RELAY_MEASURED_*` wait for a `loadtest.yml` run on the staging pair. 50.12's incident handling is in; `tunnel_connections_low` and the `staff_*` alerts come with 50.31 and 50.33, and the game day waits for the real pair. `nodecopy`'s tests still build maktaba-api per test. (#727, #739, #752, #780, #791, #798, #808, #825, #845, #856, #865, #871, #877, #883, #895, #897, #858, #852, #906)
 - Rare web test races of one shape (a check one render too early), listed on issue #697; BigScreen still re-attaches its key listener. (#746)
 - Story 51.03's spec still names the removed `loops-full-home.txt`. (#748)
 - Other whole-list functions may share `cluster_copy_excluded()`'s merge hazard (`maktaba_min_node_schema()` is checked against the MANIFEST); add a lint rule when a second such list appears. (#822)
@@ -321,7 +327,9 @@ built_from: v0.3.96
 | --- | --- | --- |
 | #784 | 2026-11-07 | fix(update): a busy pipeline no longer rolls an update back |
 | #812 | 2026-11-07 | fix(restore): the vector index is built alone, with memory of its own |
+| #896 | 2026-11-07 | fix(dashboards): Queue, Processing and Streaming boards get real series; the API's p95 on Overview; /metrics serves the plugins' metrics (53.12) |
 | #902 | 2026-11-07 | test(engine): the runner-serves test stubs the plugin role a later test makes |
+| #904 | 2026-11-07 | test(pipeline): the log bench's compare test checks both rounds ran, not their speed |
 
 ## Index
 
@@ -696,9 +704,11 @@ built_from: v0.3.96
 | 0795-plugins-update-pauses | 2026-11-07 | pr | The Updates page names the plugins an update will pause (Epic 54, 54.07 §3) |
 | 0797-pts-wrap-muxer | 2026-11-07 | pr | A muxer started just before the PTS wrap keeps the wall clock's timestamps |
 | 0798-load-test | 2026-11-07 | pr | Load test and sizing |
+| 0800-wave5-convert-dedup | 2026-11-07 | pr | Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54 wave 5, 54.32) |
 | 0801-plugins-metrics-report-logs | 2026-11-07 | pr | Plugin job metrics, and problem reports keep plugin logs out (Epic 54, 54.09 §3, §4) |
 | 0802-python-logger-cost | 2026-11-07 | pr | A Python log call from 19.5 to 11.5 µs, and the bench's runner factor measured |
 | 0803-ipad-waits | 2026-11-07 | pr | iPad Player UI waits count looks as well as seconds, and wait for Home to settle |
+| 0806-wave6-youtube-repair | 2026-11-07 | pr | YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54 wave 6, 54.33) |
 | 0808-direct-remote-cloud | 2026-11-07 | pr | Direct remote access, the cloud's side (part 1) |
 | 0810-plugins-cli-dev-mkp-run | 2026-11-07 | pr | Plugins from the command line, developer mode and mkp run (Epic 54, 54.10 §4-5, 54.12) |
 | 0811-ar-pack-no-analyser | 2026-11-07 | pr | The Arabic pack's "no analyser" test hides CAMeL Tools itself |
@@ -710,6 +720,7 @@ built_from: v0.3.96
 | 0820-store-runner-containers | 2026-11-07 | pr | The plugin store's isolated runner on Cloudflare Containers (Epic 54, #756) |
 | 0821-tests-runner-dir-tmp | 2026-11-07 | pr | Plugin runner areas go to /tmp in tests, never the checkout |
 | 0822-copy-excluded-keeps | 2026-11-07 | pr | migration-lint: cluster_copy_excluded() keeps every table |
+| 0823-wave7-livetv | 2026-11-07 | pr | Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54 wave 7, 54.34) |
 | 0824-reports-to-maktaba | 2026-11-07 | pr | Problem reports to Maktaba, when the home allows it and the sender chooses it |
 | 0825-feature-any | 2026-11-07 | pr | feature_any, a feature's groups where any member is enough (story 50.35) |
 | 0826-merge-main-changelogs | 2026-11-07 | pr | tools/dev/merge-main.sh keeps both sides of the CHANGELOGs |
@@ -725,6 +736,7 @@ built_from: v0.3.96
 | 0841-mapstore-concurrent | 2026-11-07 | pr | The Android tests' in-memory store is concurrent |
 | 0842-rehearsal-waves | 2026-11-07 | pr | The update rehearsal runs Epic 54's waves across an update (scenarios 16.1-16.3) |
 | 0843-runner-socket-realpath | 2026-11-07 | pr | A runner binds its socket through a linked folder (macOS) |
+| 0844-wave8-plex-door | 2026-11-07 | pr | Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave 8, 54.35) |
 | 0845-direct-remote-home | 2026-11-07 | pr | Direct remote access, the home's side (story 50.15, part 2) |
 | 0846-merge-main-blank-lines | 2026-11-07 | pr | merge-main.sh merges when main adds more entries than the branch |
 | 0848-sdk-python-js-templates | 2026-11-07 | pr | Python and JavaScript plugin templates (mkp new, build, world) |
@@ -732,6 +744,7 @@ built_from: v0.3.96
 | 0850-buy-paid-plugin | 2026-11-07 | pr | Buying a paid plugin (Epic 54, story 54.19 §5) |
 | 0851-plugind-go-exempt | 2026-11-07 | pr | The plugind job's Go setup is exempt from the module-download rule |
 | 0851-sdk-go-template | 2026-11-07 | pr | The Go plugin template (TinyGo wasm-unknown) |
+| 0852-cloud-logs | 2026-11-07 | pr | The cloud's logs, errors and metrics on the home's model, feeding Epic 50 |
 | 0854-payg-extra-streams | 2026-11-07 | pr | Pay as you go and extra streams on Pro, usage reports (story 50.19, part 3) |
 | 0856-plans-home-side | 2026-11-07 | pr | The home's side of the plans: cap, basic licenses, the apps' words (story 50.19, part 4) |
 | 0858-integration-tier-waste | 2026-11-07 | pr | The integration tier's waste cut, and its slowest tests in the log |
@@ -759,6 +772,7 @@ built_from: v0.3.96
 | 0895-cloud-binary-never-installed | 2026-11-07 | pr | Deploys never installed the binary the api and worker run |
 | 0897-lan-entries | 2026-11-07 | pr | The home list's LAN entries, by name and by address pinned to the home's name |
 | 0899-youtube-hosts-nightly | 2026-11-07 | pr | A nightly run checks the hosts yt-dlp contacts for the YouTube plugin (54.33 T02) |
+| 0906-rebinding-notice | 2026-11-07 | pr | The home's settings say when the router blocks its LAN name |
 | d20261107-closing-keyword-closed-a-pr | 2026-11-07 | incident | A PR body's "resolved" closed another open pull request |
 | d20261107-orphaned-cpu-load | 2026-11-07 | incident | Sixteen orphaned `yes` processes held the owner's Mac for three days and crashed WindowServer |
 | d20261107-paid-plugins-merge-problems | 2026-11-07 | incident | Problems on the way to merging the paid-plugin PRs (#781, #783, #787, #813) |
