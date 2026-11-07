@@ -28,7 +28,7 @@ func TestPackUnpacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	pkg, err := componentpack.UnpackPlugin(f, filepath.Join(dir, "unpacked"), componentpack.PluginExpect{})
 	if err != nil {
 		t.Fatal(err)

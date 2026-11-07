@@ -147,7 +147,7 @@ func TestPluginsSocketsFitSunPath(t *testing.T) {
 	short := config.Config{}
 	short.Server.DataDir = "/var/lib/maktaba"
 	p := PluginsPaths(short)
-	if p.Sockets != "" || p.Dispatch != "/var/lib/maktaba/run/plugins/plugind.sock" {
+	if p.Sockets != "" || p.Dispatch != filepath.Join("/var/lib/maktaba", "run", "plugins", "plugind.sock") {
 		t.Fatalf("short: %+v", p)
 	}
 	long := config.Config{}
