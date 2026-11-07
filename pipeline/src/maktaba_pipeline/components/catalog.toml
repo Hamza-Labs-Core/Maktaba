@@ -143,7 +143,7 @@ processes  = ["plugin-runner/light", "plugin-runner/net", "plugin-runner/service
 platforms  = ["darwin-arm64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
 on_demand  = true
-since      = "0.3.86"
+since      = "0.3.88"
 
 [[component]]
 id         = "core.node"
