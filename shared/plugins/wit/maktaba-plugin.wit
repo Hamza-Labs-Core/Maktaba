@@ -13,8 +13,8 @@
 ///
 /// Versioning: a minor version only adds functions; a plugin built for 1.N runs
 /// on any 1.M host with M >= N. Reads answer JSON text so a minor version can
-/// add fields without a new WIT type.
-package maktaba:plugin@1.0.0;
+/// add fields without a new WIT type. 1.1 added `compute` (story 54.21).
+package maktaba:plugin@1.1.0;
 
 interface types {
   /// Why a call was refused. The plugin API's refusal codes, one to one.
@@ -184,6 +184,38 @@ interface exports {
   read: func(plugin: string, subject: subject, key: string) -> result<option<string>, call-error>;
 }
 
+/// Capabilities compute.embed and compute.llm (story 54.21, plugin API 1.1): the home's own
+/// models, asked through the plugin API. Never a model outside the home: the host still has
+/// no network, and the API refuses a language model that is not on the home or the LAN.
+interface compute {
+  use types.{call-error};
+
+  record embeddings {
+    /// the embedder's model id: vectors from another model do not compare
+    model: string,
+    /// one vector per text, in order, each of the embedder's dimension
+    vectors: list<list<f32>>,
+  }
+
+  record generate-options {
+    /// 1..=1024
+    max-tokens: u32,
+    /// 0.0..=2.0
+    temperature: f32,
+    /// a JSON schema (JSON text) the answer must follow, or none
+    json-schema: option<string>,
+  }
+
+  /// compute.embed: <= 64 texts, <= 2,000 characters each, with the embedder semantic
+  /// search uses. `unavailable` while search.semantic is off.
+  embed: func(texts: list<string>) -> result<embeddings, call-error>;
+  /// compute.llm: the language model the admin chose for plugins, prompt <= 32 KB.
+  /// `unavailable` while llm is off; `invalid("compute_remote")` when the model is not on
+  /// the home or the LAN; `invalid("compute_bad_output")` when the answer does not follow
+  /// json-schema after one retry.
+  generate: func(prompt: string, options: generate-options) -> result<string, call-error>;
+}
+
 world plugin {
   import job;
   import log;
@@ -196,6 +228,7 @@ world plugin {
   import queue;
   import notify;
   import exports;
+  import compute;
 
   record run-output {
     /// what the stage produced; equal hashes mean nothing changed

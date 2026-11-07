@@ -386,3 +386,21 @@ def test_pinned_models_have_their_files() -> None:
     assert turbo.files_of(turbo.source) and turbo.files_of(turbo.source_for("darwin-arm64"))
     cohere = cat.get("model.cohere-arabic")
     assert cohere is not None and cohere.gated
+
+
+def test_a_components_plugin_field_names_a_first_party_plugin_of_its_stages() -> None:
+    """Epic 54, story 54.27 §3: ``plugin`` is a tv.maktaba.* id on a component with stages."""
+    base = (
+        importlib.resources.files("maktaba_pipeline.components")
+        .joinpath("catalog.toml")
+        .read_text()
+    )
+    good = base.replace(
+        'id        = "classify"\n', 'id        = "classify"\nplugin    = "tv.maktaba.classify"\n', 1
+    )
+    assert catalog.load(good).get("classify").plugin == "tv.maktaba.classify"  # type: ignore[union-attr]
+    bad = base.replace(
+        'id        = "classify"\n', 'id        = "classify"\nplugin    = "dev.example.x"\n', 1
+    )
+    with pytest.raises(catalog.CatalogError, match="plugin names a first-party plugin"):
+        catalog.load(bad)

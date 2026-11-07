@@ -1,8 +1,8 @@
 # Queue stages and the plugin API
 
 > **Status:** plugin stages in the queue, the plugin API and media handles are **on `main`**.
-> Grants and roles and settings are **on `main`** too, and so are panels (coming in the next
-> release); local compute is planned for Phase 3. The exact functions, capabilities, events and refusal codes are in
+> Grants and roles and settings are **on `main`** too, and so are local compute (plugin API
+> 1.1) and panels, both coming in the next release. The exact functions, capabilities, events and refusal codes are in
 > the [plugin reference](reference.md), generated from the WIT and the API's code.
 
 ## Stages and events
@@ -74,7 +74,7 @@ current and previous major for at least 12 months after a new major.
 | `queue` | `request(stage, subject, payload)` for your own stages | `jobs.enqueue` |
 | `notify` | `admin(code, params)`, a notice from your strings | `notify.admin` |
 | `exports` | `read(plugin, subject, key)` of data another plugin exported | `plugin-data.read:<id>` |
-| `compute` (Phase 3) | `embed(texts)`, `generate(prompt, opts)` | `compute.embed`, `compute.llm` |
+| `compute` (1.1) | `embed(texts)`, `generate(prompt, options)` | `compute.embed`, `compute.llm` |
 
 Every signature is in the [plugin reference](reference.md#the-plugin-api).
 
@@ -198,10 +198,31 @@ your own data, unchecked.
   runs. An app reads a missing key as off, so it never asks an older server.
 - The store gives every first version, and every version that adds a panel, a human review.
 
-## Local compute (Phase 3)
+## Local compute (plugin API 1.1)
 
-- `compute.embed`: embeddings from the home's search model, up to 64 texts per call.
-- `compute.llm`: `generate` on the home's own language model, up to 1,024 tokens.
+A plugin can ask the home's own models, through the plugin API, and never a model outside the
+home. Set `plugin_api = "1.1"` in the manifest.
 
-Calls go through the plugin API to services on the home, never a remote model. If the model is
-off, the call answers `unavailable`. Daily quotas apply, and prompts are not logged.
+| Capability | Function | What it asks |
+|---|---|---|
+| `compute.embed` | `embed(texts) -> embeddings {model, vectors}` | the embedding model semantic search uses (component `search.semantic`): up to 64 texts of up to 2,000 characters, one vector per text, with the model's id so you can tell when the admin changed the model |
+| `compute.llm` | `generate(prompt, options {max-tokens, temperature, json-schema?}) -> string` | the language model the admin chose for plugins (component `llm`; Settings → Rules → Plugin models, the tag check's model by default): a prompt up to 32 KB, up to 1,024 tokens |
+
+- **Required or optional.** A required compute capability makes its component a requirement
+  of your plugin: with `llm` off the plugin is *Waiting* (`dependency_off:llm`). An optional
+  one is a want: the plugin runs *Degraded* and the call answers `unavailable`, so you decide
+  what to do without it.
+- **Only on the home or the LAN.** If the admin points the model server at a machine on the
+  internet, `generate` answers `invalid("compute_remote")`, and nothing is sent. The address is
+  checked on every connection, not only by name.
+- **`json-schema`.** Ollama is asked to follow it; an answer that still does not follow it
+  (type, properties, required, items, enum) is retried once, then answers
+  `invalid("compute_bad_output")`.
+- **Fair use.** Your questions share the home's `lookup` slot with Maktaba's own model stages,
+  one question at a time; while Maktaba's own work waits, plugins get at most one slot in
+  three. Each plugin may ask 2,000 questions and embed 50,000 texts a day by default (the admin
+  can change both); over that, `quota` until the next day (UTC).
+- **Nothing is logged** but sizes and timings: Maktaba never writes your prompts, texts or
+  answers to its logs.
+- What you write from the answers (a field, tags, panel data) follows the same rules as any
+  plugin write: the field allow-list, plain text, attributed to your plugin.

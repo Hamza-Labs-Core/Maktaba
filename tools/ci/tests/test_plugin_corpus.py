@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 SHARED = ROOT / "shared" / "plugins"
 CORPUS = SHARED / "testdata" / "manifests"
-CODE = re.compile(r"^# expect: (manifest_[a-z_]+)( [a-z0-9/._-]+)?$")
+CODE = re.compile(r"^# expect: (manifest_[a-z_]+|plugin_trusted_field)( [a-z0-9/._-]+)?$")
 
 
 def test_every_invalid_case_names_one_code() -> None:

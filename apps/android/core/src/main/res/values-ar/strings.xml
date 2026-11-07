@@ -262,4 +262,10 @@
     <string name="status_more">%1$d أخرى</string>
     <string name="status_close">إغلاق</string>
     <string name="status_player">التشغيل غير متاح الآن. حاول مجددًا بعد دقائق.</string>
+    <!-- Maktaba Cloud's lines in the status strip (Epic 50 story 50.11) -->
+    <string name="banner_relay_degraded">الوصول عن بُعد أبطأ من المعتاد. التشغيل داخل المنزل لا يتأثر.</string>
+    <string name="banner_relay_outage">الوصول عن بُعد متوقف، ونعمل على إصلاحه. التشغيل داخل المنزل ما زال يعمل.</string>
+    <string name="banner_api_degraded">تسجيل الدخول عبر سحابة مكتبة أبطأ من المعتاد.</string>
+    <string name="banner_api_outage">تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. يمكنك تسجيل الدخول إلى الجهاز الرئيسي بكلمة مروره.</string>
+    <string name="banner_maintenance">صيانة مجدولة في %1$s، من %2$s إلى %3$s. قد يتوقف التشغيل عن بُعد بضع ثوانٍ.</string>
 </resources>

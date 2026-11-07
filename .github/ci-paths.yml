@@ -57,6 +57,9 @@ _go: &go
 _pipeline: &pipeline
   - 'pipeline/**'
   - 'shared/**'
+  # the plugin SDK and Maktaba's first-party plugins ride in the pipeline's wheel
+  - 'plugins/**'
+  - 'tools/plugins/**'
   # the packaging files and docs its tests check
   - 'deploy/packaging/**'
   # test_help_coverage reads the web's help pages
@@ -250,6 +253,17 @@ plugins:
   - 'cmd/maktaba-server/go.mod'
   - 'web/src/i18n/**'
   - '.github/workflows/_plugins.yml'
+  # Epic 54 Phase 4: Maktaba's own stages as first-party plugins
+  - 'plugins/**'
+  - 'tools/plugins/**'
+  - 'pipeline/src/maktaba_plugin_runner/**'
+  - 'pipeline/src/maktaba_pipeline/plugins/**'
+  - 'pipeline/src/maktaba_pipeline/engine/**'
+  - 'pipeline/tests/plugins/**'
+  - 'pipeline/hatch_build.py'
+  - 'api/internal/plugins/**'
+  - 'api/internal/handlers/queues/impl*.go'
+  - 'api/tools/plugin-api-dev/**'
 
 # the plugin store (Epic 54): its own folder, the shared signature and entitlement vectors
 # and the home's verifier that checks them, paid plugins' payment providers and the check
@@ -258,8 +272,15 @@ store:
   - *ci
   - 'store/**'
   - 'shared/plugins/**'
+  # the Worker's WebAssembly is built from the home's package reader and manifest validator
+  - 'plugind/Cargo.toml'
+  - 'plugind/Cargo.lock'
+  - 'plugind/crates/storewasm/**'
+  - 'plugind/crates/pluginmanifest/**'
   - 'tools/ci/payment_provider_allowlist.py'
   - '.github/workflows/_store.yml'
+  - '.github/workflows/store-deploy.yml'
+  - '.github/workflows/store-weekly.yml'
 
 # ---- the server's tiers ---------------------------------------------------------------
 

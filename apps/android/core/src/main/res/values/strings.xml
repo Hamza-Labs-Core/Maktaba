@@ -269,4 +269,10 @@
     <string name="status_more">%1$d more</string>
     <string name="status_close">Close</string>
     <string name="status_player">Playback is unavailable right now. Try again in a few minutes.</string>
+    <!-- Maktaba Cloud's lines in the status strip (Epic 50 story 50.11) -->
+    <string name="banner_relay_degraded">Remote access is slower than usual. Playback at home is not affected.</string>
+    <string name="banner_relay_outage">Remote access is down. We\'re working on it. Playback at home still works.</string>
+    <string name="banner_api_degraded">Signing in with Maktaba Cloud is slower than usual.</string>
+    <string name="banner_api_outage">Signing in with Maktaba Cloud isn\'t working right now. You can sign in to your home with its password.</string>
+    <string name="banner_maintenance">Planned maintenance on %1$s, %2$s–%3$s. Remote play may pause for a few seconds.</string>
 </resources>

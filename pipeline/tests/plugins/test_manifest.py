@@ -71,3 +71,21 @@ def test_dates_are_not_toml_manifests() -> None:
     with pytest.raises(manifest.ManifestInvalid) as exc:
         manifest.validate(b"schema = 1\nwhen = 1979-05-27\n")
     assert exc.value.has(manifest.CODE_NOT_TOML)
+
+
+def test_a_built_in_manifest_is_read_with_its_trusted_keys_only_when_trusted() -> None:
+    """Epic 54, story 54.22: x-trusted-only keys are plugin_trusted_field in any manifest but
+    the release's own first-party ones, which must be under tv.maktaba.."""
+    root = Path(__file__).resolve().parents[3]
+    toy = (
+        root / "pipeline" / "tests" / "plugins" / "firstparty" / "toy" / "manifest.toml"
+    ).read_bytes()
+    pm = manifest
+    m = pm.validate(toy, trusted=True)
+    assert m["runtime"] == "native-python" and m["trusted"]["runner"] == "light"
+    with pytest.raises(pm.ManifestInvalid) as e:
+        pm.validate(toy)
+    assert e.value.has(pm.CODE_TRUSTED_FIELD)
+    with pytest.raises(pm.ManifestInvalid) as e:
+        pm.validate(toy.replace(b"tv.maktaba.toy", b"dev.example.toy"), trusted=True)
+    assert e.value.has(pm.CODE_RESERVED_ID)

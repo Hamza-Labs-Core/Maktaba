@@ -68,6 +68,7 @@ const GUIDES = {
     "trust.md",
     "publishing.md",
     "selling.md",
+    "first-party.md",
   ],
   contributing: [
     "README.md",
