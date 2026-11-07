@@ -39,9 +39,12 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_classify';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_classify;
     FOREACH t IN ARRAY ARRAY['app_settings', 'libraries', 'media_metadata_enrichment', 'processing_jobs', 'series', 'series_episodes', 'series_seasons', 'video_signals', 'video_topic_tags', 'videos', 'youtube_playlist_items', 'youtube_playlists', 'youtube_videos'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_classify', t);
     END LOOP;
     FOREACH t IN ARRAY ARRAY['clip_group_items', 'clip_groups', 'promo_links', 'season_style', 'topic_collections', 'topic_items'] LOOP
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_classify', t);
         -- the table's own sequences (serial and identity columns)
         FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
@@ -90,9 +93,12 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_convert';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_convert;
     FOREACH t IN ARRAY ARRAY['libraries', 'media_info', 'processing_jobs'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_convert', t);
     END LOOP;
     FOREACH t IN ARRAY ARRAY['audio_tracks', 'file_actions', 'video_copies', 'videos'] LOOP
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_convert', t);
         -- the table's own sequences (serial and identity columns)
         FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
@@ -141,9 +147,12 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_dedup';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_dedup;
     FOREACH t IN ARRAY ARRAY['audio_tracks', 'libraries', 'media_info', 'media_metadata_enrichment', 'playback_state', 'processing_jobs', 'user_favorites', 'user_playlist_items', 'video_signals'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_dedup', t);
     END LOOP;
     FOREACH t IN ARRAY ARRAY['duplicate_groups', 'duplicate_members', 'file_actions', 'video_copies', 'videos'] LOOP
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_dedup', t);
         -- the table's own sequences (serial and identity columns)
         FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
@@ -192,9 +201,12 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_semantic_search';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_semantic_search;
     FOREACH t IN ARRAY ARRAY['libraries', 'semantic_store_state', 'transcript_segments', 'transcripts', 'videos'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_semantic_search', t);
     END LOOP;
     FOREACH t IN ARRAY ARRAY['chapters', 'library_topics', 'segment_embeddings', 'video_embeddings', 'video_topics'] LOOP
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_semantic_search', t);
         -- the table's own sequences (serial and identity columns)
         FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
@@ -243,9 +255,12 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_subtitles';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_subtitles;
     FOREACH t IN ARRAY ARRAY['transcript_segments', 'transcripts', 'videos'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_subtitles', t);
     END LOOP;
     FOREACH t IN ARRAY ARRAY['subtitle_files'] LOOP
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_subtitles', t);
         -- the table's own sequences (serial and identity columns)
         FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
@@ -294,6 +309,8 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_thumbnails';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_thumbnails;
     FOREACH t IN ARRAY ARRAY['chapters', 'processing_jobs', 'videos'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_thumbnails', t);
     END LOOP;
     -- every machine's API may SET ROLE to it; membership alone gives no right
@@ -336,9 +353,12 @@ BEGIN
     EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM maktaba_fp_transcription';
     GRANT USAGE ON SCHEMA public TO maktaba_fp_transcription;
     FOREACH t IN ARRAY ARRAY['app_settings', 'libraries', 'library_roots', 'media_info', 'processing_jobs', 'vocab_pairs', 'vocabulary'] LOOP
+        -- a table made later (segment_embeddings, with pgvector) is granted then
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT ON %I TO maktaba_fp_transcription', t);
     END LOOP;
     FOREACH t IN ARRAY ARRAY['audio_cache', 'audio_tracks', 'relisten_attempts', 'transcribe_checkpoints', 'transcript_edits', 'transcript_segments', 'transcripts', 'videos', 'word_flags'] LOOP
+        CONTINUE WHEN to_regclass(format('public.%I', t)) IS NULL;
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO maktaba_fp_transcription', t);
         -- the table's own sequences (serial and identity columns)
         FOR sq IN SELECT s.relname FROM pg_class s JOIN pg_depend d ON d.objid = s.oid
