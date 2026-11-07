@@ -1,0 +1,142 @@
+# Deploys the plugin store (Epic 54, story 54.15 §11) on a tag `store-v*`, after the store's
+# own CI passes on that commit. Nothing deploys the store from a laptop.
+#
+# It applies the D1 migrations (additive only, so the running version keeps working), then
+# uploads the new Worker version and moves traffic to it gradually: 10 %, then 100 % after
+# 30 minutes with no rise in its error rate (wrangler versions deploy; rollback is
+# `wrangler rollback`).
+#
+# Needs, before the first tag (store/README.md, "Going live"): the org secrets
+# CLOUDFLARE_API_TOKEN (a token scoped to the store's Workers, D1, R2, Queues and Durable
+# Objects only: it cannot edit DNS or the cloud's Workers) and CLOUDFLARE_ACCOUNT_ID; the
+# real resource ids in store/wrangler.jsonc; and the Worker secrets set by the owner.
+
+name: Store deploy
+
+on:
+  push:
+    tags: ['store-v*']
+  # A tag's run by hand, as a pushed tag's (`--ref store-vX.Y.Z -f tag=store-vX.Y.Z`), when its
+  # push run is missing. Nothing else deploys: the jobs run only on a store-v tag's ref.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The store-v tag to deploy, dispatched with --ref set to it"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: store-deploy
+  cancel-in-progress: false
+
+jobs:
+  store:
+    if: startsWith(github.ref, 'refs/tags/store-v') && (github.event_name == 'push' || inputs.tag == github.ref_name)
+    uses: ./.github/workflows/_store.yml
+    with:
+      artifact: true
+
+  deploy:
+    needs: [store]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: store-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: store/.nvmrc
+          package-manager-cache: false
+
+      - name: Download store-build
+        id: artifact-store-build
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: store-build
+          path: store
+      - name: Wait 15s to retry the download of store-build
+        if: steps.artifact-store-build.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download store-build (attempt 2)
+        id: artifact-store-build-2
+        if: steps.artifact-store-build.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: store-build
+          path: store
+      - name: Wait 45s to retry the download of store-build
+        if: steps.artifact-store-build-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download store-build (attempt 3)
+        id: artifact-store-build-3
+        if: steps.artifact-store-build-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: store-build
+          path: store
+      - name: Check store-build downloaded
+        id: artifact-store-build-check
+        if: steps.artifact-store-build-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: store-build
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
+
+      - name: Install
+        working-directory: store
+        run: npm ci --no-audit --no-fund
+
+      - name: The resources are real
+        working-directory: store
+        run: |
+          if grep -q '00000000-0000-0000-0000-00000000000' wrangler.jsonc; then
+            echo "::error::store/wrangler.jsonc still has placeholder D1 ids (store/README.md, Going live)"
+            exit 1
+          fi
+
+      - name: D1 migrations (additive)
+        working-directory: store
+        run: |
+          for db in store-accounts store-catalog store-installs; do
+            npx wrangler d1 migrations apply "$db" --remote
+          done
+
+      - name: Upload the new version
+        id: upload
+        working-directory: store
+        run: |
+          out="$(npx wrangler versions upload --message "${GITHUB_REF_NAME}" 2>&1)"
+          echo "$out"
+          version="$(grep -oE 'Worker Version ID: [0-9a-f-]+' <<<"$out" | awk '{print $4}')"
+          test -n "$version"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+
+      - name: 10 % of traffic
+        working-directory: store
+        run: npx wrangler versions deploy "${{ steps.upload.outputs.version }}@10" --yes
+
+      - name: Watch the error rate for 30 minutes
+        working-directory: store
+        run: node scripts/watch-deploy.mjs "${{ steps.upload.outputs.version }}" 1800
+
+      - name: 100 % of traffic
+        working-directory: store
+        run: npx wrangler versions deploy "${{ steps.upload.outputs.version }}@100" --yes
+
+      - name: Roll back on failure
+        if: failure() && steps.upload.outputs.version != ''
+        working-directory: store
+        run: npx wrangler rollback --message "store-deploy failed for ${GITHUB_REF_NAME}" --yes
