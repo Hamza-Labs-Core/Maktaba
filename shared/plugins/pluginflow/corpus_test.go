@@ -192,6 +192,9 @@ func budgetMembers() []Member {
 }
 
 func TestBudget(t *testing.T) {
+	if raceOn {
+		t.Skip("N22 is timed without the race detector (the integration tier)")
+	}
 	members := budgetMembers()
 	// N22 is the check's own time on a home: warm (not the first read of events.toml), the
 	// best of five, and counted as this process's CPU time where the system gives it, so a
