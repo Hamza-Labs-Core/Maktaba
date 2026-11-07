@@ -3,7 +3,6 @@
 // in api.ts's memory.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { forgetSavedHomes } from "./savedHomes";
 import {
   api,
   onSessionChange,
@@ -31,7 +30,14 @@ interface SessionState {
 
 const SessionContext = createContext<SessionState | undefined>(undefined);
 
-export function SessionProvider({ children }: { children: ReactNode }) {
+export function SessionProvider({
+  children,
+  onSignOut,
+}: {
+  children: ReactNode;
+  /** What the app forgets with the session (the user app: its saved homes, story 50.13). */
+  onSignOut?: () => void;
+}) {
   const [status, setStatus] = useState<SessionStatus>("loading");
   const [user, setUser] = useState<CloudUser | null>(null);
 
@@ -78,9 +84,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       // signing out locally is what matters
     }
-    forgetSavedHomes(); // story 50.13: the saved home list goes with the session
+    onSignOut?.();
     forget();
-  }, [forget]);
+  }, [forget, onSignOut]);
 
   const updateUser = useCallback((patch: Partial<CloudUser>) => {
     setUser((u) => (u ? { ...u, ...patch } : u));

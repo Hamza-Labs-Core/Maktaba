@@ -4,8 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Textarea } from "@ds/components/Textarea/Textarea";
-import { useI18n } from "../../i18n";
-import { Banner, useErrorMessage } from "../../ui";
+import { useI18n } from "@cloud-shared/i18n";
+import { Banner, useErrorMessage } from "@cloud-shared/ui";
 
 export function ReasonDialog({
   open,

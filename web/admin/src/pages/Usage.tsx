@@ -1,13 +1,13 @@
-// /admin/usage — the anonymous usage data homes share (Epic 16 story 16.7):
+// /usage — the anonymous usage data homes share (Epic 16 story 16.7):
 // installs, versions, platforms, apps and features in use, top error groups
 // and web-vitals p75, over the chosen number of days.
 import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
 import { Select } from "@ds/components/Select/Select";
-import { api, withQuery } from "../../api";
-import { useI18n } from "../../i18n";
-import { LoadError, Loading, Page, useLoad } from "../../ui";
+import { api, withQuery } from "@cloud-shared/api";
+import { useI18n } from "@cloud-shared/i18n";
+import { LoadError, Loading, Page, useLoad } from "@cloud-shared/ui";
 
 export interface UsageData {
   days: number;

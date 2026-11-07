@@ -6,10 +6,10 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Input } from "@ds/components/Input/Input";
-import { api } from "../api";
-import { useI18n } from "../i18n";
-import { useSession } from "../session";
-import { Banner, Loading, passwordProblem, useErrorMessage } from "../ui";
+import { api } from "../shared/api";
+import { useI18n } from "../shared/i18n";
+import { useSession } from "../shared/session";
+import { Banner, Loading, passwordProblem, useErrorMessage } from "../shared/ui";
 
 function AuthCard({ title, children }: { title: string; children: ReactNode }) {
   return (
