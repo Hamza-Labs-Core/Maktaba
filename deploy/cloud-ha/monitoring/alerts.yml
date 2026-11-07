@@ -135,3 +135,39 @@ groups:
         annotations:
           summary: "{{ $labels.node }}'s logs are not reaching the witness"
           runbook_url: docs/runbooks/cloud/errors.md
+
+  # The Phase 2 trigger (story 50.14 §5): relayed traffic and open tunnels against what one
+  # node carries, as measured by the load test (docs/cloud-sizing.md). The measured figures are
+  # the witness's textfile series relay_measured_mbit_per_second and relay_measured_tunnels
+  # (setup.sh writes them from cloud-ha.env; the planning figures until a staging run).
+  - name: maktaba-capacity
+    rules:
+      - record: relay:mbit_per_second
+        expr: >-
+          sum(rate(maktaba_relay_bandwidth_in_bytes_total{job="cloud"}[5m])
+            + rate(maktaba_relay_bandwidth_out_bytes_total{job="cloud"}[5m])) * 8 / 1e6
+      - record: relay_capacity_used
+        expr: relay:mbit_per_second / scalar(max(relay_measured_mbit_per_second))
+      - record: relay_tunnels_used
+        expr: sum(maktaba_relay_active_tunnels{job="cloud"}) / scalar(max(relay_measured_tunnels))
+      # each day's peak, rolling: above 60 % at the daily peak for 7 days in a row is every
+      # 1-day window of the last 7 days peaking above it
+      - record: relay_capacity_used:peak1d
+        expr: max_over_time(relay_capacity_used[1d])
+      - record: relay_tunnels_used:peak1d
+        expr: max_over_time(relay_tunnels_used[1d])
+      - alert: relay_start_phase2
+        expr: >-
+          min_over_time(relay_capacity_used:peak1d[7d]) > 0.6
+            or min_over_time(relay_tunnels_used:peak1d[7d]) > 0.6
+        labels: {severity: sev3}
+        annotations:
+          summary: "Start Phase 2: the relay's daily peak passed 60 % of one node's measured capacity for 7 days (traffic {{ with query \"relay_capacity_used\" }}{{ . | first | value | humanizePercentage }}{{ end }})"
+          runbook_url: docs/runbooks/cloud/capacity.md
+      - alert: relay_resize_now
+        expr: relay_capacity_used > 0.8 or relay_tunnels_used > 0.8
+        for: 1h
+        labels: {severity: sev2}
+        annotations:
+          summary: "The relay is above 80 % of one node's measured capacity for an hour: resize the pair now"
+          runbook_url: docs/runbooks/cloud/capacity.md

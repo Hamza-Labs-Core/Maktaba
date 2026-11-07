@@ -257,6 +257,7 @@ private fun NavGraphBuilder.playerGraph(screens: PlayerScreens, nav: PlayerNavig
     composable<Route.Library> { it.toRoute<Route.Library>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
     composable<Route.Channel> { it.toRoute<Route.Channel>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
     composable<Route.Watch> { it.toRoute<Route.Watch>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
+    composable<Route.SearchFor> { it.toRoute<Route.SearchFor>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
 }
 
 /** The screens that split themselves around a tabletop hinge (their page above, their list below). */

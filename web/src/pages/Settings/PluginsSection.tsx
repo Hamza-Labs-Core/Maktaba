@@ -30,6 +30,7 @@ import {
   type Grants,
   type Plugin,
   type PluginDetail,
+  type TrustStatus,
   type PluginSettings,
   type PluginWrite,
   type Policy,
@@ -141,6 +142,7 @@ function PluginsInner() {
         <Button onClick={() => setInstalling(true)}>{t("plugins.install.button")}</Button>
       </div>
       <p className="mkt-plugins__lead">{t("plugins.page.lead")}</p>
+      <TrustBanner />
       {error && <p role="alert">{error}</p>}
       {plugins === null && !error && <p>{t("plugins.page.loading")}</p>}
       {plugins?.length === 0 && <p>{t("plugins.page.none")}</p>}
@@ -243,6 +245,13 @@ export function PluginCard({ plugin: p, onOpen }: { plugin: Plugin; onOpen: () =
         )}
         {p.reason === "incompatible" && (
           <Badge tone="warn">{t("plugins.badge.incompatible")}</Badge>
+        )}
+        {p.revoked ? (
+          <Badge tone="error">{t("plugins.badge.withdrawn")}</Badge>
+        ) : (
+          p.revocation?.action === "warn" && (
+            <Badge tone="warn">{t("plugins.badge.store_warning")}</Badge>
+          )
         )}
         <Badge tone={phaseTone(p.phase || "off") === "success" ? "success" : "neutral"}>
           {phaseWord(t, p.phase || "off")}
@@ -431,6 +440,13 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
       {error && <p role="alert">{error}</p>}
       {note && <p role="status">{note}</p>}
 
+      {d.revocation && (
+        <p role="alert" className="mkt-plugins__revocation">
+          {t(`plugins.revocation.${d.revocation.action}`, {
+            reason: revocationReason(t, d.revocation.reason_code),
+          })}
+        </p>
+      )}
       <section aria-labelledby="pl-overview">
         <h3 id="pl-overview">{t("plugins.section.overview")}</h3>
         <p>{bidiIsolate(pluginWord(d.names?.summary, locale))}</p>
@@ -447,6 +463,20 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
           <dd>{t("plugins.rating.value", { n: n(d.rating) })}</dd>
         </dl>
       </section>
+
+      {(d.review_level === "automated" || d.review_level === "reviewed") && !d.revoked && (
+        <section aria-labelledby="pl-auto">
+          <h3 id="pl-auto" className="mkt-visually-hidden">
+            {t("plugins.auto_update.label")}
+          </h3>
+          <Toggle
+            label={t("plugins.auto_update.label")}
+            checked={!!d.auto_update}
+            onChange={(e) => void act(() => pluginsApi.setAutoUpdate(d.id, e.target.checked))}
+          />
+          <p className="mkt-plugins__hint">{t("plugins.auto_update.explain")}</p>
+        </section>
+      )}
 
       <PermissionsSection detail={d} onSaved={reload} />
 
@@ -503,6 +533,18 @@ function PluginPage({ id, onBack }: { id: string; onBack: () => void }) {
           </tbody>
         </table>
         <Link to={logsPageLink({ services: d.component })}>{t("plugins.health.logs")}</Link>
+        <Toggle
+          label={t("plugins.report_logs.label")}
+          checked={!!d.report_logs}
+          onChange={(e) => {
+            const on = e.target.checked;
+            void act(
+              () => pluginsApi.setReportLogs(d.id, on),
+              t(on ? "plugins.report_logs.on" : "plugins.report_logs.off")
+            );
+          }}
+        />
+        <p className="mkt-plugins__hint">{t("plugins.report_logs.hint")}</p>
       </section>
 
       <FlowSection id={d.id} names={(pid) => (pid === d.id ? name : pid)} />
@@ -1082,6 +1124,39 @@ function UpdateFromFile({ id, onDone }: { id: string; onDone: () => Promise<void
       </Button>
       {error && <p role="alert">{error}</p>}
     </div>
+  );
+}
+
+/** A revocation's reason in Maktaba's words (the code itself when it has none). */
+function revocationReason(t: T, code: string): string {
+  const key = `plugins.revocation.reason.${code}`;
+  const w = t(key);
+  return w === key ? code : w;
+}
+
+/**
+ * When this home last checked the store's list of withdrawn plugins (54.14 §4, 54.17 §4):
+ * an expired list warns (plugins keep running; store installs wait).
+ */
+function TrustBanner() {
+  const { t, formatDate } = useI18n();
+  const [trust, setTrust] = useState<TrustStatus | null>(null);
+  useEffect(() => {
+    pluginsApi.trust().then(setTrust, () => setTrust(null));
+  }, []);
+  if (!trust || !trust.store_keys) return null;
+  if (!trust.revoked_issued) return <p className="mkt-plugins__hint">{t("plugins.trust.never")}</p>;
+  const date = formatDate(trust.revoked_issued);
+  if (trust.offline)
+    return (
+      <p role={trust.revoked_expired ? "alert" : undefined} className="mkt-plugins__hint">
+        {t("plugins.trust.offline", { date })}
+      </p>
+    );
+  return trust.revoked_expired ? (
+    <p role="alert">{t("plugins.trust.expired", { date })}</p>
+  ) : (
+    <p className="mkt-plugins__hint">{t("plugins.trust.checked", { date })}</p>
   );
 }
 

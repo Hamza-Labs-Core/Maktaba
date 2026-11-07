@@ -59,3 +59,27 @@ func TestProbeDowntime(t *testing.T) {
 		t.Error("percentile")
 	}
 }
+
+// T02 (story 50.14): a segment that arrives after the next is due is a stall.
+func TestAStallIsASegmentLateForTheNext(t *testing.T) {
+	start := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	if Stalled(start, start.Add(3*time.Second), 4*time.Second) {
+		t.Error("on time counted as a stall")
+	}
+	if !Stalled(start, start.Add(5*time.Second), 4*time.Second) {
+		t.Error("a segment 1 s late is a stall")
+	}
+	s := Stats{OK: 990, Failed: 2, Stalls: 3}
+	if got := s.StallRate(); got < 0.00503 || got > 0.00505 {
+		t.Errorf("stall rate %f, want 5/992", got)
+	}
+}
+
+// A 5 Mbit/s profile with 4 s segments asks for 2.5 MB every 4 s.
+func TestAProfileSetsTheSegment(t *testing.T) {
+	var g Gen
+	g.Apply(Profile{BitsPerSecond: 5_000_000, Segment: 4 * time.Second})
+	if g.Segment != 2_500_000 || g.Every != 4*time.Second || g.SegmentMS != 400 {
+		t.Errorf("segment %d bytes every %s over %d ms", g.Segment, g.Every, g.SegmentMS)
+	}
+}

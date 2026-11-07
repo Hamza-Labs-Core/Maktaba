@@ -1,5 +1,12 @@
 package com.hamzalabs.maktaba.tv.ui.screens
 
+import com.hamzalabs.maktaba.core.api.PanelView
+import com.hamzalabs.maktaba.core.api.panels
+import com.hamzalabs.maktaba.core.ui.PluginPanels
+import kotlinx.coroutines.CancellationException
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,7 +49,23 @@ fun VideoScreen(
     onBack: (() -> Unit)? = null,
     /** Epic 56: Go to series, when the video is an episode. */
     onSeries: ((String) -> Unit)? = null,
+    /** Story 54.20: the home serves plugin panels (capabilities `plugin_panels: on`). */
+    panels: Boolean = false,
 ) {
+    var pluginPanels by remember(id) { mutableStateOf<List<PanelView>>(emptyList()) }
+    LaunchedEffect(id, panels) {
+        pluginPanels = if (!panels) {
+            emptyList()
+        } else {
+            try {
+                api.client.panels("video", id, if (java.util.Locale.getDefault().language == "ar") "ar" else "en")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
+    }
     val (state, retry) = rememberLoad(id, signedOut, where = "tv video") { api.video(id) to api.seriesOf(id) }
     LoadState(state, retry, onBack) { (v, series) ->
         val focus = remember { FocusRequester() }
@@ -84,6 +107,9 @@ fun VideoScreen(
                         Text(it, style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted, maxLines = 8, overflow = TextOverflow.Ellipsis)
                     }
                 }
+                // story 54.20: installed plugins' panels, the TV's subset (kv, badges, markers);
+                // a marker plays from its time
+                PluginPanels(pluginPanels, tv = true, onSeek = { sec -> onPlay(v.displayTitle, (sec * 1000).toLong()) })
             }
         }
     }

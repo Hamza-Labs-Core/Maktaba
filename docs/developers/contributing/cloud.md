@@ -131,6 +131,7 @@ breaks them on purpose:
 | `cert-on-standby` | fresh nodes | each holds its own wildcard certificate before any traffic |
 | `status-feed` | stops every relay process | the status page's `summary.json` says remote access is down within two probe rounds, and working again after two passing ones |
 | `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | runs the one-click recovery workflows' scripts; for the DNS swap, with the Hetzner API down | each does what its runbook says against the real pair: a new leader, the old one fenced, the relay's names on the new leader |
+| `load-small` | 1,000 homes and 50 players at 5 Mbit/s for 5 minutes | the relay's CPU per Mbit and memory per tunnel no more than 20 % worse than main's |
 
 A cloud deploy is refused unless the rehearsal passed on that exact commit. No Hetzner,
 Cloudflare or Let's Encrypt host is ever contacted: a fake Hetzner API moves the address,
@@ -145,6 +146,12 @@ go test -tags cloudrehearsal -run 'TestScenario/drain-1k$' -timeout 30m -v ./reh
 ```
 
 `REHEARSAL_HOMES` and `REHEARSAL_STREAMS` make a scenario smaller.
+
+What one node carries is measured apart from the rehearsal: `cloud/cmd/maktaba-loadtest` ramps
+simulated homes and players against a staging pair until the CPU, the added latency, the stalls,
+a dropped tunnel or the memory crosses its limit for 2 minutes, and the last good step becomes a
+row of [docs/cloud-sizing.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/cloud-sizing.md).
+The monitoring compares the live traffic with it: at 60 % for a week, the next phase starts.
 [docs/cloud-rehearsal.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/cloud-rehearsal.md)
 lists the images the other scenarios need.
 
