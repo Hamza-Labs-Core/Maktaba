@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 /// The status strip (Epic 53 story 53.06): the highest line of what is wrong on the home,
@@ -79,13 +80,16 @@ public struct HomeStatusStrip: ViewModifier {
     let liveTVOff: Bool
     @State private var watcher = HomeStatusWatcher()
     @State private var cloud = CloudStatusWatcher()
+    /// Requests waiting for the home behind the relay (story 50.13).
+    @State private var reconnecting = 0
     @Environment(\.scenePhase) private var scenePhase
 
     public func body(content: Content) -> some View {
         // Maktaba Cloud's line only when the home is reached through the cloud (story 50.11)
         let viaCloud = CloudStatusRules.throughCloud(home ?? client.home)
         let lines = StatusStripRules.lines(watcher.status, online: true, admin: admin, liveTVOff: liveTVOff,
-                                           cloud: viaCloud ? CloudStatusRules.line(cloud.summary) : nil)
+                                           cloud: viaCloud ? CloudStatusRules.line(cloud.summary) : nil,
+                                           reconnecting: reconnecting > 0)
         let sig = StatusStripRules.signature(lines)
         content
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -94,6 +98,9 @@ public struct HomeStatusStrip: ViewModifier {
                 }
             }
             .environment(\.homeStatus, watcher.status)
+            .onReceive(NotificationCenter.default.publisher(for: APIClient.reconnectingChanged).receive(on: RunLoop.main)) { n in
+                if n.userInfo?["waiting"] as? Bool == true { reconnecting += 1 } else { reconnecting = max(0, reconnecting - 1) }
+            }
             .task(id: scenePhase == .active) {
                 guard scenePhase == .active else { return }
                 await watcher.run(client)

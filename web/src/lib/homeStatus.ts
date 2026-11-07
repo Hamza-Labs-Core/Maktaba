@@ -117,12 +117,15 @@ export function stripLines(
     online: boolean;
     admin: boolean;
     liveTvOff?: boolean;
+    /** a request is waiting for the home to come back behind the relay (story 50.13) */
+    reconnecting?: boolean;
     /** the cloud's line (story 50.11), when the app reaches the home through the cloud */
     cloud?: { key: string; text: string; vars?: Record<string, string>; href: string } | null;
   }
 ): StripLine[] {
   const out: StripLine[] = [];
   if (!opts.online) out.push({ key: "offline", text: "error.offlineBanner" });
+  else if (opts.reconnecting) out.push({ key: "reconnecting", text: "home.reconnecting" });
   const cloud = opts.cloud
     ? [{ key: opts.cloud.key, text: opts.cloud.text, vars: opts.cloud.vars, href: opts.cloud.href }]
     : [];

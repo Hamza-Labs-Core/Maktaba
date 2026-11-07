@@ -74,6 +74,16 @@
 دقائق، أو فشل أكثر من نصف آخر عشرين مهمة، أو خمسون نداءً مرفوضًا للواجهة البرمجية في عشر دقائق.
 فتُعلَّق، ويتلقى المسؤولون إشعارًا واحدًا، وتبقى مهامها منتظرة حتى يضغط مسؤول «بدء».
 
+وتترك **بلاغات المشكلات** سطور سجلك خارجها: فهي نصّ إضافتك، والبلاغ يذهب إلى من يقرؤه. والمسؤول
+الذي يريدها فيه يختار **تضمين سجلاتها في بلاغات المشكلات** في صفحة إضافتك. أما سطور المضيف عن إضافتك
+(`plugins.host`) فتُضمَّن دائمًا.
+
+**المقاييس.** في `/metrics` على الجهاز الرئيسي لكل إضافة: `maktaba_plugin_jobs_total{plugin,
+outcome}` (`ok` و`failed`)، و`maktaba_plugin_job_seconds{plugin, quantile}` (0.5 و0.95 على آخر
+عشرين مهمة)، و`maktaba_plugin_memory_peak_bytes{plugin}` (الأعلى بين تلك المهام)، و
+`maktaba_plugin_refusals_total{plugin, code}` و`maktaba_plugin_api_calls_total{plugin, route}` من
+الواجهة البرمجية للإضافات.
+
 ## ما كتبته
 
 يُسجَّل كل تغيير تجريه إضافتك على المكتبة (حقل، أو وسم، أو فصول، أو ترجمة، أو صورة) مع القيمة قبله
@@ -140,6 +150,7 @@
 | `GET /api/plugins`، `GET /api/plugins/{id}` | الإضافات، وتفاصيل إضافة واحدة |
 | `POST /api/plugins/install`، `POST /api/plugins/{id}/update` | التثبيت أو التحديث من ملف |
 | `PUT /api/plugins/{id}/grants` | القدرات، والمكتبات، وكل المكتبات |
+| `PUT /api/plugins/{id}/report-logs` | `{"include": true}`: تحمل بلاغات المشكلات سطور سجلها |
 | `POST /api/plugins/{id}/enable`، `/disable`، `/start`، `/stop` | المفاتيح |
 | `POST /api/plugins/{id}/rollback` | إلى الإصدار المحفوظ (`?clear_data=true`) |
 | `DELETE /api/plugins/{id}` | الإزالة (`?purge=true`: ومسح ما كتبته) |

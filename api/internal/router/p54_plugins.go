@@ -79,6 +79,8 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 	}
 	tokens := plugins.NewTokens(d.DB)
 	inv := &pluginsh.Invocations{Tokens: tokens}
+	// story 54.09 §4: the plugins' job numbers on the home's /metrics
+	plugins.RegisterHealthMetrics(d.DB)
 	var lc *plugins.Lifecycle
 	if d.Components != nil {
 		sup := d.Sup

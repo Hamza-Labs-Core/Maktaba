@@ -114,6 +114,8 @@ type Detail struct {
 	DataRows  int64           `json:"data_rows"`
 	DataBytes int64           `json:"data_bytes"`
 	DataMB    int             `json:"data_mb"`
+	// ReportLogs: an admin ticked "Include its logs in problem reports" (54.09 §3).
+	ReportLogs bool `json:"report_logs"`
 }
 
 // List is every installed plugin, by id.
@@ -241,6 +243,9 @@ func (l *Lifecycle) Show(ctx context.Context, id string) (*Detail, error) {
 		d.Stages = append(d.Stages, sv)
 	}
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*) FROM plugin_writes WHERE plugin_id = $1 AND reverted_at IS NULL`, id).Scan(&d.Writes)
+	if set, err := ReportLogPlugins(ctx, l.DB); err == nil {
+		d.ReportLogs = set[id]
+	}
 	_ = l.DB.QueryRowContext(ctx, `SELECT count(*), COALESCE(sum(bytes), 0) FROM plugin_data WHERE plugin_id = $1`, id).
 		Scan(&d.DataRows, &d.DataBytes)
 	return d, nil

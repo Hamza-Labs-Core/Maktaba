@@ -544,3 +544,39 @@ func TestRevokedVersionsAreRefused(t *testing.T) {
 		t.Fatalf("a rollback to a revoked version: %v", err)
 	}
 }
+
+// 54.09 §3 (#711): "Include its logs in problem reports" is off until an admin ticks it on
+// the plugin's page; it is audited, and an id not installed is refused.
+func TestReportLogsOptIn(t *testing.T) {
+	f := newLC(t)
+	ctx := context.Background()
+	f.allowUnreviewed(t)
+	if _, err := f.l.Install(ctx, InstallRequest{ConfirmName: "Lifecycle", Package: bytes.NewReader(lcManifest("1.0.0", nil, nil, 1))}, admin); err != nil {
+		t.Fatal(err)
+	}
+	d, err := f.l.Show(ctx, lcPlugin)
+	if err != nil || d.ReportLogs {
+		t.Fatalf("default: %v %v", d, err)
+	}
+	if err := f.l.SetReportLogs(ctx, lcPlugin, true, admin); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ := ReportLogPlugins(ctx, f.db); !set[lcPlugin] || len(set) != 1 {
+		t.Fatalf("allowed: %v", set)
+	}
+	if d, _ := f.l.Show(ctx, lcPlugin); !d.ReportLogs {
+		t.Fatal("the page does not show it ticked")
+	}
+	if f.count(t, `SELECT count(*) FROM audit_log WHERE action = 'plugin.report_logs'`) != 1 {
+		t.Fatal("not audited")
+	}
+	if err := f.l.SetReportLogs(ctx, lcPlugin, false, admin); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ := ReportLogPlugins(ctx, f.db); len(set) != 0 {
+		t.Fatalf("cleared: %v", set)
+	}
+	if err := f.l.SetReportLogs(ctx, "dev.example.absent", true, admin); asProblem(err) == nil || asProblem(err).Code != CodeNotInstalled {
+		t.Fatalf("not installed: %v", err)
+	}
+}
