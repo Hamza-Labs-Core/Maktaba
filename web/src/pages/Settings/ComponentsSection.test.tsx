@@ -3,7 +3,7 @@
 // health (51.14), offline files (51.16) and the licence lock (51.19).
 // The fake API is built from the real catalog (shared/components/testdata/catalog.dump.json),
 // in the shape of the API's View: `settings` is the catalog's list as it is.
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -32,6 +32,7 @@ import type { ComponentDetail, ComponentView, ListView, Preview } from "../../li
 import { adminUser, memberUser, renderPage } from "../../test/pageHarness";
 import { axeViolations } from "../../test/axe";
 import { ComponentsSection } from "./ComponentsSection";
+import { OFFLINE_POLL_MS } from "./ComponentOffline";
 import { GROUP_ORDER } from "./componentWords";
 
 // the catalog is outside src/: read it at run time, as help.coverage.test.ts does
@@ -1009,9 +1010,9 @@ describe("Components page: a wanted asset not on this home", () => {
 async function axeBoth(render: () => Promise<{ container: HTMLElement; unmount: () => void }>) {
   for (const locale of ["en", "ar"]) {
     localStorage.setItem("mkt:locale", locale);
-    const { container, unmount } = await render();
-    expect(await axeViolations(container), locale).toEqual([]);
-    expect(await axeViolations(document.body), `${locale} (dialogs)`).toEqual([]);
+    const { unmount } = await render();
+    // the body holds the page and its portalled dialogs: one axe run covers both (#697)
+    expect(await axeViolations(document.body), locale).toEqual([]);
     unmount();
   }
 }
@@ -1458,7 +1459,13 @@ describe("Components page: offline files (story 51.16 §6)", () => {
       return new Response("TAR", { status: 200, headers: { "Content-Type": "application/x-tar" } });
     });
     vi.stubGlobal("fetch", fetchMock);
-    const user = userEvent.setup();
+    // the next ask for progress is OFFLINE_POLL_MS away: moved on by the test, not waited
+    // out in real time (#697); real time still moves the clock for the page's other waits
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     open();
     await loaded();
     await user.click(screen.getByRole("button", { name: "Download for offline" }));
@@ -1475,7 +1482,12 @@ describe("Components page: offline files (story 51.16 §6)", () => {
     );
     const building = await within(dialog).findByTestId("comp-offline-building");
     expect(building).toHaveTextContent("Gathering runtime.ml: 1 MB of 4 MB");
-    const ready = await within(dialog).findByTestId("comp-offline-ready", {}, { timeout: 5000 });
+    expect(asks).toBe(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(OFFLINE_POLL_MS);
+    });
+    expect(asks).toBe(2);
+    const ready = await within(dialog).findByTestId("comp-offline-ready");
     const link = within(ready).getByRole("link", { name: "Save the file" });
     expect(link.getAttribute("href")).toContain(`/api/components/offline/${NAME}`);
     expect(link).toHaveAttribute("download", NAME);
