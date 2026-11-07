@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // fakeStore is the store's pairing protocol (store/web/homes.ts) in Go, checking each signed
@@ -177,7 +177,7 @@ func TestHomeSignatureVector(t *testing.T) {
 func TestOfflineCallsNoStore(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
 	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { hits.Add(1) }))
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
 	defer srv.Close()
 	t.Setenv(ports.EnvOffline, "1")
 	l := &Link{DB: db, Secrets: secrets.NewMemory(), StoreURL: srv.URL, Version: "0.7.0", Platform: "darwin-arm64", Name: "Home"}
