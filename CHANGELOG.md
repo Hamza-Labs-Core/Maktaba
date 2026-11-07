@@ -279,6 +279,12 @@ build fails when the two differ.
   for one refresh. The tray now reads the record again for a moment before it treats it as
   gone.
 
+- **Maktaba's built-in plugins run in their runners again (Epic 54, story 54.23).** Since
+  0.3.93 every first-party runner (light, fp, ml, index) exited about 0.2 s after it
+  started, on a circular import, and was marked failed after five restarts; the worker ran
+  the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
+  runner. The runners start again, and a test imports each entry point in a fresh process.
+
 ### Security
 
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
