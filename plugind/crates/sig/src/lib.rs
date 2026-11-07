@@ -200,6 +200,8 @@ pub struct State {
     #[serde(default)]
     pub catalog_versions: BTreeMap<String, i64>,
     #[serde(default)]
+    pub catalog_sha256: BTreeMap<String, String>,
+    #[serde(default)]
     pub newest_issued: String,
 }
 
@@ -526,6 +528,14 @@ impl StoreKeys {
         let seen = st.catalog_versions.get(&api_major.to_string()).copied().unwrap_or(0);
         if s.version < seen {
             return fail(CODE_CATALOG_ROLLBACK, "list", format!("version {} is older than {seen}", s.version));
+        }
+        let seen_sum = st.catalog_sha256.get(&api_major.to_string()).map(String::as_str).unwrap_or("");
+        if s.version == seen && !seen_sum.is_empty() && seen_sum != hex::encode(Sha256::digest(raw)) {
+            return fail(
+                CODE_CATALOG_ROLLBACK,
+                "list",
+                format!("version {} differs from the copy seen before", s.version),
+            );
         }
         if st.now(clock) > expires {
             return fail(CODE_CATALOG_EXPIRED, "list", format!("version {} expired", s.version));

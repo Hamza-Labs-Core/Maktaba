@@ -998,6 +998,7 @@
   "catalogs": {
     "v10": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"38jNoh0KTYIOvKuDxX8vDLumqcrBkhQ3+gADbzUb8w6JUCpUOQemZw4g9g4Z/aqfjana+Lr/O+0crmhQnNJOBw==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-13T11:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":10}}",
     "v9": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"akrpqzFBTKHnyWmJ3wp2Qn5JpvfY2cEgffJn7tvC0C6bZEdAId3Ais/SDB3DMaYOxP8kHho8ornyNChXRDTYCQ==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-12T12:00:00Z\",\"issued\":\"2026-11-06T10:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":9}}",
+    "v10_other": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"wQ4Y0yMJi7NOhombPmavxFc+yarnEUlC1NqHBnO8oZcMqdg1yR4x8eGcqfYJ8eOF2DxuTQLQudEDuccIXw+yAw==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-12T12:00:00Z\",\"issued\":\"2026-11-06T10:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":10}}",
     "expired": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"Hzs9Jg0dMxD7zVYrON2437CZLjtlww1OUIFPhEXqhUmMDpRXHNcfeWFfVhnHoiRZ1oPYXoAKkTylO9In8gwPAA==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-04T12:00:00Z\",\"issued\":\"2026-10-28T12:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":11}}",
     "major2": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"SCCRdYfIu8B/BMxkEefLMa7/1nzOhM1Qv4nQJAVq4q+qen+h5ndQ8jcefWmuPeNt2YkPFsFCuo24uaSCT84QDw==\"}],\"signed\":{\"api_major\":2,\"expires\":\"2026-11-12T12:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":12}}",
     "too_long": "{\"signatures\":[{\"key_id\":\"4c9016bd109e2a2b01c8f12e84e5eef8\",\"sig\":\"7107OpWqKIfrwy2jgOsNqqjfXTseFUDQuijWF+Fz4e7jrqBoABgEsB8xKDGf7FnAJEF9ZfUGtAw+N5tY2QmTAg==\"}],\"signed\":{\"api_major\":1,\"expires\":\"2026-11-13T12:00:00Z\",\"issued\":\"2026-11-06T11:00:00Z\",\"plugins\":[{\"category\":\"metadata\",\"developer\":\"Example\",\"icon\":\"\",\"id\":\"dev.example.signed\",\"installs\":0,\"machine_translated\":[],\"names\":{\"ar\":\"موقّع\",\"en\":\"Signed\"},\"price\":\"free\",\"rating_avg_x100\":0,\"rating_count\":0,\"summaries\":{\"ar\":\"إضافة موقّعة.\",\"en\":\"A signed plugin.\"},\"tags\":[\"tags\"],\"versions\":[{\"capabilities\":[\"library.read\"],\"files_sha256\":\"45825fdbc2a6a8627363184f046c06d7fab172e8ad9604ee2c910a15c6bd9840\",\"maktaba\":\">=0.6.0, <0.9.0\",\"platforms\":[\"any\"],\"plugin_api\":\"1.0\",\"released\":\"2026-11-06T10:00:00Z\",\"review_level\":\"reviewed\",\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"size\":1234,\"url\":\"https://plugins-cdn.maktaba.tv/0000000000000000000000000000000000000000000000000000000000000000.mkplugin\",\"version\":\"1.0.0\"}]}],\"version\":13}}"
@@ -1035,6 +1036,49 @@
         "ok": false,
         "code": "catalog_rollback_refused",
         "step": "list"
+      }
+    },
+    {
+      "name": "the newest seen version with other content",
+      "raw": "v10_other",
+      "api_major": 1,
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "catalog_versions": {
+          "1": 10
+        },
+        "catalog_sha256": {
+          "1": "90fe9ecf914d57d965988e4d46bcbe2bfbb070e4ab6f3b238b54cbf21424ce68"
+        }
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": false,
+        "code": "catalog_rollback_refused",
+        "step": "list"
+      }
+    },
+    {
+      "name": "the newest seen version again, the same bytes",
+      "raw": "v10",
+      "api_major": 1,
+      "state": {
+        "store_keys_version": 0,
+        "revoked_version": 0,
+        "newest_issued": "0001-01-01T00:00:00Z",
+        "catalog_versions": {
+          "1": 10
+        },
+        "catalog_sha256": {
+          "1": "90fe9ecf914d57d965988e4d46bcbe2bfbb070e4ab6f3b238b54cbf21424ce68"
+        }
+      },
+      "now": "2026-11-06T12:00:00Z",
+      "expect": {
+        "ok": true,
+        "version": 10
       }
     },
     {
