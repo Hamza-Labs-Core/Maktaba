@@ -431,7 +431,9 @@ export function pluginReference(src, lang) {
 
   const trusted = trustedKeys(src.schema);
   if (trusted.length) {
-    md.push(L("### Keys only Maktaba's own plugins use", "### مفاتيح لا تستخدمها إلا إضافات مكتبة نفسها"));
+    md.push(
+      L("### Keys only Maktaba's own plugins use", "### مفاتيح لا تستخدمها إلا إضافات مكتبة نفسها")
+    );
     md.push(
       L(
         `These keys, and a stage named like one of Maktaba's own, are refused in your manifest with \`plugin_trusted_field\`: only the manifests built into a Maktaba release are read with them ([Maktaba's own plugins](../first-party/)). ${trusted.map(code).join(", ")}.`,
