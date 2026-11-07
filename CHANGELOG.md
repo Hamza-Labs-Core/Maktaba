@@ -279,6 +279,12 @@ build fails when the two differ.
   for one refresh. The tray now reads the record again for a moment before it treats it as
   gone.
 
+- **A plugin runner starts on a Mac whose data folder has a long path (Epic 54, story
+  54.23).** A runner's socket then lives under `/tmp`, which macOS keeps at `/private/tmp`;
+  the runner's sandbox named the first and was refused the second, so the runner exited
+  about 10 s after it started and its stages ran in the worker. The sandbox now names the
+  sockets and the run folder by their real paths.
+
 ### Security
 
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
