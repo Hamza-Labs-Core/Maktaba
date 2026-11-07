@@ -30,6 +30,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
+
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 )
@@ -162,18 +164,41 @@ func (c *Cluster) files(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"code": "not_found"})
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(dir, filepath.FromSlash(clean)))
+	p, ok := within(dir, clean)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, map[string]string{"code": "not_found"})
+		return
+	}
+	http.ServeFile(w, r, p)
+}
+
+// within is name under dir, ok false when the joined path would leave dir.
+func within(dir, name string) (string, bool) {
+	p := filepath.Join(dir, filepath.FromSlash(name))
+	rel, err := filepath.Rel(dir, p)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return p, true
 }
 
 // listed reports whether a package folder serves name: files.json, a signature, or a file
-// files.json lists.
+// files.json lists, under the pack's path rule (componentpack.SafePluginPath: a name
+// files.json lists that breaks it is never served).
 func listed(dir, name string) bool {
 	switch name {
-	case "files.json", "developer.sig", "store.sig", "manifest.toml":
-		_, err := os.Stat(filepath.Join(dir, name))
+	case componentpack.PluginFilesName, componentpack.PluginDeveloperSig, componentpack.PluginStoreSig, componentpack.PluginManifestName:
+		p, ok := within(dir, name)
+		if !ok {
+			return false
+		}
+		_, err := os.Stat(p)
 		return err == nil
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "files.json"))
+	if !componentpack.SafePluginPath(name) {
+		return false
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, componentpack.PluginFilesName))
 	if err != nil {
 		return false
 	}
@@ -184,7 +209,7 @@ func listed(dir, name string) bool {
 		return false
 	}
 	for _, f := range list {
-		if f.Path == name {
+		if f.Path == name && componentpack.SafePluginPath(f.Path) {
 			return true
 		}
 	}

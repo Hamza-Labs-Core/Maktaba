@@ -3,8 +3,10 @@ package plugins
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,8 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginsig"
 )
 
 // folderHome serves an installed folder's files as the home's machine route does.
@@ -95,5 +99,133 @@ func TestAMachineGatesByPlacement(t *testing.T) {
 	home := &Runner{st: st}
 	if got := home.Gate(components.PluginPrefix + "dev.example.home"); got != "" {
 		t.Errorf("the home gates its own: %q", got)
+	}
+}
+
+// mapHome is a hostile or tampered home: it serves whatever bytes each name has, and
+// records what the machine asked for.
+type mapHome struct {
+	files map[string][]byte
+	asked []string
+}
+
+func (h *mapHome) Fetch(_ context.Context, path string) (*http.Response, error) {
+	i := strings.LastIndex(path, "/files/")
+	name := strings.SplitN(path[i+len("/files/"):], "/", 3)[2]
+	if u, err := url.PathUnescape(name); err == nil {
+		name = u
+	}
+	h.asked = append(h.asked, name)
+	b, ok := h.files[name]
+	if !ok {
+		return &http.Response{StatusCode: 404, Status: "404", Body: io.NopCloser(strings.NewReader(""))}, nil
+	}
+	return &http.Response{StatusCode: 200, Status: "200", Body: io.NopCloser(bytes.NewReader(b))}, nil
+}
+
+// noWrites fails when the machine's layout, or the folder above it, holds anything.
+func noWrites(t *testing.T, f *Files, what string) {
+	t.Helper()
+	parent := filepath.Dir(f.Layout.Root)
+	_ = filepath.WalkDir(parent, func(p string, d os.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			t.Errorf("%s: wrote %s", what, p)
+		}
+		return nil
+	})
+}
+
+func entry(name string, b []byte) componentpack.PluginFile {
+	return componentpack.PluginFile{Path: name, Size: int64(len(b)), SHA256: hexSum(b)}
+}
+
+// CodeQL go/path-injection (#166): a files.json from a tampered home that names a path
+// outside the package (a "..", an absolute path, a backslash, a colon, a NUL, a name
+// twice, one of the package's own names) is refused before the machine writes or
+// fetches anything else.
+func TestAHostileFilesListWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	man := []byte(manifest(testID, "1.0.0"))
+	for _, name := range []string{"../evil", "a/../../evil", "/etc/evil", `a\b`, "C:/evil", "a\x00b",
+		"plugin.wasm", componentpack.PluginFilesName, componentpack.PluginStoreSig, "./a", "a//b"} {
+		list := []componentpack.PluginFile{entry(componentpack.PluginManifestName, man), entry(name, []byte("x"))}
+		if name == "plugin.wasm" {
+			list = append(list, entry(name, []byte("x"))) // listed twice
+		}
+		fj, _ := json.Marshal(list)
+		h := &mapHome{files: map[string][]byte{componentpack.PluginFilesName: fj, componentpack.PluginManifestName: man, name: []byte("x")}}
+		m := &Files{Layout: packs.Layout{Root: filepath.Join(t.TempDir(), "plugins")}}
+		ref := m.FetchFromHome(ctx, h, Install{ID: testID, Version: "1.0.0", Digest: hexSum(fj), Path: "/home/" + testID + "/1.0.0-ab"})
+		if ref == nil || ref.Code != components.ReasonPluginUntrusted {
+			t.Errorf("%q: %v", name, ref)
+		}
+		if len(h.asked) != 1 {
+			t.Errorf("%q: fetched %v after files.json", name, h.asked[1:])
+		}
+		noWrites(t, m, name)
+	}
+}
+
+// The signature over files.json is checked before anything is written: a developer.sig
+// over another files.json makes no write, and fetches nothing but the signatures and the
+// manifest; a file whose sha256 is not files.json's is refused and nothing is placed.
+func TestABadSignatureOrDigestWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	k := newKit()
+	good := pluginFiles("1.0.0")
+	fj := filesJSONOf(t, good)
+	other := pluginFiles("1.0.0")
+	other["plugin.wasm"] = []byte("\x00asm-other")
+	sig, err := pluginsig.SignDeveloper(k.dev1, testID, "1.0.0", filesJSONOf(t, other))
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := map[string][]byte{componentpack.PluginFilesName: fj, componentpack.PluginDeveloperSig: sig}
+	for n, b := range good {
+		served[n] = b
+	}
+	row := Install{ID: testID, Version: "1.0.0", Digest: hexSum(fj), Path: "/home/" + testID + "/1.0.0-ab"}
+	h := &mapHome{files: served}
+	m := k.files(t, nil, pluginsig.State{})
+	if ref := m.FetchFromHome(ctx, h, row); ref == nil || ref.Code != components.ReasonPluginUntrusted {
+		t.Fatalf("a bad signature: %v", ref)
+	}
+	for _, n := range h.asked {
+		if n == "plugin.wasm" || strings.HasPrefix(n, "i18n/") {
+			t.Errorf("fetched %s before the signature verified", n)
+		}
+	}
+	if f := m.Layout.Folders(testID); len(f) != 0 {
+		t.Errorf("placed %v", f)
+	}
+	if entries, _ := os.ReadDir(m.Layout.Root); len(entries) != 0 {
+		t.Errorf("staged %v", entries)
+	}
+	// the good signature verifies; a payload file whose bytes are not files.json's is refused
+	served[componentpack.PluginDeveloperSig], _ = pluginsig.SignDeveloper(k.dev1, testID, "1.0.0", fj)
+	served["plugin.wasm"] = []byte("\x00asm-evil")
+	m = k.files(t, nil, pluginsig.State{})
+	if ref := m.FetchFromHome(ctx, &mapHome{files: served}, row); ref == nil || ref.Code != components.ReasonPluginUntrusted {
+		t.Fatalf("a mismatched sha: %v", ref)
+	}
+	if entries, _ := os.ReadDir(m.Layout.Root); len(entries) != 0 {
+		t.Errorf("left %v", entries)
+	}
+	served["plugin.wasm"] = good["plugin.wasm"]
+	m = k.files(t, nil, pluginsig.State{})
+	if ref := m.FetchFromHome(ctx, &mapHome{files: served}, row); ref != nil {
+		t.Fatalf("the signed package: %v", ref)
+	}
+}
+
+func TestContained(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"../x", "a/../../x", "..", "."} {
+		if _, err := contained(dir, name); err == nil {
+			t.Errorf("%q passed", name)
+		}
+	}
+	if p, err := contained(dir, "a/b.json"); err != nil || p != filepath.Join(dir, "a", "b.json") {
+		t.Errorf("a/b.json: %q %v", p, err)
 	}
 }

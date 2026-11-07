@@ -264,6 +264,45 @@ func TestPackageFilesForMachines(t *testing.T) {
 	if got := get(rig.unsignedURL, folder+"/plugin.wasm"); got != 401 {
 		t.Errorf("unsigned: %d", got)
 	}
+	// CodeQL go/path-injection (#164, #165): a files.json on the home that lists names
+	// outside the folder serves none of them, and an encoded traversal is refused
+	outside := filepath.Join(filepath.Dir(rig.pkg), "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(rig.pkg, "files.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(raw, &list); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"../outside.txt", "sub/../../outside.txt", "/etc/passwd", `..\outside.txt`} {
+		list = append(list, map[string]any{"path": name, "sha256": "", "size": 0})
+	}
+	hostile, _ := json.Marshal(list)
+	if err := os.WriteFile(filepath.Join(rig.pkg, "files.json"), hostile, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"../outside.txt", "sub/../../outside.txt", "/etc/passwd", `..\outside.txt`} {
+		if listed(rig.pkg, name) {
+			t.Errorf("listed %q", name)
+		}
+	}
+	for _, p := range []string{folder + "/..%2Foutside.txt", folder + "/%2E%2E/outside.txt", folder + "/sub%2F..%2F..%2Foutside.txt", folder + "/..%5Coutside.txt"} {
+		if got := get(rig.home.URL, p); got != 400 && got != 404 {
+			t.Errorf("%s: %d", p, got)
+		}
+	}
+	if got := get(rig.home.URL, folder+"/plugin.wasm"); got != 200 {
+		t.Errorf("a listed file next to hostile names: %d", got)
+	}
+	for _, name := range []string{"../x", "a/../../x", "..", "."} {
+		if _, ok := within(rig.pkg, name); ok {
+			t.Errorf("within %q", name)
+		}
+	}
 }
 
 // The home's breaker statements are the dispatcher's, character for character.

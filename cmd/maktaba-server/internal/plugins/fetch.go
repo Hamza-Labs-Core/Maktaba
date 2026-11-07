@@ -3,14 +3,19 @@ package plugins
 // A joined machine's copies of its home's plugin packages (story 54.42 §2). The home
 // installs and approves; a machine whose placement fits fetches each enabled plugin's
 // files over its signed link (the route the home serves to its machines,
-// /internal/cluster/plugins/files/…), and verifies them before anything is unpacked:
+// /internal/cluster/plugins/files/…), and verifies them, in this order, before anything
+// is written:
 //
 //   - files.json's sha256 must be the digest the home recorded in plugin_installs (the
 //     home's own word on the package, read over the machine's verified database link;
 //     only the home writes that table);
-//   - a store countersignature, when the package has one, must verify against the trust
-//     root (pluginsig, as the home's install does);
-//   - every file's size and sha256 must be files.json's.
+//   - every name it lists must be a safe pack path (componentpack.SafePluginPath: no
+//     absolute path, "..", backslash, colon or control character), each listed once;
+//   - the signatures over files.json, when the package has them, must verify against the
+//     trust root (pluginsig, as the home's install does: the store's keys for a
+//     store.sig);
+//   - then each file is fetched, kept only when its size and sha256 are files.json's,
+//     and written only inside the staging folder.
 //
 // A package that fails is never placed, and the machine reports plugin_package_untrusted.
 
@@ -26,6 +31,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
@@ -98,16 +104,23 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 	if err := json.Unmarshal(filesJSON, &list); err != nil {
 		return untrusted("files.json: %v", err)
 	}
-	if err := os.MkdirAll(f.Layout.Root, 0o755); err != nil {
-		return refuse(ReasonBusy, ReasonBusy, "%v", err)
-	}
-	tmp := filepath.Join(f.Layout.Root, newStaging())
-	keep := false
-	defer func() {
-		if !keep {
-			_ = os.RemoveAll(tmp)
+	// every name is checked before anything is fetched or written: the pack rule (no
+	// absolute path, no "..", no backslash, colon or control character, none of the
+	// package's own names), each once
+	var manifestFile *componentpack.PluginFile
+	seen := map[string]bool{}
+	for i, file := range list {
+		if !componentpack.SafePluginPath(file.Path) || seen[file.Path] {
+			return untrusted("bad path %q", file.Path)
 		}
-	}()
+		seen[file.Path] = true
+		if file.Path == componentpack.PluginManifestName {
+			manifestFile = &list[i]
+		}
+	}
+	if manifestFile == nil {
+		return untrusted("files.json lists no %s", componentpack.PluginManifestName)
+	}
 	pkg := &componentpack.PluginPackage{FilesJSON: filesJSON, FilesSHA256: in.Digest, Files: list}
 	for _, name := range []string{componentpack.PluginDeveloperSig, componentpack.PluginStoreSig} {
 		b, ok, err := get(ctx, h, filesPath(in.ID, folder, name))
@@ -122,8 +135,47 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 			}
 		}
 	}
+	fetch := func(file componentpack.PluginFile) ([]byte, *Refusal) {
+		b, ok, err := get(ctx, h, filesPath(in.ID, folder, file.Path))
+		if err != nil || !ok {
+			return nil, refuse(ReasonBusy, ReasonBusy, "%s from the home: %v", file.Path, err)
+		}
+		if int64(len(b)) != file.Size || hexSum(b) != file.SHA256 {
+			return nil, untrusted("%s does not match files.json", file.Path)
+		}
+		return b, nil
+	}
+	// the signature over files.json is verified before anything is written (the chain
+	// of trust, as the home's install checks it, 54.14 §3); it needs the manifest's
+	// capabilities, so the manifest alone is fetched first and held in memory
+	var ref *Refusal
+	if pkg.Manifest, ref = fetch(*manifestFile); ref != nil {
+		return ref
+	}
+	m, errs := pluginmanifest.Validate(pkg.Manifest, nil)
+	if len(errs) > 0 {
+		return untrusted("the manifest: %s", errs.Error())
+	}
+	if len(pkg.StoreSig) > 0 || len(pkg.DeveloperSig) > 0 {
+		if _, ref := f.verify(pkg, m, in.ID, in.Version); ref != nil {
+			return untrusted("%s", ref.Detail)
+		}
+	}
+	if err := os.MkdirAll(f.Layout.Root, 0o755); err != nil {
+		return refuse(ReasonBusy, ReasonBusy, "%v", err)
+	}
+	tmp := filepath.Join(f.Layout.Root, newStaging())
+	keep := false
+	defer func() {
+		if !keep {
+			_ = os.RemoveAll(tmp)
+		}
+	}()
 	write := func(name string, b []byte) error {
-		p := filepath.Join(tmp, filepath.FromSlash(name))
+		p, err := contained(tmp, name)
+		if err != nil {
+			return err
+		}
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			return err
 		}
@@ -133,21 +185,14 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 		return refuse(ReasonBusy, ReasonBusy, "%v", err)
 	}
 	for _, file := range list {
-		if !componentpack.SafePluginPath(file.Path) {
-			return untrusted("bad path %q", file.Path)
-		}
-		b, ok, err := get(ctx, h, filesPath(in.ID, folder, file.Path))
-		if err != nil || !ok {
-			return refuse(ReasonBusy, ReasonBusy, "%s from the home: %v", file.Path, err)
-		}
-		if int64(len(b)) != file.Size || hexSum(b) != file.SHA256 {
-			return untrusted("%s does not match files.json", file.Path)
-		}
-		if file.Path == componentpack.PluginManifestName {
-			pkg.Manifest = b
+		b := pkg.Manifest
+		if file.Path != componentpack.PluginManifestName {
+			if b, ref = fetch(file); ref != nil {
+				return ref
+			}
 		}
 		if err := write(file.Path, b); err != nil {
-			return refuse(ReasonBusy, ReasonBusy, "%v", err)
+			return untrusted("%v", err)
 		}
 	}
 	for name, b := range map[string][]byte{componentpack.PluginDeveloperSig: pkg.DeveloperSig, componentpack.PluginStoreSig: pkg.StoreSig} {
@@ -155,16 +200,6 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 			if err := write(name, b); err != nil {
 				return refuse(ReasonBusy, ReasonBusy, "%v", err)
 			}
-		}
-	}
-	m, errs := pluginmanifest.Validate(pkg.Manifest, nil)
-	if len(errs) > 0 {
-		return untrusted("the manifest: %s", errs.Error())
-	}
-	if len(pkg.StoreSig) > 0 || len(pkg.DeveloperSig) > 0 {
-		// the chain of trust, as the home's install checks it (54.14 §3)
-		if _, ref := f.verify(pkg, m, in.ID, in.Version); ref != nil {
-			return untrusted("%s", ref.Detail)
 		}
 	}
 	unlock, err := f.Layout.Lock(ctx, in.ID)
@@ -187,4 +222,15 @@ func (f *Files) FetchFromHome(ctx context.Context, h HomeFiles, in Install) *Ref
 		return refuse(ReasonBusy, ReasonBusy, "%v", err)
 	}
 	return nil
+}
+
+// contained is name under dir, refused when it would land outside it (a name that passed
+// SafePluginPath never does; the check holds at the write itself).
+func contained(dir, name string) (string, error) {
+	p := filepath.Join(dir, filepath.FromSlash(name))
+	rel, err := filepath.Rel(dir, p)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", fmt.Errorf("%q is outside the package folder", name)
+	}
+	return p, nil
 }
