@@ -1326,6 +1326,11 @@ and fakes. When the owner is ready:
    recovery codes in the password manager.
 6. **The optional IP allow-list.** Decide whether staff sign-in is limited to some networks
    (`admin.ip_allowlist`; empty means off, the default; 50.33 §7).
+7. **GitHub settings for the deploys** (50.34). Allow GitHub Actions to create pull requests
+   (repository settings, Actions → General), so the weekly job can propose Cloudflare's changed
+   IP ranges. Optionally, add required reviewers to the `production` environment, so each
+   Cloudflare deploy waits for a person. `deploy/cloudflare/README.md` has the token table and
+   the per-piece token names.
 
 **Costs. Every figure is an estimate** (list prices as of 2026-11-03, USD a month; check the
 plan pages before buying):
