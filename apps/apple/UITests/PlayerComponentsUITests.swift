@@ -170,6 +170,10 @@ final class PlayerComponentsUITests: PlayerUITestCase {
             let shimmer = element("shimmer")
             XCTAssertTrue(shimmer.waitForExistence(timeout: 5))
             XCTAssertEqual(shimmer.label, language == "ar" ? "جارٍ التحميل…" : "Loading…")
+            // the first placeholder exists before the others are laid out: wait for them (a
+            // count read at once saw 3 of the 4 on an iPad run of #742)
+            let deadline = Date().addingTimeInterval(5)
+            while all("shimmer").count < 4, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
             XCTAssertGreaterThanOrEqual(all("shimmer").count, 4, "the blocks and the card still loading")
         }
     }

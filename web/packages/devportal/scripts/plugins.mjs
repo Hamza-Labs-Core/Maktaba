@@ -129,6 +129,7 @@ export function readPluginSources(repo) {
       ...goConsts(read("api/internal/plugins/media.go")),
       ...goConsts(read("api/internal/plugins/tokens.go")),
       ...goConsts(read("api/internal/plugins/compute.go")),
+      ...goConsts(read("api/internal/plugins/panels.go")),
     },
     pack: goConsts(read("shared/go/componentpack/plugin.go")),
     causes,
@@ -209,6 +210,10 @@ export const CODE_WORDS = {
   compute_bad_output: t(
     "The model's answer did not follow `json-schema`, after one retry.",
     "لم تتبع إجابة النموذج `json-schema`، بعد محاولة ثانية."
+  ),
+  plugin_text_forbidden: t(
+    "A value for a key a panel shows holds a URL, HTML, markdown or a control character.",
+    "قيمة لمفتاح تعرضه لوحة فيها رابط أو HTML أو markdown أو محرف تحكم."
   ),
 };
 

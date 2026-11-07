@@ -430,6 +430,10 @@ func (l *Lifecycle) Install(ctx context.Context, req InstallRequest, actor svc.A
 	if err := checkAsked(req.Grants, m); err != nil {
 		return nil, err
 	}
+	// every [[panel]] is a valid ui/panel.json in the package (story 54.20 §2)
+	if err := CheckPanels(in.Path, in.Manifest); err != nil {
+		return nil, problem(http.StatusBadRequest, "manifest_bad_panel", "%v", err)
+	}
 	if err := l.checkLibraries(ctx, req.Libraries); err != nil {
 		return nil, err
 	}

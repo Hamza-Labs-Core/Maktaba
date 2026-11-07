@@ -61,10 +61,14 @@ public struct Capabilities: Equatable, Sendable {
     public let off: Set<Feature>
     /// nil: a viewer (or no answer yet).
     public let admin: Admin?
+    /// Plugin panels (story 54.20): true only when the home answers `plugin_panels: "on"`.
+    /// Unlike the known features, a missing key is off, so the app never asks an older home.
+    public let panels: Bool
 
-    public init(off: Set<Feature> = [], admin: Admin? = nil) {
+    public init(off: Set<Feature> = [], admin: Admin? = nil, panels: Bool = false) {
         self.off = off
         self.admin = admin
+        self.panels = panels
     }
 
     /// Every feature on, nothing known about the person: before the first answer, on a home
@@ -119,7 +123,8 @@ public struct Capabilities: Equatable, Sendable {
         let w = try JSONDecoder().decode(Wire.self, from: data)
         let off = Set((w.features ?? [:]).compactMap { $0.value == "off" ? Feature(rawValue: $0.key) : nil })
         let admin = w.admin.map { Admin(manageComponents: $0.manageComponents ?? false, off: $0.off ?? [:]) }
-        return (Capabilities(off: off, admin: admin), w.etag)
+        let panels = w.features?["plugin_panels"] == "on"
+        return (Capabilities(off: off, admin: admin, panels: panels), w.etag)
     }
 
     private struct Wire: Decodable {

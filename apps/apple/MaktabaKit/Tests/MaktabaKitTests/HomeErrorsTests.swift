@@ -135,7 +135,8 @@ let renditionNotFound = #"{"type":"https://maktaba.invalid/problems/rendition-no
 
     @Test func everyFeatureHasItsNameInBothLanguages() {
         #expect(Set(ErrorStrings.featuresEN.keys) == Set(ErrorStrings.featuresAR.keys))
-        #expect(ErrorStrings.featuresEN.count == 9)
+        // the catalog's ten (plugin_panels, story 54.20)
+        #expect(ErrorStrings.featuresEN.count == 10)
         for (id, en) in ErrorStrings.featuresEN where id != "plex" {
             #expect(ErrorStrings.featuresAR[id] != en, "ar \(id) is not translated")
         }
