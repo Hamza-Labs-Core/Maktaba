@@ -24,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols/symbolstest"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
@@ -283,7 +284,7 @@ func TestTheServiceAdminTriagesAndRepliesAndTheHomeFetchesIt(t *testing.T) {
 // binaries are named as missing. An upload replaces the table of the same binary.
 func TestAReportsCrashIsSymbolicatedWithTheUploadedTables(t *testing.T) {
 	rg := newRig(t, true)
-	tables, err := symbols.ExtractPath("../symbols/testdata/crashy.dwarf")
+	tables, err := symbols.ExtractPath(symbolstest.Fixture(t, "crashy.dwarf"))
 	if err != nil {
 		t.Fatal(err)
 	}

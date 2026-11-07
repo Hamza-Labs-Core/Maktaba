@@ -12,12 +12,11 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols/symbolstest"
 )
 
-const fixture = "../../internal/symbols/testdata/crashy.dwarf"
-
 func TestExtractWritesOneTablePerArchitecture(t *testing.T) {
-	dir := t.TempDir()
+	dir, fixture := t.TempDir(), symbolstest.Fixture(t, "crashy.dwarf")
 	var out strings.Builder
 	if err := run(context.Background(), []string{"extract", "-o", dir, fixture}, &out); err != nil {
 		t.Fatal(err)
@@ -52,6 +51,7 @@ func TestUploadSendsEachTableWithTheToken(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer srv.Close()
+	fixture := symbolstest.Fixture(t, "crashy.dwarf")
 	t.Setenv("MAKTABA_SYMBOLS_TOKEN", "tok")
 	var out strings.Builder
 	if err := run(context.Background(), []string{"upload", "-url", srv.URL + "/", "-version", "0.3.98", fixture}, &out); err != nil {

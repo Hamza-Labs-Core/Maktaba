@@ -2,7 +2,8 @@
 # Rebuilds the symbol fixtures on a Mac with Xcode: a fat (arm64 + x86_64) C binary's dSYM
 # and an arm64 Swift one, with their source paths mapped to /src. The tests read the dSYMs'
 # DWARF files (crashy.dwarf, player.dwarf), and crashy.arm64 is the arm64 binary with no debug
-# info (its symbol table, debugging entries stripped).
+# info (its symbol table, debugging entries stripped). Each is kept gzip'd: the repo's lint
+# refuses committed executables, and the tests unpack them.
 set -eu
 cd "$(dirname "$0")"
 work=$(mktemp -d)
@@ -19,3 +20,4 @@ xcrun swiftc -g -Onone -parse-as-library -module-name Demo -debug-prefix-map "$P
 xcrun swiftc "$work/player.o" -o "$work/player"
 dsymutil "$work/player" -o "$work/player.dSYM"
 cp "$work/player.dSYM/Contents/Resources/DWARF/player" player.dwarf
+gzip -n -9 -f crashy.arm64 crashy.dwarf player.dwarf

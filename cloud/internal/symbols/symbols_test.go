@@ -15,14 +15,16 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols/symbolstest"
 )
 
 // The fixtures are built by testdata/build.sh: crashy.c (fat: arm64 and x86_64) and
-// player.swift (arm64), their sources mapped to /src.
+// player.swift (arm64), their sources mapped to /src, kept gzip'd (symbolstest unpacks them).
 
 func extract(t *testing.T, name string) []*Table {
 	t.Helper()
-	ts, err := ExtractPath(filepath.Join("testdata", name))
+	ts, err := ExtractPath(symbolstest.Fixture(t, name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +115,7 @@ func TestExtractDSYMBundle(t *testing.T) {
 	if err := os.MkdirAll(dwarf, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join("testdata", "crashy.dwarf"))
+	b, err := os.ReadFile(symbolstest.Fixture(t, "crashy.dwarf"))
 	if err != nil {
 		t.Fatal(err)
 	}
