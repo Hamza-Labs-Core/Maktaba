@@ -4,7 +4,10 @@ import com.hamzalabs.maktaba.core.api.AuthTokens
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.CloudException
 import com.hamzalabs.maktaba.core.session.CloudHome
+import com.hamzalabs.maktaba.core.session.CloudConnection
 import com.hamzalabs.maktaba.core.session.CloudSession
+import com.hamzalabs.maktaba.core.session.CloudUser
+import com.hamzalabs.maktaba.core.session.SavedCloudHomes
 import com.hamzalabs.maktaba.core.session.ConnectProgress
 import com.hamzalabs.maktaba.core.session.FoundHome
 import com.hamzalabs.maktaba.core.session.Home
@@ -320,6 +323,94 @@ class CloudTest {
         store.put("homes", """[{"url":"http://a:8088","name":"Studio"}]""")
         assertEquals(emptyList<String>(), AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() }).homes.value.single().addresses)
     }
+
+    // ---------- Epic 50 story 50.13: riding out a cloud outage ----------
+
+    /** T04: the order apps try, from the list or from the older fields. */
+    @Test
+    fun connectionsInTheOrderAppsTry() {
+        val h = com.hamzalabs.maktaba.core.api.ApiClient.json.decodeFromString(
+            CloudHome.serializer(),
+            """{"server_id":"s1","name":"Kitchen","relay_url":"https://kitchen.relay.example","direct_url":"http://192.0.2.1:9",
+               "connections":[{"url":"https://kitchen.relay.example","kind":"relay"},{"url":"https://h.example","kind":"relay_hint"},
+                              {"url":"http://192.0.2.1:9","kind":"direct"},{"url":"http://10.0.0.2:8080","kind":"local"},{"url":"x","kind":"pigeon"}]}""",
+        )
+        assertEquals(listOf("local", "direct", "relay_hint", "relay"), h.ordered.map { it.kind })
+        assertEquals("http://10.0.0.2:8080", h.addresses.first())
+        val old = CloudHome("s2", relayUrl = "https://cabin.relay.example", directUrl = "http://192.0.2.2:9")
+        assertEquals(listOf("direct", "relay"), old.ordered.map { it.kind })
+        assertEquals(listOf(CloudConnection("http://192.0.2.2:9", "direct")), CloudConnection.ordered(old.ordered.take(1)))
+    }
+
+    /** T02: a good list is kept; the cloud down, the saved one comes back with its time. */
+    @Test
+    fun theSavedListWhenTheCloudIsDown() = runBlocking {
+        val store = MapStore()
+        val s = AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() })
+        val c = cloudSession()
+        c.signIn("sara@example.com", "pw")
+        val live = s.cloudHomes(c)
+        assertEquals(2, live.size)
+        assertNull("the cloud's own answer", s.cloudSaved.value)
+        assertFalse("never a token in the saved list", store.map.values.any { "cloud-tok" in it })
+        cloud.close() // the cloud goes away
+        val saved = s.cloudHomes(c)
+        assertEquals(listOf("Kitchen", "Cabin"), saved.map { it.name })
+        val shown = s.cloudSaved.value!!
+        assertTrue(shown.savedAtMs > 0 && !shown.isOld())
+        // signing out takes every saved list away
+        s.cloudSignOut()
+        assertNull(SavedCloudHomes.load(store, "sara@example.com"))
+        assertNull(s.cloudSaved.value)
+    }
+
+    /**
+     * T08 (in the client library): with Maktaba Cloud unreachable, a home's own sign-in and its
+     * pages work, and not one request goes to the cloud.
+     */
+    @Test
+    fun withTheCloudDownAHomesOwnSignInAndPagesNeverAskTheCloud() = runBlocking {
+        val home = server("home") { r ->
+            when (r.url.encodedPath) {
+                "/api/auth/login" -> json(200, """{"access_token":"$fresh","refresh_token":"r1","user":{"id":"u1","username":"sara"}}""")
+                "/api/auth/me" -> json(200, """{"id":"u1","username":"sara","home_name":"Kitchen"}""")
+                "/api/libraries" -> json(200, """{"items":[{"id":"l1","name":"Talks"}],"next":null}""")
+                else -> json(404, "{}")
+            }
+        }
+        cloud.close() // the cloud is gone
+        try {
+            val s = AppSession(MapStore(), CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() })
+            s.cloud = cloudSession() // a cloud session from before, now unreachable
+            s.use(Home(home.url("/").toString().trimEnd('/'), "Kitchen", null))
+            s.signIn("sara", "pw")
+            assertTrue(s.phase.value is AppSession.Phase.SignedIn)
+            assertEquals(listOf("Talks"), s.client!!.libraries().map { it.name })
+            assertTrue("nothing went to the cloud", seen.none { it.first == "cloud" })
+        } finally {
+            home.close()
+        }
+    }
+
+    /** T06, and an old list still shown: a sign-in the cloud can't answer; the home signs in on its own. */
+    @Test
+    fun aSignInTheCloudCantAnswerShowsTheSavedListAndAsksTheHome() = runBlocking {
+        val store = MapStore()
+        val s = AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() })
+        val kitchen = CloudHome(homeId, "Kitchen", "kitchen", relayUrl = relayUrl, linked = true)
+        SavedCloudHomes.save(store, CloudUser("c1", "sara@example.com"), listOf(kitchen), System.currentTimeMillis() - 31L * 24 * 3600 * 1000)
+        assertTrue(s.showSavedCloudHomes("Sara@Example.com "))
+        assertTrue("over 30 days: shown, marked old", s.cloudSaved.value!!.isOld())
+        assertFalse("another account's list is never shown", s.showSavedCloudHomes("omar@example.com").also { if (it) fail() })
+        try {
+            s.useCloudHome(kitchen, HomeProbe())
+            fail("no assertion without the cloud")
+        } catch (e: CloudException) {
+            assertEquals("cloud_down", e.code)
+        }
+        assertEquals("the home is picked: its own sign-in shows", relayUrl, s.current.value?.url)
+        assertTrue(seen.none { it.first == "cloud" })
+    }
 }
 
 /**
@@ -335,4 +426,6 @@ private class SlowToFail(
             if (v is ConnectProgress.Failed) Thread.sleep(300)
             held.value = v
         }
+
 }
+

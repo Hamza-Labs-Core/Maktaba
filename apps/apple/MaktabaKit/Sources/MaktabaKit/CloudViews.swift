@@ -156,6 +156,16 @@ struct CloudSheet: View {
 
     @ViewBuilder private func homes(_ user: CloudUser) -> some View {
         let list = session.cloudHomes
+        if let at = session.cloudHomesSavedAt {
+            // story 50.13: the cloud can't be reached; the saved list, with its time
+            Section {
+                Text(words.text(.cloudHomesSaved, at.formatted(date: .abbreviated, time: .shortened)))
+                    .accessibilityIdentifier("cloud.saved")
+                if session.cloudHomesOld {
+                    Text(words.text(.cloudHomesSavedOld)).foregroundStyle(.secondary)
+                }
+            }
+        }
         Section {
             if list.isEmpty {
                 Text(words.text(.noCloudHomes)).foregroundStyle(.secondary)
@@ -184,7 +194,7 @@ struct CloudSheet: View {
                 .accessibilityIdentifier("cloud.refresh")
             Button(words.text(.cloudSignOut), systemImage: "rectangle.portrait.and.arrow.right", role: .destructive) {
                 problem = nil
-                session.cloudSignOut()
+                session.cloudSignOut(forgetSaved: true)
             }
             .disabled(signingInto != nil)
             .accessibilityIdentifier("cloud.signout")

@@ -351,6 +351,10 @@
   "banner.api.degraded": "Signing in with Maktaba Cloud is slower than usual.",
   "banner.api.outage": "Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password.",
   "banner.maintenance": "Planned maintenance on {date}, {start}–{end}. Remote play may pause for a few seconds.",
+  "cloud.homes.saved": "Maktaba Cloud can't be reached. Showing your homes from {time}.",
+  "cloud.homes.savedOld": "This list is more than 30 days old. Some addresses may have changed.",
+  "homes.openDirectly": "Open directly",
+  "homes.openRelay": "Open through Maktaba Cloud",
   "billing.uptime.title": "Uptime",
   "billing.uptime.status": "See how we did on the status page",
   "uptime.policy": "We aim to keep remote access available 99.9% of every month, and we publish how we did. This is a target, not a guarantee: we don't give credits or refunds for downtime."

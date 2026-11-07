@@ -13,6 +13,16 @@ import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { api } from "../api";
 import { useI18n } from "../i18n";
+import {
+  cloudUnreachable,
+  connectionsOf,
+  isOld,
+  loadHomes,
+  saveHomes,
+  type Connection,
+  type SavedList,
+} from "../savedHomes";
+import { useSession } from "../session";
 import { navigateExternal } from "../nav";
 import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "../ui";
 
@@ -22,6 +32,8 @@ export interface CloudHome {
   slug: string;
   relay_url: string;
   direct_url?: string;
+  /** every way to reach it, in the order apps try (story 50.13) */
+  connections?: Connection[];
   online: boolean;
   linked: boolean;
   owned: boolean;
@@ -42,7 +54,20 @@ export function editionUrl(home: CloudHome, edition: Edition, assertion: string)
 export function Homes() {
   const { t } = useI18n();
   const errorMessage = useErrorMessage();
-  const homes = useLoad(() => api.get<{ homes: CloudHome[] }>("/v1/homes"), "homes");
+  const { user } = useSession();
+  // story 50.13: a good list is saved; while the cloud can't be reached, the saved one shows
+  const homes = useLoad(async (): Promise<{ homes: CloudHome[]; saved?: SavedList }> => {
+    try {
+      const r = await api.get<{ homes: CloudHome[] }>("/v1/homes");
+      if (!r || !Array.isArray(r.homes)) throw new TypeError("not the API's answer");
+      if (user) saveHomes(user.id, r.homes);
+      return r;
+    } catch (e) {
+      const saved = user ? loadHomes(user.id) : null;
+      if (saved && cloudUnreachable(e)) return { homes: [], saved };
+      throw e;
+    }
+  }, "homes");
   const [opening, setOpening] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
 
@@ -69,7 +94,8 @@ export function Homes() {
       {homes.error !== null && homes.error !== undefined && (
         <LoadError error={homes.error} onRetry={homes.reload} />
       )}
-      {homes.data && homes.data.homes.length === 0 && <p>{t("homes.none")}</p>}
+      {homes.data?.saved && <SavedHomes list={homes.data.saved} />}
+      {homes.data && !homes.data.saved && homes.data.homes.length === 0 && <p>{t("homes.none")}</p>}
       {homes.data &&
         homes.data.homes.map((h) => (
           <Card key={h.server_id}>
@@ -111,5 +137,40 @@ export function Homes() {
         ))}
       <p className="mkc-muted">{t("homes.rights")}</p>
     </Page>
+  );
+}
+
+/** The saved list while Maktaba Cloud can't be reached: each home's own addresses, opened
+ * directly (signing in on the home itself, which works without the cloud). */
+function SavedHomes({ list }: { list: SavedList }) {
+  const { t, formatDate } = useI18n();
+  return (
+    <>
+      <Banner tone="warn">{t("cloud.homes.saved", { time: formatDate(list.saved_at) })}</Banner>
+      {isOld(list) && <Banner tone="info">{t("cloud.homes.savedOld")}</Banner>}
+      {list.homes.map((h) => (
+        <Card key={h.server_id}>
+          <h2>
+            <bdi>{h.name || h.slug}</bdi>
+          </h2>
+          <ul className="mkc-links">
+            {connectionsOf(h).map((c) => (
+              <li key={c.url}>
+                <a href={c.url} rel="noopener noreferrer">
+                  {t(
+                    c.kind === "relay" || c.kind === "relay_hint"
+                      ? "homes.openRelay"
+                      : "homes.openDirectly"
+                  )}
+                </a>{" "}
+                <span className="mkc-muted" dir="ltr">
+                  {c.url}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ))}
+    </>
   );
 }
