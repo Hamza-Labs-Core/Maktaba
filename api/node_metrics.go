@@ -135,12 +135,16 @@ func askMachine(ctx context.Context, hub machineAsker, node, session string, wai
 	}
 	out := map[string]*dto.MetricFamily{}
 	for name, f := range fams {
-		if !strings.HasPrefix(name, "maktaba_") {
+		if !nodeFamily(name) {
 			continue
 		}
 		var kept []*dto.Metric
+		seen := map[string]bool{}
 		for _, m := range f.GetMetric() {
-			if setMachine(m, node) {
+			// a machine's answer is not trusted: after the rewrite, a label set it sends
+			// twice would repeat a series and fail the home's whole scrape
+			if setMachine(m, node) && !seen[labelKey(m)] {
+				seen[labelKey(m)] = true
 				kept = append(kept, m)
 			}
 		}
@@ -150,6 +154,20 @@ func askMachine(ctx context.Context, hub machineAsker, node, session string, wai
 		}
 	}
 	return out
+}
+
+// nodeMachinePrefixes: the only families taken from a joined machine, the same per-machine
+// families the API takes from its own supervisor (its components and its host), never one
+// of the home's own.
+var nodeMachinePrefixes = []string{"maktaba_component_", "maktaba_host_"}
+
+func nodeFamily(name string) bool {
+	for _, p := range nodeMachinePrefixes {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // setMachine sets a series' machine label to node; false when it has none (a series

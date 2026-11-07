@@ -103,5 +103,7 @@ func (d defaultMaktaba) Gather() ([]*dto.MetricFamily, error) {
 func metricsHandler(supervisorURL string, nodes *nodeMetrics) http.Handler {
 	return promhttp.HandlerFor(prometheus.Gatherers{metrics.Reg(), defaultMaktaba{own: metrics.Reg()},
 		machinesMetrics{local: supervisorMetrics{url: supervisorURL, client: &http.Client{Timeout: 3 * time.Second}}, nodes: nodes}},
-		promhttp.HandlerOpts{EnableOpenMetrics: true, ProcessStartTime: time.Now()})
+		promhttp.HandlerOpts{EnableOpenMetrics: true, ProcessStartTime: time.Now(),
+			// a family one source got wrong is left out, not the whole scrape
+			ErrorHandling: promhttp.ContinueOnError})
 }

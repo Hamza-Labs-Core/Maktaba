@@ -205,3 +205,27 @@ func (answering) MachineAgents() map[string]string { return map[string]string{"s
 func (a answering) CommandWithin(context.Context, string, string, json.RawMessage, string, time.Duration) (agent.CmdResult, error) {
 	return a.res, a.err
 }
+
+// A joined machine's answer is not trusted: only its component and host families are
+// taken (not its update metrics, nor any other maktaba_ family the home may have), and two
+// series that become one after the machine label is rewritten are kept once, so a machine
+// cannot make the home's /metrics repeat a series and fail the whole scrape.
+func TestNodeMetricsUntrustedAnswer(t *testing.T) {
+	text := `# TYPE maktaba_host_load1 gauge
+maktaba_host_load1{machine="a"} 1
+maktaba_host_load1{machine="b"} 2
+# TYPE maktaba_update_runs_total counter
+maktaba_update_runs_total{machine="a"} 3
+# TYPE maktaba_pipeline_queue_depth gauge
+maktaba_pipeline_queue_depth{machine="a",stage="x",state="pending"} 4
+`
+	d, _ := json.Marshal(text)
+	got := askMachine(context.Background(), answering{agent.CmdResult{OK: true, Detail: d}, nil}, "studio", "s", time.Second)
+	if len(got) != 1 || got["maktaba_host_load1"] == nil {
+		t.Fatalf("families: %v", got)
+	}
+	ms := got["maktaba_host_load1"].GetMetric()
+	if len(ms) != 1 || labelKey(ms[0]) != "machine\x00studio" || ms[0].GetGauge().GetValue() != 1 {
+		t.Fatalf("series: %v", ms)
+	}
+}
