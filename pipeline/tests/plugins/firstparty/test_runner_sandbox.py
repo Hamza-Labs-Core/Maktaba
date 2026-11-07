@@ -352,7 +352,8 @@ def test_only_the_net_group_reaches_the_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """youtube and repair (story 54.33) run in ``net``: sockets, yt-dlp, and the library, its
-    trash and the downloads' work folder; no other group has the network."""
+    trash and the downloads' work folder; no other group has the network, ``service`` (Plex
+    through the home's door, story 54.35) included."""
     from maktaba_pipeline.plugins import firstparty
     from maktaba_plugin_runner.sandbox import _q, policy_for, seatbelt_profile
 
@@ -373,7 +374,11 @@ def test_only_the_net_group_reaches_the_network(
     assert os.path.realpath(ytdlp) in net.exec, net.exec
     assert f"(allow process-exec (literal {_q(os.path.realpath(ytdlp))}))" in seatbelt_profile(net)
     assert "(allow network-outbound)" in seatbelt_profile(net)
-    for other in ("light", "files"):
+    for other in ("light", "files", "service"):
         p = policy_for(group(other), areas=areas, own_socket=f"/run/runner-{other}.sock", **kw)
         assert not p.net, other
+        if other == "service":
+            assert {pl.id for pl in firstparty.plugins() if pl.trusted.get("runner") == other} >= {
+                "tv.maktaba.plex"
+            }
         assert "(allow network-outbound)" not in seatbelt_profile(p), other
