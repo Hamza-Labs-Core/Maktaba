@@ -393,7 +393,9 @@ def test_pinned_models_have_their_files() -> None:
 def test_a_components_plugin_field_names_a_first_party_plugin_of_its_stages() -> None:
     """Epic 54, story 54.27 §3: ``plugin`` is a tv.maktaba.* id on a component with stages."""
     base = (
-        importlib.resources.files("maktaba_pipeline.components").joinpath("catalog.toml").read_text()
+        importlib.resources.files("maktaba_pipeline.components")
+        .joinpath("catalog.toml")
+        .read_text()
     )
     assert catalog.load(base).get("classify").plugin == "tv.maktaba.classify"  # type: ignore[union-attr]
     bad = base.replace('plugin    = "tv.maktaba.classify"', 'plugin    = "dev.example.x"', 1)

@@ -101,6 +101,7 @@ async def _fingerprint(stage: str, db: Any, subject: Any) -> str | None:
     assert impl is not None and impl.input_fingerprint is not None
     return await impl.input_fingerprint(db, subject)
 
+
 __all__ = ["ImportReport", "main", "run_import"]
 
 _log = get_logger()

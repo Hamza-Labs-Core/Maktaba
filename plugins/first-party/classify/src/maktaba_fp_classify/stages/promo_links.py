@@ -21,13 +21,13 @@ from uuid import UUID
 from maktaba_pipeline import settings
 from maktaba_pipeline.classify.clip_groups import is_promo, link_promo, promo_season
 from maktaba_pipeline.db.jobs import Job
-from maktaba_pipeline.rules import read as read_rules
 from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.graph import PROMO_VERSION, StageResult, Subject
 from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.sql import now, to_ts, uid
 from maktaba_pipeline.engine.stages._leftovers import load_leftovers, load_shows
 from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.rules import read as read_rules
 
 __all__ = ["IMPL", "plan_links"]
 

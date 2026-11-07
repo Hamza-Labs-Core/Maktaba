@@ -9,11 +9,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from maktaba_fp_classify.stages import clip_groups, promo_links
 
 from maktaba_pipeline import rules
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import dumps, now, to_ts
-from maktaba_fp_classify.stages import clip_groups, promo_links
 from maktaba_pipeline.engine.stages import detect, plan_channels
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library

@@ -12,10 +12,10 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from maktaba_plugin_sdk.parity import ParityConfig
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.media import reset_runner
-from maktaba_plugin_sdk.parity import ParityConfig
 from tests.plugins.firstparty.harness import parity
 from tests.stages.world import make_fake_media, models_off
 

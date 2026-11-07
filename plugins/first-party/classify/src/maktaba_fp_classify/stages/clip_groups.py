@@ -23,7 +23,6 @@ from uuid import UUID
 from maktaba_pipeline import settings
 from maktaba_pipeline.classify.clip_groups import Group, group_title, is_promo, plan_groups
 from maktaba_pipeline.db.jobs import Job
-from maktaba_pipeline.rules import read as read_rules
 from maktaba_pipeline.engine.context import StageContext
 from maktaba_pipeline.engine.graph import CLIP_GROUPS_VERSION, StageResult, Subject
 from maktaba_pipeline.engine.hashing import canonical_hash
@@ -31,6 +30,7 @@ from maktaba_pipeline.engine.ids import clip_group_uuid
 from maktaba_pipeline.engine.sql import now, to_ts, uid
 from maktaba_pipeline.engine.stages._leftovers import library_name, load_leftovers
 from maktaba_pipeline.engine.stages.registry import StageImpl
+from maktaba_pipeline.rules import read as read_rules
 
 __all__ = ["IMPL", "plan_library_groups"]
 
