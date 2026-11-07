@@ -21,7 +21,12 @@ _QUIET_KINDS = frozenset({"enqueued", "coalesced", "skipped"})
 
 
 async def publish(db: Any, type_: str, payload: dict[str, Any]) -> None:
-    """Insert one ``events`` row on channel ``jobs``."""
+    """Insert one ``events`` row on channel ``jobs``. In a first-party plugin's runner
+    (Epic 54, story 54.23) the worker writes it: only the queue engine writes events."""
+    relay = getattr(db, "engine_relay", None)
+    if relay is not None:
+        await relay.publish(type_, payload)
+        return
     await db.execute(
         "INSERT INTO events (channel, type, payload) VALUES ($1, $2, $3)",
         JOBS_CHANNEL,
@@ -34,6 +39,10 @@ async def publish(db: Any, type_: str, payload: dict[str, Any]) -> None:
 
 async def job_ref(db: Any, job_id: int) -> dict[str, Any] | None:
     """The ``JobRef`` payload of section 7.2 for one job id."""
+    relay = getattr(db, "engine_relay", None)
+    if relay is not None:
+        ref: dict[str, Any] | None = await relay.job_ref(job_id)
+        return ref
     from .subjects import label_of
 
     row = await db.fetchrow(
@@ -85,7 +94,23 @@ async def log_event(
     data: dict[str, Any] | None = None,
     subject_label: str | None = None,
 ) -> None:
-    """Append a ``job_events`` row; mirror info-and-above rows as ``job.log``."""
+    """Append a ``job_events`` row; mirror info-and-above rows as ``job.log``. In a
+    first-party plugin's runner (Epic 54) the worker writes it, as it does every job event."""
+    relay = getattr(db, "engine_relay", None)
+    if relay is not None:
+        await relay.log_event(
+            job_id=job_id,
+            subject_kind=subject_kind,
+            subject_id=subject_id,
+            library_id=library_id,
+            stage=stage,
+            level=level,
+            kind=kind,
+            message=message,
+            data=data,
+            subject_label=subject_label,
+        )
+        return
     message = message[:500]
     await db.execute(
         "INSERT INTO job_events (job_id, subject_kind, subject_id, library_id, stage, level, kind,"

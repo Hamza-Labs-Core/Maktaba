@@ -290,3 +290,53 @@ describe("Settings → Plugins", () => {
     }
   });
 });
+
+describe("Settings → Plugins: built into Maktaba (Epic 54, story 54.22 §4)", () => {
+  const builtIn = {
+    id: "tv.maktaba.classify",
+    name: "Classify",
+    name_ar: "التصنيف",
+    summary: "Groups and titles the library.",
+    summary_ar: "يجمع المكتبة ويسمّيها.",
+    component: "classify",
+    stages: ["promo_links"],
+    capabilities: [
+      { key: "fp.trusted.db.statements", param: "promo_links" },
+      { key: "fp.trusted.settings.read", param: "groups" },
+    ],
+  };
+
+  it("lists Maktaba's own plugins with what each can do, and no grants dialog", async () => {
+    get.mockImplementation(async (path: string) => {
+      if (path === "/api/plugins")
+        return { plugins: [], policy: { allow_unreviewed: false }, built_in: [builtIn] };
+      throw new Error("unexpected " + path);
+    });
+    open();
+    const section = await screen.findByRole("region", { name: "Built into Maktaba" });
+    expect(section).toHaveTextContent("Classify");
+    expect(section).toHaveTextContent("Groups and titles the library.");
+    await userEvent.click(screen.getByText("What it can do"));
+    expect(section).toHaveTextContent(en["fp.trusted.db.statements"]);
+    expect(section).toHaveTextContent(en["fp.trusted.settings.read"]);
+    expect(section).toHaveTextContent("Turned on and off with");
+    // turning its component on is the decision (54.22 §4): no grants dialog to open
+    expect(section.querySelector("button")).toBeNull();
+  });
+
+  it("says nothing of built-in plugins when the release has none", async () => {
+    routes(detail(), []);
+    open();
+    await screen.findByText(en["plugins.page.none"]);
+    expect(screen.queryByRole("region", { name: "Built into Maktaba" })).toBeNull();
+  });
+
+  it("has every trusted capability in English and Arabic", () => {
+    const keys = Object.keys(en).filter((k) => k.startsWith("fp.trusted."));
+    expect(keys.length).toBeGreaterThanOrEqual(12);
+    for (const k of keys) {
+      expect((ar as Record<string, string>)[k], k).toBeTruthy();
+      expect((ar as Record<string, string>)[k], k).not.toBe((en as Record<string, string>)[k]);
+    }
+  });
+});

@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0198 (plugins: the lineage a write leaves on its
+-- SQLite parity sibling for slot 0199 (plugins: the lineage a write leaves on its
 -- subject). Plugins run on a Postgres home only (slot 0194); this keeps the schema in step.
 --
 CREATE TABLE IF NOT EXISTS plugin_write_lineage (

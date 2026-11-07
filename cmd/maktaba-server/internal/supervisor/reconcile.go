@@ -614,6 +614,9 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 // needed reports whether an on-demand component serves a component that is on now: a
 // plugin entry that requires it, enabled, not held and passing its gates (PluginGate).
 func (r *Reconciler) needed(id string, desired map[string]store.Desired) bool {
+	if id == PluginRunnersComponent {
+		return r.firstPartyNeeded(desired)
+	}
 	for _, dep := range r.cat().Dependents(id) {
 		c, ok := r.cat().Get(dep)
 		if !ok || c.Kind != components.KindPlugin {
@@ -1154,4 +1157,22 @@ func (r *Reconciler) report(ctx context.Context, decs map[string]decision) {
 	r.written = rows
 	r.nextTry = time.Time{}
 	r.mu.Unlock()
+}
+
+// firstPartyNeeded: the plugin runners run while a component whose stages a first-party
+// plugin implements is on (story 54.23 §1): a core one always, another while enabled and
+// not held.
+func (r *Reconciler) firstPartyNeeded(desired map[string]store.Desired) bool {
+	for _, c := range r.cat().Components() {
+		if c.Plugin == "" {
+			continue
+		}
+		if !c.Switchable {
+			return true
+		}
+		if d, ok := desired[c.ID]; ok && d.Want == components.WantEnabled && d.Hold == nil {
+			return true
+		}
+	}
+	return false
 }

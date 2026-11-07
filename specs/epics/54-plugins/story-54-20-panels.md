@@ -79,6 +79,28 @@ panels, so they never call an older server for nothing.
 Each renderer has a test that feeds it hostile values (URLs, HTML, very long strings, RTL
 override characters) and asserts plain text, truncation and no network request.
 
+### 6. As built
+
+- `shared/plugins/panel.schema.json` documents `ui@1` (a `title`, 1–10 blocks; a block's
+  `key` names a key of the plugin's data for the subject; `image` has no key and shows the
+  PNG or JPEG set with `artwork.write` kind `panel`, at most 1 MB, served by
+  `GET /api/panels/image`). `shared/plugins/pluginpanel` parses it (install refuses a bad file,
+  `manifest_bad_panel`) and checks each value's shape and text on `data.put` of a key a
+  panel uses: `plugin_text_forbidden`, `plugin_invalid` or `plugin_too_large`.
+- `GET /api/panels?subject=<kind>:<id>&lang=` answers `{panels: [{plugin_id, plugin, title,
+  blocks: [{type, label, columns, value, image}]}]}`: the plugin's words in the user's
+  language (English when missing), plugins in install order (an admin order is not built yet),
+  at most 3. The subject's library decides access (404 for a subject the user cannot see).
+  A marker is "written after the change" when its data row is newer than the video's file
+  `mtime`.
+- Renderers: web `PluginPanel` (on the video page), MaktabaKit `PluginPanelView` and
+  `PluginPanelsSection` (the Player's video screen), Android core `PluginPanel` and
+  `PluginPanels` (the Player's video screen). The series and library pages and the TV apps
+  take the same components in a follow-up. On Android, chips are shown, not tappable,
+  until the Search route takes a query.
+- T07 holds the median of 40 calls to 30 ms and logs the p95: on shared runners the tail
+  measures the machine.
+
 ## Acceptance criteria
 
 - **Given** a plugin with an admin panel on videos,

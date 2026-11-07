@@ -1,0 +1,26 @@
+schema = 1
+phases = ["not_installed", "installing", "removing", "off", "stopped", "waiting", "starting", "running", "degraded", "draining", "failed"]
+reasons = ["dependency_off", "held"]
+features = ["live_tv"]
+
+[[component]]
+id         = "classify"
+kind       = "stages"
+group      = "media"
+title_key  = "components.classify.title"
+desc_key   = "components.classify.desc"
+stages     = ["promo_links"]
+platforms  = ["linux-amd64"]
+since      = "0.3.66"
+plugin     = "tv.maktaba.classify"
+
+[[component]]
+id         = "livetv.inprocess"
+kind       = "loop"
+group      = "media"
+title_key  = "components.livetv.title"
+desc_key   = "components.livetv.desc"
+loops      = ["pipeline:x"]
+platforms  = ["linux-amd64"]
+since      = "0.3.66"
+plugin     = "dev.example.x"

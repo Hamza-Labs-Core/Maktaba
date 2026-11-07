@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0198 - plugins: the lineage a plugin's write leaves on its subject (Epic 54,
+-- Slot 0199 - plugins: the lineage a plugin's write leaves on its subject (Epic 54,
 -- story 54.40 §3).
 --
 --   plugin_write_lineage  for each subject a plugin wrote (a tag, a field, chapters,
@@ -90,7 +90,7 @@ LANGUAGE sql IMMUTABLE AS $f$
         -- plugins (slot 0197): each plugin's daily use of the home's models and the
         -- lookup slots its questions hold; the home's API alone writes them
         'plugin_compute_usage', 'compute_leases',
-        -- plugins (slot 0198): the lineage a plugin write leaves on its subject, the home's
+        -- plugins (slot 0199): the lineage a plugin write leaves on its subject, the home's
         -- API alone reads and writes it
         'plugin_write_lineage'
     ]::text[]

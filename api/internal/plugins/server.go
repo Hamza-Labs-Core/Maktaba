@@ -17,6 +17,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/statements"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/plugins/pluginmanifest"
 )
 
@@ -26,6 +27,9 @@ const (
 	RateBurst     = 200.0
 	// MaxBody is the largest request a plugin call may send (an artifact, base64).
 	MaxBody = 6 << 20
+	// MaxTrustedBody is the largest call of Maktaba's own plugins (a statement's rows,
+	// executemany): the §4.7 limits are for third-party plugins (54.24 edge cases).
+	MaxTrustedBody = 256 << 20
 )
 
 // Server serves /plugin-api/v1/<interface>/<function> to maktaba-plugind. It is mounted
@@ -38,10 +42,14 @@ type Server struct {
 	Media *Media
 	// ArtifactsDir is <data>/plugins/artifacts: subtitles and artwork plugins write.
 	ArtifactsDir string
+	// Statements runs Maktaba's own plugins' named statements (story 54.24); nil: the
+	// embedded first-party bundle's, on DB.
+	Statements *statements.Executor
 	// Compute answers compute.embed and compute.llm (54.21; nil: unavailable).
-	Compute *Compute
-	routes  map[string]route
-	once    sync.Once
+	Compute  *Compute
+	routes   map[string]route
+	once     sync.Once
+	stmtOnce sync.Once
 }
 
 // call is one plugin call, checked: its invocation and its JSON body.
@@ -118,6 +126,7 @@ func (s *Server) init() {
 		s.otherRoutes()
 		s.eventRoutes()
 		s.mediaRoutes()
+		s.trustedRoutes()
 		s.computeRoutes()
 	})
 }
@@ -148,6 +157,27 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	callsTotal.WithLabelValues(inv.PluginID, iface+"/"+fn).Inc()
+	if iface == "trusted" {
+		// Maktaba's own plugins only (story 54.22): a third-party token never reaches a
+		// statement, whatever it was granted
+		if !inv.Trusted {
+			s.refused(w, inv, iface+"/"+fn, refuse(403, CodeCapability, "trusted calls are Maktaba's own plugins'"))
+			return
+		}
+		body, err := io.ReadAll(io.LimitReader(r.Body, MaxTrustedBody+1))
+		if err != nil || len(body) > MaxTrustedBody {
+			s.refused(w, inv, iface+"/"+fn, refuse(413, CodeTooLarge, "request over 256 MB"))
+			return
+		}
+		out, ref := rt(&call{ctx: r.Context(), inv: inv, body: body, s: s})
+		if ref != nil {
+			s.refused(w, inv, iface+"/"+fn, ref)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(out)
+		return
+	}
 	if !inv.takeRate(s.Tokens.Now()) {
 		s.refused(w, inv, iface+"/"+fn, refuse(403, CodeRate, "over 200 calls a second"))
 		return
@@ -204,7 +234,13 @@ func (s *Server) refused(w http.ResponseWriter, inv *Invocation, route string, r
 func writeRefusal(w http.ResponseWriter, ref *Refusal) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(ref.Status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"code": ref.Code})
+	out := map[string]string{"code": ref.Code}
+	if ref.Code == "plugin_database" {
+		// a first-party statement's own failure: its Postgres code and message are the
+		// plugin's code's to read (a unique violation it handles, say)
+		out["detail"] = ref.Detail
+	}
+	_ = json.NewEncoder(w).Encode(out)
 }
 
 // takeRate spends one call from the invocation's token bucket.

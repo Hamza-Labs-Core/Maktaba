@@ -160,3 +160,50 @@ func TestValidateFlowDoc(t *testing.T) {
 		}
 	}
 }
+
+// Story 54.22: a built-in plugin's manifest is read with its trusted keys only in the
+// trusted mode, which only the release's own bundle gets; its id must be Maktaba's.
+func TestValidateTrusted(t *testing.T) {
+	src := []byte(`schema = 1
+id = "tv.maktaba.toy"
+version = "0.0.0-dev"
+plugin_api = "1.0"
+maktaba = ">=0.0.0"
+licence = "AGPL-3.0-only"
+runtime = "native-python"
+
+[strings]
+name = "toy.name"
+summary = "toy.summary"
+
+[trusted]
+runner = "light"
+db.write = ["fp_toy_out"]
+
+[[stage]]
+name = "promo_links"
+subject = "dup_group"
+export = "x"
+version = 1
+pool = "cpu"
+entry = "fp_toy.stage:IMPL"
+may_request = ["clip_groups"]
+`)
+	m, errs := ValidateTrusted(src, nil)
+	if len(errs) > 0 {
+		t.Fatalf("a built-in manifest: %v", errs)
+	}
+	if m["runtime"] != "native-python" {
+		t.Fatalf("normalised %v", m)
+	}
+	if _, errs := Validate(src, nil); !errs.Has(CodeTrustedField) {
+		t.Fatalf("the same manifest as a third party's: %v", errs)
+	}
+	third := []byte(strings.Replace(string(src), "tv.maktaba.toy", "dev.example.toy", 1))
+	if _, errs := ValidateTrusted(third, nil); !errs.Has(CodeReservedID) {
+		t.Fatalf("a trusted manifest outside tv.maktaba.: %v", errs)
+	}
+	if !ReservedStage("transcribe") || ReservedStage("find_silences") {
+		t.Fatal("reserved stages")
+	}
+}

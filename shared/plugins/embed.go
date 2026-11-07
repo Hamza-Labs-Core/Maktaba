@@ -21,6 +21,12 @@ var Capabilities []byte
 //go:embed events.toml
 var Events []byte
 
+// ReservedStages is reserved_stages.txt: the stage names only Maktaba's own plugins may
+// define (story 54.22 §1).
+//
+//go:embed reserved_stages.txt
+var ReservedStages []byte
+
 // WIT is the maktaba:plugin world.
 //
 //go:embed wit/maktaba-plugin.wit
@@ -53,3 +59,10 @@ var FlowSchema []byte
 //
 //go:embed flow-messages.json
 var FlowMessages []byte
+
+// FirstParty is firstparty.json: Maktaba's own plugins as this release built them (story
+// 54.22 §2, tools/plugins/bundle.py): each manifest, its strings and its compiled
+// statements. Only what is embedded here is ever trusted.
+//
+//go:embed firstparty.json
+var FirstParty []byte

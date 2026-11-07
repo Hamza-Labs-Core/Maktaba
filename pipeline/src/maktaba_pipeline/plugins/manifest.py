@@ -45,6 +45,9 @@ CODE_BAD_EMIT = "manifest_bad_emit"
 CODE_BAD_TRIGGER = "manifest_bad_trigger"
 CODE_BAD_EVENT = "manifest_bad_event"
 CODE_BAD_DEPENDS = "manifest_bad_depends"
+#: a key, a stage name or a subject only Maktaba's own release-signed plugins may use
+#: (story 54.22 §1)
+CODE_TRUSTED_FIELD = "plugin_trusted_field"
 
 SCHEMA_VERSION = 1
 MAX_NAME = 40
@@ -72,6 +75,7 @@ _KEYWORDS = {
     "default",
     "x-code",
     "x-unknown-code",
+    "x-trusted-only",
 }
 
 #: what the package rules read besides the manifest: a file's bytes by its package path,
@@ -176,7 +180,14 @@ def _join(path: str, el: str) -> str:
     return el if not path else f"{path}/{el}"
 
 
-def _check(n: dict[str, Any], v: Any, path: str, parent: str, errs: list[ManifestError]) -> None:
+def _check(
+    n: dict[str, Any],
+    v: Any,
+    path: str,
+    parent: str,
+    errs: list[ManifestError],
+    trusted: bool = False,
+) -> None:
     code = n.get("x-code") or parent or CODE_INVALID
     t = _type_of(v)
     types = n.get("type")
@@ -214,7 +225,7 @@ def _check(n: dict[str, Any], v: Any, path: str, parent: str, errs: list[Manifes
                         return
         if "items" in n:
             for i, x in enumerate(v):
-                _check(n["items"], x, _join(path, str(i)), code, errs)
+                _check(n["items"], x, _join(path, str(i)), code, errs, trusted)
     elif t == "object":
         for r in n.get("required", []):
             if r not in v:
@@ -225,7 +236,10 @@ def _check(n: dict[str, Any], v: Any, path: str, parent: str, errs: list[Manifes
                 if n.get("additionalProperties") is False:
                     errs.append(ManifestError(CODE_UNKNOWN_KEY, _join(path, k)))
                 continue
-            _check(props[k], v[k], _join(path, k), code, errs)
+            if props[k].get("x-trusted-only") and not trusted:
+                errs.append(ManifestError(CODE_TRUSTED_FIELD, _join(path, k)))
+                continue
+            _check(props[k], v[k], _join(path, k), code, errs, trusted)
 
 
 def _fill(n: dict[str, Any], v: Any) -> Any:
@@ -254,10 +268,11 @@ def _plain(v: Any) -> Any:
     raise ValueError(f"a {type(v).__name__} value is not allowed in a manifest")
 
 
-def validate(src: bytes, files: Files | None = None) -> dict[str, Any]:
+def validate(src: bytes, files: Files | None = None, *, trusted: bool = False) -> dict[str, Any]:
     """Parse and check a manifest.toml; answer the normalised manifest or raise
     :class:`ManifestInvalid`. ``files`` serves the package's files (i18n, ui) to the
-    package rules; None skips them."""
+    package rules; None skips them. ``trusted`` is only for the manifests of Maktaba's own
+    plugins built into this release (story 54.22): their x-trusted-only keys are read."""
     try:
         if len(src) > 1 << 20:
             raise ValueError("over 1 MB")
@@ -268,14 +283,14 @@ def validate(src: bytes, files: Files | None = None) -> dict[str, Any]:
     if _type_of(schema) == "integer" and schema > SCHEMA_VERSION:
         raise ManifestInvalid([ManifestError(CODE_SCHEMA_NEWER, "schema")])
     errs: list[ManifestError] = []
-    _check(_schema(), raw, "", "", errs)
+    _check(_schema(), raw, "", "", errs, trusted)
     if errs:
         raise ManifestInvalid(errs)
     m: dict[str, Any] = _fill(_schema(), raw)
     m["maktaba"] = _range(m["maktaba"])
     for d in m.get("depends", []):
         d["version"] = _range(d["version"])
-    errs = _rules(m, files)
+    errs = _rules(m, files, trusted)
     if errs:
         raise ManifestInvalid(errs)
     return m
@@ -313,9 +328,21 @@ def _known_capability(name: str) -> bool:
     return bool(sep) and valid_id(param)
 
 
-def _rules(m: dict[str, Any], files: Files | None) -> list[ManifestError]:
+@cache
+def reserved_stages() -> frozenset[str]:
+    """The stage names only Maktaba's own plugins may define (story 54.22 §1)."""
+    text = _data("reserved_stages.txt").decode()
+    return frozenset(
+        ln.strip() for ln in text.splitlines() if ln.strip() and not ln.startswith("#")
+    )
+
+
+def _rules(m: dict[str, Any], files: Files | None, trusted: bool = False) -> list[ManifestError]:
     errs: list[ManifestError] = []
-    if _reserved(m["id"]):
+    first_party = m["id"].startswith("tv.maktaba.") and not m["id"].startswith(
+        "tv.maktaba.community."
+    )
+    if (trusted and not first_party) or (not trusted and _reserved(m["id"])):
         errs.append(ManifestError(CODE_RESERVED_ID, "id"))
     if len(m["platforms"]) > 1 and "any" in m["platforms"]:
         errs.append(ManifestError(CODE_BAD_PLATFORM, "platforms", "any stands alone"))
@@ -336,6 +363,10 @@ def _rules(m: dict[str, Any], files: Files | None) -> list[ManifestError]:
         if st["name"] in subjects:
             errs.append(ManifestError(CODE_DUPLICATE_STAGE, f"stage/{i}/name", st["name"]))
         subjects[st["name"]] = st["subject"]
+        # R5a: the dup_group subject is Maktaba's own (54.22 §1); a core stage's name is not
+        # reserved (a third-party stage's queue is p_<hash>_<name>)
+        if not trusted and st["subject"] == "dup_group":
+            errs.append(ManifestError(CODE_TRUSTED_FIELD, f"stage/{i}/name", st["name"]))
     # the graph fields (54.39): published events, dependencies on other plugins' events
     published: dict[str, str] = {}
     for i, e in enumerate(m.get("event", [])):
@@ -354,7 +385,7 @@ def _rules(m: dict[str, Any], files: Files | None) -> list[ManifestError]:
     evs = events()
     for i, st in enumerate(m["stage"]):
         for j, r in enumerate(st["may_request"]):
-            if r not in subjects:
+            if r not in subjects and not trusted:
                 errs.append(ManifestError(CODE_BAD_REQUEST, f"stage/{i}/may_request/{j}", r))
         for j, t in enumerate(st["trigger"]):
             tpath = f"stage/{i}/trigger/{j}"

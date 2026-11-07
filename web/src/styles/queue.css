@@ -652,6 +652,15 @@ summary.mkt-q-lane__title {
   align-items: center;
   gap: var(--space-2);
 }
+/* Epic 54: a stage one of Maktaba's own built-in plugins defines */
+.mkt-q-badge {
+  display: inline-block;
+  padding-block: 2px;
+  padding-inline: var(--space-2);
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.8125rem;
+}
 .mkt-q-field input,
 .mkt-q-field select {
   padding: var(--space-1) var(--space-2);

@@ -29,7 +29,8 @@ var editionNames = []string{"play", "manage"}
 // editionHeaders are the home SPA's (api/internal/httpsec DefaultHeaders), so an edition is
 // no weaker for being served by the cloud.
 var editionHeaders = map[string]string{
-	"Content-Security-Policy":    "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'",
+	// connect-src: the cloud's status feed too (story 50.11), as the home's own headers allow
+	"Content-Security-Policy":    "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' https://status.maktaba.tv; frame-ancestors 'none'",
 	"Referrer-Policy":            "strict-origin-when-cross-origin",
 	"Cross-Origin-Opener-Policy": "same-origin",
 	"X-Content-Type-Options":     "nosniff",
