@@ -474,3 +474,27 @@ async def test_a_first_party_stage_runs_in_process_unless_its_runner_serves_here
     monkeypatch.setattr(native, "hello", serving)
     chosen = await run._native_impl(db, "fp_toy", impl)
     assert chosen is not None and chosen.run is not impl.run
+
+
+@pytest.mark.asyncio
+async def test_scan_is_an_engine_stage_whose_edge_names_only_its_new_videos() -> None:
+    """Epic 54 story 54.36 §2: ``scan`` runs on the engine (a core module) and its edge to
+    ``probe`` maps ``videos_changed``: the videos it names, none when it names none (where
+    ``videos_of`` falls back to every unlinked video)."""
+    import uuid
+    from types import SimpleNamespace
+
+    from maktaba_pipeline.engine.graph import Subject, get_stage
+    from maktaba_pipeline.engine.propagate import resolve_edge
+    from maktaba_pipeline.engine.stages.registry import CORE_MODULES
+
+    scan = get_stage("scan")
+    assert scan is not None and not scan.legacy
+    assert CORE_MODULES["scan"] == "maktaba_pipeline.engine.stages.scan"
+    edge = next(e for e in scan.edges if e.to == "probe")
+    assert (edge.map, edge.when, edge.legacy) == ("videos_changed", "always", False)
+    lib, v1, v2 = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    job = SimpleNamespace(subject=Subject("library", lib), library_id=lib)
+    named = await resolve_edge(None, edge, job, [("video", v1), ("video", v2), ("season", lib)])  # type: ignore[arg-type]
+    assert named == [("video", v1), ("video", v2)]
+    assert await resolve_edge(None, edge, job, []) == []  # type: ignore[arg-type]
