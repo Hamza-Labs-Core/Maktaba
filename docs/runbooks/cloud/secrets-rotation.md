@@ -8,7 +8,7 @@ A secret was exposed (a log, a screenshot, a lost laptop, a former helper), or a
 
 ## Check
 
-1. Which secrets, and since when. The cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines): anything done with them (the staff and admin audit rows, the Hetzner and Cloudflare audit logs).
+1. Which secrets, and since when. The cloud's logs and error groups in the service admin's cloud log view ([errors, last 24 h](https://app.maktaba.tv/admin/logs?level=error&last=24h); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines): anything done with them (the staff and admin audit rows, the Hetzner and Cloudflare audit logs).
 
 ## Do
 

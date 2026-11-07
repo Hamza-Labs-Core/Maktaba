@@ -9,7 +9,7 @@
 ## Check
 
 1. Ask the staff member whether it was them.
-2. The audit rows (`actor_kind = staff`) in the service admin view, and the cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines).
+2. The audit rows (`actor_kind = staff`) in the service admin view, and the cloud's logs and error groups in the service admin's cloud log view ([the API's warnings, last 24 h](https://app.maktaba.tv/admin/logs?service=cloud.api&level=warn&last=24h); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines).
 
 ## Do
 

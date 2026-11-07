@@ -8,7 +8,7 @@
 
 ## Check
 
-1. `systemctl status cloudflared` on the leader; Cloudflare's status page; the cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines).
+1. `systemctl status cloudflared` on the leader; Cloudflare's status page; the cloud's logs and error groups in the service admin's cloud log view ([relay errors, last 30 min](https://app.maktaba.tv/admin/logs?service=cloud.relay&level=error&last=30m); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines).
 
 ## Do
 

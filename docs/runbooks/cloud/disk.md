@@ -9,7 +9,7 @@
 
 ## Check
 
-`du -xh / 2>/dev/null | sort -h | tail -20` on that node, and the cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines). The usual ones: Postgres's `pg_wal` growing because the WAL archive fails ([backup-stale.md](backup-stale.md)), the logs (14 days kept, Epic 53.17), Docker images.
+`du -xh / 2>/dev/null | sort -h | tail -20` on that node, and the cloud's logs and error groups in the service admin's cloud log view ([disk warnings, last 2 h](https://app.maktaba.tv/admin/logs?q=disk&level=warn&last=2h); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines). The usual ones: Postgres's `pg_wal` growing because the WAL archive fails ([backup-stale.md](backup-stale.md)), the logs (14 days kept, Epic 53.17), Docker images.
 
 ## Do
 

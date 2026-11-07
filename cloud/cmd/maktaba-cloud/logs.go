@@ -7,6 +7,8 @@ package main
 //	                               line of this process, 14 days, 5 GB
 //	MAKTABA_CLOUD_LOGS_URL         W's private address (http://10.0.0.4:9610): lines go there too
 //	MAKTABA_CLOUD_LOGS_TOKEN_FILE  the token W takes them with (never in the repo)
+//	MAKTABA_CLOUD_LOGS_INSTANCE    this process's name among its service's on the node (the
+//	                               relay's colour)
 //
 // On W, `maktaba-cloud logs` takes every node's lines (POST /v1/logs/ingest), keeps them under
 // each node's name for 14 days, runs the log index over them, and answers the api role's
@@ -44,6 +46,9 @@ const (
 	EnvLogsURL       = "MAKTABA_CLOUD_LOGS_URL"
 	EnvLogsTokenFile = "MAKTABA_CLOUD_LOGS_TOKEN_FILE"
 	EnvLogsListen    = "MAKTABA_CLOUD_LOGS_LISTEN"
+	// EnvLogsInstance tells two processes of one service apart on a node (the relay's blue
+	// and green): each keeps its own segment folder.
+	EnvLogsInstance = "MAKTABA_CLOUD_LOGS_INSTANCE"
 )
 
 // logsToken reads W's token from its file ("" when unset or unreadable).
@@ -68,7 +73,7 @@ func logPath(service, node string) io.Writer {
 	}
 	k := logship.NewKeeper(dir, node)
 	go k.Run(context.Background())
-	tee := &logship.Tee{Keeper: k, Origin: logkeeper.Origin{Service: service}}
+	tee := &logship.Tee{Keeper: k, Origin: logkeeper.Origin{Service: service, Instance: os.Getenv(EnvLogsInstance)}}
 	if u, tok := os.Getenv(EnvLogsURL), logsToken(); u != "" && tok != "" {
 		tee.Forwarder = &logship.Forwarder{URL: u, Token: tok, Node: node, Service: service}
 		go tee.Forwarder.Run(context.Background())

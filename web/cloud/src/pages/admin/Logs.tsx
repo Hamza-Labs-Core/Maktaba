@@ -3,7 +3,7 @@
 // whole cloud is searched from one place even while a node is down. Errors lists the cloud's
 // own groups beside the homes' anonymous ones (Epic 16.7), each with the problem reports that
 // name it (53.16). A line names a home only by home_h.
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
@@ -26,6 +26,21 @@ interface LogLine {
 }
 
 const SERVICES = ["", "cloud.api", "cloud.relay", "cloud.worker", "cloud.logs"];
+/** A saved search's window (?last=30m, the runbooks' links): minutes back from now. */
+export const WINDOWS: Record<string, number> = {
+  "10m": 10,
+  "30m": 30,
+  "1h": 60,
+  "2h": 120,
+  "24h": 1440,
+  "7d": 10080,
+};
+
+/** since for a window, or "" (the index's own default). */
+export function sinceFor(last: string, now = Date.now()): string {
+  const m = WINDOWS[last];
+  return m ? new Date(now - m * 60_000).toISOString().replace(/\.\d{3}Z$/, "Z") : "";
+}
 const LEVELS = ["", "info", "warn", "error"];
 const NODES = ["", "A", "B", "W"];
 
@@ -39,8 +54,11 @@ export function AdminLogs() {
     node: params.get("node") ?? "",
     request_id: params.get("request_id") ?? "",
   };
+  const last = params.get("last") ?? "";
   const [q, setQ] = useState(f.q);
-  const path = withQuery("/v1/admin/logs/search", { ...f, limit: 200 });
+  // the window's start, once per window chosen (a new one on a new choice)
+  const since = useMemo(() => sinceFor(last), [last]);
+  const path = withQuery("/v1/admin/logs/search", { ...f, since, limit: 200 });
   const data = useLoad(() => api.get<{ lines: LogLine[]; truncated?: boolean }>(path), path);
   function set(next: Record<string, string>) {
     const p = new URLSearchParams(params);
@@ -83,6 +101,15 @@ export function AdminLogs() {
           }))}
         />
         <Select
+          label={t("admin.logs.window")}
+          value={last}
+          onChange={(e) => set({ last: e.target.value })}
+          options={["", ...Object.keys(WINDOWS)].map((w) => ({
+            value: w,
+            label: w ? t(`admin.logs.window.${w}`) : t("admin.filter.any"),
+          }))}
+        />
+        <Select
           label={t("admin.logs.node")}
           value={f.node}
           onChange={(e) => set({ node: e.target.value })}
@@ -108,9 +135,7 @@ export function AdminLogs() {
           {data.data.lines.map((l, i) => (
             <li key={i} className="mkc-list__row">
               <span className="mkc-muted">{l.ts ? formatDate(l.ts) : "—"}</span>{" "}
-              <Badge
-                tone={l.level === "error" ? "error" : l.level === "warn" ? "warn" : "neutral"}
-              >
+              <Badge tone={l.level === "error" ? "error" : l.level === "warn" ? "warn" : "neutral"}>
                 {l.level ?? "info"}
               </Badge>{" "}
               <span className="mkc-mono">

@@ -10,7 +10,7 @@
 
 ## Check
 
-1. On the leader (`patronictl -c /etc/patroni/patroni.yml list`): `sudo -u postgres pgbackrest --stanza=cloud info` and `journalctl -u maktaba-backup --since -2d`, and the cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines).
+1. On the leader (`patronictl -c /etc/patroni/patroni.yml list`): `sudo -u postgres pgbackrest --stanza=cloud info` and `journalctl -u maktaba-backup --since -2d`, and the cloud's logs and error groups in the service admin's cloud log view ([backup warnings, last 24 h](https://app.maktaba.tv/admin/logs?q=backup&level=warn&last=24h); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines).
 2. **Which repository?** A backup goes to repo1 and repo2 in turn; the WAL archive to both at once. `pgbackrest --stanza=cloud --repo=1 check` and `--repo=2 check` name the one that fails.
 
 ## Do

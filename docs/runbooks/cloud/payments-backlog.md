@@ -4,11 +4,11 @@
 
 ## When
 
-Webhook failures or lag from the payment provider (its dashboard, or the cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines)'s `billing` group).
+Webhook failures or lag from the payment provider (its dashboard, or the cloud's logs and error groups in the service admin's cloud log view ([billing warnings, last 24 h](https://app.maktaba.tv/admin/logs?service=cloud.api&q=billing&level=warn&last=24h); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines)'s `billing` group).
 
 ## Check
 
-1. The cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines): the saved search `billing webhooks, last 24 h`, by error.
+1. The cloud's logs and error groups in the service admin's cloud log view ([billing warnings, last 24 h](https://app.maktaba.tv/admin/logs?service=cloud.api&q=billing&level=warn&last=24h); [Errors](https://app.maktaba.tv/admin/errors); the witness keeps a dead node's last lines), by error.
 2. The provider's status page and its webhook log (failed deliveries and their answers).
 
 ## Do

@@ -8,7 +8,7 @@ The leader still holds its lease but can't serve: a stuck disk, an out-of-memory
 
 ## Check
 
-1. The cloud's logs and error groups in the service admin's cloud log view (Epic 53.17; the witness keeps a dead node's last lines): what the leader says.
+1. The cloud's logs and error groups in the service admin's cloud log view ([the failover window, warnings, last 30 min](https://app.maktaba.tv/admin/logs?level=warn&last=30m); [Errors](https://app.maktaba.tv/admin/errors)) (Epic 53.17; the witness keeps a dead node's last lines): what the leader says.
 2. `patronictl -c /etc/patroni/patroni.yml list`: the standby streams (a failover to a lagging replica loses the commits it lacks: only with synchronous replication intact).
 3. The standby is healthy: its own `curl -s http://127.0.0.1:8081/` (its Caddy) and disk.
 
