@@ -17,25 +17,45 @@ import (
 
 // fakeDB records written batches and fails while down.
 type fakeDB struct {
-	mu      sync.Mutex
-	down    bool
-	written map[string]int64 // server → bytes
-	buckets map[bucketKey]bool
-	writes  int
+	mu         sync.Mutex
+	down       bool
+	lostCommit bool // the next write commits but reports an error
+	ids        map[string]bool
+	written    map[string]int64 // server → bytes
+	buckets    map[bucketKey]bool
+	writes     int
 }
 
-func (f *fakeDB) write(_ context.Context, b map[bucketKey]counter) error {
+func (f *fakeDB) write(_ context.Context, id string, b map[bucketKey]counter) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.lostCommit {
+		// the commit reaches the database, its answer does not reach the meter
+		f.lostCommit = false
+		f.apply(id, b)
+		return errors.New("connection reset at COMMIT")
+	}
 	if f.down {
 		return errors.New("db down")
 	}
+	f.apply(id, b)
+	return nil
+}
+
+// apply records a batch once per id, as relay_meter_flushes makes the database do.
+func (f *fakeDB) apply(id string, b map[bucketKey]counter) {
+	if f.ids == nil {
+		f.ids = map[string]bool{}
+	}
+	if f.ids[id] {
+		return
+	}
+	f.ids[id] = true
 	f.writes++
 	for k, c := range b {
 		f.written[k.server] += c.BytesIn + c.BytesOut
 		f.buckets[k] = true
 	}
-	return nil
 }
 
 func newTestMeter(clock *time.Time) (*Meter, *fakeDB) {
@@ -188,5 +208,33 @@ func TestMeterAllowDoesNotWaitOnAVanishedDatabase(t *testing.T) {
 	_ = m.Allow(ctx, stores.Server{ID: "c", Plan: PlanFree})
 	if took := time.Since(start); took > 50*time.Millisecond {
 		t.Errorf("a held total waited %s", took)
+	}
+}
+
+// A flush whose COMMIT reached the database but whose answer was lost is
+// retried under the same id and not counted twice; bytes recorded meanwhile go
+// in the next batch.
+func TestMeterLostCommitIsNotCountedTwice(t *testing.T) {
+	clock := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	m, f := newTestMeter(&clock)
+	ctx := context.Background()
+	sv := stores.Server{ID: "a"}
+	m.Record(ctx, sv, 0, 1000)
+	f.lostCommit = true
+	if err := m.flush(ctx); err == nil {
+		t.Fatal("a lost answer looked like success")
+	}
+	m.Record(ctx, sv, 0, 500) // while the first batch is in flight
+	if err := m.flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if f.written["a"] != 1500 {
+		t.Errorf("written %d, want 1500 (the lost commit once, then the 500)", f.written["a"])
+	}
+	if in, out := m.Buffered(); in+out != 0 {
+		t.Errorf("left buffered: %d", in+out)
 	}
 }

@@ -454,6 +454,7 @@ jobs:
     permissions:
       contents: read
       packages: read # the release's image in the registry
+      actions: read # the cloud rehearsal's runs (tools/release/cloud-guard.sh)
     # The `production` environment has no protection rules yet, so a
     # deploy does not wait for approval. To add a gate, add required
     # reviewers under Settings → Environments → production.
@@ -504,6 +505,22 @@ jobs:
           done
           echo "::error::${IMAGE} was not published within an hour (release.yml's build-images, or its tag guard)"
           exit 1
+
+      # Epic 50 story 50.06: no cloud deploy of a commit whose failover, deploy, rollback and
+      # restore the cloud rehearsal (cloud-rehearsal.yml) did not pass on; a run still going is
+      # waited for. The commit is the pushed tag's, or the dispatched image tag's.
+      - name: The cloud rehearsal passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          sha="${GITHUB_SHA}"
+          if [ "${IMAGE_TAG}" != latest ] && [[ "${GITHUB_REF}" != refs/tags/* ]]; then
+            git fetch -q origin "+refs/tags/${IMAGE_TAG}:refs/tags/${IMAGE_TAG}"
+            sha="$(git rev-list -n 1 "refs/tags/${IMAGE_TAG}")"
+          fi
+          SHA="${sha}" bash tools/release/cloud-guard.sh
 
       - name: Deploy
         env:

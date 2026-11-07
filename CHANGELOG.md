@@ -242,15 +242,6 @@ build fails when the two differ.
   before. The relay's stop grace is 150 s (the container's 160 s), with switches
   `relay.drain.enabled` and `relay.ticket.enabled`, and `/metrics` counts drains, forced
   closes and handshakes by method.
-- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
-  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
-  each minute, and dropped at once when a plan, an address or an owner changes, through
-  database notifications sent by triggers), so a request needs no database call, and a home
-  it served in the last hour keeps playing however long the database is away. Metering is
-  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
-  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
-  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
-  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
 - **Any relay process answers for any home, and a home that is reconnecting is waited for
   (Epic 50, story 50.04).** A tunnel directory in the cloud database (`relay_tunnels`,
   `relay_nodes`) records which relay process holds each home's tunnel; a process without it
@@ -261,6 +252,23 @@ build fails when the two differ.
   `503 home_reconnecting` with `Retry-After: 5`; a home offline longer answers
   `503 server_offline` at once (it was a 502). The relay's error pages are in Arabic too,
   right to left, by the browser's language.
+- **Remote play keeps going while the cloud's database fails over (Epic 50, story 50.05).**
+  The relay keeps each home it serves in a cache (50,000 homes, refreshed in the background
+  each minute, and dropped at once when a plan, an address or an owner changes, through
+  database notifications sent by triggers), so a request needs no database call, and a home
+  it served in the last hour keeps playing however long the database is away. Metering is
+  buffered in memory through an outage (retried every 5 s, bounded, never dropping a byte)
+  and a meter flush that failed no longer loses its counts. The relay's `/readyz` answers
+  `200 degraded` for the first 5 minutes of an outage instead of taking it out of service.
+  Redis is a cache: the compose stack runs it with no persistence, as nothing depends on it.
+- **The cloud rehearsal: Maktaba Cloud's failover and deploy paths are proven in CI before
+  they reach a server (Epic 50, story 50.06).** A new workflow runs the cloud's cluster in
+  Docker (two relay processes behind Caddy, Postgres, 1,000 simulated homes and a stream
+  generator) and breaks it on purpose: a relay process stopped mid-stream (every home moved
+  in 12 s, no request failed) and the database killed for 15 s (no request failed, metering
+  within 1 %). The later failover, deploy and restore scenarios have their places and join as
+  their stories land. A cloud deploy is refused unless the rehearsal passed on its commit.
+  `docs/cloud-rehearsal.md` says how to run one scenario locally.
 - **The TV library view: Play all, Shuffle, series, collections and playlists (Epic 56).** One
   play queue on the server (`/api/me/play-queues`) behind every Play and Shuffle: a library in
   its grid's sort and filters, a series or a season (from the next unwatched episode), a
