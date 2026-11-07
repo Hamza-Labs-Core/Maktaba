@@ -99,7 +99,9 @@ func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, pool *db.Poo
 
 // sweepStreams deletes the relayed streams silent for billing.StreamSilence, every interval
 // (story 50.19 §3: a stream that ended or a relay that crashed frees its slot).
-func sweepStreams(ctx context.Context, logger *slog.Logger, st *billingpkg.Streams, every time.Duration) {
+func sweepStreams(ctx context.Context, logger *slog.Logger, st interface {
+	Sweep(context.Context) (int64, error)
+}, every time.Duration) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {

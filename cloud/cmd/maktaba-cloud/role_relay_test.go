@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
@@ -183,5 +184,37 @@ func TestDirectIsBuiltOnlyWhenOn(t *testing.T) {
 	}
 	if st, err := os.Stat(filepath.Join(dir, "le.key")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Fatalf("the account key: %v %v", st, err)
+	}
+}
+
+// Story 50.19: the relay's plans follow relay.plans.enforce and relay.stream_limit.enabled,
+// and count streams under this relay's id.
+func TestRelayPlansFollowTheConfig(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Relay.PlansEnforce, cfg.Relay.StreamLimitEnabled = true, false
+	p := relayPlans(cfg, nil, "blue")
+	if !p.Enforce || p.StreamLimit || p.Streams == nil {
+		t.Fatalf("%+v", p)
+	}
+}
+
+type countingSweeper struct{ n atomic.Int32 }
+
+func (c *countingSweeper) Sweep(context.Context) (int64, error) { c.n.Add(1); return 1, nil }
+
+// Story 50.19: the worker sweeps silent relayed streams on its interval until it stops.
+func TestTheWorkerSweepsStreams(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	s := &countingSweeper{}
+	done := make(chan struct{})
+	go func() { sweepStreams(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), s, 5*time.Millisecond); close(done) }()
+	deadline := time.Now().Add(2 * time.Second)
+	for s.n.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if s.n.Load() < 2 {
+		t.Fatalf("swept %d times", s.n.Load())
 	}
 }
