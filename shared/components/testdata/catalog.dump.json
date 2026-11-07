@@ -916,7 +916,7 @@
         "linux-amd64",
         "linux-arm64"
       ],
-      "plugin": "",
+      "plugin": "tv.maktaba.classify",
       "processes": [],
       "requires": [],
       "resources": {
