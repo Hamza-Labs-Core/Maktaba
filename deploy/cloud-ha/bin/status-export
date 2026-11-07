@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Network 1's view for the status page (Epic 50 story 50.11): every 30 s on the witness, the
+# latest of its own probes and the cloud's series, from its Prometheus, to
+# /var/lib/maktaba/status/status/network1.json (served behind the token by the witness's Caddy,
+# read by status-probe.yml each round). A value Prometheus doesn't have is null: the status
+# page then decides from the other network alone, or shows no measurement.
+#
+#   relay       the canary home through the relay, probed from the witness (1 or 0)
+#   api         the API's /readyz, probed from the witness
+#   push_lag    push_outbox_lag_seconds, the oldest unsent notification (Epic 53.17)
+#   held_ratio  the share of relayed requests held in the last 5 minutes (> 5 %: degraded)
+#
+# Env: PROMETHEUS (http://127.0.0.1:9090), OUT (/var/lib/maktaba/status/status/network1.json)
+set -uo pipefail
+prom="${PROMETHEUS:-http://127.0.0.1:9090}"
+out="${OUT:-/var/lib/maktaba/status/status/network1.json}"
+q() { # q <PromQL>: the first sample's value, or null
+    curl -fsS --max-time 5 --get --data-urlencode "query=$1" "${prom}/api/v1/query" 2>/dev/null \
+        | jq -c '(.data.result[0].value[1] // null) | if . == null then null else tonumber end' 2>/dev/null || echo null
+}
+relay="$(q 'max(probe_success{job="canary",instance="witness"})')"
+api="$(q 'max(probe_success{job="api",instance="witness"})')"
+lag="$(q 'max(push_outbox_lag_seconds)')"
+held="$(q 'sum(increase(maktaba_relay_held_total[5m])) / clamp_min(sum(increase(maktaba_relay_requests_total[5m])), 1)')"
+mkdir -p "$(dirname "${out}")"
+jq -n --arg at "$(date -u +%FT%TZ)" --argjson relay "${relay:-null}" --argjson api "${api:-null}" \
+    --argjson push_lag "${lag:-null}" --argjson held_ratio "${held:-null}" \
+    '{at: $at, relay: $relay, api: $api, push_lag: $push_lag, held_ratio: $held_ratio}' >"${out}.tmp" \
+    && mv "${out}.tmp" "${out}"

@@ -76,7 +76,7 @@ strangers. Epic 51 left a store to "a later epic on this model" (Epic 51 H5). Th
    (Epic 53).
 5. **A Maktaba store.** Developer accounts, submission, automated checks and human review,
    signing by the developer and by Maktaba, a revocation list homes honour, free and paid
-   plugins (the payment provider is chosen at Phase 3, §6.5), ratings and reports. **The store
+   plugins (through pluggable payment providers, §6.5), ratings and reports. **The store
    is independent of Maktaba Cloud** (§6.0): its own accounts, database, deploy, hostname
    (`plugins.maktaba.tv`) and payments, all on Cloudflare. Users browse there and in the web
    app; developers read docs on maktaba.dev.
@@ -618,10 +618,22 @@ sale and the developer gets **85 %**; publishing free plugins is free, selling n
 provider account and seller-of-record choice, separate from cloud billing, and payouts, tax
 records and refunds owned by the store.
 
-- **Payment processor and seller of record: open, decided at Phase 3.** The store resells
-  third-party products, which many sellers of record restrict (Paddle among them), so every
-  candidate must confirm in writing that it allows plugin resale before it is chosen. Models
-  and candidates:
+- **Payment providers are pluggable (decided 2026-11-06).** The store does not settle on one
+  payment processor or seller of record: it has a `PaymentProvider` interface (checkout,
+  verified webhooks, refunds, payouts to developers, tax and currency hooks, disputes, and a
+  capability descriptor: model, payouts, subscriptions, regions, currencies) and a registry
+  the store admin configures, with several providers enabled at once and chosen per buyer
+  country, currency and the admin's order. Adding a provider is one module and its
+  configuration; no provider-specific code lives outside its module (CI check 54.19 T07).
+  Purchases, the ledger, entitlements and payouts are the store's own, in one schema, and
+  each provider's records are mapped into them; the home sees only store-signed
+  entitlements and never knows a provider. The store resells third-party products, which
+  many sellers of record restrict (Paddle among them), so a provider is used live only once
+  it has confirmed in writing that it allows plugin resale (recorded on its configuration).
+  The first two modules are a fake (CI and staging) and Adyen for Platforms (model 2 below,
+  split payments, the Gulf and Egypt in its currencies), neither wired to live keys; a Gulf or
+  Egypt provider (Tap Payments, PayTabs, Paymob) is a module added beside them. The models
+  a provider can follow:
   1. **A merchant of record sells for the store** (Paddle, FastSpring, 2Checkout), and the
      store pays developers their 85 % monthly;
   2. **The store as seller** with a marketplace payment provider (Adyen for Platforms, PayPal's
@@ -630,7 +642,8 @@ records and refunds owned by the store.
   3. **Developers sell directly** on their own checkout, and the store verifies their licence
      keys offline (the buyer pays the developer; the store invoices its 15 %).
 
-  Story 54.19 is written against a `PaymentProvider` interface so any of the three fits.
+  A provider's capability descriptor names its model, so the store can run providers of
+  different models at once (story 54.19).
 - **Split:** developer 85 %, Maktaba 15 % of the price.
 - **Prices:** one-time or yearly. Refunds within 14 days, no questions; a refund revokes the
   entitlement at the next refresh.
@@ -675,7 +688,7 @@ records and refunds owned by the store.
 | F11 | Plugins install from a file offline; files without a store signature need the admin opt-in and show "Unreviewed". |
 | F12 | The store is a service independent of Maktaba Cloud (own accounts, database, deploy and hostname `plugins.maktaba.tv`, all on Cloudflare, no VPS), with store accounts (email verification, MFA required for developers, passkeys for reviewers and store admins, re-auth for sensitive actions, server-side roles), signing keys per developer account, submission, automated checks, human review, countersigning, a signed catalog and a signed revocation list. |
 | F13 | Homes fetch the catalog, packages and revocation list through the home server, straight from the store's CDN and never through Maktaba Cloud, honour `disable` revocations within one fetch, and refuse expired or rolled-back lists. |
-| F14 | Paid plugins (Phase 3) are bought on `plugins.maktaba.tv` by a home linked to a store account, through the store's own payment provider chosen at Phase 3 (separate from cloud billing); the developer gets 85 %, Maktaba 15 %; the home checks a store-signed entitlement offline. |
+| F14 | Paid plugins (Phase 3) are bought on `plugins.maktaba.tv` by a home linked to a store account, through the store's own payment providers (pluggable, several at once, chosen per buyer country and currency; separate from cloud billing); the developer gets 85 %, Maktaba 15 %; the home checks a store-signed entitlement offline. |
 | F15 | Ratings and reports, with moderation by store reviewers. |
 | F16 | All `/api/plugins/*` routes are admin-only with role tests; viewers see plugin outputs and the panels of installed plugins, only for subjects their library access allows. |
 | F17 | SDK, templates and a local harness with a mock plugin API for Rust, JS/TS, Python and TinyGo; docs on maktaba.dev. |
@@ -737,8 +750,9 @@ records and refunds owned by the store.
 - **Phase 2: store, signing and review** (54.14–54.18). Trust root and signatures, the store
   service and developer console, automated checks and review, the home's catalog with updates
   and the kill switch, the store browser, listing pages, ratings and reports.
-- **Phase 3: paid plugins and UI extensions** (54.19–54.21). Payouts through the payment
-  provider chosen at Phase 3 and entitlements,
+- **Phase 3: paid plugins and UI extensions** (54.19–54.21). Paid plugins through pluggable
+  payment providers (a `PaymentProvider` interface and a registry of providers, a fake and
+  one real-shaped adapter first), the store's own ledger, payouts and entitlements,
   panels in every app, local compute capabilities.
 
 - **Phase 4: Maktaba's own stages as first-party plugins** (54.22–54.36). The trusted manifest,
@@ -782,7 +796,7 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | Signing | Plex | checksum | none | developer + Maktaba |
 | Review | Plex | none (3rd-party repos) | HACS structure checks | automated + human |
 | Kill switch | removed directory | — | — | signed revocation list |
-| Paid | no | no | no | yes, 85/15; payment provider chosen at Phase 3 |
+| Paid | no | no | no | yes, 85/15; pluggable payment providers |
 | Offline install | manual | manual | manual | file, signed or opt-in unreviewed |
 
 ## 11. Hard calls, and what we rejected
@@ -802,7 +816,7 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | H11 | **Unreviewed install is allowed, off by default, behind a re-authenticated admin opt-in, and marked everywhere.** | *Never allow it*: kills development, offline sharing and private plugins; the sandbox does not depend on review. *Allow silently*: Obsidian learned to start in Restricted Mode. |
 | H12 | **Third-party plugin stages run on the home only in this epic** (first-party ones keep their placement, §15.4). | *Any machine*: each node would need its own host, plugin API endpoint and token minting, and media handles across machines. Later, on the same model. |
 | H13 | **Heavy compute is a host service, not plugin code.** | *Let plugins bring ML runtimes*: impossible in Wasm today (no NumPy/torch), huge packages, and duplicates what Maktaba already runs. |
-| H14 | **85/15 split; the payment provider and seller of record are chosen at Phase 3; payouts sit behind a provider-agnostic interface.** | *70/30*: high for a small ecosystem. *No paid plugins*: paid plugins are a requirement; developers need a reason to maintain plugins (Plex's lesson). *Choosing a seller of record now*: many restrict resale of third-party products; it needs written confirmation first. |
+| H14 | **85/15 split; payment providers are pluggable (several at once, per country and currency); payouts and the ledger are provider-neutral.** | *70/30*: high for a small ecosystem. *No paid plugins*: paid plugins are a requirement; developers need a reason to maintain plugins (Plex's lesson). *Choosing one seller of record*: many restrict resale of third-party products, and no one provider serves every region and currency well; each provider needs written confirmation first. |
 | H15 | **English and Arabic strings are required for store listing.** | *English only*: the product is Arabic-first; a plugin that can't name itself in Arabic would show English in an RTL UI. Developers may use machine translation; the listing says so (decided 2026-11-03). |
 | H16 | **First-party plugins run as native Python in supervised runners, behind the same manifest, dispatch and plugin API, with a trusted capability set.** | *Compile first-party stages to Wasm and run them in `maktaba-plugind`*: they need torch, MLX, faster-whisper, ffmpeg, yt-dlp and the GPU, none of which run in WASI today (§2), and N5's 2× would cost hours on transcription. *Keep them in-process and call it a plugin*: no boundary at all, a back door by another name. *One process per plugin*: fifteen Python interpreters on every home; runner groups give the same boundary at a fraction of the memory. |
 | H17 | **The database is reached through named statements and per-plugin Postgres roles, not a typed Go endpoint per write and not a database login.** | *A typed Go endpoint for every write*: rewriting about 780 Python SQL statements in Go, two languages for every change, years of work. *A database login per plugin*: no per-call check, no token scope, any SQL a bug produces. Named statements keep the SQL where it is reviewed today and let the API check every call. |
@@ -969,15 +983,19 @@ each needs the previous one green in a tagged release.
 
 ## 14. Decisions (2026-11-03)
 
-Items 1 and 3–9 are decided. Open: the payment provider (item 2, at Phase 3), the
-email provider (item 10) and the isolated check runner (item 11).
+Items 1–9 are decided. Open: the email provider (item 10) and the isolated check runner
+(item 11).
 
 1. **Revenue split: decided.** Developer 85 %, Maktaba 15 % of each paid plugin sale.
-2. **Seller of record and payment processor: decide at Phase 3.** Known constraint: the store resells third-party products, which many sellers of record restrict
-   (Paddle among them), so candidates must confirm resale in writing. Candidates: Paddle as
-   seller with Maktaba paying developers monthly; Maktaba as seller with a marketplace payment
-   provider such as Adyen for Platforms (Maktaba files tax); developers sell directly and
-   Maktaba verifies their licence keys offline. §6.5, story 54.19.
+2. **Seller of record and payment processor: decided 2026-11-06, pluggable.** No single
+   provider is chosen: the store runs payment providers behind one interface, several at once,
+   chosen per buyer country and currency or by the store admin's order, and a provider is added
+   as one module. Known constraint: the store resells third-party products, which many sellers
+   of record restrict (Paddle among them), so a provider goes live only after it confirms in
+   writing that it allows plugin resale. The models stay open per provider: a merchant of
+   record with the store paying developers monthly, the store as seller with a marketplace
+   provider such as Adyen for Platforms (the store files tax), or developers selling directly
+   with licence keys checked offline. §6.5, story 54.19.
 3. **Developer fee: decided.** Free to publish free plugins; a one-time $25 to sell.
 4. **Arabic for store listings: decided.** Every listing has English and Arabic; machine
    translation is allowed and labelled (H15).

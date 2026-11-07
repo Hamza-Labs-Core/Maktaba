@@ -1,0 +1,30 @@
+# The witness's Alertmanager (story 50.10). Pages go to the owner's phone through ntfy (or
+# Telegram: the owner chooses; fill one), repeated every 15 min until silenced; warnings go
+# by email. ${...} rendered by setup.sh from the secrets in cloud-ha.env.
+route:
+  receiver: email
+  group_by: [alertname, node]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity = "page"]
+      receiver: phone
+      repeat_interval: 15m
+receivers:
+  - name: phone
+    webhook_configs:
+      # ntfy: https://ntfy.sh/<the owner's private topic> (or a self-hosted ntfy), with its token
+      - url: "${NTFY_URL}"
+        http_config:
+          authorization:
+            credentials: "${NTFY_TOKEN}"
+        send_resolved: true
+  - name: email
+    email_configs:
+      - to: "${ALERT_EMAIL}"
+        from: "${ALERT_EMAIL_FROM}"
+        smarthost: "${SMTP_HOST}"
+        auth_username: "${SMTP_USER}"
+        auth_password: "${SMTP_PASSWORD}"
+        send_resolved: true
