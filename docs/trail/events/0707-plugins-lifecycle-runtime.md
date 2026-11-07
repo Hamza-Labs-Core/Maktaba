@@ -17,6 +17,8 @@ prs: [683, 693]
 - Plugin stages are loaded at the pipeline worker's start, so any change of the installed set needs a restart of the main worker; the supervisor's `Restart` is the clean way (no backoff, not a crash).
 - Wasmtime under the macOS hardened runtime needs `allow-jit` and `allow-unsigned-executable-memory`; the payload signs `maktaba-plugind` with its own entitlements file.
 - The affected-tests gate maps from main's coverage: tests in a new file do not count for an old source; put them in a test file the map already names, or add a `No-Test-Change` trailer for a constant bump.
+- `make compat-prev` writes `api/internal/compatprobe/main.go` while it runs and deletes it after: a `git add -A` during the run committed it, and CI's lint failed on its `fmt.Printf`. Commit only named paths while it runs.
+- A new catalog group needs its place in the web's `GROUP_ORDER` (componentWords.ts): the Components page's test compares the groups with the catalog dump.
 - On the Mac worktree, `go test ./...` of cmd/maktaba-server fails `TestSetupCLIDrivesTheSteps`, the pgbundle backup tests and `TestRestoreAskedPutsTheBackupBackBeforeAnyRole` with under 20 GB free (they fail on main too); `make compat-prev` needs `psql` on PATH (the app's `server/postgres/bin` has it).
 
 ## Open
