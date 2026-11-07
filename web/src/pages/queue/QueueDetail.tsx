@@ -377,6 +377,31 @@ export function QueueDetail() {
         </label>
       )}
 
+      {info.plugin && (
+        <div className="mkt-q-field mkt-q-field--inline" data-testid="queue-builtin-plugin">
+          <span className="mkt-q-badge" title={info.plugin}>
+            {t("queue.detail.builtInPlugin")}
+          </span>
+          <label>
+            <span>{t("queue.detail.impl")}</span>
+            <select
+              value={info.impl ?? "inproc"}
+              onChange={(e) =>
+                void action
+                  .run(
+                    "impl",
+                    save(() => queueApi.setImpl(stage, e.target.value as "inproc" | "plugin"))
+                  )
+                  .then(afterAction)
+              }
+            >
+              <option value="inproc">{t("queue.detail.impl.inproc")}</option>
+              <option value="plugin">{t("queue.detail.impl.plugin")}</option>
+            </select>
+          </label>
+        </div>
+      )}
+
       <div className="mkt-q-hero">
         <RingGauge
           size={132}

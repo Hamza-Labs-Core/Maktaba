@@ -228,7 +228,7 @@ def sources(plugin: Path) -> Iterator[tuple[Path, str, str, set[str] | None]]:
     for f in sorted(src.rglob("*.py")):
         rel = f.relative_to(src).with_suffix("")
         mod = ".".join(p for p in rel.parts if p != "__init__")
-        yield f, str(f.relative_to(ROOT)), mod, None
+        yield f, (str(f.relative_to(ROOT)) if f.is_relative_to(ROOT) else str(f)), mod, None
     cfg = plugin / "statements.toml"
     if cfg.is_file():
         for entry in tomllib.loads(cfg.read_text())["modules"]:
@@ -271,6 +271,7 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
             self.locks = False
             self.lib_args: list[int] = []
             self.video_args: list[int] = []
+            self.settings_args: list[int] = []
             self.state_write = False
 
         def visit_RangeVar(self, ancestors: Any, node: Any) -> None:  # noqa: N802
@@ -284,6 +285,16 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
 
         def visit_InsertStmt(self, ancestors: Any, node: Any) -> None:  # noqa: N802
             self.targets.append(node.relation.relname)
+            # INSERT … (library_id, …) VALUES ($1, …): the row's library is the scope
+            cols = [getattr(c, "name", "") for c in node.cols or ()]
+            sel = node.selectStmt
+            for vals in getattr(sel, "valuesLists", None) or ():
+                for col, v in zip(cols, vals, strict=False):
+                    if isinstance(v, pg.ParamRef):
+                        if col == "library_id":
+                            self.lib_args.append(v.number)
+                        elif col == "video_id":
+                            self.video_args.append(v.number)
 
         def visit_UpdateStmt(self, ancestors: Any, node: Any) -> None:  # noqa: N802
             self.targets.append(node.relation.relname)
@@ -303,7 +314,9 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
             for col, par in ((node.lexpr, node.rexpr), (node.rexpr, node.lexpr)):
                 if isinstance(col, pg.ColumnRef) and isinstance(par, pg.ParamRef):
                     fields = [getattr(f, "sval", "") for f in col.fields]
-                    if fields and fields[-1] == "library_id":
+                    if fields and fields[-1] == "key" and "app_settings" in self.rels:
+                        self.settings_args.append(par.number)
+                    elif fields and fields[-1] == "library_id":
                         self.lib_args.append(par.number)
                     elif fields and fields[-1] == "video_id":
                         self.video_args.append(par.number)
@@ -319,10 +332,13 @@ def analyse(text: str) -> tuple[str, tuple[str, ...], tuple[str, ...], str, int,
         problems.append("writes videos.state (only the engine writes it)")
     mode = "write" if writes else "read"
     scope, arg = "catalog", 0
-    if len(set(v.lib_args)) == 1 and not v.video_args:
-        scope, arg = "library", v.lib_args[0]
-    elif len(set(v.video_args)) == 1 and not v.lib_args:
+    if "app_settings" in tables and len(set(v.settings_args)) == 1:
+        scope, arg = "settings", v.settings_args[0]
+    elif len(set(v.video_args)) == 1:
+        # a video in the job's scope (its own, or one of its library's): the stricter test
         scope, arg = "subject", v.video_args[0]
+    elif len(set(v.lib_args)) == 1:
+        scope, arg = "library", v.lib_args[0]
     return mode, tuple(sorted(reads)), tuple(sorted(writes)), scope, arg, problems
 
 
@@ -358,7 +374,7 @@ def wanted(plugin: Path) -> tuple[list[Statement], list[str]]:
         problems += [f"{x.file}:{x.line}: {p}" for p in probs]
         old = have.get(k)
         if old is not None:
-            name, scope, arg = old.name, old.scope, old.scope_arg
+            name = old.name
         else:
             base = f"{_stem(x.file)}.{x.func.strip('_') or 'module'}"
             n = 1
@@ -367,8 +383,21 @@ def wanted(plugin: Path) -> tuple[list[Statement], list[str]]:
                 n += 1
                 name = f"{base}.{n}"
             taken.add(name)
+        forced = _scopes(plugin).get(name)
+        if forced:
+            scope, _, n = forced.partition(" ")
+            arg = int(n.strip().lstrip("$") or 0)
         out[k] = Statement(name, k, mode, scope, arg, reads, writes)
     return sorted(out.values(), key=lambda s: s.name), problems
+
+
+def _scopes(plugin: Path) -> dict[str, str]:
+    """``[scope]`` of statements.toml: a statement's scope set by hand (``catalog``, or
+    ``library $2`` where the parse tree cannot tell), reviewed with the plugin."""
+    cfg = plugin / "statements.toml"
+    if not cfg.is_file():
+        return {}
+    return {str(k): str(v) for k, v in (tomllib.loads(cfg.read_text()).get("scope") or {}).items()}
 
 
 def manifest_trusted(plugin: Path) -> dict[str, Any]:
@@ -445,8 +474,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("action", choices=["sync", "check"])
     ap.add_argument("plugin", nargs="?", help="a folder name under plugins/first-party")
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--dir", help="a plugin folder outside plugins/first-party (the tests' toy)")
     args = ap.parse_args(argv)
-    dirs = plugin_dirs() if args.all or not args.plugin else [FIRST_PARTY / args.plugin]
+    if args.dir:
+        dirs = [Path(args.dir).resolve()]
+    else:
+        dirs = plugin_dirs() if args.all or not args.plugin else [FIRST_PARTY / args.plugin]
     failed = False
     for d in dirs:
         problems = sync(d) if args.action == "sync" else check(d)

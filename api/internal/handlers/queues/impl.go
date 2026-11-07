@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -182,23 +181,23 @@ func sleep(ctx context.Context, d time.Duration) bool {
 	}
 }
 
-// fillImpl sets each stage's impl and first-party plugin (the Queues page's badge).
+// fillImpl sets each stage's impl and first-party plugin (the Queues page's badge). One
+// small query beside the stage rows; a database before slot 0196 leaves every stage
+// in-process.
 func (h *Handler) fillImpl(ctx context.Context, stages []StageInfo) {
-	rows, err := h.DB.QueryContext(ctx, `SELECT stage, impl FROM job_stages`)
-	if err != nil {
-		return // a database before slot 0196: every stage is in-process
-	}
-	defer rows.Close()
 	impl := map[string]string{}
-	for rows.Next() {
-		var s, i string
-		if rows.Scan(&s, &i) == nil {
-			impl[s] = i
+	if rows, err := h.DB.QueryContext(ctx, `SELECT stage, impl FROM job_stages`); err == nil {
+		for rows.Next() {
+			var s, i string
+			if rows.Scan(&s, &i) == nil {
+				impl[s] = i
+			}
 		}
+		rows.Close()
 	}
 	for i := range stages {
 		stages[i].Impl = "inproc"
-		if v := impl[stages[i].Stage]; strings.TrimSpace(v) != "" {
+		if v := impl[stages[i].Stage]; v != "" {
 			stages[i].Impl = v
 		}
 		stages[i].Plugin = firstPartyOf(stages[i].Stage)

@@ -126,6 +126,15 @@ async def serving(stage: str) -> tuple[bool, str | None]:
     return True, (str(reason) if reason else None)
 
 
+async def serving_group(group: str, stage: str) -> tuple[bool, str | None]:
+    """Whether ``group`` (``fp``, the fingerprint runner) serves the stage here."""
+    h = await hello(group)
+    if h is None or stage not in (h.get("stages") or {}):
+        return False, None
+    reason = (h.get("stages") or {}).get(stage)
+    return True, (str(reason) if reason else None)
+
+
 @dataclasses.dataclass(frozen=True)
 class ImplChoice:
     impl: str  # "inproc" | "plugin"
@@ -396,3 +405,75 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
             w.close()
     finally:
         await _end(str(minted["invocation_id"]))
+
+
+# --- fingerprints through the fp runner (story 54.23 §4) ---------------------------------
+
+_FP_TOKENS: dict[str, tuple[float, str]] = {}
+#: a fingerprint token is minted for hours; renewed well before it ends
+FP_TOKEN_TTL = 3600.0
+
+
+async def _fp_token(plugin_id: str) -> str:
+    from .dispatch import _api
+
+    hit = _FP_TOKENS.get(plugin_id)
+    now = time.monotonic()
+    if hit is not None and now - hit[0] < FP_TOKEN_TTL:
+        return hit[1]
+    status, body = await asyncio.to_thread(
+        _api, "POST", "/internal/plugins/invocations", {"plugin_id": plugin_id, "purpose": "fingerprints"}
+    )
+    if status != 200:
+        raise ConnectionError(f"fingerprint token: {body.get('code', status)}")
+    _FP_TOKENS[plugin_id] = (now, str(body["token"]))
+    return str(body["token"])
+
+
+async def fingerprints(stage: str, kind: str, subjects: list[Any], *, group: str = "fp") -> list[str | None]:
+    """The stage's input or output fingerprints of ``subjects``, in one batch, from the
+    runner that serves fingerprints (read statements only). Raises ``ConnectionError``
+    when it does not answer; the caller then computes them in-process."""
+    p = firstparty.by_stage(stage)
+    if p is None:
+        raise KeyError(stage)
+    token = await _fp_token(p.id)
+    r, w = await asyncio.open_unix_connection(str(socket_path(group)), limit=1 << 20)
+    try:
+        await write_frame(
+            w,
+            {
+                "type": "fingerprints",
+                "stage": stage,
+                "kind": kind,
+                "token": token,
+                "subjects": [
+                    [s.kind, str(s.id), str(s.library_id) if s.library_id else None] for s in subjects
+                ],
+            },
+        )
+        msg = await read_frame(r)
+    finally:
+        w.close()
+    if msg.get("type") != "fingerprints":
+        if msg.get("status") == "unregistered":
+            raise Unregistered(str(msg.get("message") or ""))
+        raise ConnectionError(str(msg.get("message") or "fingerprints refused"))
+    return [None if h is None else str(h) for h in msg.get("hashes") or []]
+
+
+def fingerprint_fn(stage: str, kind: str, inproc: Any) -> Any:
+    """The input (or output) fingerprint function of a plugin stage: the fp runner's when it
+    answers, else the in-process one (a machine without it, a refusal)."""
+    if inproc is None:
+        return None
+
+    async def fn(db: Any, subject: Any) -> Any:
+        try:
+            (h,) = await fingerprints(stage, kind, [subject])
+            return h
+        except (OSError, ConnectionError, Unregistered, ValueError, KeyError) as exc:
+            _log.info("plugin_fingerprint_inproc", stage=stage, why=str(exc)[:200])
+            return await inproc(db, subject)
+
+    return fn

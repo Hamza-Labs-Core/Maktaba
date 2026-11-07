@@ -15,7 +15,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+try:
+    from hatchling.builders.hooks.plugin.interface import BuildHookInterface
+except ImportError:  # the tests import package_dirs outside a build
+    BuildHookInterface = object  # type: ignore[assignment,misc]
 
 
 def package_dirs(root: Path) -> dict[str, str]:

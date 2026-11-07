@@ -261,7 +261,18 @@ async def _native_impl(db: Any, name: str, inproc: Any) -> Any:
             result: StageResult = await inproc.run(db, job, ctx)
             return result
 
-    return replace(inproc, run=run) if inproc is not None else None
+    if inproc is None:
+        return None
+    fp_ok, _ = await native.serving_group("fp", name)
+    return replace(
+        inproc,
+        run=run,
+        input_fingerprint=(
+            native.fingerprint_fn(name, "input", inproc.input_fingerprint)
+            if fp_ok
+            else inproc.input_fingerprint
+        ),
+    )
 
 
 async def _fail(db: Any, job: Job, stage: StageDef, error: StageError) -> None:
