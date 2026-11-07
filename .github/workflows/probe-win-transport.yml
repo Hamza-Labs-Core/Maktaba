@@ -42,6 +42,8 @@ jobs:
 
       - name: The probes
         run: |
+          # GitHub runs bash with -e: an expected failure must not end the step
+          set +e
           set -uo pipefail
           B="$(cygpath -w "$RUNNER_TEMP/bin")"
           P="$RUNNER_TEMP/bin/probewin.exe"
