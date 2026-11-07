@@ -18,6 +18,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 
 	"net/http"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
@@ -56,6 +58,9 @@ func main() {
 		runAdmin(os.Args[2:])
 	case "license":
 		runLicense(os.Args[2:])
+	case "logs":
+		// W's role (53.17): every node's lines, kept and indexed
+		runLogs(os.Args[2:])
 	case "version":
 		runVersion()
 	default:
@@ -180,7 +185,26 @@ func runMigrate(args []string) {
 // carries service (cloud.<role>), version, env and node like the home's, with the
 // shared redaction. MAKTABA_ENV (default prod) and MAKTABA_NODE_ID (the cloud node)
 // name the rest.
-func newLogger(role string) *slog.Logger { return mlog.Init(logOptions(role)) }
+// Its lines are counted for /metrics (53.17 §4: maktaba_log_lines_total, and error lines by
+// code in maktaba_errors_total), the service named for the request series too.
+func newLogger(role string) *slog.Logger {
+	opts := logOptions(role)
+	obs.SetService(opts.Service)
+	// this node's keeper and the forwarding to W (53.17 §2), when the environment sets them;
+	// W's own role keeps no second copy in the folder it serves
+	if role != "logs" {
+		node := opts.Node
+		if node == "" {
+			node, _ = os.Hostname()
+		}
+		if tee := logPath(opts.Service, node); tee != nil {
+			opts.Output = io.MultiWriter(os.Stdout, tee)
+		}
+	}
+	l := slog.New(obs.Handler(mlog.Init(opts).Handler(), opts.Service, obs.Default))
+	slog.SetDefault(l)
+	return l
+}
 
 func logOptions(role string) mlog.Options {
 	env := os.Getenv("MAKTABA_ENV")

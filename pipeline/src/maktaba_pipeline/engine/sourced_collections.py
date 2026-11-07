@@ -104,15 +104,23 @@ async def sync_sourced(
     """Make ``library_id``'s collections of ``kinds`` the ``desired`` ones."""
     stats = SyncStats()
     want = {(d.source_kind, d.source_ref): d for d in desired}
-    ph = ", ".join(f"${i + 2}" for i in range(len(kinds)))
+    if is_pg(db):
+        rows = await db.fetch(
+            "SELECT id, source_kind, source_ref, membership_hash FROM collections"
+            " WHERE library_id = $1 AND source_kind = ANY($2::text[])",
+            uid(library_id),
+            list(kinds),
+        )
+    else:
+        rows = await db.fetch(
+            "SELECT id, source_kind, source_ref, membership_hash FROM collections"
+            " WHERE library_id = $1 AND source_kind IN (SELECT value FROM json_each($2))",
+            uid(library_id),
+            dumps(list(kinds)),
+        )
     have = {
         (str(r["source_kind"]), str(r["source_ref"])): (str(r["id"]), r["membership_hash"])
-        for r in await db.fetch(
-            "SELECT id, source_kind, source_ref, membership_hash FROM collections"  # noqa: S608
-            f" WHERE library_id = $1 AND source_kind IN ({ph})",
-            uid(library_id),
-            *kinds,
-        )
+        for r in rows
     }
     stamp = to_ts(db, now())
     yes = True if is_pg(db) else 1

@@ -17,6 +17,7 @@ was; the strip then shows its ``title``.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -30,7 +31,18 @@ from ..classify.display_title import (
 
 __all__ = ["DisplayInfo", "display_info", "merge_snapshot"]
 
-_CHUNK = 400
+#: one select of the display parts (each dialect's WHERE is added: a fixed text each)
+_DISPLAY_SQL = (
+    "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title)"
+    " AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '')"
+    " AS manual, v.display_title IS NOT NULL AS done,"
+    " COALESCE(s.display_name, s.name_override, s.name) AS series,"
+    " COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep,"
+    " se.series_id AS sid"
+    " FROM videos v"
+    " LEFT JOIN series_episodes se ON se.video_id = v.id"
+    " LEFT JOIN series s ON s.id = se.series_id"
+)
 
 
 class DisplayInfo(dict[str, Any]):
@@ -43,32 +55,21 @@ async def display_info(db: Any, video_ids: Sequence[str]) -> dict[str, DisplayIn
     out: dict[str, DisplayInfo] = {}
     if not ids:
         return out
-    cast = "::uuid" if getattr(db, "dialect", "postgres") == "postgres" else ""
-    for i in range(0, len(ids), _CHUNK):
-        part = ids[i : i + _CHUNK]
-        marks = ",".join(f"${n}{cast}" for n in range(1, len(part) + 1))
+    if getattr(db, "dialect", "postgres") == "postgres":
+        rows = await db.fetch(_DISPLAY_SQL + " WHERE v.id = ANY($1::uuid[])", ids)
+    else:
         rows = await db.fetch(
-            "SELECT v.id AS id, COALESCE(NULLIF(v.display_title_manual, ''), v.display_title)"
-            " AS title, (v.display_title_manual IS NOT NULL AND v.display_title_manual <> '')"
-            " AS manual, v.display_title IS NOT NULL AS done,"
-            " COALESCE(s.display_name, s.name_override, s.name) AS series,"
-            " COALESCE(se.episode_override, se.episode, se.absolute_number) AS ep,"
-            " se.series_id AS sid"
-            " FROM videos v"
-            " LEFT JOIN series_episodes se ON se.video_id = v.id"
-            " LEFT JOIN series s ON s.id = se.series_id"
-            f" WHERE v.id IN ({marks})",  # noqa: S608 — placeholders only
-            *part,
+            _DISPLAY_SQL + " WHERE v.id IN (SELECT value FROM json_each($1))", json.dumps(ids)
         )
-        for r in rows:
-            if not (r["done"] or r["manual"]):
-                continue
-            ep = r["ep"]
-            out[str(r["id"])] = DisplayInfo(
-                title=str(r["title"] or ""),
-                series=str(r["series"] or "") if r["sid"] is not None else "",
-                episode=int(ep) if ep is not None else None,
-            )
+    for r in rows:
+        if not (r["done"] or r["manual"]):
+            continue
+        ep = r["ep"]
+        out[str(r["id"])] = DisplayInfo(
+            title=str(r["title"] or ""),
+            series=str(r["series"] or "") if r["sid"] is not None else "",
+            episode=int(ep) if ep is not None else None,
+        )
     return out
 
 

@@ -225,7 +225,9 @@ func (t *Tokens) Mint(ctx context.Context, jobID int64) (*Minted, error) {
 	}
 	pluginID, ok := strings.CutPrefix(ext.String, "plugin:")
 	if !ok || pluginID == "" {
-		if fp := FirstPartyByStage(stage); fp != nil && !ext.Valid {
+		// a first-party stage: an engine stage (no extension), or one an extension's
+		// component hands to its first-party plugin (ext.plex: tv.maktaba.plex, story 54.35)
+		if fp := FirstPartyByStage(stage); fp != nil && (!ext.Valid || fp.Trusted.Component == "ext."+ext.String) {
 			return t.mintFirstParty(ctx, fp, jobID, stage, kind, subject)
 		}
 		return nil, refuse(409, CodeNotPluginJob, "the job's stage is not a plugin's")

@@ -2,7 +2,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from maktaba_pipeline.engine.stages.plan_channels import reset_plan_exporters
+from maktaba_pipeline.schedule.plan_inputs import reset_plan_exporters
 from tests.engine.fixtures_db import db, pg_template, sqlite_template  # noqa: F401
 
 

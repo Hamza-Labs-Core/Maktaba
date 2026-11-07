@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from maktaba_fp_convert.stages import convert_mp4
 
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.claim import claim_for_pool
@@ -24,7 +25,6 @@ from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, bound_graph, get_stage, validate
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads, uid
-from maktaba_pipeline.engine.stages import convert_mp4
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.library_mgmt import convert as cv
 from maktaba_pipeline.library_mgmt.ledger import list_actions

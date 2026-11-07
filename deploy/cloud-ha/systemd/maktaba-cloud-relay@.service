@@ -10,6 +10,8 @@ After=patroni.service
 User=maktaba
 EnvironmentFile=/etc/maktaba/cloud.env
 EnvironmentFile=/etc/maktaba/relay-%i.env
+# blue and green keep separate segment folders
+Environment=MAKTABA_CLOUD_LOGS_INSTANCE=%i
 ExecStart=/usr/local/bin/maktaba-cloud-%i serve --role relay --config /etc/maktaba/cloud.toml
 Restart=on-failure
 RestartSec=2
@@ -17,6 +19,8 @@ RestartSec=2
 KillSignal=SIGTERM
 TimeoutStopSec=160
 NoNewPrivileges=yes
+# this node's log keeper (story 53.17): /var/lib/maktaba-cloud/logs, writable under ProtectSystem
+StateDirectory=maktaba-cloud
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
