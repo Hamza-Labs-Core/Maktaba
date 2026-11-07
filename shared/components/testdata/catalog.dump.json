@@ -1082,7 +1082,9 @@
         "gpu": "",
         "ram_mb": 0
       },
-      "settings": [],
+      "settings": [
+        "rules.plugin_compute"
+      ],
       "since": "0.3.86",
       "source": "",
       "sources": {},

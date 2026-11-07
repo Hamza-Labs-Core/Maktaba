@@ -1,0 +1,79 @@
+// The store's Worker `store-web` (story 54.15 §1): plugins.maktaba.tv — the store API (/v1/…),
+// accounts, the developer console (static assets), linking a home (/link) and the admin and
+// review pages (/admin). Every id below is a placeholder until the owner creates the
+// resources (store/README.md, "Going live"); secrets are never in this file.
+{
+  "name": "store-web",
+  "main": "web/index.ts",
+  "compatibility_date": "2026-08-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "rules": [{ "type": "CompiledWasm", "globs": ["**/*.wasm"], "fallthrough": true }],
+  "routes": [{ "pattern": "plugins.maktaba.tv", "custom_domain": true }],
+  "assets": {
+    "directory": "console/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/v1/*", "/admin/*", "/p/*", "/ar/*", "/link", "/"],
+  },
+  "limits": { "cpu_ms": 1000 },
+  "vars": {
+    "STORE_ORIGIN": "https://plugins.maktaba.tv",
+    "CDN_ORIGIN": "https://plugins-cdn.maktaba.tv",
+    "SIGNUP_OPEN": "false",
+    "SUBMISSIONS_OPEN": "false",
+    "AGREEMENT_VERSION": "1",
+    "UPLOADS": "presigned",
+    "MAIL_PROVIDER": "postmark",
+    "MAIL_FROM": "Maktaba Plugins <no-reply@plugins.maktaba.tv>",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB_ACCOUNTS",
+      "database_name": "store-accounts",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations/accounts",
+    },
+    {
+      "binding": "DB_CATALOG",
+      "database_name": "store-catalog",
+      "database_id": "00000000-0000-0000-0000-000000000002",
+      "migrations_dir": "migrations/catalog",
+    },
+    {
+      "binding": "DB_INSTALLS",
+      "database_name": "store-installs",
+      "database_id": "00000000-0000-0000-0000-000000000003",
+      "migrations_dir": "migrations/installs",
+    },
+  ],
+  "r2_buckets": [
+    { "binding": "BUCKET", "bucket_name": "maktaba-plugins" },
+    { "binding": "PRIVATE", "bucket_name": "maktaba-plugins-private" },
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "ACCOUNT_GUARD", "class_name": "AccountGuard" },
+      { "name": "IP_BUCKET", "class_name": "IpBucket" },
+      { "name": "PAIRING_CODE", "class_name": "PairingCode" },
+      { "name": "CATALOG_WRITER", "class_name": "CatalogWriter" },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountGuard", "IpBucket", "PairingCode", "CatalogWriter"] }],
+  "queues": {
+    "producers": [
+      { "binding": "Q_CHECKS", "queue": "store-checks" },
+      { "binding": "Q_CATALOG", "queue": "store-catalog" },
+      { "binding": "Q_MAIL", "queue": "store-mail" },
+    ],
+    "consumers": [
+      { "queue": "store-catalog", "max_batch_size": 1 },
+      { "queue": "store-mail", "max_batch_size": 10 },
+    ],
+  },
+  "triggers": {
+    // every 6 hours: re-sign the revocation list (48 h) and the catalog (7 d), finish MFA
+    // resets whose hold is over; 03:15 daily: the nightly export; the 1st at 04:00: the DNS
+    // prefix check
+    "crons": ["0 */6 * * *", "15 3 * * *", "0 4 1 * *"],
+  },
+}

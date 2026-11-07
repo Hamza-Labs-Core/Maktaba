@@ -21,7 +21,7 @@ export const KIND = {
 export type Kind = (typeof KIND)[keyof typeof KIND];
 
 const enc = new TextEncoder();
-const subtle = globalThis.crypto.subtle;
+const subtle = crypto.subtle;
 
 export function toB64(b: Uint8Array): string {
   let s = "";
@@ -81,7 +81,7 @@ export class Signer {
     pkcs8.set(PKCS8_HEAD, 0);
     pkcs8.set(seed, PKCS8_HEAD.length);
     const key = await subtle.importKey("pkcs8", pkcs8 as BufferSource, { name: "Ed25519" }, true, ["sign"]);
-    const jwk = await subtle.exportKey("jwk", key);
+    const jwk = (await subtle.exportKey("jwk", key)) as JsonWebKey;
     const publicRaw = fromB64url(jwk.x ?? "");
     const signer = new Signer(await keyId(publicRaw), publicRaw, key);
     // keep only a non-extractable copy: the seed never leaves through this object

@@ -646,14 +646,14 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 			switch {
 			case !ok:
 				// ended, or of another machine: anonymous, and the cookie cleared
-				r.setCookies(w, "", "", time.Time{})
+				r.setCookies(w, req, "", "", time.Time{})
 				next.ServeHTTP(w, req)
 				return
 			case local:
 			case !r.away() && !readOnly(req.Method):
 				// a change through the home's database, the home back: it knows nothing of
 				// this sign-in, so it asks for one there
-				r.setCookies(w, "", "", time.Time{})
+				r.setCookies(w, req, "", "", time.Time{})
 				writeSignInAgain(w)
 				return
 			case !readOnly(req.Method):
@@ -826,14 +826,14 @@ func (r *Resolver) Home(proxy http.Handler) http.Handler {
 				}
 				proxy.ServeHTTP(w, keepSignIn(withoutLocalSession(req)))
 			default:
-				r.setCookies(w, "", "", time.Time{})
+				r.setCookies(w, req, "", "", time.Time{})
 				writeSignInAgain(w)
 			}
 			return
 		}
 		if r.signedOutHere(req) {
 			// signed out on this machine and the home may not know yet: never sent there
-			r.setCookies(w, "", "", time.Time{})
+			r.setCookies(w, req, "", "", time.Time{})
 			if req.Method == http.MethodPost && (req.URL.Path == LogoutPath || req.URL.Path == LogoutAllPath) {
 				w.WriteHeader(http.StatusNoContent)
 				return

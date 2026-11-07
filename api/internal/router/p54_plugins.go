@@ -1,6 +1,7 @@
 // Epic 54 wiring (plugins), Phase 1.
 //
-//	/api/plugins/*                 the admin routes (54.07, 54.08 §3): admin-only
+//	/api/plugins/*                 the admin routes (54.07, 54.08 §3; the store link of
+//	                               54.15 §5): admin-only
 //	/internal/plugins/invocations…  TCP, this machine's own processes only (54.04 §2)
 //	/internal/plugins/breaker      TCP, this machine's pipeline only (54.09 §2)
 //	/plugin-api/v1/*               the unix socket only, never TCP (54.04 §1): served when
@@ -15,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/go-chi/chi/v5"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	pluginsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/storelink"
 )
 
 // P54Deps bundles the Epic 54 routes.
@@ -43,6 +46,14 @@ type P54Deps struct {
 	Version string
 	// Sup puts packages on disk (nil: the supervisor this API runs under).
 	Sup plugins.Supervisor
+	// Secrets is the home's sealed store: the home store key of a store link (54.15 §5).
+	// nil: no store link.
+	Secrets storelink.Secrets
+	// Capabilities says whether llm and search.semantic are on (nil: both are taken as on).
+	Capabilities *components.Capabilities
+	// Embedder is the pipeline worker holding the embedder (54.21; nil: compute.embed is
+	// unavailable). The search pipeline client, when it implements EmbedTexts.
+	Embedder any
 }
 
 // MountP54 mounts the invocation routes on r and, when a socket is named, serves the
@@ -73,7 +84,13 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		(&plugins.Panels{L: l}).Mount(r)
 		inv.Trip = func(r *http.Request, id, reason string) (bool, error) { return l.Trip(r.Context(), id, reason) }
 		accounts := users.New(d.DB)
-		(&pluginsh.Admin{L: l, Logger: logger, VerifyPassword: func(ctx context.Context, id, pw string) error {
+		var link *storelink.Link
+		if d.Secrets != nil {
+			host, _ := os.Hostname()
+			link = &storelink.Link{DB: d.DB, Secrets: d.Secrets, StoreURL: os.Getenv("MAKTABA_PLUGIN_STORE_URL"),
+				Version: d.Version, Platform: runtime.GOOS + "-" + runtime.GOARCH, Name: host}
+		}
+		(&pluginsh.Admin{L: l, Logger: logger, Store: link, VerifyPassword: func(ctx context.Context, id, pw string) error {
 			u, err := accounts.GetByID(ctx, id)
 			if err != nil {
 				return err
@@ -92,6 +109,7 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 	if d.DataDir != "" {
 		s.ArtifactsDir = filepath.Join(d.DataDir, "plugins", "artifacts")
 	}
+	s.Compute = computeOf(d)
 	sock := d.Socket
 	if sock == "" {
 		sock = os.Getenv("MAKTABA_PLUGIN_API_SOCKET")
@@ -109,4 +127,35 @@ func MountP54(r chi.Router, d P54Deps) *plugins.Server {
 		logger.Info("plugin_api_listening", "socket", sock)
 	}
 	return s
+}
+
+// computeOf is the plugin API's local compute (story 54.21): the pipeline's embedder, and
+// the language model while the llm component is on.
+func computeOf(d P54Deps) *plugins.Compute {
+	k := &plugins.Compute{}
+	if e, ok := d.Embedder.(plugins.Embedder); ok {
+		k.Embedder = gatedEmbedder{e: e, caps: d.Capabilities}
+	}
+	if caps := d.Capabilities; caps != nil {
+		k.LLMOn = func(context.Context) bool {
+			_, off := caps.Snapshot().ComponentOff("llm")
+			return !off
+		}
+	}
+	return k
+}
+
+// gatedEmbedder answers ErrComputeOff while search.semantic is off, without asking.
+type gatedEmbedder struct {
+	e    plugins.Embedder
+	caps *components.Capabilities
+}
+
+func (g gatedEmbedder) EmbedTexts(ctx context.Context, texts []string) (string, [][]float32, error) {
+	if g.caps != nil {
+		if _, off := g.caps.Snapshot().ComponentOff("search.semantic"); off {
+			return "", nil, plugins.ErrComputeOff
+		}
+	}
+	return g.e.EmbedTexts(ctx, texts)
 }
