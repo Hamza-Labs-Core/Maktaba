@@ -34,9 +34,15 @@ func TestStateNeverGoesBack(t *testing.T) {
 }
 
 func TestStateMergeTakesTheNewer(t *testing.T) {
-	a := State{CatalogVersions: map[string]int64{"1": 5}, RevokedVersion: 3}
-	a.Merge(State{CatalogVersions: map[string]int64{"1": 4, "2": 9}, RevokedVersion: 7, RevokedSHA256: "x"})
+	a := State{CatalogVersions: map[string]int64{"1": 5}, CatalogSHA256s: map[string]string{"1": "five"}, RevokedVersion: 3}
+	a.Merge(State{CatalogVersions: map[string]int64{"1": 4, "2": 9}, CatalogSHA256s: map[string]string{"1": "four", "2": "nine"},
+		RevokedVersion: 7, RevokedSHA256: "x"})
 	if a.CatalogVersion(1) != 5 || a.CatalogVersion(2) != 9 || a.RevokedVersion != 7 || a.RevokedSHA256 != "x" {
+		t.Fatalf("%+v", a)
+	}
+	// each catalog's sha256 goes with its version (so the same version with other bytes is
+	// refused after a restart from either copy)
+	if a.CatalogSHA256(1) != "five" || a.CatalogSHA256(2) != "nine" {
 		t.Fatalf("%+v", a)
 	}
 }
