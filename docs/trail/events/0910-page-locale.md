@@ -19,6 +19,7 @@ prs: [893]
 ## What we learned
 - On Apple, a `String` built with `String(localized:)` or `.formatted()` follows the process and ignores SwiftUI's `\.locale`; a page that a preview or test draws in another language mixes the two. Build such strings with the environment's locale.
 - #910's first CI run passed against the old Arabic references: a short phrase in another language changes about 700 to 3,900 pixels, under the 0.2 % tolerance of a 760×1500 page. The snapshots guard layout, not wording; the Arabic references were re-recorded from that run anyway, and the English ones, pixel-identical, were kept.
+- `affected-tests` matches a changed source with a test named after it (`SeriesPage.kt` → `SeriesPageTest.kt`, `SeriesScreen.swift` → `SeriesScreenTests.swift`); #910's first push named its tests after the behaviour and was blocked. Name a new test after the file it guards.
 - A re-recorded PNG can differ in bytes with no pixel change; compare pixels before committing so the diff holds only real changes.
 
 ## Keep doing
