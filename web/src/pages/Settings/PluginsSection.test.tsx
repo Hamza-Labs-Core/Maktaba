@@ -304,7 +304,8 @@ describe("Settings → Plugins: built into Maktaba (Epic 54, story 54.22 §4)", 
     expect(section).toHaveTextContent(en["fp.trusted.db.statements"]);
     expect(section).toHaveTextContent(en["fp.trusted.settings.read"]);
     expect(section).toHaveTextContent("Turned on and off with");
-    expect(screen.queryByRole("button", { name: en["plugins.grants.save"] ?? "Save" })).toBeNull();
+    // turning its component on is the decision (54.22 §4): no grants dialog to open
+    expect(section.querySelector("button")).toBeNull();
   });
 
   it("says nothing of built-in plugins when the release has none", async () => {

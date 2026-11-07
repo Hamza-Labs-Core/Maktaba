@@ -123,7 +123,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # Epic 51 (story 51.01): a change to the graph runs the catalog job beside the pipeline's
     "the stage graph runs the catalog check": (
         ["pipeline/src/maktaba_pipeline/engine/graph.py"],
-        {"unit", "integration", "e2e", "node-packaging"},
+        # the engine is also the first-party plugins' (Epic 54 Phase 4): their parity runs
+        {"unit", "integration", "e2e", "node-packaging", "plugins"},
         {
             "lint": {"pipeline", "catalog"},
             "unit": {"pipeline"},
