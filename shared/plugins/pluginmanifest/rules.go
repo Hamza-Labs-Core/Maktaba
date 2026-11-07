@@ -12,8 +12,10 @@ import (
 //
 //	R1 reserved ids            R4 capabilities           R7 strings in both i18n files
 //	R2 platforms               R5 stages, requests,      R8 the settings schema file
-//	R3 a lower bound in           triggers               R9 schedule settings
-//	   the maktaba range       R6 schedules on catalog
+//	R3 a lower bound in           triggers, emits,       R9 schedule settings
+//	   the maktaba range          published events and   R10 event payload schemas
+//	                              dependencies (54.39)
+//	                           R6 schedules on catalog
 //	                              stages
 //
 // R7–R9 need the package's files and are skipped when files is nil.
@@ -61,6 +63,32 @@ func rules(m map[string]any, files Files) Errors {
 		}
 		subjects[name] = st["subject"].(string)
 	}
+	// the graph fields (54.39): published events, dependencies on other plugins' events
+	published := map[string]string{}
+	events, _ := m["event"].([]any)
+	for i, e := range events {
+		em := e.(map[string]any)
+		name := em["name"].(string)
+		if _, dup := published[name]; dup {
+			errs = append(errs, Error{Code: CodeBadEvent, Path: "event/" + strconv.Itoa(i) + "/name", Detail: name})
+		}
+		published[name] = em["subject"].(string)
+	}
+	depends := map[string]bool{}
+	used := map[string]bool{}
+	dependsList, _ := m["depends"].([]any)
+	for i, d := range dependsList {
+		dm := d.(map[string]any)
+		p := dm["plugin"].(string)
+		path := "depends/" + strconv.Itoa(i)
+		switch {
+		case p == id || depends[p]:
+			errs = append(errs, Error{Code: CodeBadDepends, Path: path + "/plugin", Detail: p})
+		case !hasLowerBound(dm["version"].(string)):
+			errs = append(errs, Error{Code: CodeBadDepends, Path: path + "/version", Detail: "no lower bound"})
+		}
+		depends[p] = true
+	}
 	for i, s := range stages {
 		st := s.(map[string]any)
 		base := "stage/" + strconv.Itoa(i)
@@ -70,8 +98,38 @@ func rules(m map[string]any, files Files) Errors {
 			}
 		}
 		for j, t := range st["trigger"].([]any) {
-			ev := t.(map[string]any)["event"].(string)
-			path := base + "/trigger/" + strconv.Itoa(j) + "/event"
+			tm := t.(map[string]any)
+			tpath := base + "/trigger/" + strconv.Itoa(j)
+			ev, hasEvent := tm["event"].(string)
+			after, hasStage := tm["stage"].(string)
+			if hasEvent == hasStage {
+				errs = append(errs, Error{Code: CodeBadTrigger, Path: tpath, Detail: "event or stage"})
+				continue
+			}
+			if hasStage {
+				subject, own := subjects[after]
+				switch {
+				case !own:
+					errs = append(errs, Error{Code: CodeBadTrigger, Path: tpath + "/stage", Detail: after})
+				case subject != st["subject"].(string):
+					errs = append(errs, Error{Code: CodeSubjectMismatch, Path: tpath + "/stage", Detail: after})
+				}
+				continue
+			}
+			path := tpath + "/event"
+			if rest, ok := strings.CutPrefix(ev, "plugin:"); ok {
+				// another plugin's published event (54.39): never its own, always a dependency
+				publisher, _, _ := strings.Cut(rest, "/")
+				switch {
+				case publisher == id:
+					errs = append(errs, Error{Code: CodeBadTrigger, Path: path, Detail: ev})
+				case !depends[publisher]:
+					errs = append(errs, Error{Code: CodeBadDepends, Path: path, Detail: publisher})
+				default:
+					used[publisher] = true
+				}
+				continue
+			}
 			e, ok := eventByName[ev]
 			switch {
 			case !ok || !e.Triggerable():
@@ -79,6 +137,17 @@ func rules(m map[string]any, files Files) Errors {
 			case e.Subject != st["subject"].(string):
 				errs = append(errs, Error{Code: CodeSubjectMismatch, Path: path, Detail: ev})
 			}
+		}
+		emits, _ := st["emits"].([]any)
+		for j, e := range emits {
+			if _, ok := published[e.(string)]; !ok {
+				errs = append(errs, Error{Code: CodeBadEmit, Path: base + "/emits/" + strconv.Itoa(j), Detail: e.(string)})
+			}
+		}
+	}
+	for i, d := range dependsList {
+		if p := d.(map[string]any)["plugin"].(string); !used[p] {
+			errs = append(errs, Error{Code: CodeBadDepends, Path: "depends/" + strconv.Itoa(i), Detail: p})
 		}
 	}
 	for i, s := range m["schedule"].([]any) {
@@ -119,6 +188,19 @@ func packageRules(m map[string]any, files Files) Errors {
 			case utf8.RuneCountInString(w) > f.max:
 				errs = append(errs, Error{Code: CodeStringTooLong, Path: "strings/" + f.key, Detail: lang})
 			}
+		}
+	}
+	events, _ := m["event"].([]any)
+	for i, e := range events {
+		path := e.(map[string]any)["payload"].(string)
+		raw, ok := files(path)
+		if !ok {
+			errs = append(errs, Error{Code: CodeMissingFile, Path: "event/" + strconv.Itoa(i) + "/payload", Detail: path})
+			continue
+		}
+		var doc map[string]any
+		if json.Unmarshal(raw, &doc) != nil || doc["type"] != "object" {
+			errs = append(errs, Error{Code: CodeBadEvent, Path: "event/" + strconv.Itoa(i) + "/payload", Detail: path})
 		}
 	}
 	var props map[string]any

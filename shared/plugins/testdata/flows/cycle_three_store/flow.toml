@@ -1,0 +1,51 @@
+schema = 1
+id = "dev.example.flow"
+version = "1.0.0"
+
+[strings]
+name = "flow.name"
+
+[[plugin]]
+id = "dev.example.alpha"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name = "one"
+  subject = "video"
+  triggers = ["audio.ready", "plugin:dev.example.gamma/c.done"]
+  emits = ["a.done"]
+
+  [[plugin.event]]
+  name = "a.done"
+  subject = "video"
+  payload = "events/a.done.schema.json"
+
+[[plugin]]
+id = "dev.example.beta"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name = "two"
+  subject = "video"
+  triggers = ["plugin:dev.example.alpha/a.done"]
+  emits = ["b.done"]
+
+  [[plugin.event]]
+  name = "b.done"
+  subject = "video"
+  payload = "events/b.done.schema.json"
+
+[[plugin]]
+id = "dev.example.gamma"
+version = ">=1.0.0, <2.0.0"
+
+  [[plugin.stage]]
+  name = "three"
+  subject = "video"
+  triggers = ["plugin:dev.example.beta/b.done"]
+  emits = ["c.done"]
+
+  [[plugin.event]]
+  name = "c.done"
+  subject = "video"
+  payload = "events/c.done.schema.json"

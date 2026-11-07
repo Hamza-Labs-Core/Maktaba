@@ -1,0 +1,45 @@
+{
+  "findings": [
+    {
+      "code": "flow_core_edge",
+      "severity": "refuse",
+      "plugin": "dev.example.alpha",
+      "detail": "dev.example.alpha/one: transcribe"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.alpha/one"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.alpha/one",
+        "kind": "stage",
+        "name": "one",
+        "plugin": "dev.example.alpha",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تصل الإضافة ⁦dev.example.alpha⁩ إلى مرحلة أساسية (⁦dev.example.alpha/one: transcribe⁩)؛ ولا تعمل مراحل الإضافات إلا بعد المراحل الأساسية."
+    ],
+    "en": [
+      "dev.example.alpha reaches a core stage (dev.example.alpha/one: transcribe); plugin stages run only after core stages."
+    ]
+  }
+}

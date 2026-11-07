@@ -1,0 +1,58 @@
+{
+  "flow_invalid": {
+    "en": "The flow ({detail}) is not valid.",
+    "ar": "التدفّق (⁦{detail}⁩) غير صالح."
+  },
+  "flow_unknown_key": {
+    "en": "The flow has a field Maktaba does not know: {detail}.",
+    "ar": "في التدفّق حقل لا تعرفه مكتبة: ⁦{detail}⁩."
+  },
+  "flow_limit": {
+    "en": "The flow is over a limit: {detail}.",
+    "ar": "التدفّق يتجاوز حدًّا: ⁦{detail}⁩."
+  },
+  "flow_duplicate": {
+    "en": "The flow names {detail} twice.",
+    "ar": "يسمّي التدفّق ⁦{detail}⁩ مرّتين."
+  },
+  "flow_not_member": {
+    "en": "The plugin {plugin} is not a member of its own flow at this version.",
+    "ar": "الإضافة ⁦{plugin}⁩ ليست عضوًا في تدفّقها بهذا الإصدار."
+  },
+  "flow_manifest_mismatch": {
+    "en": "The manifest of {plugin} does not match its flow: {detail} differs.",
+    "ar": "بيان الإضافة ⁦{plugin}⁩ لا يطابق تدفّقها: ⁦{detail}⁩ مختلف."
+  },
+  "flow_core_edge": {
+    "en": "{plugin} reaches a core stage ({detail}); plugin stages run only after core stages.",
+    "ar": "تصل الإضافة ⁦{plugin}⁩ إلى مرحلة أساسية (⁦{detail}⁩)؛ ولا تعمل مراحل الإضافات إلا بعد المراحل الأساسية."
+  },
+  "flow_foreign_stage": {
+    "en": "{plugin} names a stage that is not its own ({detail}); plugins start each other only through published events.",
+    "ar": "تسمّي الإضافة ⁦{plugin}⁩ مرحلة ليست من مراحلها (⁦{detail}⁩)؛ ولا تشغّل الإضافات بعضها إلا عبر الأحداث المنشورة."
+  },
+  "flow_foreign_event": {
+    "en": "{plugin} emits an event it does not publish ({detail}).",
+    "ar": "تُطلق الإضافة ⁦{plugin}⁩ حدثًا لا تنشره (⁦{detail}⁩)."
+  },
+  "flow_unknown_event": {
+    "en": "{plugin} follows an event no one publishes: {detail}.",
+    "ar": "تتبع الإضافة ⁦{plugin}⁩ حدثًا لا ينشره أحد: ⁦{detail}⁩."
+  },
+  "flow_subject_mismatch": {
+    "en": "{plugin} follows an event about something else than its stage works on: {detail}.",
+    "ar": "تتبع الإضافة ⁦{plugin}⁩ حدثًا عن شيء غير الذي تعمل عليه مرحلتها: ⁦{detail}⁩."
+  },
+  "flow_missing_plugin": {
+    "en": "{plugin} works with {detail}, which is not here at a version it accepts.",
+    "ar": "تعمل الإضافة ⁦{plugin}⁩ مع ⁦{detail}⁩، وهي غير موجودة هنا بإصدار تقبله."
+  },
+  "flow_cycle": {
+    "en": "These plugins would start each other in a loop: {path}.",
+    "ar": "ستشغّل هذه الإضافات بعضها بعضًا في حلقة: ⁦{path}⁩."
+  },
+  "flow_too_deep": {
+    "en": "This chain of plugin stages is longer than 16 steps: {path}.",
+    "ar": "سلسلة مراحل الإضافات هذه أطول من 16 خطوة: ⁦{path}⁩."
+  }
+}

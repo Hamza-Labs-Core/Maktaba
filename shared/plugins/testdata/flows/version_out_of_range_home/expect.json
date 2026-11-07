@@ -1,0 +1,84 @@
+{
+  "findings": [
+    {
+      "code": "flow_missing_plugin",
+      "severity": "warn",
+      "plugin": "dev.example.chapter-writer",
+      "detail": "dev.example.silences >=1.0.0, <2.0.0"
+    }
+  ],
+  "graph": {
+    "edges": [
+      {
+        "from": "core:audio.ready",
+        "kind": "trigger",
+        "to": "stage:dev.example.silences/find_silences"
+      },
+      {
+        "from": "stage:dev.example.chapter-writer/write_chapters",
+        "kind": "after",
+        "to": "stage:dev.example.chapter-writer/tidy"
+      },
+      {
+        "from": "stage:dev.example.chapter-writer/write_chapters",
+        "kind": "request",
+        "to": "stage:dev.example.chapter-writer/tidy"
+      },
+      {
+        "from": "stage:dev.example.silences/find_silences",
+        "kind": "emit",
+        "to": "event:dev.example.silences/silences.found"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "core:audio.ready",
+        "kind": "core",
+        "name": "audio.ready",
+        "plugin": "",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "event:dev.example.silences/silences.found",
+        "kind": "event",
+        "name": "silences.found",
+        "plugin": "dev.example.silences",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.chapter-writer/tidy",
+        "kind": "stage",
+        "name": "tidy",
+        "plugin": "dev.example.chapter-writer",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.chapter-writer/write_chapters",
+        "kind": "stage",
+        "name": "write_chapters",
+        "plugin": "dev.example.chapter-writer",
+        "state": "enabled",
+        "subject": "video"
+      },
+      {
+        "id": "stage:dev.example.silences/find_silences",
+        "kind": "stage",
+        "name": "find_silences",
+        "plugin": "dev.example.silences",
+        "state": "enabled",
+        "subject": "video"
+      }
+    ]
+  },
+  "messages": {
+    "ar": [
+      "تعمل الإضافة ⁦dev.example.chapter-writer⁩ مع ⁦dev.example.silences >=1.0.0, <2.0.0⁩، وهي غير موجودة هنا بإصدار تقبله."
+    ],
+    "en": [
+      "dev.example.chapter-writer works with dev.example.silences >=1.0.0, <2.0.0, which is not here at a version it accepts."
+    ]
+  }
+}
