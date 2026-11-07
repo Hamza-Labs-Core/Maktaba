@@ -1081,6 +1081,18 @@ build fails when the two differ.
   **Report a problem** (the account menu, the TV's Account, and **Report this** on error
   screens) shows what it sends first; **My reports** shows the admin's reply.
 
+- **Buying a paid plugin (Epic 54, story 54.19).** A paid plugin's page in Settings →
+  Plugins → Browse shows its price and **Buy**, or **Link this home to buy** on a home not
+  linked to a store account, which links it right there. Buy asks the store for a one-time
+  purchase intent signed by the home (the plugin and the language only, never the home's
+  address) and opens the store's buy page in a new tab: the buyer signs in to the store
+  account the home is linked to, sees the price in a currency an enabled payment provider
+  sells to their country, and pays on that provider's page; the home picks up the purchase
+  within 15 seconds. The store's buy pages run no script, sign-in returns only to a buy page
+  or the admin pages of the store itself, and the catalog carries each paid plugin's product
+  and prices. The store now runs its payment providers' webhooks. Nothing can be bought until
+  the store admin enables a provider.
+
 - **Paid plugins wait for their purchase (Epic 54, story 54.19).** A home linked to a store
   account fetches its entitlements from the store daily, signed with its own home store key
   (and every 15 seconds for 15 minutes after a Buy), checks each offline against the store

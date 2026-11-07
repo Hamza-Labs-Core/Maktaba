@@ -2,6 +2,15 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { ApiError, api, getPasskey } from "../api";
 import { useShell } from "../App";
+import { safeNext } from "../next";
+
+/** After signing in: back to the page that sent the buyer here (?next=, checked), else the account. */
+function afterSignIn(go: (p: string) => void) {
+  const next = safeNext(new URLSearchParams(location.search).get("next"), location.origin);
+  // a buy page or the admin pages are the server's own pages: a full load
+  if (next) location.assign(next);
+  else go("/account");
+}
 
 export function SignIn() {
   const s = useShell();
@@ -17,7 +26,7 @@ export function SignIn() {
     try {
       await api("POST", "/v1/sessions", { email, password, ...(code ? { code } : {}) });
       await s.reload();
-      s.go("/account");
+      afterSignIn(s.go);
     } catch (err) {
       if (err instanceof ApiError && err.code === "code_required") setNeedCode(true);
       setError(s.errorText(err));
@@ -29,7 +38,7 @@ export function SignIn() {
       const o = await api<{ challenge_id: string; publicKey: { challenge: string } }>("POST", "/v1/sessions/passkey/options");
       await api("POST", "/v1/sessions/passkey", { challenge_id: o.challenge_id, credential: await getPasskey(o.publicKey) });
       await s.reload();
-      s.go("/account");
+      afterSignIn(s.go);
     } catch (err) {
       setError(s.errorText(err));
     }

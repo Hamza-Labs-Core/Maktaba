@@ -136,6 +136,21 @@ files or CI logs.
    home): after a Buy it started it checks every 15 s for up to 15 minutes, otherwise daily.
    Then it downloads the package.
 
+**As built.** The catalog's `price` names a paid plugin's active product (`one_time` first,
+else `yearly`) and `extra.prices` its amounts in minor units by currency, from
+`store-commerce`. The home's `POST /api/plugins/store-account/buy` asks the store, signed with
+its home store key, for a purchase intent (`POST /v1/homes/{id}/purchase-intents`: the plugin
+id and the admin's language only; one use, 10 minutes, only its sha256 kept, migration
+`commerce/0002`), starts the 15-second entitlement checks, and the admin's browser posts the
+intent to `/buy/<plugin id>` in the tab the click opened. The store keeps it in a same-site
+cookie, sends a signed-out buyer to `/signin?next=` (the console follows `next` only to
+`/buy/…` or `/admin` on the store's own origin), shows the price in the first currency an
+enabled provider sells to the buyer's country (theirs, then USD, EUR, GBP, SAR, AED, EGP),
+and its pay step (same origin only) redirects to the provider's checkout. The pages run no
+script. The Worker builds the provider registry from `payment_providers` and the Worker
+secrets, and routes `POST /v1/payments/webhook/{provider}` to the provider's module. Buy on
+`plugins.maktaba.tv` itself (picking a linked home) is not built.
+
 **Split:** `maktaba_share = 15 %` of the price, `developer_share = 85 %`, computed by one
 function with a shared test table (rounding: Maktaba's share is rounded down to the cent, the
 developer gets the rest). Nothing else is taken from the developer's share by the store; the
