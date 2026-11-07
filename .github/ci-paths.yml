@@ -267,6 +267,8 @@ store:
   - 'tools/ci/payment_provider_allowlist.py'
   - '.github/workflows/_store.yml'
   - '.github/workflows/store-check-runner.yml'
+  - '.github/workflows/store-deploy.yml'
+  - '.github/workflows/store-weekly.yml'
 
 # ---- the server's tiers ---------------------------------------------------------------
 

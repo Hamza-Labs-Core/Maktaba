@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 56,
-    "stories": 664,
+    "stories": 668,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -6899,6 +6899,42 @@
       "slug": "plugin-files",
       "title": "Plugin files on disk, on Epic 51's packs code",
       "story_file": "specs/epics/54-plugins/story-54-38-plugin-files.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.39",
+      "epic": 54,
+      "num": "39",
+      "slug": "flows",
+      "title": "Flows: the declared graph, the leaf rule and the cycle check",
+      "story_file": "specs/epics/54-plugins/story-54-39-flows.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.40",
+      "epic": 54,
+      "num": "40",
+      "slug": "events-lineage",
+      "title": "Published events, cross-plugin triggers and run-time lineage",
+      "story_file": "specs/epics/54-plugins/story-54-40-events-lineage.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.41",
+      "epic": 54,
+      "num": "41",
+      "slug": "flow-chart",
+      "title": "The flow chart",
+      "story_file": "specs/epics/54-plugins/story-54-41-flow-chart.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.42",
+      "epic": 54,
+      "num": "42",
+      "slug": "joined-machines",
+      "title": "Third-party plugins on joined machines",
+      "story_file": "specs/epics/54-plugins/story-54-42-joined-machines.md",
       "plan_files": []
     },
     {
