@@ -36,9 +36,20 @@ services:
   pushgateway:
     <<: *guest
     image: prom/pushgateway:v1.11.1
-    # reached through Caddy on the witness, with a token, by network 2's probe
+    # reached through the front (Caddyfile.witness), with a token, by network 2's probe
     command: ["--web.listen-address=127.0.0.1:9091"]
     network_mode: host
+  # the witness's one public site (Caddyfile.witness): the probe's pushes and the status
+  # page's view, behind a token; a certificate by HTTP-01 for WITNESS_DOMAIN
+  front:
+    <<: *guest
+    image: ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    network_mode: host
+    env_file: /etc/maktaba/monitoring/front.env
+    volumes:
+      - /etc/maktaba/monitoring/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/maktaba/status:/srv:ro
+      - front_data:/data
   grafana:
     <<: *guest
     image: grafana/grafana:12.1.1
@@ -51,4 +62,15 @@ services:
 
 volumes:
   prometheus:
+  # the witness's one public site (Caddyfile.witness): the probe's pushes and the status
+  # page's view, behind a token; a certificate by HTTP-01 for WITNESS_DOMAIN
+  front:
+    <<: *guest
+    image: ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    network_mode: host
+    env_file: /etc/maktaba/monitoring/front.env
+    volumes:
+      - /etc/maktaba/monitoring/Caddyfile:/etc/caddy/Caddyfile:ro
+      - /var/lib/maktaba/status:/srv:ro
+      - front_data:/data
   grafana:

@@ -1,0 +1,30 @@
+# The witness's one public site (Epic 50 stories 50.10 and 50.11), behind a token: network 2's
+# probe (GitHub Actions, outside Hetzner) pushes its rounds to the Pushgateway here, and reads
+# network 1's view (the witness's own probes, status-export) for the status page. Nothing else
+# is reachable: Prometheus, Alertmanager and Grafana listen on loopback.
+#
+# Env: WITNESS_DOMAIN (witness.maktaba.tv), ACME_EMAIL, WITNESS_TOKEN (/etc/maktaba/witness.token)
+{
+	email {$ACME_EMAIL}
+}
+
+{$WITNESS_DOMAIN} {
+	@unauthed not header Authorization "Bearer {$WITNESS_TOKEN}"
+	respond @unauthed 401
+
+	handle /status/network1.json {
+		root * /srv
+		header Cache-Control no-store
+		file_server
+	}
+	@push {
+		method POST PUT
+		path /metrics/job/network2 /metrics/job/network2/*
+	}
+	handle @push {
+		reverse_proxy 127.0.0.1:9091
+	}
+	handle {
+		respond 404
+	}
+}
