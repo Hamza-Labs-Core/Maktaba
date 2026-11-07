@@ -197,6 +197,11 @@ maktaba-cloud license unrevoke --id lic_… --reason "…" --config cloud.toml
 
 ## Service admin — `/v1/admin/*` (bearer token + `service_admin`)
 
+The console that calls these is its own web bundle, `web/admin` (`pnpm dev:admin`,
+`pnpm build:admin` → `dist-admin/`), for `admin.maktaba.tv` only (Epic 50 story 50.32). The
+user app (`web/cloud`) has no admin route, link, string or module, and CI fails a user build
+that carries one (`tools/lint/no-admin-in-user-bundle.mjs`).
+
 | Method & path | Body | Success |
 |---|---|---|
 | `GET /v1/admin/accounts?q=&status=&plan=&limit=&offset=` | — | `{accounts:[{id, email, display_name?, plan, status, role, created_at, last_login_at?, servers}], total}` |

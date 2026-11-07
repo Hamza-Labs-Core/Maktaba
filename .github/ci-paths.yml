@@ -82,6 +82,8 @@ _web: &web
   # help.coverage.test.ts checks the help against these
   - 'api/internal/handlers/rules/schema.json'
   - 'api/internal/handlers/systemstatus/types.go'
+  # the cloud user bundle's admin check (story 50.32), run by the web unit job
+  - 'tools/lint/no-admin-in-user-bundle*.mjs'
 
 # make test-tokens: the token source and the files built from it
 _tokens: &tokens
@@ -210,8 +212,8 @@ unit_tokens:
 log_bench:
   - *ci
   - 'shared/log/**'
-  - 'cmd/maktaba-server/internal/logkeeper/**'
-  - 'cmd/maktaba-server/internal/logindex/**'
+  # the keeper and the index (shared since 53.17: the cloud runs them too)
+  - 'shared/logkeeper/**'
   - 'cmd/maktaba-server/internal/logbench/**'
   - 'cmd/maktaba-server/internal/supervisor/**'
   - 'cmd/maktaba-server/go.mod'
@@ -360,7 +362,7 @@ components:
   - 'plugind/**'
   - 'cmd/maktaba-server/internal/supervisor/plugins.go'
   - 'cmd/maktaba-server/internal/plugins/**'
-  - 'cmd/maktaba-server/internal/logkeeper/**'
+  - 'shared/logkeeper/**'
   - 'api/internal/plugins/**'
   - 'api/internal/handlers/plugins/**'
   - 'api/internal/router/p54_plugins.go'
@@ -510,6 +512,22 @@ mac_app:
   - 'deploy/packaging/node/build-release.sh'
   - 'pipeline/pyproject.toml'
   - 'pipeline/uv.lock'
+  # what runs on an idle Core home (the Bundle size check counts its processes and memory):
+  # the supervisor's processes, components, gates and runners, the components' defaults,
+  # the first-party bundle's runner groups, the plugin runner and the worker's ask for one
+  - 'cmd/maktaba-server/internal/supervisor/supervisor.go'
+  - 'cmd/maktaba-server/internal/supervisor/run.go'
+  - 'cmd/maktaba-server/internal/supervisor/reconcile.go'
+  - 'cmd/maktaba-server/internal/supervisor/components.go'
+  - 'cmd/maktaba-server/internal/supervisor/compcache*.go'
+  - 'cmd/maktaba-server/internal/supervisor/plugins.go'
+  - 'cmd/maktaba-server/internal/supervisor/runners.go'
+  - 'cmd/maktaba-server/internal/supervisor/instances.go'
+  - 'cmd/maktaba-server/internal/supervisor/env.go'
+  - 'shared/components/**'
+  - 'shared/plugins/**'
+  - 'pipeline/src/maktaba_plugin_runner/**'
+  - 'pipeline/src/maktaba_pipeline/plugins/native.py'
   - '.github/workflows/_mac-app.yml'
   - '.github/workflows/desktop-release.yml'
   - 'Makefile'

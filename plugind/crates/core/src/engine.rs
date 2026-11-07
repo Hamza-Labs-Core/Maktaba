@@ -35,6 +35,18 @@ pub const CODE_BAD_MANIFEST: &str = "plugin_bad_manifest";
 pub const CODE_LINK: &str = "plugin_link";
 pub const CODE_COMPILE: &str = "plugin_compile";
 pub const CODE_NOT_LOADED: &str = "plugin_not_loaded";
+/// A package whose compile took longer than the host's compile cap (54.02 §6).
+pub const CODE_COMPILE_TIMEOUT: &str = "plugin_compile_timeout";
+
+/// How long one package's compile may take (54.02 §6). A compile is not a job: it never
+/// counts against a job's time limit, and has this cap of its own instead, with the package
+/// size caps (54.01) bounding what is compiled. Cranelift cannot be stopped part way, and
+/// the sandbox lets the host start no process to kill, so a compile that overruns keeps its
+/// worker until it ends; its caller gets `plugin_compile_timeout` at the cap, and the package
+/// is refused from then on (never compiled again by this host).
+pub const COMPILE_TIMEOUT: Duration = Duration::from_secs(180);
+/// Compiles at once on a host: an overrunning package holds one of these, never a job slot.
+pub const COMPILE_WORKERS: usize = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoadError {
@@ -96,6 +108,8 @@ pub struct HostConfig {
     /// what health reports of the OS sandbox
     pub sandbox: String,
     pub sandbox_missing: Vec<String>,
+    /// one package's compile cap ([`COMPILE_TIMEOUT`]; tests shorten it)
+    pub compile_timeout: Duration,
 }
 
 struct Loaded {
@@ -114,6 +128,29 @@ pub struct Host {
     running: AtomicUsize,
     cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
     stop: Arc<AtomicBool>,
+    /// the compile workers ([`COMPILE_WORKERS`])
+    compiles: Arc<Semaphore>,
+    /// one compile per package at a time: a second caller waits and takes the first's cache
+    compiling: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// packages (by sha256) whose compile overran the cap, and why: refused from then on
+    refused: Mutex<HashMap<String, String>>,
+    /// the engine's compatibility hash (its settings and target), in the cache's names
+    config_hash: String,
+}
+
+/// The compile cache's file name for a component: its sha256, the Wasmtime version and the
+/// engine's compatibility hash, so an update of either never reuses a stale artifact
+/// (Wasmtime checks again on load, and a refusal recompiles).
+pub fn cache_file_name(sha256: &str, wasmtime: &str, config_hash: &str) -> String {
+    format!("{sha256}-{wasmtime}-{config_hash}.cwasm")
+}
+
+/// The engine's compatibility hash as hex (Engine::precompile_compatibility_hash).
+fn config_hash(engine: &Engine) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    engine.precompile_compatibility_hash().hash(&mut h);
+    format!("{:016x}", h.finish())
 }
 
 struct HasIo;
@@ -173,7 +210,12 @@ impl Host {
         // folders above its own)
         let plugins_dir = cfg.plugins_dir.canonicalize().unwrap_or_else(|_| cfg.plugins_dir.clone());
         let stop = Arc::new(AtomicBool::new(false));
+        let config_hash = config_hash(&engine);
         let host = Arc::new(Self {
+            compiles: Arc::new(Semaphore::new(COMPILE_WORKERS)),
+            compiling: Mutex::new(HashMap::new()),
+            refused: Mutex::new(HashMap::new()),
+            config_hash,
             pool: Semaphore::new(cfg.pool_size),
             engine,
             linker,
@@ -226,22 +268,132 @@ impl Host {
         if !audit::is_component(wasm) {
             return Err(load_err(audit::CODE_NOT_COMPONENT, "plugin.wasm is not a WebAssembly component"));
         }
-        let cache = self.cfg.cache_dir.join(format!("{}-{}.cwasm", sha256_hex(wasm), WASMTIME_VERSION));
-        if cache.is_file() {
-            // SAFETY: the cache folder is written only by this host, atomically, and the
-            // name binds the component's sha256 and this Wasmtime version; Wasmtime
-            // checks the engine's compatibility again and a refusal recompiles.
-            if let Ok(c) = unsafe { Component::deserialize_file(&self.engine, &cache) } {
-                return Ok(c);
+        let sha = sha256_hex(wasm);
+        let refused = |host: &Self| host.refused.lock().unwrap().get(&sha).cloned();
+        if let Some(why) = refused(self) {
+            return Err(load_err(CODE_COMPILE_TIMEOUT, why));
+        }
+        let cache = self.cfg.cache_dir.join(cache_file_name(&sha, WASMTIME_VERSION, &self.config_hash));
+        if let Some(c) = self.cached(&cache) {
+            return Ok(c);
+        }
+        let gate = self.compiling.lock().unwrap().entry(sha.clone()).or_default().clone();
+        let _gate = gate.lock().unwrap();
+        if let Some(c) = self.cached(&cache) {
+            return Ok(c);
+        }
+        if let Some(why) = refused(self) {
+            return Err(load_err(CODE_COMPILE_TIMEOUT, why));
+        }
+        let cap = self.cfg.compile_timeout;
+        let (tx, rx) = std::sync::mpsc::channel();
+        let began: Arc<Mutex<Option<Instant>>> = Arc::new(Mutex::new(None));
+        {
+            let (engine, wasm, cache, began, workers) =
+                (self.engine.clone(), wasm.to_vec(), cache.clone(), began.clone(), self.compiles.clone());
+            std::thread::Builder::new()
+                .name("compile".into())
+                .spawn(move || {
+                    let _worker = workers.acquire();
+                    let t = Instant::now();
+                    *began.lock().unwrap() = Some(t);
+                    let r = engine.precompile_component(&wasm);
+                    // an overrun is refused: never cached, so no later load takes it
+                    if let (Ok(bytes), true) = (&r, t.elapsed() <= cap) {
+                        let tmp = cache.with_extension(format!("cwasm.tmp-{}", std::process::id()));
+                        if std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, &cache)).is_err() {
+                            let _ = std::fs::remove_file(&tmp);
+                        }
+                    }
+                    let _ = tx.send((r, t.elapsed()));
+                })
+                .map_err(|e| load_err(CODE_COMPILE, e))?;
+        }
+        let waited = Instant::now();
+        match rx.recv_timeout(cap) {
+            Ok((Ok(bytes), took)) => {
+                self.cfg.logs.host(
+                    "info",
+                    "plugin_compiled",
+                    serde_json::json!({"sha256": &sha[..12], "ms": took.as_millis() as u64, "bytes": wasm.len()}),
+                );
+                // SAFETY: the bytes were produced by this engine a moment ago.
+                unsafe { Component::deserialize(&self.engine, &bytes) }.map_err(|e| load_err(CODE_COMPILE, e))
+            }
+            Ok((Err(e), _)) => Err(load_err(CODE_COMPILE, e)),
+            Err(_) => {
+                // refused only when its own compile overran (not a wait behind other compiles)
+                let started = *began.lock().unwrap();
+                let detail = format!("compiling the package took longer than {}s", cap.as_secs());
+                if started.is_some_and(|t| t.elapsed() >= cap) {
+                    self.refused.lock().unwrap().insert(sha.clone(), detail.clone());
+                }
+                self.cfg.logs.host(
+                    "warn",
+                    CODE_COMPILE_TIMEOUT,
+                    serde_json::json!({"sha256": &sha[..12], "waited_ms": waited.elapsed().as_millis() as u64,
+                        "compiling": started.is_some()}),
+                );
+                Err(load_err(CODE_COMPILE_TIMEOUT, detail))
             }
         }
-        let bytes = self.engine.precompile_component(wasm).map_err(|e| load_err(CODE_COMPILE, e))?;
-        let tmp = cache.with_extension(format!("cwasm.tmp-{}", std::process::id()));
-        if std::fs::write(&tmp, &bytes).and_then(|_| std::fs::rename(&tmp, &cache)).is_err() {
-            let _ = std::fs::remove_file(&tmp);
+    }
+
+    /// The compiled component in the cache, when it is there and this engine takes it.
+    fn cached(&self, cache: &Path) -> Option<Component> {
+        if !cache.is_file() {
+            return None;
         }
-        // SAFETY: the bytes were produced by this engine a moment ago.
-        unsafe { Component::deserialize(&self.engine, &bytes) }.map_err(|e| load_err(CODE_COMPILE, e))
+        // SAFETY: the cache folder is written only by this host, atomically, and the name
+        // binds the component's sha256, this Wasmtime version and the engine's settings;
+        // Wasmtime checks the engine's compatibility again and a refusal recompiles.
+        unsafe { Component::deserialize_file(&self.engine, cache) }.ok()
+    }
+
+    /// Compiles every installed package into the cache in the background, one at a time
+    /// (54.02 §6): after an update whose Wasmtime or settings changed, each recompiles once
+    /// here rather than in its first job. The host is ready meanwhile; a job whose package
+    /// is not warm yet compiles it itself (or waits for the compile under way).
+    pub fn warm(self: &Arc<Self>) {
+        let host = self.clone();
+        let _ = std::thread::Builder::new().name("warm".into()).spawn(move || {
+            let t = Instant::now();
+            let (mut packages, mut compiled, mut failed) = (0u64, 0u64, 0u64);
+            let cache = host.cfg.cache_dir.canonicalize().unwrap_or_else(|_| host.cfg.cache_dir.clone());
+            let dirs = |d: &Path| -> Vec<PathBuf> {
+                let mut v: Vec<PathBuf> = std::fs::read_dir(d)
+                    .map(|r| r.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect())
+                    .unwrap_or_default();
+                v.sort();
+                v
+            };
+            'all: for plugin in dirs(&host.plugins_dir) {
+                if plugin.canonicalize().map(|p| p == cache).unwrap_or(false) {
+                    continue;
+                }
+                for pkg in dirs(&plugin) {
+                    if host.stop.load(Ordering::Relaxed) {
+                        break 'all;
+                    }
+                    let Ok(wasm) = std::fs::read(pkg.join("plugin.wasm")) else { continue };
+                    packages += 1;
+                    let name = cache_file_name(&sha256_hex(&wasm), WASMTIME_VERSION, &host.config_hash);
+                    if host.cfg.cache_dir.join(name).is_file() {
+                        continue;
+                    }
+                    match host.compile(&wasm) {
+                        Ok(_) => compiled += 1,
+                        Err(_) => failed += 1,
+                    }
+                }
+            }
+            host.cfg.logs.host(
+                "info",
+                "plugin_cache_warm",
+                serde_json::json!({"packages": packages, "compiled": compiled, "failed": failed,
+                    "ms": t.elapsed().as_millis() as u64}),
+            );
+        });
     }
 
     /// Validates, audits, compiles and pre-instantiates a package (`Preload`, 54.02 §6).
@@ -302,7 +454,6 @@ impl Host {
 
     /// Runs one job (54.02 §2, §5). Progress and checkpoints go to `progress` as they come.
     pub fn run(&self, req: &Run, progress: Progress) -> RunResult {
-        let started = Instant::now();
         let mut res = RunResult {
             invocation_id: req.invocation_id.clone(),
             outcome: Outcome::Refused,
@@ -318,11 +469,18 @@ impl Host {
             detail: String::new(),
             checkpoint: None,
             limits_clamped: false,
+            compile_ms: 0,
+            wait_ms: 0,
         };
         let key = (req.plugin_id.clone(), req.version.clone());
         let mut loaded = self.loaded.lock().unwrap().get(&key).cloned();
         if loaded.is_none() {
-            if let Err(e) = self.preload(&req.plugin_id, &req.version, &req.package_path) {
+            // a package not preloaded (a host that started after its install, a cache an
+            // update made stale) is compiled here, before the job's clock starts
+            let t = Instant::now();
+            let pre = self.preload(&req.plugin_id, &req.version, &req.package_path);
+            res.compile_ms = t.elapsed().as_millis() as u64;
+            if let Err(e) = pre {
                 res.error_code = e.code.into();
                 res.detail = e.detail;
                 return res;
@@ -342,8 +500,13 @@ impl Host {
                 serde_json::json!({"plugin": req.plugin_id, "job_id": req.job.id}),
             );
         }
+        let waiting = Instant::now();
         let _pool = self.pool.acquire();
         let _mine = loaded.sem.acquire();
+        res.wait_ms = waiting.elapsed().as_millis() as u64;
+        // the job's own time limit counts from here: a compile or a wait for a slot is not
+        // the plugin's time (54.02 §5)
+        let started = Instant::now();
         let cancel = Arc::new(AtomicBool::new(false));
         self.cancels.lock().unwrap().insert(req.invocation_id.clone(), cancel.clone());
         self.running.fetch_add(1, Ordering::Relaxed);

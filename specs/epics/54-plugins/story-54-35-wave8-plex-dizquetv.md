@@ -2,11 +2,23 @@
 
 > Epic 54 · Phase 4 · Depends on: 54.34 · Needed by: 54.36
 
+**Only the Plex stages move.** dizqueTV stores the programme bodies its stages write, which
+carry the Plex token, and a plugin could read them back: those stages stay in the worker until
+the door builds programmes on the home (issue #827).
+
 ## Why
 
 The Plex and dizqueTV extensions hold the home's most sensitive settings (the Plex token) and
 talk to other products. As first-party plugins they must keep working without ever holding the
 secret: they call through the home's service door (story 31.R), which adds it.
+
+The Plex stages move in this story. The dizqueTV stages stay in the worker: their programmes
+carry the Plex token in the request body, and dizqueTV stores the programmes, so a plugin
+could read the token back through the same paths it writes them with. A door that filled the
+token into a body would have to scrub every dizqueTV answer, transformed or partial copies
+included. That is a larger promise than adding a header. They move once the door builds a
+programme on the home from the plugin's Plex item ids, so the token crosses the plugin
+boundary in neither direction (issue #827).
 
 ## Description
 
@@ -106,3 +118,18 @@ Per stage switch; per release Epic 51 rollback.
 ### Dependencies
 
 54.34; Epic 31 story 31.R (the service door).
+
+## Built (2026-11-07)
+
+Wave 8 moved `plex_index`, `plex_collections_import`, `plex_collection`, `plex_groups` and
+`plex_livetv` into `tv.maktaba.plex`, in the `service` runner, which has no network (roles in
+the wave's `NNNN_fp_roles` migration). `plex_collections_import` (Epic 56) moves with them:
+`ext.plex` maps to one plugin, and its stages are the manifest's. Every Plex call goes through
+the home's service door: on the home the plugin API's `trusted/service`, on a joined machine
+the worker's channel to the home. The door adds the token and scrubs it out of every answer;
+the plugin holds neither the token nor Plex's address. The door's Plex allow-list gains the
+Live TV calls `plex_livetv` makes, for a caller on the home only. The dizqueTV stages stay in
+the worker (§ Why, issue #827). Parity (T01) runs a library through index, collection import,
+collection and groups, and Live TV's registration and channel map, against a fake Plex behind
+HTTP on each side: the calls Plex receives, with the token, are identical, and N16 holds. The
+sandbox test (T02) checks the `service` runner has no network.

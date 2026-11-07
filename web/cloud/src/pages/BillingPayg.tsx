@@ -11,9 +11,9 @@ import { Card } from "@ds/components/Card/Card";
 import { Input } from "@ds/components/Input/Input";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api } from "../api";
-import { useI18n } from "../i18n";
-import { Banner, useBytes, useErrorMessage, useLoad, useMoney } from "../ui";
+import { api } from "../shared/api";
+import { useI18n } from "../shared/i18n";
+import { Banner, useBytes, useErrorMessage, useLoad, useMoney } from "../shared/ui";
 import type { Plan } from "./Billing";
 
 export interface UsageByMode {

@@ -7392,12 +7392,14 @@
   "plugins.browse.install": "Install",
   "plugins.buy.price_one_time": "{price}, one time",
   "plugins.buy.price_yearly": "{price} a year",
-  "plugins.buy.paid_note": "A paid plugin. It installs now and waits for its purchase; once bought, it starts by itself.",
+  "plugins.buy.paid_note": "A paid plugin. Buy it first: its download is only for homes that bought it, and it starts by itself once installed.",
   "plugins.buy.buy": "Buy",
   "plugins.buy.link": "Link this home to buy",
   "plugins.buy.started": "Finish paying on the store's page. The plugin starts by itself once the purchase arrives.",
   "plugins.buy.popup_blocked": "Your browser blocked the store's page. Allow pop-ups for Maktaba and try again.",
   "plugins.error.not_for_sale": "This plugin isn't for sale.",
+  "plugins.error.paid_downloads_unavailable": "This server can't download paid plugins. Link it to a store account first.",
+  "plugins.error.entitlement_missing": "This home hasn't bought this plugin yet. Buy it, then install it.",
   "plugins.browse.update": "Update to {version}",
   "plugins.browse.installed_now": "Installed. Grant it what it needs on its page, then turn it on.",
   "plugins.browse.rate": "Rate it",
@@ -7593,5 +7595,6 @@
   "direct.state.checking": "Checking from outside. This takes a minute or two.",
   "direct.manual": "I forwarded a port by hand",
   "direct.manualPort": "Public port",
-  "direct.checkNow": "Check now"
+  "direct.checkNow": "Check now",
+  "direct.rebinding": "Apps on this network can't use the home's secure name: your router blocks it (DNS rebinding protection). Apps will use its address instead."
 }

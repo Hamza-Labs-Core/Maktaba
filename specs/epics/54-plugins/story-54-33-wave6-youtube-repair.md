@@ -96,3 +96,15 @@ Per stage switch; per release Epic 51 rollback.
 ### Dependencies
 
 54.32.
+
+## Built (2026-11-07)
+
+Wave 6 moved `youtube_sync`, `youtube_fetch`, `youtube_backfill` and `exact_dates` into
+`tv.maktaba.youtube` and `repair_broken` into `tv.maktaba.repair` (runner group `net`; roles
+in the wave's `NNNN_fp_roles` migration). The hosts are the manifest's `net` list; the
+sandbox opens the network for the group as a whole (README §15.12), and the nightly host
+check (T02) follows in issue #805. A download's `probe` is held by the worker until the job
+commits. Parity (T01) runs a channel listing, two downloads and a back-catalogue fill with
+the recorded yt-dlp, the five outcomes of a repair, and the exact dates of a series, with
+N16. The path check (T03) follows with issue #796, and the rehearsal scenario 16.6 (T04)
+with issue #804.

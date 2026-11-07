@@ -12,11 +12,14 @@
 
 1. The cloud's dashboards in the service admin view (Epic 53.17) and the witness's Grafana:
    `relay:mbit_per_second`, `relay_capacity_used`, `relay_tunnels_used` over the last 30 days.
-2. The measured figures the rules use: `relay_measured_mbit_per_second` and
+2. The relay's warnings in the service admin's cloud log view
+   ([relay warnings, last 2 h](https://admin.maktaba.tv/logs?service=cloud.relay&level=warn&last=2h)):
+   a node near its limit says so before it refuses.
+3. The measured figures the rules use: `relay_measured_mbit_per_second` and
    `relay_measured_tunnels` on the witness (`/var/lib/node_exporter/textfile/relay_capacity.prom`).
    The planning figures (300 Mbit/s, 5,000 tunnels) are only placeholders until a staging run;
    if the sizing table has a row for the pair's plan, use it.
-3. Is the growth real (more paying homes), or one home (a viral link: [abuse-ddos.md](abuse-ddos.md))?
+4. Is the growth real (more paying homes), or one home (a viral link: [abuse-ddos.md](abuse-ddos.md))?
 
 ## Do
 

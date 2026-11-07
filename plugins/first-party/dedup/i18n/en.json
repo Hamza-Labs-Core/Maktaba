@@ -1,0 +1,1 @@
+{"fp.dedup.name": "Duplicates", "fp.dedup.summary": "Finds duplicate videos, merges each group into the copy it keeps, and empties or restores the file trash."}

@@ -11,7 +11,9 @@ import { nightlyExport } from "./exports";
 import * as homes from "./homes";
 import { entitlements } from "./entitlements";
 import { buyPage, purchaseIntent } from "./buy";
+import { listPurchases, movePurchaseRoute } from "./purchases";
 import { paymentsWebhook } from "./payments";
+import { paidDownloadURL, paidPackage } from "./paid";
 import { Refusal, json, problem, refuse } from "./http";
 import { type Mail, deliver } from "./mail";
 import { resignPage } from "./publish";
@@ -63,6 +65,9 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/homes\/link$/, homes.link],
   ["GET", /^\/v1\/homes$/, homes.listHomes],
   ["DELETE", /^\/v1\/homes\/([\w-]+)$/, homes.unlink],
+  // story 54.19 §6: the buyer's purchases, and moving one to another linked home
+  ["GET", /^\/v1\/purchases$/, listPurchases],
+  ["POST", /^\/v1\/purchases\/([\w-]+)\/move$/, movePurchaseRoute],
   ["POST", /^\/v1\/admin\/bootstrap$/, admin.bootstrap],
   ["POST", /^\/v1\/admin\/roles$/, admin.grantRole],
   ["DELETE", /^\/v1\/admin\/roles\/([\w-]+)\/([a-z_]+)$/, admin.revokeRole],
@@ -102,6 +107,8 @@ const HOME_ROUTES: [string, RegExp, (env: Env, req: Request, ...p: string[]) => 
   // story 54.19 §5: a linked home's purchase intent for its admin's Buy, and the payment
   // providers' webhooks (each verified by its own module; no session, no cookie)
   ["POST", /^\/v1\/homes\/([\w-]+)\/purchase-intents$/, purchaseIntent],
+  // story 54.19 §6: a paid package's download URL, against a valid entitlement
+  ["POST", /^\/v1\/homes\/([\w-]+)\/downloads$/, paidDownloadURL],
   ["POST", /^\/v1\/payments\/webhook\/([a-z0-9][a-z0-9_-]{0,31})$/, (env, req) => paymentsWebhook(env, req)],
   ["PUT", /^\/v1\/uploads\/([A-Za-z0-9_-]{43})$/, dev.workerUpload],
   // the isolated runner's single-use URLs (54.16 §1): it holds no session and no secret
@@ -163,6 +170,12 @@ async function adminPage(req: Request, env: Env): Promise<Response> {
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    // plugins-cdn.maktaba.tv/paid/* (a route of this Worker on the CDN's host): paid packages,
+    // by signed URL only (story 54.19 §6); the rest of that host is the public bucket
+    if (url.hostname === new URL(env.CDN_ORIGIN).hostname) {
+      if (url.pathname.startsWith("/paid/")) return paidPackage(env, req);
+      return new Response("not found", { status: 404 });
+    }
     if (url.pathname.startsWith("/v1/")) {
       try {
         return await api(req, env);
