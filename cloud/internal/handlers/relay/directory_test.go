@@ -145,9 +145,8 @@ func TestForwardToTheProcessWithTheTunnel(t *testing.T) {
 			t.Fatalf("byte %d wrong", i)
 		}
 	}
-	if calls, out := blue.meter.snapshot(); calls == 0 || out < 300000 {
-		t.Errorf("blue metered %d calls, %d bytes", calls, out)
-	}
+	// the owner meters once the body is through, just after the client's last byte
+	waitOn(t, "blue's meter", func() bool { calls, out := blue.meter.snapshot(); return calls > 0 && out >= 300000 })
 	if calls, _ := green.meter.snapshot(); calls != 0 {
 		t.Errorf("green metered %d calls, want 0 (it only forwarded)", calls)
 	}
