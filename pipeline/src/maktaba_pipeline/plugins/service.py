@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import functools
 import urllib.parse
 from collections.abc import Iterator, Mapping
 from contextvars import ContextVar
@@ -128,16 +129,23 @@ def plex_client(settings: Mapping[str, str]) -> Any:
     return relay.plex_client(settings)
 
 
+@functools.cache
+def _secret_fields() -> dict[str, frozenset[str]]:
+    """Each extension's secret setting fields (read once: the manifests are the release's)."""
+    from ..extensions import discover
+
+    return {
+        ext.manifest.name: frozenset(f.key for f in ext.manifest.settings if f.secret)
+        for ext in discover()
+    }
+
+
 def plugin_settings(
     settings: Mapping[str, Mapping[str, str]], services: tuple[str, ...]
 ) -> dict[str, dict[str, str]]:
     """What a plugin's job gets of the extensions' settings: no secret field, and for each
     service the door reaches, no address (``service:<name>`` stands for it)."""
-    from ..extensions import discover
-
-    secret: dict[str, set[str]] = {}
-    for ext in discover():
-        secret[ext.manifest.name] = {f.key for f in ext.manifest.settings if f.secret}
+    secret = _secret_fields()
     out: dict[str, dict[str, str]] = {}
     for name, values in settings.items():
         keep = {k: str(v) for k, v in values.items() if k not in secret.get(name, set())}

@@ -639,6 +639,8 @@ def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
     from .service import plugin_settings
 
     services = _services_of(stage)
+    if not services:
+        return {}  # no service: the job gets no extension settings, as before
     settings = getattr(ctx, "settings", None) or {}
     via = "worker" if any(relay.relayed(settings.get(s, {})) for s in services) else "api"
     return {"extension_settings": plugin_settings(settings, services), "service_via": via}

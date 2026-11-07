@@ -39,8 +39,8 @@ def test_the_route_follows_where_the_worker_runs(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(relay, "node_may_relay", lambda: True)
     node = SimpleNamespace(settings={"plex": {"url": "http://192.168.1.4:32400"}})
     assert native._service_frame("plex_index", node)["service_via"] == "worker"
-    # a stage that reaches no service
-    assert native._service_frame("tv_gc", ctx)["service_via"] == "api"
+    # a stage that reaches no service gets nothing (no settings, no work per job)
+    assert native._service_frame("tv_gc", ctx) == {}
 
 
 @pytest.mark.asyncio
