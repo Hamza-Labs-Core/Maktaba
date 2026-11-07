@@ -1065,7 +1065,7 @@
       "licence": "",
       "loops": [],
       "on_demand": true,
-      "placement": "home",
+      "placement": "any",
       "platforms": [
         "darwin-arm64",
         "linux-amd64",
@@ -3288,7 +3288,10 @@
     "runner_crash_loop",
     "plugin_trusted_unsigned",
     "plugin_trusted_version",
-    "kept_off"
+    "kept_off",
+    "plugin_home_only",
+    "plugin_no_gpu",
+    "plugin_package_untrusted"
   ],
   "schema": 1
 }

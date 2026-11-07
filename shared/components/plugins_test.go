@@ -72,3 +72,36 @@ func TestWithPluginEntries(t *testing.T) {
 		t.Fatalf("plugins.host %+v", host)
 	}
 }
+
+// Story 54.42 §1: a plugin's placement makes its entry placeable on joined machines (any,
+// gpu) or the home's (home, or none said); a machine runs a gpu one only with a gpu pool.
+func TestPluginPlacement(t *testing.T) {
+	for runsOn, want := range map[string]string{"": "home", "home": "home", "any": "any", "gpu": "any"} {
+		if got := PluginEntry(PluginSpec{ID: "dev.example.a", RunsOn: runsOn}).Placement; got != want {
+			t.Errorf("%q: placement %s, want %s", runsOn, got, want)
+		}
+	}
+	s, err := PluginSpecOf([]byte(`{"id":"dev.example.a","placement":"gpu","stage":[]}`), "")
+	if err != nil || s.RunsOn != PlacementGPU {
+		t.Fatalf("%+v %v", s, err)
+	}
+	for _, c := range []struct {
+		placement string
+		gpu       bool
+		want      string
+	}{{"any", false, ""}, {"gpu", true, ""}, {"gpu", false, ReasonPluginNoGPU}, {"home", true, ReasonPluginHomeOnly}, {"", false, ReasonPluginHomeOnly}} {
+		if got := RunsOnMachine(c.placement, c.gpu); got != c.want {
+			t.Errorf("%+v: %q", c, got)
+		}
+	}
+	cat := Default()
+	host, _ := cat.Get(PluginsHost)
+	if host.Placement != "any" || !host.OnDemand {
+		t.Fatalf("plugins.host %+v", host)
+	}
+	for _, r := range MachineReasons {
+		if !slices.Contains(cat.Reasons, r) {
+			t.Errorf("%s is not in catalog.toml's reasons", r)
+		}
+	}
+}

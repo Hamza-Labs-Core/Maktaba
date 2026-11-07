@@ -83,6 +83,11 @@ class PluginExtension:
 
         schedules = {s["stage"]: s["every_minutes_setting"] for s in self.doc.get("schedule", [])}
         events = pm.events()
+        # where it runs (story 54.42 §1): the home (the default), any machine, or a machine
+        # that serves the gpu pool (its stages take that pool, as core GPU stages do)
+        runs_on = str(self.doc.get("placement") or "home")
+        placement = "home" if runs_on == "home" else "any"
+        pool = "gpu" if runs_on == "gpu" else "plugins"
         for s in self.doc["stage"]:
             name = pm.queue_name(self.plugin_id, s["name"])
             subject = "season" if s["subject"] == "series" else s["subject"]
@@ -92,7 +97,7 @@ class PluginExtension:
                     name=name,
                     label=f"{self.plugin_id}: {s['name']}",
                     subject_kinds=(subject,),  # type: ignore[arg-type]
-                    pool="plugins",
+                    pool=pool,
                     lane="sources" if subject == "catalog" else "media",
                     lane_order=900,
                     version=int(s["version"]),
@@ -102,7 +107,7 @@ class PluginExtension:
                     entry_for=("catalog",) if subject == "catalog" else (),
                     extension=PREFIX + self.plugin_id,
                     max_attempts=2,
-                    placement="home",
+                    placement=placement,  # type: ignore[arg-type]
                     every_minutes_rule=(f"plugins.{self.plugin_id}", setting) if setting else None,
                 )
             )

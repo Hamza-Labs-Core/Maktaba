@@ -64,6 +64,43 @@ type PluginSpec struct {
 	TimeoutS           int
 	// Since is the server version that installed it.
 	Since string
+	// RunsOn is the manifest's placement (README §4.13): home (also ""), any or gpu.
+	RunsOn string
+}
+
+// The manifest's placements (story 54.42 §1).
+const (
+	PlacementHome = "home"
+	PlacementAny  = "any"
+	PlacementGPU  = "gpu"
+)
+
+// The reasons a joined machine gives for a plugin it does not run (story 54.42).
+const (
+	// ReasonPluginHomeOnly: the plugin's placement is the home.
+	ReasonPluginHomeOnly = "plugin_home_only"
+	// ReasonPluginNoGPU: a gpu plugin on a machine that serves no gpu pool.
+	ReasonPluginNoGPU = "plugin_no_gpu"
+	// ReasonPluginUntrusted: the package the machine fetched failed its verification.
+	ReasonPluginUntrusted = "plugin_package_untrusted"
+)
+
+// MachineReasons are the codes a joined machine adds for plugins.
+var MachineReasons = []string{ReasonPluginHomeOnly, ReasonPluginNoGPU, ReasonPluginUntrusted}
+
+// RunsOnMachine is why a joined machine does not run a plugin of this placement ("" when
+// it does): gpu needs a machine that serves the gpu pool.
+func RunsOnMachine(placement string, servesGPU bool) string {
+	switch placement {
+	case PlacementAny:
+		return ""
+	case PlacementGPU:
+		if servesGPU {
+			return ""
+		}
+		return ReasonPluginNoGPU
+	}
+	return ReasonPluginHomeOnly
 }
 
 // PluginEntry derives a plugin's catalog entry (story 54.37 §1 table).
@@ -99,10 +136,19 @@ func PluginEntry(p PluginSpec) *Component {
 		TitleKey: "plugin." + p.ID + ".name", DescKey: "plugin." + p.ID + ".summary",
 		Stages: nonNil(slices.Clone(p.Stages)), Processes: []string{}, Loops: []string{},
 		Requires: requires, Wants: wants, Conflicts: []string{}, Settings: []string{"plugins." + p.ID},
-		Platforms: platforms, Placement: "home", Licence: "", Features: []string{}, Bundles: []string{},
+		Platforms: platforms, Placement: catalogPlacement(p.RunsOn), Licence: "", Features: []string{}, Bundles: []string{},
 		Since: p.Since, Sources: map[string]string{}, Files: []File{},
 		Drain: Drain{GraceS: grace, Checkpoint: true},
 	}
+}
+
+// catalogPlacement is a plugin entry's Epic 51 placement: home for a home plugin, any for
+// one a joined machine may run (any, gpu).
+func catalogPlacement(runsOn string) string {
+	if runsOn == PlacementAny || runsOn == PlacementGPU {
+		return "any"
+	}
+	return "home"
 }
 
 // IsPlugin reports whether an id is a plugin entry's.
@@ -171,6 +217,7 @@ type installedManifest struct {
 	ID           string   `json:"id"`
 	Version      string   `json:"version"`
 	Platforms    []string `json:"platforms"`
+	Placement    string   `json:"placement"`
 	Capabilities struct {
 		Required []string `json:"required"`
 		Optional []string `json:"optional"`
@@ -194,7 +241,7 @@ func PluginSpecOf(manifest []byte, since string) (PluginSpec, error) {
 		return PluginSpec{}, errors.New("components: a plugin manifest with no id")
 	}
 	s := PluginSpec{ID: m.ID, Version: m.Version, Platforms: m.Platforms, Required: m.Capabilities.Required,
-		Optional: m.Capabilities.Optional, TimeoutS: m.Resources.TimeoutS, Since: since}
+		Optional: m.Capabilities.Optional, TimeoutS: m.Resources.TimeoutS, Since: since, RunsOn: m.Placement}
 	for _, st := range m.Stage {
 		s.Stages = append(s.Stages, PluginQueueName(m.ID, st.Name))
 	}
