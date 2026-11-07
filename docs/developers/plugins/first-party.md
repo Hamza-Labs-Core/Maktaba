@@ -28,7 +28,9 @@ how they are kept in check, and how a stage moves.
 
 A first-party plugin runs as Python in `maktaba-plugin-runner`, one process per **runner group**
 (`light`, `files` for the plugins that rewrite or move library files, `ml`, `index`, `net`,
-`service`, and `fp` for fingerprints). A runner has no
+`service`, and `fp` for fingerprints). A shared group's runner starts when the worker has a
+job for it and stops after ten idle minutes, so an idle home runs none; until it is up, the
+worker runs the job itself. A runner has no
 database password and no secrets: the supervisor strips them from its environment and the
 runner refuses to start if any is there. Before it imports a plugin it
 
