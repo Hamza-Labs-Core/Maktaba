@@ -190,9 +190,16 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	var upd atomic.Pointer[updates]
 	// this machine's own log files, for the logs page and the bundle (serve_logfiles.go)
 	logDirs := logfiles.Dirs{Logs: config.LogsDir(), Updates: updatesDirOf(cfg, releaseDir)}
+	// this machine's metrics, for the home's dashboards (serve_metrics.go): set once the
+	// supervisor has built them
+	var machMetrics atomic.Pointer[machineMetrics]
 	commands := func(ctx context.Context, name string, args json.RawMessage) (bool, bool, any) {
 		if name == "logs.files" {
 			ok, detail := logFilesCommand(ctx, logDirs, args)
+			return true, ok, detail
+		}
+		if name == "metrics" {
+			ok, detail := metricsCommand(ctx, machMetrics.Load())
 			return true, ok, detail
 		}
 		if h, ok, detail := upd.Load().command(ctx, name, args); h {
@@ -544,7 +551,9 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	packsRoutes.token = token
 	admin = packsRoutes.adminHandler(admin)
 	admin = logFilesAdmin(admin, token, logDirs)
-	admin = metricsAdmin(admin, logDirs.Updates, packsRoutes.metrics, newHostMetrics(cfg.Server.DataDir))
+	mm := &machineMetrics{Dir: logDirs.Updates, Comps: packsRoutes.metrics, Host: newHostMetrics(cfg.Server.DataDir)}
+	machMetrics.Store(mm)
+	admin = metricsAdmin(admin, mm)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}

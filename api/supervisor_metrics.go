@@ -98,9 +98,10 @@ func (d defaultMaktaba) Gather() ([]*dto.MetricFamily, error) {
 }
 
 // metricsHandler is the API's /metrics: the process's registry, the maktaba_* families on
-// the default registry, and its supervisor's update metrics.
-func metricsHandler(supervisorURL string) http.Handler {
+// the default registry, its supervisor's update metrics and, on a home, the joined
+// machines' per-machine families (nodes; nil: none).
+func metricsHandler(supervisorURL string, nodes *nodeMetrics) http.Handler {
 	return promhttp.HandlerFor(prometheus.Gatherers{metrics.Reg(), defaultMaktaba{own: metrics.Reg()},
-		supervisorMetrics{url: supervisorURL, client: &http.Client{Timeout: 3 * time.Second}}},
+		machinesMetrics{local: supervisorMetrics{url: supervisorURL, client: &http.Client{Timeout: 3 * time.Second}}, nodes: nodes}},
 		promhttp.HandlerOpts{EnableOpenMetrics: true, ProcessStartTime: time.Now()})
 }

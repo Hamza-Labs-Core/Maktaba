@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **The home's dashboards show every joined machine (Epic 53 story 53.12).** The Overview's
+  memory, disk free and load, and its components and restarts, now carry a line for each joined
+  machine beside the home's. The home asks each machine's own agent over the cluster channel at
+  most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
+  never holds the dashboards back. Component series keep their cap per machine, and come last on a
+  board so each machine's memory, disk and load stay within its 50 lines.
 - **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
   Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
   home's secure LAN names from the browser, and when none answers it explains that the router

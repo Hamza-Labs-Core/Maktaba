@@ -1,5 +1,5 @@
 {
-  "comment": "The series the dashboards keep (Epic 53 story 53.12): only these are stored, so a new metric with many label values cannot grow the store. kind is counter (stored as a rate per minute), gauge (the last value) or latency (a histogram, stored as <name>_count, its requests per minute over every label set, and <name>_p95, the minute's 95th percentile). Each series keeps at most label_cap label sets; a series whose labels are catalog ids (id_labels) keeps up to the catalog's size.",
+  "comment": "The series the dashboards keep (Epic 53 story 53.12): only these are stored, so a new metric with many label values cannot grow the store. kind is counter (stored as a rate per minute), gauge (the last value) or latency (a histogram, stored as <name>_count, its requests per minute over every label set, and <name>_p95, the minute's 95th percentile). Each series keeps at most label_cap label sets; a series whose labels are catalog ids (id_labels) keeps up to id_label_cap per machine, for up to label_cap machines (the home's /metrics carries every joined machine's components), and comes last on its board so each machine's own lines are kept within the board's 50.",
   "label_cap": 50,
   "id_label_cap": 200,
   "series": [
