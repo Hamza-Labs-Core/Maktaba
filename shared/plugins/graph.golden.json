@@ -757,7 +757,7 @@
    "may_request": [],
    "model_rules": null,
    "name": "dizquetv_show",
-   "placement": "any",
+   "placement": "home",
    "pool": "network_tv",
    "relay": null,
    "storage": null,

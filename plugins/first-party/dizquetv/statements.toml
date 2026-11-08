@@ -1,0 +1,12 @@
+# The shared pipeline modules whose statements tv.maktaba.dizquetv's stages run (story 54.24
+# §1, issue #827): the dizqueTV extension's domain code (its stages wrap it), what it reads of
+# the Plex index and the seasons, and the rules.
+modules = [
+    "maktaba_pipeline.rules:read",
+    "maktaba_pipeline.extensions.links",
+    "maktaba_pipeline.extensions.plex_items:details_for",
+    "maktaba_pipeline.extensions.seasons",
+    "maktaba_pipeline.extensions.dizquetv.shows",
+    "maktaba_pipeline.extensions.dizquetv.channels",
+    "maktaba_pipeline.extensions.dizquetv.audit",
+]

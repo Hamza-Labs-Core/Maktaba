@@ -1937,6 +1937,15 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   `plex_livetv` makes (DVRs, tuners, lineups, the channel map, guide reloads), each marked for a
   caller on the home; a node is never allowed them. A caller on the home is served whatever
   the relay switch for nodes says, under the same rate limits.
+- **dizqueTV's programmes are built on the home (issue #827).** `tv.maktaba.dizquetv` runs its
+  three stages in the `service` runner. The door has its own dizqueTV operations, not body
+  templating: a show or filler write sends a token-free record of each Plex item, which the
+  door checks field by field and builds into a programme with Plex's address, the server's
+  name and the token. A channel's programmes are references (an index into the stored
+  channel, or a show id and a rating key) that the door fills in from what dizqueTV holds.
+  Every read is a projection that leaves out any field holding a secret, a final check refuses
+  any answer naming the token in any form, and raw writes that could carry a programme are
+  refused. dizqueTV is home-only in the door, so the stages are placed on the home.
 - **An extension's component hands its stages to one plugin.** `ext.plex` keeps its kind and
   its settings and names `tv.maktaba.plex`; all five of its stages move, including
   `plex_collections_import` (Epic 56), since the catalog's stages and the manifest's must

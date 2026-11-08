@@ -28,7 +28,7 @@ from typing import Any
 from ...engine.context import StageContext, StageFailure
 from ...engine.graph import StageResult, Subject
 from ...engine.hashing import canonical_hash
-from ...engine.sql import dumps, loads, now, to_ts
+from ...engine.sql import dumps, is_pg, loads, now, to_ts
 from ...engine.stages import review_pages
 from ...integrations.dizquetv import DizqueError, DizqueTV
 from ...integrations.plex import TransportError
@@ -93,8 +93,96 @@ def _rating_keys(
 # ------------------------------------------------------------------ tracing items
 
 
-def _marks(start: int, n: int) -> str:
-    return ",".join(f"${i + start}" for i in range(n))
+# One constant text per statement (a first-party plugin's statements are registered by their
+# text, story 54.24 §1): a list goes as one array parameter on Postgres, as JSON on SQLite.
+
+
+async def _item_links(db: Any, keys: list[str]) -> list[Any]:
+    if is_pg(db):
+        return list(
+            await db.fetch(
+                "SELECT subject_id, external_id FROM external_links WHERE target = 'plex_item'"
+                " AND subject_kind = 'video' AND external_id = ANY($1::text[])",
+                keys,
+            )
+        )
+    return list(
+        await db.fetch(
+            "SELECT subject_id, external_id FROM external_links WHERE target = 'plex_item'"
+            " AND subject_kind = 'video' AND external_id IN (SELECT value FROM json_each($1))",
+            dumps(keys),
+        )
+    )
+
+
+async def _seasons_of(db: Any, vids: list[str]) -> list[Any]:
+    if is_pg(db):
+        return list(
+            await db.fetch(
+                "SELECT e.video_id AS vid, ss.id AS sid, ss.library_id AS lib"
+                " FROM series_episodes e"
+                " JOIN series_seasons ss ON ss.series_id = e.series_id"
+                "  AND ss.season = COALESCE(e.season_override, e.season)"
+                " WHERE ss.retired_at IS NULL AND e.video_id = ANY($1::uuid[])",
+                vids,
+            )
+        )
+    return list(
+        await db.fetch(
+            "SELECT e.video_id AS vid, ss.id AS sid, ss.library_id AS lib FROM series_episodes e"
+            " JOIN series_seasons ss ON ss.series_id = e.series_id"
+            "  AND ss.season = COALESCE(e.season_override, e.season)"
+            " WHERE ss.retired_at IS NULL AND e.video_id IN (SELECT value FROM json_each($1))",
+            dumps(vids),
+        )
+    )
+
+
+async def _paths_of(db: Any, vids: list[str]) -> list[Any]:
+    if is_pg(db):
+        return list(await db.fetch("SELECT id, path FROM videos WHERE id = ANY($1::uuid[])", vids))
+    return list(
+        await db.fetch(
+            "SELECT id, path FROM videos WHERE id IN (SELECT value FROM json_each($1))",
+            dumps(vids),
+        )
+    )
+
+
+async def _video_tags(db: Any, vids: list[str]) -> list[Any]:
+    if is_pg(db):
+        return list(
+            await db.fetch(
+                "SELECT video_id, tag, score FROM video_topic_tags"
+                " WHERE video_id = ANY($1::uuid[])",
+                vids,
+            )
+        )
+    return list(
+        await db.fetch(
+            "SELECT video_id, tag, score FROM video_topic_tags"
+            " WHERE video_id IN (SELECT value FROM json_each($1))",
+            dumps(vids),
+        )
+    )
+
+
+async def _season_tags(db: Any, seasons: list[str]) -> list[Any]:
+    if is_pg(db):
+        return list(
+            await db.fetch(
+                "SELECT season_id, tag, score, evidence FROM season_tags"
+                " WHERE season_id = ANY($1::uuid[])",
+                seasons,
+            )
+        )
+    return list(
+        await db.fetch(
+            "SELECT season_id, tag, score, evidence FROM season_tags"
+            " WHERE season_id IN (SELECT value FROM json_each($1))",
+            dumps(seasons),
+        )
+    )
 
 
 async def build_lookup(
@@ -105,11 +193,7 @@ async def build_lookup(
     keys = _rating_keys(channels, fillers)
     for i in range(0, len(keys), _CHUNK):
         chunk = keys[i : i + _CHUNK]
-        for r in await db.fetch(
-            "SELECT subject_id, external_id FROM external_links WHERE target = 'plex_item'"
-            f" AND subject_kind = 'video' AND external_id IN ({_marks(1, len(chunk))})",
-            *chunk,
-        ):
+        for r in await _item_links(db, chunk):
             item_of[str(r["external_id"])] = str(r["subject_id"])
     vids = sorted(set(item_of.values()))
     libs = {str(r["id"]): str(r["name"]) for r in await db.fetch("SELECT id, name FROM libraries")}
@@ -120,35 +204,21 @@ async def build_lookup(
     itags: dict[str, dict[str, float]] = defaultdict(dict)
     for i in range(0, len(vids), _CHUNK):
         chunk = vids[i : i + _CHUNK]
-        marks = _marks(1, len(chunk))
-        for r in await db.fetch(
-            "SELECT e.video_id AS vid, ss.id AS sid, ss.library_id AS lib FROM series_episodes e"
-            " JOIN series_seasons ss ON ss.series_id = e.series_id"
-            "  AND ss.season = COALESCE(e.season_override, e.season)"
-            f" WHERE ss.retired_at IS NULL AND e.video_id IN ({marks})",
-            *chunk,
-        ):
+        for r in await _seasons_of(db, chunk):
             sid = str(r["sid"])
             series_of[str(r["vid"])] = sid
             if r["lib"] is not None:
                 library_of[sid] = libs.get(str(r["lib"]), "")
-        for r in await db.fetch(f"SELECT id, path FROM videos WHERE id IN ({marks})", *chunk):
+        for r in await _paths_of(db, chunk):
             folder_of[str(r["id"])] = posixpath.basename(
                 posixpath.dirname(str(r["path"]).replace("\\", "/"))
             )
-        for r in await db.fetch(
-            f"SELECT video_id, tag, score FROM video_topic_tags WHERE video_id IN ({marks})",
-            *chunk,
-        ):
+        for r in await _video_tags(db, chunk):
             itags[str(r["video_id"])][str(r["tag"])] = float(r["score"])
     seasons = sorted(set(series_of.values()))
     for i in range(0, len(seasons), _CHUNK):
         chunk = seasons[i : i + _CHUNK]
-        for r in await db.fetch(
-            "SELECT season_id, tag, score, evidence FROM season_tags"
-            f" WHERE season_id IN ({_marks(1, len(chunk))})",
-            *chunk,
-        ):
+        for r in await _season_tags(db, chunk):
             why = (loads(r["evidence"]) or {}).get("why", "") if r["evidence"] else ""
             stags[str(r["season_id"])][str(r["tag"])] = (float(r["score"]), str(why))
     return AuditLookup(item_of, series_of, library_of, folder_of, stags, itags)
