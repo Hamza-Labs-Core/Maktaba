@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.103
-up_to_commit: ba7773623
-built_from: v0.3.102
+tag: v0.3.104
+up_to_commit: 6eb25a8aa
+built_from: v0.3.103
 ---
 
-# Trail snapshot: v0.3.103
+# Trail snapshot: v0.3.104
 
 ## Keep doing
 
@@ -123,6 +123,8 @@ built_from: v0.3.102
 - Read the home log in the rehearsal's `rehearsal-logs-*` artifact: the supervisor's "wanted: starting it" line and the jobs' `job_dispatched` times show a start race to the millisecond. Make a rehearsal home look real through the routes the app uses (`PUT /api/extensions/plex`), never direct table writes: the route also sets state no one remembers, such as the component flag. (#953, #938)
 - A leak test uses random tokens and checks for leaks before coverage; a refusal test checks the reason as well as the error (a case missing other required fields passes on the old code for the wrong reason). Parity fixtures need a real fake behind every upstream address the door may call. (#942, #948)
 - A reference test (snapshot, text dump, screenshot) that draws anything read off the clock fails the day after its references are made: pin the clock (`MockHome.clock`), at noon so the date is the same in every zone, and use no future fixture times on the pinned pages. Bootstrap Apple references from a CI run that fails on purpose ("no reference") and keep only the new images `tools/apple/snapshots.py` copies. (#936, d20261108-snapshot-fixture-clock)
+- Key a start gate on the dependency a child runs from, not on one role, and test that every `python -m maktaba_*` child is gated (`TestEveryPythonChildRunsFromTheVenv`). (d20261108-runners-wait-venv)
+- Read a failed rehearsal row's test output before treating it as a fault: `no tests to run` means the matrix and the checked-out code disagree. (d20261108-rehearsal-matrix-skew)
 
 ## Stop doing
 
@@ -152,6 +154,7 @@ built_from: v0.3.102
 - Shipping a provider-neutral library without the one route that makes it reachable. (#850)
 - Telling users about behaviour the next PR in the same series is about to change. (#861)
 - Listing reference files one by one in a generated project (xcodegen): a reference added later is left out of the test bundle; a folder reference cannot leave one out. (#910)
+- Putting a registration step in front of `launchctl kickstart` with `?`: a refused registration then blocks starting a job that would have run. (d20261108-login-item-relaunch)
 
 ## What we learned
 
@@ -339,6 +342,9 @@ built_from: v0.3.102
 - Apple UI tests seed `UserDefaults` from launch arguments (`-key value`; `<hex>` reads back as Data), giving a mocked cloud with no project change. The cloud web app's Playwright tests serve it with Vite's dev server and answer `/v1` with `page.route`. Apple and Android keep the cloud token in memory only, so the saved home list is keyed by the typed email. The relay's errors are `{"error": ...}`, the home's carry `code`: a client classifying by `code` reads `error` too. Appending at a Kotlin test file's end can land in its last (helper) class. A new server answer gets an error kind per app (web, Apple, Android), and the desktop Player's `StringsTest` wants a sentence for each Android `ErrorKind`. The cloud web app's API client has no PUT. (#791, #856, #854)
 - A T3 server restart drops a session's tracking of its background watchers, not the processes: find an orphan by command line and stop it by PID. (#782)
 - The Apple Player's pages are compared with committed references (`PageSnapshots`, 0.2 % of pixels; read from the test bundle, since the host app is sandboxed; `tools/apple/snapshots.py <run id>` copies a CI run's drawn pages in). The tolerance guards layout; exact text references guard wording. A `String` built with `String(localized:)` or `.formatted()` follows the process language, not SwiftUI's `\.locale`: build page strings with the environment's locale. Player UI-test bundles compile some files alone (`ImageCache.swift`), so a MaktabaKit symbol there links only in the app: check the project's source phases before adding an import. A failed job cannot be re-run until its whole run ends. (#893, #910, #903, #929)
+- SMAppService errors on register or unregister do not mean the login item is gone: check `status` and `launchctl print` first, since launchd may still hold a good job. A Developer ID app's designated requirement survives updates and so does its registration; only ad-hoc builds need re-registering per build. After the updater swaps the bundle, the old process reads the new build through `current_exe`, so anything keyed on "this build" is captured at process start. (d20261108-login-item-relaunch)
+- A `workflow_run` rehearsal takes its matrix from main's head and checks out the rehearsed commit, so a row added to `update-rehearsal.yml` fails any older commit whose CI finishes after the row lands, with `no tests to run`. (d20261108-rehearsal-matrix-skew)
+- Import cycles show only in a fresh interpreter importing in the child's own order (`pipeline/tests/test_child_imports.py` does that in `python -I`; a suite importing `engine.graph` first hid one). A rehearsal that only checks the site serves passes a release whose runners crash-loop; the wave scenarios now fail on any process marked failed after the update (`assertNoCrashLoop`). (d20261108-runners-wait-venv)
 
 ## Open
 
@@ -370,6 +376,8 @@ built_from: v0.3.102
 - `test_node_cli` depends on other tests' threads in the same pytest worker. (d20261107-paid-plugins-merge-problems)
 - A hung pipeline-cluster test on Windows: if the stack dump shows one again, read it for the root cause (aiosqlite's wakeup or something else). (#945)
 - Dependabot dismissals to revisit when tauri moves to GTK4 and eslint adopts minimatch 11. (d20261102-dependabot-dismissals)
+- The rehearsal could skip, as not applicable, a row whose test does not exist at the rehearsed commit (for example `go test -list` first). (d20261108-rehearsal-matrix-skew)
+- Only the wave scenarios run the crash-loop check: the others use a fake pipeline wheel with no `maktaba_plugin_runner`; a fake runner module there would let every scenario run it. (d20261108-runners-wait-venv)
 
 ## Missing events
 
@@ -380,12 +388,16 @@ built_from: v0.3.102
 | #946 | 2026-11-07 | fix(backups): old backups go on their own |
 | #954 | 2026-11-07 | spec 53.12: the label caps as built (per machine for id series) |
 | #957 | 2026-11-07 | 53.16: TestFlight uploads crash symbol tables; the cloud deploy provisions their token |
+| #959 | 2026-11-08 | Remotes: restore a backup and download diagnostics natively (Epic 53) |
 | #960 | 2026-11-07 | Epic 53 story 53.12: the Overview dashboard scales with many machines |
 | #961 | 2026-11-07 | 53.16: Android R8 mappings and desktop stacks in problem reports; rehearsal T07 |
-| #963 | 2026-11-07 | Mac page snapshots: no scroll bar in the text references |
+| #966 | 2026-11-08 | fix(appcontainer): a runner grant or revoke lands only on the folder that was checked (54.23) |
 | #967 | 2026-11-07 | Epic 53 story 53.16: Android native crash frames symbolicated in the operator console |
 | #968 | 2026-11-07 | feat(appcontainer): a runner's library on an SMB share through its launcher's file broker (54.23) |
 | #971 | 2026-11-08 | test(logindex): TestBoards records an hour of scrapes, not three |
+| #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
+| #976 | 2026-11-08 | fix(plugins): first-party stages stay in the worker on Windows (54.23) |
+| #978 | 2026-11-08 | maktaba.dev: the iPhone Remote's recovery screen, with restore (Epic 53) |
 
 ## Index
 
@@ -888,5 +900,8 @@ built_from: v0.3.102
 | 0956-runners-on-windows | 2026-11-08 | pr | First-party plugin runners on Windows, each group in its own AppContainer (story 54.23) |
 | 0962-failed-runners-reported | 2026-11-08 | decision | A home reports a failed plugin runner, to admins only, with the stages that run in the worker |
 | d20261108-backups-tidy | 2026-11-08 | incident | Old backups were pruned only at an update, and a lone failed dump stayed for good |
+| d20261108-login-item-relaunch | 2026-11-08 | incident | The Mac update to 0.3.96 left the server stopped behind a login item macOS would not re-register |
+| d20261108-rehearsal-matrix-skew | 2026-11-08 | incident | A rehearsal of an older commit ran a scenario that commit does not have |
+| d20261108-runners-wait-venv | 2026-11-08 | incident | The 0.3.96 plugin runners started before the venv and crash-looped |
 | d20261108-snapshot-fixture-clock | 2026-11-08 | incident | The Mac page snapshots took their fixture dates from the clock |
 
