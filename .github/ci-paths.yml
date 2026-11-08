@@ -124,6 +124,9 @@ lint_pipeline:
   # story 54.33 T02: the nightly check of the hosts yt-dlp contacts (its tests run in lint)
   - 'tools/ci/youtube_hosts.py'
   - '.github/workflows/youtube-hosts-nightly.yml'
+  # the scheduled prune of replaced Actions cache entries (its tests run in lint)
+  - 'tools/ci/cache_prune.py'
+  - '.github/workflows/cache-prune.yml'
   - 'tools/eval-gate/**'
 
 lint_web:
