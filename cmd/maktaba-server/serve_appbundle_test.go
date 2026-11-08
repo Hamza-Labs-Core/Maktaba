@@ -1528,6 +1528,71 @@ func TestSharedStepWaiterStops(t *testing.T) {
 	}
 }
 
+// A process that starts waiting on a shared step while it runs shows the step's newest
+// report, never the waiting text over it: its first report is made before the step can
+// broadcast to it, so a broadcast that lands in between is not overwritten. The waiter's
+// first report is slow here so that, were it made outside the lock, the step's broadcast
+// would land first and the waiting text would end on top.
+func TestSharedStepWaiterKeepsTheNewestReport(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	var s *sharedStep
+	s = &sharedStep{wait: supervisor.Detail{Code: "venv_waiting", Text: "waiting"}, run: func(_ context.Context, report func(supervisor.Detail)) error {
+		report(supervisor.Detail{Code: "venv_building", Text: "starting"})
+		for { // the waiter is registered: the step reports again at once
+			s.mu.Lock()
+			n := len(s.watchers)
+			s.mu.Unlock()
+			if n == 2 {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		report(supervisor.Detail{Code: "venv_building", Text: "installing"})
+		<-release
+		return nil
+	}}
+	go func() { _ = s.prepare(context.Background(), noReport) }()
+	waitUntil(t, "the step runs", func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.running != nil })
+	var (
+		mu    sync.Mutex
+		shown []string
+		first = true
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = s.prepare(ctx, func(d supervisor.Detail) {
+			mu.Lock()
+			slow := first
+			first = false
+			mu.Unlock()
+			if slow {
+				time.Sleep(50 * time.Millisecond)
+			}
+			mu.Lock()
+			shown = append(shown, d.Text)
+			mu.Unlock()
+		})
+	}()
+	waitUntil(t, "the waiter shows the step's second report", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, x := range shown {
+			if x == "installing" {
+				return true
+			}
+		}
+		return false
+	})
+	time.Sleep(80 * time.Millisecond) // a late first report would land by now
+	mu.Lock()
+	defer mu.Unlock()
+	if shown[len(shown)-1] != "installing" {
+		t.Fatalf("the waiter showed %v: the newest report must stay on top", shown)
+	}
+}
+
 // runMigrateUp runs `migrate --timeout 0 up` with the api's binary and
 // environment; a failure carries the last lines, the api's exit 3 is a database
 // newer than its migrations.
