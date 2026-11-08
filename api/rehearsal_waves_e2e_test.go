@@ -421,6 +421,27 @@ func (r *rehearsal) waveScenario(id string) {
 			t.Errorf("%s on %s: impl %q, want plugin once its runner serves", st, k.cur, impls[st])
 		}
 	}
+	// the flip says plugin once a runner said Hello, but the update's last restarts (a
+	// runner starting again on new areas) can leave a moment with none serving, when a
+	// job runs in the worker as it should (story 54.25 §3). Warm-up jobs run until one of
+	// each stage has run in its runner; each of them is held to the same rules.
+	warm := time.Now().Add(4 * time.Minute)
+	for {
+		since = r.queueWave(db, w.stages, 1)
+		queued = queuedIDs(waveJobs(t, db, w.stages, since))
+		jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
+		r.checkWaveJobs(id+" warming up after the flip", jobs, queued, want)
+		inRunner := map[string]bool{}
+		for _, j := range jobs {
+			if queued[j.id] && j.impl == "plugin" {
+				inRunner[j.stage] = true
+			}
+		}
+		if len(inRunner) == len(w.stages) || time.Now().After(warm) {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
 	since = r.queueWave(db, w.stages, 2)
 	queued = queuedIDs(waveJobs(t, db, w.stages, since))
 	jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
