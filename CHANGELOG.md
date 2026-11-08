@@ -39,6 +39,14 @@ build fails when the two differ.
   machine neither it nor any worker of it seen within 60 s); the API passes the list to the log
   index, and the Overview's answer names them in `machines.offline`. Before, an offline machine
   kept its last values and ranked last.
+- **The Crash symbols page names each table's type (Epic 53 story 53.16).** The operator
+  console's Crash symbols page has a Type column (Apple dSYM, R8 mapping or Native (build ID)),
+  and its Key column shows each table by what it is known by: an Apple binary's UUID as Apple's
+  tools print it, an R8 mapping's app and version, and a native library's whole build ID,
+  shortened, whole on hover and with a button that copies it. Before, every table's key was
+  shown under a UUID header, and a native library showed only the first 32 digits of its build
+  ID. `GET /v1/admin/symbols` answers each table's `kind` (`dsym`, `r8` or `elf`) and a native
+  library's `code_id`; tables uploaded before are filled in the first time the list is read.
 - **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
   console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
   files and lines with a table of the app's own unstripped native library, keyed by the
@@ -185,15 +193,10 @@ build fails when the two differ.
 
 ### Fixed
 
-- **A fingerprint a Windows runner may not read is taken by the worker, never left pending
-  (story 54.23).** On Windows, every plugin runner refuses a share path it is not brokered,
-  and the fingerprint runner closed the connection without an answer when a stage's
-  fingerprint was refused (the small thumbnail's sidecar look on a share). The worker did not
-  read that as a refusal, so the job failed and went back to pending again and again. Homes
-  were spared by the share-library guard, which keeps those stages and their fingerprints in
-  the worker; the Windows end to end, which asks the runners anyway, found it. The runner
-  now answers the refusal and logs it, and the worker reads the fingerprint itself for any
-  runner that closes without an answer.
+- **On the Mac app's first start after an update, a service waiting for the transcription
+  tools now shows their install progress.** A service could keep showing "Waiting for the
+  transcription tools" while the tools were already installing, until the next progress step,
+  when its first status arrived after the install's newer one.
 
 - **Share media a Windows runner missed on v0.3.105 is processed again (story 54.23).** On
   v0.3.105, a Windows runner could read a file on a share as missing. A small thumbnail then
@@ -2890,6 +2893,16 @@ build fails when the two differ.
   So first-party stages on Windows run in their runners again instead of all in the queue
   worker. A tool the sandbox refuses to start is now a refusal, so that job runs in the worker,
   rather than failing as the tool's own exit.
+
+- **A fingerprint a Windows runner may not read is taken by the worker, never left pending
+  (story 54.23).** On Windows, every plugin runner refuses a share path it is not brokered,
+  and the fingerprint runner closed the connection without an answer when a stage's
+  fingerprint was refused (the small thumbnail's sidecar look on a share). The worker did not
+  read that as a refusal, so the job failed and went back to pending again and again. Homes
+  were spared by the share-library guard, which keeps those stages and their fingerprints in
+  the worker; the Windows end to end, which asks the runners anyway, found it. The runner
+  now answers the refusal and logs it, and the worker reads the fingerprint itself for any
+  runner that closes without an answer.
 
 ## [0.2.0] - 2026-10-19
 
