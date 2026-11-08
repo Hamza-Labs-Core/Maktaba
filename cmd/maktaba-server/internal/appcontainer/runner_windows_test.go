@@ -83,28 +83,13 @@ func junction(t *testing.T, link, target string) {
 	}
 }
 
-// mustWrite makes a file whose DACL is what its folder passes down, as a file a media
-// tool writes has: CreateFile with no security attributes (os.WriteFile has been seen
-// giving a file below two new folders an explicit, protected DACL on the CI runner, and
-// a protected DACL inherits nothing, by a grant's walk or by Windows' own propagation).
 func mustWrite(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	p16, err := windows.UTF16PtrFromString(path)
-	if err != nil {
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
-	}
-	h, err := windows.CreateFile(p16, windows.GENERIC_WRITE, 0, nil, windows.CREATE_ALWAYS, windows.FILE_ATTRIBUTE_NORMAL, 0)
-	if err != nil {
-		t.Fatalf("%s: %v", path, err)
-	}
-	var n uint32
-	err = windows.WriteFile(h, []byte("x"), &n, nil)
-	_ = windows.CloseHandle(h)
-	if err != nil {
-		t.Fatalf("%s: %v", path, err)
 	}
 }
 
@@ -153,18 +138,6 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 			show := filepath.Join(media, "season 1", "show.mkv")
 			mustWrite(t, show)
 			// the walk is tested on a tree that inherits, as Windows makes it
-			if swap == "none" { // DEBUG (temporary): the control word as each way of making a file leaves it
-				viaGo := filepath.Join(filepath.Dir(show), "go.mkv")
-				if err := os.WriteFile(viaGo, []byte("x"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				for _, p := range []string{filepath.Dir(show), show, viaGo} {
-					sd, _ := windows.GetNamedSecurityInfo(p, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-					ctrl, _, _ := sd.Control()
-					t.Logf("DEBUG control 0x%04x %s", ctrl, p)
-				}
-				_ = os.Remove(viaGo)
-			}
 			if !inheriting(t, show) {
 				t.Fatalf("the test's own %s has a protected DACL", show)
 			}
@@ -215,9 +188,10 @@ func TestAGrantLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 				if _, inherited := aceOf(t, show, sid); !inherited {
 					t.Errorf("%s: the entry is not marked inherited", show)
 				}
-				// still auto-inherited: Windows' own propagation keeps treating it as a child
+				// marked auto-inherited, as Windows' own propagation marks a child it reaches
+				// (CI's temp folders are not: their files' entries are all explicit)
 				if !autoInherited(t, show) {
-					t.Errorf("%s lost its auto-inherited flag", show)
+					t.Errorf("%s: the walk did not mark it auto-inherited", show)
 				}
 				return
 			}
@@ -304,7 +278,8 @@ func TestARevokeLandsOnlyOnTheFolderThatWasChecked(t *testing.T) {
 
 // The areas folder's grant reaches the files directly in it (the worker's areas.json) and
 // none of its folders (the other groups' run folders); a folder below a grant whose DACL is
-// protected inherits nothing; a grant on a folder that is a junction itself is refused.
+// protected inherits nothing; a NULL DACL below fails the grant; a grant on a folder that is
+// a junction itself is refused.
 func TestAGrantsWalkStopsWhereWindowsInheritanceStops(t *testing.T) {
 	dir := mustCanonical(t, t.TempDir())
 	profile, sid := testProfile(t, "ci-walk")
@@ -335,6 +310,21 @@ func TestAGrantsWalkStopsWhereWindowsInheritanceStops(t *testing.T) {
 		if found, _ := aceOf(t, p, sid); found {
 			t.Errorf("%s (protected) got an entry", p)
 		}
+	}
+
+	// a NULL DACL (anyone may do anything) is never changed in passing: the grant fails
+	// closed, and the folder keeps no grant
+	open := filepath.Join(dir, "open")
+	nullFile := filepath.Join(open, "null.bin")
+	mustWrite(t, nullFile)
+	if err := windows.SetNamedSecurityInfo(nullFile, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION, nil, nil, nil, nil); err != nil {
+		t.Fatalf("a NULL DACL: %v", err)
+	}
+	if err := Grant(profile, open, false); err == nil || !strings.Contains(err.Error(), "NULL DACL") {
+		t.Fatalf("a grant over a NULL DACL: %v", err)
+	}
+	if found, _ := aceOf(t, open, sid); found {
+		t.Errorf("%s kept a grant after its walk failed", open)
 	}
 
 	link := filepath.Join(dir, "link")

@@ -20,6 +20,8 @@ var (
 	userenv              = windows.NewLazySystemDLL("userenv.dll")
 	procCreateProfile    = userenv.NewProc("CreateAppContainerProfile")
 	procDeriveProfileSID = userenv.NewProc("DeriveAppContainerSidFromAppContainerName")
+	advapi32             = windows.NewLazySystemDLL("advapi32.dll")
+	procGetKernelObjSec  = advapi32.NewProc("GetKernelObjectSecurity")
 )
 
 const (
@@ -165,7 +167,7 @@ func change(sid *windows.SID, path string, add *ourACE, revoking bool) error {
 		return err
 	}
 	defer func() { _ = windows.CloseHandle(h) }()
-	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	sd, err := storedSD(h)
 	if err != nil {
 		return fmt.Errorf("appcontainer: %s: %w", path, err)
 	}
@@ -223,6 +225,28 @@ func change(sid *windows.SID, path string, add *ourACE, revoking bool) error {
 type ourACE struct {
 	mask  uint32
 	flags uint8
+}
+
+// storedSD is the DACL part of an open object's security descriptor as the filesystem
+// stores it (GetKernelObjectSecurity). GetSecurityInfo (MARTA) infers inheritance on a
+// DACL without SE_DACL_AUTO_INHERITED: a child whose explicit entries no longer match what
+// its parent passes down (once the walk has given the parent the SID's entry) is answered
+// as protected, which it is not, and Windows' own propagation reaches it.
+func storedSD(h windows.Handle) (*windows.SECURITY_DESCRIPTOR, error) {
+	n := uint32(512)
+	for {
+		words := make([]uint64, (n+7)/8)
+		var need uint32
+		r, _, e := procGetKernelObjSec.Call(uintptr(h), uintptr(windows.DACL_SECURITY_INFORMATION),
+			uintptr(unsafe.Pointer(&words[0])), uintptr(len(words)*8), uintptr(unsafe.Pointer(&need)))
+		if r != 0 {
+			return (*windows.SECURITY_DESCRIPTOR)(unsafe.Pointer(&words[0])), nil
+		}
+		if !errors.Is(e, windows.ERROR_INSUFFICIENT_BUFFER) || need <= uint32(len(words)*8) {
+			return nil, e
+		}
+		n = need
+	}
 }
 
 // fileAttributeTagInfo is FILE_ATTRIBUTE_TAG_INFO.
@@ -400,17 +424,26 @@ func inheritInto(h windows.Handle, path string, parent []ourACE, sid *windows.SI
 	if info.FileAttributes&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && nameSurrogate(info.ReparseTag) {
 		return nil // made a link since it was listed
 	}
-	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	sd, err := storedSD(h)
 	if err != nil {
 		return fmt.Errorf("appcontainer: %s: %w", path, err)
 	}
 	ctrl, _, err := sd.Control()
 	if err != nil {
-		return err
+		return fmt.Errorf("appcontainer: %s: %w", path, err)
+	}
+	if ctrl&windows.SE_DACL_PROTECTED != 0 {
+		return nil // a protected DACL inherits nothing
 	}
 	dacl, _, err := sd.DACL()
-	if ctrl&windows.SE_DACL_PROTECTED != 0 || dacl == nil || err != nil {
-		return nil // inherits nothing
+	switch {
+	case errors.Is(err, windows.ERROR_OBJECT_NOT_FOUND):
+		return nil // no DACL at all: anyone may reach it already, and an entry would narrow that
+	case err != nil:
+		return fmt.Errorf("appcontainer: %s: %w", path, err)
+	case dacl == nil:
+		// a NULL DACL present: never changed in passing, so the walk fails closed
+		return fmt.Errorf("appcontainer: %s has a NULL DACL: not changed", path)
 	}
 	isDir := info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
 	list, err := aces(dacl)
