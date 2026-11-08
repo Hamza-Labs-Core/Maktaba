@@ -42,8 +42,48 @@ STAGES = ["dizquetv_show", "dizquetv_channels", "dizquetv_audit"]
 TOKEN = "Zq7xP2mK9vR4tL8wN3sBy6"
 #: dizqueTV's own copy of a Plex token (its plex-servers), another than the home's
 DZ_TOKEN = "Hf5jW1cY6uE0oA2gD9kQr4"
-#: Plex as the home has it set up (never contacted: the programmes come from the saved index)
-PLEX_URL = "http://192.168.1.4:32400"
+
+
+class _Plex:
+    """The home's Plex behind HTTP: /library/metadata/<keys> answers the items the seed
+    saved (the worker builds from plex_items; the door reads Plex itself), only with the
+    home's token in the X-Plex-Token header. Keeps every path it was asked."""
+
+    def __init__(self) -> None:
+        self.asked: list[str] = []
+        outer = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                outer.asked.append(self.path)
+                path, _, query = self.path.partition("?")
+                keys = path.removeprefix("/library/metadata/").split(",")
+                found = [_ITEMS[k] for k in keys if k in _ITEMS]
+                if self.headers.get("X-Plex-Token") != TOKEN or "X-Plex-Token" in query:
+                    status, data = 401, b""
+                elif not path.startswith("/library/metadata/") or not found:
+                    status, data = 404, b""
+                else:
+                    doc = {"MediaContainer": {"size": len(found), "Metadata": found}}
+                    status, data = 200, json.dumps(doc, ensure_ascii=False).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *_a: Any) -> None:
+                return None
+
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+
+#: Plex as the home has it set up: the door reads each programme's item from it
+_PLEX = _Plex()
+PLEX_URL = _PLEX.url
+PLEX_HOST = urllib.parse.urlsplit(PLEX_URL).netloc
 KEYS = {
     "external_links": ("target", "subject_kind", "subject_id"),
     "channel_audit_channels": ("number",),
@@ -168,6 +208,16 @@ def _detail(rk: str, title: str, file: str, duration: int) -> dict[str, Any]:
     }
 
 
+#: the Plex items the seed saves in plex_items and the fake Plex answers
+_ITEMS = {
+    **{
+        str(100 + i): _detail(str(100 + i), f"الحلقة {i}", f"/volume1/share/e{i}.mp4", 1_500_000)
+        for i in range(1, 4)
+    },
+    "201": _detail("201", "مقطع", "/volume1/share/clip.mp4", 60_000),
+}
+
+
 def _logos(folder: Path) -> dict[str, str]:
     """The channel's logo and corner watermark, as local files the stage uploads to dizqueTV
     (through the door, whose channel write accepts only pictures of the home's own)."""
@@ -236,14 +286,14 @@ def seeder(logos: Path) -> Any:
                 await add_episode(db, series, v, episode=i)
                 link = Link("plex_item", "video", str(v), rk, f"الحلقة {i}", "1:x", False)
                 await put_link(db, link)
-                det = _detail(rk, f"الحلقة {i}", f"/volume1/share/e{i}.mp4", 1_500_000)
+                det = _ITEMS[rk]
                 await db.execute(
                     "INSERT INTO plex_items (server, rating_key, section_key, section_title,"
                     " library_id, video_id, file, duration_ms, detail)"
                     " VALUES ('machine-1', $1, '1', 'TV', $2, $3, $4, 1500000, $5)",
                     rk, lib, v, det["Media"][0]["Part"][0]["file"], dumps(det),
                 )  # fmt: skip
-            clip = _detail("201", "مقطع", "/volume1/share/clip.mp4", 60_000)
+            clip = _ITEMS["201"]
             await db.execute(
                 "INSERT INTO plex_items (server, rating_key, section_key, section_title, file,"
                 " duration_ms, detail) VALUES ('machine-1', '201', '1', 'TV', $1, 60000, $2)",
@@ -388,6 +438,8 @@ async def test_dizquetv_is_identical_through_the_door(
         ch5 = b_srv.fake.channels[5]
         assert ch5["icon"].startswith(f"{b_srv.url}/images/uploads/maktaba-ch-5.png?v="), ch5
         assert ch5["watermark"]["url"].startswith(f"{b_srv.url}/images/uploads/maktaba-wm.png?v=")
+        # the door read every programme's item from Plex, with the home's token (a header)
+        assert any(a.startswith("/library/metadata/") for a in _PLEX.asked), _PLEX.asked
         # the door wrote the token into every programme it built, and only there
         built = [x for d in b_srv.fake.shows.values() for x in d["content"]]
         assert built and all(
@@ -428,7 +480,7 @@ async def test_the_plex_token_reaches_no_answer_the_plugin_gets(
                 for form in _leak_forms(secret):
                     assert form not in text, f"a {where} carries {form!r}: {text[:400]}"
             assert "x-plex-token" not in text.lower(), f"a {where} names the token: {text[:400]}"
-            assert "192.168.1.4" not in text, f"a {where} names Plex's address: {text[:400]}"
+            assert PLEX_HOST not in text, f"a {where} names Plex's address: {text[:400]}"
     # the stages read everything that holds the token: the channel the user made, its filler
     # list, the Plex servers, the programmes the door built
     wants = ("/maktaba/channel/9", "/maktaba/filler/mine", "/maktaba/plex-servers")

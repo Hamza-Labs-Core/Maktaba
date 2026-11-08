@@ -10,8 +10,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -157,8 +159,12 @@ type dzHarness struct {
 	door    *Door
 	plex    Upstream
 	plexErr error // reading the Plex upstream fails
-	relayOn bool
-	answers []string
+	// items is the home's Plex library, by rating key (a fake Plex behind the door's client)
+	items map[string]map[string]any
+	// plexAsked is every metadata request the fake Plex got (its path), token checked
+	plexAsked []string
+	relayOn   bool
+	answers   []string
 }
 
 func newDZHarness(t *testing.T) *dzHarness {
@@ -182,7 +188,25 @@ func newDZHarness(t *testing.T) *dzHarness {
 		}
 	}))
 	t.Cleanup(h.art.Close)
+	h.items = map[string]map[string]any{}
+	for _, rk := range []string{"1", "101", "102", "201"} {
+		h.items[rk] = plexItem(rk)
+	}
+	plexSrv := httptest.NewServer(http.HandlerFunc(h.servePlex))
+	t.Cleanup(plexSrv.Close)
+	// the door's client reaches the home's Plex address (h.plex.URL) at the fake Plex
+	plexAt, _ := url.Parse(plexSrv.URL)
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if addr == "192.168.1.4:32400" {
+			addr = plexAt.Host
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
 	h.door = New(Config{
+		Client: &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		}},
 		Settings: func(context.Context) (Settings, error) {
 			s := DefaultSettings()
 			s.Enabled = h.relayOn // the relay switch is a node's: a home caller is served anyway
@@ -199,6 +223,48 @@ func newDZHarness(t *testing.T) *dzHarness {
 		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	return h
+}
+
+// servePlex answers /library/metadata/<keys> as Plex does: the items it knows, in the asked
+// order, only with the home's token (in the X-Plex-Token header).
+func (h *dzHarness) servePlex(w http.ResponseWriter, r *http.Request) {
+	h.dz.mu.Lock()
+	defer h.dz.mu.Unlock()
+	h.plexAsked = append(h.plexAsked, r.URL.Path)
+	if r.Header.Get("X-Plex-Token") != secret || r.URL.Query().Get("X-Plex-Token") != "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	keys, ok := strings.CutPrefix(r.URL.Path, "/library/metadata/")
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	found := []any{}
+	for _, rk := range strings.Split(keys, ",") {
+		if it, ok := h.items[rk]; ok {
+			found = append(found, it)
+		}
+	}
+	if len(found) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"MediaContainer": map[string]any{"size": len(found), "Metadata": found}})
+}
+
+// plexItem is an episode as Plex's /library/metadata/<rk> describes it.
+func plexItem(rk string) map[string]any {
+	return map[string]any{
+		"ratingKey": rk, "key": "/library/metadata/" + rk, "type": "episode", "title": "الحلقة " + rk,
+		"grandparentTitle": "Show", "parentIndex": 1, "index": 1, "summary": "",
+		"thumb": "/library/metadata/" + rk + "/thumb/1700000001", "grandparentThumb": "/library/metadata/100/thumb/1700000000",
+		"duration": 1500000, "originallyAvailableAt": "2024-01-01", "year": 2024,
+		"Media": []any{map[string]any{"Part": []any{map[string]any{
+			"key": "/library/parts/" + rk + "/1700000000/file.mp4", "file": "/volume1/share/Show/e" + rk + ".mp4",
+		}}}},
+	}
 }
 
 var dzHome = Caller{Kind: "home", WorkerID: "tv.maktaba.dizquetv", Session: "inv-1"}
@@ -521,12 +587,8 @@ func TestDizqueTVWriteRefusals(t *testing.T) {
 		method, target string
 		body           any
 	}{
-		"a part that is not Plex's":            {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["plexFile"] = "@evil.example/x" })},
-		"a key of another item":                {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["key"] = "/library/metadata/999" })},
 		"a field the door does not know":       {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["episodeIcon"] = "http://x" })},
 		"a server named by the plugin":         {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["serverKey"] = "Other" })},
-		"commercials":                          {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["commercials"] = []any{map[string]any{"x": 1}} })},
-		"not a movie or an episode":            {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["type"] = "track" })},
 		"a filler mode":                        {"PUT", "/maktaba/filler", map[string]any{"name": "x", "mode": "smart", "content": []any{}}},
 		"a programme of no stored show":        {"PUT", "/maktaba/channel", ch(map[string]any{"ratingKey": "2", "duration": 1, "customShowId": "s1"})},
 		"a show that is not stored":            {"PUT", "/maktaba/channel", ch(map[string]any{"ratingKey": "1", "duration": 1, "customShowId": "nope"})},
@@ -536,10 +598,6 @@ func TestDizqueTVWriteRefusals(t *testing.T) {
 		"a fallback":                           {"PUT", "/maktaba/channel", map[string]any{"number": 3, "name": "C", "programs": []any{}, "fallback": []any{map[string]any{"ratingKey": "1"}}}},
 		"a channel key the door does not know": {"PUT", "/maktaba/channel", map[string]any{"number": 3, "name": "C", "programs": []any{}, "plexServer": "x"}},
 		"a channel with no number":             {"PUT", "/maktaba/channel", map[string]any{"name": "C", "programs": []any{}}},
-		"a file that is a URL":                 {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "http://10.0.0.1/admin" })},
-		"a file with a scheme":                 {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "/x/concat:/etc/passwd|http://a" })},
-		"a file that is not absolute":          {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "media/a.mkv" })},
-		"a file that climbs":                   {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "/media/../etc/passwd" })},
 		// what dizqueTV and its clients fetch: only the home's own hosts
 		"an offline picture elsewhere":        {"PUT", "/maktaba/channel", withField(ch(), "offlinePicture", "http://elsewhere/x")},
 		"an offline soundtrack elsewhere":     {"PUT", "/maktaba/channel", withField(ch(), "offlineSoundtrack", "http://elsewhere/a.mp3")},
@@ -581,6 +639,127 @@ func TestDizqueTVWriteRefusals(t *testing.T) {
 func withField(m map[string]any, k string, v any) map[string]any {
 	m[k] = v
 	return m
+}
+
+// The door builds each programme from Plex's own answer for its rating key: whatever else
+// the plugin pairs with the key (another file, part, duration, key, type, title, picture) is
+// ignored, and what dizqueTV stores is Plex's. A record of the rating key alone is enough.
+func TestDizqueTVProgrammesComeFromPlex(t *testing.T) {
+	h := newDZHarness(t)
+	h.items["300"] = map[string]any{
+		"ratingKey": "300", "key": "/library/metadata/300", "type": "movie", "title": "فيلم",
+		"summary": "s", "contentRating": "PG", "year": 2020, "duration": 5400123,
+		"thumb": "/library/metadata/300/thumb/9",
+		"Media": []any{map[string]any{"Part": []any{map[string]any{"key": "/library/parts/300/9/file.mkv", "file": "/m/film.mkv"}}}},
+	}
+	lying := spec("101")
+	lying["file"], lying["plexFile"], lying["duration"] = "/etc/passwd", "/library/parts/999/1/file.mp4", 5
+	lying["key"], lying["type"], lying["title"] = "/library/metadata/999", "movie", "not Plex's title"
+	lying["icon"], lying["showTitle"], lying["season"], lying["episode"] = "/library/metadata/999/thumb/1", "Other", 9, 9
+	lying["durationStr"], lying["date"], lying["year"], lying["summary"] = "99:00:00.0", "1999-01-01", 1999, "lies"
+	created := h.ok(t, "PUT", "/maktaba/show", map[string]any{"name": "maktaba-plan · Show", "content": []any{
+		lying, map[string]any{"ratingKey": "102"}, map[string]any{"ratingKey": "300"},
+	}})
+	var c struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal([]byte(created), &c)
+	content := h.dz.shows[c.ID]["content"].([]any)
+	icon := "http://192.168.1.4:32400/library/metadata/100/thumb/1700000000?X-Plex-Token=" + secret
+	for i, want := range []map[string]any{
+		{"ratingKey": "101", "key": "/library/metadata/101", "type": "episode", "title": "الحلقة 101",
+			"duration": 1500000.0, "durationStr": "00:25:00.0", "summary": "", "rating": nil, "date": "2024-01-01",
+			"year": 2024.0, "plexFile": "/library/parts/101/1700000000/file.mp4", "file": "/volume1/share/Show/e101.mp4",
+			"showTitle": "Show", "season": 1.0, "episode": 1.0, "icon": icon, "serverKey": "PlexServer", "commercials": []any{}},
+		{"ratingKey": "102", "key": "/library/metadata/102", "type": "episode", "title": "الحلقة 102",
+			"duration": 1500000.0, "durationStr": "00:25:00.0", "summary": "", "rating": nil, "date": "2024-01-01",
+			"year": 2024.0, "plexFile": "/library/parts/102/1700000000/file.mp4", "file": "/volume1/share/Show/e102.mp4",
+			"showTitle": "Show", "season": 1.0, "episode": 1.0, "icon": icon, "serverKey": "PlexServer", "commercials": []any{}},
+		{"ratingKey": "300", "key": "/library/metadata/300", "type": "movie", "title": "فيلم",
+			"duration": 5400123.0, "durationStr": "01:30:00.1", "summary": "s", "rating": "PG", "date": "2020-01-01",
+			"year": 2020.0, "plexFile": "/library/parts/300/9/file.mkv", "file": "/m/film.mkv",
+			"showTitle": "فيلم", "season": 1.0, "episode": 1.0, "serverKey": "PlexServer", "commercials": []any{},
+			"icon": "http://192.168.1.4:32400/library/metadata/300/thumb/9?X-Plex-Token=" + secret},
+	} {
+		got := content[i].(map[string]any)
+		if len(got) != len(want) {
+			t.Errorf("programme %d holds %v, want %v", i, got, want)
+		}
+		for k, v := range want {
+			if gv, ok := got[k]; !ok || fmt.Sprint(gv) != fmt.Sprint(v) {
+				t.Errorf("programme %d: %s = %v, want Plex's %v", i, k, got[k], v)
+			}
+		}
+	}
+	// one batched request for the three keys, with the home's token
+	if len(h.plexAsked) != 1 || h.plexAsked[0] != "/library/metadata/101,102,300" {
+		t.Fatalf("Plex was asked %v", h.plexAsked)
+	}
+	// the answer the plugin got holds none of it
+	for _, a := range h.answers {
+		assertNoSecret(t, "an answer", a)
+	}
+}
+
+// The programme is Plex's item: a rating key Plex does not know, or an item it cannot play
+// (not a movie or an episode, no duration), is refused, and nothing is written.
+func TestDizqueTVRefusesWhatPlexCannotPlay(t *testing.T) {
+	h := newDZHarness(t)
+	h.items["777"] = withField(plexItem("777"), "type", "track")
+	h.items["778"] = withField(plexItem("778"), "duration", 0)
+	one := func(rk any) map[string]any {
+		return map[string]any{"name": "x", "content": []any{map[string]any{"ratingKey": rk}}}
+	}
+	for name, c := range map[string]struct {
+		target string
+		body   any
+		why    string
+	}{
+		"a rating key Plex does not know": {"/maktaba/show", one("999"), "Plex"},
+		"an item Plex cannot play":        {"/maktaba/show", one("777"), "Plex"},
+		"an item with no duration":        {"/maktaba/show", one("778"), "Plex"},
+		"no rating key":                   {"/maktaba/show", map[string]any{"name": "x", "content": []any{map[string]any{"title": "x"}}}, "rating key"},
+		"a rating key that is not Plex's": {"/maktaba/show", one("1,2"), "rating key"},
+		"a rating key that is a number":   {"/maktaba/show", one(101), "rating key"},
+	} {
+		before := len(h.dz.seen)
+		res, _ := h.do(t, "PUT", c.target, c.body)
+		if res.Err == nil || res.Err.Code != CodeBadRequest || !strings.Contains(res.Err.Detail, c.why) {
+			t.Errorf("%s: %+v", name, res)
+		}
+		for _, s := range h.dz.seen[before:] {
+			if !strings.HasPrefix(s, "GET ") {
+				t.Errorf("%s: a refused write reached dizqueTV: %s", name, s)
+			}
+		}
+	}
+}
+
+// Plex is asked at most 50 rating keys at a time (the allow-list's own limit).
+func TestDizqueTVAsksPlexInBatches(t *testing.T) {
+	h := newDZHarness(t)
+	content := []any{}
+	for i := 0; i < 120; i++ {
+		rk := strconv.Itoa(1000 + i)
+		h.items[rk] = plexItem(rk)
+		content = append(content, map[string]any{"ratingKey": rk})
+	}
+	h.ok(t, "PUT", "/maktaba/filler", map[string]any{"name": "maktaba-plan · Clips", "mode": "custom", "content": content})
+	if len(h.plexAsked) != 3 {
+		t.Fatalf("Plex was asked %d times: %v", len(h.plexAsked), h.plexAsked)
+	}
+	for _, p := range h.plexAsked {
+		if n := strings.Count(p, ",") + 1; n > 50 {
+			t.Fatalf("a request of %d keys", n)
+		}
+	}
+	var stored map[string]any
+	for _, f := range h.dz.fillers {
+		stored = f
+	}
+	if got := len(stored["content"].([]any)); got != 120 {
+		t.Fatalf("the filler list holds %d programmes", got)
+	}
 }
 
 // A channel's pictures (its logo, its watermark, its offline picture and soundtrack) are
