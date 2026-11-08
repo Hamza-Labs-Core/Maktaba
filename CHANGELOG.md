@@ -352,6 +352,11 @@ build fails when the two differ.
   started, on a circular import, and was marked failed after five restarts; the worker ran
   the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
   runner. The runners start again, and a test imports each entry point in a fresh process.
+- **A plugin can no longer write another library's video by spelling its id differently
+  (Epic 54).** A statement scoped to the job's subject checked a video id from a library job
+  by its exact text, so the same id in capitals, without hyphens or in braces passed as a
+  video that no longer exists, while the database still found it. The id is now read as an
+  id first, and anything that isn't one is refused.
 
 ### Security
 
@@ -2131,6 +2136,10 @@ build fails when the two differ.
   54.36).** It makes and saves the same images, on the home only, as before. A run that makes
   the same images as the last one now counts as unchanged, and its run notes the chapter
   frames it made and the video's state.
+- **Pulling a video's audio for transcription is a queue stage like the others (Epic 54,
+  story 54.36).** It picks the same track and writes the same audio file as before, and still
+  asks for transcription only when the video's transcription is not already handled. Its run
+  now notes the track it used, whether it wrote a file, and the video's state.
 
 - **The home's dashboards show every joined machine (Epic 53 story 53.12).** The Overview's
   memory, disk free and load, and its components and restarts, now carry a line for each joined

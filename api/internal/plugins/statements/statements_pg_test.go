@@ -134,6 +134,19 @@ func TestStatementsForgedScopeIsRefused(t *testing.T) {
 	if _, err := w.e.Stmt(ctx, sc, Request{Name: "a.insert", Op: "execute", Args: args(w.other, nil, nil, nil, nil, nil, nil)}); err == nil || err.Code != CodeScope {
 		t.Fatalf("another library's video from a library job: %v", err)
 	}
+	// the same video in the other forms Postgres reads as a uuid is still another library's
+	for _, form := range []string{strings.ToUpper(w.other), strings.ReplaceAll(w.other, "-", ""), "{" + w.other + "}"} {
+		if _, err := w.e.Stmt(ctx, sc, Request{Name: "a.insert", Op: "execute", Args: args(form, nil, nil, nil, nil, nil, nil)}); err == nil || err.Code != CodeScope {
+			t.Fatalf("another library's video written as %q from a library job: %v", form, err)
+		}
+	}
+	// and its own video in another form is still its own
+	if _, err := w.e.Stmt(ctx, sc, Request{Name: "a.insert", Op: "execute", Args: args(strings.ToUpper(w.video), nil, nil, nil, nil, nil, nil)}); err != nil {
+		t.Fatalf("its library's video in upper case: %v", err)
+	}
+	if _, err := w.e.Stmt(ctx, sc, Request{Name: "a.insert", Op: "execute", Args: args("not-a-uuid", nil, nil, nil, nil, nil, nil)}); err == nil || err.Code != CodeScope {
+		t.Fatalf("a scope argument that is no id: %v", err)
+	}
 }
 
 // A library job's videos are read once per invocation (loadLibrary); a video added to the

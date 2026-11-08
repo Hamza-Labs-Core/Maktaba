@@ -137,7 +137,7 @@ sandbox test (T02) checks the `service` runner has no network.
 ## Built: the dizqueTV stages (2026-11-07, issue #827)
 
 `dizquetv_show`, `dizquetv_channels` and `dizquetv_audit` run in `tv.maktaba.dizquetv`, in the
-`service` runner (`service = ["dizquetv", "plex"]`, roles in `0213_fp_roles`). dizqueTV is
+`service` runner (`service = ["dizquetv", "plex"]`, roles in `0214_fp_roles`). dizqueTV is
 home-only in the door: a joined machine never relays it. The plugin never writes a raw
 programme. The door's own operations (`/maktaba/...`) take a token-free record of each Plex
 item (`program_spec`), check every field, and build the programme on the home with Plex's
