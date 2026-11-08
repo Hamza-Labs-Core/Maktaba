@@ -138,11 +138,17 @@ def main(argv: list[str] | None = None) -> int:
         # reaches no share): without it, a job refused there runs in the worker
         from . import winfiles
 
+        brokered = False
         try:
-            if winfiles.install_from_env():
+            brokered = winfiles.install_from_env()
+            if brokered:
                 log("plugin_runner_files_brokered", group=group)
         except (OSError, ValueError) as exc:
             log("plugin_runner_broker_unavailable", group=group, detail=str(exc))
+        if not brokered:
+            # no broker: every share path is refused, never read as empty or missing
+            winfiles.install_unbrokered()
+            log("plugin_runner_shares_refused", group=group)
     sandbox.guard_names(policy.write_named)
     sandbox.guard_scope()  # a file stage's job changes only its subject's files (54.32 §2)
     unavailable: dict[str, str] = {}

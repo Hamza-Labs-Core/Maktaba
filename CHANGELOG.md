@@ -185,6 +185,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Share media a Windows runner missed on v0.3.105 is processed again (story 54.23).** On
+  v0.3.105, a Windows runner could read a file on a share as missing. A small thumbnail then
+  ended done with no thumbnail, and an approved duplicate merge failed with its kept file
+  unreadable. The reconciler now queues each such result once more, forced, in a library on a
+  share (a network path or a mapped network drive) since that release; the merge keeps its
+  approval and runs its checks again. On Windows, while a library is on a share, the stages
+  that read or write the libraries (thumbnails, subtitles, transcription, MP4 conversion,
+  duplicates, repair, YouTube) run in the worker, which reaches every share, until the
+  Windows end to end proves their runners there; and a runner refuses every share path it is
+  not brokered, so no look there reads a refusal as a missing file.
+
 - **A share file a sandboxed runner may not read runs in the worker, never as missing (story
   54.23).** On Windows, when a runner's sandbox refused a file in a library on a share, some
   lookups read the refusal as a missing file instead of handing the job to the worker. The
