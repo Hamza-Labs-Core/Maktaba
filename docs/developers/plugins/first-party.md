@@ -106,6 +106,53 @@ manifest does not list, writes a queue table or `videos.state`, or is built at r
 statement the runner meets that the plugin did not register never leaves the process: that
 one job runs in the worker instead, and the parity proof fails.
 
+### The scope a write must meet
+
+A write is checked against the job, never bound to it by the plugin's own code: its header
+lists a check for **every** id that binds the rows it touches, and the API runs each one before
+the statement (any one outside the job's scope is `403 plugin_scope`):
+
+```sql
+-- name: promo_links.run.3
+-- mode: write
+-- scope: subject $1, library $2, series $3, season $4
+-- tables: promo_links*
+INSERT INTO promo_links (video_id, library_id, series_id, season_id, ...) VALUES ($1,$2,$3,$4, ...)
+```
+
+`sync` writes these checks itself, from the statement's parse tree and
+`tools/plugins/scope_tables.toml`, which says which column of which table holds which kind of
+id: `subject` (a video), `library`, or a row the API looks up (`season`, `series`,
+`transcript`, `segment`, `audio_track`, `file_action`, `dup_group`, `clip_group`,
+`topic_collection`, `audio_cache`, `youtube_source`, `youtube_channel`, `youtube_playlist`,
+`youtube_video`). `check` fails a write that does not meet these rules:
+
+- an `UPDATE` or `DELETE` ties its rows to an owner column by a top-level `AND` term of its
+  `WHERE`: `col = $N`, `col = ANY($N)`, or `col IN (SELECT r.c FROM r WHERE …)` whose inner rows
+  are bound the same way (an `OR` binds nothing); an owner column its `SET` fills from a `$N`
+  is checked too;
+- an `INSERT` checks every owner column it fills from a `$N`, and fills at least one;
+- `ON CONFLICT … DO UPDATE` has an owner column in its conflict target (or a
+  `DO UPDATE … WHERE t.col = EXCLUDED.col`), so the update cannot reach another scope's row;
+- a table no library owns is listed under `[home]` in `scope_tables.toml` with its reason; one
+  marked `catalog_only` (the TV lineup) is written only by a plugin whose stages all take the
+  catalog as their subject;
+- a table only your plugin has gets its owner columns in your `statements.toml`
+  (`[tables.<table>]`), and a write the parse tree cannot bind gets its checks by hand,
+  with the reason they are right, reviewed with the plugin:
+
+```toml
+[scope."pgstore.write_vectors"]
+checks = "subject $1, library $2, segment $5"
+reason = "each row's segment_id comes from unnest($5), the conflict target"
+```
+
+The API passes an id when no row has it (an insert's new id), when the row belongs to no
+library, or when it is the job's library's (and, for a video job, the job's own video's); a
+job whose subject is the catalog spans every library. A YouTube row is in the scope of every
+library that follows its channel or downloads it. An array argument is checked element by
+element, and every id is compared as a uuid, never as text.
+
 ## Where a stage runs: the switch
 
 `job_stages.impl` says, per stage, `inproc` (the worker) or `plugin` (the runner). Each wave's

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tags"
@@ -66,13 +67,77 @@ func (c *call) readScope(videoID string) *Refusal {
 // writeScope: a write (or a media read) acts on the job's subject only; a library,
 // season, series or catalog job on items inside the granted libraries (54.04 §3).
 func (c *call) writeScope(videoID string) *Refusal {
-	if ref := c.readScope(videoID); ref != nil {
+	lib, ref := c.videoLibrary(videoID)
+	if ref != nil {
 		return ref
+	}
+	if !c.inv.LibraryAllowed(lib) {
+		return refuse(403, CodeScope, "the video's library is not granted")
 	}
 	if c.inv.SubjectKind == "video" && videoID != c.inv.SubjectID {
 		return refuse(403, CodeScope, "a video job acts on its own video only")
 	}
+	// a job of one library (a first-party job's token spans every library for reads) writes
+	// that library's videos only (README §15.12)
+	if c.inv.LibraryID != "" && !sameUUID(lib, c.inv.LibraryID) {
+		return refuse(403, CodeScope, "the video is not of this job's library")
+	}
 	return nil
+}
+
+// subjectScope: a subject a route names, of a kind it resolves (a video, a library, a
+// series or a season), inside the token's libraries and, for a write by a job of one
+// library, that library (README §15.12). Another kind answers ok=false for the route to
+// decide.
+func (c *call) subjectScope(sub subjectRef, write bool) (ok bool, ref *Refusal) {
+	var lib sql.NullString
+	switch sub.Kind {
+	case "video":
+		if write {
+			return true, c.writeScope(sub.ID)
+		}
+		return true, c.readScope(sub.ID)
+	case "library", "series", "season":
+	default:
+		return false, nil
+	}
+	id, err := uuid.Parse(sub.ID)
+	if err != nil {
+		return true, refuse(400, CodeInvalid, "a "+sub.Kind+" id is a UUID")
+	}
+	switch sub.Kind {
+	case "library":
+		lib = sql.NullString{String: id.String(), Valid: true}
+	default:
+		table := map[string]string{"series": "series", "season": "series_seasons"}[sub.Kind]
+		err := c.s.DB.QueryRowContext(c.ctx, `SELECT CAST(library_id AS text) FROM `+table+` WHERE id = $1`, id.String()).Scan(&lib)
+		if errors.Is(err, sql.ErrNoRows) {
+			return true, refuse(404, CodeNotFound, "no such "+sub.Kind)
+		}
+		if err != nil {
+			return true, dbErr(err)
+		}
+	}
+	if !lib.Valid { // a series no library owns: a token of every library only
+		if c.inv.AllLibraries && c.inv.LibraryID == "" {
+			return true, nil
+		}
+		return true, refuse(403, CodeScope, "the "+sub.Kind+" is no library's")
+	}
+	if !c.inv.LibraryAllowed(lib.String) {
+		return true, refuse(403, CodeScope, "the "+sub.Kind+"'s library is not granted")
+	}
+	if write && c.inv.LibraryID != "" && !sameUUID(lib.String, c.inv.LibraryID) {
+		return true, refuse(403, CodeScope, "the "+sub.Kind+" is not of this job's library")
+	}
+	return true, nil
+}
+
+// sameUUID: two ids name one row, read as uuids (never compared as text).
+func sameUUID(a, b string) bool {
+	x, err1 := uuid.Parse(a)
+	y, err2 := uuid.Parse(b)
+	return err1 == nil && err2 == nil && x == y
 }
 
 func (c *call) attribute(ctx context.Context, tx *sql.Tx, target, subject, field string, before, after any) error {
@@ -684,10 +749,12 @@ func (s *Server) otherRoutes() {
 		if len(in.Value)+len(in.Reason) > MaxValue || in.Field == "" || len(in.Field) > 64 {
 			return nil, refuse(413, CodeTooLarge, "a field and at most 64 KB")
 		}
-		if in.Subject.Kind == "video" {
-			if ref := c.writeScope(in.Subject.ID); ref != nil {
-				return nil, ref
-			}
+		known, ref := c.subjectScope(in.Subject, true)
+		if ref != nil {
+			return nil, ref
+		}
+		if !known {
+			return nil, refuse(400, CodeInvalid, "a suggestion is about a video, a library, a series or a season")
 		}
 		if _, err := c.s.DB.ExecContext(c.ctx, `INSERT INTO plugin_suggestions (plugin_id, version, job_id, subject_kind, subject_id, field, value, reason)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, c.inv.PluginID, c.inv.Version, c.inv.JobID, in.Subject.Kind, in.Subject.ID, in.Field, in.Value, in.Reason); err != nil {
@@ -720,10 +787,8 @@ func (s *Server) otherRoutes() {
 		if _, ok := c.inv.Lineage.Next(target, subjectKey(in.Subject.Kind, in.Subject.ID)); !ok {
 			return nil, refuse(403, CodeLoop, target+" on "+in.Subject.Kind+":"+in.Subject.ID+" would loop")
 		}
-		if in.Subject.Kind == "video" {
-			if ref := c.readScope(in.Subject.ID); ref != nil {
-				return nil, ref
-			}
+		if _, ref := c.subjectScope(in.Subject, false); ref != nil {
+			return nil, ref
 		}
 		c.inv.mu.Lock()
 		c.inv.requests++

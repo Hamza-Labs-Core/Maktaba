@@ -507,6 +507,18 @@ build fails when the two differ.
 
 ### Security
 
+- **A first-party plugin's writes stay in its job's library and video (Epic 54, README
+  §15.12).** A plugin's write statement named one id the plugin API checked against the job,
+  or none, while it reached rows by other ids too: a season's row, a series, a transcript and
+  its segments, an audio track, a file action, a duplicate group, a YouTube source, channel,
+  playlist or video. A plugin, or a compromised runner, could write another library's rows
+  through them. Every write now lists a check for each id that binds the rows it touches,
+  worked out by the build from the statement's parse tree, and the API runs each one, looking
+  rows up to find their library and video; the build fails a write it cannot bind. Lists of
+  ids are checked one by one and every id is compared as a uuid. The job events and duplicate
+  merges the worker writes for a plugin's job, and the plugin API's write routes, keep to the
+  job's own job, subject and library too. A write outside the job's scope is refused with
+  `plugin_scope`.
 - **A runner's folder grant on Windows lands only on the folder that was checked (story
   54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
   folder swapped for a junction between its check and its grant had the grant land on the

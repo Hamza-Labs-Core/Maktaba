@@ -190,5 +190,5 @@ mypy_path = "../shared/testtier/py"
 # Epic 54 Phase 4: what the first-party plugin tests import from outside the package (the
 # tools of tools/plugins, the tests' toy plugin) and the wheel's build hook
 [[tool.mypy.overrides]]
-module = ["bundle", "roles", "graph_golden", "statements_build", "fp_toy", "fp_toy.*", "hatchling.*", "hatch_build"]
+module = ["bundle", "roles", "graph_golden", "statements_build", "write_scope", "fp_toy", "fp_toy.*", "hatchling.*", "hatch_build"]
 ignore_missing_imports = true
