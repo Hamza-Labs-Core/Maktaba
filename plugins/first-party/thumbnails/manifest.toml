@@ -1,5 +1,7 @@
 # tv.maktaba.thumbnails: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 2
-# (story 54.29): the first stages that read library files and write files.
+# (story 54.29): the first stages that read library files and write files. Wave 9 (story
+# 54.36 §1): thumbnail, the poster and sprites, once it ran on the engine (54.36 §2); the
+# video's state it advances is written by the worker for the job (the relayed advance).
 schema     = 1
 id         = "tv.maktaba.thumbnails"
 version    = "0.0.0-dev"
@@ -16,10 +18,24 @@ summary = "fp.thumbnails.summary"
 runner    = "light"
 component = "media.thumbnails"
 db.read   = ["chapters", "processing_jobs", "videos"]
-db.write  = []
+db.write  = ["videos"]
 files.read  = ["library"]
 files.write = ["data.thumbnails"]
 exec      = ["ffmpeg"]
+
+[[stage]]
+name         = "thumbnail"
+subject      = "video"
+export       = "thumbnail"
+version      = 1
+label        = "Poster and sprites"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "media"
+lane_order   = 5
+placement    = "home"
+edges        = [{ to = "thumb_small", map = "same" }]
+entry        = "maktaba_fp_thumbnails.stages.thumbnail:IMPL"
 
 [[stage]]
 name         = "thumb_small"

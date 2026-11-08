@@ -142,3 +142,12 @@ func TestTheStartEndpointRefusesAHeldRunner(t *testing.T) {
 		t.Fatal("the ask opened the gate")
 	}
 }
+
+// Core's footprint is measured after 120 s idle (tools/release/bundle-size/core-home.sh): a
+// runner the home's last job woke must have exited by then, with room for that job to end.
+func TestRunnerIdleExitFitsCoresIdleWindow(t *testing.T) {
+	const coreIdleWindow = 120
+	if RunnerIdleSec <= 0 || RunnerIdleSec > coreIdleWindow/2 {
+		t.Fatalf("RunnerIdleSec = %d: a runner must exit within half of Core's %d s idle window", RunnerIdleSec, coreIdleWindow)
+	}
+}

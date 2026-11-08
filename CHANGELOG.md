@@ -2460,6 +2460,16 @@ build fails when the two differ.
   at the next 5-minute read, so the status strip says an outage as it starts. Android TV's strip,
   the same shared one, now has a test of its own.
 
+- **The core stages run as a first-party plugin (Epic 54 story 54.36, wave 9).** Finding the
+  videos, reading their length, identity, thumbnail and audio fingerprints, linking them to
+  their YouTube pages, the access check and the share path conversion run in
+  `tv.maktaba.core-media`, in the `light` runner, once the update syncs the graph. `thumbnail`
+  moves into `tv.maktaba.thumbnails` and `extract` into `tv.maktaba.transcription`. A video's
+  state, a failed stage queued again and the path conversion stay the queue engine's: the
+  worker writes them for the plugin's job after checking it. `core.pipeline` stays part of
+  the server and cannot be switched off; `categorize`, `component_catchup`, the watcher and
+  the manual scans stay in the core.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -2992,6 +3002,10 @@ build fails when the two differ.
   interpreter, told its venv. A broker pipe that fails is a refusal (the job runs in the
   worker), never a missing file, and the broker logs each process it turns away. Library
   stages on a share still run in the worker unless `MAKTABA_WINDOWS_SHARE_RUNNERS=1` is set.
+
+- **An idle Core home is back to its four processes a minute after its last job.** Since the
+  core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
+  stayed up for ten idle minutes. A runner now exits after one idle minute.
 
 ## [0.2.0] - 2026-10-19
 

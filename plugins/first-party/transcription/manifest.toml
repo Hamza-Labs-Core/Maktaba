@@ -1,6 +1,7 @@
 # tv.maktaba.transcription: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3
 # (story 54.30): Whisper and the second listen, on the GPU, in the ml runner of each
-# transcription worker.
+# transcription worker. Wave 9 (story 54.36 §1): extract, the WAV a speech backend that reads
+# a file needs (the audio cache, data.cache), once it ran on the engine (54.36 §2).
 schema     = 1
 id         = "tv.maktaba.transcription"
 version    = "0.0.0-dev"
@@ -19,10 +20,23 @@ component = "transcription"
 db.read   = ["app_settings", "libraries", "library_roots", "media_info", "processing_jobs", "vocab_pairs", "vocabulary"]
 db.write  = ["audio_cache", "audio_tracks", "relisten_attempts", "transcribe_checkpoints", "transcript_edits", "transcript_segments", "transcripts", "videos", "word_flags"]
 settings  = ["transcription"]
-files.read  = ["library", "models"]
-files.write = ["models"]
+files.read  = ["library", "models", "data.cache"]
+files.write = ["models", "data.cache"]
 exec      = ["ffmpeg"]
 gpu       = "preferred"
+
+[[stage]]
+name         = "extract"
+subject      = "video"
+export       = "extract"
+version      = 1
+label        = "Extract audio"
+subject_kinds = ["video"]
+pool         = "nas_read"
+lane         = "media"
+lane_order   = 1
+may_request  = ["transcribe"]
+entry        = "maktaba_fp_transcription.stages.extract:IMPL"
 
 [[stage]]
 name         = "transcribe"

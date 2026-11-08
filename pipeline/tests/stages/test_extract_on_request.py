@@ -18,6 +18,7 @@ from uuid import UUID
 
 import numpy as np
 import pytest
+from maktaba_fp_transcription.stages import extract as extract_stage
 from maktaba_fp_transcription.stages import transcribe as tr
 
 from maktaba_pipeline.audio.extract import sweep_audio_cache
@@ -25,7 +26,6 @@ from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.sql import now, to_ts
-from maktaba_pipeline.engine.stages import extract as extract_stage
 from maktaba_pipeline.handlers import probe_handler
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt.batched import Sentence, Transcript
@@ -156,8 +156,9 @@ async def test_the_engine_probe_queues_no_extract(
 ) -> None:
     """The engine's probe stage (story 54.36 §2) leaves extract out, as the legacy handler
     did on the engine (build_real_dispatch(engine=True))."""
+    from maktaba_fp_core_media.stages import probe as probe_stage
+
     from maktaba_pipeline.audio.probe import AudioTrack, MediaInfo, ProbeResult
-    from maktaba_pipeline.engine.stages import probe as probe_stage
     from maktaba_pipeline.handlers import build_real_dispatch
 
     rt = await core_runtime(db)

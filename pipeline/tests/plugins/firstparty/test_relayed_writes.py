@@ -222,3 +222,107 @@ async def test_the_areas_carry_the_reports_and_the_channels_art(
     assert doc["data.channels"].split(";") == sorted(
         real(tmp_path / p) for p in ("data/channel-art", "logos", "marks")
     )
+
+
+def _video_job(stage: str, lib: Any, video: Any) -> Any:
+    job = SimpleNamespace(
+        stage=stage, library_id=lib, video_id=video, subject=Subject(kind="video", id=video)
+    )
+    return SimpleNamespace(job=job, stage=get_stage(stage))
+
+
+def _lib_job(stage: str, lib: Any) -> Any:
+    job = SimpleNamespace(stage=stage, library_id=lib, subject=Subject(kind="library", id=lib))
+    return SimpleNamespace(job=job, stage=get_stage(stage))
+
+
+async def test_probe_advances_only_its_own_video_by_its_own_trigger(db: Database) -> None:
+    """Only the engine writes ``videos.state`` (story 54.36): the worker applies probe's
+    transition for the job's video; another video, or another stage's trigger, is refused
+    and the state stays as it was."""
+    if db.dialect != "postgres":
+        pytest.skip("the runners, and so the relayed advance, need Postgres")
+    lib = await make_library(db)
+    v, other = await make_video(db, lib), await make_video(db, lib)
+    ctx = _video_job("probe", lib, v)
+    with pytest.raises(native.EnqueueRefused, match="plugin_scope: video"):
+        await native._relayed_advance(
+            db, ctx, {"video_id": str(other), "trigger": "probe", "outcome": "ok"}
+        )
+    with pytest.raises(native.EnqueueRefused, match="may not advance a video by 'thumbnail'"):
+        await native._relayed_advance(
+            db, ctx, {"video_id": str(v), "trigger": "thumbnail", "outcome": "ok"}
+        )
+    with pytest.raises(native.EnqueueRefused, match="link may not advance"):
+        await native._relayed_advance(
+            db, _video_job("link", lib, v),
+            {"video_id": str(v), "trigger": "probe", "outcome": "ok"},
+        )  # fmt: skip
+    states = await db.fetch("SELECT DISTINCT state FROM videos")
+    assert [r["state"] for r in states] == ["discovered"]
+    got = await native._relayed_advance(
+        db, ctx, {"video_id": str(v), "trigger": "probe", "outcome": "ok"}
+    )
+    assert got == {"state": "probed"}
+    assert await db.fetchval("SELECT state FROM videos WHERE id = $1", str(v)) == "probed"
+    assert await db.fetchval("SELECT state FROM videos WHERE id = $1", str(other)) == "discovered"
+
+
+async def test_a_failed_stage_is_queued_again_only_for_the_jobs_video_or_library(
+    db: Database,
+) -> None:
+    """access_check queues its own video's failed stages again, scan a video of its library
+    (a missing file found again); another library's video, or another stage, is refused."""
+    from maktaba_pipeline.engine.graph import bound_graph
+    from maktaba_pipeline.engine.sync import sync_graph
+
+    await sync_graph(db, bound_graph())
+    lib, far = await make_library(db), await make_library(db)
+    v, stranger = await make_video(db, lib), await make_video(db, far)
+    for vid in (v, stranger):
+        await db.execute(
+            "INSERT INTO processing_jobs (subject_kind, subject_id, video_id, stage, state)"
+            " VALUES ('video', $1, $1, 'thumb_hash', 'failed')",
+            str(vid),
+        )
+    with pytest.raises(native.EnqueueRefused, match="access_check may not queue"):
+        await native._relayed_requeue_failed(
+            db, _video_job("access_check", lib, v), {"video_id": str(stranger), "why": "x"}
+        )
+    with pytest.raises(native.EnqueueRefused, match="scan may not queue"):
+        await native._relayed_requeue_failed(
+            db, _lib_job("scan", lib), {"video_id": str(stranger), "why": "x"}
+        )
+    with pytest.raises(native.EnqueueRefused, match="link may not queue"):
+        await native._relayed_requeue_failed(
+            db, _video_job("link", lib, v), {"video_id": str(v), "why": "x"}
+        )
+    assert await db.fetchval("SELECT count(*) FROM processing_jobs WHERE state = 'pending'") == 0
+    got = await native._relayed_requeue_failed(
+        db, _video_job("access_check", lib, v), {"video_id": str(v), "why": "file_readable"}
+    )
+    assert got == ["thumb_hash"]
+    # scan, for a video of its library: its latest thumb_hash is now the pending one, so
+    # nothing is queued twice
+    got = await native._relayed_requeue_failed(
+        db, _lib_job("scan", lib), {"video_id": str(v), "why": "file_found_again"}
+    )
+    assert got == []
+    pending = await db.fetch(
+        "SELECT subject_id FROM processing_jobs WHERE state = 'pending' AND stage = 'thumb_hash'"
+    )
+    assert {str(r["subject_id"]) for r in pending} == {str(v)}
+
+
+async def test_only_storage_canonicalizes_job_runs_the_path_conversion(db: Database) -> None:
+    """The path conversion pauses stages and writes the share map: the worker runs it for
+    storage_canonicalize's job only; with no conversion set up on this worker it skips."""
+    from maktaba_pipeline.sharepath import auto
+
+    ctx = SimpleNamespace(job=SimpleNamespace(stage="scan"))
+    with pytest.raises(native.EnqueueRefused, match="storage_canonicalize is not scan's"):
+        await native._relayed_storage_canonicalize(db, ctx)
+    auto.set_stage_env(None)
+    ctx.job.stage = "storage_canonicalize"
+    got = await native._relayed_storage_canonicalize(db, ctx)
+    assert got == {"phase": "skipped", "why": "not the home's own machine"}

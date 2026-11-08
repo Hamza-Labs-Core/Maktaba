@@ -25,8 +25,8 @@ from uuid import UUID
 
 from .failure_policy import _roots, read_config, root_answers
 from .paths import find_existing, to_local
+from .requeue import requeue_failed
 from .sql import now, to_ts, uid
-from .stages.access_check import requeue_failed
 
 __all__ = ["MissingReport", "confirm_missing"]
 

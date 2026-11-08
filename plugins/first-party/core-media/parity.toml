@@ -1,0 +1,22 @@
+# The parity proof of tv.maktaba.core-media (story 54.36 §1, T01): a library of real files
+# scanned, probed (the video's state written by the engine on both sides), linked to its
+# YouTube page from a yt-dlp sidecar, then each video's identity, fingerprint, style sample
+# and access check. The rows are compared, with the queue and the job log; only the columns
+# that hold the time are masked.
+tables = ["videos", "media_info", "audio_tracks", "video_signals", "media_metadata_enrichment", "youtube_videos", "youtube_channels"]
+files  = []
+
+[ignore]
+videos = ["created_at", "updated_at", "mtime", "last_seen_at", "discovered_at"]
+media_info = ["created_at", "updated_at", "probed_at"]
+audio_tracks = ["created_at", "updated_at"]
+video_signals = ["updated_at"]
+media_metadata_enrichment = ["created_at", "updated_at", "fetched_at"]
+youtube_videos = ["created_at", "updated_at", "fetched_at"]
+youtube_channels = ["created_at", "updated_at", "fetched_at", "last_checked_at"]
+
+[[cases]]
+name = "four videos of one show: a talk with a thumbnail beside it, one with its yt-dlp sidecar, a silent one, one ffprobe cannot read"
+
+[[failure_cases]]
+name = "a video ffprobe cannot read: probe fails with probe_failed, on both sides"

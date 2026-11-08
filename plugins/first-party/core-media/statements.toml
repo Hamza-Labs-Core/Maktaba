@@ -1,0 +1,18 @@
+# The shared pipeline modules whose statements tv.maktaba.core-media's stages run (story 54.24
+# §1). What only the queue engine writes is the worker's, relayed, and not listed:
+# orchestrator.advance (videos.state, the relayed advance), engine.requeue (a video's failed
+# stages queued again, requeue_failed) and sharepath.auto (the path conversion pauses stages
+# and writes the share map, storage_canonicalize).
+modules = [
+    "maktaba_pipeline.engine.stages._common:load_video,require_video",
+    "maktaba_pipeline.rules:read",
+    # scan: the walk's store, the copies it reconciles and the missing files it looks at again
+    "maktaba_pipeline.scanner.store",
+    "maktaba_pipeline.scanner.copies:record_copy,promote_copy,reconcile_copies",
+    "maktaba_pipeline.engine.missing_files:confirm_missing",
+    # probe: the facts it saves, and the length and frame size it reports as its output
+    "maktaba_pipeline.audio.probe:commit_probe",
+    "maktaba_pipeline.engine.stages.legacy:_probe_output",
+    # link: a linked video's YouTube sources
+    "maktaba_pipeline.library_mgmt.youtube_derive:load_evidence,_lock,_apply,derive,after_link",
+]

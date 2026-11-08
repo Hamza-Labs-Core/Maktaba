@@ -118,6 +118,9 @@ video_id = "subject"
 [tables.media_metadata_enrichment]
 video_id = "subject"
 
+[tables.media_field_provenance]
+video_id = "subject"
+
 [tables.promo_links]
 video_id = "subject"
 library_id = "library"

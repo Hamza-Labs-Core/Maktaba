@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 func TestStorageCommand(t *testing.T) {
@@ -68,9 +69,20 @@ func TestStagesImplRefusesBeforeTheDatabase(t *testing.T) {
 		!strings.Contains(err.Error(), "inproc or plugin") {
 		t.Fatalf("a bad impl: %v", err)
 	}
-	if err := runStagesImpl(context.Background(), &out, nil, "probe", "plugin", 0); err == nil ||
+	if err := runStagesImpl(context.Background(), &out, nil, "no_such_stage", "plugin", 0); err == nil ||
 		!strings.Contains(err.Error(), "not a built-in plugin's stage") {
-		t.Fatalf("a core stage: %v", err)
+		t.Fatalf("no plugin's stage: %v", err)
+	}
+	// wave 9 (story 54.36): a core stage is tv.maktaba.core-media's, and core.pipeline is
+	// not switchable
+	for _, st := range []string{"probe", "scan", "fp_gate"} {
+		if err := runStagesImpl(context.Background(), &out, nil, st, "inproc", 0); err == nil ||
+			!strings.Contains(err.Error(), "part of Maktaba's core") {
+			t.Fatalf("a core stage %s: %v", st, err)
+		}
+	}
+	if c, ok := components.Default().ByStage("promo_links"); !ok || !c.Switchable {
+		t.Fatalf("promo_links (a switchable plugin's stage) = %+v, %v", c, ok)
 	}
 	names := stageNamesOf("[[stage]]\nname = \"a\"\n[[stage]]\nname = \"b\"\n")
 	if strings.Join(names, ",") != "a,b" {

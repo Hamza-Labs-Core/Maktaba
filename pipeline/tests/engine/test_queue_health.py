@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from maktaba_fp_core_media.stages import access_check
 
 from maktaba_pipeline.db.jobs import DBConn, Job
 from maktaba_pipeline.engine.claim import claim_for_pool
@@ -25,7 +26,6 @@ from maktaba_pipeline.engine.failure_classes import (
 from maktaba_pipeline.engine.failure_policy import budget
 from maktaba_pipeline.engine.graph import StageResult, get_stage
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts
-from maktaba_pipeline.engine.stages import access_check
 from maktaba_pipeline.engine.stages.registry import register_impl
 from maktaba_pipeline.engine.watchers import (
     model_probe,

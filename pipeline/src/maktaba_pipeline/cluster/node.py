@@ -335,10 +335,9 @@ class WorkerAgent:
         await asyncio.to_thread(self._rebuild)
         await self._report_home()
         if not self.explicit_path_map:
-            from ..engine.stages.storage_canonicalize import set_env
-            from ..sharepath.auto import AutoEnv
+            from ..sharepath.auto import AutoEnv, set_stage_env
 
-            set_env(AutoEnv(mounts=self.mounts, on_change=self.storage_changed))
+            set_stage_env(AutoEnv(mounts=self.mounts, on_change=self.storage_changed))
             self._auto_canon = True
             await self._check_canonicalize(full=True)
 

@@ -7,6 +7,9 @@ modules = [
     "maktaba_pipeline.cluster.share:load_library_roots",
     # imported where they are used, so the scan of the stages' code does not see them
     "maktaba_pipeline.audio.extract:release_audio_cache",
+    # extract (wave 9, story 54.36): the track it decodes and the WAV it records; the video's
+    # state it advances is the worker's (orchestrator.advance, the relayed advance)
+    "maktaba_pipeline.audio.extract:load_selected_track,commit_extract,commit_extract_skipped,transcription_handled",
     "maktaba_pipeline.transcript.edits:carry_over",
     "maktaba_pipeline.word_review.vocabulary:load,derived_prompt,prompt_terms",
 ]

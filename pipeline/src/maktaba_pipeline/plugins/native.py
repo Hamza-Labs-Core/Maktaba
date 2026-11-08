@@ -673,6 +673,12 @@ def engine_handler(db: Any, ctx: Any, plugin_id: str = "") -> EngineHandler:
             return await _relayed_dedup_commit(db, ctx, {k: decode_any(v) for k, v in a.items()})
         if op in ("tv_commit", "tv_rollback"):
             return await _relayed_tv(db, ctx, op)
+        if op == "advance":
+            return await _relayed_advance(db, ctx, a)
+        if op == "requeue_failed":
+            return await _relayed_requeue_failed(db, ctx, a)
+        if op == "storage_canonicalize":
+            return await _relayed_storage_canonicalize(db, ctx)
         if op == "service_request":
             return await _relayed_service(ctx, a)
         raise ValueError(f"engine op {op!r}")
@@ -799,6 +805,67 @@ async def _relayed_tv(db: Any, ctx: Any, op: str) -> dict[str, Any]:
     if ctx.job.stage != stage:
         raise EnqueueRefused(f"plugin_scope: {op} is {stage}'s, not {ctx.job.stage}'s")
     got = await run_for_job(db, kind, int(ctx.job.id), ctx.job.payload)
+    return {k: encode_any(v) for k, v in got.items()}
+
+
+#: the video-state trigger each stage's job may apply (story 54.36): ``advance_after_stage``
+#: is the only writer of ``videos.state``, and only the queue engine's process runs it
+_ADVANCE_TRIGGERS = {"probe": "probe", "thumbnail": "thumbnail", "extract": "extract"}
+
+
+async def _relayed_advance(db: Any, ctx: Any, a: dict[str, Any]) -> dict[str, Any]:
+    """A video's state transition, by the worker for ``probe``, ``thumbnail`` or ``extract``
+    in its runner: only the job's own video, and only its stage's trigger (the outcome is
+    checked by the state machine, which refuses a transition it does not have)."""
+    from ..domain.states import Trigger
+    from ..orchestrator.advance import advance_after_stage
+
+    stage = str(ctx.job.stage)
+    trigger = str(a.get("trigger") or "")
+    if _ADVANCE_TRIGGERS.get(stage) != trigger:
+        raise EnqueueRefused(f"plugin_scope: {stage} may not advance a video by {trigger!r}")
+    vid = str(a.get("video_id") or "")
+    own = getattr(ctx.job, "video_id", None)
+    if own is None or str(own) != vid:
+        raise EnqueueRefused(f"plugin_scope: video {vid} is not this {stage} job's")
+    state = await advance_after_stage(
+        db, own, Trigger(trigger), str(a.get("outcome") or ""), log=_log
+    )
+    return {"state": state.value}
+
+
+async def _relayed_requeue_failed(db: Any, ctx: Any, a: dict[str, Any]) -> list[str]:
+    """A video's failed stages queued again, by the worker for ``access_check`` (the job's
+    own video) or ``scan`` (a missing file of the job's library found again)."""
+    from ..engine.requeue import requeue_failed
+    from ..engine.sql import uid
+
+    stage = str(ctx.job.stage)
+    vid = str(a.get("video_id") or "")
+    if stage == "access_check":
+        own = getattr(ctx.job, "video_id", None) or ctx.job.subject.id
+        ok = str(own) == vid
+    elif stage == "scan":
+        lib = getattr(ctx.job, "library_id", None) or ctx.job.subject.id
+        owner = await db.fetchval("SELECT library_id FROM videos WHERE id = $1", uid(vid))
+        ok = owner is not None and str(owner) == str(lib)
+    else:
+        ok = False
+    if not ok:
+        raise EnqueueRefused(f"plugin_scope: {stage} may not queue video {vid} again")
+    # checked above: the job's own video, or a row of its library, so a valid id
+    return await requeue_failed(db, UUID(vid), str(a.get("why") or "requeued"))
+
+
+async def _relayed_storage_canonicalize(db: Any, ctx: Any) -> dict[str, Any]:
+    """The home's path conversion, by the worker for ``storage_canonicalize``'s job: it
+    pauses and resumes stages and writes the share map, which a plugin never may; nothing
+    the plugin sends is used."""
+    from ..sharepath.auto import run_for_job
+
+    if str(ctx.job.stage) != "storage_canonicalize":
+        raise EnqueueRefused(f"plugin_scope: storage_canonicalize is not {ctx.job.stage}'s")
+    got = await run_for_job(db)
     return {k: encode_any(v) for k, v in got.items()}
 
 
@@ -1112,6 +1179,7 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
     """This machine's folders of each ``[trusted]`` file area, as the worker sees them: the
     library roots through this machine's share-path mapping, and the data folders the
     stages' own settings name. A runner applies its sandbox from them."""
+    from ..audio.extract import cache_path_for
     from ..engine.stages._review_pages import reviews_dir
     from ..thumbnail import small
     from ..thumbnail.generator import thumbnail_dir_for
@@ -1142,9 +1210,15 @@ async def areas_doc(db: Any, path_map: Any = None) -> dict[str, str]:
         "trash": ";".join(f"{r}/.maktaba/trash" for r in sorted(roots)),
         "data.thumbnails": thumbs,
         "models": ";".join(_model_folders()),
-        # the YouTube downloads' work folder (MAKTABA_YT_WORK, else ~/.maktaba/work/yt)
-        "data.cache": os.path.realpath(
-            os.path.expanduser(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt")
+        # the YouTube downloads' work folder (MAKTABA_YT_WORK, else ~/.maktaba/work/yt) and
+        # the audio cache extract writes its WAV in (audio.extract.cache_path_for, story 54.36)
+        "data.cache": ";".join(
+            [
+                os.path.realpath(
+                    os.path.expanduser(os.environ.get("MAKTABA_YT_WORK") or "~/.maktaba/work/yt")
+                ),
+                os.path.realpath(str(cache_path_for("x").parent)),
+            ]
         ),
         "data.index": os.path.realpath(
             os.path.expanduser(os.environ.get("MAKTABA_CHROMA_DIR") or "~/.maktaba/chroma")
