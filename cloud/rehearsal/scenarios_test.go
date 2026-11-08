@@ -83,7 +83,8 @@ func repoRoot(t *testing.T) string {
 	return strings.TrimSpace(string(out))
 }
 
-// TestScenario runs every scenario (C01–C10, and 50.11's status-feed); one with -run 'TestScenario/<name>'.
+// TestScenario runs every scenario (C01–C10, 50.11's status-feed, 53.16's report-symbolicated);
+// one with -run 'TestScenario/<name>'.
 func TestScenario(t *testing.T) {
 	skip := notBuilt(t)
 	for _, s := range []struct {
@@ -109,6 +110,7 @@ func TestScenario(t *testing.T) {
 		{"direct-remote", directRemote},
 		{"origin-only-via-edge", originOnlyViaEdge},
 		{"origin-aop", originAOP},
+		{"report-symbolicated", reportSymbolicated},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -204,7 +206,8 @@ func (c *cluster) env() []string {
 	}
 	return []string{"CLOUD_IMAGE=" + img, "CADDY_IMAGE=" + caddy, fmt.Sprintf("PG_PORT=%d", ports[0]), fmt.Sprintf("EDGE_PORT=%d", ports[1]),
 		fmt.Sprintf("CERT_A_PORT=%d", ports[1]+1000), fmt.Sprintf("CERT_B_PORT=%d", ports[1]+1001),
-		fmt.Sprintf("BLUE_PORT=%d", ports[1]+500), fmt.Sprintf("GREEN_PORT=%d", ports[1]+501), fmt.Sprintf("EDGE_ADMIN_PORT=%d", ports[1]+502)}
+		fmt.Sprintf("BLUE_PORT=%d", ports[1]+500), fmt.Sprintf("GREEN_PORT=%d", ports[1]+501), fmt.Sprintf("EDGE_ADMIN_PORT=%d", ports[1]+502),
+		fmt.Sprintf("API_PORT=%d", ports[1]+503), fmt.Sprintf("API_ADMIN_PORT=%d", ports[1]+504)}
 }
 
 // portsFor gives each scenario its own host ports (they may run on one machine).

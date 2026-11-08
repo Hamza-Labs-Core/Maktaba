@@ -8,6 +8,9 @@
 #   relay-green  the same, process "a-green" (its peer: the tunnel directory, 50.04)
 #   edge         Caddy in front of both (deploy/cloud-ha's edge without TLS)
 #
+# Profile "api" (scenario report-symbolicated, Epic 53 story 53.16 T07): this commit's api role
+# (api-rehearsal.toml), with a symbols token the scenario makes in .work/symbols.token.
+#
 # Profile "certs" (scenario cert-on-standby, story 50.02): Pebble (Let's Encrypt's test CA),
 # fakeacmedns (the DNS-01 provider Pebble resolves through) and two node edges, cert-a and
 # cert-b, each this repository's Caddy image (deploy/caddy) getting its own wildcard.
@@ -110,6 +113,37 @@ services:
         condition: service_healthy
       relay-green:
         condition: service_healthy
+
+  api:
+    profiles: ["api"]
+    image: ${CLOUD_IMAGE:-maktaba-cloud:rehearsal}
+    command: ["serve", "--role", "api", "--config", "/etc/maktaba/cloud.toml"]
+    restart: "no"
+    environment:
+      MAKTABA_ENV: rehearsal
+      MAKTABA_NODE_ID: a-api
+      MAKTABA_CLOUD_DB_URL: postgres://maktaba:rehearsal@10.50.0.10:5432/maktaba?sslmode=disable
+      MAKTABA_CLOUD_PUBLIC_URL: http://api.test
+      MAKTABA_CLOUD_TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+      MAKTABA_CLOUD_BILLING_PROVIDER: none
+      MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE: /run/maktaba/symbols.token
+    volumes:
+      - ./api-rehearsal.toml:/etc/maktaba/cloud.toml:ro
+      - ./.work/symbols.token:/run/maktaba/symbols.token:ro
+    networks:
+      private:
+        ipv4_address: 10.50.0.13
+    ports:
+      - "127.0.0.1:${API_PORT:-18090}:8090"
+      - "127.0.0.1:${API_ADMIN_PORT:-18091}:8091"
+    depends_on:
+      relay-blue:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8090/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
 
   pebble:
     profiles: [certs]
