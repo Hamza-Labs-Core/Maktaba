@@ -53,6 +53,8 @@ __all__ = [
     "Unregistered",
     "choose",
     "touches_library",
+    "share_guarded",
+    "SHARE_RUNNER_STAGES",
     "hello",
     "result_from_wire",
     "result_to_wire",
@@ -305,6 +307,22 @@ async def stage_impl(db: Any, stage: str) -> str:
 SHARE_RUNNERS_ENV = "MAKTABA_WINDOWS_SHARE_RUNNERS"
 
 
+#: the library stages the Windows end to end proves in their runners on a share with the
+#: worker's default environment (runners_windows_stages_e2e_test.go, a case each with the
+#: override off): they read the share through the launcher's broker and write only the
+#: thumbnail cache or subtitle files by name. Every other library stage stays in the worker
+#: while a library is on a share: those that write the libraries in full (convert, dedup,
+#: repair, youtube; their broker serves reads only), and transcribe and second_listen, which
+#: run in the per-slot ml runners no end to end has run on a share yet.
+SHARE_RUNNER_STAGES = frozenset({"thumb_small", "chapter_thumbs", "subtitle_gen"})
+
+
+def share_guarded(stage: str) -> bool:
+    """On Windows while a library is on a share, ``stage`` runs in the worker: it reads or
+    writes the libraries and the end to end has not proven it in its runner there."""
+    return touches_library(stage) and stage not in SHARE_RUNNER_STAGES
+
+
 def touches_library(stage: str) -> bool:
     """The stage's plugin reads or writes the libraries (``files.read`` or ``files.write``
     names ``library`` or a part of it): thumbnails, subtitles, transcription, convert,
@@ -363,15 +381,14 @@ async def choose(db: Any, stage: str) -> ImplChoice:
         return ImplChoice("inproc")
     if (
         sys.platform == "win32"
-        and touches_library(stage)
+        and share_guarded(stage)
         and os.environ.get(SHARE_RUNNERS_ENV) != "1"
         and await share_library(db)
     ):
-        # a runner reaches a library on a share only through its launcher's broker (none
-        # for a folder written in full), and v0.3.105 showed a look there answered as a
-        # missing file (a small thumbnail done with none): while a library is on a share,
-        # the stages that read or write the libraries run in the worker, which reaches every
-        # share, until the Windows end to end proves the runner path
+        # a runner reaches a library on a share only through its launcher's broker, and
+        # v0.3.105 showed a look there answered as a missing file (a small thumbnail done
+        # with none): while a library is on a share, a library stage the Windows end to end
+        # has not proven in its runner there runs in the worker, which reaches every share
         # (MAKTABA_WINDOWS_SHARE_RUNNERS=1 asks the runners anyway)
         return ImplChoice("inproc", "windows_share_library")
     ok, _ = await serving(stage)
@@ -597,10 +614,13 @@ _ENDING: set[asyncio.Future[None]] = set()
 EngineHandler = Callable[[str, dict[str, Any]], Awaitable[Any]]
 
 
-def engine_handler(db: Any, ctx: Any) -> EngineHandler:
+def engine_handler(db: Any, ctx: Any, plugin_id: str = "") -> EngineHandler:
     """What the runner may ask of the worker while one job runs: the job's own progress,
-    log, events and cancel flag, written by the worker with its own database."""
+    log, events and cancel flag, written by the worker with its own database. An event is
+    published only when its kind, size, payload, topic and ids pass
+    :func:`.publish_rules.check_publish`."""
     from ..engine import events
+    from .publish_rules import check_publish
 
     async def handle(op: str, a: dict[str, Any]) -> Any:
         if op == "progress":
@@ -627,7 +647,13 @@ def engine_handler(db: Any, ctx: Any) -> EngineHandler:
             await events.log_event(db, **kw)
             return None
         if op == "publish":
-            await events.publish(db, str(a["type"]), decode_any(a["payload"]))
+            kind = a.get("type")
+            try:
+                payload = decode_any(a.get("payload"))
+            except Exception:  # noqa: BLE001 - an undecodable payload is refused as a schema
+                payload = None  # mismatch (and logged) like any other
+            check_publish(plugin_id or str(ctx.job.stage), kind, payload, ctx.job)
+            await events.publish(db, str(kind), payload)
             return None
         if op == "job_ref":
             ref = await events.job_ref(db, _own_job_id(ctx, a.get("job_id")))
@@ -926,7 +952,7 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
     if group is None or entry is None:
         raise StageFailure("plugin_failed", f"{stage} is not a first-party stage", retryable=False)
     minted = await _mint(int(job.id))
-    handle = engine_handler(db, ctx)
+    handle = engine_handler(db, ctx, str(minted.get("plugin_id") or ""))
     try:
         opener = connect or (lambda: open_runner(group))
         try:

@@ -126,12 +126,21 @@ func (b *fileBroker) serve(c io.ReadWriteCloser) {
 				reply = b.do(req, b.process)
 			}
 			b.mu.RUnlock()
+			if reply.Errno == 13 && writeOp(req.Op) {
+				// said, so a write a runner tried where its group may not write (a share it
+				// reads only) is seen in the log, not only in the runner's refusal
+				fmt.Fprintf(os.Stderr, `{"event":"plugin_runner_broker_write_refused","op":%q,"path":%q,"detail":%q}`+"\n",
+					req.Op, req.Path, reply.Error)
+			}
 		}
 		if err := out.Encode(reply); err != nil {
 			return
 		}
 	}
 }
+
+// writeOp: a request that would change a share (a subtitle's write, rename or removal).
+func writeOp(op string) bool { return op == "write" || op == "replace" || op == "remove" }
 
 func refusal(err error) BrokerReply {
 	errno := 13

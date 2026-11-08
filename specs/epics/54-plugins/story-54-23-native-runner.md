@@ -144,12 +144,32 @@ share path, and its share jobs run in the worker. The Job Object holds the runne
 process), plus room for the tools only for a group with `exec`: no room is kept for a venv
 launcher's child.
 
-A share folder the group writes in full (`files.write`, the file stages) is not brokered, and
-its jobs run in the worker. The worker also keeps them there before any runner is asked: on Windows, while a library of
-the home has a root on a share (a `\\server\share` path or a drive mapped to one), `native.choose`
-runs every first-party stage whose plugin reads or writes the libraries (`files.read` or
-`files.write` names `library` or a part of it) in the worker, with the fallback
-`windows_share_library`, until the Windows end to end proves the runner path on a share.
+A share folder the group writes in full (`files.write`, the file stages) is brokered for
+reads only, as its own local folder would be read: the broker opens, stats and lists there
+for the group, and refuses every write, rename and removal (the root is not one the group
+writes by name), logging each (`plugin_runner_broker_write_refused`). The share is never
+granted to the AppContainer. So `convert_mp4`'s dry run (ffprobe on the share file) runs in
+the `files` runner, and a job that writes the share (a conversion's swap, a trash purge's
+removal) is refused there (`sandbox_refused`) and runs in the worker.
+
+The worker also keeps a library stage off its runner before any runner is asked, unless the
+Windows end to end has proven that stage there: on Windows, while a library of the home has a
+root on a share (a `\\server\share` path or a drive mapped to one), `native.choose` runs in
+the worker, with the fallback `windows_share_library`, every first-party stage whose plugin
+reads or writes the libraries (`files.read` or `files.write` names `library` or a part of
+it) except the stages in `SHARE_RUNNER_STAGES`:
+
+| Stage | Group | On a share library |
+|---|---|---|
+| `thumb_small`, `chapter_thumbs` | `light` | its runner: reads through the broker, writes the thumbnail cache (proven by T13) |
+| `subtitle_gen` | `light` | its runner: reads through the broker, writes its subtitle files by name through it (T13) |
+| `convert_mp4`, `dedup_scan`, `dedup_apply`, `trash_purge`, `file_restore` | `files` | the worker: they write the libraries in full, and the broker serves that share for reads only |
+| `repair_broken`, `youtube_*` | `net` | the worker, for the same reason |
+| `transcribe`, `second_listen` | `ml-<n>` | the worker: no end to end has run them in a per-slot `ml` runner on a share yet (it needs that runner and a model in its models area) |
+
+A stage joins `SHARE_RUNNER_STAGES` only with a T13 case that runs it on the share with the
+worker's default environment, in its runner; a unit test holds the list to those cases, and
+refuses a stage whose plugin writes the libraries in full.
 `MAKTABA_WINDOWS_SHARE_RUNNERS=1` in the worker's environment asks the runners anyway, as the
 end to end's own cases do. A tool (ffmpeg, ffprobe) is a child of the runner in the same
 AppContainer and Job Object, so it reaches no share either. The runner hands it the one share
@@ -254,7 +274,7 @@ runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 �
 | T10 | integration (go + py, CI only, Windows, two SMB shares made with `New-SmbShare`) | a group whose library is on `\\localhost\<share>`, started through the launcher with its broker | from inside its AppContainer: read, list, stat a video in any case; write a subtitle; write another name, write or remove the video; a traversal, a junction out of the share, an 8.3 alias, a stream, the other share; a tool on a share path; another process of the AppContainer on the pipe | without the broker no share is reached; with it the library is read and the subtitle written, everything else refused; the read throughput through the handle and outside the sandbox is logged |
 | T11 | integration (go + py, CI only, Windows, the same shares, the Windows app's ffmpeg 8.1.2) | the group's tools on an mp4 on `\\localhost\<share>` whose index is at its end | from inside its AppContainer: a thumbnail with a seek before the input, the transcription input (PCM), ffprobe's duration; thumb_small's asyncio start (through the runner's anonymous pipes) on the share and on a local copy; a second share file, the library folder, the share root, the other share, an output on the share, another program; a tool reaching the share by a path in a concat list; a tool writing outside its folders | each tool reads the file through its handle; the refusals refuse before a start; the tool reaching for the share gets nothing and nothing is written outside; the times inside and in the worker's way (the share path) are logged |
 | T12 | integration (go + py, CI only, Windows) | a captured tool start (asyncio, stdout and stderr PIPE) inside a runner's AppContainer | asyncio's own start; the same through the runner's anonymous pipes; a cancelled communicate | asyncio's own is refused (`WinError 5`, the control); through anonymous pipes the output (4 MiB), error output and exit code come back, and the cancel ends the tool at once |
-| T13 | e2e (go + py, CI only, Windows, an SMB share made with `New-SmbShare`, the Windows app's ffmpeg 8.1.2, the bundled Postgres) | `thumb_small` and `convert_mp4`'s dry run, each on an mp4 whose index is at its end in a local library and in one on `\\localhost\<share>`, through the worker's plugin path (`dispatch_job`, `choose`, `run_native` through the supervisor's pipes) into the `light` and `files` runners the supervisor starts on demand through the launcher (grants, Job Object, broker) | each job | it ran in its runner: the plugin chosen, `run_native` ok, no fallback the worker counted, a token minted for it, and the runner's own log line for it (a fallback to the worker fails the test); `thumb_small` on the share read it through the launcher's broker (the runner's job line counts an answered stat and an answered open, and no refusal); `convert_mp4` on the share is the one designed hand-off, so ffprobe on a share file cannot run in a runner today (the `files` group writes the libraries in full, so its share is never brokered, §3): the runner refuses it (its own line says `sandbox_refused`, never a missing file), `run_native` raises `SandboxRefused` once, the worker counts that one fallback and runs the job to done; `thumb_small` wrote a 320x180 JPEG in the thumbnail cache (never in the library or the share); `convert_mp4` planned a remux with the Arabic `mov_text` subtitle, from ffprobe's streams and the index at the end; a fifth case, `thumb_small` on its own copy on the share with `MAKTABA_WINDOWS_SHARE_RUNNERS` unset, proves the guard: chosen in-process with the fallback `windows_share_library`, no line for it in the runner's log, done with its 320x180 JPEG; every log is kept; each runner's log shows the launcher started its venv's base interpreter (`plugin_runner_venv_direct`), the light runner's broker answered its hello, and no client was turned away (`plugin_runner_broker_client_refused`) |
+| T13 | e2e (go + py, CI only, Windows, an SMB share made with `New-SmbShare`, the Windows app's ffmpeg 8.1.2, the bundled Postgres) | each job through the worker's plugin path (`dispatch_job`, `choose`, `run_native` through the supervisor's pipes) into the `light` and `files` runners the supervisor starts on demand through the launcher (grants, Job Object, broker), on an mp4 whose index is at its end in a local library and in one on `\\localhost\<share>`: `thumb_small` and `convert_mp4`'s dry run locally; on the share with the worker's default environment (`MAKTABA_WINDOWS_SHARE_RUNNERS` unset) `thumb_small`, `chapter_thumbs` (two chapters seeded) and `subtitle_gen` (an Arabic transcript seeded); on the share with the override, `convert_mp4`'s dry run and `trash_purge` of a trashed file (a `file_actions` row past its grace period); and `convert_mp4` on the share with the default environment | each job | every job but the last two ran in its runner: the plugin chosen, `run_native` ok, no fallback the worker counted, a token minted for it, and the runner's own log line for it (a fallback to the worker fails the test); each share job read the share through the broker (its job line counts the broker's answers each stage needs, and no refusal); `thumb_small` wrote a 320x180 JPEG in the thumbnail cache (never on the share); `chapter_thumbs` wrote one frame per chapter there; `subtitle_gen` wrote `<name>.ar.srt` and `.vtt` beside the video on the share with the transcript's sentences and no temporary file; `convert_mp4` planned a remux with the Arabic `mov_text` subtitle, from ffprobe's streams read through the broker's handle and the index at the end; `trash_purge` is refused in the files runner (the broker refuses the removal and logs `plugin_runner_broker_write_refused` for that path, the runner's line counts `remove_refused` and says `sandbox_refused`), and the worker purges the file; `convert_mp4` with the default environment is kept in the worker by the guard (`windows_share_library`, no runner line); each runner's log shows the launcher started its venv's base interpreter (`plugin_runner_venv_direct`), its broker answered its hello and turned no client away; every log is kept |
 
 ## Edge cases
 
@@ -266,17 +286,19 @@ runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 �
   SMB share, and the launcher never changes a remote folder's ACL. A share folder the group
   reads or writes by name is served by the launcher's file broker (§3), so the subtitle stage
   runs in its runner there, and a tool reads its one share input through the broker's handle
-  (§3). A job the broker refuses, a tool's start on a share path it cannot be handed that way,
-  and any job on a share the group writes in full is refused (`sandbox_refused`) and runs in
-  the worker instead, logged, as the worker runs every job of a runner that is starting or failed.
+  (§3); the thumbnail and chapter-frame stages run in their runner there too. A job the
+  broker refuses, a tool's start on a share path it cannot be handed that way, and any write
+  to a share the group writes in full (served for reads only) is refused (`sandbox_refused`)
+  and runs in the worker instead, logged, as the worker runs every job of a runner that is
+  starting or failed. The stages still guarded on a share (§3) run in the worker from the start.
 - **A folder swapped for a junction or symbolic link between its check and its grant** (a
   process of the same user, or another group's runner in a folder it may write): the grant or
   revoke is applied by handle to the object that was checked, so it never lands on the
   junction's target; the swap makes the object fail the check by handle, and the start fails
   closed (`sandbox_unavailable`, the worker runs the group's jobs).
-- **The GPU on Windows**: a group with `gpu` starts in its AppContainer as any other, but
-  whether a GPU is reachable from inside one is not proven: no CI runner has a GPU, so it
-  stays open until one does.
+- **The GPU on Windows** (open): a group with `gpu` starts in its AppContainer as any other,
+  but whether a GPU is reachable from inside one is not proven: no CI runner has a GPU, so it
+  stays open until one does, and no end to end stands in for it.
 
 ## Build plan
 

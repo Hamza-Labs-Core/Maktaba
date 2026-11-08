@@ -106,7 +106,10 @@ jobs:
       - id: downloads-cache
         uses: actions/cache/restore@v4
         with:
-          path: build/linux-app/downloads
+          # a cancelled download's .part is never kept
+          path: |
+            build/linux-app/downloads
+            !build/linux-app/downloads/*.part
           key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
           restore-keys: linux-app-downloads-${{ matrix.arch }}-
 
@@ -219,6 +222,7 @@ jobs:
       # On failure the last lines go into an annotation: readable on the run's
       # page without signing in (the job log is not).
       - name: Build the app with the payload, and check its bundles
+        id: build
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
           # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
@@ -329,9 +333,16 @@ jobs:
           path: ~/apt-cache
           key: apt-linux-app-${{ matrix.arch }}-${{ hashFiles('tools/ci/apt-install.sh', '.github/workflows/_linux-app.yml') }}
 
+      # main's, once the build has run, whatever came after it (an e2e failure lost the entry
+      # before): fetch-pinned.sh moves a file in only once its SHA-256 is the pin's. A build
+      # that failed leaves a partial folder, saved under the key and -partial-<run>, which the
+      # exact key never matches and restore-keys finds.
       - name: Save the pinned downloads
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true'
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.downloads-cache.outputs.cache-hit != 'true' && (steps.build.outcome == 'success' || steps.build.outcome == 'failure')
         uses: actions/cache/save@v4
         with:
-          path: build/linux-app/downloads
-          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          # a cancelled download's .part is never kept
+          path: |
+            build/linux-app/downloads
+            !build/linux-app/downloads/*.part
+          key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}${{ steps.build.outcome != 'success' && format('-partial-{0}-{1}', github.run_id, github.run_attempt) || '' }}
