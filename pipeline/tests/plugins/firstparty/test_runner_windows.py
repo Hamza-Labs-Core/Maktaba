@@ -7,6 +7,8 @@ waiting connections, the worker's way in, and the run folder."""
 from __future__ import annotations
 
 import asyncio
+import errno
+import functools
 import json
 import os
 import subprocess
@@ -632,6 +634,39 @@ def test_the_broker_pipe_carries_one_line_each_way() -> None:
     with pytest.raises(PermissionError):
         b({"op": "stat", "path": "p"})
     assert winfiles.install_from_env({}) is False
+
+
+def test_a_broken_broker_pipe_is_a_refusal_never_a_missing_file(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broker that turned the runner away leaves a pipe whose writes fail: that is a
+    refusal (counted, raised), never an OSError a lookup answers False to, as if the share
+    file were missing."""
+
+    class Broken:
+        def write(self, _b: bytes) -> int:
+            raise BrokenPipeError(errno.EPIPE, "the pipe has been ended")
+
+        def read(self, _n: int) -> bytes:
+            return b""
+
+    class Garbled:
+        def write(self, b: bytes) -> int:
+            return len(b)
+
+        def read(self, _n: int) -> bytes:
+            return b"not json\n"
+
+    pipes: list[Any] = [Broken(), Garbled()]
+    for pipe in pipes:
+        b = winfiles.Broker("\\\\.\\pipe\\x", opener=functools.partial(lambda p, _name: p, pipe))
+        with pytest.raises(PermissionError):
+            b({"op": "stat", "path": "p"})
+        shim = winfiles._Shim(b, [SHARE], lambda h, _f: h)
+        monkeypatch.setattr(winfiles, "_installed", [shim])
+        with pytest.raises(PermissionError):
+            shim.isfile_(SHARE + "\\a\\ep1.mkv")
+        assert winfiles.take_counts() == {"stat_refused": 1}
 
 
 VIDEO = SHARE + "\\a\\ep1.mkv"

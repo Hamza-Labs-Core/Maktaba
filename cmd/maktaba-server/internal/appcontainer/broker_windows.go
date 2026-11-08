@@ -106,6 +106,8 @@ func (b *fileBroker) serve(c io.ReadWriteCloser) {
 	pid := b.pid
 	b.mu.RUnlock()
 	if pid == 0 || client != pid {
+		// said, so a runner the broker never serves is seen in the log, not only in its refusals
+		fmt.Fprintf(os.Stderr, `{"event":"plugin_runner_broker_client_refused","client":%d,"runner":%d}`+"\n", client, pid)
 		return
 	}
 	in := bufio.NewScanner(c)

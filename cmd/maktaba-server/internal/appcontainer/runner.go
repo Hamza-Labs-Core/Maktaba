@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -396,11 +397,62 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 			}
 		}
 	}
-	code, err = runFn(profile, rest[0], rest[1:], o)
+	// a venv's python on Windows is a launcher that starts its base interpreter as a child:
+	// the broker serves only the process started here, and its handles go to that process,
+	// so the runner is started as the base interpreter itself, told its venv as the
+	// launcher tells it
+	prog := rest[0]
+	if venvDirect {
+		if base, ok := venvBase(prog); ok {
+			o.Env = append(o.Env, pyvenvLauncherEnv+"="+prog)
+			prog = base
+		}
+	}
+	code, err = runFn(profile, prog, rest[1:], o)
 	if err != nil {
 		return fail("start", err)
 	}
 	return code
+}
+
+// pyvenvLauncherEnv names the venv's python to its base interpreter, as a Windows venv's
+// launcher does when it starts the base interpreter (CPython's getpath reads it).
+const pyvenvLauncherEnv = "__PYVENV_LAUNCHER__"
+
+// venvDirect: a venv's python is started as its base interpreter (Windows only, where the
+// venv's python is a launcher; tests set it).
+var venvDirect = runtime.GOOS == "windows"
+
+// venvBase is the base interpreter of the venv whose python py is (pyvenv.cfg's
+// executable, else python.exe in its home), with ok false when py is no venv's python or
+// the base interpreter is not there.
+func venvBase(py string) (string, bool) {
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(filepath.Dir(py)), "pyvenv.cfg"))
+	if err != nil {
+		return "", false
+	}
+	var home, exe string
+	for _, line := range strings.Split(string(raw), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch strings.TrimSpace(k) {
+		case "executable":
+			exe = strings.TrimSpace(v)
+		case "home":
+			home = strings.TrimSpace(v)
+		}
+	}
+	for _, c := range []string{exe, filepath.Join(home, "python.exe")} {
+		if c == "" || !filepath.IsAbs(c) || pathKey(c) == pathKey(py) {
+			continue
+		}
+		if info, err := os.Stat(c); err == nil && info.Mode().IsRegular() {
+			return c, true
+		}
+	}
+	return "", false
 }
 
 // The ACE flags a grant's walk reads (Windows' OBJECT_INHERIT_ACE and the rest).

@@ -104,15 +104,24 @@ class Broker:
         self._lock = threading.Lock()
 
     def __call__(self, req: dict[str, Any]) -> dict[str, Any]:
-        with self._lock:
-            self._f.write(json.dumps(req).encode() + b"\n")
-            while b"\n" not in self._buf:
-                chunk = self._f.read(65536)
-                if not chunk:
-                    raise PermissionError(errno.EACCES, "the file broker closed its pipe")
-                self._buf += chunk
-            line, self._buf = self._buf.split(b"\n", 1)
-        out: dict[str, Any] = json.loads(line)
+        # any failure of the pipe is a refusal, never an absence: a broken pipe is an OSError
+        # a caller's ``isfile`` would answer False to, a share file seen as missing
+        try:
+            with self._lock:
+                self._f.write(json.dumps(req).encode() + b"\n")
+                while b"\n" not in self._buf:
+                    chunk = self._f.read(65536)
+                    if not chunk:
+                        raise PermissionError(errno.EACCES, "the file broker closed its pipe")
+                    self._buf += chunk
+                line, self._buf = self._buf.split(b"\n", 1)
+            out = json.loads(line)
+        except PermissionError:
+            raise
+        except (OSError, ValueError) as exc:
+            raise PermissionError(errno.EACCES, f"the file broker's pipe failed: {exc}") from exc
+        if not isinstance(out, dict):
+            raise PermissionError(errno.EACCES, "the file broker's answer is not an object")
         return out
 
 

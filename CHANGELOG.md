@@ -193,6 +193,15 @@ build fails when the two differ.
   now answers the refusal and logs it, and the worker reads the fingerprint itself for any
   runner that closes without an answer.
 
+- **A Windows runner reads a share through its file broker (story 54.23).** A venv's python
+  on Windows is a launcher that starts the real interpreter as its child, and the broker
+  serves only the process the launcher started, so it turned every runner away, and the
+  runner read the closed pipe as files that were not there: a small thumbnail of a share
+  video ended done with no thumbnail. The launcher now starts a venv's runner as its base
+  interpreter, told its venv. A broker pipe that fails is a refusal (the job runs in the
+  worker), never a missing file, and the broker logs each process it turns away. Library
+  stages on a share still run in the worker unless `MAKTABA_WINDOWS_SHARE_RUNNERS=1` is set.
+
 - **Share media a Windows runner missed on v0.3.105 is processed again (story 54.23).** On
   v0.3.105, a Windows runner could read a file on a share as missing. A small thumbnail then
   ended done with no thumbnail, and an approved duplicate merge failed with its kept file
