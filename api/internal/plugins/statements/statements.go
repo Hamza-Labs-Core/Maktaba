@@ -8,9 +8,12 @@
 //
 //  1. the invocation's plugin owns the statement (else 403 plugin_capability);
 //  2. a read-only invocation (the fingerprint runner's) runs only read statements;
-//  3. the statement's scope argument is in the token's scope: subject $N the job's video
-//     (or a video of its library), library $N the job's library, settings $N the key of a
-//     rules section the manifest lists (else 403 plugin_scope);
+//  3. each of the statement's scope checks passes against the token: subject $N the job's
+//     video (or a video of its library), library $N the job's library, settings $N the key
+//     of a rules section the manifest lists, and any other kind (season $N, transcript $N,
+//     …: resolve.go) an id of a row whose library (and video) a lookup finds in the job's
+//     scope (else 403 plugin_scope). A write lists a check for every id that binds its
+//     rows (README §15.12; the build works them out, tools/plugins/statements_build.py);
 //  4. it runs in a transaction that is SET LOCAL ROLE maktaba_fp_<plugin> (a NOLOGIN role
 //     granted only the manifest's db.read / db.write tables: Postgres refuses anything
 //     else, mapped to 403 plugin_capability) with maktaba.origin set to
@@ -56,14 +59,30 @@ const TxIdle = 2 * time.Minute
 
 // Statement is one registered statement (tools/plugins/statements_build.py).
 type Statement struct {
-	Name     string   `json:"name"`
-	Mode     string   `json:"mode"`
-	Scope    string   `json:"scope"`
-	ScopeArg int      `json:"scope_arg"`
-	Reads    []string `json:"reads"`
-	Writes   []string `json:"writes"`
-	Text     string   `json:"text"`
-	SHA256   string   `json:"sha256"`
+	Name     string `json:"name"`
+	Mode     string `json:"mode"`
+	Scope    string `json:"scope"`
+	ScopeArg int    `json:"scope_arg"`
+	// Also are the checks after the first (a write whose rows several ids bind)
+	Also   []Check  `json:"also,omitempty"`
+	Reads  []string `json:"reads"`
+	Writes []string `json:"writes"`
+	Text   string   `json:"text"`
+	SHA256 string   `json:"sha256"`
+}
+
+// Check is one scope check: a kind and the 1-based argument it reads.
+type Check struct {
+	Scope string `json:"scope"`
+	Arg   int    `json:"arg"`
+}
+
+// Checks are every check the statement runs (none for catalog).
+func (s *Statement) Checks() []Check {
+	if s.Scope == "catalog" {
+		return nil
+	}
+	return append([]Check{{Scope: s.Scope, Arg: s.ScopeArg}}, s.Also...)
 }
 
 // Scope is what a call's token allows: whose statements, which subject and library, and
@@ -181,6 +200,14 @@ func (e *Executor) Register(pluginID string, sts []Statement) error {
 		if s.Mode != "read" && s.Mode != "write" {
 			return fmt.Errorf("statements: %s: mode %q", s.Name, s.Mode)
 		}
+		if s.Scope == "catalog" && len(s.Also) > 0 {
+			return fmt.Errorf("statements: %s: catalog with checks", s.Name)
+		}
+		for _, c := range s.Checks() {
+			if !KnownScope(c.Scope) || c.Arg < 1 {
+				return fmt.Errorf("statements: %s: scope %s $%d", s.Name, c.Scope, c.Arg)
+			}
+		}
 		if _, dup := m[s.Name]; dup {
 			return fmt.Errorf("statements: %s: two statements named %s", pluginID, s.Name)
 		}
@@ -233,12 +260,13 @@ func (e *Executor) Stmt(ctx context.Context, sc Scope, req Request) (*Response, 
 		argSets = req.Rows
 	}
 	decoded := make([][]any, len(argSets))
+	passed := map[Check]map[string]bool{} // what this call already checked (executemany's rows)
 	for i, raw := range argSets {
 		args, err := decodeArgs(raw)
 		if err != nil {
 			return nil, refuse(400, CodeInvalid, err.Error())
 		}
-		if ref := e.checkScope(ctx, sc, st, args); ref != nil {
+		if ref := e.checkScopes(ctx, sc, st, args, passed); ref != nil {
 			return nil, ref
 		}
 		decoded[i] = args
@@ -563,32 +591,55 @@ func settingsInScope(v string, sections []string) bool {
 	return false
 }
 
-// checkScope is step 3: the statement's scope argument against the token.
-func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args []any) *Error {
-	if st.Scope == "catalog" {
-		return nil
-	}
-	if st.ScopeArg < 1 || st.ScopeArg > len(args) {
-		return refuse(400, CodeInvalid, fmt.Sprintf("%s needs argument $%d", st.Name, st.ScopeArg))
-	}
-	v, ok := args[st.ScopeArg-1].(string)
-	if !ok {
-		if args[st.ScopeArg-1] == nil {
-			return nil // a NULL matches no row
+// CheckScopes runs step 3 alone, for one call's arguments (tests, and the bundle's walk).
+func (e *Executor) CheckScopes(ctx context.Context, sc Scope, st *Statement, args []any) *Error {
+	return e.checkScopes(ctx, sc, st, args, map[Check]map[string]bool{})
+}
+
+// checkScopes is step 3: each of the statement's checks against the token.
+func (e *Executor) checkScopes(ctx context.Context, sc Scope, st *Statement, args []any, passed map[Check]map[string]bool) *Error {
+	for _, c := range st.Checks() {
+		if c.Arg > len(args) {
+			return refuse(400, CodeInvalid, fmt.Sprintf("%s needs argument $%d", st.Name, c.Arg))
 		}
-		return refuse(403, CodeScope, st.Name+": the scope argument is not an id")
+		vals, ok := scopeValues(args[c.Arg-1])
+		if !ok {
+			return refuse(403, CodeScope, fmt.Sprintf("%s: the scope argument $%d is not an id", st.Name, c.Arg))
+		}
+		for _, v := range vals {
+			if passed[c][v] {
+				continue
+			}
+			if ref := e.checkOne(ctx, sc, st, c.Scope, v); ref != nil {
+				return ref
+			}
+			if passed[c] == nil {
+				passed[c] = map[string]bool{}
+			}
+			passed[c][v] = true
+		}
 	}
-	switch st.Scope {
+	return nil
+}
+
+// checkOne checks one value of a scope argument.
+func (e *Executor) checkOne(ctx context.Context, sc Scope, st *Statement, kind, v string) *Error {
+	switch kind {
 	case "settings":
 		if settingsInScope(v, sc.Settings) {
 			return nil
 		}
 		return refuse(403, CodeScope, st.Name+": setting "+v+" is not the plugin's")
 	case "library":
-		if sc.LibraryID == "" || strings.EqualFold(v, sc.LibraryID) {
+		// compared as a uuid, never as text: another form of the same id is the same library
+		id, perr := uuid.Parse(v)
+		if perr != nil {
+			return refuse(403, CodeScope, st.Name+": the scope argument is not a library id")
+		}
+		if sc.LibraryID == "" || sameID(id.String(), sc.LibraryID) {
 			return nil
 		}
-		return refuse(403, CodeScope, st.Name+": library "+v)
+		return refuse(403, CodeScope, st.Name+": library "+id.String())
 	case "subject":
 		// A video id in any form Postgres takes for a uuid (upper case, no hyphens, braces)
 		// names the same row as its canonical text, which the lookup below compares: checked
@@ -599,7 +650,7 @@ func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args
 		}
 		v = id.String()
 		if sc.SubjectKind == "video" {
-			if strings.EqualFold(v, sc.SubjectID) {
+			if sameID(v, sc.SubjectID) {
 				return nil
 			}
 			return refuse(403, CodeScope, st.Name+": video "+v)
@@ -614,12 +665,68 @@ func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args
 		if err != nil {
 			return refuse(503, CodeDatabase, err.Error())
 		}
-		if lib == "" || strings.EqualFold(lib, sc.LibraryID) {
+		if lib == "" || sameID(lib, sc.LibraryID) {
 			return nil // a video that is gone matches no row
 		}
 		return refuse(403, CodeScope, st.Name+": video "+v+" of another library")
 	}
-	return refuse(400, CodeInvalid, st.Name+": scope "+st.Scope)
+	if _, ok := rowKinds[kind]; ok {
+		return e.checkRow(ctx, sc, st, kind, v)
+	}
+	return refuse(400, CodeInvalid, st.Name+": scope "+kind)
+}
+
+// scopeValues are the ids one scope argument names: itself, or each element of an array
+// (a Postgres array's text, as decodeArg sends one, or a JSON array's: json_each($N)). A
+// NULL names none (it matches no row); a value that is not text or a whole number, none.
+func scopeValues(a any) ([]string, bool) {
+	switch t := a.(type) {
+	case nil:
+		return nil, true
+	case int64:
+		return []string{strconv.FormatInt(t, 10)}, true
+	case string:
+		if strings.HasPrefix(t, "{") && strings.HasSuffix(t, "}") {
+			if _, err := uuid.Parse(t); err == nil {
+				return []string{t}, true // a braced uuid, not an array
+			}
+			var arr pq.StringArray
+			if err := arr.Scan(t); err != nil {
+				return nil, false
+			}
+			return arr, true
+		}
+		if strings.HasPrefix(t, "[") {
+			var arr []json.Number
+			if err := json.Unmarshal([]byte(t), &arr); err == nil {
+				out := make([]string, len(arr))
+				for i, n := range arr {
+					out[i] = n.String()
+				}
+				return out, true
+			}
+			var strs []*string
+			if err := json.Unmarshal([]byte(t), &strs); err != nil {
+				return nil, false
+			}
+			out := []string{}
+			for _, s := range strs {
+				if s != nil {
+					out = append(out, *s)
+				}
+			}
+			return out, true
+		}
+		return []string{t}, true
+	}
+	return nil, false
+}
+
+// sameID: two ids name one row, read as uuids (never compared as text, #937).
+func sameID(a, b string) bool {
+	x, err1 := uuid.Parse(a)
+	y, err2 := uuid.Parse(b)
+	return err1 == nil && err2 == nil && x == y
 }
 
 // videoLibrary answers a video's library for a scope check, from the invocation's cache:

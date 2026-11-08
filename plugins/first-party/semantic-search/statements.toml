@@ -4,3 +4,8 @@ modules = [
     "maktaba_pipeline.engine.stages._analysis:library_setting,load_embedding,store_embedding,drop_embedding",
     "maktaba_pipeline.search.pgstore:store_state,write_vectors,delete_video,keep_only,has_vectors,video_vectors",
 ]
+
+# Scope checks set by hand where the parse tree cannot bind a write (README §15.12)
+[scope."pgstore.write_vectors"]
+checks = "subject $1, library $2, segment $5"
+reason = "each row's segment_id comes from unnest($5), the conflict target: every segment id in $5 is checked, with the video and library the rows take"

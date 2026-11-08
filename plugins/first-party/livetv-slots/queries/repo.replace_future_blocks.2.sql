@@ -1,6 +1,6 @@
 -- name: repo.replace_future_blocks.2
 -- mode: write
--- scope: subject $4
+-- scope: catalog
 -- tables: channel_programs*
 INSERT INTO channel_programs
                         (channel_id, seq, kind, video_id, filler_item_id,

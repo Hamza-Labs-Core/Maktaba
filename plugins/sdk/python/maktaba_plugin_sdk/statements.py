@@ -5,7 +5,7 @@ with a header the build checks and the API enforces::
 
     -- name: promo_links.run.2
     -- mode: write                 (read | write)
-    -- scope: library $1           (subject $N | library $N | settings $N | catalog)
+    -- scope: library $1           (a check, or several: subject $1, season $2; or catalog)
     -- tables: promo_links          (comma separated; ``table*`` marks a table written)
     DELETE FROM promo_links WHERE library_id = $1
 
@@ -17,9 +17,13 @@ release, never text the plugin sent.
 
 ``scope`` names the argument the API checks against the job's token: ``subject $N`` must be
 the job's subject, ``library $N`` one of the token's libraries, ``settings $N`` the key of
-one of the ``rules.*`` sections the manifest lists; ``catalog`` statements read or write
-rows that belong to no one subject (the series catalog, a plan). A forged argument is
-``403 plugin_scope``.
+one of the ``rules.*`` sections the manifest lists; any other kind (``season $N``,
+``transcript $N``, ``youtube_channel $N``, …: :data:`ROW_SCOPES`) an id of a row the API
+looks up, whose library (and video) must be the job's. A write lists every check its rows
+need, comma separated (``subject $1, season $4``), and the API runs each one; the build
+(``tools/plugins/statements_build.py``) works them out from the statement's parse tree and
+``tools/plugins/scope_tables.toml``. ``catalog`` statements read or write rows that belong
+to no one subject (the series catalog, a plan). A forged argument is ``403 plugin_scope``.
 """
 
 from __future__ import annotations
@@ -31,16 +35,37 @@ from dataclasses import dataclass, field
 from typing import Any
 
 __all__ = [
+    "ROW_SCOPES",
     "SCOPES",
     "Registry",
     "Statement",
     "StatementError",
     "key",
     "parse_file",
+    "parse_scope",
     "render_file",
+    "render_scope",
 ]
 
-SCOPES = ("subject", "library", "settings", "catalog")
+#: kinds of ids the API resolves to a row's library (and video) with a lookup of its own
+#: (api/internal/plugins/statements/resolve.go): one per kind in tools/plugins/scope_tables.toml
+ROW_SCOPES = (
+    "audio_cache",
+    "audio_track",
+    "clip_group",
+    "dup_group",
+    "file_action",
+    "segment",
+    "season",
+    "series",
+    "topic_collection",
+    "transcript",
+    "youtube_channel",
+    "youtube_playlist",
+    "youtube_source",
+    "youtube_video",
+)
+SCOPES = ("subject", "library", "settings", "catalog", *ROW_SCOPES)
 _HEADER = re.compile(r"^--\s*([a-z]+):\s*(.*?)\s*$")
 _NAME = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$")
 
@@ -69,13 +94,22 @@ class Statement:
     reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
     plugin: str = ""
+    #: the checks after the first: ``((kind, n), …)``, each run as the first is
+    also: tuple[tuple[str, int], ...] = ()
+
+    @property
+    def checks(self) -> tuple[tuple[str, int], ...]:
+        """Every check the API runs before the statement (none for ``catalog``)."""
+        if self.scope == "catalog":
+            return ()
+        return ((self.scope, self.scope_arg), *self.also)
 
     @property
     def tables(self) -> tuple[str, ...]:
         return tuple(sorted(set(self.reads) | set(self.writes)))
 
     def to_json(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "name": self.name,
             "mode": self.mode,
             "scope": self.scope,
@@ -85,6 +119,9 @@ class Statement:
             "text": key(self.text),
             "sha256": digest(self.text),
         }
+        if self.also:
+            out["also"] = [{"scope": k, "arg": n} for k, n in self.also]
+        return out
 
     @classmethod
     def from_json(cls, d: Mapping[str, Any], plugin: str = "") -> Statement:
@@ -97,6 +134,7 @@ class Statement:
             reads=tuple(d.get("reads", ())),
             writes=tuple(d.get("writes", ())),
             plugin=plugin,
+            also=tuple((str(x["scope"]), int(x["arg"])) for x in d.get("also", ())),
         )
 
 
@@ -126,17 +164,8 @@ def parse_file(text: str, *, path: str = "") -> Statement:
     mode = head["mode"]
     if mode not in ("read", "write"):
         raise StatementError(f"{path}: mode must be read or write, not {mode!r}")
-    scope, _, arg = head["scope"].partition(" ")
-    if scope not in SCOPES:
-        raise StatementError(f"{path}: scope must be one of {SCOPES}, not {scope!r}")
-    scope_arg = 0
-    if scope != "catalog":
-        m2 = re.fullmatch(r"\$([1-9][0-9]?)", arg.strip())
-        if m2 is None:
-            raise StatementError(f"{path}: scope {scope} needs the argument it checks ($N)")
-        scope_arg = int(m2.group(1))
-        if f"${scope_arg}" not in body:
-            raise StatementError(f"{path}: scope argument ${scope_arg} is not in the statement")
+    checks = parse_scope(head["scope"], body, path=path)
+    scope, scope_arg = checks[0] if checks else ("catalog", 0)
     reads: list[str] = []
     writes: list[str] = []
     for t in (x.strip() for x in head["tables"].split(",")):
@@ -158,11 +187,40 @@ def parse_file(text: str, *, path: str = "") -> Statement:
         scope_arg=scope_arg,
         reads=tuple(sorted(reads)),
         writes=tuple(sorted(writes)),
+        also=tuple(checks[1:]),
     )
 
 
+def parse_scope(value: str, body: str = "", *, path: str = "") -> list[tuple[str, int]]:
+    """A ``scope:`` value: ``catalog``, or checks ``kind $N`` separated by commas."""
+    if value.strip() == "catalog":
+        return []
+    out: list[tuple[str, int]] = []
+    for part in value.split(","):
+        scope, _, arg = part.strip().partition(" ")
+        if scope not in SCOPES or scope == "catalog":
+            raise StatementError(f"{path}: scope must be one of {SCOPES}, not {scope!r}")
+        m2 = re.fullmatch(r"\$([1-9][0-9]?)", arg.strip())
+        if m2 is None:
+            raise StatementError(f"{path}: scope {scope} needs the argument it checks ($N)")
+        n = int(m2.group(1))
+        if body and not re.search(rf"\${n}(?![0-9])", body):
+            raise StatementError(f"{path}: scope argument ${n} is not in the statement")
+        if (scope, n) in out:
+            raise StatementError(f"{path}: scope {scope} ${n} twice")
+        out.append((scope, n))
+    if not out:
+        raise StatementError(f"{path}: scope is empty")
+    return out
+
+
+def render_scope(checks: Iterable[tuple[str, int]]) -> str:
+    parts = [f"{k} ${n}" for k, n in checks]
+    return ", ".join(parts) if parts else "catalog"
+
+
 def render_file(st: Statement) -> str:
-    scope = st.scope if st.scope == "catalog" else f"{st.scope} ${st.scope_arg}"
+    scope = render_scope(st.checks)
     tables = ", ".join([*st.reads, *(f"{t}*" for t in st.writes)])
     return (
         f"-- name: {st.name}\n-- mode: {st.mode}\n-- scope: {scope}\n-- tables: {tables}\n"
