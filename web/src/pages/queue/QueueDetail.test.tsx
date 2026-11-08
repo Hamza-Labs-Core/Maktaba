@@ -377,9 +377,9 @@ describe("QueueDetail, reads and changes in order", () => {
 
   it("a snapshot poll that began before a write-mode change does not set it back", async () => {
     const older = deferred<unknown>();
-    const review = withStage("plex_collection", { write_mode: "review" });
-    routes("plex_collection", inTurn(review, snapshotFixture, older.promise), () =>
-      detailFixture("plex_collection")
+    const review = withStage("plex_livetv", { write_mode: "review" });
+    routes("plex_livetv", inTurn(review, snapshotFixture, older.promise), () =>
+      detailFixture("plex_livetv")
     );
     const u = user();
     const mode = await screen.findByRole("combobox", { name: "Writes to other systems" });
@@ -388,7 +388,7 @@ describe("QueueDetail, reads and changes in order", () => {
     expect(calls("/api/queues")).toHaveLength(2);
 
     await u.selectOptions(mode, "review");
-    expect(patch).toHaveBeenCalledWith("/api/queues/plex_collection", { write_mode: "review" });
+    expect(patch).toHaveBeenCalledWith("/api/queues/plex_livetv", { write_mode: "review" });
     act(() => hub.emit("queues", { type: "queues.snapshot", payload: review }));
     await waitFor(() => expect(mode).toHaveValue("review"));
 

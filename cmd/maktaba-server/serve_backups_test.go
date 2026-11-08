@@ -185,3 +185,20 @@ func TestAppBundleNoDumpWhenPreUpdateIsOff(t *testing.T) {
 		t.Errorf("record %+v", rec)
 	}
 }
+
+// The server's pre-update dumps and the backups loop's pruning count the same way:
+// [backups] update_keep, else [postgres] update_dumps, else three.
+func TestUpdateKeepIsTheBundlesRule(t *testing.T) {
+	var cfg config.Config
+	if got := updateKeep(cfg); got != config.DefaultUpdateDumps {
+		t.Errorf("unset: %d, want %d", got, config.DefaultUpdateDumps)
+	}
+	cfg.Postgres.UpdateDumps = 5
+	if got := updateKeep(cfg); got != 5 {
+		t.Errorf("[postgres] update_dumps: %d", got)
+	}
+	cfg.Backups.UpdateKeep = 2
+	if got := updateKeep(cfg); got != 2 || pgbundle.UpdateKeepOf(cfg) != got {
+		t.Errorf("[backups] update_keep: %d, the bundle's %d", got, pgbundle.UpdateKeepOf(cfg))
+	}
+}

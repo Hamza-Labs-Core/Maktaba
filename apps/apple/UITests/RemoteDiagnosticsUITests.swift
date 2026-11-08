@@ -2,7 +2,8 @@ import XCTest
 
 /// The Remote's diagnostics (Epic 53 stories 53.11 §4, 53.12 §4, 53.15 §5) against
 /// `MockHome`'s made-up answers: Errors (a group's page and Resolve), Logs (a search, and a
-/// reference followed), the Overview and Storage dashboards, and the problem-report inbox.
+/// reference followed), the Overview and Storage dashboards, the problem-report inbox, and the
+/// recovery screen (53.04, 53.05).
 /// MAKTABA_SHOTS, when set, is a folder the screenshots are written to as well (CI's Remote
 /// UI tests job keeps them; the maktaba.dev Apps pages take theirs from it).
 ///
@@ -56,7 +57,27 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         let row = element(id)
         for _ in 0 ..< 6 where !(row.exists && row.isHittable) { app.swipeUp(velocity: .slow) }
         XCTAssertTrue(row.waitForExistence(timeout: 10), id)
-        row.tap()
+        // A swipe leaves the list coasting, and a tap on a moving list only stops it: the row is
+        // not selected and the screen stays on Home. Tap once the row stands still, then check the
+        // screen went: the row gone from the screen (a pushed page covers Home's list).
+        for attempt in 1 ... 2 {
+            waitStill(row)
+            row.tap()
+            if row.waitForNonExistence(timeout: 5) || !row.isHittable { return }
+            XCTAssertLessThan(attempt, 2, "\(id) opened nothing after two taps on a still row")
+        }
+    }
+
+    /// Waits (at most 5 s) until the element's frame reads the same twice 0.3 s apart.
+    private func waitStill(_ e: XCUIElement) {
+        var last = e.frame
+        let end = Date().addingTimeInterval(5)
+        while Date() < end {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+            let now = e.frame
+            if now == last { return }
+            last = now
+        }
     }
 
     private func back() { app.navigationBars.buttons.firstMatch.tap() }
@@ -125,7 +146,191 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         shot("ar-dashboards")
     }
 
+    /// Story 53.12: with many machines the Overview says how many it shows, and the machine
+    /// picker asks the home for one machine's lines (`machine=`); a joined machine that is
+    /// offline is named as offline, in the line and in the picker. Machines are named as the
+    /// Machines page names them (the answer's names), the picker keeping the node id as a hint.
+    func testDashboardsOfManyMachines() throws {
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        let now = Int(Date().timeIntervalSince1970)
+        let pts = (0..<24).map { "[\(now - (23 - $0) * 3600),\($0 % 3)]" }.joined(separator: ",")
+        let all = (0..<37).map { String(format: "\"n%02d\"", $0) }.joined(separator: ",")
+        home.stub("GET", "/api/admin/dashboards/overview", body: """
+        {"board":"overview","range":"24h","step":3600,
+         "machines":{"total":37,"shown":["n07","n33","n12","n41","n20"],"all":[\(all)],"offline":["n07"]},
+         "names":{"n07":"Attic NAS"},
+         "series":[{"name":"maktaba_machines_components_down","kind":"gauge","points":[\(pts)]},
+          {"name":"maktaba_component_down","labels":"machine=n07","kind":"gauge","points":[\(pts)]}]}
+        """)
+        open("home.dashboards", homeTab: "Home")
+        let totals = element("dash.panel.maktaba_machines_components_down")
+        XCTAssertTrue(totals.waitForExistence(timeout: 15), "the totals across machines")
+        XCTAssertTrue(totals.label.contains("Components down, all machines"), "its words: \(totals.label)")
+        let shown = element("dash.machines.shown")
+        XCTAssertTrue(shown.waitForExistence(timeout: 5) && shown.label.contains("Showing 5 of 37 machines"), "how many it shows: \(shown.label)")
+        let offline = element("dash.offline")
+        XCTAssertTrue(offline.waitForExistence(timeout: 5) && offline.label.contains("Offline: Attic NAS"), "the offline machine, by name: \(offline.label)")
+        let picker = element("dash.machine")
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "the machine picker")
+        picker.tap()
+        let n07 = app.buttons["Attic NAS (n07) (offline)"].firstMatch
+        XCTAssertTrue(n07.waitForExistence(timeout: 5), "n07 in the picker, by name with its id")
+        XCTAssertTrue(app.buttons["n08"].firstMatch.exists, "a machine with no name, by its id")
+        n07.tap()
+        let asked = { self.home.requests.contains { $0.path == "/api/admin/dashboards/overview" && $0.value("machine") == "n07" } }
+        let end = Date().addingTimeInterval(10)
+        while !asked(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(asked(), "the Overview of n07 asked of the home")
+    }
+
+    /// The recovery screen (Epic 53 stories 53.04, 53.05): the supervisor's state from
+    /// `/recovery/api/state`, a part restarted after its confirmation, the pass asked of the API.
+    func testRecovery() throws {
+        stubRecovery()
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: "Home")
+        let part = element("recovery.part.core.postgres")
+        XCTAssertTrue(part.waitForExistence(timeout: 15), "the parts")
+        XCTAssertTrue(element("recovery.safe").exists, "safe mode is said")
+        XCTAssertTrue(home.seen.contains("GET /recovery/api/state") && home.seen.contains("GET /recovery/api/logs"))
+        XCTAssertTrue(home.seen.contains("POST /api/auth/recovery-pass"), "a fresh pass while the API answers")
+        shot("recovery")
+        let restart = element("recovery.restart.core.postgres")
+        XCTAssertTrue(restart.waitForExistence(timeout: 5))
+        restart.tap()
+        // the alert names its action twice (its title and its button): any one of them, the POST below proves the tap
+        let confirm = app.alerts.buttons["Restart"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "asked to confirm")
+        confirm.tap()
+        let posted = { self.home.requests.contains { $0.method == "POST" && $0.path == "/recovery/api/action" } }
+        let end = Date().addingTimeInterval(10)
+        while !posted(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(posted(), "Restart went to the home")
+        let sent = home.requests.last { $0.path == "/recovery/api/action" }
+        let body = sent.flatMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+        XCTAssertEqual(body?["action"] as? String, "restart")
+        XCTAssertEqual(body?["component"] as? String, "core.postgres")
+        XCTAssertTrue(element("recovery.done").waitForExistence(timeout: 10), "Done is said")
+    }
+
+    /// Restore a backup and the diagnostics download, on the console's routes as the web page:
+    /// the backups listed, one chosen and confirmed twice before the POST, then the bundle
+    /// fetched and handed to the share sheet.
+    func testRecoveryRestoreAndDiagnostics() throws {
+        stubRecovery()
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: "Home")
+        XCTAssertTrue(element("recovery.part.core.postgres").waitForExistence(timeout: 15), "the parts")
+        let restore = element("recovery.action.restore")
+        for _ in 0 ..< 8 where !(restore.exists && restore.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(restore.waitForExistence(timeout: 5))
+        restore.tap()
+        let backup = element("recovery.backup.maktaba-20261106-030000.dump")
+        XCTAssertTrue(backup.waitForExistence(timeout: 10), "the home's backups")
+        XCTAssertTrue(home.seen.contains("GET /recovery/api/backups"))
+        shot("recovery-restore")
+        backup.tap()
+        // the alert's title names the backup, its button says Restore
+        let confirm = app.alerts.buttons["Restore"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "the first confirmation")
+        XCTAssertTrue(app.alerts.staticTexts["Are you sure?"].exists)
+        confirm.tap()
+        XCTAssertTrue(app.alerts.staticTexts["This replaces what is there now. Are you sure?"].waitForExistence(timeout: 5),
+                      "the second confirmation")
+        XCTAssertFalse(home.requests.contains { $0.path == "/recovery/api/action" }, "nothing sent before the second")
+        app.alerts.buttons["Restore"].firstMatch.tap()
+        let posted = { self.home.requests.contains { $0.method == "POST" && $0.path == "/recovery/api/action" } }
+        var end = Date().addingTimeInterval(10)
+        while !posted(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        let sent = home.requests.last { $0.path == "/recovery/api/action" }
+        let body = sent.flatMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+        XCTAssertEqual(body?["action"] as? String, "restore")
+        XCTAssertEqual(body?["backup"] as? String, "maktaba-20261106-030000.dump")
+        XCTAssertEqual(body?["confirm"] as? Int, 2)
+        XCTAssertTrue(element("recovery.restoring").waitForExistence(timeout: 10), "what happens next is said")
+
+        let download = element("recovery.action.diagnostics")
+        for _ in 0 ..< 4 where !(download.exists && download.isHittable) { app.swipeUp(velocity: .slow) }
+        download.tap()
+        let fetched = { self.home.seen.contains("GET /recovery/api/diagnostics") }
+        end = Date().addingTimeInterval(10)
+        while !fetched(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(fetched(), "the bundle was asked of the home")
+        // the system's share sheet, with the bundle's file
+        let sheet = app.otherElements["ActivityListView"].firstMatch
+        let named = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH %@", "maktaba-recovery-")).firstMatch
+        let shown = Date().addingTimeInterval(10)
+        while !(sheet.exists || named.exists), Date() < shown { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(sheet.exists || named.exists, "the share sheet")
+    }
+
+    func testRecoveryInArabic() throws {
+        stubRecovery()
+        launch("ar", locale: "ar_JO")
+        let homeTab = "الجهاز الرئيسي"
+        try XCTSkipUnless(app.buttons[homeTab].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: homeTab)
+        XCTAssertTrue(element("recovery.part.core.postgres").waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["قاعدة البيانات"].exists, "the groups in Arabic")
+        shot("ar-recovery")
+        let restore = element("recovery.action.restore")
+        for _ in 0 ..< 8 where !(restore.exists && restore.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(restore.label.contains("استعادة نسخة احتياطية"), "Restore a backup, in Arabic: \(restore.label)")
+        restore.tap()
+        XCTAssertTrue(element("recovery.backup.maktaba-20261106-030000.dump").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["اختر نسخة احتياطية"].exists, "the list's title in Arabic")
+        shot("ar-recovery-restore")
+    }
+
+    /// A viewer's token (or a revoked pass): the console says 401, the screen says only
+    /// admins get in, and the app stays signed in.
+    func testRecoveryRefused() throws {
+        home.stub("GET", "/recovery/api/state", status: 401, body: #"{"error":"unauthorized"}"#)
+        home.stub("POST", "/api/auth/recovery-pass", status: 403, body: #"{"title":"forbidden"}"#)
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        open("home.recovery", homeTab: "Home")
+        XCTAssertTrue(element("recovery.denied").waitForExistence(timeout: 15), "only admins")
+        back()
+        XCTAssertTrue(app.buttons["Queue"].firstMatch.exists, "still signed in")
+    }
+
     // MARK: made-up answers
+
+    private func stubRecovery() {
+        let now = Date()
+        func t(_ s: TimeInterval) -> String { ISO8601DateFormatter().string(from: now.addingTimeInterval(s)) }
+        home.stub("POST", "/api/auth/recovery-pass", body: #"{"expires_at":"\#(t(7 * 86400))","pass":"p-ui"}"#)
+        home.stub("GET", "/recovery/api/state", body: """
+        {"status":{"v":1,"mode":"safe","overall":"down","components":{"database":"down","api":"restarting","streaming":"off","processing":"off","search":"ok","logs":"ok"}},
+         "components":[
+          {"id":"core.postgres","group":"database","phase":"failed","reason":"crash_loop","state":"down","restarts":3,"cut_off":true,
+           "last_exit":"\(t(-240))","last_code":1,"last_error":"FATAL: could not open file pg_wal/000000010000000000000002","can_restart":true},
+          {"id":"core.api","group":"api","phase":"running","state":"restarting","restarts":5,"last_exit":"\(t(-60))","last_code":2,
+           "last_error":"db_connect: connection refused","can_restart":true},
+          {"id":"search.index","group":"search","phase":"running","state":"ok","restarts":0,"can_restart":true},
+          {"id":"logs.index","group":"logs","phase":"running","state":"ok","restarts":0,"can_restart":true}],
+         "disk_free":214748364800,"logs_bytes":52428800,"rollback":"0.3.44","safe_mode":true}
+        """)
+        home.stub("GET", "/recovery/api/logs", body: """
+        {"lines":[
+          {"ts":"\(t(-240))","level":"error","service":"postgres","component":"core.postgres","msg":"raw_line","attrs":{"text":"FATAL: could not open file pg_wal/000000010000000000000002"}},
+          {"ts":"\(t(-60))","level":"error","service":"api","component":"core.api","msg":"db_connect","err":"connection refused"},
+          {"ts":"\(t(-30))","level":"warn","service":"supervisor","msg":"child_backoff"}],"truncated":false}
+        """)
+        home.stub("POST", "/recovery/api/action", body: #"{"result":"ok"}"#)
+        home.stub("GET", "/recovery/api/backups", body: """
+        {"backups":[{"name":"maktaba-20261106-030000.dump","at":"\(t(-86400))","size":73400320},
+                    {"name":"maktaba-20261105-030000.dump","at":"\(t(-2 * 86400))","size":72351744},
+                    {"name":"maktaba-20261104-030000.dump","at":"\(t(-3 * 86400))","size":71303168}]}
+        """)
+        // made-up bytes: the app hands them on as they came
+        home.stub("GET", "/recovery/api/diagnostics", body: "made-up diagnostics bundle")
+    }
+
 
     private func stubDiagnostics() {
         let now = Date()

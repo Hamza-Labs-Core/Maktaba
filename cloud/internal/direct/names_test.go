@@ -55,3 +55,12 @@ func TestParsingNames(t *testing.T) {
 		t.Fatal("a name in the zone that isn't ours: in the zone, no such name")
 	}
 }
+
+// The apps derive a home's id from its server id to check a local_ip pin names that home
+// (PinnedNames on Android and Apple): this value is in their tests too, so a change here must
+// change theirs.
+func TestHomeIDIsWhatTheAppsDerive(t *testing.T) {
+	if got := HomeID("s"); got != "18c78ba238ff428e2ddbdff20477e7eb" {
+		t.Fatalf("HomeID(%q) = %s", "s", got)
+	}
+}

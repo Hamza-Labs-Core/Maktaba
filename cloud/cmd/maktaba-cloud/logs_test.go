@@ -153,3 +153,29 @@ func TestTokenFile(t *testing.T) {
 		t.Error("W's token is not read from its file")
 	}
 }
+
+// The api's symbols token: from the file deploy/cloud-ha/deploy.sh writes, named by
+// MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE; none (or an empty file) leaves uploads off.
+func TestSymbolsToken(t *testing.T) {
+	if EnvSymbolsTokenFile != "MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE" {
+		t.Fatalf("deploy.sh writes MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE, not %s", EnvSymbolsTokenFile)
+	}
+	t.Setenv(EnvSymbolsTokenFile, "")
+	if got := symbolsToken(); got != "" {
+		t.Errorf("unset: %q", got)
+	}
+	p := filepath.Join(t.TempDir(), "symbols.token")
+	if err := os.WriteFile(p, []byte("\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(EnvSymbolsTokenFile, p)
+	if got := symbolsToken(); got != "" {
+		t.Errorf("an empty file: %q", got)
+	}
+	if err := os.WriteFile(p, []byte("tok-123\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := symbolsToken(); got != "tok-123" {
+		t.Errorf("file: %q", got)
+	}
+}

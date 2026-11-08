@@ -28,9 +28,7 @@ export function HealthStrip({
   const net = (ms: number | null) =>
     ms === null ? "–" : ms < 0 ? t("queue.health.unreachable") : fmt.ms(ms);
   // null = not configured: only the probed services count
-  const probed = [network.plex_ms, network.tv_ms, network.youtube_ms].filter(
-    (v): v is number => v !== null
-  );
+  const probed = [network.plex_ms, network.youtube_ms].filter((v): v is number => v !== null);
   const reachable = probed.filter((v) => v >= 0).length;
   const hours = t("queue.health.window");
   const sparkOf = (values: number[], what: string) => ({
@@ -78,9 +76,6 @@ export function HealthStrip({
         <ul className="mkt-q-stat__list">
           <li>
             <span>Plex</span> <span>{net(network.plex_ms)}</span>
-          </li>
-          <li>
-            <span>dizqueTV</span> <span>{net(network.tv_ms)}</span>
           </li>
           <li>
             <span>YouTube</span> <span>{net(network.youtube_ms)}</span>

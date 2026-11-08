@@ -3,6 +3,7 @@
 package main
 
 import (
+	"encoding/json"
 	"slices"
 	"testing"
 )
@@ -54,5 +55,34 @@ func TestKeptProcessesReadsOnDemandRunners(t *testing.T) {
 		if !sub.Failed() && slices.Equal(kept, rows[0]) {
 			t.Errorf("%s: passed (%v)", name, kept)
 		}
+	}
+}
+
+// crashLooping names a process the supervisor marked failed or that crash-loops, with its
+// last exit; a running, idle or held one is none.
+func TestCrashLoopingNamesFailedProcesses(t *testing.T) {
+	body := `{"processes":[
+		{"role":"api","state":"running"},
+		{"role":"plugin-runner","instance":"light","state":"stopped"},
+		{"role":"plugin-runner","instance":"ml-1","state":"failed","crash_loop":true,
+		 "last_exit":{"code":1,"reason":"exited","error":"exit status 1"}},
+		{"role":"plugin-runner","instance":"index","state":"backoff","crash_loop":true},
+		{"role":"pipeline","state":"failed","detail":"the transcription tools could not be installed"}]}`
+	var snap struct {
+		Processes []supervisedProcess `json:"processes"`
+	}
+	if err := json.Unmarshal([]byte(body), &snap); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"pipeline/ state=failed crash_loop=false; the transcription tools could not be installed",
+		"plugin-runner/index state=backoff crash_loop=true",
+		"plugin-runner/ml-1 state=failed crash_loop=true last exit 1 (exited): exit status 1",
+	}
+	if got := crashLooping(snap.Processes); !slices.Equal(got, want) {
+		t.Fatalf("crashLooping =\n%q\nwant\n%q", got, want)
+	}
+	if bad := crashLooping(snap.Processes[:2]); len(bad) != 0 {
+		t.Fatalf("a running and an idle process read %v", bad)
 	}
 }

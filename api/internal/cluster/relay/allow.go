@@ -41,9 +41,6 @@ type Rule struct {
 	HomeOnly bool
 	// Use names the client call that needs it (documentation).
 	Use string
-	// Verify, when set, is checked against the upstream before the call
-	// is forwarded (DELETE only removes collections).
-	Verify string
 }
 
 // KeyRule is a family of query parameters: a name pattern and its value's.
@@ -51,9 +48,6 @@ type KeyRule struct {
 	Name  *regexp.Regexp
 	Value *regexp.Regexp
 }
-
-// VerifyCollection: the rating key in the path must name a collection.
-const VerifyCollection = "collection"
 
 // Extension is a relayable extension: where its secret is, how it is
 // added, and its allow-list.
@@ -70,7 +64,9 @@ type Extension struct {
 	// QueryParam is the query parameter name that would carry the secret
 	// (refused in requests, scrubbed from answers).
 	QueryParam string
-	Rules      []Rule
+	// MaxBody bounds a request's body (0: MaxRequestBody).
+	MaxBody int
+	Rules   []Rule
 }
 
 // HomeOnly lists the extensions whose calls are never relayed, with why.
@@ -79,24 +75,11 @@ var HomeOnly = map[string]string{
 	// the calls are admin operations made by the home's API itself
 	// (api/internal/tvremote): no stage needs them on a node.
 	"cloudflare_stream": "the Cloudflare API token is used by the home's API only (admin operations)",
-	// dizqueTV holds no secret of its own; its stages are home-only for
-	// other reasons (they embed the Plex token in dizqueTV programmes).
-	"dizquetv": "dizqueTV stages run on the home (programmes carry the Plex token)",
 }
 
 var (
-	digits   = regexp.MustCompile(`^[0-9]{1,12}$`)
-	digitsOK = regexp.MustCompile(`^[0-9]{0,12}$`)
-	flag01   = regexp.MustCompile(`^[01]$`)
-	// a collection member list: server://<machine>/com.plexapp.plugins.library/library/metadata/<keys>
-	memberURI = regexp.MustCompile(`^server://[A-Za-z0-9-]{1,64}/com\.plexapp\.plugins\.library/library/metadata/[0-9]{1,12}(,[0-9]{1,12})*$`)
-	anyTitle  = regexp.MustCompile(`^[^\x00-\x1f]{1,512}$`)
-	labelTag  = regexp.MustCompile(`^[^\x00-\x1f]{1,128}$`)
-	only1     = regexp.MustCompile(`^1$`)
-	only0     = regexp.MustCompile(`^0$`)
-	only18    = regexp.MustCompile(`^18$`)
-	only2     = regexp.MustCompile(`^2$`)
-	itemType  = regexp.MustCompile(`^(1|4)$`)
+	anyTitle = regexp.MustCompile(`^[^\x00-\x1f]{1,512}$`)
+	only1    = regexp.MustCompile(`^1$`)
 	// Live TV: Maktaba's own HDHomeRun tuner and XMLTV guide
 	tunerURL      = regexp.MustCompile(`^https?://[A-Za-z0-9.\-\[\]:]{1,255}(/[^\x00-\x20]{0,512})?$`)
 	language      = regexp.MustCompile(`^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$`)
@@ -115,11 +98,10 @@ func q(pairs ...any) map[string]*regexp.Regexp {
 	return m
 }
 
-// Plex is the Plex extension: every call the node-placed stages
-// (plex_index, plex_collection, plex_groups) and the reachability probe
-// make through maktaba_pipeline.integrations.plex.PlexClient. Live TV
-// (/livetv, /media/grabbers) is absent on purpose: plex_livetv stays on the
-// home beside write_channels, so no node needs it.
+// Plex is the Plex extension (Plex Live TV is the only Plex integration Maktaba keeps): a
+// node may make the reachability probe only; the Live TV calls (/livetv, /media/grabbers)
+// are plex_livetv's, made by its plugin on the home beside write_channels, so they are
+// HomeOnly.
 var Plex = Extension{
 	Name:       "plex",
 	SecretName: "ext.plex.token",
@@ -129,31 +111,7 @@ var Plex = Extension{
 	QueryParam: "X-Plex-Token",
 	Rules: []Rule{
 		{Method: "GET", Path: "/identity", Re: regexp.MustCompile(`^/identity$`),
-			Use: "ping, machine_identifier"},
-		{Method: "GET", Path: "/library/sections", Re: regexp.MustCompile(`^/library/sections$`),
-			Use: "sections"},
-		{Method: "GET", Path: "/library/sections/{key}/all", Re: regexp.MustCompile(`^/library/sections/[0-9]{1,12}/all$`),
-			Query: q("type", itemType), Use: "section_listing"},
-		{Method: "GET", Path: "/library/sections/{key}/collections", Re: regexp.MustCompile(`^/library/sections/[0-9]{1,12}/collections$`),
-			Use: "collections"},
-		{Method: "GET", Path: "/library/metadata/{keys}", Re: regexp.MustCompile(`^/library/metadata/[0-9]{1,12}(,[0-9]{1,12}){0,49}$`),
-			Use: "metadata, item_section, collection_labels"},
-		{Method: "GET", Path: "/library/collections/{key}/children", Re: regexp.MustCompile(`^/library/collections/[0-9]{1,12}/children$`),
-			Use: "collection_children"},
-		{Method: "POST", Path: "/library/collections", Re: regexp.MustCompile(`^/library/collections$`),
-			Query:    q("type", only1, "title", anyTitle, "smart", only0, "sectionId", digits, "uri", memberURI),
-			Required: []string{"type", "title", "smart", "sectionId", "uri"}, Use: "create_collection"},
-		{Method: "PUT", Path: "/library/collections/{key}/items", Re: regexp.MustCompile(`^/library/collections/[0-9]{1,12}/items$`),
-			Query: q("uri", memberURI), Required: []string{"uri"}, Use: "create_collection (add members)"},
-		{Method: "PUT", Path: "/library/collections/{key}/items/{item}/move", Re: regexp.MustCompile(`^/library/collections/[0-9]{1,12}/items/[0-9]{1,12}/move$`),
-			Query: q("after", digitsOK), Use: "create_collection (order)"},
-		{Method: "PUT", Path: "/library/metadata/{key}/prefs", Re: regexp.MustCompile(`^/library/metadata/[0-9]{1,12}/prefs$`),
-			Query: q("collectionSort", only2), Required: []string{"collectionSort"}, Use: "create_collection (custom order)"},
-		{Method: "PUT", Path: "/library/sections/{key}/all (labels of a collection)", Re: regexp.MustCompile(`^/library/sections/[0-9]{1,12}/all$`),
-			Query:    q("type", only18, "id", digits, "label[0].tag.tag", labelTag, "label.locked", flag01),
-			Required: []string{"type", "id", "label[0].tag.tag"}, Use: "add_label"},
-		{Method: "DELETE", Path: "/library/metadata/{key} (collections only)", Re: regexp.MustCompile(`^/library/metadata/[0-9]{1,12}$`),
-			Verify: VerifyCollection, Use: "delete_metadata (a collection)"},
+			Use: "ping"},
 		// Live TV (story 54.35): what plex_livetv calls, from its plugin on the home only
 		// (the stage is home-placed; no node makes these calls)
 		{Method: "GET", Path: "/livetv/dvrs", Re: regexp.MustCompile(`^/livetv/dvrs$`),

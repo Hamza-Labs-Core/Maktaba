@@ -12,6 +12,7 @@ import sys
 import tempfile
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -278,13 +279,19 @@ def test_the_light_group_writes_subtitles_by_name_and_thumbnails_in_full() -> No
     light = [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == "light"]
     p = policy_for(
         light,
-        areas={"library": "/media/a;/media/b", "data.thumbnails": "/data/thumbnails"},
+        areas={
+            "library": "/media/a;/media/b",
+            "data.thumbnails": "/data/thumbnails",
+            "data.review": "/data/reviews",
+        },
         api_socket="/run/api.sock",
         own_socket="/run/runner-light.sock",
         run_dir="/run",
     )
-    assert p.read[:2] == ["/media/a", "/media/b"]
-    assert p.write == ["/data/thumbnails"]
+    assert {"/media/a", "/media/b"} <= set(p.read)
+    # tv.maktaba.classify (wave 4) reads the small thumbnails for review_pages and writes
+    # that page in the reports folder
+    assert p.write == ["/data/reviews", "/data/thumbnails"]
     assert p.write_named == ["/media/a", "/media/b"]
     profile = seatbelt_profile(p)
     assert '(allow file-read* file-write* (subpath "/media/a"))' not in profile
@@ -355,34 +362,44 @@ def test_only_the_net_group_reaches_the_network(
 ) -> None:
     """youtube and repair (story 54.33) run in ``net``: sockets, yt-dlp, and the library, its
     trash and the downloads' work folder; no other group has the network, ``service`` (Plex
-    through the home's door, story 54.35) included."""
+    through the home's door, story 54.35) included. classify declares a host for its one
+    ``net`` stage (``books``, story 54.31), and its stages in ``light`` still get no socket."""
     from maktaba_pipeline.plugins import firstparty
     from maktaba_plugin_runner.sandbox import _q, policy_for, seatbelt_profile
 
     ytdlp = _tool(tmp_path, "yt-dlp")  # this machine's, as an Epic 51 asset would be
     monkeypatch.setenv("MAKTABA_YTDLP", str(ytdlp))
 
-    def group(name: str) -> list[dict[str, object]]:
-        return [dict(p.trusted) for p in firstparty.plugins() if p.trusted.get("runner") == name]
+    def ids(name: str) -> set[str]:
+        """The plugins with a stage in the group (the runner's members)."""
+        return {
+            p.id
+            for p in firstparty.plugins()
+            if any(firstparty.runner_group(s) == name for s in p.stages)
+        }
 
-    assert {p.id for p in firstparty.plugins() if p.trusted.get("runner") == "net"} >= {
-        "tv.maktaba.youtube",
-        "tv.maktaba.repair",
-    }
+    def group(name: str) -> list[dict[str, object]]:
+        return [dict(p.trusted) for p in firstparty.plugins() if p.id in ids(name)]
+
+    assert ids("net") >= {"tv.maktaba.youtube", "tv.maktaba.repair", "tv.maktaba.classify"}
+    assert "tv.maktaba.classify" in ids("light")
+    assert firstparty.by_id("tv.maktaba.classify").trusted.get("net")  # type: ignore[union-attr]
     areas = {"library": "/media/a", "trash": "/media/a/.maktaba/trash", "data.cache": "/w/yt"}
     kw = {"api_socket": "/run/api.sock", "run_dir": "/run"}
-    net = policy_for(group("net"), areas=areas, own_socket="/run/runner-net.sock", **kw)
+    net = policy_for(
+        group("net"), areas=areas, own_socket="/run/runner-net.sock", group="net", **kw
+    )
     assert net.net and set(net.write) >= {"/media/a", "/media/a/.maktaba/trash", "/w/yt"}
     assert os.path.realpath(ytdlp) in net.exec, net.exec
     assert f"(allow process-exec (literal {_q(os.path.realpath(ytdlp))}))" in seatbelt_profile(net)
     assert "(allow network-outbound)" in seatbelt_profile(net)
     for other in ("light", "files", "service"):
-        p = policy_for(group(other), areas=areas, own_socket=f"/run/runner-{other}.sock", **kw)
+        p = policy_for(
+            group(other), areas=areas, own_socket=f"/run/runner-{other}.sock", group=other, **kw
+        )
         assert not p.net, other
         if other == "service":
-            assert {pl.id for pl in firstparty.plugins() if pl.trusted.get("runner") == other} >= {
-                "tv.maktaba.plex"
-            }
+            assert ids(other) >= {"tv.maktaba.plex"}
         assert "(allow network-outbound)" not in seatbelt_profile(p), other
 
 
@@ -452,3 +469,37 @@ def test_a_runner_binds_its_socket_through_a_linked_folder() -> None:
     finally:
         link.unlink(missing_ok=True)
         shutil.rmtree(real, ignore_errors=True)
+
+
+def test_a_stage_outside_its_plugins_group_brings_only_the_network() -> None:
+    """classify's ``books`` runs in ``net`` (story 54.31): the net runner gets the socket
+    the host list is for, not classify's thumbnails, reports folder or tools; the light
+    runner keeps those and gets no socket."""
+    from maktaba_plugin_runner.sandbox import policy_for
+
+    classify: dict[str, object] = {
+        "runner": "light",
+        "net": ["ar.wikipedia.org"],
+        "files": {"read": ["data.thumbnails"], "write": ["data.review"]},
+        "exec": ["ffmpeg"],
+        "gpu": "optional",
+    }
+    areas = {"data.thumbnails": "/data/thumbnails", "data.review": "/data/reviews"}
+
+    def policy(group: str) -> Any:
+        return policy_for(
+            [classify],
+            areas=areas,
+            api_socket="/run/api.sock",
+            own_socket=f"/run/runner-{group}.sock",
+            run_dir="/run",
+            group=group,
+        )
+
+    net = policy("net")
+    assert net.net
+    assert (net.read, net.write, net.write_named, net.exec, net.gpu) == ([], [], [], [], False)
+    light = policy("light")
+    assert not light.net
+    assert light.read == ["/data/thumbnails"] and light.write == ["/data/reviews"]
+    assert light.gpu

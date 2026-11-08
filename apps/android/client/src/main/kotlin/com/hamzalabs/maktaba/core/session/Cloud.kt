@@ -69,9 +69,7 @@ data class CloudHome(
 
     /** Pins its `local_ip` entries to their names ([PinnedNames]), so the app can use them. */
     fun pinNames() {
-        for (c in connections) {
-            if (c.kind == "local_ip" && c.tlsName != null) PinnedNames.pin(c.url, c.tlsName)
-        }
+        PinnedNames.pinHome(serverId, connections.mapNotNull { c -> c.tlsName?.takeIf { c.kind == "local_ip" }?.let { c.url to it } })
     }
 }
 

@@ -70,7 +70,11 @@ async def _real_runner(args: list[str], timeout: float) -> ProcResult:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-    except OSError as exc:
+    except PermissionError:
+        # a refusal (a runner's sandbox, its share routing): raised, so the job runs in the
+        # worker (sandbox_refused) rather than failing as the tool's own exit
+        raise
+    except OSError as exc:  # no such tool, a broken one
         return ProcResult(b"", str(exc).encode(), 127)
     try:
         out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -95,5 +99,7 @@ def reset_runner() -> None:
 
 
 async def run_media(args: list[str], *, timeout: float = 120.0) -> ProcResult:
-    """Run ``args`` (argv[0] is ffmpeg / ffprobe) and capture output; never raises."""
+    """Run ``args`` (argv[0] is ffmpeg / ffprobe) and capture output. Raises only a
+    refusal to start it (PermissionError: a runner's sandbox), so that job runs in the
+    worker; a missing tool, a timeout and its exit are answered."""
     return await _runner(args, timeout)

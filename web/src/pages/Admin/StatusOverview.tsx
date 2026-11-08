@@ -45,6 +45,7 @@ const NAMED = new Set([
   "tv_slot",
   "tv_tuner",
   "host_access",
+  "plugin_runners",
 ]);
 
 /**
@@ -109,6 +110,9 @@ export function itemReason(it: StatusItem, t: T, fmt: Fmt, n: (v: number) => str
       vars.why = w === k ? why.replace(/_/g, " ") : w;
     }
   }
+  // Epic 54: a failed plugin runner on the home says the home in the person's language
+  if (it.kind === "plugin_runners" && it.params?.machine === "home")
+    vars.machine = t("plugins.runners.home");
   const key = `health.reason.${it.code}`;
   const s = t(key, vars);
   return s === key ? it.reason : s;

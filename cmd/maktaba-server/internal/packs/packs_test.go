@@ -82,6 +82,7 @@ func TestInstallPack(t *testing.T) {
 // install asks for the rest with Range, verifies and installs.
 func TestInstallResumesACutDownload(t *testing.T) {
 	f := newFixture(t, fixtureOpts{})
+	f.m.Net.(*Net).Tries = 1 // the install gives up at the cut (the next test retries in it)
 	cut := int64(len(f.pack)) * 4 / 10
 	f.cutAt = cut
 	err := f.m.Install(context.Background(), "runtime.ml", nil)
@@ -93,6 +94,22 @@ func TestInstallResumesACutDownload(t *testing.T) {
 	if p, _ := f.m.Progress("runtime.ml"); p.Phase != components.PhaseFailed || p.Reason != ReasonDownloadFailed {
 		t.Fatalf("progress: %+v", p)
 	}
+	if err := f.m.Install(context.Background(), "runtime.ml", nil); err != nil {
+		t.Fatalf("%v\n%s", err, f.log.String())
+	}
+	got := f.reqs(".tar.zst")
+	if len(got) != 2 || !strings.HasSuffix(got[1], "bytes="+strconv.FormatInt(cut, 10)+"-") {
+		t.Fatalf("pack requests: %q", got)
+	}
+	f.installedPack(t)
+}
+
+// A download cut short is a transient failure: the same install asks again for the rest
+// (Range), verifies and installs.
+func TestInstallRetriesACutDownloadInTheSameInstall(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	cut := int64(len(f.pack)) * 4 / 10
+	f.cutAt = cut
 	if err := f.m.Install(context.Background(), "runtime.ml", nil); err != nil {
 		t.Fatalf("%v\n%s", err, f.log.String())
 	}

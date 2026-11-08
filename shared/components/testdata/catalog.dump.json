@@ -100,7 +100,6 @@
         "ram_mb": 0
       },
       "settings": [
-        "rules.audit",
         "rules.storage",
         "rules.system_health",
         "rules.search"
@@ -1269,67 +1268,11 @@
       "source": "",
       "sources": {},
       "stages": [
-        "plex_index",
-        "plex_collection",
-        "plex_groups",
-        "plex_livetv",
-        "plex_collections_import"
+        "plex_livetv"
       ],
       "stop_grace_s": 0,
       "switchable": true,
       "title_key": "components.ext.plex.title",
-      "wants": []
-    },
-    {
-      "bundles": [],
-      "conflicts": [],
-      "desc_key": "components.ext.dizquetv.desc",
-      "drain": {
-        "checkpoint": false,
-        "grace_s": 30
-      },
-      "features": [],
-      "gated": false,
-      "group": "integrations",
-      "id": "ext.dizquetv",
-      "in_payload": false,
-      "kind": "extension",
-      "licence": "",
-      "loops": [],
-      "on_demand": false,
-      "placement": "any",
-      "platforms": [
-        "darwin-arm64",
-        "windows-amd64",
-        "linux-amd64",
-        "linux-arm64"
-      ],
-      "plugin": "",
-      "processes": [],
-      "requires": [
-        [
-          "livetv"
-        ]
-      ],
-      "resources": {
-        "disk_mb": 0,
-        "gpu": "",
-        "ram_mb": 0
-      },
-      "settings": [
-        "rules.dizquetv"
-      ],
-      "since": "0.3.66",
-      "source": "",
-      "sources": {},
-      "stages": [
-        "dizquetv_show",
-        "dizquetv_channels",
-        "dizquetv_audit"
-      ],
-      "stop_grace_s": 0,
-      "switchable": true,
-      "title_key": "components.ext.dizquetv.title",
       "wants": []
     },
     {
@@ -3435,7 +3378,6 @@
     "youtube",
     "ext.plex",
     "livetv",
-    "ext.dizquetv",
     "ext.cloudflare_stream",
     "livetv.slots",
     "livetv.inprocess",

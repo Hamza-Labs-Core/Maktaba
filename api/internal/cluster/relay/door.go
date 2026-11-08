@@ -353,6 +353,7 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 	if !s.Enabled && !home {
 		return Result{Err: fail(CodeOff, "the extension relay is switched off on the home")}
 	}
+	// an extension never relayed
 	if why, ok := HomeOnly[req.Ext]; ok {
 		return Result{Err: fail(CodeHomeOnly, why)}
 	}
@@ -365,8 +366,12 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 			return Result{Err: fail(CodeNotMember, "this machine is not an approved member")}
 		}
 	}
-	if len(req.Body) > MaxRequestBody {
-		return Result{Err: fail(CodeTooLarge, fmt.Sprintf("request body over %d bytes", MaxRequestBody))}
+	maxBody := MaxRequestBody
+	if ext.MaxBody > 0 {
+		maxBody = ext.MaxBody
+	}
+	if len(req.Body) > maxBody {
+		return Result{Err: fail(CodeTooLarge, fmt.Sprintf("request body over %d bytes", maxBody))}
 	}
 	rule, upath, rawQuery, err := ext.MatchFor(home, req.Method, req.Target)
 	if err != nil {
@@ -427,12 +432,6 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 	accept := "application/json"
 	if acceptRe.MatchString(req.Accept) {
 		accept = req.Accept
-	}
-
-	if rule.Verify == VerifyCollection {
-		if e := d.verifyCollection(cctx, ext, base, upath, up.Secret); e != nil {
-			return Result{Err: e}
-		}
 	}
 
 	target := base + upath
@@ -508,35 +507,6 @@ func (d *Door) transportErr(cctx, ctx context.Context, ext *Extension, secret st
 		return fail(CodeTimeout, "the server did not answer in time")
 	}
 	return fail(CodeUnreachable, clip(ScrubString(ext.QueryParam, secret, err.Error()), 200))
-}
-
-// verifyCollection checks that the rating key at the end of path is a
-// collection (a DELETE of any other item could remove a library item).
-func (d *Door) verifyCollection(ctx context.Context, ext *Extension, base, path, secret string) *Error {
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
-	if err != nil {
-		return fail(CodeBadRequest, "request not buildable")
-	}
-	hreq.Header.Set("Accept", "application/json")
-	hreq.Header.Set(ext.Header, secret)
-	resp, err := d.client.Do(hreq)
-	if err != nil {
-		return fail(CodeUnreachable, clip(ScrubString(ext.QueryParam, secret, err.Error()), 200))
-	}
-	defer resp.Body.Close()
-	var doc struct {
-		MediaContainer struct {
-			Metadata []struct {
-				Type string `json:"type"`
-			} `json:"Metadata"`
-		} `json:"MediaContainer"`
-	}
-	if resp.StatusCode != http.StatusOK ||
-		json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&doc) != nil ||
-		len(doc.MediaContainer.Metadata) != 1 || doc.MediaContainer.Metadata[0].Type != "collection" {
-		return fail(CodeNotAllowed, "DELETE "+clip(path, 120)+": only a collection may be deleted")
-	}
-	return nil
 }
 
 func baseURL(raw string) (string, error) {
@@ -625,7 +595,7 @@ func (d *Door) Status(ctx context.Context) Status {
 			v.Reason = "settings unreadable"
 		case up.URL == "":
 			v.Reason = "no server address"
-		case up.Secret == "":
+		case up.Secret == "" && ext.SecretName != "":
 			v.Reason = "no secret stored on the home"
 		default:
 			v.Configured = true

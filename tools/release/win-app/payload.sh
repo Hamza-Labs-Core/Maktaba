@@ -98,17 +98,11 @@ sha256() { sha256sum "$1" | awk '{print $1}'; }
 # win PATH...: the Windows form of each path, for the native programs given a path
 win() { cygpath -w "$@"; }
 
-# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked.
+# fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked
+# (tools/release/fetch-pinned.sh: retried with backoff, a github.com release asset by the
+# API's route too; a download with other bytes stops the build).
 fetch() {
-    local url="$1" want="$2" dst="$CACHE/$3" got
-    if [ ! -f "$dst" ] || [ "$(sha256 "$dst")" != "$want" ]; then
-        log "downloading $3"
-        curl -fsSL --retry 3 -o "$dst.part" "$url"
-        mv "$dst.part" "$dst"
-    fi
-    got="$(sha256 "$dst")"
-    [ "$got" = "$want" ] || die "$3: sha256 $got, pins.env says $want"
-    printf '%s\n' "$dst"
+    "$REPO_ROOT/tools/release/fetch-pinned.sh" "$1" "$2" "$CACHE/$3" || die "$3: download failed ($1)"
 }
 
 # the license-server key (Epic 16): a release's workflow writes it before this

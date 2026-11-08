@@ -265,10 +265,16 @@ plugins:
   - 'cmd/maktaba-server/go.mod'
   - 'web/src/i18n/**'
   - '.github/workflows/_plugins.yml'
+  # its pinned downloads, retried and checked (the payload's fetch too)
+  - 'tools/release/fetch-pinned.sh'
   # Epic 54 Phase 4: Maktaba's own stages as first-party plugins
   - 'plugins/**'
   - 'tools/plugins/**'
   - 'pipeline/src/maktaba_plugin_runner/**'
+  # the runners on Windows (54.23): their launch, pipes and the probe CI runs in them
+  - 'cmd/maktaba-server/internal/supervisor/runners*'
+  - 'cmd/maktaba-server/internal/supervisor/testdata/runner_probe.py'
+  - 'cmd/maktaba-server/cmd_plugins_sandbox.go'
   - 'pipeline/src/maktaba_pipeline/plugins/**'
   - 'pipeline/src/maktaba_pipeline/engine/**'
   - 'pipeline/tests/plugins/**'
@@ -276,6 +282,36 @@ plugins:
   - 'api/internal/plugins/**'
   - 'api/internal/handlers/queues/impl*.go'
   - 'api/tools/plugin-api-dev/**'
+
+# Epic 54 (story 54.23): Maktaba's own stages through the worker's plugin path into their
+# Windows runners, end to end (_runner-stages.yml): the runner, the worker's side of the
+# plugin path, the engine, the two stages and the tool helpers they run, the launcher, the
+# supervisor's runners and pipes, and the plugin API's executor the stages' statements go to
+runner_stages:
+  - *ci
+  - '.github/workflows/_runner-stages.yml'
+  - 'pipeline/src/maktaba_plugin_runner/**'
+  - 'pipeline/src/maktaba_pipeline/plugins/native.py'
+  - 'pipeline/src/maktaba_pipeline/plugins/pipe.py'
+  - 'pipeline/src/maktaba_pipeline/plugins/firstparty.py'
+  - 'pipeline/src/maktaba_pipeline/engine/**'
+  - 'pipeline/src/maktaba_pipeline/thumbnail/**'
+  - 'pipeline/src/maktaba_pipeline/audio/probe.py'
+  - 'pipeline/src/maktaba_pipeline/binaries.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/convert.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/verify.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/unicode_open.py'
+  - 'plugins/first-party/thumbnails/**'
+  - 'plugins/first-party/convert/**'
+  - 'cmd/maktaba-server/internal/appcontainer/**'
+  - 'cmd/maktaba-server/internal/supervisor/runners*'
+  - 'cmd/maktaba-server/internal/supervisor/testdata/runner_stages_worker.py'
+  - 'cmd/maktaba-server/internal/pluginrelay/**'
+  - 'api/internal/plugins/**'
+  - 'api/tools/plugin-api-dev/**'
+  # the ffmpeg download, retried and checked against its pin
+  - 'tools/release/fetch-pinned.sh'
+  - 'tools/release/win-app/pins.env'
 
 # the cloud's Cloudflare files (Epic 50, 50.30, 50.31, 50.34): the zone and Tunnel files, the
 # published IP ranges, the tools that check and deploy them, and their workflows
@@ -544,6 +580,8 @@ mac_app:
   - 'pipeline/src/maktaba_plugin_runner/**'
   - 'pipeline/src/maktaba_pipeline/plugins/native.py'
   - '.github/workflows/_mac-app.yml'
+  # its pinned downloads, retried and checked (the payload's fetch too)
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
   - 'Makefile'
 
@@ -559,6 +597,8 @@ win_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_win-app.yml'
+  # its pinned downloads, retried and checked (the payload's fetch too)
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
   - 'Makefile'
 
@@ -575,6 +615,8 @@ linux_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_linux-app.yml'
+  # the payload's fetch (pinned downloads, retried and checked)
+  - 'tools/release/fetch-pinned.sh'
   - 'Makefile'
 
 # ---- the native apps ------------------------------------------------------------------

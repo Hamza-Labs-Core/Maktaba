@@ -25,7 +25,7 @@ const (
 // ---------- explain ----------
 
 var explainVideoCols = []string{"id", "title", "filename", "library_id", "library", "aired", "date_quality",
-	"duration", "metadata", "youtube_id", "method", "tab", "plex"}
+	"duration", "metadata", "youtube_id", "method", "tab"}
 
 func explainRules(verdict ...*queuestest.Rule) []*queuestest.Rule {
 	base := []*queuestest.Rule{
@@ -35,7 +35,7 @@ func explainRules(verdict ...*queuestest.Rule) []*queuestest.Rule {
 			{"شمائل", int64(3)}}},
 		{Match: "from videos v", Cols: explainVideoCols, Rows: [][]driver.Value{
 			{videoV, "طلع البدر", "e1.mp4", libL, "قناة", "2020-01-01", "exact", 1500.5,
-				[]byte(`{"width":1920,"height":1080}`), "yt-1", "info_json", "videos", "99123"}}},
+				[]byte(`{"width":1920,"height":1080}`), "yt-1", "info_json", "videos"}}},
 	}
 	return append(base, verdict...)
 }
@@ -57,7 +57,7 @@ func TestExplain_ValidatesAndEscapes(t *testing.T) {
 	}
 }
 
-func TestExplain_EpisodeVerdictWithPlaylistsAndPlex(t *testing.T) {
+func TestExplain_EpisodeVerdictWithPlaylists(t *testing.T) {
 	f := newFixture(explainRules(&queuestest.Rule{Match: "from series_episodes e",
 		Cols: []string{"sid", "series", "name", "season", "episode", "attached"},
 		Rows: [][]driver.Value{{seasonA, seriesX, "كنوز السيرة", int64(2), int64(7), true}}})...)
@@ -74,7 +74,7 @@ func TestExplain_EpisodeVerdictWithPlaylistsAndPlex(t *testing.T) {
 	if v.Verdict.Kind != VerdictEpisode || v.Verdict.Label != "كنوز السيرة S2 E7 (attached)" || !v.Verdict.Attached {
 		t.Errorf("verdict %+v", v.Verdict)
 	}
-	if v.PlexKey == nil || *v.PlexKey != "99123" || v.LinkMethod == nil || *v.LinkMethod != "info_json" ||
+	if v.LinkMethod == nil || *v.LinkMethod != "info_json" ||
 		v.Width == nil || *v.Width != 1920 || len(v.Playlists) != 1 || *v.Playlists[0].Position != 3 {
 		t.Errorf("video %+v", v)
 	}
@@ -401,8 +401,8 @@ func TestSeasonStyles_RefusesNonAdmins(t *testing.T) {
 
 func TestInsights(t *testing.T) {
 	f := newFixture(
-		&queuestest.Rule{Match: "(select count(*) from libraries)", Cols: make([]string, 11), Rows: [][]driver.Value{
-			{int64(3), int64(100), int64(90), int64(10), int64(20), int64(5), int64(4), int64(6), int64(2), int64(50), int64(7)}}},
+		&queuestest.Rule{Match: "(select count(*) from libraries)", Cols: make([]string, 9), Rows: [][]driver.Value{
+			{int64(3), int64(100), int64(90), int64(10), int64(20), int64(6), int64(2), int64(50), int64(7)}}},
 		&queuestest.Rule{Match: "from season_style st", Cols: []string{"style", "n"},
 			Rows: [][]driver.Value{{"talk", int64(8)}, {"cinematic", int64(2)}}},
 		&queuestest.Rule{Match: "from season_tags t", Cols: []string{"genre", "n"},
@@ -481,17 +481,17 @@ func TestPulse_ReportsTheAgeOfTheLastActivity(t *testing.T) {
 
 func TestLibraryCollections(t *testing.T) {
 	f := newFixture(
-		&queuestest.Rule{Match: "from topic_collections t", Cols: []string{"id", "name", "n", "coll"},
-			Rows: [][]driver.Value{{"t1", "السيرة", int64(12), "قناة - ملف - السيرة"}, {"t2", "الفقه", int64(3), nil}}},
-		&queuestest.Rule{Match: "from clip_groups g", Cols: []string{"id", "kind", "basis", "title", "n", "coll"},
-			Rows: [][]driver.Value{{"g1", "clips", "topic", "مقاطع", int64(40), nil}}},
+		&queuestest.Rule{Match: "from topic_collections t", Cols: []string{"id", "name", "n"},
+			Rows: [][]driver.Value{{"t1", "السيرة", int64(12)}, {"t2", "الفقه", int64(3)}}},
+		&queuestest.Rule{Match: "from clip_groups g", Cols: []string{"id", "kind", "basis", "title", "n"},
+			Rows: [][]driver.Value{{"g1", "clips", "topic", "مقاطع", int64(40)}}},
 		&queuestest.Rule{Match: "from promo_links p", Cols: []string{"vid", "title", "show", "sid", "season", "ev"},
 			Rows: [][]driver.Value{{videoV, "برومو الحبيب", "الحبيب", seasonA, int64(2), "title names the show"}}},
 	)
 	rec := f.do("GET", "/api/items/library/"+libL+"/collections", "", admin())
 	var out LibraryCollectionsResponse
 	decode(t, rec, &out)
-	if rec.Code != 200 || len(out.Topics) != 2 || out.Topics[0].Collection == nil || out.Topics[1].Collection != nil ||
+	if rec.Code != 200 || len(out.Topics) != 2 || out.Topics[0].Items != 12 ||
 		len(out.ClipGroups) != 1 || out.ClipGroups[0].Items != 40 ||
 		len(out.Promos) != 1 || *out.Promos[0].Season != 2 || *out.Promos[0].SeasonID != seasonA {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())

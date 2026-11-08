@@ -39,7 +39,7 @@ from maktaba_plugin_sdk.native import (
     UnixTransport,
 )
 
-from . import sandbox
+from . import sandbox, winfiles
 
 __all__ = ["Runner", "load_impl"]
 
@@ -139,6 +139,9 @@ def runner_context(
     from maktaba_pipeline.engine.context import JobCancelled, StageContext
 
     class RunnerContext(StageContext):
+        #: a model question goes to the plugin API's compute.generate (story 54.31 §2)
+        model_via = "api"
+
         async def progress(
             self,
             step: str,
@@ -198,6 +201,38 @@ def with_services(ctx: Any, msg: dict[str, Any]) -> Any:
     return ctx
 
 
+def job_line(
+    group: str,
+    stage: str,
+    job_id: Any,
+    status: str,
+    seconds: float,
+    broker: dict[str, int] | None = None,
+    missing: list[str] | None = None,
+) -> None:
+    """The runner's own record of a job it ran (its log, which the supervisor keeps): the
+    worker's job id, the stage, how it ended (``ok``, ``failure``, ``refused``,
+    ``sandbox_refused``, ...), how long the stage's code took and, on Windows with a share
+    brokered, what the launcher's broker and the plain look-ups answered for it
+    (``winfiles.take_counts``) and the first paths a look-up found missing
+    (``winfiles.take_missing``)."""
+    line: dict[str, Any] = {
+        "event": "plugin_runner_job",
+        "service": "plugin-runner",
+        "group": group,
+        "stage": stage,
+        "job_id": job_id,
+        "status": status,
+        "ms": round(seconds * 1000, 1),
+    }
+    if broker:
+        line["broker"] = broker
+    if missing:
+        line["missing"] = missing
+    sys.stderr.write(json.dumps(line) + "\n")
+    sys.stderr.flush()
+
+
 @dataclass
 class Runner:
     group: str
@@ -224,6 +259,10 @@ class Runner:
     def _transport(self, token: str) -> Any:
         if self.transport is not None:
             return self.transport(token)
+        if sys.platform == "win32":
+            from .winpipe import API_ENV, PipeTransport
+
+            return PipeTransport(os.environ.get(API_ENV, ""), token)
         return UnixTransport(self.api_socket, token)
 
     def hello(self) -> dict[str, Any]:
@@ -279,6 +318,9 @@ class Runner:
             )
             return
         job = job_from_wire(msg["job"])
+        started = time.monotonic()
+        winfiles.take_counts()  # the broker's answers from here on are this job's
+        winfiles.take_missing()
         missing = _use_plan_exporters(msg)
         if missing:
             # the plan would lack what those extensions add: the worker runs the job itself
@@ -340,6 +382,15 @@ class Runner:
                 "code": "plugin_scope",
                 "message": f"{scope.refused[0]}: not a file of this {stage} job's subject",
             }
+        job_line(
+            self.group,
+            stage,
+            job.id,
+            str(out.get("status")),
+            time.monotonic() - started,
+            winfiles.take_counts(),
+            winfiles.take_missing(),
+        )
         await write_frame(w, {"type": "result", **out})
 
     async def _fingerprints(self, msg: dict[str, Any]) -> dict[str, Any]:
@@ -365,6 +416,28 @@ class Runner:
                 out.append(await fn(db, subject))
         except StatementUnregistered as exc:
             return {"type": "error", "status": "unregistered", "message": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - answered, so the worker fingerprints it itself
+            # a fingerprint the sandbox refused (a share path, a folder without a grant) or
+            # that failed: an answer, never a dropped connection (the worker then reads its
+            # own fingerprint, as for any refusal)
+            from maktaba_pipeline.plugins.native import sandbox_refused
+
+            status = "sandbox_refused" if sandbox_refused(exc) else "failed"
+            sys.stderr.write(
+                json.dumps(
+                    {
+                        "event": "plugin_runner_fingerprint_failed",
+                        "service": "plugin-runner",
+                        "group": self.group,
+                        "stage": stage,
+                        "status": status,
+                        "error": f"{type(exc).__name__}: {exc}"[:300],
+                    }
+                )
+                + "\n"
+            )
+            sys.stderr.flush()
+            return {"type": "error", "status": status, "message": f"{type(exc).__name__}: {exc}"}
         finally:
             close = getattr(transport, "close", None)
             if close is not None:
@@ -379,6 +452,13 @@ class Runner:
         return time.monotonic() - self.last_active
 
     async def serve(self, path: Path) -> None:
+        if sys.platform == "win32":
+            # no socket of its own in its AppContainer: the callers the supervisor hands it
+            # on its back pipe (story 54.23)
+            from . import winpipe
+
+            await winpipe.serve_back(self.handle, os.environ.get(winpipe.BACK_ENV, ""))
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         with contextlib.suppress(FileNotFoundError):
             path.unlink()

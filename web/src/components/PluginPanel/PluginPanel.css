@@ -1,20 +1,21 @@
-/* Plugin panels (story 54.20): Maktaba's own look; logical properties so RTL mirrors. */
+/* Plugin panels (story 54.20): Maktaba's own look, from the theme's tokens (light and dark);
+   logical properties so RTL mirrors. */
 .mkt-ppanels {
-  margin-block: var(--mk-space-6, 24px);
+  margin-block: var(--space-6);
 }
 .mkt-ppanels > summary {
   cursor: pointer;
   font-weight: 600;
-  padding-block: var(--mk-space-2, 8px);
+  padding-block: var(--space-2);
 }
 .mkt-ppanel {
-  padding: var(--mk-space-4, 16px);
-  margin-block-start: var(--mk-space-3, 12px);
+  padding: var(--space-4);
+  margin-block-start: var(--space-3);
 }
 .mkt-ppanel__head {
   display: flex;
   align-items: baseline;
-  gap: var(--mk-space-2, 8px);
+  gap: var(--space-2);
   flex-wrap: wrap;
 }
 .mkt-ppanel__head h3 {
@@ -22,28 +23,28 @@
   font-size: 1rem;
 }
 .mkt-ppanel__by {
-  color: var(--mk-color-text-muted, #666);
+  color: var(--color-muted);
   font-size: 0.85rem;
 }
 .mkt-ppanel__block {
-  margin-block-start: var(--mk-space-3, 12px);
+  margin-block-start: var(--space-3);
   overflow-wrap: anywhere;
 }
 .mkt-ppanel__block h4 {
-  margin: 0 0 var(--mk-space-1, 4px);
+  margin: 0 0 var(--space-1);
   font-size: 0.9rem;
 }
 .mkt-ppanel__kv {
   display: grid;
-  gap: var(--mk-space-1, 4px);
+  gap: var(--space-1);
   margin: 0;
 }
 .mkt-ppanel__kv > div {
   display: flex;
-  gap: var(--mk-space-3, 12px);
+  gap: var(--space-3);
 }
 .mkt-ppanel__kv dt {
-  color: var(--mk-color-text-muted, #666);
+  color: var(--color-muted);
   min-inline-size: 8rem;
 }
 .mkt-ppanel__kv dd {
@@ -52,12 +53,12 @@
 .mkt-ppanel__row {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--mk-space-2, 8px);
+  gap: var(--space-2);
 }
 .mkt-ppanel__chip {
-  border: 1px solid var(--mk-color-border, #ccc);
+  border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding-inline: var(--mk-space-3, 12px);
+  padding-inline: var(--space-3);
   padding-block: 2px;
   text-decoration: none;
   color: inherit;
@@ -68,7 +69,7 @@
 .mkt-ppanel__image {
   max-inline-size: 100%;
   block-size: auto;
-  border-radius: var(--mk-radius-2, 8px);
+  border-radius: var(--radius-md);
 }
 .mkt-ppanel__text {
   margin: 0;

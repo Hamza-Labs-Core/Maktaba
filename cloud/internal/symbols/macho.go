@@ -122,7 +122,7 @@ func extractOne(f *macho.File, codeFile string) (*Table, error) {
 		return names[s]
 	}
 	if d, err := f.DWARF(); err == nil {
-		if err := fromDWARF(d, t, name); err != nil {
+		if err := fromDWARF(d, t, name, "."); err != nil {
 			return nil, err
 		}
 	}
@@ -140,9 +140,10 @@ var scopeTags = map[dwarf.Tag]bool{
 	dwarf.TagEnumerationType: true, dwarf.TagUnionType: true, dwarf.TagInterfaceType: true,
 }
 
-// fromDWARF adds each subprogram's ranges (named with its enclosing types and modules, as
-// "Demo.Player.play") and every compile unit's line table.
-func fromDWARF(d *dwarf.Data, t *Table, name func(string) uint64) error {
+// fromDWARF adds each subprogram's ranges (named with its enclosing types and modules joined
+// by sep, as "Demo.Player.play" for Swift or "media::Player::play" for C++) and every compile
+// unit's line table.
+func fromDWARF(d *dwarf.Data, t *Table, name func(string) uint64, sep string) error {
 	type def struct {
 		ranges [][2]uint64
 		own    string
@@ -177,8 +178,8 @@ func fromDWARF(d *dwarf.Data, t *Table, name func(string) uint64) error {
 				q, _ = e.Val(dwarf.AttrLinkageName).(string)
 			}
 			if q != "" {
-				if p := strings.Join(nonEmpty(scope), "."); p != "" && own != "" {
-					q = p + "." + q
+				if p := strings.Join(nonEmpty(scope), sep); p != "" && own != "" {
+					q = p + sep + q
 				}
 				qualified[e.Offset] = q
 			}

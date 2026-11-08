@@ -18,6 +18,10 @@ import (
 // The program sees this process's environment entries named MAKTABA_PLUGIND_* or PROBE_*,
 // and the ones Run adds (SystemRoot, TEMP and the profile's folders), nothing else.
 func Launch(args []string, stderr io.Writer) int {
+	// a first-party runner (story 54.23): its policy, its own profile (LaunchRunner)
+	if len(args) > 0 && args[0] == "runner-sandbox-run" {
+		return LaunchRunner(args, stderr)
+	}
 	// the supervisor names the subcommand first; aclaunch does not
 	if len(args) > 0 && args[0] == "plugins-sandbox-run" {
 		args = args[1:]
@@ -37,8 +41,21 @@ func Launch(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "plugins-sandbox-run: a program to run is required after --")
 		return 2
 	}
+	// granted as the filesystem names them (short names expanded, links above resolved): a
+	// grant applies only to the object its path names (Grant checks it by handle). A folder
+	// that is itself a link or junction is refused, never its target granted
+	grant := func(d string, write bool) error {
+		if info, err := os.Lstat(d); err == nil && info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0 {
+			return fmt.Errorf("%s is a link: never granted", d)
+		}
+		c, err := canonical(d)
+		if err != nil {
+			return err
+		}
+		return grantFn(*profile, c, write)
+	}
 	for _, d := range reads {
-		if err := Grant(*profile, d, false); err != nil {
+		if err := grant(d, false); err != nil {
 			fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 			return 2
 		}
@@ -48,7 +65,7 @@ func Launch(args []string, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 			return 2
 		}
-		if err := Grant(*profile, d, true); err != nil {
+		if err := grant(d, true); err != nil {
 			fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 			return 2
 		}
@@ -59,7 +76,7 @@ func Launch(args []string, stderr io.Writer) int {
 			env = append(env, kv)
 		}
 	}
-	code, err := Run(*profile, rest[0], rest[1:], Options{MemoryBytes: *memory, Env: env})
+	code, err := runFn(*profile, rest[0], rest[1:], Options{MemoryBytes: *memory, Env: env})
 	if err != nil {
 		fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 		return 2

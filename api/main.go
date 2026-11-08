@@ -751,7 +751,8 @@ func runServe() error {
 				// story 54.35: the first-party Plex plugin reaches Plex through the home's
 				// service door, which adds the token and scrubs it out of every answer
 				Service: relay.New(relay.Config{Settings: relay.DBSettings(appDB),
-					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv), Logger: logger})})
+					Upstream: relay.DBUpstream(appDB, homeSecrets, os.Getenv),
+					Logger:   logger})})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

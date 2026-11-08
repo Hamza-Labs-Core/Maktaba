@@ -36,7 +36,9 @@ func (h *Handler) checks() []check {
 	}
 	if h.Components != nil {
 		cs = append(cs, check{Name: "components",
-			Fallback: base("components", GroupServices, KindComponents, "Components"), Run: checkComponents})
+			Fallback: base("components", GroupServices, KindComponents, "Components"), Run: checkComponents},
+			check{Name: "plugin_runners",
+				Fallback: base("plugin_runners", GroupServices, KindPluginRunners, "Plugin runners"), Run: checkPluginRunners})
 	}
 	cs = append(cs,
 		check{Name: "workers", Fallback: crit(base("workers", GroupWorkers, KindWorkers, "Workers")), Run: checkWorkers},

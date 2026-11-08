@@ -122,4 +122,28 @@ class CloudStatusTest {
         val m = Regex("""name="banner_maintenance">([^<]*)<""").find(ar)!!.groupValues[1]
         assertTrue(m, listOf("%1\$s", "%2\$s", "%3\$s").all { it in m })
     }
+
+    // story 50.11 §4: a failed request asks for the feed now
+    private val relayHome = "https://h1.relay.maktaba.tv/".toHttpUrl()
+    private val lanHome = "http://192.168.1.20:8088/".toHttpUrl()
+
+    @org.junit.Before
+    fun resetRecheck() = CloudStatusRules.resetRecheck()
+
+    @Test
+    fun `only the relay failing a home reached through the cloud asks`() {
+        for (code in listOf(200, 400, 401, 404, 429, 500)) {
+            assertFalse("$code", CloudStatusRules.noteRequestFailed(relayHome, code, 0))
+        }
+        assertFalse("a home on the LAN", CloudStatusRules.noteRequestFailed(lanHome, 502, 0))
+        assertTrue(CloudStatusRules.noteRequestFailed(relayHome, 502, 0))
+    }
+
+    @Test
+    fun `at most once every 10 s`() {
+        assertTrue(CloudStatusRules.noteRequestFailed(relayHome, 0, 1_000))
+        assertFalse(CloudStatusRules.noteRequestFailed(relayHome, 503, 5_000))
+        assertFalse(CloudStatusRules.noteRequestFailed(relayHome, 504, 10_999))
+        assertTrue(CloudStatusRules.noteRequestFailed(relayHome, 504, 11_000))
+    }
 }

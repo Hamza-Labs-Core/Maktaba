@@ -198,7 +198,7 @@ func TestFailures(t *testing.T) {
 			{"probe", "OSError", int64(1), t0.Add(-time.Hour), t0.Add(-time.Minute), "x", `{}`},
 		}}
 	reviewRule := &queuestest.Rule{Match: "s.external_write", Cols: []string{"stage", "n", "first", "last", "samples"},
-		Rows: [][]driver.Value{{"plex_collection", int64(2), t0.Add(-time.Hour), t0, `{season:` + uidA + `}`}}}
+		Rows: [][]driver.Value{{"write_channels", int64(2), t0.Add(-time.Hour), t0, `{season:` + uidA + `}`}}}
 	labels := &queuestest.Rule{Match: "from unnest", Cols: []string{"k", "id", "label"},
 		Rows: [][]driver.Value{{"video", uidA, "Episode 1"}, {"season", uidA, "Show · S1"}}}
 
@@ -232,7 +232,7 @@ func TestFailures(t *testing.T) {
 	if nas.SampleSubjects[1].Label != uidB {
 		t.Errorf("unlabelled subject falls back to its id: %+v", nas.SampleSubjects[1])
 	}
-	rv := by["plex_collection/awaiting_review"]
+	rv := by["write_channels/awaiting_review"]
 	if rv.Count != 2 || rv.Action != ActionApply || rv.SampleSubjects[0].Label != "Show · S1" {
 		t.Errorf("review group = %+v", rv)
 	}
@@ -373,7 +373,7 @@ func TestItemHistory(t *testing.T) {
 			{"video", uidA, "Episode 1"}, {"library", uidB, "Kids"}}},
 		{Match: "select distinct on (stage) id", Cols: jobRefCols(), Rows: [][]driver.Value{jobRefRow(5, "probe", "done")}},
 		{Match: "from external_links el", Cols: []string{"target", "title", "ext", "via"}, Rows: [][]driver.Value{
-			{"plex_collection", "Show S1", "rk1", "season"}, {"maktaba_channel", "Ch", "c1", "video"}}},
+			{"maktaba_channel", "Show S1", "c2", "season"}, {"maktaba_channel", "Ch", "c1", "video"}}},
 		{Match: "from channel_programs", Cols: []string{"id", "name", "n"}, Rows: [][]driver.Value{{uidB, "Cartoons", int64(3)}}},
 		{Match: "where j.subject_kind = $1 and j.subject_id = $2::uuid", Cols: timelineCols,
 			Rows: [][]driver.Value{tl(12, "probe"), tl(11, "probe"), tl(10, "probe")}},

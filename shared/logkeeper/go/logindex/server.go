@@ -227,7 +227,11 @@ func (ix *Index) Handler(ready *atomic.Bool) http.Handler {
 		if rng == "" {
 			rng = "24h"
 		}
-		doc, err := ix.Board(r.Context(), r.PathValue("board"), rng)
+		var offline []string // the joined machines that are offline (the API's, story 53.12)
+		if o := r.URL.Query().Get("offline"); o != "" {
+			offline = strings.Split(o, ",")
+		}
+		doc, err := ix.BoardFor(r.Context(), r.PathValue("board"), rng, r.URL.Query().Get("machine"), offline)
 		if errors.Is(err, ErrBoard) {
 			writeErr(w, http.StatusNotFound, err)
 			return

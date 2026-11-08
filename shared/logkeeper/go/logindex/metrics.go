@@ -240,6 +240,9 @@ func (ix *Index) Record(ctx context.Context, samples []sample, at time.Time) err
 			}
 		}
 	}
+	// each machine's components and restarts, and the totals across machines, summed as
+	// they are written so the Overview reads a line per machine, not one per component
+	tally := newMachineTally()
 	for _, s := range samples {
 		def, ok := st.allowed[s.name]
 		if !ok || def.Kind == LatencyKind {
@@ -260,23 +263,40 @@ func (ix *Index) Record(ctx context.Context, samples []sample, at time.Time) err
 				d = s.value // the process restarted: its counter began again
 			}
 			rows = append(rows, row{s.name, s.labels, d, true})
+			tally.add(s.name, s.labels, d)
 			continue
 		}
 		rows = append(rows, row{s.name, s.labels, s.value, false})
+		tally.add(s.name, s.labels, s.value)
+	}
+	for _, r := range tally.rows() {
+		rows = append(rows, row(r))
 	}
 	rows = append(rows, row{DroppedSeries, "", st.dropped, false})
 	tx, err := ix.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
+	// each statement is prepared once per scrape, not once per row: the driver keeps no
+	// statement cache, and parsing the upsert was about half of Record's time
+	set, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
+		ON CONFLICT(name, labels, minute) DO UPDATE SET value = excluded.value`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	add, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
+		ON CONFLICT(name, labels, minute) DO UPDATE SET value = value + excluded.value`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 	for _, r := range rows {
-		q := `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
-			ON CONFLICT(name, labels, minute) DO UPDATE SET value = excluded.value`
+		stmt := set
 		if r.add {
-			q = `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
-				ON CONFLICT(name, labels, minute) DO UPDATE SET value = value + excluded.value`
+			stmt = add
 		}
-		if _, err := tx.Exec(q, r.name, r.labels, minute, r.v); err != nil {
+		if _, err := stmt.ExecContext(ctx, r.name, r.labels, minute, r.v); err != nil {
 			_ = tx.Rollback()
 			return err
 		}
@@ -403,27 +423,62 @@ type BoardDoc struct {
 	Range  string   `json:"range"`
 	Step   int64    `json:"step"` // seconds between points
 	Series []Series `json:"series"`
+	// Machine is the one machine the Overview was asked for (machine=), "" for all.
+	Machine string `json:"machine,omitempty"`
+	// Machines (Overview only) counts the machines, names the ones shown and the offline ones.
+	Machines *MachineCount `json:"machines,omitempty"`
+	// Omitted is how many lines MaxSeries left out.
+	Omitted int `json:"omitted,omitempty"`
 }
 
 // ErrBoard is a board or range this store does not answer.
 var ErrBoard = fmt.Errorf("logindex: no such board or range")
 
-// Board answers a board's series over the range, downsampled to at most MaxPoints each.
+// window is where a board reads its points: the table, its time column and unit (seconds),
+// the bucket (in units) the points are averaged over, and the first unit kept.
+type window struct {
+	table, col          string
+	unit, bucket, since int64
+}
+
+// Board answers a board's series over the range for every machine.
 func (ix *Index) Board(ctx context.Context, board, rng string) (BoardDoc, error) {
+	return ix.BoardOf(ctx, board, rng, "")
+}
+
+// BoardOf answers a board's series over the range, downsampled to at most MaxPoints each and
+// at most MaxSeries lines. On the Overview, machine names one machine whose lines it answers
+// ("" all machines: totals across them and the TopMachines most in need of attention).
+func (ix *Index) BoardOf(ctx context.Context, board, rng, machine string) (BoardDoc, error) {
+	return ix.BoardFor(ctx, board, rng, machine, nil)
+}
+
+// BoardFor is BoardOf with the joined machines that are offline (the home's cluster says
+// which, story 53.12): on the Overview they rank first and are named in Machines.Offline.
+// At most MaxOffline, each a machine id of at most maxMachineID bytes.
+func (ix *Index) BoardFor(ctx context.Context, board, rng, machine string, offline []string) (BoardDoc, error) {
 	d, ok := Ranges[rng]
 	known := false
 	for _, b := range Boards {
 		known = known || b == board
 	}
-	if !ok || !known {
+	if !ok || !known || len(machine) > maxMachineID || len(offline) > MaxOffline {
 		return BoardDoc{}, ErrBoard
+	}
+	for _, m := range offline {
+		if len(m) > maxMachineID {
+			return BoardDoc{}, ErrBoard
+		}
+	}
+	if board != "overview" {
+		machine, offline = "", nil
 	}
 	allowed, _, _ := AllowedSeries()
 	var names []string
 	kinds := map[string]string{}
 	for _, s := range allowed {
-		if s.Board != board {
-			continue
+		if s.Board != board || (board == "overview" && machineSeries(s.Name)) {
+			continue // the Overview's per-machine series are answered by overviewMachines
 		}
 		if s.Kind == LatencyKind { // kept as its requests per minute and its p95
 			count, p95 := LatencySeries(s.Name)
@@ -434,62 +489,48 @@ func (ix *Index) Board(ctx context.Context, board, rng string) (BoardDoc, error)
 		names = append(names, s.Name)
 		kinds[s.Name] = s.Kind
 	}
-	// the series of catalog ids last: they have a line per component and machine, and
-	// would otherwise take the board's lines from each machine's memory, disk and load
-	idSeries := func(name string) bool { return allowed[name].IDLabels }
-	sort.Slice(names, func(i, j int) bool {
-		if a, b := idSeries(names[i]), idSeries(names[j]); a != b {
-			return b
-		}
-		return names[i] < names[j]
-	})
+	sort.Strings(names)
 	now := ix.now()
-	since := now.Add(-d).Unix()
-	table, col, unit := "metric_1m", "minute", int64(60)
+	w := window{table: "metric_1m", col: "minute", unit: 60}
 	if d > 7*24*time.Hour {
-		table, col, unit = "metric_1h", "hour", 3600
+		w.table, w.col, w.unit = "metric_1h", "hour", 3600
 	}
-	span := d.Seconds() / float64(unit)
-	bucket := int64(math.Ceil(span / MaxPoints))
-	if bucket < 1 {
-		bucket = 1
+	span := d.Seconds() / float64(w.unit)
+	w.bucket = int64(math.Ceil(span / MaxPoints))
+	if w.bucket < 1 {
+		w.bucket = 1
 	}
-	doc := BoardDoc{Board: board, Range: rng, Step: bucket * unit, Series: []Series{}}
-	for _, name := range names {
-		if len(doc.Series) >= MaxSeries {
-			break
+	since := now.Add(-d).Unix()
+	w.since = since / w.unit
+	doc := BoardDoc{Board: board, Range: rng, Step: w.bucket * w.unit, Series: []Series{}, Machine: machine}
+	add := func(ss []Series) {
+		for _, s := range ss {
+			if len(doc.Series) < MaxSeries {
+				doc.Series = append(doc.Series, s)
+			} else {
+				doc.Omitted++
+			}
 		}
-		rows, err := ix.db.QueryContext(ctx, `SELECT labels, (`+col+` / ?) * ?, AVG(value) FROM `+table+`
-			WHERE name = ? AND `+col+` >= ? GROUP BY labels, `+col+` / ? ORDER BY labels, 2`,
-			bucket, bucket, name, since/unit, bucket)
+	}
+	if board == "overview" {
+		lines, count, err := ix.overviewMachines(ctx, w, machine, offline)
 		if err != nil {
 			return doc, err
 		}
-		by := map[string]*Series{}
-		var order []string
-		for rows.Next() {
-			var labels string
-			var t int64
-			var v float64
-			if rows.Scan(&labels, &t, &v) != nil {
-				continue
-			}
-			s := by[labels]
-			if s == nil {
-				s = &Series{Name: name, Labels: labels, Kind: kinds[name]}
-				by[labels] = s
-				order = append(order, labels)
-			}
-			s.Points = append(s.Points, [2]float64{float64(t * unit), v})
-		}
-		_ = rows.Close()
-		for _, l := range order {
-			if len(doc.Series) < MaxSeries {
-				doc.Series = append(doc.Series, *by[l])
-			}
+		doc.Machines = count
+		add(lines)
+		if machine != "" { // one machine: only its own lines (the rest are the home's)
+			return doc, nil
 		}
 	}
-	if board == "overview" && len(doc.Series) < MaxSeries {
+	for _, name := range names {
+		ss, err := ix.seriesOf(ctx, w, name, kinds[name])
+		if err != nil {
+			return doc, err
+		}
+		add(ss)
+	}
+	if board == "overview" {
 		// errors per hour by component, from the error groups (story 53.10)
 		rows, err := ix.db.QueryContext(ctx, `SELECT COALESCE(g.component, g.service), h.hour, SUM(h.count)
 			FROM error_hours h JOIN error_groups g ON g.fp = h.fp WHERE h.hour >= ?
@@ -514,13 +555,42 @@ func (ix *Index) Board(ctx context.Context, board, rng string) (BoardDoc, error)
 			}
 			_ = rows.Close()
 			for _, c := range order {
-				if len(doc.Series) < MaxSeries {
-					doc.Series = append(doc.Series, *by[c])
-				}
+				add([]Series{*by[c]})
 			}
 		}
 	}
 	return doc, nil
+}
+
+// seriesOf is one series name's lines over the window, a line per label set.
+// With a label set given, only that one line (read through the primary key).
+func (ix *Index) seriesOf(ctx context.Context, w window, name, kind string, labels ...string) ([]Series, error) {
+	where, args := "", []any{w.bucket, w.bucket, name, w.since}
+	if len(labels) == 1 {
+		where, args = " AND labels = ?", append(args, labels[0])
+	}
+	rows, err := ix.db.QueryContext(ctx, `SELECT labels, (`+w.col+` / ?) * ?, AVG(value) FROM `+w.table+`
+		WHERE name = ? AND `+w.col+` >= ?`+where+` GROUP BY labels, `+w.col+` / ? ORDER BY labels, 2`,
+		append(args, w.bucket)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Series
+	for rows.Next() {
+		var labels string
+		var t int64
+		var v float64
+		if rows.Scan(&labels, &t, &v) != nil {
+			continue
+		}
+		if len(out) == 0 || out[len(out)-1].Labels != labels {
+			out = append(out, Series{Name: name, Labels: labels, Kind: kind})
+		}
+		s := &out[len(out)-1]
+		s.Points = append(s.Points, [2]float64{float64(t * w.unit), v})
+	}
+	return out, rows.Err()
 }
 
 // ScrapeEvery is how often the metrics are read.

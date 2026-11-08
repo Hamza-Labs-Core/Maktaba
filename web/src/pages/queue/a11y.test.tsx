@@ -74,8 +74,6 @@ const table = {
       videos_with_length: 300,
       series: 5,
       seasons: 9,
-      plex_collections: 4,
-      dizquetv_shows: 1,
       channels: 3,
       style_pinned: 1,
       youtube_videos: 0,

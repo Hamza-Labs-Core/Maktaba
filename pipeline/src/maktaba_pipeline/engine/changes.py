@@ -1,8 +1,8 @@
 """Change sets: the compute / apply seam (plan 06-11 notes N1 and N1a).
 
 Every stage that changes user-visible structure (``detect``, ``tag``,
-``rate_style``, ``plan_channels``, ``write_channels``, and the Plex / dizqueTV
-writers) is split into two pure-ish steps:
+``rate_style``, ``plan_channels``, ``write_channels``, and the Plex Live TV
+writer) is split into two pure-ish steps:
 
 * ``compute_changes(...)`` returns a typed, JSON-serialisable :class:`ChangeSet`
   against the current state; it writes nothing;

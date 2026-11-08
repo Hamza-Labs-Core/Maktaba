@@ -102,7 +102,20 @@ Seed = Callable[[Database], Awaitable[None]]
 
 def plugin_api_dev() -> str | None:
     """The dev API binary (``MAKTABA_PLUGIN_API_DEV``), else built with go for this checkout
-    (``None``: no go here). A build that fails skips the calling test, saying why."""
+    (``None``: no go here), once per test process. A build that fails skips the calling
+    test, saying why."""
+    global _BUILT
+    if _BUILT is None:
+        _BUILT = _plugin_api_dev()
+    return _BUILT
+
+
+#: plugin_api_dev()'s binary, built once per process (the checkout does not change under a
+#: run; each parity test paid go's ~0.6 s cache check before)
+_BUILT: str | None = None
+
+
+def _plugin_api_dev() -> str | None:
     explicit = os.environ.get("MAKTABA_PLUGIN_API_DEV", "").strip()
     if explicit:
         return explicit
@@ -111,7 +124,7 @@ def plugin_api_dev() -> str | None:
         return None
     import hashlib
 
-    # one binary per checkout, built every time (go's cache makes an unchanged one quick):
+    # one binary per checkout, built once per run (go's cache makes an unchanged one quick):
     # a binary left by another worktree or an older checkout serves other routes
     tag = hashlib.sha256(str(API_DIR.resolve()).encode()).hexdigest()[:12]
     out = Path(tempfile.gettempdir()) / f"maktaba-plugin-api-dev-{tag}"
@@ -649,7 +662,7 @@ async def parity(
     await admin.close()
     tmp = Path(tempfile.mkdtemp(prefix="mkp-"))
     proc: subprocess.Popen[str] | None = None
-    task: asyncio.Task[None] | None = None
+    tasks: list[asyncio.Task[None]] = []
     sides: list[Database] = []
     try:
         for n in names:
@@ -703,19 +716,27 @@ async def parity(
         from maktaba_plugin_runner.server import library_roots
 
         area_dirs = json.loads((run_dir / native.AREAS_FILE).read_text()).get("areas") or {}
-        runner = Runner(
-            group=group,
-            api_socket=str(api_sock),
-            stages=served,
-            plugin_of={s: firstparty.by_stage(s).id for s in stages},  # type: ignore[union-attr]
-            bundle=firstparty.bundle_digest(),
-            areas=areas,
-            library_roots=library_roots(area_dirs),
-        )
-        sock = run_dir / f"runner-{group}.sock"
-        task = asyncio.create_task(runner.serve(sock))
+        # one runner per group the stages run in (classify's books is in net, story 54.31;
+        # its other stages in light); ``group`` for a stage with none
+        by_group: dict[str, dict[str, str]] = {}
+        for name, entry in served.items():
+            by_group.setdefault(firstparty.runner_group(name) or group, {})[name] = entry
+        socks = []
+        for g, members in sorted(by_group.items()):
+            runner = Runner(
+                group=g,
+                api_socket=str(api_sock),
+                stages=members,
+                plugin_of={s: firstparty.by_stage(s).id for s in members},  # type: ignore[union-attr]
+                bundle=firstparty.bundle_digest(),
+                areas=areas,
+                library_roots=library_roots(area_dirs),
+            )
+            sock = run_dir / f"runner-{g}.sock"
+            socks.append(sock)
+            tasks.append(asyncio.create_task(runner.serve(sock)))
         for _ in range(200):
-            if sock.exists() and api_sock.exists():
+            if all(x.exists() for x in socks) and api_sock.exists():
                 break
             await asyncio.sleep(0.02)
         native.forget_hello()
@@ -735,7 +756,7 @@ async def parity(
         native.forget_hello()
         native._FP_TOKENS.clear()
         native._AREAS_WRITTEN.clear()
-        if task is not None:
+        for task in tasks:
             task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await task

@@ -10,7 +10,7 @@
   - `GET /api/channels/sources?kind&q&limit` via `channelsApi.sources()` → `{ kind, items: SourceHit[] }` (debounced 250 ms)
   - `GET /api/channels/now` via `channelsApi.now()` → `{ server_time, channels: [{ channel, current, next }] }` (strip preview lines)
   - `GET /api/filler/pools` via `fillerApi.pools()` → `{ items: FillerPool[] }`
-  - `GET /api/rules` via `rulesApi.list()` → `{ sections: [{ key, fields: [{ name, value }] }] }` (reads `tv.live`, `dizquetv.live`, `tv_strip.*`); `PATCH /api/rules/tv` with `{ live: rows }` via `rulesApi.patch()`
+  - `GET /api/rules` via `rulesApi.list()` → `{ sections: [{ key, fields: [{ name, value }] }] }` (reads `tv.live` with its `inherited` flag, `tv_strip.*`); `PATCH /api/rules/tv` with `{ live: rows }` via `rulesApi.patch()`
   - `POST /api/channels/{id}/art/{logo|watermark|loading}` (multipart, progress) via `channelArtApi.upload()`; `DELETE /api/channels/{id}/art/{kind}`; `PATCH /api/channels/{id}/art/watermark`
   - `PATCH /api/channels/{id}/strip` / `DELETE /api/channels/{id}/strip` via `channelStripApi`
   - `GET /api/tv/cluster` via `tvClusterApi.get()` → `{ hosts: [{ name, ... }], settings: { pins } }`; `PATCH /api/rules/tv_cluster` via `tvClusterApi.setPin()`
@@ -370,8 +370,8 @@ Shared fixture (`C1`): `{ "id": "c1", "number": 1, "name": "Quran", "slug": "qur
   1. Live tab: add a row; leave the address empty; type "ftp://a"; type a valid https URL.
   2. Set "minutes" to 0.
   3. Basics: change Number to 3; Save.
-  4. Variants: `GET /api/rules` → 500; → `{ "sections": null }`; → tv.live empty and `dizquetv.live` has rows.
-- **Expected:** Only channel 2's rows are shown. Empty address "Enter the stream address."; bad scheme "Enter a full address, starting with https://"; minutes 0 shows the minutes error; the Live tab label carries " •" and Save is disabled while any of this channel's rows is invalid. Saving sends the PATCH channel body and then `PATCH /api/rules/tv` with all rows, this channel's rows renumbered to 3 and channel 7's row untouched. Rules 500 or `sections: null` shows "Live broadcasts could not be loaded." and the rest of the editor works. Inherited case shows the `channels.live.inherited` note.
+  4. Variants: `GET /api/rules` → 500; → `{ "sections": null }`; → tv.live inherited (`inherited: true`, rows from the old dizqueTV settings); → tv.live empty while another section has a `live` list.
+- **Expected:** Only channel 2's rows are shown. Empty address "Enter the stream address."; bad scheme "Enter a full address, starting with https://"; minutes 0 shows the minutes error; the Live tab label carries " •" and Save is disabled while any of this channel's rows is invalid. Saving sends the PATCH channel body and then `PATCH /api/rules/tv` with all rows, this channel's rows renumbered to 3 and channel 7's row untouched. Rules 500 or `sections: null` shows "Live broadcasts could not be loaded." and the rest of the editor works. Inherited rows are shown and edited with the `channels.live.inherited` note (saving gives `tv.live` its own copy). With tv.live empty and not inherited the channel shows "This channel carries no live broadcasts." and no note; another section's `live` list is never read.
 
 ### CHN-28 — Live save fails after a new channel was created
 

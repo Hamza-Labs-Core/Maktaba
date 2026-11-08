@@ -568,18 +568,19 @@ class SqlRepo:
             )
 
     async def load_tv(self) -> MaktabaTvConfig:
-        """The ``tv`` rules, with the dizqueTV export's live broadcasts when Maktaba TV
-        names none of its own (``rules.dizquetv.live`` keeps working)."""
+        """The ``tv`` rules (a staged release's, when this run builds one), with the old
+        dizqueTV settings' live broadcasts when they name none of their own
+        (:func:`rules.legacy_tv_live`: the stored list keeps airing)."""
         if self._tv is None:
             from .. import rules
-            from ..schedule.tv_settings import live_slots
 
             if self.release is not None and self.release.tv is not None:
                 tv, _ = rules.config("tv", self.release.tv)
             else:
                 tv, _, _ = await rules.read(self._c, "tv")
-            dz, _, _ = await rules.read(self._c, "dizquetv")
-            self._tv = replace(tv, live=live_slots(tv, dz))
+            if not tv.live:
+                tv = replace(tv, live=await rules.legacy_tv_live(self._c))
+            self._tv = tv
         return self._tv
 
     async def future_programs(self, channel_id: UUID, from_at: datetime) -> list[UUID]:

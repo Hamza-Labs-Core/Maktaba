@@ -1,7 +1,7 @@
 # ruff: noqa: E501  (long SQL strings read better unwrapped)
-"""write_channels gives Maktaba's channels what the dizqueTV export gives dizqueTV's (the
-filler pools, each channel's filler lists, its logo, watermark and loudness), and the
-scheduler airs from them on the real database: clips in the gaps, live broadcasts."""
+"""write_channels gives Maktaba's channels what they air from (the filler pools, each
+channel's filler lists, its logo, watermark and loudness), and the scheduler airs from them
+on the real database: clips in the gaps, live broadcasts."""
 
 from __future__ import annotations
 
@@ -273,7 +273,9 @@ async def test_the_scheduler_airs_the_written_filler_and_live_broadcasts(
         pytest.skip("the scheduler's SqlRepo binds UUIDs and datetimes as Postgres takes them")
     plan, clips, talks = await _plan(db, tmp_path)
     await _write(db, plan)
-    await set_rules(db, "dizquetv", {"live": [  # the dizqueTV rows serve Maktaba TV too
+    # the old dizqueTV settings' live broadcasts still air while rules.tv names none
+    # (slot 0215 keeps their row; rules.legacy_tv_live)
+    await set_rules(db, "dizquetv", {"live": [
         {"channel": 105, "url": "https://www.youtube.com/@aljazeera/live", "title": "Live",
          "start": "20:00", "end": "22:00", "every_minutes": 60, "minutes": 10}]})  # fmt: skip
     cid = UUID(str(await db.fetchval("SELECT id FROM channels WHERE number = 105")))

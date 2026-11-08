@@ -1,6 +1,6 @@
 -- name: store.save_candidate.4
 -- mode: write
--- scope: library $1
+-- scope: library $1, subject $8
 -- tables: videos*
 INSERT INTO videos
        (library_id, content_hash, path, filename, size_bytes, mtime,

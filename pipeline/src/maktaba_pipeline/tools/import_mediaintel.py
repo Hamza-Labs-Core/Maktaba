@@ -15,7 +15,8 @@ rewritten with ``--path-map``) plus equal size and an mtime within 2 s; unmatche
 What is copied: fingerprints / thumbnail hashes / style metrics (``video_signals``), YouTube rows,
 the links (``media_metadata_enrichment``), series / seasons / episodes (through the same
 ``detect.apply_changes`` the live stage uses, so ids and membership hashes are identical), tags,
-styles and user style overrides, and the Plex collections the tool created (``external_links``).
+styles and user style overrides. The Plex collections the tool created are not imported: Maktaba
+keeps no Plex collections.
 The user's rule changes (``settings.json``, beside the cache unless ``--settings`` says
 otherwise) become the ``rules.<section>`` rows of ``app_settings``, each value checked with
 :func:`maktaba_pipeline.rules.config` (unusable ones are reported, never imported; a value
@@ -72,14 +73,14 @@ from ..engine.hashing import canonical_hash
 from ..engine.ids import season_uuid, series_uuid
 from ..engine.paths import PathMap, set_active_path_map, to_db, to_local
 from ..engine.sql import dumps, is_pg, loads, now, parse_ts, to_date, to_ts, uid
-from ..engine.stages import books as books_stage
-from ..engine.stages import check_clips as check_clips_stage
-from ..engine.stages import check_tags as check_tags_stage
-from ..engine.stages import detect as detect_stage
+from ..engine.stages import _books as books_stage
+from ..engine.stages import _check_clips as check_clips_stage
+from ..engine.stages import _check_tags as check_tags_stage
+from ..engine.stages import _detect as detect_stage
+from ..engine.stages import _tag as tag_stage
 from ..engine.stages import fingerprint as fingerprint_stage
 from ..engine.stages import link as link_stage
 from ..engine.stages import style_sample as style_sample_stage
-from ..engine.stages import tag as tag_stage
 from ..engine.stages import thumb_hash as thumb_stage
 from ..engine.stages._leftovers import library_name
 from ..engine.stages._tagging import season_tags_digest, video_tags_digest
@@ -116,7 +117,7 @@ LINK_CONFIDENCE = {
 TABLES = (
     "video_signals", "youtube_channels", "youtube_videos", "youtube_playlists",
     "youtube_playlist_items", "media_metadata_enrichment", "series", "series_seasons",
-    "series_episodes", "season_tags", "video_topic_tags", "season_style", "external_links",
+    "series_episodes", "season_tags", "video_topic_tags", "season_style",
     "processing_jobs", "app_settings", "libraries", "library_roots", "videos",
     "tag_checks", "clip_checks", "books", "series_books", "episode_tags",
 )  # fmt: skip
@@ -1148,16 +1149,6 @@ async def _tags_styles_plex(
                 " ON CONFLICT (season_id) DO NOTHING",
                 uid(seasons[st["series_id"]][0]), st["style"], st["tier"], st["confidence"], st["reasons"],
                 st["sampled"], st["version"], override, stamp,
-            )  # fmt: skip
-    if _has(cache, "plex_collections"):
-        for c in cache.execute("SELECT * FROM plex_collections"):
-            if c["series_id"] not in seasons:
-                continue
-            await db.execute(
-                "INSERT INTO external_links (target, subject_kind, subject_id, external_id, title, content_hash,"
-                " created_by_tool, updated_at) VALUES ('plex_collection','season',$1,$2,$3,'imported',$4,$5)"
-                " ON CONFLICT (target, subject_kind, subject_id) DO NOTHING",
-                str(seasons[c["series_id"]][0]), c["rating_key"], c["title"], True if is_pg(db) else 1, stamp,
             )  # fmt: skip
 
 

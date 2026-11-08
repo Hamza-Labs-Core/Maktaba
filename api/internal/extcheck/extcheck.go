@@ -1,4 +1,4 @@
-// Package extcheck is "Test connection" for the Plex and dizqueTV
+// Package extcheck is "Test connection" for the Plex and web search
 // extensions (the Cloudflare Stream one lives in tvremote). Each test is a
 // list of checks in the shape tvremote.TestResult uses, so the extensions
 // page lists them the same way: key, ok, optional (a warning when not ok),
@@ -57,7 +57,6 @@ const (
 	CodeSecrets       = "secrets_unavailable"
 	CodeLiveTVMissing = "livetv_missing"
 	CodeNotFound      = "not_found"
-	CodePathMap       = "path_map_mismatch"
 )
 
 // Line is one check (same JSON as tvremote.Line, plus code and latency_ms).
@@ -157,24 +156,6 @@ func hostPort(u *url.URL) string {
 		}
 	}
 	return strings.ToLower(u.Hostname()) + ":" + port
-}
-
-// SameHost: do two addresses name the same host and port (scheme and path aside)?
-func SameHost(a, b string) bool {
-	ua, ea := parseLoose(a)
-	ub, eb := parseLoose(b)
-	if ea != nil || eb != nil || ua.Hostname() == "" || ub.Hostname() == "" {
-		return false
-	}
-	return hostPort(ua) == hostPort(ub)
-}
-
-func parseLoose(s string) (*url.URL, error) {
-	s = strings.TrimSpace(s)
-	if !strings.Contains(s, "://") {
-		s = "http://" + s
-	}
-	return url.Parse(s)
 }
 
 // baseURL validates the configured address: http(s), a host, no user info.

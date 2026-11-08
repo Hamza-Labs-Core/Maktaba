@@ -45,6 +45,16 @@ App Store Connect record doesn't exist yet, the other apps still upload.
    Store profile's. The Mac app also declares its App Store category
    (`LSApplicationCategoryType`, Entertainment), which the Mac App Store requires.
 
+6. Crash symbols (Epic 53 story 53.16): after its upload, each leg turns the archive's dSYMs
+   into symbol tables (`cloud/cmd/maktaba-symbols`) and uploads the tables, not the dSYMs, to
+   Maktaba Cloud (`POST /v1/symbols`) with the `MAKTABA_SYMBOLS_TOKEN` repository secret. A
+   problem report's Apple crash frames then read as function, file and line in the operator
+   console. Without the secret the leg logs one line (crash symbols not uploaded) and stays
+   green. A failed upload warns and never fails the leg (the app is already in TestFlight):
+   the tables are kept for 90 days as the run's `symbols-N` artifact, and
+   `MAKTABA_SYMBOLS_TOKEN=… maktaba-symbols upload -version vX.Y.Z *.symbols` sends them later.
+   See [Crash symbols](#crash-symbols-owner) for the one step that turns it on.
+
 The Capacitor wrapper's iOS job in `mobile-release.yml` (`apps/mobile`) is a different app.
 It still archives unsigned and is not uploaded.
 
@@ -84,6 +94,22 @@ App records can't be created through the API, so the first upload fails until th
    automatic distribution, and add yourself. Internal testers must be users of the team.
 
 Then run the workflow by hand, or push the next tag.
+
+## Crash symbols (owner)
+
+One step turns symbol uploads on at both ends: add a repository secret **`MAKTABA_SYMBOLS_TOKEN`**
+(GitHub → Settings → Secrets and variables → Actions → New repository secret), a long random
+value, for example the output of `openssl rand -hex 32`. Keep it nowhere else.
+
+- The next cloud deploy (`relay.yml`, the Phase 1 pair) writes it to `/etc/maktaba/symbols.token`
+  on both nodes and names it in `/etc/maktaba/cloud.env` (`MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE`);
+  the api reads it when the deploy restarts it. Until then `POST /v1/symbols` answers
+  `503 symbols_off`.
+- The next tag's TestFlight legs upload their tables with it. The operator console's Crash
+  symbols page (admin.maktaba.tv/symbols) lists what arrived.
+
+To rotate it, replace the secret and run a cloud deploy; uploads made with the old one are
+refused from then on (401).
 
 ## Installing on the iPhone (iPad, Mac, Apple TV)
 

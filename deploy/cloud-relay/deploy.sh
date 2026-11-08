@@ -32,6 +32,12 @@
 #   HEALTH_URL         extra public health URL to curl from the VPS after
 #                      rollout (e.g. https://relay.example.com/readyz).
 #                      Optional; the in-container probe always runs.
+#   MAKTABA_SYMBOLS_TOKEN  the token release symbol tables are uploaded with
+#                      (story 53.16; the repository secret the release
+#                      workflows upload with). Written to secrets/symbols.token
+#                      (0600, owned like secrets/log.key) and named in .env as
+#                      MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE; never echoed. Empty: no
+#                      file, so uploads stay off (503 symbols_off).
 set -euo pipefail
 
 # --- config ---------------------------------------------------------------
@@ -51,7 +57,9 @@ err() { printf '\033[1;31m[deploy:error]\033[0m %s\n' "$*" >&2; }
 # back to the caller's ambient SSH config (agent / ~/.ssh/id_*).
 SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p "$RELAY_SSH_PORT")
 KEY_FILE=""
-cleanup() { [ -n "$KEY_FILE" ] && rm -f "$KEY_FILE"; }
+# (an if, not `[ ] && rm`: an EXIT trap's last status is the script's, so a run with no
+# key file would end 1 after a good deploy)
+cleanup() { if [ -n "$KEY_FILE" ]; then rm -f "$KEY_FILE"; fi; }
 trap cleanup EXIT
 
 if [ -n "${RELAY_SSH_KEY:-}" ]; then
@@ -64,6 +72,41 @@ fi
 SSH_TARGET="${RELAY_SSH_USER}@${RELAY_SSH_HOST}"
 
 log "Deploying tag '${NEW_TAG}' to ${SSH_TARGET}:${DEPLOY_DIR}"
+
+# --- the symbol uploaders' token ------------------------------------------
+# As deploy/cloud-ha/deploy.sh does on the pair: over SSH's stdin (never an
+# argument, never echoed), into the read-only secrets mount, readable by its
+# owner only and owned like the log key; replaced only when it changed. The
+# api reads MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE when the rollout below restarts it.
+if [ -n "${MAKTABA_SYMBOLS_TOKEN:-}" ]; then
+  # the remote script is single-quoted on purpose: it expands on the VPS, with the
+  # deploy dir as its one (quoted) argument
+  # shellcheck disable=SC2016,SC2029
+  printf '%s' "$MAKTABA_SYMBOLS_TOKEN" | ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+    "bash -c $(printf '%q' '
+set -euo pipefail
+cd "$1"
+[ -d secrets ] || { echo "no secrets/ in $1 (run setup.sh first)" >&2; exit 1; }
+t=secrets/symbols.token
+n=$(umask 077; mktemp secrets/.symbols.token.XXXXXX)
+trap "rm -f \"$n\"" EXIT
+cat >"$n"
+chmod 0600 "$n"
+if [ -f secrets/log.key ]; then
+  own=$(ls -n secrets/log.key | awk "{print \$3\":\"\$4}")
+  [ "$(id -u):$(id -g)" = "$own" ] || chown "$own" "$n"
+fi
+if [ -f "$t" ] && cmp -s "$n" "$t"; then rm -f "$n"; else mv "$n" "$t"; fi
+f=/etc/maktaba/cloud/secrets/symbols.token
+l="MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE=$f"
+if ! grep -qx "$l" .env; then
+  # keep .env itself (its owner and mode): the other lines, then this one, written back
+  e=$(grep -v "^MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE=" .env || true)
+  { [ -z "$e" ] || printf "%s\n" "$e"; printf "%s\n" "$l"; } >.env
+fi
+') _ $(printf '%q' "$DEPLOY_DIR")"
+  log "the symbols token is in ${DEPLOY_DIR}/secrets"
+fi
 
 # --- remote payload -------------------------------------------------------
 # Everything below runs ON THE VPS. We stream it over `bash -s` and pass

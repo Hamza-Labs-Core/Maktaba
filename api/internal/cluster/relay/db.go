@@ -44,7 +44,7 @@ func DBUpstream(db *sql.DB, store secrets.Store, getenv func(string) string) fun
 		if up.URL == "" && getenv != nil && ext.URLEnv != "" {
 			up.URL = strings.TrimSpace(getenv(ext.URLEnv))
 		}
-		if store == nil {
+		if store == nil || ext.SecretName == "" {
 			return up, nil
 		}
 		v, err := store.Get(ctx, ext.SecretName)

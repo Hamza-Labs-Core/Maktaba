@@ -228,7 +228,7 @@ func TestSymbolicate(t *testing.T) {
 		{"crashy", depthOff},
 		{"crashy", depthOff + 8},
 	}, map[string]string{"crashy": id, "libdyld.dylib": "11111111-2222-3333-4444-555555555555"})
-	got := Symbolicate(context.Background(), []json.RawMessage{json.RawMessage(`"not an event"`), ev}, finder{tab.DebugID: tab})
+	got := Symbolicate(context.Background(), []json.RawMessage{json.RawMessage(`"not an event"`), ev}, finder{tab.DebugID: tab}, Release{})
 	if len(got) != 1 {
 		t.Fatalf("crashes = %d, want the one event", len(got))
 	}
@@ -253,7 +253,7 @@ func TestSymbolicate(t *testing.T) {
 		t.Errorf("missing = %+v", c.Missing)
 	}
 	// no tables at all: raw frames, every binary missing
-	got = Symbolicate(context.Background(), []json.RawMessage{ev}, nil)
+	got = Symbolicate(context.Background(), []json.RawMessage{ev}, nil, Release{})
 	if len(got) != 1 || got[0].Frames[0].Symbol != nil || len(got[0].Missing) != 2 {
 		t.Errorf("no finder: %+v", got)
 	}
@@ -316,5 +316,26 @@ func TestAdminListNeedsTheGate(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/admin/symbols", nil))
 	if w.Code != http.StatusForbidden {
 		t.Errorf("no gate: %d", w.Code)
+	}
+}
+
+// 53.16: the list names each table's kind (a dSYM's table has Kind ""), and a native
+// library's whole build id only for a library.
+func TestListNamesEachKind(t *testing.T) {
+	for kind, want := range map[string]string{"": ListDSYM, KindR8: ListR8, KindELF: ListELF} {
+		if got := listKind(kind); got != want {
+			t.Errorf("listKind(%q) = %q, want %q", kind, got, want)
+		}
+	}
+	if ListDSYM != "dsym" || ListR8 != "r8" || ListELF != "elf" {
+		t.Fatalf("the listed kinds are the API's: %q %q %q", ListDSYM, ListR8, ListELF)
+	}
+	b, _ := json.Marshal(Info{DebugID: "ab", Kind: ListDSYM})
+	if !strings.Contains(string(b), `"kind":"dsym"`) || strings.Contains(string(b), "code_id") {
+		t.Errorf("a dSYM's table: %s", b)
+	}
+	b, _ = json.Marshal(Info{DebugID: "ab", Kind: ListELF, CodeID: "0102030405060708090a0b0c0d0e0f10aabbccdd"})
+	if !strings.Contains(string(b), `"code_id":"0102030405060708090a0b0c0d0e0f10aabbccdd"`) {
+		t.Errorf("a library's table: %s", b)
 	}
 }

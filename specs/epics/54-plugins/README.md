@@ -1764,6 +1764,25 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   argument with the job's token (a video of another library, another library, a settings
   section the manifest does not list: `403 plugin_scope`). Reserved parameter names bound by
   the API would have meant rewriting every moved statement.
+  A write lists a check for **every** id that binds the rows it touches (2026-11-08), not only
+  one: `scope: subject $1, library $2, series $3, season $4`. `tools/plugins/scope_tables.toml`
+  says which column of which table holds which kind of id (`series_seasons.id` a `season`,
+  `transcript_segments.transcript_id` a `transcript`, `youtube_videos.youtube_id` a
+  `youtube_video`, …), and the build reads each write's parse tree against it: an `UPDATE` or
+  `DELETE` must tie its rows to an owner column by a top-level `AND` term (`= $N`,
+  `= ANY($N)`, or `IN` a subquery whose rows are bound the same way); an `INSERT` checks every
+  owner column it fills from a `$N`; `ON CONFLICT … DO UPDATE` needs an owner column in its
+  conflict target. A write the build cannot bind fails `statements_build.py check`; a table no
+  library owns is listed with its reason (the TV lineup, written only by stages whose subject
+  is the catalog), and a statement checked by hand carries its reason in its plugin's
+  `statements.toml`. The API resolves each kind other than `subject`, `library` and `settings`
+  with a lookup of its own (the row's library, and its video where it has one): the id passes
+  when no row has it (an insert's new id), when the row is no library's, or when it is the
+  job's library's (and, for a video job, the job's video's); a YouTube row is in the scope of
+  each library that follows its channel or downloads it. Arrays are checked element by
+  element, and every id is compared as a uuid, never as text. The worker's relayed job events
+  and duplicate merges, and the plugin API's write routes, keep to the job's own job, subject
+  and library the same way.
 - **The API holds a plugin's transactions.** Besides one statement in its own transaction,
   the plugin API opens a transaction for an invocation (`trusted/tx`: begin, savepoints,
   commit, rollback), under the plugin's role and `maktaba.origin`, so moved code keeps its
@@ -1937,6 +1956,15 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   `plex_livetv` makes (DVRs, tuners, lineups, the channel map, guide reloads), each marked for a
   caller on the home; a node is never allowed them. A caller on the home is served whatever
   the relay switch for nodes says, under the same rate limits.
+- **dizqueTV's programmes are built on the home (issue #827).** `tv.maktaba.dizquetv` runs its
+  three stages in the `service` runner. The door has its own dizqueTV operations, not body
+  templating: a show or filler write sends each Plex item's rating key; the door reads the
+  item from Plex with the home's token and builds the programme from Plex's answer, with
+  Plex's address, the server's name and the token, so no playable field is the plugin's. A channel's programmes are references (an index into the stored
+  channel, or a show id and a rating key) that the door fills in from what dizqueTV holds.
+  Every read is a projection that leaves out any field holding a secret, a final check refuses
+  any answer naming the token in any form, and raw writes that could carry a programme are
+  refused. dizqueTV is home-only in the door, so the stages are placed on the home.
 - **An extension's component hands its stages to one plugin.** `ext.plex` keeps its kind and
   its settings and names `tv.maktaba.plex`; all five of its stages move, including
   `plex_collections_import` (Epic 56), since the catalog's stages and the manifest's must

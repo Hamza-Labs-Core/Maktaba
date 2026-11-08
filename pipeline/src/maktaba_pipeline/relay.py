@@ -57,10 +57,10 @@ _log = get_logger()
 
 @dataclass(frozen=True)
 class RelayConfig:
-    """The extension relay: nodes run the Plex stages through the home, which adds the
-    Plex token they never see."""
+    """The extension relay: nodes reach Plex through the home, which adds the Plex token
+    they never see."""
 
-    #: off: the home refuses every relayed call and the Plex stages run on the home only
+    #: off: the home refuses every relayed call
     enabled: bool = True
     #: calls a minute each machine may make through the home
     requests_per_minute: int = 600
@@ -68,7 +68,7 @@ class RelayConfig:
     burst: int = 60
     #: calls of one machine running at the same time
     max_in_flight: int = 4
-    #: the largest answer passed back (a Plex library listing can be large)
+    #: the largest answer passed back
     max_response_mb: int = 256
     #: how long one call may take
     timeout_sec: int = 120
@@ -77,9 +77,9 @@ class RelayConfig:
 _R = "Extension relay"
 settings.register(RelayConfig, {
     "enabled": settings.Help(_R, "Relay extension calls for machines",
-                             "Machines run the Plex stages (index, collections) through the "
-                             "home, which adds the Plex token; the token never leaves the home. "
-                             "Off: those stages run on the home only."),
+                             "Machines reach Plex through the home, which adds the Plex "
+                             "token; the token never leaves the home. Off: the home refuses "
+                             "their Plex calls."),
     "requests_per_minute": settings.Help(_R, "Calls a minute per machine", minimum=1,
                                          maximum=100_000),
     "burst": settings.Help(_R, "Burst per machine", "Calls above the rate a machine may make "

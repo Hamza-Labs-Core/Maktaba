@@ -1,6 +1,26 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (%@)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$@)"
+          }
+        }
+      }
+    },
+    "%@ (offline)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (غير متصل)"
+          }
+        }
+      }
+    },
     "%@ a minute" : {
       "localizations" : {
         "ar" : {
@@ -101,6 +121,16 @@
         }
       }
     },
+    "%lld more lines did not fit on this board." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld خطوط أخرى لم تتسع لها هذه اللوحة."
+          }
+        }
+      }
+    },
     "%lld need attention" : {
       "localizations" : {
         "ar" : {
@@ -151,6 +181,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "%lld restarts · last stopped %@ (code %lld)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مرات إعادة التشغيل: %1$lld · توقّف آخر مرة %2$@ (الرمز %3$lld)"
           }
         }
       }
@@ -275,6 +315,16 @@
         }
       }
     },
+    "All machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل الأجهزة"
+          }
+        }
+      }
+    },
     "API goroutines" : {
       "localizations" : {
         "ar" : {
@@ -321,6 +371,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الحساب"
+          }
+        }
+      }
+    },
+    "Actions" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإجراءات"
           }
         }
       }
@@ -509,6 +569,16 @@
         }
       }
     },
+    "Are you sure?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل أنت متأكد؟"
+          }
+        }
+      }
+    },
     "Asking to join" : {
       "localizations" : {
         "ar" : {
@@ -545,6 +615,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "اللوحة"
+          }
+        }
+      }
+    },
+    "Choose a backup" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر نسخة احتياطية"
+          }
+        }
+      }
+    },
+    "Components down" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكوّنات المتوقفة"
+          }
+        }
+      }
+    },
+    "Components down, all machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكوّنات المتوقفة، كل الأجهزة"
+          }
+        }
+      }
+    },
+    "Components up, all machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكوّنات العاملة، كل الأجهزة"
           }
         }
       }
@@ -605,6 +715,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "اختر مرحلة"
+          }
+        }
+      }
+    },
+    "Close" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إغلاق"
           }
         }
       }
@@ -689,6 +809,16 @@
         }
       }
     },
+    "Database" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قاعدة البيانات"
+          }
+        }
+      }
+    },
     "Day" : {
       "localizations" : {
         "ar" : {
@@ -739,12 +869,42 @@
         }
       }
     },
+    "Disk: %@ free, logs %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القرص: %1$@ متاحة، والسجلات %2$@"
+          }
+        }
+      }
+    },
     "Done in 24 h" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "أُنجز خلال 24 ساعة"
+          }
+        }
+      }
+    },
+    "Done." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم."
+          }
+        }
+      }
+    },
+    "Download diagnostics" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تنزيل ملف التشخيص"
           }
         }
       }
@@ -795,6 +955,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "كل المستويات"
+          }
+        }
+      }
+    },
+    "Every part of Maktaba is working." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل أجزاء مكتبة تعمل."
           }
         }
       }
@@ -929,6 +1099,16 @@
         }
       }
     },
+    "Go back to version %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرجوع إلى الإصدار %@"
+          }
+        }
+      }
+    },
     "Health check failing (%lld in a row)" : {
       "localizations" : {
         "ar" : {
@@ -955,6 +1135,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "معلّق: ينتظر موافقتك."
+          }
+        }
+      }
+    },
+    "Highest load average (1 min) of any machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أعلى متوسط حِمل (دقيقة) بين الأجهزة"
           }
         }
       }
@@ -1129,6 +1319,36 @@
         }
       }
     },
+    "Least disk free of any machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أقل مساحة حرة على القرص بين الأجهزة"
+          }
+        }
+      }
+    },
+    "Least memory free of any machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أقل ذاكرة متاحة بين الأجهزة"
+          }
+        }
+      }
+    },
+    "Leave safe mode" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخروج من الوضع الآمن"
+          }
+        }
+      }
+    },
     "Let %@ go?" : {
       "localizations" : {
         "ar" : {
@@ -1179,6 +1399,16 @@
         }
       }
     },
+    "Load 15 more minutes" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحميل 15 دقيقة أخرى"
+          }
+        }
+      }
+    },
     "Load average (1 min)" : {
       "localizations" : {
         "ar" : {
@@ -1195,6 +1425,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ملفات السجلات"
+          }
+        }
+      }
+    },
+    "Log search" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث في السجلات"
           }
         }
       }
@@ -1249,6 +1489,16 @@
         }
       }
     },
+    "Machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز"
+          }
+        }
+      }
+    },
     "Machines" : {
       "localizations" : {
         "ar" : {
@@ -1285,6 +1535,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يمكن للأجهزة طلب الانضمام"
+          }
+        }
+      }
+    },
+    "Maktaba service" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خدمة مكتبة"
           }
         }
       }
@@ -1469,6 +1729,16 @@
         }
       }
     },
+    "No backups were found on the data disk." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تُعثر على نسخ احتياطية في قرص البيانات."
+          }
+        }
+      }
+    },
     "No data for this time yet" : {
       "localizations" : {
         "ar" : {
@@ -1589,6 +1859,16 @@
         }
       }
     },
+    "No warnings or errors in this window." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تحذيرات ولا أخطاء في هذه المدة."
+          }
+        }
+      }
+    },
     "No words to review" : {
       "localizations" : {
         "ar" : {
@@ -1649,6 +1929,16 @@
         }
       }
     },
+    "Offline: %@. Offline machines come first; their lines end at their last values." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متصلة: %@. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها."
+          }
+        }
+      }
+    },
     "Old enough on" : {
       "localizations" : {
         "ar" : {
@@ -1679,6 +1969,16 @@
         }
       }
     },
+    "Only an admin of this home can open the recovery page." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يمكن لمشرفي هذا الجهاز الرئيسي فقط فتح صفحة الاستعادة."
+          }
+        }
+      }
+    },
     "Only home admins can review words" : {
       "localizations" : {
         "ar" : {
@@ -1699,12 +1999,42 @@
         }
       }
     },
+    "Open the recovery page" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افتح صفحة الاستعادة"
+          }
+        }
+      }
+    },
     "Open until %@. Each machine shows a six-digit code to approve it with." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "مفتوح حتى %@. يعرض كل جهاز رمزًا من ستة أرقام للموافقة عليه."
+          }
+        }
+      }
+    },
+    "Or, once the home answers again, sign in as an admin and come back to this page." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أو سجّل الدخول مشرفًا حين يجيب الجهاز الرئيسي من جديد، ثم عُد إلى هذه الصفحة."
+          }
+        }
+      }
+    },
+    "Other parts" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أجزاء أخرى"
           }
         }
       }
@@ -1735,6 +2065,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الجزء"
+          }
+        }
+      }
+    },
+    "Part of Maktaba isn't working. You can see what happened and fix it here." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جزء من مكتبة لا يعمل. يمكنك هنا معرفة ما حدث وإصلاحه."
+          }
+        }
+      }
+    },
+    "Parts" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأجزاء"
           }
         }
       }
@@ -1849,6 +2199,16 @@
         }
       }
     },
+    "Playback" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل"
+          }
+        }
+      }
+    },
     "Previous word" : {
       "localizations" : {
         "ar" : {
@@ -1949,6 +2309,26 @@
         }
       }
     },
+    "Recent problems" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المشكلات الأخيرة"
+          }
+        }
+      }
+    },
+    "Recovery" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاستعادة"
+          }
+        }
+      }
+    },
     "Release" : {
       "localizations" : {
         "ar" : {
@@ -1999,12 +2379,82 @@
         }
       }
     },
+    "Restart" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل"
+          }
+        }
+      }
+    },
+    "Restart everything" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة تشغيل الكل"
+          }
+        }
+      }
+    },
     "Restarts per minute" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "إعادات التشغيل في الدقيقة"
+          }
+        }
+      }
+    },
+    "Restarts per minute, all machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادات التشغيل في الدقيقة، كل الأجهزة"
+          }
+        }
+      }
+    },
+    "Restore" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة"
+          }
+        }
+      }
+    },
+    "Restore %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة %@"
+          }
+        }
+      }
+    },
+    "Restore a backup" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استعادة نسخة احتياطية"
+          }
+        }
+      }
+    },
+    "Restoring replaces the library database with the backup and loses every change made since it was taken." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحلّ الاستعادة النسخة الاحتياطية محلّ قاعدة بيانات المكتبة، وتضيع كل التغييرات التي جرت منذ أخذها."
           }
         }
       }
@@ -2109,6 +2559,16 @@
         }
       }
     },
+    "Search" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث"
+          }
+        }
+      }
+    },
     "Search logs" : {
       "localizations" : {
         "ar" : {
@@ -2155,6 +2615,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "عرض"
+          }
+        }
+      }
+    },
+    "Showing %lld of %lld machines, those most in need of attention first. Pick a machine to see its own." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض %1$lld من %2$lld أجهزة، الأحوج إلى الانتباه أولاً. اختر جهازاً لترى بياناته وحده."
           }
         }
       }
@@ -2219,6 +2689,16 @@
         }
       }
     },
+    "Start in safe mode" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل في الوضع الآمن"
+          }
+        }
+      }
+    },
     "Started" : {
       "localizations" : {
         "ar" : {
@@ -2255,6 +2735,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الحالة"
+          }
+        }
+      }
+    },
+    "Stay in safe mode" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البقاء في الوضع الآمن"
           }
         }
       }
@@ -2309,6 +2799,16 @@
         }
       }
     },
+    "The home is restarting to put the backup back." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُعاد تشغيل الجهاز الرئيسي لإرجاع النسخة الاحتياطية."
+          }
+        }
+      }
+    },
     "TV bytes out per minute" : {
       "localizations" : {
         "ar" : {
@@ -2359,12 +2859,32 @@
         }
       }
     },
+    "That did not work." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينجح ذلك."
+          }
+        }
+      }
+    },
     "That did not work. Try again." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "لم ينجح ذلك. حاول مرة أخرى."
+          }
+        }
+      }
+    },
+    "That did not work: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينجح ذلك: %@"
           }
         }
       }
@@ -2419,6 +2939,16 @@
         }
       }
     },
+    "The recovery page did not answer." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تُجب صفحة الاستعادة."
+          }
+        }
+      }
+    },
     "The sentence changed since this word was found: it is shown again as it is now." : {
       "localizations" : {
         "ar" : {
@@ -2469,12 +2999,42 @@
         }
       }
     },
+    "This home has no recovery page yet. Update it to use one." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا صفحة استعادة في هذا الجهاز الرئيسي بعد. حدّثه لاستخدامها."
+          }
+        }
+      }
+    },
+    "This machine is offline. Its lines end at its last values." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه."
+          }
+        }
+      }
+    },
     "This part is not in this home's plan. Apply a licence in Settings → Subscription." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "هذا الجزء غير مشمول في خطة هذا الجهاز الرئيسي. طبّق ترخيصًا من الإعدادات ← الاشتراك."
+          }
+        }
+      }
+    },
+    "This replaces what is there now. Are you sure?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سيحلّ هذا محلّ ما هو موجود الآن. هل أنت متأكد؟"
           }
         }
       }
@@ -2799,6 +3359,16 @@
         }
       }
     },
+    "having trouble" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يواجه مشكلة"
+          }
+        }
+      }
+    },
     "kept across a restart" : {
       "localizations" : {
         "ar" : {
@@ -2825,6 +3395,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إعادة التشغيل التالية %@"
+          }
+        }
+      }
+    },
+    "off" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف عمدًا"
           }
         }
       }
@@ -2869,6 +3449,16 @@
         }
       }
     },
+    "restarting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُعاد تشغيله"
+          }
+        }
+      }
+    },
     "seen %@" : {
       "localizations" : {
         "ar" : {
@@ -2885,6 +3475,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "يبدأ"
+          }
+        }
+      }
+    },
+    "stopped" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف"
           }
         }
       }
@@ -3016,6 +3616,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مطلوب"
+          }
+        }
+      }
+    },
+    "working" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعمل"
           }
         }
       }

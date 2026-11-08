@@ -1,6 +1,6 @@
 -- name: transcribe.store
 -- mode: write
--- scope: subject $1
+-- scope: subject $1, audio_track $7, transcript $8
 -- tables: transcripts*
 INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,
                                      backend, model, backend_version, word_level, diarized,

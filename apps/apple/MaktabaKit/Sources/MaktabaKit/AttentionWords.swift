@@ -21,7 +21,6 @@ public enum AttentionWords {
         "youtube_unavailable": "YouTube video or channel unavailable",
         "plex_unreachable": "Plex is unreachable",
         "plex_auth": "Plex rejected the token",
-        "dizquetv_unreachable": "dizqueTV is unreachable",
         "readback_mismatch": "Write did not read back correctly",
         "no_handler": "No worker handles this stage",
         "graph_violation": "Stage requested work its graph does not allow",

@@ -81,3 +81,20 @@ func TestFirstPartyGroupComponents(t *testing.T) {
 		}
 	}
 }
+
+// Each first-party stage has its runner group as the pipeline reads it: a stage's own
+// runner (books: net) before its plugin's (classify: light); a slotted runner's instance
+// (ml-3) is its group's.
+func TestFirstPartyStageGroups(t *testing.T) {
+	g := FirstPartyStageGroups()
+	for stage, want := range map[string]string{"books": "net", "detect": "light", "tag": "light"} {
+		if g[stage] != want {
+			t.Errorf("%s runs in %q, want %q", stage, g[stage], want)
+		}
+	}
+	for in, want := range map[string]string{"ml-3": "ml", "ml": "ml", "light": "light", "core-media": "core-media"} {
+		if got := RunnerGroupOf(in); got != want {
+			t.Errorf("RunnerGroupOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

@@ -69,8 +69,8 @@ async def test_a_relayed_plex_call_carries_no_token_and_is_reassembled() -> None
             s = await hub.wait_session(1)
             await until(lambda: agent.connected)
 
-            sections = await asyncio.to_thread(client.sections)
-            assert [(x.key, x.type) for x in sections] == [("1", "show")]
+            doc = await asyncio.to_thread(client.get, "/library/sections")
+            assert doc["MediaContainer"]["Directory"][0]["key"] == "1"  # reassembled
             sent = await s.next("svc.request")
             assert sent["ext"] == "plex" and sent["method"] == "GET"
             assert sent["path"] == "/library/sections" and sent["accept"] == "application/json"

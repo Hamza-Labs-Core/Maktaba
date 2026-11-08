@@ -21,6 +21,8 @@ data class HomeStatusDoc(
 /** What a strip line is about: each has its words in the core's strings (status_*). */
 enum class StripKey {
     OFFLINE, RESTARTING, DATABASE, SAFE, STREAMING, STREAMING_NO_TV, SEARCH, PROCESSING, LOGS,
+    // a plugin runner that failed (Epic 54): its stages run in the worker, outside their sandbox
+    PLUGIN_RUNNERS,
     // Maktaba Cloud's lines (Epic 50 story 50.11)
     RELAY_DEGRADED, RELAY_OUTAGE, API_DEGRADED, API_OUTAGE, MAINTENANCE,
     // a request waiting for the home behind the relay (story 50.13)
@@ -43,7 +45,7 @@ data class StripLine(
 /**
  * The strip's lines for a status, highest priority first (story 53.06 §1): offline; the home
  * restarting or its database down; safe mode; a part a viewer feels (playback, search);
- * admin-only parts (processing, log search). A feature that is off is no outage: an off group
+ * admin-only parts (processing, log search, a failed plugin runner). A feature that is off is no outage: an off group
  * has no line, and Live TV is left out of the playback sentence when it is off.
  */
 object StatusStripRules {
@@ -78,6 +80,8 @@ object StatusStripRules {
         if (cloud != null) out += cloud
         if (admin && bad("processing")) out += StripLine(StripKey.PROCESSING, "/admin/health")
         if (admin && bad("logs")) out += StripLine(StripKey.LOGS, "/admin/health")
+        // Epic 54: a plugin runner that failed (down, not a restart)
+        if (admin && s.components["plugin_runners"] == "down") out += StripLine(StripKey.PLUGIN_RUNNERS, "/settings/plugins")
         return out
     }
 

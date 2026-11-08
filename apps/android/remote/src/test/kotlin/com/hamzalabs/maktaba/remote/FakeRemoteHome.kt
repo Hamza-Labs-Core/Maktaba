@@ -98,7 +98,7 @@ class FakeRemoteHome : ExternalResource() {
         val ISSUES = """{"groups":[
             {"stage":"fingerprint","cause":"nas_partial_read","label":"NAS returned a partial read","count":256,"action":"retry","sample_message":"read failed: head, tail"},
             {"stage":"probe","cause":"ffmpeg_decode","label":"Could not decode the media file","count":3,"action":"retry","sample_message":"ffprobe exit=1: [mov,mp4,m4a,3gp,3g2,mj2 @ 000001facc7850c0] moov atom not found"},
-            {"stage":"plex_groups","cause":"plex_unreachable","label":"Plex is unreachable","count":2,"action":"open_settings","sample_message":"relay: no answer from the home"},
+            {"stage":"plex_livetv","cause":"plex_unreachable","label":"Plex is unreachable","count":2,"action":"open_settings","sample_message":"relay: no answer from the home"},
             {"stage":"chapter_thumbs","cause":"ffmpeg_rc","label":"ffmpeg failed on the file","count":1,"action":"retry","sample_message":"ing thread with return code -22 (Invalid argument)\\n[out#0/image2 @ 0x6000]"},
             {"stage":"check_clips","cause":"model_unavailable:<n> of <n> clips got no answer from the model","label":"model_unavailable:<n> of <n> clips got no answer from the model","count":1,"action":"retry","sample_message":"4 of 4 clips got no answer from the model"},
             {"stage":"subtitle_gen","cause":"nas_timeout:<path> محاضرات/سلسلة التاريخ..الجزء الثاني<n> | دروس عامة <n> | مكتبة البيت.mp<n>>: no answer","label":"nas_timeout:<path> محاضرات/سلسلة التاريخ..الجزء الثاني<n> | دروس عامة <n> | مكتبة البيت.mp<n>>: no answer","count":1,"action":"retry","sample_message":"/Volumes/Media/محاضرات/سلسلة التاريخ..الجزء الثاني 2 | دروس عامة 3 | مكتبة البيت.mp4: no answer"}

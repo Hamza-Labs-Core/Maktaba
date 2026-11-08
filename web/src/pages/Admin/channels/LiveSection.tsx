@@ -33,7 +33,7 @@ export function LiveSection({
   number: number;
   /** the row index the grid asked to open */
   focus: number | null;
-  /** the rows came from the dizqueTV export's list (tv.live was empty) */
+  /** the rows are the old dizqueTV settings' list (tv.live has none of its own) */
   inherited: boolean;
   onChange: (rows: LiveRow[]) => void;
 }) {

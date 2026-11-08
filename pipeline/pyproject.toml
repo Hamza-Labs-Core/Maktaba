@@ -150,6 +150,10 @@ dev-mode-dirs = ["src", "../plugins/sdk/python", "../plugins/first-party/classif
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# A test still running after this many seconds prints every thread's stack to stderr (the
+# run goes on): a hang names its test and the line it waits on instead of leaving a CI job
+# cancelled at its limit with no output (pipeline-cluster-windows on PR #831).
+faulthandler_timeout = 120
 markers = [
     "unit: fast in-process tests (Epic 20.1)",
     "integration: tests that touch service containers (Epic 20.4)",
@@ -186,5 +190,5 @@ mypy_path = "../shared/testtier/py"
 # Epic 54 Phase 4: what the first-party plugin tests import from outside the package (the
 # tools of tools/plugins, the tests' toy plugin) and the wheel's build hook
 [[tool.mypy.overrides]]
-module = ["bundle", "roles", "graph_golden", "statements_build", "fp_toy", "fp_toy.*", "hatchling.*", "hatch_build"]
+module = ["bundle", "roles", "graph_golden", "statements_build", "write_scope", "fp_toy", "fp_toy.*", "hatchling.*", "hatch_build"]
 ignore_missing_imports = true

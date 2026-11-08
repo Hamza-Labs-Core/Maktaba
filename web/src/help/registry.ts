@@ -151,7 +151,6 @@ export const KNOWN_CAUSES = [
   "youtube_unavailable",
   "plex_unreachable",
   "plex_auth",
-  "dizquetv_unreachable",
   "readback_mismatch",
   "no_handler",
   "graph_violation",
@@ -261,6 +260,7 @@ export const SYSTEM_HEALTH_KINDS = [
   "tv_tuner",
   "host_access",
   "components",
+  "plugin_runners",
 ] as const;
 
 export function systemHealthHelp(kind: string): HelpRef {

@@ -2,9 +2,9 @@
 
 > Epic 54 · Phase 4 · Depends on: 54.34 · Needed by: 54.36
 
-**Only the Plex stages move.** dizqueTV stores the programme bodies its stages write, which
-carry the Plex token, and a plugin could read them back: those stages stay in the worker until
-the door builds programmes on the home (issue #827).
+**The Plex stages moved first; the dizqueTV stages followed** once the door built programmes
+on the home (issue #827): dizqueTV stores the programme bodies its stages write, which carry
+the Plex token, so the plugin never writes or reads one.
 
 ## Why
 
@@ -12,13 +12,13 @@ The Plex and dizqueTV extensions hold the home's most sensitive settings (the Pl
 talk to other products. As first-party plugins they must keep working without ever holding the
 secret: they call through the home's service door (story 31.R), which adds it.
 
-The Plex stages move in this story. The dizqueTV stages stay in the worker: their programmes
-carry the Plex token in the request body, and dizqueTV stores the programmes, so a plugin
-could read the token back through the same paths it writes them with. A door that filled the
-token into a body would have to scrub every dizqueTV answer, transformed or partial copies
-included. That is a larger promise than adding a header. They move once the door builds a
-programme on the home from the plugin's Plex item ids, so the token crosses the plugin
-boundary in neither direction (issue #827).
+The Plex stages move first. The dizqueTV stages need more: their programmes carry the Plex
+token in the request body, and dizqueTV stores the programmes, so a plugin could read the
+token back through the same paths it writes them with. A door that filled the token into a
+body would have to scrub every dizqueTV answer, transformed or partial copies included. That
+is a larger promise than adding a header. So they move once the door builds a programme on the
+home from the plugin's Plex item ids, and answers every read with a projection that holds no
+secret: the token crosses the plugin boundary in neither direction (issue #827).
 
 ## Description
 
@@ -128,8 +128,38 @@ the wave's `NNNN_fp_roles` migration). `plex_collections_import` (Epic 56) moves
 the home's service door: on the home the plugin API's `trusted/service`, on a joined machine
 the worker's channel to the home. The door adds the token and scrubs it out of every answer;
 the plugin holds neither the token nor Plex's address. The door's Plex allow-list gains the
-Live TV calls `plex_livetv` makes, for a caller on the home only. The dizqueTV stages stay in
-the worker (§ Why, issue #827). Parity (T01) runs a library through index, collection import,
+Live TV calls `plex_livetv` makes, for a caller on the home only. The dizqueTV stages followed
+(issue #827, below). Parity (T01) runs a library through index, collection import,
 collection and groups, and Live TV's registration and channel map, against a fake Plex behind
 HTTP on each side: the calls Plex receives, with the token, are identical, and N16 holds. The
 sandbox test (T02) checks the `service` runner has no network.
+
+## Built: the dizqueTV stages (2026-11-07, issue #827)
+
+`dizquetv_show`, `dizquetv_channels` and `dizquetv_audit` run in `tv.maktaba.dizquetv`, in the
+`service` runner (`service = ["dizquetv", "plex"]`, roles in `0214_fp_roles`). dizqueTV is
+home-only in the door: a joined machine never relays it. The plugin never writes a raw
+programme. The door's own operations (`/maktaba/...`) take each Plex item's rating key, read
+the item from Plex with the home's token (`/library/metadata/<keys>`, up to 50 keys a
+request), and build the programme on the home from Plex's answer, as `program_from_plex`
+does in the worker, with Plex's address, the server's name and the token. Every playable
+field (file, media part, duration, key, type) is Plex's: any other field the plugin sends is
+ignored, and a rating key Plex does not know or cannot play is refused. A channel's programmes are written as references:
+an index into the stored channel, or a show id and a rating key, which the door fills in from
+what dizqueTV holds. Every read is a projection: a whitelist of fields, and any field whose
+value holds a secret is left out, then merged back from the stored document on a write. A
+final check refuses any answer that names the token, dizqueTV's own Plex tokens or Plex's
+address, raw, URL-encoded or in part. If dizqueTV's Plex servers cannot be read, the door
+refuses the call, and so does an unreadable Plex upstream. Raw writes that could carry a
+programme are refused. A channel's pictures (logo, watermark, offline picture and soundtrack),
+which dizqueTV and its clients fetch, are written only as the home's own: none, the stored
+value, a file directly under `dz_art_url`, or one uploaded to dizqueTV (at its address or at
+`dz_public_url`), with the file's version as the only query. A pass-through programme keeps
+only its duration, `isOffline`, and a redirect's target. The agent channel's door carries Plex
+only. The hosted-logo check
+is a HEAD of a file under the home's own `dz_art_url` only. Its redirects are followed only
+within that host. Tests: the door's allow-list, refusals and token-leak tests run against a
+fake dizqueTV that stores and echoes its bodies. The plugin's parity test runs a season's
+show, a planned channel and the audit on each side. Its leak test plants the token in the Plex
+settings and in the fake's plex-servers, and checks that no answer or settings the plugin got
+carry it.

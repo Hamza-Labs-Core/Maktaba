@@ -127,17 +127,17 @@ open are `it.fails` / `it.todo` tests.
 
 ## Admin
 
-| File                                         | Route                                             | Prefix | Cases | P1  | Covered (Yes / Partial) |
-| -------------------------------------------- | ------------------------------------------------- | ------ | ----- | --- | ----------------------- |
-| [admin-users.md](admin-users.md)             | `/admin/users`                                    | USR    | 27    | 13  | 20 / 0                  |
-| [admin-library-acl.md](admin-library-acl.md) | `/admin/library-acl`                              | ACL    | 22    | 9   | 15 / 0                  |
-| [admin-extensions.md](admin-extensions.md)   | `/admin/extensions`, `/admin/extensions#dizquetv` | EXT    | 23    | 10  | 19 / 0                  |
-| [admin-enrichment.md](admin-enrichment.md)   | `/admin/enrichment`                               | ENR    | 21    | 9   | 13 / 0                  |
-| [admin-channels.md](admin-channels.md)       | `/admin/channels`                                 | CHN    | 38    | 18  | 30 / 2                  |
-| [admin-filler.md](admin-filler.md)           | `/admin/filler`                                   | FIL    | 24    | 10  | 19 / 0                  |
-| [admin-analytics.md](admin-analytics.md)     | `/admin/analytics`                                | ANL    | 26    | 9   | 22 / 1                  |
-| [admin-audit.md](admin-audit.md)             | `/admin/audit`                                    | AUD    | 28    | 9   | 22 / 0                  |
-| [admin-health.md](admin-health.md)           | `/admin/health`                                   | HLT    | 25    | 10  | 20 / 0                  |
-| [admin-machines.md](admin-machines.md)       | `/admin/machines`                                 | MCH    | 29    | 11  | 23 / 3                  |
-| [admin-logs.md](admin-logs.md)               | `/admin/logs`                                     | LOG    | 27    | 9   | 19 / 0                  |
-| [admin-devices.md](admin-devices.md)         | `/admin/devices`, `/account/devices`              | DEV    | 27    | 11  | 24 / 0                  |
+| File                                         | Route                                         | Prefix | Cases | P1  | Covered (Yes / Partial) |
+| -------------------------------------------- | --------------------------------------------- | ------ | ----- | --- | ----------------------- |
+| [admin-users.md](admin-users.md)             | `/admin/users`                                | USR    | 27    | 13  | 20 / 0                  |
+| [admin-library-acl.md](admin-library-acl.md) | `/admin/library-acl`                          | ACL    | 22    | 9   | 15 / 0                  |
+| [admin-extensions.md](admin-extensions.md)   | `/admin/extensions`, `/admin/extensions#plex` | EXT    | 23    | 10  | 19 / 0                  |
+| [admin-enrichment.md](admin-enrichment.md)   | `/admin/enrichment`                           | ENR    | 21    | 9   | 13 / 0                  |
+| [admin-channels.md](admin-channels.md)       | `/admin/channels`                             | CHN    | 38    | 18  | 30 / 2                  |
+| [admin-filler.md](admin-filler.md)           | `/admin/filler`                               | FIL    | 24    | 10  | 19 / 0                  |
+| [admin-analytics.md](admin-analytics.md)     | `/admin/analytics`                            | ANL    | 26    | 9   | 22 / 1                  |
+| [admin-audit.md](admin-audit.md)             | `/admin/audit`                                | AUD    | 28    | 9   | 22 / 0                  |
+| [admin-health.md](admin-health.md)           | `/admin/health`                               | HLT    | 25    | 10  | 20 / 0                  |
+| [admin-machines.md](admin-machines.md)       | `/admin/machines`                             | MCH    | 29    | 11  | 23 / 3                  |
+| [admin-logs.md](admin-logs.md)               | `/admin/logs`                                 | LOG    | 27    | 9   | 19 / 0                  |
+| [admin-devices.md](admin-devices.md)         | `/admin/devices`, `/account/devices`          | DEV    | 27    | 11  | 24 / 0                  |

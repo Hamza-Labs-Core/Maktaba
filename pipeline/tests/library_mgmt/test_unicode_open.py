@@ -85,6 +85,28 @@ def test_no_ditto_off_macos_and_nothing_opens(tmp_path: Path) -> None:
         )
 
 
+def test_a_refused_file_is_never_a_missing_one(tmp_path: Path) -> None:
+    """A refusal (a runner's sandbox) is raised as itself, so the job runs in the worker
+    (sandbox_refused) instead of failing as file_missing; a later spelling that opens
+    still wins."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    def refused(_p: str) -> bool:
+        raise PermissionError(13, "refused")
+
+    with pytest.raises(PermissionError) as exc:
+        open_fallback(str(tmp_path / NFD), None, can_open=refused, platform="win32")
+    assert sandbox_refused(exc.value)
+
+    def nfc_only(p: str) -> bool:
+        if p.endswith(NFC):
+            return True
+        raise PermissionError(13, "refused")
+
+    opened = open_fallback(str(tmp_path / NFD), None, can_open=nfc_only, platform="win32")
+    assert opened.how == "nfc"
+
+
 def test_candidates_skip_a_spelling_already_tried() -> None:
     assert [h for h, _ in candidates("/a/plain.mp4")] == ["as_given"]
     assert [h for h, _ in candidates("/a/" + NFD)] == ["as_given", "nfc"]

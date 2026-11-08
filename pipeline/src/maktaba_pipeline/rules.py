@@ -44,8 +44,6 @@ from .relay import RelayConfig
 from .schedule import settings_help as _planner_help  # noqa: F401
 from .schedule.channel_planner import PlannerConfig
 from .schedule.tv_settings import (
-    ChannelAuditConfig,
-    DizqueExportConfig,
     ExactDatesConfig,
     MaktabaTvClusterConfig,
     MaktabaTvConfig,
@@ -163,9 +161,6 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
     "tagcheck": (TagCheckConfig, "Tag check", "a language model checks what each series is "
                  "about"),
     "books": (BooksConfig, "Books", "the book a lesson series explains decides its topics"),
-    "dizquetv": (DizqueExportConfig, "dizqueTV export", "how the planned channels are written "
-                 "into dizqueTV: removing what the plan dropped, rewriting a channel that is "
-                 "on air"),
     "tv": (MaktabaTvConfig, "Maktaba TV", "how Maktaba's own channels air: filler between "
            "programmes, the Ramadan grids, live broadcasts, loudness, the guide's days "
            "ahead"),
@@ -190,15 +185,14 @@ SECTIONS: dict[str, tuple[type, str, str]] = {
                "own intel (transcripts, chapters, the book, file and folder names, sibling "
                "episodes) and a web search a language model reads; the daily caps"),
     "display_titles": (DisplayTitleConfig, "Display titles", "short, clean on-air titles "
-                       "for the guide, the channel strip and the dizqueTV export"),
+                       "for the guide and the channel strip"),
     "exactdates": (ExactDatesConfig, "Exact dates", "exact upload dates fetched from YouTube "
                    "for series members (off until switched on)"),
-    "audit": (ChannelAuditConfig, "Channel audit", "is what each channel airs about the channel"),
     "plexlive": (PlexLiveConfig, "Plex Live TV", "Maktaba's channels in Plex: adding the tuner "
                  "and its guide, refreshing the guide and the channel list"),
     "repair": (RepairConfig, "Broken files", "downloads that cannot be read are fetched from "
                "YouTube again (off until switched on)"),
-    "relay": (RelayConfig, "Extension relay", "machines run the Plex stages through the home, "
+    "relay": (RelayConfig, "Extension relay", "machines reach Plex through the home, "
               "which adds the Plex token they never see; limits per machine"),
     "storage": (StorageConfig, "Canonical share paths", "the home registers the storage "
                 "servers it mounts and converts the stored media paths to smb://server/"
@@ -305,6 +299,33 @@ async def read(db: Any, section: str) -> tuple[Any, dict[str, Any], dict[str, st
             raise SettingsInvalid(section, str(e)) from e
     cfg, bad = config(section, changes)
     return cfg, changes, bad
+
+
+#: the dizqueTV export's stored settings. Maktaba TV aired their live broadcasts
+#: (``live``) while the ``tv`` rules named none; the export is gone, but slot 0215 keeps the
+#: row (a release's migrations lose no data), so the list is still read from it until the
+#: cleanup migration moves it to ``rules.tv``.
+LEGACY_LIVE_KEY = KEY_PREFIX + "dizquetv"
+
+
+async def legacy_tv_live(db: Any) -> tuple[Any, ...]:
+    """The live broadcasts stored under :data:`LEGACY_LIVE_KEY` (``live``), read as the
+    ``tv`` rules read theirs: () without the row, with no list, or with a list the ``tv``
+    rules would not take (one bad row never airs)."""
+    from .engine.sql import loads
+
+    try:
+        row = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", LEGACY_LIVE_KEY)
+    except Exception as exc:
+        if not _missing_table(exc):
+            raise
+        return ()
+    stored = loads(row["value"]) if row is not None else None
+    live = stored.get("live") if isinstance(stored, dict) else None
+    if not isinstance(live, list) or not live:
+        return ()
+    cfg, bad = config("tv", {"live": live})
+    return () if bad else tuple(cfg.live)
 
 
 def _missing_table(exc: BaseException) -> bool:

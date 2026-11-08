@@ -65,7 +65,7 @@ The home converts the stored file paths to the shared `smb://server/share/...` f
 
 ### Extension relay {#relay}
 
-Machines run the Plex stages through the home. The home adds the Plex token, so the token never leaves the home. Turn it on or off with **Relay extension calls for machines** on the **Relay** tab. Off: the Plex stages run on the home only. The limits per machine are in [Settings → Rules](/help/rules#relay).
+Machines reach Plex through the home. The home adds the Plex token, so the token never leaves the home. Turn it on or off with **Relay extension calls for machines** on the **Relay** tab. Off: the home refuses the machines' Plex calls. The limits per machine are in [Settings → Rules](/help/rules#relay).
 
 ### The same account on every machine {#one-sign-in}
 

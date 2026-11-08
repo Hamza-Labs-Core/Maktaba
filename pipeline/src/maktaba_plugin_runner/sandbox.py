@@ -11,8 +11,19 @@ Least privilege from the union of the group's ``[trusted]`` tables (:class:`Poli
   TCP; seccomp-bpf refusing ``socket(AF_INET/AF_INET6)`` unless the group has ``net``, and
   ``ptrace``, ``bpf``, ``mount`` and ``keyctl`` always. Without Landlock the runner runs
   *Degraded* ``sandbox_partial`` when seccomp is in force (as 54.03).
-- **Windows**: no runner (the stages run in the worker there, as before); see
-  :mod:`maktaba_pipeline.plugins.native`.
+- **Windows**: a process cannot put itself in an AppContainer, so the supervisor's
+  launcher (``maktaba-server runner-sandbox-run``) applies the policy from outside: it runs
+  ``--policy`` (:func:`policy_doc`), grants the group's own profile
+  (``Maktaba.Runner.<group>``) read on the interpreter, the ``files.read`` areas and the
+  tools' installations and full control on the run folder and the ``files.write`` areas,
+  and starts the runner in that AppContainer with no capability (the Windows Filtering
+  Platform blocks every network path) or, for a group with ``net``, internetClient alone,
+  in a Job Object that allows no child process to a group without ``exec``. Here the
+  runner checks that its token is that AppContainer's with no other capability
+  (:func:`_apply_windows`), and since every AppContainer may run the system's programs, a
+  group with ``exec`` runs only its own tools (:func:`guard_exec`). ``library.subtitles``
+  is kept to subtitle names by :func:`guard_names`, as on Linux. Its sockets are the
+  supervisor's pipes (:mod:`.winpipe`).
 
 A runner that cannot apply its sandbox does not run (:class:`SandboxUnavailable`).
 """
@@ -32,6 +43,7 @@ import struct
 import sys
 import sysconfig
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -43,7 +55,9 @@ __all__ = [
     "Policy",
     "SandboxUnavailable",
     "apply",
+    "guard_exec",
     "guard_scope",
+    "policy_doc",
     "seatbelt_profile",
 ]
 
@@ -86,14 +100,13 @@ def _rx(path: str) -> str:
     return "".join("\\" + c if c in ".^$*+?()[]{}|\\" else c for c in path)
 
 
-def guard_names(roots: list[str]) -> None:
-    """Refuse (``plugin_scope``) a write under ``roots`` to any name but SUBTITLE_NAME: an
-    audit hook on every open for writing, rename, remove and link (story 54.29 §3)."""
-    if not roots:
-        return
+def _names_check(
+    roots: list[str], normcase: Callable[[str], str] = os.path.normcase
+) -> Callable[[object], None]:
+    """The check of :func:`guard_names`: a path under ``roots`` (compared as the OS names
+    paths: any case on Windows) must have a subtitle name, as it was written."""
     name = re.compile("^" + SUBTITLE_NAME + "$")
-    real = [os.path.realpath(r) for r in roots]
-    writes = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
+    real = [normcase(os.path.realpath(r)) for r in roots]
 
     def check(path: object) -> None:
         if path is None or isinstance(path, int):
@@ -102,10 +115,23 @@ def guard_names(roots: list[str]) -> None:
             a = os.path.abspath(os.fsdecode(path))  # type: ignore[arg-type]
         except (TypeError, ValueError):
             return
-        if any(a == r or a.startswith(r + os.sep) for r in real) and not name.match(
+        k = normcase(a)
+        if any(k == r or k.startswith(r.rstrip(os.sep) + os.sep) for r in real) and not name.match(
             os.path.basename(a)
         ):
             raise PluginRefused(403, "plugin_scope", f"{a}: only subtitle files are written here")
+
+    return check
+
+
+def guard_names(roots: list[str]) -> None:
+    """Refuse (``plugin_scope``) a write under ``roots`` to any name but SUBTITLE_NAME: an
+    audit hook on every open for writing, rename, remove and link (story 54.29 §3). Landlock
+    and an AppContainer's folder grants cannot match a name; this does, on both."""
+    if not roots:
+        return
+    check = _names_check(roots)
+    writes = os.O_WRONLY | os.O_RDWR | os.O_CREAT | os.O_TRUNC | os.O_APPEND
 
     def hook(event: str, args: tuple[object, ...]) -> None:
         if event == "open":
@@ -235,7 +261,8 @@ def tool_prefixes(tool: str) -> list[str]:
             return [pm]
     here = os.path.dirname(real)
     up = os.path.dirname(here) if os.path.basename(here) == "bin" else here
-    return [up] if up not in ("/", "/usr", "") else [real]
+    # never a filesystem root (a tool at /ffmpeg, or C:\bin\ffmpeg.exe on Windows)
+    return [up] if up not in ("/", "/usr", "") and os.path.dirname(up) != up else [real]
 
 
 def tool_path(name: str) -> str | None:
@@ -510,12 +537,178 @@ def _apply_linux(p: Policy) -> Applied:
     return Applied("full" if not missing else "partial", tuple(missing))
 
 
+# --- Windows: the AppContainer the launcher started this runner in -----------------------
+
+#: the internetClient capability (outbound internet; never loopback or the local network)
+INTERNET_CLIENT = "S-1-15-3-1"
+_TOKEN_IS_APPCONTAINER, _TOKEN_CAPABILITIES, _TOKEN_QUERY = 29, 30, 0x0008
+
+
+def _token_appcontainer() -> tuple[bool, list[str]]:  # pragma: no cover - Windows only
+    """Whether this process's token is an AppContainer's, and its capability SIDs."""
+    from ctypes import wintypes
+
+    advapi = ctypes.WinDLL("advapi32", use_last_error=True)  # type: ignore[attr-defined]
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+    # every handle and pointer typed: ctypes passes a bare Python int as a C int, and the
+    # process's pseudo-handle (-1 as a HANDLE) overflows one on 64-bit Windows
+    kernel.GetCurrentProcess.restype = wintypes.HANDLE
+    kernel.GetCurrentProcess.argtypes = []
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel.LocalFree.restype = ctypes.c_void_p
+    advapi.OpenProcessToken.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.HANDLE),
+    ]
+    advapi.OpenProcessToken.restype = wintypes.BOOL
+    advapi.GetTokenInformation.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    advapi.GetTokenInformation.restype = wintypes.BOOL
+    advapi.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(wintypes.LPWSTR)]
+    advapi.ConvertSidToStringSidW.restype = wintypes.BOOL
+    token = wintypes.HANDLE()
+    if not advapi.OpenProcessToken(kernel.GetCurrentProcess(), _TOKEN_QUERY, ctypes.byref(token)):
+        err = ctypes.get_last_error()  # type: ignore[attr-defined]
+        raise SandboxUnavailable("appcontainer", f"OpenProcessToken: {err}")
+    try:
+        flag, n = wintypes.DWORD(), wintypes.DWORD()
+        if not advapi.GetTokenInformation(
+            token, _TOKEN_IS_APPCONTAINER, ctypes.byref(flag), 4, ctypes.byref(n)
+        ):
+            err = ctypes.get_last_error()  # type: ignore[attr-defined]
+            raise SandboxUnavailable("appcontainer", f"GetTokenInformation: {err}")
+        if not flag.value:
+            return False, []
+        advapi.GetTokenInformation(token, _TOKEN_CAPABILITIES, None, 0, ctypes.byref(n))
+        buf = ctypes.create_string_buffer(n.value or 4)
+        if not advapi.GetTokenInformation(
+            token, _TOKEN_CAPABILITIES, buf, n.value, ctypes.byref(n)
+        ):
+            err = ctypes.get_last_error()  # type: ignore[attr-defined]
+            raise SandboxUnavailable("appcontainer", f"capabilities: {err}")
+
+        class SidAndAttributes(ctypes.Structure):
+            _fields_ = [("sid", ctypes.c_void_p), ("attributes", wintypes.DWORD)]
+
+        count = ctypes.cast(buf, ctypes.POINTER(wintypes.DWORD))[0]
+        offset = ctypes.sizeof(ctypes.c_void_p)  # GroupCount, padded to the array's alignment
+        groups = (SidAndAttributes * count).from_buffer(buf, offset)
+        caps: list[str] = []
+        for g in groups:
+            text = wintypes.LPWSTR()
+            if advapi.ConvertSidToStringSidW(ctypes.c_void_p(g.sid), ctypes.byref(text)):
+                caps.append(str(text.value))
+                kernel.LocalFree(ctypes.cast(text, ctypes.c_void_p))
+        return True, caps
+    finally:
+        kernel.CloseHandle(token)
+
+
+def exec_allowed(program: object, allowed: list[str]) -> bool:
+    """Whether ``program`` (as named, or found on PATH) is one of the group's tools, by real
+    path, compared as the OS names paths."""
+    if program is None:
+        return False
+    try:
+        name = os.fsdecode(program)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return False
+    found = shutil.which(name) or name
+    real = os.path.normcase(os.path.realpath(found))
+    return real in {os.path.normcase(os.path.realpath(a)) for a in allowed}
+
+
+def _program(argv: object) -> object:
+    """The program a command line runs (its first word)."""
+    if isinstance(argv, (str, bytes)):
+        text = os.fsdecode(argv).strip()
+        if text.startswith('"'):
+            return text[1:].split('"', 1)[0]
+        return text.split(" ", 1)[0] if text else None
+    if isinstance(argv, (list, tuple)) and argv:
+        return argv[0]
+    return None
+
+
+def guard_exec(allowed: list[str]) -> None:
+    """Refuse (``plugin_exec``) any program but the group's tools: an audit hook on every
+    process start (subprocess, os.exec*, os.spawn*, os.posix_spawn), and os.system and
+    os.startfile always (a shell). On Windows every AppContainer may read and so run the
+    system's programs; this keeps a group with ``exec`` to its own tools."""
+
+    def refuse(what: object) -> None:
+        raise PluginRefused(403, "plugin_exec", f"{what}: not a tool of this runner group")
+
+    def hook(event: str, args: tuple[object, ...]) -> None:
+        if event == "subprocess.Popen":
+            executable, argv = args[0], args[1]
+            prog = executable if executable is not None else _program(argv)
+            if not exec_allowed(prog, allowed):
+                refuse(prog)
+        elif event in ("os.exec", "os.spawn", "os.posix_spawn"):
+            if not exec_allowed(args[0], allowed):
+                refuse(args[0])
+        elif event in ("os.system", "os.startfile"):
+            refuse(args[0])
+
+    sys.addaudithook(hook)
+
+
+def _apply_windows(p: Policy) -> Applied:
+    """The launcher applied the sandbox; this checks it: the token is an AppContainer's, it
+    holds no capability but internetClient for a group with ``net``, and the group's tools
+    are the only programs it runs."""
+    inside, caps = _token_appcontainer()
+    if not inside:
+        raise SandboxUnavailable("appcontainer", "not started in its AppContainer")
+    extra = [c for c in caps if not (p.net and c == INTERNET_CLIENT)]
+    if extra:
+        raise SandboxUnavailable("appcontainer_capabilities", ",".join(extra))
+    guard_exec(list(p.exec))
+    return Applied("full")
+
+
+def policy_doc(p: Policy) -> dict[str, Any]:
+    """The policy as the Windows launcher reads it (``--policy``): the group's folders and
+    tools, the tools' installations, what the interpreter reads, and the Job Object's
+    process limit: the runner, its interpreter when a venv's launcher starts it (Windows),
+    and room for the tools only when the group may run any."""
+    processes = 1
+    base = getattr(sys, "_base_executable", sys.executable)
+    if sys.platform == "win32" and os.path.normcase(base) != os.path.normcase(sys.executable):
+        processes += 1  # Scripts\python.exe starts the base interpreter as its child
+    if p.exec:
+        processes += 32
+    return {
+        "read": list(p.read),
+        "write": list(p.write),
+        "write_named": list(p.write_named),
+        "exec": list(p.exec),
+        "net": p.net,
+        "gpu": p.gpu,
+        "run_dir": p.run_dir,
+        "python": python_paths(),
+        "tool_dirs": sorted({d for t in p.exec for d in tool_prefixes(t)}),
+        "processes": processes,
+    }
+
+
 def apply(p: Policy) -> Applied:
-    """Apply the group's sandbox to this process, for good."""
+    """Apply the group's sandbox to this process, for good (on Windows: check the one the
+    launcher applied)."""
     if sys.platform == "darwin":
         return _apply_darwin(p)
     if sys.platform.startswith("linux"):
         return _apply_linux(p)
+    if sys.platform == "win32":
+        return _apply_windows(p)
     raise SandboxUnavailable("platform", sys.platform)
 
 
@@ -526,6 +719,7 @@ def policy_for(
     api_socket: str,
     own_socket: str,
     run_dir: str,
+    group: str | None = None,
 ) -> Policy:
     """The union of a group's ``[trusted]`` tables; ``areas`` maps an area name
     (``library``, ``data.thumbnails`` …) to this machine's folders (``;``-separated).
@@ -533,7 +727,14 @@ def policy_for(
     The sockets and the run folder are named by their real paths, as the areas are: a
     runner's socket outside a long data folder is under ``/tmp``, which is ``/private/tmp``
     on macOS, and Seatbelt matches the real path (a bind there was refused, so the runner
-    exited 1)."""
+    exited 1).
+
+    With ``group`` named, the network is the ``net`` group's alone: a plugin that declares
+    hosts for one stage in ``net`` (classify's ``books``, story 54.31) gives its other
+    groups no socket, so a classify stage in ``light`` is still refused one. And a plugin
+    whose stage runs outside its own ``[trusted] runner`` group (that stage's ``runner``)
+    brings only its network there: its files, tools and GPU stay with its own group, so
+    ``books`` does not give the ``net`` runner classify's thumbnails or reports folder."""
 
     def real(path: str) -> str:
         return os.path.realpath(path) if path else path
@@ -544,6 +745,10 @@ def policy_for(
         return [x for x in areas.get(area, "").split(";") if x]
 
     for t in trusted:
+        own = str(t.get("runner") or "")
+        if group is not None and own not in (group, "own"):
+            p.net |= bool(t.get("net"))
+            continue
         files = t.get("files") or {}
         assert isinstance(files, dict)
         for a in files.get("read") or ():
@@ -559,6 +764,8 @@ def policy_for(
                 p.exec.append(found)
         p.net |= bool(t.get("net"))
         p.gpu |= str(t.get("gpu") or "none") != "none"
+    if group is not None and group != "net":
+        p.net = False
     p.read, p.write, p.exec = sorted(set(p.read)), sorted(set(p.write)), sorted(set(p.exec))
     # a folder the group may write in full needs no name rule
     p.write_named = sorted(

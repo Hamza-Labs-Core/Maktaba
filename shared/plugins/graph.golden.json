@@ -1,11 +1,5 @@
 {
  "pools": {
-  "audits": {
-   "default_size": 1,
-   "label": "Channel audit",
-   "scope": "global",
-   "size": 1
-  },
   "convert": {
    "default_size": 1,
    "label": "Convert to MP4",
@@ -53,12 +47,6 @@
    "label": "Plex",
    "scope": "global",
    "size": 2
-  },
-  "network_tv": {
-   "default_size": 1,
-   "label": "dizqueTV",
-   "scope": "global",
-   "size": 1
   },
   "network_yt": {
    "default_size": 1,
@@ -339,12 +327,6 @@
      "map": "catalog",
      "to": "plan_channels",
      "when": "output_changed"
-    },
-    {
-     "legacy": false,
-     "map": "same",
-     "to": "plex_groups",
-     "when": "output_changed"
     }
    ],
    "entry_for": [
@@ -559,20 +541,8 @@
     },
     {
      "legacy": false,
-     "map": "seasons_changed",
-     "to": "dizquetv_show",
-     "when": "output_changed"
-    },
-    {
-     "legacy": false,
      "map": "catalog",
      "to": "plan_channels",
-     "when": "output_changed"
-    },
-    {
-     "legacy": false,
-     "map": "seasons_changed",
-     "to": "plex_collection",
      "when": "output_changed"
     },
     {
@@ -669,103 +639,6 @@
    ],
    "unreleased": false,
    "version": 3
-  },
-  "dizquetv_audit": {
-   "after_topup": false,
-   "debounce_max_sec": 900,
-   "debounce_sec": 60,
-   "edges": [],
-   "entry_for": [
-    "catalog"
-   ],
-   "every_minutes_rule": null,
-   "extension": "dizquetv",
-   "external_write": false,
-   "hidden": false,
-   "label": "Channel audit",
-   "lane": "channels",
-   "lane_order": 4,
-   "legacy": false,
-   "max_attempts": 3,
-   "may_request": [],
-   "model_rules": null,
-   "name": "dizquetv_audit",
-   "placement": "home",
-   "pool": "audits",
-   "relay": null,
-   "storage": null,
-   "subject_kinds": [
-    "catalog"
-   ],
-   "unreleased": false,
-   "version": 1
-  },
-  "dizquetv_channels": {
-   "after_topup": false,
-   "debounce_max_sec": 0,
-   "debounce_sec": 0,
-   "edges": [
-    {
-     "legacy": false,
-     "map": "same",
-     "to": "dizquetv_audit",
-     "when": "output_changed"
-    }
-   ],
-   "entry_for": [
-    "catalog"
-   ],
-   "every_minutes_rule": null,
-   "extension": "dizquetv",
-   "external_write": true,
-   "hidden": false,
-   "label": "dizqueTV channels",
-   "lane": "channels",
-   "lane_order": 3,
-   "legacy": false,
-   "max_attempts": 3,
-   "may_request": [],
-   "model_rules": null,
-   "name": "dizquetv_channels",
-   "placement": "home",
-   "pool": "network_tv",
-   "relay": null,
-   "storage": null,
-   "subject_kinds": [
-    "catalog"
-   ],
-   "unreleased": false,
-   "version": 1
-  },
-  "dizquetv_show": {
-   "after_topup": false,
-   "debounce_max_sec": 0,
-   "debounce_sec": 0,
-   "edges": [],
-   "entry_for": [
-    "season"
-   ],
-   "every_minutes_rule": null,
-   "extension": "dizquetv",
-   "external_write": true,
-   "hidden": false,
-   "label": "dizqueTV show",
-   "lane": "seasons",
-   "lane_order": 5,
-   "legacy": false,
-   "max_attempts": 3,
-   "may_request": [],
-   "model_rules": null,
-   "name": "dizquetv_show",
-   "placement": "any",
-   "pool": "network_tv",
-   "relay": null,
-   "storage": null,
-   "subject_kinds": [
-    "season"
-   ],
-   "unreleased": false,
-   "version": 1
   },
   "enrich": {
    "after_topup": false,
@@ -1039,12 +912,6 @@
     {
      "legacy": false,
      "map": "same",
-     "to": "dizquetv_channels",
-     "when": "output_changed"
-    },
-    {
-     "legacy": false,
-     "map": "same",
      "to": "write_channels",
      "when": "output_changed"
     }
@@ -1073,158 +940,6 @@
    ],
    "unreleased": false,
    "version": 5
-  },
-  "plex_collection": {
-   "after_topup": false,
-   "debounce_max_sec": 0,
-   "debounce_sec": 0,
-   "edges": [
-    {
-     "legacy": false,
-     "map": "same",
-     "to": "dizquetv_show",
-     "when": "output_changed"
-    }
-   ],
-   "entry_for": [
-    "season"
-   ],
-   "every_minutes_rule": null,
-   "extension": "plex",
-   "external_write": true,
-   "hidden": false,
-   "label": "Plex collection",
-   "lane": "seasons",
-   "lane_order": 4,
-   "legacy": false,
-   "max_attempts": 3,
-   "may_request": [],
-   "model_rules": null,
-   "name": "plex_collection",
-   "placement": "home",
-   "pool": "network_plex",
-   "relay": "plex",
-   "storage": null,
-   "subject_kinds": [
-    "season"
-   ],
-   "unreleased": false,
-   "version": 1
-  },
-  "plex_collections_import": {
-   "after_topup": false,
-   "debounce_max_sec": 600,
-   "debounce_sec": 60,
-   "edges": [],
-   "entry_for": [
-    "library"
-   ],
-   "every_minutes_rule": null,
-   "extension": "plex",
-   "external_write": false,
-   "hidden": false,
-   "label": "Read Plex collections",
-   "lane": "sources",
-   "lane_order": 2,
-   "legacy": false,
-   "max_attempts": 3,
-   "may_request": [],
-   "model_rules": null,
-   "name": "plex_collections_import",
-   "placement": "home",
-   "pool": "network_plex",
-   "relay": "plex",
-   "storage": null,
-   "subject_kinds": [
-    "library"
-   ],
-   "unreleased": false,
-   "version": 1
-  },
-  "plex_groups": {
-   "after_topup": false,
-   "debounce_max_sec": 600,
-   "debounce_sec": 60,
-   "edges": [],
-   "entry_for": [
-    "library"
-   ],
-   "every_minutes_rule": null,
-   "extension": "plex",
-   "external_write": true,
-   "hidden": false,
-   "label": "Plex topic and clip collections",
-   "lane": "seasons",
-   "lane_order": 4,
-   "legacy": false,
-   "max_attempts": 3,
-   "may_request": [],
-   "model_rules": null,
-   "name": "plex_groups",
-   "placement": "home",
-   "pool": "network_plex",
-   "relay": "plex",
-   "storage": null,
-   "subject_kinds": [
-    "library"
-   ],
-   "unreleased": false,
-   "version": 1
-  },
-  "plex_index": {
-   "after_topup": false,
-   "debounce_max_sec": 600,
-   "debounce_sec": 60,
-   "edges": [
-    {
-     "legacy": false,
-     "map": "seasons_changed",
-     "to": "dizquetv_show",
-     "when": "output_changed"
-    },
-    {
-     "legacy": false,
-     "map": "seasons_changed",
-     "to": "plex_collection",
-     "when": "output_changed"
-    },
-    {
-     "legacy": false,
-     "map": "same",
-     "to": "plex_collections_import",
-     "when": "output_changed"
-    },
-    {
-     "legacy": false,
-     "map": "same",
-     "to": "plex_groups",
-     "when": "output_changed"
-    }
-   ],
-   "entry_for": [
-    "library"
-   ],
-   "every_minutes_rule": null,
-   "extension": "plex",
-   "external_write": false,
-   "hidden": false,
-   "label": "Plex index",
-   "lane": "sources",
-   "lane_order": 1,
-   "legacy": false,
-   "max_attempts": 3,
-   "may_request": [],
-   "model_rules": null,
-   "name": "plex_index",
-   "placement": "home",
-   "pool": "network_plex",
-   "relay": "plex",
-   "storage": null,
-   "subject_kinds": [
-    "library"
-   ],
-   "unreleased": false,
-   "version": 1
   },
   "plex_livetv": {
    "after_topup": true,
@@ -1454,12 +1169,6 @@
    "debounce_max_sec": 0,
    "debounce_sec": 0,
    "edges": [
-    {
-     "legacy": false,
-     "map": "same",
-     "to": "plex_index",
-     "when": "output_changed"
-    },
     {
      "legacy": false,
      "map": "videos_changed",
@@ -1853,12 +1562,6 @@
      "legacy": false,
      "map": "catalog",
      "to": "plan_channels",
-     "when": "output_changed"
-    },
-    {
-     "legacy": false,
-     "map": "same",
-     "to": "plex_groups",
      "when": "output_changed"
     },
     {

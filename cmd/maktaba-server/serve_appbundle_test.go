@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,9 +40,42 @@ func init() {
 		time.Sleep(time.Hour) // a sleep, not a select{}: alone, that is a deadlock the runtime ends
 		os.Exit(0)
 	}
+	if venv := os.Getenv("MAKTABA_TEST_APPBUNDLE_VENV_CHILD"); venv != "" {
+		// a child that runs from the venv (TestAppBundleRunnersWaitForTheVenv): each start
+		// is logged; without the venv's ready marker it dies as python does on a module the
+		// venv does not hold yet
+		_, err := os.Stat(venv)
+		line := "ready"
+		if err != nil {
+			line = "early"
+		}
+		if f, ferr := os.OpenFile(os.Getenv("MAKTABA_TEST_APPBUNDLE_STARTS"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); ferr == nil {
+			fmt.Fprintf(f, "%s %s\n", os.Getenv("MAKTABA_TEST_APPBUNDLE_NAME"), line)
+			_ = f.Close()
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "python: No module named maktaba_plugin_runner")
+			os.Exit(1)
+		}
+		time.Sleep(time.Hour)
+		os.Exit(0)
+	}
 	mode := os.Getenv("MAKTABA_TEST_APPBUNDLE_MIGRATE")
 	if mode == "" {
 		return
+	}
+	if strings.HasPrefix(mode, "down") { // a rollback's Down scripts (TestRunMigrateDownTo)
+		if strings.Join(os.Args[1:], " ") != "migrate --timeout 0 --lock-timeout "+migrateLockTimeout+" down-to 191" ||
+			os.Getenv("MAKTABA_DISABLE_DOWN") != "" {
+			fmt.Fprintf(os.Stderr, "unexpected %q (MAKTABA_DISABLE_DOWN=%q)\n", os.Args[1:], os.Getenv("MAKTABA_DISABLE_DOWN"))
+			os.Exit(2)
+		}
+		if mode == "down-fail" {
+			fmt.Fprintln(os.Stderr, "migrate: ERROR 0192_smart_playlists.sql: failed to run SQL migration\nlock timeout")
+			os.Exit(1)
+		}
+		fmt.Println("migrate: OK 0192_smart_playlists.sql (down)")
+		os.Exit(0)
 	}
 	if strings.Join(os.Args[1:], " ") != "migrate --timeout 0 --lock-timeout "+migrateLockTimeout+" up" {
 		fmt.Fprintf(os.Stderr, "unexpected %q\n", os.Args[1:])
@@ -1231,6 +1265,137 @@ func TestAppBundleNoVenvForANamedPython(t *testing.T) {
 	}
 }
 
+// An update's start (the 0.3.96 one, 2026-11-08): the plugin runners run from the
+// venv, so under the supervisor they start only once the venv step has installed this
+// release's packages, as the pipeline's workers do. Meanwhile none is started (each
+// start before would die on "No module named maktaba_plugin_runner") and none is
+// marked failed by the crash loop; once the venv is ready every one runs.
+func TestAppBundleRunnersWaitForTheVenv(t *testing.T) {
+	spawnsPrograms(t) // real children under the supervisor
+	cfg, payload := appEnv(t, "v0.3.96", "v0.3.95")
+	installFakeDB(t, cfg)
+	dir := t.TempDir()
+	marker, starts := filepath.Join(dir, "venv-ready"), filepath.Join(dir, "starts.log")
+	prev := venvRun
+	t.Cleanup(func() { venvRun = prev })
+	release, building := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	venvRun = func(ctx context.Context, _ appvenv.Spec, progress func(appvenv.Progress)) (appvenv.Result, error) {
+		once.Do(func() { close(building) })
+		progress(appvenv.Progress{Fraction: 0.5, Message: "Installing maktaba_pipeline"})
+		select {
+		case <-ctx.Done():
+			return appvenv.Result{}, ctx.Err()
+		case <-release:
+		}
+		if err := os.WriteFile(marker, []byte("ok"), 0o600); err != nil {
+			return appvenv.Result{}, err
+		}
+		return appvenv.Result{Pipeline: "0.3.96"}, nil
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := func(role supervisor.Role, instance string) supervisor.Process {
+		p := supervisor.Process{Role: role, Instance: instance}
+		cmd := exec.Command(self)
+		cmd.Env = append(os.Environ(), "MAKTABA_TEST_APPBUNDLE_VENV_CHILD="+marker,
+			"MAKTABA_TEST_APPBUNDLE_STARTS="+starts, "MAKTABA_TEST_APPBUNDLE_NAME="+p.Name())
+		p.Cmd = cmd
+		return p
+	}
+	api := exec.Command(self)
+	api.Env = append(os.Environ(), "MAKTABA_TEST_APPBUNDLE_CHILD=1")
+	procs := []supervisor.Process{{Role: supervisor.RoleAPI, Cmd: api},
+		child(supervisor.RolePipeline, ""),
+		child(supervisor.RolePluginRunner, "ml-1"), child(supervisor.RolePluginRunner, "ml-2"),
+		child(supervisor.RolePluginRunner, "index")}
+	procs = appBundleGates(cfg, payload, nil, procs, io.Discard)
+
+	// a crash loop after two quick exits: had a runner started before the venv was
+	// ready, it would be marked failed within milliseconds
+	policy := supervisor.DefaultPolicy()
+	policy.BackoffInitial, policy.BackoffMax, policy.MaxRestarts = 5*time.Millisecond, 10*time.Millisecond, 2
+	policy.HealthyAfter, policy.StartupGrace = 50*time.Millisecond, 50*time.Millisecond
+	sup := supervisor.New(procs, policy, supervisor.WithLog(io.Discard))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sup.Run(ctx, 5*time.Second) }()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	venvChild := func(st supervisor.ChildStatus) bool {
+		return st.Role == supervisor.RolePipeline || st.Role == supervisor.RolePluginRunner
+	}
+	select {
+	case <-building:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the venv step never ran")
+	}
+	// while the venv installs: no child that runs from it starts, none is failed, each
+	// shows what it waits on
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		for _, st := range sup.Snapshot().Processes {
+			if !venvChild(st) {
+				continue
+			}
+			if st.State == supervisor.StateFailed || st.CrashLoop || st.PID != 0 || st.Restarts != 0 {
+				t.Fatalf("%s/%s before the venv is ready: state %s, pid %d, %d restarts, crash loop %v",
+					st.Role, st.Instance, st.State, st.PID, st.Restarts, st.CrashLoop)
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for _, st := range sup.Snapshot().Processes {
+		if venvChild(st) && st.DetailCode != "venv_building" {
+			t.Errorf("%s/%s waits showing %q (%s)", st.Role, st.Instance, st.DetailCode, st.Detail)
+		}
+	}
+	if b, _ := os.ReadFile(starts); len(b) != 0 {
+		t.Fatalf("started before the venv was ready:\n%s", b)
+	}
+
+	close(release)
+	waitFor := time.Now().Add(20 * time.Second)
+	for {
+		running := 0
+		for _, st := range sup.Snapshot().Processes {
+			if !venvChild(st) {
+				continue
+			}
+			if st.State == supervisor.StateFailed || st.CrashLoop {
+				t.Fatalf("%s/%s marked failed: %s", st.Role, st.Instance, st.Detail)
+			}
+			if st.State == supervisor.StateRunning {
+				running++
+			}
+		}
+		if running == 4 {
+			break
+		}
+		if time.Now().After(waitFor) {
+			t.Fatalf("%d of 4 running after the venv was ready: %+v", running, sup.Snapshot().Processes)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// running is the process started: its own line may still be on its way
+	var lines []string
+	waitUntil(t, "every child's start logged", func() bool {
+		b, _ := os.ReadFile(starts)
+		lines = strings.Split(strings.TrimSpace(string(b)), "\n")
+		return len(lines) >= 4
+	})
+	sort.Strings(lines)
+	want := []string{"pipeline ready", "plugin-runner/index ready", "plugin-runner/ml-1 ready", "plugin-runner/ml-2 ready"}
+	if strings.Join(lines, "|") != strings.Join(want, "|") {
+		t.Fatalf("starts = %q, want each once, after the venv: %q", lines, want)
+	}
+}
+
 // The detail codes are a fixed list (the app's screens translate them): a code
 // added, gone or with other params must be added here too, and to the list in
 // contract-update.md.
@@ -1363,6 +1528,71 @@ func TestSharedStepWaiterStops(t *testing.T) {
 	}
 }
 
+// A process that starts waiting on a shared step while it runs shows the step's newest
+// report, never the waiting text over it: its first report is made before the step can
+// broadcast to it, so a broadcast that lands in between is not overwritten. The waiter's
+// first report is slow here so that, were it made outside the lock, the step's broadcast
+// would land first and the waiting text would end on top.
+func TestSharedStepWaiterKeepsTheNewestReport(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	var s *sharedStep
+	s = &sharedStep{wait: supervisor.Detail{Code: "venv_waiting", Text: "waiting"}, run: func(_ context.Context, report func(supervisor.Detail)) error {
+		report(supervisor.Detail{Code: "venv_building", Text: "starting"})
+		for { // the waiter is registered: the step reports again at once
+			s.mu.Lock()
+			n := len(s.watchers)
+			s.mu.Unlock()
+			if n == 2 {
+				break
+			}
+			time.Sleep(time.Millisecond)
+		}
+		report(supervisor.Detail{Code: "venv_building", Text: "installing"})
+		<-release
+		return nil
+	}}
+	go func() { _ = s.prepare(context.Background(), noReport) }()
+	waitUntil(t, "the step runs", func() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.running != nil })
+	var (
+		mu    sync.Mutex
+		shown []string
+		first = true
+	)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = s.prepare(ctx, func(d supervisor.Detail) {
+			mu.Lock()
+			slow := first
+			first = false
+			mu.Unlock()
+			if slow {
+				time.Sleep(50 * time.Millisecond)
+			}
+			mu.Lock()
+			shown = append(shown, d.Text)
+			mu.Unlock()
+		})
+	}()
+	waitUntil(t, "the waiter shows the step's second report", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, x := range shown {
+			if x == "installing" {
+				return true
+			}
+		}
+		return false
+	})
+	time.Sleep(80 * time.Millisecond) // a late first report would land by now
+	mu.Lock()
+	defer mu.Unlock()
+	if shown[len(shown)-1] != "installing" {
+		t.Fatalf("the waiter showed %v: the newest report must stay on top", shown)
+	}
+}
+
 // runMigrateUp runs `migrate --timeout 0 up` with the api's binary and
 // environment; a failure carries the last lines, the api's exit 3 is a database
 // newer than its migrations.
@@ -1389,6 +1619,53 @@ func TestRunMigrateUp(t *testing.T) {
 	err = runMigrateUp(context.Background(), api("ahead"), io.Discard)
 	if !errors.Is(err, errSchemaAhead) || !strings.Contains(err.Error(), "schema is at 0150") {
 		t.Fatalf("ahead = %v", err)
+	}
+}
+
+// A rollback's Down scripts run as `migrate down-to <schema>` with the api's binary and
+// environment, without an operator's MAKTABA_DISABLE_DOWN (the rollback of 0.3.90, 2026-11-07).
+func TestRunMigrateDownTo(t *testing.T) {
+	spawnsPrograms(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := func(mode string) *exec.Cmd {
+		c := exec.Command(self)
+		c.Env = append(os.Environ(), "MAKTABA_TEST_APPBUNDLE_MIGRATE="+mode, "MAKTABA_DISABLE_DOWN=1")
+		return c
+	}
+	var log strings.Builder
+	if err := runMigrateDownTo(context.Background(), api("down-ok"), 191, &log); err != nil ||
+		!strings.Contains(log.String(), "0192_smart_playlists.sql (down)") {
+		t.Fatalf("ok = %v, log %q", err, log.String())
+	}
+	if err := runMigrateDownTo(context.Background(), api("down-fail"), 191, io.Discard); err == nil ||
+		!strings.Contains(err.Error(), "lock timeout") {
+		t.Fatalf("fail = %v", err)
+	}
+}
+
+// After a rollback whose Down scripts undid the new release's migrations (the record the
+// release before's own: layout.MarkRecordDown), the release before starts as on its own
+// database: nothing dumped, nothing put back, nothing refused.
+func TestAppBundleStartsOnTheSchemaItsDownScriptsLeft(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.2.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated, From: "v0.2.0",
+		Release: "v0.3.0", Dump: "/b/pre-0.2.0-to-0.3.0.dump"})
+	if ok, err := layout.MarkRecordDown(apppayload.DatabasePath(cfg.StateDir()), "v0.3.0", "0.2.0", "watch_timeout"); !ok || err != nil {
+		t.Fatalf("MarkRecordDown: %v %v", ok, err)
+	}
+	f := installFakeDB(t, cfg)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if d, _, r := f.counts(); d != 0 || r != 0 {
+		t.Fatalf("%d dumps, %d restores", d, r)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record %+v", rec)
 	}
 }
 

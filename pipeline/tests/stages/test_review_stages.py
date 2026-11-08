@@ -14,7 +14,7 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, POOLS
 from maktaba_pipeline.engine.media import ProcResult, reset_runner, set_runner
 from maktaba_pipeline.engine.sql import loads
-from maktaba_pipeline.engine.stages import review_pages
+from maktaba_pipeline.engine.stages import _review_pages as review_pages
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.thumbnail import small as thumb_small
 from tests.engine.factory import make_library, make_series_and_season, make_video
@@ -121,7 +121,9 @@ async def test_thumb_small_without_a_thumbnail_and_with_an_unreadable_one(
     await enqueue_job(db, subject_kind="video", subject_id=a, stage="thumb_small")
     await drain_core(db, rt, only={"thumb_small"})
     first = (await _rows(db, "thumb_small"))[0]
-    assert loads(first["output_summary"])["reason"] == "no_thumbnail"
+    summary = loads(first["output_summary"])
+    # it says where it looked: the video's file as this machine names it
+    assert summary["reason"] == "no_thumbnail" and summary["video"] == str(tmp_path / "a.mp4")
 
     async def bad(args: list[str], timeout: float) -> ProcResult:
         return ProcResult(b"", b"Invalid data found when processing input", 1)

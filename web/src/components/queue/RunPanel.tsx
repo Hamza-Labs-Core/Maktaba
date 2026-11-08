@@ -2,7 +2,7 @@
 // graph's own switches (no parallel mechanism). Its choices map to:
 //
 //   libraries            the subjects of POST /api/queue/retrigger
-//   write to Plex / TV   the plex / dizquetv extensions' enabled flag (PUT /api/extensions/{name})
+//   write to Plex        the plex extension's enabled flag (PUT /api/extensions/{name})
 //   read YouTube         the youtube_sync queue's enabled flag (PATCH /api/queues/{stage})
 //   exact upload dates   the exact_dates rule's enabled setting (PATCH /api/rules/exactdates)
 //   start at <step>      a retrigger of that queue in "from here on" mode (force_cascade);
@@ -34,7 +34,7 @@ export const CATALOG_ID = "00000000-0000-0000-0000-00000000ca7a";
 const YOUTUBE_STAGE = "youtube_sync";
 /** Off until its rule enables it (rules.exactdates.enabled), so the switch is that setting. */
 const EXACT_STAGE = "exact_dates";
-const WRITE_EXTENSIONS = ["plex", "dizquetv"] as const;
+const WRITE_EXTENSIONS = ["plex"] as const;
 const START_KINDS = ["library", "catalog", "season"] as const;
 const RUN_PRIORITY = 50;
 

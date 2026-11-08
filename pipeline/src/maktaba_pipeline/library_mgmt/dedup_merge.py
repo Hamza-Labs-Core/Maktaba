@@ -149,7 +149,8 @@ RULES: Mapping[tuple[str, str], Rule] = {
     ("relisten_attempts", "video_id"): Rule("keep"),
     ("transcribe_checkpoints", "video_id"): Rule("keep"),
     ("processing_jobs", "video_id"): Rule("keep"),
-    ("plex_items", "video_id"): Rule("keep"),  # Plex's own scan re-links its item
+    # the removed Plex sync's rows (slot 0215 keeps them until the cleanup migration)
+    ("plex_items", "video_id"): Rule("keep"),
     ("video_copies", "video_id"): Rule("keep"),  # the copies are members: trashed
     ("file_actions", "video_id"): Rule("keep"),  # the ledger (restore needs the loser)
     ("duplicate_members", "video_id"): Rule("keep"),

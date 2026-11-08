@@ -21,7 +21,7 @@ What the dizqueTV grid does, this does too:
   episode though it runs past the slot (dizqueTV's maxFlex); with
   ``filler_between_episodes`` the spare time is shared out between the slot's episodes
   (dizqueTV's ``flexPreference: distribute``);
-* live broadcasts (the ``tv`` rule ``live``, the same rows as ``dizquetv.live``): a live
+* live broadcasts (the ``tv`` rule ``live``): a live
   block at each start; nothing runs into it (a programme that would not end before it
   is not started, filler fills up to it) and the slot's show goes on after it.
 

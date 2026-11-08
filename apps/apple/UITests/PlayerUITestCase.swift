@@ -55,7 +55,7 @@ class PlayerUITestCase: XCTestCase {
     /// So before the first test the app goes the way a test takes it, on a mock home of its
     /// own (the test's mock sees none of it): launched, signed in, the shell drawn on
     /// Libraries, and read until three snapshots running each come back within 2 s (a page
-    /// read at its usual pace), and one full accessibility audit run (a process's first is
+    /// read at its usual pace), and full accessibility audits until the process is warm (a process's first is
     /// slow as well); then closed. What it took is in the test log and the result
     /// bundle. A later test process (after a crash) finds the simulator ready and pays one
     /// sign-in.
@@ -109,12 +109,27 @@ class PlayerUITestCase: XCTestCase {
             let pace = !shell ? "no shell in 120 s" : quick >= 3 ? "read at its usual pace" : "still slow after 180 s"
             // the process's first full accessibility audit is slow too (15 to 16 s on CI, 2 to
             // 2.5 s after; one of a single cheap type warmed nothing): a full one here, its
-            // findings ignored, so a first test's audit keeps to its deadline
-            let audited = Date()
-            if shell { try? app.performAccessibilityAudit(for: XCUIAccessibilityAuditType.all.subtracting(.dynamicType)) { _ in true } }
-            let audit = Date().timeIntervalSince(audited)
-            let note = String(format: "signed in, shell drawn at %.0f s; %@ at %.0f s; snapshots took %@ s; first audit %.1f s",
-                              drawn, pace, Date().timeIntervalSince(start), looks.joined(separator: ", "), audit)
+            // findings ignored, so a first test's audit keeps to its deadline. One is not always
+            // enough: on an iPad on CI (run 42455914091) the warm-up's audit took 10.2 s and the
+            // first test's next one went past XCTest's 15 s ("Audit failed to complete in time"),
+            // while the relaunched process's took 2.3 s. So audits run, as the snapshots above,
+            // until the process is warm: one under 5 s, or one no more than 15% quicker than the
+            // one before (an iPad's Libraries audit, warm, takes 5 to 12 s on CI: run 42464827238 of
+            // #1001 had every iPad shard at four audits, 13.3, 9.6, 9.7, 9.4 s), at most four
+            var audits: [String] = []
+            var last: TimeInterval?
+            while shell, audits.count < 4 {
+                let audited = Date()
+                try? app.performAccessibilityAudit(for: XCUIAccessibilityAuditType.all.subtracting(.dynamicType)) { _ in true }
+                let took = Date().timeIntervalSince(audited)
+                audits.append(String(format: "%.1f", took))
+                if took < 5 { break }
+                if let last, took > last * 0.85 { break }
+                last = took
+            }
+            let note = String(format: "signed in, shell drawn at %.0f s; %@ at %.0f s; snapshots took %@ s; audits took %@ s",
+                              drawn, pace, Date().timeIntervalSince(start), looks.joined(separator: ", "),
+                              audits.isEmpty ? "none" : audits.joined(separator: ", "))
             // in the test log, and kept with the result bundle
             print("PlayerUITestCase warm-up: \(note)")
             let kept = XCTAttachment(string: note)

@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // ErrUnknownStage is returned by SetStages for a stage not in job_stages.
@@ -313,6 +315,10 @@ func (s *PGStore) Stages(ctx context.Context) (map[string]map[string]bool, error
 		var on bool
 		if err := rows.Scan(&id, &stage, &on); err != nil {
 			return nil, err
+		}
+		// a stage a release removed keeps its switch rows until the cleanup migration
+		if components.RetiredStage(stage) {
+			continue
 		}
 		if out[id] == nil {
 			out[id] = map[string]bool{}

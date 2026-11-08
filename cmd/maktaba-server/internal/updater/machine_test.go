@@ -23,6 +23,7 @@ type world struct {
 	migrated  bool // the database holds the new release's migrations
 	marked    bool // the record says: put the dump back
 	kept      bool // the record says: the schema is kept for the release before
+	down      bool // the record says: the release before's schema, by the Down scripts
 	committed string
 	exits     []int
 	// the desktop app's side of an order (an installer that orders from its app)
@@ -88,6 +89,16 @@ type fakeInst struct {
 	replaces bool
 	// keeps: its rollback keeps the schema (SchemaKeeper)
 	keeps bool
+	// reverts: its rollback may run the Down scripts (SchemaReverter)
+	reverts bool
+}
+
+// DownTo implements SchemaReverter.
+func (f *fakeInst) DownTo(*Journal) (int64, bool, string) {
+	if f.reverts {
+		return 191, true, "the fake's migrations lose no data"
+	}
+	return 0, false, "the fake's migrations drop a column"
 }
 
 // KeepsSchema implements SchemaKeeper.
@@ -211,6 +222,15 @@ func (r fakeRecords) Unmark(string) error {
 	defer r.w.mu.Unlock()
 	r.w.marked, r.w.kept = false, false
 	return nil
+}
+func (r fakeRecords) MarkDown(_, _, _ string) (bool, error) {
+	r.w.mu.Lock()
+	defer r.w.mu.Unlock()
+	if !r.w.migrated {
+		return false, nil
+	}
+	r.w.down, r.w.migrated = true, false
+	return true, nil
 }
 func (r fakeRecords) MarkKept(_, _, _ string) (bool, error) {
 	r.w.mu.Lock()
@@ -902,5 +922,61 @@ func TestUnreadableJournalIsSetAside(t *testing.T) {
 	}
 	if err := r.m.Prepare(homeJob()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// The rollback of 0.3.90 (2026-11-07): migrations that cannot be kept but lose no data are
+// undone by their Down scripts, back to the release before's schema, and nothing is put
+// back; Down scripts that fail, or migrations that lose data, put the dump back as before.
+func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
+	for name, c := range map[string]struct {
+		reverts bool
+		fails   bool
+		down    bool // the Down scripts are what put it back
+	}{
+		"down":       {reverts: true, down: true},
+		"down fails": {reverts: true, fails: true},
+		"loses data": {reverts: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := newWorld("1.4.0")
+			r := startRig(t, t.TempDir(), w, healthy)
+			_ = r.m.Prepare(homeJob())
+			r.waitState(StatePrepared)
+			_ = r.m.Apply("run-1")
+			r.waitExit()
+			w.migrated = true
+			r.stop()
+			n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
+			n.inst.reverts = c.reverts
+			var ran atomic.Int32
+			var restored atomic.Int32
+			n.m.MigrateDown = func(_ context.Context, j *Journal, schema int64) error {
+				ran.Add(1)
+				if schema != 191 || j.Job.Version != "1.5.0" || j.From != "1.4.0" {
+					t.Errorf("MigrateDown(%s from %s, %d)", j.Job.Version, j.From, schema)
+				}
+				if c.fails {
+					return errors.New("migrate down-to 191: lock timeout")
+				}
+				return nil
+			}
+			n.m.RestoreBack = func(context.Context, *Journal, string) error { restored.Add(1); return nil }
+			n.m.Resume()
+			n.waitExit()
+			n.waitState(StateRollingBack)
+			w.mu.Lock()
+			marked, down, next := w.marked, w.down, w.next
+			w.mu.Unlock()
+			if want := int32(map[bool]int{true: 1}[c.reverts]); ran.Load() != want {
+				t.Fatalf("the Down scripts ran %d times, want %d", ran.Load(), want)
+			}
+			if down != c.down || marked == c.down || (restored.Load() == 1) == c.down {
+				t.Fatalf("record down %v, restore marked %v, dump put back %d times", down, marked, restored.Load())
+			}
+			if next != "1.4.0" {
+				t.Fatalf("switched back to %s", next)
+			}
+		})
 	}
 }
