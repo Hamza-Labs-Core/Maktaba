@@ -160,12 +160,17 @@ build fails when the two differ.
 
 ### Fixed
 
-- **On Windows, Maktaba's own plugin stages run in the worker again (Epic 54 story 54.23).** Inside
-  its AppContainer a runner cannot create the named pipes Python uses to read a tool's output, so a
-  stage that runs ffmpeg or ffprobe there failed as if the tool were broken. Until the runners start
-  tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
-  v0.3.102, and no runner is started for it.
-
+- **The Mac server starts after an app update instead of stopping at "could not start".** After
+  the update from 0.3.90 to 0.3.96 on 2026-11-08 the Mac app unregistered and registered the
+  server's login item again; macOS refused (SMAppServiceErrorDomain 22 from the old app right
+  after the install, then 1 on every launch), so the server was never started again and each
+  launch showed "The Maktaba server could not start", though launchd still had the job and it
+  was on in System Settings. A release signed with a Developer ID now keeps its login item
+  across updates (it is registered again only when its plist changes); an app still running
+  from a bundle the install replaced leaves the login item to the new build; and when macOS
+  refuses a registration while the login item is on or launchd has the job, the app starts that
+  job and waits for launchd to run it. The dialog shows only when nothing registered can start;
+  a login item turned off in System Settings still asks to be turned on there.
 - **Old backups go on their own.** The backups folder kept the newest nightly dumps and
   pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
   failed update or of a database a restore replaced was kept until more of its kind came:
@@ -2771,6 +2776,12 @@ build fails when the two differ.
 - **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
   refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
   read, so they never showed. They do now, and no family is listed twice.
+
+- **On Windows, Maktaba's own plugin stages run in the worker again (Epic 54 story 54.23).** Inside
+  its AppContainer a runner cannot create the named pipes Python uses to read a tool's output, so a
+  stage that runs ffmpeg or ffprobe there failed as if the tool were broken. Until the runners start
+  tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
+  v0.3.102, and no runner is started for it.
 
 ## [0.2.0] - 2026-10-19
 
