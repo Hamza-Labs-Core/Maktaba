@@ -533,6 +533,36 @@ def test_a_share_outside_the_brokered_folders_is_refused_never_absent(
     assert shim.exists_(str(tmp_path)) and not shim.isfile_(str(tmp_path / "none"))
 
 
+def test_a_local_folder_the_sandbox_refuses_is_never_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A local path the AppContainer has no grant for (a share this machine serves, mapped
+    back to its folder) raises from exists/isfile/isdir/lexists instead of answering False;
+    a missing local file is still False and a present one True."""
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    shim, asked = _shim(tmp_path, {})
+    denied = str(tmp_path / "denied" / "a.jpg")
+    real_stat, real_lstat = shim.stat, shim.lstat
+
+    def stat(p: Any, *a: Any, **k: Any) -> os.stat_result:
+        if str(p) == denied:
+            raise PermissionError(13, "Access is denied", denied)
+        out: os.stat_result = real_stat(p, *a, **k)
+        return out
+
+    shim.stat = stat
+    shim.lstat = lambda p, *a, **k: stat(p) if str(p) == denied else real_lstat(p, *a, **k)
+    for look in (shim.exists_, shim.isfile_, shim.isdir_, shim.lexists_):
+        with pytest.raises(PermissionError) as refused:
+            look(denied)
+        assert sandbox_refused(refused.value)
+        assert not look(str(tmp_path / "none.jpg"))
+    (tmp_path / "here.jpg").write_bytes(b"x")
+    assert shim.isfile_(str(tmp_path / "here.jpg")) and shim.isdir_(str(tmp_path))
+    assert not asked
+
+
 def test_the_broker_counts_are_taken_once_per_job(monkeypatch: pytest.MonkeyPatch) -> None:
     """``take_counts`` empties the counts (the runner's job line reads what one job made the
     broker answer); with no broker installed it is empty."""

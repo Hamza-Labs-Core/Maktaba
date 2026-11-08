@@ -250,9 +250,24 @@ class _Shim:
     # A missing file is False, as the plain calls answer; a refusal is raised: answered
     # False, a stage would go on as if the file were absent (a thumbnail not found, a job
     # done with the wrong result) instead of running in the worker (sandbox_refused).
+    def _plain_look(
+        self, look: Callable[[os.stat_result], bool], path: Any, *, follow: bool = True
+    ) -> bool:
+        """A look-up the plain call serves, answered as the plain one is but for a refusal,
+        which is raised: inside the AppContainer a folder without a grant answers
+        ``PermissionError`` (a share this machine serves, mapped back to its folder, is one),
+        and ``os.path.isfile`` and the like would answer False, as if the file were not there."""
+        try:
+            st = (self.stat if follow else self.lstat)(path)
+        except PermissionError:
+            raise
+        except (OSError, ValueError):
+            return False
+        return look(st)
+
     def exists_(self, path: Any) -> bool:
         if self._route(path) is None:
-            return self.exists(path)
+            return self._plain_look(lambda _st: True, path)
         try:
             self.stat_(path)
         except PermissionError:
@@ -263,7 +278,7 @@ class _Shim:
 
     def isfile_(self, path: Any) -> bool:
         if self._route(path) is None:
-            return self.isfile(path)
+            return self._plain_look(lambda st: stat_mod.S_ISREG(st.st_mode), path)
         try:
             return stat_mod.S_ISREG(self.stat_(path).st_mode)
         except PermissionError:
@@ -273,7 +288,7 @@ class _Shim:
 
     def isdir_(self, path: Any) -> bool:
         if self._route(path) is None:
-            return self.isdir(path)
+            return self._plain_look(lambda st: stat_mod.S_ISDIR(st.st_mode), path)
         try:
             return stat_mod.S_ISDIR(self.stat_(path).st_mode)
         except PermissionError:
@@ -285,7 +300,7 @@ class _Shim:
     # brokered file is never a link: the broker refuses one, which raises here)
     def lexists_(self, path: Any) -> bool:
         if self._route(path) is None:
-            return self.lexists(path)
+            return self._plain_look(lambda _st: True, path, follow=False)
         return self.exists_(path)
 
     def islink_(self, path: Any) -> bool:
