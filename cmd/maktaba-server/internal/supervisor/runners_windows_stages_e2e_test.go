@@ -33,10 +33,16 @@ type stageE2ECase struct {
 	// ShareRunners false: the worker runs this job with MAKTABA_WINDOWS_SHARE_RUNNERS
 	// unset, as a home does by default (native.choose's Windows share-library guard)
 	ShareRunners *bool `json:"share_runners,omitempty"`
-	group        string
-	// handOff: the runner's sandbox refuses this job by design and the worker runs it
-	// (a share folder the group writes in full is never brokered, spec 54.23 §3)
+	// Subject is video (File's video, the default) or library (Library itself)
+	Subject string `json:"subject,omitempty"`
+	// Seed gives the job its inputs before it is queued (the worker driver's seed)
+	Seed  string `json:"seed,omitempty"`
+	group string
+	// handOff: the runner's sandbox refuses this job by design and the worker runs it (a
+	// write to a share folder the group writes in full: its broker serves reads only)
 	handOff bool
+	// guarded: native.choose keeps it in the worker (a stage still guarded on a share)
+	guarded bool
 }
 
 // Story 54.23 on Windows, end to end with Maktaba's own stages (CI's runner-stages job,
@@ -49,14 +55,21 @@ type stageE2ECase struct {
 // (the API's executor, the plugins' Postgres roles); the worker is the pipeline's own
 // dispatch (testdata/runner_stages_worker.py: dispatch_job, native.choose, native.run_native).
 //
-// Two stages that capture a tool's output, each on a local library and on one on a share:
-// thumb_small (ffmpeg, the JPEG on its stdout) and convert_mp4's dry run (ffprobe's JSON on
-// its stdout, of an mp4 whose index is at its end). Each job must have run in its runner
-// (ranInRunner: the plugin chosen, run_native ok, no fallback, a token, the runner's own
-// log line) and made the right output (smallThumbnailProblems, convertPlanProblems). The
-// one exception is by design: the files group writes the libraries in full, so its share
-// is never brokered, and convert_mp4 there must be refused in the runner and run by the
-// worker (handedToWorker), never failed as a missing file.
+// The cases, on a local library and on one on a share (spec 54.23, T13):
+//   - the stages lifted out of native.choose's Windows share guard (thumb_small: ffmpeg's
+//     JPEG on its stdout; chapter_thumbs: one frame per chapter, ffmpeg seeking an mp4
+//     whose index is at its end; subtitle_gen: two subtitle files written on the share by
+//     name), run with the worker's default environment, must each have run in its runner
+//     (ranInRunner: the plugin chosen, run_native ok, no fallback, a token, the runner's
+//     own log line), reading the share through the broker (brokeredProblems) and making
+//     the right output;
+//   - convert_mp4's dry run (ffprobe's JSON on its stdout) runs in the files runner on the
+//     share too: that group's broker serves its share for reads only;
+//   - a write from the files runner to the share (trash_purge removing a trashed file) is
+//     refused by the broker, which logs it, and the job runs in the worker
+//     (handedToWorker, writeRefusedProblems);
+//   - convert_mp4, still guarded, stays in the worker with the default environment
+//     (guardedInWorker).
 func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	env := map[string]string{}
 	var missing []string
@@ -95,7 +108,7 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	share := strings.TrimRight(env["MAKTABA_STAGES_E2E_SHARE"], `\`) + `\stages-e2e`
 	shareDir := filepath.Join(env["MAKTABA_STAGES_E2E_SHARE_DIR"], "stages-e2e")
 	libraries := map[string]string{"local": filepath.Join(dir, "library"), "share": share}
-	for _, d := range []string{filepath.Join(dir, "library", "show"), filepath.Join(shareDir, "show"), filepath.Join(shareDir, "guarded")} {
+	for _, d := range []string{filepath.Join(dir, "library", "show"), filepath.Join(shareDir, "show"), filepath.Join(shareDir, "guarded"), filepath.Join(shareDir, "subs")} {
 		makeStageFixture(t, ffmpeg, d)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(shareDir) })
@@ -110,21 +123,33 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		}
 		t.Logf("fixture on the share: %s\\show\\%s, %d bytes", share, f, info.Size())
 	}
-	var cases []stageE2ECase
-	for _, lib := range []string{"local", "share"} {
-		cases = append(cases,
-			stageE2ECase{Name: "thumb_small/" + lib, Stage: "thumb_small", Library: lib, File: `show\moov_end.mp4`, group: "light"},
-			// the files group writes the libraries in full, so its share is never brokered:
-			// on the share the runner refuses the job and hands it to the worker
-			stageE2ECase{Name: "convert_mp4/" + lib, Stage: "convert_mp4", Library: lib, File: `show\moov_end.mp4`,
-				Payload: map[string]any{"dry_run": true}, group: "files", handOff: lib == "share"})
+	// the stages lifted out of native.choose's Windows share guard run on the share with the
+	// worker's default environment (MAKTABA_WINDOWS_SHARE_RUNNERS unset, as a home has it):
+	// each must have run in its runner, reading the share through the broker. A stage still
+	// guarded (convert, dedup) runs with the override to prove its runner's read side, and
+	// once without it to prove the guard
+	off := false
+	cases := []stageE2ECase{
+		{Name: "thumb_small/local", Stage: "thumb_small", Library: "local", File: `show\moov_end.mp4`, group: "light"},
+		{Name: "convert_mp4/local", Stage: "convert_mp4", Library: "local", File: `show\moov_end.mp4`,
+			Payload: map[string]any{"dry_run": true}, group: "files"},
+		{Name: "thumb_small/share", Stage: "thumb_small", Library: "share", File: `show\moov_end.mp4`, ShareRunners: &off, group: "light"},
+		{Name: "chapter_thumbs/share", Stage: "chapter_thumbs", Library: "share", File: `show\moov_end.mp4`,
+			Seed: "chapters", ShareRunners: &off, group: "light"},
+		{Name: "subtitle_gen/share", Stage: "subtitle_gen", Library: "share", File: `subs\moov_end.mp4`,
+			Seed: "transcript", ShareRunners: &off, group: "light"},
+		// ffprobe on a share file in the files runner: its broker serves that group's share
+		// for reads only, and the dry run only reads
+		{Name: "convert_mp4/share", Stage: "convert_mp4", Library: "share", File: `show\moov_end.mp4`,
+			Payload: map[string]any{"dry_run": true}, group: "files"},
+		// a write from the files runner to the share: the broker refuses the removal (and
+		// logs it), the runner refuses the job and the worker runs it
+		{Name: "trash_purge/share", Stage: "trash_purge", Library: "share", File: `show\moov_end.mp4`,
+			Subject: "library", Seed: "trash", group: "files", handOff: true},
+		// a stage still guarded, with the worker's default environment: kept in the worker
+		{Name: "convert_mp4/share-guarded", Stage: "convert_mp4", Library: "share", File: `guarded\moov_end.mp4`,
+			Payload: map[string]any{"dry_run": true}, ShareRunners: &off, group: "files", guarded: true},
 	}
-	// the guard's own case (#990): thumb_small on the share with the worker's default
-	// environment (MAKTABA_WINDOWS_SHARE_RUNNERS unset) stays in the worker, on its own copy
-	// of the fixture so its small JPEG is its own
-	no := false
-	cases = append(cases, stageE2ECase{Name: "thumb_small/share-guarded", Stage: "thumb_small", Library: "share",
-		File: `guarded\moov_end.mp4`, ShareRunners: &no, group: "light"})
 
 	// the folders the stages and the runners' areas name, all in this test's folder
 	thumbs := filepath.Join(dir, "cache", "thumbnails")
@@ -286,7 +311,8 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 			Seconds    float64        `json:"seconds"`
 			AskRefused bool           `json:"ask_refused"`
 		} `json:"runners"`
-		MigrationProblems []string `json:"migration_problems"`
+		MigrationProblems []string                  `json:"migration_problems"`
+		Seeded            map[string]map[string]any `json:"seeded"`
 	}
 	if err := json.Unmarshal(raw, &rep); err != nil {
 		t.Fatalf("the worker's report: %v", err)
@@ -321,12 +347,13 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		}
 		// the launcher's identity: it started the venv's base interpreter itself, and the
 		// broker served that process (its hello answered, no client turned away)
-		for _, p := range runnerIdentityProblems(runnerLogs[g], g == "light") {
+		for _, p := range runnerIdentityProblems(runnerLogs[g], true) {
 			t.Errorf("the %s runner: %s", g, p)
 		}
-		// light reads the share by name (brokered); files writes it in full (never brokered)
-		if want := map[string]string{"light": "plugin_runner_files_brokered", "files": "plugin_runner_area_remote"}[g]; !strings.Contains(runnerLogs[g], want) {
-			t.Errorf("the %s runner's log has no %s for the share", g, want)
+		// both groups' shares are brokered: light reads it and writes subtitles by name,
+		// files reads it only (it writes it in full, which the broker never serves)
+		if !strings.Contains(runnerLogs[g], `"plugin_runner_area_brokered"`) {
+			t.Errorf("the %s runner's launcher brokered no share", g)
 		}
 	}
 	byName := map[string]stageReport{}
@@ -343,14 +370,15 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		switch {
 		case c.handOff:
 			verdict, choice = handedToWorker, "refused in its runner by design, run by the worker"
-		case c.ShareRunners != nil && !*c.ShareRunners:
+		case c.guarded:
 			verdict, choice = guardedInWorker, "kept in the worker by the Windows share-library guard"
 		}
 		problems := verdict(c.group, r, runnerLogs[c.group])
-		if c.Library == "share" && !c.handOff && c.ShareRunners == nil {
-			problems = append(problems, brokeredProblems(r, runnerLogs[c.group])...)
+		if c.Library == "share" && !c.handOff && !c.guarded {
+			problems = append(problems, brokeredProblems(r, runnerLogs[c.group], brokerWants[c.Stage])...)
 		}
 		summary := r.summary()
+		shareFolder := filepath.Join(shareDir, filepath.Dir(c.File))
 		switch c.Stage {
 		case "thumb_small":
 			lib := libraries[c.Library]
@@ -361,6 +389,16 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		case "convert_mp4":
 			problems = append(problems, convertPlanProblems(summary, "remux",
 				[]map[string]any{{"lang": "ara", "codec": "mov_text"}})...)
+		case "chapter_thumbs":
+			problems = append(problems, chapterFramesProblems(summary, thumbs, 2)...)
+		case "subtitle_gen":
+			problems = append(problems, subtitleFilesProblems(summary, shareFolder, "moov_end", "ar", []string{"بسم الله", "الحمد لله"})...)
+		case "trash_purge":
+			trashed, _ := rep.Seeded[c.Name]["trash_path"].(string)
+			problems = append(problems, writeRefusedProblems(r, runnerLogs[c.group], "remove", trashed)...)
+			if _, err := os.Stat(trashed); err == nil {
+				problems = append(problems, "the worker did not purge the trashed file")
+			}
 		}
 		for _, p := range problems {
 			t.Errorf("%s (job %d): %s", c.Name, r.JobID, p)

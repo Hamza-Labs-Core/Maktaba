@@ -19,8 +19,9 @@ import (
 // the launcher. A subtitle (small) is written by the launcher itself from the bytes the
 // runner sends, for a subtitle name in a folder the group writes by name
 // (library.subtitles): the runner never holds a handle it could write with (nor turn into
-// a link). A folder the group writes in full (files.write) on a share is never brokered:
-// its jobs run in the worker, as before.
+// a link). A folder the group writes in full (files.write) on a share is brokered for
+// reads only: every write, rename and removal there is refused, so such a job runs in the
+// worker.
 
 // EnvFilesPipe and EnvFilesRoots tell the runner its broker (winfiles.py).
 const (
@@ -135,23 +136,21 @@ func (rs BrokerRoots) Confine(path string, write bool) (BrokerRoot, string, erro
 }
 
 // brokerRootsOf is the policy's share folders a broker serves (shared: a folder named by
-// its \\server\share path): its read areas and the folders it writes by name; a share in
-// a folder written in full is not brokered, nor a mapped drive (Confine serves only
-// \\server\share paths).
+// its \\server\share path): its read areas and the folders it writes by name. A share in a
+// folder the group writes in full (the file stages) is served for reads only, as its own
+// local folder is: WriteNamed stays false, so Confine refuses every write, rename and
+// removal there, and a job that writes a share runs in the worker. A mapped drive is not
+// brokered (Confine serves only \\server\share paths).
 func brokerRootsOf(p RunnerPolicy, shared func(string) bool) BrokerRoots {
 	named := map[string]bool{}
 	for _, x := range p.WriteNamed {
 		named[pathKey(x)] = true
 	}
-	full := map[string]bool{}
-	for _, x := range p.Write {
-		full[pathKey(x)] = true
-	}
 	seen := map[string]bool{}
 	var out BrokerRoots
 	for _, x := range append(append([]string{}, p.Read...), p.WriteNamed...) {
 		k := pathKey(x)
-		if seen[k] || full[k] || !shared(x) {
+		if seen[k] || !shared(x) {
 			continue
 		}
 		seen[k] = true

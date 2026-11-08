@@ -547,9 +547,19 @@ func TestARunnersBrokerServesOnlyItsShareFolders(t *testing.T) {
 		Write:      []string{`\\nas\c`},
 		Python:     []string{`\\nas\py`},
 	}, remote)
-	want := BrokerRoots{{Path: `\\nas\a`, WriteNamed: true}, {Path: `\\nas\b`}}
+	// a share written in full (\\nas\c) is served for reads only: never WriteNamed, so every
+	// write, rename and removal there is refused (Confine)
+	want := BrokerRoots{{Path: `\\nas\a`, WriteNamed: true}, {Path: `\\nas\b`}, {Path: `\\nas\c`}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("brokered %+v, want %+v", got, want)
+	}
+	for _, path := range []string{`\\nas\c\show\ep1.en.srt`, `\\nas\c\show\ep1.mp4`, `\\nas\c\show\ep1.en.srt.maktaba-tmp`} {
+		if _, _, err := got.Confine(path, true); err == nil {
+			t.Errorf("a write of %s in a folder the group writes in full was confined", path)
+		}
+		if _, _, err := got.Confine(path, false); err != nil {
+			t.Errorf("a read of %s: %v", path, err)
+		}
 	}
 
 	// an administrative share is never brokered, nor a share this machine serves from a

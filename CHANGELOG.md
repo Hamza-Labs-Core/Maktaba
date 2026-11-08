@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **On a Windows home with a library on a network share, thumbnails, chapter frames and
+  subtitle files are made in their sandboxed runners again (story 54.23).** Since v0.3.105's
+  missed thumbnails, every step that touches a library ran in the queue worker while a library
+  was on a share. The small thumbnail, the chapter frames and the subtitle files now run in
+  their runners there, reading the share through the runner's file broker. Steps that rewrite
+  library files (convert, duplicates, repair, YouTube downloads) and transcription still run
+  in the worker on a share.
+
 - **Maktaba no longer syncs your library into Plex, and the dizqueTV integration is removed.**
   Maktaba now replaces Plex for watching the library. These are gone:
   - the Plex index, the season collections, the clip-group collections and the import of
