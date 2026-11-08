@@ -33,11 +33,23 @@ type Rule struct {
 	Query map[string]*regexp.Regexp
 	// Required: parameters that must be present (with Query's pattern).
 	Required []string
+	// QueryKeys: families of parameters whose names follow a pattern (Plex's
+	// channelMapping[<n>]), each name once, its value matching Value.
+	QueryKeys []KeyRule
+	// HomeOnly: only a caller on the home itself may make this call (a first-party
+	// plugin's stage there, Epic 54 story 54.35); a node never may.
+	HomeOnly bool
 	// Use names the client call that needs it (documentation).
 	Use string
 	// Verify, when set, is checked against the upstream before the call
 	// is forwarded (DELETE only removes collections).
 	Verify string
+}
+
+// KeyRule is a family of query parameters: a name pattern and its value's.
+type KeyRule struct {
+	Name  *regexp.Regexp
+	Value *regexp.Regexp
 }
 
 // VerifyCollection: the rating key in the path must name a collection.
@@ -85,6 +97,14 @@ var (
 	only18    = regexp.MustCompile(`^18$`)
 	only2     = regexp.MustCompile(`^2$`)
 	itemType  = regexp.MustCompile(`^(1|4)$`)
+	// Live TV: Maktaba's own HDHomeRun tuner and XMLTV guide
+	tunerURL      = regexp.MustCompile(`^https?://[A-Za-z0-9.\-\[\]:]{1,255}(/[^\x00-\x20]{0,512})?$`)
+	language      = regexp.MustCompile(`^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$`)
+	hdhrDevice    = regexp.MustCompile(`^device://tv\.plex\.grabbers\.hdhomerun/[A-Za-z0-9-]{1,64}$`)
+	xmltvLineup   = regexp.MustCompile(`^lineup://tv\.plex\.providers\.epg\.xmltv/[^\x00-\x1f]+$`)
+	channelList   = regexp.MustCompile(`^[0-9]{1,6}(,[0-9]{1,6})*$`)
+	channelMapKey = regexp.MustCompile(`^channelMapping(ByKey)?\[[0-9]{1,6}\]$`)
+	channelNumber = regexp.MustCompile(`^[0-9]{1,6}$`)
 )
 
 func q(pairs ...any) map[string]*regexp.Regexp {
@@ -134,6 +154,38 @@ var Plex = Extension{
 			Required: []string{"type", "id", "label[0].tag.tag"}, Use: "add_label"},
 		{Method: "DELETE", Path: "/library/metadata/{key} (collections only)", Re: regexp.MustCompile(`^/library/metadata/[0-9]{1,12}$`),
 			Verify: VerifyCollection, Use: "delete_metadata (a collection)"},
+		// Live TV (story 54.35): what plex_livetv calls, from its plugin on the home only
+		// (the stage is home-placed; no node makes these calls)
+		{Method: "GET", Path: "/livetv/dvrs", Re: regexp.MustCompile(`^/livetv/dvrs$`),
+			HomeOnly: true, Use: "dvrs"},
+		{Method: "GET", Path: "/media/grabbers/devices", Re: regexp.MustCompile(`^/media/grabbers/devices$`),
+			HomeOnly: true, Use: "grabber_devices"},
+		{Method: "POST", Path: "/media/grabbers/devices", Re: regexp.MustCompile(`^/media/grabbers/devices$`),
+			Query: q("uri", tunerURL), Required: []string{"uri"}, HomeOnly: true, Use: "add_grabber_device"},
+		{Method: "POST", Path: "/livetv/dvrs", Re: regexp.MustCompile(`^/livetv/dvrs$`),
+			Query:    q("language", language, "device", hdhrDevice, "lineup", xmltvLineup, "lineupTitle", anyTitle),
+			Required: []string{"language", "device", "lineup", "lineupTitle"}, HomeOnly: true, Use: "create_dvr"},
+		{Method: "PUT", Path: "/livetv/dvrs/{key}/lineups", Re: regexp.MustCompile(`^/livetv/dvrs/[0-9]{1,12}/lineups$`),
+			Query: q("lineup", xmltvLineup), Required: []string{"lineup"}, HomeOnly: true, Use: "add_dvr_lineup"},
+		{Method: "DELETE", Path: "/livetv/dvrs/{key}/lineups", Re: regexp.MustCompile(`^/livetv/dvrs/[0-9]{1,12}/lineups$`),
+			Query: q("lineup", xmltvLineup), Required: []string{"lineup"}, HomeOnly: true, Use: "remove_dvr_lineup"},
+		{Method: "PUT", Path: "/livetv/dvrs/{key}/devices/{device}", Re: regexp.MustCompile(`^/livetv/dvrs/[0-9]{1,12}/devices/[0-9]{1,12}$`),
+			HomeOnly: true, Use: "add_dvr_device"},
+		{Method: "DELETE", Path: "/livetv/dvrs/{key}/devices/{device}", Re: regexp.MustCompile(`^/livetv/dvrs/[0-9]{1,12}/devices/[0-9]{1,12}$`),
+			HomeOnly: true, Use: "remove_dvr_device"},
+		{Method: "DELETE", Path: "/livetv/dvrs/{key}", Re: regexp.MustCompile(`^/livetv/dvrs/[0-9]{1,12}$`),
+			HomeOnly: true, Use: "delete_dvr"},
+		{Method: "POST", Path: "/livetv/dvrs/{key}/reloadGuide", Re: regexp.MustCompile(`^/livetv/dvrs/[0-9]{1,12}/reloadGuide$`),
+			HomeOnly: true, Use: "reload_guide"},
+		{Method: "DELETE", Path: "/media/grabbers/devices/{key}", Re: regexp.MustCompile(`^/media/grabbers/devices/[0-9]{1,12}$`),
+			HomeOnly: true, Use: "delete_grabber_device"},
+		{Method: "PUT", Path: "/media/grabbers/devices/{key} (title)", Re: regexp.MustCompile(`^/media/grabbers/devices/[0-9]{1,12}$`),
+			Query: q("title", anyTitle, "enabled", only1), Required: []string{"title", "enabled"}, HomeOnly: true,
+			Use: "set_device_title"},
+		{Method: "PUT", Path: "/media/grabbers/devices/{key}/channelmap", Re: regexp.MustCompile(`^/media/grabbers/devices/[0-9]{1,12}/channelmap$`),
+			Query:     q("channelsEnabled", channelList),
+			QueryKeys: []KeyRule{{Name: channelMapKey, Value: channelNumber}},
+			Required:  []string{"channelsEnabled"}, HomeOnly: true, Use: "put_channel_map"},
 	},
 }
 
@@ -150,6 +202,12 @@ var (
 // extension's rules. It returns the rule and the path and raw query to
 // forward unchanged.
 func (e *Extension) Match(method, target string) (*Rule, string, string, error) {
+	return e.MatchFor(false, method, target)
+}
+
+// MatchFor is Match for a caller on the home (home) or a node: a HomeOnly rule
+// matches only a caller on the home.
+func (e *Extension) MatchFor(home bool, method, target string) (*Rule, string, string, error) {
 	if len(target) == 0 || len(target) > MaxTarget || target[0] != '/' {
 		return nil, "", "", ErrBadTarget
 	}
@@ -176,7 +234,7 @@ func (e *Extension) Match(method, target string) (*Rule, string, string, error) 
 	method = strings.ToUpper(method)
 	for i := range e.Rules {
 		r := &e.Rules[i]
-		if r.Method != method || !r.Re.MatchString(path) {
+		if r.Method != method || !r.Re.MatchString(path) || (r.HomeOnly && !home) {
 			continue
 		}
 		if queryOK(r, values) {
@@ -189,6 +247,14 @@ func (e *Extension) Match(method, target string) (*Rule, string, string, error) 
 func queryOK(r *Rule, values url.Values) bool {
 	for k, vs := range values {
 		re, ok := r.Query[k]
+		if !ok {
+			for _, kr := range r.QueryKeys {
+				if kr.Name.MatchString(k) {
+					re, ok = kr.Value, true
+					break
+				}
+			}
+		}
 		if !ok || len(vs) != 1 || !re.MatchString(vs[0]) {
 			return false
 		}

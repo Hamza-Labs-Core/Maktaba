@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import re
 import shutil
@@ -200,6 +201,8 @@ class Side:
     #: sides run the same queries
     cpu_times: dict[str, list[float]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
+    #: the extensions' settings its jobs get (story 54.35: each side's own fake Plex)
+    extension_states: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -223,7 +226,7 @@ class Parity:
         """Run every claimable job of the graph on one side, timing each."""
         from maktaba_pipeline.engine.claim import claim_for_pool
 
-        rt = EngineRuntime(graph=self.graph)
+        rt = EngineRuntime(graph=self.graph, extension_states=side.extension_states)
         pools = sorted({s.pool for s in self.graph.values()})
         for _ in range(limit):
             job = None
@@ -391,7 +394,8 @@ class Parity:
                     marks.clear()
                     cpu0, api0 = time.process_time(), _cpu_of(self.api_pid)
                     t0 = time.perf_counter()
-                    await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
+                    side_rt = EngineRuntime(graph=rt.graph, extension_states=side.extension_states)
+                    await dispatch_job(side.db, job, runtime=side_rt, legacy_handlers={})
                     t1 = time.perf_counter()
                     cpu1, api1 = time.process_time(), _cpu_of(self.api_pid)
                     took = t1 - t0
@@ -563,6 +567,10 @@ class Parity:
             res = []
             for r in rows:
                 d = dict(r.items())
+                # a tool's own pointers in its error text (ffmpeg's "[mov,mp4 @ 0x7486c48000]")
+                # differ from run to run
+                if isinstance(d.get("message"), str):
+                    d["message"] = _ADDRESS.sub("0x…", d["message"])
                 k = tuple(d.values())
                 seen[k] = seen.get(k, 0) + 1
                 res.append({**d, "n": seen[k]})
@@ -620,8 +628,10 @@ async def parity(
     seed: Seed,
     group: str = "light",
     files: dict[str, Path] | None = None,
+    plex: tuple[str, str] | None = None,
     monkeypatch: Any,
 ) -> AsyncIterator[Parity]:
+    """``plex``: the (URL, token) the plugin API's service door forwards to (story 54.35)."""
     import asyncpg  # type: ignore[import-untyped]
 
     from maktaba_pipeline.plugins import firstparty, native
@@ -675,6 +685,7 @@ async def parity(
                 str(api_sock),
                 "-bundle",
                 str(tmp / "bundle.json"),
+                *(["-plex-url", plex[0], "-plex-token", plex[1]] if plex else []),
             ],
             stdout=subprocess.PIPE,
             text=True,
@@ -689,6 +700,9 @@ async def parity(
         # the worker's areas (the runner's sandbox folders), as refresh_stages writes them
         native._AREAS_WRITTEN.clear()
         areas = await native.write_areas(b)
+        from maktaba_plugin_runner.server import library_roots
+
+        area_dirs = json.loads((run_dir / native.AREAS_FILE).read_text()).get("areas") or {}
         runner = Runner(
             group=group,
             api_socket=str(api_sock),
@@ -696,6 +710,7 @@ async def parity(
             plugin_of={s: firstparty.by_stage(s).id for s in stages},  # type: ignore[union-attr]
             bundle=firstparty.bundle_digest(),
             areas=areas,
+            library_roots=library_roots(area_dirs),
         )
         sock = run_dir / f"runner-{group}.sock"
         task = asyncio.create_task(runner.serve(sock))
@@ -735,6 +750,9 @@ async def parity(
             await admin.execute(f'DROP DATABASE IF EXISTS "{n}" WITH (FORCE)')
         await admin.close()
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+_ADDRESS = re.compile(r"0x[0-9a-f]{6,}")
 
 
 class SameIds:

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -405,5 +406,49 @@ func TestAMachineAsksForItsAccess(t *testing.T) {
 	}
 	if strings.Count(logged, `"access_request"`) < 5 || strings.Contains(logged, "fresh") {
 		t.Fatalf("the events file: %s", logged)
+	}
+}
+
+// A machine's metrics (Epic 53 story 53.12) go to the home's /metrics, asked every
+// scrape: neither the command nor its answer goes into the hub's event log, and a
+// worker's session does not take it.
+func TestMetricsCommandQuiet(t *testing.T) {
+	f := newFixture(t)
+	id, priv := f.approvedNode("studio-gpu")
+	a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for range 2 {
+			cmd := a.recvType("cmd")
+			a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true,
+				"detail": "maktaba_host_load1{machine=\"x\"} 1.5\n"})
+		}
+	}()
+	res, err := f.hub.CommandWithin(context.Background(), a.Session, "metrics", nil, "system:metrics", 5*time.Second)
+	if err != nil || !res.OK || !strings.Contains(string(res.Detail), "maktaba_host_load1") {
+		t.Fatalf("metrics: %+v %v", res, err)
+	}
+	// a logged command after it: once its result is in the log, the metrics' would be too
+	if _, err := f.hub.CommandWithin(context.Background(), a.Session, "logs.files", json.RawMessage(`{}`), "admin", 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	logged := ""
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		f.hub.files.Flush()
+		if logged = strings.Join(readLines(t, eventsPath(f)), "\n"); strings.Contains(logged, `"cmd.result"`) {
+			break
+		}
+	}
+	if !strings.Contains(logged, "logs.files") || strings.Contains(logged, `"metrics"`) || strings.Contains(logged, "maktaba_host_load1") {
+		t.Fatalf("the event log: %s", logged)
+	}
+	w, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, workerID: "maktaba-node"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.hub.CommandWithin(context.Background(), w.Session, "metrics", nil, "system:metrics", time.Second); !errors.Is(err, ErrBadCommand) {
+		t.Fatalf("a worker took metrics: %v", err)
 	}
 }

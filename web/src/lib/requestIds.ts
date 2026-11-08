@@ -63,3 +63,16 @@ export function lastRequests(): RequestSeen[] {
 export function shortRef(id: string | undefined): string {
   return id ? id.slice(0, 8) : "";
 }
+
+/**
+ * A streaming playlist's URL carrying the request id as `rid` (story 53.08): a player can't
+ * add a header to every fetch, so streaming reads the id from the query and logs it with the
+ * request's failures. Ids are not secrets. A URL that already names one is left as it is.
+ */
+export function withRequestId(url: string, id: string | undefined): string {
+  if (!id || /[?&]rid=/.test(url)) return url;
+  const hash = url.indexOf("#");
+  const base = hash < 0 ? url : url.slice(0, hash);
+  const frag = hash < 0 ? "" : url.slice(hash);
+  return `${base}${base.includes("?") ? "&" : "?"}rid=${encodeURIComponent(id)}${frag}`;
+}

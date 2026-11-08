@@ -185,7 +185,7 @@ func (d *Deps) Handler() http.Handler {
 				return
 			}
 			// not here, or only a draining tunnel: a newer one on a peer wins
-			if !hopped && d.forwardIfElsewhere(w, r, slug, t) {
+			if !hopped && d.forwardIfElsewhere(w, r, slug, sv.ID, t) {
 				return
 			}
 			if t != nil {
@@ -201,7 +201,7 @@ func (d *Deps) Handler() http.Handler {
 			return
 		}
 		// the home was here a moment ago: hold the request while it reconnects
-		t, served := d.hold(w, r, slug, hopped)
+		t, served := d.hold(w, r, slug, sv.ID, hopped)
 		switch {
 		case served:
 		case t != nil:
@@ -452,6 +452,11 @@ func setForwarded(h http.Header, r *http.Request) {
 // Caddy in front of the relay), which appends the address it saw as the
 // rightmost X-Forwarded-For entry. Entries further left are the client's
 // own claims and are never trusted.
+// ClientIP is the address the relay attributes r to (its access log, its stream keys): the
+// rightmost X-Forwarded-For entry when the peer is Caddy on the loopback or a private
+// address, else the peer. CF-Connecting-IP is never read.
+func ClientIP(r *http.Request) string { return clientIP(r) }
+
 func clientIP(r *http.Request) string {
 	peer, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {

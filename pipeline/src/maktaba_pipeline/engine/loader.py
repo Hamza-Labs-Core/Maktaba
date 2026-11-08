@@ -7,8 +7,8 @@ from dataclasses import replace
 
 from ..extensions.base import Extension
 from ..extensions.store import ExtensionState
+from ..schedule.plan_inputs import register_plan_exporter
 from .graph import GRAPH, GraphBuilder, StageDef, validate
-from .stages.plan_channels import register_plan_exporter
 from .stages.registry import register_impl
 
 __all__ = ["build_full_graph", "register_extension_impls"]

@@ -14,6 +14,23 @@ build fails when the two differ.
 
 ### Changed
 
+- **A page's counts, dates and episode numbers follow the language it is drawn in (Apple apps,
+  Android).** On the Apple apps a series' episode count and year, a video's length and date, and
+  an episode's season and number now take the page's language, as its other words do, so a page
+  drawn in Arabic in a preview or a page snapshot says them in Arabic. On Android a series' year
+  is written in the same digits as its episode count.
+- **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
+  Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
+  home's secure LAN names from the browser, and when none answers it explains that the router
+  blocks them (DNS rebinding protection) and apps will use the home's address instead.
+- **Apps can reach a home on its own network by address when the router blocks its name
+  (Epic 50 story 50.15).** Some routers refuse names that point at addresses on the home
+  network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
+  carries each LAN address both by name and by address, the address checked against the home's
+  own certificate, so an app on that network still proves it reached this home.
+- **Android and the Apple apps use those LAN addresses (Epic 50 story 50.15 §3).** They try a
+  home's `local_ip` entries after its LAN name and before the direct and relay paths, and accept
+  one only when its certificate holds the home's own name for that same address (`tls_name`).
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
@@ -119,6 +136,11 @@ build fails when the two differ.
   row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
   or recast data, or a Down script fails.
 
+- **A cloud node that loses the lead no longer keeps trying to take the Floating IP (Epic 50
+  story 50.07).** When Hetzner's API refuses the move for a minute, the new leader keeps retrying
+  in the background; that retry now stops as soon as Patroni says the node no longer leads, so a
+  node demoted meanwhile can't pull the IP back. While Patroni doesn't answer at all, it keeps
+  trying, so the IP still moves to a real leader.
 - **A cloud deploy now updates the API and the worker (Epic 50).** Deploys installed the new
   release only for the relay and the name server, so the API and the worker never ran a
   release on the nodes. They now get it too, the standby first; on the leader they restart,
@@ -338,9 +360,26 @@ build fails when the two differ.
   started, on a circular import, and was marked failed after five restarts; the worker ran
   the built-in plugins' stages in-process meanwhile, so no job was lost, but none ran in its
   runner. The runners start again, and a test imports each entry point in a fresh process.
+- **A plugin can no longer write another library's video by spelling its id differently
+  (Epic 54).** A statement scoped to the job's subject checked a video id from a library job
+  by its exact text, so the same id in capitals, without hyphens or in braces passed as a
+  video that no longer exists, while the database still found it. The id is now read as an
+  id first, and anything that isn't one is refused.
 
 ### Security
 
+- **The cloud's operator console has its own listener and name (Epic 50 story 50.32).** Every
+  `/v1/admin/*` route is served only by the api role's admin listener, for `admin.maktaba.tv`
+  alone: on the user names each one is the same 404 as a route that doesn't exist. The console
+  listener allows no cross-origin call, and a change from it must carry the console's own
+  Origin and header, or it is refused before anything runs. The user API answers only its own
+  names, and the sign-in cookie is now `__Host-maktaba_refresh`, which a browser never shares
+  with another name. The relay's access log records the visitor's address instead of the
+  proxy's.
+- **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
+  network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
+  a channel listing and a download and fails on one the plugin's reviewed `net` list does not
+  name (story 54.33 T02, issue 805).
 - **Settings → Models no longer keeps an OpenAI API key in the browser.** The page had a key
   field that saved what was typed into the browser's storage in plain text and never used it
   (the server reads `OPENAI_API_KEY`). The field is gone, the page says where the key is set,
@@ -359,9 +398,22 @@ build fails when the two differ.
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
   the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
+- **A file job in a plugin's runner moves only its own subject's files (Epic 54 wave 5, story
+  54.32 §2).** The runner's sandbox lets the file plugins write anywhere in the library, so a
+  merge, a conversion or a restore could move a file that is not its own. Now, before such a
+  job starts, the runner reads its subject's files (a duplicate group's members, a video's file
+  and its MP4, the ledger rows a restore names), and refuses any other library file with
+  `plugin_scope`: the job fails, not retried, and the file stays where it is.
 
 ### Added
 
+- **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
+  and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
+  (its functions and line table, keyed by the binary's UUID), uploaded with the new
+  `maktaba-symbols upload` command and a symbols token (`MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE`). The
+  operator console's report page shows each crash, top frame first, with the function, file and
+  line where a table is uploaded and names the binaries that have none; a new **Crash symbols**
+  page lists the uploaded tables. The cloud never receives the dSYM itself.
 - **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
   the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
   homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
@@ -1272,6 +1324,23 @@ build fails when the two differ.
   can open; a plugin still gets no network, no files and no sockets of its own. maktaba.dev:
   Building Maktaba plugins, Installing and managing plugins, The sandbox.
 
+- **Cloudflare in front of the cloud (Epic 50, story 50.30).** The zone's TLS settings, the WAF
+  managed rules, four custom rules and two rate limits are written in
+  `deploy/cloudflare/zone.maktaba.tv.json`; CI checks the file against its plan and 50.34's
+  workflow applies it. Signing up, signing in and asking for a password reset on the web can ask
+  for a Cloudflare Turnstile check, turned on in the production config; the api verifies the
+  token and answers `turnstile_failed` or `turnstile_unavailable`. The web app explains those
+  and the edge's `rate_limited` in English and Arabic.
+
+- **The cloud's API is reached only through Cloudflare (Epic 50, story 50.31).** The leading
+  node runs a Cloudflare Tunnel connector beside the API, and Caddy serves relay names only. CI
+  writes the Tunnel's routes and the names' DNS records from
+  `deploy/cloudflare/tunnel.maktaba.tv.json`. The API believes `CF-Connecting-IP` only from a
+  peer listed in the new `server.trusted_proxies` (the local connector) and never reads
+  `X-Forwarded-For`, so rate limits, the blocklist, the audit log and the access log can no
+  longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
+  production the API refuses a public listener.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -1873,6 +1942,33 @@ build fails when the two differ.
   **Check for purchases now**); the old one stops at its next daily check, keeping the plugin's
   queue and data.
 
+- **The cloud keeps and searches its own logs (Epic 53 story 53.17).** Each Maktaba Cloud node
+  keeps its processes' lines for 14 days and sends them to the witness: warnings within a
+  second, the rest every 10 seconds, with no gap or duplicate when the network drops. The
+  witness indexes every node's lines, so the service admin's **Logs** and **Errors** pages
+  search the whole cloud even while a node is down. Errors shows the cloud's own groups beside
+  the homes' anonymous ones, with the problem reports that name each. A line names a home only
+  by a hash, never its address, and never logs an email or a token. Every process serves its
+  error, request and log metrics for the monitoring (`shared/metrics/cloud-series.md`), and
+  each runbook's Check step links to a saved search.
+
+- **Cloudflare deploys from CI only (Epic 50, story 50.34).** The cloud's Cloudflare
+  configuration (the zone's rules, the Tunnel's ingress, the two web Workers) has its own
+  workflows. Pull requests only check the files offline. A push to `main` deploys, after a
+  token check that names any missing permission before anything is written, and a smoke check
+  of the live hosts follows. Each job skips with a notice until its secrets are set. A weekly job
+  proposes Cloudflare's changed IP ranges as a pull request. `deploy/cloudflare/README.md` lists
+  each piece's token permissions.
+
+- **A plugin's data migrates before its new version runs (Epic 54, story 54.07 §5).** When
+  an update raises a plugin's `data_version`, its other stages wait while one migrate job
+  runs on the home first: the plugin's `run` gets the stage `__migrate` with `{"from", "to"}`
+  when its manifest says `migrate = true`, and nothing runs when it does not. The new
+  `plugin_installs.data_version` keeps the data's own version until then (migration 0209),
+  and a rollback before the migration ran no longer needs the plugin's data cleared.
+  maktaba.dev: Queue stages and the plugin API, *Migrating your data*; the manifest's
+  `migrate` field.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -1965,6 +2061,100 @@ build fails when the two differ.
   for `admin.maktaba.tv` only. The account app has no Admin link or route any more (`/admin` is its
   new 404 page, like any unknown path), and CI fails an account-app build that carries an admin
   or staff API path, an admin string or a console module.
+
+- **Maktaba's built-in plugin runners start only when they have work.** An idle home runs
+  none of them: a runner starts when the first job of its kind arrives (that job runs in the
+  worker meanwhile) and stops after ten idle minutes. The Core install is back to its four
+  processes and its memory budget at rest.
+
+- **Plex runs as Maktaba's built-in plugin, through the home's service door (Epic 54 wave
+  8).** Indexing Plex, writing collections, reading Plex's own collections back and keeping
+  Maktaba's channels in Plex Live TV run in `tv.maktaba.plex`, in a runner with no network:
+  every call to Plex goes through the home's service door, which adds the Plex token and
+  removes it from every answer, so the plugin never holds the token or Plex's address. The
+  dizqueTV stages stay in the worker for now. The parity proof compares the calls Plex receives
+  on both paths.
+
+- **Live TV's channel planning and TV changes run as Maktaba's built-in plugins (Epic 54
+  wave 7).** Planning and writing the channels run in `tv.maktaba.livetv`, and staging,
+  swapping, rolling back and cleaning up TV changes in `tv.maktaba.livetv-slots`, in the
+  sandboxed `light` runner. A swap and a rollback still put the TV settings on the air in
+  one step with the lineup: the worker does that part for the plugin's job. The dizqueTV
+  export's additions to the plan keep working there. The parity proof compares the plan,
+  the channels, the TV change and its schedule through a stage, a swap, a rollback and the
+  clean-up.
+
+- **YouTube and the repair of broken downloads run as Maktaba's built-in plugins (Epic 54
+  wave 6).** Listing channels and playlists, downloading, filling a back catalogue and
+  fetching exact upload dates run in `tv.maktaba.youtube`, and fetching a broken download
+  again in `tv.maktaba.repair`, in the sandboxed `net` runner, the only one that reaches the
+  network. Each reads only the rules it lists, a new download's first job is queued once its
+  video is saved, and the parity proof compares the downloaded files, the rows and the queue
+  with the recorded yt-dlp.
+
+- **Converting, duplicates and the file trash run as Maktaba's built-in plugins (Epic 54
+  wave 5).** The conversion to MP4 runs in `tv.maktaba.convert`, and finding and merging
+  duplicates, emptying the trash and restoring from it in `tv.maktaba.dedup`, in the
+  sandboxed `files` runner, a new runner group of their own (in `light` their library writes
+  would have covered the subtitles' name-only rule): they write only the library's folders and their trash, and what
+  only the engine may change (queuing jobs, a merge's re-pointing of everything that refers
+  to a video, a restored video's state) the worker does for them, checked against the job.
+  The parity proof compares the library and its trash byte for byte, through a merge, a
+  restore and a purge.
+
+- **`server.log` keeps the warnings and errors (Epic 53 story 53.02).** After one release with
+  both written, the server's parts send only their warnings and errors to `server.log`, beside
+  the supervisor's and the launcher's own lines, so a busy pipeline no longer pushes a crash out
+  of it. Every line is still in the log segments, the Logs page and the recovery console.
+  `server_log = "all"` under `[logs]` in `server.toml` brings every line back.
+
+- **The cloud rehearsal proves direct remote access end to end (Epic 50 story 50.15, T06,
+  T10, T12).** Its `direct-remote` scenario puts two homes behind a router that maps ports,
+  with the cloud's relay, worker and name server and two certificate authorities on the other
+  side. Each home gets its certificate through the cloud, the second from the overflow
+  authority once the week's budget is used, and passes the outside check, and an app outside
+  downloads from each home directly, never through the relay. The cloud's name server now
+  starts: its role was refused as unknown.
+
+- **The cloud rehearsal proves the origin is reached only through Cloudflare (Epic 50 story
+  50.31, T06–T08).** Two new scenarios run the pair with production's Caddyfile and firewall,
+  the api behind the loopback, and a stand-in for Cloudflare's edge and its connector. In
+  `origin-only-via-edge`, the Floating IP answers only 80 and 443 from the internet, refuses
+  the api's name on 443, and a forged client address never reaches the api or the relay; with
+  the leader powered off, the connector moves to the new leader and the api is back within the
+  3-minute RTO. In `origin-aop`, the fallback origin answers only with the client certificate
+  and only from the test Cloudflare ranges.
+
+- **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
+  queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
+  admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
+  Apple, Android and Android TV) carries the id of the call that opened the session (`rid`), and streaming logs it on a failed
+  playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
+  lines for the same action. Streaming's failure lines also carried no request id until now.
+
+- **A folder scan is a queue stage like the others (Epic 54, story 54.36).** The scan reports
+  the new videos it found, and the queue starts each one's checks from that, instead of the
+  scanner queuing them itself. What a scan finds and what runs after it are unchanged; a scan
+  that finds nothing new starts nothing.
+- **Reading a video's length and audio tracks is a queue stage like the others (Epic 54,
+  story 54.36).** It saves what it reads as before, and the queue decides what runs next from
+  the length and frame size it reports, as it did. Its run now notes how many audio tracks it
+  found and the video's new state.
+- **Making a video's poster and sprite is a queue stage like the others (Epic 54, story
+  54.36).** It makes and saves the same images, on the home only, as before. A run that makes
+  the same images as the last one now counts as unchanged, and its run notes the chapter
+  frames it made and the video's state.
+- **Pulling a video's audio for transcription is a queue stage like the others (Epic 54,
+  story 54.36).** It picks the same track and writes the same audio file as before, and still
+  asks for transcription only when the video's transcription is not already handled. Its run
+  now notes the track it used, whether it wrote a file, and the video's state.
+
+- **The home's dashboards show every joined machine (Epic 53 story 53.12).** The Overview's
+  memory, disk free and load, and its components and restarts, now carry a line for each joined
+  machine beside the home's. The home asks each machine's own agent over the cluster channel at
+  most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
+  never holds the dashboards back. Component series keep their cap per machine, and come last on a
+  board so each machine's memory, disk and load stay within its 50 lines.
 
 ### Fixed
 
@@ -2441,6 +2631,29 @@ build fails when the two differ.
   `plugin_compile_timeout`), and the host compiles every installed plugin in the background
   when it starts, so an update that changes the plugin engine recompiles each one before its
   first job. maktaba.dev: Testing and packaging.
+
+- **The Queue and Processing dashboards show the queue (Epic 53 story 53.12).** Both boards were
+  empty: they kept series that nothing exported. The home's metrics now carry the jobs waiting or
+  running by stage, the jobs finished in the last hour by stage and outcome, the audio
+  transcribed in the last hour and the transcription speed, read from the queue once a minute.
+
+- **The Streaming dashboard shows the TV (Epic 53 story 53.12).** The dashboards read only the
+  API's metrics, so the TV's channels on air, switches, failovers and viewers never reached the
+  Streaming board. They read streaming's too now; a series both processes have is kept from the
+  API's.
+
+- **The Overview dashboard shows the API's requests per minute and its p95 response time (Epic 53
+  story 53.12).** The response-time histogram is kept as two lines over all routes at once: the
+  requests in each minute, and the time 95 % of them were answered within.
+
+- **The Overview dashboard shows each machine's memory, disk and load (Epic 53 story 53.12).** The
+  supervisor now reports its machine's memory and how much is free, the free space on the disk
+  that holds the data folder, the one-minute load average and the number of CPUs. A reading the
+  system doesn't give (Windows keeps no load average) is left out rather than shown as 0.
+
+- **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
+  refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
+  read, so they never showed. They do now, and no family is listed twice.
 
 ## [0.2.0] - 2026-10-19
 

@@ -47,7 +47,7 @@ public actor APIClient {
     /// For tests: the waits returned at once.
     func setReconnectSleep(_ f: @escaping @Sendable (Duration) async throws -> Void) { reconnectSleep = f }
 
-    public init(home: URL, tokens: TokenStore, session: URLSession = .shared) {
+    public init(home: URL, tokens: TokenStore, session: URLSession = PinnedTrust.session) {
         self.home = home
         self.tokens = tokens
         self.session = session
@@ -123,7 +123,11 @@ public actor APIClient {
         var body: [String: Any] = ["video_id": video]
         if startSec > 0 { body["start_sec"] = startSec }
         if let maxBitrateKbps, maxBitrateKbps > 0 { body["max_bitrate_kbps"] = maxBitrateKbps }
-        return try await send(request("POST", "/api/stream/sessions", body: body))
+        let r = request("POST", "/api/stream/sessions", body: body)
+        var s: StreamSession = try await send(r)
+        // the playlist carries the open call's id (Epic 53 story 53.08)
+        s.requestID = r.value(forHTTPHeaderField: RequestID.header)
+        return s
     }
 
     /// The header the player sends with every `/stream/` request (the web port lets only

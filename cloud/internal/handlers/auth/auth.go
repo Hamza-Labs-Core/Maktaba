@@ -31,6 +31,7 @@ import (
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 )
 
 // Deps bundles the collaborators each handler needs.
@@ -50,6 +51,10 @@ type Deps struct {
 	WebURL       string
 	CookieDomain string
 	Secure       bool
+	// Turnstile checks the bot-check token on register, login and forgot-password for web
+	// origins (story 50.30 §4; nil: off). TurnstileSiteKey is served to the web pages.
+	Turnstile        *turnstile.Guard
+	TurnstileSiteKey string
 }
 
 // Router is the part of chi.Router Mount needs.
@@ -103,9 +108,10 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 type registerReq struct {
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	DisplayName string `json:"display_name"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	DisplayName    string `json:"display_name"`
+	TurnstileToken string `json:"turnstile_token"`
 }
 
 type authResp struct {
@@ -148,6 +154,9 @@ func normalizeEmail(s string) string {
 func (d *Deps) Register(w http.ResponseWriter, r *http.Request) {
 	var req registerReq
 	if !decode(w, r, &req) {
+		return
+	}
+	if !d.Turnstile.Require(w, r, req.TurnstileToken) {
 		return
 	}
 	email := normalizeEmail(req.Email)
@@ -254,7 +263,8 @@ func (d *Deps) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 }
 
 type emailReq struct {
-	Email string `json:"email"`
+	Email          string `json:"email"`
+	TurnstileToken string `json:"turnstile_token"`
 }
 
 // ResendVerification mails a fresh link to an unverified account. It
@@ -274,8 +284,9 @@ func (d *Deps) ResendVerification(w http.ResponseWriter, r *http.Request) {
 }
 
 type loginReq struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email          string `json:"email"`
+	Password       string `json:"password"`
+	TurnstileToken string `json:"turnstile_token"`
 }
 
 // dummyHash is verified against when the email is unknown, so a miss
@@ -291,6 +302,9 @@ var dummyHash = func() string {
 func (d *Deps) Login(w http.ResponseWriter, r *http.Request) {
 	var req loginReq
 	if !decode(w, r, &req) {
+		return
+	}
+	if !d.Turnstile.Require(w, r, req.TurnstileToken) {
 		return
 	}
 	u, err := d.Users.ByEmail(r.Context(), req.Email)
@@ -451,6 +465,9 @@ func (d *Deps) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if !d.Turnstile.Require(w, r, req.TurnstileToken) {
+		return
+	}
 	if email := normalizeEmail(req.Email); email != "" {
 		u, err := d.Users.ByEmail(r.Context(), email)
 		if err == nil && u.Status == stores.StatusActive {
@@ -515,7 +532,12 @@ func (d *Deps) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 // Providers tells the sign-in page which OAuth buttons to show.
 func (d *Deps) Providers(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]bool{"google": d.Google != nil, "apple": d.Apple != nil})
+	out := map[string]any{"google": d.Google != nil, "apple": d.Apple != nil}
+	// the Turnstile widget's public site key, when the bot check is on (story 50.30 §4)
+	if d.Turnstile != nil && d.Turnstile.Enabled {
+		out["turnstile_site_key"] = d.TurnstileSiteKey
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // issueTokens is the shared tail of login/refresh/OAuth: a fresh

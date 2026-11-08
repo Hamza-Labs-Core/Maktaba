@@ -106,6 +106,9 @@ func TestScenario(t *testing.T) {
 		{"runbook-dns-swap", runbookDNSSwap},
 		{"load-small", loadSmall},
 		{"relay-plans", relayPlans},
+		{"direct-remote", directRemote},
+		{"origin-only-via-edge", originOnlyViaEdge},
+		{"origin-aop", originAOP},
 	} {
 		t.Run(s.name, func(t *testing.T) {
 			if why, ok := skip[s.name]; ok || s.run == nil {
@@ -116,8 +119,11 @@ func TestScenario(t *testing.T) {
 			switch s.name {
 			case "cert-on-standby":
 				c = upOnly(t, s.name)
+			case "direct-remote":
+				c = upDirect(t, s.name)
 			case "failover-kill-leader", "failover-network-partition", "switchover", "restore-pitr",
-				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap":
+				"runbook-switchover", "runbook-forced-failover", "runbook-dns-swap",
+				"origin-only-via-edge", "origin-aop":
 				// the pair's own cluster (compose-ha.yml), started by the scenario
 			default:
 				c = up(t, s.name)
@@ -156,7 +162,9 @@ type cluster struct {
 	t       *testing.T
 	project string
 	dir     string   // tools/rehearsal-cloud
-	over    []string // compose files over compose.yml (relay-plans: compose-plans.yml)
+	base    string   // the compose file ("": compose.yml; direct-remote: compose-direct.yml)
+	over    []string // compose files over it (relay-plans: compose-plans.yml)
+	extra   []string // more environment for compose (a scenario's own ports and ids)
 	edge    string   // http://127.0.0.1:<port>
 	db      *sql.DB
 	api     *httptestServer
@@ -170,12 +178,16 @@ type httptestServer struct {
 }
 
 func (c *cluster) compose(args ...string) (string, error) {
-	files := []string{"compose", "-p", c.project, "-f", filepath.Join(c.dir, "compose.yml")}
+	base := c.base
+	if base == "" {
+		base = "compose.yml"
+	}
+	files := []string{"compose", "-p", c.project, "-f", filepath.Join(c.dir, base)}
 	for _, f := range c.over {
 		files = append(files, "-f", filepath.Join(c.dir, f))
 	}
 	cmd := exec.Command("docker", append(files, args...)...)
-	cmd.Env = append(os.Environ(), c.env()...)
+	cmd.Env = append(append(os.Environ(), c.env()...), c.extra...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
 }

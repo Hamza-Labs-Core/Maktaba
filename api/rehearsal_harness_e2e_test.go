@@ -570,6 +570,8 @@ admin_addr = "127.0.0.1:%d"
 
 [logs]
 addr = "127.0.0.1:%d"
+# every line on the output the checks read (53.02: server.log is warn+ by default)
+server_log = "all"
 
 [tv]
 slots = "%s"

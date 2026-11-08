@@ -5,6 +5,7 @@ package rehearsal
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -27,6 +28,10 @@ type haExtra struct {
 	profiles []string
 	env      []string
 	before   func(*ha) // after the old project is gone, before up
+	files    []string  // more compose files after compose-ha.yml (compose-origin.yml)
+	// noEdgeWait skips the wait for the plain-HTTP relay through fipfront: 50.31's scenarios
+	// run production's Caddyfile, which serves relay names over TLS only
+	noEdgeWait bool
 }
 
 type ha struct {
@@ -40,6 +45,9 @@ func (h *ha) composeHA(args ...string) (string, error) {
 	base := []string{"compose", "-p", h.project, "-f", filepath.Join(h.dir, "compose-ha.yml")}
 	var env []string
 	if h.extra != nil {
+		for _, f := range h.extra.files {
+			base = append(base, "-f", filepath.Join(h.dir, f))
+		}
 		for _, p := range h.extra.profiles {
 			base = append(base, "--profile", p)
 		}
@@ -71,6 +79,7 @@ func (h *ha) envHA() []string {
 		fmt.Sprintf("A_PG_PORT=%d", p[0]+100), fmt.Sprintf("B_PG_PORT=%d", p[0]+101),
 		fmt.Sprintf("A_API_PORT=%d", p[0]+200), fmt.Sprintf("B_API_PORT=%d", p[0]+201),
 		fmt.Sprintf("FAKEHCLOUD_PORT=%d", p[0]+300),
+		fmt.Sprintf("W_LOGS_PORT=%d", p[0]+400),
 		"FAKEHCLOUD_NETWORK="+h.project+"_fip",
 		fmt.Sprintf("FAKEHCLOUD_SERVERS=1=%s-node-a-1@10.61.0.11,2=%s-node-b-1@10.61.0.12", h.project, h.project),
 	)
@@ -113,7 +122,7 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 		var b strings.Builder
 		b.WriteString(logs)
 		for _, n := range []string{"node-a", "node-b"} {
-			for _, f := range []string{"patroni.log", "relay.log", "etcd.log", "caddy.log"} {
+			for _, f := range []string{"patroni.log", "relay.log", "etcd.log", "caddy.log", "api.log", "connector.log"} {
 				out, _ := exec.Command("docker", "exec", h.project+"-"+n+"-1", "cat", "/var/log/"+f).CombinedOutput()
 				fmt.Fprintf(&b, "\n===== %s /var/log/%s\n%s", n, f, out)
 			}
@@ -128,14 +137,16 @@ func upHAWith(t *testing.T, scenario string, extra *haExtra) *ha {
 		l := h.leader()
 		return l != "" && h.syncStandby(other(l))
 	})
-	waitFor(t, time.Minute, "the edge through the Floating IP", func() bool {
-		resp, err := http.Get(c.edge + "/readyz")
-		if err != nil {
-			return false
-		}
-		_ = resp.Body.Close()
-		return resp.StatusCode == 200
-	})
+	if extra == nil || !extra.noEdgeWait {
+		waitFor(t, time.Minute, "the edge through the Floating IP", func() bool {
+			resp, err := http.Get(c.edge + "/readyz")
+			if err != nil {
+				return false
+			}
+			_ = resp.Body.Close()
+			return resp.StatusCode == 200
+		})
+	}
 	api := simhome.API()
 	c.api = &httptestServer{URL: api.URL, close: api.Close}
 	return h
@@ -375,9 +386,17 @@ func failoverKillLeader(t *testing.T, _ *cluster) Result {
 	if len(missing) > 0 {
 		t.Errorf("%d acknowledged commits lost: %v", len(missing), missing[:min(10, len(missing))])
 	}
+	// story 53.17 T05: the killed node's last lines are on W, searchable, up to its last batch
+	last := h.lastLineOnW(old+"-blue", start.Add(-2*time.Minute))
+	if last.IsZero() {
+		t.Errorf("no line of %s's relay on the witness", old)
+	} else if gap := start.Sub(last); gap > 15*time.Second {
+		t.Errorf("%s's last line on the witness is %s before the kill (want within a batch, 10 s)", old, gap)
+	}
 	return Result{DowntimeMS: down.Milliseconds(), BudgetMS: (3 * time.Minute).Milliseconds(), FailedRequests: stats.Failed,
 		Requests: stats.OK + stats.Failed, ReconnectP99MS: back99.Milliseconds(),
-		Notes: []string{fmt.Sprintf("promoted after %s; all homes back after %s; %d commits, %d lost", promoted, back100, len(acked), len(missing))}}
+		Notes: []string{fmt.Sprintf("promoted after %s; all homes back after %s; %d commits, %d lost; the old leader's last line on W %s before the kill",
+			promoted, back100, len(acked), len(missing), start.Sub(last).Round(time.Millisecond))}}
 }
 
 // C03 failover-network-partition: the leader is cut from the other node and the witness but
@@ -519,4 +538,37 @@ func (h *ha) fipHolder() int64 {
 	}
 	_ = jsonDecode(resp, &out)
 	return out.FloatingIP.Server
+}
+
+// lastLineOnW is the time of node's newest line the witness has (story 53.17 T05), searched
+// through W's private listener with the rehearsal's token; zero when it has none.
+func (h *ha) lastLineOnW(node string, since time.Time) time.Time {
+	port := portsFor(h.project)[0] + 400
+	var newest time.Time
+	waitFor(h.t, time.Minute, "the witness to index "+node+"'s lines", func() bool {
+		u := fmt.Sprintf("http://127.0.0.1:%d/v1/logs/search?node=%s&since=%s&limit=50", port, node,
+			since.UTC().Format(time.RFC3339))
+		req, _ := http.NewRequest(http.MethodGet, u, nil)
+		req.Header.Set("Authorization", "Bearer rehearsal-logs-token")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		var got struct {
+			Lines []struct {
+				TS string `json:"ts"`
+			} `json:"lines"`
+		}
+		if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&got) != nil || len(got.Lines) == 0 {
+			return false
+		}
+		for _, l := range got.Lines {
+			if t, err := time.Parse(time.RFC3339Nano, l.TS); err == nil && t.After(newest) {
+				newest = t
+			}
+		}
+		return true
+	})
+	return newest
 }

@@ -475,6 +475,7 @@ async def commit_extract(
     content_hash: str,
     cache_path: str,
     bytes_written: int | None,
+    queue_transcribe: bool = True,
 ) -> str:
     """Persist the extracted-audio artifact and advance the video state.
 
@@ -488,7 +489,9 @@ async def commit_extract(
        :func:`advance_after_stage` (its terminal-drop guard makes a
        replay a no-op),
     4. enqueue the follow-on TRANSCRIBE job via :func:`enqueue` — the
-       *exact* mechanism ``commit_probe`` uses for the EXTRACT enqueue.
+       *exact* mechanism ``commit_probe`` uses for the EXTRACT enqueue. The engine's
+       extract stage (``queue_transcribe=False``) asks for it as a declared request
+       instead (story 54.36 §2).
 
     Idempotent on replay: the artifact UPSERT, the FSM
     ``late_stage_finish`` guard, and the ``enqueue`` unique-live index
@@ -528,13 +531,14 @@ async def commit_extract(
         # AUDIO_EXTRACTED --EXTRACT--> (no such edge).
         new_state = current_state
 
-    await enqueue(
-        _as_job_db(db),
-        video_id=video_id,
-        stage=_JobStage.TRANSCRIBE,
-        priority=100,
-        payload={"audio_track_id": audio_track_id, "content_hash": content_hash},
-    )
+    if queue_transcribe:
+        await enqueue(
+            _as_job_db(db),
+            video_id=video_id,
+            stage=_JobStage.TRANSCRIBE,
+            priority=100,
+            payload=transcribe_payload(audio_track_id, content_hash),
+        )
     log.info(
         "extract_committed",
         video_id=str(video_id),
@@ -558,6 +562,7 @@ async def commit_extract_skipped(
     video_id: UUID,
     audio_track_id: int,
     content_hash: str,
+    queue_transcribe: bool = True,
 ) -> str:
     """Finish an EXTRACT job without writing a WAV: the backend streams.
 
@@ -567,7 +572,9 @@ async def commit_extract_skipped(
     still enqueued, so nothing waits on an extract that wrote nothing. The
     enqueue is left out when the video's transcription is already handled
     (an active transcript or a live transcribe job, the probe's #267 rule):
-    re-queueing those would only refill the GPU queue.
+    re-queueing those would only refill the GPU queue. ``queue_transcribe=False``: the
+    engine's extract stage asks for it itself, by the same rule
+    (:func:`transcription_handled`).
     """
     from ..db.jobs import Stage as _JobStage  # noqa: PLC0415
     from ..db.jobs import enqueue  # noqa: PLC0415
@@ -585,14 +592,14 @@ async def commit_extract_skipped(
     else:
         new_state = current_state
 
-    handled = await db.fetchrow(_TRANSCRIPTION_HANDLED_SQL, video_id) is not None
-    if not handled:
+    handled = await transcription_handled(db, video_id)
+    if not handled and queue_transcribe:
         await enqueue(
             _as_job_db(db),
             video_id=video_id,
             stage=_JobStage.TRANSCRIBE,
             priority=100,
-            payload={"audio_track_id": audio_track_id, "content_hash": content_hash},
+            payload=transcribe_payload(audio_track_id, content_hash),
         )
     log.info(
         "extract_skipped_streaming_backend",
@@ -602,6 +609,17 @@ async def commit_extract_skipped(
         transcribe_enqueued=not handled,
     )
     return str(new_state)
+
+
+def transcribe_payload(audio_track_id: int, content_hash: str) -> dict[str, Any]:
+    """The payload of the transcribe an extract queues (transcribe reads ``content_hash``
+    as the sign that extract ran)."""
+    return {"audio_track_id": audio_track_id, "content_hash": content_hash}
+
+
+async def transcription_handled(db: _ExtractDB, video_id: UUID) -> bool:
+    """An active transcript or a live transcribe job: a streaming extract queues none."""
+    return await db.fetchrow(_TRANSCRIPTION_HANDLED_SQL, video_id) is not None
 
 
 def _as_job_db(db: _ExtractDB) -> Any:

@@ -17,9 +17,9 @@ import (
 )
 
 // supervisorMetricsPrefixes: the only families taken from the supervisor's /metrics (its
-// update metrics, story 35.15, and its machine's components, story 51.14), never one the
-// API has of its own.
-var supervisorMetricsPrefixes = []string{"maktaba_update_", "maktaba_component_"}
+// update metrics, story 35.15, its machine's components, story 51.14, and its machine's
+// memory, disk and load, story 53.12), never one the API has of its own.
+var supervisorMetricsPrefixes = []string{"maktaba_update_", "maktaba_component_", "maktaba_host_"}
 
 // supervisorMetrics gathers this machine's supervisor's /metrics into the API's, so a
 // machine is one scrape target (plan 35.15 D2). A supervisor that does not answer (none
@@ -69,10 +69,41 @@ func (s supervisorMetrics) Gather() ([]*dto.MetricFamily, error) {
 	return out, nil
 }
 
-// metricsHandler is the API's /metrics: the process's registry and its supervisor's
-// update metrics.
-func metricsHandler(supervisorURL string) http.Handler {
-	return promhttp.HandlerFor(prometheus.Gatherers{metrics.Reg(),
-		supervisorMetrics{url: supervisorURL, client: &http.Client{Timeout: 3 * time.Second}}},
-		promhttp.HandlerOpts{EnableOpenMetrics: true, ProcessStartTime: time.Now()})
+// defaultMaktaba gathers the maktaba_* families registered on prometheus' default registry
+// that the process registry doesn't have. The plugins' metrics (Epic 54: the plugin API's
+// calls and refusals, statements, the health rows) register there, and /metrics served
+// only the process registry, so they never showed. A family the process registry has is
+// left out, so none repeats (a repeated family fails the whole scrape).
+type defaultMaktaba struct{ own prometheus.Gatherer }
+
+// Gather implements prometheus.Gatherer.
+func (d defaultMaktaba) Gather() ([]*dto.MetricFamily, error) {
+	fams, err := prometheus.DefaultGatherer.Gather()
+	if err != nil && len(fams) == 0 {
+		return nil, nil
+	}
+	have := map[string]bool{}
+	if mine, _ := d.own.Gather(); mine != nil {
+		for _, f := range mine {
+			have[f.GetName()] = true
+		}
+	}
+	var out []*dto.MetricFamily
+	for _, f := range fams {
+		if strings.HasPrefix(f.GetName(), "maktaba_") && !have[f.GetName()] {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+// metricsHandler is the API's /metrics: the process's registry, the maktaba_* families on
+// the default registry, its supervisor's update metrics and, on a home, the joined
+// machines' per-machine families (nodes; nil: none).
+func metricsHandler(supervisorURL string, nodes *nodeMetrics) http.Handler {
+	return promhttp.HandlerFor(prometheus.Gatherers{metrics.Reg(), defaultMaktaba{own: metrics.Reg()},
+		machinesMetrics{local: supervisorMetrics{url: supervisorURL, client: &http.Client{Timeout: 3 * time.Second}}, nodes: nodes}},
+		promhttp.HandlerOpts{EnableOpenMetrics: true, ProcessStartTime: time.Now(),
+			// a family one source got wrong is left out, not the whole scrape
+			ErrorHandling: promhttp.ContinueOnError})
 }

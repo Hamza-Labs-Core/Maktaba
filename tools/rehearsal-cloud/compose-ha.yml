@@ -4,7 +4,7 @@
 # failover-kill-leader, failover-network-partition and switchover (cloud/rehearsal) run on it.
 #
 #   private  10.60.0.0/24: the Hetzner private network (etcd, Patroni, Postgres, the relays' peers)
-#   fip      10.61.0.0/24: where the Floating IP lives; fakehcloud moves the alias relay.test
+#   fip      10.61.0.0/16: where the Floating IP lives; fakehcloud moves the alias relay.test
 #            here to the node it is assigned to, and front dials relay.test for each connection
 #
 # The scenario sets FAKEHCLOUD_SERVERS and FAKEHCLOUD_NETWORK (they name this project's
@@ -20,7 +20,7 @@ networks:
   fip:
     ipam:
       config:
-        - subnet: 10.61.0.0/24
+        - subnet: 10.61.0.0/16
 
 x-machine-env: &machine-env
   ETCD_INITIAL_CLUSTER: node-a=https://10.60.0.11:2380,node-b=https://10.60.0.12:2380,witness=https://10.60.0.13:2380
@@ -31,6 +31,9 @@ x-machine-env: &machine-env
   PG_REWIND_PASSWORD: rehearsal-rewind
   PG_APP_PASSWORD: rehearsal
   TOKEN_SECRET: rehearsal-token-secret-at-least-32-bytes
+  # the cloud's logs (story 53.17): every node's lines go to the witness W
+  LOGS_TOKEN: rehearsal-logs-token
+  LOGS_W_ADDR: 10.60.0.13:9610
   HCLOUD_ENDPOINT: http://10.61.0.30:8080/v1
   HCLOUD_TOKEN: rehearsal-hcloud-token
   FLOATING_IP_ID: "7"
@@ -68,6 +71,9 @@ services:
     networks:
       private:
         ipv4_address: 10.60.0.13
+    ports:
+      # the logs' private listener, for the test to search (story 53.17 T05)
+      - "127.0.0.1:${W_LOGS_PORT:-29610}:9610"
 
   node-a:
     <<: *node

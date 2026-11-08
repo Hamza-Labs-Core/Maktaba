@@ -35,8 +35,10 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
+	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/migrations"
 )
 
@@ -56,7 +58,8 @@ const (
 type env struct {
 	t       *testing.T
 	h       http.Handler
-	router  *chi.Mux
+	router  *chi.Mux // the user listener's router (story 50.32)
+	admin   *chi.Mux // the operator console's listener's router
 	pool    *db.Pool
 	mail    *mail.Recorder
 	pay     *fakeProvider // nil: the "none" provider
@@ -101,6 +104,23 @@ func newPaidEnv(t *testing.T) *env {
 
 func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	t.Helper()
+	return newEnvFull(t, pay, nil, nil)
+}
+
+// newEnvOpts is newEnvWith with the auth pages' bot check on, checked by ts (story 50.30).
+func newEnvOpts(t *testing.T, pay *fakeProvider, ts turnstile.Verifier) *env {
+	t.Helper()
+	return newEnvFull(t, pay, ts, nil)
+}
+
+// newEnvCfg is newEnvWith with a hook that adjusts the config before it is validated (50.31).
+func newEnvCfg(t *testing.T, pay *fakeProvider, adjust func(*config.Config)) *env {
+	t.Helper()
+	return newEnvFull(t, pay, nil, adjust)
+}
+
+func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust func(*config.Config)) *env {
+	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
 		t.Skip("MAKTABA_CLOUD_DB_URL not set")
@@ -127,12 +147,23 @@ func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	cfg.Server.ListenAddr = "127.0.0.1:0"
 	cfg.Server.PublicURL = "https://api.example.test"
 	cfg.Server.WebURL = testWebURL
+	cfg.Server.AdminListenAddr = "127.0.0.1:0"
+	cfg.Server.AdminHost = testAdminHost
 	cfg.Auth.TokenSecret = testTokenSecret
 	cfg.Mail.Driver = "log"
 	cfg.Billing.Provider = "none"
 	cfg.OAuthGoogle.ClientID = "google-test-client"
 	cfg.OAuthGoogle.ClientSecret = "google-test-secret"
 	cfg.Entitlement.PrivateKeyPath = e.entPath
+	if ts != nil {
+		cfg.Turnstile.Enabled = true
+		cfg.Turnstile.Secret = "test-turnstile-secret"
+		cfg.Turnstile.SiteKey = "test-site-key"
+		cfg.Turnstile.WebOrigins = []string{strings.TrimSuffix(testWebURL, "/")}
+	}
+	if adjust != nil {
+		adjust(&cfg)
+	}
 	if err := config.Validate(cfg, config.RoleAPI); err != nil {
 		t.Fatal(err)
 	}
@@ -149,13 +180,40 @@ func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	if pay != nil {
 		o.BillingProvider = pay
 	}
-	r, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, o)
+	o.Turnstile = ts
+	a, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, o)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(stop)
-	e.h, e.router = r, r
+	e.router, e.admin = a.User, a.Admin
+	e.h = consoleOrUser(a)
 	return e
+}
+
+// testAdminHost is the console's name in these tests (server.admin_host).
+const testAdminHost = "admin.example.test"
+
+// consoleOrUser stands in for the two hostnames in front of the api's two listeners (story
+// 50.32): an admin path goes to the admin router as the console sends it (its Host, its
+// Origin, X-Maktaba-Staff), anything else to the user router. The listeners' own rules are
+// tested on e.router and e.admin directly.
+func consoleOrUser(a apiRouters) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !server.IsAdminPath(r.URL.Path) {
+			a.User.ServeHTTP(w, r)
+			return
+		}
+		r = r.Clone(r.Context())
+		r.Host = testAdminHost
+		if r.Header.Get("Origin") == "" {
+			r.Header.Set("Origin", "https://"+testAdminHost)
+		}
+		if r.Header.Get(cmw.StaffHeader) == "" {
+			r.Header.Set(cmw.StaffHeader, "1")
+		}
+		a.Admin.ServeHTTP(w, r)
+	})
 }
 
 // scratchDB creates a database of its own for the test (CI's shared
@@ -193,6 +251,9 @@ type client struct {
 	ip      string
 	token   string
 	cookies map[string]string
+	header  map[string]string // extra request headers
+	// origin is sent as Origin (a web page's request; empty: a native app)
+	origin string
 }
 
 func (e *env) client() *client {
@@ -243,6 +304,12 @@ func (c *client) do(method, path string, body any) resp {
 	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	for k, v := range c.header {
+		req.Header.Set(k, v)
+	}
+	if c.origin != "" {
+		req.Header.Set("Origin", c.origin)
 	}
 	for k, v := range c.cookies {
 		req.AddCookie(&http.Cookie{Name: k, Value: v})

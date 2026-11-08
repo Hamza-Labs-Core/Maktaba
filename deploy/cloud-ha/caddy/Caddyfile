@@ -8,7 +8,15 @@
 # Behind it, the node's relay processes, blue and green (50.08): new work goes to the first
 # whose /readyz answers 200; a draining process answers 503 "draining" and drops out at once.
 # The API, the web app and the console are not served here: they reach the leader only
-# through the Cloudflare Tunnel (50.31).
+# through the Cloudflare Tunnel (50.31). Only relay names have a site: a TLS handshake for any
+# other name fails (no catch-all, no on-demand certificate), and plain HTTP for another name
+# gets 421. Relay names are DNS only, so a CF-Connecting-IP on one was written by the client:
+# it is removed before the relay sees the request. X-Forwarded-For stays: reverse_proxy sets
+# it to the peer it saw, and the relay reads that rightmost entry (its per-IP stream limit).
+#
+# The fallback origin (server.origin_mode = "aop", 50.31 §3): setup.sh writes the api, app
+# and admin sites into /etc/caddy/origin.d/ (origin-aop.caddy, with Cloudflare's ranges) only
+# when ORIGIN_MODE=aop; in tunnel mode that directory is empty.
 #
 # Env: RELAY_DOMAIN, ACME_EMAIL, CF_API_TOKEN, RELAY_UPSTREAMS ("127.0.0.1:8443 127.0.0.1:8453"),
 # NODE_ADDR (the node's private address: the edge's own health check listens there, 50.07's
@@ -45,9 +53,17 @@
 		dns cloudflare {env.CF_API_TOKEN}
 		resolvers 1.1.1.1 9.9.9.9
 	}
+	request_header -CF-Connecting-IP
 	encode zstd gzip
 	import relay
 }
+
+# Any other name over plain HTTP (the relay names' own redirect to HTTPS is more specific)
+http:// {
+	respond 421
+}
+
+import /etc/caddy/origin.d/*.caddy
 
 # The leading relay process's /metrics, for the witness's Prometheus (story 50.10), on the
 # private address only (UFW opens 9443 to the private network); Caddy's own metrics beside.

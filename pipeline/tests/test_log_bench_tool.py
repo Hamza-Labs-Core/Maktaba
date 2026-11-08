@@ -4,6 +4,7 @@ against the reference, clamped to 1–4, with the loops' times in the report."""
 from __future__ import annotations
 
 import importlib.util
+import math
 from pathlib import Path
 from types import ModuleType
 
@@ -131,13 +132,16 @@ def test_the_base_on_the_same_runner_tells_the_runner_from_the_change(
 
 @pytest.mark.integration  # fresh processes, past the unit tier's cap
 def test_compare_runs_the_base_logger_round_for_round() -> None:
-    # this checkout's own logger as the base: the same code, so near one another
+    # this checkout's own logger as the base: both sides run, round for round. Their speed
+    # is not compared here: a p99 of 2,000 calls in a fresh process on a shared runner moved
+    # 7.6 times between two runs of the same code (verdict's tests cover the comparison)
     lb = _tool()
     src = str(TOOL.parents[1] / "src")
     got = lb.compare(src, 2_000, rounds=2)
     assert len(got["base_p99_ns_rounds"]) == 2 and len(got["head_p99_ns_rounds"]) == 2
     assert got["base_p99_ns"] == min(got["base_p99_ns_rounds"])
-    assert 0.2 < got["ratio"] < 5
+    assert got["head_p99_ns"] == min(got["head_p99_ns_rounds"])
+    assert math.isfinite(got["ratio"]) and got["ratio"] > 0
 
 
 @pytest.mark.integration  # fresh processes, past the unit tier's cap

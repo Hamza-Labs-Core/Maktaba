@@ -55,10 +55,18 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 	admin := e.serviceAdmin("ops@example.test")
 	anon := e.client()
 
-	routes := adminRoutes(t, e.router)
+	routes := adminRoutes(t, e.admin)
 	// the problem reports homes sent (53.16): a home admin's cloud token reads none of them
 	if !slices.ContainsFunc(routes, func(rt [2]string) bool { return rt[1] == "/v1/admin/reports" }) {
 		t.Fatalf("the walk missed /v1/admin/reports: %v", routes)
+	}
+	// nor the release symbol tables their crashes are read against (53.14)
+	if !slices.ContainsFunc(routes, func(rt [2]string) bool { return rt[1] == "/v1/admin/symbols" }) {
+		t.Fatalf("the walk missed /v1/admin/symbols: %v", routes)
+	}
+	// the upload is the symbols token's, and off with none set up
+	if r := anon.do("POST", "/v1/symbols", nil); r.code != http.StatusServiceUnavailable || r.errCode() != "symbols_off" {
+		t.Errorf("an upload with no symbols token set up = %d %s", r.code, r.errCode())
 	}
 	for _, rt := range routes {
 		method, path := rt[0], concrete(rt[1], victimID)
@@ -86,6 +94,11 @@ func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
 		method, path := rt[0], concrete(rt[1], victimID)
 		body := map[string]any{"reason": "role test", "subject_kind": "ip", "subject": "203.0.113.9"}
 		r := admin.do(method, path, body)
+		// the cloud's log routes answer 503 logs_unavailable with no index on W (53.17): past
+		// the gate, and saying why
+		if r.code == http.StatusServiceUnavailable && r.errCode() == "logs_unavailable" {
+			continue
+		}
 		if r.code == http.StatusUnauthorized || r.code == http.StatusForbidden || r.code >= 500 {
 			t.Errorf("service admin %s %s = %d %s", method, path, r.code, r.body)
 		}

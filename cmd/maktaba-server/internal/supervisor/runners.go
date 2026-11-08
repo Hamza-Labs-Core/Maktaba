@@ -3,7 +3,7 @@ package supervisor
 // maktaba-plugin-runner (Epic 54, story 54.23): Maktaba's own stages as first-party
 // plugins, one Python process per runner group with no database login and no secrets.
 //
-// The shared groups (light, net, service, fp) are instances of the core component
+// The shared groups (light, files, net, service, fp) are instances of the core component
 // core.plugin_runners (on_demand: they run while a component with a first-party plugin is
 // enabled); ml-* and index come with transcription and semantic search (wave 3). Only the
 // groups the release's first-party plugins name are built (shared/plugins FirstPartyGroups):
@@ -32,8 +32,12 @@ const RolePluginRunner Role = "plugin-runner"
 // PluginRunnersComponent is the catalog's core component of the shared runner groups.
 const PluginRunnersComponent = "core.plugin_runners"
 
+// RunnerIdleSec is how long a shared group's runner, started on demand, waits for work
+// before it exits (a variable so tests can shorten it).
+var RunnerIdleSec = 600
+
 // RunnerGroups are core.plugin_runners' instances (the catalog's processes).
-var RunnerGroups = []string{"light", "net", "service", "fp"}
+var RunnerGroups = []string{"light", "files", "net", "service", "fp"}
 
 // The runner groups of their own components (story 54.30): ml, one per transcription
 // worker (transcription's plugin-runner/ml-*), and index (search.semantic's).
@@ -148,12 +152,20 @@ func BuildPluginRunners(opts Options) ([]Process, error) {
 	api := PluginsPaths(opts.Config).API
 	var out []Process
 	runner := func(instance string, env []string, dormant bool) Process {
+		// a shared group's runner starts when the worker has a job for it (POST
+		// /runners/{group}/start) and stops itself when idle (exit 0): an idle home runs
+		// none (the Core budget: four processes). Until it is up the worker runs the job.
+		shared := containsString(RunnerGroups, instance)
+		if shared {
+			env = setEnv(append([]string{}, env...), "MAKTABA_RUNNER_IDLE_SEC", strconv.Itoa(RunnerIdleSec))
+		}
 		sock := filepath.Join(dir, "runner-"+instance+".sock")
 		cmd := exec.Command(pythonFor(opts), "-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", dir)
 		cmd.Env = env
 		wire(cmd)
 		return Process{
 			Role: RolePluginRunner, Instance: instance, Cmd: cmd, Dormant: dormant,
+			OnDemand: shared, IdleOnClean: shared,
 			Probe: "unix:" + sock, ProbeTimeout: PythonProbeTimeout,
 			Check: func(ctx context.Context) error { return askRunnerHello(ctx, sock) },
 			BeforeStart: func() {

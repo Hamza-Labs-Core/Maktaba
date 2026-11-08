@@ -25,6 +25,7 @@ import json
 import os
 import struct
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,8 @@ from maktaba_plugin_sdk.native import (
     StatementUnregistered,
     UnixTransport,
 )
+
+from . import sandbox
 
 __all__ = ["Runner", "load_impl"]
 
@@ -60,6 +63,21 @@ async def read_frame(r: asyncio.StreamReader) -> dict[str, Any]:
 def load_impl(entry: str) -> Any:
     module, _, attr = entry.partition(":")
     return getattr(importlib.import_module(module), attr)
+
+
+def _use_plan_exporters(msg: dict[str, Any]) -> str:
+    """The worker's plan exporters for this job (story 54.34): its extensions add data to
+    the channel plan, and this process loads none, so the names it sent are resolved here
+    from the extensions it discovers (the same code). Every job of one worker sends the same
+    names, so concurrent jobs agree. Answers why it could not (the job then runs in the
+    worker, as for an unregistered statement), else ""."""
+    names = msg.get("plan_exporters")
+    if names is None:
+        return ""
+    from maktaba_pipeline.schedule.plan_inputs import use_plan_exporters
+
+    missing = use_plan_exporters(str(n) for n in names)
+    return f"plan exporters this runner cannot load: {', '.join(missing)}" if missing else ""
 
 
 class Relay:
@@ -106,6 +124,12 @@ class Relay:
         v = await self.ask("job_ref", job_id=job_id)
         return None if v is None else decode_any(v)
 
+    async def enqueue(self, **args: Any) -> dict[str, Any]:
+        """Queue a job: the worker enqueues it (only the queue engine writes the queue), and
+        only a stage this job's stage may request, for a subject of the job's library."""
+        v = await self.ask("enqueue", **args)
+        return dict(v or {})
+
 
 def runner_context(
     db: Any, job: Any, stage: Any, relay: Relay, write_mode: str, path_map: Any
@@ -146,6 +170,34 @@ def runner_context(
     return ctx
 
 
+def library_roots(areas: dict[str, Any]) -> list[str]:
+    """The ``library`` area's folders (``;``-separated, as the sandbox reads them)."""
+    return [x for x in str(areas.get("library") or "").split(";") if x]
+
+
+async def job_scope(db: Any, stage: str, job: Any, ctx: Any, roots: list[str]) -> Any:
+    """The files a job of a file stage may change (story 54.32 §2), as this machine names
+    them, read through the plugin's statements before the job runs; None when its stage
+    keeps no scope."""
+    from maktaba_pipeline.library_mgmt.scope import JobScope, job_paths
+
+    found = await job_paths(db, stage, job)
+    if found is None:
+        return None
+    sandbox.guard_scope()  # once per process; the runner's main installs it before any job
+    return JobScope.of(stage, (ctx.local_path(p) for p in found), roots)
+
+
+def with_services(ctx: Any, msg: dict[str, Any]) -> Any:
+    """The job's extension settings (no secret, no service address) and the way its service
+    calls go (story 54.35), from the worker's run frame."""
+    settings = msg.get("extension_settings")
+    if isinstance(settings, dict):
+        ctx.settings = {str(k): dict(v) for k, v in settings.items() if isinstance(v, dict)}
+    ctx.service_via = str(msg.get("service_via") or "api")
+    return ctx
+
+
 @dataclass
 class Runner:
     group: str
@@ -159,10 +211,15 @@ class Runner:
     unavailable: dict[str, str] = field(default_factory=dict)
     #: the digest of the file areas the sandbox was built from (the worker's areas.json)
     areas: str = ""
+    #: this machine's library roots (the ``library`` area): where a job's scope applies
+    library_roots: list[str] = field(default_factory=list)
     areas_changed: bool = False
     #: the transport a job's database uses (a seam: tests give one in memory)
     transport: Callable[[str], Any] | None = None
     running: dict[int, asyncio.Task[Any]] = field(default_factory=dict)
+    #: when it last had work (a run or a fingerprint request; the health check's hello
+    #: is not work), for the idle timeout
+    last_active: float = field(default_factory=time.monotonic)
 
     def _transport(self, token: str) -> Any:
         if self.transport is not None:
@@ -184,6 +241,8 @@ class Runner:
         try:
             msg = await read_frame(r)
             kind = msg.get("type")
+            if kind in ("run", "fingerprints"):
+                self.last_active = time.monotonic()
             if kind == "hello":
                 await write_frame(w, self.hello())
             elif kind == "run":
@@ -220,14 +279,31 @@ class Runner:
             )
             return
         job = job_from_wire(msg["job"])
+        missing = _use_plan_exporters(msg)
+        if missing:
+            # the plan would lack what those extensions add: the worker runs the job itself
+            await write_frame(w, {"type": "result", "status": "unregistered", "message": missing})
+            return
         relay = Relay(r, w)
         transport = self._transport(str(msg["token"]))
         db = StatementDB(firstparty.registry(self.plugin_of[stage]), transport, engine_relay=relay)
         sdef = get_stage(stage)
         path_map = PathMap(tuple((str(a), str(b)) for a, b in msg.get("path_map") or ()))
         ctx = runner_context(db, job, sdef, relay, str(msg.get("write_mode") or "auto"), path_map)
+        with_services(ctx, msg)
         impl = load_impl(self.stages[stage])
-        task = asyncio.ensure_future(impl.run(db, job, ctx))
+        scope = None
+        try:
+            scope = await job_scope(db, stage, job, ctx, self.library_roots)
+        except StatementUnregistered as exc:
+            await write_frame(w, {"type": "result", "status": "unregistered", "message": str(exc)})
+            return
+        # the task copies the context: its scope is this job's alone (asyncio.to_thread too)
+        token = sandbox.JOB_SCOPE.set(scope)
+        try:
+            task = asyncio.ensure_future(impl.run(db, job, ctx))
+        finally:
+            sandbox.JOB_SCOPE.reset(token)
         self.running[job.id] = task
         try:
             result = await task
@@ -257,6 +333,13 @@ class Runner:
             close = getattr(transport, "close", None)
             if close is not None:
                 await close()
+        if scope is not None and scope.refused:
+            # refused even when the job's code caught the error (a move it reports failed)
+            out = {
+                "status": "refused",
+                "code": "plugin_scope",
+                "message": f"{scope.refused[0]}: not a file of this {stage} job's subject",
+            }
         await write_frame(w, {"type": "result", **out})
 
     async def _fingerprints(self, msg: dict[str, Any]) -> dict[str, Any]:
@@ -267,6 +350,9 @@ class Runner:
         if stage not in self.stages:
             return {"type": "error", "message": f"{stage} is not served by {self.group}"}
         impl = load_impl(self.stages[stage])
+        missing = _use_plan_exporters(msg)
+        if missing:
+            return {"type": "error", "status": "unregistered", "message": missing}
         fn = impl.input_fingerprint if msg.get("kind") == "input" else impl.output_fingerprint
         if fn is None:
             return {"type": "fingerprints", "hashes": [None for _ in msg.get("subjects") or []]}
@@ -284,6 +370,13 @@ class Runner:
             if close is not None:
                 await close()
         return {"type": "fingerprints", "hashes": out, "calls": db.calls}
+
+    def idle_for(self) -> float:
+        """Seconds since it last had work; 0 while a job runs."""
+        if self.running:
+            self.last_active = time.monotonic()
+            return 0.0
+        return time.monotonic() - self.last_active
 
     async def serve(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)

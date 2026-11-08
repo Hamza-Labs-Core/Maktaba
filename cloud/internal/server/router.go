@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -40,7 +41,20 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 	r := chi.NewRouter()
 	r.Use(middleware.Recover(logger))
 	r.Use(middleware.RequestID)
+	switch {
+	case o.clientIP:
+		// before the logger, so its remote_ip is the resolved client (50.31)
+		r.Use(middleware.WithClientIP(o.trusted))
+	case o.resolveIP != nil:
+		// the relay's own rule (its rightmost X-Forwarded-For entry from Caddy), for the log
+		r.Use(middleware.WithResolvedClientIP(o.resolveIP))
+	}
 	r.Use(middleware.Logging(logger))
+	if o.hosts != nil {
+		// the user listener answers its own names only (50.32 §1); its JSON carries §5's headers
+		r.Use(middleware.OnlyHosts(logger, "user", o.hosts))
+		r.Use(middleware.APIHeaders)
+	}
 	r.Use(middleware.CORS(allowedOrigins))
 
 	r.Get("/healthz", healthzHandler(build))
@@ -73,8 +87,36 @@ func healthzHandler(build BuildInfo) http.HandlerFunc {
 type RouterOption func(*routerOptions)
 
 type routerOptions struct {
-	lenient  *LenientReadiness
-	draining func() bool
+	lenient   *LenientReadiness
+	draining  func() bool
+	clientIP  bool
+	trusted   []netip.Prefix
+	resolveIP func(*http.Request) string
+	hosts     []string // non-nil: the api's user listener (50.32)
+}
+
+// WithClientIPFrom stores resolve(r) as the request's client IP before the access log, for
+// a role with its own rule: the relay's rightmost X-Forwarded-For entry, which Caddy appends
+// (Epic 50 story 50.32 §1, after 50.31 stopped the log from printing the leftmost entry).
+func WithClientIPFrom(resolve func(*http.Request) string) RouterOption {
+	return func(o *routerOptions) { o.resolveIP = resolve }
+}
+
+// WithUserHosts makes the router the api's user listener (Epic 50 story 50.32): a Host not in
+// hosts is 404 (any Host when hosts is empty: development), and every answer carries the
+// API's headers.
+func WithUserHosts(hosts []string) RouterOption {
+	return func(o *routerOptions) {
+		o.hosts = append([]string{}, hosts...)
+	}
+}
+
+// WithTrustedProxies resolves each request's client IP (middleware.WithClientIP) before
+// anything else reads it, the access log included: CF-Connecting-IP from a peer in trusted,
+// else the TCP peer (Epic 50 story 50.31). The api role sets it from
+// server.trusted_proxies; the relay never does.
+func WithTrustedProxies(trusted []netip.Prefix) RouterOption {
+	return func(o *routerOptions) { o.clientIP, o.trusted = true, trusted }
 }
 
 // WithDraining makes /readyz answer 503 "draining" while draining() is true:
@@ -250,12 +292,12 @@ func versionHandler(build BuildInfo) http.HandlerFunc {
 }
 
 // DefaultOrigins is the locked allow-list used by all roles unless the
-// operator passes their own through config in a future story.
+// operator passes their own through config in a future story. The operator console's
+// origin is not in it: its listener is same-origin only (story 50.32).
 func DefaultOrigins(_ config.Config) []string {
 	return []string{
 		"https://app.maktaba.tv",
 		"https://web.maktaba.tv",
-		"https://admin.maktaba.tv",
 		"https://maktaba.tv",
 	}
 }

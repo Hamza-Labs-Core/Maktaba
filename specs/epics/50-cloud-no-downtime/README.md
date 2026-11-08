@@ -1316,16 +1316,30 @@ and fakes. When the owner is ready:
 3. **The Tunnel.** Create one tunnel, `maktaba-cloud-production` (dashboard → Networks →
    Tunnels). Cloudflare may ask to choose the free Zero Trust plan to open that page; that turns
    on no access policy. Put the tunnel's token in the GitHub `production` environment as
-   `CLOUDFLARE_TUNNEL_TOKEN`. CI writes the ingress and the DNS records from the repo (50.34).
+   `CLOUDFLARE_TUNNEL_TOKEN`. CI writes the ingress and the DNS records from the repo (50.34),
+   and the nodes' deploy writes the token to `/etc/maktaba/tunnel.token` on both nodes. On A
+   and B, `/etc/maktaba/cloud.toml` gets `env = "production"`, the loopback listeners,
+   `trusted_proxies = ["127.0.0.1/32", "::1/128"]` and `origin_mode = "tunnel"`
+   (`deploy/cloud-ha/README.md`, 50.31). Then a port scan from W: only 22 (from the listed
+   addresses), 80 and 443 answer, and 443 refuses SNI `api.maktaba.tv`.
 4. **Turnstile.** Create one widget (managed mode) for `maktaba.tv`, `app.maktaba.tv` and
    `admin.maktaba.tv`. Put the site key in the `production` config and the secret key in the
-   `production` environment as `TURNSTILE_SECRET_KEY`.
+   `production` environment as `TURNSTILE_SECRET_KEY`. On each api node that means
+   `[turnstile] enabled = true` and `site_key = "…"` in `/etc/maktaba/cloud.toml`, and
+   `MAKTABA_CLOUD_TURNSTILE_SECRET=…` in `/etc/maktaba/cloud.env` (the api refuses to start
+   with Turnstile on and no secret; the file never holds the secret). Turnstile is off until
+   then (50.30).
 5. **Staff accounts.** On the leader, over SSH: `maktaba-cloud staff add --email … --role
    service_admin`. It prints a one-time enrolment link (valid 24 h). Open it on
    `admin.maktaba.tv`, set a password, register a passkey and a TOTP app, and keep the 10
    recovery codes in the password manager.
 6. **The optional IP allow-list.** Decide whether staff sign-in is limited to some networks
    (`admin.ip_allowlist`; empty means off, the default; 50.33 §7).
+7. **GitHub settings for the deploys** (50.34). Allow GitHub Actions to create pull requests
+   (repository settings, Actions → General), so the weekly job can propose Cloudflare's changed
+   IP ranges. Optionally, add required reviewers to the `production` environment, so each
+   Cloudflare deploy waits for a person. `deploy/cloudflare/README.md` has the token table and
+   the per-piece token names.
 
 **Costs. Every figure is an estimate** (list prices as of 2026-11-03, USD a month; check the
 plan pages before buying):

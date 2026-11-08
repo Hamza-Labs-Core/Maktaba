@@ -35,6 +35,7 @@ on:
       - 'cloud/**'
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
+      - 'shared/logkeeper/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
     tags:
@@ -44,9 +45,12 @@ on:
       # Maktaba's Caddy (Epic 50 story 50.02) and the HA pair's edge
       - 'deploy/caddy/**'
       - 'deploy/cloud-ha/**'
+      # Cloudflare's ranges, which the pair's aop fallback reads (story 50.31 T04)
+      - 'deploy/cloudflare/ips-*.txt'
       - 'cloud/**'
       # the shared logger the cloud builds with (Epic 53 story 53.01)
       - 'shared/log/go/**'
+      - 'shared/logkeeper/go/**'
       - 'deploy/cloud-relay/**'
       - '.github/workflows/relay.yml'
   # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
@@ -368,6 +372,37 @@ jobs:
               -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e NODE_ADDR=10.0.0.2 -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
               maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
           done
+      # Epic 50 story 50.31 T04: the pair's Caddy serves relay names only (no catch-all, no
+      # on-demand certificate), strips CF-Connecting-IP on them, and the aop fallback's sites
+      # (written by setup.sh only when ORIGIN_MODE=aop) validate with a test CA and the ranges.
+      - name: T04 the pair's Caddy serves relay names only; the aop fallback validates and denies first
+        run: |
+          set -euo pipefail
+          f=deploy/cloud-ha/caddy/Caddyfile
+          sites="$(grep -E '^[^#[:space:]].*\{$' "$f" | grep -v '^(' | sed 's/ *{$//')"
+          printf '%s\n' "$sites"
+          # shellcheck disable=SC2016  # the Caddyfile's own {$VAR} placeholders, literally
+          grep -qx '{$RELAY_DOMAIN}, \*\.{$RELAY_DOMAIN}' <<<"$sites"
+          ! grep -qE '^https://$|^:443$|maktaba\.tv' <<<"$sites" || { echo "a site that is not a relay name"; exit 1; }
+          ! grep -q 'on_demand' "$f" || { echo "on-demand TLS in the pair's Caddyfile"; exit 1; }
+          awk '/^\{\$RELAY_DOMAIN\}/,/^\}/' "$f" >"$RUNNER_TEMP/relay-site"
+          grep -q 'request_header -CF-Connecting-IP' "$RUNNER_TEMP/relay-site"
+          dir="$(mktemp -d)"; mkdir "$dir/origin.d"; cp "$f" "$dir/Caddyfile"
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout /dev/null \
+            -out "$dir/maktaba-aop-ca.pem" -days 1 -subj /CN=rehearsal-aop-ca 2>/dev/null
+          ranges="$(grep -hv '^#' deploy/cloudflare/ips-v4.txt deploy/cloudflare/ips-v6.txt | tr '\n' ' ')"
+          sed "s|CLOUDFLARE_RANGES|${ranges}|" deploy/cloud-ha/caddy/origin-aop.caddy >"$dir/origin.d/aop.caddy"
+          grep -q 'mode require_and_verify' "$dir/origin.d/aop.caddy"
+          grep -q 'remote_ip 173.245.48.0/20' "$dir/origin.d/aop.caddy"
+          caddy_env=(-e RELAY_DOMAIN=relay.example.com -e ACME_EMAIL=ops@example.com
+            -e CF_API_TOKEN=test0000000000000000000000000000000000ab -e NODE_ADDR=10.0.0.2
+            -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453")
+          docker run --rm -v "$dir:/etc/caddy:ro" "${caddy_env[@]}" \
+            maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
+          # the deny rule for addresses outside Cloudflare's ranges runs before any proxying
+          docker run --rm -v "$dir:/etc/caddy:ro" "${caddy_env[@]}" \
+            maktaba-caddy:check caddy adapt --config /etc/caddy/Caddyfile >"$RUNNER_TEMP/aop-adapted.json"
+          bash deploy/cloud-ha/tests/deny-first.sh "$RUNNER_TEMP/aop-adapted.json" api.maktaba.tv 403 remote_ip
       - name: The HA pair's scripts (Epic 50 story 50.07)
         run: |
           shellcheck -x deploy/cloud-ha/setup.sh deploy/cloud-ha/bin/* deploy/cloud-ha/tests/*.sh
@@ -643,5 +678,7 @@ jobs:
           RELAY_HOST_B: ${{ secrets.RELAY_HOST_B }}
           RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
           RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          # the Tunnel's connector token (story 50.31); empty until the owner creates the tunnel
+          CLOUDFLARE_TUNNEL_TOKEN: ${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: bash deploy/cloud-ha/deploy.sh "${{ steps.tag.outputs.tag }}"

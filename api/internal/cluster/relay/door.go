@@ -347,7 +347,10 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 		d.record(c, call, res)
 	}()
 	s := d.Settings(ctx)
-	if !s.Enabled {
+	// a caller on the home itself (a first-party plugin's stage there, story 54.35) is not
+	// relayed: the relay switch and the membership are a node's
+	home := c.Kind == "home"
+	if !s.Enabled && !home {
 		return Result{Err: fail(CodeOff, "the extension relay is switched off on the home")}
 	}
 	if why, ok := HomeOnly[req.Ext]; ok {
@@ -357,7 +360,7 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 	if ext == nil {
 		return Result{Err: fail(CodeUnknown, "no relayable extension "+clip(req.Ext, 40))}
 	}
-	if d.cfg.Member != nil {
+	if d.cfg.Member != nil && !home {
 		if err := d.cfg.Member(ctx, c); err != nil {
 			return Result{Err: fail(CodeNotMember, "this machine is not an approved member")}
 		}
@@ -365,7 +368,7 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 	if len(req.Body) > MaxRequestBody {
 		return Result{Err: fail(CodeTooLarge, fmt.Sprintf("request body over %d bytes", MaxRequestBody))}
 	}
-	rule, upath, rawQuery, err := ext.Match(req.Method, req.Target)
+	rule, upath, rawQuery, err := ext.MatchFor(home, req.Method, req.Target)
 	if err != nil {
 		code := CodeNotAllowed
 		if errors.Is(err, ErrBadTarget) {

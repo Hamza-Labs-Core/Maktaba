@@ -51,6 +51,10 @@ jobs:
       - name: A simulator's settle check reads its own processes
         run: python3 tools/apple/sim-settle.py --self-test
 
+      # how a CI run's drawn pages become the Mac Player's page references (issue #876)
+      - name: The page references' copier picks PageSnapshots' images only
+        run: python3 tools/apple/snapshots.py --self-test
+
       - name: Select Xcode
         run: |
           set -euo pipefail
@@ -463,6 +467,9 @@ jobs:
             -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
             -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
             -only-testing "Maktaba Player Mac Tests/PlayerLaunchLog" \
+            -only-testing "Maktaba Player Mac Tests/PageLocale" \
+            -only-testing "Maktaba Player Mac Tests/SeriesScreenDetails" \
+            -only-testing "Maktaba Player Mac Tests/PageSnapshots" \
             -only-testing "Maktaba Player Mac UITests" || status=1
           log show --start "$start" --style compact --info --debug \
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true

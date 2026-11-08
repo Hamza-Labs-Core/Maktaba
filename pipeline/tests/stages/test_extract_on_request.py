@@ -12,7 +12,6 @@ from __future__ import annotations
 import os
 import time
 from datetime import timedelta
-from functools import partial
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -26,7 +25,8 @@ from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.sql import now, to_ts
-from maktaba_pipeline.handlers import extract_handler, probe_handler
+from maktaba_pipeline.engine.stages import extract as extract_stage
+from maktaba_pipeline.handlers import probe_handler
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt.batched import Sentence, Transcript
 from tests.engine.factory import make_library, make_video
@@ -101,17 +101,26 @@ async def _jobs(db: Database, stage: str) -> list[Any]:
     )
 
 
-async def _run_extract(db: Database, rt: EngineRuntime, handler: Any) -> int:
-    """Claim and run every extract job (a legacy stage: drain_core leaves them)."""
+async def _run_extract(
+    db: Database, rt: EngineRuntime, decode: Any = None, *, reads_file: bool = False
+) -> int:
+    """Claim and run every extract job (drain_core leaves them): the engine stage (story
+    54.36 §2), its decoder and its backend's answer set for the run."""
+    saved = (extract_stage.decode, extract_stage.requires_file)
+    extract_stage.decode = decode or _never_ffmpeg()
+    extract_stage.requires_file = lambda: reads_file
     ran = 0
-    while True:
-        job = await claim_for_pool(
-            db, worker_id="test", pool="nas_read", stages=["extract"], scope="global"
-        )
-        if job is None:
-            return ran
-        await dispatch_job(db, job, runtime=rt, legacy_handlers={"extract": handler})
-        ran += 1
+    try:
+        while True:
+            job = await claim_for_pool(
+                db, worker_id="test", pool="nas_read", stages=["extract"], scope="global"
+            )
+            if job is None:
+                return ran
+            await dispatch_job(db, job, runtime=rt, legacy_handlers={})
+            ran += 1
+    finally:
+        extract_stage.decode, extract_stage.requires_file = saved
 
 
 def _never_ffmpeg() -> Any:
@@ -138,13 +147,17 @@ async def test_a_streaming_backend_never_asks_for_extract(
     assert await db.fetchval("SELECT count(*) FROM audio_cache") == 0
 
 
-# Postgres only: the legacy probe's SQL is (``probed_at = now()``, and the FSM advance's
+# Postgres only: the probe's SQL is (``probed_at = now()``, and the FSM advance's
 # ``FOR UPDATE``); tests/audio/test_probe.py covers chain_extract on both dialects' fakes
 @pytest.mark.parametrize("db", ["postgres"], indirect=True)
 @pytest.mark.asyncio
-async def test_the_engine_probe_queues_no_extract(db: Database, tmp_path: Path) -> None:
-    """The engine's probe handler (build_real_dispatch(engine=True)) leaves extract out."""
+async def test_the_engine_probe_queues_no_extract(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine's probe stage (story 54.36 §2) leaves extract out, as the legacy handler
+    did on the engine (build_real_dispatch(engine=True))."""
     from maktaba_pipeline.audio.probe import AudioTrack, MediaInfo, ProbeResult
+    from maktaba_pipeline.engine.stages import probe as probe_stage
     from maktaba_pipeline.handlers import build_real_dispatch
 
     rt = await core_runtime(db)
@@ -162,8 +175,8 @@ async def test_the_engine_probe_queues_no_extract(db: Database, tmp_path: Path) 
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="probe")
     job = await claim_for_pool(db, worker_id="t", pool="nas_read", stages=["probe"], scope="global")
     assert job is not None
-    handlers = {"probe": partial(probe_handler, run_probe=ffprobe, chain_extract=False)}
-    await dispatch_job(db, job, runtime=rt, legacy_handlers=handlers)
+    monkeypatch.setattr(probe_stage, "ffprobe", ffprobe)
+    await dispatch_job(db, job, runtime=rt, legacy_handlers={})
 
     assert [j["state"] for j in await _jobs(db, "probe")] == ["done"]
     assert await _jobs(db, "extract") == []
@@ -189,8 +202,6 @@ async def test_a_file_backend_asks_for_the_wav_reads_it_and_releases_it(
         dest.write_bytes(b"RIFF....WAVE")
         return dest
 
-    extract = partial(extract_handler, run_extract=run_extract, requires_file=lambda: True)
-
     # 1. transcribe has no WAV: it waits and asks for extract
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
     assert await drain_core(db, rt, only={"transcribe"}) == ["transcribe"]
@@ -200,7 +211,7 @@ async def test_a_file_backend_asks_for_the_wav_reads_it_and_releases_it(
     assert [j["state"] for j in await _jobs(db, "extract")] == ["pending"]
 
     # 2. extract writes the WAV of the Arabic track and queues transcribe again
-    assert await _run_extract(db, rt, extract) == 1
+    assert await _run_extract(db, rt, run_extract, reads_file=True) == 1
     arabic = await _track_id(db, vid, 1)
     assert written == [(str(tmp_path / "درس 01.mp4"), 1)]
     row = await db.fetchrow("SELECT path, audio_track_id FROM audio_cache")
@@ -269,15 +280,14 @@ async def test_the_queued_extract_backlog_drains_as_no_ops(db: Database, tmp_pat
         " WHERE stage = 'extract'",
         to_ts(db, now()),
     )
-    assert await _run_extract(db, rt, extract_handler) == 0  # paused: nothing claimed
+    assert await _run_extract(db, rt) == 0  # paused: nothing claimed
     await db.execute(
         "UPDATE job_stages SET paused = false, paused_at = NULL, paused_by = NULL"
         " WHERE stage = 'extract'"
     )
 
-    handler = partial(extract_handler, run_extract=_never_ffmpeg(), requires_file=lambda: False)
     t0 = time.monotonic()
-    assert await _run_extract(db, rt, handler) == 6
+    assert await _run_extract(db, rt) == 6
     assert time.monotonic() - t0 < 5
 
     assert {j["state"] for j in await _jobs(db, "extract")} == {"done"}

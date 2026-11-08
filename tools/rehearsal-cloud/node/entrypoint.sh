@@ -15,8 +15,15 @@ envsubst <"/opt/cloud-ha/etcd/etcd.conf.yml" >/etc/etcd/etcd.conf.yml
 mkdir -p /etc/etcd/pki && cp /pki/ca.crt "/pki/${NODE_NAME}.crt" "/pki/${NODE_NAME}.key" /etc/etcd/pki/
 etcd --config-file /etc/etcd/etcd.conf.yml >/var/log/etcd.log 2>&1 &
 
+# the cloud's logs (story 53.17): the token A, B and W share
+printf '%s\n' "${LOGS_TOKEN:-rehearsal-logs-token}" >/etc/maktaba/logs.token
+chmod 0644 /etc/maktaba/logs.token
+
 if [ "${ROLE:-node}" = witness ]; then
-    echo "witness ${NODE_NAME}: etcd"
+    echo "witness ${NODE_NAME}: etcd, and the cloud's logs"
+    MAKTABA_ENV=rehearsal MAKTABA_NODE_ID=witness MAKTABA_CLOUD_LOGS_DIR=/var/lib/maktaba-cloud/logs \
+    MAKTABA_CLOUD_LOGS_LISTEN="${NODE_ADDR}:9610" MAKTABA_CLOUD_LOGS_TOKEN_FILE=/etc/maktaba/logs.token \
+        maktaba-cloud logs >/var/log/logs.log 2>&1 &
     tail -F /var/log/etcd.log
 fi
 
@@ -57,13 +64,52 @@ gosu postgres env CLOUD_HA_ENV=/etc/maktaba/cloud-ha.env PATRONI_URL="http://127
     ACTIVE_FILE=/run/maktaba/active MAKTABA_ACTIVE_CMD=/opt/rehearsal-node/active.sh \
     leader-guard >/var/log/leader-guard.log 2>&1 &
 
-# the edge
-caddy run --adapter caddyfile --config /opt/rehearsal-node/Caddyfile >/var/log/caddy.log 2>&1 &
+# the edge: the rehearsal's plain-HTTP relay site, or with ORIGIN_MODE (story 50.31's scenarios)
+# production's Caddyfile and UFW, and the api behind the loopback (origin.sh, firewall.sh)
+caddy_config=/opt/rehearsal-node/Caddyfile
+if [ -n "${ORIGIN_MODE:-}" ]; then
+    [ -z "${FIREWALL_PUBLIC_NET:-}" ] || /opt/rehearsal-node/firewall.sh
+    export RELAY_DOMAIN=relay.test RELAY_UPSTREAMS="127.0.0.1:8443" ACME_EMAIL=rehearsal@example.test NODE_ADDR
+    /opt/rehearsal-node/origin.sh
+    caddy_config=/etc/caddy/Caddyfile
+fi
+caddy run --adapter caddyfile --config "${caddy_config}" >/var/log/caddy.log 2>&1 &
+
+# 50.31's api and its stand-in connector (cloudflared's place: maktaba-cloudflared.service is
+# PartOf the active target): socat on the private address to the api's loopback listener, so the
+# stand-in edge reaches the api only through the leader. Started and stopped with the relay.
+api_pid=""
+conn_pid=""
+origin_start() {
+    [ -n "${ORIGIN_MODE:-}" ] || return 0
+    if [ -z "${api_pid}" ] || ! kill -0 "${api_pid}" 2>/dev/null; then
+        MAKTABA_ENV=rehearsal MAKTABA_NODE_ID="${NODE_NAME}-api" \
+        MAKTABA_CLOUD_DB_URL="postgres://maktaba:${PG_APP_PASSWORD}@127.0.0.1:5432/maktaba?sslmode=disable" \
+        MAKTABA_CLOUD_PUBLIC_URL=https://api.maktaba.tv MAKTABA_CLOUD_TOKEN_SECRET="${TOKEN_SECRET}" \
+        MAKTABA_CLOUD_BILLING_PROVIDER=none \
+            maktaba-cloud serve --role api --config /etc/maktaba/cloud.toml >>/var/log/api.log 2>&1 &
+        api_pid=$!
+    fi
+    if [ "${ORIGIN_MODE}" = tunnel ] && { [ -z "${conn_pid}" ] || ! kill -0 "${conn_pid}" 2>/dev/null; }; then
+        echo "$(date -u +%FT%TZ) starting the connector (this node leads)"
+        socat "TCP-LISTEN:7844,bind=${NODE_ADDR},fork,reuseaddr" TCP:127.0.0.1:8090 >>/var/log/connector.log 2>&1 &
+        conn_pid=$!
+    fi
+}
+origin_stop() {
+    for pid in "${conn_pid}" "${api_pid}"; do
+        [ -z "${pid}" ] || kill -TERM "${pid}" 2>/dev/null || true
+    done
+    [ -z "${conn_pid}" ] || echo "$(date -u +%FT%TZ) stopping the connector (this node no longer leads)"
+    conn_pid=""
+    api_pid=""
+}
 
 # the cloud processes follow the active file (on-role-change writes it through active.sh)
 relay_pid=""
 while :; do
     want="$(cat /run/maktaba/active 2>/dev/null || echo stop)"
+    if [ "${want}" = start ]; then origin_start; else origin_stop; fi
     if [ "${want}" = start ] && { [ -z "${relay_pid}" ] || ! kill -0 "${relay_pid}" 2>/dev/null; }; then
         echo "$(date -u +%FT%TZ) starting the relay (this node leads)"
         MAKTABA_ENV=rehearsal MAKTABA_NODE_ID="${NODE_NAME}-blue" \
@@ -72,6 +118,8 @@ while :; do
         MAKTABA_CLOUD_PUBLIC_URL=http://relay.test MAKTABA_CLOUD_RELAY_PUBLIC_HOST=relay.test \
         MAKTABA_CLOUD_TOKEN_SECRET="${TOKEN_SECRET}" MAKTABA_CLOUD_BILLING_PROVIDER=none \
         MAKTABA_CLOUD_RELAY_ID="${NODE_NAME}-blue" MAKTABA_CLOUD_RELAY_PEER_ADDR="${NODE_ADDR}:8444" \
+        MAKTABA_CLOUD_LOGS_DIR=/var/lib/maktaba-cloud/logs MAKTABA_CLOUD_LOGS_INSTANCE=blue \
+        MAKTABA_CLOUD_LOGS_URL="http://${LOGS_W_ADDR:-10.60.0.13:9610}" MAKTABA_CLOUD_LOGS_TOKEN_FILE=/etc/maktaba/logs.token \
             maktaba-cloud serve --role relay >>/var/log/relay.log 2>&1 &
         relay_pid=$!
     elif [ "${want}" = stop ] && [ -n "${relay_pid}" ] && kill -0 "${relay_pid}" 2>/dev/null; then

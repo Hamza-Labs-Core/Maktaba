@@ -20,10 +20,10 @@ from typing import Any, Literal
 from ..log import get_logger
 from ..rules import read as read_rules
 from ..schedule.entry import plan_catalog
+from ..schedule.plan_inputs import compute_changes, load_inputs
 from .plan_page import PLAN_PAGE, PREVIEW_PAGE, write_plan_page
 from .sql import loads
 from .stages._plan_json import build_plan_json
-from .stages.plan_channels import compute_changes, load_inputs
 from .stages.review_pages import reviews_dir
 
 __all__ = ["PlanPreview", "PreviewBusy"]

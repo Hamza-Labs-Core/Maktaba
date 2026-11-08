@@ -15,6 +15,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	relayh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/relay"
 	metricspkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/metrics"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
 	relaypkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
@@ -178,7 +179,7 @@ func runRelay(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Mig
 			h(w, req)
 		}
 	}
-	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, meter.WriteMetrics)))
+	r.Get("/metrics", relayControl(metricspkg.PrometheusHandler(collector, relaypkg.WriteMetrics, relayh.WriteMetrics, relayh.WriteCacheMetrics, meter.WriteMetrics, obs.WriteMetrics)))
 	r.Get("/privacy", relayControl(privacy.PolicyHandler))
 	// Story 25.23: the edge's on-demand TLS asks here before it requests a
 	// certificate (Caddy `on_demand_tls { ask … }`): 200 only for the bare
@@ -217,7 +218,9 @@ func relayRouterOptions(cfg config.Config, cache *relayh.HomeCache, reg *relaypk
 		started := time.Now()
 		draining = func() bool { return reg.Closing() || time.Since(started) > time.Duration(badAfter)*time.Second }
 	}
-	return append(relayReadiness(cfg, cache), server.WithDraining(draining))
+	// the access log prints the client the relay itself resolves (its rightmost
+	// X-Forwarded-For entry, which Caddy appends), not Caddy's loopback (story 50.32 §1)
+	return append(relayReadiness(cfg, cache), server.WithDraining(draining), server.WithClientIPFrom(relayh.ClientIP))
 }
 
 // relayIDOf names this relay process in the tunnel directory: relay.id, or
