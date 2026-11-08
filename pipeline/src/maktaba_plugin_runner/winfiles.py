@@ -12,11 +12,13 @@ file closes: the runner holds no handle it could write with
 (cmd/maktaba-server/internal/appcontainer/broker.go).
 
 :func:`install` routes the calls a stage makes on such a path to the broker: ``open``,
-``os.stat`` (and so ``os.path.exists`` and the like), ``os.listdir``, ``os.replace`` /
-``os.rename`` and ``os.remove`` / ``os.unlink``. Each raises the audit event the plain call
-would, so the runner's guards (subtitle names, the job's scope) see the path as before. A
-refusal is a ``PermissionError``, so a job refused there runs in the worker
-(``sandbox_refused``).
+``os.stat`` (and so ``os.path.exists``, ``lexists``, ``isfile``, ``isdir`` and the like),
+``os.listdir``, ``os.replace`` / ``os.rename`` and ``os.remove`` / ``os.unlink``; ``os.scandir``
+(and so ``os.walk`` and ``Path.glob``) is refused there. Each raises the audit event the plain
+call would, so the runner's guards (subtitle names, the job's scope) see the path as before. A
+refusal is a ``PermissionError``, never a missing file: a lookup that answered False or empty
+for a refused file would let a stage end done with the wrong result, where the refusal makes
+the job run in the worker (``sandbox_refused``).
 
 A tool (ffmpeg, ffprobe) reaches no share either, being a child in the same AppContainer and
 Job Object. One given a single file of a brokered folder as its input reads it through a
@@ -103,7 +105,9 @@ class _Shim:
         self.rename = os.rename
         self.remove = os.remove
         self.unlink = os.unlink
+        self.scandir = os.scandir
         self.exists = os.path.exists
+        self.lexists = os.path.lexists
         self.isfile = os.path.isfile
         self.isdir = os.path.isdir
 
@@ -179,12 +183,28 @@ class _Shim:
         sec = ns // 1_000_000_000
         return os.stat_result((mode, 0, 0, 1, 0, 0, size, sec, sec, sec))
 
-    # Python 3.12 on Windows answers these without os.stat (nt._path_exists and the like)
+    # Python 3.12 on Windows answers these without os.stat (nt._path_exists and the like).
+    # A missing file is False, as the plain calls answer; a refusal is raised: answered
+    # False, a stage would go on as if the file were absent (a thumbnail not found, a job
+    # done with the wrong result) instead of running in the worker (sandbox_refused).
     def exists_(self, path: Any) -> bool:
         if self.under(path) is None:
             return self.exists(path)
         try:
             self.stat_(path)
+        except PermissionError:
+            raise  # refused, not absent: the job runs in the worker (sandbox_refused)
+        except (OSError, ValueError):
+            return False
+        return True
+
+    def lexists_(self, path: Any) -> bool:
+        if self.under(path) is None:
+            return self.lexists(path)
+        try:
+            self.lstat_(path)
+        except PermissionError:
+            raise  # refused, not absent: the job runs in the worker (sandbox_refused)
         except (OSError, ValueError):
             return False
         return True
@@ -194,6 +214,8 @@ class _Shim:
             return self.isfile(path)
         try:
             return stat_mod.S_ISREG(self.stat_(path).st_mode)
+        except PermissionError:
+            raise
         except (OSError, ValueError):
             return False
 
@@ -202,6 +224,8 @@ class _Shim:
             return self.isdir(path)
         try:
             return stat_mod.S_ISDIR(self.stat_(path).st_mode)
+        except PermissionError:
+            raise
         except (OSError, ValueError):
             return False
 
@@ -212,6 +236,15 @@ class _Shim:
         sys.audit("os.listdir", p)
         names = [str(n) for n in self.ask({"op": "list", "path": p}).get("names") or []]
         return [os.fsencode(n) for n in names] if isinstance(path, bytes) else names
+
+    def scandir_(self, path: Any = ".") -> Any:
+        """Not brokered (its entries would stat behind the broker's back): a brokered folder
+        is refused, so the job runs in the worker instead of seeing an empty or missing one."""
+        p = self.under(path)
+        if p is None:
+            return self.scandir(path)
+        sys.audit("os.scandir", p)
+        raise PermissionError(errno.EACCES, f"{p}: a share folder is listed with os.listdir")
 
     def _move(
         self, plain: Callable[..., None], src: Any, dst: Any, *args: Any, **kwargs: Any
@@ -406,11 +439,13 @@ def install(
     os.stat = shim.stat_
     os.lstat = shim.lstat_
     os.listdir = shim.listdir_
+    os.scandir = shim.scandir_
     os.replace = shim.replace_
     os.rename = shim.rename_
     os.remove = shim.remove_
     os.unlink = shim.unlink_
     os.path.exists = shim.exists_
+    os.path.lexists = shim.lexists_
     os.path.isfile = shim.isfile_
     os.path.isdir = shim.isdir_  # type: ignore[assignment]
     subprocess.Popen.__init__ = shim.popen_init(subprocess.Popen.__init__)  # type: ignore[method-assign]
