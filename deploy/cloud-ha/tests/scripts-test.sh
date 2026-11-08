@@ -7,13 +7,21 @@
 set -uo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
 work="$(mktemp -d)"
-trap 'rm -rf "${work}"' EXIT
+# a background Floating IP retry a failed case left running is stopped before the stubs go:
+# without them it would run on with the real curl and sleep, for good
+cleanup() {
+    local f
+    for f in "${work}"/*/fip-retry.pid; do [ -f "${f}" ] && kill "$(cat "${f}")" 2>/dev/null; done
+    rm -rf "${work}"
+}
+trap cleanup EXIT
 fails=0
 ok()   { printf '  ok    %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 
 mkdir -p "${work}/bin"
-# curl: the Hetzner API answers the codes in $CODES one per call ("201" when empty), and each
+# curl: the Hetzner API answers the codes in $CODES one per call (then $CODE_AFTER, "201" when
+# unset), and each
 # call is recorded; any other URL (a Caddy health check) answers $HEALTH (0 = up)
 cat >"${work}/bin/curl" <<'STUB'
 #!/usr/bin/env bash
@@ -26,14 +34,15 @@ if [[ "${url}" == *:8453/readyz ]]; then
 fi
 if [[ "${url}" == *:8443/readyz ]]; then exit 0; fi
 if [[ "${url}" == */primary ]]; then
-    printf '%s' "${GUARD_CODE:-200}"
+    # $STATE/primary_code, when a case writes it, overrides $GUARD_CODE as it runs
+    printf '%s' "$(cat "${STATE}/primary_code" 2>/dev/null || echo "${GUARD_CODE:-200}")"
     exit 0
 fi
 if [[ "${url}" == *floating_ips* ]]; then
     echo "$*" >>"${STATE}/calls"
     n="$(wc -l <"${STATE}/calls" | tr -d ' ')"
     code="$(sed -n "${n}p" <<<"${CODES:-}" | tr -d ' ')"
-    printf '%s' "${code:-201}"
+    printf '%s' "${code:-${CODE_AFTER:-201}}"
     exit 0
 fi
 exit "${HEALTH:-0}"
@@ -86,12 +95,28 @@ else
 fi
 
 # T08: the API refuses for the whole window: fip_assign_failed, the processes start anyway
-role refused primary CODES="$(printf '503\n%.0s' $(seq 1 40))" FIP_RETRY_FOR=15 FIP_RETRY_EVERY=1
+# (every assign call answers 503)
+role refused primary CODE_AFTER=503 FIP_RETRY_FOR=15 FIP_RETRY_EVERY=1 \
+    FIP_RETRY_PIDFILE="${work}/refused/fip-retry.pid"
 if grep -q '^fip_assign_failed .*DNS-swap runbook' "${work}/refused/alerts" 2>/dev/null && [ "$(cat "${work}/refused/active")" = start ]; then
     ok "refused: fip_assign_failed after the retry window, with the runbook; processes started"
 else
     fail "refused: alerts=$(cat "${work}/refused/alerts" 2>/dev/null) out=$(cat "${work}/refused/out")"
 fi
+# the retry goes on in the background while this node leads, and while Patroni doesn't answer
+# (restarting is not a demotion); once Patroni answers it is not the primary, the retry stops
+alive() { kill -0 "$(cat "${work}/refused/fip-retry.pid" 2>/dev/null)" 2>/dev/null; }
+gone_within() { local _; for _ in $(seq 1 50); do alive || return 0; command sleep 0.1; done; return 1; }
+retry_ok=1
+alive || { retry_ok=0; fail "refused: no background retry while this node leads"; }
+echo 000 >"${work}/refused/primary_code"
+command sleep 0.5
+alive || { retry_ok=0; fail "refused: the retry stopped when Patroni didn't answer"; }
+echo 503 >"${work}/refused/primary_code"
+gone_within || { retry_ok=0; fail "refused: the retry still runs after Patroni answered 503 on /primary"; }
+grep -q 'no longer leads: the Floating IP retry stops' "${work}/refused/out" \
+    || { retry_ok=0; fail "refused: the retry's stop is not logged: $(tail -3 "${work}/refused/out")"; }
+[ "${retry_ok}" = 1 ] && ok "refused: the background retry runs while leading or unanswered, and stops on a demotion"
 
 # T02: replica: processes stopped, no API call
 for r in replica demoted; do
