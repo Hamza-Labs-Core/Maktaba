@@ -229,6 +229,17 @@ jobs:
           MAKTABA_PLUGINS_SANDBOX_RUN="$(cygpath -w "$RUNNER_TEMP/aclaunch-e2e.exe")" \
             go test -count=1 -v -run '^TestThePluginHostOnWindowsThroughTheRelay$' ./internal/supervisor/
 
+      # 54.23 on Windows: the runner launcher's package on the OS itself, real profiles and
+      # ACLs on temp folders. A grant or revoke lands only on the folder that was checked:
+      # one swapped for a junction to a decoy between the check and the change (a test hook)
+      # is refused, the decoy gets no entry and the start fails closed. Verbose, so the log
+      # shows each test ran
+      - name: The runner launcher's grants (54.23)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        run: go test -count=1 -v ./internal/appcontainer/...
+
       # 54.23 on Windows: a runner's library on an SMB share, through its launcher's file
       # broker. Two shares are made on local folders (reached as \\localhost\<name>); a
       # runner group started through the launcher reads the library and writes a subtitle
