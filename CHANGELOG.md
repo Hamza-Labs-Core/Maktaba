@@ -193,6 +193,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **On the Mac app's first start after an update, a service waiting for the transcription
+  tools now shows their install progress.** A service could keep showing "Waiting for the
+  transcription tools" while the tools were already installing, until the next progress step,
+  when its first status arrived after the install's newer one.
+
 - **Share media a Windows runner missed on v0.3.105 is processed again (story 54.23).** On
   v0.3.105, a Windows runner could read a file on a share as missing. A small thumbnail then
   ended done with no thumbnail, and an approved duplicate merge failed with its kept file
