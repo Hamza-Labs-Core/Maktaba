@@ -17,6 +17,7 @@ session: 848393e1-ea22-4a25-a90f-b930df232381
   - `maktaba-server stages impl` would have flipped a core stage, because `probe` is now a built-in plugin's. It now refuses a stage whose component isn't switchable, as the API does, and its test covers probe, scan and fp_gate.
   - The core-media parity took 21 s on CI, over the hard cap. Probe's edges queued `transcribe`, which ran ffmpeg on the stand-in files; with no ffmpeg on CI, each job failed and was retried. Transcription is switched off in that world, as on a home without it: 12.0 s to 4.1 s with no ffmpeg on the machine.
 - Every by-id write became scope-checked on main while this branch waited (#1005). Running `statements_build.py sync` gave the moved statements their checks: fp_gate's season, link's YouTube rows, the candidate's library and video, and extract's audio rows. The hand-set scope tables of core-media and thumbnails are gone, because the build now derives a write of a video by id.
+- CI's Core footprint check (`mac-app / Bundle size (Core payload)`) failed: 6 processes and 763 MB against exactly 4 and 700 MB. Core stages such as scan now run in a runner, so the test home's scan of its empty library woke two runner groups, and a runner stayed up for ten idle minutes (#859), past the 120 s idle window. A runner now exits after one idle minute (`RunnerIdleSec = 60`), and a test pins it within half that window. The update rehearsal had already passed on that head.
 
 ## What we learned
 - A move this big conflicts with every wave merged meanwhile (registry, graph, import_mediaintel, pyproject lists, guide, roles). Resolve by dropping both sides' moved entries, then rebuild the generated files (`bundle.py --write`, `roles.py sql`) instead of merging them by hand.
@@ -25,6 +26,7 @@ session: 848393e1-ea22-4a25-a90f-b930df232381
 - First-party plugin tests run on their own (`pytest ../plugins/first-party`) don't load the pipeline's pytest config, so the soft-cap hook never judges them. A test that's over the cap passes locally and fails on CI. Time them the way CI runs them, together with `tests/plugins/firstparty`.
 - A parity world runs every stage the graph queues, including other plugins'. Switch off what isn't under test, or the world depends on the machine's tools.
 - A move that turns core stages into plugin stages changes every check that asks whether a stage is a plugin's. Run `cmd/maktaba-server`'s tests too.
+- Moving always-on work into an on-demand process changes when that process runs. Check Core's footprint whenever core stages change where they run.
 
 ## Keep doing
 - Re-check main's newest migration just before the push and again before the merge (the watcher's slot guard), and take the next slot then, not when the branch starts.

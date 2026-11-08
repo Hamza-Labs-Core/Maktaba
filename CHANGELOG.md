@@ -193,6 +193,10 @@ build fails when the two differ.
 
 ### Fixed
 
+- **An idle Core home is back to its four processes a minute after its last job.** Since the
+  core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
+  stayed up for ten idle minutes. A runner now exits after one idle minute.
+
 - **A machine can now download Postgres while github.com's download links fail.** A machine
   that needs Postgres at runtime (a node keeping a copy of its home's database) now tries three
   places in turn: Maktaba's CDN (plugins-cdn.maktaba.tv, where each release now publishes the
