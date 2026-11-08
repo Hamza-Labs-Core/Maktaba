@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
+  later, a crash in native code is now kept and sent, when crash reports are on, with its
+  signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
+  Each frame names its library file only, never a folder, and the abort message loses its
+  paths and personal data before it is kept. On Android 11, or a tombstone that cannot be read,
+  the crash is kept with its reason alone, as before. Story 53.14.
 - **The service door reads each dizqueTV programme's item from Plex (`tv.maktaba.dizquetv`).**
   The plugin now names each programme by its Plex rating key only. The door reads the item
   from Plex with the home's token and takes the file, media part and duration from Plex's
