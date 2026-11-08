@@ -1,0 +1,93 @@
+# TEMPORARY (removed before merge): N16's evidence. Each shard runs the first-party parity
+# suite (CI's command) and then classify's proof alone (its detect job runs 29 statements
+# then, the workload of PR #1021's failure) REPS times, with the old N16 harness (main's)
+# or the new one, keeping every run's parity report.
+name: n16-repeat
+on:
+  push:
+    branches: [claude/n16-cpu-measure]
+    paths: ['.github/workflows/n16-repeat.yml']
+permissions:
+  contents: read
+jobs:
+  loop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        measure: [old, new]
+        shard: [1, 2, 3, 4, 5, 6]
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba
+      REPS: 6
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: The old N16 harness (main's)
+        if: matrix.measure == 'old'
+        run: |
+          base=$(git merge-base HEAD origin/main)
+          git checkout "$base" -- pipeline/tests/plugins/firstparty plugins/sdk/python/maktaba_plugin_sdk/parity.py
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --extra dev
+
+      - name: Loop
+        working-directory: pipeline
+        shell: bash
+        run: |
+          set +e
+          lscpu | grep -E 'Model name|^CPU\(s\)' || true
+          suite_fail=0; alone_fail=0
+          for i in $(seq 1 "$REPS"); do
+            MAKTABA_PARITY_REPORT_DIR="$RUNNER_TEMP/rep/$i/suite" uv run --with pglast==8.7 pytest -q -p no:cacheprovider -W ignore tests/plugins/firstparty $(ls -d ../plugins/first-party/*/tests) > "$RUNNER_TEMP/suite-$i.log" 2>&1
+            rc=$?; [ $rc -ne 0 ] && suite_fail=$((suite_fail+1))
+            echo "rep $i suite rc=$rc $(tail -1 "$RUNNER_TEMP/suite-$i.log")"
+            grep -E "^FAILED|^E +AssertionError: .*p(50|95)" "$RUNNER_TEMP/suite-$i.log" | head -5
+            MAKTABA_PARITY_REPORT_DIR="$RUNNER_TEMP/rep/$i/alone" uv run --with pglast==8.7 pytest -q -p no:cacheprovider -W ignore ../plugins/first-party/classify/tests > "$RUNNER_TEMP/alone-$i.log" 2>&1
+            rc=$?; [ $rc -ne 0 ] && alone_fail=$((alone_fail+1))
+            echo "rep $i classify alone rc=$rc $(tail -1 "$RUNNER_TEMP/alone-$i.log")"
+            grep -E "^FAILED|^E +AssertionError: .*p(50|95)" "$RUNNER_TEMP/alone-$i.log" | head -5
+          done
+          echo "SUMMARY measure=${{ matrix.measure }} shard=${{ matrix.shard }} reps=$REPS suite_failed=$suite_fail classify_alone_failed=$alone_fail"
+          cp "$RUNNER_TEMP"/*.log "$RUNNER_TEMP/rep/" 2>/dev/null
+          exit 0
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: n16-${{ matrix.measure }}-${{ matrix.shard }}
+          path: ${{ runner.temp }}/rep
