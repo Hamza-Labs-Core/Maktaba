@@ -1,6 +1,10 @@
 package com.hamzalabs.maktaba.core.api
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -12,8 +16,9 @@ import java.time.Instant
 
 /**
  * Maktaba Cloud's status (Epic 50 story 50.11): `https://status.maktaba.tv/summary.json`, read
- * only when the app reaches its home through the cloud (the relay's address). Read at start and
- * every 5 minutes while in front; it never blocks: a failed read shows nothing. The status strip
+ * only when the app reaches its home through the cloud (the relay's address). Read at start,
+ * every 5 minutes while in front, and at once when a request fails as the relay fails
+ * ([CloudStatusRules.noteRequestFailed]); it never blocks: a failed read shows nothing. The status strip
  * (53.06) draws its line after the home's own.
  */
 @Serializable
@@ -50,6 +55,8 @@ object CloudStatusRules {
     /** The relay's public names: a home at `<slug>.relay.maktaba.tv` is reached through it. */
     const val RELAY_DOMAIN = "relay.maktaba.tv"
     const val POLL_MS = 5 * 60_000L
+    /** At most one read a failed request asks for in this long: an outage fails every request. */
+    const val RECHECK_GAP_MS = 10_000L
     private const val AHEAD_MS = 24 * 3600_000L
 
     /** The app reaches the home at [home] through Maktaba Cloud. */
@@ -99,6 +106,33 @@ object CloudStatusRules {
             args = listOf(start.first, start.second, fmt(b).second),
             link = m.url ?: SITE,
         )
+    }
+
+    private val _recheck = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** Fires when a failed request asks for the feed now; the strip's loop reads it then. */
+    val recheck: SharedFlow<Unit> = _recheck.asSharedFlow()
+
+    @Volatile private var lastRecheck = Long.MIN_VALUE / 2
+
+    /**
+     * A request to [home] answered [code] (0: no answer). When the home is reached through the
+     * cloud and that is the relay failing (no answer, 502, 503, 504), the feed is read now, at
+     * most once every [RECHECK_GAP_MS]. Whether it fired.
+     */
+    fun noteRequestFailed(home: HttpUrl?, code: Int, nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (code != 0 && code != 502 && code != 503 && code != 504) return false
+        if (!throughCloud(home)) return false
+        synchronized(this) {
+            if (nowMs - lastRecheck < RECHECK_GAP_MS) return false
+            lastRecheck = nowMs
+        }
+        return _recheck.tryEmit(Unit)
+    }
+
+    /** Forgets the last recheck (tests). */
+    fun resetRecheck() {
+        lastRecheck = Long.MIN_VALUE / 2
     }
 
     private val json = Json { ignoreUnknownKeys = true }

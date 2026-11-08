@@ -492,6 +492,8 @@ public actor APIClient {
                 // the screen went away (its task was cancelled): nothing went wrong
                 if Log.isCancellation(error) { throw CancellationError() }
                 Log.network.error("\(Self.describe(r), privacy: .public): no answer (URLError \((error as? URLError)?.code.rawValue ?? 0, privacy: .public))")
+                // the relay not answering: the cloud's status is read now (story 50.11)
+                CloudStatusRules.noteRequestFailed(home: home, status: 0)
                 throw APIError.transport(error.localizedDescription)
             }
             // a home reconnecting behind the relay is waited for (Epic 50 story 50.13)
@@ -505,6 +507,7 @@ public actor APIClient {
             waited += 1
         }
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if !Self.isReconnecting(code, data) { CloudStatusRules.noteRequestFailed(home: home, status: code) }
         if code == 401, authorized, !retried, tokens.refresh != nil {
             _ = try await refreshOnce()
             return try await exchange(r, authorized: true, retried: true, redirects: redirects, answered: answered)
