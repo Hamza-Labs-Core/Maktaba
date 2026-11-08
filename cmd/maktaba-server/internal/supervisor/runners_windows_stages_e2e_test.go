@@ -170,6 +170,13 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		return os.OpenFile(filepath.Join(logs, name+".log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	}
 	s := New(procs, DefaultPolicy(), WithLog(supLog), WithSpool(spool))
+	// the components reconciler's part (core.plugin_runners is on while a component with a
+	// first-party plugin is): each shared group may start, and starts when the worker asks
+	for _, p := range procs[1:] {
+		if err := s.Allow(RolePluginRunner, p.Instance, true); err != nil {
+			t.Fatal(err)
+		}
+	}
 	stopped := make(chan error, 1)
 	go func() { stopped <- s.Run(ctx, 30*time.Second) }()
 	defer func() {
