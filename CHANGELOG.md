@@ -133,6 +133,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A cloud node that loses the lead no longer keeps trying to take the Floating IP (Epic 50
+  story 50.07).** When Hetzner's API refuses the move for a minute, the new leader keeps retrying
+  in the background; that retry now stops as soon as Patroni says the node no longer leads, so a
+  node demoted meanwhile can't pull the IP back. While Patroni doesn't answer at all, it keeps
+  trying, so the IP still moves to a real leader.
 - **A cloud deploy now updates the API and the worker (Epic 50).** Deploys installed the new
   release only for the relay and the name server, so the API and the worker never ran a
   release on the nodes. They now get it too, the standby first; on the leader they restart,
@@ -360,6 +365,12 @@ build fails when the two differ.
 
 ### Security
 
+- **The cloud's two web sites each get a Worker in front (Epic 50 story 50.32).**
+  `app.maktaba.tv` and `admin.maktaba.tv` serve their own bundles through a Cloudflare Worker that
+  sets each host's security headers and content policy on every page and API answer. Each lets
+  through only its own API paths: the user site answers the operator console's API with 404
+  before it reaches the cloud, and the console's site serves nothing else, tells search engines
+  to stay away and is never cached.
 - **The cloud's operator console has its own listener and name (Epic 50 story 50.32).** Every
   `/v1/admin/*` route is served only by the api role's admin listener, for `admin.maktaba.tv`
   alone: on the user names each one is the same 404 as a route that doesn't exist. The console

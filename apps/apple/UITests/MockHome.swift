@@ -69,6 +69,7 @@ final class MockHome: @unchecked Sendable {
     private var startFailure: Error?
     private var master = "master"
     private var seconds = 3120
+    private var fixedNow: Date?
 
     /// What `/stream/{session}/manifest.m3u8` serves: `master` (the home's shape: the sound
     /// in the video's segments, two subtitle renditions) or `master-two-audio` (English and
@@ -76,6 +77,14 @@ final class MockHome: @unchecked Sendable {
     var streamMaster: String {
         get { lock.withLock { master } }
         set { lock.withLock { master = newValue } }
+    }
+
+    /// The "now" that fixtures' `{{now…}}` times count from (nil: the real time). The page
+    /// snapshots fix it, so a date a page shows (a video added 20 days ago) is the same on
+    /// every day the tests run.
+    var clock: Date? {
+        get { lock.withLock { fixedNow } }
+        set { lock.withLock { fixedNow = newValue } }
     }
 
     /// How long the test stream lasts, in seconds (even).
@@ -204,7 +213,7 @@ final class MockHome: @unchecked Sendable {
     func fixture(named name: String) -> String? {
         fixtures.url(forResource: name, withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
-            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self)) }
+            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self), now: clock ?? Date()) }
     }
 
     func stop() {
