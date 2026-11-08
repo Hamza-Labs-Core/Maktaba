@@ -58,6 +58,8 @@ type Handler struct {
 	TV        TVInfo
 	// Components reads component_status for the Components line (nil: no line).
 	Components ComponentStatuses
+	// PluginStages answers the stages set to run as plugins (tests); nil reads job_stages.
+	PluginStages func(ctx context.Context) ([]string, error)
 
 	// HTTP probes the streaming service and the supervisor; nil: a default
 	// client (each request carries the check's deadline).

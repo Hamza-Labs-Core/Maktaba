@@ -18,6 +18,10 @@ import (
 // The program sees this process's environment entries named MAKTABA_PLUGIND_* or PROBE_*,
 // and the ones Run adds (SystemRoot, TEMP and the profile's folders), nothing else.
 func Launch(args []string, stderr io.Writer) int {
+	// a first-party runner (story 54.23): its policy, its own profile (LaunchRunner)
+	if len(args) > 0 && args[0] == "runner-sandbox-run" {
+		return LaunchRunner(args, stderr)
+	}
 	// the supervisor names the subcommand first; aclaunch does not
 	if len(args) > 0 && args[0] == "plugins-sandbox-run" {
 		args = args[1:]

@@ -29,6 +29,19 @@ build fails when the two differ.
   before with all of it. Live broadcasts set only in the old dizqueTV settings keep airing on
   Maktaba TV, and the channel editor shows them with a note; saving there gives Maktaba TV its
   own copy.
+- **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
+  operator console reads an Android report's obfuscated Kotlin frames back to their classes,
+  methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads
+  (`maktaba-symbols upload -r8`, with the same `MAKTABA_SYMBOLS_TOKEN` secret, nothing while it
+  is unset), and marks calls R8 inlined. The Android apps keep each frame's line for it. The
+  desktop player is not obfuscated: its frames are shown as its code's own. The cloud rehearsal
+  sends a canary home's reports through its agent and checks they arrive symbolicated.
+- **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
+  later, a crash in native code is now kept and sent, when crash reports are on, with its
+  signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
+  Each frame names its library file only, never a folder, and the abort message loses its
+  paths and personal data before it is kept. On Android 11, or a tombstone that cannot be read,
+  the crash is kept with its reason alone, as before. Story 53.14.
 - **The service door reads each dizqueTV programme's item from Plex (`tv.maktaba.dizquetv`).**
   The plugin now names each programme by its Plex rating key only. The door reads the item
   from Plex with the home's token and takes the file, media part and duration from Plex's
@@ -153,6 +166,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **After an update, a first-party plugin's jobs run in its runner instead of the worker
+  (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
+  the first jobs after an update found their runner down and ran inside the pipeline worker.
+  Such a job now waits for the runner it asked for, up to 30 seconds, and runs in the worker
+  only if the runner does not start. A runner that has just started is used by the next job
+  instead of after 15 seconds.
 - **A cloud node that loses the lead no longer keeps trying to take the Floating IP (Epic 50
   story 50.07).** When Hetzner's API refuses the move for a minute, the new leader keeps retrying
   in the background; that retry now stops as soon as Patroni says the node no longer leads, so a
@@ -1364,6 +1383,14 @@ build fails when the two differ.
   longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
   production the API refuses a public listener.
 
+- **A failed plugin runner is reported (Epic 54).** When one of Maktaba's own plugin runners
+  fails, the stages set to run as plugins in it run in the worker, outside their sandbox. No
+  job is lost, but until now only a log line said so. System health has a new Plugin runners
+  line that names the runner, the machine and those stages, on every machine. The Plugins and
+  Updates pages show the same warning, with a link to Components to start the runners again.
+  An admin's status strip, on the web, Apple and Android, says it too. `/status.json` has a new
+  admin-only `plugin_runners` group, which changes neither `overall` nor the banners.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -1992,6 +2019,15 @@ build fails when the two differ.
   maktaba.dev: Queue stages and the plugin API, *Migrating your data*; the manifest's
   `migrate` field.
 
+- **The Remote apps' recovery screen (Epic 53 stories 53.04, 53.05).** On the iPhone (Home tab)
+  and Android (account menu) Remotes, **Recovery** shows the home's recovery console in the app
+  instead of the web page: each part's state, restarts and last error, recent warnings and
+  errors, and the free disk; an admin can restart a part or everything, start or leave safe
+  mode, and go back to the previous version (asked twice). The status strip's **Details** for
+  the home restarting, its database or safe mode opens it. The app signs in with a recovery
+  pass the API now also returns in the body to native apps, so the screen works while the API
+  is down; a refusal says only admins can open it and never signs the app out.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
@@ -2178,6 +2214,28 @@ build fails when the two differ.
   most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
   never holds the dashboards back. Component series keep their cap per machine, and come last on a
   board so each machine's memory, disk and load stay within its 50 lines.
+
+- **The rest of classify runs as Maktaba's own plugin (Epic 54 story 54.31).** Placing episodes,
+  tagging topics, the language model's checks of series and clips, the book lookup and the
+  review pages now run in `tv.maktaba.classify`, with the same results. The model's questions go
+  through the plugin API to the same model server the settings name, and the book lookup is the
+  only classify stage that may reach the network (the encyclopedia). Find metadata stays where
+  it was for now. An admin can switch any of these stages back to the worker under **Queues**.
+
+- **Release crash symbols reach Maktaba Cloud with one secret (Epic 53 story 53.16).** Each
+  tag's TestFlight build uploads the symbol tables of its apps' dSYMs (`maktaba-symbols`), and
+  the cloud deploy writes the same `MAKTABA_SYMBOLS_TOKEN` repository secret to the api nodes,
+  so forwarded Apple crash reports read as functions, files and lines in the operator console.
+  Without the secret nothing is uploaded and the release stays green; a failed upload warns and
+  keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
+
+- **Maktaba's own stages run in their sandboxed runners on Windows too (story 54.23).** Each
+  runner group now runs on a Windows home in its own AppContainer and Job Object, as the plugin
+  host does: it reads and writes only the folders its group declares, has no network unless
+  its group needs it, and starts no program but its group's tools. The worker reaches it
+  through pipes the server serves. A runner that cannot be sandboxed does not run, and its
+  jobs run in the worker, as before. Media on a network share is never granted to a runner;
+  jobs that need it run in the worker.
 
 ### Fixed
 

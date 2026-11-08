@@ -1112,6 +1112,12 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		if dec.idle && phase == components.PhaseRunning {
 			detail["idle"] = true
 		}
+		// the component's plugin runners that failed (core.plugin_runners' groups,
+		// transcription's ml-N, search's index): System health names the stages that run in
+		// the worker meanwhile
+		if f := failedRunners(own); len(f) > 0 {
+			detail["failed_runners"] = f
+		}
 		if len(detail) > 0 {
 			row.Detail = detail
 		}
@@ -1225,4 +1231,17 @@ func (r *Reconciler) firstPartyNeeded(desired map[string]store.Desired) bool {
 		}
 	}
 	return false
+}
+
+// failedRunners is the instances of the plugin runners among procs that failed and are
+// not held, sorted (none: nil).
+func failedRunners(procs []procView) []string {
+	var out []string
+	for _, p := range procs {
+		if p.Role == RolePluginRunner && p.State == StateFailed && p.Instance != "" && p.Allowed {
+			out = append(out, p.Instance)
+		}
+	}
+	slices.Sort(out)
+	return out
 }

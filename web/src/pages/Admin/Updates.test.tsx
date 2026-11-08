@@ -950,6 +950,49 @@ describe("Admin Updates", () => {
     expect(screen.queryByTestId("updates-plugins-paused")).toBeNull();
   });
 
+  // Epic 54: an update sets stages to run as plugins; a runner that failed says so here
+  it("names a failed plugin runner and its stages, and nothing when the runners run", async () => {
+    const health = (failed: unknown[]) => ({
+      status: failed.length ? "degraded" : "ok",
+      code: "",
+      reason: "",
+      checked_at: "2026-11-08T12:00:00Z",
+      processes_supervised: true,
+      items: [
+        {
+          id: "plugin_runners",
+          group: "services",
+          kind: "plugin_runners",
+          name: "Plugin runners",
+          status: failed.length ? "degraded" : "ok",
+          code: "",
+          reason: "",
+          last_checked: "2026-11-08T12:00:00Z",
+          help: "plugin_runners",
+          details: { failed },
+        },
+      ],
+    });
+    const withHealth = (failed: unknown[]) => {
+      routes(overview(), null);
+      const base = get.getMockImplementation()!;
+      get.mockImplementation((path: string) =>
+        path === "/api/admin/system/status" ? Promise.resolve(health(failed)) : base(path)
+      );
+    };
+    withHealth([{ machine: "home", runner: "light", stages: ["detect", "tag"] }]);
+    const { unmount } = renderPage();
+    const box = await screen.findByTestId("runners-warning");
+    expect(box).toHaveTextContent(/The \u2068?light\u2069? runner on this home/);
+    expect(box).toHaveTextContent("(detect, tag)");
+    unmount();
+    withHealth([]);
+    renderPage();
+    await screen.findByTestId("updates-what-happens");
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/api/admin/system/status"));
+    expect(screen.queryByTestId("runners-warning")).toBeNull();
+  });
+
   it("colours states", () => {
     expect(stateTone("healthy")).toBe("success");
     expect(stateTone("rolled_back")).toBe("error");

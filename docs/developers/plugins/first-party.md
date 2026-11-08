@@ -17,7 +17,10 @@
 > channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
 > and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: Plex Live
 > TV runs in `tv.maktaba.plex`, through the home's service door (the Plex library sync and
-> the dizqueTV plugin were removed since). The other stages move wave by wave.
+> the dizqueTV plugin were removed since). **Wave 4 has moved**: `detect`, `tag`, `check_tags`,
+> `check_clips`, `books` and `review_pages` run in `tv.maktaba.classify`, the model's questions
+> through the plugin API's `compute.generate`; `enrich` stays in the worker for now. The other
+> stages move wave by wave.
 
 Maktaba's own stages (thumbnails, transcription, the classifiers, the YouTube downloads and
 the rest) become **first-party plugins**: the same manifest, the same tokens and the same plugin
@@ -39,8 +42,10 @@ runner refuses to start if any is there. Before it imports a plugin it
    release's signed wheel installed (`plugin_trusted_unsigned` otherwise);
 2. applies its OS sandbox to itself: Seatbelt on macOS; Landlock and seccomp on Linux. The
    sandbox allows only what the group's manifests declare: the files of its areas, its media
-   tools, the GPU, and the network only for a group that lists hosts. On Windows there is no
-   runner and the stages run in the worker, as before.
+   tools, the GPU, and the network only for a group that lists hosts. On Windows the runner
+   runs in its group's own AppContainer and Job Object, which the supervisor's launcher
+   applies before it starts, and the runner refuses to serve outside it (see
+   [the sandbox](sandbox.md)).
 
 The queue worker dispatches a job to the runner with the same kind of per-job token as a
 third-party plugin's. The job's progress, log and events go back to the worker, which is the
@@ -144,6 +149,34 @@ column.
 
 When the release that moved a stage starts, each worker's graph sync sets the stage to run in
 its plugin (a stage set back by hand stays as it was).
+
+## The language model and the encyclopedia: the rest of `tv.maktaba.classify`
+
+Wave 4 (story 54.31) moves the rest of classify: `detect`, `tag`, `check_tags`, `check_clips`,
+`books` and `review_pages` join the wave 1 stages in `tv.maktaba.classify`.
+
+- **The model through the plugin API.** `check_tags` and `check_clips` no longer call the model
+  server themselves. In the runner they ask `compute.generate` with the same messages, format
+  and options. For a first-party stage that names `model_rules = "tagcheck"`, the API forwards
+  them unchanged to `rules.tagcheck`'s server and model, so a node that asks a model on another
+  machine still does, and recorded answers match. A third-party plugin only ever gets the
+  home's own model, and may not send chat messages. A model that is down fails the job as it
+  did before.
+- **One stage in the `net` group.** `books` looks the book up in the encyclopedia
+  (`ar.wikipedia.org`, the manifest's `net`). It sets its own `runner = "net"`. Only the `net`
+  runner gets a socket, so classify's other stages in `light` still have none. A stage that runs
+  outside its plugin's own group brings only the network there: the `net` runner does not get
+  classify's thumbnails or reports folder.
+- **The review pages** read the small thumbnails (`files.read: data.thumbnails`) and write each
+  library's page in the reports folder (`files.write: data.review`).
+- **Parity with the model on.** A fake model server answers both sides over HTTP (the plugin's
+  questions reach it through `compute.generate`). The encyclopedia is a recorded answer, and
+  the test fails if the plugin looks a book up on a host its manifest does not list. The
+  questions, the lookups, the rows, the review pages and the jobs must all be the same.
+
+`enrich` (Find metadata) stays in the worker for now. It reads whatever page a web search
+links to, and its search keys are sealed in the home's secrets, which the plugin API does not
+serve. A declared host list cannot cover either.
 
 ## Files and tools: `tv.maktaba.thumbnails` and `tv.maktaba.subtitles`
 

@@ -253,7 +253,20 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	if queued == 0 {
 		t.Fatalf("no job of %v queued: the seed has none of their subjects", stages)
 	}
+	makeDue(t, db, stages, last)
 	return last
+}
+
+// makeDue makes the pending jobs of the stages after since due at once. A stage's debounce
+// (tag and exact_dates wait 300 s for more changes) is not what the scenarios rehearse, and
+// would outlast their five-minute waits: the jobs a scenario queues, and the ones the wave's
+// own runs enqueue later (a detect enqueues its video's tag), are made due as they appear.
+func makeDue(t *testing.T, db *sql.DB, stages []string, since int64) {
+	t.Helper()
+	if _, err := db.Exec(`UPDATE processing_jobs SET not_before = now() WHERE id > $1 AND stage = ANY($2)
+		AND state = 'pending' AND not_before > now()`, since, pq.Array(stages)); err != nil {
+		t.Fatalf("make the wave's jobs due: %v", err)
+	}
 }
 
 // waveJobs is the jobs of the stages after id since, with their starts and where they ran.
@@ -313,6 +326,7 @@ func waitSettled(t *testing.T, db *sql.DB, stages []string, since int64, d time.
 		if time.Now().After(deadline) {
 			t.Fatalf("%d of %d jobs of %v still open after %s: %+v", open, len(jobs), stages, d, jobs)
 		}
+		makeDue(t, db, stages, since)
 		time.Sleep(2 * time.Second)
 	}
 }
@@ -480,6 +494,27 @@ func (r *rehearsal) waveScenario(id string) {
 		if impls[st] != "plugin" {
 			t.Errorf("%s on %s: impl %q, want plugin once its runner serves", st, k.cur, impls[st])
 		}
+	}
+	// the flip says plugin once a runner said Hello, but the update's last restarts (a
+	// runner starting again on new areas) can leave a moment with none serving, when a
+	// job runs in the worker as it should (story 54.25 §3). Warm-up jobs run until one of
+	// each stage has run in its runner; each of them is held to the same rules.
+	warm := time.Now().Add(4 * time.Minute)
+	for {
+		since = r.queueWave(db, w.stages, 1)
+		queued = queuedIDs(waveJobs(t, db, w.stages, since))
+		jobs = waitSettled(t, db, w.stages, since, 5*time.Minute)
+		r.checkWaveJobs(id+" warming up after the flip", jobs, queued, want)
+		inRunner := map[string]bool{}
+		for _, j := range jobs {
+			if queued[j.id] && j.impl == "plugin" {
+				inRunner[j.stage] = true
+			}
+		}
+		if len(inRunner) == len(w.stages) || time.Now().After(warm) {
+			break
+		}
+		time.Sleep(5 * time.Second)
 	}
 	since = r.queueWave(db, w.stages, 2)
 	queued = queuedIDs(waveJobs(t, db, w.stages, since))

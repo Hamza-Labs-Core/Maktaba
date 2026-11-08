@@ -17,6 +17,7 @@ Pure except :func:`ask` (HTTP to the model). Settings: :class:`TagCheckConfig`.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import urllib.request
@@ -312,15 +313,24 @@ def apply_clip(tags: Mapping[str, float], keep: Sequence[str],
 
 def ask(text: str, cfg: TagCheckConfig) -> str:
     """One answer from the model (JSON mode, temperature 0)."""
-    body = json.dumps({
-        "model": cfg.model, "stream": False, "format": "json",
-        "options": {"temperature": 0, "num_ctx": 4096},
-        "messages": [{"role": "user", "content": text}],
-    }).encode()  # fmt: skip
+    from ..plugins.llm import chat_body
+
+    body = json.dumps(chat_body(cfg.model, text)).encode()
     req = urllib.request.Request(cfg.url.rstrip("/") + "/api/chat", data=body,
                                  headers={"Content-Type": "application/json"})  # fmt: skip
     with urllib.request.urlopen(req, timeout=cfg.timeout_s) as r:  # noqa: S310 — local model
         return str(json.loads(r.read().decode("utf-8"))["message"]["content"])
+
+
+async def ask_job(db: Any, ctx: Any, text: str, cfg: TagCheckConfig) -> str:
+    """A job's answer: in a first-party plugin's runner through the plugin API's
+    ``compute.generate`` (which asks this stage's ``rules.tagcheck`` server and model, story
+    54.31 §2), else :func:`ask` in a thread. Failures are ``OSError`` either way."""
+    from ..plugins import llm
+
+    if llm.in_runner(db, ctx):
+        return await llm.chat(db, ctx, cfg.url, llm.chat_body(cfg.model, text), cfg.timeout_s)
+    return await asyncio.to_thread(ask, text, cfg)
 
 
 def _register_help() -> None:

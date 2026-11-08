@@ -8779,6 +8779,16 @@
         }
       }
     },
+    "A plugin runner failed: its stages run in the worker, outside their sandbox." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعطّل مشغّل إضافات: مراحله تعمل داخل العامل، خارج عزلها."
+          }
+        }
+      }
+    },
     "Details" : {
       "localizations" : {
         "ar" : {

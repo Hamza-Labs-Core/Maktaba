@@ -5,7 +5,7 @@ served under a CSP that allows no script)."""
 from __future__ import annotations
 
 from maktaba_pipeline.engine import plan_page
-from maktaba_pipeline.engine.stages import review_pages
+from maktaba_pipeline.engine.stages import _review_pages as review_pages
 
 
 def _dark_by_default(page: str) -> None:

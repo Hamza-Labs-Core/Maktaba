@@ -1,4 +1,9 @@
-"""``review_pages``: one HTML page per library to review its seasons by eye.
+"""What ``review_pages`` shares with the pipeline: the reports folder (the API serves it, the
+plan pages and the dizqueTV audit write beside it), a page's path and its rendering, and the
+stage's input fingerprint. The stage itself is ``tv.maktaba.classify``'s (Epic 54 wave 4,
+story 54.31), which writes the page in the ``data.review`` area.
+
+``review_pages``: one HTML page per library to review its seasons by eye.
 
 Ported from mediaintel's ``report`` step, which runs on its own thread so the
 stages that write never wait for it. Here that independence is structural:
@@ -22,15 +27,20 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from ...db.jobs import Job
 from ...thumbnail import small as thumb_small
-from ..context import StageContext
-from ..graph import REVIEW_VERSION, StageResult, Subject
+from ..graph import REVIEW_VERSION, Subject
 from ..hashing import canonical_hash
 from ..sql import uid
-from .registry import StageImpl
 
-__all__ = ["IMPL", "REVIEW_VERSION", "page_path", "render"]
+__all__ = [
+    "REVIEW_VERSION",
+    "episodes",
+    "input_fingerprint",
+    "page_path",
+    "render",
+    "reviews_dir",
+    "seasons",
+]
 
 
 def reviews_dir() -> Path:
@@ -46,7 +56,7 @@ def page_path(library_id: UUID | str) -> Path:
     return reviews_dir() / f"{library_id}.html"
 
 
-async def _seasons(db: Any, library_id: UUID) -> list[Any]:
+async def seasons(db: Any, library_id: UUID) -> list[Any]:
     return list(
         await db.fetch(
             "SELECT ss.id AS id, s.name AS series, COALESCE(s.name_override, s.name) AS shown,"
@@ -60,7 +70,7 @@ async def _seasons(db: Any, library_id: UUID) -> list[Any]:
     )
 
 
-async def _episodes(db: Any, library_id: UUID) -> dict[str, list[Any]]:
+async def episodes(db: Any, library_id: UUID) -> dict[str, list[Any]]:
     rows = await db.fetch(
         "SELECT ss.id AS season_id, v.id AS video_id, v.content_hash AS content_hash,"
         " COALESCE(v.title, v.filename) AS title, v.duration_sec AS duration,"
@@ -148,8 +158,8 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     lib = await db.fetchrow("SELECT name FROM libraries WHERE id = $1", uid(subject.id))
     if lib is None:
         return None
-    seasons = [
-        (str(s["id"]), str(s["name"]), str(s["membership"])) for s in await _seasons(db, subject.id)
+    named = [
+        (str(s["id"]), str(s["name"]), str(s["membership"])) for s in await seasons(db, subject.id)
     ]
     thumbs = await db.fetchrow(
         "SELECT count(*) AS n, max(id) AS last FROM processing_jobs"
@@ -159,7 +169,7 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
     return canonical_hash(
         {
             "library": str(lib["name"]),
-            "seasons": seasons,
+            "seasons": named,
             "thumbs": [
                 int(thumbs["n"] or 0),
                 None if thumbs["last"] is None else int(thumbs["last"]),
@@ -167,40 +177,3 @@ async def input_fingerprint(db: Any, subject: Subject) -> str | None:
             "v": REVIEW_VERSION,
         }
     )
-
-
-async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    library_id: UUID = job.subject.id
-    lib = await db.fetchrow("SELECT name FROM libraries WHERE id = $1", uid(library_id))
-    if lib is None:
-        return StageResult(output_hash=canonical_hash({"library": None}), summary={"gone": True})
-    seasons = await _seasons(db, library_id)
-    episodes = await _episodes(db, library_id)
-    out = page_path(library_id)
-    thumbs: dict[str, str] = {}
-    n = 0
-    for eps in episodes.values():
-        for ep in eps:
-            h = str(ep["content_hash"])
-            p = thumb_small.small_path(h)
-            if p.is_file():
-                thumbs[h] = Path(os.path.relpath(p, out.parent)).as_posix()
-            n += 1
-    await ctx.progress("render", 1, 2, f"{len(seasons)} seasons, {n} episodes", force=True)
-    page = render(str(lib["name"]), seasons, episodes, thumbs)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".part.html")
-    tmp.write_text(page, encoding="utf-8")
-    tmp.replace(out)
-    return StageResult(
-        output_hash=canonical_hash(page),
-        summary={
-            "page": str(out),
-            "seasons": len(seasons),
-            "episodes": n,
-            "with_thumbnail": len(thumbs),
-        },
-    )
-
-
-IMPL = StageImpl(run=run, input_fingerprint=input_fingerprint)

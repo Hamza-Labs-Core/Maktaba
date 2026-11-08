@@ -139,6 +139,9 @@ def runner_context(
     from maktaba_pipeline.engine.context import JobCancelled, StageContext
 
     class RunnerContext(StageContext):
+        #: a model question goes to the plugin API's compute.generate (story 54.31 §2)
+        model_via = "api"
+
         async def progress(
             self,
             step: str,
@@ -224,6 +227,10 @@ class Runner:
     def _transport(self, token: str) -> Any:
         if self.transport is not None:
             return self.transport(token)
+        if sys.platform == "win32":
+            from .winpipe import API_ENV, PipeTransport
+
+            return PipeTransport(os.environ.get(API_ENV, ""), token)
         return UnixTransport(self.api_socket, token)
 
     def hello(self) -> dict[str, Any]:
@@ -379,6 +386,13 @@ class Runner:
         return time.monotonic() - self.last_active
 
     async def serve(self, path: Path) -> None:
+        if sys.platform == "win32":
+            # no socket of its own in its AppContainer: the callers the supervisor hands it
+            # on its back pipe (story 54.23)
+            from . import winpipe
+
+            await winpipe.serve_back(self.handle, os.environ.get(winpipe.BACK_ENV, ""))
+            return
         path.parent.mkdir(parents=True, exist_ok=True)
         with contextlib.suppress(FileNotFoundError):
             path.unlink()

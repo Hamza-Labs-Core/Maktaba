@@ -61,13 +61,16 @@ const (
 	KindHostAccess = "host_access"
 	// KindComponents: the components that failed or stay degraded (Epic 51).
 	KindComponents = "components"
+	// KindPluginRunners: Maktaba's own plugin runners that failed, and the stages set to
+	// run as plugins that run in the worker meanwhile (Epic 54).
+	KindPluginRunners = "plugin_runners"
 )
 
 // Kinds lists every kind (the help coverage test).
 var Kinds = []string{
 	KindAPI, KindPostgres, KindStreaming, KindPipeline, KindProcess, KindWorkers, KindWorker,
 	KindStreamingHost, KindDependency, KindPlexLiveTV, KindQueues, KindTVChannels, KindTVChange,
-	KindTVSlot, KindTVTuner, KindHostAccess, KindComponents,
+	KindTVSlot, KindTVTuner, KindHostAccess, KindComponents, KindPluginRunners,
 }
 
 // Item is one part of Maktaba on the page.

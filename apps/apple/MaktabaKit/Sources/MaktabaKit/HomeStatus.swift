@@ -51,7 +51,7 @@ public struct StripLine: Equatable, Sendable, Identifiable {
 
 /// The strip's lines for a status, highest priority first (story 53.06 §1): offline; the
 /// home restarting or its database down; safe mode; a part a viewer feels (playback,
-/// search); admin-only parts (processing, log search). A feature that is off is no outage:
+/// search); admin-only parts (processing, log search, a failed plugin runner). A feature that is off is no outage:
 /// an off group has no line, and Live TV is left out of the playback sentence when it is off.
 public enum StatusStripRules {
     /// `cloud` is Maktaba Cloud's line (story 50.11, `CloudStatusRules.line`) when the app
@@ -84,6 +84,10 @@ public enum StatusStripRules {
             out.append(StripLine(key: "processing", text: StripWords.processing, details: "/admin/health"))
         }
         if admin && bad("logs") { out.append(StripLine(key: "logs", text: StripWords.logs, details: "/admin/health")) }
+        // Epic 54: a plugin runner that failed (down, not a restart): its stages run in the worker
+        if admin && s.components["plugin_runners"] == "down" {
+            out.append(StripLine(key: "plugin_runners", text: StripWords.pluginRunners, details: "/settings/plugins"))
+        }
         return out
     }
 
@@ -111,6 +115,7 @@ public enum StripWords {
     public static let search = "Search is unavailable right now."
     public static let processing = "Processing is paused: new videos won't be added for now."
     public static let logs = "Log search is restarting. Recent logs can still be read from the recovery page."
+    public static let pluginRunners = "A plugin runner failed: its stages run in the worker, outside their sandbox."
     public static let details = "Details"
     public static let more = "%lld more"
     public static let close = "Close"
@@ -132,6 +137,7 @@ public enum StripWords {
 
     /// Every line's words (the catalog test checks each has its Arabic).
     public static let all = [offline, restarting, database, safe, streaming, streamingNoTV, search, processing, logs,
+                             pluginRunners,
                              details, more, close, player, relayDegraded, relayOutage, apiDegraded, apiOutage,
                              maintenance, reconnecting]
 }

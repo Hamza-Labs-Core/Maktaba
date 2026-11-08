@@ -243,3 +243,33 @@ def test_main(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert (tmp_path / "out" / "whatsnew-ar").exists()
     assert pr.main(["package", "nope"]) == 1
     assert pr.main([]) == 2
+
+
+# Epic 53 story 53.16: each app's R8 mapping goes to Maktaba Cloud under the app a report names
+# (android.player, android.remote, android.tv) and the release's versionName, with the
+# MAKTABA_SYMBOLS_TOKEN secret. Without it, one line and nothing else; a failed upload warns.
+def _bundle_steps() -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = _play_bundles()["jobs"]["bundles"]["steps"]
+    return steps
+
+
+def test_mappings_upload_only_with_the_token_and_never_fail_the_release() -> None:
+    steps = _bundle_steps()
+    names = [s.get("name") for s in steps]
+    gate = names.index("Symbols token")
+    upload = names.index("Upload crash symbols")
+    assert names.index("Collect bundles") < gate < upload
+    assert steps[gate]["env"]["MAKTABA_SYMBOLS_TOKEN"] == "${{ secrets.MAKTABA_SYMBOLS_TOKEN }}"
+    assert "no MAKTABA_SYMBOLS_TOKEN secret is set" in steps[gate]["run"]
+    for s in steps[gate + 1 : upload + 1]:
+        assert s.get("if") == "steps.symbols.outputs.set == 'true'", s
+        assert s.get("continue-on-error") is True or s.get("name") == "Upload crash symbols", s
+    run = steps[upload]["run"]
+    assert "set -e" not in run.replace("set -uo", "") and "exit 1" not in run
+    assert 'upload -r8 "android.${app}" -version "$NAME"' in run
+    assert "for app in player remote tv" in run
+    assert steps[upload]["env"]["NAME"] == "${{ steps.version.outputs.name }}"
+    # the files Collect bundles wrote
+    assert 'mapping/maktaba-${app}-${NAME}-mapping.txt' in run
+    assert 'cp "$2/build/outputs/mapping/release/mapping.txt" "mapping/maktaba-$1-${NAME}-mapping.txt"' in (
+        next(s for s in steps if s.get("name") == "Collect bundles")["run"])

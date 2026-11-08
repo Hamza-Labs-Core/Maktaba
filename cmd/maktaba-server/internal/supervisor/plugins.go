@@ -297,12 +297,23 @@ func HostCall(ctx context.Context, socket string, req any, out *json.RawMessage)
 	if err != nil {
 		return err
 	}
+	return frameCall(ctx, conn, req, out)
+}
+
+// frameCall is HostCall on an open connection (closed when it returns, or when ctx ends:
+// a pipe from the runners' broker has no deadline of its own).
+func frameCall(ctx context.Context, conn io.ReadWriteCloser, req any, out *json.RawMessage) error {
 	defer conn.Close()
-	if dl, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(dl)
-	} else {
-		_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
 	}
+	if d, ok := conn.(interface{ SetDeadline(time.Time) error }); ok {
+		dl, _ := ctx.Deadline()
+		_ = d.SetDeadline(dl)
+	}
+	defer context.AfterFunc(ctx, func() { _ = conn.Close() })()
 	body, err := json.Marshal(req)
 	if err != nil {
 		return err

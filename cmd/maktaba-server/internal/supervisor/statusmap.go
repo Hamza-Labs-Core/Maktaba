@@ -18,6 +18,9 @@ type StatusGroup struct {
 	FeaturesDown []string
 	// Banner is the banner key a group that is not well raises ("": none for viewers).
 	Banner string
+	// AdminOnly: a part no viewer feature waits on. It changes neither overall,
+	// features_down nor the banner; only an admin's strip shows it.
+	AdminOnly bool
 }
 
 // StatusGroups, in the order a banner is chosen (the first that is not well).
@@ -30,6 +33,10 @@ var StatusGroups = []StatusGroup{
 		FeaturesDown: []string{"new_media", "transcripts", "thumbnails"}, Banner: "processing_down"},
 	{Name: "search", Components: []string{"search.semantic"}, FeaturesDown: []string{"semantic_search"}, Banner: "search_down"},
 	{Name: "logs", Components: []string{"logs.index"}, FeaturesDown: []string{"log_search"}},
+	// Maktaba's own plugin runners (Epic 54, story 54.23): a runner that failed leaves its
+	// stages, set to run as plugins, running in the worker outside their sandbox. No viewer
+	// feature stops, so only an admin's strip says it (down: failed, not a restart).
+	{Name: "plugin_runners", Components: []string{"core.plugin_runners"}, AdminOnly: true},
 }
 
 // NoStatusGroup are the process components no status group shows, and why.
@@ -38,8 +45,6 @@ var NoStatusGroup = map[string]string{
 	"core.node": "a full node's copy of the home's database: the Machines page shows it",
 	"cloud.link": "remote access through Maktaba Cloud: the cloud's status (Epic 50.11) says it, " +
 		"and the home stays usable without it",
-	"core.plugin_runners": "Maktaba's own plugin runners (Epic 54, story 54.23): a machine whose runner is down " +
-		"runs those stages in the worker, as before, so no viewer feature stops",
 	"plugins.host": "the third-party plugins' host (Epic 54, story 54.09 §5): no viewer feature stops when " +
 		"it is down (what plugins wrote stays); the admins' Plugins page says it",
 }

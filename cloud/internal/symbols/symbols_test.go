@@ -228,7 +228,7 @@ func TestSymbolicate(t *testing.T) {
 		{"crashy", depthOff},
 		{"crashy", depthOff + 8},
 	}, map[string]string{"crashy": id, "libdyld.dylib": "11111111-2222-3333-4444-555555555555"})
-	got := Symbolicate(context.Background(), []json.RawMessage{json.RawMessage(`"not an event"`), ev}, finder{tab.DebugID: tab})
+	got := Symbolicate(context.Background(), []json.RawMessage{json.RawMessage(`"not an event"`), ev}, finder{tab.DebugID: tab}, Release{})
 	if len(got) != 1 {
 		t.Fatalf("crashes = %d, want the one event", len(got))
 	}
@@ -253,7 +253,7 @@ func TestSymbolicate(t *testing.T) {
 		t.Errorf("missing = %+v", c.Missing)
 	}
 	// no tables at all: raw frames, every binary missing
-	got = Symbolicate(context.Background(), []json.RawMessage{ev}, nil)
+	got = Symbolicate(context.Background(), []json.RawMessage{ev}, nil, Release{})
 	if len(got) != 1 || got[0].Frames[0].Symbol != nil || len(got[0].Missing) != 2 {
 		t.Errorf("no finder: %+v", got)
 	}

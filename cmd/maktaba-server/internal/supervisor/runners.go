@@ -15,12 +15,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	sharedplugins "github.com/Hamza-Labs-Core/Maktaba/shared/plugins"
@@ -31,6 +35,19 @@ const RolePluginRunner Role = "plugin-runner"
 
 // PluginRunnersComponent is the catalog's core component of the shared runner groups.
 const PluginRunnersComponent = "core.plugin_runners"
+
+// The runners' pipes on Windows (runners_windows.go): the worker's way to each runner
+// (EnvRunnerPipes: the prefix its group's name completes), and each runner's own: the
+// pipe it dials to be handed the worker's connections, and its way to the plugin API.
+const (
+	EnvRunnerPipes    = "MAKTABA_RUNNER_PIPES"
+	EnvRunnerBackPipe = "MAKTABA_RUNNER_BACK_PIPE"
+	EnvRunnerAPIPipe  = "MAKTABA_RUNNER_API_PIPE"
+)
+
+func warnf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "[serve] level=warn "+format+"\n", args...)
+}
 
 // RunnerIdleSec is how long a shared group's runner, started on demand, waits for work
 // before it exits (a variable so tests can shorten it).
@@ -60,12 +77,9 @@ const (
 )
 
 // RunnersHere reports whether this machine runs plugin runners: a Postgres home or node
-// (the plugin API's statements run under a Postgres role), not Windows (asyncio opens no
-// unix socket there; its stages run in the worker, as before).
+// (the plugin API's statements run under a Postgres role). On Windows each runner runs in
+// its group's AppContainer and is reached through the supervisor's pipes (runners_windows.go).
 func RunnersHere(cfg config.Config) bool {
-	if runtime.GOOS == "windows" {
-		return false
-	}
 	u := strings.ToLower(strings.TrimSpace(cfg.Database.URL))
 	if !strings.HasPrefix(u, "postgres://") && !strings.HasPrefix(u, "postgresql://") {
 		return false
@@ -75,10 +89,14 @@ func RunnersHere(cfg config.Config) bool {
 
 // RunnerDir is the runners' sockets' folder (MAKTABA_RUNNER_DIR for the worker and each
 // runner): <data>/run/runners, or a short folder under /tmp when that is too long for a
-// unix socket (as the plugin host's).
-func RunnerDir(cfg config.Config) string {
+// unix socket (as the plugin host's). On Windows it holds no socket (the runners are
+// reached through pipes): always <data>\run\runners, the run folder their AppContainers
+// may write.
+func RunnerDir(cfg config.Config) string { return runnerDir(cfg, runtime.GOOS) }
+
+func runnerDir(cfg config.Config, goos string) string {
 	d := filepath.Join(cfg.Server.DataDir, "run", "runners")
-	if len(filepath.Join(d, "runner-service.sock")) > maxSocketPath {
+	if goos != "windows" && len(filepath.Join(d, "runner-service.sock")) > maxSocketPath {
 		sum := sha256.Sum256([]byte(filepath.Clean(cfg.Server.DataDir)))
 		d = filepath.Join("/tmp", "maktaba-r-"+hex.EncodeToString(sum[:6]))
 	}
@@ -91,7 +109,9 @@ func RunnerDir(cfg config.Config) string {
 func runnerEnvDrop(k string) bool {
 	switch k {
 	case "DATABASE_URL", "MAKTABA_DATABASE_URL", "MAKTABA_HOME_SECRETS", "MAKTABA_SUPERVISOR_TOKEN_FILE",
-		"PGPASSWORD", "PGPASSFILE", "PGHOST", "PGUSER", "PGDATABASE":
+		"PGPASSWORD", "PGPASSFILE", "PGHOST", "PGUSER", "PGDATABASE",
+		// the worker's ways in (Windows): the plugin host's relay and the runners' own pipes
+		"MAKTABA_PLUGIND_PIPE", EnvRunnerPipes:
 		return true
 	}
 	u := strings.ToUpper(k)
@@ -162,14 +182,28 @@ func BuildPluginRunners(opts Options) ([]Process, error) {
 			env = setEnv(append([]string{}, env...), "MAKTABA_RUNNER_IDLE_SEC", strconv.Itoa(RunnerIdleSec))
 		}
 		sock := filepath.Join(dir, "runner-"+instance+".sock")
-		cmd := exec.Command(pythonFor(opts), "-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", dir)
+		probe, dial := "unix:"+sock, func() (io.ReadWriteCloser, error) { return net.DialTimeout("unix", sock, 5*time.Second) }
+		if runtime.GOOS == "windows" {
+			// the runner in its AppContainer, reached through the supervisor's pipes
+			pipes, err := runnerPipesFor(opts.Config, instance)
+			if err != nil {
+				warnf("the plugin runner %s's pipes: %v", instance, err)
+			} else {
+				env = setEnv(append([]string{}, env...), EnvRunnerBackPipe, pipes.Back)
+				env = setEnv(env, EnvRunnerAPIPipe, pipes.API)
+				probe, dial = "pipe:"+pipes.Caller, pipes.dial
+			}
+		}
+		name, args := runnerCommand(runtime.GOOS, SandboxLauncher(), pythonFor(opts), instance, api, dir,
+			filepath.Join(opts.Config.Server.DataDir, "run", "runner-"+instance+".grants"), runnerProtected(opts.Config))
+		cmd := exec.Command(name, args...)
 		cmd.Env = env
 		wire(cmd)
 		return Process{
 			Role: RolePluginRunner, Instance: instance, Cmd: cmd, Dormant: dormant,
 			OnDemand: shared, IdleOnClean: shared,
-			Probe: "unix:" + sock, ProbeTimeout: PythonProbeTimeout,
-			Check: func(ctx context.Context) error { return askRunnerHello(ctx, sock) },
+			Probe: probe, ProbeTimeout: PythonProbeTimeout,
+			Check: func(ctx context.Context) error { return askRunnerHelloVia(ctx, dial) },
 			BeforeStart: func() {
 				privateDir(dir)
 			},
@@ -215,10 +249,44 @@ func containsString(l []string, s string) bool {
 	return false
 }
 
-// askRunnerHello is a runner's health: it answers hello on its socket.
-func askRunnerHello(ctx context.Context, socket string) error {
+// runnerCommand is a runner's command line on goos: the interpreter itself (the runner
+// applies its own sandbox: Seatbelt, Landlock and seccomp), or on Windows the launcher's
+// runner-sandbox-run around it (the group's AppContainer and Job Object, from the policy
+// the runner prints). On Windows each group writes only its own run folder,
+// <dir>\<group>, and reads the worker's areas.json in dir (its files, not the other
+// groups' folders); its grants are kept in grants, outside every runner's reach, and no
+// grant may hold or be inside a protected folder.
+func runnerCommand(goos, launcher, python, instance, api, dir, grants string, protect []string) (string, []string) {
+	if goos != "windows" {
+		return python, []string{"-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", dir}
+	}
+	own := filepath.Join(dir, instance)
+	w := []string{"runner-sandbox-run", "-group", instance, "-run-dir", own, "-areas-dir", dir, "-grants", grants}
+	for _, p := range protect {
+		w = append(w, "-protect", p)
+	}
+	w = append(w, "--", python, "-m", "maktaba_plugin_runner", "--group", instance, "--api-socket", api, "--run-dir", own)
+	return launcher, w
+}
+
+// runnerProtected are the folders no runner's grant may hold or be inside: the run folder
+// (the plugin host's, the runners', the grants records), the supervisor's (its local
+// token) and the keys.
+func runnerProtected(cfg config.Config) []string {
+	return []string{filepath.Join(cfg.Server.DataDir, "run"), filepath.Join(cfg.Server.DataDir, "supervisor"),
+		config.KeysDir()}
+}
+
+// askRunnerHelloVia is a runner's health: it answers hello on a connection from dial (its
+// socket, or on Windows a connection the broker paired with the runner, Ready already read
+// by the runner's side).
+func askRunnerHelloVia(ctx context.Context, dial func() (io.ReadWriteCloser, error)) error {
+	conn, err := dial()
+	if err != nil {
+		return err
+	}
 	var raw json.RawMessage
-	if err := HostCall(ctx, socket, map[string]any{"type": "hello"}, &raw); err != nil {
+	if err := frameCall(ctx, conn, map[string]any{"type": "hello"}, &raw); err != nil {
 		return err
 	}
 	var frame struct {

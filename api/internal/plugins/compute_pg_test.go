@@ -8,10 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins/firstparty"
 )
 
 // Story 54.21: compute.embed and compute.llm through the plugin API.
@@ -33,11 +37,13 @@ func (e *fakeEmbedder) EmbedTexts(_ context.Context, texts []string) (string, []
 	return "test-e5", out, nil
 }
 
-// fakeOllama answers /api/generate with the next answer of answers (the last one again).
+// fakeOllama answers /api/generate and /api/chat with the next answer of answers (the last
+// one again), noting each request and its path.
 type fakeOllama struct {
 	mu      sync.Mutex
 	answers []string
 	asked   []map[string]any
+	paths   []string
 }
 
 func (o *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -45,12 +51,14 @@ func (o *fakeOllama) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&in)
 	o.mu.Lock()
 	o.asked = append(o.asked, in)
+	o.paths = append(o.paths, r.URL.Path)
 	a := o.answers[0]
 	if len(o.answers) > 1 {
 		o.answers = o.answers[1:]
 	}
 	o.mu.Unlock()
-	_ = json.NewEncoder(w).Encode(map[string]any{"model": in["model"], "response": a, "done": true})
+	_ = json.NewEncoder(w).Encode(map[string]any{"model": in["model"], "response": a, "done": true,
+		"message": map[string]any{"role": "assistant", "content": a}})
 }
 
 func (f *fixture) setRules(t *testing.T, section string, v map[string]any) {
@@ -283,5 +291,87 @@ func TestComputeLookupShare(t *testing.T) {
 	defer cancel()
 	if _, ref := f.s.Compute.takeLease(short, f.db, testPlugin, time.Minute); ref == nil || ref.Code != CodeComputeUnavailable {
 		t.Fatalf("wait past its time = %+v", ref)
+	}
+}
+
+// story 54.31 T02: a first-party stage that names model_rules asks rules.<section>'s model
+// server and model with its own messages, format and options unchanged; a third-party token
+// cannot send them, and still gets the home's model only.
+func TestComputeFirstPartyFollowsModelRules(t *testing.T) {
+	raw, err := os.ReadFile("firstparty/testdata/toy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	_ = json.Unmarshal(raw, &doc)
+	p := doc["plugins"].([]any)[0].(map[string]any)
+	m := p["manifest"].(string)
+	m = strings.Replace(m, `fingerprint = { input = true }`, "fingerprint = { input = true }\nmodel_rules = \"tagcheck\"", 1)
+	m = strings.Replace(m, "[trusted]\n", "[capabilities]\noptional = [\"compute.llm\"]\n\n[trusted]\ncompute   = [\"llm\"]\n", 1)
+	p["manifest"] = m
+	raw, _ = json.Marshal(doc)
+	defer firstparty.UseBundle(raw)()
+	if fp := firstparty.ByStage("fp_toy"); fp == nil || fp.ModelRules["fp_toy"] != "tagcheck" {
+		t.Fatalf("the toy's model_rules: %+v", fp)
+	}
+
+	f, _, home, _ := computeFixture(t, "compute.llm")
+	tagModel := &fakeOllama{answers: []string{`{"topics":["fiqh"]}`}}
+	tagSrv := httptest.NewServer(tagModel)
+	t.Cleanup(tagSrv.Close)
+	f.setRules(t, "tagcheck", map[string]any{"url": tagSrv.URL + "/", "model": "qwen-tags", "timeout_s": 30})
+	f.exec(t, `INSERT INTO job_stages (stage, label, subject_kinds, pool, lane) VALUES ('fp_toy','Toy','{library}','cpu','seasons')`)
+	var job int64
+	if err := f.db.QueryRow(`INSERT INTO processing_jobs (stage, state, subject_kind, subject_id, library_id)
+		VALUES ('fp_toy','running','library',$1,$1) RETURNING id`, f.libA).Scan(&job); err != nil {
+		t.Fatal(err)
+	}
+	fpTok, err := f.s.Tokens.Mint(context.Background(), job)
+	if err != nil || !slices.Contains(fpTok.Grants, "compute.llm") {
+		t.Fatalf("minted %+v %v", fpTok, err)
+	}
+	ask := map[string]any{
+		"messages": []map[string]string{{"role": "user", "content": "what is this series about?"}},
+		"format":   "json",
+		"options":  map[string]any{"temperature": 0, "num_ctx": 4096},
+	}
+	code, c, body := f.call(t, fpTok.Token, "compute/generate", ask)
+	if code != 200 || !strings.Contains(string(body), "fiqh") || !strings.Contains(string(body), "qwen-tags") {
+		t.Fatalf("first-party chat = %d %s %s", code, c, body)
+	}
+	got := tagModel.asked[0]
+	if tagModel.paths[0] != "/api/chat" || got["model"] != "qwen-tags" || got["format"] != "json" || got["stream"] != false {
+		t.Fatalf("asked %s %v", tagModel.paths[0], got)
+	}
+	if o := got["options"].(map[string]any); o["num_ctx"] != float64(4096) || o["temperature"] != float64(0) {
+		t.Fatalf("options changed: %v", o)
+	}
+	if msgs := got["messages"].([]any); msgs[0].(map[string]any)["content"] != "what is this series about?" {
+		t.Fatalf("messages changed: %v", msgs)
+	}
+	if len(home.asked) != 0 {
+		t.Fatalf("the home's plugin model was asked: %v", home.asked)
+	}
+	// the third-party quota does not count a first-party stage's questions
+	var n int
+	_ = f.db.QueryRow(`SELECT count(*) FROM plugin_compute_usage`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("%d usage rows for a first-party stage", n)
+	}
+
+	// a down model server is the stage's model failure (503), not a hang
+	tagSrv.Close()
+	if code, c, _ := f.call(t, fpTok.Token, "compute/generate", ask); code != 503 || c != CodeComputeUnavailable {
+		t.Fatalf("model server down = %d %s", code, c)
+	}
+
+	// a third-party token: no messages or options, and the home's model only
+	tp := f.mint(t).Token
+	if code, c, _ := f.call(t, tp, "compute/generate", ask); code != 400 || c != CodeInvalid {
+		t.Fatalf("third-party chat = %d %s", code, c)
+	}
+	code, _, body = f.call(t, tp, "compute/generate", map[string]any{"prompt": "summarise", "max_tokens": 20})
+	if code != 200 || !strings.Contains(string(body), "a summary") || len(home.asked) != 1 || home.paths[0] != "/api/generate" {
+		t.Fatalf("third-party generate = %d %s (home asked %v)", code, body, home.paths)
 	}
 }
