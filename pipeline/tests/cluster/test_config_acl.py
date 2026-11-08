@@ -40,6 +40,7 @@ def _grant_signed_in_users(folder: Path) -> None:
         ["icacls", str(folder), "/grant", "*S-1-5-11:(OI)(CI)(M)", "*S-1-5-32-545:(OI)(CI)(RX)"],
         check=True,
         capture_output=True,
+        timeout=60,
     )
 
 
@@ -60,7 +61,9 @@ def test_windows_a_node_json_others_may_read_is_made_the_users(
     if shape == "a wider ACL set by hand":
         user = os.environ["USERNAME"]
         for args in (["/inheritance:r", "/grant:r", f"{user}:F"], ["/grant", "*S-1-5-32-545:(R)"]):
-            subprocess.run(["icacls", str(roaming), *args], check=True, capture_output=True)
+            subprocess.run(
+                ["icacls", str(roaming), *args], check=True, capture_output=True, timeout=60
+            )
     assert not _users_only(_icacls(roaming))
     warnings = _Warnings(private=True)
     monkeypatch.setattr(log, "get_logger", lambda: warnings)
@@ -73,7 +76,7 @@ def test_windows_a_node_json_others_may_read_is_made_the_users(
 
     # claimed already: a load alone makes it the user's again
     _grant_signed_in_users(roaming.parent)
-    subprocess.run(["icacls", str(roaming), "/reset"], check=True, capture_output=True)
+    subprocess.run(["icacls", str(roaming), "/reset"], check=True, capture_output=True, timeout=60)
     assert not _users_only(_icacls(roaming))
     assert config.load() is not None
     assert _users_only(_icacls(roaming))

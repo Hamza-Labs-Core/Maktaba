@@ -15,7 +15,7 @@ from maktaba_fp_livetv.stages import plan_channels
 from maktaba_pipeline import rules
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.sql import dumps, now, to_ts
-from maktaba_pipeline.engine.stages import detect
+from maktaba_pipeline.engine.stages import _detect as detect
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library
 

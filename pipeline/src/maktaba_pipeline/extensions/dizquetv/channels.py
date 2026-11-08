@@ -33,14 +33,13 @@ from ...engine.changes import ChangeSet, apply_or_review
 from ...engine.context import StageContext, StageFailure
 from ...engine.graph import StageResult, Subject
 from ...engine.hashing import canonical_hash
-from ...engine.sql import loads
+from ...engine.sql import dumps, is_pg, loads
 from ...engine.stages._plan_json import pool_items
 from ...integrations.dizquetv import (
     PREFIX,
     DizqueError,
     DizqueTV,
     State,
-    program_from_plex,
     read_state,
 )
 from ...integrations.dizquetv_export import (
@@ -416,12 +415,16 @@ def changes_from(actions: Sequence[Action]) -> ChangeSet:
 
 
 def _content(
-    keys: Sequence[str], meta: Mapping[str, Mapping[str, Any]], server: str, plex: PlexClient
+    dz: DizqueTV,
+    keys: Sequence[str],
+    meta: Mapping[str, Mapping[str, Any]],
+    server: str,
+    plex: PlexClient,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for k in keys:
         m = meta.get(k)
-        prog = None if m is None else program_from_plex(m, server, plex.uri, plex.token)
+        prog = None if m is None else dz.programme(m, server, plex)
         if prog is not None:
             out.append(prog)
     return out
@@ -524,7 +527,7 @@ def apply_actions(
         meta.update(plex.metadata(missing))
     for a in objs:
         assert a.body is not None and a.endpoint is not None
-        content = _content([str(i["ratingKey"]) for i in a.body["content"]], meta, server, plex)
+        content = _content(dz, [str(i["ratingKey"]) for i in a.body["content"]], meta, server, plex)
         body = {**a.body, "content": content}
         if a.verb == "create":
             oid = dz.call("PUT", a.endpoint, body)["id"]
@@ -620,14 +623,23 @@ async def with_display_titles(
     titles: dict[str, str] = {}
     for i in range(0, len(keys), 400):
         chunk = keys[i : i + 400]
-        marks = ",".join(f"${n + 1}" for n in range(len(chunk)))
-        rows = await db.fetch(
-            "SELECT p.rating_key AS rk,"
-            " COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS t"
-            " FROM plex_items p JOIN videos v ON v.id = p.video_id"
-            f" WHERE p.rating_key IN ({marks})",  # noqa: S608 — placeholders only
-            *chunk,
-        )
+        # one constant text per statement (a first-party plugin's are registered by text)
+        if is_pg(db):
+            rows = await db.fetch(
+                "SELECT p.rating_key AS rk,"
+                " COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS t"
+                " FROM plex_items p JOIN videos v ON v.id = p.video_id"
+                " WHERE p.rating_key = ANY($1::text[])",
+                chunk,
+            )
+        else:
+            rows = await db.fetch(
+                "SELECT p.rating_key AS rk,"
+                " COALESCE(NULLIF(v.display_title_manual, ''), v.display_title) AS t"
+                " FROM plex_items p JOIN videos v ON v.id = p.video_id"
+                " WHERE p.rating_key IN (SELECT value FROM json_each($1))",
+                dumps(chunk),
+            )
         titles.update({str(r["rk"]): str(r["t"]) for r in rows if r["t"]})
     return {rk: ({**m, "title": titles[rk]} if rk in titles else m) for rk, m in saved.items()}
 
@@ -686,7 +698,7 @@ async def run_channels(
 
     async def apply(cs: ChangeSet) -> None:
         plex_settings = ctx.extension_settings("plex")
-        if not plex_settings.get("url") or not plex_settings.get("token"):
+        if not dz.can_build(plex_settings):
             raise StageFailure(
                 "plex_not_configured",
                 "writing dizqueTV programmes needs the Plex settings (url and token)",

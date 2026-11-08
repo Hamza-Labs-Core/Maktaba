@@ -41,6 +41,10 @@ class CloudTest {
     private lateinit var relay: MockWebServer
     private lateinit var elsewhere: MockWebServer
     private val seen: MutableList<Pair<String, RecordedRequest>> = Collections.synchronizedList(mutableListOf())
+
+    // the servers add to seen from their own threads while a probe may still be asking: read a
+    // copy taken under its lock (iterating the list itself can throw ConcurrentModificationException)
+    private fun seenNow(): List<Pair<String, RecordedRequest>> = synchronized(seen) { seen.toList() }
     private val homeId = "0a1b2c3d-0000-4000-8000-000000000000"
     private val fresh = jwt(System.currentTimeMillis() / 1000 + 900, "home")
 
@@ -103,7 +107,7 @@ class CloudTest {
     fun signsInToTheCloudAndListsItsHomes() = runBlocking {
         val c = cloudSession()
         assertEquals("sara@example.com", c.signIn("sara@example.com", "pw").email)
-        val login = seen.first { it.first == "cloud" }.second
+        val login = seenNow().first { it.first == "cloud" }.second
         assertTrue(login.body!!.utf8().contains("\"email\":\"sara@example.com\""))
         val homes = c.homes()
         assertEquals(listOf("Kitchen", "Cabin"), homes.map { it.name })
@@ -111,7 +115,7 @@ class CloudTest {
         assertFalse("owning a home is no account in it", homes[1].linked)
         assertEquals("its own address first, then the relay", listOf("http://192.0.2.1:9", relayUrl), homes[0].addresses)
         assertEquals("mkha1.p.s", c.assertion(homeId))
-        assertEquals("""{"purpose":"signin"}""", seen.last { it.second.url.encodedPath.endsWith("/assertion") }.second.body!!.utf8())
+        assertEquals("""{"purpose":"signin"}""", seenNow().last { it.second.url.encodedPath.endsWith("/assertion") }.second.body!!.utf8())
     }
 
     @Test
@@ -123,7 +127,7 @@ class CloudTest {
         } catch (e: CloudException) {
             assertEquals(401, e.status)
         }
-        assertTrue("nothing was sent without a token", seen.isEmpty())
+        assertTrue("nothing was sent without a token", seenNow().isEmpty())
     }
 
     @Test
@@ -133,7 +137,7 @@ class CloudTest {
         // a cloud API path that answers a redirect to another server
         val r = CloudSession(cloud.url("/v1/redirect/.."), CloudSession.defaultHttp)
         runCatching { r.homes() }
-        assertTrue("the other server saw nothing", seen.none { it.first == "elsewhere" })
+        assertTrue("the other server saw nothing", seenNow().none { it.first == "elsewhere" })
     }
 
     @Test
@@ -152,7 +156,7 @@ class CloudTest {
         assertTrue("both addresses kept", "http://192.0.2.1:9" in s.current.value!!.addresses)
         val signedIn = s.phase.value as AppSession.Phase.SignedIn
         assertEquals("sara", signedIn.user.username)
-        val asked = seen.single { it.second.url.encodedPath == "/api/auth/cloud" }.second
+        val asked = seenNow().single { it.second.url.encodedPath == "/api/auth/cloud" }.second
         assertEquals("""{"assertion":"mkha1.p.s"}""", asked.body!!.utf8())
         assertNull("a cloud sign-in sends no token of its own", asked.headers["Authorization"])
         assertEquals("the home's tokens, under the relay's address only", fresh, tokens.getValue(relayUrl).access)
@@ -179,7 +183,7 @@ class CloudTest {
         assertTrue(local in s.current.value!!.addresses)
         assertTrue(s.phase.value is AppSession.Phase.SignedIn)
         // the local token never went to the relay
-        assertTrue(seen.filter { it.first == "relay" }.none { it.second.headers["Authorization"] == "Bearer local-token" })
+        assertTrue(seenNow().filter { it.first == "relay" }.none { it.second.headers["Authorization"] == "Bearer local-token" })
         assertEquals("local-token", tokens.getValue(local).access)
         assertEquals(fresh, tokens.getValue(relayUrl).access)
     }
@@ -197,7 +201,7 @@ class CloudTest {
         assertTrue(s.reachElsewhere())
         assertEquals(relayUrl, s.current.value?.url)
         assertEquals("asked to sign in there instead", AppSession.Phase.SigningIn, s.phase.value)
-        assertTrue("no assertion was asked for or sent", seen.none { it.second.url.encodedPath.endsWith("/assertion") || it.second.url.encodedPath == "/api/auth/cloud" })
+        assertTrue("no assertion was asked for or sent", seenNow().none { it.second.url.encodedPath.endsWith("/assertion") || it.second.url.encodedPath == "/api/auth/cloud" })
         try {
             s.signInWithCloud()
             fail("refused")
@@ -237,7 +241,7 @@ class CloudTest {
         assertEquals("the next launch starts there", relayUrl, AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() }).current.value?.url)
         assertEquals("signed in afresh there", AppSession.Phase.SigningIn, s.phase.value)
         assertNull(s.restoreProblem.value)
-        assertTrue("the old token never went to the new address", seen.none { it.second.headers["Authorization"] == "Bearer old-name-token" })
+        assertTrue("the old token never went to the new address", seenNow().none { it.second.headers["Authorization"] == "Bearer old-name-token" })
         assertEquals("old-name-token", tokens.getValue(dead).access)
     }
 
@@ -386,7 +390,7 @@ class CloudTest {
             s.signIn("sara", "pw")
             assertTrue(s.phase.value is AppSession.Phase.SignedIn)
             assertEquals(listOf("Talks"), s.client!!.libraries().map { it.name })
-            assertTrue("nothing went to the cloud", seen.none { it.first == "cloud" })
+            assertTrue("nothing went to the cloud", seenNow().none { it.first == "cloud" })
         } finally {
             home.close()
         }
@@ -409,7 +413,7 @@ class CloudTest {
             assertEquals("cloud_down", e.code)
         }
         assertEquals("the home is picked: its own sign-in shows", relayUrl, s.current.value?.url)
-        assertTrue(seen.none { it.first == "cloud" })
+        assertTrue(seenNow().none { it.first == "cloud" })
     }
 }
 

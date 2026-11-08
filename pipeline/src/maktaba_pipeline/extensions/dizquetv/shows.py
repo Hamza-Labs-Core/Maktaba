@@ -25,7 +25,7 @@ from ...engine.changes import ChangeSet, apply_or_review, diff_order
 from ...engine.context import StageContext, StageFailure
 from ...engine.graph import StageResult, Subject
 from ...engine.hashing import canonical_hash
-from ...integrations.dizquetv import DizqueError, DizqueTV, program_from_plex
+from ...integrations.dizquetv import DizqueError, DizqueTV
 from ...integrations.plex import PlexClient, PlexError, TransportError
 from ...text.arabic import fold
 from ..links import Link, delete_link, get_link, get_links, put_link
@@ -142,7 +142,8 @@ def apply_show(
 
     Programmes are built from ``saved`` (the ``plex_index`` stage's records, by
     rating key) and only the keys it lacks are asked of Plex. The show is read
-    back and its ratingKey order verified.
+    back and its ratingKey order verified. The client builds each programme (the worker's
+    with the Plex token; a plugin's sends the token-free record and the home's door builds it).
     """
     ours = remote.ours
     if desired.delete:
@@ -163,7 +164,7 @@ def apply_show(
     content: list[dict[str, Any]] = []
     for k in desired.keys:
         m = meta.get(k)
-        prog = None if m is None else program_from_plex(m, server, plex.uri, plex.token)
+        prog = None if m is None else dz.programme(m, server, plex)
         if prog is not None:
             content.append(prog)
     body = {"name": desired.name, "content": content}
@@ -245,7 +246,7 @@ async def run_show(db: Any, job: Any, ctx: StageContext, service: ShowsService) 
 
     async def apply(cs: ChangeSet) -> None:
         plex_settings = ctx.extension_settings("plex")
-        if not desired.delete and (not plex_settings.get("url") or not plex_settings.get("token")):
+        if not desired.delete and not dz.can_build(plex_settings):
             raise StageFailure(
                 "plex_not_configured",
                 "writing dizqueTV programmes needs the Plex settings (url and token)",

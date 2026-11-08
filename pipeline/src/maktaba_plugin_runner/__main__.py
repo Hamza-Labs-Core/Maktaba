@@ -101,7 +101,12 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError):
         pass
     policy = sandbox.policy_for(
-        tables, areas=areas, api_socket=args.api_socket, own_socket=str(own), run_dir=run_dir
+        tables,
+        areas=areas,
+        api_socket=args.api_socket,
+        own_socket=str(own),
+        run_dir=run_dir,
+        group=firstparty.group_of_instance(group),
     )
     try:
         applied = sandbox.apply(policy)

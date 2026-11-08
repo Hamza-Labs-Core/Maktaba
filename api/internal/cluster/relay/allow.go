@@ -44,6 +44,9 @@ type Rule struct {
 	// Verify, when set, is checked against the upstream before the call
 	// is forwarded (DELETE only removes collections).
 	Verify string
+	// Op, when set, names an operation the door serves itself instead of forwarding
+	// the call (dizqueTV's, issue #827: a projection read or a programme the door builds).
+	Op string
 }
 
 // KeyRule is a family of query parameters: a name pattern and its value's.
@@ -70,7 +73,9 @@ type Extension struct {
 	// QueryParam is the query parameter name that would carry the secret
 	// (refused in requests, scrubbed from answers).
 	QueryParam string
-	Rules      []Rule
+	// MaxBody bounds a request's body (0: MaxRequestBody).
+	MaxBody int
+	Rules   []Rule
 }
 
 // HomeOnly lists the extensions whose calls are never relayed, with why.
@@ -79,8 +84,9 @@ var HomeOnly = map[string]string{
 	// the calls are admin operations made by the home's API itself
 	// (api/internal/tvremote): no stage needs them on a node.
 	"cloudflare_stream": "the Cloudflare API token is used by the home's API only (admin operations)",
-	// dizqueTV holds no secret of its own; its stages are home-only for
-	// other reasons (they embed the Plex token in dizqueTV programmes).
+	// dizqueTV holds no secret of its own, but its programmes carry the Plex token: the
+	// home's own plugin reaches it through the door's operations (DizqueTV), which build
+	// the programmes on the home; no node is ever relayed to it.
 	"dizquetv": "dizqueTV stages run on the home (programmes carry the Plex token)",
 }
 
@@ -189,8 +195,72 @@ var Plex = Extension{
 	},
 }
 
+var (
+	dzID      = `[A-Za-z0-9_-]{1,64}`
+	dzNumber  = `[0-9]{1,6}`
+	httpURL   = regexp.MustCompile(`^https?://[^\x00-\x20]{1,1000}$`)
+	dzMaxBody = 48 << 20
+)
+
+// DizqueTV is dizqueTV as the home's own tv.maktaba.dizquetv reaches it (issue #827). Every
+// rule is HomeOnly. A programme body is never read or written raw: the reads are the door's
+// projections (Op), with no secret in them, and a show, filler list or channel is written
+// through an operation that builds or fills its programmes on the home (dizquetv.go). The raw
+// calls left answer with what the plugin sent (the time-slot tool), a link, or nothing.
+var DizqueTV = Extension{
+	Name:       "dizquetv",
+	URLKey:     "url",
+	URLEnv:     "MAKTABA_DIZQUETV_URL",
+	QueryParam: "X-Plex-Token",
+	// a channel's programmes (dizqueTV itself takes up to 50 MB)
+	MaxBody: dzMaxBody,
+	Rules: []Rule{
+		{Method: "GET", Path: "/maktaba/channels", Re: regexp.MustCompile(`^/maktaba/channels$`),
+			HomeOnly: true, Op: opChannels, Use: "read_state, read_dizquetv, ping (channel numbers)"},
+		{Method: "GET", Path: "/maktaba/shows", Re: regexp.MustCompile(`^/maktaba/shows$`),
+			HomeOnly: true, Op: opList, Use: "read_state, read_remote (id, name)"},
+		{Method: "GET", Path: "/maktaba/fillers", Re: regexp.MustCompile(`^/maktaba/fillers$`),
+			HomeOnly: true, Op: opList, Use: "read_state (id, name)"},
+		{Method: "GET", Path: "/maktaba/plex-servers", Re: regexp.MustCompile(`^/maktaba/plex-servers$`),
+			HomeOnly: true, Op: opServers, Use: "plex_server_name (names; never a token or an address)"},
+		{Method: "GET", Path: "/maktaba/show/{id}", Re: regexp.MustCompile(`^/maktaba/show/` + dzID + `$`),
+			HomeOnly: true, Op: opReadList, Use: "read_state, read_remote, read-back (programmes projected)"},
+		{Method: "GET", Path: "/maktaba/filler/{id}", Re: regexp.MustCompile(`^/maktaba/filler/` + dzID + `$`),
+			HomeOnly: true, Op: opReadList, Use: "read_state, read_dizquetv, read-back (programmes projected)"},
+		{Method: "GET", Path: "/maktaba/channel/{n}", Re: regexp.MustCompile(`^/maktaba/channel/` + dzNumber + `$`),
+			HomeOnly: true, Op: opReadChannel, Use: "write_channel, read_dizquetv (programmes projected)"},
+		{Method: "GET", Path: "/maktaba/channel/programless/{n}", Re: regexp.MustCompile(`^/maktaba/channel/programless/` + dzNumber + `$`),
+			HomeOnly: true, Op: opReadChannel, Use: "read_state, read-back (settings projected)"},
+		{Method: "PUT", Path: "/maktaba/show", Re: regexp.MustCompile(`^/maktaba/show$`),
+			HomeOnly: true, Op: opWriteList, Use: "apply_show, apply_actions (programmes built on the home)"},
+		{Method: "POST", Path: "/maktaba/show/{id}", Re: regexp.MustCompile(`^/maktaba/show/` + dzID + `$`),
+			HomeOnly: true, Op: opWriteList, Use: "apply_show, apply_actions (programmes built on the home)"},
+		{Method: "PUT", Path: "/maktaba/filler", Re: regexp.MustCompile(`^/maktaba/filler$`),
+			HomeOnly: true, Op: opWriteList, Use: "apply_actions (programmes built on the home)"},
+		{Method: "POST", Path: "/maktaba/filler/{id}", Re: regexp.MustCompile(`^/maktaba/filler/` + dzID + `$`),
+			HomeOnly: true, Op: opWriteList, Use: "apply_actions (programmes built on the home)"},
+		{Method: "POST", Path: "/maktaba/channel", Re: regexp.MustCompile(`^/maktaba/channel$`),
+			HomeOnly: true, Op: opWriteChannel, Use: "write_channel (a new channel; programmes filled on the home)"},
+		{Method: "PUT", Path: "/maktaba/channel", Re: regexp.MustCompile(`^/maktaba/channel$`),
+			HomeOnly: true, Op: opWriteChannel, Use: "write_channel (programmes filled on the home)"},
+		{Method: "HEAD", Path: "/maktaba/art?url=", Re: regexp.MustCompile(`^/maktaba/art$`),
+			Query: q("url", httpURL), Required: []string{"url"}, HomeOnly: true, Op: opArt,
+			Use: "hosted_link (a logo under the home's dz_art_url)"},
+		{Method: "POST", Path: "/api/channel-tools/time-slots", Re: regexp.MustCompile(`^/api/channel-tools/time-slots$`),
+			HomeOnly: true, Op: opRaw, Use: "write_channel (the timeline, from the plugin's projections)"},
+		{Method: "POST", Path: "/api/upload/image", Re: regexp.MustCompile(`^/api/upload/image$`),
+			HomeOnly: true, Op: opRaw, Use: "upload_image (a channel logo)"},
+		{Method: "DELETE", Path: "/api/show/{id}", Re: regexp.MustCompile(`^/api/show/` + dzID + `$`),
+			HomeOnly: true, Op: opRaw, Use: "apply_show, removals"},
+		{Method: "DELETE", Path: "/api/filler/{id}", Re: regexp.MustCompile(`^/api/filler/` + dzID + `$`),
+			HomeOnly: true, Op: opRaw, Use: "removals"},
+		{Method: "DELETE", Path: "/api/channel", Re: regexp.MustCompile(`^/api/channel$`),
+			HomeOnly: true, Op: opRaw, Use: "removals (body: the channel's number)"},
+	},
+}
+
 // Extensions are the relayable extensions by name.
-var Extensions = map[string]*Extension{Plex.Name: &Plex}
+var Extensions = map[string]*Extension{Plex.Name: &Plex, DizqueTV.Name: &DizqueTV}
 
 // Refusal reasons of Match.
 var (

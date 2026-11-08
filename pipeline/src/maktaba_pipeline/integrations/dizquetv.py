@@ -7,6 +7,7 @@ injectable :class:`~maktaba_pipeline.integrations.plex.Transport` as the Plex cl
 from __future__ import annotations
 
 import json
+import re
 import urllib.parse
 import uuid
 from collections.abc import Mapping
@@ -17,12 +18,15 @@ from typing import Any
 from .plex import Transport, TransportError, UrllibTransport
 
 __all__ = [
+    "DOOR_BASE",
     "PREFIX",
     "DizqueError",
     "DizqueTV",
+    "DoorDizqueTV",
     "State",
     "image_upload_body",
     "program_from_plex",
+    "program_spec",
     "read_state",
     "tz_offset_minutes",
 ]
@@ -111,17 +115,98 @@ class DizqueTV:
         """Raise unless the server lists its channels."""
         self.get("/api/channels")
 
+    # ------------------------------------------------------------------ programmes
+
+    def programme(self, meta: Mapping[str, Any], server: str, plex: Any) -> dict[str, Any] | None:
+        """The programme a show or filler list is written with: built here from the Plex
+        record, with the Plex client's address and token (the worker's own client)."""
+        return program_from_plex(meta, server, plex.uri, plex.token)
+
+    def can_build(self, plex_settings: Mapping[str, str]) -> bool:
+        """Whether programmes can be built: the Plex settings hold the address and token."""
+        return bool(plex_settings.get("url")) and bool(plex_settings.get("token"))
+
     def plex_server_name(self, plex_uri: str | None = None) -> str | None:
         """The name dizqueTV registered the Plex server at ``plex_uri`` under (programmes
         name their server by it). Without a match, the only registered server; None when
         there is none, or several and none at ``plex_uri``."""
-        servers = list(self.get("/api/plex-servers") or [])
+        servers = list(self.get("/api/plex-servers") or [])  # never kept: they hold tokens
         if plex_uri:
             want = plex_uri.rstrip("/").lower()
             for s in servers:
                 if str(s.get("uri", "")).rstrip("/").lower() == want:
                     return str(s["name"])
         return str(servers[0]["name"]) if len(servers) == 1 else None
+
+
+#: what a plugin's dizqueTV client has for an address: the door knows the real one
+DOOR_BASE = "service://dizquetv"
+
+#: the raw reads the door answers with a token-free projection instead (issue #827)
+_DOOR_READ = re.compile(
+    r"^/api/(channels|shows|fillers|plex-servers|(show|filler)/[^/]+"
+    r"|channel/(programless/)?[0-9]+)$"
+)
+#: the writes whose programmes the door builds or fills on the home
+_DOOR_WRITE = re.compile(r"^/api/((show|filler)(/[^/]+)?|channel)$")
+
+
+class DoorDizqueTV(DizqueTV):
+    """dizqueTV through the home's service door, for a first-party plugin's stage (issue
+    #827). The plugin never holds the Plex token, and no answer it gets carries it:
+
+    * a read of a show, filler list, channel or the Plex servers is the door's projection
+      (``/maktaba/...``): rating keys, durations and settings, never a programme's picture
+      or a server's token;
+    * a programme is written as its Plex item's rating key; the door reads the item from
+      Plex and builds the programme, the picture's URL with the token included;
+    * a channel's programmes are sent as the projections they were read as; the door fills
+      each from the stored show (or, by ``maktabaRef``, from the channel as stored).
+
+    Everything else (the time-slot tool, a logo upload, a delete) goes as sent, through the
+    door's allow-list."""
+
+    def __init__(self, transport: Transport, *, timeout: float = DEFAULT_TIMEOUT) -> None:
+        super().__init__(DOOR_BASE, transport=transport, timeout=timeout)
+
+    def call(self, method: str, path: str, body: Any = None) -> Any:
+        if (method == "GET" and _DOOR_READ.match(path)) or (
+            method in ("PUT", "POST") and _DOOR_WRITE.match(path)
+        ):
+            path = "/maktaba/" + path.removeprefix("/api/")
+        return super().call(method, path, body)
+
+    def programme(self, meta: Mapping[str, Any], server: str, plex: Any) -> dict[str, Any] | None:
+        """The item's rating key alone: the door reads the item from Plex on the home and
+        builds the programme from Plex's answer (every playable field is Plex's to say, so
+        the plugin sends none of them). None for an item that cannot be played."""
+        if program_spec(meta) is None:
+            return None
+        return {"ratingKey": str(meta["ratingKey"])}
+
+    def can_build(self, plex_settings: Mapping[str, str]) -> bool:
+        """The door holds the Plex settings (it refuses a write when they are missing)."""
+        return True
+
+    def plex_server_name(self, plex_uri: str | None = None) -> str | None:
+        """As :meth:`DizqueTV.plex_server_name`, from the door's projection: each server's
+        name, and whether it is the home's own Plex (its address is never shown)."""
+        servers = list(self.get("/api/plex-servers") or [])
+        if plex_uri:
+            for s in servers:
+                if s.get("home"):
+                    return str(s["name"])
+        return str(servers[0]["name"]) if len(servers) == 1 else None
+
+    def head_status(self, url: str) -> int:
+        """A logo's status on its web host: the door checks only a link under the home's own
+        ``dz_art_url`` (0 when unreachable or refused)."""
+        target = f"{self.base}/maktaba/art?url={urllib.parse.quote(url, safe='')}"
+        try:
+            status = self._transport.request("HEAD", target, {}, None, 30.0)[0]
+        except TransportError:
+            return 0
+        return 0 if status == 403 else status
 
 
 @dataclass(slots=True)
@@ -165,21 +250,18 @@ def _hms(ms: int) -> str:
     return f"{s // 3600:02d}:{s // 60 % 60:02d}:{s % 60:02d}.{ms % 1000 // 100}"
 
 
-def program_from_plex(
-    meta: Mapping[str, Any], server_name: str, plex_uri: str, plex_token: str
-) -> dict[str, Any] | None:
-    """A dizqueTV programme from a Plex ``/library/metadata/RK`` item.
+def program_spec(meta: Mapping[str, Any]) -> dict[str, Any] | None:
+    """A programme's token-free record from a Plex ``/library/metadata/RK`` item: the
+    programme without what names Plex's address or token (``icon`` is the picture's Plex
+    path, there is no ``serverKey``): what :func:`program_from_plex` builds on in the worker.
+    The home's service door builds the same programme for a plugin from Plex's own answer
+    (issue #827), as ``fromPlex`` in the door's code.
 
-    The shape the dizqueTV web UI saves (``tools/fill-custom-shows.js``). Returns
     None for items that cannot be played (no duration, not a movie or episode).
     """
     if not meta.get("duration") or meta.get("type") not in ("movie", "episode"):
         return None
     part = meta["Media"][0]["Part"][0]
-
-    def icon(t: str | None) -> str | None:
-        return f"{plex_uri}{t}?X-Plex-Token={plex_token}" if t else None
-
     date = meta.get("originallyAvailableAt") or (
         f"{meta['year']}-01-01" if meta.get("year") else None
     )
@@ -187,7 +269,7 @@ def program_from_plex(
         "title": meta.get("title", ""),
         "key": meta["key"],
         "ratingKey": str(meta["ratingKey"]),
-        "icon": icon(meta.get("thumb")),
+        "icon": meta.get("thumb") or None,
         "type": meta["type"],
         "duration": int(meta["duration"]),
         "durationStr": _hms(int(meta["duration"])),
@@ -203,10 +285,29 @@ def program_from_plex(
             showTitle=meta.get("grandparentTitle"),
             season=meta.get("parentIndex"),
             episode=meta.get("index"),
-            icon=icon(meta.get("grandparentThumb")),
+            icon=meta.get("grandparentThumb") or None,
         )
     else:
         p.update(showTitle=meta.get("title", ""), season=1, episode=1)
+    p["commercials"] = []
+    return p
+
+
+def program_from_plex(
+    meta: Mapping[str, Any], server_name: str, plex_uri: str, plex_token: str
+) -> dict[str, Any] | None:
+    """A dizqueTV programme from a Plex ``/library/metadata/RK`` item.
+
+    The shape the dizqueTV web UI saves (``tools/fill-custom-shows.js``): the record of
+    :func:`program_spec` with the picture's URL (Plex's address and token) and the server's
+    name. Returns None for items that cannot be played (no duration, not a movie or episode).
+    """
+    p = program_spec(meta)
+    if p is None:
+        return None
+    t = p["icon"]
+    p["icon"] = f"{plex_uri}{t}?X-Plex-Token={plex_token}" if t else None
+    del p["commercials"]
     p["serverKey"] = server_name
     p["commercials"] = []
     return p
