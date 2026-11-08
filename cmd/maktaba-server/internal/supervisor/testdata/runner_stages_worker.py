@@ -95,15 +95,24 @@ async def main(cfg: dict[str, Any]) -> dict[str, Any]:
             t0 = time.monotonic()
             native.want_runner(group)
             hello = None
+            refused = False
             while time.monotonic() - t0 < float(cfg["wait_sec"]):
                 hello = await native.hello(group, fresh=True)
                 if hello is not None:
+                    break
+                if group in native._ASK_REFUSED:
+                    # the supervisor answered the ask with an error (its log says why at
+                    # debug): no runner is coming, so the end to end stops here, saying so
+                    refused = True
                     break
                 await asyncio.sleep(1)
             report["runners"][group] = {
                 "hello": hello,
                 "seconds": round(time.monotonic() - t0, 1),
+                "ask_refused": refused,
             }
+            if hello is None:
+                return report  # the test fails on the first runner that is not up
 
         choices: list[dict[str, Any]] = []
         runs: list[dict[str, Any]] = []

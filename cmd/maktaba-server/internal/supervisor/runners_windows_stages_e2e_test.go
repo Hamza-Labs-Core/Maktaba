@@ -253,8 +253,9 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	var rep struct {
 		Cases   []stageReport `json:"cases"`
 		Runners map[string]struct {
-			Hello   map[string]any `json:"hello"`
-			Seconds float64        `json:"seconds"`
+			Hello      map[string]any `json:"hello"`
+			Seconds    float64        `json:"seconds"`
+			AskRefused bool           `json:"ask_refused"`
 		} `json:"runners"`
 		MigrationProblems []string `json:"migration_problems"`
 	}
@@ -266,7 +267,12 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	}
 	for g, r := range rep.Runners {
 		if r.Hello == nil {
-			t.Fatalf("the %s runner never answered the worker in %.0fs (plugin-runner-%s.log)", g, r.Seconds, g)
+			why := "never answered the worker"
+			if r.AskRefused {
+				why = "was refused by the supervisor when the worker asked for it (POST /runners/" + g + "/start)"
+			}
+			t.Fatalf("the %s runner %s after %.0fs; the supervisor sees %s (plugin-runner-%s.log)",
+				g, why, r.Seconds, runnerStates(s), g)
 		}
 		t.Logf("runner %s up in %.1fs: pid %v, stages served %v", g, r.Seconds, r.Hello["pid"], r.Hello["stages"])
 	}
@@ -317,6 +323,18 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		t.Logf("case %s: job %d, choice plugin, run_native %v, fallbacks %v, tokens %d, state %v; %s; output %s",
 			c.Name, r.JobID, runStatuses(r), r.Fallbacks, r.Invocations, r.Job["state"], line, out)
 	}
+}
+
+// runnerStates is how the supervisor sees each runner group (the first thing to read when
+// one never came up: blocked by its component, never wanted, crashed, restarting).
+func runnerStates(s *Supervisor) string {
+	var out []string
+	for _, c := range s.Snapshot().Processes {
+		if c.Role == RolePluginRunner {
+			out = append(out, fmt.Sprintf("%s: %s pid %d wanted %v blocked %v", c.Instance, c.State, c.PID, c.Wanted, c.Blocked))
+		}
+	}
+	return strings.Join(out, "; ")
 }
 
 func runStatuses(r stageReport) []string {
