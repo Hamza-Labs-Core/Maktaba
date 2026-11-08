@@ -160,6 +160,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **On Windows, Maktaba's own plugin stages run in the worker again (Epic 54 story 54.23).** Inside
+  its AppContainer a runner cannot create the named pipes Python uses to read a tool's output, so a
+  stage that runs ffmpeg or ffprobe there failed as if the tool were broken. Until the runners start
+  tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
+  v0.3.102, and no runner is started for it.
+
 - **Old backups go on their own.** The backups folder kept the newest nightly dumps and
   pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
   failed update or of a database a restore replaced was kept until more of its kind came:

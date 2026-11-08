@@ -72,6 +72,12 @@ media paths, service door), calling this machine's plugin API socket with the to
 A runner that cannot apply its sandbox does not run (`sandbox_unavailable`), except on Linux
 without Landlock, where it runs *Degraded* `sandbox_partial` if seccomp is in force (as 54.03).
 
+**Until the runners start tools through anonymous pipes (Windows).** Inside its AppContainer a
+runner cannot create the named pipes asyncio uses to capture a tool's output (`WinError 5`), and
+`engine.media` reports that as a tool failure. So the worker's `choose` keeps every first-party
+stage on Windows in-process (`windows_tool_pipes`) and starts no runner for it, until the runners
+start tools through anonymous pipes.
+
 On Windows a runner cannot listen: an AppContainer process may not create a named pipe, and
 Python on Windows has no `AF_UNIX`. The supervisor serves three pipes per group, under a name
 prefix new to each of its runs: the worker's pipe (admitting only the user Maktaba runs as),
