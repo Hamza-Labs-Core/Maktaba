@@ -2120,6 +2120,10 @@ build fails when the two differ.
   story 54.36).** It saves what it reads as before, and the queue decides what runs next from
   the length and frame size it reports, as it did. Its run now notes how many audio tracks it
   found and the video's new state.
+- **Making a video's poster and sprite is a queue stage like the others (Epic 54, story
+  54.36).** It makes and saves the same images, on the home only, as before. A run that makes
+  the same images as the last one now counts as unchanged, and its run notes the chapter
+  frames it made and the video's state.
 
 - **The home's dashboards show every joined machine (Epic 53 story 53.12).** The Overview's
   memory, disk free and load, and its components and restarts, now carry a line for each joined

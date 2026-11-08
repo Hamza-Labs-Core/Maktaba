@@ -1,0 +1,25 @@
+Image: السيرة النبوية، الدرس ١٠
+Button: Seerah · Season 1, Episode 10
+Heading: السيرة النبوية، الدرس ١٠
+StaticText: 52:00 · Oct 18, 2026
+Button: Play
+Button: Favorite
+Button: Mark watched
+Button: Play next
+Button: Add to queue
+StaticText: الدرس العاشر من سلسلة السيرة النبوية.
+Heading: Chapters
+Button: 0:00, المقدمة
+Button: 7:00, Hijrah to Madinah
+Button: 25:00, بناء المسجد
+Button: 43:20, Questions and answers
+Heading: From the transcript
+Button: 0:00, ⁨بسم الله الرحمن الرحيم⁩
+Button: 0:06, ⁨نبدأ اليوم الدرس العاشر من السيرة النبوية⁩
+Button: 0:14, ⁨and we pick up the story at the Hijrah⁩
+Button: 0:22, ⁨خرج النبي صلى الله عليه وسلم من مكة ليلاً⁩
+Button: 0:31, ⁨with his companion, towards the cave of Thawr⁩
+DisclosureTriangle: From plugins | 0
+Heading: Next episodes
+Button: السيرة النبوية، الدرس ١١, Season 1, Episode 11 | 42% watched
+Button: السيرة النبوية، الدرس ١٢, Season 1, Episode 12
