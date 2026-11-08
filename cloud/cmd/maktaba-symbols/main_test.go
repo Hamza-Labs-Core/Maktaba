@@ -162,3 +162,46 @@ func TestUsage(t *testing.T) {
 		}
 	}
 }
+
+// An ELF file is an Android app's native library: one table, named by its build id's key,
+// and uploaded as the others are.
+func TestANativeLibraryIsExtractedAndUploaded(t *testing.T) {
+	dir, lib := t.TempDir(), symbolstest.Fixture(t, "native.so")
+	var out strings.Builder
+	if err := run(context.Background(), []string{"extract", "-o", dir, lib}, &out); err != nil {
+		t.Fatal(err)
+	}
+	files, _ := filepath.Glob(filepath.Join(dir, "*.symbols"))
+	if len(files) != 1 || !strings.Contains(out.String(), "native.so build id ") {
+		t.Fatalf("tables = %v (%s)", files, out.String())
+	}
+	b, err := os.ReadFile(files[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	tab, err := symbols.Decode(b)
+	if err != nil || tab.Kind != symbols.KindELF || filepath.Base(files[0]) != tab.DebugID+".symbols" ||
+		tab.DebugID != symbols.ELFID(tab.CodeID) {
+		t.Fatalf("%s: %+v %v", files[0], tab, err)
+	}
+	var kinds []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		x, err := symbols.Decode(b)
+		if err != nil || r.Header.Get("Authorization") != "Bearer tok" {
+			http.Error(w, "no", http.StatusBadRequest)
+			return
+		}
+		kinds = append(kinds, x.Kind+" "+x.CodeID)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+	t.Setenv("MAKTABA_SYMBOLS_TOKEN", "tok")
+	// the library itself, and the table extract wrote of it
+	if err := run(context.Background(), []string{"upload", "-url", srv.URL, "-version", "0.3.103", lib, files[0]}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(kinds) != 2 || kinds[0] != "elf "+tab.CodeID || kinds[1] != kinds[0] {
+		t.Fatalf("uploaded %v", kinds)
+	}
+}

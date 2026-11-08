@@ -6,9 +6,10 @@
 // the home's admin and the report's sender see. A report holds no title, path, name or
 // address (the home's export scrub) and is kept 90 days. Its Apple crashes read as functions,
 // files and lines where the release's symbol tables are uploaded (/symbols, 53.14), its
-// Android crashes where the release's R8 mapping is, and its desktop crashes as they came
-// (the desktop player is not obfuscated); the
-// binaries without one are named.
+// Android crashes where the release's R8 mapping is, its Android native crashes where the
+// app's own libraries' tables are (keyed by build id), and its desktop crashes as they came
+// (the desktop player is not obfuscated); the binaries, mappings and libraries without one
+// are named. A native crash kept with its reason alone (Android 11) has no frames.
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -66,10 +67,18 @@ export interface ReportCrash {
   type: string;
   value?: string;
   frames: CrashFrame[];
-  // a binary's missing dSYM, or (kind "r8") an Android release's missing mapping
-  missing?: { code_file: string; debug_id: string; kind?: string; version?: string }[];
-  // how the frames read: a dSYM's table, an R8 mapping, or the code's own names (not obfuscated)
-  symbols?: "dsym" | "mapping" | "source";
+  // a binary's missing dSYM, (kind "r8") an Android release's missing mapping, or (kind "elf")
+  // an Android app's own native library without a table, with its build id when known
+  missing?: {
+    code_file: string;
+    debug_id: string;
+    kind?: string;
+    version?: string;
+    code_id?: string;
+  }[];
+  // how the frames read: a dSYM's table, an R8 mapping, a native library's table, or the
+  // code's own names (not obfuscated)
+  symbols?: "dsym" | "mapping" | "source" | "native";
 }
 
 export interface CloudReportDoc extends CloudReport {
@@ -230,6 +239,7 @@ const SYMBOLS_NOTE = {
   dsym: "admin.reports.symbols.dsym",
   mapping: "admin.reports.symbols.mapping",
   source: "admin.reports.symbols.source",
+  native: "admin.reports.symbols.native",
 } as const;
 
 // a frame's place in the code: the function, and the file's name and line when known
@@ -256,27 +266,49 @@ function Crashes({ crashes }: { crashes: ReportCrash[] }) {
             </h3>
           }
         >
-          <p className="mkc-muted">{t("admin.reports.crashFrames")}</p>
-          {c.symbols && (
-            <p className="mkc-muted" data-testid="crash-symbols">
-              {t(SYMBOLS_NOTE[c.symbols])}
+          {(c.frames ?? []).length === 0 ? (
+            <p className="mkc-muted" data-testid="crash-no-frames">
+              {t("admin.reports.noFrames")}
             </p>
+          ) : (
+            <>
+              <p className="mkc-muted">{t("admin.reports.crashFrames")}</p>
+              {c.symbols && SYMBOLS_NOTE[c.symbols] && (
+                <p className="mkc-muted" data-testid="crash-symbols">
+                  {t(SYMBOLS_NOTE[c.symbols])}
+                </p>
+              )}
+              <ol className="mkc-list" data-testid="crash-frames" dir="ltr">
+                {c.frames.map((f, k) => (
+                  <li key={k} className="mkc-list__row mkc-mono">
+                    {f.in_app ? <strong>{frameText(f)}</strong> : frameText(f)}
+                    {f.inlined && <span className="mkc-muted"> {t("admin.reports.inlined")}</span>}
+                    {f.symbol && f.raw && <span className="mkc-muted"> · {f.raw}</span>}
+                  </li>
+                ))}
+              </ol>
+            </>
           )}
-          <ol className="mkc-list" data-testid="crash-frames" dir="ltr">
-            {c.frames.map((f, k) => (
-              <li key={k} className="mkc-list__row mkc-mono">
-                {f.in_app ? <strong>{frameText(f)}</strong> : frameText(f)}
-                {f.inlined && <span className="mkc-muted"> {t("admin.reports.inlined")}</span>}
-                {f.symbol && f.raw && <span className="mkc-muted"> · {f.raw}</span>}
-              </li>
-            ))}
-          </ol>
-          {c.missing && c.missing.some((m) => m.kind !== "r8") && (
+          {c.missing && c.missing.some((m) => !m.kind) && (
             <p className="mkc-muted" data-testid="crash-missing">
               {t("admin.reports.noSymbols", {
                 binaries: c.missing
-                  .filter((m) => m.kind !== "r8")
+                  .filter((m) => !m.kind)
                   .map((m) => `${m.code_file} (${m.debug_id})`)
+                  .join(", "),
+              })}
+            </p>
+          )}
+          {c.missing && c.missing.some((m) => m.kind === "elf") && (
+            <p className="mkc-muted" data-testid="crash-missing-native">
+              {t("admin.reports.noNativeSymbols", {
+                libraries: c.missing
+                  .filter((m) => m.kind === "elf")
+                  .map((m) =>
+                    m.code_id
+                      ? t("admin.reports.library", { file: m.code_file, buildId: m.code_id })
+                      : t("admin.reports.libraryNoBuildId", { file: m.code_file })
+                  )
                   .join(", "),
               })}
             </p>

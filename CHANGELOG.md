@@ -14,6 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
+- **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
+  console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
+  files and lines with a table of the app's own unstripped native library, keyed by the
+  library's build ID (`maktaba-symbols extract|upload lib.so`). System libraries' frames stay as
+  they came; an own library without a table is named with its build ID; a crash kept with its
+  reason alone says it has no frames. Each tag's Play bundles run makes the tables from the
+  unstripped libraries and uploads them with the same `MAKTABA_SYMBOLS_TOKEN` secret (nothing
+  while it is unset; a failed upload keeps them as the run's artifact). The cloud rehearsal
+  checks a native crash arrives symbolicated.
 - **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
   operator console reads an Android report's obfuscated Kotlin frames back to their classes,
   methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads

@@ -14,7 +14,8 @@ import (
 // Deps are the symbol routes:
 //
 //	POST /v1/symbols          a table (Encode's form), with the symbols token (?version=): a
-//	                          dSYM's, or an Android release's R8 mapping (kind "r8")
+//	                          dSYM's, an Android release's R8 mapping (kind "r8"), or an
+//	                          Android app's native library (kind "elf")
 //	GET  /v1/admin/symbols    the kept tables, for the service admin
 type Deps struct {
 	Store *Store
