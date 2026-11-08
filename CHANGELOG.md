@@ -2206,6 +2206,14 @@ build fails when the two differ.
   Without the secret nothing is uploaded and the release stays green; a failed upload warns and
   keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
 
+- **Maktaba's own stages run in their sandboxed runners on Windows too (story 54.23).** Each
+  runner group now runs on a Windows home in its own AppContainer and Job Object, as the plugin
+  host does: it reads and writes only the folders its group declares, has no network unless
+  its group needs it, and starts no program but its group's tools. The worker reaches it
+  through pipes the server serves. A runner that cannot be sandboxed does not run, and its
+  jobs run in the worker, as before. Media on a network share is never granted to a runner;
+  jobs that need it run in the worker.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

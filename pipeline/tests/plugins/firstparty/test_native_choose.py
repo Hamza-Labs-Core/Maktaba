@@ -4,11 +4,12 @@ only where the plugin's Postgres role is usable by this machine's login (Epic 54
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
 
-from maktaba_pipeline.plugins import firstparty, native
+from maktaba_pipeline.plugins import firstparty, native, pipe
 
 pytestmark = pytest.mark.asyncio
 
@@ -63,3 +64,26 @@ async def test_the_answer_is_kept_for_a_minute(stage: str) -> None:
     await native.choose(db, stage)
     await native.choose(db, stage)
     assert db.role_asks == 1
+
+
+async def test_the_worker_reaches_a_runner_through_its_pipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On Windows the worker opens the group's pipe (the supervisor's prefix and the
+    group's name; story 54.23); without the prefix it finds none, as a missing socket
+    elsewhere."""
+    opened: list[str] = []
+
+    async def open_pipe(name: str, **_: Any) -> Any:
+        opened.append(name)
+        return "r", "w"
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(pipe, "open_pipe", open_pipe)
+    monkeypatch.setenv("MAKTABA_RUNNER_PIPES", "\\\\.\\pipe\\maktaba-runner-ab-")
+    got: Any = await native.open_runner("light")
+    assert got == ("r", "w")
+    assert opened == ["\\\\.\\pipe\\maktaba-runner-ab-light"]
+    monkeypatch.delenv("MAKTABA_RUNNER_PIPES")
+    with pytest.raises(FileNotFoundError):
+        await native.open_runner("light")
