@@ -404,6 +404,26 @@ jobs:
         # tools/release/tauri-stamp.mjs: the same stamp as CI's dry run of the Core leg
         run: node tools/release/tauri-stamp.mjs
 
+      # what tauri's AppImage bundler would fetch unpinned at bundle time (AppRun,
+      # linuxdeploy, its appimage plugin, the AppImage runtime appimagetool takes), by the
+      # SHA-256 in tools/release/linux-app/tauri-tools.pins, as CI's Linux app job does
+      # (whose push to main saves the cache restored here)
+      - name: tauri's AppImage tools (key)
+        id: tauri-tools-pin
+        if: runner.os == 'Linux'
+        run: echo "key=$(tools/release/linux-app/tauri-tools.sh --key "$(uname -m)")" >>"$GITHUB_OUTPUT"
+      - name: tauri's AppImage tools (cache)
+        if: runner.os == 'Linux'
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ci-pinned/tauri-tools
+          key: ${{ steps.tauri-tools-pin.outputs.key }}
+      - name: tauri's AppImage tools and the AppImage runtime, pinned
+        if: runner.os == 'Linux'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: tools/release/linux-app/tauri-tools.sh "$(uname -m)"
+
       # `tauri build`, nothing published: it signs each updater bundle (.sig) when
       # the signing key secret is present (Story 28.4). A fork without
       # TAURI_SIGNING_* still produces UNSIGNED installers and no updater
@@ -433,14 +453,17 @@ jobs:
           APPLE_API_ISSUER: ${{ env.APPLE_NOTARIZE == 'true' && secrets.APPLE_API_ISSUER || '' }}
           ARGS: ${{ matrix.args }}
           TAG: ${{ github.ref_name }}
+          # appimagetool's own output (-v), through linuxdeploy-plugin-appimage (Linux)
+          LDAI_VERBOSE: "1"
         run: |
           set -euo pipefail
           # ARGS is a list of words (the targets, the bundles, the payload overlay)
           read -r -a words <<<"$ARGS"
           if [ "$RUNNER_OS" = Linux ]; then
             # the AppImage, the .deb and the .rpm at the tag's version (a pre-release's
-            # packages in their own forms, the app still the tag's semver)
-            ../../tools/release/linux-app/bundle.sh "$TAG" "${words[@]}"
+            # packages in their own forms, the app still the tag's semver); verbose: tauri
+            # shows linuxdeploy's output only then
+            ../../tools/release/linux-app/bundle.sh "$TAG" --verbose "${words[@]}"
           elif [ "$RUNNER_OS" = macOS ]; then
             # the API key's .p8 as a file for tauri (APPLE_API_KEY_PATH)
             if [ -n "${APPLE_API_KEY_P8:-}" ]; then

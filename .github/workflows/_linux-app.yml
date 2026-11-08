@@ -156,62 +156,26 @@ jobs:
             bash tools/release/linux-app/test_full_package.sh
           fi
 
-      # tauri's AppImage bundler downloads AppRun and linuxdeploy from GitHub releases with no
-      # retry and no checksum (a 504 failed this job): the two tauri-cli 2.12.3 names
-      # (appimage/linuxdeploy.rs: apprun-old, linuxdeploy-07333c6), pinned here by the
-      # SHA-256 GitHub lists for each asset, cached, fetched by tools/release/fetch-pinned.sh
-      # and put in tauri's tools folder (~/.cache/tauri) under its names, so it downloads
-      # neither. Its appimage plugin is linuxdeploy-plugin-appimage's `continuous` build
-      # (unchanged since 2026-10-01), which linuxdeploy cannot do without here: pinned the
-      # same way, but when its pin no longer matches (`continuous` moved) the step warns and
-      # tauri downloads it as before. A tauri naming other tools downloads its own.
+      # tauri's AppImage bundler downloads AppRun, linuxdeploy and linuxdeploy-plugin-appimage
+      # from GitHub releases, and the plugin's appimagetool the AppImage runtime, with no
+      # retry and no checksum (a 504 failed this job; an aarch64 bundle failed in linuxdeploy,
+      # run 42480410454). tools/release/linux-app/tauri-tools.sh fetches each by the SHA-256
+      # in tauri-tools.pins, lays the tools out in tauri's tools folder and hands appimagetool
+      # the runtime (LDAI_RUNTIME_FILE), so the bundle downloads nothing; cached on the pins.
       - id: tauri-tools-pin
         env:
           ARCH: ${{ matrix.arch }}
-        run: |
-          case "$ARCH" in
-            x86_64) apprun=f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f
-                    linuxdeploy=36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62
-                    plugin=49d6a17160675a6bd1781699aae6bdf7692d98552e02a3671d2183d10547842e ;;
-            aarch64) apprun=072f17c0895a85c490282fe5395c5007e5fc75da727e553b3b8fb680feb11578
-                     linuxdeploy=556ab80baa98e600aa80f0dcedfb70bca0e1ce7e9f147fb345be3fcc3e91b2b1
-                     plugin=518f4b49a561c157b23fd1ba4e857b8fa2271a038ac711bdedab6f018acbe7e5 ;;
-            *) echo "::error::no tauri tool pins for $ARCH"; exit 1 ;;
-          esac
-          {
-            echo "apprun=$apprun"
-            echo "linuxdeploy=$linuxdeploy"
-            echo "plugin=$plugin"
-            echo "key=pinned-linux-tauri-tools-$ARCH-apprun-old-${apprun:0:16}-linuxdeploy-07333c6-${linuxdeploy:0:16}-plugin-${plugin:0:16}"
-          } >>"$GITHUB_OUTPUT"
+        run: echo "key=$(tools/release/linux-app/tauri-tools.sh --key "$ARCH")" >>"$GITHUB_OUTPUT"
       - id: tauri-tools-cache
         uses: actions/cache/restore@v4
         with:
           path: build/ci-pinned/tauri-tools
           key: ${{ steps.tauri-tools-pin.outputs.key }}
-      - name: tauri's AppImage tools, retried
+      - name: tauri's AppImage tools and the AppImage runtime, pinned
         env:
           ARCH: ${{ matrix.arch }}
-          APPRUN_SHA256: ${{ steps.tauri-tools-pin.outputs.apprun }}
-          LINUXDEPLOY_SHA256: ${{ steps.tauri-tools-pin.outputs.linuxdeploy }}
-          PLUGIN_SHA256: ${{ steps.tauri-tools-pin.outputs.plugin }}
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          r=https://github.com/tauri-apps/binary-releases/releases/download d=build/ci-pinned/tauri-tools
-          tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
-          mkdir -p "$tools"
-          a="$(tools/release/fetch-pinned.sh "$r/apprun-old/AppRun-$ARCH" "$APPRUN_SHA256" "$d/AppRun-$ARCH")"
-          l="$(tools/release/fetch-pinned.sh "$r/linuxdeploy-07333c6/linuxdeploy-$ARCH.AppImage" "$LINUXDEPLOY_SHA256" "$d/linuxdeploy-$ARCH.AppImage")"
-          install -m 755 "$a" "$tools/AppRun-$ARCH"
-          install -m 755 "$l" "$tools/linuxdeploy-07333c6-$ARCH.AppImage"
-          pu=https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-$ARCH.AppImage
-          if p="$(tools/release/fetch-pinned.sh "$pu" "$PLUGIN_SHA256" "$d/linuxdeploy-plugin-appimage-$ARCH.AppImage")"; then
-            install -m 755 "$p" "$tools/linuxdeploy-plugin-appimage.AppImage"
-          else
-            echo "::warning::linuxdeploy-plugin-appimage ($pu) is not the pinned build: tauri downloads it"
-          fi
-          ls -l "$tools"
+        run: tools/release/linux-app/tauri-tools.sh "$ARCH"
       - name: Save tauri's AppImage tools
         if: steps.tauri-tools-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -227,7 +191,8 @@ jobs:
           VERSION: v0.0.0-ci.${{ github.run_number }}
           # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
           GITHUB_TOKEN: ${{ github.token }}
-          # appimagetool's own output (-v), through linuxdeploy-plugin-appimage
+          # appimagetool's own output (-v), through linuxdeploy-plugin-appimage; build-app.sh
+          # runs tauri verbose, which shows linuxdeploy's
           LDAI_VERBOSE: "1"
         run: |
           set -o pipefail
