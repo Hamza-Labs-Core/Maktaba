@@ -160,6 +160,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The Mac server starts after an app update instead of stopping at "could not start".** After
+  the update from 0.3.90 to 0.3.96 on 2026-11-08 the Mac app unregistered and registered the
+  server's login item again; macOS refused (SMAppServiceErrorDomain 22 from the old app right
+  after the install, then 1 on every launch), so the server was never started again and each
+  launch showed "The Maktaba server could not start", though launchd still had the job and it
+  was on in System Settings. A release signed with a Developer ID now keeps its login item
+  across updates (it is registered again only when its plist changes); an app still running
+  from a bundle the install replaced leaves the login item to the new build; and when macOS
+  refuses a registration while the login item is on or launchd has the job, the app starts that
+  job and waits for launchd to run it. The dialog shows only when nothing registered can start;
+  a login item turned off in System Settings still asks to be turned on there.
 - **A rollback undoes only what the release changed.** When an update rolled back and its
   migrations could not simply be kept, the whole database was put back from the dump taken
   before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90

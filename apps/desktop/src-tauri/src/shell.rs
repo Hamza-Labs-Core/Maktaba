@@ -575,7 +575,9 @@ fn server_not_back(to: &str, last: &attempts::Seen) -> Failure {
 #[cfg(target_os = "macos")]
 fn login_item_failure(said: &str) -> Option<Failure> {
     let before = agent::login_item();
-    match agent::register() {
+    // a registration macOS refuses while launchd has the job starts the job instead
+    // (agent::on_refusal): not the login item's failure
+    match agent::register_or_start() {
         Err(e) => {
             let code = if e.starts_with(attempts::LOGIN_ITEM_UNSIGNED) {
                 attempts::LOGIN_ITEM_UNSIGNED
@@ -588,14 +590,14 @@ fn login_item_failure(said: &str) -> Option<Failure> {
                 format!("{said}; the server's login item ({before:?}): {e}"),
             ))
         }
-        Ok(()) if agent::login_item() == LoginItem::RequiresApproval => Some(Failure::new(
+        Ok(agent::Synced::NeedsApproval) => Some(Failure::new(
             attempts::STEP_RELAUNCH,
             attempts::RELAUNCH_FAILED,
             format!(
                 "{said}; the server's login item is turned off in System Settings, Login Items"
             ),
         )),
-        Ok(()) => None,
+        Ok(_) => None,
     }
 }
 
@@ -1676,14 +1678,16 @@ fn stop_before_swap(supervisor_url: &str) -> Result<(), String> {
 }
 
 /// macOS: how long the server may stay silent after the app's update before its login item
-/// is registered again (the plist or the signature it was registered with changed).
+/// is registered again (an app signed ad hoc) or its registered job started (a Developer ID
+/// release, whose registration stays valid: agent::login_item_step).
 #[cfg(target_os = "macos")]
 const LOGIN_ITEM_RECHECK: Duration = Duration::from_secs(30);
 
 /// macOS: the server's login item registered for the app that is now `to` (the contract's
 /// "plist changed: unregister + register", agent::register_login_item): for this build when
 /// another build registered it, or again with `force`; why not, as the attempt's failure
-/// (login_item_unsigned when macOS refuses an app without its signature).
+/// (login_item_unsigned when macOS refuses an app without its signature). A refusal while
+/// launchd has the job is no failure: the job is started (agent::on_refusal).
 #[cfg(target_os = "macos")]
 fn register_again(to: &str, force: bool) -> Result<(), Failure> {
     let before = agent::login_item();
@@ -1703,9 +1707,9 @@ fn register_again(to: &str, force: bool) -> Result<(), Failure> {
                 ),
             ))
         }
-        // this build registered it already (at the app's start)
-        Ok(false) => Ok(()),
-        Ok(true) if agent::login_item() == LoginItem::RequiresApproval => Err(Failure::new(
+        // this build registered it already (at the app's start), or it stays valid
+        Ok(agent::Synced::Unchanged) => Ok(()),
+        Ok(agent::Synced::NeedsApproval) => Err(Failure::new(
             attempts::STEP_RELAUNCH,
             attempts::RELAUNCH_FAILED,
             format!(
@@ -1713,9 +1717,15 @@ fn register_again(to: &str, force: bool) -> Result<(), Failure> {
                  Settings › Login Items"
             ),
         )),
-        Ok(true) => {
+        Ok(agent::Synced::Registered) => {
             attempts::log(&format!(
                 "update to {to}: the server's login item registered again (it was {before:?})"
+            ));
+            Ok(())
+        }
+        Ok(agent::Synced::Started) => {
+            attempts::log(&format!(
+                "update to {to}: the server's registered job started (it was {before:?})"
             ));
             Ok(())
         }
