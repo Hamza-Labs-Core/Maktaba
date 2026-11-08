@@ -270,7 +270,7 @@ func (ix *Index) Record(ctx context.Context, samples []sample, at time.Time) err
 		tally.add(s.name, s.labels, s.value)
 	}
 	for _, r := range tally.rows() {
-		rows = append(rows, row{r.name, r.labels, r.v, r.add})
+		rows = append(rows, row(r))
 	}
 	rows = append(rows, row{DroppedSeries, "", st.dropped, false})
 	tx, err := ix.db.BeginTx(ctx, nil)
