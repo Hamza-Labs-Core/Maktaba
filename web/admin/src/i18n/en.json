@@ -249,11 +249,16 @@
   "admin.symbols.title": "Crash symbols",
   "admin.symbols.about": "The Apple apps' symbols from each release's dSYMs, the Android apps' R8 mappings, and their own native libraries' symbols (by build ID). A report's crash reads as functions and lines only for the binaries, releases and libraries listed here. They are uploaded with maktaba-symbols.",
   "admin.symbols.none": "No symbols uploaded yet.",
+  "admin.symbols.kind": "Type",
+  "admin.symbols.kind.dsym": "Apple dSYM",
+  "admin.symbols.kind.r8": "R8 mapping",
+  "admin.symbols.kind.elf": "Native (build ID)",
+  "admin.symbols.key": "Key",
+  "admin.symbols.copyBuildId": "Copy build ID",
+  "admin.symbols.copied": "Copied",
   "admin.symbols.binary": "Binary",
   "admin.symbols.arch": "Architecture",
-  "admin.symbols.debugId": "UUID",
   "admin.symbols.uploaded": "Uploaded",
   "admin.symbols.size": "Size",
-  "admin.symbols.kb": "{count} KB",
-  "admin.symbols.mapping": "R8 mapping"
+  "admin.symbols.kb": "{count} KB"
 }

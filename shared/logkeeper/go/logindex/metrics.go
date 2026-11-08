@@ -277,14 +277,26 @@ func (ix *Index) Record(ctx context.Context, samples []sample, at time.Time) err
 	if err != nil {
 		return err
 	}
+	// each statement is prepared once per scrape, not once per row: the driver keeps no
+	// statement cache, and parsing the upsert was about half of Record's time
+	set, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
+		ON CONFLICT(name, labels, minute) DO UPDATE SET value = excluded.value`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	add, err := tx.PrepareContext(ctx, `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
+		ON CONFLICT(name, labels, minute) DO UPDATE SET value = value + excluded.value`)
+	if err != nil {
+		_ = tx.Rollback()
+		return err
+	}
 	for _, r := range rows {
-		q := `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
-			ON CONFLICT(name, labels, minute) DO UPDATE SET value = excluded.value`
+		stmt := set
 		if r.add {
-			q = `INSERT INTO metric_1m(name, labels, minute, value) VALUES(?, ?, ?, ?)
-				ON CONFLICT(name, labels, minute) DO UPDATE SET value = value + excluded.value`
+			stmt = add
 		}
-		if _, err := tx.Exec(q, r.name, r.labels, minute, r.v); err != nil {
+		if _, err := stmt.ExecContext(ctx, r.name, r.labels, minute, r.v); err != nil {
 			_ = tx.Rollback()
 			return err
 		}

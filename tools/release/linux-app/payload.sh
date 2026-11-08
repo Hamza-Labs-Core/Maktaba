@@ -83,30 +83,14 @@ mkdir -p "$CACHE"
 sha256() { sha256sum "$1" | awk '{print $1}'; }
 
 # fetch URL SHA256 NAME: the file in the cache, downloaded once, always checked: it is kept
-# only when it has SHA256. A download that fails (or gives other bytes) is tried again
-# after 15, 30, 60, then 120 s: a host down for a while (a 5xx such as Cloudflare's 521, a
-# reset) is asked again. curl's --retry never retries a 521, and its --retry-all-errors
-# needs a newer curl than some build hosts have. One try gives up after 15 minutes.
+# only when it has SHA256. tools/release/fetch-pinned.sh does it: a host down for a while
+# (a 5xx such as Cloudflare's 521 or GitHub's 504, a reset, a timeout) is asked again,
+# 5 tries 10-80 s apart, and a github.com release asset by the API's route to it too
+# (GitHub's release downloads answered 504 for minutes on 2026-11-08, the API did not).
+# A download with other bytes stops the build.
 fetch() {
-    local url="$1" want="$2" dst="$CACHE/$3" delay
-    if [ -f "$dst" ] && [ "$(sha256 "$dst")" = "$want" ]; then
-        printf '%s\n' "$dst"
-        return
-    fi
-    log "downloading $3"
-    for delay in 15 30 60 120 0; do
-        if curl -fsSL --connect-timeout 30 --max-time 900 -o "$dst.part" "$url" &&
-            [ "$(sha256 "$dst.part")" = "$want" ]; then
-            mv "$dst.part" "$dst"
-            printf '%s\n' "$dst"
-            return
-        fi
-        rm -f "$dst.part"
-        [ "$delay" -gt 0 ] || break
-        log "$3: not downloaded, again in $delay s"
-        sleep "$delay"
-    done
-    die "$3: no download from $url had the SHA-256 pins.env names ($want)"
+    "$REPO_ROOT/tools/release/fetch-pinned.sh" "$1" "$2" "$CACHE/$3" ||
+        die "$3: no download from $1 had the SHA-256 pins.env names ($2)"
 }
 
 PG_FILE="postgresql-$POSTGRES_VERSION-$ARCH.tar.gz"
