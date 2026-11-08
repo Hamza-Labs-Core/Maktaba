@@ -364,11 +364,15 @@ func listDir(dir windows.Handle) ([]dirEntry, error) {
 // (parent: the SID's entries on the folder), never through a name surrogate (a junction or
 // a symbolic link: skipped, and what it points to with it). A child that cannot be opened
 // to change its DACL is skipped by a grant (nothing is given there) and fails a revoke.
+// walkNote is told of each child a walk leaves alone (tests).
+var walkNote = func(string, error) {}
+
 func propagate(dir windows.Handle, dirPath string, parent []ourACE, sid *windows.SID, revoking bool) error {
 	entries, err := listDir(dir)
 	if err != nil {
 		return fmt.Errorf("appcontainer: %s: %w", dirPath, err)
 	}
+	walkNote(dirPath, fmt.Errorf("DEBUG listed %d", len(entries)))
 	for _, e := range entries {
 		if e.attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 && nameSurrogate(e.tag) {
 			continue
@@ -379,6 +383,7 @@ func propagate(dir windows.Handle, dirPath string, parent []ourACE, sid *windows
 		case errors.Is(err, windows.STATUS_OBJECT_NAME_NOT_FOUND), errors.Is(err, windows.STATUS_OBJECT_PATH_NOT_FOUND):
 			continue // gone since it was listed
 		case errors.Is(err, windows.STATUS_ACCESS_DENIED) && !revoking:
+			walkNote(childPath, err)
 			continue
 		case err != nil:
 			return fmt.Errorf("appcontainer: %s: %w", childPath, err)
@@ -410,6 +415,7 @@ func inheritInto(h windows.Handle, path string, parent []ourACE, sid *windows.SI
 	}
 	dacl, _, err := sd.DACL()
 	if ctrl&windows.SE_DACL_PROTECTED != 0 || dacl == nil || err != nil {
+		walkNote(path, fmt.Errorf("DEBUG protected %v nil %v err %v", ctrl&windows.SE_DACL_PROTECTED != 0, dacl == nil, err))
 		return nil // inherits nothing
 	}
 	isDir := info.FileAttributes&windows.FILE_ATTRIBUTE_DIRECTORY != 0
@@ -429,6 +435,7 @@ func inheritInto(h windows.Handle, path string, parent []ourACE, sid *windows.SI
 			out = append(out, newACE(sid, p.mask, f))
 		}
 	}
+	walkNote(path, fmt.Errorf("DEBUG isDir %v parent %v before %d after %d", isDir, parent, len(list), len(out)))
 	if !sameACEs(list, out) {
 		if err := setDACL(h, sd, buildACL(aclRevision(dacl), out)); err != nil {
 			return fmt.Errorf("appcontainer: %s: %w", path, err)
