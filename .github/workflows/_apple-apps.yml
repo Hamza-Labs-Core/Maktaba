@@ -514,7 +514,7 @@ jobs:
     name: Remote UI tests
     if: inputs.player_ui
     runs-on: macos-26
-    timeout-minutes: 100
+    timeout-minutes: 60
     env:
       DERIVED: ${{ github.workspace }}/build/remote-ui-derived
       SHOTS: ${{ github.workspace }}/build/remote-shots
@@ -557,7 +557,7 @@ jobs:
           set -euo pipefail
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/remote.xcresult" \
-            CODE_SIGNING_ALLOWED=NO -test-iterations 3 -only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"
+            CODE_SIGNING_ALLOWED=NO -only-testing "Maktaba Remote UITests/RemoteDiagnosticsUITests"
 
       - name: Keep the app's log, delete the simulator
         if: always() && env.UDID != ''
