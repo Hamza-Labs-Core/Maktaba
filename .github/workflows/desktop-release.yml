@@ -637,13 +637,8 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - name: Gradle wrapper is Gradle's
-        working-directory: apps/desktop-player
-        run: |
-          set -euo pipefail
-          version=$(sed -n 's#.*/gradle-\(.*\)-bin.zip#\1#p' gradle/wrapper/gradle-wrapper.properties)
-          want=$(curl -fsSL "https://services.gradle.org/distributions/gradle-${version}-wrapper.jar.sha256")
-          got=$(sha256sum gradle/wrapper/gradle-wrapper.jar | cut -d' ' -f1)
-          [ "${want}" = "${got}" ] || { echo "::error::the Gradle wrapper jar is not Gradle's ${version}"; exit 1; }
+        # Gradle's published SHA-256 of the jar, fetched with retries
+        run: tools/ci/gradle-wrapper.sh check apps/desktop-player
 
       - name: Set up Java
         uses: actions/setup-java@v4

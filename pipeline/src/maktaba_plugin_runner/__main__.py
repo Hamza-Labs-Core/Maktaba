@@ -52,6 +52,30 @@ def members(group: str) -> dict[str, tuple[str, str]]:
     return out
 
 
+#: the venv the Windows launcher started this runner for, as its base interpreter
+#: (cmd/maktaba-server/internal/appcontainer: EnvRunnerVenv)
+VENV_ENV = "MAKTABA_RUNNER_VENV"
+
+
+def venv_problem(environ: dict[str, str] | None = None, prefix: str | None = None) -> str | None:
+    """Why this runner is not in the venv its launcher named (``MAKTABA_RUNNER_VENV``), or
+    None: started as the venv's base interpreter, it must have taken the venv
+    (``__PYVENV_LAUNCHER__``), or it would run the base installation's packages, not the
+    release's. No venv named (not started that way): None."""
+    env = os.environ if environ is None else environ
+    want = env.get(VENV_ENV, "")
+    if not want:
+        return None
+    have = sys.prefix if prefix is None else prefix
+
+    def key(p: str) -> str:
+        return os.path.normcase(os.path.realpath(os.path.abspath(p))).rstrip("\\/")
+
+    if key(have) != key(want):
+        return f"sys.prefix {have!r} is not the venv {want!r} its launcher named"
+    return None
+
+
 def log(event: str, **kw: Any) -> None:
     sys.stderr.write(json.dumps({"event": event, "service": "plugin-runner", **kw}) + "\n")
     sys.stderr.flush()
@@ -134,15 +158,36 @@ def main(argv: list[str] | None = None) -> int:
         from . import winproc
 
         winproc.install()
+        # started as the venv's base interpreter (the process the broker serves), it must
+        # have taken the venv: otherwise it refuses to serve, and the worker runs its jobs
+        why = venv_problem()
+        if why:
+            log("plugin_runner_venv_refused", group=group, detail=why)
+            return EXIT_SANDBOX
+        # which interpreter the launcher started: a venv's runner is its base interpreter,
+        # told its venv (story 54.23), never the venv's launcher with the runner its child
+        log(
+            "plugin_runner_interpreter",
+            group=group,
+            pid=os.getpid(),
+            executable=sys.executable,
+            prefix=sys.prefix,
+            venv=sys.prefix != sys.base_prefix,
+        )
         # the library's share folders, through the launcher's broker (an AppContainer
         # reaches no share): without it, a job refused there runs in the worker
         from . import winfiles
 
         brokered = False
         try:
+            # the broker's hello first: it answers only the process the launcher created,
+            # so a runner it would turn away (a launcher's child) is seen now, not as each
+            # share job's refusal
             brokered = winfiles.install_from_env()
             if brokered:
-                log("plugin_runner_files_brokered", group=group)
+                log("plugin_runner_files_brokered", group=group, hello=True)
+        except PermissionError as exc:
+            log("plugin_runner_broker_refused", group=group, pid=os.getpid(), detail=str(exc))
         except (OSError, ValueError) as exc:
             log("plugin_runner_broker_unavailable", group=group, detail=str(exc))
         if not brokered:

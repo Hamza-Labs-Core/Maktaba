@@ -108,6 +108,8 @@ lint_go:
   - *make
   - *go
   - '.github/workflows/_lint.yml'
+  # golangci-lint's pinned release (tools/release/fetch-pinned.sh is in *go)
+  - 'tools/ci/golangci-lint.sh'
 
 lint_pipeline:
   - *ci
@@ -282,6 +284,36 @@ plugins:
   - 'api/internal/plugins/**'
   - 'api/internal/handlers/queues/impl*.go'
   - 'api/tools/plugin-api-dev/**'
+
+# Epic 54 (story 54.23): Maktaba's own stages through the worker's plugin path into their
+# Windows runners, end to end (_runner-stages.yml): the runner, the worker's side of the
+# plugin path, the engine, the two stages and the tool helpers they run, the launcher, the
+# supervisor's runners and pipes, and the plugin API's executor the stages' statements go to
+runner_stages:
+  - *ci
+  - '.github/workflows/_runner-stages.yml'
+  - 'pipeline/src/maktaba_plugin_runner/**'
+  - 'pipeline/src/maktaba_pipeline/plugins/native.py'
+  - 'pipeline/src/maktaba_pipeline/plugins/pipe.py'
+  - 'pipeline/src/maktaba_pipeline/plugins/firstparty.py'
+  - 'pipeline/src/maktaba_pipeline/engine/**'
+  - 'pipeline/src/maktaba_pipeline/thumbnail/**'
+  - 'pipeline/src/maktaba_pipeline/audio/probe.py'
+  - 'pipeline/src/maktaba_pipeline/binaries.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/convert.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/verify.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/unicode_open.py'
+  - 'plugins/first-party/thumbnails/**'
+  - 'plugins/first-party/convert/**'
+  - 'cmd/maktaba-server/internal/appcontainer/**'
+  - 'cmd/maktaba-server/internal/supervisor/runners*'
+  - 'cmd/maktaba-server/internal/supervisor/testdata/runner_stages_worker.py'
+  - 'cmd/maktaba-server/internal/pluginrelay/**'
+  - 'api/internal/plugins/**'
+  - 'api/tools/plugin-api-dev/**'
+  # the ffmpeg download, retried and checked against its pin
+  - 'tools/release/fetch-pinned.sh'
+  - 'tools/release/win-app/pins.env'
 
 # the cloud's Cloudflare files (Epic 50, 50.30, 50.31, 50.34): the zone and Tunnel files, the
 # published IP ranges, the tools that check and deploy them, and their workflows
@@ -596,6 +628,9 @@ android_apps:
   - *ci
   - 'apps/android/**'
   - '.github/workflows/_android-apps.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
   - 'tools/release/play-version.sh'
   - 'tools/release/play-version-test.sh'
@@ -608,6 +643,9 @@ android_tv:
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_android-tv.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/play-bundles.yml'
 
 # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
@@ -619,6 +657,9 @@ desktop_player:
   - 'apps/android/core/src/main/res/font/**'
   - 'apps/android/gradle/libs.versions.toml'
   - '.github/workflows/_desktop-player.yml'
+  # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
+  - 'tools/ci/gradle-wrapper.sh'
+  - 'tools/release/fetch-pinned.sh'
 
 # The Apple apps' build job: MaktabaKit's tests, a build of the Remote, the Player (iPhone
 # and Mac) and the TV app, their String Catalogs.

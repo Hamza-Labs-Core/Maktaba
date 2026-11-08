@@ -193,10 +193,20 @@ build fails when the two differ.
 
 ### Fixed
 
-- **An idle Core home is back to its four processes a minute after its last job.** Since the
-  core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
-  stayed up for ten idle minutes. A runner now exits after one idle minute.
+- **A Windows plugin runner never starts as a process its file broker turns away (story
+  54.23).** The runner's launcher starts the venv's own interpreter directly. If the venv's
+  `pyvenv.cfg` cannot be read, or names no usable interpreter, the launcher no longer falls
+  back to the venv's launcher program, whose child the broker refuses. The runner no longer
+  starts, and the queue worker runs its jobs. Before it serves, the runner checks that it is in
+  its venv and that the broker answers it. A runner the broker would turn away is now seen at
+  start, and its share jobs run in the worker.
 
+- **The single-VPS cloud deploy hands the api the symbol uploaders' token (Epic 53 story
+  53.16).** Only the Phase 1 pair's deploy wrote it, so on the single VPS a release's symbol
+  tables were refused (503 symbols_off) even with the token set. Its deploy now writes the token
+  to the stack's secrets and names it for the api, and a CI check fails when either deploy path
+  leaves out a secret the api reads. A deploy run without an SSH key file no longer ends with
+  a failure after a good rollout.
 - **A machine can now download Postgres while github.com's download links fail.** A machine
   that needs Postgres at runtime (a node keeping a copy of its home's database) now tries three
   places in turn: Maktaba's CDN (plugins-cdn.maktaba.tv, where each release now publishes the
@@ -2415,6 +2425,12 @@ build fails when the two differ.
   and bidirectional override characters dropped, and a machine with no name, or every machine
   when the cluster can't be read, keeps its node id. The node id stays the key (`machine=`).
 
+- **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
+  Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request
+  through the relay gets no answer or a 502, 503 or 504 (at most once every 10 seconds), instead of
+  at the next 5-minute read, so the status strip says an outage as it starts. Android TV's strip,
+  the same shared one, now has a test of its own.
+
 - **The core stages run as a first-party plugin (Epic 54 story 54.36, wave 9).** Finding the
   videos, reading their length, identity, thumbnail and audio fingerprints, linking them to
   their YouTube pages, the access check and the share path conversion run in
@@ -2948,6 +2964,19 @@ build fails when the two differ.
   the worker; the Windows end to end, which asks the runners anyway, found it. The runner
   now answers the refusal and logs it, and the worker reads the fingerprint itself for any
   runner that closes without an answer.
+
+- **A Windows runner reads a share through its file broker (story 54.23).** A venv's python
+  on Windows is a launcher that starts the real interpreter as its child, and the broker
+  serves only the process the launcher started, so it turned every runner away, and the
+  runner read the closed pipe as files that were not there: a small thumbnail of a share
+  video ended done with no thumbnail. The launcher now starts a venv's runner as its base
+  interpreter, told its venv. A broker pipe that fails is a refusal (the job runs in the
+  worker), never a missing file, and the broker logs each process it turns away. Library
+  stages on a share still run in the worker unless `MAKTABA_WINDOWS_SHARE_RUNNERS=1` is set.
+
+- **An idle Core home is back to its four processes a minute after its last job.** Since the
+  core steps (such as a library scan) run in a plugin runner, any work woke a runner, and it
+  stayed up for ten idle minutes. A runner now exits after one idle minute.
 
 ## [0.2.0] - 2026-10-19
 

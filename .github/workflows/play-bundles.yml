@@ -117,13 +117,8 @@ jobs:
       # The wrappers' jars run the builds, with the upload key in the environment: each must
       # be Gradle's own for the version it names.
       - name: Gradle wrappers are Gradle's
-        run: |
-          set -euo pipefail
-          for dir in apps/android apps/tv/android; do
-            version=$(sed -n 's#.*/gradle-\(.*\)-bin.zip#\1#p' "$dir/gradle/wrapper/gradle-wrapper.properties")
-            want=$(curl -fsSL "https://services.gradle.org/distributions/gradle-${version}-wrapper.jar.sha256")
-            echo "${want}  $dir/gradle/wrapper/gradle-wrapper.jar" | sha256sum -c -
-          done
+        # Gradle's published SHA-256 of each jar, fetched with retries
+        run: tools/ci/gradle-wrapper.sh check apps/android apps/tv/android
 
       - name: Version from the tag
         id: version

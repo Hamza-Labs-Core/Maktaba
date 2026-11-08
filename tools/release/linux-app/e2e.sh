@@ -158,35 +158,11 @@ done
 log "systemd user manager: ok (linger turned on here: $LINGER_ON)"
 
 # --- the first payload: the latest release's, when it has one for this machine ----------------
-# previous_release DIR: the latest release's Linux payload unpacked in DIR (its server/
-# directory printed), checked against the release's checksums.txt; nothing when the latest
-# release has none for this machine. A payload it lists but cannot give is a failure (on
-# stderr, status 1).
-previous_release() {
-    local dir="$1" arch tag asset base api auth=()
-    arch="$(uname -m)"
-    [ -n "${GITHUB_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
-    api="$(curl -fsSL "${auth[@]}" "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null)" || return 0
-    tag="$(printf '%s' "$api" | "$PY" -I -c 'import json, sys; print(json.load(sys.stdin).get("tag_name", ""))')"
-    [ -n "$tag" ] || return 0
-    asset="maktaba-linux-payload-${tag#v}-$arch.tar.gz"
-    printf '%s' "$api" | "$PY" -I -c 'import json, sys
-sys.exit(0 if any(a.get("name") == sys.argv[1] for a in json.load(sys.stdin).get("assets", [])) else 1)' "$asset" || return 0
-    base="https://github.com/$REPO/releases/download/$tag"
-    mkdir -p "$dir"
-    if ! curl -fsSL -o "$dir/$asset" "$base/$asset" || ! curl -fsSL -o "$dir/checksums.txt" "$base/checksums.txt"; then
-        echo "the release $tag lists $asset but it could not be downloaded" >&2
-        return 1
-    fi
-    if ! (cd "$dir" && sha256sum --check --ignore-missing --quiet checksums.txt); then
-        echo "$asset does not match the release's checksums.txt" >&2
-        return 1
-    fi
-    tar -C "$dir" -xzf "$dir/$asset"
-    rm -f "$dir/$asset"
-    printf '%s\n' "$dir/server"
-}
-FIRST="$(previous_release "$SCRATCH/previous")" || die "the latest release's payload"
+# the latest release's payload, when it has one for this machine: previous-release.sh prints
+# its server/ directory, checked against the release's checksums.txt, and fetched through
+# tools/release/fetch-pinned.sh (the GitHub API first, retried); nothing when there is none.
+# A payload it lists but cannot give is a failure.
+FIRST="$(PY="$PY" "$SCRIPT_DIR/previous-release.sh" "$REPO" "$SCRATCH/previous")" || die "the latest release's payload"
 # a release from before the terminal setup (story 39.6) cannot be set up by this test
 if [ -n "$FIRST" ]; then
     help="$("$FIRST/bin/maktaba-server" setup --help 2>&1 || true)"

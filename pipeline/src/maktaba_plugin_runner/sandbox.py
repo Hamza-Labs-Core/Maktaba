@@ -678,12 +678,10 @@ def _apply_windows(p: Policy) -> Applied:
 def policy_doc(p: Policy) -> dict[str, Any]:
     """The policy as the Windows launcher reads it (``--policy``): the group's folders and
     tools, the tools' installations, what the interpreter reads, and the Job Object's
-    process limit: the runner, its interpreter when a venv's launcher starts it (Windows),
-    and room for the tools only when the group may run any."""
+    process limit: the runner alone, and room for the tools only when the group may run any.
+    The launcher starts a venv's runner as its base interpreter (never the venv's launcher,
+    whose child it would be), so a group without tools has no room for a second process."""
     processes = 1
-    base = getattr(sys, "_base_executable", sys.executable)
-    if sys.platform == "win32" and os.path.normcase(base) != os.path.normcase(sys.executable):
-        processes += 1  # Scripts\python.exe starts the base interpreter as its child
     if p.exec:
         processes += 32
     return {

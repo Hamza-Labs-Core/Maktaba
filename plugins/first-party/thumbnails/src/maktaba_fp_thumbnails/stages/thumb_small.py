@@ -111,13 +111,14 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             output_hash=canonical_hash({"small": dst.name, "size": dst.stat().st_size}),
             summary={"small": str(dst), "adopted": True, "source": made_from},
         )
-    src = sidecar or find_thumbnail(
-        ctx.local_path(v.path), ctx.local_path(v.poster_path) if v.poster_path else None
-    )
+    local = ctx.local_path(v.path)
+    src = sidecar or find_thumbnail(local, ctx.local_path(v.poster_path) if v.poster_path else None)
     if src is None:
+        # where it looked: the video's own file as this machine names it (its sidecars are
+        # next to it, or in .thumbs/ beside it)
         return StageResult(
             output_hash=canonical_hash({"small": None}),
-            summary={"small": None, "reason": "no_thumbnail"},
+            summary={"small": None, "reason": "no_thumbnail", "video": local},
         )
     async with ctx.nas.timed(src):  # at most nas_read reads at once, as mediaintel's 2
         res = await run_media(small_args(src), timeout=60.0)

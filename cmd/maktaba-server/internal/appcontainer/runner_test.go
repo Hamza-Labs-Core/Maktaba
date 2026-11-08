@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -78,6 +79,7 @@ type fakeLaunch struct {
 	profile   string
 	started   bool
 	opts      Options
+	prog      string
 	grantErr  error
 	remote    string
 	filesOnly []string
@@ -118,8 +120,8 @@ func (f *fakeLaunch) install(t *testing.T) {
 		return nil
 	}
 	revokeFn = func(_, path string) error { f.revoked = append(f.revoked, path); return nil }
-	runFn = func(profile, _ string, _ []string, o Options) (int, error) {
-		f.started, f.opts, f.profile = true, o, profile
+	runFn = func(profile, prog string, _ []string, o Options) (int, error) {
+		f.started, f.opts, f.profile, f.prog = true, o, profile, prog
 		return 0, nil
 	}
 }
@@ -601,4 +603,127 @@ func mustCanonical(t *testing.T, p string) string {
 		t.Fatal(err)
 	}
 	return c
+}
+
+// A venv's python on Windows is a launcher whose child is the runner: the launcher starts
+// the base interpreter itself (the process the broker serves), told its venv; a python of
+// its own is started as named; a venv whose base interpreter cannot be named refuses the
+// start, before any grant, and never falls back to the launcher.
+func TestARunnerInAVenvIsStartedAsItsBaseInterpreter(t *testing.T) {
+	old := venvDirect
+	venvDirect = true
+	t.Cleanup(func() { venvDirect = old })
+	dir := mustCanonical(t, t.TempDir())
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	// inherited hints are never passed on
+	t.Setenv(pyvenvLauncherEnv, `C:\elsewhere\python.exe`)
+	t.Setenv(EnvRunnerVenv, `C:\elsewhere`)
+	home := filepath.Join(dir, "python")
+	base := filepath.Join(home, "python.exe")
+	venv := filepath.Join(dir, "venv")
+	venvPy := filepath.Join(venv, "Scripts", "python.exe")
+	for _, p := range []string{base, venvPy} {
+		_ = os.MkdirAll(filepath.Dir(p), 0o700)
+		_ = os.WriteFile(p, []byte("exe"), 0o700)
+	}
+	cfg := filepath.Join(venv, "pyvenv.cfg")
+	_ = os.WriteFile(cfg, []byte("home = "+home+"\r\ninclude-system-site-packages = false\r\n"), 0o600)
+	pol, _ := json.Marshal(RunnerPolicy{Processes: 1})
+	launch := func(py string) (*fakeLaunch, int, string) {
+		t.Helper()
+		f := &fakeLaunch{policy: string(pol)}
+		f.install(t)
+		var errOut strings.Builder
+		code := LaunchRunner([]string{"runner-sandbox-run", "-group", "light", "-run-dir", filepath.Join(dir, "run"),
+			"--", py, "-m", "maktaba_plugin_runner"}, &errOut)
+		return f, code, errOut.String()
+	}
+	envOf := func(f *fakeLaunch, key string) []string {
+		var out []string
+		for _, kv := range f.opts.Env {
+			if k, v, _ := strings.Cut(kv, "="); strings.EqualFold(k, key) {
+				out = append(out, v)
+			}
+		}
+		return out
+	}
+	f, code, out := launch(venvPy)
+	if code != 0 || !f.started || f.prog != base {
+		t.Fatalf("exit %d, started %v %q: %s", code, f.started, f.prog, out)
+	}
+	if got := envOf(f, pyvenvLauncherEnv); !slices.Equal(got, []string{venvPy}) {
+		t.Fatalf("%s %v, want only %s", pyvenvLauncherEnv, got, venvPy)
+	}
+	if got := envOf(f, EnvRunnerVenv); !slices.Equal(got, []string{venv}) {
+		t.Fatalf("%s %v, want only %s", EnvRunnerVenv, got, venv)
+	}
+	if !strings.Contains(out, `"plugin_runner_venv_direct"`) {
+		t.Fatalf("the direct start is not said: %s", out)
+	}
+	f, code, _ = launch(base)
+	if code != 0 || f.prog != base || len(envOf(f, pyvenvLauncherEnv)) != 0 || len(envOf(f, EnvRunnerVenv)) != 0 {
+		t.Fatalf("a python of its own: exit %d, started %q with %v", code, f.prog, f.opts.Env)
+	}
+	// "executable" wins over "home"
+	exe := filepath.Join(dir, "other", "python.exe")
+	_ = os.MkdirAll(filepath.Dir(exe), 0o700)
+	_ = os.WriteFile(exe, []byte("exe"), 0o700)
+	_ = os.WriteFile(cfg, []byte("home = "+home+"\nexecutable = "+exe+"\n"), 0o600)
+	if f, code, out = launch(venvPy); code != 0 || f.prog != exe {
+		t.Fatalf("executable: exit %d, started %q: %s", code, f.prog, out)
+	}
+	// every venv whose base cannot be named refuses the start, before any grant or start
+	otherVenv := filepath.Join(dir, "venv2", "Scripts", "python.exe")
+	_ = os.MkdirAll(filepath.Dir(otherVenv), 0o700)
+	_ = os.WriteFile(otherVenv, []byte("exe"), 0o700)
+	_ = os.WriteFile(filepath.Join(dir, "venv2", "pyvenv.cfg"), []byte("home = "+home+"\n"), 0o600)
+	for name, body := range map[string]string{
+		"a base that is gone":     "home = " + filepath.Join(dir, "gone") + "\n",
+		"no base named":           "include-system-site-packages = false\n",
+		"not a key = value file":  "\x00\x01garbage",
+		"a relative base":         "executable = python\\python.exe\n",
+		"the venv's own python":   "executable = " + venvPy + "\n",
+		"a folder":                "executable = " + home + "\n",
+		"another venv's launcher": "executable = " + otherVenv + "\n",
+	} {
+		_ = os.WriteFile(cfg, []byte(body), 0o600)
+		f, code, out := launch(venvPy)
+		if code != RunnerSandboxExit || f.started || len(f.granted) > 0 || !strings.Contains(out, `"step":"venv"`) {
+			t.Errorf("%s: exit %d, started %v, granted %v: %s", name, code, f.started, f.granted, out)
+		}
+	}
+	// a pyvenv.cfg that cannot be read (a folder in its place) refuses the start too
+	_ = os.Remove(cfg)
+	_ = os.Mkdir(cfg, 0o700)
+	if f, code, out := launch(venvPy); code != RunnerSandboxExit || f.started {
+		t.Errorf("an unreadable pyvenv.cfg: exit %d, started %v: %s", code, f.started, out)
+	}
+}
+
+// venvBase on its own: where CPython finds pyvenv.cfg (beside the program, else one up),
+// and no pyvenv.cfg at all is a python of its own.
+func TestVenvBaseFindsTheConfigAsCPythonDoes(t *testing.T) {
+	dir := t.TempDir()
+	home := filepath.Join(dir, "base")
+	base := filepath.Join(home, "python.exe")
+	flat := filepath.Join(dir, "flat", "python.exe")
+	plain := filepath.Join(dir, "plain", "bin", "python.exe")
+	for _, p := range []string{base, flat, plain} {
+		_ = os.MkdirAll(filepath.Dir(p), 0o700)
+		_ = os.WriteFile(p, []byte("exe"), 0o700)
+	}
+	_ = os.WriteFile(filepath.Join(dir, "flat", "pyvenv.cfg"), []byte("home="+home+"\n"), 0o600)
+	if b, v, err := venvBase(flat); err != nil || b != base || v != filepath.Join(dir, "flat") {
+		t.Fatalf("beside the program: %q %q %v", b, v, err)
+	}
+	if b, v, err := venvBase(plain); err != nil || b != plain || v != "" {
+		t.Fatalf("no pyvenv.cfg: %q %q %v", b, v, err)
+	}
+}
+
+func TestWithoutEnvDropsKeysInAnyCase(t *testing.T) {
+	got := withoutEnv([]string{"A=1", "__pyvenv_launcher__=x", "MAKTABA_RUNNER_VENV=y", "B=2"}, pyvenvLauncherEnv, EnvRunnerVenv)
+	if !slices.Equal(got, []string{"A=1", "B=2"}) {
+		t.Fatalf("%v", got)
+	}
 }

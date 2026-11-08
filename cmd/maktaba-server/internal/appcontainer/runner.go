@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -69,8 +71,9 @@ type RunnerPolicy struct {
 	Python []string `json:"python"`
 	// ToolDirs are the installations of the Exec tools (what they read to start)
 	ToolDirs []string `json:"tool_dirs"`
-	// Processes is the Job Object's process limit: the runner (and, from a venv, the
-	// interpreter its launcher starts), plus room for the tools when Exec names any
+	// Processes is the Job Object's process limit: the runner alone (a venv's runner is
+	// started as its base interpreter, never as the venv launcher's child), plus room for
+	// the tools when Exec names any
 	Processes int `json:"processes"`
 }
 
@@ -239,6 +242,21 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 			*group, step, err.Error())
 		return RunnerSandboxExit
 	}
+	// the interpreter this start runs, settled before any grant: a venv's python on Windows
+	// is a launcher that starts its base interpreter as a child, and the broker serves only
+	// the process started here (the pid the kernel reports for the process this launcher
+	// created and holds a handle to), so the runner is started as the base interpreter
+	// itself, told its venv as the launcher tells it. A venv whose base interpreter cannot be
+	// named refuses the start: never the venv's launcher with the runner its child, whose
+	// share reads the broker would turn away
+	prog, venv := rest[0], ""
+	if venvDirect {
+		base, v, err := venvBase(prog)
+		if err != nil {
+			return fail("venv", err)
+		}
+		prog, venv = base, v
+	}
 	raw, code, err := askPolicy(rest[0], append(append([]string{}, rest[1:]...), "--policy"), stderr)
 	if err != nil {
 		return fail("policy", err)
@@ -396,11 +414,136 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 			}
 		}
 	}
-	code, err = runFn(profile, rest[0], rest[1:], o)
+	// an inherited venv hint is never passed on: only the one this start names
+	o.Env = withoutEnv(o.Env, pyvenvLauncherEnv, EnvRunnerVenv)
+	if venv != "" {
+		o.Env = append(o.Env, pyvenvLauncherEnv+"="+rest[0], EnvRunnerVenv+"="+venv)
+		fmt.Fprintf(stderr, `{"event":"plugin_runner_venv_direct","group":%q,"python":%q,"base":%q,"venv":%q}`+"\n",
+			*group, rest[0], prog, venv)
+	}
+	code, err = runFn(profile, prog, rest[1:], o)
 	if err != nil {
 		return fail("start", err)
 	}
 	return code
+}
+
+// pyvenvLauncherEnv names the venv's python to its base interpreter, as a Windows venv's
+// launcher does when it starts the base interpreter (CPython's getpath reads it).
+const pyvenvLauncherEnv = "__PYVENV_LAUNCHER__"
+
+// venvDirect: a venv's python is started as its base interpreter (Windows only, where the
+// venv's python is a launcher; tests set it).
+var venvDirect = runtime.GOOS == "windows"
+
+// EnvRunnerVenv names the venv a runner started as its base interpreter must be in: the
+// runner checks its sys.prefix against it before it serves (maktaba_plugin_runner).
+const EnvRunnerVenv = "MAKTABA_RUNNER_VENV"
+
+// withoutEnv drops the keys (compared as Windows compares names: any case) from env.
+func withoutEnv(env []string, keys ...string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		k, _, _ := strings.Cut(kv, "=")
+		drop := false
+		for _, key := range keys {
+			drop = drop || strings.EqualFold(k, key)
+		}
+		if !drop {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// venvConfig is the pyvenv.cfg that makes py a venv's python, as CPython looks for it:
+// beside the program, else one folder up (Scripts\python.exe); "" when there is none.
+func venvConfig(py string) (string, error) {
+	for _, dir := range []string{filepath.Dir(py), filepath.Dir(filepath.Dir(py))} {
+		cfg := filepath.Join(dir, "pyvenv.cfg")
+		if _, err := os.Lstat(cfg); err == nil {
+			return cfg, nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("%s: %w", cfg, err)
+		}
+	}
+	return "", nil
+}
+
+// venvBase is how the runner's python py starts: base is the program to start and venv the
+// venv folder it is told ("" when py is no venv's python: it starts as named). A venv whose
+// pyvenv.cfg cannot be read or names no usable base interpreter is an error: the executable
+// (else python.exe in home) must be an absolute path to a regular file that is neither py
+// itself nor another venv's python (a launcher again).
+func venvBase(py string) (base, venv string, err error) {
+	cfg, err := venvConfig(py)
+	if err != nil || cfg == "" {
+		return py, "", err
+	}
+	raw, err := os.ReadFile(cfg)
+	if err != nil {
+		return "", "", fmt.Errorf("%s: unreadable: %w", cfg, err)
+	}
+	var home, exe string
+	for _, line := range strings.Split(string(raw), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case "executable":
+			exe = strings.TrimSpace(v)
+		case "home":
+			home = strings.TrimSpace(v)
+		}
+	}
+	var why []string
+	for _, c := range []string{exe, homePython(home)} {
+		if c == "" {
+			continue
+		}
+		if err := usableBase(py, c); err != nil {
+			why = append(why, err.Error())
+			continue
+		}
+		return c, filepath.Dir(cfg), nil
+	}
+	if len(why) == 0 {
+		return "", "", fmt.Errorf("%s names no base interpreter (no executable, no home)", cfg)
+	}
+	return "", "", fmt.Errorf("%s names no usable base interpreter: %s", cfg, strings.Join(why, "; "))
+}
+
+func homePython(home string) string {
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "python.exe")
+}
+
+// usableBase refuses a base interpreter c of the venv python py that would not be the
+// runner itself.
+func usableBase(py, c string) error {
+	if !filepath.IsAbs(c) {
+		return fmt.Errorf("%s: not an absolute path", c)
+	}
+	info, err := os.Stat(c)
+	if err != nil {
+		return fmt.Errorf("%s: %w", c, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%s: not a file", c)
+	}
+	if pathKey(c) == pathKey(py) {
+		return fmt.Errorf("%s: the venv's own python", c)
+	}
+	if mine, err := os.Stat(py); err == nil && os.SameFile(info, mine) {
+		return fmt.Errorf("%s: the venv's own python", c)
+	}
+	if other, err := venvConfig(c); err != nil || other != "" {
+		return fmt.Errorf("%s: another venv's python (%s)", c, other)
+	}
+	return nil
 }
 
 // The ACE flags a grant's walk reads (Windows' OBJECT_INHERIT_ACE and the rest).
