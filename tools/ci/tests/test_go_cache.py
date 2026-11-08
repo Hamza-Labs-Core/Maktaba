@@ -27,7 +27,6 @@ MAIN = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
 # (workflow, job) -> the runner it writes for, as an extra condition on its matrix
 WRITERS = {
     ("_unit.yml", "unit"): "",  # Linux x64, Go 1.26 (api)
-    ("_launcher.yml", "launcher"): " && runner.os == 'Linux'",  # Linux x64, Go 1.25.8
     ("_linux-app.yml", "payload"): " && runner.arch == 'ARM64'",  # Linux arm64
     ("_win-app.yml", "win-app"): "",  # Windows x64
     ("_mac-app.yml", "mac-app"): "",  # macOS arm64

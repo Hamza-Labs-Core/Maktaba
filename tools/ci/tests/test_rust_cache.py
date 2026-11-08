@@ -31,7 +31,7 @@ def _rust_caches() -> list[tuple[str, str, dict[str, Any]]]:
 
 def test_only_main_writes_rust_caches() -> None:
     caches = _rust_caches()
-    assert len(caches) >= 10
+    assert len(caches) >= 7
     for workflow, job, w in caches:
         save_if = w.get("save-if")
         assert save_if is not None, f"{workflow} {job}: rust-cache without save-if saves on every ref"
@@ -52,7 +52,12 @@ def test_the_plugin_host_shares_one_ubuntu_24_entry() -> None:
     assert kit["shared-key"] == "plugind-ubuntu-24.04" and kit["save-if"] is False
     # the sandbox's ubuntu-24.04 leg resolves to the same key and does not save
     assert sandbox["shared-key"] == "plugind-${{ matrix.os }}"
-    assert "matrix.os != 'ubuntu-24.04'" in sandbox["save-if"]
+    assert "matrix.os == 'windows-2022'" in sandbox["save-if"]
     # the paths are part of an entry's version: every sharer caches the same workspaces
     assert writer["workspaces"] == sandbox["workspaces"] == kit["workspaces"]
     assert "key" not in writer and "key" not in sandbox and "key" not in kit
+
+
+def test_the_desktop_shell_tests_keep_no_rust_cache() -> None:
+    jobs = {job for wf, job, _ in _rust_caches() if wf == "_unit.yml"}
+    assert not jobs & {"desktop-shell", "desktop-shell-linux", "desktop-shell-windows"}

@@ -72,6 +72,18 @@ def test_a_family_of_one_is_kept_however_old() -> None:
     assert _keys([_c("v0-rust-plugind-Linux-x64-01b81e85-33164258", created_h=200, used_h=100)]) == []
 
 
+def test_a_closed_pull_requests_entries_go_an_open_ones_stay() -> None:
+    dep = "codeql-dependencies-1-Linux-go-d56fde1f4f167b8c953d3b69ad59646968a43747f2c777806992dd8a476503af"
+    caches = [
+        _c(dep, created_h=2, used_h=2, ref="refs/pull/1034/head"),
+        _c(dep, created_h=2, used_h=2, ref="refs/pull/1036/merge"),
+        _c(dep, created_h=2, used_h=2),
+    ]
+    got = cache_prune.to_delete(caches, NOW, {1034})
+    assert [c["ref"] for c in got] == ["refs/pull/1034/head"]
+    assert cache_prune.pull_number("refs/heads/main") is None
+
+
 def test_only_main_is_pruned() -> None:
     caches = [
         _c(f"setup-go-Linux-x64-go-1.26.0-{H64}", created_h=1, used_h=1),
@@ -97,7 +109,37 @@ def test_the_workflow_runs_it_with_the_least_privilege() -> None:
     doc = yaml.safe_load((ROOT / ".github/workflows/cache-prune.yml").read_text(encoding="utf-8"))
     assert doc["permissions"] == {"contents": "read"}
     job = doc["jobs"]["prune"]
-    assert job["permissions"] == {"actions": "write", "contents": "read"}
+    assert job["permissions"] == {"actions": "write", "contents": "read", "pull-requests": "read"}
     assert any(s.get("run") == "python3 tools/ci/cache_prune.py" for s in job["steps"])
     on = doc.get("on") or doc.get(True)
     assert "schedule" in on and "pull_request" not in on and "push" not in on
+
+
+def test_it_deletes_only_closed_pull_requests_entries_and_replaced_main_entries() -> None:
+    """Every other entry is kept: the newest of a family, one used in the last hour, one of
+    no family, one on an open pull request's ref, one on any other branch or tag."""
+    gl = "pinned-linux-golangci-lint-2.12.2-linux-amd64.tar.gz-8df580d2670fed8f"
+    caches = [
+        # deleted: a closed pull request's, whatever it is and however recent
+        _c(gl, created_h=0.1, used_h=0.1, ref="refs/pull/7/merge"),
+        # deleted: replaced on main and idle for an hour
+        _c("v0-rust-plugind-ubuntu-24.04-Linux-x64-aaaaaaaa-11111111", created_h=10, used_h=9),
+        # kept: the newest of that family
+        _c("v0-rust-plugind-ubuntu-24.04-Linux-x64-bbbbbbbb-22222222", created_h=1, used_h=1),
+        # kept: replaced but used in the last hour
+        _c("v0-rust-plugind-ubuntu-24.04-Linux-x64-cccccccc-33333333", created_h=20, used_h=0.5),
+        # kept: on main, old and idle, but of no family
+        _c(gl, created_h=300, used_h=200),
+        _c("codeql-overlay-base-database-1-433570c23e836bda-go-2.27.4-c06f247d", created_h=50, used_h=40),
+        # kept: an open pull request's
+        _c(gl, created_h=5, used_h=5, ref="refs/pull/8/merge"),
+        # kept: replaced-looking entries off main (another branch, a tag)
+        _c(f"setup-go-Linux-x64-go-1.26.0-{H64}", created_h=1, used_h=1, ref="refs/heads/release/x"),
+        _c(f"setup-go-Linux-x64-go-1.26.0-{H64B}", created_h=9, used_h=9, ref="refs/heads/release/x"),
+        _c(f"setup-go-Linux-x64-go-1.26.0-{H64B}", created_h=9, used_h=9, ref="refs/tags/v0.3.106"),
+    ]
+    got = {(c["key"], c["ref"]) for c in cache_prune.to_delete(caches, NOW, {7})}
+    assert got == {
+        (gl, "refs/pull/7/merge"),
+        ("v0-rust-plugind-ubuntu-24.04-Linux-x64-aaaaaaaa-11111111", "refs/heads/main"),
+    }

@@ -375,11 +375,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-          # pull requests and tags restore main's build; only a push to main saves
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # no Rust build cache: a debug test build shares nothing with the app jobs' release
+      # entries, three entries of their own were 2.5 GB of the repository's 10 GB, and with
+      # them evicted these jobs ran in 4-8 minutes uncached anyway (run 42486732449)
 
       # tauri::generate_context! reads build.frontendDist; the tests never load it
       - name: Stub the web bundle
@@ -405,11 +403,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-          # pull requests and tags restore main's build; only a push to main saves
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # no Rust build cache: a debug test build shares nothing with the app jobs' release
+      # entries, three entries of their own were 2.5 GB of the repository's 10 GB, and with
+      # them evicted these jobs ran in 4-8 minutes uncached anyway (run 42486732449)
 
       # tauri::generate_context! reads build.frontendDist; the tests never load it
       - name: Stub the web bundle
@@ -450,11 +446,9 @@ jobs:
         with:
           components: clippy, rustfmt
 
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/desktop/src-tauri
-          # pull requests and tags restore main's build; only a push to main saves
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      # no Rust build cache: a debug test build shares nothing with the app jobs' release
+      # entries, three entries of their own were 2.5 GB of the repository's 10 GB, and with
+      # them evicted these jobs ran in 4-8 minutes uncached anyway (run 42486732449)
 
       # tauri::generate_context! reads build.frontendDist; the tests never load it
       - name: Stub the web bundle

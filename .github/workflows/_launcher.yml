@@ -141,18 +141,6 @@ jobs:
           go test -count=1 -v ./internal/pgbundle ./internal/supervisor
           -run "TestPostgresToken|TestTheSupervisorHoldsARestrictedPostgres|TestRealPostgresOnWindows|TestResolveAutoInsideAnAppPayload|TestAppBundleFFmpegOnWindows"
 
-      # this job writes its runner's one Go cache entry (.github/actions/go-cache), every
-      # module of the checkout in it first; only a push to main writes it
-      - name: Every module in the Go cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && runner.os == 'Linux' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        run: tools/ci/go-cache-fill.sh
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && runner.os == 'Linux' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
       - name: Save the postgres download (Windows)
         if: (runner.os == 'Windows') && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pgbin-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4

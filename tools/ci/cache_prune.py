@@ -10,8 +10,10 @@ are still in use, such as a pinned tool's: golangci-lint's was evicted within th
 
 A family is a key with its version or hash taken out (FAMILIES). In each family on main,
 the newest entry is kept, and so is any entry used in the last hour (a run may still be
-restoring it); the others are deleted. Entries of no family, and entries on other refs, are
-left to GitHub's eviction. tools/ci/tests/test_cache_prune.py tests the choice.
+restoring it); the others are deleted. An entry on a pull request's ref (refs/pull/N/...) is
+deleted once that pull request is closed or merged: nothing reads it again (CodeQL's default
+setup wrote 0.6 GB per pull request). Everything else is left to GitHub's eviction.
+tools/ci/tests/test_cache_prune.py tests the choice.
 """
 
 from __future__ import annotations
@@ -51,16 +53,29 @@ def _time(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def to_delete(caches: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
-    """The entries to delete: on main, of a family, not its newest, idle for an hour."""
+PULL = re.compile(r"^refs/pull/(\d+)/")
+
+
+def pull_number(ref: str) -> int | None:
+    m = PULL.match(ref)
+    return int(m.group(1)) if m else None
+
+
+def to_delete(caches: list[dict[str, Any]], now: datetime, closed: set[int] | frozenset[int] = frozenset()) -> list[dict[str, Any]]:
+    """The entries to delete: on main, of a family, not its newest, idle for an hour; and
+    every entry on the ref of a pull request in CLOSED."""
     families: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    out = []
     for c in caches:
+        n = pull_number(str(c.get("ref", "")))
+        if n is not None and n in closed:
+            out.append(c)
+            continue
         if c.get("ref") != MAIN:
             continue
         f = family(str(c["key"]))
         if f is not None:
             families.setdefault(f, []).append(c)
-    out = []
     for entries in families.values():
         entries.sort(key=lambda c: _time(c["created_at"]), reverse=True)
         for c in entries[1:]:
@@ -79,12 +94,25 @@ def _caches(repo: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in out.splitlines() if line.strip()]
 
 
+def _closed(repo: str, numbers: set[int]) -> set[int]:
+    """The pull requests among NUMBERS that are closed (merged ones too)."""
+    closed = set()
+    for n in sorted(numbers):
+        r = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pulls/{n}", "--jq", ".state"], capture_output=True, text=True
+        )
+        if r.returncode == 0 and r.stdout.strip() == "closed":
+            closed.add(n)
+    return closed
+
+
 def main(argv: list[str]) -> int:
     dry = "--dry-run" in argv
     repo = os.environ["GITHUB_REPOSITORY"]
     caches = _caches(repo)
     before = sum(int(c["size_in_bytes"]) for c in caches)
-    doomed = to_delete(caches, datetime.now(UTC))
+    pulls = {n for c in caches if (n := pull_number(str(c.get("ref", "")))) is not None}
+    doomed = to_delete(caches, datetime.now(UTC), _closed(repo, pulls))
     freed = 0
     for c in doomed:
         mb = int(c["size_in_bytes"]) / 1e6
@@ -100,7 +128,7 @@ def main(argv: list[str]) -> int:
                 print(f"::warning::{c['key']}: not deleted ({r.stderr.strip()[:200]})")
                 continue
         freed += int(c["size_in_bytes"])
-    print(f"cache_prune: {len(caches)} entries, {before / 1e9:.2f} GB; {len(doomed)} replaced, {freed / 1e9:.2f} GB freed")
+    print(f"cache_prune: {len(caches)} entries, {before / 1e9:.2f} GB; {len(doomed)} replaced or left by closed pull requests, {freed / 1e9:.2f} GB freed")
     return 0
 
 

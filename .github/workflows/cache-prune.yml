@@ -1,6 +1,6 @@
-# Deletes the Actions cache entries on main that a newer entry of the same family replaced
-# (tools/ci/cache_prune.py): a Go or Rust entry from before a go.sum or Cargo.lock change,
-# the last release's rehearsal seed. GitHub evicts least recently used first past 10 GB,
+# Deletes stale Actions cache entries (tools/ci/cache_prune.py): on main, those a newer entry
+# of the same family replaced (a Go or Rust entry from before a go.sum or Cargo.lock change,
+# the last release's rehearsal seed), and those on the refs of closed pull requests. GitHub evicts least recently used first past 10 GB,
 # and a replaced entry was young enough to outlive small entries still in use (a pinned
 # tool's was evicted within the hour, 2026-11-08). The newest entry of each family, and
 # any used in the last hour, are kept.
@@ -22,10 +22,12 @@ jobs:
   prune:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    # deleting a cache entry needs actions: write, on this job only
+    # deleting a cache entry needs actions: write, on this job only; reading whether a pull
+    # request is closed, pull-requests: read
     permissions:
       actions: write
       contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v6.0.2
         with:

@@ -554,8 +554,6 @@ launcher:
   - 'api/go.sum'
   - 'deploy/packaging/**'
   - '.github/workflows/_launcher.yml'
-  # it writes its runner's Go cache entry, every module in it first
-  - 'tools/ci/go-cache-fill.sh'
 
 # The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into the app or how
 # it is built changes.
