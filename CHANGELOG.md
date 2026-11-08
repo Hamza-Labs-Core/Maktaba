@@ -144,6 +144,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **After an update, a first-party plugin's jobs run in its runner instead of the worker
+  (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
+  the first jobs after an update found their runner down and ran inside the pipeline worker.
+  Such a job now waits for the runner it asked for, up to 30 seconds, and runs in the worker
+  only if the runner does not start. A runner that has just started is used by the next job
+  instead of after 15 seconds.
 - **A cloud node that loses the lead no longer keeps trying to take the Floating IP (Epic 50
   story 50.07).** When Hetzner's API refuses the move for a minute, the new leader keeps retrying
   in the background; that retry now stops as soon as Patroni says the node no longer leads, so a
