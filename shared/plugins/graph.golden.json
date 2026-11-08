@@ -1793,7 +1793,7 @@
    "label": "Poster and sprites",
    "lane": "media",
    "lane_order": 5,
-   "legacy": true,
+   "legacy": false,
    "max_attempts": 3,
    "may_request": [],
    "model_rules": null,
