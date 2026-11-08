@@ -26,6 +26,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -213,6 +214,9 @@ fun RecoveryScreen(remote: Remote, onBack: () -> Unit, everyMs: Long = 10_000) {
                 },
             )
         },
+        // the last action's outcome, pinned below the list: a part's Restart and the actions are
+        // far down it, and a line at its top would be out of sight (and not composed) when it lands
+        bottomBar = { model.outcome?.let { OutcomeBar(it) } },
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = refreshing,
@@ -258,6 +262,19 @@ fun RecoveryScreen(remote: Remote, onBack: () -> Unit, everyMs: Long = 10_000) {
     }
 }
 
+@Composable
+private fun OutcomeBar(o: RecoveryModel.Outcome) {
+    Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
+        when (o) {
+            RecoveryModel.Outcome.Done -> Text(stringResource(R.string.recovery_done), Modifier.padding(16.dp).testTag("recovery-done"))
+            is RecoveryModel.Outcome.Failed -> Text(
+                if (o.why.isEmpty()) stringResource(R.string.recovery_failed) else stringResource(R.string.recovery_failed_why, o.why),
+                color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp).testTag("recovery-failed"),
+            )
+        }
+    }
+}
+
 private fun LazyListScope.recoveryRows(s: RecoveryState, model: RecoveryModel, remote: Remote, ask: (RecoveryAction) -> Unit) {
     item {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -266,14 +283,6 @@ private fun LazyListScope.recoveryRows(s: RecoveryState, model: RecoveryModel, r
                     modifier = Modifier.testTag("recovery-safe"))
             }
             Text(stringResource(if (s.allWell) R.string.recovery_all_well else R.string.recovery_intro))
-            when (val o = model.outcome) {
-                RecoveryModel.Outcome.Done -> Text(stringResource(R.string.recovery_done), Modifier.testTag("recovery-done"))
-                is RecoveryModel.Outcome.Failed -> Text(
-                    if (o.why.isEmpty()) stringResource(R.string.recovery_failed) else stringResource(R.string.recovery_failed_why, o.why),
-                    color = MaterialTheme.colorScheme.error, modifier = Modifier.testTag("recovery-failed"),
-                )
-                null -> {}
-            }
         }
     }
     item { Heading(R.string.recovery_status) }

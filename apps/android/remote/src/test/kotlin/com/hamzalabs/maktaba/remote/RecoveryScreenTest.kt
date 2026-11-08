@@ -4,6 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.Surface
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -128,6 +129,10 @@ class RecoveryScreenTest {
         val sent = synchronized(actions) { actions.single() }
         assertEquals("rollback", body(sent)["action"]!!.jsonPrimitive.content)
         assertEquals(2, body(sent)["confirm"]!!.jsonPrimitive.int)
+        // the outcome shows while the list is still scrolled down to the action (not at the list's top)
+        compose.settledUntil { compose.has("recovery-done") }
+        compose.onNodeWithTag("recovery-done").assertIsDisplayed()
+        assertTrue("still scrolled down", compose.has("recovery-action-rollback"))
     }
 
     @Test @Config(qualifiers = "ar-w411dp-h891dp-420dpi")
