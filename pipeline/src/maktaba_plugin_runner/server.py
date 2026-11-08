@@ -416,6 +416,28 @@ class Runner:
                 out.append(await fn(db, subject))
         except StatementUnregistered as exc:
             return {"type": "error", "status": "unregistered", "message": str(exc)}
+        except Exception as exc:  # noqa: BLE001 - answered, so the worker fingerprints it itself
+            # a fingerprint the sandbox refused (a share path, a folder without a grant) or
+            # that failed: an answer, never a dropped connection (the worker then reads its
+            # own fingerprint, as for any refusal)
+            from maktaba_pipeline.plugins.native import sandbox_refused
+
+            status = "sandbox_refused" if sandbox_refused(exc) else "failed"
+            sys.stderr.write(
+                json.dumps(
+                    {
+                        "event": "plugin_runner_fingerprint_failed",
+                        "service": "plugin-runner",
+                        "group": self.group,
+                        "stage": stage,
+                        "status": status,
+                        "error": f"{type(exc).__name__}: {exc}"[:300],
+                    }
+                )
+                + "\n"
+            )
+            sys.stderr.flush()
+            return {"type": "error", "status": status, "message": f"{type(exc).__name__}: {exc}"}
         finally:
             close = getattr(transport, "close", None)
             if close is not None:

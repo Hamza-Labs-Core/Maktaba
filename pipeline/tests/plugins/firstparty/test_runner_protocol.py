@@ -358,3 +358,65 @@ def test_the_job_line_names_what_the_broker_answered(capsys: pytest.CaptureFixtu
     assert first["broker"] == {"stat": 2, "stat_missing": 1, "open": 1}
     assert "broker" not in second and "missing" not in first
     assert second["missing"] == ["C:\\x\\a.jpg"]
+
+
+async def test_a_fingerprint_the_sandbox_refuses_is_answered_never_dropped(
+    db: Database, toy: bytes, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A fingerprint that raises in the runner (on Windows, a share path every runner's shim
+    refuses) comes back as an error answer, sandbox_refused for a refusal, and is logged: a
+    dropped connection gave the worker an IncompleteReadError it did not fall back on, and the
+    job went back to pending."""
+    import uuid
+
+    from maktaba_pipeline.plugins import firstparty
+    from maktaba_plugin_runner import server
+
+    async def refused(_db: Any, _subject: Any) -> str:
+        raise PermissionError(13, "a share this runner is not brokered", "\\\\nas\\m\\a.mp4")
+
+    async def broken(_db: Any, _subject: Any) -> str:
+        raise RuntimeError("boom")
+
+    reg = firstparty.registry("tv.maktaba.toy")
+    r = server.Runner(
+        group="fp",
+        api_socket="",
+        stages={"fp_toy": "fp_toy.stage:IMPL"},
+        plugin_of={"fp_toy": "tv.maktaba.toy"},
+        bundle="x",
+        transport=lambda _token: LocalTransport(reg, db),
+    )
+    msg = {
+        "stage": "fp_toy",
+        "kind": "input",
+        "token": "t",
+        "subjects": [["library", str(uuid.uuid4()), None]],
+    }
+    for fn, status in ((refused, "sandbox_refused"), (broken, "failed")):
+        impl = type("Impl", (), {"input_fingerprint": staticmethod(fn), "output_fingerprint": None})
+        monkeypatch.setattr(server, "load_impl", lambda _entry, impl=impl: impl)
+        out = await r._fingerprints(msg)
+        assert out["type"] == "error" and out["status"] == status
+    lines = [
+        x for x in capsys.readouterr().err.splitlines() if "plugin_runner_fingerprint_failed" in x
+    ]
+    assert len(lines) == 2 and '"sandbox_refused"' in lines[0] and '"failed"' in lines[1]
+
+
+async def test_a_runner_that_closes_without_a_fingerprint_is_read_in_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The worker reads the fingerprint itself when the runner closes without answering
+    (an IncompleteReadError), as for any refusal, instead of failing the job."""
+    from maktaba_pipeline.plugins import native
+
+    async def closed(*_a: Any, **_k: Any) -> Any:
+        raise asyncio.IncompleteReadError(b"", 4)
+
+    async def inproc(_db: Any, _subject: Any) -> str:
+        return "in-process"
+
+    monkeypatch.setattr(native, "fingerprints", closed)
+    fn = native.fingerprint_fn("fp_toy", "input", inproc)
+    assert await fn(None, object()) == "in-process"

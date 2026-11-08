@@ -185,6 +185,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A fingerprint a Windows runner may not read is taken by the worker, never left pending
+  (story 54.23).** On Windows, with a library on a share, every plugin runner refuses share
+  paths, and the fingerprint runner closed the connection without an answer when a stage's
+  fingerprint looked at one (the small thumbnail's sidecar look). The worker did not read
+  that as a refusal, so the job failed and went back to pending again and again. The runner
+  now answers the refusal and logs it, and the worker reads the fingerprint itself for any
+  runner that closes without an answer.
+
 - **Share media a Windows runner missed on v0.3.105 is processed again (story 54.23).** On
   v0.3.105, a Windows runner could read a file on a share as missing. A small thumbnail then
   ended done with no thumbnail, and an approved duplicate merge failed with its kept file
