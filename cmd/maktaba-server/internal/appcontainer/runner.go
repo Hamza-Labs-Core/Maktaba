@@ -180,12 +180,19 @@ var (
 	revokeFn     = Revoke
 	runFn        = Run
 	// remoteFn: a folder on another machine (a share, a mapped drive), whose ACL the
-	// launcher never changes; an AppContainer cannot reach SMB shares anyway
+	// launcher never changes; an AppContainer cannot reach SMB shares, so the launcher
+	// brokers the share folders the group reads or writes by name (broker.go)
 	remoteFn = remotePath
 	// afterCheck runs between a path's last check and the grant or revoke on it (step is
 	// "grant" or "revoke"): the Windows tests swap the folder for a junction there, which
 	// must not redirect the change
 	afterCheck = func(_, _ string) {}
+	brokerFn   = startBroker
+	// shareLocalFn maps a share this machine serves to its folder (a brokered share is
+	// checked against the protected folders by it)
+	shareLocalFn = shareLocalPath
+	// shareFn: a \\server\share path (a mapped drive is remote but not brokered)
+	shareFn = uncPath
 )
 
 // uncPath reports a \\server\share path (not a \\?\ or \\.\ local device path).
@@ -269,7 +276,12 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		return fail("policy_path", err)
 	}
 	now := p.Grants(data)
+	shares := brokerRootsOf(p, func(x string) bool { return remoteFn(x) && shareFn(x) })
 	if err := CheckGrants(now, guarded, own); err != nil {
+		return fail("policy_path", err)
+	}
+	shares, dropped, err := shares.check(shareLocalFn, guarded, own)
+	if err != nil {
 		return fail("policy_path", err)
 	}
 	profile := RunnerProfile(*group)
@@ -333,8 +345,11 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		}
 		if remoteFn(g.Path) {
 			// another machine's folder: its ACL is not ours to change, and the AppContainer
-			// cannot reach a share; a job refused there runs in the worker (sandbox_refused)
-			fmt.Fprintf(stderr, `{"event":"plugin_runner_area_remote","group":%q,"path":%q}`+"\n", *group, g.Path)
+			// cannot reach a share. One the group reads or writes by name is brokered (below);
+			// a job refused anywhere else there runs in the worker (sandbox_refused)
+			if !shares.brokered(g.Path) || dropped.brokered(g.Path) {
+				fmt.Fprintf(stderr, `{"event":"plugin_runner_area_remote","group":%q,"path":%q}`+"\n", *group, g.Path)
+			}
 			continue
 		}
 		// resolved again just before the grant: a link made since the check is refused, and
@@ -367,6 +382,20 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	}
 	o := p.RunnerOptions(os.Environ())
 	o.MemoryBytes = *memory
+	if len(shares) > 0 {
+		env, started, stop, err := brokerFn(profile, shares)
+		if err != nil {
+			// the runner starts without its shares: what it reads there is refused, and those
+			// jobs run in the worker, as before the broker
+			fmt.Fprintf(stderr, `{"event":"plugin_runner_broker_unavailable","group":%q,"detail":%q}`+"\n", *group, err.Error())
+		} else {
+			defer stop()
+			o.Env, o.Started = append(o.Env, env...), started
+			for _, r := range shares {
+				fmt.Fprintf(stderr, `{"event":"plugin_runner_area_brokered","group":%q,"path":%q,"write_named":%v}`+"\n", *group, r.Path, r.WriteNamed)
+			}
+		}
+	}
 	code, err = runFn(profile, rest[0], rest[1:], o)
 	if err != nil {
 		return fail("start", err)

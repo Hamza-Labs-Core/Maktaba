@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,6 +22,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -410,6 +413,13 @@ private fun FollowPage(remote: Remote, requestId: String, push: (DiagPage) -> Un
 /** A panel's title: the web's words for the metric, else its name. */
 private fun seriesTitle(name: String): Int? = when (name) {
     "maktaba_component_up" -> R.string.dash_component_up
+    "maktaba_component_down" -> R.string.dash_component_down
+    "maktaba_machines_components_up" -> R.string.dash_machines_components_up
+    "maktaba_machines_components_down" -> R.string.dash_machines_components_down
+    "maktaba_machines_disk_free_min_bytes" -> R.string.dash_machines_disk_free_min
+    "maktaba_machines_memory_free_min_bytes" -> R.string.dash_machines_memory_free_min
+    "maktaba_machines_load1_max" -> R.string.dash_machines_load_max
+    "maktaba_machines_restarts" -> R.string.dash_machines_restarts
     "maktaba_component_restarts_total" -> R.string.dash_restarts
     "maktaba_errors_per_hour" -> R.string.dash_errors_per_hour
     "process_resident_memory_bytes" -> R.string.dash_api_memory
@@ -444,7 +454,12 @@ private fun bytes(v: Double): String {
 private fun Dashboards(remote: Remote) {
     var board by rememberSaveable { mutableStateOf(Board.Overview) }
     var range by rememberSaveable { mutableStateOf("24h") }
-    val (state, _) = load(remote, board, range) { board(board, range) }
+    // on the Overview of several machines: one machine on its own ("" all of them)
+    var machine by rememberSaveable { mutableStateOf("") }
+    var machines by remember { mutableStateOf(emptyList<String>()) }
+    var picking by remember { mutableStateOf(false) }
+    val (state, _) = load(remote, board, range, machine) { board(board, range, machine) }
+    LaunchedEffect(state) { (state as? Loaded.Ready)?.value?.machines?.let { machines = it.all } }
     LazyColumn(Modifier.fillMaxSize().testTag("diag-dashboards")) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -457,10 +472,36 @@ private fun Dashboards(remote: Remote) {
                         FilterChip(selected = range == r, onClick = { range = r }, label = { Text(stringResource(w)) })
                     }
                 }
+                if (board == Board.Overview && machines.size > 1) {
+                    Box {
+                        val all = stringResource(R.string.dash_machine_all)
+                        OutlinedButton(onClick = { picking = true }, modifier = Modifier.testTag("dash-machine")) {
+                            Text("${stringResource(R.string.dash_machine)}: ${machine.ifEmpty { all }}")
+                        }
+                        DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
+                            (listOf("") + machines).forEach { m ->
+                                DropdownMenuItem(
+                                    text = { Text(m.ifEmpty { all }) },
+                                    onClick = { machine = m; picking = false },
+                                    modifier = Modifier.testTag("dash-machine-${m.ifEmpty { "all" }}"),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         status(state)
         val doc: BoardDoc = (state as? Loaded.Ready)?.value ?: return@LazyColumn
+        val counted = doc.machines
+        if (board == Board.Overview && doc.showsSomeMachines && counted != null) item {
+            Text(stringResource(R.string.dash_machines_shown, counted.shown.size, counted.total), style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("dash-machines-shown"))
+        }
+        if (doc.omitted > 0) item {
+            Text(stringResource(R.string.dash_omitted, doc.omitted), style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("dash-omitted"))
+        }
         val panels = doc.panels.filter { (_, s) -> s.any { it.points.isNotEmpty() } }
         if (panels.isEmpty()) item { Text(stringResource(R.string.dash_no_data), Modifier.padding(16.dp)) }
         items(panels, key = { it.first }) { (name, series) -> Panel(name, series) }

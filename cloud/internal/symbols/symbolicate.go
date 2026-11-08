@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -25,11 +26,12 @@ type Crash struct {
 	Value  string  `json:"value,omitempty"`
 	Frames []Frame `json:"frames"`
 	// Missing are the binaries its frames name whose tables are not here (their
-	// release's dSYMs were never uploaded), or the release's mapping (Kind KindR8)
+	// release's dSYMs were never uploaded), the release's mapping (Kind KindR8), or the app's
+	// own native libraries whose tables are not here (Kind KindELF)
 	Missing []Image `json:"missing,omitempty"`
-	// Symbols is how its frames read: SymbolsDSYM or SymbolsMapping when a table read some,
-	// SymbolsSource when the app is not obfuscated (its frames are its code's own names),
-	// "" when nothing could
+	// Symbols is how its frames read: SymbolsDSYM, SymbolsMapping or SymbolsNative when a
+	// table read some, SymbolsSource when the app is not obfuscated (its frames are its code's
+	// own names), "" when nothing could
 	Symbols string `json:"symbols,omitempty"`
 }
 
@@ -38,15 +40,18 @@ const (
 	SymbolsDSYM    = "dsym"
 	SymbolsMapping = "mapping"
 	SymbolsSource  = "source"
+	SymbolsNative  = "native"
 )
 
-// Image is a binary a crash names, or an Android release's mapping (Kind KindR8: CodeFile
-// is the app, Version its release).
+// Image is a binary a crash names, an Android release's mapping (Kind KindR8: CodeFile is
+// the app, Version its release), or an Android app's native library (Kind KindELF: CodeID its
+// whole build id, "" when the crash did not carry it).
 type Image struct {
 	CodeFile string `json:"code_file"`
 	DebugID  string `json:"debug_id"`
 	Kind     string `json:"kind,omitempty"`
 	Version  string `json:"version,omitempty"`
+	CodeID   string `json:"code_id,omitempty"`
 }
 
 // Release is the app and version a report came from: an Android crash is read against
@@ -82,6 +87,10 @@ type event struct {
 					// a JVM frame's file and line (the Android and desktop apps)
 					Filename string `json:"filename"`
 					Lineno   int    `json:"lineno"`
+					// a native frame's pc in its library ("0x1a2b") and the library
+					// ("rel:<index into debug_meta.images>"; the Android apps' tombstones)
+					InstructionAddr string `json:"instruction_addr"`
+					AddrMode        string `json:"addr_mode"`
 				} `json:"frames"`
 			} `json:"stacktrace"`
 		} `json:"values"`
@@ -91,6 +100,7 @@ type event struct {
 			Type     string `json:"type"`
 			CodeFile string `json:"code_file"`
 			DebugID  string `json:"debug_id"`
+			CodeID   string `json:"code_id"` // an ELF library's GNU build id
 		} `json:"images"`
 	} `json:"debug_meta"`
 }
@@ -102,7 +112,8 @@ const MaxCrashes = 5
 // event is skipped; a frame whose binary has no table keeps only its raw form. Tables are
 // looked up once each. An Apple crash names its binaries' UUIDs; a JVM crash (platform
 // "java") of an obfuscated app is read against rel's mapping, and one of an app that is not
-// obfuscated is marked as read already.
+// obfuscated is marked as read already; an Android native crash (platform "native") names its
+// libraries' build ids.
 func Symbolicate(ctx context.Context, crashes []json.RawMessage, find Finder, rel Release) []Crash {
 	tables := map[string]*Table{}
 	looked := map[string]bool{}
@@ -133,8 +144,12 @@ func Symbolicate(ctx context.Context, crashes []json.RawMessage, find Finder, re
 			}
 		}
 		ex := e.Exception.Values[0]
-		if e.Platform == "java" {
+		switch e.Platform {
+		case "java":
 			out = append(out, symbolicateJVM(e, rel, table))
+			continue
+		case "native":
+			out = append(out, symbolicateNative(e, table))
 			continue
 		}
 		c := Crash{Type: ex.Type, Value: ex.Value, Frames: []Frame{}}
@@ -193,6 +208,12 @@ func symbolicateJVM(e event, rel Release, table func(string) *Table) Crash {
 		}
 	}
 	fr := ex.Stacktrace.Frames
+	if len(fr) == 0 {
+		// only the reason was kept (an Android native crash before Android 12, or a tombstone
+		// that could not be read): there is nothing to read, and no mapping is missing
+		c.Missing, c.Symbols = nil, ""
+		return c
+	}
 	for k := len(fr) - 1; k >= 0; k-- {
 		f := fr[k]
 		raw := f.Function
@@ -220,6 +241,79 @@ func symbolicateJVM(e event, rel Release, table func(string) *Table) Crash {
 		}
 	}
 	return c
+}
+
+// symbolicateNative reads an Android native crash: each frame's pc relative to its library,
+// the library named by addr_mode "rel:N" (debug_meta.images[N], with its build id). The app's
+// own libraries (in_app) are read against their tables; a system library's frames stay as
+// they came, and only an own library without a table is named missing.
+func symbolicateNative(e event, table func(string) *Table) Crash {
+	ex := e.Exception.Values[0]
+	c := Crash{Type: ex.Type, Value: ex.Value, Frames: []Frame{}}
+	images := make([]nativeImage, len(e.DebugMeta.Images))
+	for i, im := range e.DebugMeta.Images {
+		images[i] = nativeImage{file: clip(path.Base(im.CodeFile), 200)}
+		if id := NormalizeID(im.CodeID); validCodeID(id) {
+			images[i].codeID = id
+		}
+	}
+	missing := map[string]bool{}
+	fr := ex.Stacktrace.Frames
+	for k := len(fr) - 1; k >= 0; k-- {
+		f := fr[k]
+		x := Frame{Raw: f.Function, InApp: f.InApp}
+		im, addr, ok := nativeAddr(f.AddrMode, f.InstructionAddr, images)
+		if ok && f.InApp {
+			// a tombstone's caller frames are already the call's pc (the unwinder steps back
+			// over the return address), so no frame is moved back a byte here
+			var t *Table
+			if im.codeID != "" {
+				if t = table(ELFID(im.codeID)); t != nil && (t.Kind != KindELF || t.CodeID != im.codeID) {
+					t = nil
+				}
+			}
+			if t != nil {
+				if s, found := t.Lookup(addr); found {
+					x.Symbol = &s
+					c.Symbols = SymbolsNative
+				}
+			} else if key := im.file + "\x00" + im.codeID; !missing[key] {
+				missing[key] = true
+				m := Image{CodeFile: im.file, Kind: KindELF, CodeID: im.codeID}
+				if im.codeID != "" {
+					m.DebugID = ELFID(im.codeID)
+				}
+				c.Missing = append(c.Missing, m)
+			}
+		}
+		c.Frames = append(c.Frames, x)
+	}
+	return c
+}
+
+// nativeImage is a native crash's library: its file name and build id ("" when unknown).
+type nativeImage struct{ file, codeID string }
+
+// nativeAddr is a native frame's library (addr_mode "rel:N") and pc in it ("0x1a2b").
+func nativeAddr(mode, addr string, images []nativeImage) (nativeImage, uint64, bool) {
+	var none nativeImage
+	n, ok := strings.CutPrefix(mode, "rel:")
+	if !ok {
+		return none, 0, false
+	}
+	i, err := strconv.Atoi(n)
+	if err != nil || i < 0 || i >= len(images) {
+		return none, 0, false
+	}
+	hexAddr, ok := strings.CutPrefix(strings.ToLower(addr), "0x")
+	if !ok {
+		return none, 0, false
+	}
+	a, err := strconv.ParseUint(hexAddr, 16, 64)
+	if err != nil {
+		return none, 0, false
+	}
+	return images[i], a, true
 }
 
 func orUnknown(file string) string {

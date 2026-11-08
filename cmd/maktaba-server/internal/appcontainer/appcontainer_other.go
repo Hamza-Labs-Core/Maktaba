@@ -17,3 +17,11 @@ func remotePath(p string) bool { return uncPath(p) }
 
 // GrantFiles gives the profile's SID read on a folder and the files directly in it.
 func GrantFiles(_, _ string) error { return ErrUnsupported }
+
+// startBroker serves a runner's share folders (Windows only).
+func startBroker(_ string, _ BrokerRoots) ([]string, func(uint32, uintptr), func(), error) {
+	return nil, nil, nil, ErrUnsupported
+}
+
+// shareLocalPath maps a share this machine serves to its folder (Windows only).
+func shareLocalPath(string) (string, bool, error) { return "", false, nil }

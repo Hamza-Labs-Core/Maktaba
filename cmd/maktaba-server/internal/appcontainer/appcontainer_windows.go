@@ -696,6 +696,9 @@ func Run(profile, exe string, args []string, o Options) (int, error) {
 		_ = windows.TerminateProcess(pi.Process, 1)
 		return 0, fmt.Errorf("appcontainer: assign to job: %w", err)
 	}
+	if o.Started != nil {
+		o.Started(pi.ProcessId, uintptr(pi.Process))
+	}
 	if _, err := windows.ResumeThread(pi.Thread); err != nil {
 		_ = windows.TerminateProcess(pi.Process, 1)
 		return 0, err

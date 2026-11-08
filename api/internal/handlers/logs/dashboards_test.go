@@ -56,7 +56,8 @@ func TestDashboardRoutes(t *testing.T) {
 		r.ServeHTTP(rec, req)
 		return rec
 	}
-	for _, p := range []string{"/api/admin/dashboards/overview?range=7d", "/api/admin/dashboards/use"} {
+	for _, p := range []string{"/api/admin/dashboards/overview?range=7d", "/api/admin/dashboards/use",
+		"/api/admin/dashboards/overview?range=24h&machine=n07"} {
 		if c := call(p, nil).Code; c != http.StatusUnauthorized {
 			t.Errorf("%s as nobody: %d", p, c)
 		}
@@ -67,6 +68,11 @@ func TestDashboardRoutes(t *testing.T) {
 	admin := &principal.Principal{UserID: "a", IsAdmin: true}
 	if rec := call("/api/admin/dashboards/overview?range=7d", admin); rec.Code != 200 || seen != "/dashboards/overview?range=7d" {
 		t.Fatalf("overview: %d, the role saw %q", rec.Code, seen)
+	}
+	// one machine of many (machine=) reaches the role as asked
+	if rec := call("/api/admin/dashboards/overview?range=24h&machine=n07", admin); rec.Code != 200 ||
+		seen != "/dashboards/overview?range=24h&machine=n07" {
+		t.Fatalf("overview of one machine: %d, the role saw %q", rec.Code, seen)
 	}
 	rec := call("/api/admin/dashboards/use?range=7d", admin)
 	var doc useDoc

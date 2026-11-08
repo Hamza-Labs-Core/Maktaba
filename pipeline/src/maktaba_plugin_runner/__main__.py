@@ -128,6 +128,16 @@ def main(argv: list[str] | None = None) -> int:
     except sandbox.SandboxUnavailable as exc:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))
         return EXIT_SANDBOX
+    if sys.platform == "win32":
+        # the library's share folders, through the launcher's broker (an AppContainer
+        # reaches no share): without it, a job refused there runs in the worker
+        from . import winfiles
+
+        try:
+            if winfiles.install_from_env():
+                log("plugin_runner_files_brokered", group=group)
+        except (OSError, ValueError) as exc:
+            log("plugin_runner_broker_unavailable", group=group, detail=str(exc))
     sandbox.guard_names(policy.write_named)
     sandbox.guard_scope()  # a file stage's job changes only its subject's files (54.32 §2)
     unavailable: dict[str, str] = {}

@@ -262,6 +262,7 @@
     <string name="status_search">البحث غير متاح الآن.</string>
     <string name="status_processing">المعالجة متوقفة مؤقتًا: لن تُضاف فيديوهات جديدة الآن.</string>
     <string name="status_logs">البحث في السجلات يُعاد تشغيله. ما زال يمكن قراءة السجلات الأخيرة من صفحة الاستعادة.</string>
+    <string name="status_plugin_runners">تعطّل مشغّل إضافات: مراحله تعمل داخل العامل، خارج عزلها.</string>
     <string name="status_details">التفاصيل</string>
     <string name="status_more">%1$d أخرى</string>
     <string name="status_close">إغلاق</string>

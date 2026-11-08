@@ -14,6 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
+- **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
+  console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
+  files and lines with a table of the app's own unstripped native library, keyed by the
+  library's build ID (`maktaba-symbols extract|upload lib.so`). System libraries' frames stay as
+  they came; an own library without a table is named with its build ID; a crash kept with its
+  reason alone says it has no frames. Each tag's Play bundles run makes the tables from the
+  unstripped libraries and uploads them with the same `MAKTABA_SYMBOLS_TOKEN` secret (nothing
+  while it is unset; a failed upload keeps them as the run's artifact). The cloud rehearsal
+  checks a native crash arrives symbolicated.
 - **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
   operator console reads an Android report's obfuscated Kotlin frames back to their classes,
   methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads
@@ -150,6 +159,24 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **Old backups go on their own.** The backups folder kept the newest nightly dumps and
+  pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
+  failed update or of a database a restore replaced was kept until more of its kind came:
+  one 33 GB dump of a failed update stayed for weeks. The backups loop now prunes at every
+  check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
+  dumps to their count, and a dump of a failed update or a replaced database once it is a
+  month old. The newest pre-update dump, the way back from the last update, never expires.
+
+- **A rollback undoes only what the release changed.** When an update rolled back and its
+  migrations could not simply be kept, the whole database was put back from the dump taken
+  before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
+  on 2026-11-07, most of a day with the home down) and everything written since the dump
+  lost, though none of that release's 14 migrations lost data. A rollback now runs
+  the release's own Down scripts back to the previous schema when its migrations lose no
+  data on the way up: only the tables they touched change, every other table, index and
+  row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
+  or recast data, or a Down script fails.
 
 - **After an update, a first-party plugin's jobs run in its runner instead of the worker
   (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
@@ -442,6 +469,16 @@ build fails when the two differ.
 
 ### Added
 
+- **A runner reaches a library on a share on Windows (story 54.23).** A first-party runner on
+  Windows runs in an AppContainer, which reaches no SMB share, so every job on a share-hosted
+  library ran in the queue worker. The runner's launcher now brokers the group's share
+  folders. For each file the runner asks for over its own pipe, the launcher checks that the
+  path is in those folders and spelled one way only, with no junction or link on the way. It
+  then hands the runner the open file for reading only; a subtitle is written by the launcher
+  from the bytes the runner sends. The
+  subtitle stage now runs in its runner on a share. A share the group writes in full, and a
+  tool's job on a share, still run in the worker. No network capability is given to the
+  runner.
 - **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
   and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
   (its functions and line table, keyed by the binary's UUID), uploaded with the new
@@ -1376,6 +1413,14 @@ build fails when the two differ.
   longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
   production the API refuses a public listener.
 
+- **A failed plugin runner is reported (Epic 54).** When one of Maktaba's own plugin runners
+  fails, the stages set to run as plugins in it run in the worker, outside their sandbox. No
+  job is lost, but until now only a log line said so. System health has a new Plugin runners
+  line that names the runner, the machine and those stages, on every machine. The Plugins and
+  Updates pages show the same warning, with a link to Components to start the runners again.
+  An admin's status strip, on the web, Apple and Android, says it too. `/status.json` has a new
+  admin-only `plugin_runners` group, which changes neither `overall` nor the banners.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2221,6 +2266,14 @@ build fails when the two differ.
   through pipes the server serves. A runner that cannot be sandboxed does not run, and its
   jobs run in the worker, as before. Media on a network share is never granted to a runner;
   jobs that need it run in the worker.
+
+- **The Overview dashboard keeps up with many machines (web, Apple and Android Remote).** Past a
+  few joined machines, a line per machine no longer fit a board's 50 lines, and machines were
+  left out without a word. The Overview now shows totals across the machines (components up
+  and down, the least disk and memory free, the highest load, restarts) and the five machines
+  most in need of attention, and says how many of how many it shows. A machine picker opens
+  any one machine on its own, with each of its components that was down or restarted.
+  `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
 
 ### Fixed
 

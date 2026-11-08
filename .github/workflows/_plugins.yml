@@ -240,6 +240,38 @@ jobs:
         shell: bash
         run: go test -count=1 -v ./internal/appcontainer/...
 
+      # 54.23 on Windows: a runner's library on an SMB share, through its launcher's file
+      # broker. Two shares are made on local folders (reached as \\localhost\<name>); a
+      # runner group started through the launcher reads the library and writes a subtitle
+      # there from inside its AppContainer, and reaches nothing else (the other share, a
+      # traversal, a junction out, an 8.3 alias, another name). Verbose, so the log shows it
+      # ran, with the read throughput through the broker's handle and outside the sandbox
+      - name: SMB shares for the runner's file broker (54.23)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $lib = Join-Path $env:RUNNER_TEMP 'smb-library'
+          $other = Join-Path $env:RUNNER_TEMP 'smb-other'
+          New-Item -ItemType Directory -Force -Path $lib, $other | Out-Null
+          New-SmbShare -Name 'mklibrary' -Path $lib -FullAccess $env:USERNAME | Out-Null
+          New-SmbShare -Name 'mkother' -Path $other -FullAccess $env:USERNAME | Out-Null
+          Get-ChildItem '\\localhost\mklibrary' | Out-Null
+          "MAKTABA_BROKER_SHARE=\\localhost\mklibrary" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_SHARE_DIR=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_OTHER_SHARE=\\localhost\mkother" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_OTHER_DIR=$other" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: A runner's library on a share, through its broker (54.23)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_BROKER_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          MAKTABA_BROKER_PYTHON="$(cygpath -w "$(command -v python)")" \
+            go test -count=1 -v -run '^(TestARunnersLibraryOnAShareThroughItsBroker|TestARunnersBrokerServesOnlyItsShareFolders|TestTheRunnerLauncherLeavesSharesAlone)$' ./internal/appcontainer/
+
       # 54.23 on Windows: a first-party runner group started as the supervisor starts one,
       # through the launcher's runner-sandbox-run (CI's aclaunch, the same code), in its own
       # AppContainer and Job Object: from inside, only its granted folders, no canary on

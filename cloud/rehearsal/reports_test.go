@@ -29,11 +29,13 @@ import (
 
 // report-symbolicated (Epic 53 story 53.16 T07): the canary home, online on the relay, sends two
 // problem reports through its relay agent's reports route (cloudlink.ReportsHandler, as
-// maktaba-cloudlink serves it to the home) to this commit's api role: an Apple crash and an
-// Android (R8) crash. Before any symbol table, the service admin reads raw frames and the missing
-// tables. Then the tables are made in the job (the Apple fixture's dSYM, the test mapping.txt)
+// maktaba-cloudlink serves it to the home) to this commit's api role: an Apple crash, an
+// Android (R8) crash and an Android native crash (a tombstone's frames). Before any symbol
+// table, the service admin reads raw frames and the missing tables. Then the tables are made in
+// the job (the Apple fixture's dSYM, the test mapping.txt, the unstripped native.so fixture)
 // and uploaded with a token made in the job (never a real secret), as the release workflows
-// upload them; a wrong token is refused. After, both crashes read as functions, files and lines.
+// upload them; a wrong token is refused. After, every crash reads as functions, files and lines
+// (the native crash's libc frame stays as it came).
 func reportSymbolicated(t *testing.T, c *cluster) Result {
 	start := time.Now()
 	token := make([]byte, 24)
@@ -89,6 +91,11 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 		t.Fatal("the fixture has no arm64 table")
 	}
 	depth := funcOffset(t, arm, "depth")
+	lib, err := symbols.ExtractELFPath(symbolstest.Fixture(t, "native.so"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	render := funcOffset(t, lib, "mpv_render")
 	send := func(id int, app, version, platform string, crash map[string]any) {
 		t.Helper()
 		rep := map[string]any{"id": id, "when": time.Now().UTC().Format(time.RFC3339), "app": app, "version": version,
@@ -122,6 +129,21 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 				map[string]any{"function": "android.os.Handler.dispatchMessage", "filename": "Handler.java", "lineno": 106},
 				map[string]any{"function": "a.b.c.b", "filename": "SourceFile", "lineno": 5, "in_app": true},
 			}}}}},
+	})
+	send(3, "android.tv", "0.3.102", "android", map[string]any{
+		"platform": "native",
+		"exception": map[string]any{"values": []any{map[string]any{"type": "SIGSEGV", "value": "SEGV_MAPERR",
+			"mechanism": map[string]any{"type": "native", "handled": false},
+			"stacktrace": map[string]any{"frames": []any{
+				map[string]any{"function": "__libc_init+0x60", "package": "libc.so", "instruction_addr": "0x4a1b4",
+					"addr_mode": "rel:1", "in_app": false},
+				map[string]any{"function": fmt.Sprintf("native.so + 0x%x", render+4), "package": "native.so",
+					"instruction_addr": fmt.Sprintf("0x%x", render+4), "addr_mode": "rel:0", "in_app": true},
+			}}}}},
+		"debug_meta": map[string]any{"images": []any{
+			map[string]any{"type": "elf", "code_file": "native.so", "code_id": lib.CodeID},
+			map[string]any{"type": "elf", "code_file": "libc.so", "code_id": "ffeeddccbbaa99887766554433221100"},
+		}},
 	})
 
 	// the service admin, signed in on the console's listener
@@ -159,7 +181,7 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 				App string `json:"app"`
 			} `json:"reports"`
 		}
-		if code, b := call(t, admin, req, &list); code != http.StatusOK || len(list.Reports) != 2 {
+		if code, b := call(t, admin, req, &list); code != http.StatusOK || len(list.Reports) != 3 {
 			t.Fatalf("the reports: %d %s", code, b)
 		}
 		out := map[string]symbols.Crash{}
@@ -182,6 +204,10 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 	}
 	if d := before["android.player"]; d.Frames[0].Symbol != nil || len(d.Missing) != 1 || d.Missing[0].Kind != symbols.KindR8 {
 		t.Fatalf("the Android crash before any mapping: %+v", d)
+	}
+	if n := before["android.tv"]; n.Frames[0].Symbol != nil || len(n.Missing) != 1 || n.Missing[0].Kind != symbols.KindELF ||
+		n.Missing[0].CodeID != lib.CodeID {
+		t.Fatalf("the native crash before any library table: %+v", n)
 	}
 
 	// the tables, made here, uploaded as the release workflows do
@@ -209,7 +235,7 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 	if code := upload("not-the-token", arm); code != http.StatusUnauthorized {
 		t.Fatalf("a wrong token: %d", code)
 	}
-	for _, tab := range append(tables, mapping) {
+	for _, tab := range append(tables, mapping, lib) {
 		if code := upload(tok, tab); code != http.StatusCreated {
 			t.Fatalf("upload %s %s: %d", tab.CodeFile, tab.Arch, code)
 		}
@@ -226,10 +252,15 @@ func reportSymbolicated(t *testing.T, c *cluster) Result {
 		d.Type != "com.hamzalabs.maktaba.player.PlaybackError" {
 		t.Errorf("the Android crash after the upload: %+v", d)
 	}
+	n := after["android.tv"]
+	if s := n.Frames[0].Symbol; s == nil || s.Function != "mpv_render" || s.File != "/src/native.c" || s.Line == 0 ||
+		len(n.Missing) != 0 || n.Symbols != symbols.SymbolsNative || n.Frames[1].Symbol != nil {
+		t.Errorf("the native crash after the upload: %+v", n)
+	}
 	took := time.Since(start)
-	t.Logf("two reports through the canary home's agent, %d tables uploaded, both crashes symbolicated in %s", len(tables)+1, took)
-	return Result{Requests: 2, Notes: []string{fmt.Sprintf("an Apple and an Android crash symbolicated (%d tables made in the job) in %s",
-		len(tables)+1, took)}}
+	t.Logf("three reports through the canary home's agent, %d tables uploaded, every crash symbolicated in %s", len(tables)+2, took)
+	return Result{Requests: 3, Notes: []string{fmt.Sprintf("an Apple, an Android and an Android native crash symbolicated (%d tables made in the job) in %s",
+		len(tables)+2, took)}}
 }
 
 // hostTransport sends every request with one Host: the api answers its own names only.
