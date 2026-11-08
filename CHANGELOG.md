@@ -1977,6 +1977,15 @@ build fails when the two differ.
   maktaba.dev: Queue stages and the plugin API, *Migrating your data*; the manifest's
   `migrate` field.
 
+- **The Remote apps' recovery screen (Epic 53 stories 53.04, 53.05).** On the iPhone (Home tab)
+  and Android (account menu) Remotes, **Recovery** shows the home's recovery console in the app
+  instead of the web page: each part's state, restarts and last error, recent warnings and
+  errors, and the free disk; an admin can restart a part or everything, start or leave safe
+  mode, and go back to the previous version (asked twice). The status strip's **Details** for
+  the home restarting, its database or safe mode opens it. The app signs in with a recovery
+  pass the API now also returns in the body to native apps, so the screen works while the API
+  is down; a refusal says only admins can open it and never signs the app out.
+
 ### Changed
 
 - **A machine that loses its home stays usable** under a notice instead of the whole app being
