@@ -106,6 +106,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/lint/**": "the foreign-domain check (story 50.01): the lint job's repo checks run it and its test on every pull request",
     ".trail.toml": "the agent trail's settings: the lint job's trail check (the agent-trail Action) reads them on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
+    "tools/ci/deploy_secrets.py": "both cloud deploy paths wire every secret the api reads: its tests (tools/ci/tests) run it on every pull request",
     "tools/ci/devportal_follows.py": "run by the affected-tests job on every pull request (a warning); its tests (tools/ci/tests) run on every pull request",
     "tools/ci/pr_closing_refs.py": "run by the pr-body-check job on every pull request; its tests (tools/ci/tests) run on every pull request",
     "tools/ci/tests/**": "the guard's tests: the lint job runs them on every pull request",

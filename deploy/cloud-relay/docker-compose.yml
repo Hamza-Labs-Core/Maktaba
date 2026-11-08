@@ -78,6 +78,9 @@ services:
       #     wired here so the same stack can run --role api unchanged) ---
       MAKTABA_CLOUD_BILLING_PROVIDER: ${BILLING_PROVIDER:-none}
       MAKTABA_CLOUD_OAUTH_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      # the symbol uploaders' token (story 53.16): deploy.sh writes secrets/symbols.token
+      # from the MAKTABA_SYMBOLS_TOKEN secret and names it in .env; unset, uploads are off
+      MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE: ${MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE:-}
       # Probe target (also baked into the image; set explicitly so it
       # tracks MAKTABA_CLOUD_LISTEN_ADDR if that changes).
       HEALTHCHECK_URL: http://127.0.0.1:8443/healthz

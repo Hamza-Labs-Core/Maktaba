@@ -193,6 +193,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The single-VPS cloud deploy hands the api the symbol uploaders' token (Epic 53 story
+  53.16).** Only the Phase 1 pair's deploy wrote it, so on the single VPS a release's symbol
+  tables were refused (503 symbols_off) even with the token set. Its deploy now writes the token
+  to the stack's secrets and names it for the api, and a CI check fails when either deploy path
+  leaves out a secret the api reads. A deploy run without an SSH key file no longer ends with
+  a failure after a good rollout.
 - **A machine can now download Postgres while github.com's download links fail.** A machine
   that needs Postgres at runtime (a node keeping a copy of its home's database) now tries three
   places in turn: Maktaba's CDN (plugins-cdn.maktaba.tv, where each release now publishes the
