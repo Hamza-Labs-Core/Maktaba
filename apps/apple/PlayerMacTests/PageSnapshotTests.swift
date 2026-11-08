@@ -75,7 +75,9 @@ import MaktabaKit
     }
 
     @Test(arguments: cases) func pageMatchesItsReference(_ c: Case) async throws {
-        let home = try MockHome()
+        // the references hold the dates drawn: the fixtures' times are filled from a fixed day (noon
+        // UTC, so the date is the same in every time zone a runner or a Mac is in), not the clock
+        let home = try MockHome(now: Date(timeIntervalSince1970: 1_794_052_800))
         try home.start()
         let features = MockHome.features.map { #""\#($0)":"on""# }.joined(separator: ",")
         home.stub("GET", "/api/capabilities", body: #"{"etag":"c-snap","features":{\#(features),"plugin_panels":"on"}}"#,

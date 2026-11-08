@@ -86,7 +86,12 @@ final class MockHome: @unchecked Sendable {
 
     static let code = "TEST-2345"
 
-    init() throws {
+    /// The time the fixtures' `{{now…}}` are filled from: nil, the clock; a page snapshot pins it,
+    /// since its reference holds the dates drawn (a date read off the clock changes every day).
+    let now: Date?
+
+    init(now: Date? = nil) throws {
+        self.now = now
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: params)
@@ -204,7 +209,7 @@ final class MockHome: @unchecked Sendable {
     func fixture(named name: String) -> String? {
         fixtures.url(forResource: name, withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
-            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self)) }
+            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self), now: now ?? Date()) }
     }
 
     func stop() {
