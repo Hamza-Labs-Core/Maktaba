@@ -39,6 +39,14 @@ build fails when the two differ.
   machine neither it nor any worker of it seen within 60 s); the API passes the list to the log
   index, and the Overview's answer names them in `machines.offline`. Before, an offline machine
   kept its last values and ranked last.
+- **The Crash symbols page names each table's type (Epic 53 story 53.16).** The operator
+  console's Crash symbols page has a Type column (Apple dSYM, R8 mapping or Native (build ID)),
+  and its Key column shows each table by what it is known by: an Apple binary's UUID as Apple's
+  tools print it, an R8 mapping's app and version, and a native library's whole build ID,
+  shortened, whole on hover and with a button that copies it. Before, every table's key was
+  shown under a UUID header, and a native library showed only the first 32 digits of its build
+  ID. `GET /v1/admin/symbols` answers each table's `kind` (`dsym`, `r8` or `elf`) and a native
+  library's `code_id`; tables uploaded before are filled in the first time the list is read.
 - **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
   console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
   files and lines with a table of the app's own unstripped native library, keyed by the
