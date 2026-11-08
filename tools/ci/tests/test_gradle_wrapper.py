@@ -82,20 +82,25 @@ def _project(tmp_path: Path, url: str, sha: str = hashlib.sha256(ZIP).hexdigest(
     return tmp_path / "proj"
 
 
-def _run(*args: str, home: Path) -> subprocess.CompletedProcess[str]:
+def _base(server: _Server) -> str:
+    return server.url.rsplit("/distributions/", 1)[0]
+
+
+def _run(*args: str, home: Path, base: str = "") -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "GRADLE_USER_HOME": str(home),
         "GRADLE_WRAPPER_DELAYS": "0 0 0 0",
         "FETCH_PINNED_DELAYS": "0 0 0 0",
         "RUNNER_OS": "Linux",
+        "GRADLE_WRAPPER_DISTRIBUTIONS": f"{base}/distributions" if base else "https://services.gradle.org/distributions",
     }
     return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60)
 
 
 def test_dist_puts_the_zip_where_the_wrapper_looks(server: _Server, tmp_path: Path) -> None:
     proj = _project(tmp_path, server.url)
-    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh")
+    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh", base=_base(server))
     assert r.returncode == 0, r.stderr
     dist = tmp_path / "guh/wrapper/dists/gradle-1.2-bin" / _base36(hashlib.md5(server.url.encode()).hexdigest())
     assert (dist / "gradle-1.2-bin.zip").read_bytes() == ZIP
@@ -105,7 +110,7 @@ def test_dist_puts_the_zip_where_the_wrapper_looks(server: _Server, tmp_path: Pa
 def test_dist_retries_a_504(server: _Server, tmp_path: Path) -> None:
     server.replies = [504, 504]
     proj = _project(tmp_path, server.url)
-    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh")
+    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh", base=_base(server))
     assert r.returncode == 0, r.stderr
     assert server.paths.count("/distributions/gradle-1.2-bin.zip") == 3
 
@@ -113,7 +118,7 @@ def test_dist_retries_a_504(server: _Server, tmp_path: Path) -> None:
 def test_dist_refuses_other_bytes(server: _Server, tmp_path: Path) -> None:
     other = hashlib.sha256(b"x").hexdigest()
     proj = _project(tmp_path, server.url, sha=other)
-    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh")
+    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh", base=_base(server))
     assert r.returncode != 0
     assert f"the pin says {other}" in r.stderr
     assert not list((tmp_path / "guh").rglob("*.zip")) if (tmp_path / "guh").exists() else True
@@ -123,7 +128,7 @@ def test_dist_keeps_a_cached_zip(server: _Server, tmp_path: Path) -> None:
     proj = _project(tmp_path, server.url)
     (tmp_path / "cache").mkdir()
     (tmp_path / "cache/gradle-1.2-bin.zip").write_bytes(ZIP)
-    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh")
+    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh", base=_base(server))
     assert r.returncode == 0, r.stderr
     assert server.paths == []
 
@@ -142,7 +147,7 @@ def test_dist_fetches_nothing_when_the_wrapper_has_it_installed(tmp_path: Path) 
 
 def test_dist_needs_a_distribution_sha256(server: _Server, tmp_path: Path) -> None:
     proj = _project(tmp_path, server.url, sha="")
-    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh")
+    r = _run("dist", str(proj), str(tmp_path / "cache"), home=tmp_path / "guh", base=_base(server))
     assert r.returncode != 0
     assert "no distributionSha256Sum" in r.stderr
 
@@ -150,7 +155,7 @@ def test_dist_needs_a_distribution_sha256(server: _Server, tmp_path: Path) -> No
 def test_check_accepts_gradle_s_jar_after_retries(server: _Server, tmp_path: Path) -> None:
     server.replies = [504, 503]
     proj = _project(tmp_path, server.url)
-    r = _run("check", str(proj), home=tmp_path / "guh")
+    r = _run("check", str(proj), home=tmp_path / "guh", base=_base(server))
     assert r.returncode == 0, r.stderr
     assert server.paths == ["/distributions/gradle-1.2-wrapper.jar.sha256"] * 3
     assert "again in 0 s" in r.stderr
@@ -158,7 +163,7 @@ def test_check_accepts_gradle_s_jar_after_retries(server: _Server, tmp_path: Pat
 
 def test_check_refuses_another_jar(server: _Server, tmp_path: Path) -> None:
     proj = _project(tmp_path, server.url, jar=b"not gradle's")
-    r = _run("check", str(proj), home=tmp_path / "guh")
+    r = _run("check", str(proj), home=tmp_path / "guh", base=_base(server))
     assert r.returncode != 0
     assert "is not Gradle's" in r.stderr
 
@@ -166,7 +171,7 @@ def test_check_refuses_another_jar(server: _Server, tmp_path: Path) -> None:
 def test_check_gives_up_after_five_tries(server: _Server, tmp_path: Path) -> None:
     server.replies = [504] * 10
     proj = _project(tmp_path, server.url)
-    r = _run("check", str(proj), home=tmp_path / "guh")
+    r = _run("check", str(proj), home=tmp_path / "guh", base=_base(server))
     assert r.returncode != 0
     assert "did not answer after 5 tries" in r.stderr
 
@@ -209,3 +214,22 @@ def test_the_gradle_jobs_check_and_fetch_before_the_build(workflow: str, project
     build = text.find("./gradlew --no-daemon")
     assert -1 < check < dist < build, workflow
     assert "services.gradle.org" not in text
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example/distributions/gradle-9.8.2-bin.zip",
+        "https://services.gradle.org.evil.example/distributions/gradle-9.8.2-bin.zip",
+        "https://services.gradle.org/distributions/gradle-9.8.2-src.zip",
+        "https://services.gradle.org/distributions/gradle-x/../9-bin.zip",
+    ],
+)
+@pytest.mark.parametrize("mode", ["check", "dist"])
+def test_a_distribution_off_gradle_s_host_is_refused(tmp_path: Path, url: str, mode: str) -> None:
+    proj = _project(tmp_path, url)
+    args = [mode, str(proj)] + ([str(tmp_path / "cache")] if mode == "dist" else [])
+    r = _run(*args, home=tmp_path / "guh")
+    assert r.returncode != 0
+    assert "distributionUrl" in r.stderr
+    assert not (tmp_path / "cache").exists()

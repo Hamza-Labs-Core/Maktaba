@@ -28,6 +28,28 @@ fetch="$here/../release/fetch-pinned.sh"
 
 err() { printf '::error::%s\n' "$*" >&2; exit 1; }
 
+# Gradle's own host: the jar's checksum always comes from it, and a distributionUrl anywhere
+# else is refused, so a change to the properties cannot point the check at another server
+# (GRADLE_WRAPPER_DISTRIBUTIONS stands in for it in the tests only).
+dists_host="${GRADLE_WRAPPER_DISTRIBUTIONS:-https://services.gradle.org/distributions}"
+
+# version PROJECT: the Gradle version PROJECT's distributionUrl names, which must be Gradle's
+# own -bin or -all zip on dists_host
+version() {
+    local url v
+    url="$(prop "$1" distributionUrl)"
+    v="${url#"$dists_host"/gradle-}"
+    v="${v%.zip}"
+    v="${v%-bin}"
+    v="${v%-all}"
+    case "$url" in
+        "$dists_host"/gradle-*-bin.zip | "$dists_host"/gradle-*-all.zip) ;;
+        *) err "$1's distributionUrl ($url) is not a Gradle distribution on $dists_host" ;;
+    esac
+    [[ "$v" =~ ^[0-9]+(\.[0-9]+)*(-rc-[0-9]+)?$ ]] || err "$1's distributionUrl ($url) names no Gradle version"
+    printf '%s\n' "$v"
+}
+
 # prop PROJECT NAME: NAME's value in PROJECT's wrapper properties, with \: as :
 prop() {
     local file="$1/gradle/wrapper/gradle-wrapper.properties"
@@ -78,10 +100,7 @@ case "${1:-}" in
         shift
         [ $# -ge 1 ] || err "usage: gradle-wrapper.sh check PROJECT..."
         for project in "$@"; do
-            url="$(prop "$project" distributionUrl)"
-            base="${url%.zip}"
-            base="${base%-bin}"
-            jar_sums="${base%-all}-wrapper.jar.sha256"
+            jar_sums="$dists_host/gradle-$(version "$project")-wrapper.jar.sha256"
             want="$(text "$jar_sums")"
             got="$(sha256 "$project/gradle/wrapper/gradle-wrapper.jar")"
             [ "$want" = "$got" ] || err "the Gradle wrapper jar in $project is not Gradle's (it is $got, $jar_sums says $want)"
@@ -94,6 +113,7 @@ case "${1:-}" in
         ;;
     dist)
         [ $# -eq 3 ] || err "usage: gradle-wrapper.sh dist PROJECT DIR"
+        version "$2" >/dev/null
         url="$(prop "$2" distributionUrl)"
         want="$(prop "$2" distributionSha256Sum)"
         [ -n "$want" ] || err "$2's gradle-wrapper.properties has no distributionSha256Sum"
