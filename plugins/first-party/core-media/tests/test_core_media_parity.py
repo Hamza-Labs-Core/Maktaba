@@ -24,7 +24,7 @@ import pytest
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.media import reset_runner
-from tests.plugins.firstparty.harness import SameIds, parity
+from tests.plugins.firstparty.harness import SameIds, parity, plugin_api_dev
 from tests.stages.world import make_fake_media, models_off
 
 pytestmark = [pytest.mark.integration]
@@ -76,6 +76,8 @@ def template(pg_template: str) -> str:
         pytest.skip("MAKTABA_TEST_PG_URL not set")
     if not selected():
         pytest.skip("no stage of tv.maktaba.core-media selected")
+    # the plugin API's dev server is built here, in setup, not in the timed call
+    plugin_api_dev()
     return pg_template
 
 
