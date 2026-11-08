@@ -35,6 +35,13 @@
 # is dropped, App Store versions are numbers only), by hand the latest tag's. Every upload
 # gets a new, higher build number: the UTC date and time (YYYYMMDD.HHMMSS).
 #
+# CRASH SYMBOLS (Epic 53 story 53.16): after its upload each leg turns the archive's dSYMs into
+# symbol tables (cloud/cmd/maktaba-symbols) and uploads them to Maktaba Cloud with the
+# MAKTABA_SYMBOLS_TOKEN repository secret, so a forwarded problem report's crash frames read as
+# functions, files and lines in the operator console. Without the secret it logs one line and
+# uploads nothing; a failed upload is a warning, never a failed leg (the app is in TestFlight
+# by then), and the tables are kept as the run's artifact to upload by hand.
+#
 # One-time, by the owner: the six apps' records in App Store Connect (an app record cannot be
 # made through the API), and the owner as an internal tester. See docs/testflight.md.
 name: TestFlight
@@ -129,8 +136,11 @@ jobs:
           marketing="${marketing%%-*}"
           [[ "$marketing" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "::error::no app version in tag $tag"; exit 1; }
           build="$(date -u +%Y%m%d.%H%M%S)"
-          echo "marketing=$marketing" >>"$GITHUB_OUTPUT"
-          echo "build=$build" >>"$GITHUB_OUTPUT"
+          {
+            echo "tag=$tag"
+            echo "marketing=$marketing"
+            echo "build=$build"
+          } >>"$GITHUB_OUTPUT"
           echo "::notice::$SCHEME $marketing ($build)"
 
       - name: App Store Connect API key
@@ -211,6 +221,78 @@ jobs:
             -authenticationKeyID "$APPLE_API_KEY_ID" \
             -authenticationKeyIssuerID "$APPLE_API_ISSUER"
           echo "::notice::$SCHEME ${{ steps.version.outputs.marketing }} (${{ steps.version.outputs.build }}) uploaded: it shows in TestFlight once App Store Connect has processed it"
+
+      # Crash symbols (story 53.16): only with the MAKTABA_SYMBOLS_TOKEN secret; without it, one
+      # line and nothing else (an unset secret is an empty string).
+      - name: Symbols token
+        id: symbols
+        env:
+          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}
+        run: |
+          if [ -n "$MAKTABA_SYMBOLS_TOKEN" ]; then
+            echo "set=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "set=false" >>"$GITHUB_OUTPUT"
+            echo "::notice::$SCHEME: crash symbols not uploaded: no MAKTABA_SYMBOLS_TOKEN secret is set"
+          fi
+
+      # a Go or module download that fails leaves the build below to warn (never a failed leg)
+      - uses: actions/setup-go@v6.4.0
+        if: steps.symbols.outputs.set == 'true'
+        continue-on-error: true
+        with:
+          go-version-file: cloud/go.mod
+          cache: false
+
+      - name: Go modules
+        if: steps.symbols.outputs.set == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
+
+      # A failed upload warns and keeps the tables: a release is never lost to the symbol
+      # service. `maktaba-symbols upload -version <tag> *.symbols` sends them later.
+      - name: Upload crash symbols
+        id: symbols_upload
+        if: steps.symbols.outputs.set == 'true'
+        env:
+          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -uo pipefail
+          tables="$RUNNER_TEMP/symbols"
+          mkdir -p "$tables"
+          (cd cloud && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/maktaba-symbols" ./cmd/maktaba-symbols) || {
+            echo "::warning::$SCHEME: crash symbols not uploaded: maktaba-symbols did not build"; exit 0; }
+          shopt -s nullglob
+          dsyms=("$RUNNER_TEMP"/app.xcarchive/dSYMs/*.dSYM)
+          if [ "${#dsyms[@]}" -eq 0 ]; then
+            echo "::warning::$SCHEME: crash symbols not uploaded: the archive has no dSYMs"; exit 0
+          fi
+          # each dSYM on its own: one that can't be read leaves the others' tables
+          for d in "${dsyms[@]}"; do
+            "$RUNNER_TEMP/maktaba-symbols" extract -o "$tables" "$d" || echo "::warning::$SCHEME: $(basename "$d") could not be read"
+          done
+          made=("$tables"/*.symbols)
+          if [ "${#made[@]}" -eq 0 ]; then
+            echo "::warning::$SCHEME: crash symbols not uploaded: no dSYM could be read"; exit 0
+          fi
+          if "$RUNNER_TEMP/maktaba-symbols" upload -version "$TAG" "${made[@]}"; then
+            echo "::notice::$SCHEME: crash symbols of $TAG uploaded (${#made[@]} tables)"
+          else
+            echo "kept=true" >>"$GITHUB_OUTPUT"
+            echo "::warning::$SCHEME: crash symbols of $TAG not uploaded; the tables are this run's symbols artifact"
+          fi
+
+      - name: Keep the symbol tables
+        if: steps.symbols_upload.outputs.kept == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: symbols-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/symbols/*.symbols
+          retention-days: 90
 
       - name: Remove the API key
         if: always()
