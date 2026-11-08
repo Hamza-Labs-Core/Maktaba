@@ -41,8 +41,17 @@ func Launch(args []string, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "plugins-sandbox-run: a program to run is required after --")
 		return 2
 	}
+	// granted as the filesystem names them (short names expanded, links resolved): a
+	// grant applies only to the object its path names (Grant checks it by handle)
+	grant := func(d string, write bool) error {
+		c, err := canonical(d)
+		if err != nil {
+			return err
+		}
+		return grantFn(*profile, c, write)
+	}
 	for _, d := range reads {
-		if err := Grant(*profile, d, false); err != nil {
+		if err := grant(d, false); err != nil {
 			fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 			return 2
 		}
@@ -52,7 +61,7 @@ func Launch(args []string, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 			return 2
 		}
-		if err := Grant(*profile, d, true); err != nil {
+		if err := grant(d, true); err != nil {
 			fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 			return 2
 		}
@@ -63,7 +72,7 @@ func Launch(args []string, stderr io.Writer) int {
 			env = append(env, kv)
 		}
 	}
-	code, err := Run(*profile, rest[0], rest[1:], Options{MemoryBytes: *memory, Env: env})
+	code, err := runFn(*profile, rest[0], rest[1:], Options{MemoryBytes: *memory, Env: env})
 	if err != nil {
 		fmt.Fprintln(stderr, "plugins-sandbox-run:", err)
 		return 2
