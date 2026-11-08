@@ -121,7 +121,7 @@ def group_id(folder: str, kind: str, basis: str, name: str) -> str:
 
 
 def group_title(library: str, kind: str, basis: str, name: str) -> str:
-    """Plex / dizqueTV title of a group: "<lib> - مقاطع - <name>", "<lib> - مقاطع متنوعة"."""
+    """The title of a group: "<lib> - مقاطع - <name>", "<lib> - مقاطع متنوعة"."""
     word = "مقاطع" if kind == "clips" else "منفردات"
     if basis == "rest":
         return f"{library} - {word} متنوعة"

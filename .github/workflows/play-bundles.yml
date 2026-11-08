@@ -276,6 +276,97 @@ jobs:
             whatsnew/*
           retention-days: 14
 
+      # Crash symbols (Epic 53 story 53.16): each app's R8 mapping to Maktaba Cloud, so a
+      # forwarded problem report's obfuscated Kotlin frames read as classes, methods and lines,
+      # and a table of each of the apps' unstripped native libraries, so a native crash's frames
+      # (its tombstone's) read as functions, files and lines. Only with the MAKTABA_SYMBOLS_TOKEN
+      # secret; without it, one line and nothing else (an unset secret is an empty string). A
+      # failed upload warns, never fails the release: the mappings are in the
+      # maktaba-play-bundles artifact, and `maktaba-symbols upload -r8 android.<app> -version
+      # <version> mapping.txt` sends one later; the native tables are this run's native-symbols
+      # artifact, and `maktaba-symbols upload -version <version> *.symbols` sends them.
+      - name: Symbols token
+        id: symbols
+        env:
+          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}
+        run: |
+          if [ -n "$MAKTABA_SYMBOLS_TOKEN" ]; then
+            echo "set=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "set=false" >>"$GITHUB_OUTPUT"
+            echo "::notice::crash symbols not uploaded: no MAKTABA_SYMBOLS_TOKEN secret is set"
+          fi
+
+      # a Go or module download that fails leaves the build below to warn (never a failed run)
+      - uses: actions/setup-go@v6.4.0
+        if: steps.symbols.outputs.set == 'true'
+        continue-on-error: true
+        with:
+          go-version-file: cloud/go.mod
+          cache: false
+
+      - name: Go modules
+        if: steps.symbols.outputs.set == 'true'
+        continue-on-error: true
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
+
+      - name: Upload crash symbols
+        id: symbols_upload
+        if: steps.symbols.outputs.set == 'true'
+        env:
+          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}
+          NAME: ${{ steps.version.outputs.name }}
+        run: |
+          set -uo pipefail
+          (cd cloud && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/maktaba-symbols" ./cmd/maktaba-symbols) || {
+            echo "::warning::crash symbols not uploaded: maktaba-symbols did not build"; exit 0; }
+          # the app each report names: android.player, android.remote, android.tv
+          for app in player remote tv; do
+            m="mapping/maktaba-${app}-${NAME}-mapping.txt"
+            if "$RUNNER_TEMP/maktaba-symbols" upload -r8 "android.${app}" -version "$NAME" "$m"; then
+              echo "::notice::crash symbols of android.${app} ${NAME} uploaded"
+            else
+              echo "::warning::crash symbols of android.${app} ${NAME} not uploaded; ${m} is in the maktaba-play-bundles artifact"
+            fi
+          done
+          # The native libraries, unstripped: AGP strips the packaged copies, and the merged ones
+          # before stripping stay under build/intermediates. A library with no symbol table
+          # (a dependency's prebuilt, stripped by its publisher) makes no table and is counted.
+          tables="$RUNNER_TEMP/symbols"
+          mkdir -p "$tables"
+          shopt -s nullglob
+          libs=()
+          for dir in apps/android/player apps/android/remote apps/tv/android/app; do
+            while IFS= read -r -d '' so; do libs+=("$so"); done < <(
+              find "$dir/build/intermediates/merged_native_libs/release" -name '*.so' -print0 2>/dev/null)
+          done
+          bare=0
+          for so in "${libs[@]}"; do
+            "$RUNNER_TEMP/maktaba-symbols" extract -o "$tables" "$so" || bare=$((bare + 1))
+          done
+          made=("$tables"/*.symbols)
+          if [ "${#libs[@]}" -eq 0 ]; then
+            echo "::notice::native crash symbols: the apps have no native libraries"
+          elif [ "${#made[@]}" -eq 0 ]; then
+            echo "::notice::native crash symbols: none of the ${#libs[@]} native libraries has symbols (${bare} without a symbol table)"
+          elif "$RUNNER_TEMP/maktaba-symbols" upload -version "$NAME" "${made[@]}"; then
+            echo "::notice::native crash symbols of ${NAME} uploaded (${#made[@]} tables; ${bare} libraries without a symbol table)"
+          else
+            echo "kept=true" >>"$GITHUB_OUTPUT"
+            echo "::warning::native crash symbols of ${NAME} not uploaded; the tables are this run's native-symbols artifact"
+          fi
+
+      - name: Keep the native symbol tables
+        if: steps.symbols_upload.outputs.kept == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: native-symbols
+          path: ${{ runner.temp }}/symbols/*.symbols
+          retention-days: 90
+
       # Signed bundles only. To the tag's release, a draft until release.yml's signed files and
       # the server apps are in (it is never made public or the latest from here); a published
       # release only gains the files it lacks.

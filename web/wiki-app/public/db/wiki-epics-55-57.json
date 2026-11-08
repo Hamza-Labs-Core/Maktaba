@@ -1,0 +1,1374 @@
+{
+  "version": "2.0",
+  "part": "wiki-epics-55-57.json",
+  "entries": [
+    {
+      "id": "story-55.1",
+      "type": "story",
+      "title": "The shell: five sections, a stack per section, shared state",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.01 — The shell: five sections, a stack per section, shared state\n\n> Epic 55 · Phase 1 · Depends on: — · Needed by: every other story\n\n## Why\n\nThe desktop Player has one screen after sign-in: `LibraryBrowser`. Every feature in this epic\nneeds somewhere to live: the five sections the Android and Apple Players have (Home, Libraries,\nLive TV, Search, Profile), pages pushed on a section (a video, a series, a library, a channel),\nand one object every screen reads (the client, the user, the navigation, the player). This\nstory builds that shell, moves `ReadOrder` into `:client`, and splits ",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-01-shell-and-sharing.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "shell-and-sharing"
+      }
+    },
+    {
+      "id": "story-55.2",
+      "type": "story",
+      "title": "The capabilities gate and its build switch (#638)",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.02 — The capabilities gate and its build switch (#638)\n\n> Epic 55 · Phase 1 · Depends on: 55.01 · Needed by: 55.03, 55.04, 55.06, 55.07, 55.08\n\n## Why\n\nStory 51.11 made every app read `GET /api/capabilities`: a feature that is off is hidden from a\nviewer and explained to an admin with a way to turn it on. The Android Player can switch the\ngate off with a build property (`-Pmaktaba.capabilitiesGate=off`, kept in\n`BuildConfig.CAPABILITIES_GATE`). The desktop Player makes its `AppSession` with the gate on,\nnever follows capabilities and has no switch: issue #638. This story gives it th",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-get-settings",
+        "ep-put-settings",
+        "ep-get-capabilities",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-02-capabilities-gate.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /settings",
+        "PUT /settings",
+        "GET /capabilities",
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "capabilities-gate"
+      }
+    },
+    {
+      "id": "story-55.3",
+      "type": "story",
+      "title": "Home: hero, rows, recommendations",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.03 — Home: hero, rows, recommendations\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.10\n\n## Why\n\nThe Android and Apple Players open on Home: a featured hero, then rows (Continue Watching, On\nDeck, What's On Now, Favorites, Recently Added, Recently Watched, pinned libraries, For You).\nThe desktop Player opens on a grid of every video. This story gives the desktop the same Home,\nbuilt from the same row builder.\n\n## Description\n\n### 1. Rows from `:client`\n\n`homeRows(rails, recs, now, known)` and its row types move from\n`apps/android/player/.../home/HomeRows.kt` into `",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-03-home.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "home"
+      }
+    },
+    {
+      "id": "story-55.4",
+      "type": "story",
+      "title": "Search: titles, transcripts, recent searches",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.04 — Search: titles, transcripts, recent searches\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.10\n\n## Why\n\nThe desktop Player's search filters titles in the current library. The Android and Apple\nPlayers search titles and words said in videos (Epic 49), suggest as the person types, keep\nrecent searches, and play a transcript hit at its moment. This story brings that search to the\ndesktop, with a keyboard-first field.\n\n## Description\n\n### 1. `SearchModel` on the desktop (`desktop/search/SearchModel.kt`)\n\nAs the Android `SearchModel`: `searchSuggestions(q)` as the p",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "entity-transcripts",
+        "ep-get-search",
+        "ep-post-search"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-04-search.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /search",
+        "POST /search"
+      ],
+      "db_tables": [
+        "transcripts"
+      ],
+      "metadata": {
+        "slug": "search"
+      }
+    },
+    {
+      "id": "story-55.5",
+      "type": "story",
+      "title": "Libraries and the library page",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.05 — Libraries and the library page\n\n> Epic 55 · Phase 2 · Depends on: 55.01 · Needed by: 55.06, 55.10\n\n## Why\n\nThe desktop Player lists libraries beside one grid of videos. The Android and Apple Players\n(Epic 45, story 48.27) have a Libraries section with pinning, and a library page with its hub\nrows, a videos tab with sort and filters, and a series tab. This story replaces the desktop's\n`LibraryBrowser` with the same pages.\n\n## Description\n\n### 1. Libraries section (`desktop/libraries/LibrariesScreen.kt`)\n\n- `librarySummaries()` as cards (name, videos and length), pinned ones firs",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-05-libraries.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "libraries"
+      }
+    },
+    {
+      "id": "story-55.6",
+      "type": "story",
+      "title": "The series page and the video page",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.06 — The series page and the video page\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02, 55.05 · Needed by: 55.08, 55.10\n\n## Why\n\nOn the desktop, choosing a video plays it at once: there is no page to see what it is, resume\nit, start it over, mark it watched or add it to favorites, and series have no page at all. The\nAndroid and Apple Players have both pages (stories 48.27 and 48.28). This story brings them.\n\n## Description\n\n### 1. Series page (`desktop/libraries/SeriesPage.kt`)\n\nAs the Android `SeriesPage`: `series(id)` and `seriesEpisodes(id, sort)`.\n- Header: the series' poster, ",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "entity-chapters",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-06-series-and-video.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [
+        "chapters"
+      ],
+      "metadata": {
+        "slug": "series-and-video"
+      }
+    },
+    {
+      "id": "story-55.7",
+      "type": "story",
+      "title": "Live TV: Now, Guide, the channel player",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.07 — Live TV: Now, Guide, the channel player\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.10\n\n## Why\n\nLive TV (Epic 27, story 48.30) is a section on the Android and Apple Players: what is on now on\nevery channel, a guide by time, and a channel player that works at home and away from home. The\ndesktop Player has none of it. This story adds it, playing the channel with JavaFX through\n`StreamProxy`.\n\n## Description\n\n### 1. Guide maths into `:client`\n\nThe guide's time logic in the Android `GuideTab.kt` (the window shown, blocks cut to it, the\nnow line, Earlier and Lat",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-07-live-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "live-tv"
+      }
+    },
+    {
+      "id": "story-55.8",
+      "type": "story",
+      "title": "Watching: resume, tracks, subtitles, quality, Up Next, keys",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.08 — Watching: resume, tracks, subtitles, quality, Up Next, keys\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.02 · Needed by: 55.09, 55.10\n\n## Why\n\nThe desktop player starts every video at 0, has no audio or subtitle choice, no quality, no Up\nNext and few keys. The Android and Apple players (story 48.32) resume where the person left,\nchoose audio and subtitles (remembered), cap quality, offer the next episode, and the Mac\nPlayer has a full Playback menu. JavaFX draws no subtitles and plays only an HLS stream's\ndefault audio, so this story also says how the desktop does both (README ",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "entity-chapters"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-08-watch.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "chapters"
+      ],
+      "metadata": {
+        "slug": "watch"
+      }
+    },
+    {
+      "id": "story-55.9",
+      "type": "story",
+      "title": "Profile: history, favorites, playlists, sessions, settings",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.09 — Profile: history, favorites, playlists, sessions, settings\n\n> Epic 55 · Phase 2 · Depends on: 55.01, 55.08 · Needed by: 55.10\n\n## Why\n\nThe desktop Player has an Account menu (sign out, switch home, approve a sign-in) and a Language\nmenu. The Android and Apple Players have a Profile section: watch history with Forget,\nfavorites, playlists, sign-in sessions, approving a TV or device, playback settings, language,\nand help and about. This story adds the Profile section; the menus stay as shortcuts.\n\n## Description\n\n### 1. `ProfileState` (`desktop/profile/ProfileState.kt`)\n\nAs the A",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-09-profile.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "profile"
+      }
+    },
+    {
+      "id": "story-55.10",
+      "type": "story",
+      "title": "Help, README and the release check",
+      "epic": "55-desktop-player-parity",
+      "phase": 5,
+      "content": "# Story 55.10 — Help, README and the release check\n\n> Epic 55 · Phase 3 · Depends on: 55.03, 55.04, 55.05, 55.06, 55.07, 55.08, 55.09 · Needed by: —\n\n## Why\n\nThe desktop Player's help page (`web/src/help/content/{en,ar}/desktop-player.md`) and its\nREADME describe story 42.4: libraries on the left, a title search and a bare player. Once the\nother stories land, both are wrong. This story rewrites them and checks the installers still\nbuild and update as before.\n\n## Description\n\n### 1. Help page, English and Arabic\n\n`web/src/help/content/en/desktop-player.md` and `ar/desktop-player.md`, in the hel",
+      "tags": [
+        "story",
+        "55-desktop-player-parity",
+        "phase-5"
+      ],
+      "related": [
+        "epic-55-desktop-player-parity"
+      ],
+      "files": {
+        "story": "specs/epics/55-desktop-player-parity/story-55-10-help-and-release.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "help-and-release"
+      }
+    },
+    {
+      "id": "story-56.1",
+      "type": "story",
+      "title": "A play queue on the server",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.01 — A play queue on the server\n\n> Epic 56 · Phase 1 · Depends on: — · Needed by: 56.02, 56.10, 56.11, 56.12, 56.13, Epic 55\n\n## Why\n\nPlay all and Shuffle need a queue that can hold a whole library, survive the app closing and\nmove between devices. Today the only queue is the web's, in one tab's `sessionStorage`, and\nShuffle is one random page of `GET /api/videos` (`sort=random` has no cursor), so a TV cannot\nshuffle a library of thousands of videos. Plex keeps play queues on the server; so will Maktaba.\n\n## Description\n\n### 1. Sources and order\n\n`POST /api/me/play-queues` takes `{s",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-post-me-play-queues",
+        "ep-get-me-play-queues-current",
+        "ep-get-me-play-queues-id",
+        "ep-delete-me-play-queues-id",
+        "ep-put-me-play-queues-id-current",
+        "ep-post-me-play-queues-id-items",
+        "ep-post-me-play-queues-id-reshuffle",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id",
+        "ep-get-series-id-episodes"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-01-play-queue.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "POST /me/play-queues",
+        "GET /me/play-queues/current",
+        "GET /me/play-queues/{id}",
+        "DELETE /me/play-queues/{id}",
+        "PUT /me/play-queues/{id}/current",
+        "POST /me/play-queues/{id}/items",
+        "POST /me/play-queues/{id}/reshuffle",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}",
+        "GET /series/{id}/episodes"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "play-queue"
+      }
+    },
+    {
+      "id": "story-56.2",
+      "type": "story",
+      "title": "Play and Shuffle on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.02 — Play and Shuffle on the TVs\n\n> Epic 56 · Phase 3 · Depends on: 56.01, 56.03 · Needed by: 56.11\n\n## Why\n\nA library, a series, a season, a collection and a playlist on a TV can only be played one video\nat a time. Plex puts Play and Shuffle on each of them; people expect to start a library on\nshuffle from the couch and leave it.\n\n## Description\n\n### 1. Where the buttons are\n\n| Surface | Buttons | Source sent to 56.01 |\n|---|---|---|\n| A library (header, on Recommended and Library) | **Play**, **Shuffle** | `library` + the Library tab's current filters and sort |\n| A series page | ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-post-me-play-queues"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-02-tv-play-shuffle.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /me/play-queues"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-play-shuffle"
+      }
+    },
+    {
+      "id": "story-56.3",
+      "type": "story",
+      "title": "Library tabs and remote navigation on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.03 — Library tabs and remote navigation on the TVs\n\n> Epic 56 · Phase 3 · Depends on: — (56.04, 56.05, 56.08, 56.10 fill the tabs) · Needed by: 56.02, 56.04, 56.05, 56.08, 56.10\n\n## Why\n\nPlex's TV apps show a library as five tabs: Recommended, Library, Collections, Playlists and\nCategories. Maktaba's TV apps show one grid. The tabs are the frame every other TV story fills,\nand they must work with the remote alone, in both languages.\n\n## Description\n\n### 1. The tabs\n\n| Tab | Content | Reads |\n|---|---|---|\n| **Recommended** (opens here) | rows: On Deck, Continue Watching, Recently Ad",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-recommendations",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-home",
+        "ep-get-libraries-id-hub",
+        "ep-get-libraries-id-collections",
+        "ep-get-libraries-id-categories"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-03-tv-library-tabs.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /recommendations",
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /home",
+        "GET /libraries/{id}/hub",
+        "GET /libraries/{id}/collections",
+        "GET /libraries/{id}/categories"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-library-tabs"
+      }
+    },
+    {
+      "id": "story-56.4",
+      "type": "story",
+      "title": "Series grouping, series and season pages on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.04 — Series grouping, series and season pages on the TVs\n\n> Epic 56 · Phases 1 and 3 · Depends on: 56.03 · Needed by: 56.11\n\n## Why\n\nMost of a Maktaba library is lessons in series and seasons. The phone Players, the web and the\nweb's `/big` view group them; the TVs show loose videos only. Plex's Library tab has a type\npicker (shows, seasons, episodes); Maktaba's has **Show: Videos | Series**.\n\n## Description\n\n### 1. Server: the grid by series\n\n`GET /api/videos` gains `group=series`: the same filters, and one card per series that has a\nmatching video (videos in no series appear as th",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-libraries-id-series",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-04-series-grouping.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /libraries/{id}/series",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "series-grouping"
+      }
+    },
+    {
+      "id": "story-56.5",
+      "type": "story",
+      "title": "Sort, filter, letter jump and Categories on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.05 — Sort, filter, letter jump and Categories on the TVs\n\n> Epic 56 · Phases 1 and 3 · Depends on: 56.03 · Needed by: 56.02 (the view Play follows)\n\n## Why\n\nA TV library today is newest first, with no way to narrow it. Plex's Library tab has sort,\nfilters and a letter jump bar, and its Categories tab browses by metadata. Maktaba's grid\nalready has these filters on the web and the Players (`GET /api/videos`, `GET /api/videos/facets`).\n\n## Description\n\n### 1. Sort\n\nA **Sort** button opens a list: Newest added, Oldest added, Newest published, A–Z, Z–A,\nLongest, Shortest, Most played: t",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-libraries-id-categories",
+        "ep-get-videos-facets"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-05-sort-filter-categories.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /libraries/{id}/categories",
+        "GET /videos/facets"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "sort-filter-categories"
+      }
+    },
+    {
+      "id": "story-56.6",
+      "type": "story",
+      "title": "Automatic collections from YouTube playlists and channels",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.06 — Automatic collections from YouTube playlists and channels\n\n> Epic 56 · Phase 2 · Depends on: — (slot 0193 shared with 56.07, 56.08) · Needed by: 56.08\n\n## Why\n\nMost of a Maktaba library came from YouTube, where its creators already grouped it into\nplaylists and channels. Today the pipeline turns a playlist into a **season** when it matches\none, and into a **topic collection** (`topic_collections`, slot 0094) only when it cuts across\nshows (`find_topics` in `classify/series_detector.py`). Every other playlist, and every channel,\nis lost to browsing. Plex builds collections autom",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "entity-collection_items",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-libraries-id-collections",
+        "ep-get-series"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-06-youtube-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /collections",
+        "POST /collections",
+        "GET /libraries/{id}/collections",
+        "GET /series"
+      ],
+      "db_tables": [
+        "collection_items"
+      ],
+      "metadata": {
+        "slug": "youtube-collections"
+      }
+    },
+    {
+      "id": "story-56.7",
+      "type": "story",
+      "title": "Plex collections, read into Maktaba",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.07 — Plex collections, read into Maktaba\n\n> Epic 56 · Phase 2 · Depends on: 56.06 (slot 0193) · Needed by: 56.08\n\n## Why\n\nA home that used Plex before Maktaba has collections there that people made by hand over\nyears. Maktaba already indexes Plex (`plex_index` fills `plex_items`, rating key ↔ video) and\nwrites its own season and topic collections into Plex (`plex_collection`, `plex_groups`), but\nnever reads Plex's collections back. Moving from Plex should not lose them.\n\n## Description\n\n### 1. The stage\n\n`plex_collections_import`, in `pipeline/src/maktaba_pipeline/extensions/plex/`,",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-extensions"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-07-plex-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /collections",
+        "POST /collections",
+        "GET /extensions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "plex-collections"
+      }
+    },
+    {
+      "id": "story-56.8",
+      "type": "story",
+      "title": "Collections on the TVs, collection mode and Recommended rows",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.08 — Collections on the TVs, collection mode and Recommended rows\n\n> Epic 56 · Phases 2 and 3 · Depends on: 56.03, 56.06 (slot 0193) · Needed by: —\n\n## Why\n\nCollections exist on the server (admin-made manual and smart ones, topic and clip groups, and now\nYouTube and Plex ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,\nlets an admin choose whether they also show in the library grid (collection mode), and lets an\nadmin promote one to a row on Recommended and on Home.\n\n## Description\n\n### 1. The Collections tab (TVs)\n\nA grid of collection cards from `GET",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id",
+        "ep-get-home",
+        "ep-get-libraries-id-hub",
+        "ep-get-libraries-id-collections"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-08-tv-collections.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}",
+        "GET /home",
+        "GET /libraries/{id}/hub",
+        "GET /libraries/{id}/collections"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-collections"
+      }
+    },
+    {
+      "id": "story-56.9",
+      "type": "story",
+      "title": "Smart playlists",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.09 — Smart playlists\n\n> Epic 56 · Phase 1 · Depends on: — (slot 0192) · Needed by: 56.10, 56.12, 56.13\n\n## Why\n\nPlaylists today are manual lists (`user_playlists`, slot 0162). Plex also has smart playlists: a\nsaved filter with a sort and a limit, that keeps itself up to date, per user. Viewers cannot make\ncollections (admin-only, README §11 decision 3), so smart playlists are how a viewer keeps\n\"unwatched lessons of speaker X, newest first\" one click away, on every device.\n\n## Description\n\n### 1. Model (slot 0192, planned)\n\n`user_playlists` gains `kind` (`manual` | `smart`) and `sma",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-me-playlists-id",
+        "ep-patch-me-playlists-id",
+        "ep-delete-me-playlists-id"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-09-smart-playlists.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /me/playlists/{id}",
+        "PATCH /me/playlists/{id}",
+        "DELETE /me/playlists/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "smart-playlists"
+      }
+    },
+    {
+      "id": "story-56.10",
+      "type": "story",
+      "title": "Playlists on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.10 — Playlists on the TVs\n\n> Epic 56 · Phase 3 · Depends on: 56.01, 56.03, 56.09 · Needed by: —\n\n## Why\n\nA user's playlists (manual and smart) exist on the server and the web, and under Profile on the\nphone Players, but cannot be seen or played on a TV. Plex's TV apps show, in a library's\nPlaylists tab, the user's playlists with items from that library, and every playlist in a\ntop-level Playlists place.\n\n## Description\n\n### 1. Where\n\n- **A library's Playlists tab**: `GET /api/me/playlists?library={id}` (new filter: manual lists\n  with at least one item from the library; smart lists ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "entity-libraries",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-me-playlists-id",
+        "ep-patch-me-playlists-id",
+        "ep-delete-me-playlists-id",
+        "ep-get-me-playlists-id-items",
+        "ep-post-me-playlists-id-items"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-10-tv-playlists.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /me/playlists/{id}",
+        "PATCH /me/playlists/{id}",
+        "DELETE /me/playlists/{id}",
+        "GET /me/playlists/{id}/items",
+        "POST /me/playlists/{id}/items"
+      ],
+      "db_tables": [
+        "libraries"
+      ],
+      "metadata": {
+        "slug": "tv-playlists"
+      }
+    },
+    {
+      "id": "story-56.11",
+      "type": "story",
+      "title": "Continue and Up next on the TVs",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.11 — Continue and Up next on the TVs\n\n> Epic 56 · Phase 3 · Depends on: 56.01, 56.02, 56.04 · Needed by: —\n\n## Why\n\nWhen a video ends on a TV, the player stops. The phone Players count down to the next episode\n(`UpNext.swift`, `UpNext.kt`) and the web plays its queue's next video. Plex auto-plays the next\nepisode with a countdown and keeps On Deck and Continue Watching on Recommended and Home.\n\n## Description\n\n### 1. Up next\n\nWhen fewer than 30 s remain (or the end credits chapter starts, when the video has chapters), an\n**Up next** card appears at the bottom end corner: the next qu",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-post-me-play-queues",
+        "ep-get-me-play-queues-current"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-11-tv-continue-up-next.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /me/play-queues",
+        "GET /me/play-queues/current"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-continue-up-next"
+      }
+    },
+    {
+      "id": "story-56.12",
+      "type": "story",
+      "title": "The phone and tablet Players catch up",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.12 — The phone and tablet Players catch up\n\n> Epic 56 · Phase 4 · Depends on: 56.01, 56.08, 56.09 · Needed by: —\n\n## Why\n\nThe Android and Apple Players (phone, tablet, Mac Catalyst / Mac) have a library's Videos and\nSeries tabs, series pages and Up next for episodes, but no Play all, no Shuffle, no collections,\nand playlists only under Profile. What the TV gains should not be missing on the phone.\n\n## Description\n\n### 1. Play and Shuffle\n\nOn a library (above its grid, following its sort and filters), a series, a season, a collection\nand a playlist: **Play** and **Shuffle** buttons, ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-12-players-parity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "players-parity"
+      }
+    },
+    {
+      "id": "story-56.13",
+      "type": "story",
+      "title": "The web on the server queue, with smart playlists",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.13 — The web on the server queue, with smart playlists\n\n> Epic 56 · Phase 4 · Depends on: 56.01, 56.08, 56.09 · Needed by: —\n\n## Why\n\nThe web already has Play all and Shuffle (library grid, collections, playlists) and an Up next,\nbut its queue lives in one tab's `sessionStorage` (`web/src/lib/playQueue.ts`) and Shuffle is one\nrandom page. Its 10-foot view (`/big`, Epic 46) has no Play or Shuffle at all. The web should\nuse the same queue as the apps, so a queue moves between the browser, the phone and the TV.\n\n## Description\n\n### 1. The server queue\n\n`web/src/lib/playQueue.ts` keeps ",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-13-web-parity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web-parity"
+      }
+    },
+    {
+      "id": "story-56.14",
+      "type": "story",
+      "title": "OpenAPI and role tests for the library routes",
+      "epic": "56-tv-library-view",
+      "phase": 5,
+      "content": "# Story 56.14 — OpenAPI and role tests for the library routes\n\n> Epic 56 · Phase 1 (last) · Depends on: 56.01, 56.04, 56.05, 56.08, 56.09 · Needed by: —\n\n## Why\n\n`shared/api/openapi.json` describes `/libraries` and `/collections` only, names the collection\nitems path `/collections/{id}/videos` while the code serves `/items`, and leaves out series,\nseasons, playlists, hubs, home, facets and `/me/*`, which every TV and Player reads. The API must\nalso prove every role rule of this epic with a test (no hidden-UI rules).\n\n## Description\n\n### 1. OpenAPI\n\nDescribe, with request and response schemas a",
+      "tags": [
+        "story",
+        "56-tv-library-view",
+        "phase-5"
+      ],
+      "related": [
+        "epic-56-tv-library-view",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id",
+        "ep-get-collections-id-items",
+        "ep-post-collections-id-items",
+        "ep-post-me-play-queues",
+        "ep-get-me-playlists",
+        "ep-post-me-playlists",
+        "ep-get-home",
+        "ep-get-libraries-summary",
+        "ep-get-libraries-id-hub",
+        "ep-get-libraries-id-series",
+        "ep-get-libraries-id-collections",
+        "ep-get-libraries-id-collections-kind-gid",
+        "ep-get-videos-facets",
+        "ep-post-me-watched",
+        "ep-post-me-favorites",
+        "ep-get-me-pinned-libraries",
+        "ep-put-me-pinned-libraries",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id",
+        "ep-get-series-id-episodes"
+      ],
+      "files": {
+        "story": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}",
+        "GET /collections/{id}/items",
+        "POST /collections/{id}/items",
+        "POST /me/play-queues",
+        "GET /me/playlists",
+        "POST /me/playlists",
+        "GET /home",
+        "GET /libraries/summary",
+        "GET /libraries/{id}/hub",
+        "GET /libraries/{id}/series",
+        "GET /libraries/{id}/collections",
+        "GET /libraries/{id}/collections/{kind}/{gid}",
+        "GET /videos/facets",
+        "POST /me/watched",
+        "POST /me/favorites",
+        "GET /me/pinned-libraries",
+        "PUT /me/pinned-libraries",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}",
+        "GET /series/{id}/episodes"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "openapi-roles"
+      }
+    },
+    {
+      "id": "story-57.1",
+      "type": "story",
+      "title": "Age tiers on the home's content",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.01 — Age tiers on the home's content\n\n> Epic 57 · Phase 1 · Depends on: — · Needed by: 57.03, 57.04, 57.10, 57.11, 57.12\n\n## Why\n\nNothing on the home has a rating column. The ratings that exist are free text in four places\n(Plex's `contentRating`, the guide's `title_snapshot.rating`, a plugin's `content_rating`, and an\nenrichment field nothing writes), and YouTube's age limit is not kept at all. A filter needs one\nnumber per video, decided the same way every time, in Go and in Swift.\n\n## Description\n\n### 1. The scale and the rating tables\n\nTiers 0 (All ages), 9, 13, 16, 18, and null",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-videos-id",
+        "ep-patch-videos-id",
+        "ep-delete-videos-id",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id",
+        "ep-get-libraries-id-youtube-sources",
+        "ep-post-libraries-id-youtube-sources",
+        "ep-patch-libraries-id-youtube-sources-sid",
+        "ep-delete-libraries-id-youtube-sources-sid",
+        "ep-get-extensions",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-01-age-tiers.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /videos/{id}",
+        "PATCH /videos/{id}",
+        "DELETE /videos/{id}",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}",
+        "GET /libraries/{id}/youtube/sources",
+        "POST /libraries/{id}/youtube/sources",
+        "PATCH /libraries/{id}/youtube/sources/{sid}",
+        "DELETE /libraries/{id}/youtube/sources/{sid}",
+        "GET /extensions",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "age-tiers"
+      }
+    },
+    {
+      "id": "story-57.2",
+      "type": "story",
+      "title": "Restricted accounts and guardians",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.02 — Restricted accounts and guardians\n\n> Epic 57 · Phase 1 · Depends on: — · Needed by: 57.03, 57.04, 57.06, 57.07, 57.08, 57.12, 57.13\n\n## Why\n\nThe home has two roles, admin and viewer, and per-library read. A parent needs a third shape: a\nviewer whose content is limited, who cannot change that limit, and whose limit can be managed by\nthe people looking after them, who are not always home admins. Every rule must be enforced by\nthe API and proven by role tests; hiding a button stops nothing.\n\n## Description\n\n### 1. The model\n\n- A **restricted account** is a viewer with a row in `pa",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "entity-audit_log"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-02-restricted-accounts.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "audit_log"
+      ],
+      "metadata": {
+        "slug": "restricted-accounts"
+      }
+    },
+    {
+      "id": "story-57.3",
+      "type": "story",
+      "title": "One content filter on every surface",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.03 — One content filter on every surface\n\n> Epic 57 · Phase 1 · Depends on: 57.01, 57.02 · Needed by: 57.04, 57.05, 57.10, 57.11, 57.13\n\n## Why\n\nThe home has no central access check: about 15 packages each scope by library their own way.\nA parental filter added to each by hand would be missed in one of them, and a child needs only one\ngap. The filter must be one function, used by every package, with a test that fails when a new\ncontent route skips it.\n\n## Description\n\n### 1. `api/internal/parental`\n\n- `Limit(ctx, p) Effective`: from the principal's policy (57.02, cached, invalidated",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "entity-collection_items",
+        "entity-collections",
+        "entity-videos",
+        "ep-get-videos",
+        "ep-get-search",
+        "ep-post-search",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /search",
+        "POST /search",
+        "POST /sessions"
+      ],
+      "db_tables": [
+        "collection_items",
+        "collections",
+        "videos"
+      ],
+      "metadata": {
+        "slug": "server-filter"
+      }
+    },
+    {
+      "id": "story-57.4",
+      "type": "story",
+      "title": "The device's signal: Declared Age Range and the Screen Time rating limit",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.04 — The device's signal: Declared Age Range and the Screen Time rating limit\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.01, 57.02, 57.03 · Needed by: 57.05, 57.11, 57.12\n\n## Why\n\nAn account cannot know which device it is on. If a parent signs into their own account on a\nchild's iPad, or an older sibling's account is used there, the account's policy says nothing.\nApple knows: the guardian may share the child's age range (Declared Age Range, iOS 26+), and\nScreen Time holds the movie and TV limit the parent set for that device (readable without any\nauthorization through `Man",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-04-device-signal.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "device-signal"
+      }
+    },
+    {
+      "id": "story-57.5",
+      "type": "story",
+      "title": "The restricted Player on iPhone and iPad",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.05 — The restricted Player on iPhone and iPad\n\n> Epic 57 · Phase 3 (first) · Depends on: 57.03, 57.04 · Needed by: 57.06, 57.07, 57.11\n\n## Why\n\nThe home already hides what a child may not see (57.03). The Player must make that feel\ndeliberate, not broken. A link to a blocked video should say so and offer Ask a parent, not show\n\"Something went wrong\". Controls a child cannot use, such as YouTube search or admin items,\nshould not show. Everything must work in Arabic, mirrored.\n\n## Description\n\n### 1. Knowing it is restricted\n\n`GET /api/capabilities` gains `parental: {restricted, tier_",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-capabilities"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-05-restricted-player.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "restricted-player"
+      }
+    },
+    {
+      "id": "story-57.6",
+      "type": "story",
+      "title": "Ask a parent, and the parent PIN",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.06 — Ask a parent, and the parent PIN\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.05 · Needed by: 57.07, 57.08\n\n## Why\n\nA limit that is slightly wrong must be easy to fix in the moment: the child sees \"This isn't\navailable\" for something the parent would allow. Apple's Ask to Buy covers purchases and Ask for\nMore Time covers Screen Time, but nothing covers a single item in Maktaba's own library.\nPermissionKit's questions are for communication and significant app updates, not content. So\nMaktaba needs two ways: ask now and a guardian answers from their own phone, or a",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-06-ask-a-parent.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "ask-a-parent"
+      }
+    },
+    {
+      "id": "story-57.7",
+      "type": "story",
+      "title": "Family settings for guardians in the Player",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.07 — Family settings for guardians in the Player\n\n> Epic 57 · Phase 3 · Depends on: 57.02, 57.05, 57.06 · Needed by: 57.08, 57.12\n\n## Why\n\nParents look after children from their own phone. The web's admin pages are out of scope for\nthis epic (README §4), and the Remote app is for admins running the home, while a guardian may be\na viewer. So the Player on iPhone and iPad gets a Family section, shown only to admins and\nguardians (`parental.can_manage` from capabilities). The home still enforces every rule; the\nsection only calls the routes of 57.02 and 57.06.\n\n## Description\n\n### 1. W",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-07-family-settings.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "family-settings"
+      }
+    },
+    {
+      "id": "story-57.8",
+      "type": "story",
+      "title": "Activity for guardians",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.08 — Activity for guardians\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.06, 57.07 · Needed by: 57.13\n\n## Why\n\nScreen Time reports how long each app was used, not what was watched in it. A parent wants to see\nwhat their child watched, what was blocked and what they asked for, without that record leaving\nthe home, and without keeping more than is needed.\n\n## Description\n\n### 1. What is recorded\n\n`parental_events` (slot 0218), only for restricted accounts:\n\n| Kind | When | Subject |\n|---|---|---|\n| `watched` | a watch session reaches 60 s or 20 % (from `watch_sessions`,",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-activity"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-08-activity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /activity"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "activity"
+      }
+    },
+    {
+      "id": "story-57.9",
+      "type": "story",
+      "title": "Screen Time, Family Sharing and the App Store",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.09 — Screen Time, Family Sharing and the App Store\n\n> Epic 57 · Phase 3 · Depends on: 57.04 · Needed by: —\n\n## Why\n\nTime limits, downtime, bedtime, app limits and Always Allowed are Screen Time's, set by a parent\nin Settings for a Family Sharing child. Maktaba builds none of them (README decision 1). Its job\nis to behave well when Screen Time stops it, to be honest in its App Store age rating so Apple's\nage gate works, and to tell parents in Help how to use Apple's controls with Maktaba.\n\n## Description\n\n### 1. Under a shield\n\nWhen downtime starts or an app limit is reached, iOS shi",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-09-screen-time.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "screen-time"
+      }
+    },
+    {
+      "id": "story-57.10",
+      "type": "story",
+      "title": "Live TV under parental controls",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.10 — Live TV under parental controls\n\n> Epic 57 · Phase 1 · Depends on: 57.01, 57.03 · Needed by: 57.05, 57.11, 57.13\n\n## Why\n\nLive TV is where a filter is easiest to miss. Channel streams (`/stream/channel/{id}/…`) and the\nHDHomeRun routes are not signed today, a channel with no library is visible to every signed-in\nuser, and the guide keeps programme ratings (`title_snapshot.rating`) that nothing enforces. Plex\nlive TV (`plex_livetv`, the part of Maktaba that still works with Plex) and the remote live\nsessions (`/api/tv/remote/sessions`) need the same check.\n\n## Description\n\n### 1",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-10-live-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "live-tv"
+      }
+    },
+    {
+      "id": "story-57.11",
+      "type": "story",
+      "title": "Apple TV, where it falls out",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.11 — Apple TV, where it falls out\n\n> Epic 57 · Phase 3 · Depends on: 57.03, 57.04, 57.05, 57.10 · Needed by: —\n\n## Why\n\nThis epic is for iPhone and iPad. Apple TV is included only where it costs little. Two things\ncome for free. First, the home's filter (57.03, 57.10) applies to any client, so a child's account\nsigned in on the Apple TV is already limited. Second, the TV app shares MaktabaKit, where the\nblocked page and the signal code live. Apple's APIs decide the rest: on tvOS 26 the Screen Time\nmovie and TV limit can be read (`ManagedSettingsStore.effectiveMaximum…Rating`, tvOS 2",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-11-apple-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "apple-tv"
+      }
+    },
+    {
+      "id": "story-57.12",
+      "type": "story",
+      "title": "Turning it on in existing homes",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.12 — Turning it on in existing homes\n\n> Epic 57 · Phase 4 · Depends on: 57.01, 57.02, 57.04, 57.07 · Needed by: —\n\n## Why\n\nEvery existing home has users, libraries and devices, and no ratings. If the update started\nenforcing device signals at once, a child's iPad on an adult's account would suddenly show nothing,\nbecause unrated content is hidden by default (README decision 7). If it never enforced them,\nparents would not know the feature exists. The update has to change nothing for anyone until an\nadmin sets it up, while making it easy to set up.\n\n## Description\n\n### 1. What the up",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-12-existing-homes.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "existing-homes"
+      }
+    },
+    {
+      "id": "story-57.13",
+      "type": "story",
+      "title": "OpenAPI, role tests and the bypass rehearsal",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.13 — OpenAPI, role tests and the bypass rehearsal\n\n> Epic 57 · Phase 1 (registry walk, with 57.03), 4 (the rest) · Depends on: 57.01–57.12 · Needed by: —\n\n## Why\n\nA parental filter is only as good as its weakest route. The epic needs three proofs that keep\nholding as the code changes: every route is described, every role rule is tested, and every known\nway around the filter is tried in CI on every change that touches it.\n\n## Description\n\n### 1. OpenAPI\n\nDescribe every route of README §6.6 with request and response schemas and error codes\n(`restricted`, `restricted_admin`, `restricte",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "entity-users",
+        "ep-get-capabilities"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
+      "db_tables": [
+        "users"
+      ],
+      "metadata": {
+        "slug": "openapi-roles-rehearsal"
+      }
+    }
+  ]
+}

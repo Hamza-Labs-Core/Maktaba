@@ -18,12 +18,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from ..audio.chromaprint import AUDIO_FP_VERSION
-from ..classify.books import BOOKS_VERSION
 from ..classify.display_title import DISPLAY_TITLE_VERSION
 from ..classify.production_style import STYLE_VERSION
-from ..classify.series_detector import DETECTOR_VERSION
-from ..classify.tag_check import CLIP_CHECK_VERSION, TAG_CHECK_VERSION
-from ..classify.topic_tags import TAGGER_VERSION
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 if TYPE_CHECKING:
@@ -241,15 +237,12 @@ POOLS: tuple[PoolDef, ...] = (
     # writes next to the videos (subtitle files): small, kept apart from the reads
     PoolDef("nas_write", "NAS writes", "global", 4, 4),
     PoolDef("network_plex", "Plex", "global", 2, 2),
-    PoolDef("network_tv", "dizqueTV", "global", 1, 1),
     PoolDef("network_yt", "YouTube", "global", 1, 1),
     # the language model (Ollama) and the encyclopedia answer one question at a time
     PoolDef("lookup", "Model and encyclopedia", "global", 1, 1),
     # review pages only: they never take a cpu or network slot from the stages that write
     PoolDef("reports", "Review pages", "global", 1, 1),
-    # the channel audit reads dizqueTV for minutes; a repair downloads for hours: neither
-    # takes the slot that writes the channels or lists YouTube
-    PoolDef("audits", "Channel audit", "global", 1, 1),
+    # a repair downloads for hours: it never takes the slot that lists YouTube
     PoolDef("repairs", "Repairs", "global", 1, 1),
     # Epic 47: a library's conversion to MP4 (ffmpeg plus a full decode), one at a time
     PoolDef("convert", "Convert to MP4", "global", 1, 1),
@@ -455,29 +448,8 @@ GRAPH: tuple[StageDef, ...] = (
     # Epic 54: defined by tv.maktaba.thumbnails's manifest
     _fp("thumb_small"),
     # ---- seasons and libraries lane ------------------------------------
-    StageDef(
-        name="detect",
-        label="Place episodes",
-        subject_kinds=("library",),
-        pool="cpu",
-        lane="seasons",
-        lane_order=1,
-        version=DETECTOR_VERSION,
-        edges=(
-            Edge("tag", "seasons_changed"),
-            Edge("rate_style", "seasons_changed"),
-            Edge("tag", "same"),
-            Edge("plan_channels", "catalog"),
-            Edge("review_pages", "same"),
-            Edge("topic_collections", "same"),
-            Edge("promo_links", "same"),
-            Edge("display_title", "same"),
-        ),
-        may_request=("fingerprint", "fp_gate"),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("detect"),
     StageDef(
         name="fp_gate",
         label="Samples to candidates",
@@ -491,60 +463,13 @@ GRAPH: tuple[StageDef, ...] = (
         debounce_max_sec=120,
         hidden=True,
     ),
-    StageDef(
-        name="tag",
-        label="Tag topics",
-        subject_kinds=("season", "library"),
-        pool="cpu",
-        lane="seasons",
-        lane_order=2,
-        version=TAGGER_VERSION,
-        # a new run rewrites the tags, so the model's and the book's corrections are
-        # applied again (from their cached answers) before a clip group or a channel
-        # reads them
-        edges=(
-            Edge("plan_channels", "catalog"),
-            Edge("check_tags", "same"),
-            Edge("check_clips", "library_of"),
-        ),
-        entry_for=("season",),
-        # transcripts arrive one video at a time: a season's are tagged together
-        debounce_sec=300,
-        debounce_max_sec=3600,
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("tag"),
     # ---- what a language model and the book behind a series say about the tags ----
-    StageDef(
-        name="check_tags",
-        label="Check series tags",
-        subject_kinds=("season",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=3,
-        version=TAG_CHECK_VERSION,
-        edges=(Edge("books", "same"), Edge("plan_channels", "catalog")),
-        entry_for=("season",),
-        # the model server defaults to localhost: the home's own (a node would ask
-        # another model, or none) unless the settings name a shared one
-        placement="home",
-        model_rules="tagcheck",
-    ),
-    StageDef(
-        name="check_clips",
-        label="Check clip tags",
-        subject_kinds=("library",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=3,
-        version=CLIP_CHECK_VERSION,
-        edges=(Edge("clip_groups", "same"), Edge("plan_channels", "catalog")),
-        entry_for=("library",),
-        debounce_sec=30,
-        debounce_max_sec=300,
-        # the model server defaults to localhost: the home's own (a node would ask
-        # another model, or none) unless the settings name a shared one
-        placement="home",
-        model_rules="tagcheck",
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("check_tags"),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("check_clips"),
     # ---- the on-air titles the guide and the channel strip show (Story 27.11) ----
     StageDef(
         name="display_title",
@@ -562,17 +487,8 @@ GRAPH: tuple[StageDef, ...] = (
         placement="home",
         model_rules="tagcheck",
     ),
-    StageDef(
-        name="books",
-        label="Books",
-        subject_kinds=("season",),
-        pool="lookup",
-        lane="seasons",
-        lane_order=4,
-        version=BOOKS_VERSION,
-        edges=(Edge("plan_channels", "catalog"),),
-        entry_for=("season",),
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest (net group)
+    _fp("books"),
     # ---- what detection left over: topics, promos, clip groups (section 17) ----
     # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
     _fp("topic_collections"),
@@ -597,24 +513,12 @@ GRAPH: tuple[StageDef, ...] = (
     # Epic 54 wave 1 (story 54.28): defined by tv.maktaba.classify's manifest
     _fp("rate_style"),
     # Its own pool and no edges out: nothing waits for a review page (plan 06-11 section 18).
-    StageDef(
-        name="review_pages",
-        label="Review pages",
-        subject_kinds=("library",),
-        pool="reports",
-        lane="seasons",
-        lane_order=6,
-        version=REVIEW_VERSION,
-        entry_for=("library",),
-        debounce_sec=120,
-        debounce_max_sec=900,
-        placement="home",
-    ),
+    # Epic 54 wave 4 (story 54.31): defined by tv.maktaba.classify's manifest
+    _fp("review_pages"),
     # ---- channels lane -------------------------------------------------
     # Epic 54: defined by tv.maktaba.livetv's manifest
     _fp("plan_channels"),
-    # Core write_channels writes Maktaba Live TV only (a cpu-bound DB write);
-    # the dizqueTV channel export is the dizquetv extension's own stage.
+    # Core write_channels writes Maktaba Live TV (a cpu-bound DB write).
     # Epic 54: defined by tv.maktaba.livetv's manifest
     _fp("write_channels"),
     # Epic 33: TV changes. The API's change controller enqueues them (payload
@@ -645,15 +549,18 @@ GRAPH: tuple[StageDef, ...] = (
         edges=(Edge("probe", "videos_changed", when="always"),),
     ),
     # the WAV a backend that reads a file needs (openai-api): only transcribe asks for it
-    # (may_request), and the extract handler queues transcribe again once it is written.
-    # Nothing else leads here: a streaming backend never gets an extract job
-    _legacy(
-        "extract",
-        "Extract audio",
-        ("video",),
-        "nas_read",
-        1,
-        edges=(Edge("transcribe", "same", legacy=True),),
+    # (may_request), and extract asks for transcribe again once it is written. Nothing else
+    # leads here: a streaming backend never gets an extract job. Epic 54 story 54.36 §2: on
+    # the engine; its transcribe is a request (it carries the payload transcribe reads)
+    StageDef(
+        name="extract",
+        label="Extract audio",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="media",
+        lane_order=1,
+        version=1,
+        may_request=("transcribe",),
     ),
     # plan 03-10: transcription on the engine. The file is decoded straight off the share
     # and batched across the worker's jobs (content_hash's edge reaches it). When the
@@ -808,6 +715,11 @@ MONOTONE_STAGES: frozenset[str] = frozenset(
         "style_sample",
         # Epic 47: each job takes at least one wanted item off the list before it asks
         # for the next job, so the self-request ends when the list is empty
+        # story 54.36 §2: transcribe asks for extract only while the video has no WAV and its
+        # job carries no extract payload; extract's request always carries that payload, so
+        # each asks the other at most once
+        "transcribe",
+        "extract",
         "youtube_fetch",
         "youtube_backfill",
     }  # fmt: skip

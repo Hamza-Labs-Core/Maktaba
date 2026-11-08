@@ -8,7 +8,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
-// Story 51.07 §1 through the components routes: turning ext.plex, ext.dizquetv or the
+// Story 51.07 §1 through the components routes: turning ext.plex, ext.cloudflare_stream or the
 // HDHomeRun on or off by PUT, apply or a bundle writes the older switch
 // (extensions.enabled, hdhr_device.enabled) in the same transaction as the desired row,
 // so the pipeline stops answering extension_disabled at once, not at the next start.
@@ -17,7 +17,7 @@ import (
 func mirrorFixture(t *testing.T) *fixture {
 	t.Helper()
 	f, _ := pgFixture(t)
-	for _, name := range []string{"plex", "dizquetv", "cloudflare_stream"} {
+	for _, name := range []string{"plex", "cloudflare_stream"} {
 		if _, err := f.db.Exec(`INSERT INTO extensions (name, enabled, settings, updated_at)
 			VALUES ($1, false, '{}'::jsonb, now()) ON CONFLICT (name) DO UPDATE SET enabled = false`, name); err != nil {
 			t.Fatal(err)
@@ -29,7 +29,7 @@ func mirrorFixture(t *testing.T) *fixture {
 	}
 	if _, err := f.st.SetDesiredBatch(context.Background(), func(map[string]store.Desired, int64) (store.BatchPlan, error) {
 		var p store.BatchPlan
-		for _, id := range []string{"ext.plex", "ext.dizquetv", "livetv.hdhomerun"} {
+		for _, id := range []string{"ext.plex", "ext.cloudflare_stream", "livetv.hdhomerun"} {
 			p.Writes = append(p.Writes, store.BatchWrite{Desired: store.Desired{ID: id, Want: components.WantInstalled},
 				Audit: store.Audit{By: store.SeedBy, ActorSource: "seed", Action: "component.seed"}})
 		}
@@ -73,9 +73,9 @@ func TestPGPutWritesTheMirror(t *testing.T) {
 		t.Fatal("PUT ext.plex installed left extensions.enabled true")
 	}
 	// a hold leaves the mirror: the extension is still enabled, only stopped now
-	decode(t, f.do("PUT", "/api/components/ext.dizquetv", `{"want":"enabled"}`, admin()), 200, nil)
-	decode(t, f.do("POST", "/api/components/ext.dizquetv/stop", "", admin()), 200, nil)
-	if !f.extEnabled(t, "dizquetv") {
+	decode(t, f.do("PUT", "/api/components/ext.cloudflare_stream", `{"want":"enabled"}`, admin()), 200, nil)
+	decode(t, f.do("POST", "/api/components/ext.cloudflare_stream/stop", "", admin()), 200, nil)
+	if !f.extEnabled(t, "cloudflare_stream") {
 		t.Fatal("a hold turned extensions.enabled off")
 	}
 }
@@ -83,9 +83,9 @@ func TestPGPutWritesTheMirror(t *testing.T) {
 func TestPGApplyWritesTheMirror(t *testing.T) {
 	f := mirrorFixture(t)
 	decode(t, f.do("POST", "/api/components/apply", `{"changes":[{"id":"ext.plex","want":"enabled"},
-		{"id":"ext.dizquetv","want":"enabled"},{"id":"livetv.hdhomerun","want":"enabled"}]}`, admin()), 200, nil)
-	if !f.extEnabled(t, "plex") || !f.extEnabled(t, "dizquetv") || !f.tunerEnabled(t) {
-		t.Fatalf("apply: plex %v, dizquetv %v, tuner %v", f.extEnabled(t, "plex"), f.extEnabled(t, "dizquetv"), f.tunerEnabled(t))
+		{"id":"ext.cloudflare_stream","want":"enabled"},{"id":"livetv.hdhomerun","want":"enabled"}]}`, admin()), 200, nil)
+	if !f.extEnabled(t, "plex") || !f.extEnabled(t, "cloudflare_stream") || !f.tunerEnabled(t) {
+		t.Fatalf("apply: plex %v, cloudflare_stream %v, tuner %v", f.extEnabled(t, "plex"), f.extEnabled(t, "cloudflare_stream"), f.tunerEnabled(t))
 	}
 }
 

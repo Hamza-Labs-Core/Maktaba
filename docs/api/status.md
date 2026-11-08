@@ -52,9 +52,15 @@ of the catalog is in no group):
 | `processing` | `core.pipeline`, `transcription` | `new_media`, `transcripts`, `thumbnails` | `processing_down` (admins only) |
 | `search` | `search.semantic` | `semantic_search` | `search_down` |
 | `logs` | `logs.index` (the log index, story 53.09) | `log_search` | none |
+| `plugin_runners` | `core.plugin_runners` (Maktaba's own plugin runners, Epic 54), admin-only | none | none |
 
 `overall` is `down` when `database` or `api` is restarting or down, else `degraded` when any
-group is not `ok` or `off`, else `ok`. `banner` is the first group in the table's order that
+group other than an admin-only one is not `ok` or `off`, else `ok`. An admin-only group
+changes neither `overall`, `features_down` nor `banner`: `plugin_runners` is `down` when a
+runner failed, and its stages set to run as plugins then run in the worker, outside their
+sandbox; no viewer feature stops. Only an admin's strip shows it (web, Apple and Android), and
+only while it is `down`, not while a runner restarts. System health's Plugin runners line names
+the runner, the machine and those stages, for every machine. `banner` is the first group in the table's order that
 is degraded, restarting or down and has a banner key.
 
 Each change is a `status_group_changed` line in the supervisor's log (`group`, `from`, `to`).

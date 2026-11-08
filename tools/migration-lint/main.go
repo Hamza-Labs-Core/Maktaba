@@ -20,6 +20,8 @@
 //     migrations defining maktaba_min_node_schema() agree (story 35.5 AC5).
 //  7. Permanent gaps:  every unused slot below the highest one is listed under
 //     MANIFEST.md's "Permanent gaps", and every listed one is unused (gaps.go).
+//  8. Goose annotations: Up, Down and StatementBegin/End come in the order goose
+//     parses (goose.go).
 //
 // Exit code 0 = clean; non-zero = at least one violation. The output
 // is human-readable and lists every violation found (does not bail on
@@ -101,6 +103,11 @@ func main() {
 		dialect := "postgres"
 		if strings.HasSuffix(f, ".sqlite.sql") {
 			dialect = "sqlite"
+		}
+
+		for _, v := range gooseCheck(f, body) {
+			violations++
+			report(v)
 		}
 
 		for _, v := range noTxCheck(f, body) {

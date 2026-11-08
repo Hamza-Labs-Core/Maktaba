@@ -229,6 +229,102 @@ jobs:
           MAKTABA_PLUGINS_SANDBOX_RUN="$(cygpath -w "$RUNNER_TEMP/aclaunch-e2e.exe")" \
             go test -count=1 -v -run '^TestThePluginHostOnWindowsThroughTheRelay$' ./internal/supervisor/
 
+      # 54.23 on Windows: the runner launcher's package on the OS itself, real profiles and
+      # ACLs on temp folders. A grant or revoke lands only on the folder that was checked:
+      # one swapped for a junction to a decoy between the check and the change (a test hook)
+      # is refused, the decoy gets no entry and the start fails closed. Verbose, so the log
+      # shows each test ran
+      - name: The runner launcher's grants (54.23)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        run: go test -count=1 -v ./internal/appcontainer/...
+
+      # 54.23 on Windows: a runner's library on an SMB share, through its launcher's file
+      # broker. Two shares are made on local folders (reached as \\localhost\<name>); a
+      # runner group started through the launcher reads the library and writes a subtitle
+      # there from inside its AppContainer, and reaches nothing else (the other share, a
+      # traversal, a junction out, an 8.3 alias, another name). Verbose, so the log shows it
+      # ran, with the read throughput through the broker's handle and outside the sandbox
+      - name: SMB shares for the runner's file broker (54.23)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $lib = Join-Path $env:RUNNER_TEMP 'smb-library'
+          $other = Join-Path $env:RUNNER_TEMP 'smb-other'
+          New-Item -ItemType Directory -Force -Path $lib, $other | Out-Null
+          New-SmbShare -Name 'mklibrary' -Path $lib -FullAccess $env:USERNAME | Out-Null
+          New-SmbShare -Name 'mkother' -Path $other -FullAccess $env:USERNAME | Out-Null
+          Get-ChildItem '\\localhost\mklibrary' | Out-Null
+          "MAKTABA_BROKER_SHARE=\\localhost\mklibrary" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_SHARE_DIR=$lib" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_OTHER_SHARE=\\localhost\mkother" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_OTHER_DIR=$other" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      # the Windows app's ffmpeg (tools/release/win-app/pins.env), for the runner's tools
+      # on a share file
+      - name: ffmpeg for the runner's tools on a share (54.23)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $url = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_URL=(.*)$').Matches[0].Groups[1].Value
+          $sha = (Select-String -Path tools/release/win-app/pins.env -Pattern '^FFMPEG_SHA256=(.*)$').Matches[0].Groups[1].Value
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          if ((Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower() -ne $sha) { throw "ffmpeg.zip: sha256 mismatch" }
+          $dest = Join-Path $env:RUNNER_TEMP 'ffmpeg'
+          Expand-Archive -Path $zip -DestinationPath $dest
+          Remove-Item $zip
+          $bin = (Get-ChildItem -Path $dest -Recurse -Filter ffmpeg.exe | Select-Object -First 1).DirectoryName
+          & (Join-Path $bin 'ffmpeg.exe') -hide_banner -version | Select-Object -First 1
+          "MAKTABA_BROKER_FFMPEG=$(Join-Path $bin 'ffmpeg.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MAKTABA_BROKER_FFPROBE=$(Join-Path $bin 'ffprobe.exe')" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: A runner's library on a share, through its broker (54.23)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_BROKER_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          MAKTABA_BROKER_PYTHON="$(cygpath -w "$(command -v python)")" \
+            go test -count=1 -v -run '^(TestARunnersLibraryOnAShareThroughItsBroker|TestARunnersToolsReadAShareFileThroughItsBroker|TestARunnersBrokerServesOnlyItsShareFolders|TestTheRunnerLauncherLeavesSharesAlone)$' ./internal/appcontainer/
+
+      # 54.23 on Windows: a stage's captured tool start (asyncio, stdout and stderr PIPE)
+      # inside a runner's AppContainer: asyncio's own named pipes are refused there (the
+      # control); the runner's anonymous pipes (winproc) answer the output, the exit code and
+      # a cancel. Verbose, so the log shows it ran
+      - name: A runner's captured tool start in its AppContainer (54.23)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_BROKER_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          MAKTABA_BROKER_PYTHON="$(cygpath -w "$(command -v python)")" \
+            go test -count=1 -v -run '^TestARunnersCapturedToolStartRunsInItsAppContainer$' ./internal/appcontainer/
+
+      # 54.23 on Windows: a first-party runner group started as the supervisor starts one,
+      # through the launcher's runner-sandbox-run (CI's aclaunch, the same code), in its own
+      # AppContainer and Job Object: from inside, only its granted folders, no canary on
+      # loopback or the LAN address without net, no process, no other group's pipe nor the
+      # worker's; its API pipe and the broker's pairing work; a net group reaches the
+      # internet and still no canary. The same probes outside the sandbox are the control
+      - name: A first-party runner in its AppContainer (54.23)
+        if: runner.os == 'Windows'
+        working-directory: cmd/maktaba-server
+        shell: bash
+        env:
+          MAKTABA_RUNNER_E2E_REQUIRE: '1'
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/aclaunch-runner.exe" ./internal/appcontainer/aclaunch
+          MAKTABA_RUNNER_E2E_PYTHON="$(cygpath -w "$(command -v python)")" \
+          MAKTABA_PLUGINS_SANDBOX_RUN="$(cygpath -w "$RUNNER_TEMP/aclaunch-runner.exe")" \
+            go test -count=1 -v -run '^(TestARunnerOnWindowsInItsAppContainer|TestARunnersPipesOnWindows)$' ./internal/supervisor/
+
       # 54.03 §4 (#710): a guest can open no socket on Windows either (the host links no
       # wasi:sockets: the audit refuses it, and the linker without the audit)
       - name: A guest can open no socket (Windows)

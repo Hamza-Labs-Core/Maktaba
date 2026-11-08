@@ -23,7 +23,7 @@ public enum APIError: LocalizedError, Equatable {
 /// The REST client for one home: base URL, Bearer tokens, one refresh on a 401.
 public actor APIClient {
     public nonisolated let home: URL
-    private let tokens: TokenStore
+    let tokens: TokenStore
     let session: URLSession
     private var refreshing: Task<String, Error>?
     /// How a request waits between tries while the relay says the home is reconnecting (tests
@@ -528,7 +528,7 @@ public actor APIClient {
     }
 
     /// One refresh at a time: requests that 401 together wait for the same one.
-    private func refreshOnce() async throws -> String {
+    func refreshOnce() async throws -> String {
         if let refreshing { return try await refreshing.value }
         let task = Task<String, Error> {
             guard let refresh = tokens.refresh else { throw APIError.signedOut }

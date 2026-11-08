@@ -21,7 +21,7 @@ from maktaba_pipeline.classify.series_detector import DetectorConfig
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, bound_graph, validate
 from maktaba_pipeline.engine.media import reset_runner
-from maktaba_pipeline.engine.stages.tag import _episode_tags, library_tags
+from maktaba_pipeline.engine.stages._tag import _episode_tags, library_tags
 from maktaba_pipeline.engine.watchers import release
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.schedule.plan_inputs import load_inputs

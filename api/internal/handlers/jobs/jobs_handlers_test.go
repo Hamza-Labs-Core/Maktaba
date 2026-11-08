@@ -198,11 +198,13 @@ func TestRetry(t *testing.T) {
 func TestStats(t *testing.T) {
 	rules := []*queuestest.Rule{
 		{Match: "from job_stages", Cols: []string{"stage", "ext", "enabled"}, Rows: [][]driver.Value{
-			{"probe", nil, true}, {"transcribe", nil, true}, {"plex_collection", "plex", false}, {"thumb_hash", nil, true}}},
+			{"probe", nil, true}, {"transcribe", nil, true}, {"plex_livetv", "plex", false}, {"thumb_hash", nil, true},
+			// a stage a release removed: its row stays until the cleanup migration
+			{"plex_groups", "plex", true}}},
 		{Match: "group by stage, state", Cols: []string{"stage", "state", "n"}, Rows: [][]driver.Value{
 			{"probe", "pending", int64(30)}, {"probe", "running", int64(2)}, {"probe", "claimed", int64(1)},
 			{"probe", "failed", int64(4)}, {"transcribe", "paused", int64(1)}, {"transcribe", "pending", int64(5)},
-			{"legacy_only", "pending", int64(1)}}},
+			{"legacy_only", "pending", int64(1)}, {"plex_groups", "pending", int64(9)}, {"plex_groups", "claimed", int64(1)}}},
 		{Match: "where state = 'done' and finished_at > $1 group by stage", Cols: []string{"stage", "n"}, Rows: [][]driver.Value{{"probe", int64(200)}}},
 		{Match: "filter (where state = 'pending' and (not_before", Cols: []string{"stage", "rate", "ready"}, Rows: [][]driver.Value{
 			{"probe", int64(20), int64(20)},      // 2/min -> 20 ready = 600 s
@@ -222,12 +224,12 @@ func TestStats(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &s); err != nil {
 		t.Fatal(err)
 	}
-	for _, bogus := range []string{"audio_extract", "subtitle", "embed", "rehash"} {
+	for _, bogus := range []string{"audio_extract", "subtitle", "embed", "rehash", "plex_groups"} {
 		if _, ok := s.ByStage[bogus]; ok {
 			t.Errorf("stage %q does not exist and must not be listed", bogus)
 		}
 	}
-	for _, real := range []string{"probe", "transcribe", "plex_collection", "thumb_hash", "legacy_only"} {
+	for _, real := range []string{"probe", "transcribe", "plex_livetv", "thumb_hash", "legacy_only"} {
 		if _, ok := s.ByStage[real]; !ok {
 			t.Errorf("stage %q missing", real)
 		}
@@ -255,7 +257,7 @@ func TestStats(t *testing.T) {
 	if tr := s.ByStage["transcribe"]; !tr.NoWorker || tr.ServedWorkers != 0 {
 		t.Errorf("transcribe must be flagged no_worker: %+v", tr)
 	}
-	if px := s.ByStage["plex_collection"]; px.NoWorker || px.Extension == nil || *px.Extension != "plex" {
+	if px := s.ByStage["plex_livetv"]; px.NoWorker || px.Extension == nil || *px.Extension != "plex" {
 		t.Errorf("disabled extension stage = %+v", px)
 	}
 }

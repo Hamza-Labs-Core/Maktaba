@@ -30,14 +30,20 @@ const (
 	MaxRaw   = 512 << 20
 )
 
-// Table is one binary's symbols (one architecture of its dSYM).
+// Table is one binary's symbols (one architecture of its dSYM), an Android release's R8
+// mapping (Kind KindR8, r8.go), or an Android app's native library (Kind KindELF, elf.go).
 type Table struct {
-	V        int    `json:"v"`
-	DebugID  string `json:"debug_id"`  // the binary's UUID, NormalizeID's form
+	V int `json:"v"`
+	// Kind is "" for a dSYM's table, KindR8 for a mapping's, KindELF for a native library's
+	Kind     string `json:"kind,omitempty"`
+	DebugID  string `json:"debug_id"`  // the binary's UUID, NormalizeID's form (a mapping's: R8ID; a library's: ELFID)
 	Arch     string `json:"arch"`      // arm64, x86_64, …
 	CodeFile string `json:"code_file"` // the binary's name ("Maktaba Remote")
-	// TextAddr is the __TEXT segment's address in the dSYM: a frame's offset is from it
+	// TextAddr is the __TEXT segment's address in the dSYM: a frame's offset is from it (0 for
+	// a library: a native frame's pc is in its own address space)
 	TextAddr uint64 `json:"text_addr"`
+	// CodeID is a library's whole GNU build id, hex (Kind KindELF)
+	CodeID string `json:"code_id,omitempty"`
 	// Names are the functions' names; Funcs are [low, high, name index], sorted by low
 	Names []string    `json:"names"`
 	Funcs [][3]uint64 `json:"funcs"`
@@ -45,6 +51,12 @@ type Table struct {
 	// address, where a file index of 0 ends a sequence (no line after it)
 	Files []string    `json:"files"`
 	Lines [][3]uint64 `json:"lines"`
+
+	// Release is a mapping's app version (its DebugID is R8ID(CodeFile, Release)); Classes
+	// its classes
+	Release string    `json:"release,omitempty"`
+	Classes []R8Class `json:"classes,omitempty"`
+	r8      *r8Index
 }
 
 // NormalizeID is a UUID as tables are keyed: lower case, no dashes or braces.
@@ -151,12 +163,32 @@ func Decode(b []byte) (*Table, error) {
 	if !validID(t.DebugID) {
 		return nil, fmt.Errorf("%w: debug_id is not a UUID", ErrInvalid)
 	}
-	if len(t.Funcs) == 0 {
-		return nil, fmt.Errorf("%w: no functions", ErrInvalid)
-	}
 	t.CodeFile = clip(path.Base(t.CodeFile), 200)
 	t.Arch = clip(t.Arch, 32)
-	t.sortRows()
+	switch t.Kind {
+	case "":
+		if len(t.Funcs) == 0 {
+			return nil, fmt.Errorf("%w: no functions", ErrInvalid)
+		}
+		t.Classes, t.Release, t.CodeID = nil, "", ""
+		t.sortRows()
+	case KindR8:
+		// a mapping is found by its app and version: its key must be theirs
+		if len(t.Classes) == 0 {
+			return nil, fmt.Errorf("%w: no classes", ErrInvalid)
+		}
+		if t.Release == "" || t.DebugID != R8ID(t.CodeFile, t.Release) {
+			return nil, fmt.Errorf("%w: a mapping's debug_id is not its app's and release's", ErrInvalid)
+		}
+		t.Funcs, t.Lines, t.CodeID = nil, nil, ""
+		t.indexR8()
+	case KindELF:
+		if err := t.checkELF(); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, fmt.Errorf("%w: kind %q", ErrInvalid, t.Kind)
+	}
 	return &t, nil
 }
 

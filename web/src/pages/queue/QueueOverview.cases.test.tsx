@@ -63,8 +63,6 @@ const insights = {
     videos_with_length: 300,
     series: 5,
     seasons: 9,
-    plex_collections: 4,
-    dizquetv_shows: 1,
     channels: 3,
     style_pinned: 0,
     youtube_videos: 0,
@@ -522,7 +520,7 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
     const base = failureGroupsFixture[0];
     const groups = [
       base,
-      { ...base, stage: "plex_collection", cause: "plex_review", action: "apply", label: "Ap" },
+      { ...base, stage: "plex_livetv", cause: "plex_review", action: "apply", label: "Ap" },
       { ...base, stage: "link", cause: "no_plex", action: "open_settings", label: "Os" },
       { ...base, stage: "probe", cause: "no_worker", action: "show_workers", label: "Sw" },
     ];
@@ -558,7 +556,7 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
     };
     post.mockResolvedValue({ enqueued: 3 });
     await userEvent.click(screen.getByRole("button", { name: "Apply" }));
-    expect(post).toHaveBeenCalledWith("/api/queues/plex_collection/apply", { all: true });
+    expect(post).toHaveBeenCalledWith("/api/queues/plex_livetv/apply", { all: true });
     await waitFor(() => {
       expect(calls("/api/queues").length).toBeGreaterThan(before.q);
       expect(calls("/api/issues").length).toBeGreaterThan(before.i);

@@ -122,15 +122,14 @@ export function ChannelEditor({
     rulesApi
       .list()
       .then((r) => {
-        const field = (sec: string) =>
-          r.sections.find((s) => s.key === sec)?.fields.find((f) => f.name === "live")?.value;
-        const own = Array.isArray(field("tv")) ? (field("tv") as LiveRow[]) : [];
-        const dz = Array.isArray(field("dizquetv")) ? (field("dizquetv") as LiveRow[]) : [];
-        // an empty tv.live means "the dizqueTV export's list": editing starts from it,
-        // so every other channel keeps its broadcasts
+        const field = r.sections.find((s) => s.key === "tv")?.fields.find((f) => f.name === "live");
+        const rows = Array.isArray(field?.value) ? (field.value as LiveRow[]) : [];
+        // with no list of its own, tv.live shows the old dizqueTV settings' list (which
+        // Maktaba TV airs): editing starts from it, so every other channel keeps its
+        // broadcasts
         setLive({
-          rows: own.length ? own : dz,
-          inherited: !own.length && dz.length > 0,
+          rows,
+          inherited: Boolean(field?.inherited) && rows.length > 0,
           dirty: false,
           loaded: true,
         });

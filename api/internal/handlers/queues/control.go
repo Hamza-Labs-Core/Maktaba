@@ -198,7 +198,7 @@ const maxBulkRetry = 20000
 
 // failedForRetrySQL: latest-failed rows of a stage whose coded cause
 // equals $2, plus uncoded legacy rows (filtered in Go by legacyCause).
-const failedForRetrySQL = latestFailedCTE + `
+var failedForRetrySQL = latestFailedCTE + `
 SELECT id, subject_kind, subject_id::text, error_cause, error
   FROM latest
  WHERE state = 'failed' AND (error_cause = $2::text OR error_cause IS NULL)

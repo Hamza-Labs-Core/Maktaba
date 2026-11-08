@@ -5,15 +5,27 @@ its extensions registered and the runner resolves them from the extensions it di
 from __future__ import annotations
 
 from collections.abc import Iterator
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
-from maktaba_pipeline.extensions.dizquetv.exporter import EXPORT_NAME, export_channel
+from maktaba_pipeline import extensions
 from maktaba_pipeline.schedule import plan_inputs
+from maktaba_pipeline.schedule.channel_planner import ChannelSuggestion, PlanResult
+
+EXPORT_NAME = "test_export"
+
+
+def export_channel(ch: ChannelSuggestion, plan: PlanResult) -> dict[str, Any]:
+    """A stand-in exporter (no built-in extension registers one)."""
+    return {}
 
 
 @pytest.fixture(autouse=True)
-def _clean() -> Iterator[None]:
+def _clean(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    ext = SimpleNamespace(plan_exporters=lambda: {EXPORT_NAME: export_channel})
+    monkeypatch.setattr(extensions, "discover", lambda: [ext])
     plan_inputs.reset_plan_exporters()
     yield
     plan_inputs.reset_plan_exporters()

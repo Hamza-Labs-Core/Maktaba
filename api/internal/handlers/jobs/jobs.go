@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/paginate"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // Job is the over-the-wire shape; minimal — handlers don't return rich
@@ -162,6 +163,8 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		conds = append(conds, "library_id IN ("+strings.Join(ph, ",")+")")
 	}
+	// the jobs of a stage a release removed stay until the cleanup migration: not listed
+	conds = append(conds, components.NotRetiredStageSQL("stage"))
 	if v := r.URL.Query().Get("stage"); v != "" {
 		conds = append(conds, "stage = $"+strconv.Itoa(len(args)+1))
 		args = append(args, v)
@@ -581,6 +584,9 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&stage, &state, &cnt); err != nil {
 			continue
 		}
+		if components.RetiredStage(stage) {
+			continue
+		}
 		st := resp.ByStage[stage]
 		if st.ServedHosts == nil {
 			st.ServedHosts = []string{}
@@ -674,6 +680,13 @@ func (h *Handler) Stats(w http.ResponseWriter, r *http.Request) {
 			}
 			wi.CurrentJobID = &jobID
 			resp.Workers = append(resp.Workers, wi)
+		}
+	}
+
+	// a stage a release removed keeps its rows until the cleanup migration: not reported
+	for stage := range resp.ByStage {
+		if components.RetiredStage(stage) {
+			delete(resp.ByStage, stage)
 		}
 	}
 

@@ -46,12 +46,10 @@ the Quran channel. A channel's week is laid out the way a TV channel is:
 The result maps onto Epic 27 directly: each channel becomes a ``schedule``
 mode channel (:func:`maktaba_channel_definition`, the slot-0081 shape the Go
 validator accepts and :class:`~maktaba_pipeline.channels.planner.schedule.
-SchedulePlanner` reads), and onto dizqueTV's time-slot tool
-(:func:`dizquetv_time_slots`; each queue becomes one dizqueTV custom show
-played in order, so a slot runs on through the years). :func:`simulate` lays
-days out the way both schedulers do (next episodes while they fit, filler
-between and to the boundary) and :func:`slot_timeline` shows what a slot airs
-over the coming months.
+SchedulePlanner` reads; each queue is played in order, so a slot runs on through
+the years). :func:`simulate` lays days out the way the scheduler does (next
+episodes while they fit, filler between and to the boundary) and
+:func:`slot_timeline` shows what a slot airs over the coming months.
 
 Every threshold lives in :class:`PlannerConfig`; every suggestion carries
 ``reasons``.
@@ -69,7 +67,9 @@ from datetime import date
 from functools import partial
 from pathlib import Path
 from statistics import median
-from typing import Any
+from typing import Any, ClassVar
+
+from .. import settings
 
 __all__ = [
     "DAY_MINUTES",
@@ -94,7 +94,6 @@ __all__ = [
     "SeriesCandidate",
     "Slot",
     "ThemeSpec",
-    "dizquetv_time_slots",
     "fmt_hhmm",
     "group_series",
     "maktaba_channel_definition",
@@ -435,6 +434,9 @@ DEFAULT_RAMADAN_DAYPARTS: tuple[Daypart, ...] = (
 class PlannerConfig:
     """Every threshold the planner uses. Durations in minutes unless named ``_s``."""
 
+    #: 2.0: the dizqueTV export's settings (``RETIRED_V1``) went with the export
+    SCHEMA_VERSION: ClassVar[tuple[int, int]] = (2, 0)
+
     themes: tuple[ThemeSpec, ...] = DEFAULT_THEMES
     dayparts: tuple[Daypart, ...] = DEFAULT_DAYPARTS
     ramadan_dayparts: tuple[Daypart, ...] = DEFAULT_RAMADAN_DAYPARTS
@@ -654,29 +656,18 @@ class PlannerConfig:
     rank_style_bonus: float = 0.1  # … for a produced or cinematic production style
     format_min_score: float = 0.5
     timezone: str | None = None  # IANA name written into mode_config; None = server local
-    # dizqueTV schedule knobs
-    #: a slot started later than this is all filler: a day, never (programmes all day)
-    dz_lateness_ms: int = 24 * 60 * 60_000
+    # schedule knobs (the dz_ names are kept: they are the stored settings' names)
     #: the most filler a slot ends on: past it the next episode plays though it runs past
     #: the slot's end (0: never; a nonstop channel's filler to the hour is its design)
     slot_max_filler_minutes: int = 20
-    dz_max_days: int = 365
-    dz_pad_ms: int = 1
     dz_filler_cooldown_ms: int = 30 * 60_000
-    #: how often dizqueTV picks each of a channel's filler lists (relative weights)
+    #: how often each of a channel's filler lists is picked (relative weights)
     dz_weight_topic: int = 300
     dz_weight_promos: int = 150
     dz_weight_breaks: int = 200
     dz_weight_general: int = 100
-    #: the guide shows what runs: programmes from this long are listed (shorter ones are
-    #: filler), and filler time from this long gets its own entry (dz_guide_filler_title)
-    #: instead of being added to the programme before it
-    dz_guide_min_program_s: int = 60
-    dz_guide_max_padding_s: int = 120
-    dz_guide_filler_title: str = "فواصل"
-    #: a dizqueTV filler list holds at most this many clips (the first of the pool, which
-    #: is in priority order): a pool can hold 75,000 clips, more than dizqueTV accepts in
-    #: one request (50 MB) and far more than a filler list needs
+    #: a filler list holds at most this many clips (the first of the pool, which is in
+    #: priority order): a pool can hold 75,000 clips, far more than a filler list needs
     dz_filler_max_items: int = 2000
     #: a folder of channel logos (the guide's channel picture): <channel key>.png, else
     #: default.png; "" = no logos
@@ -690,14 +681,39 @@ class PlannerConfig:
     dz_watermark_position: str = "top-right"
     dz_watermark_width: float = 12.0  # % of the picture's width
     dz_watermark_margin: float = 2.0  # % from the edges
-    #: where the logos are served from, as the TVs and Plex reach them:
-    #: "" = uploaded to dizqueTV and served by it at dz_public_url;
-    #: a URL (Cloudflare R2/Pages, any web host) = the files are there under their own
-    #: names (<url>/quran.png), nothing is uploaded and each is checked before it is used
-    dz_art_url: str = ""
-    #: dizqueTV's address on the network ("http://192.168.1.20:8002"), for the uploaded
-    #: logos' links; "" = the address the export talks to (localhost: this PC only)
-    dz_public_url: str = ""
+
+
+#: the planner rules 1.x had for the dizqueTV export, gone with it in 2.0
+RETIRED_V1 = (
+    "dz_lateness_ms",
+    "dz_max_days",
+    "dz_pad_ms",
+    "dz_guide_min_program_s",
+    "dz_guide_max_padding_s",
+    "dz_guide_filler_title",
+    "dz_art_url",
+    "dz_public_url",
+)
+
+
+def migrate_v1_to_v2(value: dict[str, Any]) -> dict[str, Any]:
+    """Planner rules stored at 1.x, without the dizqueTV export's settings (the stored
+    value stays under the version's ``previous`` for a rollback). 1.x read a stored value
+    field by field and skipped one it could not use (an unknown name, a wrong shape); 2.0
+    checks the moved value whole, so what 1.x skipped is left out here, never refused."""
+    out: dict[str, Any] = {}
+    for name, v in value.items():
+        if name in RETIRED_V1:
+            continue
+        try:
+            settings.apply(PlannerConfig, {name: v})
+        except settings.SettingsError:
+            continue
+        out[name] = v
+    return out
+
+
+settings.register_migration(PlannerConfig, 1, migrate_v1_to_v2)
 
 
 # --------------------------------------------------------------------------- outputs
@@ -2309,7 +2325,7 @@ def suggest_channels(
             else sl
             for sl in r_slots
         ]
-        # one list of every promo of the channel's shows (dizqueTV fills per channel)
+        # one list of every promo of the channel's shows (filled per channel)
         shows_keys = {s.key for s in shows}
         ch_promos = [f for f in promos if f.promo_of in shows_keys]
         promo_key: str | None = None
@@ -3114,64 +3130,4 @@ def maktaba_channel_definition(channel: ChannelSuggestion, plan: PlanResult) -> 
         "transition": "cut",
         "enabled": True,
         "sort_order": channel.number,
-    }
-
-
-# dizqueTV's weekly period starts at the epoch's weekday, a Thursday
-_DZ_WEEK_INDEX = {"thu": 0, "fri": 1, "sat": 2, "sun": 3, "mon": 4, "tue": 5, "wed": 6}
-_DAY_MS = DAY_MINUTES * 60_000
-
-
-def dizquetv_time_slots(
-    channel: ChannelSuggestion, plan: PlanResult, *, ramadan: bool = False
-) -> dict[str, Any]:
-    """dizqueTV ``/api/channel-tools/time-slots`` schedule for a suggestion.
-
-    A dizqueTV slot is a start time; it plays its show until the next slot.
-    Lanes map to custom shows (``showId`` here is ``lane:<key>``, resolved to
-    ``custom.<uuid>`` by the exporter); slots without a lane are ``flex.``.
-    Day-specific slots (the Friday khutbah) need the weekly period, whose
-    day 0 is Thursday. Adjacent slots of one lane are merged. Times are local
-    wall-clock; the exporter sets ``timeZoneOffset`` (minutes, as the web UI
-    does with ``Date.getTimezoneOffset``)."""
-    cfg = plan.config
-    src = channel.ramadan_slots if ramadan and channel.ramadan_slots else channel.slots
-    weekly = any(s.days for s in src)
-    period = _DAY_MS * (7 if weekly else 1)
-    raw: list[tuple[int, str, str]] = []  # (time ms, showId, order)
-    days = list(_DZ_WEEK_INDEX) if weekly else ["mon"]
-    for day in days:
-        off = _DZ_WEEK_INDEX[day] * _DAY_MS if weekly else 0
-        for s in src:
-            if weekly and not s.on(day):
-                continue
-            if not weekly and s.days:
-                continue
-            show = f"lane:{s.lane}" if s.lane else "flex."
-            raw.append((off + s.start * 60_000, show, "next" if s.lane else "shuffle"))
-    raw.sort()
-    # a nonstop channel: one episode a slot, each padded to the slot (dizqueTV's pad), and
-    # its slots kept apart, so a slot started late costs that slot, never the whole day
-    lane = plan.lanes.get(src[0].lane or "") if channel.kind == "nonstop" and src else None
-    max_flex = cfg.slot_max_filler_minutes * 60_000
-    if lane is not None and not lane.slot_minutes:
-        lane = None  # back to back: one slot all day, as any other …
-        max_flex = 1  # … and never a gap: the next episode whatever room is left
-    pad = lane.slot_minutes * 60_000 if lane is not None else cfg.dz_pad_ms
-    merged: list[tuple[int, str, str]] = []
-    for item in raw:
-        if merged and merged[-1][1] == item[1] and lane is None:
-            continue
-        merged.append(item)
-    if lane is None and len(merged) > 1 and merged[0][1] == merged[-1][1]:
-        merged = merged[1:]  # the last slot wraps past the period end into the first one
-    return {
-        "period": period,
-        "lateness": cfg.dz_lateness_ms,
-        "maxDays": cfg.dz_max_days,
-        "flexPreference": "distribute",
-        "pad": pad,
-        # dizqueTV (Maktaba's build): a longer gap takes the next episode, past the slot
-        "maxFlex": 0 if lane is not None else max_flex,
-        "slots": [{"time": t, "showId": sh, "order": o} for t, sh, o in merged],
     }

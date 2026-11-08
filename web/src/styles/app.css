@@ -4414,6 +4414,11 @@ button.mkt-video__hero {
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
   gap: 1rem;
 }
+.mkt-dash__offline {
+  color: var(--color-danger, #c0392b);
+  font-weight: 600;
+  margin-block: 0.5rem;
+}
 .mkt-dash__ptitle {
   font-size: 1rem;
   margin: 0 0 0.5rem;

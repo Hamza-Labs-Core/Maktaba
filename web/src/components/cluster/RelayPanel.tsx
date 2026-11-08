@@ -1,5 +1,5 @@
 // The Relay tab (story 31.R): the home's service door, which lets machines
-// run the Plex stages without the Plex token. Its state, the switch (rules
+// reach Plex without the Plex token. Its state, the switch (rules
 // section "relay"), each extension's allow-list, and the recent relayed
 // calls (who, what, how it went: never the token).
 //

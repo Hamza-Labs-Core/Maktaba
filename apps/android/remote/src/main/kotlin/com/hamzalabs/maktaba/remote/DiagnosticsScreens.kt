@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -21,6 +22,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -77,6 +80,7 @@ import com.hamzalabs.maktaba.core.api.board
 import com.hamzalabs.maktaba.core.api.errorGroup
 import com.hamzalabs.maktaba.core.api.errorGroups
 import com.hamzalabs.maktaba.core.api.gapsOverASecond
+import com.hamzalabs.maktaba.core.api.machineName
 import com.hamzalabs.maktaba.core.api.problemReport
 import com.hamzalabs.maktaba.core.api.problemReports
 import com.hamzalabs.maktaba.core.api.replyToReport
@@ -410,6 +414,13 @@ private fun FollowPage(remote: Remote, requestId: String, push: (DiagPage) -> Un
 /** A panel's title: the web's words for the metric, else its name. */
 private fun seriesTitle(name: String): Int? = when (name) {
     "maktaba_component_up" -> R.string.dash_component_up
+    "maktaba_component_down" -> R.string.dash_component_down
+    "maktaba_machines_components_up" -> R.string.dash_machines_components_up
+    "maktaba_machines_components_down" -> R.string.dash_machines_components_down
+    "maktaba_machines_disk_free_min_bytes" -> R.string.dash_machines_disk_free_min
+    "maktaba_machines_memory_free_min_bytes" -> R.string.dash_machines_memory_free_min
+    "maktaba_machines_load1_max" -> R.string.dash_machines_load_max
+    "maktaba_machines_restarts" -> R.string.dash_machines_restarts
     "maktaba_component_restarts_total" -> R.string.dash_restarts
     "maktaba_errors_per_hour" -> R.string.dash_errors_per_hour
     "process_resident_memory_bytes" -> R.string.dash_api_memory
@@ -444,7 +455,22 @@ private fun bytes(v: Double): String {
 private fun Dashboards(remote: Remote) {
     var board by rememberSaveable { mutableStateOf(Board.Overview) }
     var range by rememberSaveable { mutableStateOf("24h") }
-    val (state, _) = load(remote, board, range) { board(board, range) }
+    // on the Overview of several machines: one machine on its own ("" all of them)
+    var machine by rememberSaveable { mutableStateOf("") }
+    var machines by remember { mutableStateOf(emptyList<String>()) }
+    var offline by remember { mutableStateOf(emptyList<String>()) }
+    // each machine id named as the Machines page names it (kept across one machine's answers)
+    var names by remember { mutableStateOf(emptyMap<String, String>()) }
+    var picking by remember { mutableStateOf(false) }
+    val (state, _) = load(remote, board, range, machine) { board(board, range, machine) }
+    LaunchedEffect(state) {
+        val doc = (state as? Loaded.Ready)?.value
+        doc?.machines?.let {
+            machines = it.all
+            offline = it.offline
+        }
+        doc?.names?.takeIf { it.isNotEmpty() }?.let { names = names + it }
+    }
     LazyColumn(Modifier.fillMaxSize().testTag("diag-dashboards")) {
         item {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -457,19 +483,64 @@ private fun Dashboards(remote: Remote) {
                         FilterChip(selected = range == r, onClick = { range = r }, label = { Text(stringResource(w)) })
                     }
                 }
+                if (board == Board.Overview && machines.size > 1) {
+                    Box {
+                        val all = stringResource(R.string.dash_machine_all)
+                        val offlineWord = stringResource(R.string.dash_machine_offline_option)
+                        val withId = stringResource(R.string.dash_machine_option)
+                        // a machine's name in the picker, its node id as a hint, marked when it is offline
+                        val named = { m: String ->
+                            val name = machineName(names, m)
+                            val label = if (name == m) m.ifEmpty { all } else withId.format(name, m)
+                            if (m in offline) offlineWord.format(label) else label
+                        }
+                        OutlinedButton(onClick = { picking = true }, modifier = Modifier.testTag("dash-machine")) {
+                            Text("${stringResource(R.string.dash_machine)}: ${named(machine)}")
+                        }
+                        DropdownMenu(expanded = picking, onDismissRequest = { picking = false }) {
+                            (listOf("") + machines).forEach { m ->
+                                DropdownMenuItem(
+                                    text = { Text(named(m)) },
+                                    onClick = { machine = m; picking = false },
+                                    modifier = Modifier.testTag("dash-machine-${m.ifEmpty { "all" }}"),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
         status(state)
         val doc: BoardDoc = (state as? Loaded.Ready)?.value ?: return@LazyColumn
+        val counted = doc.machines
+        if (board == Board.Overview && doc.showsSomeMachines && counted != null) item {
+            Text(stringResource(R.string.dash_machines_shown, counted.shown.size, counted.total), style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("dash-machines-shown"))
+        }
+        // the joined machines that are offline: named on the Overview, or the one asked for
+        val offlineLine = when {
+            board != Board.Overview || counted == null || counted.offline.isEmpty() -> null
+            !doc.machine.isNullOrEmpty() -> if (doc.machine?.let(counted::isOffline) == true) R.string.dash_machine_offline to null else null
+            else -> R.string.dash_machines_offline to counted.offline.joinToString(", ") { machineName(names, it) }
+        }
+        if (offlineLine != null) item {
+            val (res, names) = offlineLine
+            Text(if (names == null) stringResource(res) else stringResource(res, names), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp).testTag("dash-offline"))
+        }
+        if (doc.omitted > 0) item {
+            Text(stringResource(R.string.dash_omitted, doc.omitted), style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("dash-omitted"))
+        }
         val panels = doc.panels.filter { (_, s) -> s.any { it.points.isNotEmpty() } }
         if (panels.isEmpty()) item { Text(stringResource(R.string.dash_no_data), Modifier.padding(16.dp)) }
-        items(panels, key = { it.first }) { (name, series) -> Panel(name, series) }
+        items(panels, key = { it.first }) { (name, series) -> Panel(name, series, names) }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Panel(name: String, series: List<BoardSeries>) {
+private fun Panel(name: String, series: List<BoardSeries>, names: Map<String, String> = emptyMap()) {
     val title = seriesTitle(name)?.let { stringResource(it) } ?: name
     val latest = series.sumOf { it.points.lastOrNull()?.getOrNull(1) ?: 0.0 }
     val max = series.flatMap { it.points }.maxOfOrNull { it.getOrNull(1) ?: 0.0 } ?: 0.0
@@ -492,7 +563,7 @@ private fun Panel(name: String, series: List<BoardSeries>) {
                 }
             }
         }
-        if (series.size > 1) Text(series.joinToString(" · ") { it.legend }, style = MaterialTheme.typography.labelSmall)
+        if (series.size > 1) Text(series.joinToString(" · ") { it.legend(names) }, style = MaterialTheme.typography.labelSmall)
     }
 }
 

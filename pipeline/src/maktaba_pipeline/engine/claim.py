@@ -1,7 +1,7 @@
 """Pool-aware claiming (plan 06-11 section 5; fixes F10).
 
 Pools are resource classes stored in ``worker_pools``. ``global`` pools (NAS
-reads, Plex, dizqueTV, YouTube) are enforced *in the claim SQL* across every
+reads, Plex, YouTube) are enforced *in the claim SQL* across every
 process and host, under a per-pool advisory lock. ``per_worker`` pools (cpu,
 gpu) are enforced by in-process semaphores sized from the same table.
 

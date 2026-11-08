@@ -17,7 +17,7 @@ import (
 // Explain answers "why is this video where it is": for every video whose
 // title or file name matches the text it returns the air date and how sure
 // it is, the length and shape, the playlists and positions, how it was
-// linked to YouTube, its Plex item and the detector's verdict (episode N of
+// linked to YouTube and the detector's verdict (episode N of
 // a season, extra, second upload, short, in a clip group, a promo, or
 // unassigned). Ported from the stand-alone control centre's /api/explain
 // (scripts/mediaintel/explain.py) onto Maktaba's tables.
@@ -72,7 +72,6 @@ type ExplainVideo struct {
 	LinkMethod  *string           `json:"link_method"`
 	Tab         *string           `json:"tab"`
 	Playlists   []ExplainPlaylist `json:"playlists"`
-	PlexKey     *string           `json:"plex_rating_key"`
 	Verdict     ExplainVerdict    `json:"verdict"`
 }
 
@@ -98,7 +97,7 @@ type ExplainResponse struct {
 const explainVideosSQL = `
 SELECT v.id::text, COALESCE(yv.title, v.title, v.filename), v.filename, v.library_id::text, l.name,
        yv.upload_date::text, yv.date_quality, COALESCE(v.duration_sec, yv.duration_s),
-       v.metadata, m.external_id, m.mapped->>'link_method', yv.tab, el.external_id
+       v.metadata, m.external_id, m.mapped->>'link_method', yv.tab
   FROM videos v
   JOIN libraries l ON l.id = v.library_id
   LEFT JOIN LATERAL (
@@ -106,8 +105,6 @@ SELECT v.id::text, COALESCE(yv.title, v.title, v.filename), v.filename, v.librar
          WHERE video_id = v.id AND provider = 'youtube'
          ORDER BY confidence DESC LIMIT 1) m ON true
   LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id
-  LEFT JOIN external_links el ON el.target = 'plex_item' AND el.subject_kind = 'video'
-                              AND el.subject_id = v.id::text
  WHERE v.deleted_at IS NULL
    AND (v.filename ILIKE $1 ESCAPE '\' OR v.title ILIKE $1 ESCAPE '\' OR yv.title ILIKE $1 ESCAPE '\')
    AND ($2::uuid IS NULL OR v.library_id = $2::uuid)
@@ -294,16 +291,16 @@ func (h *Handler) explain(ctx context.Context, q string, lib, scope any, limit i
 	}
 	for rows.Next() {
 		var v ExplainVideo
-		var aired, dq, yt, method, tab, plex sql.NullString
+		var aired, dq, yt, method, tab sql.NullString
 		var dur sql.NullFloat64
 		var meta []byte
 		if err := rows.Scan(&v.ID, &v.Title, &v.File, &v.LibraryID, &v.Library, &aired, &dq, &dur,
-			&meta, &yt, &method, &tab, &plex); err != nil {
+			&meta, &yt, &method, &tab); err != nil {
 			_ = rows.Close()
 			return out, err
 		}
 		v.Aired, v.DateQuality, v.DurationSec = nullStrPtr(aired), nullStrPtr(dq), nullFloat(dur)
-		v.YouTubeID, v.LinkMethod, v.Tab, v.PlexKey = nullStrPtr(yt), nullStrPtr(method), nullStrPtr(tab), nullStrPtr(plex)
+		v.YouTubeID, v.LinkMethod, v.Tab = nullStrPtr(yt), nullStrPtr(method), nullStrPtr(tab)
 		v.Width, v.Height = dimensions(meta)
 		out.Videos = append(out.Videos, v)
 	}

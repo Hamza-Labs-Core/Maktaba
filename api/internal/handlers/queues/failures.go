@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // Issue groups are computed over each subject's LATEST row per stage:
@@ -23,11 +24,17 @@ import (
 // newest row through processing_jobs_subject_history_idx (one backward
 // index step each, LIMIT 1: a subject with hundreds of runs reads one),
 // so the cost follows the number of failing subjects, not the table size.
-const latestFailedCTE = `
+// retiredStagesOut leaves out the jobs of the stages a release removed (their rows stay
+// until the cleanup migration; shared/components/retired.go).
+var retiredStagesOut = components.NotRetiredStageSQL("stage")
+
+var latestFailedCTE = `
 WITH f AS (
     SELECT DISTINCT subject_kind, subject_id, stage
       FROM processing_jobs
      WHERE state = 'failed' AND ($1::text = '' OR stage = $1::text)
+       -- a stage a release removed keeps its rows until the cleanup migration
+       AND ` + retiredStagesOut + `
        -- Epic 40: an ignored item leaves every count
        AND NOT EXISTS (SELECT 1 FROM failure_ignores fi
                         WHERE fi.subject_kind = processing_jobs.subject_kind
@@ -45,7 +52,7 @@ WITH f AS (
             ORDER BY j.id DESC LIMIT 1) l
 )`
 
-const failureGroupsSQL = latestFailedCTE + `
+var failureGroupsSQL = latestFailedCTE + `
 SELECT stage, error_cause, count(*),
        min(COALESCE(finished_at, created_at)), max(COALESCE(finished_at, created_at)),
        (array_agg(error ORDER BY id DESC))[1],
@@ -56,20 +63,21 @@ SELECT stage, error_cause, count(*),
 
 // Rows from before the error_cause column existed are grouped in Go by
 // the JSON "kind" of their error text (capped, newest first).
-const legacyFailuresSQL = latestFailedCTE + `
+var legacyFailuresSQL = latestFailedCTE + `
 SELECT id, stage, subject_kind, subject_id::text, error, COALESCE(finished_at, created_at)
   FROM latest
  WHERE state = 'failed' AND error_cause IS NULL
  ORDER BY id DESC
  LIMIT 5000`
 
-const awaitingReviewSQL = `
+var awaitingReviewSQL = `
 SELECT j.stage, count(*), min(j.finished_at), max(j.finished_at),
        (array_agg(j.subject_kind || ':' || j.subject_id::text ORDER BY j.id DESC))[1:5]
   FROM processing_jobs j
   JOIN job_stages s ON s.stage = j.stage AND s.external_write
  WHERE j.state = 'done' AND j.outcome = 'awaiting_review'
    AND ($1::text = '' OR j.stage = $1::text)
+   AND ` + components.NotRetiredStageSQL("j.stage") + `
    AND NOT EXISTS (SELECT 1 FROM processing_jobs n
                     WHERE n.subject_kind = j.subject_kind AND n.subject_id = j.subject_id
                       AND n.stage = j.stage AND n.id > j.id)

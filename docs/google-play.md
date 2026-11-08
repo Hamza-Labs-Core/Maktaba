@@ -45,6 +45,14 @@ different, older app. It is not one of these.
    named `-unsigned.aab`, kept only as the `maktaba-play-bundles` workflow artifact (with R8's
    `mapping.txt` files), and the run shows a warning. Unsigned bundles are never attached to the
    Release.
+6. Crash symbols (Epic 53 story 53.16): with the `MAKTABA_SYMBOLS_TOKEN` repository secret
+   (docs/testflight.md, "Crash symbols (owner)"), each app's R8 `mapping.txt` and a table of each
+   of the apps' unstripped native libraries (AGP's `merged_native_libs`, before the packaged
+   copies are stripped; keyed by the library's GNU build ID) go to Maktaba Cloud with
+   `cloud/cmd/maktaba-symbols`. A library with no symbol table (a dependency's prebuilt library,
+   stripped by its publisher) makes no table and is counted in the run's notice. Without the
+   secret the run logs one line; a failed upload warns and keeps the native tables for 90 days
+   as the run's `native-symbols` artifact.
 
 Google Play App Signing re-signs what reaches users with Google's app signing key. The upload
 key only proves that an upload came from us. If the upload key is lost, Play Console can reset

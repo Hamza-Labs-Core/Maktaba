@@ -50,6 +50,20 @@ class StatusStripTest {
         assertEquals("/admin/health", StatusStripRules.lines(tv, online = true, admin = true).first().details)
     }
 
+    /** Epic 54: a failed plugin runner is an admin's line, to the Plugins page; a restart is not. */
+    @Test
+    fun `a failed plugin runner is an admin's line`() {
+        val failed = with("plugin_runners" to "down", overall = "ok")
+        assertTrue(StatusStripRules.lines(failed, online = true, admin = false).isEmpty())
+        assertEquals(
+            listOf(StripLine(StripKey.PLUGIN_RUNNERS, "/settings/plugins")),
+            StatusStripRules.lines(failed, online = true, admin = true),
+        )
+        for (st in listOf("restarting", "starting", "off", "ok")) {
+            assertTrue(st, StatusStripRules.lines(with("plugin_runners" to st, overall = "ok"), online = true, admin = true).isEmpty())
+        }
+    }
+
     @Test
     fun `live tv off is left out of the playback sentence`() {
         val tv = with("streaming" to "down")
@@ -73,7 +87,7 @@ class StatusStripTest {
         val root = generateSequence(File("").absoluteFile) { it.parentFile }.first { File(it, "core/src/main/res/values").exists() }
         val ar = File(root, "core/src/main/res/values-ar/strings.xml").readText()
         for (name in listOf("status_offline", "status_restarting", "status_database", "status_safe", "status_streaming",
-            "status_streaming_no_tv", "status_search", "status_processing", "status_logs", "status_details", "status_more",
+            "status_streaming_no_tv", "status_search", "status_processing", "status_logs", "status_plugin_runners", "status_details", "status_more",
             "status_close", "status_player")) {
             assertTrue(name, ar.contains("name=\"$name\""))
         }

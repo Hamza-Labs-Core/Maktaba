@@ -59,7 +59,7 @@ func TestAccessors(t *testing.T) {
 	}{
 		{func() (*Component, bool) { return c.ByStage("transcribe") }, "transcription"},
 		{func() (*Component, bool) { return c.ByStage("scan") }, "core.pipeline"},
-		{func() (*Component, bool) { return c.ByStage("plex_index") }, "ext.plex"},
+		{func() (*Component, bool) { return c.ByStage("plex_livetv") }, "ext.plex"},
 		{func() (*Component, bool) { return c.ByProcess("pipeline", "stt-3") }, "transcription"},
 		{func() (*Component, bool) { return c.ByProcess("pipeline", "") }, "core.pipeline"},
 		{func() (*Component, bool) { return c.ByProcess("pipeline", "index") }, "search.semantic"},
@@ -86,7 +86,7 @@ func TestAccessors(t *testing.T) {
 		!slices.Equal(reqs[1].AnyOf, []string{"model.whisper-turbo", "model.whisper-large-v3", "model.whisper-medium"}) {
 		t.Fatalf("Requires(transcription) = %v", reqs)
 	}
-	if deps := c.Dependents("livetv"); !slices.Contains(deps, "livetv.slots") || !slices.Contains(deps, "ext.dizquetv") {
+	if deps := c.Dependents("livetv"); !slices.Contains(deps, "livetv.slots") || !slices.Contains(deps, "ext.cloudflare_stream") {
 		t.Fatalf("Dependents(livetv) = %v", deps)
 	}
 	tr, _ := c.Get("transcription")

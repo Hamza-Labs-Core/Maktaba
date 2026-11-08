@@ -56,7 +56,6 @@ export interface CanonState {
     missing: number;
   };
   servers_added?: { name: string; addresses: string[] }[];
-  plex_added?: string[];
 }
 
 export type CanonAction = "run" | "revert" | "resume";

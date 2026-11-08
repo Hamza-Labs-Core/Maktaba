@@ -23,7 +23,7 @@ from maktaba_pipeline.engine.graph import TOPIC_VERSION, StageResult, Subject
 from maktaba_pipeline.engine.hashing import canonical_hash
 from maktaba_pipeline.engine.ids import topic_uuid
 from maktaba_pipeline.engine.sql import loads, now, to_ts, uid
-from maktaba_pipeline.engine.stages.detect import _playlists
+from maktaba_pipeline.engine.stages._detect import _playlists
 from maktaba_pipeline.engine.stages.registry import StageImpl
 
 __all__ = ["IMPL", "plan_topics"]

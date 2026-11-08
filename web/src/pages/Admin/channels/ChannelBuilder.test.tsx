@@ -128,23 +128,6 @@ function routeGet(path: string) {
             },
           ],
         },
-        {
-          key: "dizquetv",
-          title: "dz",
-          what: "",
-          fields: [
-            {
-              name: "live",
-              kind: "rows",
-              group: "",
-              label: "",
-              help: "",
-              default: [],
-              value: [],
-              changed: false,
-            },
-          ],
-        },
       ],
     });
   return Promise.resolve({});

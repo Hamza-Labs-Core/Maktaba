@@ -47,6 +47,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // EventPublisher is the slice of *eventbus.Bus the handlers use to
@@ -316,6 +317,10 @@ func (h *Handler) loadStages(ctx context.Context) ([]StageInfo, error) {
 		if err != nil {
 			return nil, err
 		}
+		// a stage a release removed keeps its row until the cleanup migration: not shown
+		if components.RetiredStage(s.Stage) {
+			continue
+		}
 		out = append(out, s)
 	}
 	if err := rows.Err(); err != nil {
@@ -353,6 +358,9 @@ func (h *Handler) fillPausedByNames(ctx context.Context, stages []StageInfo) {
 
 // loadStage reads one stage; sql.ErrNoRows when unknown.
 func (h *Handler) loadStage(ctx context.Context, stage string) (StageInfo, error) {
+	if components.RetiredStage(stage) {
+		return StageInfo{}, sql.ErrNoRows
+	}
 	s, err := scanStage(h.DB.QueryRowContext(ctx, stageSelect+` WHERE stage = $1`, stage))
 	if err != nil {
 		return StageInfo{}, err

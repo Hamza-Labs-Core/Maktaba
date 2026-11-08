@@ -33,7 +33,6 @@ type Mirror struct {
 // goes through SetDesiredTx, so neither side is ever updated alone.
 var Mirrors = map[string]Mirror{
 	"ext.plex":              extensionMirror("plex"),
-	"ext.dizquetv":          extensionMirror("dizquetv"),
 	"ext.cloudflare_stream": extensionMirror("cloudflare_stream"),
 	"livetv.hdhomerun":      hdhrMirror,
 }

@@ -3,7 +3,7 @@
 // change's PUT body, What it wrote's revert body, a viewer's not-allowed page; and 54.10's
 // typed name and the policy's password.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post, put, del, upload } = vi.hoisted(() => ({
@@ -544,6 +544,41 @@ describe("Settings → Plugins: built into Maktaba (Epic 54, story 54.22 §4)", 
       { key: "fp.trusted.settings.read", param: "groups" },
     ],
   };
+
+  // Epic 54: a first-party runner that failed is named above the list, with its stages
+  it("names a failed plugin runner, its machine and its stages", async () => {
+    get.mockImplementation(async (path: string) => {
+      if (path === "/api/plugins") return { plugins: [], policy: { allow_unreviewed: false } };
+      if (path === "/api/admin/system/status")
+        return {
+          status: "degraded",
+          code: "",
+          reason: "",
+          checked_at: "2026-11-08T12:00:00Z",
+          processes_supervised: true,
+          items: [
+            {
+              id: "plugin_runners",
+              group: "services",
+              kind: "plugin_runners",
+              name: "Plugin runners",
+              status: "degraded",
+              code: "plugin_runners_failed",
+              reason: "",
+              last_checked: "2026-11-08T12:00:00Z",
+              help: "plugin_runners",
+              details: { failed: [{ machine: "node-b", runner: "net", stages: ["books"] }] },
+            },
+          ],
+        };
+      throw new Error("unexpected " + path);
+    });
+    open();
+    const box = await screen.findByTestId("runners-warning");
+    expect(box).toHaveTextContent(/The \u2068?net\u2069? runner on \u2068?node-b/);
+    expect(box).toHaveTextContent("(books)");
+    expect(within(box).getByRole("link")).toHaveAttribute("href", "/settings/components");
+  });
 
   it("lists Maktaba's own plugins with what each can do, and no grants dialog", async () => {
     get.mockImplementation(async (path: string) => {

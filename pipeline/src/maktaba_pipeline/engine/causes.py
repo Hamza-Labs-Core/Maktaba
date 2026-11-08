@@ -41,11 +41,6 @@ _KNOWN: tuple[tuple[str, re.Pattern[str]], ...] = tuple(
             r"plex.*(?:connection refused|timed out|unreachable"
             r"|connect call failed|name or service)",
         ),
-        (
-            "dizquetv_unreachable",
-            r"dizque\w*.*(?:connection refused|timed out|unreachable"
-            r"|connect call failed|name or service)",
-        ),
         ("readback_mismatch", r"read-?back mismatch|readback_mismatch"),
         # Epic 40: resources, before db_error (a Postgres DiskFullError is not a query bug)
         ("shm_full", r"could not resize shared memory|shared memory segment"),

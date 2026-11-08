@@ -63,11 +63,5 @@ async def _always_changed(db: Any, subject: Subject) -> str:
 
 IMPLS: dict[str, StageImpl] = {
     "scan": StageImpl(output_fingerprint=_scan_output),
-    **{
-        name: StageImpl(output_fingerprint=_always_changed)
-        for name in (
-            "extract",
-            "categorize",
-        )
-    },
+    "categorize": StageImpl(output_fingerprint=_always_changed),
 }

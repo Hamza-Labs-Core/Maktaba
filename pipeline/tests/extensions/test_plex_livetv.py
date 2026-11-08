@@ -50,11 +50,10 @@ BASE = "http://plex.test"
 TUNER = "http://192.168.1.20:8782"
 #: the old home's address, before a switch of the home made this machine the home
 OLD_TUNER = "http://192.168.1.10:8782"
-DIZQUE = "http://192.168.1.20:8000"
+OTHER = "http://192.168.1.20:8000"
 DEVICE_ID = "A1B2C3D4"
 SETTINGS = {
     "plex": {"url": BASE, "token": "T"},
-    "dizquetv": {"url": DIZQUE},
 }
 
 
@@ -335,7 +334,7 @@ def test_dvrs_and_devices_are_parsed_including_single_objects() -> None:
 
 
 def test_find_tuner_by_device_id_then_by_address() -> None:
-    a = PlexTuner("1", uri="http://10.0.0.5:8000", device_id="DIZQUE01")
+    a = PlexTuner("1", uri="http://10.0.0.5:8000", device_id="OTHER01")
     b = PlexTuner("2", uri="http://192.168.1.20:8782", device_id="a1b2c3d4")
     assert find_tuner([a, b], DEVICE_ID, "") is b  # case-insensitive DeviceID
     assert find_tuner([a, b], "", "http://192.168.1.20:8782/") is b
@@ -363,8 +362,8 @@ def test_create_dvr_and_add_device_send_plexs_parameters() -> None:
 def test_channel_source_calls_send_plex_webs_parameters() -> None:
     fake = FakeLiveTV(reachable={TUNER: DEVICE_ID})
     client = PlexClient(BASE, "T", transport=fake)
-    dz = fake.add_device(DIZQUE, "DIZQUE01", "dizqueTV")
-    dvr = fake.add_dvr(dz, "dizqueTV")
+    dz = fake.add_device(OTHER, "OTHER01", "Other tuner")
+    dvr = fake.add_dvr(dz, "Other")
     dev = client.add_grabber_device(TUNER)
     assert dev is not None
     guide = xmltv_lineup(f"{TUNER}/xmltv.xml", "Maktaba")
@@ -499,7 +498,7 @@ class World:
     channels: list[str]
 
 
-async def make_world(db: Any, *, enabled_tuner: bool = True, dizquetv: bool = True) -> World:
+async def make_world(db: Any, *, enabled_tuner: bool = True, other_tuner: bool = True) -> World:
     await db.execute(
         "INSERT INTO hdhr_device (id, device_id, device_uuid, friendly_name, tuner_count, enabled)"
         " VALUES (1, $1, $2, 'Maktaba', 4, $3)",
@@ -511,9 +510,9 @@ async def make_world(db: Any, *, enabled_tuner: bool = True, dizquetv: bool = Tr
     await add_channel(db, 9, enabled=False)  # not in the lineup
     await set_rules(db, {"tuner_url": TUNER})
     fake = FakeLiveTV(reachable={TUNER: DEVICE_ID})
-    if dizquetv:  # the user's dizqueTV tuner and DVR, set up by hand in Plex
-        dk = fake.add_device(DIZQUE, "DIZQUE01", "dizqueTV")
-        fake.add_dvr(dk, "dizqueTV", "lineup://tv.plex.providers.epg.xmltv/dz#dizqueTV")
+    if other_tuner:  # another program's tuner and DVR, set up by hand in Plex
+        dk = fake.add_device(OTHER, "OTHER01", "Other tuner")
+        fake.add_dvr(dk, "Other", "lineup://tv.plex.providers.epg.xmltv/other#Other")
     ext = PlexExtension(client_factory=lambda s: PlexClient(s["url"], s["token"], transport=fake))
     rt = await setup_runtime(db, [ext], SETTINGS)
     return World(fake, rt, chans)
@@ -557,14 +556,13 @@ async def test_without_maktaba_in_plex_it_only_reports(db: Database) -> None:
     assert w.fake.writes() == []  # auto_register is off: Plex is not changed
     s = await status(db)
     assert s["reachable"] and not s["maktaba"]["registered"]
-    assert s["dizquetv_present"] is True
-    assert [d["devices"][0]["kind"] for d in s["dvrs"]] == ["dizquetv"]
+    assert [d["devices"][0]["kind"] for d in s["dvrs"]] == ["other"]
     assert s["channels"]["lineup"] == 3
     assert s["actions"]["channel_map"] == "not_registered"
 
 
-def dizque_snapshot(w: World) -> Any:
-    dk = next(k for k, d in w.fake.devices.items() if d["deviceId"] == "DIZQUE01")
+def other_snapshot(w: World) -> Any:
+    dk = next(k for k, d in w.fake.devices.items() if d["deviceId"] == "OTHER01")
     dvr = next(k for k, d in w.fake.dvrs.items() if dk in d["devices"])
     return dk, dvr, json.dumps(w.fake.devices[dk], sort_keys=True)
 
@@ -576,7 +574,7 @@ async def test_register_joins_the_dvr_plex_shows_as_another_channel_source(
     # Plex's Live TV & DVR page shows one DVR; further tuners are its channel sources,
     # each with its own guide ("Add Another Device"). A DVR of Maktaba's own stays hidden.
     w = await make_world(db)
-    dz_key, dz_dvr, dz_before = dizque_snapshot(w)
+    dz_key, dz_dvr, dz_before = other_snapshot(w)
     await ask_register(db)
     row = await livetv(db, w, force=True)
     assert row["state"] == "done", error_of(row)
@@ -594,21 +592,21 @@ async def test_register_joins_the_dvr_plex_shows_as_another_channel_source(
     assert w.fake.devices[ours]["title"] == "Maktaba"
     put = next(raw for m, p, raw in w.fake.calls if p.endswith("/channelmap"))
     assert urllib.parse.parse_qsl(put) == channel_map_query(["1", "2", "5"])
-    # dizqueTV's tuner: same channels, name and guide
-    assert dizque_snapshot(w)[2] == dz_before
-    assert w.fake.dvrs[dz_dvr]["lineups"][0] == "lineup://tv.plex.providers.epg.xmltv/dz#dizqueTV"
+    # the other program's tuner: same channels, name and guide
+    assert other_snapshot(w)[2] == dz_before
+    assert w.fake.dvrs[dz_dvr]["lineups"][0] == "lineup://tv.plex.providers.epg.xmltv/other#Other"
     st = await load_state(db)
     assert st.register_requested_at is None and st.guide_reloaded_at is not None
     s = await status(db)
     assert s["maktaba"]["registered"] and not s["maktaba"]["separate_dvr"]
     assert s["actions"]["register"] == "registered" and s["channels"]["in_sync"] is True
-    assert [t["kind"] for t in s["dvrs"][0]["devices"]] == ["dizquetv", "maktaba"]
+    assert [t["kind"] for t in s["dvrs"][0]["devices"]] == ["other", "maktaba"]
     assert summary_of(row)["registered"] is True
 
 
 @pytest.mark.asyncio
 async def test_register_makes_a_dvr_when_plex_has_none(db: Database) -> None:
-    w = await make_world(db, dizquetv=False)
+    w = await make_world(db, other_tuner=False)
     await ask_register(db)
     row = await livetv(db, w, force=True)
     assert row["state"] == "done", error_of(row)
@@ -626,7 +624,7 @@ async def test_register_makes_a_dvr_when_plex_has_none(db: Database) -> None:
 async def test_a_dvr_of_its_own_is_shown_as_hidden_and_moved_in(db: Database) -> None:
     # what earlier versions made: a second DVR, which Plex's settings page leaves out
     w = await make_world(db)
-    _, dz_dvr, dz_before = dizque_snapshot(w)
+    _, dz_dvr, dz_before = other_snapshot(w)
     ours = w.fake.add_device(TUNER, DEVICE_ID, "")
     w.fake.devices[ours]["ChannelMapping"] = [{"channelKey": "1", "lineupIdentifier": "1"}]
     own = w.fake.add_dvr(ours, "Maktaba", xmltv_lineup(f"{TUNER}/xmltv.xml", "Maktaba"))
@@ -639,7 +637,7 @@ async def test_a_dvr_of_its_own_is_shown_as_hidden_and_moved_in(db: Database) ->
     assert row["state"] == "done", error_of(row)
     assert ("DELETE", f"/livetv/dvrs/{own}") == w.fake.writes()[0]
     assert list(w.fake.dvrs) == [dz_dvr] and ours in w.fake.dvrs[dz_dvr]["devices"]
-    assert dizque_snapshot(w)[2] == dz_before
+    assert other_snapshot(w)[2] == dz_before
     s = await status(db)
     assert s["maktaba"]["registered"] and not s["maktaba"]["separate_dvr"]
 
@@ -660,7 +658,7 @@ async def test_a_dvr_shared_with_other_tuners_is_not_deleted(db: Database) -> No
 
 @pytest.mark.asyncio
 async def test_register_finds_the_dvr_when_plex_answers_without_objects(db: Database) -> None:
-    w = await make_world(db, dizquetv=False)
+    w = await make_world(db, other_tuner=False)
     w.fake.answer_with_objects = False
     await ask_register(db)
     row = await livetv(db, w, force=True)
@@ -706,7 +704,7 @@ async def test_auto_register_on_adds_it_without_a_request(db: Database) -> None:
 
 @pytest.mark.asyncio
 async def test_a_tuner_plex_found_by_itself_is_used_not_added_again(db: Database) -> None:
-    w = await make_world(db, dizquetv=False)
+    w = await make_world(db, other_tuner=False)
     w.fake.add_device("http://192.168.1.20:8782", DEVICE_ID, "Maktaba")  # SSDP found it
     await ask_register(db)
     await livetv(db, w, force=True)
@@ -854,7 +852,7 @@ async def test_refresh_while_loading_keeps_a_grown_guide_for_later(db: Database)
 async def test_a_register_that_fails_half_way_keeps_the_request_for_the_retry(
     db: Database,
 ) -> None:
-    w = await make_world(db, dizquetv=False)  # no DVR yet: Maktaba makes one
+    w = await make_world(db, other_tuner=False)  # no DVR yet: Maktaba makes one
     await ask_register(db)
     w.fake.dvr_failures = 1  # the tuner is added, then the DVR call times out
     row = await livetv(db, w, force=True)
@@ -887,23 +885,23 @@ async def registered_at_the_old_home(db: Any, w: World) -> str:
 
 OLD_GUIDE = xmltv_lineup(f"{OLD_TUNER}/xmltv.xml", "Maktaba")
 NEW_GUIDE = xmltv_lineup(f"{TUNER}/xmltv.xml", "Maktaba")
-DZ_GUIDE = "lineup://tv.plex.providers.epg.xmltv/dz#dizqueTV"
+DZ_GUIDE = "lineup://tv.plex.providers.epg.xmltv/other#Other"
 
 
 @pytest.mark.asyncio
 async def test_a_new_home_moves_the_tuner_plex_takes_in_place(db: Database) -> None:
     w = await make_world(db)
-    dz_key, dz_dvr, dz_before = dizque_snapshot(w)
+    dz_key, dz_dvr, dz_before = other_snapshot(w)
     ours = await registered_at_the_old_home(db, w)
     assert w.fake.dvrs[dz_dvr]["lineups"] == [DZ_GUIDE, OLD_GUIDE]
     row = await livetv(db, w, force=True)
     assert row["state"] == "done", error_of(row)
-    # the same device at its new address, still dizqueTV's DVR's channel source
+    # the same device at its new address, still the other DVR's channel source
     assert w.fake.devices[ours]["uri"] == TUNER
     assert w.fake.dvrs[dz_dvr]["devices"] == [dz_key, ours]
-    # the guide here instead of the old home's; dizqueTV's untouched
+    # the guide here instead of the old home's; the other program's untouched
     assert w.fake.dvrs[dz_dvr]["lineups"] == [DZ_GUIDE, NEW_GUIDE]
-    assert dizque_snapshot(w)[2] == dz_before
+    assert other_snapshot(w)[2] == dz_before
     writes = w.fake.writes()
     assert ("PUT", f"/media/grabbers/devices/{ours}/channelmap") in writes
     assert writes[-1] == ("POST", f"/livetv/dvrs/{dz_dvr}/reloadGuide")
@@ -922,7 +920,7 @@ async def test_a_new_home_moves_the_tuner_plex_takes_in_place(db: Database) -> N
 @pytest.mark.asyncio
 async def test_a_tuner_plex_keeps_at_the_old_address_is_added_again_here(db: Database) -> None:
     w = await make_world(db)
-    dz_key, dz_dvr, dz_before = dizque_snapshot(w)
+    dz_key, dz_dvr, dz_before = other_snapshot(w)
     old = await registered_at_the_old_home(db, w)
     w.fake.same_device = "keep"
     row = await livetv(db, w, force=True)
@@ -932,7 +930,7 @@ async def test_a_tuner_plex_keeps_at_the_old_address_is_added_again_here(db: Dat
     assert w.fake.devices[new]["uri"] == TUNER and w.fake.devices[new]["title"] == "Maktaba"
     assert w.fake.dvrs[dz_dvr]["devices"] == [dz_key, new]
     assert w.fake.dvrs[dz_dvr]["lineups"] == [DZ_GUIDE, NEW_GUIDE]
-    assert dizque_snapshot(w)[2] == dz_before
+    assert other_snapshot(w)[2] == dz_before
     writes = w.fake.writes()
     out = writes.index(("DELETE", f"/livetv/dvrs/{dz_dvr}/devices/{old}"))
     assert writes[out + 1] == ("DELETE", f"/media/grabbers/devices/{old}")
@@ -947,7 +945,7 @@ async def test_a_tuner_plex_keeps_at_the_old_address_is_added_again_here(db: Dat
 async def test_a_dvr_of_maktabas_own_follows_the_tuner(db: Database, same_device: str) -> None:
     # no other DVR: Maktaba made one, whose guide was the old home's; it is the same DVR
     # after the move (its recording schedules are its own): never deleted
-    w = await make_world(db, dizquetv=False)
+    w = await make_world(db, other_tuner=False)
     await registered_at_the_old_home(db, w)
     assert [d["lineups"] for d in w.fake.dvrs.values()] == [[OLD_GUIDE]]
     (before,) = w.fake.dvrs
@@ -972,7 +970,7 @@ async def test_a_tuner_plex_is_slow_to_take_again_is_added_once_it_does(
     # the old tuner left Plex (it keeps one per DeviceID): the add after it is tried
     # again, so Plex is not left without Maktaba's tuner
     monkeypatch.setattr(livetv_mod, "ADD_AGAIN_PAUSE", 0.0)
-    w = await make_world(db, dizquetv=False)
+    w = await make_world(db, other_tuner=False)
     await registered_at_the_old_home(db, w)
     (before,) = w.fake.dvrs
     w.fake.same_device, w.fake.readd_failures = "keep", 2
@@ -984,7 +982,7 @@ async def test_a_tuner_plex_is_slow_to_take_again_is_added_once_it_does(
 
 @pytest.mark.asyncio
 async def test_a_dvr_plex_drops_with_its_last_tuner_is_made_again_and_said(db: Database) -> None:
-    w = await make_world(db, dizquetv=False)
+    w = await make_world(db, other_tuner=False)
     await registered_at_the_old_home(db, w)
     (before,) = w.fake.dvrs
     w.fake.same_device, w.fake.empty_dvr = "keep", "dropped"
@@ -1004,7 +1002,7 @@ async def test_plex_that_cannot_reach_the_new_home_keeps_the_tuner_where_it_was(
     db: Database,
 ) -> None:
     w = await make_world(db)
-    _, dz_dvr, _ = dizque_snapshot(w)
+    _, dz_dvr, _ = other_snapshot(w)
     ours = await registered_at_the_old_home(db, w)
     del w.fake.reachable[TUNER]  # Plex can't read discover.json here
     row = await livetv(db, w, force=True)

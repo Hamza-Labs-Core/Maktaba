@@ -240,6 +240,10 @@ type Machine struct {
 	// parallel, nothing checked) is what failed on 2026-10-28. An error leaves the record
 	// restoring, and the release before puts it back at its start, as before (nil: always so).
 	RestoreBack func(ctx context.Context, j *Journal, reason string) error
+	// MigrateDown runs the new release's Down scripts back to schema (the release before's
+	// newest migration) with the database's other users stopped (schemadown.go): a rollback
+	// whose migrations lose no data undoes only them. nil: the dump goes back, as before.
+	MigrateDown func(ctx context.Context, j *Journal, schema int64) error
 	// Packs fetches the new release's packs before the switch, and prunes those of
 	// releases no longer kept (story 51.18, packs.go); nil: no packs step.
 	Packs *Packs
@@ -1437,7 +1441,7 @@ func (m *Machine) rollback(reason string) {
 	// the TV first (story 35.6 AC8): its change cancelled, or rolled back on the air
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
-	if migrated && !m.keepSchema(j, reason) {
+	if migrated && !m.keepSchema(j, reason) && !m.migrateDown(j, reason) {
 		marked, err := m.Records.MarkRestore(j.Job.Version, j.From, reason)
 		if err != nil {
 			m.errorf("cannot mark the database record for the dump to be put back: %v", err)

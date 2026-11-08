@@ -6,11 +6,11 @@ A plugin's stage runs in the ``service`` runner, which has no network at all. It
 client sends each HTTP exchange as a call: on the home, to the plugin API's
 ``trusted/service`` (the API hands it to the door); on a joined machine, to its worker
 (``service_request``, an engine op), which forwards it through its agent channel to the
-home's door, as the worker's own Plex stages there always did (:mod:`maktaba_pipeline.relay`).
+home's door, as the worker's own Plex calls there do (:mod:`maktaba_pipeline.relay`).
 
 The job's binding (its plugin API transport, the runner's event loop, which way to go) is a
-context variable set for the job, so one module-level ``PlexService`` (and its index cache)
-serves every job, as in-process. In-process nothing is bound and the client is the one the
+context variable set for the job, so one module-level ``PlexService`` serves every job, as
+in-process. In-process nothing is bound and the client is the one the
 worker always used (:func:`maktaba_pipeline.relay.plex_client`)."""
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ __all__ = [
     "ServiceTransport",
     "bind",
     "bound",
+    "holds_secret",
     "plex_client",
     "plugin_settings",
 ]
@@ -139,6 +140,11 @@ def _secret_fields() -> dict[str, frozenset[str]]:
         ext.manifest.name: frozenset(f.key for f in ext.manifest.settings if f.secret)
         for ext in discover()
     }
+
+
+def holds_secret(name: str) -> bool:
+    """Whether the extension ``name`` keeps a secret setting (Plex's token)."""
+    return bool(_secret_fields().get(name))
 
 
 def plugin_settings(

@@ -167,14 +167,59 @@ data class BoardSeries(
 ) {
     /** The labels' values ("core.api · home"). */
     val legend: String
-        get() = labels.orEmpty().split(",").mapNotNull { kv -> kv.substringAfter("=", "").takeIf { it.isNotEmpty() } }.joinToString(" · ")
+        get() = legend(emptyMap())
+
+    /** The labels' values with the machine named as the Machines page names it ("core.api · Living room"). */
+    fun legend(names: Map<String, String>): String =
+        labels.orEmpty().split(",").mapNotNull { kv ->
+            val v = kv.substringAfter("=", "").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            if (kv.substringBefore("=") == "machine") machineName(names, v) else v
+        }.joinToString(" · ")
+}
+
+/** A machine's name for display: its name from [names], else its node id. */
+fun machineName(names: Map<String, String>, machine: String): String = names[machine]?.takeIf { it.isNotBlank() } ?: machine
+
+/**
+ * The Overview's machines: how many there are, the ones shown (most in need of attention first, a joined machine that is
+ * offline before any other), all of them, and the offline ones (empty from a home before the list). A malformed value
+ * is its default and a malformed entry is left out (Lenient.kt); the rest of the board still decodes.
+ */
+@Serializable
+data class BoardMachines(
+    @Serializable(with = LenientCount::class) val total: Int = 0,
+    @Serializable(with = LenientStrings::class) val shown: List<String> = emptyList(),
+    @Serializable(with = LenientStrings::class) val all: List<String> = emptyList(),
+    @Serializable(with = LenientStrings::class) val offline: List<String> = emptyList(),
+) {
+    /** Whether a machine is one of the offline ones. */
+    fun isOffline(machine: String): Boolean = machine in offline
 }
 
 @Serializable
-data class BoardDoc(val board: String = "", val range: String = "", val series: List<BoardSeries> = emptyList()) {
+data class BoardDoc(
+    val board: String = "",
+    val range: String = "",
+    val series: List<BoardSeries> = emptyList(),
+    /** The one machine the Overview was asked for (null: all of them). */
+    val machine: String? = null,
+    /** The Overview's machines (null on the other boards, and from a home before them). */
+    @Serializable(with = LenientMachines::class) val machines: BoardMachines? = null,
+    /** Lines the board's 50 left out. */
+    @Serializable(with = LenientCount::class) val omitted: Int = 0,
+    /** The Overview's machine ids named as the Machines page names them (empty from a home before names: each by its id). */
+    @Serializable(with = LenientNames::class) val names: Map<String, String> = emptyMap(),
+) {
+    /** A machine's name for display: its name, else its node id. */
+    fun nameOf(machine: String): String = machineName(names, machine)
+
     /** One panel per metric name, in the board's order. */
     val panels: List<Pair<String, List<BoardSeries>>>
         get() = series.groupBy { it.name }.toList()
+
+    /** "Showing 5 of 37": the Overview of all machines shows fewer than it has. */
+    val showsSomeMachines: Boolean
+        get() = machine.isNullOrEmpty() && machines != null && machines.total > machines.shown.size
 }
 
 /** The boards the Remote shows (read only). */
@@ -267,8 +312,12 @@ suspend fun ApiClient.linesAround(id: Long): LogSearch =
 
 suspend fun ApiClient.logUserNames(): Map<String, String> = get<UserNames>("/api/admin/logs/users").users.orEmpty()
 
-suspend fun ApiClient.board(board: Board, range: String): BoardDoc =
-    get("/api/admin/dashboards/${board.id}", mapOf("range" to range))
+/** A board; on the Overview, [machine] asks for one machine's lines on their own. */
+suspend fun ApiClient.board(board: Board, range: String, machine: String? = null): BoardDoc =
+    get(
+        "/api/admin/dashboards/${board.id}",
+        if (board == Board.Overview && !machine.isNullOrEmpty()) mapOf("range" to range, "machine" to machine) else mapOf("range" to range),
+    )
 
 /** The admin's inbox, or a viewer's own reports. */
 suspend fun ApiClient.problemReports(): List<ReportSummary> = get<ReportList>("/api/reports").reports.orEmpty()

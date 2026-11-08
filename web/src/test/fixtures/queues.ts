@@ -1,8 +1,8 @@
 // JSON fixtures for every plan 06-11 §8.2 type and §7.2 event. Used by the
 // unit tests and by the dev-time mock server (web/mocks/queue-dev).
 // Numbers are chosen to cover every card state: running (probe,
-// fingerprint, detect), done (thumb_hash), waiting (tag, plex_collection),
-// failing (link), disabled (dizquetv_show), review (write_channels).
+// fingerprint, detect), done (thumb_hash), waiting (tag, plex_livetv),
+// failing (link), review (write_channels).
 import type {
   Extension,
   FailureGroup,
@@ -143,7 +143,7 @@ const SEEDS: StageSeed[] = [
     order: 1,
     pool: "cpu",
     kinds: ["library"],
-    to: ["tag", "rate_style", "plex_collection", "dizquetv_show", "plan_channels", "fingerprint"],
+    to: ["tag", "rate_style", "plan_channels", "fingerprint"],
     entry: ["library"],
     fed_by: ["probe", "thumb_hash", "link", "fingerprint"],
   },
@@ -181,26 +181,13 @@ const SEEDS: StageSeed[] = [
     fed_by: ["detect", "style_sample"],
   },
   {
-    stage: "plex_collection",
-    label: "Plex collection",
-    lane: "seasons",
-    order: 4,
-    pool: "network_plex",
-    kinds: ["season"],
-    to: ["dizquetv_show"],
-    entry: ["season"],
-    external_write: true,
-    extension: "plex",
-    fed_by: ["detect"],
-  },
-  {
     stage: "topic_collections",
     label: "Topic collections",
     lane: "seasons",
     order: 2,
     pool: "cpu",
     kinds: ["library"],
-    to: ["clip_groups", "plex_groups", "plan_channels"],
+    to: ["clip_groups", "plan_channels"],
     entry: ["library"],
     fed_by: ["detect"],
   },
@@ -222,21 +209,9 @@ const SEEDS: StageSeed[] = [
     order: 3,
     pool: "cpu",
     kinds: ["library"],
-    to: ["plex_groups", "plan_channels"],
+    to: ["plan_channels"],
     entry: ["library"],
     fed_by: ["topic_collections", "promo_links", "tag"],
-  },
-  {
-    stage: "plex_groups",
-    label: "Plex topic and clip collections",
-    lane: "seasons",
-    order: 4,
-    pool: "network_plex",
-    kinds: ["library"],
-    entry: ["library"],
-    external_write: true,
-    extension: "plex",
-    fed_by: ["topic_collections", "clip_groups", "plex_index"],
   },
   {
     stage: "review_pages",
@@ -247,17 +222,6 @@ const SEEDS: StageSeed[] = [
     kinds: ["library"],
     entry: ["library"],
     fed_by: ["detect", "thumb_small"],
-  },
-  {
-    stage: "dizquetv_show",
-    label: "dizqueTV show",
-    lane: "seasons",
-    order: 5,
-    pool: "network_tv",
-    kinds: ["season"],
-    external_write: true,
-    extension: "dizquetv",
-    fed_by: ["detect", "plex_collection"],
   },
   {
     stage: "plan_channels",
@@ -277,8 +241,21 @@ const SEEDS: StageSeed[] = [
     order: 2,
     pool: "network_tv",
     kinds: ["catalog"],
+    to: ["plex_livetv"],
     external_write: true,
     fed_by: ["plan_channels"],
+  },
+  {
+    stage: "plex_livetv",
+    label: "Plex Live TV",
+    lane: "channels",
+    order: 3,
+    pool: "network_plex",
+    kinds: ["catalog"],
+    entry: ["catalog"],
+    external_write: true,
+    extension: "plex",
+    fed_by: ["write_channels"],
   },
   {
     stage: "scan",
@@ -371,11 +348,7 @@ export function stageInfo(over: Partial<StageInfo> & { stage: string }): StageIn
   };
 }
 
-export const stagesFixture: StageInfo[] = SEEDS.map((s) =>
-  s.stage === "dizquetv_show"
-    ? stageInfo({ stage: s.stage, enabled: false, disabled_reason: "not_configured" })
-    : stageInfo({ stage: s.stage })
-);
+export const stagesFixture: StageInfo[] = SEEDS.map((s) => stageInfo({ stage: s.stage }));
 
 const ZERO = {
   pending: 0,
@@ -493,23 +466,12 @@ export const summariesFixture: QueueSummary[] = [
     wave: { done: 12, total: 16 },
     waiting_reason: "upstream",
   }),
-  queueSummary("plex_collection", {
-    counts: { pending: 5, ready: 0 },
-    wave: { done: 20, total: 25 },
-    waiting_reason: "upstream",
-  }),
-  queueSummary("dizquetv_show", { wave: { done: 0, total: 0 }, waiting_reason: "not_configured" }),
   queueSummary("topic_collections", { counts: { done_24h: 12 }, wave: { done: 12, total: 12 } }),
   queueSummary("promo_links", { counts: { done_24h: 12 }, wave: { done: 12, total: 12 } }),
   queueSummary("clip_groups", {
     counts: { pending: 2, ready: 2, running: 1, done_24h: 9 },
     wave: { done: 9, total: 12 },
     rate_per_min: 3,
-  }),
-  queueSummary("plex_groups", {
-    counts: { pending: 3, ready: 0 },
-    wave: { done: 6, total: 9 },
-    waiting_reason: "upstream",
   }),
   queueSummary("thumb_small", {
     counts: { pending: 40, ready: 40, done_24h: 160 },
@@ -527,6 +489,11 @@ export const summariesFixture: QueueSummary[] = [
     waiting_reason: "idle",
   }),
   queueSummary("write_channels", { counts: { done_24h: 1 }, wave: { done: 1, total: 1 } }),
+  queueSummary("plex_livetv", {
+    counts: { pending: 5, ready: 0 },
+    wave: { done: 20, total: 25 },
+    waiting_reason: "upstream",
+  }),
   queueSummary("scan", { counts: { done_24h: 6 }, wave: { done: 6, total: 6 } }),
   queueSummary("extract", {
     counts: { pending: 10, ready: 10, paused: 0 },
@@ -595,18 +562,18 @@ export const poolsFixture: Pool[] = [
     size: 2,
     effective_size: 2,
     busy: 0,
-    stages: ["plex_collection"],
+    stages: ["plex_livetv"],
     updated_at: ago(9000),
     updated_by: null,
   },
   {
     pool: "network_tv",
-    label: "dizqueTV",
+    label: "TV channels",
     scope: "global",
     size: 1,
     effective_size: 1,
     busy: 0,
-    stages: ["dizquetv_show", "write_channels"],
+    stages: ["write_channels"],
     updated_at: ago(9000),
     updated_by: null,
   },
@@ -627,7 +594,7 @@ export const extensionsFixture: Extension[] = [
   {
     name: "plex",
     label: "Plex",
-    description: "Keeps Plex collections in step with your seasons.",
+    description: "Adds Maktaba's channels to Plex Live TV.",
     version: "1.2.0",
     enabled: true,
     configured: true,
@@ -640,29 +607,23 @@ export const extensionsFixture: Extension[] = [
         help: "For example http://192.0.2.10:32400",
       },
       { key: "token", label: "Token", type: "secret", required: true },
-      {
-        key: "path_map",
-        label: "Path map",
-        type: "text",
-        help: "PLEX=LOCAL pairs, comma separated",
-      },
     ],
-    settings: { url: "http://192.0.2.10:32400", path_map: "/data=Z:/" },
+    settings: { url: "http://192.0.2.10:32400" },
     secrets_set: ["token"],
   },
   {
-    name: "dizquetv",
-    label: "dizqueTV",
-    description: "Mirrors seasons and channels into a dizqueTV server.",
-    version: "0.4.1",
+    name: "web_search",
+    label: "Web search",
+    description:
+      "Find metadata: search the web for a video and have the language model read the results.",
+    version: "1",
     enabled: false,
     configured: false,
     settings_schema: [
-      { key: "url", label: "Server address", type: "url", required: true },
-      { key: "api_key", label: "API key", type: "secret" },
-      { key: "mirror_channels", label: "Also mirror channels", type: "boolean" },
+      { key: "google_api_key", label: "Google API key", type: "secret" },
+      { key: "google_cx", label: "Search engine ID (cx)", type: "text" },
     ],
-    settings: { url: "", mirror_channels: false },
+    settings: { google_cx: "" },
     secrets_set: [],
   },
 ];
@@ -680,8 +641,8 @@ export const workersFixture: WorkerHost[] = [
       "link",
       "fingerprint",
       "detect",
-      "plex_collection",
       "write_channels",
+      "plex_livetv",
     ],
     serves_label: "NAS, detection, Plex",
   },
@@ -704,9 +665,8 @@ export const flowsFixture: Flow[] = [
   { from: "detect", to: "tag", per_min: 0.3 },
   { from: "tag", to: "rate_style", per_min: 0 },
   { from: "detect", to: "rate_style", per_min: 0.2 },
-  { from: "rate_style", to: "plex_collection", per_min: 0 },
-  { from: "plex_collection", to: "dizquetv_show", per_min: 0.1 },
   { from: "plan_channels", to: "write_channels", per_min: 0 },
+  { from: "write_channels", to: "plex_livetv", per_min: 0.1 },
 ];
 
 export const snapshotFixture: QueuesSnapshot = {
@@ -719,7 +679,7 @@ export const snapshotFixture: QueuesSnapshot = {
   health: {
     nas: { reads_busy: 2, reads_limit: 2, open_ms_p50: 180, open_ms_p95: 940, timeouts_10m: 3 },
     cpu: { pct: 47 },
-    network: { plex_ms: 38, tv_ms: 22, youtube_ms: -1 },
+    network: { plex_ms: 38, youtube_ms: -1 },
     backlog: { ready: 523, oldest_waiting_sec: 3100 },
     spark: {
       nas_open_ms: [120, 140, 180, 210, 190, 260, 240, 180],
@@ -909,29 +869,29 @@ const done = (over: Partial<JobRef>) =>
     ...over,
   });
 
-const plexWrite = done({
+const channelWrite = done({
   id: 13,
-  stage: "plex_collection",
-  subject_kind: "season",
-  subject_label: "Fiqh of worship",
+  stage: "write_channels",
+  subject_kind: "catalog",
+  subject_label: "Channels",
 });
-export const seasonWriteChanges: NonNullable<ItemHistoryData["timeline"][number]["changes"]> = [
-  { action: "created", what: "collection", target: "Fiqh of worship", count: 1 },
+export const channelWriteChanges: NonNullable<ItemHistoryData["timeline"][number]["changes"]> = [
+  { action: "created", what: "channel", target: "Fiqh of worship", count: 1 },
   {
     action: "added",
-    what: "episodes",
+    what: "slot",
     target: "Fiqh of worship",
     count: 3,
     items: ["Lecture 22", "Lecture 23", "Lecture 24"],
   },
   {
     action: "removed",
-    what: "episodes",
+    what: "slot",
     target: "Fiqh of worship",
     count: 1,
     items: ["Lecture 02 (duplicate)"],
   },
-  { action: "reordered", what: "episodes", target: "Fiqh of worship", count: 24 },
+  { action: "reordered", what: "slot", target: "Fiqh of worship", count: 24 },
 ];
 
 export const libraryHistoryFixture: ItemHistoryData = {
@@ -963,8 +923,7 @@ export const libraryHistoryFixture: ItemHistoryData = {
     { id: "s-3", label: "2024", season: 2024, kind: "ongoing", episode_count: 48 },
   ],
   appears_in: [
-    { target: "plex_collection", title: "Fiqh of worship", external_id: "plex-991" },
-    { target: "dizquetv_show", title: "Fiqh of worship", external_id: "dz-12" },
+    { target: "maktaba_channel", title: "Fiqh of worship", external_id: "ch-2" },
     {
       target: "channel_slot",
       title: "Wisdom channel",
@@ -974,8 +933,8 @@ export const libraryHistoryFixture: ItemHistoryData = {
   ],
   timeline: [
     {
-      job: plexWrite,
-      changes: seasonWriteChanges,
+      job: channelWrite,
+      changes: channelWriteChanges,
       duration_ms: 1900,
       triggered: [],
       reasons: [{ at: ago(470), why: "detect output changed", by: "job:12" }],
@@ -990,7 +949,7 @@ export const libraryHistoryFixture: ItemHistoryData = {
       duration_ms: 4200,
       triggered: [
         { stage: "tag", subject_label: "Fiqh of worship", outcome: "inserted" },
-        { stage: "plex_collection", subject_label: "Fiqh of worship", outcome: "coalesced" },
+        { stage: "plan_channels", subject_label: "Fiqh of worship", outcome: "coalesced" },
       ],
       reasons: [{ at: ago(520), why: "link output changed", by: "job:11" }],
     },

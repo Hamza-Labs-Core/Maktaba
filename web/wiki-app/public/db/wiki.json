@@ -3,7 +3,7 @@
   "project": "Maktaba",
   "description": "Self-hosted media intelligence platform: full Plex alternative + every-word-searchable transcripts. See specs/architecture.md.",
   "generated_from": [
-    "specs/epics/** (56 epics, 01 to 56: READMEs, stories, plans)",
+    "specs/epics/** (57 epics, 01 to 57: READMEs, stories, plans)",
     "specs/architecture.md (DB tables)",
     "specs/*.md (15 reviews and audits)",
     "specs/diagrams/*.drawio (14 diagrams)",
@@ -13,15 +13,15 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 181,
+    "endpoint": 180,
     "entity": 42,
-    "epic": 56,
+    "epic": 57,
     "feature": 3,
     "mockup": 63,
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 668
+    "story": 681
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -30,7 +30,7 @@
     "wiki-epics-28-36.json",
     "wiki-epics-37-45.json",
     "wiki-epics-46-54.json",
-    "wiki-epics-55-56.json"
+    "wiki-epics-55-57.json"
   ],
   "entries": [
     {
@@ -2908,6 +2908,43 @@
       }
     },
     {
+      "id": "epic-57-parental-controls",
+      "type": "epic",
+      "title": "Parental controls on iPhone and iPad, on Apple's Screen Time",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "engine": null,
+      "content": "Parental controls on iPhone and iPad, on Apple's Screen Time.\n\nRequirement: a parent must be able to hand a child an iPhone or iPad with Maktaba on it and know the child sees only what the parent allows. That has to hold everywhere content can appear, on the home network and through Maktaba Cloud, and no app, modified or not, may get around it. Today the only limit is which libraries a user can read (`library_acl`). Epic 45 listed parental controls as missing and shelved its profiles-with-a-PIN story (45.23).",
+      "tags": [
+        "epic",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "story-57.1",
+        "story-57.2",
+        "story-57.3",
+        "story-57.4",
+        "story-57.5",
+        "story-57.6",
+        "story-57.7",
+        "story-57.8",
+        "story-57.9",
+        "story-57.10",
+        "story-57.11",
+        "story-57.12",
+        "story-57.13"
+      ],
+      "files": {
+        "readme": "specs/epics/57-parental-controls/README.md"
+      },
+      "metadata": {
+        "story_count": 13,
+        "plan_count": 0,
+        "mockup_count": 0
+      }
+    },
+    {
       "id": "diagram-api-streaming-stories",
       "type": "diagram",
       "title": "Api Streaming Stories",
@@ -4752,7 +4789,9 @@
         "story-56.7",
         "story-56.8",
         "story-56.12",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1",
+        "story-57.7"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -4808,7 +4847,9 @@
         "story-56.7",
         "story-56.8",
         "story-56.12",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1",
+        "story-57.7"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -4850,7 +4891,9 @@
         "story-56.5",
         "story-56.6",
         "story-56.8",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1",
+        "story-57.7"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -4892,7 +4935,9 @@
         "story-56.5",
         "story-56.6",
         "story-56.8",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1",
+        "story-57.7"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -4934,7 +4979,9 @@
         "story-56.5",
         "story-56.6",
         "story-56.8",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1",
+        "story-57.7"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5040,7 +5087,9 @@
         "story-56.5",
         "story-56.8",
         "story-56.9",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1",
+        "story-57.3"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5082,7 +5131,8 @@
         "story-27.11",
         "story-29.5",
         "story-52.9",
-        "story-52.12"
+        "story-52.12",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5124,7 +5174,8 @@
         "story-27.11",
         "story-29.5",
         "story-52.9",
-        "story-52.12"
+        "story-52.12",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5166,7 +5217,8 @@
         "story-27.11",
         "story-29.5",
         "story-52.9",
-        "story-52.12"
+        "story-52.12",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5451,7 +5503,8 @@
         "story-26.8",
         "story-51.9",
         "story-53.9",
-        "story-55.4"
+        "story-55.4",
+        "story-57.3"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5488,7 +5541,8 @@
         "story-26.8",
         "story-51.9",
         "story-53.9",
-        "story-55.4"
+        "story-55.4",
+        "story-57.3"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5806,7 +5860,8 @@
         "story-56.7",
         "story-56.8",
         "story-56.9",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5839,7 +5894,8 @@
         "story-56.7",
         "story-56.8",
         "story-56.9",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5864,7 +5920,8 @@
       "related": [
         "story-9.14",
         "story-56.8",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5889,7 +5946,8 @@
       "related": [
         "story-9.14",
         "story-56.8",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -5914,7 +5972,8 @@
       "related": [
         "story-9.14",
         "story-56.8",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6000,7 +6059,9 @@
         "story-12.3",
         "story-26.4",
         "story-54.15",
-        "story-55.9"
+        "story-55.9",
+        "story-57.3",
+        "story-57.10"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7051,7 +7112,9 @@
         "Queue",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-57.1"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -7072,7 +7135,9 @@
         "Queue",
         "post"
       ],
-      "related": [],
+      "related": [
+        "story-57.1"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -7093,7 +7158,9 @@
         "Queue",
         "patch"
       ],
-      "related": [],
+      "related": [
+        "story-57.1"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -7114,7 +7181,9 @@
         "Queue",
         "delete"
       ],
-      "related": [],
+      "related": [
+        "story-57.1"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },
@@ -7475,7 +7544,8 @@
       ],
       "related": [
         "story-29.3",
-        "story-29.4"
+        "story-29.4",
+        "story-57.8"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7556,7 +7626,7 @@
       "id": "ep-get-extensions",
       "type": "endpoint",
       "title": "GET /extensions",
-      "content": "Optional extensions (Plex, dizqueTV)",
+      "content": "Optional extensions (Plex, Cloudflare Stream, web search)",
       "tags": [
         "api",
         "Queue",
@@ -7566,7 +7636,8 @@
         "story-51.7",
         "story-54.6",
         "story-54.35",
-        "story-56.7"
+        "story-56.7",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7732,7 +7803,9 @@
         "story-54.20",
         "story-54.21",
         "story-54.40",
-        "story-55.2"
+        "story-55.2",
+        "story-57.5",
+        "story-57.13"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -8987,27 +9060,6 @@
       }
     },
     {
-      "id": "ep-get-libraries-id-plex-missing",
-      "type": "endpoint",
-      "title": "GET /libraries/{id}/plex-missing",
-      "content": "The items of a library's Plex collections that are not in Maktaba (admin)",
-      "tags": [
-        "api",
-        "Libraries",
-        "get"
-      ],
-      "related": [],
-      "files": {
-        "openapi": "shared/api/openapi.yaml"
-      },
-      "metadata": {
-        "method": "GET",
-        "path": "/libraries/{id}/plex-missing",
-        "tag": "Libraries",
-        "operationId": "listPlexMissing"
-      }
-    },
-    {
       "id": "ep-get-videos-facets",
       "type": "endpoint",
       "title": "GET /videos/facets",
@@ -9161,7 +9213,8 @@
         "story-56.1",
         "story-56.4",
         "story-56.6",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9189,7 +9242,8 @@
         "story-26.10",
         "story-56.1",
         "story-56.4",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9217,7 +9271,8 @@
         "story-26.10",
         "story-56.1",
         "story-56.4",
-        "story-56.14"
+        "story-56.14",
+        "story-57.1"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -9384,7 +9439,8 @@
         "story-53.10",
         "story-53.11",
         "story-54.7",
-        "story-54.8"
+        "story-54.8",
+        "story-57.2"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",
@@ -9446,7 +9502,8 @@
         "story-9.14",
         "story-9.15",
         "story-26.4",
-        "story-56.6"
+        "story-56.6",
+        "story-57.3"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",
@@ -9469,7 +9526,8 @@
       ],
       "related": [
         "story-26.4",
-        "story-31.relay-service-door"
+        "story-31.relay-service-door",
+        "story-57.3"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",
@@ -10076,6 +10134,7 @@
         "story-29.3",
         "story-30.3",
         "story-42.7",
+        "story-57.13",
         "story-10.11"
       ],
       "files": {
@@ -10168,7 +10227,8 @@
         "story-26.6",
         "story-27.10",
         "story-29.3",
-        "story-29.5"
+        "story-29.5",
+        "story-57.3"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

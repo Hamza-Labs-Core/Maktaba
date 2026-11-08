@@ -990,17 +990,37 @@ describe("Admin Channels (test-cases/admin-channels.md)", () => {
     expect(within(dialog).getByLabelText("Name")).toHaveValue("Kids");
   });
 
-  it("CHN-27: an empty tv.live inherits the dizqueTV rows with a note", async () => {
+  it("CHN-27: tv.live inherited from the old dizqueTV settings is edited with a note", async () => {
     answers["/api/rules"] = {
       sections: [
-        { key: "tv", fields: [{ name: "live", value: [] }] },
-        { key: "dizquetv", fields: [{ name: "live", value: [{ channel: 2, url: "https://d" }] }] },
+        {
+          key: "tv",
+          fields: [{ name: "live", value: [{ channel: 2, url: "https://d" }], inherited: true }],
+        },
       ],
     };
     const { user, dialog } = await openEditor("Kids");
     await user.click(within(dialog).getByRole("tab", { name: /^live broadcasts/i }));
-    expect(within(dialog).getByText(/^These come from the dizqueTV export/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/^These come from the old dizqueTV settings/)
+    ).toBeInTheDocument();
     expect(within(dialog).getByLabelText("Stream address")).toHaveValue("https://d");
+  });
+
+  it("CHN-27: tv.live's own rows carry no note; another section's live list is not read", async () => {
+    answers["/api/rules"] = {
+      sections: [
+        { key: "tv", fields: [{ name: "live", value: [] }] },
+        { key: "other", fields: [{ name: "live", value: [{ channel: 2, url: "https://d" }] }] },
+      ],
+    };
+    const { user, dialog } = await openEditor("Kids");
+    await user.click(within(dialog).getByRole("tab", { name: /^live broadcasts/i }));
+    expect(
+      within(dialog).getByText("This channel carries no live broadcasts.")
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/^These come from the old dizqueTV settings/)).toBeNull();
+    expect(within(dialog).queryByLabelText("Stream address")).toBeNull();
   });
 
   it("CHN-28: when the live rows fail after a create, the next Save retries only them", async () => {

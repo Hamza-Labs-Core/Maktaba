@@ -35,7 +35,7 @@ HDHomeRun tuner only, plus adding that tuner to Plex once:
   changes nothing within ``GUIDE_LOAD_SECONDS`` of the last reload sends nothing: Plex is
   still loading that guide, and a reload or channel-map push meanwhile aborts the load.
 
-Other tuners (dizqueTV's, an antenna's) are listed in the status and never changed: their
+Other tuners (another program's, an antenna's) are listed in the status and never changed: their
 channel maps, names and guides stay as they are. The DVR Maktaba joins is shared, so its
 guide reload reloads every guide that DVR carries.
 
@@ -70,7 +70,7 @@ from ...integrations.plex import (
     xmltv_lineup,
     xmltv_url_of,
 )
-from .collection import PlexService
+from .service import PlexService
 
 __all__ = [
     "LiveState",
@@ -179,13 +179,10 @@ def resolve_target(cfg: Any, st: LiveState, env: Mapping[str, str]) -> Target:
     return Target(base, xmltv, source)
 
 
-def classify(t: PlexTuner, ours: PlexTuner | None, dizquetv_url: str) -> str:
-    """``maktaba``, ``dizquetv`` (its address, or its name says so) or ``other``."""
+def classify(t: PlexTuner, ours: PlexTuner | None) -> str:
+    """``maktaba`` (Maktaba's own tuner) or ``other`` (any other program's, an antenna's)."""
     if ours is not None and t.key == ours.key:
         return "maktaba"
-    text = f"{t.title} {t.make} {t.model}".casefold()
-    if same_host(t.uri, dizquetv_url) or "dizque" in text:
-        return "dizquetv"
     return "other"
 
 
@@ -484,7 +481,6 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
 ) -> StageResult:
     cfg = await ctx.rules("plexlive")
     settings = ctx.extension_settings("plex")
-    dz_url = str(ctx.extension_settings("dizquetv").get("url", ""))
     st = await load_state(db)
     manual = bool(getattr(job, "force", False) or getattr(job, "force_cascade", False))
     asked = st.register_requested_at is not None
@@ -537,7 +533,7 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                             "uri": t.uri,
                             "device_id": t.device_id,
                             "title": t.title,
-                            "kind": classify(t, ours, dz_url),
+                            "kind": classify(t, ours),
                         }
                         for t in d.devices
                     ],
@@ -550,7 +546,7 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                     "uri": t.uri,
                     "device_id": t.device_id,
                     "title": t.title,
-                    "kind": classify(t, ours, dz_url),
+                    "kind": classify(t, ours),
                     "in_dvr": _dvr_of(seen_dvrs, t) is not None,
                 }
                 for t in (run.tuners if run else [])
@@ -564,9 +560,6 @@ async def run_livetv(  # noqa: C901, PLR0912, PLR0915 - one decision list, kept 
                     run and run.ours_dvr is not None and not _shown(run.dvrs, run.ours_dvr)
                 ),
             },
-            "dizquetv_present": bool(
-                run and any(classify(t, ours, dz_url) == "dizquetv" for t in run.tuners)
-            ),
             "channels": {
                 "lineup": len(lineup),
                 "mapped": len(mapped) if mapped is not None else None,

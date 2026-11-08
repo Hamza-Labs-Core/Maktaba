@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -543,6 +544,25 @@ func (e *Executor) Open() int {
 	return len(e.txs)
 }
 
+// legacySettings: a key a rules section still reads from an older release's row. The tv
+// rules air the dizqueTV export's live list while they name none of their own (slot 0215
+// keeps that row; pipeline rules.legacy_tv_live), until the cleanup migration moves it to
+// rules.tv: a plugin that may read the tv rules may read it too.
+var legacySettings = map[string]string{"tv": "rules.dizquetv"}
+
+// settingsInScope: key v is one a plugin listing these rules sections may read.
+func settingsInScope(v string, sections []string) bool {
+	for _, s := range sections {
+		if v == "rules."+s || v == "rules_version."+s {
+			return true
+		}
+		if old, ok := legacySettings[s]; ok && v == old {
+			return true
+		}
+	}
+	return false
+}
+
 // checkScope is step 3: the statement's scope argument against the token.
 func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args []any) *Error {
 	if st.Scope == "catalog" {
@@ -560,10 +580,8 @@ func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args
 	}
 	switch st.Scope {
 	case "settings":
-		for _, s := range sc.Settings {
-			if v == "rules."+s || v == "rules_version."+s {
-				return nil
-			}
+		if settingsInScope(v, sc.Settings) {
+			return nil
 		}
 		return refuse(403, CodeScope, st.Name+": setting "+v+" is not the plugin's")
 	case "library":
@@ -572,6 +590,14 @@ func (e *Executor) checkScope(ctx context.Context, sc Scope, st *Statement, args
 		}
 		return refuse(403, CodeScope, st.Name+": library "+v)
 	case "subject":
+		// A video id in any form Postgres takes for a uuid (upper case, no hyphens, braces)
+		// names the same row as its canonical text, which the lookup below compares: checked
+		// as given, another library's video would miss the lookup and pass as one that is gone.
+		id, perr := uuid.Parse(v)
+		if perr != nil {
+			return refuse(403, CodeScope, st.Name+": the scope argument is not a video id")
+		}
+		v = id.String()
 		if sc.SubjectKind == "video" {
 			if strings.EqualFold(v, sc.SubjectID) {
 				return nil

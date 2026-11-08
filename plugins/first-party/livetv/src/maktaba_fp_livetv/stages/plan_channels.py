@@ -13,7 +13,7 @@ The result is one ``channel_plans`` row (the latest wins;
 * ``apply_changes`` stores the plan;
 * an unchanged lineup writes nothing and propagates nothing.
 
-Extensions can add per-channel data to the plan (for example dizqueTV time slots) through
+Extensions can add per-channel data to the plan through
 :func:`register_plan_exporter`; the core knows nothing about what they export.
 """
 

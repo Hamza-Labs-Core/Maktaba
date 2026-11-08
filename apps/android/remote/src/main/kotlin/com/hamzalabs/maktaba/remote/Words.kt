@@ -231,7 +231,6 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
 
     private fun serviceName(s: String): String = when (s) {
         "plex" -> "Plex"
-        "dizquetv" -> "dizqueTV"
         else -> s
     }
 

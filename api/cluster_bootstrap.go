@@ -288,8 +288,7 @@ func mountClusterHub(r chi.Router, h *clusterh.Handler, db *sql.DB, driver strin
 	if db != nil {
 		// the extension service door (story 31.R): nodes run the Plex
 		// stages without the token; rules.relay switches it
-		cfg.Relay = relay.New(relay.Config{Settings: relay.DBSettings(db),
-			Upstream: relay.DBUpstream(db, store, os.Getenv), Logger: logger})
+		cfg.Relay = relay.New(clusterRelayConfig(db, store, logger))
 	}
 	deps := router.P31AgentDeps{DB: db, Driver: driver, Config: cfg}
 	var hub *agent.Hub
@@ -363,4 +362,11 @@ func schemaRev(db *sql.DB, driver string) int {
 		return 0
 	}
 	return int(n)
+}
+
+// clusterRelayConfig is the agent channel's door: Plex only (its reachability probe for a
+// node, its Live TV calls for the home's own plugin).
+func clusterRelayConfig(db *sql.DB, store secrets.Store, logger *slog.Logger) relay.Config {
+	return relay.Config{Settings: relay.DBSettings(db), Upstream: relay.DBUpstream(db, store, os.Getenv),
+		Logger: logger, Extensions: map[string]*relay.Extension{relay.Plex.Name: &relay.Plex}}
 }

@@ -58,6 +58,12 @@ const EnvSymbolsTokenFile = "MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE"
 // logsToken reads W's token from its file ("" when unset or unreadable).
 func logsToken() string { return tokenFile(EnvLogsTokenFile) }
 
+// symbolsToken reads the symbol uploaders' token from its file ("" when unset or unreadable:
+// uploads answer 503 symbols_off). deploy/cloud-ha/deploy.sh writes the file from the
+// MAKTABA_SYMBOLS_TOKEN secret the release workflows upload with, so one secret enables both
+// ends; the api reads it when it starts (each deploy restarts it).
+func symbolsToken() string { return tokenFile(EnvSymbolsTokenFile) }
+
 // tokenFile reads a token from the file env names ("" when unset or unreadable).
 func tokenFile(env string) string {
 	p := os.Getenv(env)

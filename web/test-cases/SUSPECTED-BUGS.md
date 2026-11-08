@@ -83,7 +83,7 @@ model), SHL-02 (`NotFound.tsx` is English only), REG-05 (password length hint), 
 - Extensions.tsx:124,:178 `secrets_set`/`settings_schema` null -> crash.
 - Extensions.tsx:36-39 toggling Enabled / Plex sign-in wipes unsaved edits.
 - Extensions.tsx:136 cleared number field saves 0.
-- Extensions hash deep links (#dizquetv) don't scroll (cards render after load).
+- Extensions hash deep links (#plex) don't scroll (cards render after load).
 - CloudflareRemote.tsx:33, :82-84 null `lines`/`errors`/`deleted_inputs` -> crash.
 - LibraryACL.tsx:153 `matrix.users`/`libraries` null -> crash.
 - LibraryACL.tsx:82 Retry shows "Nothing to map" instead of Loading.

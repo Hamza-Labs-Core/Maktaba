@@ -147,6 +147,9 @@ func (h *Handler) Read(w http.ResponseWriter, r *http.Request) {
 					m["changed"] = !equalValues(f, v, f.def)
 				}
 			}
+			if sec.Key == "tv" && f.Name == "live" {
+				inheritLive(m, f, st.values[f.Name], stored[legacyLiveSection])
+			}
 			fields = append(fields, m)
 		}
 		unknown := []string{}
@@ -411,6 +414,40 @@ func conflict(code, detail string) *httperror.Error {
 func writeFieldError(w http.ResponseWriter, r *http.Request, field string, err error) {
 	msg := field + ": " + err.Error()
 	httperror.Write(w, r, httperror.BadRequest(msg).With("error", msg).With("field", field))
+}
+
+// legacyLiveSection is the dizqueTV export's stored settings (rules.dizquetv). Maktaba TV
+// aired their live broadcasts while the tv rules named none; the export is gone, but slot
+// 0215 keeps the row (a release's migrations lose no data) and the scheduler still reads
+// its live list then (pipeline rules.legacy_tv_live), until the cleanup migration moves it
+// to rules.tv.
+const legacyLiveSection = "dizquetv"
+
+// inheritLive shows the tv rules' live field (m, of field f) as the scheduler airs it: with
+// no list of its own (own unset or empty), the old dizqueTV settings' list when it is one
+// the field takes, marked inherited (the channel editor starts from it, so saving one
+// channel's broadcasts keeps every other channel's).
+func inheritLive(m map[string]any, f *Field, own json.RawMessage, legacy storedSection) {
+	if own != nil {
+		if v, err := decodeValue(own); err != nil {
+			return
+		} else if list, ok := v.([]any); !ok || len(list) > 0 {
+			return
+		}
+	}
+	raw, ok := legacy.values["live"]
+	if !ok {
+		return
+	}
+	v, err := decodeValue(raw)
+	if err != nil {
+		return
+	}
+	if list, ok := v.([]any); !ok || len(list) == 0 || f.Validate(v) != nil {
+		return
+	}
+	m["value"] = raw
+	m["inherited"] = true
 }
 
 // storedSection is one decoded app_settings row.

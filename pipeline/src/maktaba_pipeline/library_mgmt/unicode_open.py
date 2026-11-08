@@ -50,10 +50,15 @@ def candidates(path: str) -> list[tuple[str, str]]:
 
 
 def _can_open(path: str) -> bool:
+    """Whether ``path`` opens and reads. A refusal (``PermissionError``) is raised, never
+    answered False: a sandboxed runner refused a file must say so, so its job runs in the
+    worker (``sandbox_refused``) instead of failing as a missing file."""
     try:
         with open(path, "rb") as f:
             f.read(1)
         return True
+    except PermissionError:
+        raise
     except OSError:
         return False
 
@@ -77,12 +82,20 @@ def open_fallback(
     """A path to ``path``'s file that opens (see the module doc).
 
     ``work_dir`` is where the macOS ``ditto`` copy goes (no copy without one). Raises
-    :class:`FileNotFoundError` when no spelling opens and no copy could be made.
+    :class:`FileNotFoundError` when no spelling opens and no copy could be made, and the
+    first refusal (:class:`PermissionError`) when no spelling opens and one was refused.
     """
     spellings = candidates(path)
+    refused: PermissionError | None = None
     for how, cand in spellings:
-        if can_open(cand):
-            return OpenedPath(cand, how)
+        try:
+            if can_open(cand):
+                return OpenedPath(cand, how)
+        except PermissionError as exc:
+            refused = refused or exc  # another spelling may still open
+    if refused is not None:
+        # the file is there but refused (a runner's sandbox): never a missing file
+        raise refused
     if platform == "darwin" and work_dir is not None:
         os.makedirs(work_dir, exist_ok=True)
         dest = os.path.join(work_dir, unicodedata.normalize("NFC", os.path.basename(path)))
