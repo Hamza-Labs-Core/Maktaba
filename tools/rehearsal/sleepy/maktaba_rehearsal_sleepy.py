@@ -21,6 +21,10 @@ and reads where each ran.
 
 The input fingerprint is the subject's own (``rehearsal:<id>``): the seed's files are not
 there, and a job the rehearsal enqueues runs whatever the subject's last real success was.
+
+``MAKTABA_REHEARSAL_WITNESS`` names stages (comma separated) whose real work runs, only
+witnessed: the same start step and the side and release in the summary, around the
+release's own code (scenario 16.7: a TV change staged, swapped and rolled back for real).
 """
 
 from __future__ import annotations
@@ -34,6 +38,9 @@ from typing import Any
 
 _NAMED = os.environ.get("MAKTABA_REHEARSAL_SLEEPY", "")
 _STAGES = frozenset(s.strip() for s in _NAMED.split(",") if s.strip())
+_WITNESS = frozenset(
+    s.strip() for s in os.environ.get("MAKTABA_REHEARSAL_WITNESS", "").split(",") if s.strip()
+)
 _REGISTRY = "maktaba_pipeline.engine.stages.registry"
 _SERVER = "maktaba_plugin_runner.server"
 
@@ -45,18 +52,43 @@ def _seconds() -> float:
         return 8.0
 
 
+def _where() -> tuple[str, str]:
+    """The side this process runs a stage on (``plugin`` in a runner, else ``inproc``) and
+    the release the rehearsal's Python started it for (next and after run cur's
+    environment, whose own version is cur's)."""
+    from maktaba_pipeline import __version__
+
+    side = "plugin" if _SERVER in sys.modules else "inproc"
+    return side, os.environ.get("MAKTABA_REHEARSAL_RELEASE") or __version__
+
+
+def _witnessed(stage: str, impl: Any) -> Any:
+    """``impl`` (a StageImpl) doing its own work, with a start step and where it ran."""
+    from dataclasses import replace
+
+    if impl is None or getattr(impl, "run", None) is None:
+        return impl
+    side, release = _where()
+    real = impl.run
+
+    async def run(db: Any, job: Any, ctx: Any) -> Any:
+        info = {"rehearsal": "start", "impl": side, "release": release, "pid": os.getpid()}
+        await ctx.log("info", f"rehearsal: {stage} runs ({side}, {release})", info)
+        result = await real(db, job, ctx)
+        summary = {**(result.summary or {}), "rehearsal": {"impl": side, "release": release}}
+        return replace(result, summary=summary)
+
+    return replace(impl, run=run)
+
+
 def _sleepy(stage: str, impl: Any) -> Any:
     """``impl`` (a StageImpl, or None) with its work a sleep."""
     from dataclasses import replace
 
-    from maktaba_pipeline import __version__
     from maktaba_pipeline.engine.graph import StageResult
     from maktaba_pipeline.engine.stages.registry import StageImpl
 
-    side = "plugin" if _SERVER in sys.modules else "inproc"
-    # the release the rehearsal's Python started this process for (next and after run cur's
-    # environment, whose own version is cur's)
-    release = os.environ.get("MAKTABA_REHEARSAL_RELEASE") or __version__
+    side, release = _where()
 
     async def run(_db: Any, job: Any, ctx: Any) -> Any:
         info = {"rehearsal": "start", "impl": side, "release": release, "pid": os.getpid()}
@@ -90,7 +122,9 @@ def _patch_registry(mod: Any) -> None:
 
     def get_impl(name: str) -> Any:
         impl = real(name)
-        return _sleepy(name, impl) if name in _STAGES else impl
+        if name in _STAGES:
+            return _sleepy(name, impl)
+        return _witnessed(name, impl) if name in _WITNESS else impl
 
     mod.get_impl = get_impl
 
@@ -105,6 +139,9 @@ def _patch_server(mod: Any) -> None:
         for name in _STAGES:
             if firstparty.impl_entry(name) == entry:
                 return _sleepy(name, impl)
+        for name in _WITNESS:
+            if firstparty.impl_entry(name) == entry:
+                return _witnessed(name, impl)
         return impl
 
     mod.load_impl = load_impl
@@ -140,5 +177,5 @@ class _Finder(importlib.abc.MetaPathFinder):
         return spec
 
 
-if _STAGES:
+if _STAGES or _WITNESS:
     sys.meta_path.insert(0, _Finder())

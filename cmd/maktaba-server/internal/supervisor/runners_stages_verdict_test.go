@@ -15,6 +15,7 @@ import (
 	"image/jpeg"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -197,17 +198,34 @@ func handedToWorker(group string, r stageReport, runnerLog string) []string {
 	return p
 }
 
+// brokerWants is what each stage's job on a brokered share must have had the broker
+// answer at least (the runner's job line counts): thumb_small looks its source up and hands
+// ffmpeg a handle; chapter_thumbs hands ffmpeg one handle per chapter; subtitle_gen looks
+// the video up and writes and renames its two files by name; convert_mp4's dry run opens
+// the file and hands ffprobe a handle. A stage not named wants a stat and an open.
+var brokerWants = map[string]map[string]int{
+	"thumb_small":    {"stat": 1, "open": 1},
+	"chapter_thumbs": {"open": 2},
+	"subtitle_gen":   {"stat": 1, "write": 2, "replace": 2},
+	"convert_mp4":    {"open": 2},
+}
+
 // brokeredProblems checks a job on a brokered share read it through the launcher's broker:
-// its runner's job line counts at least one answered stat (the source looked up) and one
-// answered open (the tool's input handle), and no refusal of any kind.
-func brokeredProblems(r stageReport, runnerLog string) []string {
+// its runner's job line counts at least the answers want names (nil: a stat and an open),
+// and no refusal of any kind.
+func brokeredProblems(r stageReport, runnerLog string, want map[string]int) []string {
+	if want == nil {
+		want = map[string]int{"stat": 1, "open": 1}
+	}
 	for _, l := range runnerJobLines(runnerLog) {
 		if l.JobID != r.JobID {
 			continue
 		}
 		var p []string
-		if l.Broker["stat"] < 1 || l.Broker["open"] < 1 {
-			p = append(p, fmt.Sprintf("the share was not read through the broker: its answers %v (want a stat and an open); looked for and missing: %q", l.Broker, l.Missing))
+		for op, n := range want {
+			if l.Broker[op] < n {
+				p = append(p, fmt.Sprintf("the share was not read through the broker: its answers %v (want %s x%d at least); looked for and missing: %q", l.Broker, op, n, l.Missing))
+			}
 		}
 		for k, n := range l.Broker {
 			if strings.HasSuffix(k, "_refused") {
@@ -217,6 +235,96 @@ func brokeredProblems(r stageReport, runnerLog string) []string {
 		return p
 	}
 	return []string{fmt.Sprintf("no runner job line for job %d", r.JobID)}
+}
+
+// writeRefusedProblems checks a write the runner tried on a share its group reads only
+// (the files group: the broker serves its share for reads): the launcher's broker refused
+// the op on that path and said so (plugin_runner_broker_write_refused), and the runner's
+// job line counts the refusal (<op>_refused).
+func writeRefusedProblems(r stageReport, runnerLog, op, path string) []string {
+	var p []string
+	said := false
+	for _, l := range strings.Split(runnerLog, "\n") {
+		if !strings.Contains(l, `"plugin_runner_broker_write_refused"`) {
+			continue
+		}
+		var ev struct {
+			Op   string `json:"op"`
+			Path string `json:"path"`
+		}
+		if json.Unmarshal([]byte(strings.TrimSpace(l)), &ev) == nil && ev.Op == op && strings.EqualFold(ev.Path, path) {
+			said = true
+		}
+	}
+	if path == "" || !said {
+		p = append(p, fmt.Sprintf("the broker did not log refusing %s of %q (plugin_runner_broker_write_refused)", op, path))
+	}
+	counted := false
+	for _, l := range runnerJobLines(runnerLog) {
+		if l.JobID == r.JobID && l.Broker[op+"_refused"] >= 1 {
+			counted = true
+		}
+	}
+	if !counted {
+		p = append(p, fmt.Sprintf("the runner's job line for job %d counts no %s_refused", r.JobID, op))
+	}
+	return p
+}
+
+// chapterFramesProblems checks chapter_thumbs' output: one frame per chapter (want), each a
+// JPEG in a video's folder of the thumbnail cache (root), never on the share.
+func chapterFramesProblems(summary map[string]any, root string, want int) []string {
+	var p []string
+	if n, _ := summary["frames"].(float64); int(n) != want {
+		p = append(p, fmt.Sprintf("the job made %v frames, want %d", summary["frames"], want))
+	}
+	frames, _ := filepath.Glob(filepath.Join(root, "*", "chapter-*.jpg"))
+	if len(frames) < want {
+		p = append(p, fmt.Sprintf("the thumbnail cache holds %d chapter frames, want %d", len(frames), want))
+	}
+	for _, f := range frames {
+		if info, err := os.Stat(f); err != nil || info.Size() == 0 {
+			p = append(p, fmt.Sprintf("%s: empty or unreadable (%v)", f, err))
+		}
+	}
+	return p
+}
+
+// subtitleFilesProblems checks subtitle_gen's output: <stem>.<lang>.srt and .vtt written in
+// the video's folder (folder: on the share, read outside the sandbox) with the transcript's
+// sentences, the summary naming both, and no temporary file left.
+func subtitleFilesProblems(summary map[string]any, folder, stem, lang string, texts []string) []string {
+	var p []string
+	written := map[string]bool{}
+	if ws, ok := summary["written"].([]any); ok {
+		for _, w := range ws {
+			if s, ok := w.(string); ok {
+				// by name: on Windows the stage lists each file's whole path (its
+				// posixpath.basename keeps a backslashed path whole)
+				written[path.Base(strings.ReplaceAll(s, `\`, "/"))] = true
+			}
+		}
+	}
+	for _, ext := range []string{"srt", "vtt"} {
+		name := stem + "." + lang + "." + ext
+		if !written[name] {
+			p = append(p, fmt.Sprintf("the summary does not name %s as written: %v", name, summary["written"]))
+		}
+		b, err := os.ReadFile(filepath.Join(folder, name))
+		if err != nil {
+			p = append(p, fmt.Sprintf("%s is not in %s: %v", name, folder, err))
+			continue
+		}
+		for _, t := range texts {
+			if !strings.Contains(string(b), t) {
+				p = append(p, fmt.Sprintf("%s lacks %q", name, t))
+			}
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(folder, "*.maktaba-tmp")); len(left) > 0 {
+		p = append(p, fmt.Sprintf("temporary files left: %v", left))
+	}
+	return p
 }
 
 // runnerIdentityProblems checks a runner's spool (the launcher's lines and the runner's)
@@ -504,7 +612,7 @@ func TestTheBrokeredShareVerdict(t *testing.T) {
 	line := func(broker string) string {
 		return `{"event": "plugin_runner_job", "group": "light", "stage": "thumb_small", "job_id": 7, "status": "ok", "ms": 90.0` + broker + "}"
 	}
-	if p := brokeredProblems(r, line(`, "broker": {"stat": 2, "stat_missing": 1, "open": 1}`)); len(p) != 0 {
+	if p := brokeredProblems(r, line(`, "broker": {"stat": 2, "stat_missing": 1, "open": 1}`), nil); len(p) != 0 {
 		t.Fatalf("a share read through the broker has problems: %q", p)
 	}
 	for name, c := range map[string]struct{ log, want string }{
@@ -515,11 +623,85 @@ func TestTheBrokeredShareVerdict(t *testing.T) {
 		"no line for the job":  {goodRunnerLog[:strings.Index(goodRunnerLog, "\n")], "no runner job line"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			p := brokeredProblems(r, c.log)
+			p := brokeredProblems(r, c.log, nil)
 			if !strings.Contains(strings.Join(p, "\n"), c.want) {
 				t.Fatalf("problems %q, want one saying %q", p, c.want)
 			}
 		})
+	}
+}
+
+// A stage's own wants: subtitle_gen must have written and renamed both files by name.
+func TestTheBrokeredShareVerdictTakesTheStagesWants(t *testing.T) {
+	r := goodStageReport()
+	line := func(broker string) string {
+		return `{"event": "plugin_runner_job", "group": "light", "stage": "subtitle_gen", "job_id": 7, "status": "ok", "ms": 9.0, "broker": {` + broker + "}}"
+	}
+	want := brokerWants["subtitle_gen"]
+	if p := brokeredProblems(r, line(`"stat": 1, "open_missing": 2, "write": 2, "replace": 2`), want); len(p) != 0 {
+		t.Fatalf("both subtitles written: %q", p)
+	}
+	if p := brokeredProblems(r, line(`"stat": 1, "write": 1, "replace": 1`), want); len(p) == 0 {
+		t.Fatal("one subtitle written passed")
+	}
+	if p := brokeredProblems(r, line(`"stat": 1, "write": 2, "replace": 2, "write_refused": 1`), want); len(p) == 0 {
+		t.Fatal("a refused write passed")
+	}
+}
+
+// A write the files runner tried on its read-only share passes only when the broker
+// refused it and said so, and the runner counted the refusal.
+func TestTheWriteRefusedVerdict(t *testing.T) {
+	r := goodStageReport()
+	const path = `\\localhost\mkstages\stages-e2e\.maktaba\trash\e2e\moov_end.mp4`
+	said := `{"event":"plugin_runner_broker_write_refused","op":"remove","path":"\\\\localhost\\mkstages\\stages-e2e\\.maktaba\\trash\\e2e\\moov_end.mp4","detail":"refused"}`
+	counted := `{"event": "plugin_runner_job", "group": "files", "stage": "trash_purge", "job_id": 7, "status": "sandbox_refused", "ms": 9.0, "broker": {"stat": 2, "remove_refused": 1}}`
+	if p := writeRefusedProblems(r, said+"\n"+counted, "remove", path); len(p) != 0 {
+		t.Fatalf("a refused, logged removal: %q", p)
+	}
+	for name, log := range map[string]string{
+		"not logged by the broker":  counted,
+		"not counted by the runner": said + "\n" + strings.Replace(counted, `"remove_refused": 1`, `"remove": 1`, 1),
+		"another path":              strings.Replace(said, "moov_end", "other", 1) + "\n" + counted,
+		"another op":                strings.Replace(said, `"op":"remove"`, `"op":"write"`, 1) + "\n" + counted,
+	} {
+		if p := writeRefusedProblems(r, log, "remove", path); len(p) == 0 {
+			t.Errorf("%s: passed", name)
+		}
+	}
+}
+
+// chapter_thumbs and subtitle_gen's outputs.
+func TestTheChapterFramesAndSubtitleVerdicts(t *testing.T) {
+	root := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "abc"), 0o700)
+	if p := chapterFramesProblems(map[string]any{"frames": 2.0}, root, 2); len(p) == 0 {
+		t.Fatal("no frames on disk passed")
+	}
+	for _, n := range []string{"chapter-1.jpg", "chapter-2.jpg"} {
+		_ = os.WriteFile(filepath.Join(root, "abc", n), []byte("jpeg"), 0o600)
+	}
+	if p := chapterFramesProblems(map[string]any{"frames": 2.0}, root, 2); len(p) != 0 {
+		t.Fatalf("two frames: %q", p)
+	}
+	if p := chapterFramesProblems(map[string]any{"frames": 1.0}, root, 2); len(p) == 0 {
+		t.Fatal("a summary of one frame passed")
+	}
+	folder := t.TempDir()
+	sum := map[string]any{"written": []any{"v.ar.srt", `\\nas\lib\v.ar.vtt`}}
+	texts := []string{"بسم الله"}
+	if p := subtitleFilesProblems(sum, folder, "v", "ar", texts); len(p) == 0 {
+		t.Fatal("no files passed")
+	}
+	for _, ext := range []string{"srt", "vtt"} {
+		_ = os.WriteFile(filepath.Join(folder, "v.ar."+ext), []byte("1\nبسم الله\n"), 0o600)
+	}
+	if p := subtitleFilesProblems(sum, folder, "v", "ar", texts); len(p) != 0 {
+		t.Fatalf("both files: %q", p)
+	}
+	_ = os.WriteFile(filepath.Join(folder, "v.ar.srt.maktaba-tmp"), nil, 0o600)
+	if p := subtitleFilesProblems(sum, folder, "v", "ar", texts); len(p) == 0 {
+		t.Fatal("a temporary file left passed")
 	}
 }
 

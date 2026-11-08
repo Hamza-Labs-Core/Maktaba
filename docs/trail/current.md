@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.106
-up_to_commit: d3098dcfb
-built_from: v0.3.105
+tag: v0.3.107
+up_to_commit: 591af235e
+built_from: v0.3.106
 ---
 
-# Trail snapshot: v0.3.106
+# Trail snapshot: v0.3.107
 
 ## Keep doing
 
@@ -142,6 +142,8 @@ built_from: v0.3.105
 - Write down a product direction that rules features out: Maktaba replaces Plex, and only Plex Live TV stays. Unwritten, features against it were built, moved and hardened across several epics. (d20261108-remove-plex-sync)
 - Prove a step behind a secret's gate before the secret exists by building its inputs locally and running its own script, in bash: a zsh array starts at 1. (d20261108-android-native-symbols-path)
 - When a guard's description changes mid-review, restate the final scope everywhere it was reported, not only in the PR body. (#990)
+- Run a new guard against open wave branches before they merge: on one such branch it found 6 unlisted tables and 8 bare-string `[scope]` overrides the analysis now derives. Prove every declared write check refuses and allows by walking the embedded bundle in a Go test, with one seeded row per kind in two libraries. (#1005)
+- Check every downloaded archive against its pin, whichever place sent it. Start a merge watcher from inside the repository, a couple of minutes after the push: started at once it reads the previous head's checks and stops on their failures, and from outside the repository it cannot read checks at all. (#1007)
 
 ## Stop doing
 
@@ -160,7 +162,7 @@ built_from: v0.3.105
 - Appending a slow PR's CHANGELOG entry at the end of Unreleased "Added", where other sessions append: it conflicted after every CI round; put it at the top of the section. (#782)
 - Picking a port without reading the port registry. (#686, #440)
 - Chaining `go test … | tail && git commit`: the pipeline's status is tail's, so a failing test still committed. (#705)
-- `git add -A` while `make compat-prev` runs: it writes `api/internal/compatprobe/main.go` for the run; commit only named paths. (#707)
+- `git add -A` after a tool that writes into the checkout: `make compat-prev` writes `api/internal/compatprobe/main.go` for the run, and `uv run` writes a root `uv.lock` that then fails ci-paths in the lint job; commit only named paths. (#707, #1007)
 - `git reset --soft origin/main` to squash after a fetch: a moved origin/main silently reverted three merged PRs. Reset to the branch's own base sha. (#701)
 - Naming a stale host in backticks in prose (CHANGELOG, docs): the foreign-domain lint flags it; write the name out of the text. (#700)
 - Cleaning up background load with `kill $(jobs -p)` (each agent command runs in a new shell, so the job table is empty) or hiding a cleanup's errors with `2>/dev/null`: sixteen orphaned `yes` loops held the Mac for three days and WindowServer crashed, ending the login session and every session's watchers. (d20261107-orphaned-cpu-load)
@@ -392,6 +394,9 @@ built_from: v0.3.105
 - An API handler adding a field to an answer proxied from the logs role buffers and re-encodes it, so the log index stays ignorant of the cluster. (#983)
 - kotlinx.serialization's `coerceInputValues` turns only a null into the default; a value of the wrong type still fails the whole answer, so optional fields use per-field lenient serializers. On this Mac the Android tests use Homebrew's openjdk@17 as `JAVA_HOME`, and Robolectric also needs `ANDROID_HOME=$HOME/Library/Android/sdk`. (#993)
 - A column that can only be filled from stored data is a nullable column filled the first time it is read: migrations stay DDL only. A vitest of a Copy button replaces `navigator.clipboard` after `userEvent.setup()`. (#994)
+- A first-party write's checks are worked out by the build from the parse tree and `tools/plugins/scope_tables.toml` (a top-level `AND` term on an owner column, every owner column of an `INSERT`, the conflict target of `DO UPDATE`), and a write it cannot bind fails the build; 91 of 187 statements had needed more than their header listed. Only `pgstore.write_vectors` (keys from `unnest($5)`) and `transcribe.forget_gone` (no argument) are set by hand. A `CASE WHEN $flag THEN $value` sets the owner column from `$value` only: checking the flag would refuse every call. (#1005)
+- A first-party token has `AllLibraries = true`, so a granted-library test passes for any library: a first-party job's own library is `inv.LibraryID`. YouTube rows are shared (a channel belongs to the first library that claims it), so one counts as in scope for every library that follows or downloads it. Bigint ids follow a predictable sequence, so only found rows are cached: a cached "no such row, allowed" could be replayed once another library creates that id. (#1005)
+- A home's `pgbin` fetches Postgres from Maktaba's CDN, then GitHub's API asset route (by tag and name, `Accept: application/octet-stream`, no credentials), then the github.com door, three tries each. The updater, self-update, the update catalog and packs inside an update job keep the door: they need an update-rehearsal T-row first. The same outage reached CI through the Windows job's WiX download and the Gradle wrapper. (#1007)
 
 ## Open
 
@@ -431,6 +436,8 @@ built_from: v0.3.105
 - `TestRestoreAskedPutsTheBackupBackBeforeAnyRole` fails on the owner's Mac (asides empty) and passes in CI; not yet looked into. (#1002)
 - Plex removal's cleanup migration, a release or more later: the seven stages' rows, the two pools, the dizqueTV extension and component rows, settings keys, `external_links` targets, `plex_items` and the channel audit tables, the `maktaba_fp_dizquetv` role, the retired lists and the `rules.legacy_tv_live` fallback. The mediaintel scripts still write Plex collections on their own. (d20261108-remove-plex-sync)
 - CodeQL's default setup and `golangci-lint-action` download from GitHub releases and cannot use the API route: a rerun is the remedy. linuxdeploy-plugin-appimage is pinned to its `continuous` build of 2026-10-01; when that build moves, the Linux app job warns and tauri downloads it unpinned. (#1003)
+- Write scope: wave 9f (core-media) needs `statements_build.py sync core-media` (7 headers) and its `[scope]` table removed once it is rebased on this; reads by id across libraries are not scoped (first-party tokens read every library); the worker's `publish` relay op still takes any payload. (#1005)
+- Runtime downloads: move the updater and the update catalog to the API route, with an update-rehearsal T-row; the store CDN's bucket (`maktaba-plugins`) and domain do not exist yet, so the publish step warns and skips, and homes go on to the API route (an owner decision, with the release token's write access); CI's WiX download could get the same fallback or be cached. (#1007)
 
 ## Missing events
 
@@ -441,8 +448,7 @@ built_from: v0.3.105
 | #946 | 2026-11-07 | fix(backups): old backups go on their own |
 | #969 | 2026-11-08 | feat: remove Plex sync and dizqueTV; Plex Live TV stays |
 | #973 | 2026-11-08 | fix(supervisor): plugin runners wait for the venv like the pipeline |
-| #1005 | 2026-11-08 | fix(plugins): every first-party write checks each id that binds its rows (README §15.12) |
-| #1007 | 2026-11-08 | fix(server): download Postgres and packs past a github.com outage |
+| #1010 | 2026-11-08 | fix(cloud-relay): the single VPS's deploy writes the symbols token (53.16) |
 
 ## Index
 
@@ -972,6 +978,8 @@ built_from: v0.3.105
 | 1001-player-ui-warmup-audits | 2026-11-08 | pr | Player UI warm-up audits until the process is warm |
 | 1002-shared-step-report-order | 2026-11-08 | pr | A process waiting on the venv showed the waiting text over the install's progress |
 | 1003-pinned-downloads-api-first | 2026-11-08 | pr | Pinned downloads by the GitHub API first, retried and cached |
+| 1005-write-scope-every-id | 2026-11-08 | pr | Every first-party write checks each id that binds its rows (README §15.12) |
+| 1007-resilient-runtime-downloads | 2026-11-08 | pr | A home's Postgres download survives github.com's download door failing |
 | d20261108-android-native-symbols-path | 2026-11-08 | decision | The Play workflow's native-symbols path is right on AGP 9.4; nothing to change |
 | d20261108-backups-tidy | 2026-11-08 | incident | Old backups were pruned only at an update, and a lone failed dump stayed for good |
 | d20261108-codeql-bundle-504 | 2026-11-08 | incident | CodeQL's bundle download failed with HTTP 504 and held every PR for about an hour |

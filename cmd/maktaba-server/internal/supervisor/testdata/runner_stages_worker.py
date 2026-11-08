@@ -17,9 +17,14 @@ nothing.
 The config: ``dsn``, ``pipeline`` (the pipeline's folder: its tests' migration helper and
 factories), ``out`` (the report's path), ``groups`` (the runners to wait for),
 ``wait_sec``, ``libraries`` (``{name: root}``) and ``cases`` (``[{name, stage, library,
-file, payload, share_runners}]``). A case with ``share_runners`` false runs with
-``MAKTABA_WINDOWS_SHARE_RUNNERS`` unset, as a home does by default: native.choose's Windows
-share-library guard then keeps it in the worker.
+file, payload, share_runners, subject, seed}]``). A case with ``share_runners`` false runs
+with ``MAKTABA_WINDOWS_SHARE_RUNNERS`` unset, as a home does by default: native.choose's
+Windows share-library guard then keeps a stage it still guards in the worker. ``subject``
+is ``video`` (the case's file, the default) or ``library`` (the case's library). ``seed``
+gives the case's job its inputs before it is queued: ``chapters`` (two chapters of the
+video), ``transcript`` (an active Arabic transcript of the video, two sentences) or
+``trash`` (the case's file copied into the library's trash on disk, with a ``file_actions``
+row whose grace period has passed).
 """
 
 from __future__ import annotations
@@ -39,6 +44,66 @@ def _jsonable(v: Any) -> Any:
         return v
     except TypeError:
         return str(v)
+
+
+async def seed(
+    db: Any, c: dict[str, Any], root: str, library: Any, videos: dict[tuple[str, str], Any]
+) -> Any:
+    """The case's inputs (``seed``), written as the home's own stages would have: what the
+    job reads besides the file. Answers what was seeded, for the report."""
+    how = c.get("seed")
+    if not how:
+        return None
+    vid = videos.get((c["library"], c["file"]))
+    if how == "chapters":
+        for seq, start in ((1, 1.0), (2, 6.0)):
+            await db.execute(
+                "INSERT INTO chapters (video_id, seq, start_sec, title, source)"
+                " VALUES ($1, $2, $3, $4, 'manual')",
+                vid,
+                seq,
+                start,
+                f"chapter {seq}",
+            )
+        return {"chapters": 2}
+    if how == "transcript":
+        await db.execute("INSERT INTO audio_tracks (video_id, track_index) VALUES ($1, 0)", vid)
+        track = await db.fetchval("SELECT id FROM audio_tracks WHERE video_id = $1", vid)
+        tid = await db.fetchval(
+            "INSERT INTO transcripts (video_id, audio_track_id, language, backend, model,"
+            " is_active) VALUES ($1, $2, 'ar', 'whisper', 'e2e', true) RETURNING id",
+            vid,
+            track,
+        )
+        for seq, (a, b, text) in enumerate(((1.0, 4.0, "بسم الله"), (5.0, 9.0, "الحمد لله"))):
+            await db.execute(
+                "INSERT INTO transcript_segments (transcript_id, seq, start_sec, end_sec, text)"
+                " VALUES ($1, $2, $3, $4, $5)",
+                tid,
+                seq,
+                a,
+                b,
+                text,
+            )
+        return {"transcript": str(tid), "segments": 2}
+    if how == "trash":
+        import shutil
+
+        src = os.path.join(root, c["file"])
+        trash = os.path.join(root, ".maktaba", "trash", "e2e", os.path.basename(src))
+        os.makedirs(os.path.dirname(trash), exist_ok=True)
+        shutil.copyfile(src, trash)
+        await db.execute(
+            "INSERT INTO file_actions (library_id, kind, state, old_path, trash_path, old_size,"
+            " purge_after) VALUES ($1, 'convert', 'done', $2, $3, $4,"
+            " now() - interval '1 day')",
+            library,
+            src,
+            trash,
+            os.path.getsize(trash),
+        )
+        return {"trash_path": trash}
+    raise ValueError(f"{c['name']}: no seed {how!r}")
 
 
 async def main(cfg: dict[str, Any]) -> dict[str, Any]:
@@ -88,6 +153,15 @@ async def main(cfg: dict[str, Any]) -> dict[str, Any]:
                     path=path,
                     size=os.path.getsize(path),
                 )
+        libs: dict[str, Any] = {}
+        for name in cfg["libraries"]:
+            libs[name] = await db.fetchval(
+                "SELECT id FROM libraries WHERE name = $1", f"e2e {name}"
+            )
+        for c in cfg["cases"]:
+            report.setdefault("seeded", {})[c["name"]] = await seed(
+                db, c, cfg["libraries"][c["library"]], libs[c["library"]], videos
+            )
         report["areas"] = await native.write_areas(db)
 
         # the runners, as the worker asks for them; waited for here (a cold AppContainer's
@@ -157,10 +231,11 @@ async def main(cfg: dict[str, Any]) -> dict[str, Any]:
             if c.get("share_runners", True) is False:
                 os.environ.pop(native.SHARE_RUNNERS_ENV, None)
             try:
-                vid = videos[(c["library"], c["file"])]
+                kind = c.get("subject") or "video"
+                vid = libs[c["library"]] if kind == "library" else videos[(c["library"], c["file"])]
                 await enqueue_job(
                     db,
-                    subject_kind="video",
+                    subject_kind=kind,
                     subject_id=vid,
                     stage=c["stage"],
                     payload=c.get("payload") or None,

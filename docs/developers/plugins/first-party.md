@@ -55,6 +55,34 @@ The queue worker dispatches a job to the runner with the same kind of per-job to
 third-party plugin's. The job's progress, log and events go back to the worker, which is the
 only one that writes the queue's tables.
 
+### What a runner may publish
+
+A runner's live events (the `publish` request on the job's connection) go onto the `jobs`
+channel that every web client and app reads, so the worker checks each one before it
+publishes it:
+
+| Kind | Payload |
+| --- | --- |
+| `job.progress` | `{"job": JobRef}`: the job's id, stage, state, subject and library, its label, attempts, times and progress document; no other key |
+| `job.log` | `job_id`, `stage`, `level` (`debug`, `info`, `warn` or `error`), `kind`, `message`, and optionally `subject_label` and a `data` object; no other key |
+
+1. **Only these kinds.** `job.started`, `job.finished` and `job.failed` are the worker's
+   own; any other kind is refused (`unknown_kind`).
+2. **At most 64 KiB** of compact JSON (`oversize`).
+3. **The kind's schema**: every required key, no unknown key, each value of its type, strings
+   of at most 4096 characters (`schema`).
+4. **Only its own topic**: the job id and stage the payload names are the running job's
+   (`topic`).
+5. **Only ids in its scope**: a `job.progress` ref's subject kind, subject id and library id
+   are the job's, compared as uuids, the way the plugin API compares a statement's ids
+   (`scope`).
+
+A refused event is an error back to the runner's code (`plugin_publish_refused: <reason>:
+<detail>`), nothing is published, and the worker logs `plugin_publish_refused` with the
+plugin, the kind, the reason and the payload's size; never the payload, which can carry a
+title. The job's progress and log lines have their own requests, which the worker writes
+with the job's own values, so a stage rarely publishes at all.
+
 ## The trusted manifest
 
 A first-party manifest is the [manifest](manifest.md) you know with a `[trusted]` table and
