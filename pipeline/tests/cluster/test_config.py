@@ -154,7 +154,9 @@ def _icacls(path: Path) -> list[str]:
     """The ACEs icacls lists for path, one per line."""
     import subprocess
 
-    out = subprocess.run(["icacls", str(path)], check=True, capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ["icacls", str(path)], check=True, capture_output=True, timeout=60, text=True
+    ).stdout
     aces: list[str] = []
     for line in out.splitlines():
         if line.startswith("Successfully processed"):

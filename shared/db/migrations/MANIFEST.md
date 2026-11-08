@@ -252,6 +252,11 @@ reservations; the permanent gaps are listed below the table).
    table an earlier one listed, or when its Down does not restore the previous
    definition. A table taken out on purpose is named on a line
    `-- cluster_copy_excluded drops: <table>`.
+7. When a migration moves to a new slot, write it again; do not cut and paste
+   pieces of the old file. migration-lint's `goose-annotations` fails when the
+   `-- +goose` lines are not in the order goose parses them: `Up` first, then
+   `Down`, and every `StatementBegin` closed by a `StatementEnd` before the next
+   one opens.
 
 ## Cross-epic ownership
 

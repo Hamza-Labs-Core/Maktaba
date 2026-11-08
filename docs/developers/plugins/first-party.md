@@ -337,8 +337,11 @@ service   = ["plex"]              # the services its calls may reach, through th
 - **dizqueTV's programmes are built on the home** (`tv.maktaba.dizquetv`: `dizquetv_show`,
   `dizquetv_channels`, `dizquetv_audit`, `service = ["dizquetv", "plex"]`). A dizqueTV
   programme plays from Plex with the token in it, and dizqueTV stores it. So the plugin never
-  writes a raw programme: the door's own operations (`/maktaba/...`) take a token-free record
-  of each Plex item, check every field, and build the programme on the home. A channel's
+  writes a raw programme: the door's own operations (`/maktaba/...`) take each Plex item's
+  rating key, read the item from Plex with the home's token (up to 50 keys a request), and
+  build the programme on the home from Plex's answer. Every playable field (the file, the
+  media part, the duration) is Plex's: whatever else the plugin sends is ignored, and a key
+  Plex does not know or cannot play is refused. A channel's
   programmes are referenced by index into the stored channel or by show id and rating key,
   and the door fills them in from what dizqueTV holds. Every read is a projection that leaves
   out any field holding a secret, and a final check refuses an answer that still names the

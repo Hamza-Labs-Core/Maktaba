@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **The service door reads each dizqueTV programme's item from Plex (`tv.maktaba.dizquetv`).**
+  The plugin now names each programme by its Plex rating key only. The door reads the item
+  from Plex with the home's token and takes the file, media part and duration from Plex's
+  answer, so a plugin can no longer pair an item with another file or length. A key Plex does
+  not know or cannot play is refused. Issue #827.
 - **dizqueTV's stages run as a first-party plugin, and the Plex token never reaches it
   (`tv.maktaba.dizquetv`).** The custom shows, the planned channels and the channel audit now
   run in the plugin's `service` runner, which has no network. The home's service door builds

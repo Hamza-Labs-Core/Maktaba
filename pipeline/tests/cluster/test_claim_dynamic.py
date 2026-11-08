@@ -12,6 +12,11 @@ from maktaba_pipeline.pipeline.runner import ClaimLoop, WorkerConfig, local_pool
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 
+#: every wait here ends within this: a claim or dispatch that never returns fails the test
+#: with its traceback instead of holding the run until the job's limit (the Windows cluster
+#: job sat 15 minutes in one of these with no output, PR #831)
+BOUND_SEC = 30.0
+
 
 @pytest.mark.asyncio
 async def test_the_served_set_changes_between_polls(db: Database) -> None:
@@ -33,12 +38,13 @@ async def test_the_served_set_changes_between_polls(db: Database) -> None:
     )
     loop = ClaimLoop(db, cfg, dispatch)
     in_flight: set[asyncio.Task[None]] = set()
-    assert await loop._drain(in_flight) == 0
-    served = ("tag",)
-    assert await loop._drain(in_flight) == 0
-    served = ("probe", "tag")
-    assert await loop._drain(in_flight) == 2
-    await asyncio.gather(*in_flight)
+    async with asyncio.timeout(BOUND_SEC):
+        assert await loop._drain(in_flight) == 0
+        served = ("tag",)
+        assert await loop._drain(in_flight) == 0
+        served = ("probe", "tag")
+        assert await loop._drain(in_flight) == 2
+        await asyncio.gather(*in_flight)
     assert len(claimed) == 2
 
 
@@ -67,8 +73,9 @@ async def test_a_pool_whose_jobs_end_at_once_does_not_starve_the_next(db: Databa
     )
     loop = ClaimLoop(db, cfg, dispatch)
     in_flight: set[asyncio.Task[None]] = set()
-    await loop._drain(in_flight)
-    await asyncio.gather(*in_flight)
+    async with asyncio.timeout(BOUND_SEC):
+        await loop._drain(in_flight)
+        await asyncio.gather(*in_flight)
     # one pass: the link job ran, and nas_read gave up no more than its size
     assert "link" in claimed
     nas = await db.fetchval(
@@ -103,9 +110,10 @@ async def test_a_gpu_node_takes_its_own_gpu_batch_not_the_cluster_pool(
 
     monkeypatch.setenv("MAKTABA_POOL_GPU", "8")
     in_flight: set[asyncio.Task[None]] = set()
-    assert await loop_for()._drain(in_flight) == 8
-    release.set()
-    await asyncio.gather(*in_flight)
+    async with asyncio.timeout(BOUND_SEC):
+        assert await loop_for()._drain(in_flight) == 8
+        release.set()
+        await asyncio.gather(*in_flight)
     assert local_pool_size("gpu") == 8
     monkeypatch.setenv("MAKTABA_POOL_GPU", "0")  # not a size: the cluster's
     assert local_pool_size("gpu") is None
@@ -129,9 +137,10 @@ async def test_without_its_own_size_a_worker_takes_the_cluster_pool(db: Database
         supported_stages=("transcribe",), pool_mode=True, stage_pools={"transcribe": "gpu"}
     )
     in_flight: set[asyncio.Task[None]] = set()
-    assert await ClaimLoop(db, cfg, dispatch)._drain(in_flight) == 2
-    release.set()
-    await asyncio.gather(*in_flight)
+    async with asyncio.timeout(BOUND_SEC):
+        assert await ClaimLoop(db, cfg, dispatch)._drain(in_flight) == 2
+        release.set()
+        await asyncio.gather(*in_flight)
 
 
 def test_an_empty_static_set_is_still_refused() -> None:
