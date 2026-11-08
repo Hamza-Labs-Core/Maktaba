@@ -44,6 +44,7 @@ import { PluginFlowChart } from "./PluginFlowChart";
 import type { FlowFinding, FlowGraph, PluginFlow } from "../../lib/pluginsApi";
 import { StoreAccount } from "./StoreAccount";
 import { PanelOrder } from "./PanelOrder";
+import { RunnersWarning } from "./RunnersWarning";
 import "./plugins.css";
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
@@ -168,6 +169,7 @@ function PluginsInner() {
       </div>
       <p className="mkt-plugins__lead">{t("plugins.page.lead")}</p>
       <TrustBanner />
+      <RunnersWarning />
       {error && <p role="alert">{error}</p>}
       {plugins === null && !error && <p>{t("plugins.page.loading")}</p>}
       {plugins?.length === 0 && <p>{t("plugins.page.none")}</p>}

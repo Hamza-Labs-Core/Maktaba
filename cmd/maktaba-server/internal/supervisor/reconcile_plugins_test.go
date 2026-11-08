@@ -217,3 +217,35 @@ func TestARunnerGroupIsHeldUntilAComponentItServesIsOn(t *testing.T) {
 		t.Fatalf("calls %v, want service held", calls)
 	}
 }
+
+// Epic 54: core.plugin_runners' row names the runner groups that failed, so System health
+// can say which stages run in the worker meanwhile; a held group that failed before it
+// was held is not named.
+func TestTheRunnersRowNamesTheFailedGroups(t *testing.T) {
+	tab := &fakeTable{}
+	for _, p := range []struct {
+		group   string
+		state   State
+		allowed bool
+	}{{"light", StateFailed, true}, {"files", StateRunning, true}, {"service", StateFailed, false}} {
+		tab.procs = append(tab.procs, procView{Role: RolePluginRunner, Instance: p.group,
+			Component: PluginRunnersComponent, State: p.state, Allowed: p.allowed, Wanted: true})
+	}
+	// not a runner: a process of the same component that failed is not named
+	tab.procs = append(tab.procs, procView{Role: RolePipeline, Instance: "stt-1",
+		Component: PluginRunnersComponent, State: StateFailed, Allowed: true, Wanted: true})
+	st := &fakeStore{}
+	r, _ := newTestReconciler(components.Default(), tab, st)
+	r.RunnerComponents = func() map[string][]string {
+		return map[string][]string{"light": {"library.convert"}, "files": {"library.convert"}, "service": {"ext.plex"}}
+	}
+	passWith(r, map[string]store.Desired{"library.convert": want("library.convert", "enabled", 1)})
+	row, ok := st.row(PluginRunnersComponent)
+	if !ok {
+		t.Fatal("no core.plugin_runners row")
+	}
+	got, _ := row.Detail["failed_runners"].([]string)
+	if row.Phase != components.PhaseFailed || !slices.Equal(got, []string{"light"}) {
+		t.Fatalf("row %s %v, want failed with failed_runners [light]", row.Phase, row.Detail)
+	}
+}

@@ -1368,6 +1368,14 @@ build fails when the two differ.
   longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
   production the API refuses a public listener.
 
+- **A failed plugin runner is reported (Epic 54).** When one of Maktaba's own plugin runners
+  fails, the stages set to run as plugins in it run in the worker, outside their sandbox. No
+  job is lost, but until now only a log line said so. System health has a new Plugin runners
+  line that names the runner, the machine and those stages, on every machine. The Plugins and
+  Updates pages show the same warning, with a link to Components to start the runners again.
+  An admin's status strip, on the web, Apple and Android, says it too. `/status.json` has a new
+  admin-only `plugin_runners` group, which changes neither `overall` nor the banners.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2205,6 +2213,14 @@ build fails when the two differ.
   so forwarded Apple crash reports read as functions, files and lines in the operator console.
   Without the secret nothing is uploaded and the release stays green; a failed upload warns and
   keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
+
+- **Maktaba's own stages run in their sandboxed runners on Windows too (story 54.23).** Each
+  runner group now runs on a Windows home in its own AppContainer and Job Object, as the plugin
+  host does: it reads and writes only the folders its group declares, has no network unless
+  its group needs it, and starts no program but its group's tools. The worker reaches it
+  through pipes the server serves. A runner that cannot be sandboxed does not run, and its
+  jobs run in the worker, as before. Media on a network share is never granted to a runner;
+  jobs that need it run in the worker.
 
 - **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
   recovery screen no longer sends either to the web page. **Restore a backup** lists the home's

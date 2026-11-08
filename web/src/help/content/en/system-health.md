@@ -91,6 +91,10 @@ A process maktaba-server runs (the API, streaming, the pipeline): **Running**, r
 
 The parts of Maktaba you can turn on and off (transcription, Live TV, YouTube and the rest), on every machine. Only a part that **failed**, or stayed **degraded** for more than 10 minutes, needs a look. A part you turned off or stopped, or one waiting for a part you turned off, is your choice and never counts. Open [Components](/settings/components) to see why a part failed and to start it again.
 
+### Plugin runners {#item-plugin-runners}
+
+Maktaba's own plugins run their stages in sandboxed runners, with no database password and no secrets. A runner that **failed** (it kept exiting soon after starting, or its sandbox cannot start) leaves the stages set to run as plugins in it running in the worker, outside their sandbox. No job is lost and nothing stops, but the stages do not have the protection the sandbox gives them. The line names the machine, the runner and how many stages run in the worker meanwhile. A runner that is idle, held or restarting is not counted. Maktaba tries a failed runner again a few times, then leaves it down until it is started again: read its error in the machine's log, then start **Plugin runners** again on [Components](/settings/components). [Plugins](/settings/plugins) shows the same warning.
+
 ### Workers {#item-workers}
 
 All workers together: how many are online. **Down** when no worker runs: nothing is processed. Start the pipeline (or the Mac app) on at least one machine.
