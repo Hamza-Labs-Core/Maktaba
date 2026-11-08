@@ -33,9 +33,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # the newer of the two modules' Go (api's), which builds cmd/maktaba-server too
       - uses: actions/setup-go@v6.4.0
         with:
-          go-version-file: cmd/maktaba-server/go.mod
+          go-version-file: api/go.mod
           cache: false
 
       # the launcher and the supervisor (cmd/maktaba-server), and the plugin API's dev
