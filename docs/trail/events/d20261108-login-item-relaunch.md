@@ -4,6 +4,7 @@ kind: incident
 title: The Mac update to 0.3.96 left the server stopped behind a login item macOS would not re-register
 date: 2026-11-08
 session: b743b7d4-a714-4de3-9952-e11ad221c8e6
+prs: [972]
 ---
 
 ## What happened
