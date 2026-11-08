@@ -113,7 +113,7 @@ func (f *fakeLaunch) install(t *testing.T) {
 // The launcher asks the runner for its policy, takes back the grants it no longer has,
 // grants the group's own profile, keeps the grants and starts the runner with them.
 func TestTheRunnerLauncherGrantsItsGroupsProfileAndStartsIt(t *testing.T) {
-	dir := canonical(t.TempDir())
+	dir := mustCanonical(t, t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	run, media, old := filepath.Join(dir, "run"), filepath.Join(dir, "media"), filepath.Join(dir, "old")
 	_ = os.MkdirAll(media, 0o700)
@@ -205,7 +205,7 @@ func TestLaunchHandsARunnerToLaunchRunner(t *testing.T) {
 // A folder on another machine (a share, a mapped drive) is never granted nor revoked: its
 // ACL is not the launcher's to change, and an AppContainer cannot reach a share anyway.
 func TestTheRunnerLauncherLeavesSharesAlone(t *testing.T) {
-	dir := canonical(t.TempDir())
+	dir := mustCanonical(t, t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	share := filepath.Join(dir, "share")
 	_ = os.MkdirAll(share, 0o700)
@@ -252,7 +252,7 @@ func TestARunnersPolicyNeverReachesAProtectedFolder(t *testing.T) {
 		}
 	}
 
-	dir := canonical(t.TempDir())
+	dir := mustCanonical(t, t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	secret := filepath.Join(dir, "supervisor")
 	pol, _ := json.Marshal(RunnerPolicy{Read: []string{secret}})
@@ -270,7 +270,7 @@ func TestARunnersPolicyNeverReachesAProtectedFolder(t *testing.T) {
 // failed start still knows what to take back), kept across a folder that is not mounted, and
 // a file that cannot be read refuses the start rather than forgetting grants.
 func TestTheGrantsRecordIsKeptBeforeGranting(t *testing.T) {
-	dir := canonical(t.TempDir())
+	dir := mustCanonical(t, t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	media := filepath.Join(dir, "media")
 	_ = os.MkdirAll(media, 0o700)
@@ -304,7 +304,7 @@ func TestTheGrantsRecordIsKeptBeforeGranting(t *testing.T) {
 // refused like the folder itself, and a spelling Windows reads otherwise (a verbatim or
 // device prefix, a trailing dot or space) is refused outright.
 func TestAPolicyPathIsComparedAsTheFilesystemNamesIt(t *testing.T) {
-	dir := canonical(t.TempDir())
+	dir := mustCanonical(t, t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
 	secret := filepath.Join(dir, "supervisor")
 	_ = os.MkdirAll(secret, 0o700)
@@ -323,7 +323,28 @@ func TestAPolicyPathIsComparedAsTheFilesystemNamesIt(t *testing.T) {
 			t.Errorf("%s: exit %d, started %v: %s", bad, code, f.started, errOut.String())
 		}
 	}
-	if got, want := canonical(filepath.Join(link, "not-yet", "x")), filepath.Join(canonical(secret), "not-yet", "x"); got != want {
+	if got, want := mustCanonical(t, filepath.Join(link, "not-yet", "x")), filepath.Join(mustCanonical(t, secret), "not-yet", "x"); got != want {
 		t.Fatalf("canonical of a path not made yet: %s, want %s", got, want)
 	}
+	// a dangling link is not walked past
+	dangling := filepath.Join(dir, "dangling")
+	_ = os.Symlink(filepath.Join(dir, "nowhere"), dangling)
+	if _, err := canonical(filepath.Join(dangling, "x")); err == nil {
+		t.Fatal("a path through a dangling link resolved")
+	}
+	for p, want := range map[string]bool{`C:\media\show`: false, `C:\media\file.txt:secret`: true, `C:\media\NUL`: true,
+		`C:\media\com1.txt`: true, `C:\media\console`: false, `C:\media\x.`: true, "/media/a": false} {
+		if badSpelling(p) != want {
+			t.Errorf("badSpelling(%q) = %v", p, !want)
+		}
+	}
+}
+
+func mustCanonical(t *testing.T, p string) string {
+	t.Helper()
+	c, err := canonical(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
 }

@@ -247,13 +247,24 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	if err := canonicalPolicy(&p); err != nil {
 		return fail("policy_path", err)
 	}
-	own := canonical(*runDir)
+	own, err := canonical(*runDir)
+	if err != nil {
+		return fail("policy_path", err)
+	}
 	p.RunDir = own
 	var guarded []string
 	for _, pr := range protect {
-		guarded = append(guarded, canonical(pr))
+		c, err := canonical(pr)
+		if err != nil {
+			return fail("policy_path", err)
+		}
+		guarded = append(guarded, c)
 	}
-	now := p.Grants(canonical(os.Getenv("MAKTABA_DATA_DIR")))
+	data, err := canonical(os.Getenv("MAKTABA_DATA_DIR"))
+	if err != nil {
+		return fail("policy_path", err)
+	}
+	now := p.Grants(data)
 	if err := CheckGrants(now, guarded, own); err != nil {
 		return fail("policy_path", err)
 	}
@@ -316,6 +327,10 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 			fmt.Fprintf(stderr, `{"event":"plugin_runner_area_remote","group":%q,"path":%q}`+"\n", *group, g.Path)
 			continue
 		}
+		// resolved again just before the grant: a link made since the check is refused
+		if again, err := canonical(g.Path); err != nil || pathKey(again) != pathKey(g.Path) {
+			return fail("policy_path", fmt.Errorf("%s changed after it was checked", g.Path))
+		}
 		if err := grantFn(profile, g.Path, g.Write); err != nil {
 			return fail("grant", err)
 		}
@@ -343,14 +358,40 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	return code
 }
 
+// dosDevices are names Windows opens as a device in any folder, with any extension.
+var dosDevices = map[string]bool{"con": true, "prn": true, "aux": true, "nul": true, "conin$": true, "conout$": true}
+
+func dosDevice(part string) bool {
+	base := strings.ToLower(part)
+	if k := strings.IndexByte(base, '.'); k >= 0 {
+		base = base[:k]
+	}
+	if dosDevices[base] {
+		return true
+	}
+	return len(base) == 4 && (strings.HasPrefix(base, "com") || strings.HasPrefix(base, "lpt")) &&
+		base[3] >= '0' && base[3] <= '9'
+}
+
 // badSpelling: a path the Windows APIs read otherwise than it is written: a device or
-// verbatim prefix (\\?\, \\.\), or a name ending in a dot or a space (Windows drops it).
+// verbatim prefix (\\?\, \\.\), a colon past the drive letter (a stream), a device name
+// (CON, NUL, COM1 …), or a name ending in a dot or a space (Windows drops it).
 func badSpelling(p string) bool {
 	if strings.HasPrefix(p, `\\?\`) || strings.HasPrefix(p, `\\.\`) || strings.HasPrefix(p, `//?/`) || strings.HasPrefix(p, `//./`) {
 		return true
 	}
+	rest := p
+	if len(rest) >= 2 && rest[1] == ':' {
+		rest = rest[2:]
+	}
+	if strings.Contains(rest, ":") {
+		return true
+	}
 	for _, part := range strings.FieldsFunc(p, func(r rune) bool { return r == '\\' || r == '/' }) {
-		if part != "." && part != ".." && (strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ")) {
+		if part == "." || part == ".." || (len(part) == 2 && part[1] == ':') {
+			continue
+		}
+		if strings.HasSuffix(part, ".") || strings.HasSuffix(part, " ") || dosDevice(part) {
 			return true
 		}
 	}
@@ -358,24 +399,35 @@ func badSpelling(p string) bool {
 }
 
 // canonical is a path as the filesystem names it: absolute, links and junctions resolved
-// (and on Windows short names expanded, as filepath.EvalSymlinks does); a path that does
-// not exist yet is resolved up to its nearest existing folder.
-func canonical(p string) string {
+// (and on Windows short names expanded, as filepath.EvalSymlinks does). A path not made
+// yet is resolved up to its nearest existing folder, but only past parts that really are
+// missing: a link that does not resolve (dangling, or unreadable) is an error.
+func canonical(p string) (string, error) {
 	if strings.TrimSpace(p) == "" {
-		return p
+		return p, nil
 	}
 	abs, err := filepath.Abs(p)
 	if err != nil {
-		return filepath.Clean(p)
+		return "", err
 	}
 	rest := ""
 	for cur := abs; ; {
-		if resolved, err := filepath.EvalSymlinks(cur); err == nil {
-			return filepath.Join(resolved, rest)
+		resolved, err := filepath.EvalSymlinks(cur)
+		if err == nil {
+			return filepath.Join(resolved, rest), nil
+		}
+		info, lerr := os.Lstat(cur)
+		switch {
+		case lerr == nil && info.Mode()&(os.ModeSymlink|os.ModeIrregular) != 0:
+			return "", fmt.Errorf("%s: a link that does not resolve", cur)
+		case lerr == nil:
+			return "", fmt.Errorf("%s: %w", cur, err)
+		case !os.IsNotExist(lerr):
+			return "", fmt.Errorf("%s: %w", cur, lerr)
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {
-			return abs
+			return abs, nil
 		}
 		rest = filepath.Join(filepath.Base(cur), rest)
 		cur = parent
@@ -389,7 +441,11 @@ func canonicalPolicy(p *RunnerPolicy) error {
 			if badSpelling(x) {
 				return fmt.Errorf("%s: a path spelled to be read otherwise", x)
 			}
-			(*l)[i] = canonical(x)
+			c, err := canonical(x)
+			if err != nil {
+				return err
+			}
+			(*l)[i] = c
 		}
 	}
 	return nil
