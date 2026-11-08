@@ -6,6 +6,7 @@ Run: uv run --no-project --with pyyaml==6.0.3 --with pytest==8.4.2 pytest tools/
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -90,8 +91,18 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {"apple-apps": {"build"}},
     ),
     "pipeline only": (
-        ["pipeline/src/maktaba_pipeline/scanner/walk.py"],
+        ["pipeline/src/maktaba_pipeline/orchestrator/advance.py"],
         {"unit", "integration", "e2e", "node-packaging"},
+        {
+            "lint": {"pipeline"},
+            "unit": {"pipeline"},
+            "integration": {"integration"},
+            "node-packaging": {"packaging", "release_venv"},
+        },
+    ),
+    "a pipeline package a first-party plugin imports": (
+        ["pipeline/src/maktaba_pipeline/scanner/walk.py"],
+        {"unit", "integration", "e2e", "node-packaging", "plugins"},
         {
             "lint": {"pipeline"},
             "unit": {"pipeline"},
@@ -660,6 +671,80 @@ def test_loop_start_files_run_the_catalog_check() -> None:
         "shared/components/runner/runner.go",
     ]:
         assert "catalog" in ci_paths.matched(filters, [f]), f
+
+
+# ---- the jobs that prove the first-party stages run for the pipeline code they run ------
+# A first-party stage's in-process handler is its plugin's own entry, so both sides of the
+# parity suite (plugins / first-party) run the plugin's package and every maktaba_pipeline
+# module it imports: a change to production_style.py (classify) once skipped the suite.
+# tools/ci/firstparty_imports.py reads those imports; a new wave or a new import that the
+# filter does not cover fails here, naming the path to add.
+
+import firstparty_imports  # noqa: E402
+
+RUNNER_STAGES_TEST = (
+    ci_paths.ROOT / "cmd" / "maktaba-server" / "internal" / "supervisor" / "runners_windows_stages_e2e_test.go"
+)
+
+
+def _files(glob: str) -> list[str]:
+    """The files under a derived path: each file of a folder glob (``<dir>/**``), or the file."""
+    if glob.endswith("/**"):
+        folder = ci_paths.ROOT / glob[: -len("/**")]
+        return sorted(p.relative_to(ci_paths.ROOT).as_posix() for p in folder.rglob("*") if p.is_file())
+    return [glob]
+
+
+def _uncovered(name: str, needed: set[str], filters: dict[str, list[str]] | None = None) -> list[str]:
+    globs = (filters or ci_paths.load_filters())[name]
+    return sorted(
+        g for g in needed if not all(any(ci_paths.matches(p, f) for p in globs) for f in _files(g))
+    )
+
+
+def test_the_plugins_filter_covers_the_pipeline_code_the_first_party_plugins_import() -> None:
+    missing = _uncovered("plugins", firstparty_imports.packages_used())
+    assert not missing, f"add to the plugins filter in .github/ci-paths.yml: {missing}"
+
+
+def test_the_runner_stages_filter_covers_the_files_its_stages_import() -> None:
+    # the stages _runner-stages.yml's Windows test runs, read from its table of cases
+    stages = set(re.findall(r'Stage:\s*"([a-z0-9_]+)"', RUNNER_STAGES_TEST.read_text(encoding="utf-8")))
+    assert {"thumb_small", "convert_mp4", "chapter_thumbs"} <= stages
+    entries = firstparty_imports.stage_entries()
+    folders = {f"{entries[s][1].parent.relative_to(ci_paths.ROOT).as_posix()}/**" for s in stages}
+    missing = _uncovered("runner_stages", firstparty_imports.stage_files(sorted(stages)) | folders)
+    assert not missing, f"add to the runner_stages filter in .github/ci-paths.yml: {missing}"
+
+
+def test_the_first_party_imports_are_read_from_the_plugins() -> None:
+    # positive controls: the derivation finds what the stages import, so an empty or
+    # broken reading cannot pass the two tests above
+    used = firstparty_imports.packages_used()
+    assert {
+        "pipeline/src/maktaba_pipeline/__init__.py",
+        "pipeline/src/maktaba_pipeline/engine/**",
+        "pipeline/src/maktaba_pipeline/classify/**",
+        "pipeline/src/maktaba_pipeline/thumbnail/**",
+    } <= used
+    assert "pipeline/src/maktaba_pipeline/**" not in used
+    files = firstparty_imports.stage_files(["thumb_small"])
+    assert {
+        "pipeline/src/maktaba_pipeline/__init__.py",
+        "pipeline/src/maktaba_pipeline/thumbnail/__init__.py",
+        "pipeline/src/maktaba_pipeline/thumbnail/small.py",
+        "pipeline/src/maktaba_pipeline/engine/stages/registry.py",
+    } <= files
+    assert not any("classify" in f for f in files)
+    with pytest.raises(KeyError):
+        firstparty_imports.stage_files(["no_such_stage"])
+
+
+def test_a_filter_without_a_package_the_plugins_import_is_caught() -> None:
+    filters = ci_paths.load_filters()
+    without = {**filters, "plugins": [g for g in filters["plugins"] if "/classify/" not in g]}
+    missing = _uncovered("plugins", firstparty_imports.packages_used(), without)
+    assert missing == ["pipeline/src/maktaba_pipeline/classify/**"]
 
 
 # ---- a branch head: CI on a conflicting pull request's own commits (ci-branch.yml) ------
