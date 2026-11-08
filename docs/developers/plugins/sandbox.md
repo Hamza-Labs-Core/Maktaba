@@ -87,8 +87,15 @@ the runner asks for, the launcher checks that the path is in the group's share f
 spelled one way only, with no junction or symbolic link on the way. It then opens the file
 itself and hands the runner the open handle, with read access only. A subtitle is written by
 the launcher from the bytes the runner sends. The bytes go straight to the share, so a read costs what the share costs. A share the
-group writes in full is not brokered, and a tool (ffmpeg) cannot use the runner's handles.
-Those jobs run in the queue worker.
+group writes in full is not brokered, and its jobs run in the queue worker.
+
+A tool (ffmpeg, ffprobe) runs in the same AppContainer and reaches no share either. When it
+reads one file of a brokered share as its input, the runner opens that file through the
+broker and hands the tool the handle as its standard input, with the input given as `fd:`.
+ffmpeg seeks a file handle as it seeks a path, so an mp4 with its index at the end and a seek
+before the input both work. A share path the runner cannot hand over that way is refused, and
+that job runs in the queue worker: a second share file, a share path as an output or inside
+another argument, another share, or another program.
 
 The runner cannot listen there (an AppContainer may not create a named pipe, and Python on
 Windows has no unix sockets), so the supervisor serves its pipes: the worker reaches a runner
