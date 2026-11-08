@@ -24,10 +24,11 @@ import javax.net.ssl.SSLPeerUnverifiedException
  * Story 50.15 §3 (DNS rebinding): a home reached by its LAN address is checked against its own
  * name. Over real TLS: a certificate naming only the home's LAN name, served on 127.0.0.1, is
  * refused by IP and accepted once the cloud's `local_ip` entry pins that address to the name;
- * a pin to another home's name is still refused.
+ * a pin to another home's name is still refused, and an address two homes pin is pinned to neither.
  */
 class PinnedNamesTest {
-    private val hid = "0123456789abcdef0123456789abcdef"
+    private val sid = "s"
+    private val hid = PinnedNames.homeId(sid)
     private val name = "127-0-0-1.$hid.direct-a.example"
     private lateinit var server: MockWebServer
     private lateinit var client: okhttp3.OkHttpClient
@@ -53,9 +54,13 @@ class PinnedNamesTest {
 
     private fun get(): Int {
         server.enqueue(MockResponse.Builder().body("ok").build())
+        // a new handshake each time: a pooled connection keeps the check it passed
+        client.connectionPool.evictAll()
         val url = "https://127.0.0.1:${server.port}/api/health"
         return client.newCall(Request.Builder().url(url).build()).execute().use { it.code }
     }
+
+    private fun pin(url: String, name: String, home: String = sid) = PinnedNames.pinHome(home, listOf(url to name))
 
     private fun refused(): Boolean = try {
         get(); false
@@ -66,39 +71,72 @@ class PinnedNamesTest {
     @Test
     fun anAddressIsCheckedAgainstItsPinnedName() {
         assertTrue("by IP, unpinned: refused", refused())
-        PinnedNames.pin("https://127.0.0.1:${server.port}", name)
+        pin("https://127.0.0.1:${server.port}", name)
         assertEquals(200, get())
     }
 
     @Test
     fun aPinToAnotherHomeIsRefused() {
-        PinnedNames.pin("https://127.0.0.1:${server.port}", "127-0-0-1.ffffffffffffffffffffffffffffffff.direct-a.example")
+        pin("https://127.0.0.1:${server.port}", "127-0-0-1.ffffffffffffffffffffffffffffffff.direct-a.example")
+        assertTrue(refused())
+        // another home's own name, listed under this home: not pinned either
+        pin("https://127.0.0.1:${server.port}", name, home = "another")
+        assertNull(PinnedNames.nameFor("127.0.0.1", server.port))
         assertTrue(refused())
     }
 
     @Test
+    fun theHomeIdIsTheClouds() {
+        // direct.HomeID("s") in the cloud (cloud/internal/direct/names.go)
+        assertEquals("18c78ba238ff428e2ddbdff20477e7eb", hid)
+    }
+
+    @Test
+    fun anAddressTwoHomesPinIsPinnedToNeither() {
+        pin("https://127.0.0.1:${server.port}", name)
+        assertEquals(200, get())
+        // a second home on the same private address and port (its own LAN): ambiguous, so the
+        // first home's certificate is no longer taken there by name; the app moves on
+        val other = "x"
+        pin("https://127.0.0.1:${server.port}", "127-0-0-1.${PinnedNames.homeId(other)}.direct-a.example", home = other)
+        assertNull(PinnedNames.nameFor("127.0.0.1", server.port))
+        assertTrue(refused())
+        // that home's list no longer has the address: the pin is the first home's again
+        PinnedNames.pinHome(other, emptyList())
+        assertEquals(200, get())
+    }
+
+    @Test
+    fun aHomesNewListReplacesItsPins() {
+        pin("https://192.168.1.20:8444", "192-168-1-20.$hid.direct-a.example")
+        pin("https://192.168.1.21:8444", "192-168-1-21.$hid.direct-a.example")
+        assertNull(PinnedNames.nameFor("192.168.1.20", 8444))
+        assertEquals("192-168-1-21.$hid.direct-a.example", PinnedNames.nameFor("192.168.1.21", 8444))
+    }
+
+    @Test
     fun onlyHttpsAddressesArePinned() {
-        PinnedNames.pin("http://192.168.1.20:8444", name)
-        PinnedNames.pin("https://home.example:8444", name)
-        PinnedNames.pin("https://192.168.1.20:8444", "")
+        pin("http://192.168.1.20:8444", name)
+        pin("https://home.example:8444", name)
+        pin("https://192.168.1.20:8444", "")
         assertNull(PinnedNames.nameFor("192.168.1.20", 8444))
         assertNull(PinnedNames.nameFor("home.example", 8444))
-        PinnedNames.pin("https://[fd00::7]:8444", "FD00--7.$hid.direct-a.example.")
+        pin("https://[fd00::7]:8444", "FD00--7.$hid.direct-a.example.")
         assertEquals("fd00--7.$hid.direct-a.example", PinnedNames.nameFor("fd00::7", 8444))
         assertNull(PinnedNames.nameFor("fd00::7", 8445))
     }
 
     @Test
     fun aNameForAnotherAddressOrNoHomeIsNotPinned() {
-        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-21.$hid.direct-a.example")
-        PinnedNames.pin("https://192.168.1.20:8444", "bank.example")
-        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-20.example")
-        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-20..direct-a.example")
-        PinnedNames.pin("https://[fd00::7]:8444", "fd00--8.$hid.direct-a.example")
-        PinnedNames.pin("https://192.168.1.20:8444", "localhost.$hid.direct-a.example")
+        pin("https://192.168.1.20:8444", "192-168-1-21.$hid.direct-a.example")
+        pin("https://192.168.1.20:8444", "bank.example")
+        pin("https://192.168.1.20:8444", "192-168-1-20.example")
+        pin("https://192.168.1.20:8444", "192-168-1-20..direct-a.example")
+        pin("https://[fd00::7]:8444", "fd00--8.$hid.direct-a.example")
+        pin("https://192.168.1.20:8444", "localhost.$hid.direct-a.example")
         assertNull(PinnedNames.nameFor("192.168.1.20", 8444))
         assertNull(PinnedNames.nameFor("fd00::7", 8444))
-        PinnedNames.pin("https://192.168.1.20:8444", "192-168-1-20.$hid.direct-a.example")
+        pin("https://192.168.1.20:8444", "192-168-1-20.$hid.direct-a.example")
         assertEquals("192-168-1-20.$hid.direct-a.example", PinnedNames.nameFor("192.168.1.20", 8444))
     }
 

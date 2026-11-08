@@ -115,9 +115,9 @@ public struct CloudHome: Codable, Identifiable, Equatable, Sendable {
     /// Pins its `local_ip` entries to their names (`PinnedNames`), so the app can use them.
     /// Every list decoded, the cloud's answer or a saved one, pins its own.
     public func pinNames(_ names: PinnedNames = .shared) {
-        for c in connections where c.kind == "local_ip" {
-            if let n = c.tlsName { names.pin(c.url, name: n) }
-        }
+        names.pinHome(serverID, connections.compactMap { c in
+            c.kind == "local_ip" ? c.tlsName.map { (url: c.url, name: $0) } : nil
+        })
     }
 
     static func fromOldFields(_ direct: URL?, _ relay: URL?) -> [CloudConnection] {
