@@ -11,12 +11,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
 	cmw "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
@@ -105,55 +103,6 @@ func RequireUser(signer *token.Signer, status StatusFunc) func(http.Handler) htt
 			ctx := cmw.WithUserID(r.Context(), claims.Sub)
 			ctx = cmw.WithSessionID(ctx, claims.SID)
 			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-type adminKey struct{}
-
-// ServiceAdmin returns the admin account RequireServiceAdmin admitted.
-func ServiceAdmin(ctx context.Context) (stores.User, bool) {
-	u, ok := ctx.Value(adminKey{}).(stores.User)
-	return u, ok
-}
-
-// RequireServiceAdmin admits only accounts holding the cloud
-// service-admin role. It must run inside RequireUser. The role is read
-// from the database on every request — never from the token, an email
-// domain, or anything a home server says — so granting and revoking
-// take effect at once. A refusal is audited.
-func RequireServiceAdmin(users *stores.Users, log *audit.Log, logger *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			uid := cmw.GetUserID(r.Context())
-			if uid == "" {
-				writeErr(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
-			u, err := users.ByID(r.Context(), uid)
-			if errors.Is(err, stores.ErrUserNotFound) {
-				writeErr(w, http.StatusUnauthorized, "unauthorized")
-				return
-			}
-			if err != nil {
-				logger.Error("admin gate: lookup", "err", err)
-				writeErr(w, http.StatusServiceUnavailable, "status_unavailable")
-				return
-			}
-			if !u.IsServiceAdmin() {
-				if log != nil {
-					if err := log.Write(r.Context(), audit.Entry{
-						ActorID: u.ID, ActorEmail: u.Email, Action: audit.ActionAdminDenied,
-						Detail: map[string]any{"method": r.Method, "path": r.URL.Path},
-						IP:     cmw.GetClientIP(r.Context()),
-					}); err != nil {
-						logger.Error("admin gate: audit denied attempt", "err", err)
-					}
-				}
-				writeErr(w, http.StatusForbidden, "admin_access_denied")
-				return
-			}
-			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), adminKey{}, u)))
 		})
 	}
 }

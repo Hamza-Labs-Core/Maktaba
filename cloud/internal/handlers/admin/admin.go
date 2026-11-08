@@ -733,7 +733,7 @@ func (d *Deps) AuditLog(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, offset := pageParams(r, audit.MaxPage, audit.MaxPage)
 	entries, total, err := d.Audit.List(r.Context(), audit.Filter{
-		ActorID: q.Get("actor"), Action: q.Get("action"), TargetID: q.Get("target"), Limit: limit, Offset: offset,
+		ActorKind: q.Get("actor_kind"), ActorID: q.Get("actor"), Action: q.Get("action"), TargetID: q.Get("target"), Limit: limit, Offset: offset,
 	})
 	if err != nil {
 		d.fail(w, r, "audit list", err)

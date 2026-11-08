@@ -148,8 +148,10 @@ func TestStaffStore(t *testing.T) {
 		}
 	}
 
-	// reset-mfa: no factors, not enrolled, no sessions
+	// reset-mfa: no factors, not enrolled, no sessions, no live link
 	y, _ := s.NewSession(ctx, a.ID, "e1", []string{"pwd", "otp"}, "", "", now)
+	pending := staffauth.TokenHash("pending-" + email)
+	_ = s.NewEnrolment(ctx, a.ID, pending, now.Add(staffauth.EnrolTTL))
 	if err := s.ResetMFA(ctx, a.ID, now); err != nil {
 		t.Fatal(err)
 	}
@@ -160,5 +162,30 @@ func TestStaffStore(t *testing.T) {
 	}
 	if _, err := s.Session(ctx, y.ID); !errors.Is(err, ErrStaffSessionEnd) {
 		t.Error("a session outlived reset-mfa")
+	}
+	if _, err := s.Enrolment(ctx, pending, now); !errors.Is(err, ErrStaffTokenGone) {
+		t.Error("an enrolment link outlived reset-mfa")
+	}
+
+	// disable: every session, mfa_token and live link ends with it
+	z, _ := s.NewSession(ctx, a.ID, "f1", []string{"pwd", "otp"}, "", "", now)
+	mt2 := staffauth.TokenHash("mfa2-" + email)
+	_ = s.NewMFAToken(ctx, mt2, a.ID, "198.51.100.7", now.Add(staffauth.MFATokenTTL))
+	link2 := staffauth.TokenHash("link2-" + email)
+	_ = s.NewEnrolment(ctx, a.ID, link2, now.Add(staffauth.EnrolTTL))
+	if err := s.SetStatus(ctx, a.ID, "disabled", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Session(ctx, z.ID); !errors.Is(err, ErrStaffSessionEnd) {
+		t.Error("a session outlived disable")
+	}
+	if _, err := s.TakeMFAAttempt(ctx, mt2, "198.51.100.7", now); !errors.Is(err, ErrStaffTokenGone) {
+		t.Error("an mfa_token outlived disable")
+	}
+	if _, err := s.Enrolment(ctx, link2, now); !errors.Is(err, ErrStaffTokenGone) {
+		t.Error("an enrolment link outlived disable")
+	}
+	if err := s.SetStatus(ctx, uuid.NewString(), "disabled", now); !errors.Is(err, ErrStaffNotFound) {
+		t.Errorf("disabling no account: %v", err)
 	}
 }

@@ -19,7 +19,10 @@ import (
 // Actions recorded by the account side. Free-form strings are allowed
 // but these are the ones the console filters on.
 const (
-	ActionAdminDenied     = "admin.access_denied"
+	ActionAdminDenied = "admin.access_denied"
+	// ActionAdminRequest is every /v1/admin/* request a staff account makes, reads included
+	// (story 50.33 §8): the method, the route pattern, the target and the status.
+	ActionAdminRequest    = "admin.request"
 	ActionAdminViewUser   = "admin.account.view"
 	ActionAdminSuspend    = "admin.account.suspend"
 	ActionAdminUnsuspend  = "admin.account.unsuspend"
@@ -41,7 +44,9 @@ const (
 
 // Entry is one audit row.
 type Entry struct {
-	ID         int64          `json:"id"`
+	ID int64 `json:"id"`
+	// ActorKind is who acted (story 50.33 §8): ActorUser (the default), ActorStaff or ActorCLI.
+	ActorKind  string         `json:"actor_kind"`
 	ActorID    string         `json:"actor_id,omitempty"`
 	ActorEmail string         `json:"actor_email,omitempty"`
 	Action     string         `json:"action"`
@@ -83,20 +88,54 @@ func WriteTx(ctx context.Context, x execer, e Entry) error {
 		return err
 	}
 	_, err = x.ExecContext(ctx, `
-        INSERT INTO audit_log (actor_id, actor_email, action, target_kind, target_id, detail, ip)
-        VALUES (NULLIF($1,'')::uuid, NULLIF($2,''), $3, NULLIF($4,''), NULLIF($5,''), $6, NULLIF($7,''))
-    `, e.ActorID, e.ActorEmail, e.Action, e.TargetKind, e.TargetID, dj, e.IP)
+        INSERT INTO audit_log (actor_kind, actor_id, actor_email, action, target_kind, target_id, detail, ip)
+        VALUES (COALESCE(NULLIF($8,''), 'user'), NULLIF($1,'')::uuid, NULLIF($2,''), $3, NULLIF($4,''), NULLIF($5,''), $6, NULLIF($7,''))
+    `, e.ActorID, e.ActorEmail, e.Action, e.TargetKind, e.TargetID, dj, e.IP, e.ActorKind)
 	return err
 }
+
+// The actor kinds (audit_log.actor_kind).
+const (
+	ActorUser  = "user"
+	ActorStaff = "staff"
+	ActorCLI   = "cli"
+)
+
+// The staff sign-in events (story 50.33 §8).
+const (
+	ActionStaffPasswordOK     = "staff.signin.password_ok"
+	ActionStaffPasswordFailed = "staff.signin.password_failed"
+	ActionStaffMFAOK          = "staff.signin.mfa_ok"
+	ActionStaffMFAFailed      = "staff.signin.mfa_failed"
+	ActionStaffRecoveryUsed   = "staff.signin.recovery_used"
+	ActionStaffLocked         = "staff.signin.locked"
+	ActionStaffUnlocked       = "staff.signin.unlocked"
+	ActionStaffTurnstile      = "staff.signin.turnstile_failed"
+	ActionStaffIPDenied       = "staff.signin.ip_denied"
+	ActionStaffEnrolled       = "staff.enrolled"
+	ActionStaffReauth         = "staff.reauth"
+	ActionStaffSignout        = "staff.signout"
+	ActionStaffIdleEnded      = "staff.session.idle_ended"
+	ActionStaffCapped         = "staff.session.capped"
+	ActionStaffReplay         = "staff.session.replay"
+	// the CLI's changes to staff accounts (actor_kind cli)
+	ActionStaffAdded    = "staff.added"
+	ActionStaffGranted  = "staff.role.grant"
+	ActionStaffRevoked  = "staff.role.revoke"
+	ActionStaffDisabled = "staff.disabled"
+	ActionStaffResetMFA = "staff.reset_mfa"
+)
 
 // Filter narrows List. Empty fields match everything; Action matches as
 // a prefix so "admin." finds every admin action.
 type Filter struct {
-	ActorID  string
-	Action   string
-	TargetID string
-	Limit    int
-	Offset   int
+	// ActorKind matches exactly: "staff" for the console's own people (§8's filter).
+	ActorKind string
+	ActorID   string
+	Action    string
+	TargetID  string
+	Limit     int
+	Offset    int
 }
 
 // MaxPage is the largest page List returns.
@@ -116,6 +155,9 @@ func (l *Log) List(ctx context.Context, f Filter) ([]Entry, int, error) {
 		args = append(args, v)
 		where = append(where, strings.ReplaceAll(cond, "$?", "$"+strconv.Itoa(len(args))))
 	}
+	if f.ActorKind != "" {
+		add("actor_kind = $?", f.ActorKind)
+	}
 	if f.ActorID != "" {
 		add("actor_id::text = $?", f.ActorID)
 	}
@@ -132,7 +174,7 @@ func (l *Log) List(ctx context.Context, f Filter) ([]Entry, int, error) {
 	}
 	args = append(args, f.Limit, f.Offset)
 	rows, err := l.DB.QueryContext(ctx, `
-        SELECT id, COALESCE(actor_id::text,''), COALESCE(actor_email,''), action,
+        SELECT id, actor_kind, COALESCE(actor_id::text,''), COALESCE(actor_email,''), action,
                COALESCE(target_kind,''), COALESCE(target_id,''), detail, COALESCE(ip,''), created_at
         FROM audit_log WHERE `+cond+`
         ORDER BY created_at DESC, id DESC
@@ -145,7 +187,7 @@ func (l *Log) List(ctx context.Context, f Filter) ([]Entry, int, error) {
 	for rows.Next() {
 		var e Entry
 		var dj []byte
-		if err := rows.Scan(&e.ID, &e.ActorID, &e.ActorEmail, &e.Action, &e.TargetKind, &e.TargetID, &dj, &e.IP, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.ActorKind, &e.ActorID, &e.ActorEmail, &e.Action, &e.TargetKind, &e.TargetID, &dj, &e.IP, &e.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		_ = json.Unmarshal(dj, &e.Detail)

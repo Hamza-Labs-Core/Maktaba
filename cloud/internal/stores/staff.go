@@ -137,9 +137,36 @@ func (s *Staff) SetRoles(ctx context.Context, id string, roles []string) error {
 	return s.exec1(ctx, `UPDATE staff_accounts SET roles = $2 WHERE id = $1`, id, pq.Array(roles))
 }
 
-// SetStatus sets active or disabled.
-func (s *Staff) SetStatus(ctx context.Context, id, status string) error {
-	return s.exec1(ctx, `UPDATE staff_accounts SET status = $2 WHERE id = $1`, id, status)
+// SetStatus sets active or disabled. Disabling ends, in the same transaction, every session,
+// the pending mfa_tokens and any unused enrolment link (§4: disable ends every session at once).
+func (s *Staff) SetStatus(ctx context.Context, id, status string, now time.Time) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE staff_accounts SET status = $2 WHERE id = $1`, id, status)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrStaffNotFound
+	}
+	if status == "disabled" {
+		for _, q := range []string{
+			`DELETE FROM staff_mfa_tokens WHERE staff_id = $1`,
+			`DELETE FROM staff_enrolments WHERE staff_id = $1 AND used_at IS NULL`,
+		} {
+			if _, err := tx.ExecContext(ctx, q, id); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE staff_sessions SET revoked_at = $2, revoke_reason = 'disabled'
+			WHERE staff_id = $1 AND revoked_at IS NULL`, id, now); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // Unlock clears the lockout.
@@ -265,6 +292,7 @@ func (s *Staff) ResetMFA(ctx context.Context, id string, now time.Time) error {
 		`DELETE FROM staff_passkeys WHERE staff_id = $1`,
 		`DELETE FROM staff_recovery_codes WHERE staff_id = $1`,
 		`DELETE FROM staff_mfa_tokens WHERE staff_id = $1`,
+		`DELETE FROM staff_enrolments WHERE staff_id = $1 AND used_at IS NULL`,
 		`UPDATE staff_accounts SET enrolled_at = NULL WHERE id = $1`,
 	} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
