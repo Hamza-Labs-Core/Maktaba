@@ -138,7 +138,7 @@ Why this design:
   brokered subtitle write.
 
 The routing (`maktaba_plugin_runner/winfiles.py`) wraps `subprocess.Popen`, so
-`subprocess.run` and asyncio's `create_subprocess_exec` (the media helpers) take it. A start
+`subprocess.run` and asyncio's `create_subprocess_exec` (the media helpers) take it. (An asyncio start that captures the tool's output cannot run inside an AppContainer yet, share or not: asyncio's Windows pipes are named pipes it creates, which an AppContainer may not; T11 records it.) A start
 is routed only under all of these conditions:
 - the program is ffmpeg or ffprobe;
 - exactly one argument names a brokered share path, and the whole argument is that path;
@@ -213,7 +213,7 @@ runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 Â
 | T07 | bench (CI) | warm runner | 1,000 trivial `Run`s | N17: p95 â‰¤ 10 ms |
 | T08 | unit | reason codes | words | en + ar for `runner_crash_loop`, `sandbox_unavailable` |
 | T10 | integration (go + py, CI only, Windows, two SMB shares made with `New-SmbShare`) | a group whose library is on `\\localhost\<share>`, started through the launcher with its broker | from inside its AppContainer: read, list, stat a video in any case; write a subtitle; write another name, write or remove the video; a traversal, a junction out of the share, an 8.3 alias, a stream, the other share; a tool on a share path; another process of the AppContainer on the pipe | without the broker no share is reached; with it the library is read and the subtitle written, everything else refused; the read throughput through the handle and outside the sandbox is logged |
-| T11 | integration (go + py, CI only, Windows, the same shares, the Windows app's ffmpeg 8.1.2) | the group's tools on an mp4 on `\\localhost\<share>` whose index is at its end | from inside its AppContainer: a thumbnail with a seek before the input, thumb_small's asyncio start, the transcription input (PCM), ffprobe's duration; a second share file, the library folder, the share root, the other share, an output on the share, another program; a tool reaching the share by a path in a concat list; a tool writing outside its folders | each tool reads the file through its handle; the refusals refuse before a start; the tool reaching for the share gets nothing and nothing is written outside; the times inside and in the worker's way (the share path) are logged |
+| T11 | integration (go + py, CI only, Windows, the same shares, the Windows app's ffmpeg 8.1.2) | the group's tools on an mp4 on `\\localhost\<share>` whose index is at its end | from inside its AppContainer: a thumbnail with a seek before the input, the transcription input (PCM), ffprobe's duration; thumb_small's asyncio start on the share and on a local copy (refused: asyncio's named pipes); a second share file, the library folder, the share root, the other share, an output on the share, another program; a tool reaching the share by a path in a concat list; a tool writing outside its folders | each tool reads the file through its handle; the refusals refuse before a start; the tool reaching for the share gets nothing and nothing is written outside; the times inside and in the worker's way (the share path) are logged |
 
 ## Edge cases
 
