@@ -30,7 +30,10 @@ type stageE2ECase struct {
 	Library string         `json:"library"`
 	File    string         `json:"file"`
 	Payload map[string]any `json:"payload,omitempty"`
-	group   string
+	// ShareRunners false: the worker runs this job with MAKTABA_WINDOWS_SHARE_RUNNERS
+	// unset, as a home does by default (native.choose's Windows share-library guard)
+	ShareRunners *bool `json:"share_runners,omitempty"`
+	group        string
 	// handOff: the runner's sandbox refuses this job by design and the worker runs it
 	// (a share folder the group writes in full is never brokered, spec 54.23 §3)
 	handOff bool
@@ -92,7 +95,7 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 	share := strings.TrimRight(env["MAKTABA_STAGES_E2E_SHARE"], `\`) + `\stages-e2e`
 	shareDir := filepath.Join(env["MAKTABA_STAGES_E2E_SHARE_DIR"], "stages-e2e")
 	libraries := map[string]string{"local": filepath.Join(dir, "library"), "share": share}
-	for _, d := range []string{filepath.Join(dir, "library", "show"), filepath.Join(shareDir, "show")} {
+	for _, d := range []string{filepath.Join(dir, "library", "show"), filepath.Join(shareDir, "show"), filepath.Join(shareDir, "guarded")} {
 		makeStageFixture(t, ffmpeg, d)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(shareDir) })
@@ -116,6 +119,12 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 			stageE2ECase{Name: "convert_mp4/" + lib, Stage: "convert_mp4", Library: lib, File: `show\moov_end.mp4`,
 				Payload: map[string]any{"dry_run": true}, group: "files", handOff: lib == "share"})
 	}
+	// the guard's own case (#990): thumb_small on the share with the worker's default
+	// environment (MAKTABA_WINDOWS_SHARE_RUNNERS unset) stays in the worker, on its own copy
+	// of the fixture so its small JPEG is its own
+	no := false
+	cases = append(cases, stageE2ECase{Name: "thumb_small/share-guarded", Stage: "thumb_small", Library: "share",
+		File: `guarded\moov_end.mp4`, ShareRunners: &no, group: "light"})
 
 	// the folders the stages and the runners' areas name, all in this test's folder
 	thumbs := filepath.Join(dir, "cache", "thumbnails")
@@ -319,11 +328,14 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 			continue
 		}
 		verdict, choice := ranInRunner, "ran in its runner"
-		if c.handOff {
+		switch {
+		case c.handOff:
 			verdict, choice = handedToWorker, "refused in its runner by design, run by the worker"
+		case c.ShareRunners != nil && !*c.ShareRunners:
+			verdict, choice = guardedInWorker, "kept in the worker by the Windows share-library guard"
 		}
 		problems := verdict(c.group, r, runnerLogs[c.group])
-		if c.Library == "share" && !c.handOff {
+		if c.Library == "share" && !c.handOff && c.ShareRunners == nil {
 			problems = append(problems, brokeredProblems(r, runnerLogs[c.group])...)
 		}
 		summary := r.summary()

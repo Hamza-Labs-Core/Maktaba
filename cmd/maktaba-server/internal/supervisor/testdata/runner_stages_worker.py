@@ -17,7 +17,9 @@ nothing.
 The config: ``dsn``, ``pipeline`` (the pipeline's folder: its tests' migration helper and
 factories), ``out`` (the report's path), ``groups`` (the runners to wait for),
 ``wait_sec``, ``libraries`` (``{name: root}``) and ``cases`` (``[{name, stage, library,
-file, payload}]``).
+file, payload, share_runners}]``). A case with ``share_runners`` false runs with
+``MAKTABA_WINDOWS_SHARE_RUNNERS`` unset, as a home does by default: native.choose's Windows
+share-library guard then keeps it in the worker.
 """
 
 from __future__ import annotations
@@ -151,6 +153,9 @@ async def main(cfg: dict[str, Any]) -> dict[str, Any]:
             runs.clear()
             native.FALLBACKS.clear()
             entry: dict[str, Any] = {"name": c["name"], "stage": c["stage"]}
+            asked = os.environ.get(native.SHARE_RUNNERS_ENV)
+            if c.get("share_runners", True) is False:
+                os.environ.pop(native.SHARE_RUNNERS_ENV, None)
             try:
                 vid = videos[(c["library"], c["file"])]
                 await enqueue_job(
@@ -184,6 +189,9 @@ async def main(cfg: dict[str, Any]) -> dict[str, Any]:
                     )
             except Exception:  # noqa: BLE001 - recorded; the test fails on it
                 entry["error"] = traceback.format_exc()
+            finally:
+                if asked is not None:
+                    os.environ[native.SHARE_RUNNERS_ENV] = asked
             entry["choices"] = list(choices)
             entry["runs"] = list(runs)
             entry["fallbacks"] = {f"{s}:{w}": n for (s, w), n in native.FALLBACKS.items()}

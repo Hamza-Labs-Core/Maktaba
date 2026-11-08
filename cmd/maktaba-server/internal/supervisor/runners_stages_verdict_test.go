@@ -219,6 +219,41 @@ func brokeredProblems(r stageReport, runnerLog string) []string {
 	return []string{fmt.Sprintf("no runner job line for job %d", r.JobID)}
 }
 
+// guardedInWorker is the verdict for a job native.choose keeps in the worker on Windows
+// while a library is on a share (#990's guard, MAKTABA_WINDOWS_SHARE_RUNNERS unset): one
+// choice, in-process with why windows_share_library, that one fallback counted, no
+// run_native, no line for it in the runner's log, and the job done (its output is judged
+// apart).
+func guardedInWorker(group string, r stageReport, runnerLog string) []string {
+	const why = "windows_share_library"
+	var p []string
+	if r.Error != "" {
+		p = append(p, "the worker's driver failed: "+r.Error)
+	}
+	if r.JobID == 0 {
+		return append(p, "no job ran")
+	}
+	if len(r.Choices) != 1 || r.Choices[0].Impl != "inproc" || r.Choices[0].Why != why {
+		p = append(p, fmt.Sprintf("the worker's choices %v: want inproc (%s), once", r.Choices, why))
+	}
+	if len(r.Runs) != 0 {
+		p = append(p, fmt.Sprintf("run_native was called %v: the guard sends no job to the runner", r.Runs))
+	}
+	want := r.Stage + ":" + why
+	if len(r.Fallbacks) != 1 || r.Fallbacks[want] != 1 {
+		p = append(p, fmt.Sprintf("the worker's fallbacks %v: want %s x1", r.Fallbacks, want))
+	}
+	if st, _ := r.Job["state"].(string); st != "done" {
+		p = append(p, fmt.Sprintf("the job ended %q (error %v)", st, r.Job["error"]))
+	}
+	for _, l := range runnerJobLines(runnerLog) {
+		if l.JobID == r.JobID {
+			p = append(p, fmt.Sprintf("the %s runner logged job %d (%s %s): the guard sends it no job", group, l.JobID, l.Stage, l.Status))
+		}
+	}
+	return p
+}
+
 // within reports whether path is dir or inside it.
 func within(dir, path string) bool {
 	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
@@ -457,6 +492,48 @@ func TestTheBrokeredShareVerdict(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := brokeredProblems(r, c.log)
+			if !strings.Contains(strings.Join(p, "\n"), c.want) {
+				t.Fatalf("problems %q, want one saying %q", p, c.want)
+			}
+		})
+	}
+}
+
+// A job the Windows share-library guard keeps in the worker passes only as that: chosen
+// in-process with its why, no runner run, no runner line, done.
+func TestTheGuardedVerdict(t *testing.T) {
+	guarded := func() stageReport {
+		r := goodStageReport()
+		r.Job = map[string]any{"state": "done"}
+		r.Choices[0].Impl, r.Choices[0].Why = "inproc", "windows_share_library"
+		r.Runs = nil
+		r.Fallbacks = map[string]int{"thumb_small:windows_share_library": 1}
+		return r
+	}
+	other := `{"event": "plugin_runner_job", "group": "light", "stage": "thumb_small", "job_id": 1, "status": "ok", "ms": 9.0}`
+	if p := guardedInWorker("light", guarded(), other); len(p) != 0 {
+		t.Fatalf("a guarded job has problems: %q", p)
+	}
+	for name, c := range map[string]struct {
+		edit func(*stageReport)
+		log  string
+		want string
+	}{
+		"sent to the runner": {func(r *stageReport) {
+			*r = goodStageReport()
+			r.Job = map[string]any{"state": "done"}
+		}, goodRunnerLog, "want inproc (windows_share_library)"},
+		"another why": {func(r *stageReport) {
+			r.Choices[0].Why = "runner_not_serving_here"
+			r.Fallbacks = map[string]int{"thumb_small:runner_not_serving_here": 1}
+		}, other, "want inproc (windows_share_library)"},
+		"a runner line for it": {func(*stageReport) {}, goodRunnerLog, "the guard sends it no job"},
+		"not done":             {func(r *stageReport) { r.Job["state"] = "failed" }, other, `ended "failed"`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := guarded()
+			c.edit(&r)
+			p := guardedInWorker("light", r, c.log)
 			if !strings.Contains(strings.Join(p, "\n"), c.want) {
 				t.Fatalf("problems %q, want one saying %q", p, c.want)
 			}
