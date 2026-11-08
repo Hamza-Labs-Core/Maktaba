@@ -250,7 +250,7 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	// named refuses the start: never the venv's launcher with the runner its child, whose
 	// share reads the broker would turn away
 	prog, venv := rest[0], ""
-	if venvDirect && os.Getenv("MAKTABA_NEGATIVE_CONTROL") == "" && false {
+	if venvDirect {
 		base, v, err := venvBase(prog)
 		if err != nil {
 			return fail("venv", err)
