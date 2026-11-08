@@ -37,7 +37,8 @@ type BrokerRoot struct {
 
 // BrokerRequest is one line a runner sends its broker.
 type BrokerRequest struct {
-	// Op is open (to read), stat, list, write, replace or remove
+	// Op is hello (the runner's startup check), open (to read), stat, list, write, replace
+	// or remove
 	Op   string `json:"op"`
 	Path string `json:"path"`
 	To   string `json:"to,omitempty"`
@@ -50,6 +51,8 @@ const MaxBrokeredWrite = 16 << 20
 
 // BrokerReply is the broker's answer line.
 type BrokerReply struct {
+	// Hello answers hello: this connection is the runner's own process
+	Hello   bool     `json:"hello,omitempty"`
 	Handle  uint64   `json:"handle,omitempty"`
 	Size    int64    `json:"size,omitempty"`
 	MtimeNs int64    `json:"mtime_ns,omitempty"`

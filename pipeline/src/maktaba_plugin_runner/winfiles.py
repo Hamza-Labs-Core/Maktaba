@@ -60,6 +60,7 @@ __all__ = [
     "Broker",
     "install",
     "install_from_env",
+    "hello",
     "install_unbrokered",
     "is_share",
     "take_counts",
@@ -678,11 +679,26 @@ def take_missing() -> list[str]:
 
 
 def install_from_env(environ: dict[str, str] | None = None) -> bool:
-    """:func:`install` with the launcher's pipe and folders, when it named any."""
+    """:func:`install` with the launcher's pipe and folders, when it named any, once the
+    broker answered :func:`hello` (else :class:`PermissionError`, nothing installed)."""
     env = os.environ if environ is None else environ
     pipe = env.get(PIPE_ENV, "")
     if not pipe:
         return False
     roots = [str(r.get("path") or "") for r in json.loads(env.get(ROOTS_ENV) or "[]")]
-    install(Broker(pipe), roots)
+    broker = Broker(pipe)
+    hello(broker)
+    install(broker, roots)
     return True
+
+
+def hello(broker: Request) -> None:
+    """The runner's startup check of its broker: answered only past the broker's client
+    check (the process the launcher created and holds a handle to), so a runner it would
+    turn away (a venv launcher's child) raises :class:`PermissionError` here, at start."""
+    out = broker({"op": "hello"})
+    if out.get("hello") is not True:
+        raise PermissionError(
+            errno.EACCES,
+            f"the file broker did not answer this runner's hello: {out.get('error') or out}",
+        )
