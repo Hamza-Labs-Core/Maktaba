@@ -22,8 +22,6 @@
 --
 -- tv.maktaba.classify: maktaba_fp_classify
 -- +goose StatementBegin
--- tv.maktaba.classify: maktaba_fp_classify
--- +goose StatementBegin
 DO $$
 DECLARE
     t text;
