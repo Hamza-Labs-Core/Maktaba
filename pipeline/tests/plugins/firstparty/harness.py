@@ -28,7 +28,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from maktaba_plugin_sdk.parity import JOB_COLUMNS, diff_files, diff_rows, files_tree, perf_check
+from maktaba_plugin_sdk.parity import (
+    JOB_COLUMNS,
+    JobTiming,
+    diff_files,
+    diff_rows,
+    files_tree,
+    perf_check,
+)
 
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.graph import StageDef, bound_graph
@@ -375,17 +382,17 @@ def _cpu_of(pid: int) -> float | None:
 
 
 #: a timing line of perf_check (N16), as opposed to a difference in what was written
-_PERF_LINE = re.compile(r" p(50|95)( \(CPU\))?: plugin ")
+_PERF_LINE = re.compile(r" p(50|95) \((CPU|wall, paired)\): plugin ")
 
 
 @dataclass
 class Side:
     db: Database
-    times: dict[str, list[float]] = field(default_factory=dict)
-    #: N16's p95 samples: the CPU each benched job cost, this process (the worker and, in
-    #: the harness, the runner) and the plugin API's process; Postgres is left out, as both
-    #: sides run the same queries
-    cpu_times: dict[str, list[float]] = field(default_factory=dict)
+    #: N16's samples per stage, one per job in the order run (the bench's rounds replace the
+    #: drain's): its wall time and the CPU it cost this process (the worker, the runner and
+    #: the stage's code) and the plugin API's (Linux; the bench only), and on the plugin
+    #: side its plugin API calls and their cheapest hop
+    timings: dict[str, list[JobTiming]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
     #: the extensions' settings its jobs get (story 54.35: each side's own fake Plex)
     extension_states: dict[str, Any] = field(default_factory=dict)
@@ -437,9 +444,11 @@ class Parity:
                     " AND parked_on IS NULL"
                 )
                 continue
-            t0 = time.perf_counter()
+            t0, c0 = time.perf_counter(), time.process_time()
             await dispatch_job(side.db, job, runtime=rt, legacy_handlers={})
-            side.times.setdefault(job.stage, []).append(time.perf_counter() - t0)
+            side.timings.setdefault(job.stage, []).append(
+                JobTiming(wall=time.perf_counter() - t0, cpu=time.process_time() - c0)
+            )
             side.ran.append(job.stage)
         raise AssertionError(f"parity: no quiet after {limit} jobs")
 
@@ -507,8 +516,7 @@ class Parity:
         rt = EngineRuntime(graph=self.graph)
         for side in (self.a, self.b):
             for st in stages:
-                side.times[st] = []
-                side.cpu_times[st] = []
+                side.timings[st] = []
         # the worker and the runner share this test's process and loop: a collector pause
         # would land on whichever side runs then, so it is held off while both are timed
         from dataclasses import replace
@@ -585,9 +593,18 @@ class Parity:
                     t1 = time.perf_counter()
                     cpu1, api1 = time.process_time(), _cpu_of(self.api_pid)
                     took = t1 - t0
-                    side.times[st].append(took)
                     at = {k: v for k, v in marks if k.startswith("@")}
                     steps = [(k, v) for k, v in marks if not k.startswith("@")]
+                    hops = [v for k, v in steps if k.startswith("api ")]
+                    api_cpu = api1 - api0 if api0 is not None and api1 is not None else 0.0
+                    side.timings[st].append(
+                        JobTiming(
+                            wall=took,
+                            cpu=(cpu1 - cpu0) + api_cpu,
+                            calls=len(hops),
+                            hop=min(hops, default=0.0),
+                        )
+                    )
                     spans: dict[str, float] = {}
                     if "@start" in at and "@end" in at:
                         named = sum(v for k, v in steps if k.startswith("api ") or k == "relay")
@@ -599,10 +616,6 @@ class Parity:
                             "api": named,
                             "unnamed": (at["@end"] - at["@start"]) - named,
                         }
-                    side.cpu_times[st].append(
-                        (cpu1 - cpu0)
-                        + ((api1 - api0) if api0 is not None and api1 is not None else 0.0)
-                    )
                     self.jobs.append(
                         {
                             "side": "plugin" if side is self.b else "in-process",
@@ -667,8 +680,7 @@ class Parity:
     ) -> list[str]:
         """N16's samples (``bench``) and every difference. A failure that is only the timing
         is measured once more and counts only when the second run fails too: with 11 runs a
-        side, p95 is about the slowest run, and one stall of a shared CI machine (on either
-        side's turn) is not the plugin's cost.
+        side, p95 is about the slowest run.
 
         ``timing_only``: only N16 is judged after the bench (the rows and the queue were
         compared after the drain): for stages that make run-time ids, which the bench's
@@ -692,12 +704,7 @@ class Parity:
         out: list[str] = []
         for s in stages:
             out += perf_check(
-                s,
-                self.a.times.get(s, []),
-                self.b.times.get(s, []),
-                floor_s=PERF_FLOOR_S,
-                inproc_p95=self.a.cpu_times.get(s),
-                plugin_p95=self.b.cpu_times.get(s),
+                s, self.a.timings.get(s, []), self.b.timings.get(s, []), floor_s=PERF_FLOOR_S
             )
         return out
 
@@ -772,17 +779,9 @@ class Parity:
                 files_tree(self.tmp / "files-b" / area),
             )
         if perf:
-            for s in stages:
-                # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
-                # path's fixed cost of a job (its token, the hop to the runner), README §15.12
-                out += perf_check(
-                    s,
-                    self.a.times.get(s, []),
-                    self.b.times.get(s, []),
-                    floor_s=PERF_FLOOR_S,
-                    inproc_p95=self.a.cpu_times.get(s),
-                    plugin_p95=self.b.cpu_times.get(s),
-                )
+            # N16 counts the job's own work: a difference under PERF_FLOOR_S is the plugin
+            # path's fixed cost of a job (its token, the hop to the runner), README §15.12
+            out += self.perf_problems(stages)
         return out
 
     async def fingerprints(self, stage: str, subjects: Sequence[Any]) -> list[str]:

@@ -55,9 +55,9 @@ def toy(monkeypatch: pytest.MonkeyPatch) -> Iterator[bytes]:
     install(monkeypatch, raw)
     from fp_toy import stage
 
-    stage.PLANT.update(row=False, fingerprint=False, slow=0.0)
+    stage.PLANT.update(row=False, fingerprint=False, slow=0.0, work=0.0, more_work=1.0)
     yield raw
-    stage.PLANT.update(row=False, fingerprint=False, slow=0.0)
+    stage.PLANT.update(row=False, fingerprint=False, slow=0.0, work=0.0, more_work=1.0)
     monkeypatch.undo()
     for f in (firstparty._load, firstparty._stage_index, firstparty.registry):
         f.cache_clear()

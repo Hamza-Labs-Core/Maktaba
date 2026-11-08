@@ -1,12 +1,15 @@
 """``fp_toy``: one row per video of the library, the way a first-party stage is written.
 
 The plugin path can be made to differ on purpose (``PLANT``), for the parity proof's
-self-tests (story 54.26 T01-T04): a row, a fingerprint, a slowdown.
+self-tests (story 54.26 T01-T04): a row, a fingerprint, a slowdown. ``work`` gives the job
+that many seconds of CPU on both sides; ``more_work`` multiplies it in the plugin path
+only (N16's regression: the same job costing the plugin more CPU).
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any
 
 from maktaba_pipeline.engine.graph import StageResult, Subject
@@ -15,11 +18,24 @@ from maktaba_pipeline.engine.sql import uid
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.rules import read as read_rules
 
-PLANT: dict[str, Any] = {"row": False, "fingerprint": False, "slow": 0.0}
+PLANT: dict[str, Any] = {
+    "row": False,
+    "fingerprint": False,
+    "slow": 0.0,
+    "work": 0.0,
+    "more_work": 1.0,
+}
 
 
 def _in_plugin(db: Any) -> bool:
     return type(db).__name__ == "StatementDB"
+
+
+def _burn(seconds: float) -> None:
+    """Busy for ``seconds`` of this process's CPU."""
+    end = time.process_time() + seconds
+    while time.process_time() < end:
+        pass
 
 
 async def input_fingerprint(db: Any, subject: Subject) -> str | None:
@@ -35,6 +51,8 @@ async def run(db: Any, job: Any, ctx: Any) -> StageResult:
     library = job.subject.id
     if PLANT["slow"] and _in_plugin(db):
         await asyncio.sleep(PLANT["slow"])
+    if PLANT["work"]:
+        _burn(PLANT["work"] * (PLANT["more_work"] if _in_plugin(db) else 1.0))
     cfg = (await read_rules(db, "groups"))[0]
     rows = await db.fetch(
         "SELECT id, title, size_bytes FROM videos WHERE library_id = $1 AND deleted_at IS NULL ORDER BY id",  # noqa: E501

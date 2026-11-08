@@ -12,7 +12,9 @@ plugin's statements and role), then compares what this module reads:
 - the queue's own record of each job: its stage, subject, state, outcome, input and output
   hashes, summary and the jobs it enqueued;
 - the input and output fingerprints of every subject;
-- the job time per stage: p50 ≤ 1.10× and p95 ≤ 1.15× of the in-process path (N16).
+- the job time per stage (N16): the CPU each job cost, p50 ≤ 1.10× and p95 ≤ 1.15× of the
+  in-process path, and its wall time, paired round by round, within 10%, beyond the plugin
+  path's stated costs of a job and of each plugin API call (``perf_check``).
 
 Any difference fails, naming the table, the key and the column (the first 20).
 """
@@ -33,6 +35,9 @@ from uuid import UUID
 
 __all__ = [
     "MAX_SHOWN",
+    "STATEMENT_CPU_S",
+    "STATEMENT_HOP_S",
+    "JobTiming",
     "ParityConfig",
     "ParityError",
     "canonical",
@@ -222,36 +227,89 @@ def _quantile(xs: Sequence[float], q: float) -> float:
     return s[i]
 
 
+@dataclass(frozen=True)
+class JobTiming:
+    """One benched job of one side, for N16.
+
+    ``wall``: the whole job, seconds. ``cpu``: the CPU the job cost every process it ran
+    in but Postgres (which runs the same queries for both sides): the worker, the runner
+    and the stage's code, and on the plugin side the plugin API. ``calls`` and ``hop``,
+    the plugin side only: how many plugin API calls the job made and the wall time of its
+    cheapest one."""
+
+    wall: float
+    cpu: float
+    calls: int = 0
+    hop: float = 0.0
+
+
+#: N18: a named statement's round trip through the plugin API (p95). The wall time N16
+#: allows a call is its measured hop, never more than this.
+STATEMENT_HOP_S = 0.002
+#: the CPU N16 allows a plugin API call, both processes (the SDK's request and the API's
+#: token check, statement and answer). Measured on CI (1,824 stage benches, 2026-11-08):
+#: 0.56 ms a call at the median, 1.00 ms at most, on the slowest runners.
+STATEMENT_CPU_S = 0.001
+
+
 def perf_check(
     stage: str,
-    inproc: Sequence[float],
-    plugin: Sequence[float],
+    inproc: Sequence[JobTiming],
+    plugin: Sequence[JobTiming],
     *,
     floor_s: float = 0.0,
-    inproc_p95: Sequence[float] | None = None,
-    plugin_p95: Sequence[float] | None = None,
 ) -> list[str]:
-    """N16: p50 ≤ 1.10× and p95 ≤ 1.15× of the in-process job time. ``floor_s`` is the
-    smallest difference that counts (a job of a few milliseconds is noise).
+    """N16: a stage's plugin job is not meaningfully slower than its in-process job.
 
-    ``inproc_p95`` / ``plugin_p95``, when given, are the samples p95 is taken over instead:
-    the CPU each job cost (the worker's process and the plugin API's), not its wall time. On
-    a shared CI machine a job's wall time stalls now and then for 30-250 ms, on either side,
-    in any span, with the CPU flat (a round trip waiting on Postgres): with eleven runs a
-    side p95 is about the slowest run, so a single stall decided it. The median of the
-    wall time is not moved by such a stall and keeps the plugin path's latency (its round
-    trips) in the gate; the tail is judged by the work the plugin path does."""
-    if not inproc or not plugin:
+    ``inproc[i]`` and ``plugin[i]`` are one round: the same job run on each side in turn.
+    The plugin path's own costs are stated, not hidden: ``floor_s`` a job (its token and
+    the hop to the runner) and, for each plugin API call, ``STATEMENT_CPU_S`` of CPU and its
+    measured hop of wall time (at most N18's ``STATEMENT_HOP_S``). Beyond them:
+
+    - **The work** (CPU): the plugin job's p50 is within 10% of the in-process job's and
+      its p95 within 15%. CPU time does not count the time a job waits, so a shared
+      machine's stalls (seen on CI on both sides, in any span, with the CPU flat) cannot
+      fail it, and a plugin that does more work fails it on any machine.
+    - **The wait** (wall time, paired): the median over rounds of plugin minus in-process
+      wall time is within 10% of the in-process median. The two jobs of a round run back
+      to back, so a machine slow for a while slows both and the difference keeps; a stall
+      on one turn moves one difference, which the median does not follow. A plugin that
+      waits (a sleep, a lock, round trips the in-process job does not make) fails it.
+
+    The percentage counts when it is more than ``floor_s``: either is allowed, not both."""
+    n = min(len(inproc), len(plugin))
+    if n == 0:
         return []
+    a, b = inproc[:n], plugin[:n]
+    calls = round(_median([float(y.calls) for y in b]))
     out = []
     for name, q, limit in (("p50", 0.5, P50_LIMIT), ("p95", 0.95, P95_LIMIT)):
-        xa, xb = inproc, plugin
-        if name == "p95" and inproc_p95 and plugin_p95:
-            xa, xb = inproc_p95, plugin_p95
-        a, b = _quantile(xa, q), _quantile(xb, q)
-        if b > a * limit and b - a > floor_s:
-            what = " (CPU)" if xa is not inproc else ""
+        ca, cb = _quantile([x.cpu for x in a], q), _quantile([x.cpu for x in b], q)
+        allowed = max(ca * (limit - 1), floor_s) + calls * STATEMENT_CPU_S
+        if cb - ca > allowed:
             out.append(
-                f"{stage} {name}{what}: plugin {b * 1000:.1f} ms > {limit:.2f} x in-process {a * 1000:.1f} ms"  # noqa: E501
+                f"{stage} {name} (CPU): plugin {cb * 1000:.1f} ms > in-process"
+                f" {ca * 1000:.1f} ms + {allowed * 1000:.1f} ms (the larger of"
+                f" {limit - 1:.0%} and {floor_s * 1000:.1f} ms a job, + {calls} calls x"
+                f" {STATEMENT_CPU_S * 1000:.2f} ms)"
             )
+    slower = _median([y.wall - x.wall for x, y in zip(a, b, strict=True)])
+    base = _median([x.wall for x in a])
+    hop = min(_median([y.hop for y in b]), STATEMENT_HOP_S)
+    allowed = max(base * (P50_LIMIT - 1), floor_s) + calls * hop
+    if slower > allowed:
+        out.append(
+            f"{stage} p50 (wall, paired): plugin slower by {slower * 1000:.1f} ms > allowed"
+            f" {allowed * 1000:.1f} ms (the larger of {P50_LIMIT - 1:.0%} of in-process"
+            f" {base * 1000:.1f} ms and {floor_s * 1000:.1f} ms a job, + {calls} calls x"
+            f" {hop * 1000:.2f} ms)"
+        )
     return out
+
+
+def _median(xs: Sequence[float]) -> float:
+    s = sorted(xs)
+    if not s:
+        return 0.0
+    m = len(s) // 2
+    return s[m] if len(s) % 2 else (s[m - 1] + s[m]) / 2
