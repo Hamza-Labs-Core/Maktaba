@@ -510,18 +510,30 @@ class ApiClient(
     private suspend fun execute(r: Request): HttpAnswer {
         // a home reconnecting behind the relay is waited for (Epic 50 story 50.13): the relay
         // never handed the request to the home, so it is safe to send again whatever its method
-        var answer = http.exchange(r)
+        var answer = sent(r)
         var waited = 0
         try {
             while (HomeReconnect.isReconnecting(answer) && waited < HomeReconnect.WAITS_MS.size) {
                 if (waited == 0) HomeReconnect.started()
                 pause(HomeReconnect.WAITS_MS[waited])
                 waited++
-                answer = http.exchange(r)
+                answer = sent(r)
             }
         } finally {
             if (waited > 0) HomeReconnect.stopped()
         }
+        return answer
+    }
+
+    /** One try; the relay failing it asks for the cloud's status now (story 50.11). */
+    private suspend fun sent(r: Request): HttpAnswer {
+        val answer = try {
+            http.exchange(r)
+        } catch (e: ApiException.Transport) {
+            CloudStatusRules.noteRequestFailed(home, 0)
+            throw e
+        }
+        if (!HomeReconnect.isReconnecting(answer)) CloudStatusRules.noteRequestFailed(home, answer.code)
         return answer
     }
 

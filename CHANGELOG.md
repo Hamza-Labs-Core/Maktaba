@@ -2417,6 +2417,12 @@ build fails when the two differ.
   and bidirectional override characters dropped, and a machine with no name, or every machine
   when the cluster can't be read, keeps its node id. The node id stays the key (`machine=`).
 
+- **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
+  Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request
+  through the relay gets no answer or a 502, 503 or 504 (at most once every 10 seconds), instead of
+  at the next 5-minute read, so the status strip says an outage as it starts. Android TV's strip,
+  the same shared one, now has a test of its own.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

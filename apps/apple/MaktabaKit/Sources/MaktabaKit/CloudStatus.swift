@@ -66,6 +66,33 @@ public enum CloudStatusRules {
     /// The relay's public names: a home at `<slug>.relay.maktaba.tv` is reached through it.
     public static let relayDomain = "relay.maktaba.tv"
     public static let every: Duration = .seconds(300)
+    /// At most one read a failed request asks for in this long: an outage fails every request.
+    public static let recheckGap: TimeInterval = 10
+
+    /// Posted when a failed request asks for the feed now (story 50.11 §4); the watcher reads it.
+    public static let recheckRequested = Notification.Name("MaktabaCloudStatusRecheck")
+
+    private static let recheckLock = NSLock()
+    nonisolated(unsafe) private static var lastRecheck = Date.distantPast
+
+    /// A request to `home` answered `status` (0: no answer). When the home is reached through
+    /// the cloud and that is the relay failing (no answer, 502, 503, 504), the feed is read now,
+    /// at most once every `recheckGap`. Whether it asked.
+    @discardableResult
+    public static func noteRequestFailed(home: URL?, status: Int, now: Date = Date(),
+                                         center: NotificationCenter = .default) -> Bool {
+        guard [0, 502, 503, 504].contains(status), throughCloud(home) else { return false }
+        let due = recheckLock.withLock {
+            guard now.timeIntervalSince(lastRecheck) >= recheckGap else { return false }
+            lastRecheck = now
+            return true
+        }
+        if due { center.post(name: recheckRequested, object: nil) }
+        return due
+    }
+
+    /// Forgets the last recheck (tests).
+    static func resetRecheck() { recheckLock.withLock { lastRecheck = .distantPast } }
 
     /// The app reaches the home at `home` through Maktaba Cloud.
     public static func throughCloud(_ home: URL?) -> Bool {
@@ -155,11 +182,24 @@ public final class CloudStatusWatcher {
         return try? JSONDecoder().decode(CloudSummary.self, from: data)
     }
 
-    /// Reads every 5 minutes until the task is cancelled (the app left the front).
-    public func run(every: Duration = CloudStatusRules.every) async {
+    /// Reads every 5 minutes, and at once when a failed request asks
+    /// (`CloudStatusRules.recheckRequested`), until the task is cancelled (the app left the front).
+    public func run(every: Duration = CloudStatusRules.every, center: NotificationCenter = .default) async {
         while !Task.isCancelled {
             await refresh()
-            try? await Task.sleep(for: every)
+            await Self.nextRead(after: every, center: center)
+        }
+    }
+
+    /// Returns after `every`, or sooner when a recheck is asked for, or when cancelled.
+    nonisolated static func nextRead(after every: Duration, center: NotificationCenter) async {
+        await withTaskGroup(of: Void.self) { g in
+            g.addTask { try? await Task.sleep(for: every) }
+            g.addTask {
+                for await _ in center.notifications(named: CloudStatusRules.recheckRequested) { break }
+            }
+            await g.next()
+            g.cancelAll()
         }
     }
 }
