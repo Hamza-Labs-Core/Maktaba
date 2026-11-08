@@ -16,6 +16,7 @@ session: 848393e1-ea22-4a25-a90f-b930df232381
 - CI found two defects that local runs missed:
   - `maktaba-server stages impl` would have flipped a core stage, because `probe` is now a built-in plugin's. It now refuses a stage whose component isn't switchable, as the API does, and its test covers probe, scan and fp_gate.
   - The core-media parity took 21 s on CI, over the hard cap. Probe's edges queued `transcribe`, which ran ffmpeg on the stand-in files; with no ffmpeg on CI, each job failed and was retried. Transcription is switched off in that world, as on a home without it: 12.0 s to 4.1 s with no ffmpeg on the machine.
+- Every by-id write became scope-checked on main while this branch waited (#1005). Running `statements_build.py sync` gave the moved statements their checks: fp_gate's season, link's YouTube rows, the candidate's library and video, and extract's audio rows. The hand-set scope tables of core-media and thumbnails are gone, because the build now derives a write of a video by id.
 
 ## What we learned
 - A move this big conflicts with every wave merged meanwhile (registry, graph, import_mediaintel, pyproject lists, guide, roles). Resolve by dropping both sides' moved entries, then rebuild the generated files (`bundle.py --write`, `roles.py sql`) instead of merging them by hand.
