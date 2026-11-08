@@ -129,6 +129,32 @@ async def test_a_job_event_is_only_of_the_plugins_own_job() -> None:
             native._own_job_event(ctx, {**own, k: v})
 
 
+async def test_a_job_ref_is_only_of_the_plugins_own_job() -> None:
+    """README §15.12: ``job_ref`` reads a job's state, subject and library through the
+    worker; a plugin's job reads its own only."""
+    ctx = _job_ctx("8f0e7c38-6c2e-4b8f-9d61-1a2b3c4d5e6f", "1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7081")
+    assert native._own_job_id(ctx, 7) == 7
+    assert native._own_job_id(ctx, "7") == 7
+    for other in (8, "8", None, "seven", 0):
+        with pytest.raises(native.EnqueueRefused, match="plugin_scope"):
+            native._own_job_id(ctx, other)
+
+
+async def test_the_job_ref_op_refuses_another_job() -> None:
+    """The relay op itself: another job's id is refused before any read."""
+
+    class NoDB:
+        engine_relay = None
+
+        async def fetchrow(self, *a: Any) -> Any:
+            raise AssertionError("another job's row was read")
+
+    ctx = _job_ctx("8f0e7c38-6c2e-4b8f-9d61-1a2b3c4d5e6f", "1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7081")
+    handle = native.engine_handler(NoDB(), ctx)
+    with pytest.raises(native.EnqueueRefused, match="plugin_scope"):
+        await handle("job_ref", {"job_id": 8})
+
+
 async def test_only_a_superseded_video_of_the_library_comes_back(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)
