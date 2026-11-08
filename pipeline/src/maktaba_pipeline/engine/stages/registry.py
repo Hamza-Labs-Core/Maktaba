@@ -44,6 +44,7 @@ CORE_MODULES: dict[str, str] = {
     "scan": "maktaba_pipeline.engine.stages.scan",
     "probe": "maktaba_pipeline.engine.stages.probe",
     "thumbnail": "maktaba_pipeline.engine.stages.thumbnail",
+    "extract": "maktaba_pipeline.engine.stages.extract",
     "content_hash": "maktaba_pipeline.engine.stages.content_hash",
     "component_catchup": "maktaba_pipeline.engine.stages.component_catchup",
     "word_check": "maktaba_pipeline.engine.stages.word_check",

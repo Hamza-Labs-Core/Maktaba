@@ -553,15 +553,18 @@ GRAPH: tuple[StageDef, ...] = (
         edges=(Edge("probe", "videos_changed", when="always"),),
     ),
     # the WAV a backend that reads a file needs (openai-api): only transcribe asks for it
-    # (may_request), and the extract handler queues transcribe again once it is written.
-    # Nothing else leads here: a streaming backend never gets an extract job
-    _legacy(
-        "extract",
-        "Extract audio",
-        ("video",),
-        "nas_read",
-        1,
-        edges=(Edge("transcribe", "same", legacy=True),),
+    # (may_request), and extract asks for transcribe again once it is written. Nothing else
+    # leads here: a streaming backend never gets an extract job. Epic 54 story 54.36 §2: on
+    # the engine; its transcribe is a request (it carries the payload transcribe reads)
+    StageDef(
+        name="extract",
+        label="Extract audio",
+        subject_kinds=("video",),
+        pool="nas_read",
+        lane="media",
+        lane_order=1,
+        version=1,
+        may_request=("transcribe",),
     ),
     # plan 03-10: transcription on the engine. The file is decoded straight off the share
     # and batched across the worker's jobs (content_hash's edge reaches it). When the
@@ -716,6 +719,11 @@ MONOTONE_STAGES: frozenset[str] = frozenset(
         "style_sample",
         # Epic 47: each job takes at least one wanted item off the list before it asks
         # for the next job, so the self-request ends when the list is empty
+        # story 54.36 §2: transcribe asks for extract only while the video has no WAV and its
+        # job carries no extract payload; extract's request always carries that payload, so
+        # each asks the other at most once
+        "transcribe",
+        "extract",
         "youtube_fetch",
         "youtube_backfill",
     }  # fmt: skip
