@@ -2192,6 +2192,13 @@ build fails when the two differ.
   only classify stage that may reach the network (the encyclopedia). Find metadata stays where
   it was for now. An admin can switch any of these stages back to the worker under **Queues**.
 
+- **Release crash symbols reach Maktaba Cloud with one secret (Epic 53 story 53.16).** Each
+  tag's TestFlight build uploads the symbol tables of its apps' dSYMs (`maktaba-symbols`), and
+  the cloud deploy writes the same `MAKTABA_SYMBOLS_TOKEN` repository secret to the api nodes,
+  so forwarded Apple crash reports read as functions, files and lines in the operator console.
+  Without the secret nothing is uploaded and the release stays green; a failed upload warns and
+  keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
