@@ -69,6 +69,7 @@ final class MockHome: @unchecked Sendable {
     private var startFailure: Error?
     private var master = "master"
     private var seconds = 3120
+    private var fixedNow: Date?
 
     /// What `/stream/{session}/manifest.m3u8` serves: `master` (the home's shape: the sound
     /// in the video's segments, two subtitle renditions) or `master-two-audio` (English and
@@ -76,6 +77,14 @@ final class MockHome: @unchecked Sendable {
     var streamMaster: String {
         get { lock.withLock { master } }
         set { lock.withLock { master = newValue } }
+    }
+
+    /// The "now" that fixtures' `{{now…}}` times count from (nil: the real time). The page
+    /// snapshots fix it, so a date a page shows (a video added 20 days ago) is the same on
+    /// every day the tests run.
+    var clock: Date? {
+        get { lock.withLock { fixedNow } }
+        set { lock.withLock { fixedNow = newValue } }
     }
 
     /// How long the test stream lasts, in seconds (even).
@@ -86,12 +95,7 @@ final class MockHome: @unchecked Sendable {
 
     static let code = "TEST-2345"
 
-    /// The time the fixtures' `{{now…}}` are filled from: nil, the clock; a page snapshot pins it,
-    /// since its reference holds the dates drawn (a date read off the clock changes every day).
-    let now: Date?
-
-    init(now: Date? = nil) throws {
-        self.now = now
+    init() throws {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: params)
@@ -209,7 +213,7 @@ final class MockHome: @unchecked Sendable {
     func fixture(named name: String) -> String? {
         fixtures.url(forResource: name, withExtension: "json")
             .flatMap { try? Data(contentsOf: $0) }
-            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self), now: now ?? Date()) }
+            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self), now: clock ?? Date()) }
     }
 
     func stop() {
