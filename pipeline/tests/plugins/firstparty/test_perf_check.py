@@ -1,11 +1,11 @@
 """N16's comparison (maktaba_plugin_sdk.parity.perf_check): the CPU each job cost (p50 and
 p95), which a shared machine's stalls do not move, and the wall time paired round by round
-(the median difference), within 10% plus the plugin path's fixed cost of a job and the hop
-each of its statements pays."""
+(the median difference), each within 10% (15% for p95) beyond the plugin path's stated
+costs: 25 ms a job and, per plugin API call, STATEMENT_CPU_S of CPU and its measured hop."""
 
 from __future__ import annotations
 
-from maktaba_plugin_sdk.parity import STATEMENT_HOP_S, JobTiming, perf_check
+from maktaba_plugin_sdk.parity import STATEMENT_CPU_S, STATEMENT_HOP_S, JobTiming, perf_check
 
 MS = 0.001
 FLOOR = 25 * MS
@@ -21,9 +21,10 @@ def rounds(
 
 
 def test_the_failure_seen_on_ci_is_the_platform_cost_and_passes() -> None:
-    # PR #1021's run: detect made 29 plugin API calls on a slow runner, 26 ms over the
-    # in-process wall time; its CPU was 4 ms over (the API's 16 ms is N18's)
-    a, b = rounds([(25.2, 15.5)] * 11, [(51.4, 19.6)] * 11, calls=29, hop=0.4)
+    # PR #1021's and #1049's runs: detect made 29 plugin API calls on a slow runner, 26 ms
+    # over the in-process wall time, 30 ms of it in those calls; its CPU 21 ms over (4 ms in
+    # the worker's process, 17 ms in the plugin API's): about 0.7 ms of CPU a call
+    a, b = rounds([(25.2, 15.5)] * 11, [(51.4, 15.5 + 4.2 + 16.8)] * 11, calls=29, hop=0.4)
     assert perf_check("detect", a, b, floor_s=FLOOR) == []
 
 
@@ -52,20 +53,30 @@ def test_a_machine_slow_for_a_while_slows_both_sides_of_its_rounds() -> None:
 
 
 def test_twice_the_cpu_fails_p50_and_p95() -> None:
-    a, b = rounds([(50.0, 30.0)] * 11, [(90.0, 60.0)] * 11, calls=5, hop=0.5)
+    a, b = rounds([(50.0, 30.0)] * 11, [(110.0, 70.0)] * 11, calls=5, hop=0.5)
     got = perf_check("s", a, b, floor_s=FLOOR)
     assert got[:2] == [
-        "s p50 (CPU): plugin 60.0 ms > 1.10 x in-process 30.0 ms",
-        "s p95 (CPU): plugin 60.0 ms > 1.15 x in-process 30.0 ms",
+        "s p50 (CPU): plugin 70.0 ms > in-process 30.0 ms + 30.0 ms (the larger of 10% and"
+        " 25.0 ms a job, + 5 calls x 1.00 ms)",
+        "s p95 (CPU): plugin 70.0 ms > in-process 30.0 ms + 30.0 ms (the larger of 15% and"
+        " 25.0 ms a job, + 5 calls x 1.00 ms)",
     ]
+
+
+def test_each_call_costing_more_cpu_than_stated_fails() -> None:
+    # 20 calls at twice the stated CPU each: 40 ms over, 20 ms of it beyond the statement
+    over = 20 * 2 * STATEMENT_CPU_S / MS
+    a, b = rounds([(30.0, 10.0)] * 11, [(55.0, 10.0 + over + 6)] * 11, calls=20, hop=0.5)
+    got = perf_check("s", a, b, floor_s=FLOOR)
+    assert [x.split(":")[0] for x in got] == ["s p50 (CPU)", "s p95 (CPU)"], got
 
 
 def test_a_plugin_that_waits_fails_the_paired_wall_time() -> None:
     # the same CPU, 40 ms more wall a job: a sleep, a lock, round trips to Postgres
     a, b = rounds([(20.0, 10.0)] * 11, [(60.0, 10.5)] * 11, calls=4, hop=0.5)
     assert perf_check("s", a, b, floor_s=FLOOR) == [
-        "s p50 (wall, paired): plugin slower by 40.0 ms > allowed 29.0 ms (10% of in-process"
-        " 20.0 ms + 25.0 ms a job + 4 calls x 0.50 ms)"
+        "s p50 (wall, paired): plugin slower by 40.0 ms > allowed 27.0 ms (the larger of 10%"
+        " of in-process 20.0 ms and 25.0 ms a job, + 4 calls x 0.50 ms)"
     ]
 
 

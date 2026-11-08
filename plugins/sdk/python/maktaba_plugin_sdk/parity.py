@@ -13,8 +13,8 @@ plugin's statements and role), then compares what this module reads:
   hashes, summary and the jobs it enqueued;
 - the input and output fingerprints of every subject;
 - the job time per stage (N16): the CPU each job cost, p50 ≤ 1.10× and p95 ≤ 1.15× of the
-  in-process path, and its wall time, paired round by round, within 10% plus the plugin
-  path's fixed cost of a job and the hop each statement pays (``perf_check``).
+  in-process path, and its wall time, paired round by round, within 10%, beyond the plugin
+  path's stated costs of a job and of each plugin API call (``perf_check``).
 
 Any difference fails, naming the table, the key and the column (the first 20).
 """
@@ -35,6 +35,7 @@ from uuid import UUID
 
 __all__ = [
     "MAX_SHOWN",
+    "STATEMENT_CPU_S",
     "STATEMENT_HOP_S",
     "JobTiming",
     "ParityConfig",
@@ -230,12 +231,11 @@ def _quantile(xs: Sequence[float], q: float) -> float:
 class JobTiming:
     """One benched job of one side, for N16.
 
-    ``wall``: the whole job, seconds. ``cpu``: the CPU the job cost the process that runs
-    the worker, the runner and the stage's code (the plugin API's process and Postgres are
-    left out: the API's work per statement is N18's and N23's, and both sides run the same
-    queries). ``calls`` and ``hop``, the plugin side only: how many plugin API calls the
-    job made and the wall time of its cheapest one, which is the hop to the API one
-    statement pays."""
+    ``wall``: the whole job, seconds. ``cpu``: the CPU the job cost every process it ran
+    in but Postgres (which runs the same queries for both sides): the worker, the runner
+    and the stage's code, and on the plugin side the plugin API. ``calls`` and ``hop``,
+    the plugin side only: how many plugin API calls the job made and the wall time of its
+    cheapest one."""
 
     wall: float
     cpu: float
@@ -243,9 +243,13 @@ class JobTiming:
     hop: float = 0.0
 
 
-#: N18: a named statement's round trip through the plugin API (p95). The hop N16 allows a
-#: statement is the measured one, never more than this.
+#: N18: a named statement's round trip through the plugin API (p95). The wall time N16
+#: allows a call is its measured hop, never more than this.
 STATEMENT_HOP_S = 0.002
+#: the CPU N16 allows a plugin API call, both processes (the SDK's request and the API's
+#: token check, statement and answer). Measured on CI (1,824 stage benches, 2026-11-08):
+#: 0.56 ms a call at the median, 1.00 ms at most, on the slowest runners.
+STATEMENT_CPU_S = 0.001
 
 
 def perf_check(
@@ -258,42 +262,47 @@ def perf_check(
     """N16: a stage's plugin job is not meaningfully slower than its in-process job.
 
     ``inproc[i]`` and ``plugin[i]`` are one round: the same job run on each side in turn.
+    The plugin path's own costs are stated, not hidden: ``floor_s`` a job (its token and
+    the hop to the runner) and, for each plugin API call, ``STATEMENT_CPU_S`` of CPU and its
+    measured hop of wall time (at most N18's ``STATEMENT_HOP_S``). Beyond them:
 
-    - **The work** (CPU): p50 ≤ 1.10x and p95 ≤ 1.15x of the in-process job's CPU, and more
-      than ``floor_s`` over it. CPU time does not count the time a job waits, so a shared
+    - **The work** (CPU): the plugin job's p50 is within 10% of the in-process job's and
+      its p95 within 15%. CPU time does not count the time a job waits, so a shared
       machine's stalls (seen on CI on both sides, in any span, with the CPU flat) cannot
       fail it, and a plugin that does more work fails it on any machine.
     - **The wait** (wall time, paired): the median over rounds of plugin minus in-process
-      wall time is within 10% of the in-process median, plus ``floor_s`` (the plugin path's
-      fixed cost of one job: its token and the hop to the runner), plus one hop per plugin
-      API call (each statement's hop to the API: the job's cheapest call, capped at N18's
-      ``STATEMENT_HOP_S``). The two sides of a round run back to back, so a machine slow
-      for a while slows both and the difference keeps; a stall on one side's turn moves
-      one difference, which the median does not follow. A plugin that waits (a sleep, a
-      lock, more round trips to Postgres than the in-process job) fails it.
+      wall time is within 10% of the in-process median. The two jobs of a round run back
+      to back, so a machine slow for a while slows both and the difference keeps; a stall
+      on one turn moves one difference, which the median does not follow. A plugin that
+      waits (a sleep, a lock, round trips the in-process job does not make) fails it.
 
-    ``floor_s`` is the smallest difference that counts."""
+    The percentage counts when it is more than ``floor_s``: either is allowed, not both."""
     n = min(len(inproc), len(plugin))
     if n == 0:
         return []
     a, b = inproc[:n], plugin[:n]
+    calls = round(_median([float(y.calls) for y in b]))
     out = []
     for name, q, limit in (("p50", 0.5, P50_LIMIT), ("p95", 0.95, P95_LIMIT)):
         ca, cb = _quantile([x.cpu for x in a], q), _quantile([x.cpu for x in b], q)
-        if cb > ca * limit and cb - ca > floor_s:
+        allowed = max(ca * (limit - 1), floor_s) + calls * STATEMENT_CPU_S
+        if cb - ca > allowed:
             out.append(
-                f"{stage} {name} (CPU): plugin {cb * 1000:.1f} ms > {limit:.2f} x in-process {ca * 1000:.1f} ms"  # noqa: E501
+                f"{stage} {name} (CPU): plugin {cb * 1000:.1f} ms > in-process"
+                f" {ca * 1000:.1f} ms + {allowed * 1000:.1f} ms (the larger of"
+                f" {limit - 1:.0%} and {floor_s * 1000:.1f} ms a job, + {calls} calls x"
+                f" {STATEMENT_CPU_S * 1000:.2f} ms)"
             )
     slower = _median([y.wall - x.wall for x, y in zip(a, b, strict=True)])
     base = _median([x.wall for x in a])
-    calls = round(_median([float(y.calls) for y in b]))
     hop = min(_median([y.hop for y in b]), STATEMENT_HOP_S)
-    allowed = base * (P50_LIMIT - 1) + floor_s + calls * hop
+    allowed = max(base * (P50_LIMIT - 1), floor_s) + calls * hop
     if slower > allowed:
         out.append(
             f"{stage} p50 (wall, paired): plugin slower by {slower * 1000:.1f} ms > allowed"
-            f" {allowed * 1000:.1f} ms ({P50_LIMIT - 1:.0%} of in-process {base * 1000:.1f} ms"
-            f" + {floor_s * 1000:.1f} ms a job + {calls} calls x {hop * 1000:.2f} ms)"
+            f" {allowed * 1000:.1f} ms (the larger of {P50_LIMIT - 1:.0%} of in-process"
+            f" {base * 1000:.1f} ms and {floor_s * 1000:.1f} ms a job, + {calls} calls x"
+            f" {hop * 1000:.2f} ms)"
         )
     return out
 

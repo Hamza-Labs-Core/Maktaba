@@ -150,8 +150,8 @@ async def test_a_slower_plugin_fails_n16_with_both_numbers(
     ), problems
 
 
-#: the toy job's CPU on both sides for N16's bench: above PERF_FLOOR_S, so doubling it is a
-#: difference N16 counts
+#: the toy job's CPU on both sides for N16's bench: above PERF_FLOOR_S, so an extra twice it
+#: in the plugin path is over N16's stated costs (25 ms a job, 1 ms of CPU a call)
 WORK_S = 0.03
 
 
@@ -172,11 +172,12 @@ async def test_a_plugin_job_doing_the_same_work_passes_n16(
 async def test_a_plugin_job_costing_twice_the_cpu_fails_n16(
     toy: bytes, monkeypatch: pytest.MonkeyPatch, template: str
 ) -> None:
-    """N16's regression: the plugin-side handler doing its work twice over, through the
-    bench (both runs, as compare_n16 measures a timing failure once more)."""
+    """N16's regression: the plugin-side handler doing an extra twice its work (three times
+    the in-process job's), through the bench (both runs, as compare_n16 measures a timing
+    failure once more)."""
     from fp_toy import stage
 
-    stage.PLANT.update(work=WORK_S, more_work=2.0)
+    stage.PLANT.update(work=WORK_S, more_work=3.0)
     async with run(toy, monkeypatch, template) as p:
         await p.run()
         problems = await p.compare_n16([], stages=["fp_toy"], timing_only=True)

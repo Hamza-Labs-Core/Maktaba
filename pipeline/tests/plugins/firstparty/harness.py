@@ -217,7 +217,8 @@ class Side:
     db: Database
     #: N16's samples per stage, one per job in the order run (the bench's rounds replace the
     #: drain's): its wall time and the CPU it cost this process (the worker, the runner and
-    #: the stage's code), and on the plugin side its plugin API calls and their cheapest hop
+    #: the stage's code) and the plugin API's (Linux; the bench only), and on the plugin
+    #: side its plugin API calls and their cheapest hop
     timings: dict[str, list[JobTiming]] = field(default_factory=dict)
     ran: list[str] = field(default_factory=list)
     #: the extensions' settings its jobs get (story 54.35: each side's own fake Plex)
@@ -422,10 +423,11 @@ class Parity:
                     at = {k: v for k, v in marks if k.startswith("@")}
                     steps = [(k, v) for k, v in marks if not k.startswith("@")]
                     hops = [v for k, v in steps if k.startswith("api ")]
+                    api_cpu = api1 - api0 if api0 is not None and api1 is not None else 0.0
                     side.timings[st].append(
                         JobTiming(
                             wall=took,
-                            cpu=cpu1 - cpu0,
+                            cpu=(cpu1 - cpu0) + api_cpu,
                             calls=len(hops),
                             hop=min(hops, default=0.0),
                         )

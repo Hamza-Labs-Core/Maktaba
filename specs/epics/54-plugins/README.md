@@ -1829,26 +1829,30 @@ These replace the parts of §15.4–§15.6 and stories 54.22–54.25 they name.
   wave 4) instead of running in the `light` runner, which has no network. Wave 1 is
   `promo_links`, `clip_groups`, `topic_collections` and `rate_style`.
 - **N16 counts a job's own work.** Each moved stage's job is run several times on both copies,
-  in turns (one round is the in-process job, then the plugin job), and judged twice. The
-  work: the CPU each job cost the process that runs the worker, the runner and the stage's
-  code, p50 ≤ 1.10× and p95 ≤ 1.15×; the plugin API's CPU per statement is N18's and N23's
-  and Postgres runs the same queries for both, so neither is counted. A job's CPU does not
+  in turns (one round is the in-process job, then the plugin job). The plugin path's own
+  costs are stated in the measure, not hidden: 25 ms a job (its token and the hop to the
+  runner) and, for each plugin API call, 1 ms of CPU (the SDK's request and the API's
+  token check, statement and answer; 0.56 ms at the median and 1.00 ms at most on CI's
+  slowest runners) and its hop of wall time (the job's cheapest call, at most N18's 2 ms).
+  Beyond them, two checks. The work: the CPU each job cost every process it ran in but
+  Postgres (the worker, the runner and the stage's code, and the plugin API, from
+  `/proc/<pid>/schedstat` on Linux), p50 within 10% and p95 within 15%. A job's CPU does not
   count the time it waits, so a shared machine's stalls (30-250 ms on CI, on either side
   and in any span, with the CPU flat) cannot move it. The wait: the median over rounds of
   the plugin job's wall time minus the in-process job's in the same round is within 10% of
-  the in-process median, plus 25 ms, the plugin path's fixed cost of one job (its token and
-  the hop to the runner), plus one hop per plugin API call (the job's cheapest call,
-  capped at N18's 2 ms). A machine slow for a while slows both jobs of a round, so the
+  the in-process median. A machine slow for a while slows both jobs of a round, so the
   difference keeps; a stall on one turn moves one difference, which the median does not
-  follow. The hop scales the allowance with how many statements the job runs and how fast
-  the machine is: a fixed 25 ms failed `detect` on a slow runner the one time its job ran
-  29 statements instead of 19 (26 ms over), with no stall in it. A plugin that does more
-  work fails the CPU check on any machine, and one that waits (a sleep, a lock, more round
-  trips) fails the wall check. Every statement runs on a connection already set to the
-  plugin's role and origin, so a statement outside a transaction is one round trip to
-  Postgres. A failure that is only the timing is measured once more and counts when the
-  second run fails too. Each run writes its timings (both sides' wall time, CPU, the plugin
-  API's CPU and the run's spans) to the `parity-report` artifact.
+  follow. The percentage counts when it is over 25 ms. A fixed 25 ms with no per-call cost
+  failed `detect` whenever its job ran 29 statements instead of 19 on a slow runner (26 ms
+  over: 29 calls at about 0.9 ms each over the in-process query, 0.58 ms of it the API's
+  CPU), with no stall in it. A plugin that does more work, or makes calls that cost more
+  than stated, fails the CPU check on any machine; one that waits (a sleep, a lock, round
+  trips the in-process job does not make) fails the wall check. Every statement runs on a
+  connection already set to the plugin's role and origin, so a statement outside a
+  transaction is one round trip to Postgres. A failure that is only the timing is measured
+  once more and counts when the second run fails too. Each run writes its timings (both
+  sides' wall time, CPU, the plugin API's CPU and the run's spans) to the `parity-report`
+  artifact.
 - **A runner never judges an update.** Like a TV slot, a plugin runner that does not run (it
   crash loops, or its sandbox is unavailable) is left out of the update's health rules, before
   and after: its stages run in the worker meanwhile, and the Components page shows it.
