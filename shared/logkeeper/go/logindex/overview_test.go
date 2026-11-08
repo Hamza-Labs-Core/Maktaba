@@ -6,23 +6,59 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-// overviewFleet records two scrapes a minute apart from 60 machines (n00…n59) of 10
-// components each, with a few in trouble: n07 has 3 components down, n33 one that went from
-// running to failed between the scrapes, n12 and n41 the least disk free, n20 the highest load.
-// n07's c1 restarted twice between the scrapes.
+// overviewFleet is an index holding two scrapes a minute apart from 51 machines (n00…n50: one past the store's label cap of 50)
+// of 4 components each, with a few in trouble: n07 has 3 components down, n33 one that went
+// from running to failed between the scrapes, n12 and n41 the least disk free, n20 the
+// highest load. n07's c1 restarted twice between the scrapes. Recording them takes about
+// half a second under -race, so they are recorded once (recordFleet) and each test opens its
+// own copy of that index.
 func overviewFleet(t *testing.T) (*Index, context.Context) {
 	t.Helper()
-	root, now := t.TempDir(), t0
-	ix := open(t, root, &now)
+	fleetOnce.Do(func() { fleetDB, fleetNow, fleetErr = recordFleet() })
+	if fleetErr != nil {
+		t.Fatal(fleetErr)
+	}
+	root, now := t.TempDir(), fleetNow
+	if err := os.MkdirAll(filepath.Dir(Path(root)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Path(root), fleetDB, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return open(t, root, &now), context.Background()
+}
+
+var (
+	fleetOnce sync.Once
+	fleetDB   []byte // the recorded index file, closed (its WAL folded in)
+	fleetNow  time.Time
+	fleetErr  error
+)
+
+// recordFleet records overviewFleet's scrapes into a new index and answers its file.
+func recordFleet() ([]byte, time.Time, error) {
+	root, err := os.MkdirTemp("", "logindex-fleet-")
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer os.RemoveAll(root)
+	now := t0
+	ix, err := Open(root, func() time.Time { return now })
+	if err != nil {
+		return nil, now, err
+	}
 	ctx := context.Background()
 	for scrape := 0; scrape < 2; scrape++ {
 		var b strings.Builder
-		for i := 0; i < 60; i++ {
+		for i := 0; i < 51; i++ {
 			m := fmt.Sprintf("n%02d", i)
 			disk, load := 1e12, 1.0
 			switch m {
@@ -36,7 +72,7 @@ func overviewFleet(t *testing.T) (*Index, context.Context) {
 			fmt.Fprintf(&b, "maktaba_host_load1{machine=%q} %g\nmaktaba_host_cpus{machine=%q} 4\n", m, load, m)
 			fmt.Fprintf(&b, "maktaba_host_memory_bytes{machine=%q} 8e9\nmaktaba_host_memory_free_bytes{machine=%q} %g\n", m, m, 4e9-float64(i))
 			fmt.Fprintf(&b, "maktaba_host_disk_free_bytes{machine=%q} %g\n", m, disk)
-			for c := 0; c < 10; c++ {
+			for c := 0; c < 4; c++ {
 				phase, up := "running", 1
 				if m == "n07" && c < 3 {
 					phase, up = "failed", 0
@@ -52,10 +88,18 @@ func overviewFleet(t *testing.T) (*Index, context.Context) {
 		}
 		now = now.Add(time.Minute)
 		if err := ix.Record(ctx, parseMetrics(strings.NewReader(b.String())), now); err != nil {
-			t.Fatal(err)
+			_ = ix.Close()
+			return nil, now, err
 		}
 	}
-	return ix, ctx
+	if err := ix.Close(); err != nil {
+		return nil, now, err
+	}
+	if _, err := os.Stat(Path(root) + "-wal"); err == nil {
+		return nil, now, fmt.Errorf("the fleet index kept a WAL after Close")
+	}
+	db, err := os.ReadFile(Path(root))
+	return db, now, err
 }
 
 func lineOf(doc BoardDoc, name, labels string) (Series, bool) {
@@ -77,7 +121,7 @@ func last(s Series) float64 {
 // Story 53.12: with many machines the Overview keeps within MaxSeries. It draws totals across
 // the machines and the TopMachines most in need of attention, and names how many machines
 // there are, which are shown and every machine (the store keeps at most the label cap of 50
-// machines, so 50 of the 60).
+// machines, so 50 of the 51).
 func TestOverviewManyMachines(t *testing.T) {
 	ix, ctx := overviewFleet(t)
 	doc, err := ix.Board(ctx, "overview", "1h")
@@ -100,7 +144,7 @@ func TestOverviewManyMachines(t *testing.T) {
 		t.Fatalf("shown %s, want the most components down, then least disk, then highest load", got)
 	}
 	for name, want := range map[string]float64{
-		MachinesComponentsUp:   50*10 - 4,
+		MachinesComponentsUp:   50*4 - 4,
 		MachinesComponentsDown: 4,
 		MachinesDiskFreeMin:    1e9,
 		MachinesMemoryFreeMin:  4e9 - 49,
@@ -160,13 +204,13 @@ func TestOverviewOneMachine(t *testing.T) {
 	if strings.Join(names, " ") != strings.Join(want, " ") {
 		t.Fatalf("lines:\n%s\nwant:\n%s", strings.Join(names, "\n"), strings.Join(want, "\n"))
 	}
-	if s, _ := lineOf(doc, "maktaba_component_up", "machine=n07"); last(s) != 7 {
-		t.Errorf("n07 up: %v, want 7", last(s))
+	if s, _ := lineOf(doc, "maktaba_component_up", "machine=n07"); last(s) != 1 {
+		t.Errorf("n07 up: %v, want 1", last(s))
 	}
 	// a machine the store has not seen: no lines, the machines still named
-	none, err := ix.BoardOf(ctx, "overview", "1h", "n59")
+	none, err := ix.BoardOf(ctx, "overview", "1h", "n50")
 	if err != nil || len(none.Series) != 0 || none.Machines == nil || none.Machines.Total != 50 {
-		t.Fatalf("n59: %v %d lines, machines %+v", err, len(none.Series), none.Machines)
+		t.Fatalf("n50: %v %d lines, machines %+v", err, len(none.Series), none.Machines)
 	}
 	if _, err := ix.BoardOf(ctx, "overview", "1h", strings.Repeat("x", maxMachineID+1)); err != ErrBoard {
 		t.Errorf("a machine id past %d bytes: %v, want ErrBoard", maxMachineID, err)
@@ -192,8 +236,8 @@ func TestOverviewPhaseChangeCountsOnce(t *testing.T) {
 	}
 	up, _ := lineOf(doc, "maktaba_component_up", "machine=n33")
 	down, _ := lineOf(doc, ComponentDown, "machine=n33")
-	if len(up.Points) != 1 || last(up) != 9.5 || last(down) != 0.5 {
-		t.Fatalf("n33 up %v, down %v; want 9.5 and 0.5 in one bucket", up.Points, down.Points)
+	if len(up.Points) != 1 || last(up) != 3.5 || last(down) != 0.5 {
+		t.Fatalf("n33 up %v, down %v; want 3.5 and 0.5 in one bucket", up.Points, down.Points)
 	}
 }
 

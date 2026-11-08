@@ -167,8 +167,18 @@ data class BoardSeries(
 ) {
     /** The labels' values ("core.api · home"). */
     val legend: String
-        get() = labels.orEmpty().split(",").mapNotNull { kv -> kv.substringAfter("=", "").takeIf { it.isNotEmpty() } }.joinToString(" · ")
+        get() = legend(emptyMap())
+
+    /** The labels' values with the machine named as the Machines page names it ("core.api · Living room"). */
+    fun legend(names: Map<String, String>): String =
+        labels.orEmpty().split(",").mapNotNull { kv ->
+            val v = kv.substringAfter("=", "").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            if (kv.substringBefore("=") == "machine") machineName(names, v) else v
+        }.joinToString(" · ")
 }
+
+/** A machine's name for display: its name from [names], else its node id. */
+fun machineName(names: Map<String, String>, machine: String): String = names[machine]?.takeIf { it.isNotBlank() } ?: machine
 
 /**
  * The Overview's machines: how many there are, the ones shown (most in need of attention first, a joined machine that is
@@ -196,7 +206,12 @@ data class BoardDoc(
     val machines: BoardMachines? = null,
     /** Lines the board's 50 left out. */
     val omitted: Int = 0,
+    /** The Overview's machine ids named as the Machines page names them (empty from a home before names: each by its id). */
+    val names: Map<String, String> = emptyMap(),
 ) {
+    /** A machine's name for display: its name, else its node id. */
+    fun nameOf(machine: String): String = machineName(names, machine)
+
     /** One panel per metric name, in the board's order. */
     val panels: List<Pair<String, List<BoardSeries>>>
         get() = series.groupBy { it.name }.toList()

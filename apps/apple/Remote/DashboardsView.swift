@@ -8,7 +8,8 @@ import SwiftUI
 /// do), and each chart says its latest and highest value to VoiceOver. With several machines
 /// the Overview shows totals across them and the five most in need of attention, says how
 /// many of how many it shows, names the joined machines that are offline (they come first),
-/// and offers each machine on its own.
+/// and offers each machine on its own. Machines are named as the Machines page names them
+/// (the answer's names), each keyed by its node id.
 struct DashboardsView: View {
     @Environment(RemoteModel.self) private var model
     @State private var board = Board.overview
@@ -16,6 +17,7 @@ struct DashboardsView: View {
     @State private var machine = ""
     @State private var machines: [String] = []
     @State private var offline: [String] = []
+    @State private var names: [String: String] = [:]
     @State private var doc: BoardDoc?
     @State private var problem: String?
 
@@ -40,10 +42,11 @@ struct DashboardsView: View {
                     Picker("Machine", selection: $machine) {
                         Text("All machines").tag("")
                         ForEach(machines, id: \.self) { m in
+                            let label = pickerLabel(m)
                             if offline.contains(m) {
-                                Text("\(m) (offline)").tag(m)
+                                Text("\(label) (offline)").tag(m)
                             } else {
-                                Text(verbatim: m).tag(m)
+                                Text(verbatim: label).tag(m)
                             }
                         }
                     }
@@ -66,7 +69,7 @@ struct DashboardsView: View {
                             .accessibilityIdentifier("dash.offline")
                     }
                 } else {
-                    Text("Offline: \(m.offline.joined(separator: ", ")). Offline machines come first; their lines end at their last values.")
+                    Text("Offline: \(m.offline.map(name(of:)).joined(separator: ", ")). Offline machines come first; their lines end at their last values.")
                         .font(.footnote).foregroundStyle(.red)
                         .accessibilityIdentifier("dash.offline")
                 }
@@ -83,7 +86,7 @@ struct DashboardsView: View {
                 ForEach(doc.panels, id: \.name) { panel in
                     if panel.series.contains(where: { !$0.points.isEmpty }) {
                         Section {
-                            PanelChart(name: panel.name, series: panel.series)
+                            PanelChart(name: panel.name, series: panel.series, names: names)
                         } header: {
                             Text(verbatim: DashWords.title(panel.name))
                         }
@@ -99,6 +102,18 @@ struct DashboardsView: View {
         .toolbar { AccountMenu() }
     }
 
+    /// A machine's name for display: its name, else its node id.
+    private func name(of machine: String) -> String {
+        guard let n = names[machine], !n.trimmingCharacters(in: .whitespaces).isEmpty else { return machine }
+        return n
+    }
+
+    /// The picker's entry: the name with the node id as a hint, or the id alone.
+    private func pickerLabel(_ machine: String) -> String {
+        let n = name(of: machine)
+        return n == machine ? machine : String(localized: "\(n) (\(machine))")
+    }
+
     private func load() async {
         do {
             let d = try await model.client.board(board, range: range, machine: machine)
@@ -107,6 +122,7 @@ struct DashboardsView: View {
                 machines = m.all
                 offline = m.offline
             }
+            names.merge(d.names) { _, new in new }
             problem = nil
         } catch {
             if !(error is CancellationError) { problem = HomeFailure(error).message() }
@@ -117,6 +133,7 @@ struct DashboardsView: View {
 struct PanelChart: View {
     let name: String
     let series: [BoardDoc.Series]
+    var names: [String: String] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -124,7 +141,7 @@ struct PanelChart: View {
                 ForEach(series, id: \.self) { s in
                     ForEach(s.points, id: \.at) { p in
                         LineMark(x: .value("Time", p.at), y: .value("Value", p.value))
-                            .foregroundStyle(by: .value("Series", s.legend.isEmpty ? DashWords.title(name) : s.legend))
+                            .foregroundStyle(by: .value("Series", legend(s)))
                     }
                 }
             }
@@ -141,6 +158,12 @@ struct PanelChart: View {
             .accessibilityLabel(Text(verbatim: summary))
             .accessibilityIdentifier("dash.panel.\(name)")
         }
+    }
+
+    /// A line's legend, its machine named; the panel's title when it has no labels.
+    func legend(_ s: BoardDoc.Series) -> String {
+        let l = s.legend(names: names)
+        return l.isEmpty ? DashWords.title(name) : l
     }
 
     /// "Log files: now 2 MB; highest 3 MB."

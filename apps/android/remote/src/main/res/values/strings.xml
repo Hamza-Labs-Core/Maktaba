@@ -755,6 +755,7 @@
     <string name="dash_machines_offline">Offline: %1$s. Offline machines come first; their lines end at their last values.</string>
     <string name="dash_machine_offline">This machine is offline. Its lines end at its last values.</string>
     <string name="dash_machine_offline_option">%1$s (offline)</string>
+    <string name="dash_machine_option">%1$s (%2$s)</string>
     <!-- Epic 53 stories 53.04, 53.05: the recovery screen (the console's words) -->
     <string name="recovery_title">Recovery</string>
     <string name="recovery_intro">Part of Maktaba isn\'t working. You can see what happened and fix it here.</string>

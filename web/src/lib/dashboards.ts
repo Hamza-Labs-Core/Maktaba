@@ -3,6 +3,7 @@
 // top videos (counts and titles only). The Overview draws totals across the machines and
 // the five most in need of attention (a joined machine that is offline first), names them
 // all and the offline ones in `machines`, and answers one machine on its own with `machine=`.
+// `names` gives each machine id the answer mentions its name, as the Machines page shows it.
 import { api } from "./api";
 
 export const BOARDS = ["overview", "queue", "processing", "streaming", "storage", "use"] as const;
@@ -30,6 +31,15 @@ export interface BoardDoc {
   machines?: { total: number; shown: string[]; all: string[]; offline: string[] };
   /** Lines the board's 50 left out. */
   omitted?: number;
+  /** Overview: each machine id the answer mentions, named as the Machines page names it (an
+   * id with no name named by itself; an older home sends none). */
+  names?: Record<string, string>;
+}
+
+/** A machine's name for display: its name from `names`, else its id. */
+export function machineName(names: Record<string, string> | undefined, id: string): string {
+  const v = names?.[id];
+  return typeof v === "string" && v.trim() !== "" ? v : id;
 }
 
 export async function getBoard(board: Board, range: Range, machine = ""): Promise<BoardDoc> {
@@ -51,7 +61,19 @@ export async function getBoard(board: Board, range: Range, machine = ""): Promis
         }
       : undefined,
     omitted: d?.omitted ?? 0,
+    names: namesOf(d?.names),
   };
+}
+
+/** The answer's names, kept only where both id and name are text. */
+function namesOf(v: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    for (const [k, n] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof n === "string") out[k] = n;
+    }
+  }
+  return out;
 }
 
 /** The range as milliseconds (the Open in Logs window). */
@@ -74,12 +96,17 @@ export function panels(series: BoardSeries[]): { name: string; series: BoardSeri
   return out;
 }
 
-/** A series' legend: its labels' values ("core.api · home"), or the name without labels. */
-export function seriesLabel(s: BoardSeries): string {
+/** A series' legend: its labels' values ("core.api · home"), a machine named by `names`, or
+ * "" without labels. */
+export function seriesLabel(s: BoardSeries, names?: Record<string, string>): string {
   if (!s.labels) return "";
   return s.labels
     .split(",")
-    .map((kv) => kv.split("=").slice(1).join("="))
+    .map((kv) => {
+      const [k, ...rest] = kv.split("=");
+      const v = rest.join("=");
+      return k === "machine" && v ? machineName(names, v) : v;
+    })
     .filter(Boolean)
     .join(" · ");
 }

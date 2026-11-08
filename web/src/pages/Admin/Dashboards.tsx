@@ -5,7 +5,8 @@
 // titles only, never one person's history. With several machines the Overview shows totals
 // across them and the five most in need of attention, says how many of how many it shows,
 // names the joined machines that are offline (they come first), and offers each machine on
-// its own.
+// its own. Machines are named as the Machines page names them (the answer's names), each
+// keyed by its node id.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
@@ -20,6 +21,7 @@ import {
   RANGES,
   RANGE_MS,
   getBoard,
+  machineName,
   panels,
   seriesLabel,
   type Board,
@@ -59,6 +61,7 @@ function DashboardsInner() {
   const [doc, setDoc] = useState<BoardDoc | null>(null);
   const [machines, setMachines] = useState<string[]>([]);
   const [offline, setOffline] = useState<string[]>([]);
+  const [names, setNames] = useState<Record<string, string>>({});
   const [err, setErr] = useState(false);
 
   useEffect(() => {
@@ -71,6 +74,10 @@ function DashboardsInner() {
         if (d.machines) {
           setMachines(d.machines.all);
           setOffline(d.machines.offline);
+        }
+        if (d.names && Object.keys(d.names).length > 0) {
+          const got = d.names;
+          setNames((prev) => ({ ...prev, ...got }));
         }
         setErr(false);
       })
@@ -87,7 +94,7 @@ function DashboardsInner() {
       ? t("dash.machine.offline")
       : ""
     : off.length > 0
-      ? t("dash.machines.offline", { machines: off.join(", ") })
+      ? t("dash.machines.offline", { machines: off.map((m) => machineName(names, m)).join(", ") })
       : "";
   const since = new Date(Date.now() - RANGE_MS[range]).toISOString();
   const fmtTime = (s: number) => formatDate(new Date(s * 1000).toISOString());
@@ -135,11 +142,18 @@ function DashboardsInner() {
             onChange={(e) => setMachine(e.target.value)}
           >
             <option value="">{t("dash.machine.all")}</option>
-            {machines.map((m) => (
-              <option key={m} value={m}>
-                {offline.includes(m) ? t("dash.machine.offlineOption", { machine: m }) : m}
-              </option>
-            ))}
+            {machines.map((m) => {
+              // the name, with the node id as a hint when the machine has a name of its own
+              const name = machineName(names, m);
+              const label = name === m ? m : t("dash.machine.option", { name, id: m });
+              return (
+                <option key={m} value={m}>
+                  {offline.includes(m)
+                    ? t("dash.machine.offlineOption", { machine: label })
+                    : label}
+                </option>
+              );
+            })}
           </select>
         </div>
       )}
@@ -170,7 +184,7 @@ function DashboardsInner() {
         {doc &&
           panels(doc.series).map((p) => {
             const lines = p.series.map((s) => ({
-              label: seriesLabel(s) || title(p.name),
+              label: seriesLabel(s, names) || title(p.name),
               points: s.points,
             }));
             const last = lines.map((l) => {
