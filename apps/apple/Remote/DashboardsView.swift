@@ -61,13 +61,12 @@ struct DashboardsView: View {
             if let doc, board == .overview, let m = doc.machines, !m.offline.isEmpty {
                 if let one = doc.machine {
                     if m.isOffline(one) {
-                        Label("This machine is offline. Its lines end at its last values.", systemImage: "bolt.horizontal.circle")
+                        Text("This machine is offline. Its lines end at its last values.")
                             .font(.footnote).foregroundStyle(.red)
                             .accessibilityIdentifier("dash.offline")
                     }
                 } else {
-                    Label("Offline: \(m.offline.joined(separator: ", ")). Offline machines come first; their lines end at their last values.",
-                          systemImage: "bolt.horizontal.circle")
+                    Text("Offline: \(m.offline.joined(separator: ", ")). Offline machines come first; their lines end at their last values.")
                         .font(.footnote).foregroundStyle(.red)
                         .accessibilityIdentifier("dash.offline")
                 }
