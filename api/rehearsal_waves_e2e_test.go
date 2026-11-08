@@ -461,6 +461,7 @@ func (r *rehearsal) waveScenario(id string) {
 	home.waitServing(k.cur, 5*time.Minute)
 	r.budget(mon, id+": an update with wave jobs in flight", 2*time.Minute)
 	home.assertServing(k.cur)
+	home.assertNoCrashLoop(id + ": after the update to " + k.cur)
 	jobs = waitSettled(t, db, w.stages, since, 10*time.Minute)
 	r.checkWaveJobs(id+" through the update", jobs, queued, want)
 
@@ -517,6 +518,8 @@ func (r *rehearsal) waveScenario(id string) {
 			t.Errorf("%s after the flip: job %d (%s) ran %s on %s, want in its runner", id, j.id, j.stage, j.impl, j.release)
 		}
 	}
+	// minutes on this commit: a child that dies at start has had time to reach its crash loop
+	home.assertNoCrashLoop(id + ": at the end on " + k.cur)
 	r.summary(fmt.Sprintf("%s: wave jobs through a rollback and an update, none lost or run twice; flipped to plugin: %s",
 		id, strings.Join(slices.Sorted(slices.Values(w.stages)), ", ")))
 }
