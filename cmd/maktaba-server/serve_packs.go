@@ -35,6 +35,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/componentseed"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ghasset"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
@@ -140,7 +141,12 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 	}
 	trust := &rv.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore")}
 	home := hfHome(cfg)
-	net := packs.NewNet(id.Repo(), nil).WithEnv(os.Getenv)
+	net := packs.NewNet(id.Repo(), nil)
+	// github.com's download door failing past its tries, the release's files come through
+	// GitHub's API asset route (verified against the signed index all the same); a mirror
+	// set in MAKTABA_PACKS_URL clears it (WithEnv)
+	net.API, net.Log = ghasset.DefaultAPI, log
+	net = net.WithEnv(os.Getenv)
 	net.Token = func() string {
 		if t := strings.TrimSpace(os.Getenv("HF_TOKEN")); t != "" {
 			return t

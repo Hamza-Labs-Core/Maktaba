@@ -854,7 +854,7 @@ func Installed(home string) func(ctx context.Context) (string, error) {
 }
 
 // ProgramsFor is Programs for this platform's pinned build under root.
-func ProgramsFor(root string, fetch pgbin.Fetcher, log io.Writer) func(ctx context.Context) (string, error) {
+func ProgramsFor(root string, dl *pgbin.Downloader, log io.Writer) func(ctx context.Context) (string, error) {
 	return func(ctx context.Context) (string, error) {
 		pin, ok := pgbin.Here()
 		if !ok {
@@ -863,6 +863,6 @@ func ProgramsFor(root string, fetch pgbin.Fetcher, log io.Writer) func(ctx conte
 		if err := os.MkdirAll(root, 0o755); err != nil {
 			return "", err
 		}
-		return pgbin.Ensure(ctx, root, pin, fetch, log)
+		return pgbin.Ensure(ctx, root, pin, dl, log)
 	}
 }

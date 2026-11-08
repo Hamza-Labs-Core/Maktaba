@@ -21,7 +21,10 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ghasset"
 )
 
 // Version is the Postgres every machine runs (the home's major: a copy needs it).
@@ -29,8 +32,6 @@ const Version = "16.15.0"
 
 // Major is Version's major.
 const Major = "16"
-
-const base = "https://github.com/theseus-rs/postgresql-binaries/releases/download/" + Version + "/"
 
 // Pin is one platform's archive.
 type Pin struct {
@@ -40,8 +41,9 @@ type Pin struct {
 	Zip    bool
 }
 
-// URL is where the archive is downloaded from.
-func (p Pin) URL() string { return base + p.Name() }
+// URL is the archive's github.com download (pins.env's POSTGRES_URL; Ensure tries
+// Maktaba's CDN and GitHub's API before it).
+func (p Pin) URL() string { return DefaultReleases + "/" + Version + "/" + p.Name() }
 
 // Name is the archive's file name.
 func (p Pin) Name() string {
@@ -98,35 +100,253 @@ func Installed(home string) bool {
 	return true
 }
 
-// Fetcher downloads an archive (tests replace it).
-type Fetcher func(ctx context.Context, url string, w io.Writer) error
+// The places an archive is downloaded from, in the order they are tried: Maktaba's CDN
+// (the store's public bucket, plugins-cdn.maktaba.tv, where the release workflow
+// publishes each pinned archive: .github/workflows/postgres-cdn.yml), GitHub's API asset
+// route (the file on release-assets.githubusercontent.com, reached without github.com's
+// download door), then that door. Whichever answers, the archive must match its pin.
+const (
+	DefaultCDN      = "https://plugins-cdn.maktaba.tv"
+	DefaultAPI      = ghasset.DefaultAPI
+	DefaultReleases = "https://github.com/" + Repo + "/releases/download"
+	// Repo is the GitHub repository the archives are released in.
+	Repo = "theseus-rs/postgresql-binaries"
+)
 
-// HTTPFetch is the real download.
-func HTTPFetch(client *http.Client) Fetcher {
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Minute}
+// CDNPath is the archive's path on Maktaba's CDN: postgres/<version>/<name>.
+func (p Pin) CDNPath() string { return "postgres/" + Version + "/" + p.Name() }
+
+// Mirrors are the bases of the three places (tests point them at fake servers; "" leaves
+// one out).
+type Mirrors struct {
+	CDN      string // <CDN>/postgres/<version>/<name>
+	API      string // <API>/repos/<Repo>/releases/tags/<version>, then its asset route
+	Releases string // <Releases>/<version>/<name>
+	Repo     string // the GitHub repository (default Repo)
+}
+
+// DefaultMirrors are the real places.
+func DefaultMirrors() Mirrors {
+	return Mirrors{CDN: DefaultCDN, API: DefaultAPI, Releases: DefaultReleases, Repo: Repo}
+}
+
+// Source is one place an archive is downloaded from: Fetch makes one try, writing the
+// archive to w.
+type Source struct {
+	Name  string
+	Fetch func(ctx context.Context, pin Pin, w io.Writer) error
+}
+
+// Downloader tries its sources in order, each up to Tries times on a transient failure
+// (a 5xx, a timeout, a connection error: ghasset.Transient), waiting Backoff, then twice
+// that, between tries; any other failure (a 404, another 4xx), or an archive that does
+// not match its pin, moves on to the next source at once.
+type Downloader struct {
+	Sources []Source
+	Tries   int                                              // per source (0: 3)
+	Backoff time.Duration                                    // the first wait (0: 2 s)
+	Sleep   func(ctx context.Context, d time.Duration) error // tests replace it (nil: ghasset.Sleep)
+}
+
+func (d *Downloader) tries() int {
+	if d.Tries > 0 {
+		return d.Tries
 	}
-	return func(ctx context.Context, url string, w io.Writer) error {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-		if err != nil {
-			return err
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("GET %s: %s", url, resp.Status)
-		}
-		// a length said up front that w cannot take (Ensure's capped) is refused
-		// before the body is read
-		if c, ok := w.(*capped); ok && resp.ContentLength > c.left {
-			return fmt.Errorf("GET %s: %d bytes: %w", url, resp.ContentLength, errTooLarge)
-		}
-		_, err = io.Copy(w, resp.Body)
+	return 3
+}
+
+func (d *Downloader) wait(ctx context.Context, try int) (time.Duration, error) {
+	first := d.Backoff
+	if first <= 0 {
+		first = 2 * time.Second
+	}
+	w := ghasset.Backoff(first, try)
+	sleep := d.Sleep
+	if sleep == nil {
+		sleep = ghasset.Sleep
+	}
+	return w, sleep(ctx, w)
+}
+
+// HTTPDownloader downloads over HTTP from m's places, with c (nil: ghasset.Client(), which
+// honours the environment's proxy).
+func HTTPDownloader(c *http.Client, m Mirrors) *Downloader {
+	if c == nil {
+		c = ghasset.Client()
+	}
+	if m.Repo == "" {
+		m.Repo = Repo
+	}
+	d := &Downloader{}
+	if b := strings.TrimRight(m.CDN, "/"); b != "" {
+		d.Sources = append(d.Sources, Source{Name: "Maktaba's CDN", Fetch: func(ctx context.Context, p Pin, w io.Writer) error {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, b+"/"+p.CDNPath(), nil)
+			if err != nil {
+				return err
+			}
+			return get(c, req, w)
+		}})
+	}
+	if b := strings.TrimRight(m.API, "/"); b != "" {
+		d.Sources = append(d.Sources, Source{Name: "GitHub's API", Fetch: func(ctx context.Context, p Pin, w io.Writer) error {
+			u, err := ghasset.AssetURL(ctx, c, b, m.Repo, Version, p.Name())
+			if err != nil {
+				return err
+			}
+			req, err := ghasset.AssetRequest(ctx, u)
+			if err != nil {
+				return err
+			}
+			return get(c, req, w)
+		}})
+	}
+	if b := strings.TrimRight(m.Releases, "/"); b != "" {
+		d.Sources = append(d.Sources, Source{Name: "github.com", Fetch: func(ctx context.Context, p Pin, w io.Writer) error {
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, b+"/"+Version+"/"+p.Name(), nil)
+			if err != nil {
+				return err
+			}
+			return get(c, req, w)
+		}})
+	}
+	return d
+}
+
+// stallTimeout is how long a download may go without a byte before it is given up as a
+// timeout (tried again): a place that stops sending mid-archive would hold it forever.
+var stallTimeout = 60 * time.Second
+
+// get does req and copies its body to w, failing (a timeout) when no byte arrives for
+// stallTimeout.
+func get(c *http.Client, req *http.Request, w io.Writer) error {
+	ctx, cancel := context.WithCancel(req.Context())
+	defer cancel()
+	var stalled atomic.Bool
+	timer := time.AfterFunc(stallTimeout, func() { stalled.Store(true); cancel() })
+	defer timer.Stop()
+	err := getBody(c, req.WithContext(ctx), w, func() { timer.Reset(stallTimeout) })
+	if err != nil && stalled.Load() && req.Context().Err() == nil {
+		return fmt.Errorf("no data for %s: %w", stallTimeout, context.DeadlineExceeded)
+	}
+	return err
+}
+
+func getBody(c *http.Client, req *http.Request, w io.Writer, progress func()) error {
+	resp, err := c.Do(req)
+	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return &ghasset.StatusError{Code: resp.StatusCode}
+	}
+	// a length said up front that w cannot take (Ensure's capped) is refused before the
+	// body is read
+	if c, ok := w.(*capped); ok && resp.ContentLength > c.left {
+		return fmt.Errorf("%d bytes: %w", resp.ContentLength, errTooLarge)
+	}
+	_, err = io.Copy(w, progressReader{resp.Body, progress})
+	return err
+}
+
+// progressReader calls progress after every read that got bytes.
+type progressReader struct {
+	r        io.Reader
+	progress func()
+}
+
+func (p progressReader) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	if n > 0 {
+		p.progress()
+	}
+	return n, err
+}
+
+// errMismatch: an archive that does not match its pin.
+var errMismatch = errors.New("does not match its pin")
+
+// download fetches pin's archive into a new file under root (a dot file, which nothing
+// takes for an install) and returns its path once it matches the pin; a source whose
+// archive does not match is not tried again, and no unverified file is left.
+func (d *Downloader) download(ctx context.Context, root string, pin Pin, log io.Writer) (string, error) {
+	var failed sourceErrors
+	for _, s := range d.Sources {
+		for try := 1; ; try++ {
+			p, err := d.once(ctx, root, pin, s)
+			if err == nil {
+				fmt.Fprintf(log, "[postgres] PostgreSQL %s downloaded from %s\n", Version, s.Name)
+				return p, nil
+			}
+			if ctx.Err() != nil {
+				return "", ctx.Err()
+			}
+			retry := ghasset.Transient(err) && !errors.Is(err, errMismatch) && !errors.Is(err, errTooLarge) && try < d.tries()
+			if !retry {
+				fmt.Fprintf(log, "[postgres] %s failed (try %d): %v: the next source\n", s.Name, try, err)
+				failed = append(failed, fmt.Errorf("%s: %w", s.Name, err))
+				break
+			}
+			wait, werr := d.wait(ctx, try)
+			fmt.Fprintf(log, "[postgres] %s failed (try %d of %d): %v: again in %s\n", s.Name, try, d.tries(), err, wait)
+			if werr != nil {
+				return "", werr
+			}
+		}
+	}
+	if len(failed) == 0 {
+		return "", errors.New("no source to download from")
+	}
+	return "", failed
+}
+
+// sourceErrors are each source's last failure, in order.
+type sourceErrors []error
+
+func (e sourceErrors) Error() string {
+	s := make([]string, len(e))
+	for i, err := range e {
+		s[i] = err.Error()
+	}
+	return strings.Join(s, "; ")
+}
+
+func (e sourceErrors) Unwrap() []error { return e }
+
+// once is one try at s: the archive in a new dot file under root, its path returned only
+// when its SHA-256 and size are the pin's (the file is removed otherwise).
+func (d *Downloader) once(ctx context.Context, root string, pin Pin, s Source) (path string, err error) {
+	tmp, err := os.CreateTemp(root, ".download-*")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if err != nil {
+			_ = tmp.Close()
+			_ = os.Remove(tmp.Name())
+		}
+	}()
+	h := sha256.New()
+	if err := s.Fetch(ctx, pin, &capped{w: io.MultiWriter(tmp, h), left: pin.Size}); err != nil {
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		return "", err
+	}
+	info, err := tmp.Stat()
+	if err != nil {
+		return "", err
+	}
+	if info.Size() != pin.Size {
+		return "", fmt.Errorf("archive of %d bytes, pinned %d: %w", info.Size(), pin.Size, errMismatch)
+	}
+	if sum := hex.EncodeToString(h.Sum(nil)); sum != pin.SHA256 {
+		return "", fmt.Errorf("archive SHA-256 %s, pinned %s: %w", sum, pin.SHA256, errMismatch)
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	return tmp.Name(), nil
 }
 
 // errTooLarge: a download sent more than its pin's size.
@@ -211,11 +431,11 @@ func StripDecoders(home string) ([]string, error) {
 	return found, os.WriteFile(filepath.Join(home, strippedMark), nil, 0o644)
 }
 
-// Ensure returns the install of pin under root, downloading, checking and unpacking
-// it when it is not there yet (a half-done unpack is never taken for an install), with
-// no output plugin but pgoutput (StripDecoders: an install unpacked before that is
-// stripped now).
-func Ensure(ctx context.Context, root string, pin Pin, fetch Fetcher, log io.Writer) (string, error) {
+// Ensure returns the install of pin under root, downloading (dl: its sources in order),
+// checking and unpacking it when it is not there yet (a half-done unpack, or an archive
+// that does not match its pin, is never taken for an install), with no output plugin but
+// pgoutput (StripDecoders: an install unpacked before that is stripped now).
+func Ensure(ctx context.Context, root string, pin Pin, dl *Downloader, log io.Writer) (string, error) {
 	home := filepath.Join(root, pin.Dir())
 	if Installed(home) {
 		if _, err := StripDecoders(home); err != nil {
@@ -226,35 +446,21 @@ func Ensure(ctx context.Context, root string, pin Pin, fetch Fetcher, log io.Wri
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return "", err
 	}
-	tmp, err := os.CreateTemp(root, ".download-*")
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = os.Remove(tmp.Name()) }()
 	fmt.Fprintf(log, "[postgres] downloading PostgreSQL %s for this machine (%s, %d MB)\n", Version, pin.Triple, pin.Size>>20)
-	h := sha256.New()
-	if err := fetch(ctx, pin.URL(), &capped{w: io.MultiWriter(tmp, h), left: pin.Size}); err != nil {
-		_ = tmp.Close()
+	archive, err := dl.download(ctx, root, pin, log)
+	if err != nil {
 		return "", fmt.Errorf("download PostgreSQL %s: %w", Version, err)
 	}
-	if err := tmp.Close(); err != nil {
-		return "", err
-	}
-	if sum := hex.EncodeToString(h.Sum(nil)); sum != pin.SHA256 {
-		return "", fmt.Errorf("PostgreSQL %s archive: SHA-256 %s, pinned %s: not used", Version, sum, pin.SHA256)
-	}
-	if info, err := os.Stat(tmp.Name()); err != nil || info.Size() != pin.Size {
-		return "", fmt.Errorf("PostgreSQL %s archive: unexpected size", Version)
-	}
+	defer func() { _ = os.Remove(archive) }()
 	stage, err := os.MkdirTemp(root, ".unpack-*")
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(stage) }()
 	if pin.Zip {
-		err = unzip(tmp.Name(), stage)
+		err = unzip(archive, stage)
 	} else {
-		err = untargz(tmp.Name(), stage)
+		err = untargz(archive, stage)
 	}
 	if err != nil {
 		return "", fmt.Errorf("unpack PostgreSQL %s: %w", Version, err)

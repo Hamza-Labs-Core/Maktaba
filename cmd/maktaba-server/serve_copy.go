@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,7 +72,7 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 		c.DB.Home, nc.programs = home, nodecopy.Installed(home)
 	} else if pin, ok := pgbin.Here(); ok {
 		c.DB.Home = filepath.Join(copyPrograms(*cfg), pin.Dir())
-		nc.programs = nodecopy.ProgramsFor(copyPrograms(*cfg), pgbin.HTTPFetch(&http.Client{Timeout: 30 * time.Minute}), os.Stderr)
+		nc.programs = nodecopy.ProgramsFor(copyPrograms(*cfg), pgbin.HTTPDownloader(nil, pgbin.DefaultMirrors()), os.Stderr)
 	} else {
 		fmt.Fprintln(os.Stderr, "[serve] no Postgres build for this platform: this machine keeps no copy of its home's database")
 		return nil, nil
