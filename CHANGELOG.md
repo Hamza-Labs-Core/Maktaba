@@ -170,6 +170,17 @@ build fails when the two differ.
   each supervised Python child imports first, each in a fresh interpreter, so an import cycle
   like the one that crash-looped the 0.3.96 runners fails CI. The update rehearsal's wave
   scenarios fail when any supervised process is marked failed after the update.
+- **The Mac server starts after an app update instead of stopping at "could not start".** After
+  the update from 0.3.90 to 0.3.96 on 2026-11-08 the Mac app unregistered and registered the
+  server's login item again; macOS refused (SMAppServiceErrorDomain 22 from the old app right
+  after the install, then 1 on every launch), so the server was never started again and each
+  launch showed "The Maktaba server could not start", though launchd still had the job and it
+  was on in System Settings. A release signed with a Developer ID now keeps its login item
+  across updates (it is registered again only when its plist changes); an app still running
+  from a bundle the install replaced leaves the login item to the new build; and when macOS
+  refuses a registration while the login item is on or launchd has the job, the app starts that
+  job and waits for launchd to run it. The dialog shows only when nothing registered can start;
+  a login item turned off in System Settings still asks to be turned on there.
 - **Old backups go on their own.** The backups folder kept the newest nightly dumps and
   pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
   failed update or of a database a restore replaced was kept until more of its kind came:
