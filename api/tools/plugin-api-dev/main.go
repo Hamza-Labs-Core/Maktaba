@@ -63,10 +63,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if *watchStdin {
-		go func() {
-			_, _ = io.Copy(io.Discard, os.Stdin)
-			stop()
-		}()
+		go stopWhenClosed(os.Stdin, stop)
 	}
 	tokens := plugins.NewTokens(db)
 	s := &plugins.Server{DB: db, Tokens: tokens}
@@ -118,4 +115,11 @@ func main() {
 	go func() { <-ctx.Done(); _ = srv.Close() }()
 	fmt.Fprintf(os.Stdout, "ready %s\n", l.Addr())
 	_ = srv.Serve(l)
+}
+
+// stopWhenClosed reads r until it ends (the parent closed its end, or died) and then calls
+// stop, so the server shuts down with the test process that started it.
+func stopWhenClosed(r io.Reader, stop func()) {
+	_, _ = io.Copy(io.Discard, r)
+	stop()
 }
