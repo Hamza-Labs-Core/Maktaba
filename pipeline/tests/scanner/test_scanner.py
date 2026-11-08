@@ -454,3 +454,28 @@ async def test_scan_normalises_mtime_to_microseconds(tmp_path: Path) -> None:
     p = next(tmp_path.iterdir())
     assert _mtime_ns_to_db(p.stat().st_mtime_ns) == only.mtime
     assert only.mtime.tzinfo is UTC
+
+
+@pytest.mark.asyncio
+async def test_the_scan_stage_queues_no_probe_and_names_its_new_videos(tmp_path: Path) -> None:
+    """Epic 54 story 54.36: as an engine stage the scan queues nothing itself
+    (``queue_probe=False``); its new videos are ``to_probe``, which its declared edge queues.
+    A disabled library's new videos are saved and named for no probe, as before."""
+    for i in range(3):
+        _touch(tmp_path, f"v{i}.mp4", content=f"content-{i}".encode())
+    store = FakeScanStore()
+    lib = _make_lib(tmp_path)
+    store.libraries[lib.id] = lib
+    scanner = Scanner(store, log=_LoggerSink(), queue_probe=False)
+    res = await scanner.run(lib.id)
+    assert res.files_inserted == 3 and store.jobs == []
+    assert sorted(res.to_probe) == sorted(v.id for v in store.videos.values())
+    # a second run finds nothing new: nothing to probe
+    again = await scanner.run(lib.id)
+    assert again.to_probe == [] and store.jobs == []
+    off = tmp_path / "off"
+    _touch(off, "w.mp4", content=b"other")
+    dis = _make_lib(off, disabled=True)
+    store.libraries[dis.id] = dis
+    res = await Scanner(store, log=_LoggerSink(), queue_probe=False).run(dis.id)
+    assert res.files_inserted == 1 and res.to_probe == []

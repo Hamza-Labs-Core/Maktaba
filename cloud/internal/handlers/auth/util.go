@@ -33,16 +33,17 @@ func userViewFrom(u stores.User) userView {
 	return v
 }
 
-// refreshCookie carries the raw refresh token; it is scoped to
-// /v1/auth so no other route ever sees it.
-const refreshCookie = "maktaba_refresh"
+// refreshCookie carries the raw refresh token (Epic 50 story 50.32 §4). The __Host- prefix
+// makes the browser refuse it with a Domain or a Path other than /, so it can never be
+// widened to .maktaba.tv and reach a home behind *.relay.maktaba.tv or the plugin store.
+// No Domain is ever set on it, whatever the deps say.
+const refreshCookie = "__Host-maktaba_refresh"
 
-func setRefreshCookie(w http.ResponseWriter, value, domain string, secure bool, expires time.Time) {
+func setRefreshCookie(w http.ResponseWriter, value, _ string, secure bool, expires time.Time) {
 	c := &http.Cookie{
 		Name:     refreshCookie,
 		Value:    value,
-		Path:     "/v1/auth",
-		Domain:   domain,
+		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
@@ -51,12 +52,11 @@ func setRefreshCookie(w http.ResponseWriter, value, domain string, secure bool, 
 	http.SetCookie(w, c)
 }
 
-func clearRefreshCookie(w http.ResponseWriter, domain string, secure bool) {
+func clearRefreshCookie(w http.ResponseWriter, _ string, secure bool) {
 	c := &http.Cookie{
 		Name:     refreshCookie,
 		Value:    "",
-		Path:     "/v1/auth",
-		Domain:   domain,
+		Path:     "/",
 		HttpOnly: true,
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,

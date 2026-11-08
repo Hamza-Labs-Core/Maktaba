@@ -9,9 +9,30 @@ listen_addr   = "0.0.0.0:8080"
 public_url    = "https://api.maktaba.tv"
 # Origin of the cloud web app (mail links, OAuth landings). Defaults to public_url.
 web_url       = "https://app.maktaba.tv"
-# Read the client IP from CF-Connecting-IP / X-Forwarded-For. Only behind a
-# proxy that overwrites those headers.
-trust_proxy_headers = false
+# "production" on the cloud's nodes: the api's listeners must then be loopback (or
+# private) and trusted_proxies set (Epic 50 story 50.31). Production uses
+# listen_addr = "127.0.0.1:8090" and admin_listen_addr = "127.0.0.1:8091" (50.32).
+# env = "production"
+# The peers whose CF-Connecting-IP is believed (CIDRs): the local cloudflared in
+# production, ["127.0.0.1/32", "::1/128"]. Empty: the client IP is the TCP peer.
+# X-Forwarded-For is never read. (Replaces trust_proxy_headers, which is refused.)
+trusted_proxies = []
+# How Cloudflare reaches the api: "tunnel" (default), or "aop" (the fallback: Caddy
+# checks Cloudflare's client certificate against aop_ca_file and Cloudflare's ranges).
+origin_mode = "tunnel"
+# The operator console's own listener (Epic 50 story 50.32): every /v1/admin/* route is
+# served here and only here (404 on listen_addr), for exactly admin_host; any other Host is
+# 404. A change (POST, PUT, PATCH, DELETE) must carry Origin: admin_origin and
+# X-Maktaba-Staff: 1, else 403 bad_origin. Production: "127.0.0.1:8091", "admin.maktaba.tv"
+# (admin_origin then defaults to https://admin.maktaba.tv). Unset: no console at all.
+# For dev, `pnpm dev:admin` serves the console on :5175 and proxies /v1 here with
+# Host: admin.localhost.
+admin_listen_addr = "127.0.0.1:8091"
+admin_host        = "admin.localhost"
+admin_origin      = "http://localhost:5175"
+# The names listen_addr answers (any other Host is 404; /healthz, /readyz and /metrics answer
+# on any). Production: ["api.maktaba.tv", "app.maktaba.tv", "maktaba.tv"]. Empty: any name.
+user_hosts = []
 read_timeout  = "30s"
 write_timeout = "60s"
 shutdown_grace = "20s"

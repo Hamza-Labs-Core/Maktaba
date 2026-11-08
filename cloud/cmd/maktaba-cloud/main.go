@@ -93,6 +93,9 @@ func runServe(args []string) {
 		logger.Error("config invalid", "role", *role, "err", err)
 		os.Exit(2)
 	}
+	for _, w := range config.Warnings(cfg) {
+		logger.Warn("config", "warning", w)
+	}
 
 	pool, err := db.Open(cfg.Database.URL, cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns, cfg.Database.ConnMaxLifetime)
 	if err != nil {

@@ -36,6 +36,8 @@ ENV_FILE=/etc/maktaba/cloud-ha.env
 . "${ENV_FILE}"
 : "${NODE_NAME:?}" "${NODE_ADDR:?}" "${PRIVATE_NET:?}" "${ETCD_INITIAL_CLUSTER:?}"
 
+# shellcheck disable=SC1091  # the pinned versions, beside this script
+. "${here}/versions.env"
 ETCD_VERSION="${ETCD_VERSION:-v3.6.5}"
 PATRONI_VERSION="${PATRONI_VERSION:-4.1.5}"
 
@@ -88,6 +90,19 @@ if [ "${role}" != witness ]; then
 	grep -q '^save ""' /etc/redis/redis.conf || echo 'save ""' >>/etc/redis/redis.conf
 	sed -i -E "s/^bind .*/bind 127.0.0.1 -::1/" /etc/redis/redis.conf
 	systemctl restart redis-server
+
+	# cloudflared, the Tunnel's connector (50.31), pinned in versions.env, from Cloudflare's
+	# signed repository; its unit runs on the leader only (maktaba-cloud-active.target)
+	if [ ! -f /etc/apt/sources.list.d/cloudflared.list ]; then
+		curl -fsSL https://pkg.cloudflare.com/cloudflare-public-v2.gpg -o /usr/share/keyrings/cloudflare-public-v2.gpg
+		echo "deb [signed-by=/usr/share/keyrings/cloudflare-public-v2.gpg] https://pkg.cloudflare.com/cloudflared any main" \
+			>/etc/apt/sources.list.d/cloudflared.list
+		apt-get update -qq
+	fi
+	apt-get install -y -qq --allow-downgrades "cloudflared=${CLOUDFLARED_VERSION:?}" >/dev/null
+	apt-mark hold cloudflared >/dev/null
+	id cloudflared >/dev/null 2>&1 || useradd --system --home /nonexistent --shell /usr/sbin/nologin cloudflared
+	if [ -f /etc/maktaba/tunnel.token ]; then chgrp cloudflared /etc/maktaba/tunnel.token && chmod 0640 /etc/maktaba/tunnel.token; fi
 fi
 
 # ---------------------------------------------------------------------------------------
@@ -375,8 +390,20 @@ UNIT
 id maktaba >/dev/null 2>&1 || useradd --system --home /var/lib/maktaba --shell /usr/sbin/nologin maktaba
 install -m 0644 "${here}/systemd/"*.service "${here}/systemd/"*.target "${here}/systemd/"*.timer /etc/systemd/system/
 [ -s /etc/maktaba/cloudflare.token ] || die "/etc/maktaba/cloudflare.token is missing (the DNS-edit token for the wildcard, 50.02)"
-install -d -m 0755 /etc/caddy
+install -d -m 0755 /etc/caddy /etc/caddy/origin.d
 install -m 0644 "${here}/caddy/Caddyfile" /etc/caddy/Caddyfile
+# The origin's shape (story 50.31): tunnel (the default) serves no api name here; aop, the
+# fallback, adds the api, app and admin sites with their two checks.
+case "${ORIGIN_MODE:-tunnel}" in
+	tunnel) rm -f /etc/caddy/origin.d/aop.caddy ;;
+	aop)
+		[ -s /etc/caddy/maktaba-aop-ca.pem ] || die "ORIGIN_MODE=aop: /etc/caddy/maktaba-aop-ca.pem is missing (the CA of the AOP client certificate)"
+		ranges="$(grep -hv '^#' "${here}/../cloudflare/ips-v4.txt" "${here}/../cloudflare/ips-v6.txt" | tr '\n' ' ')"
+		[ -n "${ranges// /}" ] || die "Cloudflare's ranges are empty (deploy/cloudflare/ips-v4.txt, ips-v6.txt)"
+		sed "s|CLOUDFLARE_RANGES|${ranges}|" "${here}/caddy/origin-aop.caddy" >/etc/caddy/origin.d/aop.caddy
+		;;
+	*) die "ORIGIN_MODE must be tunnel or aop" ;;
+esac
 cat >/etc/systemd/system/maktaba-caddy.service <<UNIT
 [Unit]
 Description=Caddy (the wildcard certificate; both nodes, always)
@@ -388,7 +415,7 @@ ExecStartPre=-/usr/bin/docker rm -f maktaba-caddy
 ExecStart=/usr/bin/docker run --name maktaba-caddy --network host \\
   -e RELAY_DOMAIN=${RELAY_DOMAIN:?} -e ACME_EMAIL=${ACME_EMAIL:?} \\
   -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" -e NODE_ADDR=${NODE_ADDR} --env-file /etc/maktaba/caddy.env \\
-  -v /etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro -v caddy_data:/data \\
+  -v /etc/caddy:/etc/caddy:ro -v caddy_data:/data \\
   ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
 ExecStop=/usr/bin/docker stop -t 10 maktaba-caddy
 Restart=always

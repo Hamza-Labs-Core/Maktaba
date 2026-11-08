@@ -47,7 +47,7 @@ public actor APIClient {
     /// For tests: the waits returned at once.
     func setReconnectSleep(_ f: @escaping @Sendable (Duration) async throws -> Void) { reconnectSleep = f }
 
-    public init(home: URL, tokens: TokenStore, session: URLSession = .shared) {
+    public init(home: URL, tokens: TokenStore, session: URLSession = PinnedTrust.session) {
         self.home = home
         self.tokens = tokens
         self.session = session

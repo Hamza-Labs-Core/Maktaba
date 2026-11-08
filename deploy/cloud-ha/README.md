@@ -75,6 +75,45 @@ sudo deploy/cloud-ha/setup.sh --role b         # on B: joins as a replica
 Before the launch gate (Epic 50 README §11): one planned switchover and one forced failover
 (power off the leader in the Hetzner console), each within its budget.
 
+## The origin only through Cloudflare (story 50.31)
+
+The api, the web app's `/v1` and the console reach the leader only through the Cloudflare
+Tunnel. `maktaba-cloudflared.service` (cloudflared, pinned in [`versions.env`](versions.env) and
+installed from Cloudflare's signed repository) is part of `maktaba-cloud-active.target`, so
+Patroni's callback starts it with the cloud processes on the leader and stops it on the standby.
+Its token is in `/etc/maktaba/tunnel.token` (root:cloudflared, 0640): `deploy.sh` writes it on
+both nodes from the `production` secret `CLOUDFLARE_TUNNEL_TOKEN`, over SSH's stdin; without it
+the unit is skipped. Caddy serves relay names only (it removes `CF-Connecting-IP` on them), and
+nothing opens the api's ports.
+
+`/etc/maktaba/cloud.toml` on A and B:
+
+```toml
+[server]
+env = "production"
+listen_addr = "127.0.0.1:8090"
+admin_listen_addr = "127.0.0.1:8091"   # the operator console's own listener (story 50.32)
+admin_host = "admin.maktaba.tv"        # the one name it answers
+user_hosts = ["api.maktaba.tv", "app.maktaba.tv", "maktaba.tv"]
+trusted_proxies = ["127.0.0.1/32", "::1/128"]
+origin_mode = "tunnel"
+```
+
+The api refuses to start in production with a listener that is not loopback or private, with no
+`trusted_proxies`, or with the old `trust_proxy_headers`; and anywhere with `admin_listen_addr`
+but no `admin_host` (or the reverse). The Tunnel's ingress sends `admin.maktaba.tv` to 8091 and
+the user names to 8090: each listener answers only its own names (404 otherwise, logged once a
+minute), so an ingress rule pointed at the wrong port serves nothing. `/healthz`, `/readyz` and
+`/metrics` answer on any name, for the node's own probes.
+
+**The fallback**, only if the Tunnel can't be used for a while, by a deploy: put the CA of
+Maktaba's AOP client certificate in `/etc/caddy/maktaba-aop-ca.pem` on both nodes, set
+`ORIGIN_MODE=aop` in `/etc/maktaba/cloud-ha.env` and `origin_mode = "aop"` (with
+`aop_ca_file = "/etc/caddy/maktaba-aop-ca.pem"`) in `cloud.toml`, rerun `setup.sh`, then merge
+`"mode": "aop"` with the Floating IP in `deploy/cloudflare/tunnel.maktaba.tv.json`. Caddy then
+serves the three names, each request checked twice: Cloudflare's client certificate and a peer in
+Cloudflare's ranges (`deploy/cloudflare/ips-v4.txt`, `ips-v6.txt`). Never one check alone.
+
 ## Deploys with no downtime (story 50.08)
 
 `deploy/cloud-ha/deploy.sh <tag>` (relay.yml's deploy job when the repository variable

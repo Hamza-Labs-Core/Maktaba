@@ -19,6 +19,7 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.Options
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.PinnedHostnameVerifier
 import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
@@ -104,6 +105,7 @@ object ImageCache {
         decoders: ComponentRegistry.Builder.() -> Unit = {},
     ): ImageLoader {
         val http = OkHttpClient.Builder()
+            .hostnameVerifier(PinnedHostnameVerifier) // a home reached by IP: its own name (50.15 §3)
             .connectTimeout(15, TimeUnit.SECONDS) // NFR-15: no spinner forever
             .readTimeout(15, TimeUnit.SECONDS)
             .addInterceptor(HomeImageAuth(client))

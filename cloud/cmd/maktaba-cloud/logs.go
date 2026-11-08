@@ -52,9 +52,15 @@ const (
 	EnvLogsInstance = "MAKTABA_CLOUD_LOGS_INSTANCE"
 )
 
+// EnvSymbolsTokenFile is the file holding the token release symbol tables are uploaded with.
+const EnvSymbolsTokenFile = "MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE"
+
 // logsToken reads W's token from its file ("" when unset or unreadable).
-func logsToken() string {
-	p := os.Getenv(EnvLogsTokenFile)
+func logsToken() string { return tokenFile(EnvLogsTokenFile) }
+
+// tokenFile reads a token from the file env names ("" when unset or unreadable).
+func tokenFile(env string) string {
+	p := os.Getenv(env)
 	if p == "" {
 		return ""
 	}

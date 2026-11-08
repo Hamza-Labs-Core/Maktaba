@@ -14,6 +14,11 @@ build fails when the two differ.
 
 ### Changed
 
+- **A page's counts, dates and episode numbers follow the language it is drawn in (Apple apps,
+  Android).** On the Apple apps a series' episode count and year, a video's length and date, and
+  an episode's season and number now take the page's language, as its other words do, so a page
+  drawn in Arabic in a preview or a page snapshot says them in Arabic. On Android a series' year
+  is written in the same digits as its episode count.
 - **The home's settings say when the router blocks its LAN name (Epic 50 story 50.15 §3).**
   Opened from the home's network, **Settings → Storage & discovery → Direct access** tries the
   home's secure LAN names from the browser, and when none answers it explains that the router
@@ -23,6 +28,9 @@ build fails when the two differ.
   network (DNS rebinding protection), which broke the home's secure LAN name. The home list now
   carries each LAN address both by name and by address, the address checked against the home's
   own certificate, so an app on that network still proves it reached this home.
+- **Android and the Apple apps use those LAN addresses (Epic 50 story 50.15 §3).** They try a
+  home's `local_ip` entries after its LAN name and before the direct and relay paths, and accept
+  one only when its certificate holds the home's own name for that same address (`tls_name`).
 - **The direct-name DNS runs on both nodes (Epic 50 story 50.15, part 3).** `deploy/cloud-ha`
   runs the cloud's `dns` role as `maktaba-cloud-dns.service` on A and B, opens port 53 (UDP and TCP)
   and frees it from systemd-resolved's stub, once `DIRECT_DNS=yes`. Each deploy updates the
@@ -340,6 +348,14 @@ build fails when the two differ.
 
 ### Security
 
+- **The cloud's operator console has its own listener and name (Epic 50 story 50.32).** Every
+  `/v1/admin/*` route is served only by the api role's admin listener, for `admin.maktaba.tv`
+  alone: on the user names each one is the same 404 as a route that doesn't exist. The console
+  listener allows no cross-origin call, and a change from it must carry the console's own
+  Origin and header, or it is refused before anything runs. The user API answers only its own
+  names, and the sign-in cookie is now `__Host-maktaba_refresh`, which a browser never shares
+  with another name. The relay's access log records the visitor's address instead of the
+  proxy's.
 - **The hosts the YouTube plugin reaches are checked every night.** Its sandbox opens the
   network as a whole, so a nightly CI run now records each host the real yt-dlp contacts for
   a channel listing and a download and fails on one the plugin's reviewed `net` list does not
@@ -371,6 +387,13 @@ build fails when the two differ.
 
 ### Added
 
+- **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
+  and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
+  (its functions and line table, keyed by the binary's UUID), uploaded with the new
+  `maktaba-symbols upload` command and a symbols token (`MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE`). The
+  operator console's report page shows each crash, top frame first, with the function, file and
+  line where a table is uploaded and names the binaries that have none; a new **Crash symbols**
+  page lists the uploaded tables. The cloud never receives the dSYM itself.
 - **Buy a paid plugin on plugins.maktaba.tv (Epic 54 story 54.19).** A paid plugin's page on
   the store's website has **Buy**: the buyer signs in, chooses which of the account's linked
   homes it is for, and goes on to the same price and payment pages as Buy in Maktaba. The pages
@@ -1289,6 +1312,15 @@ build fails when the two differ.
   token and answers `turnstile_failed` or `turnstile_unavailable`. The web app explains those
   and the edge's `rate_limited` in English and Arabic.
 
+- **The cloud's API is reached only through Cloudflare (Epic 50, story 50.31).** The leading
+  node runs a Cloudflare Tunnel connector beside the API, and Caddy serves relay names only. CI
+  writes the Tunnel's routes and the names' DNS records from
+  `deploy/cloudflare/tunnel.maktaba.tv.json`. The API believes `CF-Connecting-IP` only from a
+  peer listed in the new `server.trusted_proxies` (the local connector) and never reads
+  `X-Forwarded-For`, so rate limits, the blocklist, the audit log and the access log can no
+  longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
+  production the API refuses a public listener.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2064,12 +2096,41 @@ build fails when the two differ.
   downloads from each home directly, never through the relay. The cloud's name server now
   starts: its role was refused as unknown.
 
+- **The cloud rehearsal proves the origin is reached only through Cloudflare (Epic 50 story
+  50.31, T06–T08).** Two new scenarios run the pair with production's Caddyfile and firewall,
+  the api behind the loopback, and a stand-in for Cloudflare's edge and its connector. In
+  `origin-only-via-edge`, the Floating IP answers only 80 and 443 from the internet, refuses
+  the api's name on 443, and a forged client address never reaches the api or the relay; with
+  the leader powered off, the connector moves to the new leader and the api is back within the
+  3-minute RTO. In `origin-aop`, the fallback origin answers only with the client certificate
+  and only from the test Cloudflare ranges.
+
 - **A request's id follows its jobs and its playback (Epic 53 story 53.08).** A pipeline job
   queued by a request (a scan, a re-run) logs that request's id as `origin_request_id`, and the
   admin's Logs search for the id now finds the job's lines too. The players' playlist URL (web,
   Apple, Android and Android TV) carries the id of the call that opened the session (`rid`), and streaming logs it on a failed
   playlist or segment fetch, so one reference finds the API's, the pipeline's and streaming's
   lines for the same action. Streaming's failure lines also carried no request id until now.
+
+- **A folder scan is a queue stage like the others (Epic 54, story 54.36).** The scan reports
+  the new videos it found, and the queue starts each one's checks from that, instead of the
+  scanner queuing them itself. What a scan finds and what runs after it are unchanged; a scan
+  that finds nothing new starts nothing.
+- **Reading a video's length and audio tracks is a queue stage like the others (Epic 54,
+  story 54.36).** It saves what it reads as before, and the queue decides what runs next from
+  the length and frame size it reports, as it did. Its run now notes how many audio tracks it
+  found and the video's new state.
+- **Making a video's poster and sprite is a queue stage like the others (Epic 54, story
+  54.36).** It makes and saves the same images, on the home only, as before. A run that makes
+  the same images as the last one now counts as unchanged, and its run notes the chapter
+  frames it made and the video's state.
+
+- **The home's dashboards show every joined machine (Epic 53 story 53.12).** The Overview's
+  memory, disk free and load, and its components and restarts, now carry a line for each joined
+  machine beside the home's. The home asks each machine's own agent over the cluster channel at
+  most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
+  never holds the dashboards back. Component series keep their cap per machine, and come last on a
+  board so each machine's memory, disk and load stay within its 50 lines.
 
 - **The apps check Maktaba Cloud's status at once when the relay fails (Epic 50 story 50.11).**
   Android, Android TV and the Apple apps read `status.maktaba.tv`'s summary right after a request

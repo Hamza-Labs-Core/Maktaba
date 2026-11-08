@@ -42,7 +42,7 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 	scrape := func(url string) string {
 		t.Helper()
 		rec := httptest.NewRecorder()
-		metricsHandler(url).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+		metricsHandler(url, nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
 		}
@@ -83,7 +83,7 @@ func TestMetricsCarryTheDefaultRegistrysAndTheQueues(t *testing.T) {
 	queues.RegisterMetrics(queuestest.New().DB)
 
 	rec := httptest.NewRecorder()
-	metricsHandler("").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	metricsHandler("", nil).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", rec.Code, body)

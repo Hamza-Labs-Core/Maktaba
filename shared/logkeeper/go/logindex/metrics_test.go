@@ -328,3 +328,46 @@ maktaba_host_disk_free_bytes{machine="home"} 214748364800
 		}
 	}
 }
+
+// Story 53.12: the home's /metrics carries every joined machine's components, so a series
+// of catalog ids keeps its cap per machine (three machines of 60 components each are all
+// kept), for at most the label cap of machines; and on the board the id series come last,
+// so each machine's load is kept within the board's 50 lines.
+func TestMetricsIDCapPerMachine(t *testing.T) {
+	root, now := t.TempDir(), t0
+	ix := open(t, root, &now)
+	var b strings.Builder
+	for _, m := range []string{"home", "studio", "attic"} {
+		fmt.Fprintf(&b, "maktaba_host_load1{machine=%q} 1\n", m)
+		for i := 0; i < 60; i++ {
+			fmt.Fprintf(&b, "maktaba_component_up{id=\"c%d\",machine=%q,phase=\"running\"} 1\n", i, m)
+		}
+	}
+	for i := 0; i < 60; i++ {
+		fmt.Fprintf(&b, "maktaba_component_restarts_total{id=\"api\",machine=\"m%d\"} 1\n", i)
+	}
+	ctx := context.Background()
+	if err := ix.Record(ctx, parseMetrics(strings.NewReader(b.String())), now); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	var dropped float64
+	_ = ix.db.QueryRow(`SELECT COUNT(DISTINCT labels) FROM metric_1m WHERE name = 'maktaba_component_up'`).Scan(&n)
+	_ = ix.db.QueryRow(`SELECT value FROM metric_1m WHERE name = ?`, DroppedSeries).Scan(&dropped)
+	if n != 180 || dropped != 10 {
+		t.Fatalf("kept %d component label sets, dropped %v; want 180 and 10 (60 machines past the cap of 50)", n, dropped)
+	}
+	doc, err := ix.Board(ctx, "overview", "1h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loads := 0
+	for _, s := range doc.Series {
+		if s.Name == "maktaba_host_load1" {
+			loads++
+		}
+	}
+	if loads != 3 || len(doc.Series) != MaxSeries {
+		t.Fatalf("the board has %d machines' load in %d lines; want 3 in %d", loads, len(doc.Series), MaxSeries)
+	}
+}

@@ -79,6 +79,7 @@ private struct VideoDetails: View {
     var caps: Capabilities = .allOn
 
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.locale) private var locale
     private let gutter = MaktabaTokens.Spacing.s4
     private static let maxWidth: CGFloat = 840
 
@@ -111,7 +112,7 @@ private struct VideoDetails: View {
                     VStack(spacing: 0) {
                         ForEach(page.chapters) { c in
                             TimedLine(videoID: video.id, time: c.startSec,
-                                      text: c.title.isEmpty ? Self.clock(c.startSec) : c.title)
+                                      text: c.title.isEmpty ? Self.clock(c.startSec, locale) : c.title)
                                 .accessibilityIdentifier("video.chapter.\(c.seq)")
                         }
                     }
@@ -142,8 +143,8 @@ private struct VideoDetails: View {
                     Rail(Text("Next episodes", tableName: "Video", comment: "The episodes after this one, a row's title"),
                          items: page.nextEpisodes) { e in
                         NavigationLink(value: PlayerRoute.video(id: e.videoID)) {
-                            PosterCard(title: e.title.isEmpty ? (Self.episodeLabel(e) ?? e.videoID) : e.title,
-                                       detail: Self.episodeLabel(e),
+                            PosterCard(title: e.title.isEmpty ? (Self.episodeLabel(e, locale) ?? e.videoID) : e.title,
+                                       detail: Self.episodeLabel(e, locale),
                                        poster: VideoPoster.url(client.home, video: e.videoID, small: true),
                                        progress: e.progress > 0 ? e.progress : nil)
                         }
@@ -165,7 +166,7 @@ private struct VideoDetails: View {
         VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s1) {
             if let s = page.series {
                 NavigationLink(value: PlayerRoute.series(id: s.id)) {
-                    Text(verbatim: [s.name.isEmpty ? nil : s.name, page.episode.flatMap(Self.episodeLabel)]
+                    Text(verbatim: [s.name.isEmpty ? nil : s.name, page.episode.flatMap { Self.episodeLabel($0, locale) }]
                         .compactMap { $0 }.joined(separator: " · "))
                         .font(.maktabaBody(14, weight: .semibold, relativeTo: .subheadline))
                         .foregroundStyle(Color.mktBrassText)
@@ -181,8 +182,8 @@ private struct VideoDetails: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("video.title")
-            let facts = [video.durationSec.flatMap { $0 > 0 ? Self.clock($0) : nil },
-                         (video.publishedAt ?? video.createdAt).map { $0.formatted(date: .abbreviated, time: .omitted) }]
+            let facts = [video.durationSec.flatMap { $0 > 0 ? Self.clock($0, locale) : nil },
+                         (video.publishedAt ?? video.createdAt).map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(locale)) }]
                 .compactMap { $0 }
             if !facts.isEmpty {
                 Text(verbatim: facts.joined(separator: " · "))
@@ -222,7 +223,7 @@ private struct VideoDetails: View {
         if let resumeAt {
             NavigationLink(value: PlayerRoute.watch(videoID: video.id, at: resumeAt)) {
                 Label {
-                    Text("Resume from \(Self.clock(resumeAt))", tableName: "Video", comment: "Play on from where the person stopped; the time")
+                    Text("Resume from \(Self.clock(resumeAt, locale))", tableName: "Video", comment: "Play on from where the person stopped; the time")
                         .fixedSize(horizontal: false, vertical: true)
                 } icon: { Image(systemName: "play.fill") }
             }
@@ -266,20 +267,20 @@ private struct VideoDetails: View {
     }
 
     /// 7:05 or 1:02:05.
-    static func clock(_ seconds: Double) -> String {
+    static func clock(_ seconds: Double, _ locale: Locale) -> String {
         let s = max(0, seconds.isFinite ? seconds : 0)
-        return Duration.seconds(Int(s)).formatted(.time(pattern: s >= 3600 ? .hourMinuteSecond : .minuteSecond))
+        return Duration.seconds(Int(s)).formatted(.time(pattern: s >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(locale))
     }
 
     /// "Season 1, Episode 3", or "Episode 3"; nil when the series does not number it.
-    static func episodeLabel(_ e: Episode) -> String? {
+    static func episodeLabel(_ e: Episode, _ locale: Locale) -> String? {
         guard let n = e.episode ?? e.absoluteNumber else { return nil }
         if let season = e.season, season > 0 {
-            return String(localized: LocalizedStringResource("Season \(season), Episode \(n)", table: "Video",
-                                                             comment: "An episode's place in its series"))
+            return LocalizedStringResource("Season \(season), Episode \(n)", table: "Video",
+                                           comment: "An episode's place in its series").string(in: locale)
         }
-        return String(localized: LocalizedStringResource("Episode \(n)", table: "Video",
-                                                         comment: "An episode's number in a series with no seasons"))
+        return LocalizedStringResource("Episode \(n)", table: "Video",
+                                       comment: "An episode's number in a series with no seasons").string(in: locale)
     }
 }
 
@@ -289,10 +290,12 @@ private struct TimedLine: View {
     let time: Double
     let text: String
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
         NavigationLink(value: PlayerRoute.watch(videoID: videoID, at: time)) {
             HStack(alignment: .firstTextBaseline, spacing: MaktabaTokens.Spacing.s3) {
-                Text(verbatim: VideoDetails.clock(time))
+                Text(verbatim: VideoDetails.clock(time, locale))
                     .font(.maktabaBody(14, weight: .semibold, relativeTo: .subheadline).monospacedDigit())
                     .foregroundStyle(Color.mktBrassText)
                 Text(verbatim: text)
@@ -309,7 +312,7 @@ private struct TimedLine: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityHint(Text("Play from \(VideoDetails.clock(time))", tableName: "Video",
+        .accessibilityHint(Text("Play from \(VideoDetails.clock(time, locale))", tableName: "Video",
                                 comment: "What a chapter or transcript line does: play from its time"))
     }
 }

@@ -161,5 +161,5 @@ func IPKey(r *http.Request) string {
 	if ip := middleware.GetClientIP(r.Context()); ip != "" {
 		return "ip:" + ip
 	}
-	return "ip:" + middleware.ClientIP(r, false)
+	return "ip:" + middleware.ClientIP(r, nil)
 }
