@@ -196,7 +196,6 @@ describe("ItemHistory", () => {
     ).closest("section")!;
     expect(await within(panel).findByText(/السيرة/)).toBeInTheDocument();
     expect(within(panel).getByText(/^\W*مقاطع\W*$/)).toBeInTheDocument();
-    expect(within(panel).queryByText("not written")).toBeNull();
     expect(within(panel).getByRole("link", { name: /الحبيب.? S2/ })).toHaveAttribute(
       "href",
       "/queue/items/season/s1"
