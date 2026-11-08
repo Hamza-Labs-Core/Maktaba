@@ -219,6 +219,30 @@ func brokeredProblems(r stageReport, runnerLog string) []string {
 	return []string{fmt.Sprintf("no runner job line for job %d", r.JobID)}
 }
 
+// runnerIdentityProblems checks a runner's spool (the launcher's lines and the runner's)
+// for the process the broker serves: the launcher started the venv's base interpreter
+// itself (plugin_runner_venv_direct), the runner found itself in that venv (no
+// plugin_runner_venv_refused), and the broker turned no client away
+// (plugin_runner_broker_client_refused, plugin_runner_broker_refused). A brokered runner
+// must also have had its hello answered (plugin_runner_files_brokered with hello).
+func runnerIdentityProblems(runnerLog string, brokered bool) []string {
+	var p []string
+	if logLine(runnerLog, "plugin_runner_venv_direct") == "" {
+		p = append(p, "the launcher did not start the venv's base interpreter (no plugin_runner_venv_direct)")
+	}
+	for _, bad := range []string{"plugin_runner_venv_refused", "plugin_runner_broker_client_refused", "plugin_runner_broker_refused"} {
+		if l := logLine(runnerLog, bad); l != "" {
+			p = append(p, "its log says "+l)
+		}
+	}
+	if brokered {
+		if l := logLine(runnerLog, "plugin_runner_files_brokered"); !strings.Contains(strings.ReplaceAll(l, " ", ""), `"hello":true`) {
+			p = append(p, fmt.Sprintf("no broker hello answered: %q", l))
+		}
+	}
+	return p
+}
+
 // guardedInWorker is the verdict for a job native.choose keeps in the worker on Windows
 // while a library is on a share (#990's guard, MAKTABA_WINDOWS_SHARE_RUNNERS unset): one
 // choice, in-process with why windows_share_library, that one fallback counted, no
@@ -670,4 +694,39 @@ func TestTheStageReportReadsItsSummaryEitherWay(t *testing.T) {
 	if got := (stageReport{Job: map[string]any{"output_summary": nil}}).summary(); got != nil {
 		t.Errorf("no summary: %v", got)
 	}
+}
+
+// The launcher's identity verdict: the base interpreter started directly and served by the
+// broker passes; a launcher's child the broker turned away, a runner outside its venv, or
+// no direct start fails.
+func TestTheRunnerIdentityVerdict(t *testing.T) {
+	good := `{"event":"plugin_runner_venv_direct","group":"light","python":"v\\Scripts\\python.exe","base":"b\\python.exe","venv":"v"}
+{"event": "plugin_runner_files_brokered", "service": "plugin-runner", "group": "light", "hello": true}`
+	if p := runnerIdentityProblems(good, true); len(p) > 0 {
+		t.Fatalf("a good start: %v", p)
+	}
+	for name, log := range map[string]string{
+		"no direct start":     `{"event": "plugin_runner_files_brokered", "group": "light", "hello": true}`,
+		"a child turned away": good + "\n" + `{"event":"plugin_runner_broker_client_refused","client":12,"runner":10}`,
+		"refused hello":       `{"event":"plugin_runner_venv_direct"}` + "\n" + `{"event": "plugin_runner_broker_refused", "detail": "x"}`,
+		"outside its venv":    good + "\n" + `{"event": "plugin_runner_venv_refused", "detail": "x"}`,
+		"no hello":            `{"event":"plugin_runner_venv_direct"}` + "\n" + `{"event": "plugin_runner_files_brokered", "group": "light"}`,
+	} {
+		if p := runnerIdentityProblems(log, true); len(p) == 0 {
+			t.Errorf("%s: passed", name)
+		}
+	}
+	if p := runnerIdentityProblems(`{"event":"plugin_runner_venv_direct"}`, false); len(p) > 0 {
+		t.Errorf("an unbrokered runner needs no hello: %v", p)
+	}
+}
+
+// logLine is the first line of log that names event ("" when none does).
+func logLine(log, event string) string {
+	for _, l := range strings.Split(log, "\n") {
+		if strings.Contains(l, `"`+event+`"`) {
+			return strings.TrimSpace(l)
+		}
+	}
+	return ""
 }

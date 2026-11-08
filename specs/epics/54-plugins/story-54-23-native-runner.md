@@ -112,6 +112,38 @@ so a job on a share-hosted library would run in the worker. Three ways were weig
   The bytes of a read go through the handle straight to the SMB redirector, so a read costs
   what the share costs (CI measures it, T10).
 
+**Which process the broker serves.** A venv's `Scripts\python.exe` on Windows is a launcher
+that starts the base interpreter as its child, so a runner started from it is a process the
+launcher did not create. Two ways were weighed:
+
+- *Serve the launcher's child* by Job Object or process tree: refused. Every tool the runner
+  starts (ffmpeg, ffprobe) is in the same Job Object and its process tree, so it would widen
+  who may open share files to processes that run on untrusted media; and a parent pid is only
+  a hint (it is never checked against a live process and can be reused).
+- *Start the base interpreter directly* (chosen): `runner-sandbox-run` reads the venv's
+  `pyvenv.cfg` (beside the program, else one folder up, as CPython does), starts its
+  `executable` (else `python.exe` in its `home`) and sets `__PYVENV_LAUNCHER__` to the venv's
+  python, as the venv's own launcher does, so `sys.prefix` and the packages stay the venv's.
+  It starts the process suspended, puts it in the Job Object, gives the broker its pid and a
+  handle to it, then resumes it. The broker compares the pid the kernel reports for each pipe
+  client (`GetNamedPipeClientProcessId`) with that pid, never a pid the runner claims. The held
+  handle keeps the pid from being reused while the runner lives, and the runner's tools have
+  pids of their own, so the broker turns them away.
+
+A venv whose base interpreter cannot be named refuses the start before any grant (exit 70,
+`plugin_runner_sandbox_unavailable` with step `venv`): a `pyvenv.cfg` that cannot be read,
+that names no base interpreter, or that names one that is not an absolute path to a regular
+file, that is the venv's own python, or that is another venv's python. It never falls back to
+the venv's launcher. A program with no `pyvenv.cfg` is a python of its own and starts as named.
+An inherited `__PYVENV_LAUNCHER__` or `MAKTABA_RUNNER_VENV` is never passed on. The launcher
+names the venv to the runner (`MAKTABA_RUNNER_VENV`), and the runner checks two things before
+it serves. First, its `sys.prefix` is that venv; otherwise it logs `plugin_runner_venv_refused`
+and exits 70, and the worker runs its jobs. Second, the broker answers its `hello`, which it
+does only past its client check; otherwise it logs `plugin_runner_broker_refused`, refuses every
+share path, and its share jobs run in the worker. The Job Object holds the runner alone (one
+process), plus room for the tools only for a group with `exec`: no room is kept for a venv
+launcher's child.
+
 A share folder the group writes in full (`files.write`, the file stages) is not brokered, and
 its jobs run in the worker. The worker also keeps them there before any runner is asked: on Windows, while a library of
 the home has a root on a share (a `\\server\share` path or a drive mapped to one), `native.choose`
@@ -222,7 +254,7 @@ runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 �
 | T10 | integration (go + py, CI only, Windows, two SMB shares made with `New-SmbShare`) | a group whose library is on `\\localhost\<share>`, started through the launcher with its broker | from inside its AppContainer: read, list, stat a video in any case; write a subtitle; write another name, write or remove the video; a traversal, a junction out of the share, an 8.3 alias, a stream, the other share; a tool on a share path; another process of the AppContainer on the pipe | without the broker no share is reached; with it the library is read and the subtitle written, everything else refused; the read throughput through the handle and outside the sandbox is logged |
 | T11 | integration (go + py, CI only, Windows, the same shares, the Windows app's ffmpeg 8.1.2) | the group's tools on an mp4 on `\\localhost\<share>` whose index is at its end | from inside its AppContainer: a thumbnail with a seek before the input, the transcription input (PCM), ffprobe's duration; thumb_small's asyncio start (through the runner's anonymous pipes) on the share and on a local copy; a second share file, the library folder, the share root, the other share, an output on the share, another program; a tool reaching the share by a path in a concat list; a tool writing outside its folders | each tool reads the file through its handle; the refusals refuse before a start; the tool reaching for the share gets nothing and nothing is written outside; the times inside and in the worker's way (the share path) are logged |
 | T12 | integration (go + py, CI only, Windows) | a captured tool start (asyncio, stdout and stderr PIPE) inside a runner's AppContainer | asyncio's own start; the same through the runner's anonymous pipes; a cancelled communicate | asyncio's own is refused (`WinError 5`, the control); through anonymous pipes the output (4 MiB), error output and exit code come back, and the cancel ends the tool at once |
-| T13 | e2e (go + py, CI only, Windows, an SMB share made with `New-SmbShare`, the Windows app's ffmpeg 8.1.2, the bundled Postgres) | `thumb_small` and `convert_mp4`'s dry run, each on an mp4 whose index is at its end in a local library and in one on `\\localhost\<share>`, through the worker's plugin path (`dispatch_job`, `choose`, `run_native` through the supervisor's pipes) into the `light` and `files` runners the supervisor starts on demand through the launcher (grants, Job Object, broker) | each job | it ran in its runner: the plugin chosen, `run_native` ok, no fallback the worker counted, a token minted for it, and the runner's own log line for it (a fallback to the worker fails the test); `thumb_small` on the share read it through the launcher's broker (the runner's job line counts an answered stat and an answered open, and no refusal); `convert_mp4` on the share is the one designed hand-off, so ffprobe on a share file cannot run in a runner today (the `files` group writes the libraries in full, so its share is never brokered, §3): the runner refuses it (its own line says `sandbox_refused`, never a missing file), `run_native` raises `SandboxRefused` once, the worker counts that one fallback and runs the job to done; `thumb_small` wrote a 320x180 JPEG in the thumbnail cache (never in the library or the share); `convert_mp4` planned a remux with the Arabic `mov_text` subtitle, from ffprobe's streams and the index at the end; a fifth case, `thumb_small` on its own copy on the share with `MAKTABA_WINDOWS_SHARE_RUNNERS` unset, proves the guard: chosen in-process with the fallback `windows_share_library`, no line for it in the runner's log, done with its 320x180 JPEG; every log is kept |
+| T13 | e2e (go + py, CI only, Windows, an SMB share made with `New-SmbShare`, the Windows app's ffmpeg 8.1.2, the bundled Postgres) | `thumb_small` and `convert_mp4`'s dry run, each on an mp4 whose index is at its end in a local library and in one on `\\localhost\<share>`, through the worker's plugin path (`dispatch_job`, `choose`, `run_native` through the supervisor's pipes) into the `light` and `files` runners the supervisor starts on demand through the launcher (grants, Job Object, broker) | each job | it ran in its runner: the plugin chosen, `run_native` ok, no fallback the worker counted, a token minted for it, and the runner's own log line for it (a fallback to the worker fails the test); `thumb_small` on the share read it through the launcher's broker (the runner's job line counts an answered stat and an answered open, and no refusal); `convert_mp4` on the share is the one designed hand-off, so ffprobe on a share file cannot run in a runner today (the `files` group writes the libraries in full, so its share is never brokered, §3): the runner refuses it (its own line says `sandbox_refused`, never a missing file), `run_native` raises `SandboxRefused` once, the worker counts that one fallback and runs the job to done; `thumb_small` wrote a 320x180 JPEG in the thumbnail cache (never in the library or the share); `convert_mp4` planned a remux with the Arabic `mov_text` subtitle, from ffprobe's streams and the index at the end; a fifth case, `thumb_small` on its own copy on the share with `MAKTABA_WINDOWS_SHARE_RUNNERS` unset, proves the guard: chosen in-process with the fallback `windows_share_library`, no line for it in the runner's log, done with its 320x180 JPEG; every log is kept; each runner's log shows the launcher started its venv's base interpreter (`plugin_runner_venv_direct`), the light runner's broker answered its hello, and no client was turned away (`plugin_runner_broker_client_refused`) |
 
 ## Edge cases
 

@@ -143,6 +143,10 @@ func refusal(err error) BrokerReply {
 
 func (b *fileBroker) do(req BrokerRequest, process windows.Handle) BrokerReply {
 	switch req.Op {
+	case "hello":
+		// served only past serve's client check: the runner's startup self-check that this
+		// broker serves it (the process the launcher created), not only that the pipe opens
+		return BrokerReply{Hello: true}
 	case "open":
 		root, p, err := b.roots.Confine(req.Path, false)
 		if err != nil {

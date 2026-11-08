@@ -7,10 +7,13 @@
    learned, then the events in `docs/trail/events/` merged since its `up_to_commit`
    (`/trail:read` does both). [`docs/claude-trail.md`](docs/claude-trail.md) is the frozen
    trail before 2026-11-05: read-only history, searched when a topic needs it.
-2. **For each pull request you merge, write its event** (`docs/trail/events/NNNN-slug.md`, in
-   that pull request, before it merges; `/trail:event`): what happened, what you learned, what
-   to keep or stop doing, what is open. Something learned after the merge goes in a second
-   event, in a trail-only pull request. Events are append-only; real PR numbers and shas only.
+2. **For each pull request you merge, write its event** (`docs/trail/events/NNNN-slug.md`,
+   `/trail:event`): what happened, what you learned, what to keep or stop doing, what is open.
+   The event goes in its **own trail-only pull request**, never in the code pull request: a code
+   pull request carries no `docs/trail/` change (check `gh pr diff N --name-only` before
+   merging). Trail-only pull requests run no CI and no tests; one may batch several events.
+   Open it alongside the code pull request and merge it after. Something learned later goes in
+   a second event, also trail-only. Events are append-only; real PR numbers and shas only.
    The plugin's hook reminds a session that merged a PR with no event.
 3. **A session pushes each tag**: a scheduled release session (every 30 minutes, on the
    owner's machine) tags the newest commit of main whose CI and update rehearsal both passed as
