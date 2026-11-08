@@ -1,5 +1,5 @@
 {
- "digest": "ecd240436be23b047f1a442532331d27f978d12a4d913c55e8ba24ac29e87d35",
+ "digest": "c699923f4df91a982b74708eb29ba6597c14844e0e4994d2159d941c61e9b284",
  "plugins": [
   {
    "digest": "a0db803104bfc1139e330f70da6fa6ba9944c1ad37e4b2ba391859c2a7370eda",
@@ -6854,7 +6854,7 @@
    }
   },
   {
-   "digest": "4e2e0b163e7fefba325adf43dd6e7ba81ed604935c884df96c31a26c71c87b62",
+   "digest": "603ea124a4b4660ddca6b10dde4423e12248ea6173327726c4c118dbae1c172d",
    "folder": "transcription",
    "id": "tv.maktaba.transcription",
    "manifest": "# tv.maktaba.transcription: a first-party plugin of Maktaba (Epic 54, README §15.2), wave 3\n# (story 54.30): Whisper and the second listen, on the GPU, in the ml runner of each\n# transcription worker. Wave 9 (story 54.36 §1): extract, the WAV a speech backend that reads\n# a file needs (the audio cache, data.cache), once it ran on the engine (54.36 §2).\nschema     = 1\nid         = \"tv.maktaba.transcription\"\nversion    = \"0.0.0-dev\"\nplugin_api = \"1.0\"\nmaktaba    = \">=0.0.0\"\nlicence    = \"AGPL-3.0-only\"\nruntime    = \"native-python\"\n\n[strings]\nname    = \"fp.transcription.name\"\nsummary = \"fp.transcription.summary\"\n\n[trusted]\nrunner    = \"ml\"\ncomponent = \"transcription\"\ndb.read   = [\"app_settings\", \"libraries\", \"library_roots\", \"media_info\", \"processing_jobs\", \"vocab_pairs\", \"vocabulary\"]\ndb.write  = [\"audio_cache\", \"audio_tracks\", \"relisten_attempts\", \"transcribe_checkpoints\", \"transcript_edits\", \"transcript_segments\", \"transcripts\", \"videos\", \"word_flags\"]\nsettings  = [\"transcription\"]\nfiles.read  = [\"library\", \"models\", \"data.cache\"]\nfiles.write = [\"models\", \"data.cache\"]\nexec      = [\"ffmpeg\"]\ngpu       = \"preferred\"\n\n[[stage]]\nname         = \"extract\"\nsubject      = \"video\"\nexport       = \"extract\"\nversion      = 1\nlabel        = \"Extract audio\"\nsubject_kinds = [\"video\"]\npool         = \"nas_read\"\nlane         = \"media\"\nlane_order   = 1\nmay_request  = [\"transcribe\"]\nentry        = \"maktaba_fp_transcription.stages.extract:IMPL\"\n\n[[stage]]\nname         = \"transcribe\"\nsubject      = \"video\"\nexport       = \"transcribe\"\nversion      = 1\nlabel        = \"Transcribe\"\nsubject_kinds = [\"video\"]\npool         = \"gpu\"\nlane         = \"speech\"\nlane_order   = 2\nmay_request  = [\"extract\"]\nstorage      = \"read\"\nedges        = [{ to = \"second_listen\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.transcribe:IMPL\"\nfingerprint  = { input = true, output = false }\n\n[[stage]]\nname         = \"second_listen\"\nsubject      = \"video\"\nexport       = \"second-listen\"\nversion      = 1\nlabel        = \"Second listen\"\nsubject_kinds = [\"video\"]\npool         = \"listen\"\nlane         = \"speech\"\nlane_order   = 3\nstorage      = \"read\"\nedges        = [{ to = \"subtitle_gen\", map = \"same\" }, { to = \"index\", map = \"same\" }, { to = \"tag\", map = \"season_of\" }, { to = \"tag\", map = \"loose_library_of\" }, { to = \"word_check\", map = \"same\" }]\nentry        = \"maktaba_fp_transcription.stages.second_listen:IMPL\"\nfingerprint  = { input = true, output = false }\n",
@@ -6984,11 +6984,21 @@
      ]
     },
     {
+     "also": [
+      {
+       "arg": 2,
+       "scope": "subject"
+      },
+      {
+       "arg": 3,
+       "scope": "audio_track"
+      }
+     ],
      "mode": "write",
      "name": "extract.commit_extract",
      "reads": [],
-     "scope": "subject",
-     "scope_arg": 2,
+     "scope": "audio_cache",
+     "scope_arg": 1,
      "sha256": "2c7ae2edf2a7647853cdc967cd134db61a5e58222842e71fac47ee083053ab16",
      "text": "INSERT INTO audio_cache (content_hash, video_id, audio_track_id, path, bytes)\nVALUES ($1, $2, $3, $4, $5)\nON CONFLICT (content_hash) DO UPDATE SET\n    video_id       = EXCLUDED.video_id,\n    audio_track_id = EXCLUDED.audio_track_id,\n    path           = EXCLUDED.path,\n    bytes          = EXCLUDED.bytes",
      "writes": [
@@ -6999,8 +7009,8 @@
      "mode": "write",
      "name": "extract.commit_extract.2",
      "reads": [],
-     "scope": "catalog",
-     "scope_arg": 0,
+     "scope": "audio_track",
+     "scope_arg": 1,
      "sha256": "17ccccbe49bd1a87c1e34d1402e3519b2b7547055be7d3a837b3b5f7c21f1dfe",
      "text": "UPDATE audio_tracks SET last_extracted_at = $2 WHERE id = $1",
      "writes": [

@@ -5,8 +5,3 @@ modules = [
     "maktaba_pipeline.engine.stages._common:load_video,require_video",
     "maktaba_pipeline.thumbnail.handler:_load_chapter_starts,commit_thumbnails",
 ]
-
-# thumbnail's write of its video by id (``WHERE id = $1``), which the parse tree reads as
-# catalog: the plugin API checks the id is the job's own video.
-[scope]
-"handler.commit_thumbnails" = "subject $1"
