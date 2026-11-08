@@ -5,7 +5,7 @@
 > 48 mockups, 130+ API endpoints, 32 DB entities.
 >
 > Status (2026-05-10): all 25 epics and 17 implementation phases delivered on `main`.
-> Since then (2026-11-03): epics 26–49 were added, most of them built on `main` (see [`specs/epics/README.md`](../../specs/epics/README.md)); 50–56 are specs. The counts above are from the 2026-05-10 generation.
+> Since then (2026-11-03): epics 26–49 were added, most of them built on `main` (see [`specs/epics/README.md`](../../specs/epics/README.md)); 50–57 are specs. The counts above are from the 2026-05-10 generation.
 
 ## Quick navigation
 
@@ -56,6 +56,7 @@
 | 54 | [Plugins](../../specs/epics/54-plugins/README.md) · [wiki](epics/epic-54-plugins.md) | spec | Pipeline + API + Web + Cloud | 38 | 0 | 0 | Third-party plugins that extend the queue with no internet access, Maktaba's own stages as first-party plugins, and a Maktaba store. |
 | 55 | [Desktop Player Parity](../../specs/epics/55-desktop-player-parity/README.md) · [wiki](epics/epic-55-desktop-player-parity.md) | spec | Desktop Player (Compose) + shared client | 10 | 0 | 0 | The Windows and Linux Player gets every Android and Apple Player feature that makes sense on a desktop: five sections, Home rows, search, libraries, series and video pages, Live TV, tracks, subtitles, quality, Up Next, a profile, and the capabilities gate with its build switch (#638). |
 | 56 | [TV Library View](../../specs/epics/56-tv-library-view/README.md) · [wiki](epics/epic-56-tv-library-view.md) | spec | API + Pipeline + TV apps + Players + Web | 14 | 0 | 0 | The TV apps' library view as Plex's: Recommended, Library, Collections, Playlists and Categories tabs; Play all and Shuffle on a library, series, season, collection or playlist through one server play queue; series grouping; automatic collections from YouTube playlists, channels and Plex; smart playlists; Up next; the same in the Players and the web. |
+| 57 | [Parental Controls](../../specs/epics/57-parental-controls/README.md) · [wiki](epics/epic-57-parental-controls.md) | spec | API + Streaming + Apple Player (iPhone, iPad) + Apple TV | 13 | 0 | 0 | Restricted accounts and guardians on the home; age tiers (All ages, 9+, 13+, 16+, 18+) from Plex, guide, YouTube, plugin and admin ratings; one server-side filter on every surface, the relay included; the iPhone and iPad Player sends Apple's Declared Age Range and Screen Time rating limit, which only tighten; time limits and bedtime stay Screen Time's; Ask a parent and a home-checked PIN; activity kept 90 days on the home. Android, web and desktop: a later epic. |
 
 ## Implementation phases
 

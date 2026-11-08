@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "part": "wiki-epics-55-56.json",
+  "part": "wiki-epics-55-57.json",
   "entries": [
     {
       "id": "story-55.1",
@@ -940,6 +940,434 @@
       "db_tables": [],
       "metadata": {
         "slug": "openapi-roles"
+      }
+    },
+    {
+      "id": "story-57.1",
+      "type": "story",
+      "title": "Age tiers on the home's content",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.01 — Age tiers on the home's content\n\n> Epic 57 · Phase 1 · Depends on: — · Needed by: 57.03, 57.04, 57.10, 57.11, 57.12\n\n## Why\n\nNothing on the home has a rating column. The ratings that exist are free text in four places\n(Plex's `contentRating`, the guide's `title_snapshot.rating`, a plugin's `content_rating`, and an\nenrichment field nothing writes), and YouTube's age limit is not kept at all. A filter needs one\nnumber per video, decided the same way every time, in Go and in Swift.\n\n## Description\n\n### 1. The scale and the rating tables\n\nTiers 0 (All ages), 9, 13, 16, 18, and null",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id",
+        "ep-get-videos",
+        "ep-get-videos-id",
+        "ep-patch-videos-id",
+        "ep-delete-videos-id",
+        "ep-get-collections",
+        "ep-post-collections",
+        "ep-get-collections-id",
+        "ep-patch-collections-id",
+        "ep-delete-collections-id",
+        "ep-get-libraries-id-youtube-sources",
+        "ep-post-libraries-id-youtube-sources",
+        "ep-patch-libraries-id-youtube-sources-sid",
+        "ep-delete-libraries-id-youtube-sources-sid",
+        "ep-get-extensions",
+        "ep-get-series",
+        "ep-get-series-id",
+        "ep-patch-series-id"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-01-age-tiers.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}",
+        "GET /videos",
+        "GET /videos/{id}",
+        "PATCH /videos/{id}",
+        "DELETE /videos/{id}",
+        "GET /collections",
+        "POST /collections",
+        "GET /collections/{id}",
+        "PATCH /collections/{id}",
+        "DELETE /collections/{id}",
+        "GET /libraries/{id}/youtube/sources",
+        "POST /libraries/{id}/youtube/sources",
+        "PATCH /libraries/{id}/youtube/sources/{sid}",
+        "DELETE /libraries/{id}/youtube/sources/{sid}",
+        "GET /extensions",
+        "GET /series",
+        "GET /series/{id}",
+        "PATCH /series/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "age-tiers"
+      }
+    },
+    {
+      "id": "story-57.2",
+      "type": "story",
+      "title": "Restricted accounts and guardians",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.02 — Restricted accounts and guardians\n\n> Epic 57 · Phase 1 · Depends on: — · Needed by: 57.03, 57.04, 57.06, 57.07, 57.08, 57.12, 57.13\n\n## Why\n\nThe home has two roles, admin and viewer, and per-library read. A parent needs a third shape: a\nviewer whose content is limited, who cannot change that limit, and whose limit can be managed by\nthe people looking after them, who are not always home admins. Every rule must be enforced by\nthe API and proven by role tests; hiding a button stops nothing.\n\n## Description\n\n### 1. The model\n\n- A **restricted account** is a viewer with a row in `pa",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "entity-audit_log"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-02-restricted-accounts.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "audit_log"
+      ],
+      "metadata": {
+        "slug": "restricted-accounts"
+      }
+    },
+    {
+      "id": "story-57.3",
+      "type": "story",
+      "title": "One content filter on every surface",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.03 — One content filter on every surface\n\n> Epic 57 · Phase 1 · Depends on: 57.01, 57.02 · Needed by: 57.04, 57.05, 57.10, 57.11, 57.13\n\n## Why\n\nThe home has no central access check: about 15 packages each scope by library their own way.\nA parental filter added to each by hand would be missed in one of them, and a child needs only one\ngap. The filter must be one function, used by every package, with a test that fails when a new\ncontent route skips it.\n\n## Description\n\n### 1. `api/internal/parental`\n\n- `Limit(ctx, p) Effective`: from the principal's policy (57.02, cached, invalidated",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "entity-collection_items",
+        "entity-collections",
+        "entity-videos",
+        "ep-get-videos",
+        "ep-get-search",
+        "ep-post-search",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "GET /search",
+        "POST /search",
+        "POST /sessions"
+      ],
+      "db_tables": [
+        "collection_items",
+        "collections",
+        "videos"
+      ],
+      "metadata": {
+        "slug": "server-filter"
+      }
+    },
+    {
+      "id": "story-57.4",
+      "type": "story",
+      "title": "The device's signal: Declared Age Range and the Screen Time rating limit",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.04 — The device's signal: Declared Age Range and the Screen Time rating limit\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.01, 57.02, 57.03 · Needed by: 57.05, 57.11, 57.12\n\n## Why\n\nAn account cannot know which device it is on. If a parent signs into their own account on a\nchild's iPad, or an older sibling's account is used there, the account's policy says nothing.\nApple knows: the guardian may share the child's age range (Declared Age Range, iOS 26+), and\nScreen Time holds the movie and TV limit the parent set for that device (readable without any\nauthorization through `Man",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-04-device-signal.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "device-signal"
+      }
+    },
+    {
+      "id": "story-57.5",
+      "type": "story",
+      "title": "The restricted Player on iPhone and iPad",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.05 — The restricted Player on iPhone and iPad\n\n> Epic 57 · Phase 3 (first) · Depends on: 57.03, 57.04 · Needed by: 57.06, 57.07, 57.11\n\n## Why\n\nThe home already hides what a child may not see (57.03). The Player must make that feel\ndeliberate, not broken. A link to a blocked video should say so and offer Ask a parent, not show\n\"Something went wrong\". Controls a child cannot use, such as YouTube search or admin items,\nshould not show. Everything must work in Arabic, mirrored.\n\n## Description\n\n### 1. Knowing it is restricted\n\n`GET /api/capabilities` gains `parental: {restricted, tier_",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-capabilities"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-05-restricted-player.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "restricted-player"
+      }
+    },
+    {
+      "id": "story-57.6",
+      "type": "story",
+      "title": "Ask a parent, and the parent PIN",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.06 — Ask a parent, and the parent PIN\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.05 · Needed by: 57.07, 57.08\n\n## Why\n\nA limit that is slightly wrong must be easy to fix in the moment: the child sees \"This isn't\navailable\" for something the parent would allow. Apple's Ask to Buy covers purchases and Ask for\nMore Time covers Screen Time, but nothing covers a single item in Maktaba's own library.\nPermissionKit's questions are for communication and significant app updates, not content. So\nMaktaba needs two ways: ask now and a guardian answers from their own phone, or a",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-06-ask-a-parent.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "ask-a-parent"
+      }
+    },
+    {
+      "id": "story-57.7",
+      "type": "story",
+      "title": "Family settings for guardians in the Player",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.07 — Family settings for guardians in the Player\n\n> Epic 57 · Phase 3 · Depends on: 57.02, 57.05, 57.06 · Needed by: 57.08, 57.12\n\n## Why\n\nParents look after children from their own phone. The web's admin pages are out of scope for\nthis epic (README §4), and the Remote app is for admins running the home, while a guardian may be\na viewer. So the Player on iPhone and iPad gets a Family section, shown only to admins and\nguardians (`parental.can_manage` from capabilities). The home still enforces every rule; the\nsection only calls the routes of 57.02 and 57.06.\n\n## Description\n\n### 1. W",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-libraries",
+        "ep-post-libraries",
+        "ep-get-libraries-id",
+        "ep-patch-libraries-id",
+        "ep-delete-libraries-id"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-07-family-settings.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries",
+        "GET /libraries/{id}",
+        "PATCH /libraries/{id}",
+        "DELETE /libraries/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "family-settings"
+      }
+    },
+    {
+      "id": "story-57.8",
+      "type": "story",
+      "title": "Activity for guardians",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.08 — Activity for guardians\n\n> Epic 57 · Phase 2 (API), 3 (iOS) · Depends on: 57.02, 57.06, 57.07 · Needed by: 57.13\n\n## Why\n\nScreen Time reports how long each app was used, not what was watched in it. A parent wants to see\nwhat their child watched, what was blocked and what they asked for, without that record leaving\nthe home, and without keeping more than is needed.\n\n## Description\n\n### 1. What is recorded\n\n`parental_events` (slot 0218), only for restricted accounts:\n\n| Kind | When | Subject |\n|---|---|---|\n| `watched` | a watch session reaches 60 s or 20 % (from `watch_sessions`,",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-get-activity"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-08-activity.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /activity"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "activity"
+      }
+    },
+    {
+      "id": "story-57.9",
+      "type": "story",
+      "title": "Screen Time, Family Sharing and the App Store",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.09 — Screen Time, Family Sharing and the App Store\n\n> Epic 57 · Phase 3 · Depends on: 57.04 · Needed by: —\n\n## Why\n\nTime limits, downtime, bedtime, app limits and Always Allowed are Screen Time's, set by a parent\nin Settings for a Family Sharing child. Maktaba builds none of them (README decision 1). Its job\nis to behave well when Screen Time stops it, to be honest in its App Store age rating so Apple's\nage gate works, and to tell parents in Help how to use Apple's controls with Maktaba.\n\n## Description\n\n### 1. Under a shield\n\nWhen downtime starts or an app limit is reached, iOS shi",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-09-screen-time.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "screen-time"
+      }
+    },
+    {
+      "id": "story-57.10",
+      "type": "story",
+      "title": "Live TV under parental controls",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.10 — Live TV under parental controls\n\n> Epic 57 · Phase 1 · Depends on: 57.01, 57.03 · Needed by: 57.05, 57.11, 57.13\n\n## Why\n\nLive TV is where a filter is easiest to miss. Channel streams (`/stream/channel/{id}/…`) and the\nHDHomeRun routes are not signed today, a channel with no library is visible to every signed-in\nuser, and the guide keeps programme ratings (`title_snapshot.rating`) that nothing enforces. Plex\nlive TV (`plex_livetv`, the part of Maktaba that still works with Plex) and the remote live\nsessions (`/api/tv/remote/sessions`) need the same check.\n\n## Description\n\n### 1",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-10-live-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "live-tv"
+      }
+    },
+    {
+      "id": "story-57.11",
+      "type": "story",
+      "title": "Apple TV, where it falls out",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.11 — Apple TV, where it falls out\n\n> Epic 57 · Phase 3 · Depends on: 57.03, 57.04, 57.05, 57.10 · Needed by: —\n\n## Why\n\nThis epic is for iPhone and iPad. Apple TV is included only where it costs little. Two things\ncome for free. First, the home's filter (57.03, 57.10) applies to any client, so a child's account\nsigned in on the Apple TV is already limited. Second, the TV app shares MaktabaKit, where the\nblocked page and the signal code live. Apple's APIs decide the rest: on tvOS 26 the Screen Time\nmovie and TV limit can be read (`ManagedSettingsStore.effectiveMaximum…Rating`, tvOS 2",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-11-apple-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "apple-tv"
+      }
+    },
+    {
+      "id": "story-57.12",
+      "type": "story",
+      "title": "Turning it on in existing homes",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.12 — Turning it on in existing homes\n\n> Epic 57 · Phase 4 · Depends on: 57.01, 57.02, 57.04, 57.07 · Needed by: —\n\n## Why\n\nEvery existing home has users, libraries and devices, and no ratings. If the update started\nenforcing device signals at once, a child's iPad on an adult's account would suddenly show nothing,\nbecause unrated content is hidden by default (README decision 7). If it never enforced them,\nparents would not know the feature exists. The update has to change nothing for anyone until an\nadmin sets it up, while making it easy to set up.\n\n## Description\n\n### 1. What the up",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-12-existing-homes.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "existing-homes"
+      }
+    },
+    {
+      "id": "story-57.13",
+      "type": "story",
+      "title": "OpenAPI, role tests and the bypass rehearsal",
+      "epic": "57-parental-controls",
+      "phase": 5,
+      "content": "# Story 57.13 — OpenAPI, role tests and the bypass rehearsal\n\n> Epic 57 · Phase 1 (registry walk, with 57.03), 4 (the rest) · Depends on: 57.01–57.12 · Needed by: —\n\n## Why\n\nA parental filter is only as good as its weakest route. The epic needs three proofs that keep\nholding as the code changes: every route is described, every role rule is tested, and every known\nway around the filter is tried in CI on every change that touches it.\n\n## Description\n\n### 1. OpenAPI\n\nDescribe every route of README §6.6 with request and response schemas and error codes\n(`restricted`, `restricted_admin`, `restricte",
+      "tags": [
+        "story",
+        "57-parental-controls",
+        "phase-5"
+      ],
+      "related": [
+        "epic-57-parental-controls",
+        "entity-users",
+        "ep-get-capabilities"
+      ],
+      "files": {
+        "story": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
+      "db_tables": [
+        "users"
+      ],
+      "metadata": {
+        "slug": "openapi-roles-rehearsal"
       }
     }
   ]

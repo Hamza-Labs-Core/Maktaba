@@ -2,8 +2,8 @@
   "schema_version": 2,
   "generated_for": "Maktaba",
   "totals": {
-    "epics": 56,
-    "stories": 668,
+    "epics": 57,
+    "stories": 681,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -400,6 +400,13 @@
       "title": "The TV library view",
       "description": "The TV library view: Play all, Shuffle, series, collections and playlists.\n\nRequirement: on the TV apps (Android TV and Apple TV), a library must offer **Play all** and **Shuffle**, and must be browsable **by series, by collection and by playlist**, as Plex's TV apps are. Today a library on a TV is one grid of videos, newest first, with no sort, no filter and no way to play more than one video.",
       "readme": "specs/epics/56-tv-library-view/README.md"
+    },
+    {
+      "id": "57",
+      "slug": "parental-controls",
+      "title": "Parental controls on iPhone and iPad, on Apple's Screen Time",
+      "description": "Parental controls on iPhone and iPad, on Apple's Screen Time.\n\nRequirement: a parent must be able to hand a child an iPhone or iPad with Maktaba on it and know the child sees only what the parent allows. That has to hold everywhere content can appear, on the home network and through Maktaba Cloud, and no app, modified or not, may get around it. Today the only limit is which libraries a user can read (`library_acl`). Epic 45 listed parental controls as missing and shelved its profiles-with-a-PIN story (45.23).",
+      "readme": "specs/epics/57-parental-controls/README.md"
     }
   ],
   "stories": [
@@ -7151,6 +7158,123 @@
       "slug": "openapi-roles",
       "title": "OpenAPI and role tests for the library routes",
       "story_file": "specs/epics/56-tv-library-view/story-56-14-openapi-roles.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.01",
+      "epic": 57,
+      "num": "01",
+      "slug": "age-tiers",
+      "title": "Age tiers on the home's content",
+      "story_file": "specs/epics/57-parental-controls/story-57-01-age-tiers.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.02",
+      "epic": 57,
+      "num": "02",
+      "slug": "restricted-accounts",
+      "title": "Restricted accounts and guardians",
+      "story_file": "specs/epics/57-parental-controls/story-57-02-restricted-accounts.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.03",
+      "epic": 57,
+      "num": "03",
+      "slug": "server-filter",
+      "title": "One content filter on every surface",
+      "story_file": "specs/epics/57-parental-controls/story-57-03-server-filter.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.04",
+      "epic": 57,
+      "num": "04",
+      "slug": "device-signal",
+      "title": "The device's signal: Declared Age Range and the Screen Time rating limit",
+      "story_file": "specs/epics/57-parental-controls/story-57-04-device-signal.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.05",
+      "epic": 57,
+      "num": "05",
+      "slug": "restricted-player",
+      "title": "The restricted Player on iPhone and iPad",
+      "story_file": "specs/epics/57-parental-controls/story-57-05-restricted-player.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.06",
+      "epic": 57,
+      "num": "06",
+      "slug": "ask-a-parent",
+      "title": "Ask a parent, and the parent PIN",
+      "story_file": "specs/epics/57-parental-controls/story-57-06-ask-a-parent.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.07",
+      "epic": 57,
+      "num": "07",
+      "slug": "family-settings",
+      "title": "Family settings for guardians in the Player",
+      "story_file": "specs/epics/57-parental-controls/story-57-07-family-settings.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.08",
+      "epic": 57,
+      "num": "08",
+      "slug": "activity",
+      "title": "Activity for guardians",
+      "story_file": "specs/epics/57-parental-controls/story-57-08-activity.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.09",
+      "epic": 57,
+      "num": "09",
+      "slug": "screen-time",
+      "title": "Screen Time, Family Sharing and the App Store",
+      "story_file": "specs/epics/57-parental-controls/story-57-09-screen-time.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.10",
+      "epic": 57,
+      "num": "10",
+      "slug": "live-tv",
+      "title": "Live TV under parental controls",
+      "story_file": "specs/epics/57-parental-controls/story-57-10-live-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.11",
+      "epic": 57,
+      "num": "11",
+      "slug": "apple-tv",
+      "title": "Apple TV, where it falls out",
+      "story_file": "specs/epics/57-parental-controls/story-57-11-apple-tv.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.12",
+      "epic": 57,
+      "num": "12",
+      "slug": "existing-homes",
+      "title": "Turning it on in existing homes",
+      "story_file": "specs/epics/57-parental-controls/story-57-12-existing-homes.md",
+      "plan_files": []
+    },
+    {
+      "id": "57.13",
+      "epic": 57,
+      "num": "13",
+      "slug": "openapi-roles-rehearsal",
+      "title": "OpenAPI, role tests and the bypass rehearsal",
+      "story_file": "specs/epics/57-parental-controls/story-57-13-openapi-roles-rehearsal.md",
       "plan_files": []
     }
   ],
