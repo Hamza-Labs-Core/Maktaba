@@ -160,6 +160,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Old backups go on their own.** The backups folder kept the newest nightly dumps and
+  pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
+  failed update or of a database a restore replaced was kept until more of its kind came:
+  one 33 GB dump of a failed update stayed for weeks. The backups loop now prunes at every
+  check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
+  dumps to their count, and a dump of a failed update or a replaced database once it is a
+  month old. The newest pre-update dump, the way back from the last update, never expires.
+
 - **A rollback undoes only what the release changed.** When an update rolled back and its
   migrations could not simply be kept, the whole database was put back from the dump taken
   before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90

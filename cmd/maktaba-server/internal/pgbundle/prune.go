@@ -19,6 +19,10 @@ const keepFile = "backups-keep"
 // left (a rehearsal runs minutes, and never while the server starts).
 const staleRehearsal = time.Hour
 
+// expireAfter is how long a dump of a failed update or of a database a restore replaced
+// stays (the newest pre-update dump never expires: it is the way back from the last update).
+const expireAfter = 30 * 24 * time.Hour
+
 // SetBackupsKeep records rules.updates.backups_keep for the dump pruning (n < 1: none).
 func SetBackupsKeep(dir string, n int) error {
 	if n < 1 {
@@ -51,7 +55,8 @@ const ReplacedDumpPrefix = "replaced-"
 // keepPath always), the newest keep dumps of failed updates (failed-*.dump) and as many of
 // databases a restore replaced (replaced-*.dump), and removes the folders of rehearsals a
 // crash left (.rehearse-*) and the dumps one cut short (*.partial), older than an hour:
-// each holds up to a whole database.
+// each holds up to a whole database. Dumps of failed updates and replaced databases also
+// go once older than expireAfter: they explain one event, and a lone one stayed for good.
 func PruneBackups(dir, keepPath string, keep int) error {
 	keep = max(keep, 1)
 	entries, err := os.ReadDir(dir)
@@ -87,14 +92,18 @@ func PruneBackups(dir, keepPath string, keep int) error {
 			}
 		}
 	}
-	for _, dumps := range kinds {
+	for prefix, dumps := range kinds {
 		sort.SliceStable(dumps, func(i, j int) bool {
 			if dumps[i].path == keepPath || dumps[j].path == keepPath {
 				return dumps[i].path == keepPath
 			}
 			return dumps[i].mod.After(dumps[j].mod)
 		})
-		for _, d := range dumps[min(keep, len(dumps)):] {
+		for i, d := range dumps {
+			expired := prefix != updateDumpPrefix && d.path != keepPath && time.Since(d.mod) > expireAfter
+			if i < keep && !expired {
+				continue
+			}
 			if err := RemoveDump(d.path); err != nil && firstErr == nil {
 				firstErr = err
 			}
