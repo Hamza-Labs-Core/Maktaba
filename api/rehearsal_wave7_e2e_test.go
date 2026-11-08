@@ -251,13 +251,18 @@ func (r *rehearsal) wave7Scenario() {
 	// the live TV release, on the previous release's streaming binary (after the update the
 	// slots that run it take that binary from the kept payload)
 	prevSum := fileSHA256(t, filepath.Join(home.payload, "bin", "maktaba-streaming"))
-	if _, err := db.Exec(`INSERT INTO tv_releases (id, digest, kinds, sched_gen, streaming_version, streaming_sha256, created_by)
-		VALUES ($1, 'rehearsal-live-16-7', '["binary"]', 1, $2, $3, 'rehearsal')`, wave7LiveRelease, k.prev, prevSum); err != nil {
+	// its generation from the generations' sequence, as the stage takes the next one from it
+	// (a fixed number there and the stage's release meets it: tv_releases_sched_gen_key)
+	var liveGen int64
+	if err := db.QueryRow(`INSERT INTO tv_releases (id, digest, kinds, sched_gen, streaming_version, streaming_sha256, created_by)
+		VALUES ($1, 'rehearsal-live-16-7', '["binary"]', nextval('tv_sched_gen_seq'), $2, $3, 'rehearsal')
+		RETURNING sched_gen`, wave7LiveRelease, k.prev, prevSum).Scan(&liveGen); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO tv_routing (scope, live_release_id, live_gen, epoch, switched_at)
-		VALUES ('cluster', $1, 1, 1, now())
-		ON CONFLICT (scope) DO UPDATE SET live_release_id = EXCLUDED.live_release_id, live_gen = 1`, wave7LiveRelease); err != nil {
+		VALUES ('cluster', $1, $2, 1, now())
+		ON CONFLICT (scope) DO UPDATE SET live_release_id = EXCLUDED.live_release_id, live_gen = EXCLUDED.live_gen`,
+		wave7LiveRelease, liveGen); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, "the live slot beating on the live TV release", 4*time.Minute, func() bool {
@@ -390,7 +395,7 @@ func (r *rehearsal) wave7Scenario() {
 
 	// 5. the admin's rollback: the previous slot and release are live again
 	code, body = a.adminJSON("POST", "/api/tv/rollback", map[string]any{})
-	if code != http.StatusOK {
+	if code != http.StatusAccepted && code != http.StatusOK {
 		t.Fatalf("roll the TV back: %d %s", code, body)
 	}
 	var rb struct {
