@@ -39,8 +39,6 @@ jobs:
         id: go-cache
         if: inputs.go
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -138,7 +136,11 @@ jobs:
         working-directory: cloud
         run: go test -short -count=1 ./...
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      # this job writes its runner's one Go cache entry (.github/actions/go-cache), every
+      # module of the checkout in it first; only a push to main writes it
+      - name: Every module in the Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        run: tools/ci/go-cache-fill.sh
       - name: Save the Go caches
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -200,8 +202,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -216,14 +216,6 @@ jobs:
       - name: Test the announcement (maktaba-server)
         working-directory: cmd/maktaba-server
         run: go test -count=1 -v ./internal/mdns/
-
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   # The mDNS announcement on Linux through systemd-resolved, for real: resolved answers mDNS
   # here (MulticastDNS=yes, Avahi masked), and both copies announce, are found by an mDNS
@@ -251,8 +243,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -284,14 +274,6 @@ jobs:
           path: ${{ runner.temp }}/mdns-linux-logs
           if-no-files-found: warn
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
-      - name: Save the Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
-
   # Epic 53 story 53.13: the log path's performance budget. Each bench fails with its
   # numbers when over its budget (scaled by the runner's speed: logbench.Calibrate);
   # docs/performance/logs.md has the targets.
@@ -311,8 +293,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('cmd/maktaba-server/go.sum') }}
 
       - name: Go modules
         uses: ./.github/actions/go-mod-download

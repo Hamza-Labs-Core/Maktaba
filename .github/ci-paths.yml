@@ -189,6 +189,8 @@ unit_go:
   - *make
   - *go
   - '.github/workflows/_unit.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
 
 # the pipeline's unit tier, and its cluster tests on Windows
 unit_pipeline:
@@ -549,6 +551,8 @@ launcher:
   - 'api/go.sum'
   - 'deploy/packaging/**'
   - '.github/workflows/_launcher.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
 
 # The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into the app or how
 # it is built changes.
@@ -582,6 +586,8 @@ mac_app:
   - 'pipeline/src/maktaba_plugin_runner/**'
   - 'pipeline/src/maktaba_pipeline/plugins/native.py'
   - '.github/workflows/_mac-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # its pinned downloads, retried and checked (the payload's fetch too)
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
@@ -599,6 +605,8 @@ win_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_win-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # its pinned downloads, retried and checked (the payload's fetch too)
   - 'tools/release/fetch-pinned.sh'
   - '.github/workflows/desktop-release.yml'
@@ -617,6 +625,8 @@ linux_app:
   - 'pipeline/uv.lock'
   - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
   - '.github/workflows/_linux-app.yml'
+  # it writes its runner's Go cache entry, every module in it first
+  - 'tools/ci/go-cache-fill.sh'
   # the payload's fetch (pinned downloads, retried and checked)
   - 'tools/release/fetch-pinned.sh'
   - 'Makefile'

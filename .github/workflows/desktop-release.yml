@@ -243,8 +243,6 @@ jobs:
         id: go-cache
         if: matrix.payload || matrix.linux_payload
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
       # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
       - name: Go modules
@@ -787,8 +785,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
       # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
       - name: Go modules

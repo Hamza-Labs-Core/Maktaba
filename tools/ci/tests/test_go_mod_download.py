@@ -107,11 +107,6 @@ def test_the_modules_are_modules() -> None:
             continue
         for m in mods:
             assert (ROOT / m / "go.mod").is_file(), f"{workflow} {job}: {m} has no go.mod"
-        # every go.sum the job's cache key names is a module it downloads
-        for s in steps:
-            if s.get("uses") == "./.github/actions/go-cache":
-                for gosum in re.findall(r"'([^']+)/go\.sum'", s["with"]["go-sum-hash"]):
-                    assert gosum in mods, f"{workflow} {job}: caches {gosum} but does not download it"
 
 
 def test_offline_unless_listed() -> None:

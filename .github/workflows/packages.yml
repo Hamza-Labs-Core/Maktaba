@@ -76,8 +76,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
       # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
       - name: Go modules
@@ -122,14 +120,6 @@ jobs:
             none "${tag} is not the newest stable release: the repositories and the tap keep theirs"
           echo "tag=${tag}" >>"${GITHUB_OUTPUT}"
           echo "publish=true" >>"${GITHUB_OUTPUT}"
-
-      # only a run on main (scheduled, dispatched or after a release) writes the caches restored above
-      - name: Save the Go caches
-        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}
 
   repos:
     name: apt + dnf repositories
@@ -326,8 +316,6 @@ jobs:
         id: go-cache
         if: steps.config.outputs.ready == 'true'
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
       # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
       - name: Go modules
@@ -377,11 +365,3 @@ jobs:
           cask=()
           [ ! -f maktaba-app.rb ] || cask=(maktaba-app.rb)
           bash tools/release/homebrew-tap.sh push tap "${TAG}" dl/maktaba.rb "${cask[@]}"
-
-      # only a run on main (scheduled, dispatched or after a release) writes the caches restored above
-      - name: Save the Go caches
-        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ steps.go-cache.outputs.path }}
-          key: ${{ steps.go-cache.outputs.key }}

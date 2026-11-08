@@ -31,8 +31,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -80,7 +78,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
-          # pull requests and tags restore main's build; only a push to main saves
+          # one entry for the app's release build on macOS, shared with bundle-size (which
+          # restores it); pull requests and tags restore main's, only a push to main saves
+          shared-key: desktop-app-macos
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       # every pinned download (~110 MB, both flavours') in one cache, keyed on the runner's OS
@@ -182,7 +182,11 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      # this job writes its runner's one Go cache entry (.github/actions/go-cache), every
+      # module of the checkout in it first; only a push to main writes it
+      - name: Every module in the Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        run: tools/ci/go-cache-fill.sh
       - name: Save the Go caches
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
@@ -230,12 +234,12 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cmd/maktaba-server/go.sum
-            cmd/maktaba-launcher/go.sum
-            tools/release/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -271,9 +275,12 @@ jobs:
         with:
           targets: aarch64-apple-darwin
 
+      # mac-app's entry, restored only (it saved on every ref, pull requests' too)
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
+          shared-key: desktop-app-macos
+          save-if: false
 
       # every pinned download (~110 MB, both flavours') in one cache, keyed on the runner's OS
       # and arch and on pins.env, so a pin bump misses; an earlier pins.env's entry is

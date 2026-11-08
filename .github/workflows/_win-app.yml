@@ -62,8 +62,6 @@ jobs:
       - name: Go caches
         id: go-cache
         uses: ./.github/actions/go-cache
-        with:
-          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
       # this job's Go modules, retried; later steps read the module cache only
       - name: Go modules
@@ -242,7 +240,11 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
-      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      # this job writes its runner's one Go cache entry (.github/actions/go-cache), every
+      # module of the checkout in it first; only a push to main writes it
+      - name: Every module in the Go cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        run: tools/ci/go-cache-fill.sh
       - name: Save the Go caches
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
