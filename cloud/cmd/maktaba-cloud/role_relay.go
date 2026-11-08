@@ -218,7 +218,9 @@ func relayRouterOptions(cfg config.Config, cache *relayh.HomeCache, reg *relaypk
 		started := time.Now()
 		draining = func() bool { return reg.Closing() || time.Since(started) > time.Duration(badAfter)*time.Second }
 	}
-	return append(relayReadiness(cfg, cache), server.WithDraining(draining))
+	// the access log prints the client the relay itself resolves (its rightmost
+	// X-Forwarded-For entry, which Caddy appends), not Caddy's loopback (story 50.32 §1)
+	return append(relayReadiness(cfg, cache), server.WithDraining(draining), server.WithClientIPFrom(relayh.ClientIP))
 }
 
 // relayIDOf names this relay process in the tunnel directory: relay.id, or

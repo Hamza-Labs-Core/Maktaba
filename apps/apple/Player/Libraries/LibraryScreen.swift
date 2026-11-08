@@ -11,6 +11,7 @@ struct LibraryScreen: View {
 
     @State private var model: LibraryModel
     @State private var pluginPanels: [PanelView] = []
+    @Environment(\.locale) private var locale
 
     init(context: PlayerContext, id: String) {
         self.context = context
@@ -218,8 +219,8 @@ struct LibraryScreen: View {
                       alignment: .leading, spacing: MaktabaTokens.Spacing.s4) {
                 ForEach(model.series) { s in
                     NavigationLink(value: PlayerRoute.series(id: s.id)) {
-                        PosterCard(title: s.name.isEmpty ? String(localized: SeriesGrid.untitled) : s.name,
-                                   detail: String(localized: SeriesGrid.episodes(s.episodes)),
+                        PosterCard(title: s.name.isEmpty ? SeriesGrid.untitled.string(in: locale) : s.name,
+                                   detail: SeriesGrid.episodes(s.episodes).string(in: locale),
                                    poster: LibraryArt.poster(client, video: s.posterVideoID),
                                    progress: s.progress, shape: .tall, width: 120)
                     }
@@ -237,13 +238,15 @@ struct VideoCard: View {
     let client: APIClient
     let video: BrowseVideo
 
+    @Environment(\.locale) private var locale
+
     var body: some View {
-        PosterCard(title: video.displayTitle, detail: video.durationSec.map(Self.length),
+        PosterCard(title: video.displayTitle, detail: video.durationSec.map { Self.length($0, locale) },
                    poster: LibraryArt.poster(client, video: video.id), progress: video.progress)
     }
 
-    /// 1:05:30 or 42:10.
-    static func length(_ seconds: Double) -> String {
-        Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond))
+    /// 1:05:30 or 42:10, in `locale`'s digits.
+    static func length(_ seconds: Double, _ locale: Locale) -> String {
+        Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(locale))
     }
 }

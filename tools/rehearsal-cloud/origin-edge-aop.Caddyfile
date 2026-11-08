@@ -1,0 +1,22 @@
+# The stand-in Cloudflare edge of the origin-aop scenario (Epic 50 story 50.31, rehearsal T08):
+# the fallback origin, reached at the Floating IP over TLS with Maktaba's Authenticated Origin
+# Pulls client certificate (a test CA here), from an address in the test "Cloudflare ranges"
+# (10.61.0.40/32). Like Cloudflare, it writes CF-Connecting-IP itself.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	# the address the edge saw, for the scenario's check that sources are not rewritten
+	header X-Edge-Saw {remote_host}
+	reverse_proxy https://relay.test:443 {
+		header_up Host api.maktaba.tv
+		header_up CF-Connecting-IP {remote_host}
+		transport http {
+			tls_server_name api.maktaba.tv
+			tls_insecure_skip_verify
+			tls_client_auth /origin/client.crt /origin/client.key
+		}
+	}
+}

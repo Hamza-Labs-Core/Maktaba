@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -124,5 +126,30 @@ func TestWThatCannotListenStopsCleanly(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("serveLogs hung after its listener failed")
+	}
+}
+
+// A token file (W's, the symbols uploaders'): its content trimmed, "" when unset or unreadable.
+func TestTokenFile(t *testing.T) {
+	const env = "MAKTABA_TEST_TOKEN_FILE"
+	t.Setenv(env, "")
+	if got := tokenFile(env); got != "" {
+		t.Errorf("unset: %q", got)
+	}
+	t.Setenv(env, filepath.Join(t.TempDir(), "missing"))
+	if got := tokenFile(env); got != "" {
+		t.Errorf("missing file: %q", got)
+	}
+	p := filepath.Join(t.TempDir(), "symbols.token")
+	if err := os.WriteFile(p, []byte("  s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(env, p)
+	if got := tokenFile(env); got != "s3cret" {
+		t.Errorf("file: %q", got)
+	}
+	t.Setenv(EnvLogsTokenFile, p)
+	if logsToken() != "s3cret" {
+		t.Error("W's token is not read from its file")
 	}
 }

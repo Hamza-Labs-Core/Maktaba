@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"runtime"
+	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -12,13 +14,44 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
-// metricsAdmin adds GET /metrics to the supervisor's loopback admin: its update metrics
-// (story 35.15, internal/updater/metrics.go), from the updates folder dir, and this
-// machine's components (story 51.14, internal/supervisor/component_metrics.go; nil:
-// none), and its memory, disk and load (story 53.12, host; nil: none). The API's /metrics
-// merges them in, so a machine is one scrape target. Read-only and without secrets, as
-// /processes beside it.
-func metricsAdmin(base http.Handler, dir string, comps *supervisor.ComponentMetrics, host *hostMetrics) http.Handler {
+// machineMetrics is this machine's supervisor's metrics: its update metrics (story 35.15,
+// internal/updater/metrics.go), from the updates folder Dir, this machine's components
+// (story 51.14, internal/supervisor/component_metrics.go; nil: none), and its memory,
+// disk and load (story 53.12, Host; nil: none).
+type machineMetrics struct {
+	Dir   string
+	Comps *supervisor.ComponentMetrics
+	Host  *hostMetrics
+}
+
+// Write writes them in Prometheus's text format.
+func (m *machineMetrics) Write(ctx context.Context, w io.Writer) {
+	_ = updater.WriteMetrics(w, m.Dir)
+	_ = m.Comps.Write(ctx, w)
+	machine := store.Home
+	if m.Comps != nil && m.Comps.Machine != "" {
+		machine = m.Comps.Machine
+	}
+	m.Host.Write(w, machine)
+}
+
+// metricsCommand answers the home's "metrics" on the cluster channel (a joined machine):
+// the same text as /metrics, for the home's dashboards to show each machine (story
+// 53.12; api/node_metrics.go takes the series labelled with the machine). nil: this
+// machine's supervisor has not built its metrics yet.
+func metricsCommand(ctx context.Context, m *machineMetrics) (bool, any) {
+	if m == nil {
+		return false, "metrics not ready"
+	}
+	var b strings.Builder
+	m.Write(ctx, &b)
+	return true, b.String()
+}
+
+// metricsAdmin adds GET /metrics to the supervisor's loopback admin (machineMetrics). The
+// API's /metrics merges them in, so a machine is one scrape target. Read-only and without
+// secrets, as /processes beside it.
+func metricsAdmin(base http.Handler, m *machineMetrics) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", base)
 	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
@@ -28,13 +61,7 @@ func metricsAdmin(base http.Handler, dir string, comps *supervisor.ComponentMetr
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = updater.WriteMetrics(w, dir)
-		_ = comps.Write(r.Context(), w)
-		machine := store.Home
-		if comps != nil && comps.Machine != "" {
-			machine = comps.Machine
-		}
-		host.Write(w, machine)
+		m.Write(r.Context(), w)
 	})
 	return mux
 }

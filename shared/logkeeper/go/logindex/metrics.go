@@ -151,7 +151,8 @@ func canonLabels(s string) string {
 type metricsState struct {
 	mu      sync.Mutex
 	last    map[string]float64         // a counter's last value, by name+labels
-	sets    map[string]map[string]bool // the label sets kept, by name
+	sets    map[string]map[string]bool // the label sets kept, by name (an id series': by name and machine)
+	hosts   map[string]map[string]bool // the machines an id series keeps, by name
 	dropped float64                    // series or label sets not stored
 	allowed map[string]SeriesDef       // the allow-list
 	caps    [2]int                     // label cap, id label cap
@@ -160,11 +161,59 @@ type metricsState struct {
 
 func newMetricsState() *metricsState {
 	a, c, ic := AllowedSeries()
-	return &metricsState{last: map[string]float64{}, sets: map[string]map[string]bool{}, allowed: a,
+	return &metricsState{last: map[string]float64{}, sets: map[string]map[string]bool{}, hosts: map[string]map[string]bool{}, allowed: a,
 		caps: [2]int{c, ic}, hist: map[string]*histState{}}
 }
 
 func minuteOf(t time.Time) int64 { return t.Unix() / 60 }
+
+// keep reports whether a sample's label set is stored: one already kept, or a new one
+// within its series' cap (a dropped one is counted). A series of catalog ids keeps up to
+// the id cap per machine, for up to the label cap of machines (the home's dashboards
+// carry each joined machine's components, story 53.12); any other keeps up to the label
+// cap.
+func (st *metricsState) keep(s sample, def SeriesDef) bool {
+	key, limit := s.name, st.caps[0]
+	if def.IDLabels {
+		machine := labelValue(s.labels, "machine")
+		key, limit = s.name+"\x00"+machine, st.caps[1]
+		hosts := st.hosts[s.name]
+		if hosts == nil {
+			hosts = map[string]bool{}
+			st.hosts[s.name] = hosts
+		}
+		if !hosts[machine] {
+			if len(hosts) >= st.caps[0] {
+				st.dropped++
+				return false
+			}
+			hosts[machine] = true
+		}
+	}
+	set := st.sets[key]
+	if set == nil {
+		set = map[string]bool{}
+		st.sets[key] = set
+	}
+	if !set[s.labels] {
+		if len(set) >= limit {
+			st.dropped++
+			return false
+		}
+		set[s.labels] = true
+	}
+	return true
+}
+
+// labelValue is one label's value in a canonical label list (`a=1,b=x`), "" when absent.
+func labelValue(labels, name string) string {
+	for _, kv := range strings.Split(labels, ",") {
+		if k, v, ok := strings.Cut(kv, "="); ok && k == name {
+			return v
+		}
+	}
+	return ""
+}
 
 // Record stores one scrape taken at `at`: an allowed counter's increase since the last
 // scrape is added to this minute's rate, a gauge's value replaces it.
@@ -196,21 +245,8 @@ func (ix *Index) Record(ctx context.Context, samples []sample, at time.Time) err
 		if !ok || def.Kind == LatencyKind {
 			continue // not on the list: not counted as dropped (most metrics are not wanted)
 		}
-		set := st.sets[s.name]
-		if set == nil {
-			set = map[string]bool{}
-			st.sets[s.name] = set
-		}
-		if !set[s.labels] {
-			limit := st.caps[0]
-			if def.IDLabels {
-				limit = st.caps[1]
-			}
-			if len(set) >= limit {
-				st.dropped++
-				continue
-			}
-			set[s.labels] = true
+		if !st.keep(s, def) {
+			continue
 		}
 		key := s.name + "{" + s.labels + "}"
 		if def.Kind == "counter" {
@@ -398,7 +434,15 @@ func (ix *Index) Board(ctx context.Context, board, rng string) (BoardDoc, error)
 		names = append(names, s.Name)
 		kinds[s.Name] = s.Kind
 	}
-	sort.Strings(names)
+	// the series of catalog ids last: they have a line per component and machine, and
+	// would otherwise take the board's lines from each machine's memory, disk and load
+	idSeries := func(name string) bool { return allowed[name].IDLabels }
+	sort.Slice(names, func(i, j int) bool {
+		if a, b := idSeries(names[i]), idSeries(names[j]); a != b {
+			return b
+		}
+		return names[i] < names[j]
+	})
 	now := ix.now()
 	since := now.Add(-d).Unix()
 	table, col, unit := "metric_1m", "minute", int64(60)

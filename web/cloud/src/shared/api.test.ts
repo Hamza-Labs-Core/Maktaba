@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api, CloudApiError, onSessionChange, setAccessToken } from "./api";
+import { api, CloudApiError, onSessionChange, setAccessToken, setChangeHeaders } from "./api";
 import { json, stubFetch, user } from "./test/fetch";
 
 beforeEach(() => setAccessToken(null));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  setChangeHeaders({});
+});
 
 describe("cloud api client", () => {
   it("sends the bearer token, and on a 401 refreshes once and retries", async () => {
@@ -87,5 +90,34 @@ describe("cloud api client", () => {
   it("returns undefined for a 204", async () => {
     stubFetch({ "POST /v1/account/sessions/revoke-all": [204] });
     await expect(api.post("/v1/account/sessions/revoke-all")).resolves.toBeUndefined();
+  });
+
+  it("adds the change headers to every call but a GET or HEAD, the refresh included", async () => {
+    setChangeHeaders({ "X-Maktaba-Staff": "1" });
+    setAccessToken("old");
+    const f = stubFetch({
+      "GET /v1/account/me": (_call, n) =>
+        n === 1 ? json(401, { error: "unauthorized" }) : json(200, user()),
+      "POST /v1/auth/refresh": [200, { access_token: "new", expires_in: 900, user: user() }],
+      "POST /v1/account/sessions/revoke-all": [204],
+    });
+    await api.get("/v1/account/me");
+    await api.post("/v1/account/sessions/revoke-all");
+    expect(f.find("GET", "/v1/account/me").map((c) => c.headers["X-Maktaba-Staff"])).toEqual([
+      undefined,
+      undefined,
+    ]);
+    expect(f.find("POST", "/v1/auth/refresh")[0].headers["X-Maktaba-Staff"]).toBe("1");
+    expect(f.find("POST", "/v1/account/sessions/revoke-all")[0].headers["X-Maktaba-Staff"]).toBe(
+      "1"
+    );
+  });
+
+  it("sends no change headers unless a bundle sets them (the user app)", async () => {
+    const f = stubFetch({ "POST /v1/account/sessions/revoke-all": [204] });
+    await api.post("/v1/account/sessions/revoke-all");
+    expect(
+      f.find("POST", "/v1/account/sessions/revoke-all")[0].headers["X-Maktaba-Staff"]
+    ).toBeUndefined();
   });
 });

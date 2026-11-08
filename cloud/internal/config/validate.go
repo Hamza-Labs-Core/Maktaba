@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
+	"strings"
 )
 
 // Role identifies which set of features this process is providing.
@@ -37,6 +39,9 @@ func Validate(c Config, role Role) error {
 			return err
 		}
 		if err := validateOrigin(c.Server); err != nil {
+			return err
+		}
+		if err := validateAdminListener(c.Server); err != nil {
 			return err
 		}
 		// the auth pages' bot check (story 50.30 §4) is never on without its secret
@@ -174,4 +179,23 @@ func Warnings(c Config) []string {
 		w = append(w, "server.aop_ca_file is set but server.origin_mode is not \"aop\": it is not used")
 	}
 	return w
+}
+
+// validateAdminListener is Epic 50 story 50.32's pairing: the admin listener needs the one
+// Host it answers, and a Host with no listener would be a setting that does nothing.
+func validateAdminListener(s ServerConfig) error {
+	switch {
+	case s.AdminListenAddr != "" && s.AdminHost == "":
+		return fmt.Errorf("%w: server.admin_host (the one name the admin listener answers, admin.maktaba.tv)", ErrMissing)
+	case s.AdminListenAddr == "" && s.AdminHost != "":
+		return fmt.Errorf("%w: server.admin_listen_addr (server.admin_host %q has no listener)", ErrMissing, s.AdminHost)
+	case s.AdminListenAddr != "" && s.AdminListenAddr == s.ListenAddr && !strings.HasSuffix(s.AdminListenAddr, ":0"):
+		return fmt.Errorf("config: server.admin_listen_addr %q is the user listener's: the console needs its own", s.AdminListenAddr)
+	}
+	if s.AdminOrigin != "" {
+		if u, err := url.Parse(s.AdminOrigin); err != nil || u.Host == "" || u.Path != "" || (u.Scheme != "https" && u.Scheme != "http") {
+			return fmt.Errorf("config: server.admin_origin %q is not an origin", s.AdminOrigin)
+		}
+	}
+	return nil
 }

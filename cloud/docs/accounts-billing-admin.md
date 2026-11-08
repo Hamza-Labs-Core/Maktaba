@@ -30,7 +30,7 @@ All bodies are JSON. Errors are `{"error": "<code>", "message": "…"}`.
 | `POST /v1/auth/register` | `{email, password, display_name?}` | `202 {"status":"pending_verification"}` — a verification mail goes out; the same 202 comes back if the email is already registered (the owner gets a "someone tried to sign up" mail instead), so registration does not reveal which addresses have accounts | `400 invalid_email`, `400 weak_password` |
 | `POST /v1/auth/verify-email` | `{token}` | `200 {"status":"verified"}` | `400 invalid_token` |
 | `POST /v1/auth/verify-email/resend` | `{email}` | `202` always | — |
-| `POST /v1/auth/login` | `{email, password}` | `200 {access_token, expires_in, user}` + `maktaba_refresh` cookie | `401 invalid_credentials`, `403 email_not_verified` (with `resend_url`), `403 account_suspended`, `429 too_many_attempts` (`Retry-After: 1800`) |
+| `POST /v1/auth/login` | `{email, password}` | `200 {access_token, expires_in, user}` + `__Host-maktaba_refresh` cookie | `401 invalid_credentials`, `403 email_not_verified` (with `resend_url`), `403 account_suspended`, `429 too_many_attempts` (`Retry-After: 1800`) |
 | `POST /v1/auth/refresh` | — (cookie) | same as login, the refresh cookie rotates | `401 no_session`; a rotated token presented again revokes every session of the account and records `refresh_token_replay` |
 | `POST /v1/auth/logout` | — (cookie) | `204` | — |
 | `POST /v1/auth/password/forgot` | `{email}` | `202` always | — |
@@ -43,8 +43,10 @@ All bodies are JSON. Errors are `{"error": "<code>", "message": "…"}`.
 
 `user` is `{id, email, email_verified, display_name?, plan, role}`.
 Access tokens last 15 minutes; refresh sessions 30 days. The refresh
-cookie is host-only (no `Domain`), so it never reaches a home server on a
-relay subdomain. Every bearer request also checks that its session is still
+cookie, `__Host-maktaba_refresh` (`Path=/`, `Secure`, `HttpOnly`, `SameSite=Lax`), is
+host-only: the `__Host-` prefix makes the browser refuse it with a `Domain`, so it never
+reaches a home server on a relay subdomain, and a session on one name is not a session on
+another. Every bearer request also checks that its session is still
 alive and the account is not suspended or blocklisted. A password
 reset, a password change, a suspension and an account deletion all
 revoke every session.
@@ -219,6 +221,18 @@ The console that calls these is its own web bundle, `web/admin` (`pnpm dev:admin
 `pnpm build:admin` → `dist-admin/`), for `admin.maktaba.tv` only (Epic 50 story 50.32). The
 user app (`web/cloud`) has no admin route, link, string or module, and CI fails a user build
 that carries one (`tools/lint/no-admin-in-user-bundle.mjs`).
+
+The routes below are served only by the api role's admin listener
+(`server.admin_listen_addr`, `127.0.0.1:8091` in production), and only for
+`server.admin_host` (`admin.maktaba.tv`): on the user listener each one is the same 404 as a
+route that doesn't exist, and the admin listener answers any other `Host` with 404. The admin
+listener has no CORS (a preflight is `403`), and a change (anything but `GET` or `HEAD`) must
+carry `Origin: https://admin.maktaba.tv` (`server.admin_origin`) and `X-Maktaba-Staff: 1`, else
+`403 bad_origin` before any handler runs. Its responses carry `Cache-Control: no-store`,
+`X-Robots-Tag: noindex, nofollow`, `Referrer-Policy: no-referrer` and same-origin COOP/CORP.
+Until staff sign-in (50.33) replaces them, the console signs in on its own host with
+`POST /v1/auth/login`, `/v1/auth/refresh`, `/v1/auth/logout` and `GET /v1/account/me`, the
+only account routes that listener serves.
 
 | Method & path | Body | Success |
 |---|---|---|

@@ -81,7 +81,7 @@ func TestGoogleSignIn(t *testing.T) {
 	if !strings.HasSuffix(r2.header.Get("Location"), "/sign-in?error=bad_state") {
 		t.Fatalf("bad state: %d %s", r2.code, r2.header.Get("Location"))
 	}
-	if _, ok := x.cookies["maktaba_refresh"]; ok {
+	if _, ok := x.cookies["__Host-maktaba_refresh"]; ok {
 		t.Fatal("bad state started a session")
 	}
 	if e.count(`SELECT count(*) FROM abuse_signals WHERE kind = 'oauth_state'`) != 1 {
