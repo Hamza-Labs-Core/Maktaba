@@ -743,6 +743,17 @@
     <string name="dash_log_files">Log files</string>
     <string name="dash_log_index">Log search index</string>
     <string name="dash_backups">Update backups</string>
+    <string name="dash_component_down">Components down</string>
+    <string name="dash_machines_components_up">Components up, all machines</string>
+    <string name="dash_machines_components_down">Components down, all machines</string>
+    <string name="dash_machines_disk_free_min">Least disk free of any machine</string>
+    <string name="dash_machines_memory_free_min">Least memory free of any machine</string>
+    <string name="dash_machines_load_max">Highest load average (1 min) of any machine</string>
+    <string name="dash_machines_restarts">Restarts per minute, all machines</string>
+    <string name="dash_machine">Machine</string>
+    <string name="dash_machine_all">All machines</string>
+    <string name="dash_machines_shown">Showing %1$d of %2$d machines, those most in need of attention first. Pick a machine to see its own.</string>
+    <string name="dash_omitted">%1$d more lines did not fit on this board.</string>
     <!-- Epic 53 stories 53.04, 53.05: the recovery screen (the console's words) -->
     <string name="recovery_title">Recovery</string>
     <string name="recovery_intro">Part of Maktaba isn\'t working. You can see what happened and fix it here.</string>

@@ -450,6 +450,104 @@ func TestAnAndroidReportsCrashIsRetracedWithTheUploadedMapping(t *testing.T) {
 	}
 }
 
+// Android native (53.16): a report of android.player has a native crash from its tombstone,
+// frames in the app's own library and in libc. Before the library's table is uploaded, the
+// library is named missing with its build id and libc never is; after (kind elf, keyed by the
+// build id), the own frame reads as function, file and line and libc's stays as it came. A
+// reason-only native crash (Android 11) comes with no frames and asks for nothing.
+func TestAnAndroidNativeCrashIsReadWithTheUploadedLibraryTable(t *testing.T) {
+	rg := newRig(t, true)
+	lib, err := symbols.ExtractELFPath(symbolstest.Fixture(t, "native.so"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var render uint64
+	for _, f := range lib.Funcs {
+		if lib.Names[f[2]] == "mpv_render" {
+			render = f[0]
+		}
+	}
+	rep := sample(4)
+	rep["app"], rep["version"], rep["platform"] = "android.player", "0.3.103", "android"
+	rep["crashes"] = []any{
+		map[string]any{
+			"platform": "native",
+			"exception": map[string]any{"values": []any{map[string]any{"type": "SIGSEGV", "value": "SEGV_MAPERR",
+				"mechanism": map[string]any{"type": "native", "handled": false},
+				"stacktrace": map[string]any{"frames": []any{
+					map[string]any{"function": "__libc_init+0x60", "package": "libc.so", "instruction_addr": "0x4a1b4",
+						"addr_mode": "rel:1", "in_app": false},
+					map[string]any{"function": fmt.Sprintf("native.so + 0x%x", render+4), "package": "native.so",
+						"instruction_addr": fmt.Sprintf("0x%x", render+4), "addr_mode": "rel:0", "in_app": true},
+				}}}}},
+			"debug_meta": map[string]any{"images": []any{
+				map[string]any{"type": "elf", "code_file": "native.so", "code_id": lib.CodeID},
+				map[string]any{"type": "elf", "code_file": "libc.so", "code_id": "ffeeddccbbaa99887766554433221100"},
+			}},
+		},
+		map[string]any{
+			"platform": "java",
+			"exception": map[string]any{"values": []any{map[string]any{"type": "native", "value": "crash (signal 11)",
+				"mechanism":  map[string]any{"type": "native", "handled": false},
+				"stacktrace": map[string]any{"frames": []any{}}}}},
+		},
+	}
+	sid := home(t, rg.ctx, rg.db, "homea")
+	body, ct := form(t, rep, nil)
+	if rec := rg.do("POST", "/v1/homes/"+sid+"/reports", "good", body, ct); rec.Code != 201 {
+		t.Fatalf("send: %d", rec.Code)
+	}
+	read := func() []symbols.Crash {
+		rec := rg.do("GET", "/v1/admin/reports/1", "", nil, "")
+		var v struct {
+			Crashes []symbols.Crash `json:"crashes"`
+		}
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &v) != nil || len(v.Crashes) != 2 {
+			t.Fatalf("read: %d %s", rec.Code, rec.Body)
+		}
+		return v.Crashes
+	}
+	before := read()
+	if c := before[0]; c.Symbols != "" || c.Frames[0].Symbol != nil || len(c.Missing) != 1 ||
+		c.Missing[0].CodeFile != "native.so" || c.Missing[0].CodeID != lib.CodeID || c.Missing[0].Kind != symbols.KindELF {
+		t.Fatalf("before the upload: %+v", c)
+	}
+	if c := before[1]; len(c.Frames) != 0 || len(c.Missing) != 0 || c.Symbols != "" || c.Value != "crash (signal 11)" {
+		t.Fatalf("the reason-only crash: %+v", c)
+	}
+	b, err := lib.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("POST", "/v1/symbols?version=0.3.103", bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer symtok")
+	rec := httptest.NewRecorder()
+	rg.h.ServeHTTP(rec, req)
+	if rec.Code != 201 || !strings.Contains(rec.Body.String(), `"kind":"elf"`) {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	after := read()
+	c := after[0]
+	if c.Symbols != symbols.SymbolsNative || len(c.Missing) != 0 {
+		t.Fatalf("after the upload: %+v", c)
+	}
+	if f := c.Frames[0]; f.Symbol == nil || f.Symbol.Function != "mpv_render" || f.Symbol.File != "/src/native.c" ||
+		f.Symbol.Line == 0 || !f.InApp {
+		t.Fatalf("top frame: %+v", f)
+	}
+	if f := c.Frames[1]; f.Symbol != nil || f.Raw != "__libc_init+0x60" {
+		t.Fatalf("libc's frame: %+v", f)
+	}
+	// listed under the library, its architecture, the release and its build id's key
+	rec = rg.do("GET", "/v1/admin/symbols", "", nil, "")
+	var l struct{ Tables []symbols.Info }
+	_ = json.Unmarshal(rec.Body.Bytes(), &l)
+	if len(l.Tables) != 1 || l.Tables[0].CodeFile != "native.so" || l.Tables[0].Arch != "arm64" ||
+		l.Tables[0].Version != "0.3.103" || l.Tables[0].DebugID != lib.CodeID[:32] {
+		t.Fatalf("list: %s", rec.Body)
+	}
+}
+
 // The desktop player is not obfuscated: its report's frames read as they came, marked as
 // read, with no mapping asked for.
 func TestADesktopReportsCrashReadsAsItCame(t *testing.T) {

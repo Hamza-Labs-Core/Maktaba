@@ -5,11 +5,15 @@ import SwiftUI
 /// Dashboards on the Remote (Epic 53 story 53.12 §4): Overview and Storage, read only, from
 /// the same call as the web's (`GET /api/admin/dashboards/{board}?range=`). One chart per
 /// metric, a line per label set; time runs left to right in Arabic too (as Arabic charts
-/// do), and each chart says its latest and highest value to VoiceOver.
+/// do), and each chart says its latest and highest value to VoiceOver. With several machines
+/// the Overview shows totals across them and the five most in need of attention, says how
+/// many of how many it shows, and offers each machine on its own.
 struct DashboardsView: View {
     @Environment(RemoteModel.self) private var model
     @State private var board = Board.overview
     @State private var range = BoardRange.day
+    @State private var machine = ""
+    @State private var machines: [String] = []
     @State private var doc: BoardDoc?
     @State private var problem: String?
 
@@ -30,9 +34,26 @@ struct DashboardsView: View {
                     Text("90 days").tag(BoardRange.quarter)
                 }
                 .accessibilityIdentifier("dash.range")
+                if board == .overview, machines.count > 1 {
+                    Picker("Machine", selection: $machine) {
+                        Text("All machines").tag("")
+                        ForEach(machines, id: \.self) { Text(verbatim: $0).tag($0) }
+                    }
+                    .accessibilityIdentifier("dash.machine")
+                }
             }
             if let problem {
                 Section { Label(problem, systemImage: "exclamationmark.triangle").foregroundStyle(.red) }
+            }
+            if let doc, board == .overview, doc.showsSomeMachines, let m = doc.machines {
+                Text("Showing \(m.shown.count) of \(m.total) machines, those most in need of attention first. Pick a machine to see its own.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("dash.machines.shown")
+            }
+            if let doc, doc.omitted > 0 {
+                Text("\(doc.omitted) more lines did not fit on this board.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("dash.omitted")
             }
             if let doc {
                 if doc.panels.allSatisfy({ $0.series.allSatisfy(\.points.isEmpty) }) {
@@ -53,13 +74,15 @@ struct DashboardsView: View {
         .overlay { if doc == nil, problem == nil { ProgressView() } }
         .navigationTitle("Dashboards")
         .refreshable { await load() }
-        .task(id: "\(board.rawValue)|\(range.rawValue)") { await load() }
+        .task(id: "\(board.rawValue)|\(range.rawValue)|\(machine)") { await load() }
         .toolbar { AccountMenu() }
     }
 
     private func load() async {
         do {
-            doc = try await model.client.board(board, range: range)
+            let d = try await model.client.board(board, range: range, machine: machine)
+            doc = d
+            if let all = d.machines?.all { machines = all }
             problem = nil
         } catch {
             if !(error is CancellationError) { problem = HomeFailure(error).message() }
@@ -113,6 +136,13 @@ enum DashWords {
     static func title(_ name: String) -> String {
         switch name {
         case "maktaba_component_up": String(localized: "Components up")
+        case "maktaba_component_down": String(localized: "Components down")
+        case "maktaba_machines_components_up": String(localized: "Components up, all machines")
+        case "maktaba_machines_components_down": String(localized: "Components down, all machines")
+        case "maktaba_machines_disk_free_min_bytes": String(localized: "Least disk free of any machine")
+        case "maktaba_machines_memory_free_min_bytes": String(localized: "Least memory free of any machine")
+        case "maktaba_machines_load1_max": String(localized: "Highest load average (1 min) of any machine")
+        case "maktaba_machines_restarts": String(localized: "Restarts per minute, all machines")
         case "maktaba_component_restarts_total": String(localized: "Restarts per minute")
         case "maktaba_errors_per_hour": String(localized: "Errors per hour")
         case "process_resident_memory_bytes": String(localized: "Memory of the API")

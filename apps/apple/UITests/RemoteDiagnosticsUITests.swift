@@ -126,6 +126,38 @@ final class RemoteDiagnosticsUITests: XCTestCase {
         shot("ar-dashboards")
     }
 
+    /// Story 53.12: with many machines the Overview says how many it shows, and the machine
+    /// picker asks the home for one machine's lines (`machine=`).
+    func testDashboardsOfManyMachines() throws {
+        launch()
+        try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        let now = Int(Date().timeIntervalSince1970)
+        let pts = (0..<24).map { "[\(now - (23 - $0) * 3600),\($0 % 3)]" }.joined(separator: ",")
+        let all = (0..<37).map { String(format: "\"n%02d\"", $0) }.joined(separator: ",")
+        home.stub("GET", "/api/admin/dashboards/overview", body: """
+        {"board":"overview","range":"24h","step":3600,
+         "machines":{"total":37,"shown":["n07","n33","n12","n41","n20"],"all":[\(all)]},
+         "series":[{"name":"maktaba_machines_components_down","kind":"gauge","points":[\(pts)]},
+          {"name":"maktaba_component_down","labels":"machine=n07","kind":"gauge","points":[\(pts)]}]}
+        """)
+        open("home.dashboards", homeTab: "Home")
+        let totals = element("dash.panel.maktaba_machines_components_down")
+        XCTAssertTrue(totals.waitForExistence(timeout: 15), "the totals across machines")
+        XCTAssertTrue(totals.label.contains("Components down, all machines"), "its words: \(totals.label)")
+        let shown = element("dash.machines.shown")
+        XCTAssertTrue(shown.waitForExistence(timeout: 5) && shown.label.contains("Showing 5 of 37 machines"), "how many it shows: \(shown.label)")
+        let picker = element("dash.machine")
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "the machine picker")
+        picker.tap()
+        let n07 = app.buttons["n07"].firstMatch
+        XCTAssertTrue(n07.waitForExistence(timeout: 5), "n07 in the picker")
+        n07.tap()
+        let asked = { self.home.requests.contains { $0.path == "/api/admin/dashboards/overview" && $0.value("machine") == "n07" } }
+        let end = Date().addingTimeInterval(10)
+        while !asked(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.2)) }
+        XCTAssertTrue(asked(), "the Overview of n07 asked of the home")
+    }
+
     /// The recovery screen (Epic 53 stories 53.04, 53.05): the supervisor's state from
     /// `/recovery/api/state`, a part restarted after its confirmation, the pass asked of the API.
     func testRecovery() throws {

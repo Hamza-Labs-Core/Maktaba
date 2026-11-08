@@ -14,6 +14,12 @@
 //
 //	maktaba-symbols upload -r8 android.player -version 0.3.102 mapping.txt
 //
+// A path that is an ELF file is an Android app's unstripped native library (lib*.so before
+// the release strips it): its table is keyed by the library's GNU build id, which the apps'
+// native crashes carry.
+//
+//	maktaba-symbols extract -o tables lib/arm64-v8a/libfoo.so
+//
 // The upload's token is MAKTABA_SYMBOLS_TOKEN (the cloud's MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE).
 // It runs where the dSYMs are; the cloud never sees the dSYM itself.
 package main
@@ -41,8 +47,8 @@ func main() {
 	}
 }
 
-const usage = "usage: maktaba-symbols extract [-o DIR] [-r8 APP -version V] X.dSYM|mapping.txt… | " +
-	"upload [-url URL] [-version V] [-r8 APP] X.dSYM|T.symbols|mapping.txt…"
+const usage = "usage: maktaba-symbols extract [-o DIR] [-r8 APP -version V] X.dSYM|mapping.txt|lib.so… | " +
+	"upload [-url URL] [-version V] [-r8 APP] X.dSYM|T.symbols|mapping.txt|lib.so…"
 
 func run(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 0 {
@@ -64,6 +70,10 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 			}
 			if t.Kind == symbols.KindR8 {
 				_, _ = fmt.Fprintf(out, "%s r8 %s %s %d classes → %s\n", t.DebugID, t.CodeFile, t.Release, len(t.Classes), p)
+				return nil
+			}
+			if t.Kind == symbols.KindELF {
+				_, _ = fmt.Fprintf(out, "%s %s %s build id %s %d functions → %s\n", t.DebugID, t.Arch, t.CodeFile, t.CodeID, len(t.Funcs), p)
 				return nil
 			}
 			_, _ = fmt.Fprintf(out, "%s %s %s %d functions → %s\n", t.DebugID, t.Arch, t.CodeFile, len(t.Funcs), p)
@@ -110,8 +120,8 @@ func run(ctx context.Context, args []string, out io.Writer) error {
 }
 
 // each extracts every path's tables and hands each, encoded, to do. A path ending in
-// .symbols is a table extract already wrote, handed on as it is; with r8 set, every other
-// path is that app's mapping of release version.
+// .symbols is a table extract already wrote, handed on as it is; an ELF file is a native
+// library; with r8 set, every other path is that app's mapping of release version.
 func each(paths []string, r8, version string, do func(*symbols.Table, []byte) error) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("%s", usage)
@@ -147,6 +157,20 @@ func each(paths []string, r8, version string, do func(*symbols.Table, []byte) er
 			t, err := symbols.Decode(b)
 			if err != nil {
 				return fmt.Errorf("%s: %w", p, err)
+			}
+			if err := do(t, b); err != nil {
+				return err
+			}
+			continue
+		}
+		if symbols.IsELF(p) {
+			t, err := symbols.ExtractELFPath(p)
+			if err != nil {
+				return fmt.Errorf("%s: %w", p, err)
+			}
+			b, err := t.Encode()
+			if err != nil {
+				return err
 			}
 			if err := do(t, b); err != nil {
 				return err

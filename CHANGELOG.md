@@ -14,6 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
+- **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
+  console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
+  files and lines with a table of the app's own unstripped native library, keyed by the
+  library's build ID (`maktaba-symbols extract|upload lib.so`). System libraries' frames stay as
+  they came; an own library without a table is named with its build ID; a crash kept with its
+  reason alone says it has no frames. Each tag's Play bundles run makes the tables from the
+  unstripped libraries and uploads them with the same `MAKTABA_SYMBOLS_TOKEN` secret (nothing
+  while it is unset; a failed upload keeps them as the run's artifact). The cloud rehearsal
+  checks a native crash arrives symbolicated.
 - **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
   operator console reads an Android report's obfuscated Kotlin frames back to their classes,
   methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads
@@ -2221,6 +2230,14 @@ build fails when the two differ.
   through pipes the server serves. A runner that cannot be sandboxed does not run, and its
   jobs run in the worker, as before. Media on a network share is never granted to a runner;
   jobs that need it run in the worker.
+
+- **The Overview dashboard keeps up with many machines (web, Apple and Android Remote).** Past a
+  few joined machines, a line per machine no longer fit a board's 50 lines, and machines were
+  left out without a word. The Overview now shows totals across the machines (components up
+  and down, the least disk and memory free, the highest load, restarts) and the five machines
+  most in need of attention, and says how many of how many it shows. A machine picker opens
+  any one machine on its own, with each of its components that was down or restarted.
+  `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
 
 - **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
   recovery screen no longer sends either to the web page. **Restore a backup** lists the home's

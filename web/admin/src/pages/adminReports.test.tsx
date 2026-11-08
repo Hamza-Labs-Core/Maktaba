@@ -268,6 +268,82 @@ describe("admin problem reports", () => {
     expect(screen.queryByTestId("crash-missing-mapping")).not.toBeInTheDocument();
   });
 
+  it("an Android native crash read with its libraries' tables, a missing library named with its build ID", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/reports/41": [
+        200,
+        {
+          ...REPORT,
+          app: "android.player",
+          body: {},
+          crashes: [
+            {
+              type: "SIGSEGV",
+              value: "SEGV_MAPERR",
+              symbols: "native",
+              frames: [
+                { raw: "libother.so + 0x10", in_app: true },
+                {
+                  raw: "libmaktaba.so + 0x684",
+                  in_app: true,
+                  symbol: { function: "mpv_render", file: "/src/native.c", line: 17 },
+                },
+                { raw: "__libc_init+0x60", in_app: false },
+              ],
+              missing: [
+                {
+                  code_file: "libother.so",
+                  debug_id: "0102030405060708090a0b0c0d0e0f10",
+                  kind: "elf",
+                  code_id: "0102030405060708090a0b0c0d0e0f10aabbccdd",
+                },
+                { code_file: "libnoid.so", debug_id: "", kind: "elf" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    renderAt("/reports/41");
+    expect(await screen.findByTestId("crash-symbols")).toHaveTextContent(
+      "Read with the tables of the app's own native libraries: system libraries' frames are as they came."
+    );
+    const frames = within(screen.getByTestId("crash-frames")).getAllByRole("listitem");
+    expect(frames).toHaveLength(3);
+    expect(frames[1]).toHaveTextContent("mpv_render (native.c:17) · libmaktaba.so + 0x684");
+    expect(frames[2]).toHaveTextContent("__libc_init+0x60");
+    expect(screen.getByTestId("crash-missing-native")).toHaveTextContent(
+      "No native symbols for libother.so (build ID 0102030405060708090a0b0c0d0e0f10aabbccdd), libnoid.so (no build ID)."
+    );
+    // not the dSYM or mapping notices
+    expect(screen.queryByTestId("crash-missing")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("crash-missing-mapping")).not.toBeInTheDocument();
+  });
+
+  it("a native crash kept with its reason alone says it has no frames", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/reports/41": [
+        200,
+        {
+          ...REPORT,
+          app: "android.tv",
+          body: {},
+          crashes: [{ type: "native", value: "crash (signal 11)", frames: [] }],
+        },
+      ],
+    });
+    renderAt("/reports/41");
+    expect(await screen.findByTestId("crash-no-frames")).toHaveTextContent(
+      "Only the reason was kept, with no frames: a native crash before Android 12, or a tombstone that could not be read."
+    );
+    expect(screen.getByRole("heading", { name: "native · crash (signal 11)" })).toBeInTheDocument();
+    expect(screen.queryByTestId("crash-frames")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("crash-symbols")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("crash-missing-mapping")).not.toBeInTheDocument();
+  });
+
   it("a report without crashes shows no crash section", async () => {
     stubFetch({
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
