@@ -117,3 +117,45 @@ func TestRecordRestoringMarkAndUnmark(t *testing.T) {
 		t.Fatalf("no record: %v %v", ok, err)
 	}
 }
+
+// A rollback whose Down scripts undid the release's migrations leaves the record the
+// release before's own, migrated, with nothing to put back and nothing kept; a record that
+// is not the failed release's, migrated, stays as it is.
+func TestMarkRecordDown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database.json")
+	write := func(s string) {
+		if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"version":"v0.3.90","state":"migrated","from":"v0.3.82","release":"v0.3.90",` +
+		`"dump":"/b/pre-v0.3.82-to-v0.3.90.dump","kept_for":"v0.3.80","at":"2026-11-07T03:51:00Z"}`)
+	ok, err := MarkRecordDown(path, "0.3.90", "0.3.82", "watch_timeout")
+	if err != nil || !ok {
+		t.Fatalf("ok %v, err %v", ok, err)
+	}
+	b, _ := os.ReadFile(path)
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["version"] != "v0.3.82" || rec["state"] != "migrated" || rec["down_from"] != "v0.3.90" ||
+		rec["down_reason"] != "watch_timeout" {
+		t.Fatalf("record: %s", b)
+	}
+	for _, k := range []string{"release", "kept_for"} {
+		if _, there := rec[k]; there {
+			t.Fatalf("%s left in the record: %s", k, b)
+		}
+	}
+	if !RecordMigrated(path, "0.3.82") {
+		t.Fatal("the release before's record is not migrated")
+	}
+	if ok, _ := MarkRecordDown(path, "0.3.90", "0.3.82", "again"); ok {
+		t.Fatal("a record that is no longer the failed release's changed")
+	}
+	write(`{"version":"v0.3.90","state":"restoring"}`)
+	if ok, _ := MarkRecordDown(path, "0.3.90", "0.3.82", "x"); ok {
+		t.Fatal("a restoring record changed")
+	}
+}
