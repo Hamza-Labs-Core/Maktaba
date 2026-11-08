@@ -20,7 +20,7 @@ from maktaba_pipeline.plugins import firstparty, native
 
 pytestmark = pytest.mark.asyncio
 
-STAGE = "plex_groups"  # tv.maktaba.plex's, in the on-demand service group (wave 8)
+STAGE = "plex_livetv"  # tv.maktaba.plex's Live TV stage, in the on-demand service group
 
 
 class _Res:
