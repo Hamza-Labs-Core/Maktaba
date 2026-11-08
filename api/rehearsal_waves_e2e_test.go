@@ -23,7 +23,9 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,21 +39,58 @@ import (
 
 // rehearsalWave is one wave of Phase 4: its scenario, its story and the stages the
 // scenario queues (those of its stages a home without a GPU, a model or a network
-// service claims).
+// service claims), and what the home needs before they claim (setup).
 type rehearsalWave struct {
 	id, story string
 	stages    []string
+	setup     func(r *rehearsal, home *appMachine, db *sql.DB)
+}
+
+// plexOn turns the Plex extension on as an owner does: Settings' PUT
+// /api/extensions/plex with enabled and its URL and token, which also sets the ext.plex
+// component's desired state (story 51.07). Its stages claim only then. Their work is a
+// sleep here, so the address answers nothing (port 9, discard) and the token is a
+// placeholder.
+func plexOn(r *rehearsal, home *appMachine, db *sql.DB) {
+	t := r.t
+	t.Helper()
+	admin := home.signIn()
+	code, body := admin.adminJSON("PUT", "/api/extensions/plex", map[string]any{"enabled": true,
+		"settings": map[string]any{"url": "http://127.0.0.1:9", "token": "rehearsal-not-a-token"}})
+	if code != http.StatusOK {
+		t.Fatalf("turn the Plex extension on: %d %s", code, body)
+	}
+	waitStagesEnabled(t, db, []string{"plex_groups"}, 3*time.Minute)
+	r.logf("the Plex extension is on; plex_groups claims")
+}
+
+// waitStagesEnabled waits until the stages' rows say enabled (the worker's graph sync
+// writes an extension stage's row and enables it once the extension is on).
+func waitStagesEnabled(t *testing.T, db *sql.DB, stages []string, within time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for {
+		var n int
+		_ = db.QueryRow(`SELECT count(*) FROM job_stages WHERE stage = ANY($1) AND enabled`, pq.Array(stages)).Scan(&n)
+		if n == len(stages) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%v not enabled within %s", stages, within)
+		}
+		time.Sleep(2 * time.Second)
+	}
 }
 
 var rehearsalWaves = map[string]rehearsalWave{
-	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}},
-	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}},
-	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}},
-	"16.4": {"16.4", "54.31", []string{"detect", "tag"}},
-	"16.5": {"16.5", "54.32", []string{"dedup_scan"}},
-	"16.6": {"16.6", "54.33", []string{"exact_dates"}},
-	"16.8": {"16.8", "54.35", []string{"plex_groups"}},
-	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}},
+	"16.1": {"16.1", "54.28", []string{"promo_links", "clip_groups", "topic_collections", "rate_style"}, nil},
+	"16.2": {"16.2", "54.29", []string{"thumb_small", "chapter_thumbs", "subtitle_gen"}, nil},
+	"16.3": {"16.3", "54.30", []string{"topic_assign", "chapter_infer"}, nil},
+	"16.4": {"16.4", "54.31", []string{"detect", "tag"}, nil},
+	"16.5": {"16.5", "54.32", []string{"dedup_scan"}, nil},
+	"16.6": {"16.6", "54.33", []string{"exact_dates"}, nil},
+	"16.8": {"16.8", "54.35", []string{"plex_groups"}, plexOn},
+	"16.9": {"16.9", "54.36", []string{"link", "fp_gate"}, nil},
 }
 
 // waveSleep is how long each job of a wave stage sleeps: longer than the claim loop's
@@ -155,9 +194,19 @@ func (r *rehearsal) queueWave(db *sql.DB, stages []string, n int) int64 {
 	_ = db.QueryRow(`SELECT COALESCE(max(id), 0) FROM processing_jobs`).Scan(&last)
 	queued := 0
 	for _, st := range stages {
+		// an extension's stage gets its row from the worker's graph sync, not a migration
+		// (plex_groups): it may come a little after the home serves
 		var kinds []string
-		if err := db.QueryRow(`SELECT subject_kinds FROM job_stages WHERE stage = $1`, st).Scan(pq.Array(&kinds)); err != nil {
-			t.Fatalf("%s's row: %v", st, err)
+		deadline := time.Now().Add(3 * time.Minute)
+		for {
+			err := db.QueryRow(`SELECT subject_kinds FROM job_stages WHERE stage = $1`, st).Scan(pq.Array(&kinds))
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, sql.ErrNoRows) || time.Now().After(deadline) {
+				t.Fatalf("%s's row: %v", st, err)
+			}
+			time.Sleep(2 * time.Second)
 		}
 		var kind string
 		var ids []string
@@ -367,6 +416,9 @@ func (r *rehearsal) waveScenario(id string) {
 	home, _ := r.homeOnPrev(profile("small"))
 	db := home.superDB("maktaba")
 	defer db.Close()
+	if w.setup != nil {
+		w.setup(r, home, db)
+	}
 	const per = 6
 
 	// 1. jobs in flight on the previous release; the update to the release that fails its
