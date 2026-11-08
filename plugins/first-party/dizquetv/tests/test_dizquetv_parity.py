@@ -100,7 +100,9 @@ class _Server:
     def writes(self) -> list[tuple[str, str, Any]]:
         """What dizqueTV was told to change (the time-slot tool computes, it stores nothing:
         its input is the plugin's projections on one side, the bodies on the other)."""
-        return [(m, p, b) for m, p, b in self.seen if m not in ("GET", "HEAD") and "time-slots" not in p]
+        return [
+            (m, p, b) for m, p, b in self.seen if m not in ("GET", "HEAD") and "time-slots" not in p
+        ]
 
     def close(self) -> None:
         self.httpd.shutdown()
@@ -222,7 +224,8 @@ def seeder() -> Any:
                 rk = str(100 + i)
                 v = await make_video(db, lib, path=f"/lib/e{i}.mp4", title=f"الحلقة {i}")
                 await add_episode(db, series, v, episode=i)
-                await put_link(db, Link("plex_item", "video", str(v), rk, f"الحلقة {i}", "1:x", False))
+                link = Link("plex_item", "video", str(v), rk, f"الحلقة {i}", "1:x", False)
+                await put_link(db, link)
                 det = _detail(rk, f"الحلقة {i}", f"/volume1/share/e{i}.mp4", 1_500_000)
                 await db.execute(
                     "INSERT INTO plex_items (server, rating_key, section_key, section_title,"
@@ -409,8 +412,10 @@ async def test_the_plex_token_reaches_no_answer_the_plugin_gets(
             assert "192.168.1.4" not in text, f"a {where} names Plex's address: {text[:400]}"
     # the stages read everything that holds the token: the channel the user made, its filler
     # list, the Plex servers, the programmes the door built
-    for want in ("/maktaba/channel/9 -> 200", "/maktaba/filler/mine -> 200", "/maktaba/plex-servers -> 200"):
-        assert any(x.startswith("dizquetv ") and want in x for x in seen.targets), f"no answer for {want}"
+    wants = ("/maktaba/channel/9", "/maktaba/filler/mine", "/maktaba/plex-servers")
+    for want in (f"{w} -> 200" for w in wants):
+        got = any(x.startswith("dizquetv ") and want in x for x in seen.targets)
+        assert got, f"no answer for {want}"
     assert seen.settings, "no job was handed its settings"
     # dizqueTV holds the token: it was there to leak
     assert TOKEN in json.dumps(b_srv.fake.shows) and DZ_TOKEN in json.dumps(b_srv.fake.channels)

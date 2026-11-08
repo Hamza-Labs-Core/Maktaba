@@ -117,9 +117,7 @@ class DizqueTV:
 
     # ------------------------------------------------------------------ programmes
 
-    def programme(
-        self, meta: Mapping[str, Any], server: str, plex: Any
-    ) -> dict[str, Any] | None:
+    def programme(self, meta: Mapping[str, Any], server: str, plex: Any) -> dict[str, Any] | None:
         """The programme a show or filler list is written with: built here from the Plex
         record, with the Plex client's address and token (the worker's own client)."""
         return program_from_plex(meta, server, plex.uri, plex.token)
@@ -145,7 +143,10 @@ class DizqueTV:
 DOOR_BASE = "service://dizquetv"
 
 #: the raw reads the door answers with a token-free projection instead (issue #827)
-_DOOR_READ = re.compile(r"^/api/(channels|shows|fillers|plex-servers|(show|filler)/[^/]+|channel/(programless/)?[0-9]+)$")
+_DOOR_READ = re.compile(
+    r"^/api/(channels|shows|fillers|plex-servers|(show|filler)/[^/]+"
+    r"|channel/(programless/)?[0-9]+)$"
+)
 #: the writes whose programmes the door builds or fills on the home
 _DOOR_WRITE = re.compile(r"^/api/((show|filler)(/[^/]+)?|channel)$")
 
@@ -175,9 +176,7 @@ class DoorDizqueTV(DizqueTV):
             path = "/maktaba/" + path.removeprefix("/api/")
         return super().call(method, path, body)
 
-    def programme(
-        self, meta: Mapping[str, Any], server: str, plex: Any
-    ) -> dict[str, Any] | None:
+    def programme(self, meta: Mapping[str, Any], server: str, plex: Any) -> dict[str, Any] | None:
         """The token-free record: the door builds the programme from it on the home."""
         return program_spec(meta)
 

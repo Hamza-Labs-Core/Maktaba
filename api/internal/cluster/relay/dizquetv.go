@@ -509,7 +509,7 @@ func decodeObject(body []byte) (map[string]any, *Error) {
 // mediaPath: an absolute path on a media server's disk (POSIX, a drive or a share), as Plex
 // reports a part's file; never a URL (dizqueTV's ffmpeg would fetch it), never a climb.
 func mediaPath(s string) bool {
-	if !(strings.HasPrefix(s, "/") || winDriveRe.MatchString(s) || strings.HasPrefix(s, `\\`)) {
+	if !strings.HasPrefix(s, "/") && !winDriveRe.MatchString(s) && !strings.HasPrefix(s, `\\`) {
 		return false
 	}
 	if strings.Contains(s, "://") || strings.ContainsRune(s, '\x00') {
@@ -523,9 +523,9 @@ func mediaPath(s string) bool {
 	return true
 }
 
-func plainText(v any, max int) (string, bool) {
+func plainText(v any, limit int) (string, bool) {
 	s, ok := v.(string)
-	if !ok || len(s) > max || !utf8.ValidString(s) {
+	if !ok || len(s) > limit || !utf8.ValidString(s) {
 		return "", false
 	}
 	for _, r := range s {
@@ -631,11 +631,11 @@ func (c *dzCall) build(spec map[string]any, server, plexBase string, i int) (map
 			p[k] = nil
 			continue
 		}
-		max := 64 << 10
+		limit := 64 << 10
 		if k == "date" || k == "durationStr" || k == "rating" {
-			max = 64
+			limit = 64
 		}
-		s, ok := plainText(v, max)
+		s, ok := plainText(v, limit)
 		if !ok {
 			return nil, bad("programme %d: %s is not text", i, k)
 		}

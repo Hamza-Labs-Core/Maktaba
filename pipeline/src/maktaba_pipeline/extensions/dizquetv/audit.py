@@ -119,7 +119,8 @@ async def _seasons_of(db: Any, vids: list[str]) -> list[Any]:
     if is_pg(db):
         return list(
             await db.fetch(
-                "SELECT e.video_id AS vid, ss.id AS sid, ss.library_id AS lib FROM series_episodes e"
+                "SELECT e.video_id AS vid, ss.id AS sid, ss.library_id AS lib"
+                " FROM series_episodes e"
                 " JOIN series_seasons ss ON ss.series_id = e.series_id"
                 "  AND ss.season = COALESCE(e.season_override, e.season)"
                 " WHERE ss.retired_at IS NULL AND e.video_id = ANY($1::uuid[])",
@@ -152,7 +153,8 @@ async def _video_tags(db: Any, vids: list[str]) -> list[Any]:
     if is_pg(db):
         return list(
             await db.fetch(
-                "SELECT video_id, tag, score FROM video_topic_tags WHERE video_id = ANY($1::uuid[])",
+                "SELECT video_id, tag, score FROM video_topic_tags"
+                " WHERE video_id = ANY($1::uuid[])",
                 vids,
             )
         )
