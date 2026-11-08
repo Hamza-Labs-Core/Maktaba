@@ -113,10 +113,12 @@ func (f FailureFilter) validate() *httperror.Error {
 
 // openItemsCTE: $1 is the stage+signature pairs (stage || chr(31) ||
 // signature) that make their stage red right now.
-const openItemsCTE = `
+var openItemsCTE = `
 WITH f AS (
     SELECT DISTINCT subject_kind, subject_id, stage FROM processing_jobs
-     WHERE state = 'failed' OR (state = 'pending' AND (parked_on IS NOT NULL OR error IS NOT NULL))
+     WHERE (state = 'failed' OR (state = 'pending' AND (parked_on IS NOT NULL OR error IS NOT NULL)))
+       -- a stage a release removed keeps its rows until the cleanup migration
+       AND ` + retiredStagesOut + `
 ), latest AS (
     -- each subject's newest row: one backward step of the subject history index
     SELECT l.*
@@ -228,7 +230,7 @@ SELECT i.id, i.stage, i.subject_kind, i.subject_id::text, ` + expr + `, i.path, 
 // failureFacetsSQL counts the open items by stage, class, signature,
 // library and status, over every filter but status (ignored items only
 // count under status).
-const failureFacetsSQL = openItemsCTE + `
+var failureFacetsSQL = openItemsCTE + `
 , filtered AS (
     SELECT i.* FROM items i
      WHERE ($2::text = '' OR i.stage = $2::text)

@@ -6,8 +6,6 @@ Button: بيت الحكمة في بغداد, 51:00
 Button: Manuscripts of Timbuktu, 49:00
 Button: رحلة إلى مكة, 55:00
 Button: The Libraries of Cordoba, 58:00
-ScrollBar: 1
-ValueIndicator: 1
 Heading: شوهد مؤخرًا
 Button: رحلة إلى مكة, 55:00 | شوهد 45٪
 Button: The Libraries of Cordoba, 58:00 | شوهد

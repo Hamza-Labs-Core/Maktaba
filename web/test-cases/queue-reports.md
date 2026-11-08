@@ -3,7 +3,7 @@
 - **Route:** `/queue/reports`, with optional `?open=<file name>` (e.g. `?open=channel-plan.html`, `?open=lib-1.html`). Linked from the overview header ("Reports"), the item page ("Review page") and the preview panel ("Open the preview").
 - **Component:** `src/pages/queue/Reports.tsx`; children: `src/components/queue/PlanPreviewPanel.tsx`, `useIsAdmin.ts`, `format.ts`.
 - **API calls:** (`src/lib/reportsApi.ts`)
-  - `GET /api/reports` → `{ reports: Report[] }` (`Report = { name, kind: "review"|"plan"|"preview"|"audit"|"other", title, library_id, size, updated_at }`) via `reportsApi.list()`.
+  - `GET /api/reports` → `{ reports: Report[] }` (`Report = { name, kind: "review"|"plan"|"preview"|"other", title, library_id, size, updated_at }`) via `reportsApi.list()`.
   - The page itself: `<iframe src={reportsApi.pageUrl(name, version)}>` → `GET /api/reports/{encodeURIComponent(name)}[?v=N]`, `sandbox="allow-same-origin"`, `referrerPolicy="no-referrer"`; plus an "Open in a new tab" link to the same URL.
   - `GET /api/reports/channel-plan/preview` → `PlanPreviewStatus` `{ running, kind, phase, error?, started_at, finished_at, summary, log: string[], ready: { preview, plan } }`; polled every 2 s while `running`.
   - `POST /api/reports/channel-plan/preview` `{ kind: "preview" | "stored" }` → `{ started, kind }`; 409 when one is already running.
@@ -45,10 +45,10 @@
 - **Priority:** P1
 - **Category:** Happy path
 - **Covered by existing test?** Yes — `Reports.test.tsx` "groups the reports by kind, plan first, and names a review page after its library"
-- **Preconditions / data:** `GET /api/reports` → `{ reports: [plan "channel-plan.html", audit "channel-audit.html", review "<lib>.html" title "قناة الاختبار", preview "channel-plan-preview.html"] }`; preview status idle (`running: false`, `log: []`, `ready: { preview: true, plan: true }`).
+- **Preconditions / data:** `GET /api/reports` → `{ reports: [plan "channel-plan.html", other "notes.html", review "<lib>.html" title "قناة الاختبار", preview "channel-plan-preview.html"] }`; preview status idle (`running: false`, `log: []`, `ready: { preview: true, plan: true }`).
 - **Steps:**
   1. Open `/queue/reports`.
-- **Expected:** `h1` "Reports"; link "Back to the queues" → `/queue`; nav "Report pages" with headings in order "Channel plan", "Plan preview", "Channel audit", "Library review pages (1)"; each item a button with title and age; right side "Pick a report to read it here.".
+- **Expected:** `h1` "Reports"; link "Back to the queues" → `/queue`; nav "Report pages" with headings in order "Channel plan", "Plan preview", "Library review pages (1)", "Other reports"; each item a button with title and age; right side "Pick a report to read it here.".
 
 ### QRP-02 — Opens a report in a sandboxed frame
 
@@ -57,8 +57,8 @@
 - **Covered by existing test?** Yes — `Reports.test.tsx` "opens a report in a frame that runs no script…"
 - **Preconditions / data:** as QRP-01.
 - **Steps:**
-  1. Click "Channel audit".
-- **Expected:** URL becomes `/queue/reports?open=channel-audit.html`; the button has `aria-current="page"`; `iframe` titled "Channel audit" with `sandbox="allow-same-origin"` (no `allow-scripts`), `referrerpolicy="no-referrer"`, `src="/api/reports/channel-audit.html"`; "Open in a new tab" link with `target="_blank"` and `rel="noopener noreferrer"`; "Updated <time>".
+  1. Click "notes.html".
+- **Expected:** URL becomes `/queue/reports?open=notes.html`; the button has `aria-current="page"`; `iframe` titled "notes.html" with `sandbox="allow-same-origin"` (no `allow-scripts`), `referrerpolicy="no-referrer"`, `src="/api/reports/notes.html"`; "Open in a new tab" link with `target="_blank"` and `rel="noopener noreferrer"`; "Updated <time>".
 
 ### QRP-03 — Deep link `?open=` opens that report
 
@@ -218,7 +218,7 @@
 - **Covered by existing test?** Yes (`Reports.cases.test.tsx`)
 - **Preconditions / data:** app routes; start at `/queue`, click "Reports".
 - **Steps:**
-  1. Pick "Channel plan", then "Channel audit".
+  1. Pick "Channel plan", then "notes.html".
   2. Press Back.
   3. Click "Open the preview" (a `Link`), then Back.
   4. From an item page click "Review page", then Back.

@@ -269,6 +269,7 @@
     <string name="status_search">Search is unavailable right now.</string>
     <string name="status_processing">Processing is paused: new videos won\'t be added for now.</string>
     <string name="status_logs">Log search is restarting. Recent logs can still be read from the recovery page.</string>
+    <string name="status_plugin_runners">A plugin runner failed: its stages run in the worker, outside their sandbox.</string>
     <string name="status_details">Details</string>
     <string name="status_more">%1$d more</string>
     <string name="status_close">Close</string>

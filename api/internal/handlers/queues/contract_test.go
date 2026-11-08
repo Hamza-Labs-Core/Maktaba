@@ -87,7 +87,7 @@ func TestExtensionJSON_MatchesQueueAPI(t *testing.T) {
 func TestTimelineChanges(t *testing.T) {
 	timelineCols := append(jobRefCols(), "reasons", "dur_ms", "summary")
 	row := func(id int64, summary any) []driver.Value {
-		return append(jobRefRow(id, "plex_collection", "done"), "[]", 10.0, summary)
+		return append(jobRefRow(id, "write_channels", "done"), "[]", 10.0, summary)
 	}
 	f := newFixture(
 		stagesRule(),

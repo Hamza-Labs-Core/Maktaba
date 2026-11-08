@@ -60,6 +60,9 @@ type Bundle struct {
 	Nightly     *NightlyPolicy
 	Room        *RoomPolicy
 	LastNightly string
+	// UpdateKeep is how many pre-update dumps Tidy keeps when no update recorded its
+	// rules.updates.backups_keep ([backups] update_keep, else [postgres] update_dumps).
+	UpdateKeep int
 }
 
 // Resolve reports whether this install runs the bundled Postgres, and where.
@@ -106,6 +109,7 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 		Room: &RoomPolicy{ReserveShare: bk.ReserveShare(), ReserveMin: bk.ReserveMinBytes(),
 			MaxShare: bk.MaxShare()},
 		LastNightly: filepath.Join(root, "state", "last-nightly-backup"),
+		UpdateKeep:  UpdateKeepOf(cfg),
 		Port:        port,
 		LAN:         !strings.EqualFold(strings.TrimSpace(cfg.Postgres.Listen), "loopback"),
 		TLS:         !strings.EqualFold(strings.TrimSpace(cfg.Postgres.TLS), "off"),
@@ -543,4 +547,13 @@ func readPassword(path string) (string, error) {
 		return "", fmt.Errorf("%s is empty", path)
 	}
 	return pw, nil
+}
+
+// UpdateKeepOf is how many pre-update dumps stay: [backups] update_keep, else [postgres]
+// update_dumps (the server's own rule for its pre-update dumps).
+func UpdateKeepOf(cfg config.Config) int {
+	if cfg.Backups.UpdateKeep > 0 {
+		return cfg.Backups.UpdateKeep
+	}
+	return cfg.Postgres.KeepUpdateDumps()
 }

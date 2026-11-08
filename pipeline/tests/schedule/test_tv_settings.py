@@ -7,8 +7,6 @@ import pytest
 
 from maktaba_pipeline import rules, settings
 from maktaba_pipeline.schedule.tv_settings import (
-    ChannelAuditConfig,
-    DizqueExportConfig,
     ExactDatesConfig,
     MaktabaTvConfig,
     PlexLiveConfig,
@@ -17,9 +15,7 @@ from maktaba_pipeline.schedule.tv_settings import (
 )
 
 SECTIONS = {
-    "dizquetv": DizqueExportConfig,
     "exactdates": ExactDatesConfig,
-    "audit": ChannelAuditConfig,
     "plexlive": PlexLiveConfig,
     "repair": RepairConfig,
     "tv": MaktabaTvConfig,
@@ -27,17 +23,13 @@ SECTIONS = {
 
 
 def test_the_defaults_are_the_tools_behaviour_without_flags() -> None:
-    d = DizqueExportConfig()
-    assert not (d.prune or d.clear_channels or d.replace_existing or d.ramadan)
-    assert d.keep_airing and d.only_channels == ""  # the exporter always kept what airs
     e = ExactDatesConfig()
     assert (e.enabled, e.scope, e.delay_s, e.lang) == (False, "series", 3.0, "ar")
     r = RepairConfig()
     assert (r.enabled, r.max_height, r.h264_first, r.keep_broken_copy) == (False, 1080, True, True)
-    assert ChannelAuditConfig().window_days == 28  # audit_channels.WINDOW_DAYS
 
 
-def test_maktaba_tv_defaults_are_what_the_dizquetv_channels_do() -> None:
+def test_maktaba_tv_defaults() -> None:
     t = MaktabaTvConfig()
     assert t.max_filler_per_gap == 0 and t.ramadan_grids and t.hijri_adjust_days == 0
     assert t.live == () and t.loudnorm and t.loudnorm_target_lufs == -16.0

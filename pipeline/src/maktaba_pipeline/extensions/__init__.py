@@ -21,7 +21,6 @@ ENTRY_POINT_GROUP = "maktaba.extensions"
 #: ``module:attribute`` of each built-in extension instance.
 BUILTIN: tuple[str, ...] = (
     "maktaba_pipeline.extensions.plex:extension",
-    "maktaba_pipeline.extensions.dizquetv:extension",
     "maktaba_pipeline.extensions.cloudflare_stream:extension",
 )
 

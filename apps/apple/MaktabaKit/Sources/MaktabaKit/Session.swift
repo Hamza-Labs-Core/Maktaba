@@ -47,6 +47,21 @@ public final class TokenStore: @unchecked Sendable {
 
     public var access: String? { lock.withLock { read("access") } }
     public var refresh: String? { lock.withLock { read("refresh") } }
+    /// The recovery pass (Epic 53 story 53.04): the API gives an admin's app one while it is
+    /// up, and the Remote sends it to the recovery console, which works with the API down.
+    public var recoveryPass: String? { lock.withLock { read("recovery") } }
+
+    func saveRecoveryPass(_ pass: String?) {
+        lock.withLock {
+            if let pass {
+                write("recovery", pass)
+            } else {
+                primary.delete(account("recovery"))
+                legacy?.delete(account("recovery"))
+                TokenCache.set(cacheKey("recovery"), nil)
+            }
+        }
+    }
 
     func save(_ t: AuthTokens) {
         lock.withLock {
@@ -57,7 +72,7 @@ public final class TokenStore: @unchecked Sendable {
 
     public func clear() {
         lock.withLock {
-            for kind in ["access", "refresh"] {
+            for kind in ["access", "refresh", "recovery"] {
                 primary.delete(account(kind))
                 legacy?.delete(account(kind))
                 TokenCache.set(cacheKey(kind), nil)

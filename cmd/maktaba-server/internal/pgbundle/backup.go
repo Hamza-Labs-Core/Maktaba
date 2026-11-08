@@ -75,7 +75,20 @@ func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
 		return "", err
 	}
 	b.recordNightly(now)
-	return path, b.prune()
+	return path, b.Tidy()
+}
+
+// Tidy keeps the backups folder to its rules: the newest nightly dumps ([backups] keep),
+// the newest pre-update dumps (UpdateKeep, or what the last update recorded), dumps of
+// failed updates and replaced databases by count and age, and no leftovers of a dump or
+// rehearsal cut short (PruneBackups). The backups loop runs it at every check, scheduled
+// dumps on or off.
+func (b Bundle) Tidy() error {
+	err := b.prune()
+	if perr := PruneBackups(b.Backups, "", BackupsKeep(b.Backups, b.UpdateKeep)); perr != nil && !os.IsNotExist(perr) && err == nil {
+		err = perr
+	}
+	return err
 }
 
 // recordNightly keeps when the last scheduled dump was taken (LastNightly), apart
@@ -211,17 +224,19 @@ func (b Bundle) RunBackups(ctx context.Context, interval time.Duration, log io.W
 // is never cut by the component's stop; the loop returns once it ends.
 func (b Bundle) RunBackupsLoop(loop, work context.Context, interval time.Duration, log io.Writer) {
 	p := b.nightly()
+	due := func() bool { return dueEvery(time.Now(), b.lastBackup(), p) }
 	if p.Off {
 		fmt.Fprintln(log, "[postgres] the scheduled backups are off ([backups] nightly = \"off\"): no dump is taken "+
-			"unless asked")
-		return
+			"unless asked; the old ones are still pruned")
+		due = func() bool { return false }
 	}
-	runBackups(loop, work, interval, log, func() bool { return dueEvery(time.Now(), b.lastBackup(), p) }, b.Backup)
+	runBackups(loop, work, interval, log, due, b.Backup, b.Tidy)
 }
 
-// runBackups is RunBackupsLoop's loop: dump when due says so, at every tick of interval.
+// runBackups is RunBackupsLoop's loop: at every tick of interval, dump when due says so
+// (a dump tidies after itself), else tidy.
 func runBackups(loop, work context.Context, interval time.Duration, log io.Writer, due func() bool,
-	dump func(ctx context.Context, now time.Time) (string, error)) {
+	dump func(ctx context.Context, now time.Time) (string, error), tidy func() error) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
@@ -230,7 +245,14 @@ func runBackups(loop, work context.Context, interval time.Duration, log io.Write
 			return
 		case <-t.C:
 		}
-		if loop.Err() != nil || !due() {
+		if loop.Err() != nil {
+			continue
+		}
+		if !due() {
+			// the dumps a rule no longer keeps go without waiting for the next dump or update
+			if err := tidy(); err != nil {
+				fmt.Fprintf(log, "[postgres] pruning old backups failed (trying again later): %v\n", err)
+			}
 			continue
 		}
 		if path, err := dump(work, time.Now()); err != nil {

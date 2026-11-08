@@ -17,8 +17,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -93,6 +95,9 @@ type updates struct {
 	sup   *supervisor.Supervisor
 	lay   *layout.Layout
 	armed atomic.Bool
+	// api is the api's command (its binary, environment and folder run the migrations: a
+	// rollback's Down scripts); nil before the processes are built, or on a node
+	api *exec.Cmd
 }
 
 // pythonStopWait is how long stopPython waits for the pipeline's processes to be gone.
@@ -460,6 +465,9 @@ func (r recordFile) Migrated(version string) bool { return layout.RecordMigrated
 func (r recordFile) NoteNext(running, next, dump string) error {
 	return layout.NoteRecordNext(string(r), running, next, dump, time.Now())
 }
+func (r recordFile) MarkDown(version, from, reason string) (bool, error) {
+	return layout.MarkRecordDown(string(r), version, from, reason)
+}
 func (r recordFile) MarkKept(version, from, reason string) (bool, error) {
 	return layout.MarkRecordKept(string(r), version, from, reason)
 }
@@ -508,6 +516,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
 		m.RestoreBack = u.restoreBack(cfg, releaseDir, pg)
+		m.MigrateDown = u.migrateDown
 		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
 		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
@@ -637,6 +646,64 @@ func (u *updates) stopDatabaseRoles(ctx context.Context) error {
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+}
+
+// setAPI keeps the api's command of procs (the rollback's Down scripts run with it).
+func (u *updates) setAPI(procs []supervisor.Process) {
+	for _, p := range procs {
+		if p.Role == supervisor.RoleAPI && p.Cmd != nil {
+			u.mu.Lock()
+			u.api = p.Cmd
+			u.mu.Unlock()
+		}
+	}
+}
+
+// migrateDown runs this release's Down scripts back to schema (updater.Machine.MigrateDown):
+// the api, the pipeline and the streaming role stop first (their writes, and the locks the
+// ALTERs wait for), then `maktaba-api migrate down-to schema` runs with this release's
+// migrations, the ones that made the schema.
+func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema int64) error {
+	u.mu.Lock()
+	api := u.api
+	u.mu.Unlock()
+	if api == nil {
+		return errors.New("no api command to run the migrations with")
+	}
+	if err := u.stopDatabaseRoles(ctx); err != nil {
+		return err
+	}
+	return runMigrateDownTo(ctx, api, schema, os.Stderr)
+}
+
+// runMigrateDownTo is `maktaba-api migrate down-to schema` with the api's binary,
+// environment and folder (tests replace it).
+var runMigrateDownTo = func(ctx context.Context, api *exec.Cmd, schema int64, log io.Writer) error {
+	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout,
+		"down-to", strconv.FormatInt(schema, 10))
+	cmd.Env, cmd.Dir = withoutEnv(api.Env, "MAKTABA_DISABLE_DOWN"), api.Dir
+	tail := &tailWriter{max: 4 << 10}
+	cmd.Stdout = io.MultiWriter(log, tail)
+	cmd.Stderr = cmd.Stdout
+	if err := cmd.Run(); err != nil {
+		if msg := tail.lastLines(3); msg != "" {
+			return errors.New(msg)
+		}
+		return err
+	}
+	return nil
+}
+
+// withoutEnv is env without key (a rollback's Down scripts are this release's own
+// decision, not an operator's guard against a down by hand).
+func withoutEnv(env []string, key string) []string {
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if !strings.HasPrefix(e, key+"=") {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (u *updates) setSupervisor(sup *supervisor.Supervisor) {

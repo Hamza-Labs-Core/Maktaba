@@ -243,3 +243,74 @@ def test_main(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert (tmp_path / "out" / "whatsnew-ar").exists()
     assert pr.main(["package", "nope"]) == 1
     assert pr.main([]) == 2
+
+
+# Epic 53 story 53.16: each app's R8 mapping goes to Maktaba Cloud under the app a report names
+# (android.player, android.remote, android.tv) and the release's versionName, with the
+# MAKTABA_SYMBOLS_TOKEN secret. Without it, one line and nothing else; a failed upload warns.
+def _bundle_steps() -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = _play_bundles()["jobs"]["bundles"]["steps"]
+    return steps
+
+
+def test_mappings_upload_only_with_the_token_and_never_fail_the_release() -> None:
+    steps = _bundle_steps()
+    names = [s.get("name") for s in steps]
+    gate = names.index("Symbols token")
+    upload = names.index("Upload crash symbols")
+    assert names.index("Collect bundles") < gate < upload
+    assert steps[gate]["env"]["MAKTABA_SYMBOLS_TOKEN"] == "${{ secrets.MAKTABA_SYMBOLS_TOKEN }}"
+    assert "no MAKTABA_SYMBOLS_TOKEN secret is set" in steps[gate]["run"]
+    for s in steps[gate + 1 : upload + 1]:
+        assert s.get("if") == "steps.symbols.outputs.set == 'true'", s
+        assert s.get("continue-on-error") is True or s.get("name") == "Upload crash symbols", s
+    run = steps[upload]["run"]
+    assert "set -e" not in run.replace("set -uo", "") and "exit 1" not in run
+    assert 'upload -r8 "android.${app}" -version "$NAME"' in run
+    assert "for app in player remote tv" in run
+    assert steps[upload]["env"]["NAME"] == "${{ steps.version.outputs.name }}"
+    # the files Collect bundles wrote
+    assert 'mapping/maktaba-${app}-${NAME}-mapping.txt' in run
+    assert 'cp "$2/build/outputs/mapping/release/mapping.txt" "mapping/maktaba-$1-${NAME}-mapping.txt"' in (
+        next(s for s in steps if s.get("name") == "Collect bundles")["run"])
+
+
+# Epic 53 story 53.16: the apps' unstripped native libraries (AGP's merged_native_libs, before
+# the packaged copies are stripped) become symbol tables, uploaded with the same token and
+# kept as the run's native-symbols artifact when the upload fails. Without the token none of
+# it runs; a library without symbols, or a failed upload, never fails the release.
+def test_native_tables_upload_only_with_the_token_and_never_fail_the_release() -> None:
+    steps = _bundle_steps()
+    names = [s.get("name") for s in steps]
+    upload = steps[names.index("Upload crash symbols")]
+    keep = steps[names.index("Keep the native symbol tables")]
+    assert names.index("Upload crash symbols") < names.index("Keep the native symbol tables")
+    assert upload["id"] == "symbols_upload"
+    run = upload["run"]
+    for app_dir in ("apps/android/player", "apps/android/remote", "apps/tv/android/app"):
+        assert app_dir in run
+    assert "build/intermediates/merged_native_libs/release" in run
+    assert '"$RUNNER_TEMP/maktaba-symbols" extract -o "$tables" "$so" || bare=$((bare + 1))' in run
+    assert '"$RUNNER_TEMP/maktaba-symbols" upload -version "$NAME" "${made[@]}"' in run
+    assert 'echo "kept=true" >>"$GITHUB_OUTPUT"' in run
+    # each outcome is one line, never a failed step
+    assert "the apps have no native libraries" in run
+    assert "native libraries has symbols" in run
+    assert "set -e" not in run.replace("set -uo", "") and "exit 1" not in run
+    assert keep["if"] == "steps.symbols_upload.outputs.kept == 'true'"
+    assert keep["continue-on-error"] is True
+    assert keep["uses"].startswith("actions/upload-artifact@")
+    assert keep["with"]["name"] == "native-symbols"
+    assert keep["with"]["path"] == "${{ runner.temp }}/symbols/*.symbols"
+    assert keep["with"]["retention-days"] == 90
+
+
+# The token gate: without the secret the native step is skipped with the rest (the token step's
+# one line), so the run has nothing to keep either.
+def test_no_token_means_no_native_tables() -> None:
+    steps = _bundle_steps()
+    names = [s.get("name") for s in steps]
+    upload = steps[names.index("Upload crash symbols")]
+    assert upload["if"] == "steps.symbols.outputs.set == 'true'"
+    gate = steps[names.index("Symbols token")]["run"]
+    assert gate.count("::notice::") == 1 and 'echo "set=false"' in gate

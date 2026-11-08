@@ -1,6 +1,5 @@
-"""The TV-grid planner (planner v2) through the Maktaba plan JSON into dizqueTV objects:
-each slot queue is one "maktaba-plan · <slot>" show with its shows back to back, the Quran
-channel has a lane per reciter, and a show the user made is still never overwritten."""
+"""The TV-grid planner (planner v2) through the Maktaba plan JSON: the Quran channel has a
+lane per reciter, and a filler clip is stored once with the pools indexing it."""
 
 from __future__ import annotations
 
@@ -10,9 +9,6 @@ from typing import Any
 import pytest
 
 from maktaba_pipeline.engine.stages._plan_json import PLAN_FORMAT, build_plan_json, pool_items
-from maktaba_pipeline.extensions.dizquetv import extension as dz_extension
-from maktaba_pipeline.extensions.dizquetv.channels import plan_actions
-from maktaba_pipeline.integrations.dizquetv import PREFIX, State
 from maktaba_pipeline.schedule import PLANNER_VERSION, plan_catalog
 from maktaba_pipeline.schedule.channel_planner import (
     EpisodeRef,
@@ -72,30 +68,7 @@ def plan() -> dict[str, Any]:
     the plan (planning and simulating each channel's week was most of each test's time)."""
     result = plan_catalog(catalog(), clips(), SMALL)
     assert result.version == PLANNER_VERSION
-    return build_plan_json(
-        result, source="catalog", notes=[], exporters=dz_extension.plan_exporters()
-    )
-
-
-def test_every_slot_queue_is_one_ordered_show(plan: dict[str, Any]) -> None:
-    actions = plan_actions(plan, State(server="PlexServer"))
-    shows = [a for a in actions if a.kind == "show"]
-    assert shows and all(a.name.startswith(PREFIX) for a in shows)
-    used = {
-        s["showId"][5:]
-        for c in plan["channels"]
-        if (c.get("exports") or {}).get("dizquetv")
-        for s in c["exports"]["dizquetv"]["schedule"]["slots"]
-        if s["showId"].startswith("lane:")
-    }
-    assert {a.ref for a in shows} == used  # one show per queue a slot plays, no more
-    for a in shows:
-        ln = plan["lanes"][a.ref]
-        assert a.name == f"{PREFIX}{ln['name']} [{a.ref}]"
-        expect = [str(e["plex_rating_key"]) for u in ln["units"] for e in u["episodes"]]
-        assert a.body is not None
-        assert [p["ratingKey"] for p in a.body["content"]] == expect  # shows back to back
-        assert ln["pattern"] or ln["special"]  # a slot queue, or the dawn Quran / khutbah lane
+    return build_plan_json(result, source="catalog", notes=[], exporters={})
 
 
 def test_the_quran_channel_has_a_lane_per_reciter(plan: dict[str, Any]) -> None:
@@ -105,15 +78,6 @@ def test_the_quran_channel_has_a_lane_per_reciter(plan: dict[str, Any]) -> None:
     libraries = [{u["series_id"] for u in ln["units"]} for ln in lanes]
     assert all(len(ids) == 1 for ids in libraries)  # one reciter per lane
     assert {next(iter(ids)) for ids in libraries} == {"h", "m", "bm"}
-    shows = {a.ref for a in plan_actions(plan, State(server="PlexServer")) if a.kind == "show"}
-    assert set(quran[0]["lanes"]) <= shows
-
-
-def test_a_show_the_user_made_is_still_never_overwritten(plan: dict[str, Any]) -> None:
-    first = next(a for a in plan_actions(plan, State(server="PlexServer")) if a.kind == "show")
-    state = State(server="PlexServer", shows={first.name: {"id": "u1", "keys": None}})
-    again = next(a for a in plan_actions(plan, state) if a.kind == "show" and a.ref == first.ref)
-    assert again.verb == "conflict" and again.body is None
 
 
 def test_filler_clips_are_stored_once_and_pools_index_them(plan: dict[str, Any]) -> None:

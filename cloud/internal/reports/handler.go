@@ -299,7 +299,7 @@ func (d *AdminDeps) Get(w http.ResponseWriter, r *http.Request) {
 		Crashes []json.RawMessage `json:"crashes"`
 	}
 	if json.Unmarshal(rep.Body, &body) == nil && len(body.Crashes) > 0 {
-		view.Crashes = symbols.Symbolicate(r.Context(), body.Crashes, d.Symbols)
+		view.Crashes = symbols.Symbolicate(r.Context(), body.Crashes, d.Symbols, symbols.Release{App: rep.App, Version: rep.Version})
 	}
 	writeJSON(w, http.StatusOK, view)
 }

@@ -93,6 +93,19 @@ func TestComponentIssuesOrder(t *testing.T) {
 	}
 }
 
+// A component a release removed (ext.dizquetv) keeps its last status row until the
+// cleanup migration: a failed one is no issue.
+func TestComponentIssuesLeaveOutRetiredComponents(t *testing.T) {
+	now := time.Now()
+	failed, degraded := componentIssues([]store.Status{
+		compRow("home", "ext.dizquetv", "pipeline", "failed", "", now.Add(-time.Hour)),
+		compRow("home", "youtube", "pipeline", "failed", "", now),
+	}, now, nil)
+	if len(failed) != 1 || failed[0].ID != "youtube" || len(degraded) != 0 {
+		t.Fatalf("failed %+v degraded %+v", failed, degraded)
+	}
+}
+
 // A component turned off or held never counts, whatever a part that stopped before it
 // reported the change still says (smart search's index worker, failed or degraded at the
 // old generation); one that is on and failed does, and so does a failed asset install.

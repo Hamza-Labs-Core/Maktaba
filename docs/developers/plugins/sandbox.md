@@ -57,6 +57,63 @@ If a Linux kernel lacks some layers (no Landlock, no user namespaces), the host 
 if seccomp is in force, and reports *Degraded* with `sandbox_partial`. Without seccomp on
 Linux, or without the Seatbelt profile or AppContainer, it does not run.
 
+## Maktaba's own runners
+
+Maktaba's own stages run as first-party plugins in `maktaba-plugin-runner`, one Python
+process per runner group ([first-party plugins](first-party.md)). A runner is sandboxed on
+every OS from the union of its group's `[trusted]` tables, and does not run when the sandbox
+cannot be applied (`sandbox_unavailable`):
+
+| OS | How | Network | Files and programs |
+|---|---|---|---|
+| macOS | a Seatbelt profile the runner applies to itself | the plugin API's socket and its own; outbound only for a group with `net` | read its areas and the interpreter; write its run folder and write areas; run only its tools |
+| Linux | Landlock and seccomp-bpf, applied by the runner to itself | no `AF_INET` socket without `net` | Landlock rules per area; only its tools are executable |
+| Windows | its group's own AppContainer (`Maktaba.Runner.<group>`) inside a Job Object, applied by the supervisor's launcher | no capability without `net` (every network path blocked, loopback included); `internetClient` alone for a group with `net` | only the folders granted to its profile; no child process for a group without tools, and only its tools for one with them |
+
+On Windows a process cannot put itself in an AppContainer, so the launcher
+(`maktaba-server runner-sandbox-run`) asks the runner for its policy first, grants the
+group's profile its folders (read on the interpreter, the read areas and the tools; modify,
+never full control, on the group's own run folder and the write areas), takes back what an
+earlier start granted that the policy no longer names, and starts the runner. No grant may
+reach the supervisor's own folders or the keys, and no runner can write the file the areas
+are read from. Each grant and revoke changes only the folder that was checked: the launcher
+opens it by handle without following a link, refuses it when it is a junction or symbolic
+link or when Windows names it otherwise than checked, and sets its ACL on that handle; what
+the folder already holds gets the entry through handles opened inside it, never through a
+junction or symbolic link. A folder swapped for a junction after its check fails the start
+instead of granting the junction's target. The runner then checks that its
+token is that AppContainer's with no other capability, or exits. Every AppContainer may run
+the system's programs, so the runner's own guard keeps a group with tools to those tools;
+subtitles next to a video are written by name only, as on Linux.
+
+An AppContainer reaches no SMB share, so a library on a share is served by the launcher's
+file broker. The broker uses a pipe that only that runner's process may use. For each file
+the runner asks for, the launcher checks that the path is in the group's share folders and
+spelled one way only, with no junction or symbolic link on the way. It then opens the file
+itself and hands the runner the open handle, with read access only. A subtitle is written by
+the launcher from the bytes the runner sends. The bytes go straight to the share, so a read costs what the share costs. A share the
+group writes in full is not brokered, and its jobs run in the queue worker.
+
+A tool (ffmpeg, ffprobe) runs in the same AppContainer and reaches no share either. When it
+reads one file of a brokered share as its input, the runner opens that file through the
+broker and hands the tool the handle as its standard input, with the input given as `fd:`.
+ffmpeg seeks a file handle as it seeks a path, so an mp4 with its index at the end and a seek
+before the input both work. A share path the runner cannot hand over that way is refused, and
+that job runs in the queue worker: a second share file, a share path as an output or inside
+another argument, another share, or another program.
+
+A runner on Windows starts its tools through anonymous pipes. asyncio's own captured starts
+make named pipes, which an AppContainer may not create, so the runner replaces
+`asyncio.create_subprocess_exec` with one that keeps its API over `subprocess.Popen`. Each
+tool runs in a Job Object of its own, so a timeout's kill or a cancel ends what it started. An AppContainer may not open the `nul` device either, so `DEVNULL` becomes an empty pipe for input and a drained pipe for output.
+
+The runner cannot listen there (an AppContainer may not create a named pipe, and Python on
+Windows has no unix sockets), so the supervisor serves its pipes: the worker reaches a runner
+through a pipe only the user Maktaba runs as can open, and the runner, from its AppContainer,
+dials a second pipe where it waits for those connections and a third that leads to the
+plugin API. The runner's pipes admit that user and the group's own AppContainer, and no other
+group's.
+
 ## How it is proven
 
 A CI job runs on macOS, Linux and Windows for every change to the host, the plugin API or the
@@ -71,6 +128,10 @@ manifest schema, and nightly:
   and the canary must see zero connections.
 - **Positive controls** run the same probes without the sandbox and must succeed, so a broken
   probe cannot pass.
+- **Maktaba's runners on Windows** are started through the real launcher in their
+  AppContainer: from inside, a runner reads and writes only its granted folders, reaches no
+  canary on loopback or the LAN without `net`, starts no process, and opens no other group's
+  pipe; its plugin API calls and the worker's calls through the supervisor's pipes work.
 
 ## Resource limits
 

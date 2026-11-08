@@ -62,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--group", required=True)
     ap.add_argument("--api-socket", default=os.environ.get("MAKTABA_PLUGIN_API_SOCKET", ""))
     ap.add_argument("--run-dir", default="")
+    # the Windows launcher's question (maktaba-server runner-sandbox-run): the sandbox it
+    # applies from outside, printed as JSON; no plugin code is imported, nothing is served
+    ap.add_argument("--policy", action="store_true")
     args = ap.parse_args(argv)
     group = args.group
     if group not in GROUPS and not group.replace("-", "").isalnum():
@@ -70,6 +73,14 @@ def main(argv: list[str] | None = None) -> int:
     if leaked:
         log("plugin_runner_env_refused", group=group, keys=leaked)
         return EXIT_ENV
+    if sys.platform == "win32":
+        from .winpipe import API_ENV, BACK_ENV
+
+        # on Windows a runner serves and calls only through the supervisor's pipes
+        missing = [k for k in (BACK_ENV, API_ENV) if not os.environ.get(k)]
+        if missing:
+            log("plugin_runner_env_refused", group=group, missing=missing)
+            return EXIT_ENV
     from maktaba_pipeline.plugins import firstparty
 
     from . import sandbox, trust
@@ -101,13 +112,43 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError):
         pass
     policy = sandbox.policy_for(
-        tables, areas=areas, api_socket=args.api_socket, own_socket=str(own), run_dir=run_dir
+        tables,
+        areas=areas,
+        api_socket=args.api_socket,
+        own_socket=str(own),
+        run_dir=run_dir,
+        group=firstparty.group_of_instance(group),
     )
     try:
+        if args.policy:
+            sys.stdout.write(json.dumps(sandbox.policy_doc(policy)) + "\n")
+            sys.stdout.flush()
+            return 0
         applied = sandbox.apply(policy)
     except sandbox.SandboxUnavailable as exc:
         log("plugin_runner_sandbox_unavailable", group=group, step=exc.step, detail=str(exc))
         return EXIT_SANDBOX
+    if sys.platform == "win32":
+        # tools start through anonymous pipes: asyncio's own are named pipes, which an
+        # AppContainer may not create
+        from . import winproc
+
+        winproc.install()
+        # the library's share folders, through the launcher's broker (an AppContainer
+        # reaches no share): without it, a job refused there runs in the worker
+        from . import winfiles
+
+        brokered = False
+        try:
+            brokered = winfiles.install_from_env()
+            if brokered:
+                log("plugin_runner_files_brokered", group=group)
+        except (OSError, ValueError) as exc:
+            log("plugin_runner_broker_unavailable", group=group, detail=str(exc))
+        if not brokered:
+            # no broker: every share path is refused, never read as empty or missing
+            winfiles.install_unbrokered()
+            log("plugin_runner_shares_refused", group=group)
     sandbox.guard_names(policy.write_named)
     sandbox.guard_scope()  # a file stage's job changes only its subject's files (54.32 §2)
     unavailable: dict[str, str] = {}

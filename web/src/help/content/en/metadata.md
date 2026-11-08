@@ -52,7 +52,7 @@ In [Settings → Rules](/settings/rules), section [Finding metadata](/help/rules
 
 ### On-air titles {#display-titles}
 
-The video page also shows the **On-air title**: the short, clean title the TV guide, the channel strip and dizqueTV use. A badge says where it came from: **by the rules**, **by the language model** or **set by hand**. Admins can press **Change** to write their own; a title set by hand always wins. **Back to the automatic title** removes it, and "(automatic: …)" shows what the rules would use. "not made yet" means Maktaba has not made one for this video yet. The rules for these titles are in [Display titles](/help/rules#display-titles).
+The video page also shows the **On-air title**: the short, clean title the TV guide and the channel strip use. A badge says where it came from: **by the rules**, **by the language model** or **set by hand**. Admins can press **Change** to write their own; a title set by hand always wins. **Back to the automatic title** removes it, and "(automatic: …)" shows what the rules would use. "not made yet" means Maktaba has not made one for this video yet. The rules for these titles are in [Display titles](/help/rules#display-titles).
 
 ### Daily caps {#daily-caps}
 

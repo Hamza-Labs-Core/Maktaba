@@ -1,5 +1,6 @@
-// Package symbolstest unpacks the symbols package's Mach-O fixtures for tests: they are kept
-// gzip'd (testdata/build.sh), since the repo's lint refuses committed executables.
+// Package symbolstest unpacks the symbols package's Mach-O and ELF fixtures for tests: they
+// are kept gzip'd (testdata/build.sh, testdata/build-native.sh), since the repo's lint refuses
+// committed executables.
 package symbolstest
 
 import (
@@ -11,8 +12,8 @@ import (
 	"testing"
 )
 
-// Fixture is the path of name ("crashy.dwarf", "player.dwarf", "crashy.arm64") unpacked into
-// the test's temporary directory.
+// Fixture is the path of name ("crashy.dwarf", "player.dwarf", "crashy.arm64", "native.so",
+// "native.stripped.so") unpacked into the test's temporary directory.
 func Fixture(t testing.TB, name string) string {
 	t.Helper()
 	_, here, _, _ := runtime.Caller(0)

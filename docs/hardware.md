@@ -31,10 +31,9 @@ count across the whole cluster; "per worker" pools count on each worker process.
 | `nas_read` | global | 2 | 2 |
 | `nas_write` | global | 4 | 4 |
 | `network_plex` | global | 2 | 2 |
-| `network_tv` (dizqueTV) | global | 1 | 1 |
 | `network_yt` (YouTube) | global | 1 | 1 |
 | `lookup` (LLM and encyclopedia) | global | 1 | 1 |
-| `reports`, `audits`, `repairs`, `convert` | global | 1 each | 1 each |
+| `reports`, `repairs`, `convert` | global | 1 each | 1 each |
 
 The `gpu` pool's size is the **batch**: the jobs of one transcription worker share one batched
 Whisper, and each GPU pass decodes one 30-second window of every file in flight
@@ -411,12 +410,12 @@ Windows node's `workers.stages_off`, which matches `graph.py`):
 
 `index`, `chapter_infer`, `thumbnail`, `thumb_small`, `chapter_thumbs`, `review_pages`,
 `display_title`, `check_tags`, `check_clips`, `plan_channels`, `write_channels`, `tv_stage`,
-`tv_swap`, `tv_gc`, `tv_rollback`, `plex_livetv`, `dizquetv_channels`, `dizquetv_audit`,
-`enrich`, `convert_mp4`, `storage_canonicalize`.
+`tv_swap`, `tv_gc`, `tv_rollback`, `plex_livetv`, `enrich`, `convert_mp4`, `storage_canonicalize`.
 
 Two exceptions in the code: an LLM stage (`model_rules`) may run on a machine when the model
-server's address is not `localhost`, and a Plex stage (`relay`) may run on a machine through the
-home's relay, which adds the token.
+server's address is not `localhost`, and a stage that names the relay (`relay`) may run on a
+machine through the home's relay, which adds the token (no built-in stage does since the Plex
+library sync was removed).
 
 What this means for sizing:
 

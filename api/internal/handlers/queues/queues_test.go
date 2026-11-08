@@ -334,7 +334,7 @@ func TestSummarizeStage(t *testing.T) {
 		},
 		{
 			name:       "disabled stage is not flagged no_worker",
-			in:         stageInputs{Info: StageInfo{Stage: "plex_collection", Enabled: false}, Now: t0},
+			in:         stageInputs{Info: StageInfo{Stage: "plex_livetv", Enabled: false}, Now: t0},
 			wantReason: true,
 		},
 	}
@@ -520,7 +520,7 @@ func snapshotRules() []*queuestest.Rule {
 			stageRow("probe", "episodes", 1, "nas_read", withEdges(`[{"to":"detect","map":"library_of"}]`)),
 			stageRow("detect", "seasons", 1, "cpu", withKinds("{library}")),
 			stageRow("transcribe", "media", 2, "gpu", withExtension("whisper")),
-			stageRow("plex_collection", "seasons", 4, "network_plex", withExternal(), withDisabled("not_configured"), withExtension("plex")),
+			stageRow("plex_livetv", "channels", 3, "network_plex", withExternal(), withDisabled("not_configured"), withExtension("plex")),
 		),
 		{Match: "from worker_pools", Cols: []string{"pool", "label", "scope", "size", "default_size", "updated_at", "updated_by"},
 			Rows: [][]driver.Value{
@@ -608,8 +608,8 @@ func TestSnapshot(t *testing.T) {
 	if tr.Extension == nil || *tr.Extension != "whisper" {
 		t.Errorf("extension = %v", tr.Extension)
 	}
-	if q["plex_collection"].WaitingReason == nil || *q["plex_collection"].WaitingReason != WaitNotConfigured {
-		t.Errorf("plex waiting = %v", q["plex_collection"].WaitingReason)
+	if q["plex_livetv"].WaitingReason == nil || *q["plex_livetv"].WaitingReason != WaitNotConfigured {
+		t.Errorf("plex waiting = %v", q["plex_livetv"].WaitingReason)
 	}
 
 	// pools
@@ -756,7 +756,7 @@ func TestMountedRoutes(t *testing.T) {
 
 func TestRetryingService(t *testing.T) {
 	ptr := func(s string) *string { return &s }
-	cases := map[string]string{"plex_unreachable": "plex", "dizquetv_unreachable": "dizquetv", "nas_timeout": "", "_unreachable": ""}
+	cases := map[string]string{"plex_unreachable": "plex", "youtube_unreachable": "youtube", "nas_timeout": "", "_unreachable": ""}
 	for cause, want := range cases {
 		got := retryingService(ptr(cause))
 		if (got == nil) != (want == "") || (got != nil && *got != want) {
@@ -766,7 +766,7 @@ func TestRetryingService(t *testing.T) {
 	if retryingService(nil) != nil {
 		t.Fatal("nil cause must give nil")
 	}
-	s := summarizeStage(stageInputs{Info: StageInfo{Stage: "plex_index", Enabled: true}, PoolSize: 2, Now: t0,
+	s := summarizeStage(stageInputs{Info: StageInfo{Stage: "plex_livetv", Enabled: true}, PoolSize: 2, Now: t0,
 		Served: Coverage{Workers: 1}, Live: liveCounts{Pending: 1, Backoff: 1, Running: 1, BackoffCause: ptr("plex_unreachable")}})
 	if s.RetryingService == nil || *s.RetryingService != "plex" {
 		t.Fatalf("summary while running: %v", s.RetryingService)

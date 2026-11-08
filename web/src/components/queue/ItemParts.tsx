@@ -21,21 +21,14 @@ export function KindChips({ kinds }: { kinds: string[] }) {
   );
 }
 
-const EXTENSION_OF: Partial<Record<AppearsInEntry["target"], string>> = {
-  plex_collection: "plex",
-  dizquetv_show: "dizquetv",
-  dizquetv_channel: "dizquetv",
-};
+const APPEARS_TARGETS: ReadonlySet<string> = new Set<AppearsInEntry["target"]>([
+  "maktaba_channel",
+  "channel_slot",
+]);
 
-/** Plex / dizqueTV rows are shown only while that extension is enabled. */
-export function visibleAppears(
-  entries: AppearsInEntry[],
-  enabledExtensions: ReadonlySet<string>
-): AppearsInEntry[] {
-  return entries.filter((a) => {
-    const ext = EXTENSION_OF[a.target];
-    return !ext || enabledExtensions.has(ext);
-  });
+/** Only Maktaba's own channels and slots are listed; a row an older sync left behind is not. */
+export function visibleAppears(entries: AppearsInEntry[]): AppearsInEntry[] {
+  return entries.filter((a) => APPEARS_TARGETS.has(a.target));
 }
 
 export function AppearsIn({ entries }: { entries: AppearsInEntry[] }) {
@@ -85,7 +78,7 @@ const CHANGE_GLYPH: Record<WriteChange["action"], string> = {
   updated: "~",
 };
 
-// What an automatic external write changed, e.g. "Added 3 episodes to
+// What an automatic external write changed, e.g. "Added 3 slots to
 // Fiqh of worship: Lecture 22, Lecture 23, Lecture 24".
 export function WriteChanges({ changes }: { changes: WriteChange[] }) {
   const { t, n } = useI18n();

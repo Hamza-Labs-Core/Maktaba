@@ -330,7 +330,6 @@ class ClaimLoop:
         "gpu",
         "nas_read",
         "network_plex",
-        "network_tv",
         "network_yt",
         "cpu",
     )

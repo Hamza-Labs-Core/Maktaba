@@ -87,3 +87,30 @@ def test_no_test_loads_the_real_second_listen_model(monkeypatch: pytest.MonkeyPa
     with pytest.raises(RuntimeError, match="stand in for the second listen"):
         cohere.recogniser(cohere.DEFAULT_MODEL)
     assert not cohere.loaded(cohere.DEFAULT_MODEL)
+
+
+_SLOW_TEST = """
+import time
+
+
+def test_waits_too_long():
+    time.sleep(1.5)
+"""
+
+
+def test_the_suite_dumps_a_hung_tests_stack(pytestconfig: pytest.Config) -> None:
+    """``faulthandler_timeout`` (pyproject.toml) is on for every tier: a hung test prints
+    every thread's stack, its own wait among them, instead of a CI job cancelled at its
+    limit with no output."""
+    assert float(pytestconfig.getini("faulthandler_timeout")) > 0
+
+
+def test_a_test_past_the_timeout_prints_where_it_waits(pytester: pytest.Pytester) -> None:
+    pytester.makepyfile(test_slow=_SLOW_TEST)
+    result = pytester.runpytest_subprocess(
+        "-p", "no:cacheprovider", "-p", "no:randomly", "-o", "faulthandler_timeout=0.3"
+    )
+    result.assert_outcomes(passed=1)  # the dump does not end the run
+    err = result.stderr.str()
+    assert "Timeout" in err
+    assert "test_waits_too_long" in err

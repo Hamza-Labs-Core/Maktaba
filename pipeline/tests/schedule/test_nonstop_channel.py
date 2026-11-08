@@ -10,7 +10,6 @@ from maktaba_pipeline.schedule.channel_planner import (
     PlannerConfig,
     SeasonCandidate,
     ThemeSpec,
-    dizquetv_time_slots,
     simulate,
     suggest_channels,
 )
@@ -115,13 +114,6 @@ def test_an_unknown_kind_is_reported() -> None:
     assert "kind 'marathon'" in dict(p.unplaced)["theme x"]
 
 
-def test_dizquetv_keeps_its_hourly_slots_each_padded_to_the_hour() -> None:
-    p = _plan()
-    ch = next(c for c in p.channels if c.key == "prophets_awadi")  # type: ignore[attr-defined]
-    dz = dizquetv_time_slots(ch, p)  # type: ignore[arg-type]
-    assert len(dz["slots"]) == 24 and dz["pad"] == 60 * 60_000
-
-
 def test_one_episode_an_hour_filler_to_the_hour() -> None:
     p = _plan()
     ch = next(c for c in p.channels if c.key == "prophets_awadi")  # type: ignore[attr-defined]
@@ -145,8 +137,6 @@ def test_slot_minutes_0_is_back_to_back_all_day() -> None:
     day = simulate(ch, p)
     progs = [a for a in day if a.kind == "program"]
     assert all(abs(a.end_s - b.start_s) < 1e-6 for a, b in zip(progs, progs[1:], strict=False))
-    dz = dizquetv_time_slots(ch, p)
-    assert len(dz["slots"]) == 1 and dz["pad"] == 1 and dz["maxFlex"] > 0
 
 
 def test_filler_off_is_programmes_only_and_never_a_gap() -> None:
@@ -163,4 +153,3 @@ def test_filler_off_is_programmes_only_and_never_a_gap() -> None:
     assert ch.filler_pools == () and all(s.filler_pool is None for s in ch.slots)
     day = simulate(ch, p)
     assert {a.kind for a in day} == {"program"}  # no filler, no flex
-    assert dizquetv_time_slots(ch, p)["maxFlex"] == 1

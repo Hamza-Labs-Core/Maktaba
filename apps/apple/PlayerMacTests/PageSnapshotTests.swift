@@ -22,6 +22,9 @@ import MaktabaKit
 /// order, each one's role and words (label, value, title). It must match exactly, so a wording
 /// change the pixel tolerance lets through (an English phrase on an Arabic page is a few hundred
 /// pixels) fails here. It is attached and copied the same way as the image.
+///
+/// The Apple TV's video page draws MaktabaKit's TV form of the panels; `tvPanelMatchesItsReference`
+/// draws that form here (story 54.20 T05), as `tv-panel-<lang>.png` and `.txt`.
 @MainActor @Suite(.serialized) struct PageSnapshots {
     enum Page: String, CaseIterable, Sendable {
         case library, series, video
@@ -63,6 +66,10 @@ import MaktabaKit
      {"type":"chips","value":["Hijra","Medina"]}]}]}
     """#
 
+    /// The day the references were drawn: the fixtures' `{{now…}}` times count from it, so
+    /// "added 20 days ago" shows the same date every day.
+    nonisolated static let clock = Date(timeIntervalSince1970: 1_794_052_800) // 2026-11-07T12:00:00Z
+
     /// The share of pixels that may differ (anti-aliasing), each by more than `channel`.
     static let tolerance = 0.002
     static let channel = 24
@@ -76,6 +83,8 @@ import MaktabaKit
 
     @Test(arguments: cases) func pageMatchesItsReference(_ c: Case) async throws {
         let home = try MockHome()
+        // the fixtures' dates from a fixed day (the one the references were drawn on), not today
+        home.clock = Self.clock
         try home.start()
         let features = MockHome.features.map { #""\#($0)":"on""# }.joined(separator: ",")
         home.stub("GET", "/api/capabilities", body: #"{"etag":"c-snap","features":{\#(features),"plugin_panels":"on"}}"#,
@@ -115,6 +124,95 @@ import MaktabaKit
         let diff = try Self.difference(image, ref)
         #expect(diff <= Self.tolerance,
                 "\(c.name) differs from its reference in \(String(format: "%.2f", diff * 100)) % of its pixels; if the change is meant, commit the attached image")
+    }
+
+    /// The Apple TV video page's panels (story 54.20 T05): MaktabaKit's own TV form, drawn here
+    /// on the Mac as the TV draws it (`pluginPanelsTVForm`: the TV's subset of blocks, open,
+    /// no chips), on the TV page's background at a 16:9 size, in English and Arabic (right to
+    /// left). One value is longer than the text rules allow: it ends in "…" and wraps. The
+    /// Apple TV's own text styles are larger than the Mac's; this is the closest the hosted
+    /// Mac tests draw it (no tvOS simulator snapshot runs in CI).
+    @Test(arguments: ["en", "ar"]) func tvPanelMatchesItsReference(_ lang: String) async throws {
+        let name = "tv-panel-\(lang)"
+        let panels = try JSONDecoder().decode([PanelView].self, from: Data(Self.tvPanel(lang).utf8))
+        #expect(PanelText.shown(panels[0].blocks, tv: true).map(\.type) == ["kv", "badges", "markers"])
+        let size = Self.tvSize
+        let root = ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text(verbatim: "The Night Journey").font(.largeTitle.bold())
+                PluginPanelsSection<String>(panels: panels, play: { _ in })
+            }
+            .padding(40)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Color(red: 0x0B / 255, green: 0x11 / 255, blue: 0x1C / 255))
+        .environment(\.pluginPanelsTVForm, true)
+        .environment(\.locale, Locale(identifier: lang))
+        .environment(\.layoutDirection, lang == "ar" ? .rightToLeft : .leftToRight)
+        .preferredColorScheme(.dark)
+        .frame(width: size.width, height: size.height)
+
+        let (image, text) = try await Self.render(root, size: size)
+        let png = try #require(image.representation(using: .png, properties: [:]))
+        Attachment.record(png, named: "\(name).png")
+        Attachment.record(Data(text.utf8), named: "\(name).txt")
+        // the TV's subset only (no chip), the long value cut at the text rules' length
+        #expect(!text.contains(lang == "ar" ? "تاريخ" : "History"), "no chips in the TV form: \(text)")
+        #expect(text.contains("…"), "the long value ends in an ellipsis: \(text)")
+
+        if let textURL = Bundle(for: SnapshotBundle.self).url(forResource: name, withExtension: "txt", subdirectory: "Snapshots"),
+           let refText = try? String(contentsOf: textURL, encoding: .utf8) {
+            let diff = Self.firstDifference(text, refText)
+            #expect(diff == nil, "\(name)'s words differ from its text reference: \(diff ?? ""); if the change is meant, commit the attached \(name).txt")
+        } else {
+            Issue.record("no text reference for \(name): commit the attached \(name).txt as PlayerMacTests/Snapshots/\(name).txt")
+        }
+        guard let refURL = Bundle(for: SnapshotBundle.self).url(forResource: name, withExtension: "png", subdirectory: "Snapshots"),
+              let refData = try? Data(contentsOf: refURL),
+              let ref = NSBitmapImageRep(data: refData) else {
+            Issue.record("no reference for \(name): commit the attached \(name).png as PlayerMacTests/Snapshots/\(name).png")
+            return
+        }
+        let diff = try Self.difference(image, ref)
+        #expect(diff <= Self.tolerance,
+                "\(name) differs from its reference in \(String(format: "%.2f", diff * 100)) % of its pixels; if the change is meant, commit the attached image")
+    }
+
+    /// A 1080p TV's 16:9, at half its points: the Mac's text styles are about half the Apple TV's.
+    static let tvSize = CGSize(width: 960, height: 540)
+
+    /// One plugin's panel as a home answers it in `lang`: every block type the TV form keeps
+    /// or drops, and a value longer than `PanelText.maxShown`.
+    nonisolated static func tvPanel(_ lang: String) -> String {
+        let ar = lang == "ar"
+        let long = String(repeating: ar ? "رحلة ليلية نحو الشمال عبر الصحراء الواسعة، " : "A journey north through the desert by night, ", count: 6)
+        return """
+        [{"plugin_id":"scenes","plugin":"\(ar ? "المشاهد" : "Scenes")","title":"\(ar ? "المشاهد" : "Scenes")","blocks":[
+         {"type":"kv","value":[{"label":"\(ar ? "الحقبة" : "Era")","value":"\(ar ? "العشرينيات" : "1920s")"},
+                               {"label":"\(ar ? "ملاحظات" : "Notes")","value":"\(long)"}]},
+         {"type":"badges","value":[{"text":"\(ar ? "مرمّم" : "Restored")"},{"text":"\(ar ? "عالي الدقة" : "HD")"}]},
+         {"type":"chips","value":["\(ar ? "تاريخ" : "History")"]},
+         {"type":"markers","value":[{"t_ms":754000,"label":"\(ar ? "الطريق شمالاً" : "The road north")"}]}]}]
+        """
+    }
+
+    /// A view with no requests, drawn in a borderless dark window of `size` once laid out, and
+    /// its words (as `draw`).
+    static func render(_ view: some View, size: CGSize) async throws -> (NSBitmapImageRep, String) {
+        let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        defer { window.close() }
+        let hosting = NSHostingView(rootView: view)
+        window.contentView = hosting
+        window.orderFrontRegardless()
+        try await Task.sleep(for: .milliseconds(500))
+        hosting.layoutSubtreeIfNeeded()
+        window.displayIfNeeded()
+        let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
+        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+        return (rep, try await words(of: hosting))
     }
 
     @ViewBuilder static func screen(_ page: Page, context: PlayerContext) -> some View {
@@ -186,6 +284,10 @@ import MaktabaKit
     static func collect(_ element: Any, into lines: inout [String]) {
         guard let o = element as? NSObject else { return }
         let role = (ax(o, "accessibilityRole") as? String).map { $0.hasPrefix("AX") ? String($0.dropFirst(2)) : $0 } ?? "?"
+        // a scroll bar (and its value indicator) is no word of the page: its value is the scroll
+        // position and where it sits among the page's elements varies from run to run, which
+        // failed library-open-ar-ax3 now and then (its first row listed before the bar)
+        if role == "ScrollBar" { return }
         var words: [String] = []
         for key in ["accessibilityLabel", "accessibilityValue", "accessibilityTitle"] {
             let w: String? = switch ax(o, key) {

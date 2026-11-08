@@ -14,7 +14,7 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Subject
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import is_pg
-from maktaba_pipeline.engine.stages import tag
+from maktaba_pipeline.engine.stages import _tag as tag
 from maktaba_pipeline.runtime import Database
 from tests.stages.world import core_runtime, drain_core, make_fake_media, make_show
 

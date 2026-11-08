@@ -147,3 +147,40 @@ describe("every System health item has its name in Arabic", () => {
     expect(itemName(index, ar)).not.toMatch(LATIN);
   });
 });
+
+// Epic 54: the Plugin runners line names the runner, the machine (the home in the person's
+// language) and how many stages run in the worker meanwhile.
+describe("the Plugin runners line", () => {
+  const runners: StatusItem = {
+    ...failed,
+    id: "plugin_runners",
+    kind: "plugin_runners",
+    name: "Plugin runners",
+    code: "plugin_runners_failed",
+    params: { failed: 1, runner: "net", machine: "home", stages: 1 },
+    reason: "1 failed: the net runner on home.",
+    help: "plugin_runners",
+  };
+
+  it("reads in English and Arabic, with the home's word", () => {
+    const en = itemReason(runners, tFor("en"), fmt, n);
+    expect(en).toContain("the net runner on this home");
+    expect(en).toContain("(1)");
+    const ar = tFor("ar");
+    const s = itemReason(runners, ar, fmt, n);
+    expect(s).toMatch(ARABIC);
+    expect(s).toContain(ar("plugins.runners.home"));
+    expect(s).not.toContain("home");
+    expect(itemName(runners, ar)).toBe(ar("health.item.plugin_runners"));
+  });
+
+  it("keeps a node's id", () => {
+    const s = itemReason(
+      { ...runners, params: { ...runners.params, machine: "node-b" } },
+      tFor("en"),
+      fmt,
+      n
+    );
+    expect(s).toContain("on node-b");
+  });
+});

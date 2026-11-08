@@ -67,14 +67,10 @@ describe("Canonical paths panel", () => {
         phase: "done",
         last: { batch: "b1", changes: 148593, finished_at: "2026-10-19T10:00:00Z" },
         servers_added: [{ name: "home-nas", addresses: ["203.0.113.94", "Home-NAS.lan"] }],
-        plex_added: ["smb://home-nas/Originals/=/volume1/Originals/"],
       })
     );
     expect(screen.getByText(/Last conversion: 148,593 values/)).toBeInTheDocument();
     expect(screen.getByText(/smb:\/\/home-nas\/ \(203\.0\.113\.94/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/smb:\/\/home-nas\/Originals\/=\/volume1\/Originals\//)
-    ).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Revert last conversion" }));
     expect(post).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Revert" }));

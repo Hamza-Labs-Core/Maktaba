@@ -94,7 +94,7 @@ def test_a_step_that_raises_or_a_bad_result_is_refused() -> None:
 
 
 def test_versions_and_registration_are_checked() -> None:
-    assert settings.schema_version(rules.SECTIONS["planner"][0]) == settings.DEFAULT_VERSION
+    assert settings.schema_version(rules.SECTIONS["planner"][0]) == (2, 0)
     assert settings.schema_version(_V3) == (3, 1)
 
     @dataclasses.dataclass(frozen=True)

@@ -1951,23 +1951,6 @@
         }
       }
     },
-    "components.ext.dizquetv.title" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "إضافة dizqueTV"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "dizqueTV"
-          }
-        }
-      }
-    },
     "components.ext.plex.title" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2846,23 +2829,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No space left on the disk"
-          }
-        }
-      }
-    },
-    "queue.issues.cause.dizquetv_unreachable" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "لا يمكن الوصول إلى dizqueTV"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "dizqueTV is unreachable"
           }
         }
       }
@@ -8809,6 +8775,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "البحث في السجلات يُعاد تشغيله. ما زال يمكن قراءة السجلات الأخيرة من صفحة الاستعادة."
+          }
+        }
+      }
+    },
+    "A plugin runner failed: its stages run in the worker, outside their sandbox." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعطّل مشغّل إضافات: مراحله تعمل داخل العامل، خارج عزلها."
           }
         }
       }

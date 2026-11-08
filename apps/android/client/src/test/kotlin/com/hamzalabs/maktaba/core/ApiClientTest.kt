@@ -453,7 +453,7 @@ class ApiClientTest {
     fun `the cloud's line follows the home's own status`() = runBlocking {
         route = { r ->
             if (r.url.encodedPath == "/status.json") {
-                json(200, """{"v":1,"mode":"normal","overall":"degraded","components":{"search":"down","logs":"down"}}""")
+                json(200, """{"v":1,"mode":"normal","overall":"degraded","components":{"search":"down","logs":"down","plugin_runners":"down"}}""")
             } else {
                 json(404, "{}")
             }
@@ -468,6 +468,8 @@ class ApiClientTest {
                 com.hamzalabs.maktaba.core.api.StripKey.SEARCH,
                 com.hamzalabs.maktaba.core.api.StripKey.RELAY_OUTAGE,
                 com.hamzalabs.maktaba.core.api.StripKey.LOGS,
+                // Epic 54: a failed plugin runner, an admin's line after the others
+                com.hamzalabs.maktaba.core.api.StripKey.PLUGIN_RUNNERS,
             ),
             lines.map { it.key },
         )

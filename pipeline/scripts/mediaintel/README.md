@@ -7,8 +7,8 @@ and write one Plex collection per season.
 
 > **Superseded by the queue graph (plan 06-11).** Inside Maktaba every step below is a stage of the
 > job queue (`maktaba_pipeline.engine`): `thumb_hash`, `link`, `fingerprint`, `style_sample`,
-> `youtube_sync`, `detect`, `fp_gate`, `tag`, `rate_style`, `plan_channels`, `write_channels`, with
-> Plex and dizqueTV as extensions (`maktaba_pipeline.extensions`). Re-queueing a library re-adds it
+> `youtube_sync`, `detect`, `fp_gate`, `tag`, `rate_style`, `plan_channels`, `write_channels`
+> (Maktaba keeps no Plex collections: Plex is used only for Live TV). Re-queueing a library re-adds it
 > to the right queue and only changed work runs. `run` here (`pipeline.py`) stays for stand-alone
 > use until the queue has replaced it; `explain` stays. To bring an existing cache into Maktaba
 > without recomputing anything: `python -m maktaba_pipeline.tools.import_mediaintel --help`
@@ -30,7 +30,7 @@ uv run --extra mediaintel python -m scripts.mediaintel --db <cache.db> <command>
 # point at folders …
 mediaintel --db cache.db run "Y:/الشيخ نبيل العوضي" "Y:/another channel"
 # … or at Plex: every library whose folder the path map reaches
-mediaintel --db cache.db run --from-plex --exclude-library Movies --dizquetv-db …/.dizquetv
+mediaintel --db cache.db run --from-plex --exclude-library Movies --plex-url http://localhost:32400 --plex-token …
 ```
 
 `run` does steps 1–6 below for those folders (plus tagging / visual style once
@@ -47,7 +47,8 @@ own (it starts again after a crash), on Windows:
 
 ```
 set MEDIAINTEL_DB=E:\tv\mediaintel\mediaintel.db
-set MEDIAINTEL_DIZQUETV=E:\tv\dizquetv\.dizquetv
+set MEDIAINTEL_PLEX_URL=http://localhost:32400
+set MEDIAINTEL_PLEX_TOKEN=…
 scripts\mediaintel\control-centre.cmd
 ```
 
@@ -69,7 +70,7 @@ e.g. a Docker container's mount as well as the NAS path) or pass
 | Step | Command | Uses | Writes |
 |---|---|---|---|
 | 1 | `scan-local Y:/channel …` | ffprobe (duration, size), thumbnails → dHash (ffmpeg), `.info.json` (video and playlist), `ytdl-archive.txt` | `files`, `folders`, `yt_videos`, `yt_playlists` |
-| 2 | `scan-plex --dizquetv-db …\.dizquetv` | Plex library items, mapped to local paths (`--path-map PLEX=LOCAL`) | `files.plex_*` |
+| 2 | `scan-plex --plex-url URL --plex-token TOKEN` | Plex library items, mapped to local paths (`--path-map PLEX=LOCAL`) | `files.plex_*` |
 | 3 | `scan-youtube [--exact]` | yt-dlp: channel tabs and **every playlist with positions** (titles requested in `--lang ar`, since YouTube auto-translates them); approximate dates from the English listing; `--exact` fetches exact upload dates per video | `yt_*`, `yt_channels` |
 | 4 | `link` | file ↔ YouTube video: exact yt-dlp filename → folded title → title+duration → fuzzy (renamed `@handle`) | `files.youtube_id` |
 | 5 | `detect [--min-episode-minutes 3]` | the detector (below) | `series`, `series_episodes`, `shorts` |
@@ -162,17 +163,6 @@ location, b-roll, staged sets, 2) or **cinematic** (AI imagery / dramatisation, 
 Borderline seasons (low confidence, or "talk" with a dark low-key look such as an AI
 virtual set) are re-sampled with 8 episodes. `set-style LIBRARY SERIES STYLE` pins a
 style by hand (`--clear` removes it); the channel planner groups and schedules by tier.
-
-## dizqueTV custom shows
-
-`dizquetv-shows [--library X] [--apply]` keeps dizqueTV's custom shows in step with
-the seasons: an existing show named `<library> - <series>` gets every season back to
-back (S1 then S2 …), and each season of a multi-season series gets its own show
-`<library> - <series> - الموسم N` (created when missing; `--create-series` also creates
-whole-series shows). Dry run first; it lists the episodes leaving each show and the
-channels that play them (dizqueTV channels keep their own copy, so regenerate their
-schedule afterwards). `--apply` backs each show up to `--backup-dir` before changing
-it and reads it back to verify.
 
 ## Plex export safety
 

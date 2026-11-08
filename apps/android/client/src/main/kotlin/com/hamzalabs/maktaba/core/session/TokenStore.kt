@@ -9,6 +9,15 @@ interface TokenStore {
     val refresh: String?
     fun save(tokens: AuthTokens)
     fun clear()
+
+    /**
+     * The recovery pass (Epic 53 story 53.04): the API gives an admin's app one while it is up,
+     * and the Remote sends it to the recovery console, which answers with the API down. A
+     * store that keeps none (a viewer's app, a test) reads null.
+     */
+    var recoveryPass: String?
+        get() = null
+        set(@Suppress("UNUSED_PARAMETER") value) {}
 }
 
 /** Strings by key: SharedPreferences on Android, a file on a desktop, a map in tests. */
@@ -44,9 +53,16 @@ class SealedTokenStore(
         write("refresh", tokens.refreshToken)
     }
 
+    override var recoveryPass: String?
+        get() = synchronized(lock) { read("recovery") }
+        set(value) = synchronized(lock) {
+            if (value == null) store.put(prefix + "recovery", null) else write("recovery", value)
+        }
+
     override fun clear() = synchronized(lock) {
         store.put(prefix + "access", null)
         store.put(prefix + "refresh", null)
+        store.put(prefix + "recovery", null)
     }
 
     private fun write(kind: String, value: String) {

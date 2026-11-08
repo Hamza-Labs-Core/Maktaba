@@ -21,7 +21,7 @@ import (
 	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
-// Extensions (Plex, dizqueTV, Cloudflare Stream) are optional add-ons,
+// Extensions (Plex Live TV, Cloudflare Stream, web search) are optional add-ons,
 // not core. Their state lives in extensions(name PK, enabled, settings
 // JSONB, updated_at); the catalogue below (version, description, settings
 // schema) is code, because the table only stores operator choices.
@@ -67,17 +67,10 @@ const WebSearchExtension = "web_search"
 
 var extensionCatalog = []extensionDef{
 	{
-		Name: "dizquetv", Label: "dizqueTV", Version: "1", Description: "Publish Maktaba shows and channels to a dizqueTV server.",
-		Fields: []SettingField{
-			{Key: "url", Label: "dizqueTV URL", Type: "url", Required: true},
-		},
-	},
-	{
-		Name: "plex", Label: "Plex", Version: "1", Description: "Create and keep Plex collections in sync with detected seasons.",
+		Name: "plex", Label: "Plex", Version: "1", Description: "Register Maktaba's TV tuner and guide in Plex Live TV.",
 		Fields: []SettingField{
 			{Key: "url", Label: "Plex URL", Type: "url", Required: true},
 			{Key: "token", Label: "Plex token", Type: "secret", Required: true},
-			{Key: "path_map", Label: "Path map (Plex path to local path, JSON)", Type: "text"},
 		},
 	},
 	{
@@ -359,7 +352,7 @@ func findExtension(name string) (extensionDef, bool) {
 }
 
 // Extensions implements GET /api/extensions. Admin-only: the settings
-// name the external servers (Plex, dizqueTV) and their accounts.
+// name the external servers (Plex, Cloudflare) and their accounts.
 func (h *Handler) Extensions(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return

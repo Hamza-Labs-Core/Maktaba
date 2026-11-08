@@ -8,6 +8,7 @@ had no latest-player.json. Every Linux player leg installs them before the build
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -40,3 +41,19 @@ def test_linux_player_legs_install_skikos_libraries_before_the_tests() -> None:
     run = " ".join(steps[i]["run"] for i in installs).split()
     missing = [lib for lib in SKIKO_LIBS if lib not in run]
     assert not missing, f"Skiko's libraries are not installed: {missing}"
+
+
+# Epic 53 story 53.16: a forwarded report's desktop crash frames are read at Maktaba as they
+# came (cloud/internal/symbols treats desktop.player as not obfuscated), which holds only while
+# the installers are built without ProGuard. Compose's packageRelease* tasks run it: a leg that
+# moved to them would need the player's mapping uploaded as the Android apps' are.
+def test_the_player_installers_are_not_obfuscated() -> None:
+    for leg in player_job()["strategy"]["matrix"]["include"]:
+        tasks = leg["tasks"].split()
+        assert tasks and all(t.startswith("package") for t in tasks), leg
+        assert not any(t.startswith("packageRelease") for t in tasks), leg
+    gradle = (ROOT / "apps/desktop-player/build.gradle.kts").read_text(encoding="utf-8")
+    # no ProGuard settings (compose.desktop's buildTypes.release.proguard) either
+    assert "buildTypes" not in gradle and not re.search(r"proguard\s*\{", gradle, re.IGNORECASE)
+    symbolicate = (ROOT / "cloud/internal/symbols/symbolicate.go").read_text(encoding="utf-8")
+    assert 'func obfuscated(app string) bool { return strings.HasPrefix(app, "android.") }' in symbolicate

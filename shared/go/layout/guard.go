@@ -324,8 +324,10 @@ func UnmarkRecordKept(path, failed string) (bool, error) {
 	if str("kept_for") == "" || NormalizeVersion(str("version")) != NormalizeVersion(failed) {
 		return false, nil
 	}
-	delete(rec, "kept_for")
-	delete(rec, "kept_reason")
+	// from starts on it as on its own: the release that ran last is from
+	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for"} {
+		delete(rec, k)
+	}
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -349,4 +351,46 @@ func RecordMigrated(path, version string) bool {
 		return false
 	}
 	return NormalizeVersion(rec.Version) == NormalizeVersion(version) && (rec.State == "migrated" || rec.State == "migrating")
+}
+
+// MarkRecordDown says the database is back on from's schema: failed's Down scripts undid
+// its migrations (a rollback that undoes only what the release changed). The record
+// becomes from's, migrated, as if failed had never migrated it; down_from names failed.
+// It reports whether it changed the record (one that is not failed's, migrated, stays).
+func MarkRecordDown(path, failed, from, reason string) (bool, error) {
+	if path == "" || from == "" {
+		return false, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	str := func(k string) string { s, _ := rec[k].(string); return s }
+	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || str("state") != "migrated" {
+		return false, nil
+	}
+	// the versions as the record spells them (the server's own: "v0.3.82")
+	back := from
+	if NormalizeVersion(str("from")) == NormalizeVersion(from) {
+		back = str("from")
+	}
+	rec["down_from"], rec["down_reason"] = str("version"), reason
+	rec["version"] = back
+	// from starts on it as on its own: the release that ran last is from
+	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for"} {
+		delete(rec, k)
+	}
+	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
 }

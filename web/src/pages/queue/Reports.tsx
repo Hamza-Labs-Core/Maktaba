@@ -1,6 +1,6 @@
 // /queue/reports — the pages the pipeline writes about the library: a review
 // page per library (seasons and their episodes by eye), the channel plan, its
-// preview (a dry run with the current settings) and the channel audit. The
+// preview (a dry run with the current settings). The
 // list is whatever *.html is in the pipeline's reports folder; a page opens in
 // a sandboxed frame (the API serves it under a policy with no script).
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,7 +15,7 @@ import { useFmt } from "../../components/queue/format";
 import { TitleRow } from "../../help/HelpLink";
 import "../../styles/queue.css";
 
-const KIND_ORDER: ReportKind[] = ["plan", "preview", "audit", "review", "other"];
+const KIND_ORDER: ReportKind[] = ["plan", "preview", "review", "other"];
 
 export function Reports() {
   const { t, n } = useI18n();

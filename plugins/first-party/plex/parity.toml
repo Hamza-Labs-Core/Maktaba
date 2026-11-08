@@ -1,12 +1,14 @@
-# The parity proof of tv.maktaba.plex (story 54.35): a library indexed in a fake Plex behind
-# HTTP, its season written as a collection, Plex's collections read back. The calls Plex
-# received are compared by the test; the rows here, only the columns that hold a time masked.
-tables = ["external_links", "plex_items", "videos"]
+# The parity proof of tv.maktaba.plex (story 54.35): Maktaba's tuner registered in a fake Plex
+# Live TV behind HTTP and its channel map pushed. The calls Plex received are compared by the
+# test; the rows here, only the columns that hold a time masked, and status.server, which names
+# Plex's address in-process and the door (service:plex) through the plugin, which never learns
+# it (the API and the Live TV page read the address from the extension's settings).
+tables = ["plex_livetv_state", "hdhr_device"]
 
 [ignore]
-external_links = ["id", "created_at", "updated_at"]
-plex_items = ["indexed_at", "updated_at", "seen_at"]
-videos = ["created_at", "updated_at", "last_seen_at"]
+plex_livetv_state = ["updated_at", "checked_at", "channelmap_at", "guide_reloaded_at",
+                     "status.checked_at", "status.updated_at", "status.server"]
+hdhr_device = ["created_at", "updated_at"]
 
 [[cases]]
-name = "three episodes of a season and an item of another library; one hand-made Plex collection"
+name = "Maktaba's tuner registered beside another program's tuner, its channel map pushed"
