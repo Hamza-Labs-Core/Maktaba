@@ -15,6 +15,7 @@ import (
 	"image/jpeg"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -298,7 +299,9 @@ func subtitleFilesProblems(summary map[string]any, folder, stem, lang string, te
 	if ws, ok := summary["written"].([]any); ok {
 		for _, w := range ws {
 			if s, ok := w.(string); ok {
-				written[s] = true
+				// by name: on Windows the stage lists each file's whole path (its
+				// posixpath.basename keeps a backslashed path whole)
+				written[path.Base(strings.ReplaceAll(s, `\`, "/"))] = true
 			}
 		}
 	}
@@ -685,7 +688,7 @@ func TestTheChapterFramesAndSubtitleVerdicts(t *testing.T) {
 		t.Fatal("a summary of one frame passed")
 	}
 	folder := t.TempDir()
-	sum := map[string]any{"written": []any{"v.ar.srt", "v.ar.vtt"}}
+	sum := map[string]any{"written": []any{"v.ar.srt", `\\nas\lib\v.ar.vtt`}}
 	texts := []string{"بسم الله"}
 	if p := subtitleFilesProblems(sum, folder, "v", "ar", texts); len(p) == 0 {
 		t.Fatal("no files passed")
