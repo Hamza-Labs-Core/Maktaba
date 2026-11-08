@@ -247,4 +247,85 @@ struct RecoveryTests {
         await model.load()
         #expect(model.phase == .ready && model.state?.safeMode == true)
     }
+
+    // restore and the diagnostics download (after #918, on the same routes as the web page)
+
+    static let backups = """
+    {"backups":[{"name":"maktaba-20261106-030000.dump","at":"2026-11-06T03:00:00Z","size":73400320},
+                {"name":"maktaba-20261105-030000.dump","at":"2026-11-05T03:00:00Z","size":72351744}]}
+    """
+
+    @Test func readsTheBackups() async throws {
+        RecoveryStub.on("GET /recovery/api/backups", 200, Self.backups)
+        let (client, _) = RecoveryStub.client(pass: "p1")
+        let list = try await client.recoveryBackups()
+        #expect(list.map(\.name) == ["maktaba-20261106-030000.dump", "maktaba-20261105-030000.dump"])
+        #expect(list.first?.size == 73400320 && list.first?.at == homeTime("2026-11-06T03:00:00Z"))
+        #expect(RecoveryStub.seen.map(\.bearer) == ["p1"])
+    }
+
+    @MainActor @Test func restoringIsChosenThenConfirmedTwice() async throws {
+        RecoveryStub.on("GET /recovery/api/backups", 200, Self.backups)
+        RecoveryStub.on("POST /recovery/api/action", 200, #"{"result":"ok"}"#)
+        RecoveryStub.on("GET /recovery/api/state", 200, Self.state)
+        RecoveryStub.on("GET /recovery/api/logs", 200, #"{"lines":[]}"#)
+        let (client, _) = RecoveryStub.client(pass: "p1")
+        let model = RecoveryModel(client: client)
+        await model.chooseBackup()
+        let first = try #require(model.backups?.first)
+        model.pick(first)
+        #expect(model.backups == nil, "the list closes")
+        #expect(model.asking == RecoveryModel.Asking(action: .restore(first.name), step: 1, need: 2))
+        await model.confirm()
+        #expect(model.asking?.step == 2, "a second confirmation, as the web page asks")
+        #expect(!RecoveryStub.seen.contains { $0.route == "POST /recovery/api/action" })
+        await model.confirm()
+        let sent = try #require(RecoveryStub.seen.first { $0.route == "POST /recovery/api/action" })
+        #expect(sent.headers["X-Maktaba-Recovery"] == "1")
+        #expect(sent.json?["action"] as? String == "restore" && sent.json?["backup"] as? String == first.name)
+        #expect(sent.json?["confirm"] as? Int == 2)
+        #expect(model.outcome == .restoring)
+    }
+
+    @MainActor @Test func noBackupsIsSaid() async {
+        RecoveryStub.on("GET /recovery/api/backups", 200, #"{"backups":[]}"#)
+        let (client, _) = RecoveryStub.client(pass: "p1")
+        let model = RecoveryModel(client: client)
+        await model.chooseBackup()
+        #expect(model.backups == nil && model.outcome == .noBackups)
+    }
+
+    @MainActor @Test func aRefusedPassWhileChoosingIsDroppedAndDenied() async {
+        // the pass and then the access token turned down: each counts toward the lockout, so
+        // the pass is dropped and the screen says only admins get in, never signing out
+        RecoveryStub.on("GET /recovery/api/backups", 401, #"{"error":"unauthorized"}"#)
+        let (client, tokens) = RecoveryStub.client(pass: "p1", access: "viewer")
+        let model = RecoveryModel(client: client)
+        await model.chooseBackup()
+        #expect(model.phase == .denied && model.backups == nil)
+        #expect(RecoveryStub.seen.map(\.bearer) == ["p1", "viewer"])
+        #expect(tokens.recoveryPass == nil && tokens.access == "viewer")
+    }
+
+    @MainActor @Test func theDiagnosticsBundleIsKeptOnlyUntilShared() async throws {
+        RecoveryStub.on("GET /recovery/api/diagnostics", 200, "bundle-bytes")
+        let (client, _) = RecoveryStub.client(pass: "p1")
+        let model = RecoveryModel(client: client)
+        await model.fetchDiagnostics()
+        let file = try #require(model.diagnostics)
+        #expect(file.lastPathComponent.hasPrefix("maktaba-recovery-") && file.pathExtension == "gz")
+        #expect(try Data(contentsOf: file) == Data("bundle-bytes".utf8))
+        #expect(file.path().hasPrefix(RecoveryModel.diagnosticsFolder.path()))
+        model.doneSharing()
+        #expect(model.diagnostics == nil)
+        #expect(!FileManager.default.fileExists(atPath: file.deletingLastPathComponent().path()), "deleted once shared")
+    }
+
+    @MainActor @Test func aDiagnosticsFailureIsSaid() async {
+        RecoveryStub.on("GET /recovery/api/diagnostics", 500, #"{"error":"no space left"}"#)
+        let (client, _) = RecoveryStub.client(pass: "p1")
+        let model = RecoveryModel(client: client)
+        await model.fetchDiagnostics()
+        #expect(model.diagnostics == nil && model.outcome == .failed("no space left"))
+    }
 }

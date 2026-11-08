@@ -212,3 +212,110 @@ func TestOverviewRouteTakesMachine(t *testing.T) {
 		t.Fatalf("%v %+v", err, d)
 	}
 }
+
+// smallFleet records one scrape from 8 machines (n00…n07) of 4 components each: n03 has 3
+// components down, n05 the least disk free; the rest are alike.
+func smallFleet(t *testing.T) (*Index, context.Context) {
+	t.Helper()
+	root, now := t.TempDir(), t0
+	ix := open(t, root, &now)
+	ctx := context.Background()
+	var b strings.Builder
+	for i := 0; i < 8; i++ {
+		m := fmt.Sprintf("n%02d", i)
+		disk := 1e12
+		if m == "n05" {
+			disk = 1e9
+		}
+		fmt.Fprintf(&b, "maktaba_host_load1{machine=%q} 1\nmaktaba_host_cpus{machine=%q} 4\n", m, m)
+		fmt.Fprintf(&b, "maktaba_host_memory_free_bytes{machine=%q} 4e9\nmaktaba_host_disk_free_bytes{machine=%q} %g\n", m, m, disk)
+		for c := 0; c < 4; c++ {
+			phase, up := "running", 1
+			if m == "n03" && c < 3 {
+				phase, up = "failed", 0
+			}
+			fmt.Fprintf(&b, "maktaba_component_up{id=\"c%d\",machine=%q,phase=%q} %d\n", c, m, phase, up)
+		}
+	}
+	now = now.Add(time.Minute)
+	if err := ix.Record(ctx, parseMetrics(strings.NewReader(b.String())), now); err != nil {
+		t.Fatal(err)
+	}
+	return ix, ctx
+}
+
+// Story 53.12: a joined machine that is offline sends no fresh values, so by its values it
+// ranked last (n06 here, all well) or was missing (n09, never in the store). Named offline,
+// both rank first among the machines shown, are counted and listed, and keep the bounds.
+func TestOverviewOfflineFirst(t *testing.T) {
+	ix, ctx := smallFleet(t)
+	doc, err := ix.BoardFor(ctx, "overview", "1h", "", []string{"n09", "n06"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mc := doc.Machines
+	if mc == nil || mc.Total != 9 || len(mc.All) != 9 || strings.Join(mc.Offline, ",") != "n06,n09" {
+		t.Fatalf("machines: %+v, want the 8 in the store and n09, n06 and n09 offline", mc)
+	}
+	if got := strings.Join(mc.Shown, ","); got != "n06,n09,n03,n05,n00" {
+		t.Fatalf("shown %s, want the offline machines first, then the most components down, then least disk", got)
+	}
+	if len(doc.Series) > MaxSeries || doc.Omitted != 0 {
+		t.Fatalf("%d lines, %d left out", len(doc.Series), doc.Omitted)
+	}
+	for _, s := range doc.Series {
+		if len(s.Points) > MaxPoints {
+			t.Errorf("%s{%s}: %d points", s.Name, s.Labels, len(s.Points))
+		}
+		if labelValue(s.Labels, "machine") == "n09" {
+			t.Errorf("n09 has no lines in the store, yet %s{%s}", s.Name, s.Labels)
+		}
+	}
+	if _, ok := lineOf(doc, "maktaba_host_load1", "machine=n06"); !ok {
+		t.Error("n06's last values are still drawn")
+	}
+	// none offline: the list is there and empty (a client reads it as is)
+	plain, err := ix.Board(ctx, "overview", "1h")
+	if err != nil || plain.Machines == nil || plain.Machines.Offline == nil || len(plain.Machines.Offline) != 0 ||
+		plain.Machines.Shown[0] != "n03" {
+		t.Fatalf("%v %+v", err, plain.Machines)
+	}
+	// one offline machine on its own: named offline, its lines as they were
+	one, err := ix.BoardFor(ctx, "overview", "1h", "n06", []string{"n06"})
+	if err != nil || strings.Join(one.Machines.Shown, ",") != "n06" || strings.Join(one.Machines.Offline, ",") != "n06" ||
+		len(one.Series) == 0 {
+		t.Fatalf("n06 alone: %v %+v, %d lines", err, one.Machines, len(one.Series))
+	}
+	// the bounds: too many, or an id too long
+	many := make([]string, MaxOffline+1)
+	for i := range many {
+		many[i] = fmt.Sprintf("m%d", i)
+	}
+	if _, err := ix.BoardFor(ctx, "overview", "1h", "", many); err != ErrBoard {
+		t.Errorf("%d offline: %v, want ErrBoard", len(many), err)
+	}
+	if _, err := ix.BoardFor(ctx, "overview", "1h", "", []string{strings.Repeat("x", maxMachineID+1)}); err != ErrBoard {
+		t.Errorf("an offline id past %d bytes: %v, want ErrBoard", maxMachineID, err)
+	}
+	// offline= is the Overview's; another board ignores it
+	if st, err := ix.BoardFor(ctx, "storage", "1h", "", []string{"n06"}); err != nil || st.Machines != nil {
+		t.Errorf("storage with offline=: %v %+v", err, st.Machines)
+	}
+}
+
+// Story 53.12: the log index's /dashboards route passes offline= on.
+func TestOverviewRouteTakesOffline(t *testing.T) {
+	ix, _ := smallFleet(t)
+	srv := httptest.NewServer(ix.Handler(nil))
+	defer srv.Close()
+	r, err := http.Get(srv.URL + "/dashboards/overview?range=1h&offline=n06,n09")
+	if err != nil || r.StatusCode != 200 {
+		t.Fatalf("%v %v", err, r)
+	}
+	defer r.Body.Close()
+	var d BoardDoc
+	if err := json.NewDecoder(r.Body).Decode(&d); err != nil || d.Machines == nil ||
+		strings.Join(d.Machines.Offline, ",") != "n06,n09" || d.Machines.Shown[0] != "n06" {
+		t.Fatalf("%v %+v", err, d.Machines)
+	}
+}

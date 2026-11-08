@@ -4,7 +4,8 @@
 // sentence for screen readers, and Open in Logs for the same window. Use shows counts and
 // titles only, never one person's history. With several machines the Overview shows totals
 // across them and the five most in need of attention, says how many of how many it shows,
-// and offers each machine on its own.
+// names the joined machines that are offline (they come first), and offers each machine on
+// its own.
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Card } from "@ds/components/Card/Card";
@@ -57,6 +58,7 @@ function DashboardsInner() {
   const [machine, setMachine] = useState("");
   const [doc, setDoc] = useState<BoardDoc | null>(null);
   const [machines, setMachines] = useState<string[]>([]);
+  const [offline, setOffline] = useState<string[]>([]);
   const [err, setErr] = useState(false);
 
   useEffect(() => {
@@ -66,7 +68,10 @@ function DashboardsInner() {
       .then((d) => {
         if (!alive) return;
         setDoc(d);
-        if (d.machines) setMachines(d.machines.all);
+        if (d.machines) {
+          setMachines(d.machines.all);
+          setOffline(d.machines.offline);
+        }
         setErr(false);
       })
       .catch(() => alive && setErr(true));
@@ -75,6 +80,15 @@ function DashboardsInner() {
     };
   }, [board, range, machine]);
 
+  // the joined machines that are offline: named on the Overview, or the one asked for
+  const off = board === "overview" ? (doc?.machines?.offline ?? []) : [];
+  const offlineLine = machine
+    ? off.includes(machine)
+      ? t("dash.machine.offline")
+      : ""
+    : off.length > 0
+      ? t("dash.machines.offline", { machines: off.join(", ") })
+      : "";
   const since = new Date(Date.now() - RANGE_MS[range]).toISOString();
   const fmtTime = (s: number) => formatDate(new Date(s * 1000).toISOString());
   return (
@@ -123,7 +137,7 @@ function DashboardsInner() {
             <option value="">{t("dash.machine.all")}</option>
             {machines.map((m) => (
               <option key={m} value={m}>
-                {m}
+                {offline.includes(m) ? t("dash.machine.offlineOption", { machine: m }) : m}
               </option>
             ))}
           </select>
@@ -141,6 +155,11 @@ function DashboardsInner() {
             })}
           </p>
         )}
+      {offlineLine && (
+        <p className="mkt-dash__offline" role="status" data-testid="dash-offline">
+          {offlineLine}
+        </p>
+      )}
       {err && <p className="mkt-muted">{t("dash.loadError")}</p>}
       {doc && doc.series.length === 0 && (doc.top ?? []).length === 0 && (
         <p className="mkt-muted" data-testid="dash-empty">

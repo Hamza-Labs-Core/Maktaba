@@ -1,6 +1,7 @@
 package pgbundle
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -128,14 +129,32 @@ func TestListDeleteAndMoveDumps(t *testing.T) {
 	}
 }
 
-func TestRunBackupsOffTakesNone(t *testing.T) {
-	b := Bundle{Backups: t.TempDir(), Nightly: &NightlyPolicy{Off: true}}
+// With the scheduled backups off no dump is taken, but the old ones are still pruned, and
+// the loop ends with its context.
+func TestRunBackupsOffTakesNoneButPrunes(t *testing.T) {
+	dir := t.TempDir()
+	for i, d := range []string{"20261020", "20261021", "20261022"} {
+		writeDump(t, dir, "maktaba-"+d+"-030000.dump", 10, time.Now().Add(time.Duration(i-3)*time.Hour))
+	}
+	b := Bundle{Backups: dir, Nightly: &NightlyPolicy{Off: true, Keep: 1}}
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
-	go func() { b.RunBackups(t.Context(), time.Millisecond, &discard{}); close(done) }()
+	go func() { b.RunBackups(ctx, time.Millisecond, &discard{}); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(left(t, dir)) > 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("the old dumps stayed: %v", left(t, dir))
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := left(t, dir); !slices.Equal(got, []string{"maktaba-20261022-030000.dump"}) {
+		t.Errorf("left %v (a dump was taken, or the newest went)", got)
+	}
+	cancel()
 	select {
 	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("RunBackups ran with the scheduled backups off")
+	case <-time.After(5 * time.Second):
+		t.Fatal("RunBackups did not end with its context")
 	}
 }
 

@@ -147,8 +147,31 @@ public struct RecoveryLine: Equatable, Sendable, Identifiable {
     }
 }
 
-/// What the console can do from the Remote (story 53.04 §4). Restoring a backup and the
-/// diagnostics download stay on the web page.
+/// One backup the home can restore (`GET /recovery/api/backups`), newest first as the home lists them.
+public struct RecoveryBackup: Decodable, Equatable, Sendable, Identifiable {
+    public var name: String
+    public var at: Date?
+    public var size: Int64
+    public var id: String { name }
+
+    enum CodingKeys: String, CodingKey { case name, at, size }
+
+    public init(name: String, at: Date? = nil, size: Int64 = -1) {
+        self.name = name
+        self.at = at
+        self.size = size
+    }
+
+    public init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        name = try c.decode(String.self, forKey: .name)
+        at = try c.decodeIfPresent(String.self, forKey: .at).flatMap(homeTime)
+        size = try c.decodeIfPresent(Int64.self, forKey: .size) ?? -1
+    }
+}
+
+/// What the console can do from the Remote (story 53.04 §4): the web page's actions, restoring
+/// a backup among them.
 public enum RecoveryAction: Equatable, Sendable, Hashable {
     case restart(String)
     case restartAll
@@ -156,12 +179,17 @@ public enum RecoveryAction: Equatable, Sendable, Hashable {
     case staySafe
     case leaveSafe
     case rollback(String)
+    /// Puts the named backup back: the home marks it and restarts to restore it.
+    case restore(String)
 
-    /// How many times the person confirms: twice to go back a version (the home asks twice
-    /// for every action through the relay, and says so with 428).
+    /// How many times the person confirms: twice to go back a version or restore a backup, as
+    /// the web page asks (the home asks twice for every action through the relay, and says so
+    /// with 428).
     public var confirms: Int {
-        if case .rollback = self { return 2 }
-        return 1
+        switch self {
+        case .rollback, .restore: 2
+        default: 1
+        }
     }
 
     var body: [String: Any] {
@@ -172,6 +200,7 @@ public enum RecoveryAction: Equatable, Sendable, Hashable {
         case .staySafe: ["action": "stay_safe"]
         case .leaveSafe: ["action": "leave_safe"]
         case .rollback: ["action": "rollback"]
+        case .restore(let name): ["action": "restore", "backup": name]
         }
     }
 }
@@ -219,6 +248,23 @@ extension APIClient {
         return lines.enumerated().compactMap { i, l in (l as? [String: Any]).map { RecoveryLine.parse($0, index: i) } }
     }
 
+    /// The backups the home can restore.
+    public func recoveryBackups() async throws(RecoveryFailure) -> [RecoveryBackup] {
+        struct List: Decodable { let backups: [RecoveryBackup]? }
+        let data = try await recoveryCall(request("GET", "/recovery/api/backups"))
+        do {
+            return try JSONDecoder().decode(List.self, from: data).backups ?? []
+        } catch {
+            throw .refused(String(describing: error))
+        }
+    }
+
+    /// The diagnostics bundle (a .tar.gz of the last 2 hours of lines, the state and the
+    /// supervisor's own files). The home builds it as it answers: longer than the other calls.
+    public func recoveryDiagnostics() async throws(RecoveryFailure) -> Data {
+        try await recoveryCall(request("GET", "/recovery/api/diagnostics"), timeout: 180)
+    }
+
     /// Runs `action`, confirmed `confirm` times.
     public func recoveryAction(_ action: RecoveryAction, confirm: Int) async throws(RecoveryFailure) {
         var body = action.body
@@ -232,9 +278,9 @@ extension APIClient {
     /// Sends `r` to the console with the pass, else the access token (refreshed once). A
     /// credential the console turns down is never a sign-out: a pass it refuses is dropped
     /// (each refusal counts toward its lockout), and the screen says only admins get in.
-    func recoveryCall(_ r: URLRequest) async throws(RecoveryFailure) -> Data {
+    func recoveryCall(_ r: URLRequest, timeout: TimeInterval = 10) async throws(RecoveryFailure) -> Data {
         var r = r
-        r.timeoutInterval = 10
+        r.timeoutInterval = timeout
         r.cachePolicy = .reloadIgnoringLocalCacheData
         var refreshed = false
         var credentials = [tokens.recoveryPass, tokens.access].compactMap { $0 }
@@ -295,6 +341,10 @@ public final class RecoveryModel {
     public enum Outcome: Equatable, Sendable {
         case done
         case failed(String)
+        /// A restore was accepted: the home restarts to put the backup back.
+        case restoring
+        /// The home has no backup to restore.
+        case noBackups
     }
 
     public private(set) var phase = Phase.loading
@@ -304,6 +354,14 @@ public final class RecoveryModel {
     public private(set) var running: RecoveryAction?
     public var asking: Asking?
     public var outcome: Outcome?
+    /// The backups to choose from while the person picks one to restore (nil: not choosing).
+    public var backups: [RecoveryBackup]?
+    /// Reading the backups or the diagnostics bundle.
+    public private(set) var fetching: Fetching?
+    /// The diagnostics bundle, in a file of its own until it is shared (then deleted).
+    public private(set) var diagnostics: URL?
+
+    public enum Fetching: Equatable, Sendable { case backups, diagnostics }
 
     let client: APIClient
 
@@ -338,6 +396,78 @@ public final class RecoveryModel {
             await load()
             if phase == .denied || phase == .notHere { return }
             try? await Task.sleep(for: every)
+            // an action or a read meanwhile may have been turned down: no more tries (each counts)
+            if phase == .denied { return }
+        }
+    }
+
+    /// Restore a backup: the home's backups, to choose one from (or says it has none).
+    public func chooseBackup() async {
+        outcome = nil
+        fetching = .backups
+        defer { fetching = nil }
+        do {
+            let list = try await client.recoveryBackups()
+            if list.isEmpty { outcome = .noBackups } else { backups = list }
+        } catch {
+            fail(error)
+        }
+    }
+
+    /// The person chose `backup`: the restore's first confirmation.
+    public func pick(_ backup: RecoveryBackup) {
+        backups = nil
+        ask(.restore(backup.name))
+    }
+
+    /// Fetches the diagnostics bundle into a file of its own, for the share sheet.
+    public func fetchDiagnostics() async {
+        outcome = nil
+        fetching = .diagnostics
+        defer { fetching = nil }
+        do {
+            let data = try await client.recoveryDiagnostics()
+            let dir = Self.diagnosticsFolder.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone(identifier: "UTC")
+            f.dateFormat = "yyyyMMdd-HHmmss"
+            let file = dir.appending(path: "maktaba-recovery-\(f.string(from: Date())).tar.gz")
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try data.write(to: file, options: [.atomic, .completeFileProtection])
+                diagnostics = file
+            } catch {
+                try? FileManager.default.removeItem(at: dir)
+                outcome = .failed(error.localizedDescription)
+            }
+        } catch {
+            fail(error)
+        }
+    }
+
+    /// The share sheet closed: the bundle's file goes (it is kept no longer than that).
+    public func doneSharing() {
+        guard let file = diagnostics else { return }
+        diagnostics = nil
+        try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+    }
+
+    /// Where bundles wait for the share sheet; anything left there (the app stopped while one
+    /// was shown) is deleted when the screen opens.
+    public static var diagnosticsFolder: URL {
+        FileManager.default.temporaryDirectory.appending(path: "recovery-diagnostics", directoryHint: .isDirectory)
+    }
+
+    public static func sweepDiagnostics() {
+        try? FileManager.default.removeItem(at: diagnosticsFolder)
+    }
+
+    private func fail(_ error: RecoveryFailure) {
+        switch error {
+        case .denied: outcome = .failed(""); phase = .denied
+        case .refused(let why): outcome = .failed(why)
+        case .notHere, .unreachable, .confirm: outcome = .failed("")
         }
     }
 
@@ -363,16 +493,14 @@ public final class RecoveryModel {
         defer { running = nil }
         do {
             try await client.recoveryAction(a.action, confirm: a.need)
-            outcome = .done
+            if case .restore = a.action { outcome = .restoring } else { outcome = .done }
         } catch {
             switch error {
             case .confirm(let n) where n > a.need:
                 // through the relay: one more confirmation
                 asking = Asking(action: a.action, step: a.need + 1, need: n)
                 return
-            case .denied: outcome = .failed(""); phase = .denied
-            case .refused(let why): outcome = .failed(why)
-            case .notHere, .unreachable, .confirm: outcome = .failed("")
+            default: fail(error)
             }
         }
         await load()

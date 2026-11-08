@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
@@ -209,4 +210,31 @@ func (h *Handler) writeNode(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 	common.WriteJSON(w, r, http.StatusOK, h.live(view(n, mine, stages[id], now), h.liveStates()))
+}
+
+// OfflineMachines are the approved machines that are not online now, by the Machines page's
+// own rule (neither the machine nor any of its workers seen within OnlineWindow), sorted:
+// the dashboards' Overview ranks them first (story 53.12).
+func (h *Handler) OfflineMachines(ctx context.Context) ([]string, error) {
+	nodes, err := h.Store.Nodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	workers, err := h.Store.Workers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byNode := map[string][]cluster.NodeWorker{}
+	for _, w := range workers {
+		byNode[w.NodeID] = append(byNode[w.NodeID], w)
+	}
+	now := h.now()
+	out := []string{}
+	for _, n := range nodes {
+		if n.State == cluster.StateApproved && !view(n, byNode[n.ID], nil, now).Online {
+			out = append(out, n.ID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
 }

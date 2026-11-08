@@ -59,6 +59,28 @@ async def test_an_unreadable_answer_runs_in_process(stage: str) -> None:
     assert (got.impl, got.why) == ("inproc", "role_unusable")
 
 
+async def test_on_windows_a_first_party_stage_stays_in_the_worker(
+    stage: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story 54.23: a runner inside its Windows AppContainer cannot create the named pipes
+    asyncio captures a tool's output with, so until the runners start tools through
+    anonymous pipes every first-party stage on Windows runs in the worker, and no runner
+    is asked or started for it."""
+    import sys
+
+    asked: list[str] = []
+
+    async def serving(s: str) -> tuple[bool, str | None]:
+        asked.append(s)
+        return True, None
+
+    monkeypatch.setattr(native, "serving", serving)
+    monkeypatch.setattr(sys, "platform", "win32")
+    got = await native.choose(_DB(True), stage)
+    assert (got.impl, got.why) == ("inproc", "windows_tool_pipes")
+    assert asked == []
+
+
 async def test_the_answer_is_kept_for_a_minute(stage: str) -> None:
     db = _DB(True)
     await native.choose(db, stage)

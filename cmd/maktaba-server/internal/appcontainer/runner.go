@@ -180,8 +180,19 @@ var (
 	revokeFn     = Revoke
 	runFn        = Run
 	// remoteFn: a folder on another machine (a share, a mapped drive), whose ACL the
-	// launcher never changes; an AppContainer cannot reach SMB shares anyway
+	// launcher never changes; an AppContainer cannot reach SMB shares, so the launcher
+	// brokers the share folders the group reads or writes by name (broker.go)
 	remoteFn = remotePath
+	// afterCheck runs between a path's last check and the grant or revoke on it (step is
+	// "grant" or "revoke"): the Windows tests swap the folder for a junction there, which
+	// must not redirect the change
+	afterCheck = func(_, _ string) {}
+	brokerFn   = startBroker
+	// shareLocalFn maps a share this machine serves to its folder (a brokered share is
+	// checked against the protected folders by it)
+	shareLocalFn = shareLocalPath
+	// shareFn: a \\server\share path (a mapped drive is remote but not brokered)
+	shareFn = uncPath
 )
 
 // uncPath reports a \\server\share path (not a \\?\ or \\.\ local device path).
@@ -265,7 +276,12 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		return fail("policy_path", err)
 	}
 	now := p.Grants(data)
+	shares := brokerRootsOf(p, func(x string) bool { return remoteFn(x) && shareFn(x) })
 	if err := CheckGrants(now, guarded, own); err != nil {
+		return fail("policy_path", err)
+	}
+	shares, dropped, err := shares.check(shareLocalFn, guarded, own)
+	if err != nil {
 		return fail("policy_path", err)
 	}
 	profile := RunnerProfile(*group)
@@ -308,6 +324,12 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		}
 	}
 	for _, g := range revoke {
+		// a recorded path is taken back only where it still is: one now reached through a
+		// link refuses the start (Revoke checks it again by handle)
+		if again, err := canonical(g.Path); err != nil || pathKey(again) != pathKey(g.Path) {
+			return fail("revoke", fmt.Errorf("%s changed after it was granted", g.Path))
+		}
+		afterCheck("revoke", g.Path)
 		if err := revokeFn(profile, g.Path); err != nil {
 			return fail("revoke", err)
 		}
@@ -323,14 +345,19 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		}
 		if remoteFn(g.Path) {
 			// another machine's folder: its ACL is not ours to change, and the AppContainer
-			// cannot reach a share; a job refused there runs in the worker (sandbox_refused)
-			fmt.Fprintf(stderr, `{"event":"plugin_runner_area_remote","group":%q,"path":%q}`+"\n", *group, g.Path)
+			// cannot reach a share. One the group reads or writes by name is brokered (below);
+			// a job refused anywhere else there runs in the worker (sandbox_refused)
+			if !shares.brokered(g.Path) || dropped.brokered(g.Path) {
+				fmt.Fprintf(stderr, `{"event":"plugin_runner_area_remote","group":%q,"path":%q}`+"\n", *group, g.Path)
+			}
 			continue
 		}
-		// resolved again just before the grant: a link made since the check is refused
+		// resolved again just before the grant: a link made since the check is refused, and
+		// Grant checks once more by handle (a link made after this one is refused there)
 		if again, err := canonical(g.Path); err != nil || pathKey(again) != pathKey(g.Path) {
 			return fail("policy_path", fmt.Errorf("%s changed after it was checked", g.Path))
 		}
+		afterCheck("grant", g.Path)
 		if err := grantFn(profile, g.Path, g.Write); err != nil {
 			return fail("grant", err)
 		}
@@ -339,7 +366,11 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 		if err := os.MkdirAll(*areasDir, 0o700); err != nil {
 			return fail("grant", err)
 		}
-		if err := grantFilesFn(profile, *areasDir); err != nil {
+		areas, err := canonical(*areasDir)
+		if err != nil {
+			return fail("policy_path", err)
+		}
+		if err := grantFilesFn(profile, areas); err != nil {
 			return fail("grant", err)
 		}
 	}
@@ -351,11 +382,67 @@ func LaunchRunner(args []string, stderr io.Writer) int {
 	}
 	o := p.RunnerOptions(os.Environ())
 	o.MemoryBytes = *memory
+	if len(shares) > 0 {
+		env, started, stop, err := brokerFn(profile, shares)
+		if err != nil {
+			// the runner starts without its shares: what it reads there is refused, and those
+			// jobs run in the worker, as before the broker
+			fmt.Fprintf(stderr, `{"event":"plugin_runner_broker_unavailable","group":%q,"detail":%q}`+"\n", *group, err.Error())
+		} else {
+			defer stop()
+			o.Env, o.Started = append(o.Env, env...), started
+			for _, r := range shares {
+				fmt.Fprintf(stderr, `{"event":"plugin_runner_area_brokered","group":%q,"path":%q,"write_named":%v}`+"\n", *group, r.Path, r.WriteNamed)
+			}
+		}
+	}
 	code, err = runFn(profile, rest[0], rest[1:], o)
 	if err != nil {
 		return fail("start", err)
 	}
 	return code
+}
+
+// The ACE flags a grant's walk reads (Windows' OBJECT_INHERIT_ACE and the rest).
+const (
+	aceObjectInherit    = 0x01
+	aceContainerInherit = 0x02
+	aceNoPropagate      = 0x04
+	aceInheritOnly      = 0x08
+	aceInherited        = 0x10
+)
+
+// inheritedFlags is what an entry with flags on a folder passes to a child of it (a folder
+// or a file), as Windows' inheritance rules have it: ok is false when it passes nothing.
+func inheritedFlags(flags uint8, childDir bool) (uint8, bool) {
+	np := flags&aceNoPropagate != 0
+	if !childDir {
+		return aceInherited, flags&aceObjectInherit != 0
+	}
+	switch {
+	case flags&aceContainerInherit != 0 && np:
+		return aceInherited, true
+	case flags&aceContainerInherit != 0:
+		return aceInherited | flags&(aceObjectInherit|aceContainerInherit), true
+	case flags&aceObjectInherit != 0 && !np:
+		// for the files below the folder, not for the folder itself
+		return aceInherited | aceInheritOnly | aceObjectInherit, true
+	}
+	return 0, false
+}
+
+// nameSurrogate: a reparse tag that names another object (a junction, a symbolic link), as
+// opposed to one that stores the file otherwise (deduplication, cloud files): a grant's
+// walk never goes through one.
+func nameSurrogate(tag uint32) bool { return tag&0x20000000 != 0 }
+
+// finalPathName is GetFinalPathNameByHandle's answer as a path: \\?\C:\x is C:\x, and
+// \\?\UNC\server\share is \\server\share.
+func finalPathName(p string) string {
+	if rest, ok := strings.CutPrefix(p, `\\?\UNC\`); ok {
+		return `\\` + rest
+	}
+	return strings.TrimPrefix(p, `\\?\`)
 }
 
 // dosDevices are names Windows opens as a device in any folder, with any extension.

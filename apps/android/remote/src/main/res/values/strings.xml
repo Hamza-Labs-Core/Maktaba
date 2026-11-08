@@ -752,6 +752,9 @@
     <string name="dash_machine_all">All machines</string>
     <string name="dash_machines_shown">Showing %1$d of %2$d machines, those most in need of attention first. Pick a machine to see its own.</string>
     <string name="dash_omitted">%1$d more lines did not fit on this board.</string>
+    <string name="dash_machines_offline">Offline: %1$s. Offline machines come first; their lines end at their last values.</string>
+    <string name="dash_machine_offline">This machine is offline. Its lines end at its last values.</string>
+    <string name="dash_machine_offline_option">%1$s (offline)</string>
     <!-- Epic 53 stories 53.04, 53.05: the recovery screen (the console's words) -->
     <string name="recovery_title">Recovery</string>
     <string name="recovery_intro">Part of Maktaba isn\'t working. You can see what happened and fix it here.</string>
@@ -782,7 +785,15 @@
     <string name="recovery_failed">That did not work.</string>
     <string name="recovery_failed_why">That did not work: %1$s</string>
     <string name="recovery_open_web">Open the recovery page</string>
-    <string name="recovery_web_note">Restoring a backup and downloading diagnostics are on the recovery page, in a browser.</string>
+    <string name="recovery_restore">Restore a backup</string>
+    <string name="recovery_restore_named">Restore %1$s</string>
+    <string name="recovery_restore_button">Restore</string>
+    <string name="recovery_choose_backup">Choose a backup</string>
+    <string name="recovery_restore_note">Restoring replaces the library database with the backup and loses every change made since it was taken.</string>
+    <string name="recovery_restoring">The home is restarting to put the backup back.</string>
+    <string name="recovery_no_backups">No backups were found on the data disk.</string>
+    <string name="recovery_diagnostics">Download diagnostics</string>
+    <string name="recovery_diagnostics_saved">Diagnostics saved.</string>
     <string name="recovery_group_database">Database</string>
     <string name="recovery_group_api">Maktaba service</string>
     <string name="recovery_group_streaming">Playback</string>

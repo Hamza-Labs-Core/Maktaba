@@ -467,14 +467,171 @@ pub use sm::{
     open_settings as open_login_items_settings, register, status as login_item, unregister,
 };
 
-/// macOS: the server's login item is bound to the build of the app that registered it.
-/// An app signed ad hoc is identified by its code hash, so after an update or a
-/// reinstall launchd refuses to start the agent ("OS_REASON_CODESIGNING | Launch
-/// Constraint Violation", exit 78) and the window waits on a server that never starts.
-/// Registered again once per build (the stamp in <state>/state/login-item-build):
-/// true when it was.
+/// What `register_login_item` found and did.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Synced {
+    /// Already this build's (or left to the newer build on disk): nothing was done.
+    Unchanged,
+    /// Registered (again) for this build.
+    Registered,
+    /// macOS refused to register it again, but launchd has the job: it was started.
+    Started,
+    /// Registered, but turned off in System Settings › Login Items.
+    NeedsApproval,
+}
+
+/// What the server's login item needs (login_item_step).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoginStep {
+    /// It is this build's: nothing to do (the stamp is written when it changed).
+    Keep,
+    /// Nothing is registered: register.
+    Register,
+    /// Another build's registration: unregister, then register.
+    Reregister,
+    /// The registration is good: start the job launchd has.
+    Kickstart,
+    /// Turned off in System Settings › Login Items: only the user can turn it on.
+    Approve,
+    /// This process runs a build the app on disk replaced (an install swapped the bundle
+    /// under it): the new build's start registers the login item, not this one.
+    LeaveToNewBuild,
+}
+
+/// What macOS refusing to register the login item leads to (on_refusal).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refusal {
+    /// launchd still has the job (the login item is Enabled): start it, no dialog.
+    Kickstart,
+    /// Turned off in System Settings › Login Items: the user turns it on there.
+    Approve,
+    /// Nothing registered that could start: the error stands.
+    Fail,
+}
+
+/// The registration stamp of an app signed with a Team ID (a Developer ID release): its
+/// team, its bundled plist and where the bundle is. The executable is not in it: a
+/// Developer ID build keeps the same designated requirement (anchor, team, identifier)
+/// across updates, so launchd keeps starting the registered job after an update and
+/// registering it again is needed only when the plist changed.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn team_stamp(team: &str, plist: &[u8], bundle: &Path) -> String {
+    // FNV-1a: stable across Rust releases (DefaultHasher is not promised to be)
+    let hash = plist.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("team:{team}|plist:{hash:016x}|{}", bundle.display())
+}
+
+/// A team stamp's team and plist hash; None for a stamp of an app signed ad hoc (its
+/// executable's path, size and time).
+fn team_stamp_parts(stamp: &str) -> Option<(&str, &str)> {
+    let mut parts = stamp.strip_prefix("team:")?.split('|');
+    let team = parts.next()?;
+    let plist = parts.next()?.strip_prefix("plist:")?;
+    Some((team, plist))
+}
+
+/// The Team ID in `codesign -dv`'s output; None for an app signed ad hoc ("not set").
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn team_from_codesign(said: &str) -> Option<String> {
+    said.lines()
+        .find_map(|l| l.trim().strip_prefix("TeamIdentifier="))
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && *t != "not set")
+        .map(String::from)
+}
+
+/// What the server's login item needs, from this build's stamp (`now`), the one saved by
+/// the build that last registered it, its status, `force` (the server stayed silent after
+/// an update) and `stale` (an install replaced this process's build on disk).
+///
+/// An app signed ad hoc is identified by its code hash, so after an update launchd refuses
+/// the old registration ("Launch Constraint Violation", exit 78): it is registered again
+/// (unregister, then register). A Developer ID build is not: its registration stays valid,
+/// and unregistering it only risks macOS refusing the register that follows (2026-11-08:
+/// SMAppServiceErrorDomain 1 on every launch, while launchd still had the job). It is
+/// registered again only for a changed plist; a silent server's job is started instead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn login_item_step(
+    force: bool,
+    stale: bool,
+    now: &str,
+    saved: Option<&str>,
+    status: LoginItem,
+) -> LoginStep {
+    if stale {
+        return LoginStep::LeaveToNewBuild;
+    }
+    let Some((_, plist)) = team_stamp_parts(now) else {
+        return if !force && saved == Some(now) {
+            LoginStep::Keep
+        } else {
+            LoginStep::Reregister
+        };
+    };
+    match status {
+        LoginItem::Enabled => {
+            let plist_changed = saved
+                .and_then(team_stamp_parts)
+                .is_some_and(|(_, was)| was != plist);
+            if plist_changed {
+                LoginStep::Reregister
+            } else if force {
+                LoginStep::Kickstart
+            } else {
+                LoginStep::Keep
+            }
+        }
+        LoginItem::RequiresApproval => LoginStep::Approve,
+        _ => LoginStep::Register,
+    }
+}
+
+/// macOS refused to register the login item (`err`): what then, from its status now and
+/// whether launchd still has the job. A login item that is Enabled, or a job launchd has
+/// loaded, is a valid registration: its job is started rather than the server called
+/// unable to start.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn on_refusal(err: &str, status: LoginItem, job_loaded: bool) -> Refusal {
+    if err.starts_with(crate::attempts::LOGIN_ITEM_UNSIGNED) {
+        Refusal::Fail
+    } else if status == LoginItem::RequiresApproval {
+        Refusal::Approve
+    } else if status == LoginItem::Enabled || job_loaded {
+        Refusal::Kickstart
+    } else {
+        Refusal::Fail
+    }
+}
+
+/// Whether `launchctl print`'s output says the job is running.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn job_running(print: &str) -> bool {
+    print.lines().any(|l| l.trim() == "state = running")
+}
+
+/// This build of the app as it was when this process started (remember_this_build): an
+/// install that swaps the bundle under the running app changes the executable on disk.
 #[cfg(target_os = "macos")]
-pub fn register_for_this_build() -> Result<bool, String> {
+static BUILD_AT_START: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Remember this process's build, before any install can replace it on disk.
+#[cfg(target_os = "macos")]
+pub fn remember_this_build() {
+    if let Some(stamp) = build_stamp() {
+        let _ = BUILD_AT_START.set(stamp);
+    }
+}
+
+/// macOS: the server's login item is bound to the build of the app that registered it
+/// (login_item_step says when it must be registered again). Checked once per build (the
+/// stamp in <state>/state/login-item-build).
+#[cfg(target_os = "macos")]
+pub fn register_for_this_build() -> Result<Synced, String> {
     register_login_item(false)
 }
 
@@ -483,47 +640,190 @@ pub fn register_for_this_build() -> Result<bool, String> {
 #[cfg(target_os = "macos")]
 static LOGIN_ITEM_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-/// The server's login item registered again for this build (unregister, then register)
-/// when another build registered it, or always with `force` (the server stays silent after
-/// an update: its plist or signature changed); true when it was.
+/// The server's login item made right for this build (login_item_step), or with `force`
+/// once the server stayed silent after an update. A registration macOS refuses while
+/// launchd has the job starts the job instead (on_refusal).
 #[cfg(target_os = "macos")]
-pub fn register_login_item(force: bool) -> Result<bool, String> {
+pub fn register_login_item(force: bool) -> Result<Synced, String> {
     let _one = LOGIN_ITEM_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let stamp = build_stamp().ok_or("cannot read this app's executable")?;
+    let exe_stamp = build_stamp().ok_or("cannot read this app's executable")?;
+    let stale = BUILD_AT_START.get().is_some_and(|at| *at != exe_stamp);
+    let now = registration_stamp(&exe_stamp);
     let path = state_root()
         .ok_or("cannot find the home folder")?
         .join("state")
         .join("login-item-build");
-    if !force && std::fs::read_to_string(&path).ok().as_deref() == Some(stamp.as_str()) {
-        return Ok(false);
-    }
-    // LaunchServices first learns where this bundle now is: the login item names its
-    // program relative to the bundle, which launchd finds through it. Right after an
-    // install it still knows the old copy, and the agent "Could not find and/or
-    // execute program ... Contents/MacOS/Maktaba" until the app launched again.
-    register_bundle_with_launch_services();
-    // an older build's registration (or none): replaced by this build's. The
-    // unregister finishes in the background; a register that comes first leaves the
-    // job unable to find its program ("Could not find and/or execute program
-    // specified by service: Contents/MacOS/Maktaba"), so wait until it is gone.
-    if unregister().is_ok() {
-        for _ in 0..50 {
-            if !matches!(
-                login_item(),
-                LoginItem::Enabled | LoginItem::RequiresApproval
-            ) {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(200));
+    let saved = std::fs::read_to_string(&path).ok();
+    let status = login_item();
+    let step = login_item_step(force, stale, &now, saved.as_deref(), status);
+    let save = || {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
         }
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        let _ = std::fs::write(&path, &now);
+    };
+    if step != LoginStep::Keep || saved.as_deref() != Some(now.as_str()) {
+        crate::attempts::log(&format!(
+            "login item: {step:?} (it is {status:?}{})",
+            if force { ", the server is silent" } else { "" }
+        ));
     }
-    register()?;
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
+    match step {
+        LoginStep::LeaveToNewBuild => Ok(Synced::Unchanged),
+        LoginStep::Keep => {
+            if saved.as_deref() != Some(now.as_str()) {
+                register_bundle_with_launch_services();
+                save();
+            }
+            Ok(Synced::Unchanged)
+        }
+        LoginStep::Approve => {
+            save();
+            Ok(Synced::NeedsApproval)
+        }
+        LoginStep::Kickstart => {
+            register_bundle_with_launch_services();
+            start_registered_job()?;
+            save();
+            Ok(Synced::Started)
+        }
+        LoginStep::Register | LoginStep::Reregister => {
+            // LaunchServices first learns where this bundle now is: the login item names
+            // its program relative to the bundle, which launchd finds through it. Right
+            // after an install it still knows the old copy, and the agent "Could not find
+            // and/or execute program ... Contents/MacOS/Maktaba" until the app launched
+            // again.
+            register_bundle_with_launch_services();
+            // an older build's registration: replaced by this build's. The unregister
+            // finishes in the background; a register that comes first leaves the job
+            // unable to find its program, so wait until it is gone.
+            if step == LoginStep::Reregister && unregister().is_ok() {
+                for _ in 0..50 {
+                    if !matches!(
+                        login_item(),
+                        LoginItem::Enabled | LoginItem::RequiresApproval
+                    ) {
+                        break;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(200));
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            let synced = register_or_start()?;
+            if synced != Synced::Started {
+                save();
+            }
+            Ok(synced)
+        }
     }
-    let _ = std::fs::write(&path, &stamp);
-    Ok(true)
+}
+
+/// Register the server's login item; one macOS refuses while launchd has the job (or it is
+/// Enabled) starts that job instead (on_refusal), and only a refusal with nothing that can
+/// start is an error.
+#[cfg(target_os = "macos")]
+pub fn register_or_start() -> Result<Synced, String> {
+    let err = match register() {
+        Ok(()) if login_item() == LoginItem::RequiresApproval => return Ok(Synced::NeedsApproval),
+        Ok(()) => return Ok(Synced::Registered),
+        Err(e) => e,
+    };
+    let status = login_item();
+    match on_refusal(&err, status, job_loaded()) {
+        Refusal::Fail => Err(err),
+        Refusal::Approve => Ok(Synced::NeedsApproval),
+        Refusal::Kickstart => {
+            crate::attempts::log(&format!(
+                "login item: macOS would not register it again ({err}), but it is {status:?} \
+                 and launchd has its job: starting that job"
+            ));
+            start_registered_job()
+                .map_err(|e| format!("{err}; starting the registered job failed too: {e}"))?;
+            Ok(Synced::Started)
+        }
+    }
+}
+
+/// Whether launchd has the server's job (`launchctl print gui/<uid>/<label>`), and its output.
+#[cfg(target_os = "macos")]
+fn print_job() -> Option<String> {
+    let target = format!("gui/{}/{LABEL}", uid());
+    let out = Command::new("/bin/launchctl")
+        .args(["print", &target])
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+#[cfg(target_os = "macos")]
+fn job_loaded() -> bool {
+    print_job().is_some()
+}
+
+/// How long launchd may take to run the job it was asked to start.
+#[cfg(target_os = "macos")]
+const KICKSTART_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Start the job launchd has for the server (`launchctl kickstart`; one that runs is left
+/// running) and wait until launchd runs it.
+#[cfg(target_os = "macos")]
+fn start_registered_job() -> Result<(), String> {
+    let out = Command::new("/bin/launchctl")
+        .args(launchctl_args(Action::Resume, uid()))
+        .output()
+        .map_err(|e| format!("launchctl: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "launchctl kickstart: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let began = std::time::Instant::now();
+    while began.elapsed() < KICKSTART_WAIT {
+        if print_job().is_some_and(|p| job_running(&p)) {
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
+    Err(format!(
+        "launchd did not run the server's job within {} s of starting it",
+        KICKSTART_WAIT.as_secs()
+    ))
+}
+
+/// This build's registration stamp: team_stamp for an app signed with a Team ID, the
+/// executable's stamp (build_stamp) for one signed ad hoc.
+#[cfg(target_os = "macos")]
+fn registration_stamp(exe_stamp: &str) -> String {
+    let Some(bundle) = this_bundle() else {
+        return exe_stamp.to_string();
+    };
+    let team = Command::new("/usr/bin/codesign")
+        .arg("-dv")
+        .arg(&bundle)
+        .output()
+        .ok()
+        .and_then(|o| team_from_codesign(&String::from_utf8_lossy(&o.stderr)));
+    let plist = std::fs::read(
+        bundle
+            .join("Contents/Library/LaunchAgents")
+            .join(PLIST_NAME),
+    );
+    match (team, plist) {
+        (Some(team), Ok(plist)) => team_stamp(&team, &plist, &bundle),
+        _ => exe_stamp.to_string(),
+    }
+}
+
+/// The Maktaba.app bundle this process runs from; None outside one (a dev build).
+#[cfg(target_os = "macos")]
+fn this_bundle() -> Option<PathBuf> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.ancestors().nth(3).map(|p| p.to_path_buf()))
+        .filter(|p| p.extension().is_some_and(|e| e == "app"))
 }
 
 /// Tell LaunchServices where this app bundle is (`lsregister -f`); best effort.
@@ -531,11 +831,7 @@ pub fn register_login_item(force: bool) -> Result<bool, String> {
 fn register_bundle_with_launch_services() {
     const LSREGISTER: &str = "/System/Library/Frameworks/CoreServices.framework/Frameworks/\
         LaunchServices.framework/Support/lsregister";
-    let Some(bundle) = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.ancestors().nth(3).map(|p| p.to_path_buf()))
-        .filter(|p| p.extension().is_some_and(|e| e == "app"))
-    else {
+    let Some(bundle) = this_bundle() else {
         return;
     };
     let _ = Command::new(LSREGISTER).arg("-f").arg(&bundle).output();
@@ -622,10 +918,16 @@ fn uid() -> u32 {
 /// Pause, resume or restart the server through launchd.
 #[cfg(not(any(windows, target_os = "linux")))]
 pub fn control(action: Action) -> Result<(), String> {
-    // a login item another build registered cannot start: this build's first
+    // a login item another build registered cannot start: this build's first. Right after
+    // an install swapped the bundle under this process, the new build's start does that
+    // (LeaveToNewBuild) and launchd restarts the job on the new bundle; a registration
+    // macOS refused while launchd has the job already started it (Synced::Started)
     #[cfg(target_os = "macos")]
-    if action != Action::Pause {
-        register_for_this_build()?;
+    if action != Action::Pause
+        && register_for_this_build()? == Synced::Started
+        && action == Action::Resume
+    {
+        return Ok(());
     }
     let out = Command::new("/bin/launchctl")
         .args(launchctl_args(action, uid()))
@@ -690,6 +992,181 @@ mod tests {
         }
         let other = "Operation not permitted (SMAppServiceErrorDomain 1)";
         assert_eq!(login_item_error(other), other);
+    }
+
+    const PLIST: &[u8] = include_bytes!("../LaunchAgents/com.hamzalabs.maktaba.server.plist");
+
+    fn signed() -> String {
+        team_stamp("G58UVTKQPB", PLIST, Path::new("/Applications/Maktaba.app"))
+    }
+
+    #[test]
+    fn the_team_id_is_read_from_codesign() {
+        let developer_id = "Executable=/Applications/Maktaba.app/Contents/MacOS/Maktaba\n\
+            Identifier=com.hamzalabs.maktaba\nTeamIdentifier=G58UVTKQPB\nSealed Resources version=2\n";
+        assert_eq!(
+            team_from_codesign(developer_id).as_deref(),
+            Some("G58UVTKQPB")
+        );
+        let ad_hoc = "Signature=adhoc\nInfo.plist=not bound\nTeamIdentifier=not set\n";
+        assert_eq!(team_from_codesign(ad_hoc), None);
+        assert_eq!(team_from_codesign("code object is not signed at all"), None);
+    }
+
+    #[test]
+    fn a_team_stamp_follows_the_plist_not_the_executable() {
+        let now = signed();
+        assert!(now.starts_with("team:G58UVTKQPB|plist:"), "{now}");
+        assert_eq!(now, signed(), "stable for the same plist");
+        assert_ne!(
+            now,
+            team_stamp(
+                "G58UVTKQPB",
+                b"<plist/>",
+                Path::new("/Applications/Maktaba.app")
+            ),
+            "a changed plist changes it"
+        );
+    }
+
+    #[test]
+    fn a_developer_id_update_keeps_the_registration() {
+        // 0.3.90 → 0.3.96 on 2026-11-08: the saved stamp was the old build's executable
+        let old = "/Applications/Maktaba.app/Contents/MacOS/Maktaba:1234:1730000000";
+        let now = signed();
+        let step = |force, saved, status| login_item_step(force, false, &now, saved, status);
+        assert_eq!(step(false, Some(old), LoginItem::Enabled), LoginStep::Keep);
+        assert_eq!(step(false, None, LoginItem::Enabled), LoginStep::Keep);
+        assert_eq!(
+            step(false, Some(now.as_str()), LoginItem::Enabled),
+            LoginStep::Keep
+        );
+        // a moved bundle keeps it too (LaunchServices learns the new place)
+        let moved = team_stamp(
+            "G58UVTKQPB",
+            PLIST,
+            Path::new("/Users/me/Applications/Maktaba.app"),
+        );
+        assert_eq!(
+            step(false, Some(moved.as_str()), LoginItem::Enabled),
+            LoginStep::Keep
+        );
+        // the server stays silent after the update: its job is started, never re-registered
+        assert_eq!(
+            step(true, Some(now.as_str()), LoginItem::Enabled),
+            LoginStep::Kickstart
+        );
+        assert_eq!(
+            step(true, Some(old), LoginItem::Enabled),
+            LoginStep::Kickstart
+        );
+        // only a changed plist registers it again
+        let other_plist = team_stamp(
+            "G58UVTKQPB",
+            b"<plist/>",
+            Path::new("/Applications/Maktaba.app"),
+        );
+        assert_eq!(
+            step(false, Some(other_plist.as_str()), LoginItem::Enabled),
+            LoginStep::Reregister
+        );
+        // nothing registered: register (no unregister first)
+        assert_eq!(
+            step(false, Some(now.as_str()), LoginItem::NotRegistered),
+            LoginStep::Register
+        );
+        // turned off in System Settings: only the user can turn it on
+        assert_eq!(
+            step(false, Some(now.as_str()), LoginItem::RequiresApproval),
+            LoginStep::Approve
+        );
+        assert_eq!(
+            step(true, None, LoginItem::RequiresApproval),
+            LoginStep::Approve
+        );
+    }
+
+    #[test]
+    fn an_ad_hoc_build_registers_again_for_each_build() {
+        let old = "/Applications/Maktaba.app/Contents/MacOS/Maktaba:1234:1730000000";
+        let now = "/Applications/Maktaba.app/Contents/MacOS/Maktaba:5678:1731000000";
+        let step = |force, saved, status| login_item_step(force, false, now, saved, status);
+        assert_eq!(
+            step(false, Some(old), LoginItem::Enabled),
+            LoginStep::Reregister
+        );
+        assert_eq!(step(false, None, LoginItem::Enabled), LoginStep::Reregister);
+        assert_eq!(step(false, Some(now), LoginItem::Enabled), LoginStep::Keep);
+        assert_eq!(
+            step(true, Some(now), LoginItem::Enabled),
+            LoginStep::Reregister
+        );
+    }
+
+    #[test]
+    fn a_process_whose_bundle_was_swapped_leaves_it_to_the_new_build() {
+        // the old app restarting the server right after the install (error 22 on 2026-11-08)
+        for now in [
+            signed(),
+            "/Applications/Maktaba.app/Contents/MacOS/Maktaba:1:2".to_string(),
+        ] {
+            for force in [false, true] {
+                assert_eq!(
+                    login_item_step(force, true, &now, None, LoginItem::Enabled),
+                    LoginStep::LeaveToNewBuild
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_refused_registration_starts_the_job_launchd_has() {
+        let not_permitted = "Operation not permitted (SMAppServiceErrorDomain 1)";
+        let invalid = "Invalid argument (SMAppServiceErrorDomain 22)";
+        // Enabled (or the job loaded) and register refused: kickstart, not the dialog
+        assert_eq!(
+            on_refusal(not_permitted, LoginItem::Enabled, true),
+            Refusal::Kickstart
+        );
+        assert_eq!(
+            on_refusal(not_permitted, LoginItem::Enabled, false),
+            Refusal::Kickstart
+        );
+        assert_eq!(
+            on_refusal(invalid, LoginItem::NotRegistered, true),
+            Refusal::Kickstart
+        );
+        // really turned off: the settings prompt
+        assert_eq!(
+            on_refusal(not_permitted, LoginItem::RequiresApproval, true),
+            Refusal::Approve
+        );
+        // nothing that could start: the error stands
+        assert_eq!(
+            on_refusal(not_permitted, LoginItem::NotRegistered, false),
+            Refusal::Fail
+        );
+        assert_eq!(
+            on_refusal(invalid, LoginItem::NotFound, false),
+            Refusal::Fail
+        );
+        // an unsigned app cannot run the job either way
+        let unsigned =
+            login_item_error("Codesigning failure loading plist (SMAppServiceErrorDomain 3)");
+        assert_eq!(
+            on_refusal(&unsigned, LoginItem::Enabled, true),
+            Refusal::Fail
+        );
+    }
+
+    #[test]
+    fn launchctl_print_says_whether_the_job_runs() {
+        let stopped = "gui/501/com.hamzalabs.maktaba.server = {\n\tactive count = 0\n\
+            \tstate = not running\n\tlast exit code = 0\n}\n";
+        assert!(!job_running(stopped));
+        let running =
+            "gui/501/com.hamzalabs.maktaba.server = {\n\tstate = running\n\tpid = 4242\n}\n";
+        assert!(job_running(running));
     }
 
     #[test]

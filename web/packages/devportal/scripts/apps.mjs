@@ -657,12 +657,12 @@ export const APPS = [
                 "**مراجعة الكلمات**، من **ما يحتاج إلى انتباه**: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، كلمةً كلمة. استمع إلى المقطع، ثم اقبل الكلمة أو صحّحها أو علّمها اسمًا أو أضفها إلى القاموس أو تخطَّها، ويمكنك التراجع؛ واتجاه السحب يتبع اتجاه اللغة."
               ),
               t(
-                "**Diagnostics** (iPhone, on the **Home** tab; Android, in the account menu), through the same routes as the web's admin pages: **Errors** (what keeps failing, grouped, with its last 14 days; a group's chart and recent lines, **Mark seen**, **Resolve** and **Mute**), **Logs** (search by words, level and time; a reference from someone's error screen opens **Follow a request**, every line of that request in time order), **Dashboards** (Overview and Storage, read only; with several machines the Overview shows totals across them and the five most in need of attention, and opens any one machine on its own) and **Problem reports** (people's reports: the device, what they wrote and one timeline of the app's and the home's lines; set a status and write back).",
-                "**التشخيص** (آيفون، في تبويب **الجهاز الرئيسي**؛ وأندرويد، في قائمة الحساب)، عبر مسارات صفحات الإدارة في الويب نفسها: **الأخطاء** (ما يتكرر فشله، مجمّعًا، بأيامه الأربعة عشر الأخيرة؛ ومخطط المجموعة وأسطرها الأخيرة، و**التعليم كمرئي** و**الحل** و**الكتم**)، و**السجلات** (البحث بالكلمات والمستوى والوقت؛ والمرجع من شاشة خطأ لدى شخص ما يفتح **تتبّع طلب**، أي كل أسطر ذلك الطلب بترتيبها الزمني)، و**لوحات المتابعة** (النظرة العامة والتخزين، للقراءة فقط؛ ومع عدة أجهزة تعرض النظرة العامة المجاميع عبرها والأجهزة الخمسة الأحوج إلى الانتباه، وتفتح أي جهاز وحده)، و**بلاغات المشكلات** (بلاغات الناس: الجهاز وما كتبوه وخط زمني واحد لأسطر التطبيق والجهاز الرئيسي؛ وتعيين الحالة والرد)."
+                "**Diagnostics** (iPhone, on the **Home** tab; Android, in the account menu), through the same routes as the web's admin pages: **Errors** (what keeps failing, grouped, with its last 14 days; a group's chart and recent lines, **Mark seen**, **Resolve** and **Mute**), **Logs** (search by words, level and time; a reference from someone's error screen opens **Follow a request**, every line of that request in time order), **Dashboards** (Overview and Storage, read only; with several machines the Overview shows totals across them and the five most in need of attention, a machine that is offline first and marked **Offline**, and opens any one machine on its own) and **Problem reports** (people's reports: the device, what they wrote and one timeline of the app's and the home's lines; set a status and write back).",
+                "**التشخيص** (آيفون، في تبويب **الجهاز الرئيسي**؛ وأندرويد، في قائمة الحساب)، عبر مسارات صفحات الإدارة في الويب نفسها: **الأخطاء** (ما يتكرر فشله، مجمّعًا، بأيامه الأربعة عشر الأخيرة؛ ومخطط المجموعة وأسطرها الأخيرة، و**التعليم كمرئي** و**الحل** و**الكتم**)، و**السجلات** (البحث بالكلمات والمستوى والوقت؛ والمرجع من شاشة خطأ لدى شخص ما يفتح **تتبّع طلب**، أي كل أسطر ذلك الطلب بترتيبها الزمني)، و**لوحات المتابعة** (النظرة العامة والتخزين، للقراءة فقط؛ ومع عدة أجهزة تعرض النظرة العامة المجاميع عبرها والأجهزة الخمسة الأحوج إلى الانتباه، والجهاز غير المتصل أولاً معلَّمًا **غير متصل**، وتفتح أي جهاز وحده)، و**بلاغات المشكلات** (بلاغات الناس: الجهاز وما كتبوه وخط زمني واحد لأسطر التطبيق والجهاز الرئيسي؛ وتعيين الحالة والرد)."
               ),
               t(
-                "**Recovery** (iPhone, on the **Home** tab; Android, in the account menu): the home's recovery page, in the app. The supervisor answers it with the database or the API down, and the app signs in with a recovery pass it keeps while the API is up. It shows each part's state, restarts and last error, the warnings and errors of the last minutes and the free disk space; an admin can restart a part or everything, start or leave **safe mode**, and go back to the previous version (asked twice). Restoring a backup and downloading diagnostics stay on the web page, linked at the end. Anyone but an admin is told only admins can open it.",
-                "**الاستعادة** (آيفون، في تبويب **الجهاز الرئيسي**؛ وأندرويد، في قائمة الحساب): صفحة الاستعادة في الجهاز الرئيسي، داخل التطبيق. يجيب عنها المشرف حتى حين تتوقف قاعدة البيانات أو الواجهة البرمجية، ويسجّل التطبيق الدخول إليها بتصريح استعادة يحفظه ما دامت الواجهة البرمجية تعمل. وتعرض حالة كل جزء ومرات إعادة تشغيله وآخر خطأ فيه، والتحذيرات والأخطاء في الدقائق الأخيرة، والمساحة الحرة على القرص؛ ويستطيع المدير إعادة تشغيل جزء أو الكل، والدخول إلى **الوضع الآمن** أو الخروج منه، والرجوع إلى الإصدار السابق (بعد تأكيدين). وتبقى استعادة نسخة احتياطية وتنزيل ملف التشخيص في صفحة الويب، برابط في آخرها. ومن ليس مديرًا يُقال له إن فتحها للمدراء فقط."
+                "**Recovery** (iPhone, on the **Home** tab; Android, in the account menu): the home's recovery page, in the app. The supervisor answers it with the database or the API down, and the app signs in with a recovery pass it keeps while the API is up. It shows each part's state, restarts and last error, the warnings and errors of the last minutes and the free disk space; an admin can restart a part or everything, start or leave **safe mode**, go back to the previous version, and **restore a backup**: choose one of the home's backups, with when it was taken and its size, and confirm twice, as the web page asks; the home then restarts to put it back. **Download diagnostics** fetches the same bundle as the web page (the last two hours of logs, the state and the supervisor's own files) and hands it to the share sheet on the iPhone, or saves it where you choose on Android; the app keeps no copy. Anyone but an admin is told only admins can open it.",
+                "**الاستعادة** (آيفون، في تبويب **الجهاز الرئيسي**؛ وأندرويد، في قائمة الحساب): صفحة الاستعادة في الجهاز الرئيسي، داخل التطبيق. يجيب عنها المشرف حتى حين تتوقف قاعدة البيانات أو الواجهة البرمجية، ويسجّل التطبيق الدخول إليها بتصريح استعادة يحفظه ما دامت الواجهة البرمجية تعمل. وتعرض حالة كل جزء ومرات إعادة تشغيله وآخر خطأ فيه، والتحذيرات والأخطاء في الدقائق الأخيرة، والمساحة الحرة على القرص؛ ويستطيع المدير إعادة تشغيل جزء أو الكل، والدخول إلى **الوضع الآمن** أو الخروج منه، والرجوع إلى الإصدار السابق، و**استعادة نسخة احتياطية**: يختار إحدى النسخ الاحتياطية في الجهاز الرئيسي، بتاريخ أخذها وحجمها، ثم يؤكد مرتين كما تطلب صفحة الويب؛ فيُعاد تشغيل الجهاز الرئيسي لإرجاعها. ويجلب **تنزيل ملف التشخيص** الحزمة نفسها التي تنزّلها صفحة الويب (سجلات آخر ساعتين والحالة وملفات المشرف نفسه)، ويسلّمها إلى ورقة المشاركة على آيفون، أو يحفظها حيث تختار على أندرويد؛ ولا يحتفظ التطبيق بنسخة منها. ومن ليس مديرًا يُقال له إن فتحها للمدراء فقط."
               ),
               t(
                 "**The status strip**: what is down on the home, at the top of every screen. For an admin, **Details** on the home restarting, its database or safe mode opens **Recovery**.",
@@ -739,6 +739,18 @@ export const APPS = [
                 "لوحة النظرة العامة في تطبيق الإدارة عن بُعد على آيفون: المكوّنات العاملة والأخطاء في الساعة"
               ),
               shot(
+                "remote-iphone-recovery",
+                "phone",
+                "The Remote's Recovery on an iPhone, in safe mode: the database stopped and the service restarting, made-up data",
+                "الاستعادة في تطبيق الإدارة عن بُعد على آيفون، في الوضع الآمن: قاعدة البيانات متوقفة والخدمة يُعاد تشغيلها، على بيانات مختلَقة"
+              ),
+              shot(
+                "remote-iphone-recovery-restore",
+                "phone",
+                "The Remote's Recovery on an iPhone: choosing one of three backups to restore, with when each was taken and its size, made-up data",
+                "الاستعادة في تطبيق الإدارة عن بُعد على آيفون: اختيار إحدى ثلاث نسخ احتياطية لاستعادتها، بتاريخ أخذ كل منها وحجمها، على بيانات مختلَقة"
+              ),
+              shot(
                 "android-remote-errors",
                 "phone",
                 "The Remote's Errors on an Android phone: two error groups with their last 14 days, made-up data",
@@ -755,6 +767,12 @@ export const APPS = [
                 "phone",
                 "The Remote's Recovery on an Android phone, in safe mode: the database stopped, each part's last error and Restart, made-up data",
                 "الاستعادة في تطبيق الإدارة عن بُعد على هاتف أندرويد، في الوضع الآمن: قاعدة البيانات متوقفة، وآخر خطأ لكل جزء وزر إعادة التشغيل، على بيانات مختلَقة"
+              ),
+              shot(
+                "android-remote-recovery-restore",
+                "phone",
+                "The Remote's Recovery on an Android phone: choosing one of three backups to restore, with when each was taken and its size, made-up data",
+                "الاستعادة في تطبيق الإدارة عن بُعد على هاتف أندرويد: اختيار إحدى ثلاث نسخ احتياطية لاستعادتها، بتاريخ أخذ كل منها وحجمها، على بيانات مختلَقة"
               ),
               shot(
                 "android-remote-attention",
@@ -1149,8 +1167,8 @@ export const APPS = [
                 "**مراجعة الكلمات** (`/review`)، للمدراء: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، ومع كل منها جملتها ومقطعها الصوتي وسبب تعليمها والتهجئات المقترحة. اقبل أو صحّح أو علّم اسمًا أو أضف إلى القاموس أو تخطَّ، في موضع واحد أو في كل موضع فيه الكلمة نفسها، ويمكنك التراجع. وبجانبها: **التصحيحات** و**المفردات** و**حزم اللغات**، وإعدادات مراجعة الكلمات لكل مكتبة."
               ),
               t(
-                "**Logs**, **Errors** and **Dashboards**, for admins. Logs searches every part's lines, follows one request from app to server and back, and follows new lines live. Errors groups repeated failures, with how often and since which version, and tells admins of a new one. **Diagnostics settings** choose how long logs are kept and turn on detailed logs for an hour. Dashboards draw the home's metrics over a chosen range; with several machines the Overview shows totals across them and the five most in need of attention, says how many of how many it shows, and opens any one machine on its own.",
-                "**السجلات** و**الأخطاء** و**لوحات المتابعة**، للمدراء. تبحث صفحة السجلات في أسطر كل جزء، وتتتبّع طلبًا واحدًا من التطبيق إلى الخادم وبالعكس، وتعرض الأسطر الجديدة مباشرةً. وتجمع صفحة الأخطاء الإخفاقات المتكررة، مع عدد مراتها ومنذ أي إصدار، وتنبّه المدراء إلى كل خطأ جديد. وتحدد **إعدادات التشخيص** مدة الاحتفاظ بالسجلات، وتشغّل السجلات المفصّلة لمدة ساعة. وترسم لوحات المتابعة مقاييس الجهاز الرئيسي في مدة تختارها؛ ومع عدة أجهزة تعرض النظرة العامة المجاميع عبرها والأجهزة الخمسة الأحوج إلى الانتباه، وتذكر كم جهازًا تعرض من كم، وتفتح أي جهاز وحده."
+                "**Logs**, **Errors** and **Dashboards**, for admins. Logs searches every part's lines, follows one request from app to server and back, and follows new lines live. Errors groups repeated failures, with how often and since which version, and tells admins of a new one. **Diagnostics settings** choose how long logs are kept and turn on detailed logs for an hour. Dashboards draw the home's metrics over a chosen range; with several machines the Overview shows totals across them and the five most in need of attention, a machine that is offline first and named as offline, says how many of how many it shows, and opens any one machine on its own.",
+                "**السجلات** و**الأخطاء** و**لوحات المتابعة**، للمدراء. تبحث صفحة السجلات في أسطر كل جزء، وتتتبّع طلبًا واحدًا من التطبيق إلى الخادم وبالعكس، وتعرض الأسطر الجديدة مباشرةً. وتجمع صفحة الأخطاء الإخفاقات المتكررة، مع عدد مراتها ومنذ أي إصدار، وتنبّه المدراء إلى كل خطأ جديد. وتحدد **إعدادات التشخيص** مدة الاحتفاظ بالسجلات، وتشغّل السجلات المفصّلة لمدة ساعة. وترسم لوحات المتابعة مقاييس الجهاز الرئيسي في مدة تختارها؛ ومع عدة أجهزة تعرض النظرة العامة المجاميع عبرها والأجهزة الخمسة الأحوج إلى الانتباه، والجهاز غير المتصل أولاً مسمًّى غير متصل، وتذكر كم جهازًا تعرض من كم، وتفتح أي جهاز وحده."
               ),
             ],
           },

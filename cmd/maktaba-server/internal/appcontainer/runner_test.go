@@ -81,12 +81,26 @@ type fakeLaunch struct {
 	grantErr  error
 	remote    string
 	filesOnly []string
+	brokered  BrokerRoots
+	brokerErr error
+	stopped   bool
 }
 
 func (f *fakeLaunch) install(t *testing.T) {
 	t.Helper()
-	ap, gf, rf, run, rem, gff := askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn
-	t.Cleanup(func() { askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn = ap, gf, rf, run, rem, gff })
+	ap, gf, rf, run, rem, gff, bf, sf, slf := askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn, brokerFn, shareFn, shareLocalFn
+	t.Cleanup(func() {
+		askPolicy, grantFn, revokeFn, runFn, remoteFn, grantFilesFn, brokerFn, shareFn, shareLocalFn = ap, gf, rf, run, rem, gff, bf, sf, slf
+	})
+	shareFn = func(p string) bool { return f.remote != "" && p == f.remote }
+	shareLocalFn = func(string) (string, bool, error) { return "", false, nil }
+	brokerFn = func(_ string, roots BrokerRoots) ([]string, func(uint32, uintptr), func(), error) {
+		if f.brokerErr != nil {
+			return nil, nil, nil, f.brokerErr
+		}
+		f.brokered = roots
+		return []string{EnvFilesPipe + `=\\.\pipe\x`}, func(uint32, uintptr) {}, func() { f.stopped = true }, nil
+	}
 	grantFilesFn = func(_, path string) error { f.filesOnly = append(f.filesOnly, path); return nil }
 	remoteFn = func(p string) bool { return f.remote != "" && p == f.remote }
 	askPolicy = func(_ string, args []string, _ io.Writer) ([]byte, int, error) {
@@ -203,7 +217,10 @@ func TestLaunchHandsARunnerToLaunchRunner(t *testing.T) {
 }
 
 // A folder on another machine (a share, a mapped drive) is never granted nor revoked: its
-// ACL is not the launcher's to change, and an AppContainer cannot reach a share anyway.
+// ACL is not the launcher's to change, and an AppContainer cannot reach a share. One the
+// group reads or writes by name is brokered instead: the runner starts with its broker's
+// pipe in its environment and the hook that learns its process, and the broker stops when
+// it exits; a share the group writes in full is not brokered (its jobs run in the worker).
 func TestTheRunnerLauncherLeavesSharesAlone(t *testing.T) {
 	dir := mustCanonical(t, t.TempDir())
 	t.Setenv("MAKTABA_DATA_DIR", dir)
@@ -221,8 +238,31 @@ func TestTheRunnerLauncherLeavesSharesAlone(t *testing.T) {
 			t.Fatalf("a share was granted: %+v", f.granted)
 		}
 	}
-	if !strings.Contains(errOut.String(), "plugin_runner_area_remote") {
-		t.Fatalf("not logged: %q", errOut.String())
+	if !strings.Contains(errOut.String(), "plugin_runner_area_brokered") || strings.Contains(errOut.String(), "plugin_runner_area_remote") {
+		t.Fatalf("not logged as brokered: %q", errOut.String())
+	}
+	if !reflect.DeepEqual(f.brokered, BrokerRoots{{Path: share, WriteNamed: true}}) || !f.stopped || f.opts.Started == nil {
+		t.Fatalf("brokered %+v, stopped %v, hook %v", f.brokered, f.stopped, f.opts.Started != nil)
+	}
+	if !strings.Contains(strings.Join(f.opts.Env, "\n"), EnvFilesPipe+"=") {
+		t.Fatal("the runner was not told its broker's pipe")
+	}
+	// a share written in full is not brokered; a broker that cannot start leaves the runner
+	// to start without its shares (logged)
+	full, _ := json.Marshal(RunnerPolicy{Write: []string{share}, RunDir: filepath.Join(dir, "run")})
+	f2 := &fakeLaunch{policy: string(full), remote: share}
+	f2.install(t)
+	errOut.Reset()
+	if code := LaunchRunner([]string{"-group", "light", "-run-dir", filepath.Join(dir, "run"), "--", "python"}, &errOut); code != 0 ||
+		f2.brokered != nil || !strings.Contains(errOut.String(), "plugin_runner_area_remote") {
+		t.Fatalf("a share written in full: exit %d, brokered %+v: %s", code, f2.brokered, errOut.String())
+	}
+	f3 := &fakeLaunch{policy: string(pol), remote: share, brokerErr: errors.New("no pipe")}
+	f3.install(t)
+	errOut.Reset()
+	if code := LaunchRunner([]string{"-group", "light", "-run-dir", filepath.Join(dir, "run"), "--", "python"}, &errOut); code != 0 ||
+		!f3.started || !strings.Contains(errOut.String(), "plugin_runner_broker_unavailable") {
+		t.Fatalf("a broker that cannot start: exit %d, started %v: %s", code, f3.started, errOut.String())
 	}
 	for p, want := range map[string]bool{`\\nas\media`: true, "//nas/media": true, `\\?\C:\media`: false, `C:\media`: false} {
 		if uncPath(p) != want {
@@ -337,6 +377,220 @@ func TestAPolicyPathIsComparedAsTheFilesystemNamesIt(t *testing.T) {
 		if badSpelling(p) != want {
 			t.Errorf("badSpelling(%q) = %v", p, !want)
 		}
+	}
+}
+
+// A grant's walk on Windows recomputes, for each child of a granted folder, the profile's
+// inherited entries from its parent's as Windows' inheritance rules have it: a folder-wide
+// grant (object and container inherit) reaches every folder and file below; the areas
+// folder's grant (object inherit, no propagate) reaches its files and none of its folders;
+// an inherit-only entry passes on without applying; a junction or symbolic link (a name
+// surrogate) is never walked through, deduplicated or cloud files are; and the
+// filesystem's final name of a handle reads as the path it was checked as.
+func TestAGrantsWalkFollowsWindowsInheritanceAndNoLink(t *testing.T) {
+	const oi, ci, np, io, inh = aceObjectInherit, aceContainerInherit, aceNoPropagate, aceInheritOnly, aceInherited
+	for _, c := range []struct {
+		flags  uint8
+		dir    bool
+		want   uint8
+		passes bool
+	}{
+		{oi | ci, true, inh | oi | ci, true},
+		{oi | ci, false, inh, true},
+		{oi | np, true, 0, false},
+		{oi | np, false, inh, true},
+		{oi, true, inh | io | oi, true},
+		{inh | io | oi, false, inh, true},
+		{inh | io | oi, true, inh | io | oi, true},
+		{ci, false, 0, false},
+		{ci | np, true, inh, true},
+		{0, true, 0, false},
+		{0, false, 0, false},
+	} {
+		got, ok := inheritedFlags(c.flags, c.dir)
+		if ok != c.passes || (ok && got != c.want) {
+			t.Errorf("flags 0x%02x to a child (folder %v): 0x%02x %v, want 0x%02x %v", c.flags, c.dir, got, ok, c.want, c.passes)
+		}
+	}
+	for tag, want := range map[uint32]bool{0xA0000003: true, 0xA000000C: true, 0x80000013: false, 0x9000001A: false, 0x8000001B: false} {
+		if nameSurrogate(tag) != want {
+			t.Errorf("nameSurrogate(0x%08x) = %v", tag, !want)
+		}
+	}
+	for in, want := range map[string]string{`\\?\C:\media\a`: `C:\media\a`, `\\?\UNC\nas\media`: `\\nas\media`, `C:\x`: `C:\x`} {
+		if got := finalPathName(in); got != want {
+			t.Errorf("finalPathName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A grant or revoke happens only after the path's last check, on the canonical path: the
+// hook between the two (where the Windows tests swap a folder) sees each change's path
+// once, after the policy was checked. A recorded grant whose path is now reached through a
+// link is not taken back there: the start fails closed, the revoke never runs. The areas
+// folder is granted as the filesystem names it.
+func TestAGrantOrRevokeComesAfterItsLastCheck(t *testing.T) {
+	dir := mustCanonical(t, t.TempDir())
+	t.Setenv("MAKTABA_DATA_DIR", dir)
+	media, old := filepath.Join(dir, "media"), filepath.Join(dir, "old")
+	_ = os.MkdirAll(media, 0o700)
+	_ = os.MkdirAll(old, 0o700)
+	grants := filepath.Join(dir, "g.json")
+	b, _ := json.Marshal([]GrantEntry{{Path: old}})
+	_ = os.WriteFile(grants, b, 0o600)
+	pol, _ := json.Marshal(RunnerPolicy{Read: []string{media}})
+	f := &fakeLaunch{policy: string(pol)}
+	f.install(t)
+	ac := afterCheck
+	t.Cleanup(func() { afterCheck = ac })
+	var seen []string
+	afterCheck = func(step, p string) {
+		seen = append(seen, step+" "+p)
+		for _, g := range f.granted {
+			if g.Path == p {
+				t.Errorf("the hook ran after the grant on %s", p)
+			}
+		}
+	}
+	run := filepath.Join(dir, "run")
+	args := []string{"-group", "light", "-run-dir", run, "-grants", grants, "-areas-dir", filepath.Join(dir, ".", "areas"), "--", "python"}
+	if code := LaunchRunner(args, io.Discard); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	want := []string{"revoke " + old, "grant " + media, "grant " + run}
+	if !reflect.DeepEqual(seen, want) {
+		t.Fatalf("hook saw %v, want %v", seen, want)
+	}
+	if !reflect.DeepEqual(f.filesOnly, []string{filepath.Join(dir, "areas")}) {
+		t.Fatalf("the areas folder granted as %v", f.filesOnly)
+	}
+
+	// the recorded folder is now a link to another one: refused before any revoke
+	elsewhere := filepath.Join(dir, "elsewhere")
+	_ = os.MkdirAll(elsewhere, 0o700)
+	_ = os.RemoveAll(old)
+	if err := os.Symlink(elsewhere, old); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	_ = os.WriteFile(grants, b, 0o600)
+	f2 := &fakeLaunch{policy: string(pol)}
+	f2.install(t)
+	var errOut strings.Builder
+	if code := LaunchRunner(args, &errOut); code != RunnerSandboxExit || f2.started || len(f2.revoked) != 0 ||
+		!strings.Contains(errOut.String(), `"step":"revoke"`) {
+		t.Fatalf("a recorded path now a link: exit %d, started %v, revoked %v: %s", code, f2.started, f2.revoked, errOut.String())
+	}
+}
+
+// A runner's broker serves only its share folders, each path spelled one way: a share
+// path at or under a brokered root (any case, as Windows compares), never another share,
+// a traversal, a stream, a device, a trailing dot or an 8.3 alias; a write only a
+// subtitle name in a folder the group writes by name, never the folder itself nor any
+// other name; and only the policy's read and named-write shares are brokered.
+func TestARunnersBrokerServesOnlyItsShareFolders(t *testing.T) {
+	roots := BrokerRoots{{Path: `\\nas\media\shows`, WriteNamed: true}, {Path: `\\nas\media\films`}}
+	for path, want := range map[string]bool{
+		`\\nas\media\shows\a\ep1.mkv`:      true,
+		`\\NAS\Media\Shows\a\EP1.mkv`:      true,
+		"//nas/media/shows/a/ep1.mkv":      true,
+		`\\nas\media\shows`:                true,
+		`\\nas\media\films\f.mkv`:          true,
+		`\\nas\media\showsx\a.mkv`:         false,
+		`\\nas\media\extra\a.mkv`:          false,
+		`\\nas\second\shows\a.mkv`:         false,
+		`\\evil\media\shows\a.mkv`:         false,
+		`\\nas\media\shows\..\secret.txt`:  false,
+		`\\nas\media\shows\.\a.mkv`:        false,
+		`\\nas\media\shows\\a.mkv`:         false,
+		`\\nas\media\shows\a.mkv:stream`:   false,
+		`\\nas\media\shows\NUL`:            false,
+		`\\nas\media\shows\a.mkv.`:         false,
+		`\\nas\media\shows\SHOWSA~1\a.mkv`: false,
+		`\\?\UNC\nas\media\shows\a.mkv`:    false,
+		`C:\media\shows\a.mkv`:             false,
+	} {
+		if _, _, err := roots.Confine(path, false); (err == nil) != want {
+			t.Errorf("read %s: %v", path, err)
+		}
+	}
+	for path, want := range map[string]bool{
+		`\\nas\media\shows\a\ep1.en.srt`:             true,
+		`\\nas\media\shows\a\ep1.ar.vtt.maktaba-tmp`: true,
+		`\\nas\media\shows\a\ep1.mkv`:                false,
+		`\\nas\media\shows\a\ep1.srt`:                false,
+		`\\nas\media\shows\a\notes.txt`:              false,
+		`\\nas\media\shows\a\EP1~1.SRT`:              false,
+		`\\nas\media\shows`:                          false,
+		`\\nas\media\films\f.en.srt`:                 false,
+	} {
+		if _, _, err := roots.Confine(path, true); (err == nil) != want {
+			t.Errorf("write %s: %v", path, err)
+		}
+	}
+	// Windows' upcase table is not Go's: a root compares by ASCII case only, so U+0130 or
+	// the Kelvin sign never makes a request name a sibling folder as the root
+	uni := BrokerRoots{{Path: "\\\\nas\\media\\\u0130stanbul", WriteNamed: true}, {Path: "\\\\nas\\media\\\u212aids"}}
+	for _, path := range []string{`\\nas\media\istanbul\a.mkv`, `\\nas\media\kids\a.mkv`, "\\\\nas\\media\\\u0130stanbul.mkv"} {
+		if _, _, err := uni.Confine(path, false); err == nil {
+			t.Errorf("%s was confined to %+v", path, uni)
+		}
+	}
+	if _, _, err := uni.Confine("\\\\nas\\media\\\u0130stanbul\\a.mkv", false); err != nil {
+		t.Errorf("the root's own spelling: %v", err)
+	}
+	remote := func(p string) bool { return uncPath(p) }
+	got := brokerRootsOf(RunnerPolicy{
+		Read:       []string{`\\nas\a`, `\\nas\b`, "/local", `\\nas\c`},
+		WriteNamed: []string{`\\nas\a`},
+		Write:      []string{`\\nas\c`},
+		Python:     []string{`\\nas\py`},
+	}, remote)
+	want := BrokerRoots{{Path: `\\nas\a`, WriteNamed: true}, {Path: `\\nas\b`}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("brokered %+v, want %+v", got, want)
+	}
+
+	// an administrative share is never brokered, nor a share this machine serves from a
+	// folder that holds or is inside a protected one
+	none := func(string) (string, bool, error) { return "", false, nil }
+	for _, r := range []string{`\\nas\C$\media`, `\\nas\admin$`, `\\localhost\IPC$`, `\\nas`} {
+		if _, _, err := (BrokerRoots{{Path: r}}).check(none, nil, ""); err == nil {
+			t.Errorf("%s was brokered", r)
+		}
+	}
+	if _, _, err := (BrokerRoots{{Path: `\\nas\media$\shows`}}).check(none, nil, ""); err != nil {
+		t.Errorf("a hidden share that is not administrative: %v", err)
+	}
+	dir := mustCanonical(t, t.TempDir())
+	secret := filepath.Join(dir, "supervisor")
+	_ = os.MkdirAll(filepath.Join(dir, "media"), 0o700)
+	at := func(local string) func(string) (string, bool, error) {
+		return func(string) (string, bool, error) { return local, true, nil }
+	}
+	if _, _, err := (BrokerRoots{{Path: `\\localhost\d`}}).check(at(dir), []string{secret}, ""); err == nil {
+		t.Error("this machine's share of the folder holding the supervisor's was brokered")
+	}
+	if _, _, err := (BrokerRoots{{Path: `\\localhost\s`}}).check(at(filepath.Join(secret, "x")), []string{secret}, ""); err == nil {
+		t.Error("this machine's share inside the supervisor's folder was brokered")
+	}
+	if kept, _, err := (BrokerRoots{{Path: `\\localhost\m`}}).check(at(filepath.Join(dir, "media")), []string{secret}, ""); err != nil || len(kept) != 1 {
+		t.Errorf("this machine's share of a library: %v", err)
+	}
+	// a share of this machine that cannot be looked up is left out (its jobs: the worker)
+	lookupFails := func(string) (string, bool, error) { return "", false, errors.New("access denied") }
+	kept, dropped, err := (BrokerRoots{{Path: `\\localhost\m`}, {Path: `\\nas\media`}}).check(lookupFails2(lookupFails), nil, "")
+	if err != nil || !reflect.DeepEqual(kept, BrokerRoots{{Path: `\\nas\media`}}) || !reflect.DeepEqual(dropped, BrokerRoots{{Path: `\\localhost\m`}}) {
+		t.Errorf("a share that cannot be looked up: kept %+v, dropped %+v, %v", kept, dropped, err)
+	}
+}
+
+// lookupFails2 fails the lookup for this machine's shares only.
+func lookupFails2(fail func(string) (string, bool, error)) func(string) (string, bool, error) {
+	return func(root string) (string, bool, error) {
+		if strings.HasPrefix(strings.ToLower(root), `\\localhost\`) {
+			return fail(root)
+		}
+		return "", false, nil
 	}
 }
 

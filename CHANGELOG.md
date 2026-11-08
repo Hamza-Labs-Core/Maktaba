@@ -30,6 +30,15 @@ build fails when the two differ.
   Maktaba TV, and the channel editor shows them with a note; saving there gives Maktaba TV its
   own copy.
 
+
+- **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
+  dashboards, a joined machine that is offline now ranks first among the machines most in need
+  of attention, and is named as offline: a line on the web page and both Remotes ("Offline:
+  …"), "(offline)" in the machine picker, and a line on its own view saying its lines end at
+  its last values. Which machines are offline is the Machines page's own rule (an approved
+  machine neither it nor any worker of it seen within 60 s); the API passes the list to the log
+  index, and the Overview's answer names them in `machines.offline`. Before, an offline machine
+  kept its last values and ranked last.
 - **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
   console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
   files and lines with a table of the app's own unstripped native library, keyed by the
@@ -175,6 +184,45 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **After an update, the plugin runners wait for the new release's Python packages.** In the
+  Mac app, the plugin runners (light, ml-1, ml-2, index) started while the update was still
+  installing the new release's packages into the venv. Each died at once on a missing module,
+  and after five exits the crash loop marked them failed for five minutes, although the venv
+  was ready a minute later. Every child that runs from the venv (the pipeline's workers and
+  every plugin runner) now waits for the venv step, as the pipeline's workers already did. A
+  waiting runner is not started, so it adds nothing to the crash loop. A test now imports what
+  each supervised Python child imports first, each in a fresh interpreter, so an import cycle
+  like the one that crash-looped the 0.3.96 runners fails CI. The update rehearsal's wave
+  scenarios fail when any supervised process is marked failed after the update.
+- **The Mac server starts after an app update instead of stopping at "could not start".** After
+  the update from 0.3.90 to 0.3.96 on 2026-11-08 the Mac app unregistered and registered the
+  server's login item again; macOS refused (SMAppServiceErrorDomain 22 from the old app right
+  after the install, then 1 on every launch), so the server was never started again and each
+  launch showed "The Maktaba server could not start", though launchd still had the job and it
+  was on in System Settings. A release signed with a Developer ID now keeps its login item
+  across updates (it is registered again only when its plist changes); an app still running
+  from a bundle the install replaced leaves the login item to the new build; and when macOS
+  refuses a registration while the login item is on or launchd has the job, the app starts that
+  job and waits for launchd to run it. The dialog shows only when nothing registered can start;
+  a login item turned off in System Settings still asks to be turned on there.
+- **Old backups go on their own.** The backups folder kept the newest nightly dumps and
+  pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
+  failed update or of a database a restore replaced was kept until more of its kind came:
+  one 33 GB dump of a failed update stayed for weeks. The backups loop now prunes at every
+  check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
+  dumps to their count, and a dump of a failed update or a replaced database once it is a
+  month old. The newest pre-update dump, the way back from the last update, never expires.
+
+- **A rollback undoes only what the release changed.** When an update rolled back and its
+  migrations could not simply be kept, the whole database was put back from the dump taken
+  before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
+  on 2026-11-07, most of a day with the home down) and everything written since the dump
+  lost, though none of that release's 14 migrations lost data. A rollback now runs
+  the release's own Down scripts back to the previous schema when its migrations lose no
+  data on the way up: only the tables they touched change, every other table, index and
+  row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
+  or recast data, or a Down script fails.
 
 - **After an update, a first-party plugin's jobs run in its runner instead of the worker
   (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
@@ -414,6 +462,14 @@ build fails when the two differ.
 
 ### Security
 
+- **A runner's folder grant on Windows lands only on the folder that was checked (story
+  54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
+  folder swapped for a junction between its check and its grant had the grant land on the
+  junction's target. Each grant and revoke now opens the folder by handle without following a
+  link, refuses it when it is a junction or Windows names it otherwise than checked, and sets
+  the ACL on that handle; what the folder holds gets the entry through handles opened inside
+  it, never through a junction or symbolic link. Such a swap now fails the runner's start, and
+  the worker runs the group's jobs.
 - **The cloud's two web sites each get a Worker in front (Epic 50 story 50.32).**
   `app.maktaba.tv` and `admin.maktaba.tv` serve their own bundles through a Cloudflare Worker that
   sets each host's security headers and content policy on every page and API answer. Each lets
@@ -459,6 +515,16 @@ build fails when the two differ.
 
 ### Added
 
+- **A runner reaches a library on a share on Windows (story 54.23).** A first-party runner on
+  Windows runs in an AppContainer, which reaches no SMB share, so every job on a share-hosted
+  library ran in the queue worker. The runner's launcher now brokers the group's share
+  folders. For each file the runner asks for over its own pipe, the launcher checks that the
+  path is in those folders and spelled one way only, with no junction or link on the way. It
+  then hands the runner the open file for reading only; a subtitle is written by the launcher
+  from the bytes the runner sends. The
+  subtitle stage now runs in its runner on a share. A share the group writes in full, and a
+  tool's job on a share, still run in the worker. No network capability is given to the
+  runner.
 - **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
   and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
   (its functions and line table, keyed by the binary's UUID), uploaded with the new
@@ -2255,6 +2321,14 @@ build fails when the two differ.
   any one machine on its own, with each of its components that was down or restarted.
   `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
 
+- **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
+  recovery screen no longer sends either to the web page. **Restore a backup** lists the home's
+  backups with when each was taken and its size; choosing one asks twice, as the web page does,
+  and the home then restarts to put it back. **Download diagnostics** fetches the web page's
+  bundle and hands it to the share sheet on the iPhone, or saves it where the person chooses on
+  Android; the app keeps no copy. Both use the recovery pass and stop at the first refusal, as
+  the rest of the screen does.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -2753,6 +2827,12 @@ build fails when the two differ.
 - **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
   refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
   read, so they never showed. They do now, and no family is listed twice.
+
+- **On Windows, Maktaba's own plugin stages run in the worker again (Epic 54 story 54.23).** Inside
+  its AppContainer a runner cannot create the named pipes Python uses to read a tool's output, so a
+  stage that runs ffmpeg or ffprobe there failed as if the tool were broken. Until the runners start
+  tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
+  v0.3.102, and no runner is started for it.
 
 ## [0.2.0] - 2026-10-19
 

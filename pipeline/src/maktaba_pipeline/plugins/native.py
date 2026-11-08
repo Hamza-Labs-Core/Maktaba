@@ -30,6 +30,7 @@ import dataclasses
 import json
 import os
 import struct
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -305,6 +306,12 @@ async def choose(db: Any, stage: str) -> ImplChoice:
         return ImplChoice("inproc")
     if await stage_impl(db, stage) != "plugin":
         return ImplChoice("inproc")
+    if sys.platform == "win32":
+        # story 54.23: inside its AppContainer a runner cannot create the named pipes
+        # asyncio captures a tool's output with (WinError 5), and engine.media turns that
+        # into a tool failure; until the runners start tools through anonymous pipes, every
+        # first-party stage on Windows runs here, and no runner is started for it
+        return ImplChoice("inproc", "windows_tool_pipes")
     ok, _ = await serving(stage)
     if not ok:
         return ImplChoice("inproc", "runner_not_serving_here")

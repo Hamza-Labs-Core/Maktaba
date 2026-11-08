@@ -96,10 +96,19 @@ data class RecoveryLine(val ts: String?, val level: String, val service: String,
     }
 }
 
-/**
- * What the console can do from the Remote (story 53.04 §4). Restoring a backup and the
- * diagnostics download stay on the web page.
- */
+/** One backup the home can restore (`GET /recovery/api/backups`), newest first as the home lists them. */
+@Serializable
+data class RecoveryBackup(
+    val name: String,
+    /** RFC 3339 */
+    val at: String? = null,
+    val size: Long = -1,
+)
+
+@Serializable
+internal data class RecoveryBackups(val backups: List<RecoveryBackup>? = null)
+
+/** What the console can do from the Remote (story 53.04 §4): the web page's actions, restoring a backup among them. */
 sealed interface RecoveryAction {
     data class Restart(val id: String) : RecoveryAction
     data object RestartAll : RecoveryAction
@@ -108,11 +117,14 @@ sealed interface RecoveryAction {
     data object LeaveSafe : RecoveryAction
     data class Rollback(val version: String) : RecoveryAction
 
+    /** Puts the named backup back: the home marks it and restarts to restore it. */
+    data class Restore(val backup: String) : RecoveryAction
+
     /**
-     * How many times the person confirms: twice to go back a version (the home asks twice for
-     * every action through the relay, and says so with 428).
+     * How many times the person confirms: twice to go back a version or restore a backup, as the
+     * web page asks (the home asks twice for every action through the relay, and says so with 428).
      */
-    val confirms: Int get() = if (this is Rollback) 2 else 1
+    val confirms: Int get() = if (this is Rollback || this is Restore) 2 else 1
 
     /** The action's word on the console. */
     val wire: String
@@ -123,11 +135,13 @@ sealed interface RecoveryAction {
             StaySafe -> "stay_safe"
             LeaveSafe -> "leave_safe"
             is Rollback -> "rollback"
+            is Restore -> "restore"
         }
 
     fun body(confirm: Int): JsonObject = buildJsonObject {
         put("action", wire)
         if (this@RecoveryAction is Restart) put("component", id)
+        if (this@RecoveryAction is Restore) put("backup", backup)
         put("confirm", confirm)
     }
 }
@@ -168,6 +182,27 @@ suspend fun ApiClient.recoveryLines(minutes: Int = 15): List<RecoveryLine> {
     val lines = runCatching { ApiClient.json.parseToJsonElement(String(bytes)).jsonObject["lines"]?.jsonArray }.getOrNull()
     return lines.orEmpty().mapNotNull { (it as? JsonObject)?.let(RecoveryLine::of) }
 }
+
+/** The backups the home can restore. */
+suspend fun ApiClient.recoveryBackups(): List<RecoveryBackup> {
+    val bytes = recoveryCall(request("GET", "/recovery/api/backups"))
+    return try {
+        ApiClient.json.decodeFromString(RecoveryBackups.serializer(), String(bytes)).backups.orEmpty()
+    } catch (e: Exception) {
+        throw RecoveryException.Refused(e.message ?: "unexpected answer")
+    }
+}
+
+/**
+ * The diagnostics bundle: a .tar.gz of the last 2 hours of lines, the state and the supervisor's
+ * own files, as the web page's download.
+ */
+suspend fun ApiClient.recoveryDiagnostics(): ByteArray = recoveryCall(request("GET", "/recovery/api/diagnostics"))
+
+/** The name the web page's download gives the bundle: `maktaba-recovery-<UTC time>.tar.gz`. */
+fun recoveryDiagnosticsName(at: java.time.Instant = java.time.Instant.now()): String =
+    "maktaba-recovery-" + java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+        .withZone(java.time.ZoneOffset.UTC).format(at) + ".tar.gz"
 
 /** Runs [action], confirmed [confirm] times. */
 suspend fun ApiClient.recoveryAction(action: RecoveryAction, confirm: Int) {

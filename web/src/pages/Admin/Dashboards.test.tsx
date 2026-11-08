@@ -186,6 +186,67 @@ describe("Dashboards", () => {
     expect(screen.getByLabelText(ar["dash.machine"])).toBeInTheDocument();
   });
 
+  it("names the offline machines, marks them in the picker, and says so for one", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve({
+        board: "overview",
+        range: "24h",
+        step: 60,
+        machine: path.includes("machine=") ? "n45" : undefined,
+        machines: {
+          total: 9,
+          shown: path.includes("machine=") ? ["n45"] : ["n45", "n70", "n07", "n33", "n12"],
+          all: ["n07", "n12", "n20", "n33", "n41", "n45", "n50", "n60", "n70"],
+          offline: ["n45", "n70"],
+        },
+        series: [{ name: "maktaba_machines_components_down", kind: "gauge", points: [[1, 4]] }],
+      })
+    );
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect(await screen.findByTestId("dash-offline")).toHaveTextContent("Offline: n45, n70");
+    const pick = screen.getByLabelText(en["dash.machine"]) as HTMLSelectElement;
+    const labels = Array.from(pick.options).map((o) => o.textContent);
+    expect(labels).toContain("n45 (offline)");
+    expect(labels).toContain("n07");
+    fireEvent.change(pick, { target: { value: "n45" } });
+    await waitFor(() =>
+      expect(screen.getByTestId("dash-offline")).toHaveTextContent(en["dash.machine.offline"])
+    );
+    // a machine that is online, on its own: no offline line
+    fireEvent.change(pick, { target: { value: "n07" } });
+    await waitFor(() => expect(String(get.mock.calls.at(-1)?.[0])).toContain("machine=n07"));
+    await screen.findAllByTestId("dash-panel");
+    expect(screen.queryByTestId("dash-offline")).toBeNull();
+  });
+
+  it("with none offline there is no offline line, and an older home without the list reads as none", async () => {
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: { total: 2, shown: ["a", "b"], all: ["a", "b"] },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    await screen.findAllByTestId("dash-panel");
+    expect(screen.queryByTestId("dash-offline")).toBeNull();
+  });
+
+  it("in Arabic the offline line is Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: { total: 2, shown: ["b", "a"], all: ["a", "b"], offline: ["b"] },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect((await screen.findByTestId("dash-offline")).textContent).toContain("غير متصلة: b");
+    const pick = screen.getByLabelText(ar["dash.machine"]) as HTMLSelectElement;
+    expect(Array.from(pick.options).map((o) => o.textContent)).toContain("b (غير متصل)");
+  });
+
   it("a viewer sees admins only, and no board is asked for", async () => {
     renderPage(<AdminDashboards />, { path: "/admin/dashboards", user: memberUser });
     expect(await screen.findByText(en["common.forbidden.title"])).toBeInTheDocument();

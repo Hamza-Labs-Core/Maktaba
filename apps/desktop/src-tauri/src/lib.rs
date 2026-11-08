@@ -130,6 +130,10 @@ pub fn run() {
         }
         _ => {}
     }
+    // macOS: this build, before an install can swap the bundle under it (the login item
+    // is then the new build's to register, agent::login_item_step)
+    #[cfg(target_os = "macos")]
+    agent::remember_this_build();
 
     // Linux (Epic 39): without a StatusNotifier host there is no tray to come
     // back from. Closing the window then quits the app (the server is a
