@@ -201,6 +201,19 @@ func TestAReadByIdOfAnotherScopeIsRefused(t *testing.T) {
 	if err := e.CheckScopes(ctx, lib, js, []any{a.ids["dup_group"]}); err != nil {
 		t.Errorf("a job subject that is the library's duplicate group: %v", err)
 	}
+	// a deleted duplicate group's jobs stay (no foreign key): their library answers
+	gone := "0b8f8a52-61a4-4d0a-9d8a-9a3f4bd2d0ff"
+	if _, err := db.Exec(`INSERT INTO processing_jobs (stage, state, subject_kind, subject_id, library_id)
+		VALUES ('dedup_apply', 'done', 'dup_group', $1, $2)`, gone, b.ids["library"]); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.CheckScopes(ctx, lib, js, []any{gone}); err == nil || err.Code != CodeScope {
+		t.Errorf("a deleted duplicate group of another library, through its jobs: %v", err)
+	}
+	libB := Scope{Invocation: "inv_rb" + tag, PluginID: "tv.maktaba.t", SubjectKind: "library", SubjectID: b.ids["library"], LibraryID: b.ids["library"]}
+	if err := e.CheckScopes(ctx, libB, js, []any{gone}); err != nil {
+		t.Errorf("a deleted duplicate group of the job's library, through its jobs: %v", err)
+	}
 	// a video job reads its own video's rows; the same library's other video is not its own
 	for _, kind := range []string{"subject", "job_subject"} {
 		st := &Statement{Name: "rv." + kind, Mode: "read", Scope: kind, ScopeArg: 1}
