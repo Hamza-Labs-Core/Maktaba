@@ -4,6 +4,7 @@ and which home-only stages a node may take while the relay is on."""
 from __future__ import annotations
 
 from collections.abc import Coroutine
+from dataclasses import replace
 from typing import Any, cast
 
 import pytest
@@ -16,7 +17,16 @@ from maktaba_pipeline.integrations.plex import UrllibTransport
 
 pytestmark = pytest.mark.unit
 
-PLEX = {"plex_index", "plex_collection", "plex_groups", "plex_collections_import"}
+#: no built-in stage names the relay since the Plex library sync went (plex_livetv is
+#: home-only); a stand-in that does keeps the placement rule covered
+RELAYED = "relayed_probe"
+PLEX = {RELAYED}
+
+
+def _graph() -> tuple[Any, ...]:
+    graph = build_full_graph(discover(include_entry_points=False))
+    tv = next(s for s in graph if s.name == "plex_livetv")
+    return (*graph, replace(tv, name=RELAYED, relay="plex"))
 
 
 class _Db:
@@ -73,13 +83,13 @@ def test_the_relay_target_is_a_path_never_a_url() -> None:
     assert t._target("relay://plex/identity") == "/identity"  # noqa: SLF001
 
 
-def test_plex_stages_lift_onto_a_node_while_the_relay_is_on(
+def test_relayed_stages_lift_onto_a_node_while_the_relay_is_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    graph = build_full_graph(discover(include_entry_points=False))
+    graph = _graph()
     monkeypatch.setenv("MAKTABA_CLUSTER_AGENT", "1")
     lifted = _run(lifted_placements(_Db(), graph))
-    assert lifted & {s.name for s in graph if s.name.startswith(("plex_", "dizquetv_"))} == PLEX
+    assert lifted & {s.name for s in graph if s.extension} == PLEX
     assert "plex_livetv" not in lifted  # beside write_channels, on the home
     # switched off in the settings: home-only again
     off_db = _Db({"rules.relay": '{"enabled": false}'})
@@ -98,5 +108,5 @@ def test_unreadable_relay_settings_keep_the_stages_home_only(
             raise RuntimeError("connection lost")
 
     monkeypatch.setenv("MAKTABA_CLUSTER_AGENT", "1")
-    graph = build_full_graph(discover(include_entry_points=False))
+    graph = _graph()
     assert not (_run(lifted_placements(Broken(), graph)) & PLEX)

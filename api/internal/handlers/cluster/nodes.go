@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster"
@@ -209,4 +210,65 @@ func (h *Handler) writeNode(w http.ResponseWriter, r *http.Request, id string) {
 		}
 	}
 	common.WriteJSON(w, r, http.StatusOK, h.live(view(n, mine, stages[id], now), h.liveStates()))
+}
+
+// OfflineMachines are the approved machines that are not online now, by the Machines page's
+// own rule (neither the machine nor any of its workers seen within OnlineWindow), sorted:
+// the dashboards' Overview ranks them first (story 53.12).
+func (h *Handler) OfflineMachines(ctx context.Context) ([]string, error) {
+	nodes, err := h.Store.Nodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	workers, err := h.Store.Workers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byNode := map[string][]cluster.NodeWorker{}
+	for _, w := range workers {
+		byNode[w.NodeID] = append(byNode[w.NodeID], w)
+	}
+	now := h.now()
+	out := []string{}
+	for _, n := range nodes {
+		if n.State == cluster.StateApproved && !view(n, byNode[n.ID], nil, now).Online {
+			out = append(out, n.ID)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// HomeMachine is the machine id the home's own lines carry on the dashboards
+// (shared/components/store.Home).
+const HomeMachine = "home"
+
+// MachineNames are the names the Machines page shows for the machine ids asked (the home's
+// own name for HomeMachine, each joined machine's name for its node id); an id it has no
+// name for is left out. The dashboards' Overview names its machines with them (story
+// 53.12). The names are the user's text: the caller bounds them for display.
+func (h *Handler) MachineNames(ctx context.Context, ids []string) (map[string]string, error) {
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	out := map[string]string{}
+	if len(want) == 0 {
+		return out, nil
+	}
+	nodes, err := h.Store.Nodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range nodes {
+		if want[n.ID] && n.Name != "" {
+			out[n.ID] = n.Name
+		}
+	}
+	if want[HomeMachine] && out[HomeMachine] == "" {
+		if id, err := h.Store.Identity(ctx); err == nil && id.Name != "" {
+			out[HomeMachine] = id.Name
+		}
+	}
+	return out, nil
 }

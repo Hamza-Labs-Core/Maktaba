@@ -25,7 +25,6 @@ from maktaba_pipeline.schedule.channel_planner import (
     PlanResult,
     SeasonCandidate,
     Slot,
-    dizquetv_time_slots,
     group_series,
     maktaba_channel_definition,
     simulate,
@@ -564,34 +563,6 @@ def test_maktaba_definition_matches_the_slot_0081_schema(library_plan: PlanResul
                 assert len(hits) == 1, (ch.key, day, m)
         if ch.ramadan_slots:
             assert body["mode_config"]["ramadan"]["activate"] == {"hijri_month": 9}
-
-
-def test_dizquetv_weekly_schedule_for_a_grid_of_strips_and_weekly_shows(
-    library_plan: PlanResult,
-) -> None:
-    p = library_plan
-    ch = channel(p, "seerah")
-    dz = dizquetv_time_slots(ch, p)
-    assert dz["period"] == 7 * 86_400_000  # strips and weekly slots: a weekly period
-    times = [s["time"] for s in dz["slots"]]
-    assert times == sorted(times) and len(set(times)) == len(times)
-    shows = [s["showId"] for s in dz["slots"]]
-    for a, b in zip(shows, shows[1:], strict=False):
-        assert a != b  # adjacent slots of one lane are merged
-    assert shows[0] != shows[-1]  # …also across midnight
-    assert all(s["order"] == "next" for s in dz["slots"] if s["showId"] != "flex.")
-    assert {"lateness", "maxDays", "pad", "flexPreference"} <= set(dz)
-
-
-def test_dizquetv_weekly_schedule_puts_khutbah_on_friday(library_plan: PlanResult) -> None:
-    p = library_plan
-    mix = channel(p, "mix")
-    dz = dizquetv_time_slots(mix, p)
-    day = 86_400_000
-    assert dz["period"] == 7 * day
-    kh = [s for s in dz["slots"] if s["showId"] == "lane:library.khutbah"]
-    # dizqueTV's weekly period starts on Thursday: Friday is day 1
-    assert [s["time"] for s in kh] == [1 * day + 12 * 3_600_000]
 
 
 def test_a_recitation_joins_a_theme_only_by_its_genre() -> None:

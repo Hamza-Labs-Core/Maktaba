@@ -46,7 +46,6 @@
       </li>
       <li><span class="label">2 · What to write</span>
         <label class="opt"><input type="checkbox" id="o-plex" checked> Season collections in Plex</label>
-        <label class="opt"><input type="checkbox" id="o-tv" checked> dizqueTV shows and TV channels</label>
         <label class="opt"><input type="checkbox" id="o-yt" checked> Read YouTube playlists and dates</label>
         <label class="opt"><input type="checkbox" id="o-exact"> <span>Exact upload dates<br><span class="muted">slow: one request per video</span></span></label>
       </li>
@@ -479,7 +478,7 @@ function drawLibs(libs) {
 
 // ---- controls
 function skipped() { return [...document.querySelectorAll("#o-skip input:checked")].map(i => i.value); }
-function options() { return {plex: $("o-plex").checked, tv: $("o-tv").checked, youtube: $("o-yt").checked, exact: $("o-exact").checked,
+function options() { return {plex: $("o-plex").checked, youtube: $("o-yt").checked, exact: $("o-exact").checked,
                              from_step: $("o-from").value, skip: skipped()}; }
 function fillSteps(names) {  // the run's steps, from the server: "Start at" and "Leave out"
   if (!names || $("o-from").options.length > 1) return;
@@ -488,7 +487,7 @@ function fillSteps(names) {  // the run's steps, from the server: "Start at" and
 }
 function review() {
   const o = options(), sel = $("scope-sel").checked;
-  const what = [o.plex && "write season collections to Plex", o.tv && "update dizqueTV shows and channels",
+  const what = [o.plex && "write season collections to Plex",
                 o.youtube ? "read YouTube playlists" : "skip YouTube", o.exact && "fetch exact dates"].filter(Boolean);
   $("sel-n").textContent = selected.size;
   const sk = skipped();
@@ -501,7 +500,7 @@ async function startRun(folders) {
   catch (e) { toast(e.message, true); }
 }
 $("start").addEventListener("click", () => startRun($("scope-sel").checked ? [...selected] : []));
-["o-plex", "o-tv", "o-yt", "o-exact", "o-from", "o-skip", "scope-all", "scope-sel"].forEach(id => $(id).addEventListener("change", review));
+["o-plex", "o-yt", "o-exact", "o-from", "o-skip", "scope-all", "scope-sel"].forEach(id => $(id).addEventListener("change", review));
 $("libs").addEventListener("change", e => { const f = e.target.closest(".pick")?.dataset.f; if (!f) return;
   e.target.checked ? selected.add(f) : selected.delete(f); if (selected.size) $("scope-sel").checked = true; review(); });
 $("libs").addEventListener("click", e => { const b = e.target.closest(".run1"); if (b) startRun([b.dataset.f]); });

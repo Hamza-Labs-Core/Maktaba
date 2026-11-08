@@ -1,20 +1,14 @@
 Heading: تابع المشاهدة
 Button: رحلة إلى مكة, 55:00 | شوهد 45٪
-ScrollBar: 0
-ValueIndicator: 0
 Heading: أضيف حديثًا
 Button: Scholars of the Silk Road, 43:00
 Button: بيت الحكمة في بغداد, 51:00
 Button: Manuscripts of Timbuktu, 49:00
 Button: رحلة إلى مكة, 55:00
 Button: The Libraries of Cordoba, 58:00
-ScrollBar: 1
-ValueIndicator: 1
 Heading: شوهد مؤخرًا
 Button: رحلة إلى مكة, 55:00 | شوهد 45٪
 Button: The Libraries of Cordoba, 58:00 | شوهد
-ScrollBar: 0
-ValueIndicator: 0
 Button: تشغيل
 Button: تشغيل عشوائي
 DisclosureTriangle: من الإضافات | 1
@@ -34,8 +28,6 @@ RadioButton: قوائم التشغيل | 0
 MenuButton: ترتيب
 MenuButton: اللغة
 MenuButton: المتحدث
-ScrollBar: 0
-ValueIndicator: 0
 Button: Scholars of the Silk Road, 43:00
 Button: بيت الحكمة في بغداد, 51:00
 Button: Manuscripts of Timbuktu, 49:00
@@ -48,5 +40,3 @@ Button: السيرة النبوية، الدرس ١١, 49:40 | شوهد 42٪
 Button: السيرة النبوية، الدرس ١٠, 52:00 | شوهد
 Button: The Fiqh of Fasting, 30:20
 Button: The Libraries of Cordoba, 58:00 | شوهد
-ScrollBar: 0
-ValueIndicator: 0

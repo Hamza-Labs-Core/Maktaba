@@ -201,7 +201,6 @@ async def test_named_seasons_are_stored_and_titled(
 ) -> None:
     from maktaba_pipeline.classify.series_detector import Detection, Season, Series
     from maktaba_pipeline.engine.stages import _detect as detect_stage
-    from maktaba_pipeline.extensions.seasons import collection_title, load_season
 
     lib = await make_library(db, "أحمد منصور")
     await add_channel(db, lib)
@@ -239,11 +238,6 @@ async def test_named_seasons_are_stored_and_titled(
         ("وليد جنبلاط", 2005, True),
         ("عبدالناصر عيسى", 2006, True),
     ]
-    info = await load_season(db, rows[0]["id"])
-    assert info is not None and info.title == "أحمد منصور - شاهد على العصر - وليد جنبلاط"
-    # a one-season series keeps the plain title; a numbered one without a name "الموسم N"
-    assert collection_title("L", "S", 1, 1, "x") == "L - S"
-    assert collection_title("L", "S", 2, 3) == "L - S - الموسم 2"
 
 
 @pytest.mark.asyncio

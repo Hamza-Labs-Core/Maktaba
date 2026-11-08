@@ -4,11 +4,12 @@ only where the plugin's Postgres role is usable by this machine's login (Epic 54
 
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
 
-from maktaba_pipeline.plugins import firstparty, native
+from maktaba_pipeline.plugins import firstparty, native, pipe
 
 pytestmark = pytest.mark.asyncio
 
@@ -33,7 +34,7 @@ class _DB:
 def stage(monkeypatch: pytest.MonkeyPatch) -> str:
     # a plugin with no file access (tv.maktaba.classify reads thumbnails since wave 4, so
     # its runner must also hold this machine's current areas)
-    name = "plex_index"
+    name = "plex_livetv"
     assert firstparty.by_stage(name) is not None
 
     async def serving(_stage: str) -> tuple[bool, str | None]:
@@ -58,8 +59,51 @@ async def test_an_unreadable_answer_runs_in_process(stage: str) -> None:
     assert (got.impl, got.why) == ("inproc", "role_unusable")
 
 
+async def test_on_windows_a_first_party_stage_asks_its_runner(
+    stage: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story 54.23: a runner on Windows starts its tools through anonymous pipes (winproc),
+    so a first-party stage there is chosen as on any other OS: its runner is asked."""
+    import sys
+
+    asked: list[str] = []
+
+    async def serving(s: str) -> tuple[bool, str | None]:
+        asked.append(s)
+        return False, None
+
+    monkeypatch.setattr(native, "serving", serving)
+    monkeypatch.setattr(sys, "platform", "win32")
+    got = await native.choose(_DB(True), stage)
+    assert (got.impl, got.why) == ("inproc", "runner_not_serving_here")
+    assert asked == [stage]
+
+
 async def test_the_answer_is_kept_for_a_minute(stage: str) -> None:
     db = _DB(True)
     await native.choose(db, stage)
     await native.choose(db, stage)
     assert db.role_asks == 1
+
+
+async def test_the_worker_reaches_a_runner_through_its_pipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """On Windows the worker opens the group's pipe (the supervisor's prefix and the
+    group's name; story 54.23); without the prefix it finds none, as a missing socket
+    elsewhere."""
+    opened: list[str] = []
+
+    async def open_pipe(name: str, **_: Any) -> Any:
+        opened.append(name)
+        return "r", "w"
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(pipe, "open_pipe", open_pipe)
+    monkeypatch.setenv("MAKTABA_RUNNER_PIPES", "\\\\.\\pipe\\maktaba-runner-ab-")
+    got: Any = await native.open_runner("light")
+    assert got == ("r", "w")
+    assert opened == ["\\\\.\\pipe\\maktaba-runner-ab-light"]
+    monkeypatch.delenv("MAKTABA_RUNNER_PIPES")
+    with pytest.raises(FileNotFoundError):
+        await native.open_runner("light")

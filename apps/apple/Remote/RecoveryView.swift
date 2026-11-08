@@ -5,9 +5,9 @@ import SwiftUI
 /// recovery page shows and does, from the same routes, `/recovery/api/*`, which the
 /// supervisor answers with the API or the database down. The state of each group and part
 /// with its last error, Restart a part, Restart everything, safe mode on and off, going back
-/// a version (confirmed twice), the disk and the last warnings and errors. Restoring a backup
-/// and the diagnostics download stay on the web page, linked at the end. The console is the
-/// rule (admins only): a refusal says so and never signs the app out.
+/// a version and restoring a backup (each confirmed twice, as the web page asks), the
+/// diagnostics bundle handed to the share sheet, the disk and the last warnings and errors.
+/// The console is the rule (admins only): a refusal says so and never signs the app out.
 struct RecoveryView: View {
     @Environment(RemoteModel.self) private var model
     @State private var recovery: RecoveryModel?
@@ -22,6 +22,7 @@ struct RecoveryView: View {
         }
         .navigationTitle("Recovery")
         .task {
+            if recovery == nil { RecoveryModel.sweepDiagnostics() } // a bundle left by an app that stopped
             let r = recovery ?? RecoveryModel(client: model.client)
             recovery = r
             // a fresh pass while the API answers, for the next time it does not
@@ -82,6 +83,12 @@ private struct RecoveryList: View {
                     case .failed:
                         Label("That did not work.", systemImage: "xmark.octagon").foregroundStyle(.red)
                             .accessibilityIdentifier("recovery.failed")
+                    case .restoring:
+                        Label("The home is restarting to put the backup back.", systemImage: "arrow.counterclockwise")
+                            .accessibilityIdentifier("recovery.restoring")
+                    case .noBackups:
+                        Label("No backups were found on the data disk.", systemImage: "info.circle")
+                            .accessibilityIdentifier("recovery.noBackups")
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -93,13 +100,28 @@ private struct RecoveryList: View {
             get: { recovery.asking != nil },
             set: { if !$0 { recovery.cancel() } }
         ), presenting: recovery.asking) { asking in
-            Button(title(asking.action), role: asking.action.confirms > 1 ? .destructive : nil) {
+            Button(button(asking.action), role: asking.action.confirms > 1 ? .destructive : nil) {
                 Task { await recovery.confirm(asking) }
             }
             .accessibilityIdentifier("recovery.confirm")
             Button("Cancel", role: .cancel) { recovery.cancel() }
         } message: { asking in
             Text(asking.step > 1 ? "This replaces what is there now. Are you sure?" : "Are you sure?")
+        }
+        .sheet(isPresented: Binding(
+            get: { recovery.backups != nil },
+            set: { if !$0 { recovery.backups = nil } }
+        )) {
+            BackupPicker(backups: recovery.backups ?? [], pick: { recovery.pick($0) }, cancel: { recovery.backups = nil })
+        }
+        .sheet(isPresented: Binding(
+            get: { recovery.diagnostics != nil },
+            set: { if !$0 { recovery.doneSharing() } }
+        ), onDismiss: { recovery.doneSharing() }) {
+            if let file = recovery.diagnostics {
+                ShareSheet(file: file) { recovery.doneSharing() }
+                    .ignoresSafeArea()
+            }
         }
     }
 
@@ -144,6 +166,10 @@ private struct RecoveryList: View {
             if let version = s.rollback {
                 actionButton(.rollback(version), systemImage: "arrow.uturn.backward.circle")
             }
+            fetchButton(.backups, "Restore a backup", systemImage: "externaldrive.badge.timemachine",
+                        id: "recovery.action.restore") { await recovery.chooseBackup() }
+            fetchButton(.diagnostics, "Download diagnostics", systemImage: "square.and.arrow.down",
+                        id: "recovery.action.diagnostics") { await recovery.fetchDiagnostics() }
         } header: {
             Text("Actions")
         } footer: {
@@ -167,9 +193,24 @@ private struct RecoveryList: View {
                 Label("Open the recovery page", systemImage: "safari")
             }
             .accessibilityIdentifier("recovery.web")
-        } footer: {
-            Text("Restoring a backup and downloading diagnostics are on the recovery page, in a browser.")
         }
+    }
+
+    /// Restore a backup and Download diagnostics: a read first (the backups, the bundle), its
+    /// progress in the button.
+    private func fetchButton(_ kind: RecoveryModel.Fetching, _ label: LocalizedStringKey, systemImage: String, id: String,
+                             run: @escaping () async -> Void) -> some View {
+        Button {
+            Task { await run() }
+        } label: {
+            if recovery.fetching == kind {
+                ProgressView()
+            } else {
+                Label(label, systemImage: systemImage)
+            }
+        }
+        .disabled(recovery.running != nil || recovery.fetching != nil)
+        .accessibilityIdentifier(id)
     }
 
     private func actionButton(_ action: RecoveryAction, systemImage: String) -> some View {
@@ -182,7 +223,7 @@ private struct RecoveryList: View {
                 Label(title(action), systemImage: systemImage)
             }
         }
-        .disabled(recovery.running != nil)
+        .disabled(recovery.running != nil || recovery.fetching != nil)
         .accessibilityIdentifier("recovery.action.\(Self.slug(action))")
     }
 
@@ -194,7 +235,14 @@ private struct RecoveryList: View {
         case .staySafe: "Stay in safe mode"
         case .leaveSafe: "Leave safe mode"
         case .rollback(let v): "Go back to version \(v)"
+        case .restore(let name): "Restore \(name)"
         }
+    }
+
+    /// The confirmation's button: the action's title, or Restore (the backup is in the alert's title).
+    private func button(_ action: RecoveryAction) -> LocalizedStringKey {
+        if case .restore = action { return "Restore" }
+        return title(action)
     }
 
     static func slug(_ action: RecoveryAction) -> String {
@@ -205,6 +253,7 @@ private struct RecoveryList: View {
         case .staySafe: "staySafe"
         case .leaveSafe: "leaveSafe"
         case .rollback: "rollback"
+        case .restore: "restore"
         }
     }
 
@@ -305,4 +354,57 @@ private struct LineRow: View {
         }
         .environment(\.layoutDirection, .leftToRight)
     }
+}
+
+/// The backups the home can restore, newest first: its file name, when it was taken and its
+/// size. Choosing one asks twice before anything is sent.
+private struct BackupPicker: View {
+    let backups: [RecoveryBackup]
+    let pick: (RecoveryBackup) -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(backups) { b in
+                        Button { pick(b) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(verbatim: b.name).font(.body.monospaced()).environment(\.layoutDirection, .leftToRight)
+                                Text(verbatim: [b.at.map { $0.formatted(date: .abbreviated, time: .shortened) },
+                                                b.size < 0 ? nil : RecoveryList.bytes(b.size)]
+                                    .compactMap { $0 }.joined(separator: " · "))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("recovery.backup.\(b.name)")
+                    }
+                } footer: {
+                    Text("Restoring replaces the library database with the backup and loses every change made since it was taken.")
+                }
+            }
+            .maktabaSurface()
+            .navigationTitle("Choose a backup")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: cancel) }
+            }
+        }
+        .accessibilityIdentifier("recovery.backups")
+    }
+}
+
+/// The system share sheet for the diagnostics bundle's file; `done` when it closes, shared or not.
+private struct ShareSheet: UIViewControllerRepresentable {
+    let file: URL
+    let done: () -> Void
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let vc = UIActivityViewController(activityItems: [file], applicationActivities: nil)
+        vc.completionWithItemsHandler = { _, _, _, _ in done() }
+        return vc
+    }
+
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }

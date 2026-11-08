@@ -110,6 +110,201 @@ describe("Dashboards", () => {
     expect(panels[0].querySelector("figure")?.getAttribute("dir")).toBe("ltr");
   });
 
+  it("with many machines it says how many it shows, and picks one machine on its own", async () => {
+    const all = Array.from({ length: 37 }, (_, i) => `n${String(i).padStart(2, "0")}`);
+    get.mockImplementation((path: string) =>
+      Promise.resolve({
+        board: "overview",
+        range: "24h",
+        step: 60,
+        machine: path.includes("machine=") ? "n07" : undefined,
+        machines: {
+          total: 37,
+          shown: path.includes("machine=") ? ["n07"] : ["n07", "n33", "n12", "n41", "n20"],
+          all,
+        },
+        omitted: path.includes("machine=") ? 3 : 0,
+        series: [
+          { name: "maktaba_machines_components_down", kind: "gauge", points: [[1, 4]] },
+          {
+            name: "maktaba_component_down",
+            labels: "machine=n07",
+            kind: "gauge",
+            points: [[1, 3]],
+          },
+        ],
+      })
+    );
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    const panels = await screen.findAllByTestId("dash-panel");
+    expect(within(panels[0]).getByRole("heading")).toHaveTextContent(
+      en["dash.series.maktaba_machines_components_down"]
+    );
+    expect(within(panels[1]).getByRole("heading")).toHaveTextContent(
+      en["dash.series.maktaba_component_down"]
+    );
+    expect(screen.getByTestId("dash-machines-shown")).toHaveTextContent("Showing 5 of 37 machines");
+    const pick = screen.getByLabelText(en["dash.machine"]) as HTMLSelectElement;
+    expect(pick.options).toHaveLength(38);
+    expect(pick.options[0].textContent).toBe(en["dash.machine.all"]);
+    expect(screen.queryByTestId("dash-omitted")).toBeNull();
+    fireEvent.change(pick, { target: { value: "n07" } });
+    await waitFor(() =>
+      expect(String(get.mock.calls.at(-1)?.[0])).toBe(
+        "/api/admin/dashboards/overview?range=24h&machine=n07"
+      )
+    );
+    expect(await screen.findByTestId("dash-omitted")).toHaveTextContent("3 more lines did not fit");
+    expect(screen.queryByTestId("dash-machines-shown")).toBeNull();
+    // the machine is the Overview's: another board is asked without it
+    fireEvent.click(screen.getByRole("tab", { name: en["dash.storage"] }));
+    await waitFor(() =>
+      expect(String(get.mock.calls.at(-1)?.[0])).toBe("/api/admin/dashboards/storage?range=24h")
+    );
+    expect(screen.queryByTestId("dash-machine")).toBeNull();
+  });
+
+  it("in Arabic the machines line is Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: {
+        total: 9,
+        shown: ["a", "b", "c", "d", "e"],
+        all: ["a", "b", "c", "d", "e", "f", "g", "h", "i"],
+      },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    const panels = await screen.findAllByTestId("dash-panel");
+    expect(within(panels[0]).getByRole("heading")).toHaveTextContent(
+      ar["dash.series.maktaba_machines_load1_max"]
+    );
+    expect(screen.getByTestId("dash-machines-shown").textContent).toContain("عرض");
+    expect(screen.getByLabelText(ar["dash.machine"])).toBeInTheDocument();
+  });
+
+  it("names the offline machines, marks them in the picker, and says so for one", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve({
+        board: "overview",
+        range: "24h",
+        step: 60,
+        machine: path.includes("machine=") ? "n45" : undefined,
+        machines: {
+          total: 9,
+          shown: path.includes("machine=") ? ["n45"] : ["n45", "n70", "n07", "n33", "n12"],
+          all: ["n07", "n12", "n20", "n33", "n41", "n45", "n50", "n60", "n70"],
+          offline: ["n45", "n70"],
+        },
+        series: [{ name: "maktaba_machines_components_down", kind: "gauge", points: [[1, 4]] }],
+      })
+    );
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect(await screen.findByTestId("dash-offline")).toHaveTextContent("Offline: n45, n70");
+    const pick = screen.getByLabelText(en["dash.machine"]) as HTMLSelectElement;
+    const labels = Array.from(pick.options).map((o) => o.textContent);
+    expect(labels).toContain("n45 (offline)");
+    expect(labels).toContain("n07");
+    fireEvent.change(pick, { target: { value: "n45" } });
+    await waitFor(() =>
+      expect(screen.getByTestId("dash-offline")).toHaveTextContent(en["dash.machine.offline"])
+    );
+    // a machine that is online, on its own: no offline line
+    fireEvent.change(pick, { target: { value: "n07" } });
+    await waitFor(() => expect(String(get.mock.calls.at(-1)?.[0])).toContain("machine=n07"));
+    await screen.findAllByTestId("dash-panel");
+    expect(screen.queryByTestId("dash-offline")).toBeNull();
+  });
+
+  it("with none offline there is no offline line, and an older home without the list reads as none", async () => {
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: { total: 2, shown: ["a", "b"], all: ["a", "b"] },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    await screen.findAllByTestId("dash-panel");
+    expect(screen.queryByTestId("dash-offline")).toBeNull();
+  });
+
+  it("in Arabic the offline line is Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: { total: 2, shown: ["b", "a"], all: ["a", "b"], offline: ["b"] },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect((await screen.findByTestId("dash-offline")).textContent).toContain("غير متصلة: b");
+    const pick = screen.getByLabelText(ar["dash.machine"]) as HTMLSelectElement;
+    expect(Array.from(pick.options).map((o) => o.textContent)).toContain("b (غير متصل)");
+  });
+
+  it("names each machine as the Machines page does, keyed by its node id", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve({
+        board: "overview",
+        range: "24h",
+        step: 60,
+        machine: path.includes("machine=") ? "n45" : undefined,
+        machines: {
+          total: 3,
+          shown: path.includes("machine=") ? ["n45"] : ["n45", "n07", "home"],
+          all: ["home", "n07", "n45"],
+          offline: ["n45"],
+        },
+        names: { home: "Living room", n07: "Attic NAS", n45: "Office", bad: 7 },
+        series: [
+          {
+            name: "maktaba_host_load1",
+            labels: "machine=n07",
+            kind: "gauge",
+            points: [[1, 2]],
+          },
+        ],
+      })
+    );
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect(await screen.findByTestId("dash-offline")).toHaveTextContent("Offline: Office.");
+    const pick = screen.getByLabelText(en["dash.machine"]) as HTMLSelectElement;
+    const options = Array.from(pick.options).map((o) => [o.value, o.textContent]);
+    expect(options).toContainEqual(["n07", "Attic NAS (n07)"]);
+    expect(options).toContainEqual(["home", "Living room (home)"]);
+    expect(options).toContainEqual(["n45", "Office (n45) (offline)"]);
+    // the legend and the screen-reader sentence name the machine
+    const panel = (await screen.findAllByTestId("dash-panel"))[0];
+    expect(panel.textContent).toContain("Attic NAS");
+    expect(panel.textContent).not.toContain("n07");
+    // picking by name still asks by node id
+    fireEvent.change(pick, { target: { value: "n45" } });
+    await waitFor(() => expect(String(get.mock.calls.at(-1)?.[0])).toContain("machine=n45"));
+  });
+
+  it("an older home without names shows the node ids, and Arabic keeps the id as the hint", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    get.mockResolvedValue({
+      board: "overview",
+      range: "24h",
+      step: 60,
+      machines: { total: 2, shown: ["a", "b"], all: ["a", "b"], offline: ["b"] },
+      names: { a: "المكتب" },
+      series: [{ name: "maktaba_machines_load1_max", kind: "gauge", points: [[1, 2]] }],
+    });
+    renderPage(<AdminDashboards />, { path: "/admin/dashboards" });
+    expect((await screen.findByTestId("dash-offline")).textContent).toContain("غير متصلة: b");
+    const pick = screen.getByLabelText(ar["dash.machine"]) as HTMLSelectElement;
+    const labels = Array.from(pick.options).map((o) => o.textContent);
+    expect(labels).toContain("المكتب (a)");
+    expect(labels).toContain("b (غير متصل)");
+  });
+
   it("a viewer sees admins only, and no board is asked for", async () => {
     renderPage(<AdminDashboards />, { path: "/admin/dashboards", user: memberUser });
     expect(await screen.findByText(en["common.forbidden.title"])).toBeInTheDocument();

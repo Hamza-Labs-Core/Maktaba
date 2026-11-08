@@ -242,7 +242,6 @@
     <string name="w_components_enrich_title">البحث عن التفاصيل</string>
     <string name="w_components_youtube_title">يوتيوب</string>
     <string name="w_components_ext_plex_title">إضافة Plex</string>
-    <string name="w_components_ext_dizquetv_title">إضافة dizqueTV</string>
     <string name="w_components_livetv_title">البث المباشر</string>
     <string name="w_health_processes_state_standby">في الانتظار</string>
     <string name="w_health_processes_state_running">يعمل</string>
@@ -384,7 +383,6 @@
     <string name="cause_youtube_unavailable">فيديو أو قناة YouTube غير متاحة</string>
     <string name="cause_plex_unreachable">لا يمكن الوصول إلى Plex</string>
     <string name="cause_plex_auth">رفض Plex الرمز</string>
-    <string name="cause_dizquetv_unreachable">لا يمكن الوصول إلى dizqueTV</string>
     <string name="cause_readback_mismatch">لم تُقرأ الكتابة كما كُتبت</string>
     <string name="cause_no_handler">لا عامل يتولّى هذه المرحلة</string>
     <string name="cause_graph_violation">طلبت المرحلة عملًا لا يسمح به مخططها</string>
@@ -763,6 +761,21 @@
     <string name="dash_log_files">ملفات السجلات</string>
     <string name="dash_log_index">فهرس البحث في السجلات</string>
     <string name="dash_backups">نسخ التحديث الاحتياطية</string>
+    <string name="dash_component_down">المكوّنات المتوقفة</string>
+    <string name="dash_machines_components_up">المكوّنات العاملة، كل الأجهزة</string>
+    <string name="dash_machines_components_down">المكوّنات المتوقفة، كل الأجهزة</string>
+    <string name="dash_machines_disk_free_min">أقل مساحة حرة على القرص بين الأجهزة</string>
+    <string name="dash_machines_memory_free_min">أقل ذاكرة متاحة بين الأجهزة</string>
+    <string name="dash_machines_load_max">أعلى متوسط حِمل (دقيقة) بين الأجهزة</string>
+    <string name="dash_machines_restarts">إعادات التشغيل في الدقيقة، كل الأجهزة</string>
+    <string name="dash_machine">الجهاز</string>
+    <string name="dash_machine_all">كل الأجهزة</string>
+    <string name="dash_machines_shown">عرض %1$d من %2$d أجهزة، الأحوج إلى الانتباه أولاً. اختر جهازاً لترى بياناته وحده.</string>
+    <string name="dash_omitted">%1$d خطوط أخرى لم تتسع لها هذه اللوحة.</string>
+    <string name="dash_machines_offline">غير متصلة: %1$s. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها.</string>
+    <string name="dash_machine_offline">هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه.</string>
+    <string name="dash_machine_offline_option">%1$s (غير متصل)</string>
+    <string name="dash_machine_option">%1$s (%2$s)</string>
     <!-- Epic 53 stories 53.04, 53.05: the recovery screen (the console's words) -->
     <string name="recovery_title">الاستعادة</string>
     <string name="recovery_intro">جزء من مكتبة لا يعمل. يمكنك هنا معرفة ما حدث وإصلاحه.</string>
@@ -793,7 +806,15 @@
     <string name="recovery_failed">لم ينجح ذلك.</string>
     <string name="recovery_failed_why">لم ينجح ذلك: %1$s</string>
     <string name="recovery_open_web">افتح صفحة الاستعادة</string>
-    <string name="recovery_web_note">استعادة نسخة احتياطية وتنزيل ملف التشخيص في صفحة الاستعادة، في المتصفح.</string>
+    <string name="recovery_restore">استعادة نسخة احتياطية</string>
+    <string name="recovery_restore_named">استعادة %1$s</string>
+    <string name="recovery_restore_button">استعادة</string>
+    <string name="recovery_choose_backup">اختر نسخة احتياطية</string>
+    <string name="recovery_restore_note">تحلّ الاستعادة النسخة الاحتياطية محلّ قاعدة بيانات المكتبة، وتضيع كل التغييرات التي جرت منذ أخذها.</string>
+    <string name="recovery_restoring">يُعاد تشغيل الجهاز الرئيسي لإرجاع النسخة الاحتياطية.</string>
+    <string name="recovery_no_backups">لم تُعثر على نسخ احتياطية في قرص البيانات.</string>
+    <string name="recovery_diagnostics">تنزيل ملف التشخيص</string>
+    <string name="recovery_diagnostics_saved">حُفظ ملف التشخيص.</string>
     <string name="recovery_group_database">قاعدة البيانات</string>
     <string name="recovery_group_api">خدمة مكتبة</string>
     <string name="recovery_group_streaming">التشغيل</string>

@@ -105,7 +105,7 @@ class DisplayTitleConfig:
     #: is its branding and is dropped
     boilerplate_share: float = 0.3
     boilerplate_min_count: int = 5
-    #: the guide's and the dizqueTV export's programme titles are the display titles
+    #: the guide's programme titles are the display titles
     use_in_guide: bool = True
     #: the local language model rewrites what the rules leave long or messy (the model
     #: and server of rules ``tagcheck``); answers are kept per title
@@ -118,7 +118,7 @@ register(
     {
         "enabled": Help(
             "Display titles", "Clean on-air titles",
-            "The guide, the channel strip and the dizqueTV export show a short title made "
+            "The guide and the channel strip show a short title made "
             "from the library title: no channel names, hashtags, emojis, links, dates or "
             "file leftovers, the series and «الحلقة 45» kept apart. A title set by hand on "
             "the video always wins.",
@@ -152,7 +152,7 @@ register(
         ),
         "boilerplate_min_count": Help("Display titles", "Shared phrase from (titles)",
                                       minimum=2),
-        "use_in_guide": Help("Display titles", "Use in the guide and dizqueTV",
+        "use_in_guide": Help("Display titles", "Use in the guide",
                              "Off: only the channel strip shows the display titles."),
         "use_llm": Help(
             "Display titles", "Let the language model tidy what is left",

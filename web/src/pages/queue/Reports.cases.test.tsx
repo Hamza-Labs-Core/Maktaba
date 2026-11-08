@@ -28,7 +28,7 @@ const report = (over: Partial<Report> & { name: string }): Report => ({
 
 const reports: Report[] = [
   report({ name: "channel-plan.html", kind: "plan", title: "Channel plan" }),
-  report({ name: "channel-audit.html", kind: "audit", title: "Channel audit" }),
+  report({ name: "notes.html", kind: "other", title: "notes.html" }),
   report({ name: "lib-1.html", kind: "review", title: "قناة الاختبار", library_id: "lib-1" }),
   report({ name: "channel-plan-preview.html", kind: "preview", title: "Channel plan (preview)" }),
 ];
@@ -172,14 +172,14 @@ describe("Reports (test-cases/queue-reports.md)", () => {
   it("QRP-11: a filter with no match shows no groups; clearing brings them back", async () => {
     setup();
     const nav = await listNav();
-    await within(nav).findByRole("button", { name: /Channel audit/ });
+    await within(nav).findByRole("button", { name: /notes\.html/ });
     const filter = within(nav).getByRole("searchbox", { name: "Filter reports" });
     await userEvent.type(filter, "zzz");
     expect(within(nav).queryAllByRole("heading")).toHaveLength(0);
     await userEvent.clear(filter);
     expect(within(nav).getAllByRole("heading").length).toBe(4);
-    await userEvent.type(filter, "AUDIT");
-    expect(within(nav).getByRole("button", { name: /Channel audit/ })).toBeInTheDocument();
+    await userEvent.type(filter, "NOTES");
+    expect(within(nav).getByRole("button", { name: /notes\.html/ })).toBeInTheDocument();
     expect(within(nav).queryByRole("button", { name: /Channel plan\u2069/ })).toBeNull();
   });
 
@@ -198,7 +198,7 @@ describe("Reports (test-cases/queue-reports.md)", () => {
     routeGet(get, { "/api/reports": { reports }, "/api/reports/channel-plan/preview": idle });
     await userEvent.click(screen.getByRole("button", { name: "go back" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Reports" })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /Channel audit/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /notes\.html/ })).toBeInTheDocument();
   });
 
   it("QRP-13: signed-out user is sent to /login; no report is loaded", async () => {
@@ -216,20 +216,20 @@ describe("Reports (test-cases/queue-reports.md)", () => {
     expect(await screen.findByRole("link", { name: "Open the preview" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Preview channels" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Show the stored plan" })).toBeNull();
-    await userEvent.click(await screen.findByRole("button", { name: /Channel audit/ }));
-    expect(await screen.findByTitle("Channel audit")).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /notes\.html/ }));
+    expect(await screen.findByTitle("notes.html")).toBeInTheDocument();
   });
 
   it("QRP-18: picking replaces the entry (Back leaves); Open the preview pushes", async () => {
     setup({}, { history: ["/queue"] });
     const nav = await listNav();
     await userEvent.click(await within(nav).findByRole("button", { name: /Channel plan\u2069/ }));
-    await userEvent.click(within(nav).getByRole("button", { name: /Channel audit/ }));
-    expect(await screen.findByTitle("Channel audit")).toBeInTheDocument();
+    await userEvent.click(within(nav).getByRole("button", { name: /notes\.html/ }));
+    expect(await screen.findByTitle("notes.html")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("link", { name: "Open the preview" }));
     expect(await screen.findByTitle("Channel plan (preview)")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "go back" }));
-    expect(await screen.findByTitle("Channel audit")).toBeInTheDocument();
+    expect(await screen.findByTitle("notes.html")).toBeInTheDocument();
     // picking uses replace: one more Back leaves the page (not back to the plan)
     await userEvent.click(screen.getByRole("button", { name: "go back" }));
     expect(await screen.findByText("overview page")).toBeInTheDocument();

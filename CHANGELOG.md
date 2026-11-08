@@ -14,6 +14,47 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba no longer syncs your library into Plex, and the dizqueTV integration is removed.**
+  Maktaba now replaces Plex for watching the library. These are gone:
+  - the Plex index, the season collections, the clip-group collections and the import of
+    Plex collections;
+  - the Plex path map setting;
+  - the whole dizqueTV extension: its shows, its channels, the channel audit and its settings.
+
+  Plex Live TV stays: Maktaba can still add its tuner and guide to Plex, refresh them and
+  restore its channel list. A dizqueTV tuner already in Plex is now shown as another
+  program's. The update deletes no data: the removed steps' jobs, the stored Plex item list,
+  the channel audits, the links to Plex and dizqueTV items and the old dizqueTV settings stay
+  in the database, and Maktaba no longer shows them. A rollback goes back to the release
+  before with all of it. Live broadcasts set only in the old dizqueTV settings keep airing on
+  Maktaba TV, and the channel editor shows them with a note; saving there gives Maktaba TV its
+  own copy.
+
+
+- **An offline machine comes first on the Overview (Epic 53 story 53.12).** On the home's
+  dashboards, a joined machine that is offline now ranks first among the machines most in need
+  of attention, and is named as offline: a line on the web page and both Remotes ("Offline:
+  …"), "(offline)" in the machine picker, and a line on its own view saying its lines end at
+  its last values. Which machines are offline is the Machines page's own rule (an approved
+  machine neither it nor any worker of it seen within 60 s); the API passes the list to the log
+  index, and the Overview's answer names them in `machines.offline`. Before, an offline machine
+  kept its last values and ranked last.
+- **Android native crashes in problem reports read as code (Epic 53 story 53.16).** The operator
+  console reads a native crash's frames (from its tombstone, Android 12 and later) as functions,
+  files and lines with a table of the app's own unstripped native library, keyed by the
+  library's build ID (`maktaba-symbols extract|upload lib.so`). System libraries' frames stay as
+  they came; an own library without a table is named with its build ID; a crash kept with its
+  reason alone says it has no frames. Each tag's Play bundles run makes the tables from the
+  unstripped libraries and uploads them with the same `MAKTABA_SYMBOLS_TOKEN` secret (nothing
+  while it is unset; a failed upload keeps them as the run's artifact). The cloud rehearsal
+  checks a native crash arrives symbolicated.
+- **Android and desktop crashes in problem reports read as code (Epic 53 story 53.16).** The
+  operator console reads an Android report's obfuscated Kotlin frames back to their classes,
+  methods and lines with the release's R8 mapping, which each tag's Play bundles run uploads
+  (`maktaba-symbols upload -r8`, with the same `MAKTABA_SYMBOLS_TOKEN` secret, nothing while it
+  is unset), and marks calls R8 inlined. The Android apps keep each frame's line for it. The
+  desktop player is not obfuscated: its frames are shown as its code's own. The cloud rehearsal
+  sends a canary home's reports through its agent and checks they arrive symbolicated.
 - **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
   later, a crash in native code is now kept and sent, when crash reports are on, with its
   signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
@@ -143,6 +184,54 @@ build fails when the two differ.
   days and opens an issue when a cost grows by more than 20 % (Epic 53 story 53.13).
 
 ### Fixed
+
+- **A share file a sandboxed runner may not read runs in the worker, never as missing (story
+  54.23).** On Windows, when a runner's sandbox refused a file in a library on a share, some
+  lookups read the refusal as a missing file instead of handing the job to the worker. The
+  small thumbnail could end done with no thumbnail, because its sidecar look found nothing, and
+  the MP4 conversion could fail as a missing file. Every lookup on a share path in a runner
+  (exists, lexists, isfile, isdir, stat, open) now reports a refusal as a refusal, and a folder
+  scan there (scandir, walk, glob) is refused rather than seen as empty, so the worker runs the
+  job, as the runner's design says. A missing file still reads as missing.
+
+- **After an update, the plugin runners wait for the new release's Python packages.** In the
+  Mac app, the plugin runners (light, ml-1, ml-2, index) started while the update was still
+  installing the new release's packages into the venv. Each died at once on a missing module,
+  and after five exits the crash loop marked them failed for five minutes, although the venv
+  was ready a minute later. Every child that runs from the venv (the pipeline's workers and
+  every plugin runner) now waits for the venv step, as the pipeline's workers already did. A
+  waiting runner is not started, so it adds nothing to the crash loop. A test now imports what
+  each supervised Python child imports first, each in a fresh interpreter, so an import cycle
+  like the one that crash-looped the 0.3.96 runners fails CI. The update rehearsal's wave
+  scenarios fail when any supervised process is marked failed after the update.
+- **The Mac server starts after an app update instead of stopping at "could not start".** After
+  the update from 0.3.90 to 0.3.96 on 2026-11-08 the Mac app unregistered and registered the
+  server's login item again; macOS refused (SMAppServiceErrorDomain 22 from the old app right
+  after the install, then 1 on every launch), so the server was never started again and each
+  launch showed "The Maktaba server could not start", though launchd still had the job and it
+  was on in System Settings. A release signed with a Developer ID now keeps its login item
+  across updates (it is registered again only when its plist changes); an app still running
+  from a bundle the install replaced leaves the login item to the new build; and when macOS
+  refuses a registration while the login item is on or launchd has the job, the app starts that
+  job and waits for launchd to run it. The dialog shows only when nothing registered can start;
+  a login item turned off in System Settings still asks to be turned on there.
+- **Old backups go on their own.** The backups folder kept the newest nightly dumps and
+  pre-update dumps, but the other dumps were pruned only when an update ran, and a dump of a
+  failed update or of a database a restore replaced was kept until more of its kind came:
+  one 33 GB dump of a failed update stayed for weeks. The backups loop now prunes at every
+  check, scheduled dumps on or off: the nightly dumps to [backups] keep, the pre-update
+  dumps to their count, and a dump of a failed update or a replaced database once it is a
+  month old. The newest pre-update dump, the way back from the last update, never expires.
+
+- **A rollback undoes only what the release changed.** When an update rolled back and its
+  migrations could not simply be kept, the whole database was put back from the dump taken
+  before the update: every table reloaded, every index rebuilt (for the rollback of 0.3.90
+  on 2026-11-07, most of a day with the home down) and everything written since the dump
+  lost, though none of that release's 14 migrations lost data. A rollback now runs
+  the release's own Down scripts back to the previous schema when its migrations lose no
+  data on the way up: only the tables they touched change, every other table, index and
+  row stays as it is. The dump goes back only when a migration dropped, deleted, overwrote
+  or recast data, or a Down script fails.
 
 - **After an update, a first-party plugin's jobs run in its runner instead of the worker
   (Epic 54).** The shared plugin runners start when a job needs them and stop when idle, so
@@ -382,6 +471,14 @@ build fails when the two differ.
 
 ### Security
 
+- **A runner's folder grant on Windows lands only on the folder that was checked (story
+  54.23).** The launcher applied a runner group's folder grants and revokes by path, so a
+  folder swapped for a junction between its check and its grant had the grant land on the
+  junction's target. Each grant and revoke now opens the folder by handle without following a
+  link, refuses it when it is a junction or Windows names it otherwise than checked, and sets
+  the ACL on that handle; what the folder holds gets the entry through handles opened inside
+  it, never through a junction or symbolic link. Such a swap now fails the runner's start, and
+  the worker runs the group's jobs.
 - **The cloud's two web sites each get a Worker in front (Epic 50 story 50.32).**
   `app.maktaba.tv` and `admin.maktaba.tv` serve their own bundles through a Cloudflare Worker that
   sets each host's security headers and content policy on every page and API answer. Each lets
@@ -427,6 +524,26 @@ build fails when the two differ.
 
 ### Added
 
+- **A runner's tools read a library file on a share on Windows (story 54.23).** A job that
+  hands ffmpeg or ffprobe a file on a share-hosted library (thumbnails, probes, the
+  transcription input) no longer runs in the queue worker. The runner opens that one file
+  through its launcher's broker, with the same checks as its own reads, and hands the tool the
+  open file, for reading only, as its standard input. The tool still runs in the group's
+  AppContainer, reaches no share or other file there, and writes only where the group may.
+  An mp4 with its index at the end and a seek before the input both work. A share path a tool
+  cannot be handed that way (a second share file, an output on the share, another share,
+  another program) is refused, and that job runs in the worker as before.
+
+- **A runner reaches a library on a share on Windows (story 54.23).** A first-party runner on
+  Windows runs in an AppContainer, which reaches no SMB share, so every job on a share-hosted
+  library ran in the queue worker. The runner's launcher now brokers the group's share
+  folders. For each file the runner asks for over its own pipe, the launcher checks that the
+  path is in those folders and spelled one way only, with no junction or link on the way. It
+  then hands the runner the open file for reading only; a subtitle is written by the launcher
+  from the bytes the runner sends. The
+  subtitle stage now runs in its runner on a share. A share the group writes in full, and a
+  tool's job on a share, still run in the worker. No network capability is given to the
+  runner.
 - **A forwarded report's Apple crash reads as functions, files and lines (Epic 53 stories 53.14
   and 53.16).** Maktaba Cloud keeps a symbol table of each Apple binary from a release's dSYMs
   (its functions and line table, keyed by the binary's UUID), uploaded with the new
@@ -1361,6 +1478,14 @@ build fails when the two differ.
   longer be fooled by a header. The old `server.trust_proxy_headers` is refused at start, and in
   production the API refuses a public listener.
 
+- **A failed plugin runner is reported (Epic 54).** When one of Maktaba's own plugin runners
+  fails, the stages set to run as plugins in it run in the worker, outside their sandbox. No
+  job is lost, but until now only a log line said so. System health has a new Plugin runners
+  line that names the runner, the machine and those stages, on every machine. The Plugins and
+  Updates pages show the same warning, with a link to Components to start the runners again.
+  An admin's status strip, on the web, Apple and Android, says it too. `/status.json` has a new
+  admin-only `plugin_runners` group, which changes neither `overall` nor the banners.
+
 ### Fixed
 
 - **Videos play with sound again.** A video whose audio track was recorded by transcription
@@ -2199,6 +2324,38 @@ build fails when the two differ.
   Without the secret nothing is uploaded and the release stays green; a failed upload warns and
   keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
 
+- **Maktaba's own stages run in their sandboxed runners on Windows too (story 54.23).** Each
+  runner group now runs on a Windows home in its own AppContainer and Job Object, as the plugin
+  host does: it reads and writes only the folders its group declares, has no network unless
+  its group needs it, and starts no program but its group's tools. The worker reaches it
+  through pipes the server serves. A runner that cannot be sandboxed does not run, and its
+  jobs run in the worker, as before. Media on a network share is never granted to a runner;
+  jobs that need it run in the worker.
+
+- **The Overview dashboard keeps up with many machines (web, Apple and Android Remote).** Past a
+  few joined machines, a line per machine no longer fit a board's 50 lines, and machines were
+  left out without a word. The Overview now shows totals across the machines (components up
+  and down, the least disk and memory free, the highest load, restarts) and the five machines
+  most in need of attention, and says how many of how many it shows. A machine picker opens
+  any one machine on its own, with each of its components that was down or restarted.
+  `GET /api/admin/dashboards/overview` takes `machine=` and names the machines in its answer.
+
+- **The Remotes restore a backup and download diagnostics themselves (iPhone, Android).** The
+  recovery screen no longer sends either to the web page. **Restore a backup** lists the home's
+  backups with when each was taken and its size; choosing one asks twice, as the web page does,
+  and the home then restarts to put it back. **Download diagnostics** fetches the web page's
+  bundle and hands it to the share sheet on the iPhone, or saves it where the person chooses on
+  Android; the app keeps no copy. Both use the recovery pass and stop at the first refusal, as
+  the rest of the screen does.
+
+- **The Overview names each machine (Epic 53 story 53.12).** On the home's dashboards, the
+  machine picker, the Offline line and the chart legends show each machine by its name, as the
+  Machines page shows it (the home by its own name), on the web page and both Remotes; the
+  picker keeps the node id beside the name. The API adds `names` (`{<node id>: <name>}`, only
+  the ids the answer mentions) from the cluster: a name is bounded to 64 characters with control
+  and bidirectional override characters dropped, and a machine with no name, or every machine
+  when the cluster can't be read, keeps its node id. The node id stays the key (`machine=`).
+
 - **The core stages run as a first-party plugin (Epic 54 story 54.36, wave 9).** Finding the
   videos, reading their length, identity, thumbnail and audio fingerprints, linking them to
   their YouTube pages, the access check and the share path conversion run in
@@ -2707,6 +2864,21 @@ build fails when the two differ.
 - **The plugins' metrics reach the home's `/metrics` (Epic 54).** The plugin API's calls and
   refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
   read, so they never showed. They do now, and no family is listed twice.
+
+- **On Windows, Maktaba's own plugin stages run in the worker again (Epic 54 story 54.23).** Inside
+  its AppContainer a runner cannot create the named pipes Python uses to read a tool's output, so a
+  stage that runs ffmpeg or ffprobe there failed as if the tool were broken. Until the runners start
+  tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
+  v0.3.102, and no runner is started for it.
+
+- **A runner on Windows starts its tools again (story 54.23).** Inside a runner's
+  AppContainer, a stage that starts a tool and captures its output (thumbnails, probes,
+  audio and the transcription input) failed: asyncio's pipes on Windows are named pipes,
+  which an AppContainer may not create. The runner now starts its tools through anonymous
+  pipes, with the same results, and a timeout or a cancel ends the tool and what it started.
+  So first-party stages on Windows run in their runners again instead of all in the queue
+  worker. A tool the sandbox refuses to start is now a refusal, so that job runs in the worker,
+  rather than failing as the tool's own exit.
 
 ## [0.2.0] - 2026-10-19
 

@@ -2,8 +2,8 @@
 
 Each row of ``plugin_installs`` becomes a :class:`PluginExtension` that satisfies the
 built-in extension contract (``extensions/base.py``), so the graph build path is the one
-the Plex and dizqueTV extensions use. The loader reads manifests only: it never imports,
-loads or runs plugin code (that runs in maktaba-plugind).
+the built-in extensions (Plex, Cloudflare Stream) use. The loader reads manifests only: it
+never imports, loads or runs plugin code (that runs in maktaba-plugind).
 
 For each ``[[stage]]``: a ``StageDef`` named ``p_<hash>_<name>`` with
 ``extension = "plugin:<id>"``, pool ``plugins``, placement ``home``, two attempts; for each

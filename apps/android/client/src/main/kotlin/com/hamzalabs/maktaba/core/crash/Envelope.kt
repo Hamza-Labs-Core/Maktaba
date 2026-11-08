@@ -157,6 +157,12 @@ data class KeptCrash(
                                 add(buildJsonObject {
                                     put("function", f.substringBefore('('))
                                     put("module", f.substringBefore('(').substringBeforeLast('.', ""))
+                                    // the file and line ("Player.kt:12", R8's "SourceFile:4"): the
+                                    // line is what Maktaba reads an R8 build's frame back with (53.16)
+                                    sourceOf(f)?.let { (file, line) ->
+                                        put("filename", file)
+                                        line?.let { put("lineno", it) }
+                                    }
                                     put("in_app", f.startsWith(ownPackage))
                                 })
                             }
@@ -191,6 +197,19 @@ data class KeptCrash(
         const val KIND = "maktaba.crash"
         const val TRACE_MAX = 256 * 1024
         private val JSON = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+
+        /**
+         * A frame's file and line: "Player.kt:12" in "com.x.Player.play(Player.kt:12)" is
+         * (Player.kt, 12); "(Unknown Source)" or "(Native Method)" has no line; no parentheses, null.
+         */
+        fun sourceOf(frame: String): Pair<String, Int?>? {
+            val inside = frame.substringAfter('(', "").substringBeforeLast(')', "")
+            if (inside.isEmpty()) return null
+            // a line of -1 or -2 (none, a native method) is no line
+            val n = inside.substringAfterLast(':', "").toIntOrNull()
+            val file = if (n != null) inside.substringBeforeLast(':') else inside
+            return file to n?.takeIf { it > 0 }
+        }
 
         fun decode(text: String): KeptCrash? = runCatching { JSON.decodeFromString(serializer(), text) }.getOrNull()?.takeIf { it.kind == KIND }
 

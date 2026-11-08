@@ -27,7 +27,6 @@ GOLDEN = [
     ("yt", "Video unavailable. This video is private", "youtube_unavailable"),
     ("plex", "Plex answered HTTP 401 Unauthorized", "plex_auth"),
     ("plex", "Plex: connection refused at http://192.168.1.5:32400", "plex_unreachable"),
-    ("dizquetv", "dizqueTV: connect call failed ('127.0.0.1', 8002)", "dizquetv_unreachable"),
     ("plex", "read-back mismatch for collection 12", "readback_mismatch"),
     ("dispatch_unknown_stage", "no handler registered for stage foo", "no_handler"),
     ("graph_violation", "detect requested probe, not in may_request", "graph_violation"),

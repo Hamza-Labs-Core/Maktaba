@@ -65,6 +65,7 @@ fun stripText(key: StripKey): Int = when (key) {
     StripKey.SEARCH -> R.string.status_search
     StripKey.PROCESSING -> R.string.status_processing
     StripKey.LOGS -> R.string.status_logs
+    StripKey.PLUGIN_RUNNERS -> R.string.status_plugin_runners
     StripKey.RELAY_DEGRADED -> R.string.banner_relay_degraded
     StripKey.RELAY_OUTAGE -> R.string.banner_relay_outage
     StripKey.API_DEGRADED -> R.string.banner_api_degraded

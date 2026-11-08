@@ -4,9 +4,9 @@
 here, on the worker's database) or ``plugin`` (the same code in ``maktaba-plugin-runner``,
 which reaches the database only through the plugin API by its named statements). The
 worker reads it for each job (:func:`choose`); a stage whose runner does not serve on this
-machine (a Windows machine, a runner that is starting or failed its sandbox) runs here
-in-process instead, which writes the same data (the parity proof, story 54.26), so a
-mixed cluster or a machine without a runner never stops a stage.
+machine (a runner that is starting, or failed its sandbox) runs here in-process instead,
+which writes the same data (the parity proof, story 54.26), so a mixed cluster or a machine
+without a runner never stops a stage.
 
 :func:`run_native` is the plugin path of one job:
 
@@ -30,6 +30,7 @@ import dataclasses
 import json
 import os
 import struct
+import sys
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -126,6 +127,24 @@ async def read_frame(r: asyncio.StreamReader) -> dict[str, Any]:
 
 # --- the runners serving here -----------------------------------------------------------
 
+
+async def open_runner(
+    group: str, *, limit: int = 1 << 20
+) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
+    """A connection to the group's runner: its unix socket, or on Windows (no AF_UNIX in
+    Python there) the supervisor's pipe to it, the prefix ``MAKTABA_RUNNER_PIPES`` and the
+    group's name (story 54.23). Raises ``OSError`` when it does not answer, on every OS."""
+
+    if sys.platform == "win32":
+        from . import pipe
+
+        prefix = os.environ.get("MAKTABA_RUNNER_PIPES", "").strip()
+        if not prefix:
+            raise FileNotFoundError("MAKTABA_RUNNER_PIPES is not set: no runner pipes here")
+        return await pipe.open_pipe(prefix + group, limit=limit)
+    return await asyncio.open_unix_connection(str(socket_path(group)), limit=limit)
+
+
 _HELLO: dict[str, tuple[float, dict[str, Any] | None]] = {}
 
 
@@ -134,7 +153,7 @@ async def _probe(group: str) -> dict[str, Any] | None:
     with contextlib.suppress(
         OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError
     ):
-        r, w = await asyncio.wait_for(asyncio.open_unix_connection(str(socket_path(group))), 2)
+        r, w = await asyncio.wait_for(open_runner(group), 2)
         try:
             await write_frame(w, {"type": "hello"})
             msg = await asyncio.wait_for(read_frame(r), 5)
@@ -793,7 +812,7 @@ def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
     """What a plugin's job gets for the services it reaches (story 54.35): the extensions'
     settings with no secret and no service address, and ``service_via``: ``api`` on the home
     (the plugin API's door), ``worker`` on a joined machine (this worker's channel to the
-    home's door, as for its own Plex stages)."""
+    home's door, as for its own Plex calls)."""
     from .. import relay
     from .service import holds_secret, plugin_settings
 
@@ -801,8 +820,7 @@ def _service_frame(stage: str, ctx: Any) -> dict[str, Any]:
     if not services:
         return {}  # no service: the job gets no extension settings, as before
     settings = getattr(ctx, "settings", None) or {}
-    # only a service with a secret is relayed (a machine without it asks the home's door);
-    # dizqueTV keeps none and is home-only (issue #827)
+    # only a service with a secret is relayed (a machine without it asks the home's door)
     via = (
         "worker"
         if any(relay.relayed(settings.get(s, {})) for s in services if holds_secret(s))
@@ -856,9 +874,7 @@ async def run_native(db: Any, job: Any, ctx: Any, *, connect: Any = None) -> Sta
     minted = await _mint(int(job.id))
     handle = engine_handler(db, ctx)
     try:
-        opener = connect or (
-            lambda: asyncio.open_unix_connection(str(socket_path(group)), limit=1 << 20)
-        )
+        opener = connect or (lambda: open_runner(group))
         try:
             r, w = await opener()
         except OSError as exc:
@@ -957,7 +973,7 @@ async def fingerprints(
     if p is None:
         raise KeyError(stage)
     token = await _fp_token(p.id)
-    r, w = await asyncio.open_unix_connection(str(socket_path(group)), limit=1 << 20)
+    r, w = await open_runner(group)
     try:
         await write_frame(
             w,

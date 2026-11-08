@@ -118,14 +118,14 @@ CREATE TABLE IF NOT EXISTS shorts (
     folder TEXT NOT NULL
 );
 -- Plex's own record of each library item, saved by the plex-index step (one listing
--- per library): later steps (dizqueTV shows …) read it here instead of asking Plex again
+-- per library), so the cache keeps what Plex knew about each item
 CREATE TABLE IF NOT EXISTS plex_items (
     rating_key TEXT PRIMARY KEY,
     section    TEXT NOT NULL,
     library    TEXT NOT NULL,
     path       TEXT,               -- local path (path map applied), NULL outside the map
     updated_at INTEGER,            -- Plex's updatedAt
-    detail     TEXT NOT NULL       -- JSON: the fields dizqueTV programmes are built from
+    detail     TEXT NOT NULL       -- JSON: the item's Plex fields (scan_plex.DETAIL_KEYS)
 );
 CREATE INDEX IF NOT EXISTS plex_items_path_idx ON plex_items (path);
 CREATE INDEX IF NOT EXISTS plex_items_section_idx ON plex_items (section);

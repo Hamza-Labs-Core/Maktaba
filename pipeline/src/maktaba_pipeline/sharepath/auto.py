@@ -67,6 +67,7 @@ from typing import Any
 from .. import settings
 from ..db import schema_compat
 from ..engine.paths import PathMap, _norm
+from ..engine.retired import RETIRED_STAGES
 from ..engine.sql import dumps, is_pg, loads, now, to_ts
 from ..log import get_logger
 from . import backup as bk
@@ -353,7 +354,13 @@ async def pause_path_stages(db: Any, pools: Iterable[str]) -> list[str]:
     rows = await db.fetch("SELECT stage, pool, paused, paused_by FROM job_stages")
     at = to_ts(db, now())
     for r in rows:
-        if r["pool"] in pools and not r["paused"] and r["stage"] != STAGE:
+        # a stage a release removed (its row stays until the cleanup migration) is left as is
+        if (
+            r["pool"] in pools
+            and not r["paused"]
+            and r["stage"] != STAGE
+            and r["stage"] not in RETIRED_STAGES
+        ):
             await db.execute(
                 "UPDATE job_stages SET paused = $2, paused_at = $3, paused_by = $4,"
                 " updated_at = $3 WHERE stage = $1 AND paused = $5",

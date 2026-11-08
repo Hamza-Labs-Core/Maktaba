@@ -420,3 +420,13 @@ func (ri *RuntimeInstaller) KeepsSchema(j *Journal) (bool, string) {
 	return KeepsSchemaFrom(filepath.Join(ri.Runtime.Root, j.FromRef, "migrations"),
 		filepath.Join(ri.Runtime.Root, j.Staged, "migrations"))
 }
+
+// DownTo implements SchemaReverter: the staged runtime's Down scripts above the runtime of
+// the release before (schemadown.go).
+func (ri *RuntimeInstaller) DownTo(j *Journal) (int64, bool, string) {
+	if j.FromRef == "" || j.Staged == "" {
+		return 0, false, "the runtimes' migrations are not known"
+	}
+	return DownToFrom(filepath.Join(ri.Runtime.Root, j.FromRef, "migrations"),
+		filepath.Join(ri.Runtime.Root, j.Staged, "migrations"))
+}

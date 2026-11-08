@@ -124,6 +124,9 @@ func (b *StatusBoard) Doc() StatusDoc {
 	features := map[string]bool{}
 	for _, g := range StatusGroups {
 		st := groups[g.Name]
+		if g.AdminOnly {
+			continue
+		}
 		switch st {
 		case StatusDown, StatusRestarting:
 			for _, f := range g.FeaturesDown {

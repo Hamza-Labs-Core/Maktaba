@@ -3,7 +3,7 @@ what ``plan_channels`` reads and how two plans differ, in the core because the p
 (:mod:`maktaba_pipeline.engine.plan_preview`) and the extensions' plan exporters use them
 too. The stage itself is ``tv.maktaba.livetv``'s.
 
-Extensions add per-channel data to the plan (for example dizqueTV time slots) through
+Extensions add per-channel data to the plan through
 :func:`register_plan_exporter`; the core knows nothing about what they export. A plugin
 runner has no extensions loaded, so the worker sends the names it has registered with each
 job and the runner resolves them (:func:`use_plan_exporters`).

@@ -187,12 +187,6 @@ type Config struct {
 	Member func(ctx context.Context, c Caller) error
 	// Client makes the upstream calls (redirects are never followed).
 	Client *http.Client
-	// ArtBase reads rules.planner.dz_art_url: the only web host the dizqueTV plugin's
-	// hosted-logo check may reach (issue #827); nil or "": none.
-	ArtBase func(ctx context.Context) (string, error)
-	// PublicBase reads rules.planner.dz_public_url: the address the TVs reach dizqueTV at,
-	// in the link of a logo uploaded to it (issue #827); nil or "": dizqueTV's own address.
-	PublicBase func(ctx context.Context) (string, error)
 	// Audit receives every call (the hub's events file).
 	Audit      func(Call)
 	Extensions map[string]*Extension
@@ -225,8 +219,6 @@ type Door struct {
 	ups      map[string]cached[Upstream]
 	recent   []Call
 	totals   map[string]*Totals
-	// dizqueTV's own copies of Plex tokens (its plex-servers), hidden from every answer
-	dzTokens cached[[]string]
 }
 
 // Totals counts a caller's calls since the API started.
@@ -318,7 +310,6 @@ func (d *Door) Forget() {
 	d.mu.Lock()
 	d.settings = cached[Settings]{}
 	d.ups = map[string]cached[Upstream]{}
-	d.dzTokens = cached[[]string]{}
 	d.mu.Unlock()
 }
 
@@ -362,9 +353,8 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 	if !s.Enabled && !home {
 		return Result{Err: fail(CodeOff, "the extension relay is switched off on the home")}
 	}
-	// an extension never relayed to a node; the home's own plugin reaches it when the door
-	// has an allow-list for it (dizqueTV, issue #827)
-	if why, ok := HomeOnly[req.Ext]; ok && (!home || d.cfg.Extensions[req.Ext] == nil) {
+	// an extension never relayed
+	if why, ok := HomeOnly[req.Ext]; ok {
 		return Result{Err: fail(CodeHomeOnly, why)}
 	}
 	ext := d.cfg.Extensions[req.Ext]
@@ -420,12 +410,6 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 	}
 	defer func() { <-lim.slots }()
 
-	if rule.Op != "" {
-		// an operation of the door's own (dizqueTV): served here, never forwarded as sent
-		res = d.serveOp(ctx, s, ext, rule, upath, rawQuery, req, sink)
-		return res
-	}
-
 	up, err := d.upstream(ctx, ext)
 	if err != nil || !up.Enabled || up.URL == "" || up.Secret == "" {
 		why := "the extension is not set up on the home"
@@ -448,12 +432,6 @@ func (d *Door) Serve(ctx context.Context, c Caller, req Request, sink Sink) (res
 	accept := "application/json"
 	if acceptRe.MatchString(req.Accept) {
 		accept = req.Accept
-	}
-
-	if rule.Verify == VerifyCollection {
-		if e := d.verifyCollection(cctx, ext, base, upath, up.Secret); e != nil {
-			return Result{Err: e}
-		}
 	}
 
 	target := base + upath
@@ -531,35 +509,6 @@ func (d *Door) transportErr(cctx, ctx context.Context, ext *Extension, secret st
 	return fail(CodeUnreachable, clip(ScrubString(ext.QueryParam, secret, err.Error()), 200))
 }
 
-// verifyCollection checks that the rating key at the end of path is a
-// collection (a DELETE of any other item could remove a library item).
-func (d *Door) verifyCollection(ctx context.Context, ext *Extension, base, path, secret string) *Error {
-	hreq, err := http.NewRequestWithContext(ctx, http.MethodGet, base+path, nil)
-	if err != nil {
-		return fail(CodeBadRequest, "request not buildable")
-	}
-	hreq.Header.Set("Accept", "application/json")
-	hreq.Header.Set(ext.Header, secret)
-	resp, err := d.client.Do(hreq)
-	if err != nil {
-		return fail(CodeUnreachable, clip(ScrubString(ext.QueryParam, secret, err.Error()), 200))
-	}
-	defer resp.Body.Close()
-	var doc struct {
-		MediaContainer struct {
-			Metadata []struct {
-				Type string `json:"type"`
-			} `json:"Metadata"`
-		} `json:"MediaContainer"`
-	}
-	if resp.StatusCode != http.StatusOK ||
-		json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&doc) != nil ||
-		len(doc.MediaContainer.Metadata) != 1 || doc.MediaContainer.Metadata[0].Type != "collection" {
-		return fail(CodeNotAllowed, "DELETE "+clip(path, 120)+": only a collection may be deleted")
-	}
-	return nil
-}
-
 func baseURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
@@ -634,11 +583,7 @@ func (d *Door) Status(ctx context.Context) Status {
 		Calls: []Call{}, Totals: []CallerTotals{}}
 	names := make([]string, 0, len(d.cfg.Extensions))
 	for n := range d.cfg.Extensions {
-		// the Machines page's door is the nodes': an extension the home's own plugin alone
-		// reaches (dizqueTV) is listed as home-only below
-		if _, homeOnly := HomeOnly[n]; !homeOnly {
-			names = append(names, n)
-		}
+		names = append(names, n)
 	}
 	sort.Strings(names)
 	for _, n := range names {

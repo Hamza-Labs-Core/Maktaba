@@ -15,9 +15,9 @@
 > exact dates run in `tv.maktaba.youtube`, and the repair of broken downloads in
 > `tv.maktaba.repair`, the first stages that reach the network. **Wave 7 has moved**: the
 > channel planner and writer run in `tv.maktaba.livetv`, and staging, swapping, rolling back
-> and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: the Plex
-> stages run in `tv.maktaba.plex` and the dizqueTV stages in `tv.maktaba.dizquetv`, both
-> through the home's service door. **Wave 4 has moved**: `detect`, `tag`, `check_tags`,
+> and cleaning up TV changes in `tv.maktaba.livetv-slots`. **Wave 8 has moved**: Plex Live
+> TV runs in `tv.maktaba.plex`, through the home's service door (the Plex library sync and
+> the dizqueTV plugin were removed since). **Wave 4 has moved**: `detect`, `tag`, `check_tags`,
 > `check_clips`, `books` and `review_pages` run in `tv.maktaba.classify`, the model's questions
 > through the plugin API's `compute.generate`; `enrich` stays in the worker for now. **Wave 9
 > has moved the core stages**: finding the videos, reading their length, identity, thumbnail
@@ -46,8 +46,10 @@ runner refuses to start if any is there. Before it imports a plugin it
    release's signed wheel installed (`plugin_trusted_unsigned` otherwise);
 2. applies its OS sandbox to itself: Seatbelt on macOS; Landlock and seccomp on Linux. The
    sandbox allows only what the group's manifests declare: the files of its areas, its media
-   tools, the GPU, and the network only for a group that lists hosts. On Windows there is no
-   runner and the stages run in the worker, as before.
+   tools, the GPU, and the network only for a group that lists hosts. On Windows the runner
+   runs in its group's own AppContainer and Job Object, which the supervisor's launcher
+   applies before it starts, and the runner refuses to serve outside it (see
+   [the sandbox](sandbox.md)).
 
 The queue worker dispatches a job to the runner with the same kind of per-job token as a
 third-party plugin's. The job's progress, log and events go back to the worker, which is the
@@ -312,8 +314,8 @@ they are.
   air in the same transaction as its lineup, and only the queue engine writes
   `app_settings`. So the worker runs the swap commit and the rollback for the plugin's job
   (`tv_commit`, `tv_rollback` above), for the change the job's payload names.
-- **Extensions add to the plan.** An extension such as the dizqueTV export adds data to each
-  channel of the plan. A runner loads no extension, so the worker sends the names it has
+- **Extensions add to the plan.** An extension may add data to each channel of the plan
+  (a plan exporter; no built-in extension registers one today). A runner loads no extension, so the worker sends the names it has
   registered with every job, and the runner takes the same functions from the extensions it
   finds. A name it cannot load runs the job in the worker.
 - **Parity** plans a library into channels with staging off (written to the air) and on (a
@@ -322,8 +324,8 @@ they are.
 
 ## Services through the home's door: `tv.maktaba.plex`
 
-Wave 8 moves the Plex stages (`plex_index`, `plex_collections_import`, `plex_collection`,
-`plex_groups`, `plex_livetv`) into the `service` runner, which has no network at all.
+Wave 8 moves the Plex stage (`plex_livetv`, Plex Live TV) into the `service` runner, which
+has no network at all.
 
 ```toml
 [trusted]
@@ -341,24 +343,7 @@ service   = ["plex"]              # the services its calls may reach, through th
   settings without secret fields, and `service:plex` in place of the address.
 - **Live TV is the home's.** The door allows the Live TV calls `plex_livetv` makes (DVRs,
   tuners, the channel map, guide reloads) only for a caller on the home.
-- **dizqueTV's programmes are built on the home** (`tv.maktaba.dizquetv`: `dizquetv_show`,
-  `dizquetv_channels`, `dizquetv_audit`, `service = ["dizquetv", "plex"]`). A dizqueTV
-  programme plays from Plex with the token in it, and dizqueTV stores it. So the plugin never
-  writes a raw programme: the door's own operations (`/maktaba/...`) take each Plex item's
-  rating key, read the item from Plex with the home's token (up to 50 keys a request), and
-  build the programme on the home from Plex's answer. Every playable field (the file, the
-  media part, the duration) is Plex's: whatever else the plugin sends is ignored, and a key
-  Plex does not know or cannot play is refused. A channel's
-  programmes are referenced by index into the stored channel or by show id and rating key,
-  and the door fills them in from what dizqueTV holds. Every read is a projection that leaves
-  out any field holding a secret, and a final check refuses an answer that still names the
-  token, in any encoding or in part. Raw writes that could carry a programme are refused.
-  dizqueTV and its clients fetch a channel's pictures (its logo, watermark, offline picture
-  and soundtrack), so the door writes only the home's own: none, the stored one, a file on
-  the logo host (`dz_art_url`) or one uploaded to dizqueTV. Filler time and redirects keep
-  only their duration and target.
-  dizqueTV is reached only from the home: a joined machine never relays it.
-- **Parity** runs the Plex stages against a fake Plex behind HTTP on each side: the calls Plex
+- **Parity** runs the Plex stage against a fake Plex behind HTTP on each side: the calls Plex
   receives (method, path, query and the token) are identical, then N16.
 
 ## The core stages: `tv.maktaba.core-media`

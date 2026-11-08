@@ -22,7 +22,6 @@ import sys
 import threading
 import time
 import urllib.parse
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -45,7 +44,7 @@ STEPS: list[tuple[str, str, str]] = [
     (
         "plex-index",
         "Index Plex",
-        "every Plex item and its details, saved once: lengths for the scan, details for dizqueTV",
+        "every Plex item and its details, saved once: lengths for the scan",
     ),
     (
         "scan-local (",
@@ -96,7 +95,6 @@ STEPS: list[tuple[str, str, str]] = [
         "shorts and clips into filler collections, stand-alone videos by topic, promos to shows",
     ),
     ("export-plex", "Write Plex collections", "one collection per season, in episode order"),
-    ("dizquetv-shows", "Update dizqueTV shows", "a show per series and per season"),
     ("report", "Write review pages", "one HTML page per library"),
     (
         "scan-visual",
@@ -104,16 +102,10 @@ STEPS: list[tuple[str, str, str]] = [
         "talk / produced / cinematic, from sampled frames; only channel planning needs it",
     ),
     ("plan-channels", "Plan TV channels", "themed / mix / presenter channels, time slots, fillers"),
-    ("export-dizquetv", "Create the TV channels", "in dizqueTV, with schedules and fillers"),
     (
         "repair-broken",
         "Repair broken files",
         "unfinished downloads are fetched from YouTube again, checked, then swapped in",
-    ),
-    (
-        "audit-channels",
-        "Audit the channels",
-        "is what each channel airs about the channel? (channel-audit.html)",
     ),
 ]
 
@@ -255,8 +247,6 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
                          "unit": "libraries"}  # fmt: skip
         elif STEPS[current][0] == "group (":
             return out, _counted(body, r"^grouping clips in (\d+) libraries")
-        elif STEPS[current][0] == "dizquetv-shows":
-            return out, _dz_shows_progress(body, n_lib)
         elif STEPS[current][0] == "signatures":
             return out, _sig_progress(body)
         else:
@@ -265,12 +255,9 @@ def _steps(lines: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any] | Non
     return out, progress
 
 
-_DETAILS_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] episode details from Plex")
-
-
 #: what a step's "[n/N]" lines count
-_UNITS = {"check-tags": "series", "check-clips": "questions", "books": "books", "repair-broken": "files", "plan-channels": "channels", "export-dizquetv": "items",
-          "audit-channels": "channels"}  # fmt: skip
+_UNITS = {"check-tags": "series", "check-clips": "questions", "books": "books", "repair-broken": "files",
+          "plan-channels": "channels"}  # fmt: skip
 _PHASE_RE = re.compile(r"^phase: (.+)$")
 _N_OF_RE = re.compile(r"^\s*\[(\d+)/(\d+)\] ")
 
@@ -298,32 +285,6 @@ def _counted(body: list[str], total_re: str) -> dict[str, Any]:
     done = [int(x.group(1)) for ln in body if (x := re.match(r"^\s*\[(\d+)/(\d+)\] ", ln))]
     total = next((int(t.group(1)) for ln in body if (t := re.match(total_re, ln))), None)
     return {"done": done[-1] if done else 0, "total": total, "unit": "libraries"}
-
-
-def _dz_shows_progress(body: list[str], n_lib: int | None) -> dict[str, Any]:
-    """dizqueTV shows, one library at a time: a library is done at its "Backups of
-    changed shows" line. Inside one, the shows it will write ("+" lines), the episode
-    details fetched from Plex so far, and whether Plex is stalling."""
-    ends = [i for i, ln in enumerate(body) if ln.startswith("Backups of changed shows")]
-    cur = body[ends[-1] + 1 :] if ends else body
-    prog: dict[str, Any] = {"done": len(ends), "total": n_lib, "unit": "libraries"}
-    writing = sum(1 for ln in cur if ln.startswith("  +  "))
-    details = [m for ln in cur if (m := _DETAILS_RE.match(ln))]
-    parts = []
-    if writing:
-        parts.append(f"now writing {writing} show{'s' if writing != 1 else ''}")
-    if details:
-        parts.append(f"{int(details[-1].group(1)):,} of {int(details[-1].group(2)):,}"
-                     " episode details from Plex")  # fmt: skip
-    elif writing:
-        parts.append("fetching episode details from Plex")
-    tail = [ln for ln in cur if ln.strip()][-1:]
-    if tail and "Plex not answering" in tail[0]:
-        n = sum(1 for ln in cur if "Plex not answering" in ln)
-        parts.append(f"Plex not answering, retrying ({n} so far in this library)")
-    if parts:
-        prog["phase"] = " · ".join(parts)
-    return prog
 
 
 PARALLEL_STEPS = ("report",)
@@ -741,47 +702,10 @@ def group_series(
     return sorted(out, key=lambda g: (-g["episodes"], g["name"]))
 
 
-_TV_CACHE: dict[str, Any] = {"at": 0.0, "url": None, "shows": None}
-
-
-def tv_shows(url: str = "http://localhost:8002") -> dict[str, str] | None:
-    """dizqueTV custom shows by folded name → name, or None when dizqueTV can't be
-    reached. Asked at most once a minute."""
-    c = _TV_CACHE
-    if c["url"] != url or time.time() - c["at"] > 60:
-        from maktaba_pipeline.text.arabic import fold
-
-        try:
-            with urllib.request.urlopen(f"{url}/api/shows", timeout=3) as r:  # noqa: S310 — local service
-                shows = {fold(x["name"]): x["name"] for x in json.load(r)}
-        except (OSError, ValueError, KeyError, TypeError):
-            shows = None
-        c.update(at=time.time(), url=url, shows=shows)
-    out: dict[str, str] | None = c["shows"]
-    return out
-
-
-def tv_names(library: str, g: dict[str, Any], shows: dict[str, str]) -> list[str]:
-    """The dizqueTV shows a series appears as: its series show and, for several seasons,
-    one per season, named as dizquetv-shows names them."""
-    from maktaba_pipeline.text.arabic import fold
-
-    from .export_plex import _title
-
-    count = len(g["seasons"])
-    wanted = [_title(library, g["name"], 1, 1)]
-    if count > 1:
-        wanted += [
-            _title(library, g["name"], x["season"] or 0, count, x.get("name")) for x in g["seasons"]
-        ]
-    return [shows[fold(n)] for n in wanted if fold(n) in shows]
-
-
 def item_detail(
     conn: sqlite3.Connection,
     folder: str,
     series_key: str | None = None,
-    tv: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """The library page: counts, series with where they appear, stage status and history."""
     head = conn.execute(
@@ -814,11 +738,6 @@ def item_detail(
         ).fetchall()
     )
     series = group_series(rows, episodes, collections)
-    lib = conn.execute(
-        "SELECT library FROM series WHERE json_extract(metadata, '$.folder') = ? LIMIT 1", (folder,)
-    ).fetchone()
-    for g in series:  # None: dizqueTV not reachable, so the page says so instead of "none"
-        g["tv"] = tv_names(lib[0], g, tv) if (tv is not None and lib) else None
     kinds: dict[str, int] = {}
     for g in series:
         kinds[g["kind"]] = kinds.get(g["kind"], 0) + 1
@@ -1157,7 +1076,7 @@ def _alive(pid: int) -> bool:
 
 
 def _run_args(
-    db_path: str, body: dict[str, Any], dizquetv_db: Path | None, reports: Path
+    db_path: str, body: dict[str, Any], plex: tuple[str, str] | None, reports: Path
 ) -> list[str]:
     """The exact ``mediaintel run`` command a page request maps to (no free-form input).
 
@@ -1169,13 +1088,11 @@ def _run_args(
         raise ValueError("A folder cannot start with '-'.")
     if not folders:
         args += ["--from-plex", "--exclude-library", "Movies"]
-    if dizquetv_db:
-        args += ["--dizquetv-db", str(dizquetv_db)]
+    if plex:
+        args += ["--plex-url", plex[0], "--plex-token", plex[1]]
     args += ["--out", str(reports)]
     if body.get("plex"):
         args.append("--plex")
-    if body.get("tv"):
-        args.append("--tv")
     if body.get("exact"):
         args.append("--exact")
     if not body.get("youtube", True):
@@ -1298,7 +1215,8 @@ def serve(
     log_path: Path | None,
     port: int = 8770,
     *,
-    dizquetv_db: Path | None = None,
+    plex_url: str | None = None,
+    plex_token: str | None = None,
     reports: Path = Path("reports"),
 ) -> None:
     """The control centre: status, start / stop a run, explain a video, pin a style,
@@ -1347,7 +1265,7 @@ def serve(
                             )
                             data = stage_detail(conn, arg, lines)
                         else:
-                            data = item_detail(conn, arg, extra, tv_shows())
+                            data = item_detail(conn, arg, extra)
                     finally:
                         conn.close()
                     detail_cache[key] = (time.time(), data)
@@ -1468,7 +1386,10 @@ def serve(
                     self._json(409, {"error": "A run is already in progress. Stop it first."})
                     return
                 try:
-                    args = _run_args(db_path, body, dizquetv_db, reports)
+                    args = _run_args(
+                        db_path, body,
+                        (plex_url, plex_token) if plex_url and plex_token else None, reports,
+                    )  # fmt: skip
                 except ValueError as e:
                     self._json(400, {"error": str(e)})
                     return

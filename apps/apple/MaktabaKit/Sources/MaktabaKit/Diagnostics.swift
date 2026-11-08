@@ -337,11 +337,17 @@ public struct BoardDoc: Decodable, Sendable {
         }
 
         /// The legend: its labels' values ("core.api · home").
-        public var legend: String {
+        public var legend: String { legend(names: [:]) }
+
+        /// The legend with its machine named as the Machines page names it ("core.api ·
+        /// Living room"); a machine with no name keeps its id.
+        public func legend(names: [String: String]) -> String {
             guard let labels else { return "" }
             return labels.split(separator: ",").compactMap { kv in
-                let v = kv.split(separator: "=", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
-                return v.isEmpty ? nil : v
+                let parts = kv.split(separator: "=", maxSplits: 1)
+                let v = parts.dropFirst().first.map(String.init) ?? ""
+                if v.isEmpty { return nil }
+                return parts.first == "machine" ? BoardDoc.name(of: v, in: names) : v
             }.joined(separator: " · ")
         }
     }
@@ -351,17 +357,68 @@ public struct BoardDoc: Decodable, Sendable {
         public let value: Double
     }
 
+    /// The Overview's machines: how many there are, the ones shown (most in need of
+    /// attention first, a joined machine that is offline before any other), all of them,
+    /// for a machine picker, and the offline ones.
+    public struct Machines: Decodable, Hashable, Sendable {
+        public let total: Int
+        public let shown: [String]
+        public let all: [String]
+        /// The joined machines that are offline (empty from a home before the list).
+        public let offline: [String]
+
+        enum CodingKeys: String, CodingKey { case total, shown, all, offline }
+
+        public init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            total = try c.decodeIfPresent(Int.self, forKey: .total) ?? 0
+            shown = try c.decodeIfPresent([String].self, forKey: .shown) ?? []
+            all = try c.decodeIfPresent([String].self, forKey: .all) ?? []
+            offline = try c.decodeIfPresent([String].self, forKey: .offline) ?? []
+        }
+
+        /// Whether a machine is one of the offline ones.
+        public func isOffline(_ machine: String) -> Bool { offline.contains(machine) }
+    }
+
     public let board: String
     public let range: String
     public let series: [Series]
+    /// The one machine the Overview was asked for, nil for all of them.
+    public let machine: String?
+    /// The Overview's machines (nil on the other boards, and from a home before them).
+    public let machines: Machines?
+    /// Lines the board's 50 left out.
+    public let omitted: Int
+    /// The Overview's machine ids named as the Machines page names them (empty from a home
+    /// before names: each machine is then named by its id).
+    public let names: [String: String]
 
-    enum CodingKeys: String, CodingKey { case board, range, series }
+    enum CodingKeys: String, CodingKey { case board, range, series, machine, machines, omitted, names }
 
     public init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         board = try c.decodeIfPresent(String.self, forKey: .board) ?? ""
         range = try c.decodeIfPresent(String.self, forKey: .range) ?? ""
         series = try c.decodeIfPresent([Series].self, forKey: .series) ?? []
+        machine = try c.decodeIfPresent(String.self, forKey: .machine).flatMap { $0.isEmpty ? nil : $0 }
+        machines = try c.decodeIfPresent(Machines.self, forKey: .machines)
+        omitted = try c.decodeIfPresent(Int.self, forKey: .omitted) ?? 0
+        names = (try? c.decodeIfPresent([String: String].self, forKey: .names)) ?? [:]
+    }
+
+    /// A machine's name for display: its name, else its node id.
+    public func name(of machine: String) -> String { Self.name(of: machine, in: names) }
+
+    static func name(of machine: String, in names: [String: String]) -> String {
+        guard let n = names[machine], !n.trimmingCharacters(in: .whitespaces).isEmpty else { return machine }
+        return n
+    }
+
+    /// "Showing 5 of 37": the Overview of all machines shows fewer than it has.
+    public var showsSomeMachines: Bool {
+        guard machine == nil, let machines else { return false }
+        return machines.total > machines.shown.count
     }
 
     /// One panel per metric name, in the board's order.
@@ -528,8 +585,11 @@ extension APIClient {
 
     // MARK: dashboards
 
-    public func board(_ board: Board, range: BoardRange) async throws -> BoardDoc {
-        try await get("/api/admin/dashboards/\(board.rawValue)", query: ["range": range.rawValue])
+    /// A board; on the Overview, `machine` asks for one machine's lines on their own.
+    public func board(_ board: Board, range: BoardRange, machine: String? = nil) async throws -> BoardDoc {
+        var query = ["range": range.rawValue]
+        if board == .overview, let machine, !machine.isEmpty { query["machine"] = machine }
+        return try await get("/api/admin/dashboards/\(board.rawValue)", query: query)
     }
 
     // MARK: problem reports

@@ -50,7 +50,6 @@ const explained: ExplainResponse = {
       link_method: "info_json",
       tab: "videos",
       playlists: [{ title: "سيرة", position: 2 }],
-      plex_rating_key: "99123",
       verdict: {
         kind: "episode",
         label: "كنوز السيرة S2 E7",
@@ -69,7 +68,7 @@ describe("ExplainPanel", () => {
     get.mockReset();
   });
 
-  it("explains a video: air date and its quality, length, playlists, Plex item, verdict", async () => {
+  it("explains a video: air date and its quality, length, playlists, verdict", async () => {
     routeGet(get, { "/api/explain": explained });
     renderAt(<ExplainPanel libraries={librariesFixture} />, "/queue");
     await userEvent.type(screen.getByRole("searchbox", { name: "Title text" }), "طلع");
@@ -80,7 +79,6 @@ describe("ExplainPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "Explain" }));
     const card = (await screen.findByRole("heading", { name: /^⁨?طلع البدر⁩?$/ })).closest("li")!;
     expect(within(card).getByText("2020-01-01 (exact)")).toBeInTheDocument();
-    expect(within(card).getByText(/99123/)).toBeInTheDocument();
     expect(within(card).getByText(/yt-1 · linked via info_json/)).toBeInTheDocument();
     expect(within(card).getByText(/^.?سيرة.? #2$/)).toBeInTheDocument();
     expect(within(card).getByText(/1500|25 min/)).toHaveTextContent("1920×1080");
@@ -314,8 +312,6 @@ const insights: Insights = {
     videos_with_length: 1100,
     series: 40,
     seasons: 120,
-    plex_collections: 99,
-    dizquetv_shows: 7,
     channels: 12,
     style_pinned: 2,
     youtube_videos: 900,
@@ -337,7 +333,7 @@ describe("InsightsPanel", () => {
     routeGet(get, { "/api/queues/insights": insights });
     renderAt(<InsightsPanel />, "/queue");
     const region = await screen.findByRole("region", { name: "Library at a glance" });
-    expect(within(region).getByText("Plex collections").nextSibling).toHaveTextContent("99");
+    expect(within(region).getByText("Channels").nextSibling).toHaveTextContent("12");
     expect(within(region).getByText("Videos").nextSibling).toHaveTextContent("1,200");
     const styles = within(region).getByRole("list", { name: "Production style" });
     expect(within(styles).getByText("Studio / lecture")).toBeInTheDocument();

@@ -303,6 +303,69 @@ func TestDashboard30d(t *testing.T) {
 	budget(t, "dashboard 30 d (p95)", p(ds, .95), 500*time.Millisecond)
 }
 
+// dashboard_30d_machines (story 53.12): the Overview of 50 machines of 45 components, and
+// one machine's own view, answer within 500 ms p95 for 30 days. The per-machine and
+// across-machine sums are stored as a scrape is written, so the board reads a line per
+// machine at most and the full lines of the five it shows.
+func TestDashboard30dMachines(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC()
+	ix, err := logindex.Open(root, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ix.Close()
+	ctx := context.Background()
+	hours := func(n int, v float64) [][2]float64 {
+		var pts [][2]float64
+		for h := 0; h < n; h++ {
+			pts = append(pts, [2]float64{float64(now.Add(-time.Duration(h) * time.Hour).Unix()), v})
+		}
+		return pts
+	}
+	for _, name := range []string{logindex.MachinesComponentsUp, logindex.MachinesComponentsDown, logindex.MachinesDiskFreeMin,
+		logindex.MachinesMemoryFreeMin, logindex.MachinesLoadMax, logindex.MachinesRestarts} {
+		if err := ix.ImportHours(ctx, name, "", hours(30*24, 7)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for m := 0; m < 50; m++ {
+		l := fmt.Sprintf("machine=m%02d", m)
+		for _, name := range []string{logindex.MachineComponentsUp, logindex.MachineComponents, logindex.MachineRestarts,
+			"maktaba_host_load1", "maktaba_host_cpus", "maktaba_host_memory_bytes", "maktaba_host_memory_free_bytes",
+			"maktaba_host_disk_free_bytes"} {
+			if err := ix.ImportHours(ctx, name, l, hours(30*24, float64(m))); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for c := 0; c < 45; c++ { // each component's own lines (a day: their count is what the view skips through)
+			if err := ix.ImportHours(ctx, "maktaba_component_up", fmt.Sprintf("id=c%02d,%s,phase=running", c, l), hours(24, 1)); err != nil {
+				t.Fatal(err)
+			}
+			if err := ix.ImportHours(ctx, "maktaba_component_restarts_total", fmt.Sprintf("id=c%02d,%s", c, l), hours(24, 0)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var all, one []time.Duration
+	for i := 0; i < 20; i++ {
+		s := time.Now()
+		doc, err := ix.Board(ctx, "overview", "30d")
+		if err != nil || doc.Machines == nil || doc.Machines.Total != 50 || len(doc.Series) > logindex.MaxSeries {
+			t.Fatalf("board: %v %+v %d", err, doc.Machines, len(doc.Series))
+		}
+		all = append(all, time.Since(s))
+		s = time.Now()
+		if doc, err = ix.BoardOf(ctx, "overview", "30d", "m07"); err != nil || len(doc.Series) == 0 {
+			t.Fatalf("m07: %v %d", err, len(doc.Series))
+		}
+		one = append(one, time.Since(s))
+	}
+	record("dashboard_30d_machines", map[string]any{"p95_ms": p(all, .95).Milliseconds(), "one_machine_p95_ms": p(one, .95).Milliseconds()})
+	budget(t, "dashboard 30 d, 50 machines (p95)", p(all, .95), 500*time.Millisecond)
+	budget(t, "dashboard 30 d, one machine of 50 (p95)", p(one, .95), 500*time.Millisecond)
+}
+
 // logger_overhead (Go): a log call costs at most 20 µs at the 99th percentile.
 func TestLoggerOverhead(t *testing.T) {
 	l := mlog.NewLogger(mlog.Options{Service: "bench", Format: "json", Output: io.Discard})

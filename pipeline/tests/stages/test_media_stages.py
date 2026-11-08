@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Iterator
 from datetime import date
@@ -294,3 +295,27 @@ async def test_fingerprint_without_a_probed_duration_waits_for_inputs(db: Databa
     await drain_core(db, rt, only={"fingerprint"})
     assert (await _rows(db, "fingerprint"))[0]["outcome"] == "waiting_inputs"
     assert await db.fetchval("SELECT count(*) FROM video_signals") == 0
+
+
+def test_a_refused_tool_start_is_a_refusal_not_the_tools_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``run_media`` answers a missing tool as exit 127, but a refusal to start one (the
+    runner's sandbox, as an AppContainer refused asyncio's named pipes) is raised: the job
+    then runs in the worker (sandbox_refused) instead of failing as the tool's own exit."""
+    from maktaba_pipeline.engine import media
+    from maktaba_pipeline.plugins.native import sandbox_refused
+
+    async def refused(*_a: object, **_k: object) -> object:
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", refused)
+    with pytest.raises(PermissionError) as exc:
+        asyncio.run(media._real_runner(["ffmpeg", "-version"], 5))
+    assert sandbox_refused(exc.value)
+
+    async def missing(*_a: object, **_k: object) -> object:
+        raise FileNotFoundError(2, "no such tool")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", missing)
+    assert asyncio.run(media._real_runner(["ffmpeg", "-version"], 5)).returncode == 127

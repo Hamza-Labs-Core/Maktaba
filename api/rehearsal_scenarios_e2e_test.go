@@ -10,6 +10,8 @@ package main
 //	01 a normal update with migrations, on the full seed: it commits, nothing is put back
 //	02 the TV's change waits during the watch: the update commits, the TV pending
 //	03 a rollback after additive migrations: the schema is kept, nothing is put back
+//	03b a rollback after a lossless migration the schema cannot keep: its Down scripts
+//	    undo it, nothing is put back
 //	04 a rollback after a destructive migration: the dump goes back the safe way, whole
 //	05 that restore while machines keep logging in and asking for their copy
 //	06 that restore killed (kill -9) part way: the live database untouched, back by itself
@@ -57,6 +59,14 @@ func (k *rehearsalKit) curSpec() payloadSpec {
 func (k *rehearsalKit) nextAdditiveFailing() payloadSpec {
 	n1, b1 := additiveMigration(k.rev + 1)
 	n2, b2 := additiveNextMigration(k.rev + 2)
+	return payloadSpec{variant: "next", version: k.next, extra: map[string]string{n1: b1, n2: b2}}
+}
+
+// nextConstraintFailing is the same with a lossless migration the schema-keep rule cannot
+// keep (a CHECK added) in place of the second: its Down script undoes it.
+func (k *rehearsalKit) nextConstraintFailing() payloadSpec {
+	n1, b1 := additiveMigration(k.rev + 1)
+	n2, b2 := constraintNextMigration(k.rev + 2)
 	return payloadSpec{variant: "next", version: k.next, extra: map[string]string{n1: b1, n2: b2}}
 }
 
@@ -418,6 +428,58 @@ func TestUpdateRehearsal03RollbackAdditive(t *testing.T) {
 	}
 	r.countsUnchanged(before, seedCounts(t, db))
 }
+
+// =====================================================================================
+// 03b A rollback after a lossless migration the schema cannot keep runs its Down scripts.
+// =====================================================================================
+
+// As 03, but the failing release's migration adds a CHECK: nothing is lost, yet the
+// schema-keep rule cannot keep it (this commit might write what it refuses). Before the
+// Down scripts, such a rollback put the whole dump back (0.3.90's 0192, a day of index
+// rebuild). Now the failing release undoes its own migrations with their Down scripts:
+// the record becomes this commit's, nothing is restored, every row stays.
+func TestUpdateRehearsal03bRollbackDownScripts(t *testing.T) {
+	r := newRehearsal(t)
+	k := r.kit
+	home, _ := r.homeOnPrev(profile("restore"))
+	home.installByHand(k.curSpec())
+	home.waitServing(k.cur, 10*time.Minute)
+	db := home.superDB("maktaba")
+	before := seedCounts(t, db)
+	run, mon, states := r.update(home, k.nextConstraintFailing(), 25*time.Minute)
+	if run.State != "rolled_back" {
+		t.Fatalf("the update to %s ended %s, want rolled_back: %s", k.next, run.State, run.Error)
+	}
+	home.waitServing(k.cur, 5*time.Minute)
+	r.budget(mon, "a rollback by the Down scripts", 4*time.Minute)
+	home.assertServing(k.cur)
+	r.noRestore(home, states)
+	rec, all := home.record()
+	if layoutVersion(rec.Version) != layoutVersion(k.cur) || rec.KeptFor != "" {
+		t.Errorf("the database's record is %+v: want %s's own, not kept", rec, k.cur)
+	}
+	if df, _ := all["down_from"].(string); layoutVersion(df) != layoutVersion(k.next) {
+		t.Errorf("the record does not say %s's Down scripts brought it back: %v", k.next, all)
+	}
+	for _, want := range []string{"'s migrations with their Down scripts, back to slot", "nothing is put back"} {
+		if !strings.Contains(home.log.String(), want) {
+			t.Errorf("the rollback did not run the Down scripts: no %q in the log", want)
+		}
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_constraint WHERE conname = 'rehearsal_probe_note_short'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Error("the failed release's CHECK is still there: its Down script did not run")
+	}
+	if !rehearsalTableExists(t, db, "rehearsal_probe") {
+		t.Error("this commit's own migration (rehearsal_probe) was undone too")
+	}
+	r.countsUnchanged(before, seedCounts(t, db))
+}
+
+func layoutVersion(v string) string { return strings.TrimPrefix(v, "v") }
 
 // =====================================================================================
 // 04 A rollback after a destructive migration puts the dump back, whole.

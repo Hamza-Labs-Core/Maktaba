@@ -94,9 +94,9 @@ func TestAFailedMirrorRollsTheChangeBack(t *testing.T) {
 // Switch keeps the hold and names the verb.
 func TestSwitchKeepsTheHold(t *testing.T) {
 	db, _ := clustertest.ScratchDB(t)
-	extRow(t, db, "dizquetv", true, "2026-11-01T00:00:00Z")
+	extRow(t, db, "cloudflare_stream", true, "2026-11-01T00:00:00Z")
 	s := New(db)
-	held := store.Desired{ID: "ext.dizquetv", Want: comps.WantEnabled, Hold: &store.Hold{By: "admin"}}
+	held := store.Desired{ID: "ext.cloudflare_stream", Want: comps.WantEnabled, Hold: &store.Hold{By: "admin"}}
 	if _, err := SetDesired(ctx, s, held, admin("component.hold")); err != nil {
 		t.Fatal(err)
 	}
@@ -104,17 +104,17 @@ func TestSwitchKeepsTheHold(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Switch(ctx, s, tx, "ext.dizquetv", false, store.Audit{By: "admin"}); err != nil {
+	if _, err := Switch(ctx, s, tx, "ext.cloudflare_stream", false, store.Audit{By: "admin"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	d, _ := s.DesiredOf(ctx, "ext.dizquetv")
+	d, _ := s.DesiredOf(ctx, "ext.cloudflare_stream")
 	if d.Want != comps.WantInstalled || d.Hold == nil {
 		t.Fatalf("got %+v", d)
 	}
-	if extEnabled(t, db, "dizquetv") || audits(t, db, "component.disable", "ext.dizquetv") != 1 {
+	if extEnabled(t, db, "cloudflare_stream") || audits(t, db, "component.disable", "ext.cloudflare_stream") != 1 {
 		t.Fatal("mirror or audit")
 	}
 }
@@ -128,31 +128,26 @@ func TestRepairMirrors(t *testing.T) {
 	if _, err := s.SetDesired(ctx, store.Desired{ID: "ext.plex", Want: comps.WantEnabled}, admin("component.enable")); err != nil {
 		t.Fatal(err)
 	}
-	// dizquetv: an older release turned the row on after the desired state was written
-	if _, err := s.SetDesired(ctx, store.Desired{ID: "ext.dizquetv", Want: comps.WantInstalled}, admin("component.disable")); err != nil {
-		t.Fatal(err)
-	}
-	extRow(t, db, "dizquetv", true, "2099-01-01T00:00:00Z")
-	// cloudflare_stream: in step
-	extRow(t, db, "cloudflare_stream", false, "2026-11-01T00:00:00Z")
+	// cloudflare_stream: an older release turned the row on after the desired state was written
 	if _, err := s.SetDesired(ctx, store.Desired{ID: "ext.cloudflare_stream", Want: comps.WantInstalled}, admin("component.disable")); err != nil {
 		t.Fatal(err)
 	}
+	extRow(t, db, "cloudflare_stream", true, "2099-01-01T00:00:00Z")
 
 	got, err := RepairMirrors(ctx, s, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0] != "ext.dizquetv" || got[1] != "ext.plex" {
+	if len(got) != 2 || got[0] != "ext.cloudflare_stream" || got[1] != "ext.plex" {
 		t.Fatalf("repaired %v", got)
 	}
 	if !extEnabled(t, db, "plex") {
 		t.Fatal("plex's row not put back on")
 	}
-	if d, _ := s.DesiredOf(ctx, "ext.dizquetv"); d.Want != comps.WantEnabled {
-		t.Fatalf("dizquetv want %q, want enabled (its row was newer)", d.Want)
+	if d, _ := s.DesiredOf(ctx, "ext.cloudflare_stream"); d.Want != comps.WantEnabled {
+		t.Fatalf("cloudflare_stream want %q, want enabled (its row was newer)", d.Want)
 	}
-	for _, id := range []string{"ext.plex", "ext.dizquetv"} {
+	for _, id := range []string{"ext.plex", "ext.cloudflare_stream"} {
 		if audits(t, db, "component.mirror_repaired", id) != 1 {
 			t.Errorf("%s: no audit row", id)
 		}

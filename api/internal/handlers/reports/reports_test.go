@@ -85,7 +85,7 @@ func TestList_KindsTitlesAndHiddenFiles(t *testing.T) {
 	f := newFixture(t)
 	f.write(t, libID+".html", "<p>review</p>")
 	f.write(t, PlanPage, "<p>plan</p>")
-	f.write(t, AuditPage, "<p>audit</p>")
+	f.write(t, "channel-audit.html", "<p>audit</p>") // left by the removed audit stage
 	f.write(t, "notes-2.html", "<p>x</p>")
 	f.write(t, libID+".part.html", "half") // a page being written
 	f.write(t, "readme.txt", "no")         // not a report
@@ -102,12 +102,12 @@ func TestList_KindsTitlesAndHiddenFiles(t *testing.T) {
 	for _, r := range got.Reports {
 		order = append(order, r.Kind+":"+r.Title)
 	}
-	want := []string{"plan:Channel plan", "audit:Channel audit", "review:قناة الاختبار", "other:notes-2.html"}
+	want := []string{"plan:Channel plan", "review:قناة الاختبار", "other:channel-audit.html", "other:notes-2.html"}
 	if strings.Join(order, "|") != strings.Join(want, "|") {
 		t.Fatalf("got %v want %v", order, want)
 	}
-	if got.Reports[2].LibraryID == nil || *got.Reports[2].LibraryID != libID {
-		t.Errorf("review page lost its library id: %+v", got.Reports[2])
+	if got.Reports[1].LibraryID == nil || *got.Reports[1].LibraryID != libID {
+		t.Errorf("review page lost its library id: %+v", got.Reports[1])
 	}
 }
 
@@ -328,8 +328,8 @@ func TestPage_FollowsTheSystemTheme(t *testing.T) {
 	}
 	// a page that already declares its scheme is served untouched
 	own := `<!doctype html><style>:root{color-scheme:dark light}</style><p>own</p>`
-	f.write(t, AuditPage, own)
-	if rec := f.do("GET", "/api/reports/"+AuditPage, "", admin()); rec.Body.String() != own {
+	f.write(t, PreviewPage, own)
+	if rec := f.do("GET", "/api/reports/"+PreviewPage, "", admin()); rec.Body.String() != own {
 		t.Errorf("page with its own color-scheme changed: %s", rec.Body.String())
 	}
 }

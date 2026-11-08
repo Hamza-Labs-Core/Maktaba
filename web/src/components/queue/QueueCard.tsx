@@ -15,7 +15,6 @@ import { hrefOf, stageHelp, tileHealthHelp, waitingHelp } from "../../help/regis
 /** Display name of an external service named by the API ("plex" -> "Plex"). */
 const SERVICE_NAMES: Record<string, string> = {
   plex: "Plex",
-  dizquetv: "dizqueTV",
   youtube: "YouTube",
 };
 

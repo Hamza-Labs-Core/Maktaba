@@ -230,7 +230,7 @@ var (
 // for a moment is said once and asked again; a stop of the setup ends it.
 func setupPlexCLI(ctx context.Context, p *prompter, run func(string, any) (any, error),
 	skippable func() (<-chan struct{}, func())) error {
-	if !p.yesNo("\nSign in to Plex now (your Plex libraries and watch history)?", false) {
+	if !p.yesNo("\nSign in to Plex now (to add Maktaba's channels to Plex Live TV)?", false) {
 		_, err := run("plex", map[string]string{"action": "skip"})
 		return err
 	}

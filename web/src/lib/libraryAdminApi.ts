@@ -100,8 +100,6 @@ export interface ManagedLibrary {
   youtube?: LibraryYouTube;
   /** how the library grid shows collections (Epic 56 story 56.08) */
   collection_mode?: CollectionMode;
-  /** what the Plex import read into the library (story 56.07) */
-  plex_collections?: { imported: number; missing_videos: number };
 }
 
 export type CollectionMode = "tab_only" | "hide_items" | "show_both";
@@ -110,21 +108,6 @@ export const COLLECTION_MODES: CollectionMode[] = ["tab_only", "hide_items", "sh
 /** Sets a library's collection mode (admin). */
 export async function setCollectionMode(libraryId: string, mode: CollectionMode): Promise<void> {
   await api.patch(`/api/libraries/${encodeURIComponent(libraryId)}`, { collection_mode: mode });
-}
-
-/** An item of a library's Plex collections that is not in Maktaba. */
-export interface PlexMissingItem {
-  collection: string;
-  rating_key: string;
-  title?: string;
-  file?: string;
-}
-
-export async function fetchPlexMissing(libraryId: string): Promise<PlexMissingItem[]> {
-  const r = await api.get<{ items?: PlexMissingItem[] }>(
-    `/api/libraries/${encodeURIComponent(libraryId)}/plex-missing`
-  );
-  return Array.isArray(r?.items) ? r.items : [];
 }
 
 export interface ConflictMember {

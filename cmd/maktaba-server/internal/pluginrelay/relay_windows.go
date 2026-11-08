@@ -25,13 +25,22 @@ type Listener struct {
 }
 
 // userOnly is the pipe's security: a protected DACL admitting only the user this process
-// runs as (no inherited entries, no one else).
-func userOnly() (*windows.SecurityAttributes, error) {
+// runs as (no inherited entries, no one else), and the AppContainer SIDs named (a
+// first-party runner's, story 54.23), which run at low integrity: with any, the pipe's
+// mandatory label is low, so they may write to it (no one else is admitted by the DACL).
+func userOnly(appContainers ...string) (*windows.SecurityAttributes, error) {
 	u, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return nil, fmt.Errorf("pluginrelay: this process's user: %w", err)
 	}
-	sd, err := windows.SecurityDescriptorFromString("D:P(A;;GA;;;" + u.User.Sid.String() + ")")
+	sddl := "D:P(A;;GA;;;" + u.User.Sid.String() + ")"
+	for _, sid := range appContainers {
+		sddl += "(A;;GA;;;" + sid + ")"
+	}
+	if len(appContainers) > 0 {
+		sddl += "S:(ML;;NW;;;LW)"
+	}
+	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
 		return nil, fmt.Errorf("pluginrelay: the pipe's security: %w", err)
 	}
@@ -40,8 +49,12 @@ func userOnly() (*windows.SecurityAttributes, error) {
 
 // Listen makes the pipe's first instance. A name that exists already (someone made it
 // first) is not served: FILE_FLAG_FIRST_PIPE_INSTANCE refuses it.
-func Listen(name string) (*Listener, error) {
-	sa, err := userOnly()
+func Listen(name string) (*Listener, error) { return ListenFor(name) }
+
+// ListenFor is Listen admitting, besides this process's user, the AppContainer SIDs named
+// (a first-party runner's own pipes, story 54.23 on Windows).
+func ListenFor(name string, appContainers ...string) (*Listener, error) {
+	sa, err := userOnly(appContainers...)
 	if err != nil {
 		return nil, err
 	}

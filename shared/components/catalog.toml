@@ -103,7 +103,7 @@ loops      = ["api:process_recorder", "api:license_refresher", "api:license_relo
               # the plugin store's signed lists and the kill switch (story 54.17 §1): idle
               # unless a plugin is installed or Browse was opened in the last 7 days
               "api:plugins_catalog"]
-settings   = ["rules.audit", "rules.storage", "rules.system_health", "rules.search"]
+settings   = ["rules.storage", "rules.system_health", "rules.search"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
 since      = "0.3.66"
@@ -438,29 +438,13 @@ kind      = "extension"
 group     = "integrations"
 title_key = "components.ext.plex.title"
 desc_key  = "components.ext.plex.desc"
-stages    = ["plex_index", "plex_collection", "plex_groups", "plex_livetv",
-             "plex_collections_import"]
+stages    = ["plex_livetv"]
 settings  = ["rules.plexlive"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 # on as its extensions row says (51.07), in no bundle by default
 bundles   = []
 features  = ["plex"]
-since     = "0.3.66"
-
-[[component]]
-id        = "ext.dizquetv"
-plugin    = "tv.maktaba.dizquetv"
-kind      = "extension"
-group     = "integrations"
-title_key = "components.ext.dizquetv.title"
-desc_key  = "components.ext.dizquetv.desc"
-stages    = ["dizquetv_show", "dizquetv_channels", "dizquetv_audit"]
-requires  = ["livetv"]
-settings  = ["rules.dizquetv"]
-placement = "home"
-platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
-bundles   = []
 since     = "0.3.66"
 
 [[component]]

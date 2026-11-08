@@ -177,6 +177,59 @@ extension DiagnosticsOverHTTP {
         #expect(b.panels[0].series[0].points[1].value == 2048)
     }
 
+    @Test func theOverviewOfManyMachinesSaysWhichItShowsAndAsksForOne() async throws {
+        DiagStub.on("GET /api/admin/dashboards/overview", 200, #"""
+        {"board":"overview","range":"24h","step":60,"omitted":2,
+         "machines":{"total":37,"shown":["n07","n33","n12","n41","n20"],"all":["n00","n01","n07"]},
+         "series":[{"name":"maktaba_machines_components_down","kind":"gauge","points":[[1800000000,4]]},
+          {"name":"maktaba_component_down","labels":"machine=n07","kind":"gauge","points":[[1800000000,3]]}]}
+        """#)
+        let c = DiagStub.client()
+        let all = try await c.board(.overview, range: .day)
+        #expect(DiagStub.seen.last?.query == ["range": "24h"])
+        #expect(all.machines?.total == 37 && all.machines?.shown.first == "n07" && all.machines?.all.count == 3)
+        #expect(all.machine == nil && all.omitted == 2 && all.showsSomeMachines)
+        #expect(all.panels.map(\.name) == ["maktaba_machines_components_down", "maktaba_component_down"])
+        #expect(all.panels[1].series[0].legend == "n07")
+        _ = try await c.board(.overview, range: .day, machine: "n07")
+        #expect(DiagStub.seen.last?.query == ["range": "24h", "machine": "n07"])
+        // the machine is the Overview's; Storage is asked without it
+        DiagStub.on("GET /api/admin/dashboards/storage", 200, #"{"board":"storage","range":"24h","series":[]}"#)
+        let storage = try await c.board(.storage, range: .day, machine: "n07")
+        #expect(DiagStub.seen.last?.query == ["range": "24h"])
+        #expect(storage.machines == nil && storage.omitted == 0 && !storage.showsSomeMachines)
+    }
+
+    @Test func theOverviewNamesTheOfflineMachinesFirst() throws {
+        let json = #"{"board":"overview","machines":{"total":9,"shown":["n45","n70","n07"],"all":["n07","n45","n70"],"offline":["n45","n70"]},"series":[]}"#
+        let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))
+        #expect(b.machines?.offline == ["n45", "n70"] && b.machines?.shown.first == "n45")
+        #expect(b.machines?.isOffline("n70") == true && b.machines?.isOffline("n07") == false)
+        // a home before the list: none offline
+        let old = #"{"board":"overview","machines":{"total":2,"shown":["a","b"],"all":["a","b"]},"series":[]}"#
+        let o = try JSONDecoder.home.decode(BoardDoc.self, from: Data(old.utf8))
+        #expect(o.machines?.offline == [] && o.machines?.isOffline("a") == false)
+    }
+
+    @Test func theOverviewNamesItsMachinesAsTheMachinesPageDoes() throws {
+        let json = #"{"board":"overview","machines":{"total":2,"shown":["n07","home"],"all":["home","n07"],"offline":[]},"names":{"home":"Living room","n07":"Attic NAS","n09":" "},"series":[{"name":"maktaba_component_down","labels":"id=core.api,machine=n07","kind":"gauge","points":[]}]}"#
+        let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))
+        #expect(b.name(of: "n07") == "Attic NAS" && b.name(of: "home") == "Living room")
+        // no name, or a blank one: the node id
+        #expect(b.name(of: "n08") == "n08" && b.name(of: "n09") == "n09")
+        #expect(b.series[0].legend(names: b.names) == "core.api · Attic NAS" && b.series[0].legend == "core.api · n07")
+        // a home before names, or names that are not text: every machine by its id
+        let old = #"{"board":"overview","names":{"n07":7},"series":[]}"#
+        let o = try JSONDecoder.home.decode(BoardDoc.self, from: Data(old.utf8))
+        #expect(o.names.isEmpty && o.name(of: "n07") == "n07")
+    }
+
+    @Test func oneMachineOfManyIsNotSomeMachines() throws {
+        let json = #"{"board":"overview","machine":"n07","machines":{"total":37,"shown":["n07"],"all":[]},"series":[]}"#
+        let b = try JSONDecoder.home.decode(BoardDoc.self, from: Data(json.utf8))
+        #expect(b.machine == "n07" && !b.showsSomeMachines)
+    }
+
     @Test func theInboxReadsAReportsTimelineAndChangesIt() async throws {
         DiagStub.on("GET /api/reports", 200, #"{"reports":[{"id":27,"at":"2026-11-06T09:00:00Z","name":"Test Viewer","app":"apple.player","category":"playback","status":"new","shared_with_maktaba":false}]}"#)
         DiagStub.on("GET /api/reports/27", 200, #"""

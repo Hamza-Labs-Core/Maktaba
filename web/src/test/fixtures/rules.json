@@ -1429,7 +1429,7 @@
         {
           "name": "timezone",
           "kind": "str?",
-          "group": "dizqueTV",
+          "group": "Schedule and look",
           "label": "Time zone",
           "help": "IANA name (Asia/Riyadh); empty: the server's.",
           "default": null,
@@ -1437,42 +1437,9 @@
           "changed": false
         },
         {
-          "name": "dz_lateness_ms",
-          "kind": "int",
-          "group": "dizqueTV",
-          "label": "Allowed lateness (ms)",
-          "help": "",
-          "default": 900000,
-          "minimum": 0,
-          "value": 900000,
-          "changed": false
-        },
-        {
-          "name": "dz_max_days",
-          "kind": "int",
-          "group": "dizqueTV",
-          "label": "Schedule length (days)",
-          "help": "",
-          "default": 365,
-          "minimum": 1,
-          "value": 365,
-          "changed": false
-        },
-        {
-          "name": "dz_pad_ms",
-          "kind": "int",
-          "group": "dizqueTV",
-          "label": "Pad (ms)",
-          "help": "",
-          "default": 1,
-          "minimum": 0,
-          "value": 1,
-          "changed": false
-        },
-        {
           "name": "dz_filler_cooldown_ms",
           "kind": "int",
-          "group": "dizqueTV",
+          "group": "Schedule and look",
           "label": "Filler cooldown (ms)",
           "help": "",
           "default": 1800000,

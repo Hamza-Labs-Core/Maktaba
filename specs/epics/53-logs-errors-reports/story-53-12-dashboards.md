@@ -44,7 +44,7 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 
 | Board | Panels |
 |---|---|
-| **Overview** | the 53.03 states now; errors per hour by component (14 d); components by phase over time and restarts per component (from `maktaba_component_*`), with turn-off and hold times marked from the `components` audit rows (`component.disable`, `component.hold`, …); requests per minute and p95 latency (API); CPU, memory, disk free of the home and each machine |
+| **Overview** | the 53.03 states now; errors per hour by component (14 d); components by phase over time and restarts per component (from `maktaba_component_*`), with turn-off and hold times marked from the `components` audit rows (`component.disable`, `component.hold`, …); requests per minute and p95 latency (API); CPU, memory, disk free of the home and each machine (many machines: below) |
 | **Queue** | jobs done and failed per hour per stage; queue depth per stage; time in queue p50/p95; per machine throughput (from `job_events` and the queue metrics) |
 | **Processing** | transcription hours of audio per hour and real-time factor; thumbnails per hour; MP4 conversions and dedup (Epic 47); failures by class (Epic 40) |
 | **Streaming** | sessions now and per hour, direct play vs transcode, transcode real-time factor, bandwidth out (LAN, relay), TV channels on air and their restarts |
@@ -59,10 +59,54 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 - **Use** shows counts and names only to admins; it never shows one person's history (the
   existing activity page and Profile do that, under their own rules).
 
+#### The Overview with many machines
+
+Each joined machine adds its load, memory, disk free and its components (labelled
+`machine=<node id>`), so past a few machines a line per machine does not fit a board's 50
+lines. The Overview of all machines draws instead:
+
+- totals across the machines (with two or more): components up and down, the least disk free
+  and memory free of any machine, the highest load, restarts per minute;
+- the **five machines most in need of attention now** (a joined machine that is offline
+  first, then most components down, then least disk free, then the highest load per CPU, by
+  their latest values): their components down, load, disk free and memory free;
+- "Showing 5 of 37 machines, those most in need of attention first", the offline machines
+  named ("Offline: …", and marked in the picker), and a machine picker: one machine on its own
+  shows its components up and down, load, CPUs, memory and disk, and a line for each component
+  that was not up all the time or that restarted (an offline one says so: its lines end at its
+  last values).
+
+Which machines are offline is the cluster's to say, by the Machines page's own rule: an
+approved machine is offline when neither it nor any of its workers was seen within the last
+60 s. The API asks the cluster and passes the list to the log index (`offline=`); a caller's
+own `offline=` never reaches it. The store alone cannot say it: a machine that stopped sending
+keeps its last values there (by them it ranked last), and a machine removed from the cluster
+looks the same as one that is offline. An offline machine the store has no lines of is still
+counted, named and shown, with no lines.
+
+Each machine is shown by its name, as the Machines page shows it (a joined machine's name,
+the home's own name for `home`), in the picker, the Offline line and the chart legends; the
+picker keeps the node id as a hint ("Attic NAS (n07)"), and the node id stays the key
+(`machine=`). The API names them from the cluster; the log index knows only ids. A machine
+with no name, or every machine when the cluster can't be read, is shown by its node id.
+
+The log index sums each machine's components up, its components and its restarts, and the
+totals across machines, as it writes a scrape (`maktaba_machine_*{machine}`,
+`maktaba_machines_*`), so the board reads at most a line per machine, and the full lines only
+of the machines it shows. Summing every component's rows when the board is asked took seconds
+for 50 machines of 45 components over 30 days; read this way the Overview and one machine's
+view answer in tens of milliseconds (`dashboard_30d_machines` in the performance run, budget
+500 ms p95).
+
 ### 3. API
 
 Admin only: `GET /api/admin/dashboards/{board}?range=` returns the board's series in one call
-(≤ 50 series, ≤ 2,000 points each, downsampled by the role). Role tests.
+(≤ 50 series, ≤ 2,000 points each, downsampled by the role). On the Overview,
+`machine=<node id>` answers that machine's lines on their own; the Overview's answer names the
+machines (`machines`: `total`, `shown`, `all`, `offline`), `names` (`{<node id>: <name>}`,
+only the ids the answer mentions; a name is the user's text, shown and nothing else: control
+and bidirectional override characters dropped, at most 64 characters), and `omitted` counts
+the lines the 50 left out. Role tests (the `machine=` query included).
 
 ### 4. On the Remote apps
 
@@ -81,6 +125,14 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | `dash.use` | Use | الاستخدام |
 | `dash.openLogs` | Open in Logs | فتح في السجلات |
 | `dash.noData` | No data for this time yet | لا توجد بيانات لهذه الفترة بعد |
+| `dash.machine` | Machine | الجهاز |
+| `dash.machine.all` | All machines | كل الأجهزة |
+| `dash.machines.shown` | Showing {shown} of {total} machines, those most in need of attention first. Pick a machine to see its own. | عرض {shown} من {total} أجهزة، الأحوج إلى الانتباه أولاً. اختر جهازاً لترى بياناته وحده. |
+| `dash.omitted` | {count} more lines did not fit on this board. | {count} خطوط أخرى لم تتسع لها هذه اللوحة. |
+| `dash.machines.offline` | Offline: {machines}. Offline machines come first; their lines end at their last values. | غير متصلة: {machines}. تأتي الأجهزة غير المتصلة أولاً، وتنتهي خطوطها عند آخر قيمها. |
+| `dash.machine.offline` | This machine is offline. Its lines end at its last values. | هذا الجهاز غير متصل. تنتهي خطوطه عند آخر قيمه. |
+| `dash.machine.offlineOption` | {machine} (offline) | {machine} (غير متصل) |
+| `dash.machine.option` | {name} ({id}) | {name} ({id}) |
 
 ## Acceptance criteria
 
@@ -107,6 +159,12 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 | T05 | role test | nobody, viewer, admin | | 401, 403, 200 |
 | T06 | unit (vitest) | board fixtures | render en/ar | text summaries, RTL |
 | T07 | UI (**CI only**) | dark theme screenshots | | |
+| T08 | unit | 60 machines, a few in trouble | Overview; `machine=` | totals, the five most in need of attention in order, ≤ 50 lines, the machine count; one machine's own lines |
+| T09 | unit (vitest, Apple, Android) | an Overview of 37 machines | render; pick one | "Showing 5 of 37", the picker asks `machine=`, en/ar |
+| T10 | unit | the 60 machines, one well but offline and one offline with no lines | Overview with `offline=` | both shown first, counted and named in `offline`; bounds kept (≤ 1,000 ids, each ≤ 128 bytes) |
+| T11 | unit (API, cluster) | approved machines seen now, 5 min ago, never; pending and revoked ones | Overview | the role is asked `offline=` with the two not seen, a caller's own dropped; admins only |
+| T12 | unit (vitest, Apple, Android) | an Overview with offline machines | render; pick one | "Offline: …", "(offline)" in the picker, the one machine's offline line, en/ar |
+| T13 | unit (API, cluster, vitest, Apple, Android) | machines with names, one without, a 200-character name, the cluster down | Overview | `names` for the ids mentioned only, the name bounded, the id when there is none; the picker, Offline line and legends show names, the picker the id as a hint, en/ar |
 
 ## Build plan
 
