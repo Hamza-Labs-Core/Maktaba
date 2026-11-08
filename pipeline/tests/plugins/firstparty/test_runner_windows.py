@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import errno
-import functools
 import json
 import os
 import subprocess
@@ -657,9 +656,12 @@ def test_a_broken_broker_pipe_is_a_refusal_never_a_missing_file(
         def read(self, _n: int) -> bytes:
             return b"not json\n"
 
+    def opener_of(pipe: Any) -> Any:
+        return lambda _name: pipe
+
     pipes: list[Any] = [Broken(), Garbled()]
     for pipe in pipes:
-        b = winfiles.Broker("\\\\.\\pipe\\x", opener=functools.partial(lambda p, _name: p, pipe))
+        b = winfiles.Broker("\\\\.\\pipe\\x", opener=opener_of(pipe))
         with pytest.raises(PermissionError):
             b({"op": "stat", "path": "p"})
         shim = winfiles._Shim(b, [SHARE], lambda h, _f: h)
