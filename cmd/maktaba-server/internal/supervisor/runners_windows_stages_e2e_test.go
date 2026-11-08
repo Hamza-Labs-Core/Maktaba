@@ -319,6 +319,11 @@ func TestFirstPartyStagesRunInTheirRunnersOnWindows(t *testing.T) {
 		} else {
 			t.Logf("runner %s interpreter: %s", g, line)
 		}
+		// the launcher's identity: it started the venv's base interpreter itself, and the
+		// broker served that process (its hello answered, no client turned away)
+		for _, p := range runnerIdentityProblems(runnerLogs[g], g == "light") {
+			t.Errorf("the %s runner: %s", g, p)
+		}
 		// light reads the share by name (brokered); files writes it in full (never brokered)
 		if want := map[string]string{"light": "plugin_runner_files_brokered", "files": "plugin_runner_area_remote"}[g]; !strings.Contains(runnerLogs[g], want) {
 			t.Errorf("the %s runner's log has no %s for the share", g, want)
@@ -458,14 +463,4 @@ func tailLogs(t *testing.T, dir string) {
 		}
 		t.Logf("---- %s (last %d lines) ----\n%s", e.Name(), len(lines), strings.Join(lines, "\n"))
 	}
-}
-
-// logLine is the first line of log that names event ("" when none does).
-func logLine(log, event string) string {
-	for _, l := range strings.Split(log, "\n") {
-		if strings.Contains(l, `"`+event+`"`) {
-			return strings.TrimSpace(l)
-		}
-	}
-	return ""
 }

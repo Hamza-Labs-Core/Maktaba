@@ -193,6 +193,14 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A Windows plugin runner never starts as a process its file broker turns away (story
+  54.23).** The runner's launcher starts the venv's own interpreter directly. If the venv's
+  `pyvenv.cfg` cannot be read, or names no usable interpreter, the launcher no longer falls
+  back to the venv's launcher program, whose child the broker refuses. The runner no longer
+  starts, and the queue worker runs its jobs. Before it serves, the runner checks that it is in
+  its venv and that the broker answers it. A runner the broker would turn away is now seen at
+  start, and its share jobs run in the worker.
+
 - **The single-VPS cloud deploy hands the api the symbol uploaders' token (Epic 53 story
   53.16).** Only the Phase 1 pair's deploy wrote it, so on the single VPS a release's symbol
   tables were refused (503 symbols_off) even with the token set. Its deploy now writes the token
