@@ -14,12 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
-- **Release crash symbols reach Maktaba Cloud with one secret (Epic 53 story 53.16).** Each
-  tag's TestFlight build uploads the symbol tables of its apps' dSYMs (`maktaba-symbols`), and
-  the cloud deploy writes the same `MAKTABA_SYMBOLS_TOKEN` repository secret to the api nodes,
-  so forwarded Apple crash reports read as functions, files and lines in the operator console.
-  Without the secret nothing is uploaded and the release stays green; a failed upload warns and
-  keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
+- **A native crash on Android keeps its stack (Player, Remote, Android TV).** On Android 12 and
+  later, a crash in native code is now kept and sent, when crash reports are on, with its
+  signal, its abort message and the crashed thread's frames, read from the crash's tombstone.
+  Each frame names its library file only, never a folder, and the abort message loses its
+  paths and personal data before it is kept. On Android 11, or a tombstone that cannot be read,
+  the crash is kept with its reason alone, as before. Story 53.14.
 - **The service door reads each dizqueTV programme's item from Plex (`tv.maktaba.dizquetv`).**
   The plugin now names each programme by its Plex rating key only. The door reads the item
   from Plex with the home's token and takes the file, media part and duration from Plex's
@@ -2178,6 +2178,13 @@ build fails when the two differ.
   most every 10 s, and a machine that does not answer within 2 s adds nothing, so a slow machine
   never holds the dashboards back. Component series keep their cap per machine, and come last on a
   board so each machine's memory, disk and load stay within its 50 lines.
+
+- **Release crash symbols reach Maktaba Cloud with one secret (Epic 53 story 53.16).** Each
+  tag's TestFlight build uploads the symbol tables of its apps' dSYMs (`maktaba-symbols`), and
+  the cloud deploy writes the same `MAKTABA_SYMBOLS_TOKEN` repository secret to the api nodes,
+  so forwarded Apple crash reports read as functions, files and lines in the operator console.
+  Without the secret nothing is uploaded and the release stays green; a failed upload warns and
+  keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
 
 ### Fixed
 
