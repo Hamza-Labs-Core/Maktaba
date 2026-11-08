@@ -64,8 +64,17 @@ video_id = "subject"
 [tables.item_requests]
 video_id = "subject"
 
+[tables.item_checks]
+video_id = "subject"
+
 [tables.library_topics]
 library_id = "library"
+
+[tables.media_info]
+video_id = "subject"
+
+[tables.media_metadata_enrichment]
+video_id = "subject"
 
 [tables.promo_links]
 video_id = "subject"
@@ -145,6 +154,9 @@ transcript_id = "transcript"
 video_id = "subject"
 library_id = "library"
 
+[tables.video_signals]
+video_id = "subject"
+
 [tables.video_topic_tags]
 video_id = "subject"
 
@@ -165,6 +177,10 @@ audio_track_id = "audio_track"
 channel_id = "youtube_channel"
 library_id = "library"
 
+[tables.youtube_channel_libraries]
+channel_id = "youtube_channel"
+library_id = "library"
+
 [tables.youtube_downloads]
 library_id = "library"
 source_id = "youtube_source"
@@ -179,6 +195,11 @@ playlist_id = "youtube_playlist"
 
 [tables.youtube_sources]
 id = "youtube_source"
+library_id = "library"
+
+# a library's decision record: clash_library_id names the other library it clashed with, as
+# information, not an owner
+[tables.youtube_source_decisions]
 library_id = "library"
 
 [tables.youtube_videos]
