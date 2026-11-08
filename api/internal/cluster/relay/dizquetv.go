@@ -76,8 +76,9 @@ var (
 	// a Plex media part: dizqueTV streams <server's address><part> with its own token
 	plexPartRe = regexp.MustCompile(`^/library/parts/[0-9]{1,12}(/[0-9]{1,12})?/file(\.[A-Za-z0-9]{1,8})?$`)
 	// one file name under dz_art_url, as hosted_link quotes it
-	artNameRe = regexp.MustCompile(`^[A-Za-z0-9._~%-]{1,255}$`)
-	showIDRe  = regexp.MustCompile(`^` + dzID + `$`)
+	winDriveRe = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
+	artNameRe  = regexp.MustCompile(`^[A-Za-z0-9._~%-]{1,255}$`)
+	showIDRe   = regexp.MustCompile(`^` + dzID + `$`)
 )
 
 // specFields: each field of a programme record and whether it must be there.
@@ -217,15 +218,20 @@ func (d *Door) dizqueTokens(c *dzCall) ([]string, *Error) {
 	if e != nil {
 		return nil, e
 	}
-	var toks []string
-	if status < 300 {
-		var list []map[string]any
-		_ = json.Unmarshal(raw, &list)
-		for _, s := range list {
-			for k, v := range s {
-				if str, ok := v.(string); ok && strings.Contains(strings.ToLower(k), "token") {
-					toks = append(toks, str)
-				}
+	// fail closed: without dizqueTV's own copies of the token no answer can be checked, so
+	// an unreadable list refuses the call (and nothing is cached)
+	if status >= 300 {
+		return nil, fail(CodeUnreachable, "dizqueTV's Plex servers are unreadable")
+	}
+	var list []map[string]any
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fail(CodeUnreachable, "dizqueTV's Plex servers are unreadable")
+	}
+	toks := []string{}
+	for _, s := range list {
+		for k, v := range s {
+			if str, ok := v.(string); ok && strings.Contains(strings.ToLower(k), "token") {
+				toks = append(toks, str)
 			}
 		}
 	}
@@ -500,6 +506,23 @@ func decodeObject(body []byte) (map[string]any, *Error) {
 	return m, nil
 }
 
+// mediaPath: an absolute path on a media server's disk (POSIX, a drive or a share), as Plex
+// reports a part's file; never a URL (dizqueTV's ffmpeg would fetch it), never a climb.
+func mediaPath(s string) bool {
+	if !(strings.HasPrefix(s, "/") || winDriveRe.MatchString(s) || strings.HasPrefix(s, `\\`)) {
+		return false
+	}
+	if strings.Contains(s, "://") || strings.ContainsRune(s, '\x00') {
+		return false
+	}
+	for _, seg := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg == ".." {
+			return false
+		}
+	}
+	return true
+}
+
 func plainText(v any, max int) (string, bool) {
 	s, ok := v.(string)
 	if !ok || len(s) > max || !utf8.ValidString(s) {
@@ -595,7 +618,7 @@ func (c *dzCall) build(spec map[string]any, server, plexBase string, i int) (map
 	}
 	p["plexFile"] = part
 	file, ok := plainText(spec["file"], 4096)
-	if !ok {
+	if !ok || !mediaPath(file) {
 		return nil, bad("programme %d: its file is not a path", i)
 	}
 	p["file"] = file
@@ -901,6 +924,14 @@ func (c *dzCall) writeChannel(method string, body []byte) (int, []byte, *Error) 
 
 // ---------------------------------------------------------------- the hosted-logo check
 
+// artLink: link names one file directly under base (no climb, no encoded separator).
+func artLink(base, link string) bool {
+	name, ok := strings.CutPrefix(link, base+"/")
+	low := strings.ToLower(name)
+	return ok && artNameRe.MatchString(name) && !strings.HasPrefix(name, ".") &&
+		!strings.Contains(low, "%2f") && !strings.Contains(low, "%5c") && !strings.Contains(low, "%2e")
+}
+
 // art answers the status of a HEAD of one file under the home's own dz_art_url (no body):
 // the only web host this plugin may reach, set by an admin, never the plugin's choice.
 func (c *dzCall) art(rawQuery string) Result {
@@ -917,10 +948,7 @@ func (c *dzCall) art(rawQuery string) Result {
 	if base == "" {
 		return Result{Err: fail(CodeNotConfigured, "no logo host (dz_art_url) is set on the home")}
 	}
-	name, ok := strings.CutPrefix(link, base+"/")
-	low := strings.ToLower(name)
-	if !ok || !artNameRe.MatchString(name) || strings.HasPrefix(name, ".") ||
-		strings.Contains(low, "%2f") || strings.Contains(low, "%5c") || strings.Contains(low, "%2e") {
+	if !artLink(base, link) {
 		return Result{Err: fail(CodeNotAllowed, "only a file under the home's logo host is checked")}
 	}
 	hreq, err := http.NewRequestWithContext(c.ctx, http.MethodHead, link, nil)
@@ -928,10 +956,11 @@ func (c *dzCall) art(rawQuery string) Result {
 		return Result{Err: fail(CodeBadRequest, "request not buildable")}
 	}
 	// no secret goes with it: a logo host's redirect may be followed (as the worker's own
-	// check did), a few times at most
+	// check did), a few times at most and only to another file under the same host; any
+	// other hop answers the redirect's own status
 	client := *c.d.client
-	client.CheckRedirect = func(_ *http.Request, via []*http.Request) error {
-		if len(via) >= 3 {
+	client.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		if len(via) >= 3 || !artLink(base, r.URL.String()) {
 			return http.ErrUseLastResponse
 		}
 		return nil

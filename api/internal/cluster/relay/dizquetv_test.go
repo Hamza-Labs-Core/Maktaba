@@ -34,6 +34,8 @@ type fakeDZ struct {
 	next     int
 	seen     []string // "METHOD path"
 	heads    []string
+	// serversDown: dizqueTV answers its plex-servers with an error
+	serversDown bool
 }
 
 func newFakeDZ(plexURL string) *fakeDZ {
@@ -67,6 +69,8 @@ func (f *fakeDZ) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			nums = append(nums, n)
 		}
 		out(nums)
+	case r.URL.Path == "/api/plex-servers" && f.serversDown:
+		w.WriteHeader(500)
 	case r.URL.Path == "/api/plex-servers":
 		out(f.servers)
 	case r.URL.Path == "/api/channel-tools/time-slots":
@@ -166,8 +170,13 @@ func newDZHarness(t *testing.T) *dzHarness {
 		h.dz.mu.Lock()
 		h.dz.heads = append(h.dz.heads, r.Method+" "+r.URL.Path)
 		h.dz.mu.Unlock()
-		if strings.HasSuffix(r.URL.Path, "/missing.png") {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/missing.png"):
 			w.WriteHeader(404)
+		case strings.HasSuffix(r.URL.Path, "/moved.png"):
+			http.Redirect(w, r, "/logos/a.png", http.StatusFound)
+		case strings.HasSuffix(r.URL.Path, "/away.png"):
+			http.Redirect(w, r, "/other/a.png", http.StatusFound)
 		}
 	}))
 	t.Cleanup(h.art.Close)
@@ -524,6 +533,10 @@ func TestDizqueTVWriteRefusals(t *testing.T) {
 		"a fallback":                           {"PUT", "/maktaba/channel", map[string]any{"number": 3, "name": "C", "programs": []any{}, "fallback": []any{map[string]any{"ratingKey": "1"}}}},
 		"a channel key the door does not know": {"PUT", "/maktaba/channel", map[string]any{"number": 3, "name": "C", "programs": []any{}, "plexServer": "x"}},
 		"a channel with no number":             {"PUT", "/maktaba/channel", map[string]any{"name": "C", "programs": []any{}}},
+		"a file that is a URL":                 {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "http://10.0.0.1/admin" })},
+		"a file with a scheme":                 {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "/x/concat:/etc/passwd|http://a" })},
+		"a file that is not absolute":          {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "media/a.mkv" })},
+		"a file that climbs":                   {"PUT", "/maktaba/show", bad(func(m map[string]any) { m["file"] = "/media/../etc/passwd" })},
 	} {
 		before := len(h.dz.seen)
 		res, _ := h.do(t, c.method, c.target, c.body)
@@ -570,6 +583,36 @@ func TestDizqueTVArtCheck(t *testing.T) {
 	}
 	if len(h.dz.heads) != 2 {
 		t.Fatalf("the art host got %v", h.dz.heads)
+	}
+	// a redirect is followed only to another file under the logo host; elsewhere the
+	// redirect's own status is the answer and the other place is never asked
+	if res, _ := h.do(t, "HEAD", q(h.art.URL+"/logos/moved.png"), nil); res.Err != nil || res.Status != 200 {
+		t.Fatalf("moved within the host: %+v", res)
+	}
+	if res, _ := h.do(t, "HEAD", q(h.art.URL+"/logos/away.png"), nil); res.Err != nil || res.Status != http.StatusFound {
+		t.Fatalf("moved away: %+v", res)
+	}
+	for _, got := range h.dz.heads {
+		if strings.HasPrefix(got, "HEAD /other/") {
+			t.Fatalf("a redirect off the logo host was followed: %v", h.dz.heads)
+		}
+	}
+}
+
+// Fail closed: when dizqueTV's own copies of the token cannot be read, no answer can be
+// checked for them, so every operation is refused, and nothing is cached.
+func TestDizqueTVUnreadableServersRefuse(t *testing.T) {
+	h := newDZHarness(t)
+	h.dz.shows["s1"] = map[string]any{"name": "S", "content": []any{}}
+	h.dz.serversDown = true
+	for _, target := range []string{"/maktaba/shows", "/maktaba/show/s1", "/maktaba/channels"} {
+		if res, _ := h.do(t, "GET", target, nil); res.Err == nil || res.Err.Code != CodeUnreachable {
+			t.Errorf("%s answered: %+v", target, res)
+		}
+	}
+	h.dz.serversDown = false
+	if res, _ := h.do(t, "GET", "/maktaba/shows", nil); res.Err != nil {
+		t.Fatalf("after dizqueTV recovered: %+v", res)
 	}
 }
 

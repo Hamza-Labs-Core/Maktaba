@@ -39,9 +39,9 @@ pytestmark = [pytest.mark.integration]
 PG_URL = os.environ.get("MAKTABA_TEST_PG_URL", "")
 HERE = Path(__file__).parent
 STAGES = ["dizquetv_show", "dizquetv_channels", "dizquetv_audit"]
-TOKEN = "SECRET-PLEX-token-for-dizquetv"
+TOKEN = "Zq7xP2mK9vR4tL8wN3sBy6"
 #: dizqueTV's own copy of a Plex token (its plex-servers), another than the home's
-DZ_TOKEN = "DZ-OWN-plex-access-token-77"
+DZ_TOKEN = "Hf5jW1cY6uE0oA2gD9kQr4"
 #: Plex as the home has it set up (never contacted: the programmes come from the saved index)
 PLEX_URL = "http://192.168.1.4:32400"
 KEYS = {
@@ -283,13 +283,15 @@ class _Seen:
         from maktaba_pipeline.plugins import native, service
 
         self.answers: list[str] = []
+        self.targets: list[str] = []
         self.settings: list[str] = []
         real = service.ServiceTransport.request
         outer = self
 
         def request(self: Any, *a: Any, **kw: Any) -> tuple[int, bytes]:
             status, body = real(self, *a, **kw)
-            outer.answers.append(f"{self.service} {a[1]} -> {status} {body.decode('utf-8', 'replace')}")
+            outer.targets.append(f"{self.service} {a[1]} -> {status}")
+            outer.answers.append(body.decode("utf-8", "replace"))
             return status, body
 
         monkeypatch.setattr(service.ServiceTransport, "request", request)
@@ -398,14 +400,6 @@ async def test_the_plex_token_reaches_no_answer_the_plugin_gets(
             assert s in p.b.ran, f"{s} never ran"
     finally:
         await ctx.__aexit__(None, None, None)
-    dz_answers = [x for x in seen.answers if x.startswith("dizquetv ")]
-    # the stages read everything that holds the token: the channel the user made, its filler
-    # list, the Plex servers, the programmes the door built
-    for want in ("/maktaba/channel/9", "/maktaba/filler/mine", "/maktaba/plex-servers"):
-        assert any(want in x for x in dz_answers), f"no answer for {want}"
-    assert seen.settings, "no job was handed its settings"
-    # dizqueTV holds the token: it was there to leak
-    assert TOKEN in json.dumps(b_srv.fake.shows) and DZ_TOKEN in json.dumps(b_srv.fake.channels)
     for where, texts in (("answer", seen.answers), ("settings", seen.settings)):
         for text in texts:
             for secret in (TOKEN, DZ_TOKEN):
@@ -413,3 +407,10 @@ async def test_the_plex_token_reaches_no_answer_the_plugin_gets(
                     assert form not in text, f"a {where} carries {form!r}: {text[:400]}"
             assert "x-plex-token" not in text.lower(), f"a {where} names the token: {text[:400]}"
             assert "192.168.1.4" not in text, f"a {where} names Plex's address: {text[:400]}"
+    # the stages read everything that holds the token: the channel the user made, its filler
+    # list, the Plex servers, the programmes the door built
+    for want in ("/maktaba/channel/9 -> 200", "/maktaba/filler/mine -> 200", "/maktaba/plex-servers -> 200"):
+        assert any(x.startswith("dizquetv ") and want in x for x in seen.targets), f"no answer for {want}"
+    assert seen.settings, "no job was handed its settings"
+    # dizqueTV holds the token: it was there to leak
+    assert TOKEN in json.dumps(b_srv.fake.shows) and DZ_TOKEN in json.dumps(b_srv.fake.channels)

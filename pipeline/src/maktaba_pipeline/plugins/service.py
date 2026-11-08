@@ -33,6 +33,7 @@ __all__ = [
     "bind",
     "bound",
     "dizquetv_client",
+    "holds_secret",
     "plex_client",
     "plugin_settings",
 ]
@@ -153,6 +154,11 @@ def _secret_fields() -> dict[str, frozenset[str]]:
         ext.manifest.name: frozenset(f.key for f in ext.manifest.settings if f.secret)
         for ext in discover()
     }
+
+
+def holds_secret(name: str) -> bool:
+    """Whether the extension ``name`` keeps a secret setting (Plex's token; dizqueTV none)."""
+    return bool(_secret_fields().get(name))
 
 
 def plugin_settings(
