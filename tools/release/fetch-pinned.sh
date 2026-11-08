@@ -10,9 +10,9 @@
 # download is tried up to 5 times, 10, 20, 40 then 80 s apart (FETCH_PINNED_DELAYS
 # overrides the waits, for the tests): a 5xx, a 408 or 429, a reset, a refused connection
 # or a timeout is tried again; any other 4xx stops at once (the pin is wrong, not the
-# host). A github.com release download also has the REST API's route to the same asset,
-# tried after each failed try (see api_asset_url). A download whose SHA-256 is not the
-# pinned one fails the job, as it always did.
+# host). A github.com release download goes by the REST API's route to the same asset
+# first, the github.com URL second, in each try (see api_asset_url). A download whose
+# SHA-256 is not the pinned one fails the job, as it always did, whichever route gave it.
 # Every failure ends in an `::error::` that names the URL.
 #
 # GitHub's release downloads answered 504 for minutes at a time (2026-11-08): curl's
@@ -60,10 +60,13 @@ if [ -f "$dst" ]; then
 fi
 
 # A github.com release download (/OWNER/REPO/releases/download/TAG/FILE) has a second route
-# to the same asset: the REST API's asset endpoint. When github.com's redirect answered 504
-# for minutes (2026-11-08) the API served the file at once. It is tried after each failed
-# try of the URL itself, with $GITHUB_TOKEN when the job passes one; the SHA-256 decides
-# either way. FETCH_PINNED_GITHUB and FETCH_PINNED_API point both at a test server.
+# to the same asset: the REST API's asset endpoint (the release by its tag, the asset by its
+# name, then the asset with Accept: application/octet-stream). github.com's front door
+# answered 504 to the first request for minutes (2026-11-08) while the API served the file
+# at once, so the API's route goes first and the URL itself second, in every try, with
+# $GITHUB_TOKEN when the job passes one (never printed); the SHA-256 decides either way.
+# pins.env keeps the github.com URL: owner, repo, tag and name come from it.
+# FETCH_PINNED_GITHUB and FETCH_PINNED_API point both at a test server.
 gh_base="${FETCH_PINNED_GITHUB:-https://github.com}"
 api_base="${FETCH_PINNED_API:-https://api.github.com}"
 api_url="" api_looked=""
@@ -119,8 +122,19 @@ keep() {
 read -r -a delays <<<"${FETCH_PINNED_DELAYS:-10 20 40 80}"
 attempts=$((${#delays[@]} + 1))
 part="$dst.part"
+auth=()
+[ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
 for ((i = 1; i <= attempts; i++)); do
-    log "$name: downloading $url (attempt $i of $attempts)"
+    api_why=""
+    api_asset_url
+    if [ -n "$api_url" ]; then
+        log "$name: downloading by the GitHub API, $api_url (attempt $i of $attempts)"
+        get "$api_url" -H 'Accept: application/octet-stream' ${auth[@]+"${auth[@]}"} && keep "$api_url"
+        if [ "$rc" -eq 0 ]; then api_why="API route HTTP $code"; else api_why="API route curl exit $rc"; fi
+        log "$name: $api_why; trying $url"
+    else
+        log "$name: downloading $url (attempt $i of $attempts)"
+    fi
     get "$url" && keep "$url"
     if [ "$rc" -eq 0 ]; then
         case "$code" in
@@ -134,15 +148,7 @@ for ((i = 1; i <= attempts; i++)); do
         esac
         why="curl exit $rc${code:+ (HTTP $code)}"
     fi
-    api_asset_url
-    alt="$api_url"
-    if [ -n "$alt" ]; then
-        log "$name: $why; trying the API's route to the same asset, $alt"
-        auth=()
-        [ -z "${GITHUB_TOKEN:-}" ] || auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
-        get "$alt" -H 'Accept: application/octet-stream' ${auth[@]+"${auth[@]}"} && keep "$alt"
-        if [ "$rc" -eq 0 ]; then why="$why; API route HTTP $code"; else why="$why; API route curl exit $rc"; fi
-    fi
+    why="${api_why:+$api_why; }$why"
     if [ "$i" -lt "$attempts" ]; then
         d="${delays[$((i - 1))]}"
         log "$name: $why, again in $d s"

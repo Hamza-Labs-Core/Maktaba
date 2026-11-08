@@ -212,6 +212,8 @@ jobs:
       - name: Build the Windows app with the payload, and check it
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
+          # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
+          GITHUB_TOKEN: ${{ github.token }}
           WIN_APP_REQUIRE_PGVECTOR: "1"
         run: make win-app
 

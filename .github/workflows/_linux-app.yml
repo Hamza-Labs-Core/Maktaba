@@ -153,11 +153,64 @@ jobs:
             bash tools/release/linux-app/test_full_package.sh
           fi
 
+      # tauri's AppImage bundler downloads AppRun and linuxdeploy from GitHub releases with no
+      # retry and no checksum (a 504 failed this job): the two tauri-cli 2.12.3 names
+      # (appimage/linuxdeploy.rs: apprun-old, linuxdeploy-07333c6), pinned here by the
+      # SHA-256 GitHub lists for each asset, cached, fetched by tools/release/fetch-pinned.sh
+      # and put in tauri's tools folder (~/.cache/tauri) under its names, so it downloads
+      # neither. Its optional appimage plugin (a `continuous` build, unpinnable) falls back to
+      # linuxdeploy's own when its download fails. A tauri naming others downloads its own.
+      - id: tauri-tools-pin
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          case "$ARCH" in
+            x86_64) apprun=f30140a43a0a59e46db21bdefdf749b9e9f2c6946e92afabbacf98b8ae73fb4f
+                    linuxdeploy=36a2d7e274d12e1050d0e9ecfe11d339ed54720b2bec464c286d53f8b07f5c62 ;;
+            aarch64) apprun=072f17c0895a85c490282fe5395c5007e5fc75da727e553b3b8fb680feb11578
+                     linuxdeploy=556ab80baa98e600aa80f0dcedfb70bca0e1ce7e9f147fb345be3fcc3e91b2b1 ;;
+            *) echo "::error::no tauri tool pins for $ARCH"; exit 1 ;;
+          esac
+          {
+            echo "apprun=$apprun"
+            echo "linuxdeploy=$linuxdeploy"
+            echo "key=pinned-linux-tauri-tools-$ARCH-apprun-old-${apprun:0:16}-linuxdeploy-07333c6-${linuxdeploy:0:16}"
+          } >>"$GITHUB_OUTPUT"
+      - id: tauri-tools-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/ci-pinned/tauri-tools
+          key: ${{ steps.tauri-tools-pin.outputs.key }}
+      - name: tauri's AppImage tools, retried
+        env:
+          ARCH: ${{ matrix.arch }}
+          APPRUN_SHA256: ${{ steps.tauri-tools-pin.outputs.apprun }}
+          LINUXDEPLOY_SHA256: ${{ steps.tauri-tools-pin.outputs.linuxdeploy }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          r=https://github.com/tauri-apps/binary-releases/releases/download d=build/ci-pinned/tauri-tools
+          tools="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
+          mkdir -p "$tools"
+          a="$(tools/release/fetch-pinned.sh "$r/apprun-old/AppRun-$ARCH" "$APPRUN_SHA256" "$d/AppRun-$ARCH")"
+          l="$(tools/release/fetch-pinned.sh "$r/linuxdeploy-07333c6/linuxdeploy-$ARCH.AppImage" "$LINUXDEPLOY_SHA256" "$d/linuxdeploy-$ARCH.AppImage")"
+          install -m 755 "$a" "$tools/AppRun-$ARCH"
+          install -m 755 "$l" "$tools/linuxdeploy-07333c6-$ARCH.AppImage"
+          ls -l "$tools"
+      - name: Save tauri's AppImage tools
+        if: steps.tauri-tools-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: build/ci-pinned/tauri-tools
+          key: ${{ steps.tauri-tools-pin.outputs.key }}
+
       # On failure the last lines go into an annotation: readable on the run's
       # page without signing in (the job log is not).
       - name: Build the app with the payload, and check its bundles
         env:
           VERSION: v0.0.0-ci.${{ github.run_number }}
+          # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
           if ! make linux-app 2>&1 | tee "$RUNNER_TEMP/linux-app.log"; then

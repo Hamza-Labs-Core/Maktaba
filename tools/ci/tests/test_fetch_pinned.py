@@ -36,7 +36,10 @@ class _Server:
         self.replies: list[int | str] = []
         self.requests = 0
         self.api: list[str] = []
+        self.asset_replies: list[int] = []
+        self.auth: list[str] = []
         self.release = True
+        self.asset_name = "cpython-3.12.15+20261003.tar.gz"
         server = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -63,13 +66,15 @@ class _Server:
             def _api(self) -> None:
                 if self.path == "/repos/o/r/releases/tags/t" and server.release:
                     host = f"http://127.0.0.1:{server.httpd.server_address[1]}"
-                    asset = {"name": "cpython-3.12.15+20261003.tar.gz", "url": f"{host}/repos/o/r/releases/assets/7"}
+                    asset = {"name": server.asset_name, "url": f"{host}/repos/o/r/releases/assets/7"}
                     body = json.dumps({"assets": [{"name": "other", "url": "x"}, asset]}).encode()
                     status = 200
                 elif (
                     self.path == "/repos/o/r/releases/assets/7" and self.headers["Accept"] == "application/octet-stream"
                 ):
-                    status, body = 200, BODY
+                    server.auth.append(self.headers.get("Authorization", ""))
+                    status = server.asset_replies.pop(0) if server.asset_replies else 200
+                    body = BODY if status == 200 else b"Gateway Time-out"
                 else:
                     status, body = 404, b"{}"
                 self.send_response(status)
@@ -93,8 +98,8 @@ def server() -> Iterator[_Server]:
 
 
 def _run(*args: str, **extra: str) -> subprocess.CompletedProcess[str]:
-    env = {**os.environ, "FETCH_PINNED_DELAYS": "0 0 0 0", "RUNNER_OS": "Windows", **extra}
-    env.pop("GITHUB_TOKEN", None)
+    env = {k: v for k, v in os.environ.items() if k not in ("GITHUB_TOKEN", "GH_TOKEN")}
+    env.update({"FETCH_PINNED_DELAYS": "0 0 0 0", "RUNNER_OS": "Windows", **extra})
     return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True, env=env, timeout=60)
 
 
@@ -203,44 +208,72 @@ def _github(server: _Server) -> tuple[str, dict[str, str]]:
     return url, {"FETCH_PINNED_GITHUB": base, "FETCH_PINNED_API": base}
 
 
-def test_a_github_release_504_falls_back_to_the_api_route(server: _Server, tmp_path: Path) -> None:
-    server.replies = [504] * 10
+def test_a_github_release_goes_by_the_api_first_with_the_token(server: _Server, tmp_path: Path) -> None:
+    server.replies = [504] * 10  # github.com's front door is down: it is not asked at all
     url, env = _github(server)
     dst = tmp_path / "cpython.tar.gz"
+    r = _run(url, SHA, str(dst), GITHUB_TOKEN="tok-not-printed", **env)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert server.requests == 0
+    assert server.api == ["/repos/o/r/releases/tags/t", "/repos/o/r/releases/assets/7"]
+    assert server.auth == ["Bearer tok-not-printed"]
+    assert dst.read_bytes() == BODY
+    assert "downloading by the GitHub API" in r.stderr
+    assert "tok-not-printed" not in r.stdout + r.stderr
+
+
+def test_the_github_url_is_the_fallback_in_the_same_try(server: _Server, tmp_path: Path) -> None:
+    server.asset_replies = [504]
+    url, env = _github(server)
+    dst = tmp_path / "f"
     r = _run(url, SHA, str(dst), **env)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert server.requests == 1, "the API route answers in the first attempt"
-    assert server.api == ["/repos/o/r/releases/tags/t", "/repos/o/r/releases/assets/7"]
+    assert server.requests == 1
+    assert "API route HTTP 504; trying" in r.stderr
+    assert "attempt 2" not in r.stderr
     assert dst.read_bytes() == BODY
-    assert "trying the API's route to the same asset" in r.stderr
 
 
-def test_the_api_route_is_looked_up_once_and_retried_with_the_url(server: _Server, tmp_path: Path) -> None:
+def test_both_routes_down_retries_and_looks_the_asset_up_once(server: _Server, tmp_path: Path) -> None:
     server.replies = [504] * 10
-    server.release = False  # the release lookup answers 404 (it is retried, as a failed lookup)
+    server.asset_replies = [504] * 10
     url, env = _github(server)
     r = _run(url, SHA, str(tmp_path / "f"), **env)
     assert r.returncode != 0
     assert server.requests == 5
-    assert all(p == "/repos/o/r/releases/tags/t" for p in server.api)
-    assert "not downloaded after 5 attempts" in r.stderr
+    assert server.api.count("/repos/o/r/releases/tags/t") == 1
+    assert server.api.count("/repos/o/r/releases/assets/7") == 5
+    assert "not downloaded after 5 attempts (last: API route HTTP 504; HTTP 504)" in r.stderr
 
 
-def test_a_github_release_404_does_not_ask_the_api(server: _Server, tmp_path: Path) -> None:
+def test_a_failed_release_lookup_is_retried_and_the_url_tried(server: _Server, tmp_path: Path) -> None:
+    server.replies = [504] * 10
+    server.release = False  # the release lookup answers 404
+    url, env = _github(server)
+    r = _run(url, SHA, str(tmp_path / "f"), **env)
+    assert r.returncode != 0
+    assert server.requests == 5
+    assert all(p == "/repos/o/r/releases/tags/t" for p in server.api) and len(server.api) == 5
+
+
+def test_an_asset_the_release_lacks_and_a_404_stop_at_once(server: _Server, tmp_path: Path) -> None:
+    server.asset_name = "another-file.tar.gz"
     server.replies = [404]
     url, env = _github(server)
     r = _run(url, SHA, str(tmp_path / "f"), **env)
     assert r.returncode != 0
-    assert server.api == []
+    assert server.requests == 1
+    assert "has no asset cpython-3.12.15+20261003.tar.gz" in r.stderr
+    assert "answered HTTP 404" in r.stderr
 
 
 def test_the_api_route_bytes_are_checked_too(server: _Server, tmp_path: Path) -> None:
-    server.replies = [504]
     url, env = _github(server)
     other = hashlib.sha256(b"x").hexdigest()
     dst = tmp_path / "f"
     r = _run(url, other, str(dst), **env)
     assert r.returncode != 0
+    assert server.requests == 0
     assert f"the pin says {other}" in r.stderr
     assert not dst.exists()
 

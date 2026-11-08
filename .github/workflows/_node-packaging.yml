@@ -617,14 +617,19 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       # the Python the Windows app ships: one pin, the payload's (it cannot drift from it)
+      # fetched by the payload's own fetch (tools/release/fetch-pinned.sh: by the GitHub API
+      # first, github.com second, retried with backoff, checked against the pin)
       - name: The app's python-build-standalone (pins.env)
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           # shellcheck source=/dev/null
           . tools/release/win-app/pins.env
           [ -n "${PYTHON_URL:-}" ] && [ -n "${PYTHON_SHA256:-}" ] || { echo "::error::pins.env has no PYTHON_URL / PYTHON_SHA256"; exit 1; }
-          { echo "PBS_URL=$PYTHON_URL"; echo "PBS_SHA256=$PYTHON_SHA256"; } >> "$GITHUB_ENV"
+          tgz="$(tools/release/fetch-pinned.sh "$PYTHON_URL" "$PYTHON_SHA256" build/ci-pinned/python.tar.gz)"
+          { echo "PBS_URL=$PYTHON_URL"; echo "PBS_SHA256=$PYTHON_SHA256"; echo "PBS_TGZ=$(cygpath -w "$PWD/$tgz")"; } >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v6.2.0
         with:
@@ -688,9 +693,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()  # the bootstrap writes UTF-8
           $server = Join-Path $env:RUNNER_TEMP 'Maktaba\server'
-          $tgz = Join-Path $env:RUNNER_TEMP 'python.tar.gz'
-          curl.exe --fail --location --silent --show-error --retry 3 --output $tgz $env:PBS_URL
-          if ($LASTEXITCODE -ne 0) { throw "could not download $env:PBS_URL" }
+          $tgz = $env:PBS_TGZ
           $sha = (Get-FileHash -LiteralPath $tgz -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($sha -ne $env:PBS_SHA256) { throw "python-build-standalone: SHA-256 $sha, pinned $env:PBS_SHA256" }
           New-Item -ItemType Directory -Force -Path $server | Out-Null
