@@ -353,7 +353,8 @@ def test_the_job_line_names_what_the_broker_answered(capsys: pytest.CaptureFixtu
     from maktaba_plugin_runner.server import job_line
 
     job_line("light", "thumb_small", 5, "ok", 0.02, {"stat": 2, "stat_missing": 1, "open": 1})
-    job_line("light", "thumb_small", 6, "ok", 0.02, {})
+    job_line("light", "thumb_small", 6, "ok", 0.02, {}, ["C:\\x\\a.jpg"])
     first, second = (json.loads(x) for x in capsys.readouterr().err.splitlines())
     assert first["broker"] == {"stat": 2, "stat_missing": 1, "open": 1}
-    assert "broker" not in second
+    assert "broker" not in second and "missing" not in first
+    assert second["missing"] == ["C:\\x\\a.jpg"]

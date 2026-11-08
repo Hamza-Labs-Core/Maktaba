@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import base64
 import builtins
+import contextlib
 import errno
 import io
 import json
@@ -51,7 +52,15 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
-__all__ = ["PIPE_ENV", "ROOTS_ENV", "Broker", "install", "install_from_env", "take_counts"]
+__all__ = [
+    "PIPE_ENV",
+    "ROOTS_ENV",
+    "Broker",
+    "install",
+    "install_from_env",
+    "take_counts",
+    "take_missing",
+]
 
 PIPE_ENV = "MAKTABA_RUNNER_FILES_PIPE"
 ROOTS_ENV = "MAKTABA_RUNNER_FILES_ROOTS"
@@ -135,6 +144,8 @@ class _Shim:
         #: answer, ``<op>_missing`` for a file not there, ``<op>_refused`` for a refusal,
         #: ``unrouted_refused`` for a call on a share path the shim does not route
         self.counts: dict[str, int] = {}
+        #: the first paths a look-up found missing since :func:`take_missing` (at most 3)
+        self.missing: list[str] = []
         self._own = threading.local()
 
     def under(self, path: object) -> str | None:
@@ -183,6 +194,7 @@ class _Shim:
             code = int(out.get("errno") or errno.EACCES)
             if code == errno.ENOENT:
                 self.count(op + "_missing")
+                self.note_missing(str(req.get("path")))
                 raise FileNotFoundError(code, str(out["error"]), req.get("path"))
             self.count(op + "_refused")
             raise PermissionError(code, str(out["error"]), req.get("path"))
@@ -262,8 +274,16 @@ class _Shim:
         except PermissionError:
             raise
         except (OSError, ValueError):
+            self.count("plain_missing")
+            self.note_missing(path)
             return False
+        self.count("plain")
         return look(st)
+
+    def note_missing(self, path: Any) -> None:
+        if len(self.missing) < 3:
+            with contextlib.suppress(TypeError, ValueError):
+                self.missing.append(os.fsdecode(path))
 
     def exists_(self, path: Any) -> bool:
         if self._route(path) is None:
@@ -595,6 +615,16 @@ def take_counts() -> dict[str, int]:
         return {}
     shim = _installed[0]
     out, shim.counts = shim.counts, {}
+    return out
+
+
+def take_missing() -> list[str]:
+    """The first paths a look-up found missing since the last call (at most 3), emptied:
+    the runner's job line names them, so a stage that found nothing says where it looked."""
+    if not _installed:
+        return []
+    shim = _installed[0]
+    out, shim.missing = shim.missing, []
     return out
 
 

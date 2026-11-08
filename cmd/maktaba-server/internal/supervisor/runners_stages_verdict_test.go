@@ -68,6 +68,8 @@ type runnerJobLine struct {
 	// Broker: what the launcher's broker answered for the job (winfiles.take_counts:
 	// "stat", "open", "stat_missing", "open_refused", "unrouted_refused", ...)
 	Broker map[string]int `json:"broker"`
+	// Missing: the first paths the job's look-ups found missing (winfiles.take_missing)
+	Missing []string `json:"missing"`
 }
 
 // runnerJobLines are the job lines of a runner's log (its spool: the launcher's lines and
@@ -205,7 +207,7 @@ func brokeredProblems(r stageReport, runnerLog string) []string {
 		}
 		var p []string
 		if l.Broker["stat"] < 1 || l.Broker["open"] < 1 {
-			p = append(p, fmt.Sprintf("the share was not read through the broker: its answers %v (want a stat and an open)", l.Broker))
+			p = append(p, fmt.Sprintf("the share was not read through the broker: its answers %v (want a stat and an open); looked for and missing: %q", l.Broker, l.Missing))
 		}
 		for k, n := range l.Broker {
 			if strings.HasSuffix(k, "_refused") {

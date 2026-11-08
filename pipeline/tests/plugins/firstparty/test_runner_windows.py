@@ -571,8 +571,11 @@ def test_the_broker_counts_are_taken_once_per_job(monkeypatch: pytest.MonkeyPatc
     shim = winfiles._Shim(lambda req: {"error": "gone", "errno": 2}, [SHARE], lambda h, _f: h)
     monkeypatch.setattr(winfiles, "_installed", [shim])
     assert not shim.isfile_(SHARE + "\\a\\ep1.webp")
-    assert winfiles.take_counts() == {"stat_missing": 1}
+    assert not shim.isfile_("C:\\nowhere\\ep1.jpg")
+    assert winfiles.take_counts() == {"stat_missing": 1, "plain_missing": 1}
     assert winfiles.take_counts() == {}
+    assert winfiles.take_missing() == [SHARE + "\\a\\ep1.webp", "C:\\nowhere\\ep1.jpg"]
+    assert winfiles.take_missing() == []
 
 
 def test_the_broker_pipe_carries_one_line_each_way() -> None:
