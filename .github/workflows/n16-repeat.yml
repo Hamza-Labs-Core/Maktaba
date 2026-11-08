@@ -6,7 +6,7 @@ name: n16-repeat
 on:
   push:
     branches: [claude/n16-cpu-measure]
-    paths: ['.github/workflows/n16-repeat.yml']
+    paths: ['.github/workflows/n16-repeat.yml', 'plugins/sdk/python/maktaba_plugin_sdk/parity.py']
 permissions:
   contents: read
 jobs:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        measure: [old, new]
+        measure: [new]
         shard: [1, 2, 3, 4, 5, 6]
     services:
       postgres:
