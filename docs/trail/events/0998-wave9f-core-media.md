@@ -17,9 +17,9 @@ session: 848393e1-ea22-4a25-a90f-b930df232381
 - A move this big conflicts with every wave merged meanwhile (registry, graph, import_mediaintel, pyproject lists, guide, roles). Resolve by dropping both sides' moved entries, then rebuild the generated files (`bundle.py --write`, `roles.py sql`) instead of merging them by hand.
 - Run the full Go suites alone. A real-ffmpeg timing test (`TestTwoStationsAligned_RealFFmpeg`) fails when pytest shares the machine, and passes alone.
 
-## Keep / stop
-- Keep: re-check main's newest migration just before the push and again before the merge (the watcher's slot guard), and take the next slot then, not when the branch starts.
-- Keep: run first-party tests as their own pytest run (`pytest ../plugins/first-party`). Passing them alongside `tests` changes the config pytest reads, which drops `faulthandler_timeout` and fails the conftest guard.
+## Keep doing
+- Re-check main's newest migration just before the push and again before the merge (the watcher's slot guard), and take the next slot then, not when the branch starts.
+- Run first-party tests as their own pytest run (`pytest ../plugins/first-party`). Passing them alongside `tests` changes the config pytest reads, which drops `faulthandler_timeout` and fails the conftest guard.
 
 ## Open
 - The legacy handlers are removed one release after wave 9, in their own pull request.
