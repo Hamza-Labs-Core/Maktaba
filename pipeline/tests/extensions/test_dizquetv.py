@@ -534,3 +534,24 @@ def test_plex_server_name_is_the_one_at_the_configured_plex_url() -> None:
     one = [{"name": "only", "uri": "http://x"}]
     assert Listed(one).plex_server_name("http://elsewhere") == "only"
     assert Listed([]).plex_server_name("http://plex:32400") is None
+
+
+def test_through_the_door_a_programme_is_its_rating_key_alone() -> None:
+    """issue #827: the door reads every playable field from Plex itself, so the plugin's
+    record of a programme is the item's rating key, nothing it could pair wrongly with it;
+    an item the stage cannot play is still left out here (the door refuses one too)."""
+    from maktaba_pipeline.integrations.dizquetv import DoorDizqueTV
+    from maktaba_pipeline.plugins.service import ServiceTransport
+
+    meta = {
+        "ratingKey": 101,
+        "key": "/library/metadata/101",
+        "type": "episode",
+        "title": "x",
+        "duration": 1_500_000,
+        "Media": [{"Part": [{"key": "/library/parts/101/1/file.mp4", "file": "/v/e.mp4"}]}],
+    }
+    dz = DoorDizqueTV(ServiceTransport("dizquetv"))
+    assert dz.programme(meta, "PlexServer", None) == {"ratingKey": "101"}
+    assert dz.programme({**meta, "type": "track"}, "PlexServer", None) is None
+    assert dz.programme({**meta, "duration": 0}, "PlexServer", None) is None

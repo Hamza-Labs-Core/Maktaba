@@ -106,23 +106,3 @@ async def test_off_the_allow_list_is_plexs_forbidden_other_refusals_are_errors()
 def test_unbound_the_client_is_the_workers_own() -> None:
     c = service.plex_client({"url": "http://192.168.1.4:32400", "token": "SECRET"})
     assert c.uri.startswith("http://192.168.1.4") and c.token == "SECRET"
-
-
-def test_through_the_door_a_programme_is_its_rating_key_alone() -> None:
-    """issue #827: the door reads every playable field from Plex itself, so the plugin's
-    record of a programme is the item's rating key, nothing it could pair wrongly with it;
-    an item the stage cannot play is still left out here (the door refuses one too)."""
-    from maktaba_pipeline.integrations.dizquetv import DoorDizqueTV
-
-    meta = {
-        "ratingKey": 101,
-        "key": "/library/metadata/101",
-        "type": "episode",
-        "title": "x",
-        "duration": 1_500_000,
-        "Media": [{"Part": [{"key": "/library/parts/101/1/file.mp4", "file": "/v/e.mp4"}]}],
-    }
-    dz = DoorDizqueTV(service.ServiceTransport("dizquetv"))
-    assert dz.programme(meta, "PlexServer", None) == {"ratingKey": "101"}
-    assert dz.programme({**meta, "type": "track"}, "PlexServer", None) is None
-    assert dz.programme({**meta, "duration": 0}, "PlexServer", None) is None
