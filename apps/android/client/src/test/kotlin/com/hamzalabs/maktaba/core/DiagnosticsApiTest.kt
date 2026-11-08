@@ -238,6 +238,61 @@ class DiagnosticsApiTest {
     }
 
     @Test
+    fun aMalformedOptionalValueSkipsOnlyItselfAndTheOverviewStillDecodes() {
+        val series = """"series":[{"name":"maktaba_component_down","labels":"id=core.api,machine=n07","points":[[1800000000,3]]}]"""
+        // through the client (its Json coerces nulls) and through a plain Json (it does not)
+        val decoders = listOf<(String) -> BoardDoc>(
+            { body -> answer = { json(200, body) }; runBlocking { client().board(Board.Overview, "24h") } },
+            { body -> Json { ignoreUnknownKeys = true }.decodeFromString<BoardDoc>(body) },
+        )
+        for (decode in decoders) {
+            // names: a number, null, an object, an array and a blank are skipped; the text names kept
+            val mixed = decode(
+                """{"board":"overview","range":"24h","omitted":1,$series,
+                  "machines":{"total":3,"shown":["n07","n08"],"all":["n07","n08","n09"],"offline":["n08"]},
+                  "names":{"n07":"Attic NAS","n08":42,"n09":null,"n10":{"x":1},"n11":["a"],"home":"Living room","n12":true}}""",
+            )
+            assertEquals(mapOf("n07" to "Attic NAS", "home" to "Living room"), mixed.names)
+            assertEquals("Attic NAS", mixed.nameOf("n07"))
+            assertEquals("n08", mixed.nameOf("n08"))
+            assertEquals("n10", mixed.nameOf("n10"))
+            assertEquals("n12", mixed.nameOf("n12"))
+            assertEquals("core.api · Attic NAS", mixed.series[0].legend(mixed.names))
+            assertEquals(1, mixed.omitted)
+            assertEquals(listOf("n08"), mixed.machines?.offline)
+            assertTrue(mixed.showsSomeMachines)
+            // names that is not an object, or absent: no names; the rest decodes
+            for (names in listOf(""","names":"n07"""", ""","names":["n07"]""", ""","names":7""", ""","names":null""", "")) {
+                val b = decode("""{"board":"overview","range":"24h",$series,"machines":{"total":2,"shown":["n07"],"all":["n07","n08"]}$names}""")
+                assertEquals(names, emptyMap<String, String>(), b.names)
+                assertEquals(names, "n07", b.nameOf("n07"))
+                assertEquals(names, 2, b.machines?.total)
+                assertEquals(names, listOf("maktaba_component_down"), b.panels.map { it.first })
+            }
+            // the machines' counts and lists: a bad value is its default, a bad entry skipped
+            val bad = decode(
+                """{"board":"overview","range":"24h","omitted":"two",$series,
+                  "machines":{"total":"37","shown":["n07",5,null,"n33"],"all":{"n07":1},"offline":"n07"}}""",
+            )
+            assertEquals(0, bad.omitted)
+            assertEquals(0, bad.machines?.total)
+            assertEquals(listOf("n07", "n33"), bad.machines?.shown)
+            assertEquals(emptyList<String>(), bad.machines?.all)
+            assertEquals(emptyList<String>(), bad.machines?.offline)
+            assertEquals("24h", bad.range)
+            assertEquals(1, bad.series.size)
+            // machines that is not an object: none, as from a home before them
+            for (m in listOf("\"n07\"", "[\"n07\"]", "3", "null")) {
+                val b = decode("""{"board":"overview",$series,"machines":$m,"omitted":2.5}""")
+                assertNull(m, b.machines)
+                assertEquals(0, b.omitted)
+                assertFalse(b.showsSomeMachines)
+                assertEquals(1, b.series.size)
+            }
+        }
+    }
+
+    @Test
     fun theInboxReadsAReportsTimelineAndChangesIt() = runBlocking {
         answer = { r ->
             when (r.url.encodedPath) {
