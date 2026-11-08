@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **Release crash symbols reach Maktaba Cloud with one secret (Epic 53 story 53.16).** Each
+  tag's TestFlight build uploads the symbol tables of its apps' dSYMs (`maktaba-symbols`), and
+  the cloud deploy writes the same `MAKTABA_SYMBOLS_TOKEN` repository secret to the api nodes,
+  so forwarded Apple crash reports read as functions, files and lines in the operator console.
+  Without the secret nothing is uploaded and the release stays green; a failed upload warns and
+  keeps the tables as the run's artifact (`maktaba-symbols upload` also takes them).
 - **The service door reads each dizqueTV programme's item from Plex (`tv.maktaba.dizquetv`).**
   The plugin now names each programme by its Plex rating key only. The door reads the item
   from Plex with the home's token and takes the file, media part and duration from Plex's

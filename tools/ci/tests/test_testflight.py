@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import struct
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -198,3 +199,84 @@ def test_the_mac_app_icon_has_every_mac_size() -> None:
         assert _png_size(folder / filename) == (pixels, pixels), filename
     # the iPhone and iPad keep their single-size icon
     assert any(i["idiom"] == "universal" and i.get("platform") == "ios" for i in images)
+
+
+# Crash symbols (Epic 53 story 53.16): each leg uploads its archive's symbol tables with the
+# MAKTABA_SYMBOLS_TOKEN secret, after its TestFlight upload. With no secret it logs one line and
+# runs nothing else; with one, a failed upload warns and keeps the tables, never failing the leg.
+SYMBOL_STEPS = ["Symbols token", "Go modules", "Upload crash symbols", "Keep the symbol tables"]
+
+
+def _step_index(name: str) -> int:
+    return next(i for i, s in enumerate(UPLOAD["steps"]) if s.get("name") == name)
+
+
+def test_symbols_upload_after_testflight() -> None:
+    names = [s.get("name") for s in UPLOAD["steps"]]
+    for name in SYMBOL_STEPS:
+        assert name in names, name
+    assert _step_index("Sign and upload to TestFlight") < _step_index("Symbols token")
+    assert _step_index("Keep the symbol tables") < _step_index("Remove the API key")
+
+
+def test_no_token_is_one_line_and_nothing_else() -> None:
+    gate = STEPS["Symbols token"]
+    assert gate["env"]["MAKTABA_SYMBOLS_TOKEN"] == "${{ secrets.MAKTABA_SYMBOLS_TOKEN }}"
+    assert "set -e" not in gate["run"]
+    assert 'echo "set=false"' in gate["run"] and "no MAKTABA_SYMBOLS_TOKEN secret is set" in gate["run"]
+    # every step after the gate that does work runs only with the token
+    start = _step_index("Symbols token")
+    for s in UPLOAD["steps"][start + 1 : _step_index("Remove the API key")]:
+        cond = str(s.get("if", ""))
+        assert "steps.symbols.outputs.set == 'true'" in cond or "steps.symbols_upload.outputs.kept" in cond, s
+
+
+def test_a_failed_upload_warns_and_keeps_the_tables() -> None:
+    run = STEPS["Upload crash symbols"]["run"]
+    assert "set -e" not in run.replace("set -uo", "")
+    assert "app.xcarchive/dSYMs/*.dSYM" in run
+    assert 'upload -version "$TAG"' in run
+    # every exit is 0: nothing the symbol service does fails a release
+    assert "exit 1" not in run
+    assert "::warning::" in run and 'echo "kept=true"' in run
+    keep = STEPS["Keep the symbol tables"]
+    assert keep["uses"].startswith("actions/upload-artifact@")
+    assert keep["with"]["path"].endswith("/symbols/*.symbols")
+    assert STEPS["Upload crash symbols"]["env"]["TAG"] == "${{ steps.version.outputs.tag }}"
+    assert 'echo "tag=$tag"' in STEPS["Versions"]["run"]
+
+
+def _bash_ok(script: str, env: dict[str, str]) -> str:
+    out = subprocess.run(["bash", "-c", script], env={"PATH": "/usr/bin:/bin", **env},
+                         capture_output=True, text=True, check=False)
+    assert out.returncode == 0, out.stderr
+    return out.stdout
+
+
+def test_the_gate_runs_without_and_with_a_token(tmp_path: Path) -> None:
+    gate = STEPS["Symbols token"]["run"]
+    for token, want in (("", "set=false"), ("tok", "set=true")):
+        out = tmp_path / "out"
+        out.write_text("")
+        printed = _bash_ok(gate, {"MAKTABA_SYMBOLS_TOKEN": token, "GITHUB_OUTPUT": str(out), "SCHEME": "Maktaba TV"})
+        assert out.read_text().strip() == want
+        assert (printed.count("\n") == 1) == (token == ""), printed
+
+
+# The cloud's end: relay.yml's Phase 1 deploy hands deploy.sh the same secret, which writes
+# the file the api reads (MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE, cloud/cmd/maktaba-cloud/logs.go).
+def test_the_deploy_provisions_the_cloud_token() -> None:
+    relay = yaml.safe_load((ROOT / ".github/workflows/relay.yml").read_text(encoding="utf-8"))
+    ha = next(s for j in relay["jobs"].values() for s in j.get("steps", [])
+              if s.get("name") == "Deploy (the Phase 1 pair)")
+    assert ha["env"]["MAKTABA_SYMBOLS_TOKEN"] == "${{ secrets.MAKTABA_SYMBOLS_TOKEN }}"
+    deploy = (ROOT / "deploy/cloud-ha/deploy.sh").read_text(encoding="utf-8")
+    assert 'if [ -n "${MAKTABA_SYMBOLS_TOKEN:-}" ]; then' in deploy
+    assert "t=/etc/maktaba/symbols.token" in deploy
+    assert "MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE=\\$t" in deploy
+    # the token goes over stdin, never on a command line
+    assert 'printf \'%s\' "${MAKTABA_SYMBOLS_TOKEN}" | on' in deploy
+    logs = (ROOT / "cloud/cmd/maktaba-cloud/logs.go").read_text(encoding="utf-8")
+    assert 'EnvSymbolsTokenFile = "MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE"' in logs
+    # step 6 (app-update restarts the leader's api) comes after the token is written
+    assert deploy.index("symbols.token") < deploy.index("app-update ${tag}")
