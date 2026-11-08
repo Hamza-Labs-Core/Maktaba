@@ -133,7 +133,7 @@ def main(argv: list[str] | None = None) -> int:
         # AppContainer may not create
         from . import winproc
 
-        winproc.install()
+        pass  # NEGATIVE CONTROL (reverted next commit): winproc.install() skipped
         # which interpreter the launcher started: a venv's runner is its base interpreter,
         # told its venv (story 54.23), never the venv's launcher with the runner its child
         log(
