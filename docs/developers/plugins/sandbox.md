@@ -90,6 +90,11 @@ the launcher from the bytes the runner sends. The bytes go straight to the share
 group writes in full is not brokered, and a tool (ffmpeg) cannot use the runner's handles.
 Those jobs run in the queue worker.
 
+A runner on Windows starts its tools through anonymous pipes. asyncio's own captured starts
+make named pipes, which an AppContainer may not create, so the runner replaces
+`asyncio.create_subprocess_exec` with one that keeps its API over `subprocess.Popen`. Each
+tool runs in a Job Object of its own, so a timeout's kill or a cancel ends what it started.
+
 The runner cannot listen there (an AppContainer may not create a named pipe, and Python on
 Windows has no unix sockets), so the supervisor serves its pipes: the worker reaches a runner
 through a pipe only the user Maktaba runs as can open, and the runner, from its AppContainer,
