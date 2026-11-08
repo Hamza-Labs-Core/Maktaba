@@ -15,7 +15,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
-from ...engine.graph import Edge, GraphBuilder, StageDef, StageResult, Subject
+from ...engine.graph import Edge, GraphBuilder, StageResult, Subject
 from ...engine.stages.registry import StageImpl
 from ...integrations.dizquetv import DizqueTV, tz_offset_minutes
 from ...integrations.plex import PlexClient
@@ -78,51 +78,16 @@ class DizqueTVExtension:
         return bool(settings.get("url"))
 
     def register(self, graph: GraphBuilder) -> None:
-        graph.add_stage(
-            StageDef(
-                name="dizquetv_show",
-                label="dizqueTV show",
-                subject_kinds=("season",),
-                pool="network_tv",
-                lane="seasons",
-                lane_order=5,
-                version=DZ_SHOW_VERSION,
-                external_write=True,
-                entry_for=("season",),
-            )
-        )
-        graph.add_stage(
-            StageDef(
-                name="dizquetv_channels",
-                label="dizqueTV channels",
-                subject_kinds=("catalog",),
-                pool="network_tv",
-                lane="channels",
-                lane_order=3,
-                version=DZ_CHANNELS_VERSION,
-                external_write=True,
-                entry_for=("catalog",),
-                # uploads the logo / watermark files from the home's folders
-                placement="home",
-            )
-        )
-        graph.add_stage(
-            StageDef(
-                name="dizquetv_audit",
-                label="Channel audit",
-                subject_kinds=("catalog",),
-                pool="audits",
-                lane="channels",
-                lane_order=4,
-                version=DZ_AUDIT_VERSION,
-                entry_for=("catalog",),
-                debounce_sec=60,
-                debounce_max_sec=900,
-                # writes its report into the home's reviews folder
-                placement="home",
-            )
-        )
-        graph.add_edge("dizquetv_channels", Edge("dizquetv_audit", "same"))
+        """The dizqueTV stages are tv.maktaba.dizquetv's (issue #827): each is its manifest's
+        ``[[stage]]`` (home-placed: the door reaches dizqueTV for the home's own plugin only;
+        the channels stage uploads the logos from the home's folders, the audit writes its
+        report into the home's reviews folder; ``dizquetv_channels -> dizquetv_audit`` is the
+        manifest's own edge); what leads into them from other stages is added here, as
+        before."""
+        from ...engine.graph import _fp
+
+        for stage in (_fp("dizquetv_show"), _fp("dizquetv_channels"), _fp("dizquetv_audit")):
+            graph.add_stage(stage)
         graph.add_edge("detect", Edge("dizquetv_show", "seasons_changed"))
         if graph.has_stage("plex_collection"):
             graph.add_edge("plex_collection", Edge("dizquetv_show", "same"))
@@ -131,6 +96,9 @@ class DizqueTVExtension:
         graph.add_edge("plan_channels", Edge("dizquetv_channels", "same"))
 
     def impls(self) -> Mapping[str, StageImpl]:
+        """In-process, each dizqueTV stage runs here with this extension's clients (direct,
+        programmes built with the Plex token); in tv.maktaba.dizquetv's runner its entry runs
+        the same functions through the service door (issue #827)."""
         return {
             "dizquetv_show": StageImpl(
                 run=self._run_show,

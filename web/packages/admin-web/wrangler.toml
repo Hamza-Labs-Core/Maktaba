@@ -1,0 +1,23 @@
+# admin.maktaba.tv: the operator console's bundle behind a Worker (Epic 50 story 50.32 §3). Build the bundle first
+# (`pnpm build:admin` in web/ writes web/dist-admin/); CI deploys it (story 50.34). No KV, no secrets.
+name = "maktaba-admin-web"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+# no *.workers.dev copy of the site exists
+workers_dev = false
+
+# A route on the proxied name, never a custom domain: admin.maktaba.tv's DNS record is the Cloudflare
+# Tunnel's CNAME (tools/cloudflare/tunnel.mjs writes it, story 50.31), so the Worker's
+# pass-through fetch(request) reaches the origin. A custom domain would own the hostname and
+# fight that record.
+routes = [
+  { pattern = "admin.maktaba.tv/*", zone_name = "maktaba.tv" },
+]
+
+[assets]
+directory = "../../dist-admin"
+binding = "ASSETS"
+# the Worker answers a missing path itself: the SPA's index.html for an app route
+not_found_handling = "none"
+# every request goes through the Worker, so every response carries the host's headers (§5)
+run_worker_first = true

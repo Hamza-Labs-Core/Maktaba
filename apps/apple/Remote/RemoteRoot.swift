@@ -10,6 +10,8 @@ struct RemoteRoot: View {
     @State private var model: RemoteModel
     @SceneStorage("remote.tab") private var tab = RemoteTab.attention
     @State private var pending = PendingSignInsWatcher()
+    /// The recovery screen over the tabs, from the status strip's Details (Epic 53 story 53.04).
+    @State private var recoveryOpen = false
     @Environment(\.scenePhase) private var scenePhase
 
     init(session: AppSession, user: User, client: APIClient) {
@@ -50,12 +52,36 @@ struct RemoteRoot: View {
         }
         // what is down on the home, at the top (Epic 53 story 53.06)
         .homeStatusStrip(client: model.client, home: model.client.home, admin: user.isAdmin)
+        // its Details for the home restarting, its database or safe mode: the recovery screen
+        // here, not the web page (outside the strip, so the strip reads it)
+        .environment(\.statusDetails, StatusDetailsAction { [open = $recoveryOpen] path in
+            guard path == "/recovery" else { return false }
+            open.wrappedValue = true
+            return true
+        })
+        .sheet(isPresented: $recoveryOpen) {
+            NavigationStack {
+                RecoveryView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { recoveryOpen = false }.accessibilityIdentifier("recovery.close")
+                        }
+                    }
+            }
+            .environment(model)
+        }
         // crash reports to the home: asked once, off until the admin says yes (53.14);
         // Report a problem from the Home tab and error screens (53.15)
         .crashReports(session: session)
         .reportsProblems(session: session)
         .environment(model)
         .task { await model.poll() }
+        // an admin's recovery pass, while the API answers: the recovery screen signs in with
+        // it when the API is down (53.04)
+        .task {
+            guard user.isAdmin else { return }
+            await model.client.refreshRecoveryPass()
+        }
         // asked every 12 s while the app is in front only
         .task(id: scenePhase == .active) {
             guard scenePhase == .active else { return }

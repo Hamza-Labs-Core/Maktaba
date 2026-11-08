@@ -21,7 +21,7 @@ from maktaba_pipeline.classify.series_detector import DetectorConfig
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import loads
-from maktaba_pipeline.engine.stages.tag import library_tags
+from maktaba_pipeline.engine.stages._tag import library_tags
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.tools.import_mediaintel import run_import
 from tests.engine.factory import make_video

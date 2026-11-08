@@ -59,6 +59,58 @@ func TestRecoveryPassRoles(t *testing.T) {
 	if d := time.Unix(claims.Exp, 0).Sub(time.Unix(claims.Iat, 0)); d != RecoveryPassTTL {
 		t.Fatalf("lasts %v, want 7 days", d)
 	}
+	// the web's answer carries no pass (its scripts never see it)
+	var web map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &web)
+	if _, ok := web["pass"]; ok || web["expires_at"] == nil {
+		t.Fatalf("web body: %s", rec.Body.String())
+	}
+}
+
+// A native app (the Remotes) gets the pass in the body too, to send as a bearer to the
+// recovery console; a viewer's native app still gets 403 and no pass.
+func TestRecoveryPassForANativeApp(t *testing.T) {
+	h := &Handler{Keys: testKeys(t)}
+	call := func(p *principal.Principal) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/recovery-pass", nil)
+		req = req.WithContext(principal.WithPrincipal(req.Context(), p))
+		rec := httptest.NewRecorder()
+		h.RecoveryPass(rec, req)
+		return rec
+	}
+	if rec := call(&principal.Principal{UserID: "v", IsAdmin: false, Source: principal.SourceJWT}); rec.Code != http.StatusForbidden ||
+		strings.Contains(rec.Body.String(), `"pass":`) {
+		t.Fatalf("viewer: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := call(&principal.Principal{UserID: "a1", IsAdmin: true, Source: principal.SourceJWT})
+	var body struct {
+		Pass      string `json:"pass"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil || body.ExpiresAt == "" {
+		t.Fatalf("admin: %d %s", rec.Code, rec.Body.String())
+	}
+	claims, err := jwt.Verify(h.Keys, body.Pass, RecoveryAudience)
+	if err != nil || claims.Sub != "a1" || !claims.IsAdmin {
+		t.Fatalf("pass: %+v %v", claims, err)
+	}
+}
+
+// The pass reaches the body only for a request signed in with a bearer access token: a
+// web session (the cookie) gets the cookie alone even when it sends the native client's
+// header or an Authorization header, so a script on the web page never reads the pass.
+func TestRecoveryPassBodyFollowsTheSignIn(t *testing.T) {
+	h := &Handler{Keys: testKeys(t)}
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/recovery-pass", nil)
+	req.Header.Set(HeaderClient, "apple.remote/0.3.99")
+	req.Header.Set("Authorization", "Bearer forged")
+	req = req.WithContext(principal.WithPrincipal(req.Context(),
+		&principal.Principal{UserID: "a1", IsAdmin: true, Source: principal.SourceCookie}))
+	rec := httptest.NewRecorder()
+	h.RecoveryPass(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), `"pass":`) {
+		t.Fatalf("a cookie session: %d %s", rec.Code, rec.Body.String())
+	}
 }
 
 // Demotion, deletion and sign-out everywhere write the user to the revocation file, one

@@ -55,9 +55,12 @@ type FirstParty struct {
 	Version string
 	Digest  string
 	// Manifest is the normalised manifest (defaults filled).
-	Manifest   map[string]any
-	Trusted    Trusted
-	Stages     []string
+	Manifest map[string]any
+	Trusted  Trusted
+	Stages   []string
+	// ModelRules maps a stage to the rules section whose model server and model it asks
+	// (its manifest's model_rules, story 54.31 §2); stages without one are absent.
+	ModelRules map[string]string
 	Strings    map[string]map[string]string
 	Statements []statements.Statement
 }
@@ -192,7 +195,15 @@ func parseBundle(raw []byte) ([]*FirstParty, string, error) {
 		fp.Version, _ = m["version"].(string)
 		fp.Trusted = trustedOf(m)
 		for _, s := range m["stage"].([]any) {
-			fp.Stages = append(fp.Stages, s.(map[string]any)["name"].(string))
+			st := s.(map[string]any)
+			name := st["name"].(string)
+			fp.Stages = append(fp.Stages, name)
+			if mr, _ := st["model_rules"].(string); mr != "" {
+				if fp.ModelRules == nil {
+					fp.ModelRules = map[string]string{}
+				}
+				fp.ModelRules[name] = mr
+			}
 		}
 		out = append(out, fp)
 	}

@@ -1,0 +1,589 @@
+# ruff: noqa: E501  (long SQL string literals read better unwrapped)
+"""What ``tag`` shares with the pipeline (mediaintel's import): a season's and a library's
+keyword tags, the stored tags and their writes, and the stage's input fingerprint. The stage
+itself is ``tv.maktaba.classify``'s (Epic 54 wave 4, story 54.31).
+
+``tag``: topic / format / audience / occasion tags (plan 06-11 section 3.2).
+
+Runs :mod:`maktaba_pipeline.classify.topic_tags` over what ``detect`` stored; ported from the
+prototype's ``classify_tags._tag_folder``:
+
+* subject **season** -> ``season_tags``: tagged from the series name, its playlists' titles, its
+  episodes' titles and descriptions, the channel and folder name, the median duration and the
+  exact air dates, with the channel's pasted footer (``boilerplate_phrases``) ignored;
+* subject **library** -> ``video_topic_tags``: every video that is in no season (unassigned or a
+  short) is tagged on its own so it can be used as themed filler.
+
+Both also read what was said: the opening (``transcript_max_minutes``) of each video's active
+transcript, sampled down to ``transcript_max_episodes`` for a big season, is a separate evidence
+source (see :func:`~maktaba_pipeline.classify.topic_tags.tag_series`). The input fingerprint holds
+the active transcript ids, so a new transcript re-tags its season (or the library's loose videos),
+and the tagging rules as set (settings ``rules.tag``).
+
+Both are change-set stages (notes N1a): ``compute_changes`` diffs the new tags against the stored
+ones, ``apply_changes`` writes them, and the change set lands in the job log.
+
+Also as in the prototype's ``tag`` step: a season's **episodes** are tagged by their own title
+and by their chapter playlist («كتاب الصيام» of a hadith course), stored in ``episode_tags`` (a
+Palestine episode of a talk show, a tajweed lesson inside a lecture series: themed channels
+take such episodes one by one); a playlist holding several shows names a collection, not a
+chapter of each show, so it is no evidence; the channel's branding is stripped from the
+playlist titles; and what counts as a short follows the detection settings (``rules.detect``).
+
+The model's and the book's corrections (``check_tags``, ``books``, ``check_clips``) are
+written over these tags. A run whose keyword tags equal the last run's therefore writes
+nothing, so those corrections stay; a run that does change them lets the corrections be
+applied again from their cached answers (the output hash is the keyword tags').
+"""
+
+from __future__ import annotations
+
+import posixpath
+from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import date
+from typing import Any
+from uuid import UUID
+
+from ...classify.series_detector import DetectorConfig, VideoFacts
+from ...classify.series_detector import is_short as detector_is_short
+from ...classify.topic_tags import (
+    TAGGER_VERSION,
+    Tag,
+    TaggerConfig,
+    boilerplate_phrases,
+    branding,
+    chapter_tags,
+    sample_evenly,
+    tag_series,
+    tag_video,
+)
+from ...rules import read as read_rules
+from ...settings import to_json
+from ..changes import ChangeSet
+from ..graph import Subject
+from ..hashing import canonical_hash
+from ..sql import dumps, is_pg, loads, uid
+from ._common import load_season, season_episode_ids
+
+__all__ = [
+    "diff_tags",
+    "drop_departed_episode_tags",
+    "input_fingerprint",
+    "library_tags",
+    "season_tags",
+    "stored_episode_tags",
+    "write_episode_tags",
+]
+
+_EPS = 0.005
+#: ids per ``IN (...)`` query
+_CHUNK = 500
+#: what an episode keeps of its own tags: what it is about, for whom, for when
+_EPISODE_NAMESPACES = ("topic:", "audience:", "occasion:")
+
+#: a list of ids in one parameter, as each dialect takes it: an array on Postgres, a JSON list
+#: on SQLite (fixed texts whatever the list's length: a first-party plugin runs named
+#: statements)
+_PG_UUIDS_1 = "= ANY($1::uuid[])"
+_PG_TEXTS_1 = "= ANY($1::text[])"
+_PG_UUIDS_2 = "= ANY($2::uuid[])"
+_LITE_IN_1 = "IN (SELECT value FROM json_each($1))"
+_LITE_IN_2 = "IN (SELECT value FROM json_each($2))"
+
+
+def _ids_arg(db: Any, ids: Sequence[Any]) -> Any:
+    """The list as the dialect's one parameter."""
+    values = [str(i) for i in ids]
+    return values if is_pg(db) else dumps(values)
+
+
+def diff_tags(
+    kind: str,
+    old: Mapping[str, float],
+    new: Mapping[str, float],
+    *,
+    meta: Mapping[str, Any] | None = None,
+) -> ChangeSet:
+    added = tuple({"tag": t, "score": round(s, 3)} for t, s in sorted(new.items()) if t not in old)
+    removed = tuple(
+        {"tag": t, "score": round(s, 3)} for t, s in sorted(old.items()) if t not in new
+    )
+    changed = tuple(
+        {"tag": t, "from": round(old[t], 3), "to": round(new[t], 3)}
+        for t in sorted(new)
+        if t in old and abs(old[t] - new[t]) > _EPS
+    )
+    return ChangeSet(kind, added, removed, changed, (), meta or {})
+
+
+def _library_noise_key(path: str) -> str:
+    return posixpath.dirname(path.replace("\\", "/"))
+
+
+async def _folder_descriptions(db: Any, library_id: UUID, folder: str) -> list[str]:
+    rows = await db.fetch(
+        "SELECT yv.description AS d FROM videos v"
+        " JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube'"
+        " JOIN youtube_videos yv ON yv.youtube_id = m.external_id"
+        " WHERE v.library_id = $1 AND v.deleted_at IS NULL AND v.path LIKE $2"
+        " AND yv.description IS NOT NULL",
+        uid(library_id),
+        folder.rstrip("/") + "/%",
+    )
+    return [str(r["d"]) for r in rows]
+
+
+async def _channel_names(db: Any, library_id: UUID, folder: str) -> list[str]:
+    rows = await db.fetch(
+        "SELECT title FROM youtube_channels WHERE library_id = $1 AND title IS NOT NULL"
+        " ORDER BY channel_id",
+        uid(library_id),
+    )
+    names = [str(r["title"]) for r in rows][:3]
+    base = posixpath.basename(folder)
+    if base and base not in names:
+        names.append(base)
+    return names
+
+
+# ------------------------------------------------------------------------- transcripts
+
+_BATCH = 500
+
+
+def _first_per_video(rows: Iterable[Any]) -> dict[str, str]:
+    """video id -> its active transcript id; with several audio tracks, the first track's
+    (rows come ordered by video, track, id)."""
+    out: dict[str, str] = {}
+    for r in rows:
+        out.setdefault(str(r["video_id"]), str(r["id"]))
+    return out
+
+
+async def _season_transcript_ids(db: Any, video_ids: Sequence[UUID]) -> dict[str, str]:
+    if not video_ids:
+        return {}
+    inn = _PG_UUIDS_1 if is_pg(db) else _LITE_IN_1
+    rows = await db.fetch(
+        "SELECT id, video_id FROM transcripts WHERE is_active AND video_id "
+        + inn
+        + " ORDER BY video_id, audio_track_id, id",
+        _ids_arg(db, video_ids),
+    )
+    return _first_per_video(rows)
+
+
+_LOOSE_TRANSCRIPTS_SQL = """
+SELECT t.id AS id, t.video_id AS video_id
+  FROM transcripts t
+  JOIN videos v ON v.id = t.video_id
+ WHERE v.library_id = $1 AND v.deleted_at IS NULL AND t.is_active
+   AND NOT EXISTS (SELECT 1 FROM series_episodes e WHERE e.video_id = v.id)
+ ORDER BY t.video_id, t.audio_track_id, t.id
+"""
+
+
+async def _loose_transcript_ids(db: Any, library_id: UUID) -> dict[str, str]:
+    return _first_per_video(await db.fetch(_LOOSE_TRANSCRIPTS_SQL, uid(library_id)))
+
+
+async def _transcript_texts(
+    db: Any, transcript_ids: Sequence[str], cfg: TaggerConfig
+) -> dict[str, str]:
+    """transcript id -> the text of its segments starting in the first
+    ``transcript_max_minutes``, at most ``transcript_max_chars`` long."""
+    parts: dict[str, list[str]] = defaultdict(list)
+    size: dict[str, int] = defaultdict(int)
+    limit_s = cfg.transcript_max_minutes * 60.0
+    for at in range(0, len(transcript_ids), _BATCH):
+        batch = list(transcript_ids[at : at + _BATCH])
+        inn = _PG_UUIDS_2 if is_pg(db) else _LITE_IN_2
+        for r in await db.fetch(
+            "SELECT transcript_id AS tid, text FROM transcript_segments"
+            " WHERE start_sec < $1 AND transcript_id " + inn + " ORDER BY transcript_id, seq",
+            limit_s,
+            _ids_arg(db, batch),
+        ):
+            tid = str(r["tid"])
+            if size[tid] >= cfg.transcript_max_chars:
+                continue
+            text = str(r["text"] or "").strip()
+            if text:
+                parts[tid].append(text)
+                size[tid] += len(text) + 1
+    return {tid: " ".join(ps)[: cfg.transcript_max_chars] for tid, ps in parts.items()}
+
+
+# ------------------------------------------------------------------------- season
+
+
+@dataclass(slots=True)
+class SeasonTagging:
+    """What the keyword tagger made of one season."""
+
+    tags: list[Tag]
+    scores: dict[str, float]
+    #: episode (video id) -> its own tags, for the episodes that have any
+    episodes: dict[str, dict[str, float]]
+    library_id: UUID | None = None
+
+    def digest(self) -> str:
+        """The output hash: the keyword tags of the season and of its episodes."""
+        return canonical_hash(
+            {
+                "season": sorted([t, round(s, 3)] for t, s in self.scores.items()),
+                "episodes": sorted(
+                    [v, sorted([t, round(s, 3)] for t, s in tags.items())]
+                    for v, tags in self.episodes.items()
+                ),
+            }
+        )
+
+
+async def _shows_in(db: Any, library_id: UUID, playlists: Iterable[str]) -> dict[str, int]:
+    """How many shows (series) of the library each playlist is on. A playlist holding several
+    shows («رمضان 1437», «غزة») names a collection, not each show in it."""
+    out: dict[str, int] = {}
+    for pl in sorted(set(playlists)):
+        rows = await db.fetch(
+            "SELECT DISTINCT series_id FROM series_seasons WHERE library_id = $1"
+            " AND retired_at IS NULL AND CAST(metadata AS TEXT) LIKE $2",
+            uid(library_id),
+            f'%"{pl}"%',
+        )
+        out[pl] = len(rows)
+    return out
+
+
+async def _playlist_titles(db: Any, playlist_ids: Sequence[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for i in range(0, len(playlist_ids), _CHUNK):
+        part = list(playlist_ids[i : i + _CHUNK])
+        inn = _PG_TEXTS_1 if is_pg(db) else _LITE_IN_1
+        for r in await db.fetch(
+            "SELECT playlist_id, title FROM youtube_playlists WHERE playlist_id " + inn,
+            _ids_arg(db, part),
+        ):
+            out[str(r["playlist_id"])] = str(r["title"])
+    return out
+
+
+async def _playlists_of(db: Any, youtube_ids: Sequence[str]) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = defaultdict(list)
+    for i in range(0, len(youtube_ids), _CHUNK):
+        part = list(youtube_ids[i : i + _CHUNK])
+        inn = _PG_TEXTS_1 if is_pg(db) else _LITE_IN_1
+        for r in await db.fetch(
+            "SELECT playlist_id, youtube_id FROM youtube_playlist_items WHERE youtube_id "
+            + inn
+            + " ORDER BY playlist_id",
+            _ids_arg(db, part),
+        ):
+            out[str(r["youtube_id"])].append(str(r["playlist_id"]))
+    return out
+
+
+async def _youtube_ids(db: Any, video_ids: Sequence[UUID]) -> list[str]:
+    """The YouTube ids of these videos (the ones that have one)."""
+    out: list[str] = []
+    for i in range(0, len(video_ids), _CHUNK):
+        part = [str(v) for v in video_ids[i : i + _CHUNK]]
+        inn = _PG_UUIDS_1 if is_pg(db) else _LITE_IN_1
+        for r in await db.fetch(
+            "SELECT external_id FROM media_metadata_enrichment"
+            " WHERE provider = 'youtube' AND video_id " + inn + " ORDER BY external_id",
+            _ids_arg(db, part),
+        ):
+            out.append(str(r["external_id"]))
+    return out
+
+
+@dataclass(slots=True)
+class _Playlists:
+    """The playlist evidence of a season: its own playlists, each episode's playlists (by
+    YouTube id), how many shows each is on and their titles."""
+
+    own: list[str]
+    by_episode: dict[str, list[str]]
+    shows: dict[str, int]
+    titles: dict[str, str]
+
+    def fingerprint(self) -> list[Any]:
+        every = sorted({*self.own, *self.titles, *self.shows})
+        return [
+            sorted(self.own),
+            sorted([yid, sorted(pls)] for yid, pls in self.by_episode.items()),
+            [[p, self.titles.get(p), self.shows.get(p, 0)] for p in every],
+        ]
+
+
+async def _season_playlists(
+    db: Any, library_id: UUID, metadata: Mapping[str, Any], youtube_ids: Sequence[str]
+) -> _Playlists:
+    own = [str(p) for p in metadata.get("playlists") or []]
+    by_episode = await _playlists_of(db, list(youtube_ids))
+    every = sorted({*own, *(p for pls in by_episode.values() for p in pls)})
+    return _Playlists(
+        own,
+        dict(by_episode),
+        await _shows_in(db, library_id, every),
+        await _playlist_titles(db, every),
+    )
+
+
+def _episode_tags(
+    eps: Sequence[Any],
+    channel: Sequence[str],
+    noise: frozenset[str],
+    playlists: Mapping[str, Sequence[str]],
+    titles: Mapping[str, str],
+    shows: Mapping[str, int],
+    config: TaggerConfig | None = None,
+) -> dict[str, dict[str, float]]:
+    """Each episode's tags from its own title, plus its show's chapter playlists: an episode
+    in «كتاب الصيام» of a hadith course is about that chapter, whatever its own title says
+    («المجلس 14»)."""
+    strip = branding(channel)
+    chapter: dict[str, dict[str, float]] = {}  # playlist -> its chapter tags
+    out: dict[str, dict[str, float]] = {}
+    for e in eps:
+        own: dict[str, float] = {}
+        for t in tag_video(
+            str(e["title"]),
+            str(e["description"] or ""),
+            None if e["dur"] is None else float(e["dur"]),
+            channel=channel,
+            noise=noise,
+            config=config,
+        ):
+            if t.tag.startswith(_EPISODE_NAMESPACES) and t.tag != "audience:general":
+                own[t.tag] = float(t.score)
+        for pl in playlists.get(str(e["yid"] or ""), ()):
+            if shows.get(pl, 0) > 1 or pl not in titles:
+                continue  # a playlist holding several shows is a collection, not a chapter
+            if pl not in chapter:
+                chapter[pl] = chapter_tags(titles[pl], strip=strip)
+            for tag, sc in chapter[pl].items():
+                own[tag] = max(own.get(tag, 0.0), sc)
+        if own:
+            out[str(e["id"])] = own
+    return out
+
+
+async def season_tags(db: Any, season_id: UUID, cfg: TaggerConfig) -> SeasonTagging | None:
+    s = await load_season(db, season_id)
+    if s is None or s.retired or s.library_id is None:
+        return None
+    ids = await season_episode_ids(db, season_id)
+    if not ids:
+        return SeasonTagging([], {}, {})
+    by_video = await _season_transcript_ids(db, ids)
+    # in episode order, spread evenly over the season
+    chosen = sample_evenly(
+        [by_video[str(i)] for i in ids if str(i) in by_video], cfg.transcript_max_episodes
+    )
+    texts = await _transcript_texts(db, chosen, cfg)
+    inn = _PG_UUIDS_1 if is_pg(db) else _LITE_IN_1
+    rows = {
+        str(r["id"]): r
+        for r in await db.fetch(
+            "SELECT v.id AS id, v.path AS path, COALESCE(yv.title, v.title, v.filename) AS title,"
+            " yv.description AS description, COALESCE(v.duration_sec, yv.duration_s) AS dur,"
+            " yv.upload_date AS upload_date, yv.date_quality AS dq,"
+            " m.external_id AS yid FROM videos v"
+            " LEFT JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube'"
+            " LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id"
+            " WHERE v.id " + inn,
+            _ids_arg(db, ids),
+        )
+    }
+    eps = [rows[str(i)] for i in ids if str(i) in rows]
+    folder = _library_noise_key(str(eps[0]["path"])) if eps else ""
+    noise = boilerplate_phrases(await _folder_descriptions(db, s.library_id, folder))
+    channel = await _channel_names(db, s.library_id, folder)
+    pls = await _season_playlists(
+        db, s.library_id, s.metadata, [str(e["yid"]) for e in eps if e["yid"]]
+    )
+    own_pls, by_episode, shows, pl_titles = pls.own, pls.by_episode, pls.shows, pls.titles
+    dates = [
+        d if isinstance(d, date) else date.fromisoformat(str(d)[:10])
+        for e in eps
+        if e["dq"] == "exact" and (d := e["upload_date"]) is not None
+    ]
+    durs = sorted(float(e["dur"]) for e in eps if e["dur"])
+    median = s.median_duration_s or (durs[len(durs) // 2] if durs else None)
+    tags = tag_series(
+        s.name,
+        # only a show's own playlists are evidence of its topic
+        playlist_titles=[pl_titles[p] for p in own_pls if p in pl_titles and shows.get(p, 0) <= 1],
+        episode_titles=[str(e["title"]) for e in eps],
+        descriptions=[str(e["description"] or "") for e in eps],
+        channel=channel,
+        median_duration_s=median,
+        kind=s.kind,
+        air_dates=dates,
+        noise=noise,
+        transcripts=[texts[t] for t in chosen if t in texts],
+        config=cfg,
+    )
+    return SeasonTagging(
+        tags,
+        {t.tag: float(t.score) for t in tags},
+        _episode_tags(eps, channel, noise, by_episode, pl_titles, shows, cfg),
+        s.library_id,
+    )
+
+
+async def stored_episode_tags(db: Any, season_id: UUID) -> dict[str, dict[str, float]]:
+    out: dict[str, dict[str, float]] = defaultdict(dict)
+    for r in await db.fetch(
+        "SELECT t.video_id AS vid, t.tag AS tag, t.score AS score FROM episode_tags t"
+        " WHERE t.video_id IN (SELECT e.video_id FROM series_episodes e"
+        " JOIN series_seasons ss ON ss.series_id = e.series_id"
+        "  AND ss.season = COALESCE(e.season_override, e.season) WHERE ss.id = $1)",
+        uid(season_id),
+    ):
+        out[str(r["vid"])][str(r["tag"])] = round(float(r["score"]), 4)
+    return dict(out)
+
+
+async def write_episode_tags(
+    db: Any,
+    old: Mapping[str, Mapping[str, float]],
+    new: Mapping[str, Mapping[str, float]],
+) -> None:
+    for vid in sorted(set(old) | set(new)):
+        if old.get(vid) == new.get(vid):
+            continue
+        await db.execute("DELETE FROM episode_tags WHERE video_id = $1", vid)
+        for tag, score in (new.get(vid) or {}).items():
+            await db.execute(
+                "INSERT INTO episode_tags (video_id, tag, score) VALUES ($1,$2,$3)",
+                vid,
+                tag,
+                score,
+            )
+
+
+_DEPARTED_SQL = """
+DELETE FROM episode_tags WHERE video_id IN (
+  SELECT v.id FROM videos v
+   WHERE v.library_id = $1
+     AND NOT EXISTS (
+       SELECT 1 FROM series_episodes e
+         JOIN series_seasons ss ON ss.series_id = e.series_id
+          AND ss.season = COALESCE(e.season_override, e.season)
+        WHERE e.video_id = v.id AND ss.retired_at IS NULL))
+"""
+
+
+async def drop_departed_episode_tags(db: Any, library_id: UUID | None) -> None:
+    """Remove the episode tags of the library's videos that are an episode of no season
+    any more (they left theirs): a season only rewrites its own members' tags, so these
+    would stay. A video that moved to another season is that season's to rewrite."""
+    if library_id is not None:
+        await db.execute(_DEPARTED_SQL, uid(library_id))
+
+
+# ------------------------------------------------------------------------- library
+
+
+_LOOSE_SQL = """
+SELECT v.id AS id, v.path AS path, COALESCE(yv.title, v.title, v.filename) AS title,
+       yv.description AS description, COALESCE(v.duration_sec, yv.duration_s) AS dur,
+       yv.tab AS tab, v.metadata AS metadata
+  FROM videos v
+  LEFT JOIN media_metadata_enrichment m ON m.video_id = v.id AND m.provider = 'youtube'
+  LEFT JOIN youtube_videos yv ON yv.youtube_id = m.external_id
+ WHERE v.library_id = $1 AND v.deleted_at IS NULL
+   AND NOT EXISTS (SELECT 1 FROM series_episodes e WHERE e.video_id = v.id)
+ ORDER BY v.id
+"""
+
+
+def _is_short(row: Any, detect: DetectorConfig) -> bool:
+    meta = loads(row["metadata"]) or {}
+    w, h = meta.get("width"), meta.get("height")
+    facts = VideoFacts(
+        key=str(row["id"]),
+        title=str(row["title"]),
+        duration_s=None if row["dur"] is None else float(row["dur"]),
+        is_short=row["tab"] == "shorts" or bool(w and h and h > w),
+    )
+    return detector_is_short(facts, detect)
+
+
+def _ids_hash(by_video: Mapping[str, str]) -> str:
+    return canonical_hash(sorted(by_video.values()))
+
+
+async def input_fingerprint(db: Any, subject: Subject) -> str | None:
+    # the rules as set: a changed tagging setting tags again
+    rules = to_json((await read_rules(db, "tag"))[0])
+    if subject.kind == "season":
+        s = await load_season(db, subject.id)
+        if s is None:
+            return canonical_hash("gone")
+        ids = await season_episode_ids(db, subject.id)
+        by_video = await _season_transcript_ids(db, ids)
+        # the playlists are evidence too (chapter playlists tag episodes): a playlist sync
+        # that adds, drops or renames one tags the season again
+        pls = (
+            await _season_playlists(db, s.library_id, s.metadata, await _youtube_ids(db, ids))
+            if s.library_id is not None
+            else None
+        )
+        return canonical_hash(
+            {
+                "membership": s.membership_hash,
+                "retired": s.retired,
+                "v": TAGGER_VERSION,
+                "transcripts": _ids_hash(by_video),
+                "rules": rules,
+                "playlists": pls.fingerprint() if pls is not None else None,
+            }
+        )
+    rows = await db.fetch(_LOOSE_SQL, uid(subject.id))
+    return canonical_hash(
+        {
+            "loose": [[str(r["id"]), r["title"], r["dur"], r["tab"]] for r in rows],
+            # the detection settings decide what is a short
+            "detect": to_json((await read_rules(db, "detect"))[0]),
+            "v": TAGGER_VERSION,
+            "transcripts": _ids_hash(await _loose_transcript_ids(db, subject.id)),
+            "rules": rules,
+        }
+    )
+
+
+async def library_tags(
+    db: Any, library_id: UUID, detect: DetectorConfig, cfg: TaggerConfig | None = None
+) -> dict[str, dict[str, float]]:
+    """The keyword tags of every video of the library that is in no season, by video id
+    (``cfg``: the tagging rules as set, the built-in ones when not given)."""
+    cfg = cfg or TaggerConfig()
+    rows = await db.fetch(_LOOSE_SQL, uid(library_id))
+    by_video = await _loose_transcript_ids(db, library_id)
+    texts = await _transcript_texts(db, sorted(by_video.values()), cfg)
+    by_folder: dict[str, list[Any]] = defaultdict(list)
+    for r in rows:
+        by_folder[_library_noise_key(str(r["path"]))].append(r)
+    new: dict[str, dict[str, float]] = {}
+    for folder, grp in by_folder.items():
+        noise = boilerplate_phrases(str(r["description"] or "") for r in grp)
+        channel = await _channel_names(db, library_id, folder)
+        for r in grp:
+            tags = tag_video(
+                str(r["title"]),
+                str(r["description"] or ""),
+                None if r["dur"] is None else float(r["dur"]),
+                channel=channel,
+                is_short=_is_short(r, detect),
+                noise=noise,
+                transcript=texts.get(by_video.get(str(r["id"]), ""), ""),
+                config=cfg,
+            )
+            new[str(r["id"])] = {t.tag: float(t.score) for t in tags}
+    return new

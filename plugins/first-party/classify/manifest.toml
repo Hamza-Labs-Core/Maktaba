@@ -1,6 +1,8 @@
 # tv.maktaba.classify: Maktaba's classifiers as a first-party plugin (Epic 54, README §15.2).
-# Wave 1 (story 54.28) moves the stages that read the database and write it, with no file,
-# no model and no network; wave 4 (story 54.31) brings the rest of classify.
+# Wave 1 (story 54.28) moved the stages that read the database and write it, with no file,
+# no model and no network; wave 4 (story 54.31) brings the rest of classify: the model's
+# questions go through the plugin API's compute.generate (model_rules), the encyclopedia
+# lookup runs in the net group.
 schema     = 1
 id         = "tv.maktaba.classify"
 version    = "0.0.0-dev"
@@ -13,12 +15,24 @@ runtime    = "native-python"
 name    = "fp.classify.name"
 summary = "fp.classify.summary"
 
+[capabilities]
+# the model's questions (check_tags, check_clips) go through compute.generate (54.31 §2)
+required = ["compute.llm"]
+
 [trusted]
 runner    = "light"
 component = "classify"
-db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "series", "series_episodes", "series_seasons", "video_signals", "video_topic_tags", "videos", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
-db.write  = ["clip_group_items", "clip_groups", "promo_links", "season_style", "topic_collections", "topic_items"]
-settings  = ["groups", "detect"]
+db.read   = ["app_settings", "libraries", "media_metadata_enrichment", "processing_jobs", "transcript_segments", "transcripts", "video_signals", "videos", "youtube_channels", "youtube_playlist_items", "youtube_playlists", "youtube_videos"]
+db.write  = ["books", "clip_checks", "clip_group_items", "clip_groups", "episode_tags", "promo_links", "season_style", "season_tags", "series", "series_books", "series_episodes", "series_seasons", "tag_checks", "topic_collections", "topic_items", "video_topic_tags"]
+settings  = ["groups", "detect", "tag", "tagcheck", "books"]
+compute   = ["llm"]
+# review_pages: reads the small thumbnails, writes the library's page in the reports folder
+files.read  = ["data.thumbnails"]
+files.write = ["data.review"]
+# books: the encyclopedia (rules.books.wiki_api). Only the net group gets a socket (the
+# runner's sandbox), so this list is books' alone; the CI recording proxy fails a run that
+# reaches any other host (story 54.31 T03)
+net       = ["ar.wikipedia.org"]
 
 [[stage]]
 name         = "promo_links"
@@ -89,3 +103,115 @@ edges        = [{ to = "plan_channels", map = "catalog" }]
 entry        = "maktaba_fp_classify.stages.rate_style:IMPL"
 fingerprint  = { input = true, output = false }
 
+[[stage]]
+name         = "check_tags"
+subject      = "season"
+export       = "check-tags"
+version      = 1
+label        = "Check series tags"
+subject_kinds = ["season"]
+pool         = "lookup"
+lane         = "seasons"
+lane_order   = 3
+entry_for    = ["season"]
+edges        = [{ to = "books", map = "same" }, { to = "plan_channels", map = "catalog" }]
+# the model server defaults to localhost: the home's own (a node would ask another model,
+# or none) unless the settings name a shared one
+placement    = "home"
+model_rules  = "tagcheck"
+entry        = "maktaba_fp_classify.stages.check_tags:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "check_clips"
+subject      = "library"
+export       = "check-clips"
+version      = 2
+label        = "Check clip tags"
+subject_kinds = ["library"]
+pool         = "lookup"
+lane         = "seasons"
+lane_order   = 3
+entry_for    = ["library"]
+debounce_sec = 30
+debounce_max_sec = 300
+edges        = [{ to = "clip_groups", map = "same" }, { to = "plan_channels", map = "catalog" }]
+# the model server defaults to localhost: the home's own (a node would ask another model,
+# or none) unless the settings name a shared one
+placement    = "home"
+model_rules  = "tagcheck"
+entry        = "maktaba_fp_classify.stages.check_clips:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "review_pages"
+subject      = "library"
+export       = "review-pages"
+version      = 1
+label        = "Review pages"
+subject_kinds = ["library"]
+pool         = "reports"
+lane         = "seasons"
+lane_order   = 6
+entry_for    = ["library"]
+debounce_sec = 120
+debounce_max_sec = 900
+# the reports folder is the home's (the API serves it)
+placement    = "home"
+entry        = "maktaba_fp_classify.stages.review_pages:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "detect"
+subject      = "library"
+export       = "detect"
+version      = 3
+label        = "Place episodes"
+subject_kinds = ["library"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 1
+may_request  = ["fingerprint", "fp_gate"]
+entry_for    = ["library"]
+debounce_sec = 30
+debounce_max_sec = 300
+edges        = [{ to = "tag", map = "seasons_changed" }, { to = "rate_style", map = "seasons_changed" }, { to = "tag", map = "same" }, { to = "plan_channels", map = "catalog" }, { to = "review_pages", map = "same" }, { to = "topic_collections", map = "same" }, { to = "promo_links", map = "same" }, { to = "display_title", map = "same" }]
+entry        = "maktaba_fp_classify.stages.detect:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "tag"
+subject      = "season"
+export       = "tag"
+version      = 7
+label        = "Tag topics"
+subject_kinds = ["season", "library"]
+pool         = "cpu"
+lane         = "seasons"
+lane_order   = 2
+entry_for    = ["season"]
+# transcripts arrive one video at a time: a season's are tagged together
+debounce_sec = 300
+debounce_max_sec = 3600
+# a new run rewrites the tags, so the model's and the book's corrections are applied again
+# (from their cached answers) before a clip group or a channel reads them
+edges        = [{ to = "plan_channels", map = "catalog" }, { to = "check_tags", map = "same" }, { to = "check_clips", map = "library_of" }]
+entry        = "maktaba_fp_classify.stages.tag:IMPL"
+fingerprint  = { input = true, output = false }
+
+[[stage]]
+name         = "books"
+subject      = "season"
+export       = "books"
+version      = 1
+label        = "Books"
+subject_kinds = ["season"]
+pool         = "lookup"
+lane         = "seasons"
+lane_order   = 4
+entry_for    = ["season"]
+edges        = [{ to = "plan_channels", map = "catalog" }]
+# the one classify stage that reaches the internet (the encyclopedia)
+runner       = "net"
+entry        = "maktaba_fp_classify.stages.books:IMPL"
+fingerprint  = { input = true, output = false }
