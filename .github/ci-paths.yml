@@ -284,6 +284,35 @@ plugins:
   - 'cmd/maktaba-server/cmd_plugins_sandbox.go'
   - 'pipeline/src/maktaba_pipeline/plugins/**'
   - 'pipeline/src/maktaba_pipeline/engine/**'
+  # the pipeline code the first-party plugins import, which both sides of the parity suite
+  # run (the in-process handler is the plugin's own entry): one package each, as
+  # tools/ci/firstparty_imports.py derives them (test_ci_paths.py fails on one missing)
+  - 'pipeline/src/maktaba_pipeline/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/audio/**'
+  - 'pipeline/src/maktaba_pipeline/channels/**'
+  - 'pipeline/src/maktaba_pipeline/classify/**'
+  - 'pipeline/src/maktaba_pipeline/cluster/**'
+  - 'pipeline/src/maktaba_pipeline/db/**'
+  - 'pipeline/src/maktaba_pipeline/discovery/**'
+  - 'pipeline/src/maktaba_pipeline/extensions/**'
+  - 'pipeline/src/maktaba_pipeline/identity/**'
+  - 'pipeline/src/maktaba_pipeline/integrations/**'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/**'
+  - 'pipeline/src/maktaba_pipeline/log/**'
+  - 'pipeline/src/maktaba_pipeline/pipeline/**'
+  - 'pipeline/src/maktaba_pipeline/scanner/**'
+  - 'pipeline/src/maktaba_pipeline/schedule/**'
+  - 'pipeline/src/maktaba_pipeline/search/**'
+  - 'pipeline/src/maktaba_pipeline/sharepath/**'
+  - 'pipeline/src/maktaba_pipeline/stt/**'
+  - 'pipeline/src/maktaba_pipeline/text/**'
+  - 'pipeline/src/maktaba_pipeline/thumbnail/**'
+  - 'pipeline/src/maktaba_pipeline/transcript/**'
+  - 'pipeline/src/maktaba_pipeline/tvrelease/**'
+  - 'pipeline/src/maktaba_pipeline/word_review/**'
+  - 'pipeline/src/maktaba_pipeline/offline.py'
+  - 'pipeline/src/maktaba_pipeline/rules.py'
+  - 'pipeline/src/maktaba_pipeline/settings.py'
   - 'pipeline/tests/plugins/**'
   - 'pipeline/hatch_build.py'
   - 'api/internal/plugins/**'
@@ -292,7 +321,7 @@ plugins:
 
 # Epic 54 (story 54.23): Maktaba's own stages through the worker's plugin path into their
 # Windows runners, end to end (_runner-stages.yml): the runner, the worker's side of the
-# plugin path, the engine, the two stages and the tool helpers they run, the launcher, the
+# plugin path, the engine, the stages and the tool helpers they run, the launcher, the
 # supervisor's runners and pipes, and the plugin API's executor the stages' statements go to
 runner_stages:
   - *ci
@@ -305,11 +334,26 @@ runner_stages:
   - 'pipeline/src/maktaba_pipeline/thumbnail/**'
   - 'pipeline/src/maktaba_pipeline/audio/probe.py'
   - 'pipeline/src/maktaba_pipeline/binaries.py'
+  # the files the stages' entries import, with the package __init__ files the
+  # imports run (tools/ci/firstparty_imports.py; test_ci_paths.py fails on one missing)
+  - 'pipeline/src/maktaba_pipeline/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/db/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/db/jobs.py'
+  - 'pipeline/src/maktaba_pipeline/discovery/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/discovery/ytdlp_sidecars.py'
+  - 'pipeline/src/maktaba_pipeline/identity/__init__.py'
+  - 'pipeline/src/maktaba_pipeline/identity/on_disk.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/__init__.py'
   - 'pipeline/src/maktaba_pipeline/library_mgmt/convert.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/ledger.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/swap.py'
+  - 'pipeline/src/maktaba_pipeline/library_mgmt/trash.py'
   - 'pipeline/src/maktaba_pipeline/library_mgmt/verify.py'
   - 'pipeline/src/maktaba_pipeline/library_mgmt/unicode_open.py'
   - 'plugins/first-party/thumbnails/**'
   - 'plugins/first-party/convert/**'
+  - 'plugins/first-party/subtitles/**'
+  - 'plugins/first-party/dedup/**'
   - 'cmd/maktaba-server/internal/appcontainer/**'
   - 'cmd/maktaba-server/internal/supervisor/runners*'
   - 'cmd/maktaba-server/internal/supervisor/testdata/runner_stages_worker.py'
