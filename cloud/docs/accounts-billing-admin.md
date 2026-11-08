@@ -9,17 +9,22 @@ operator can do about it. The relay, server linking and TLS live elsewhere
 
 | Principal | Where it lives | What it can do |
 |---|---|---|
-| **Cloud account** (`users.role = 'user'`) | cloud `users` table | its own profile, sessions, billing, linked servers |
-| **Service admin** (`users.role = 'service_admin'`) | cloud `users` table | everything under `/v1/admin/*` |
+| **Cloud account** | cloud `users` table | its own profile, sessions, billing, linked servers; never an operator |
+| **Staff account** with `service_admin` | cloud `staff_accounts` table (Epic 50 story 50.33) | everything under `/v1/admin/*`, signed in on `admin.maktaba.tv` only |
 | **Home admin / viewer** | a home server's own database | nothing on the cloud — a home role is never a cloud role |
 
-A service admin is granted only from the operator CLI
-(`maktaba-cloud admin grant --email …`, see below); no HTTP endpoint can
-grant or revoke the role, and neither an email domain nor a home role
-confers it. Every `/v1/admin/*` route checks the role in the database on
-each request (so a revocation takes effect immediately) and answers a
-normal account `403 {"error":"admin_access_denied"}`; the denied attempt
-is written to the audit log.
+An operator is a **staff account**, not a cloud account: it owns no homes, has no plan, no
+OAuth identity and no email reset, and is created only from the operator CLI on the leader
+(`maktaba-cloud staff add`, see below); no HTTP endpoint creates staff or changes roles, and
+neither an email domain, a home role nor `users.role` confers anything (migration
+`00500012` reset every `users.role` to `user`). Every `/v1/admin/*` route checks, in order: the
+admin listener's host, the optional IP allow-list, a staff access token whose session is alive,
+a second factor in the token, the route's role read from the database on each request (so a
+revocation takes effect at once), and for a sensitive action an MFA check in the last 5
+minutes. A customer's token is `401 no_session` there (another key, another audience); a staff
+account without the role is `403 admin_access_denied`. Refusals of a presented credential and
+every request served (`admin.request`, with the route and status) are audit rows with
+`actor_kind = 'staff'`.
 
 ## Auth — `/v1/auth/*`
 
@@ -238,7 +243,7 @@ only account routes that listener serves.
 |---|---|---|
 | `GET /v1/admin/accounts?q=&status=&plan=&limit=&offset=` | — | `{accounts:[{id, email, display_name?, plan, status, role, created_at, last_login_at?, servers}], total}` |
 | `GET /v1/admin/accounts/{id}` | — | `{account, subscription, servers:[{id,name,slug,plan,version,online,last_seen_at}], usage:{month, used_bytes, limit_bytes}, sessions_active, abuse:[…], audit:[…]}` |
-| `POST /v1/admin/accounts/{id}/suspend` | `{reason}` | `204` — status `suspended`, sessions revoked; `400 reason_required`, `409 cannot_suspend_admin` (self or another service admin) |
+| `POST /v1/admin/accounts/{id}/suspend` | `{reason}` | `204` — status `suspended`, sessions revoked; `400 reason_required` |
 | `POST /v1/admin/accounts/{id}/unsuspend` | `{reason}` | `204` |
 | `POST /v1/admin/accounts/{id}/plan` | `{plan, reason}` | `204`; sets the plan by hand (subscription provider `manual`, mirrored onto the account and its servers, audited `admin.account.set_plan`, not counted as revenue); `422 bad_plan`, `409 provider_managed` when a payment provider is billing the plan |
 | `GET /v1/admin/fleet` | — | `{users_total, users_suspended, servers_total, servers_online, servers_stale, tunnels_live?}` |
@@ -255,15 +260,52 @@ writes an `audit_log` row (`actor`, `action`, `target`, `detail`, `ip`).
 The Epic 30 relay-analytics routes (`/v1/admin/metrics/*`,
 `/v1/admin/privacy/*`) sit behind the same role check.
 
-### Granting the role
+**Sensitive actions** need an MFA check in the last 5 minutes (`POST /v1/staff/reauth/totp`),
+else `401 reauth_required`: suspend and unsuspend, setting a plan by hand, block and unblock,
+revoking and unrevoking a license, deleting a user's data. The list is
+`staffauth.Sensitive`; a test fails on a state-changing admin route that is neither in it nor
+in `staffauth.NotSensitive` with a reason.
+
+### Staff accounts (story 50.33)
 
 ```sh
-maktaba-cloud admin grant  --email ops@example.com   # account must exist and be verified
-maktaba-cloud admin revoke --email ops@example.com
-maktaba-cloud admin list
+maktaba-cloud staff add       --email ops@example.com --role service_admin   # prints a one-time enrolment link (24 h)
+maktaba-cloud staff grant     --email … --role service_admin
+maktaba-cloud staff revoke    --email … --role service_admin
+maktaba-cloud staff disable   --email …    # ends every session at once (enable undoes it)
+maktaba-cloud staff reset-mfa --email …    # removes every factor; prints a new enrolment link
+maktaba-cloud staff unlock    --email …    # clears a lockout early
+maktaba-cloud staff list
 ```
 
-Each writes an audit row with actor `cli`.
+Each writes an audit row with `actor_kind = 'cli'`; a role change ends the account's sessions.
+`maktaba-cloud admin` is gone and prints a pointer to `staff`. The link opens
+`admin.maktaba.tv/enroll#<token>` (the token stays in the fragment): the person sets a password
+(14–256 characters, the breached-password check), adds a TOTP app and gets 10 one-use recovery
+codes. Until enrolment finishes the account can't sign in.
+
+### Staff sign-in — `/v1/staff/*` (the admin listener only)
+
+| Route | Body | Answer |
+|---|---|---|
+| `POST /v1/staff/login` | `{email, password, turnstile_token}` | `200 {mfa_token, methods}`; a wrong email, password or a disabled account: the same `401 invalid_credentials` after the same argon2id work; `403 mfa_required` (no factor); `423 account_locked` (`Retry-After`); `429 too_many_attempts` |
+| `POST /v1/staff/mfa/totp`, `/mfa/recovery` | `{mfa_token, code}` | the session; `401 mfa_failed`; `401 mfa_token_invalid` (5 minutes, the same client IP, 5 attempts) |
+| `POST /v1/staff/refresh` | — (cookie) | the session, the cookie rotated; `401 {no_session, reason: idle\|capped}`; a rotated cookie presented again ends every session of the account |
+| `POST /v1/staff/logout`, `/sessions/revoke-all` | — | `204` |
+| `GET /v1/staff/me`, `/sessions` | — | the account, its roles and factors; its live sessions |
+| `POST /v1/staff/reauth/totp` | `{code}` | a fresh MFA check: the session's sensitive actions open for 5 minutes |
+| `POST /v1/staff/enroll/start`, `/enroll/finish` | `{token}`, `{token, password, code}` | the TOTP secret and its `otpauth://` link; the 10 recovery codes, once |
+
+The session is `{access_token, expires_in, idle_ends_at, capped_at, staff}` plus the host-only,
+Strict `__Host-maktaba_staff` cookie. The access token lasts 10 minutes and is signed with
+`MAKTABA_CLOUD_STAFF_TOKEN_SECRET` (`aud = admin.maktaba.tv`); a session ends after 15 minutes
+without an admin request, and 8 hours after its sign-in whatever the activity. 5 failed steps
+(password or code) in 15 minutes lock the account for 30 and page the owner (`staff_lockout`);
+a recovery code's use pages too (`staff_recovery_code_used`). Sign-in, the codes and the
+re-check are limited to burst 5 then 1 per 12 s per IP. TOTP secrets are sealed with
+AES-256-GCM under `MAKTABA_CLOUD_STAFF_SECRET_KEY`. `[admin] ip_allowlist` (CIDRs, empty: off)
+refuses every other client IP on the admin listener with `403 ip_not_allowed`. Passkeys come in
+the story's second part.
 
 ## Mail
 
@@ -330,11 +372,10 @@ and the cloud web app.
   notify old one).
 - **Avatar upload** (25.5 `413 avatar_too_large`): only an https URL can be
   set.
-- **Admin step-up re-auth** (25.20 `acr` freshness) and **admin SSO**: the
-  console uses the normal session plus the role. Specced in Epic 50 stories
-  50.32–50.33: the console moves to `admin.maktaba.tv` with separate staff
-  accounts, mandatory MFA, short sessions and re-authentication for
-  sensitive actions.
+- **Staff passkeys** (50.33 part 2): staff sign in with a password and a TOTP
+  app (recovery codes behind it); WebAuthn passkeys for sign-in and the
+  re-check, and the console's passkey enrolment, are next. Admin step-up
+  re-auth, staff accounts, MFA and short sessions are done (50.33).
 - **Force-disconnect a server / tunnel revoke frames** (25.20, 25.5): owned
   by the relay work.
 - ~~**Server-scoped entitlements** and the home pulling them~~: done as

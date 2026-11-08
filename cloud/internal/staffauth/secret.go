@@ -18,6 +18,24 @@ import (
 // (story 50.33 §1): a copy of the database alone can't mint codes.
 type Box struct{ aead cipher.AEAD }
 
+// ParseKey reads MAKTABA_CLOUD_STAFF_SECRET_KEY: 32 bytes as 64 hex digits or as base64
+// (`openssl rand -hex 32` or `openssl rand -base64 32`).
+func ParseKey(s string) ([]byte, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, fmt.Errorf("staffauth: the secret key is not set")
+	}
+	if b, err := hex.DecodeString(s); err == nil && len(b) == 32 {
+		return b, nil
+	}
+	for _, enc := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding, base64.URLEncoding, base64.RawURLEncoding} {
+		if b, err := enc.DecodeString(s); err == nil && len(b) == 32 {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("staffauth: the secret key must be 32 bytes, as 64 hex digits or base64")
+}
+
 // NewBox takes the 32-byte key.
 func NewBox(key []byte) (*Box, error) {
 	if len(key) != 32 {

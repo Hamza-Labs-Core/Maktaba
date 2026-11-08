@@ -4,7 +4,7 @@
 
 ## When
 
-`staff_lockout`, `staff_recovery_code_used`, `staff_passkey_counter`.
+`staff_lockout` (5 failed sign-in steps in 15 minutes locked the account for 30), `staff_recovery_code_used` (a sign-in spent a recovery code); `staff_passkey_counter` comes with the console's passkeys.
 
 ## Check
 
@@ -13,8 +13,8 @@
 
 ## Do
 
-1. It was them: nothing more (a new recovery code if one was used).
-2. It wasn't: take the role away at once on the leader (`sudo -u maktaba maktaba-cloud admin revoke --email <email> --config /etc/maktaba/cloud.toml`; 50.33's staff accounts add `staff disable`), read what the account did in the audit, and rotate `MAKTABA_CLOUD_STAFF_TOKEN_SECRET` if a token may have leaked ([secrets-rotation.md](secrets-rotation.md)).
+1. It was them: nothing more. A lockout clears itself after 30 minutes, or at once with `maktaba-cloud staff unlock --email <email>`; after a recovery code, `staff reset-mfa` prints a new enrolment link with 10 fresh codes.
+2. It wasn't: disable the account at once on the leader, which ends every session (`sudo -u maktaba maktaba-cloud staff disable --email <email> --config /etc/maktaba/cloud.toml`), read what the account did in the audit, and rotate `MAKTABA_CLOUD_STAFF_TOKEN_SECRET` if a token may have leaked ([secrets-rotation.md](secrets-rotation.md)).
 
 ## Done when
 

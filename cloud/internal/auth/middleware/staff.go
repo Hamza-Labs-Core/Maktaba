@@ -47,8 +47,10 @@ func WithOperator(ctx context.Context, o Operator) context.Context {
 //  6. for a staffauth.Sensitive route, an MFA check in the last 5 minutes, else 401
 //     reauth_required;
 //
-// (7, CSRF, is the listener's AdminSameOrigin). Each refusal from 4 on is audited, and every
-// request it admits is audited as admin.request with its status once it is answered.
+// (7, CSRF, is the listener's AdminSameOrigin). Each refusal of a presented credential is
+// audited (a request with none at all is a plain 401: the console's own page loads before
+// sign-in), and every request it admits is audited as admin.request with its status once it
+// is answered.
 type StaffGate struct {
 	Staff  *stores.Staff
 	Signer *staffauth.Signer
@@ -132,11 +134,14 @@ func (g *StaffGate) admit(w http.ResponseWriter, r *http.Request) (Operator, sto
 	}
 	claims, err := g.Signer.Verify(raw, now)
 	if err != nil {
+		// a customer's token, an expired or a forged one: a credential that is no staff session
+		g.audit(r, Operator{}, audit.ActionAdminDenied, map[string]any{"method": r.Method, "path": r.URL.Path, "reason": "no_session"})
 		staffErr(w, http.StatusUnauthorized, "no_session", "")
 		return Operator{}, stores.StaffSession{}, false
 	}
 	sess, err := g.Staff.Session(ctx, claims.SID)
 	if errors.Is(err, stores.ErrStaffSessionEnd) || (err == nil && sess.StaffID != claims.Sub) {
+		g.audit(r, Operator{ID: claims.Sub}, audit.ActionAdminDenied, map[string]any{"method": r.Method, "path": r.URL.Path, "reason": "session_ended"})
 		staffErr(w, http.StatusUnauthorized, "no_session", "")
 		return Operator{}, stores.StaffSession{}, false
 	}
@@ -147,6 +152,7 @@ func (g *StaffGate) admit(w http.ResponseWriter, r *http.Request) (Operator, sto
 	}
 	a, err := g.Staff.ByID(ctx, claims.Sub)
 	if err != nil || !a.Active() {
+		g.audit(r, Operator{ID: claims.Sub}, audit.ActionAdminDenied, map[string]any{"method": r.Method, "path": r.URL.Path, "reason": "account_inactive"})
 		staffErr(w, http.StatusUnauthorized, "no_session", "")
 		return Operator{}, stores.StaffSession{}, false
 	}

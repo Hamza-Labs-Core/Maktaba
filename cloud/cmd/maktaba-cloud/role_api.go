@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
 	serversh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/servers"
+	staffh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/staff"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/homeassert"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/license"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
@@ -42,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/reports"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/staffauth"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/symbols"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/telemetry"
@@ -103,6 +106,11 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// The bot check on the auth pages (story 50.30 §4): on without its secret, the role
 	// refuses to start rather than sign people in unchecked.
 	tsGuard, err := turnstileGuard(cfg, o.Turnstile)
+	if err != nil {
+		return apiRouters{}, nil, err
+	}
+	// the console's staff keys (story 50.33): required with the admin listener on
+	staffSigner, staffBox, err := staffKeys(cfg)
 	if err != nil {
 		return apiRouters{}, nil, err
 	}
@@ -226,7 +234,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		appleFlow = oauth.NewAppleFlow(ac)
 	}
 
-	// The account routes, shared by both listeners until 50.33 (ConsoleSignIn).
+	// The account routes (the user listener only: the console signs in on /v1/staff/*).
 	authDeps := &authh.Deps{
 		Users:     users,
 		Sessions:  sess,
@@ -313,27 +321,26 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	// the relay's /metrics).
 	r.Get("/metrics", metricspkg.PrometheusHandler(pushMetrics, obs.WriteMetrics))
 
-	// The operator console's listener (story 50.32): every /v1/admin/* route, behind a signed-in
-	// user whose cloud role in the database is service_admin (50.33 replaces this with staff
-	// sign-in on /v1/staff/*). Nothing else is mounted here.
-	adminGate := middleware.RequireServiceAdmin(users, auditLog, logger)
+	// The operator console's listener (stories 50.32, 50.33): the staff sign-in on /v1/staff/*
+	// and every /v1/admin/* route, behind the IP allow-list (when set) and a staff session with
+	// its second factor whose account holds service_admin, read from the database on each
+	// request. A customer token is never a staff token: the keys and the audience differ.
+	staffStore := &stores.Staff{DB: pool.DB}
+	staffGate := &middleware.StaffGate{Staff: staffStore, Signer: staffSigner, Audit: auditLog, Logger: logger}
+	adminGate := staffGate.Require(stores.StaffRoleServiceAdmin)
 	live := metricsh.LiveFromStore(metricsStore, time.Now)
-	// Until 50.33's staff sign-in exists, the console signs in with the account routes it has
-	// always used, and only those (ConsoleSignIn), on its own host: the refresh cookie is
-	// host-only, so a console session is never a session on the user names, and the console
-	// listener's Origin rule covers these POSTs too. 50.33 replaces them with /v1/staff/*.
 	adminR.Group(func(g chi.Router) {
-		g.Use(authRateLimit(ratelimit.NewLimiter(30, 5), authh.RateLimitedPaths))
-		g.Use(blockedIPs(detector, logger))
-		g.Post("/v1/auth/login", authDeps.Login)
-		g.Post("/v1/auth/refresh", authDeps.Refresh)
-		g.Post("/v1/auth/logout", authDeps.Logout)
-	})
-	adminR.Group(func(g chi.Router) {
-		g.Use(middleware.RequireUser(signer, middleware.UserStatus(pool.DB)))
-		g.Get("/v1/account/me", accountDeps.Me)
-		// Service-admin console: every /v1/admin/* route checks the cloud
-		// role in the database (never an email domain or a home role).
+		g.Use(middleware.IPAllowList(cfg.Admin.IPAllowlist, auditLog, logger))
+		// §6: sign-in, the second factor and the re-check, burst 5 then 1 per 12 s per IP
+		g.Use(prefixRateLimit(ratelimit.NewLimiter(5, 1.0/12), staffh.RateLimitedPrefixes))
+		g.Use(authRateLimit(ratelimit.NewLimiter(30, 5), []string{"/v1/staff/refresh"}))
+		staffh.Mount(g, &staffh.Deps{
+			Staff: staffStore, Signer: staffSigner, Box: staffBox, Gate: staffGate,
+			Turnstile: staffTurnstile(cfg, tsGuard, o.Turnstile), Audit: auditLog, Logger: logger, Secure: true,
+		})
+
+		// Service-admin console: every /v1/admin/* route checks the staff role in the database
+		// (never a customer account, an email domain or a home role).
 		adminh.Mount(g, &adminh.Deps{
 			DB: pool.DB, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 			Logger: logger, Gate: adminGate, LiveTunnels: live, Licenses: licenses,
@@ -365,13 +372,6 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	return apiRouters{User: r, Admin: adminR}, stopMetrics, nil
 }
 
-// ConsoleSignIn are the account routes the console listener also serves until 50.33's staff
-// sign-in replaces them: sign in, refresh, sign out, and who is signed in.
-var ConsoleSignIn = map[string]bool{
-	"POST /v1/auth/login": true, "POST /v1/auth/refresh": true, "POST /v1/auth/logout": true,
-	"GET /v1/account/me": true,
-}
-
 // authRateLimit applies l, keyed by client IP, to the given paths only.
 func authRateLimit(l *ratelimit.Limiter, paths []string) func(http.Handler) http.Handler {
 	set := map[string]bool{}
@@ -384,6 +384,61 @@ func authRateLimit(l *ratelimit.Limiter, paths []string) func(http.Handler) http
 		}
 		return ""
 	})
+}
+
+// prefixRateLimit applies l, keyed by client IP, to the paths under the given prefixes.
+func prefixRateLimit(l *ratelimit.Limiter, prefixes []string) func(http.Handler) http.Handler {
+	return l.Middleware(func(req *http.Request) string {
+		for _, p := range prefixes {
+			if strings.HasPrefix(req.URL.Path, p) {
+				return ratelimit.IPKey(req)
+			}
+		}
+		return ""
+	})
+}
+
+// staffKeys are the console's token signer and TOTP box (story 50.33 §2, §1). With the admin
+// listener on, both secrets are required and the role refuses to start without them; with it
+// off nothing is served, and throwaway keys stand in.
+func staffKeys(cfg config.Config) (*staffauth.Signer, *staffauth.Box, error) {
+	tok, key := cfg.Auth.StaffTokenSecret, cfg.Auth.StaffSecretKey
+	if cfg.Server.AdminListenAddr == "" && tok == "" && key == "" {
+		t, k := make([]byte, 32), make([]byte, 32)
+		_, _ = rand.Read(t)
+		_, _ = rand.Read(k)
+		box, err := staffauth.NewBox(k)
+		return staffauth.NewSigner(t), box, err
+	}
+	if len(tok) < 32 {
+		return nil, nil, fmt.Errorf("the admin listener needs MAKTABA_CLOUD_STAFF_TOKEN_SECRET (at least 32 bytes)")
+	}
+	if tok == cfg.Auth.TokenSecret {
+		return nil, nil, fmt.Errorf("MAKTABA_CLOUD_STAFF_TOKEN_SECRET must differ from MAKTABA_CLOUD_TOKEN_SECRET")
+	}
+	raw, err := staffauth.ParseKey(key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("MAKTABA_CLOUD_STAFF_SECRET_KEY: %w", err)
+	}
+	box, err := staffauth.NewBox(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return staffauth.NewSigner([]byte(tok)), box, nil
+}
+
+// staffTurnstile is the bot check on staff sign-in (50.30): the same switch and secret as the
+// user pages', asked of the console's own origin. Off when the user pages' check is off.
+func staffTurnstile(cfg config.Config, user *turnstile.Guard, fake turnstile.Verifier) *turnstile.Guard {
+	if user == nil {
+		return nil
+	}
+	origin := cfg.Server.AdminOriginOrDefault()
+	var v turnstile.Verifier = &turnstile.Client{Secret: cfg.Turnstile.Secret, Hostnames: []string{cfg.Server.AdminHost}}
+	if fake != nil {
+		v = fake
+	}
+	return &turnstile.Guard{Enabled: true, Verifier: v, WebOrigins: []string{origin}, ClientIP: user.ClientIP}
 }
 
 // blockedIPs refuses the auth routes to a blocklisted client IP.

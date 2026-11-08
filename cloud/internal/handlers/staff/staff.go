@@ -44,7 +44,7 @@ const (
 // maktaba_errors_total counts and deploy/cloud-ha/monitoring/alerts.yml pages on.
 const (
 	AlertLockout      = "staff_lockout"
-	AlertRecoveryUsed = "staff_recovery_used"
+	AlertRecoveryUsed = "staff_recovery_code_used"
 )
 
 // Deps is what the staff routes need.

@@ -139,3 +139,24 @@ func TestOriginModeAOP(t *testing.T) {
 		t.Fatalf("tunnel with a CA set: %v", w)
 	}
 }
+
+// Story 50.33 §7: admin.ip_allowlist is a list of prefixes, empty by default; a bare address
+// is refused, naming the setting. The staff secrets come from the environment only.
+func TestAdminIPAllowlistAndStaffSecrets(t *testing.T) {
+	c, err := loadTOML(t, "[admin]\nip_allowlist = [\"198.51.100.0/24\", \"2001:db8::/32\"]\n")
+	if err != nil || len(c.Admin.IPAllowlist) != 2 || c.Admin.IPAllowlist[0] != netip.MustParsePrefix("198.51.100.0/24") {
+		t.Fatalf("ip_allowlist: %v %v", c.Admin.IPAllowlist, err)
+	}
+	if _, err := loadTOML(t, "[admin]\nip_allowlist = [\"198.51.100.7\"]\n"); err == nil || !strings.Contains(err.Error(), "admin.ip_allowlist") {
+		t.Fatalf("a bare address: %v", err)
+	}
+	if d, _ := Load(""); len(d.Admin.IPAllowlist) != 0 {
+		t.Fatalf("default: %v", d.Admin.IPAllowlist)
+	}
+	t.Setenv("MAKTABA_CLOUD_STAFF_TOKEN_SECRET", "a-staff-secret-of-at-least-32-bytes!!")
+	t.Setenv("MAKTABA_CLOUD_STAFF_SECRET_KEY", "k")
+	d, _ := Load("")
+	if d.Auth.StaffTokenSecret != "a-staff-secret-of-at-least-32-bytes!!" || d.Auth.StaffSecretKey != "k" {
+		t.Fatalf("env: %+v", d.Auth)
+	}
+}

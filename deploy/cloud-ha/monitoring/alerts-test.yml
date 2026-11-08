@@ -110,4 +110,24 @@ tests:
             exp_annotations:
               summary: "node-b's logs are not reaching the witness"
               runbook_url: docs/runbooks/cloud/errors.md
-
+  # a staff lockout and a recovery code's use page at once (story 50.33 §6)
+  - interval: 1m
+    input_series:
+      - series: 'maktaba_errors_total{job="cloud",service="cloud.api",code="staff_lockout"}'
+        values: '0 0 0 1 1 1'
+      - series: 'maktaba_errors_total{job="cloud",service="cloud.api",code="staff_recovery_code_used"}'
+        values: '0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: staff_lockout
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: staff_lockout
+        exp_alerts:
+          - exp_labels: {severity: sev2, service: cloud.api}
+            exp_annotations:
+              summary: "A staff account was locked after 5 failed sign-in steps"
+              runbook_url: docs/runbooks/cloud/staff-security.md
+      - eval_time: 4m
+        alertname: staff_recovery_code_used
+        exp_alerts: []

@@ -123,6 +123,7 @@ const (
 	ActionStaffGranted  = "staff.role.grant"
 	ActionStaffRevoked  = "staff.role.revoke"
 	ActionStaffDisabled = "staff.disabled"
+	ActionStaffEnabled  = "staff.enabled"
 	ActionStaffResetMFA = "staff.reset_mfa"
 )
 

@@ -67,9 +67,11 @@ pnpm -C ../web dev:cloud
 # Host: admin.localhost; the console's routes are on no other listener:
 pnpm -C ../web dev:admin
 
-# Make an account a service admin (after it verified its email; the
-# verification link is in the api log — mail.driver is "log"):
-go run ./cmd/maktaba-cloud admin grant --email you@example.com
+# Make yourself a console operator: a staff account (story 50.33), not a cloud account.
+# It prints an enrolment link: open it on the console, set a password, add a TOTP app.
+# The api needs MAKTABA_CLOUD_STAFF_TOKEN_SECRET (>= 32 bytes) and MAKTABA_CLOUD_STAFF_SECRET_KEY
+# (openssl rand -hex 32) with the admin listener on.
+go run ./cmd/maktaba-cloud staff add --email you@example.com --role service_admin
 ```
 
 No payment provider is chosen yet: `[billing] provider = "none"` (the
@@ -134,7 +136,7 @@ to `ghcr.io/hamza-labs-core/maktaba-cloud` (cosign-signed) by the
 | Relay | Caddy, any name | Caddy serves `relay.maktaba.tv` and `*.relay.maktaba.tv` only, **DNS only** (relayed video never goes through Cloudflare's proxy or the Tunnel) |
 | Client IP | `CF-Connecting-IP` from any peer when `server.trust_proxy_headers` is on | `CF-Connecting-IP` only from a peer in `server.trusted_proxies` (the local `cloudflared`); the relay never reads it (50.31) |
 | `/v1/admin/*` | on every name, inside the user web bundle (`web/cloud`) | **404 on every user name**; served only by the admin listener for `admin.maktaba.tv`, from its own bundle (`web/admin`), cookie (`__Host-maktaba_staff`) and CSP (50.32) |
-| Operators | a cloud account with `users.role = 'service_admin'` (`admin grant`), password only | **staff accounts**, separate from cloud accounts (`maktaba-cloud staff add`), with **mandatory MFA** (passkey or TOTP), 15-minute idle timeout, 8-hour cap, re-authentication for sensitive actions, lockout, an audit row for every sign-in and admin request, an optional IP allow-list (50.33) |
+| Operators | a cloud account with `users.role = 'service_admin'` (`admin grant`), password only (replaced by 50.33) | **staff accounts**, separate from cloud accounts (`maktaba-cloud staff add`), with **mandatory MFA** (passkey or TOTP), 15-minute idle timeout, 8-hour cap, re-authentication for sensitive actions, lockout, an audit row for every sign-in and admin request, an optional IP allow-list (50.33) |
 | Cloudflare deploys | — | from CI only, with the org secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (50.34) |
 
 The plugin store is a separate service on Cloudflare (`plugins.maktaba.tv`, signed files on

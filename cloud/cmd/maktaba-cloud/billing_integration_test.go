@@ -80,7 +80,8 @@ func TestBillingNoneProvider(t *testing.T) {
 	if r := admin.do("POST", "/v1/admin/accounts/not-a-uuid/plan", map[string]string{"plan": "basic", "reason": "x"}); r.code != 404 {
 		t.Fatalf("bad id: %d", r.code)
 	}
-	if r := c.do("POST", path, map[string]string{"plan": "basic", "reason": "self"}); r.code != 403 {
+	// a customer's token is no staff session (story 50.33)
+	if r := c.do("POST", path, map[string]string{"plan": "basic", "reason": "self"}); r.code != http.StatusUnauthorized {
 		t.Fatalf("a member set their own plan: %d", r.code)
 	}
 	admin.mustStatus(admin.do("POST", path, map[string]string{"plan": "basic", "reason": "early supporter"}), http.StatusNoContent)

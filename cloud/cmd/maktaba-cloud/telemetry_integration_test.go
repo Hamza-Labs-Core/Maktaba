@@ -68,7 +68,7 @@ func TestTelemetryOnTheRealRouter(t *testing.T) {
 	}
 
 	user := e.registerVerified("user@example.test")
-	if r := user.do("GET", "/v1/admin/usage?days=30", nil); r.code != http.StatusForbidden || r.errCode() != "admin_access_denied" {
+	if r := user.do("GET", "/v1/admin/usage?days=30", nil); r.code != http.StatusUnauthorized || r.errCode() != "no_session" {
 		t.Fatalf("normal account: %d %s", r.code, r.body)
 	}
 	if r := e.client().do("GET", "/v1/admin/usage", nil); r.code != http.StatusUnauthorized {

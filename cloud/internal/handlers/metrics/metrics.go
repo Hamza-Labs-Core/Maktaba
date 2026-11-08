@@ -163,7 +163,7 @@ func (d *Deps) DeleteUserData(w http.ResponseWriter, r *http.Request) {
 		e := audit.Entry{Action: audit.ActionAdminErase, TargetKind: "user", TargetID: id,
 			Detail: map[string]any{"push_log_rows": rep.PushRows}, IP: middleware.GetClientIP(r.Context())}
 		if admin, ok := authmw.ServiceAdmin(r.Context()); ok {
-			e.ActorID, e.ActorEmail = admin.ID, admin.Email
+			e.ActorKind, e.ActorID, e.ActorEmail = audit.ActorStaff, admin.ID, admin.Email
 		}
 		_ = d.Audit.Write(r.Context(), e)
 	}

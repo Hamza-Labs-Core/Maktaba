@@ -513,6 +513,19 @@ build fails when the two differ.
 
 ### Security
 
+- **The operator console signs in with staff accounts and a second factor (Epic 50 story
+  50.33, part 1).** An operator was a customer account with a role, signed in with an email and
+  a password like any customer. Operators are now separate staff accounts, created only from
+  the leader's CLI (`maktaba-cloud staff add`), that enrol through a one-time link with a
+  password and a TOTP app and get 10 recovery codes. Every admin route checks a staff session
+  with its second factor and the role from the database on each request; a customer's token is
+  refused there. Sessions end after 15 minutes idle and 8 hours in all; suspending, blocking,
+  setting plans, revoking licenses and deleting a user's data need a code from the last 5
+  minutes. Five failed steps lock the account for 30 minutes and alert the owner, as does a
+  recovery code's use. Every sign-in step and admin request is audited as staff, and an optional
+  network allow-list can close the console to other addresses. The old customer role was
+  cleared and `maktaba-cloud admin` points to `staff`. Passkeys come next.
+
 - **A first-party plugin's writes stay in its job's library and video (Epic 54, README
   §15.12).** A plugin's write statement named one id the plugin API checked against the job,
   or none, while it reached rows by other ids too: a season's row, a series, a transcript and
