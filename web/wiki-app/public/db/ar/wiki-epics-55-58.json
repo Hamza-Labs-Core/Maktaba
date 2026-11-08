@@ -1,6 +1,6 @@
 {
   "version": "2.0",
-  "part": "wiki-epics-55-57.json",
+  "part": "wiki-epics-55-58.json",
   "lang": "ar",
   "entries": [
     {
@@ -1627,6 +1627,632 @@
         "source": {
           "title": "2aecb133a23757cf",
           "content": "9c83c1242ba5ff2d"
+        }
+      }
+    },
+    {
+      "id": "story-58.1",
+      "type": "story",
+      "title": "عقد التوافق: مستويات الواجهة البرمجية، وأقدم التطبيقات المدعومة، وطلب التحديث",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.01 — عقد التوافق: مستويات الواجهة البرمجية، وأقدم التطبيقات المدعومة، وطلب التحديث\n\n> الملحمة 58 · المرحلة 1 · تعتمد على: — · تحتاجها: 58.05، 58.07، 58.08، 58.09، 58.12، 58.17، 58.18\n\n## لماذا\n\nيتحدّث الجهاز الرئيسي والتطبيقات على أجهزة تلفاز الأسرة كلٌّ على توقيته. فالجهاز الرئيسي يحدّث نفسه (الملحمة 28، `docs/updates.md`). ويتحدّث تطبيق فاير تي في حين يدفعه متجر متجر أمازون، وقناة روكو حين تدفعها روكو، وتطبيق سامسونج أو إل جي فقط بعد أن يعتمده المتجر، وقد يستغرق ذلك أسابيع. واليوم لا يعرف التطبيق إلا سلسلة `version` الخاصة بالجهاز الرئيسي (`GET /api/discovery/home`، التي يقرؤها `HomeProbe` في",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-capabilities",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-01-compatibility-contract.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /capabilities",
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "compatibility-contract"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "d3dd8140c00ac062",
+          "content": "db5c646719dc7ea7"
+        }
+      }
+    },
+    {
+      "id": "story-58.2",
+      "type": "story",
+      "title": "تشغيل يناسب كل تلفاز: قدرات يُبلغ عنها الجهاز، وملفات تعريف جديدة، وHLS بمقاطع fMP4",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.02 — تشغيل يناسب كل تلفاز: قدرات يُبلغ عنها الجهاز، وملفات تعريف جديدة، وHLS بمقاطع fMP4\n\n> الملحمة 58 · المرحلة 1 · تعتمد على: — · تحتاجها: 58.05، 58.07، 58.08، 58.10، 58.11، 58.13، 58.17، 58.18\n\n## لماذا\n\nتقرّر خدمة البث التشغيل المباشر أو إعادة التغليف أو التحويل بناءً على ملف تعريف عميل مسمّى (`streaming/internal/capability/matrix.go`: `generic` و`desktop-player` و`browser-chrome` و`browser-safari` و`ios-native` و`tvos` و`android-native` و`androidtv`). وملف التعريف غير المعروف يرجع إلى `generic`: ‏H.264 وAAC في HLS، بدقة 720p على الأكثر. فكل تلفاز جديد سيحصل على تحويلات بدقة 720p.\n\nملف تعريف واحد",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-post-sessions"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-02-device-playback-caps.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "device-playback-caps"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "1edc6739de97f41f",
+          "content": "38d2e8b2c205ba19"
+        }
+      }
+    },
+    {
+      "id": "story-58.3",
+      "type": "story",
+      "title": "تسجيل دخول التلفاز من أي مكان: رمز عبر Maktaba Cloud",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.03 — تسجيل دخول التلفاز من أي مكان: رمز عبر Maktaba Cloud\n\n> الملحمة 58 · المرحلة 1 · تعتمد على: — · تحتاجها: 58.04، 58.09، 58.12، 58.14، 58.17، 58.18\n\n## لماذا\n\nيسجّل التلفاز دخوله اليوم بإحدى طريقتين:\n- **برمز يصنعه الجهاز الرئيسي.** يعرض `ABCD-1234` ‏(`POST /api/pairing/device`)، فيوافق عليه هاتف، ثم يستبدل التلفاز الرمز. ويتطلب ذلك أن يعرف التلفاز الجهاز الرئيسي أولًا: يجده أندرويد تي في وآبل تي في عبر mDNS ‏(`_maktaba._tcp`).\n- **بكتابة اسم المستخدم وكلمة المرور** على لوحة مفاتيح تظهر على الشاشة.\n\nلا تستطيع المنصات الجديدة دائمًا العثور على الجهاز الرئيسي:\n- ليس لتطبيقات الويب على سامسونج وLG",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-03-cloud-tv-code.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cloud-tv-code"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "01b0ee92c2042bd1",
+          "content": "11ecb4407eceafd0"
+        }
+      }
+    },
+    {
+      "id": "story-58.4",
+      "type": "story",
+      "title": "جهاز رئيسي لمراجعي المتاجر",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.04 — جهاز رئيسي لمراجعي المتاجر\n\n> الملحمة 58 · المرحلة 1 · تعتمد على: 58.03 · تحتاجها: 58.05، 58.07، 58.10، 58.11، 58.13، 58.18\n\n## لماذا\n\nكل متجر يراجع تطبيق التلفاز باستخدامه:\n- مراجعة متجر متجر أمازون.\n- اعتماد روكو، الذي يفحص زمن التشغيل والروابط العميقة وبدء العرض.\n- اختبار التحقق لدى سامسونج.\n- مرحلة فحص الوظائف في ضمان الجودة لدى إل جي.\n- لا تحتاج وحدة تحكم جوجل كاست إلى مراجعة، لكن المستقبِل المنشور يجب أن يعمل.\n\nMaktaba بلا جهاز رئيسي لا فائدة منه، والمراجع لا يملك واحدًا. وكل متجر يطلب بيانات اختبار صالحة في نموذج التقديم. والمراجع الذي لا يستطيع تسجيل الدخول يرفض",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-04-store-review-home.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "store-review-home"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "a8c5509cf4a406bc",
+          "content": "79a942b188ea5d00"
+        }
+      }
+    },
+    {
+      "id": "story-58.5",
+      "type": "story",
+      "title": "فاير تي في على فاير أو إس: نسخة أمازون من تطبيق أندرويد تي في",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.05 — فاير تي في على فاير أو إس: نسخة أمازون من تطبيق أندرويد تي في\n\n> الملحمة 58 · المرحلة 2 · تعتمد على: 58.01، 58.02، 58.04 · تحتاجها: 58.14، 58.16\n\n## لماذا\n\n‏فاير أو إس هو أندرويد:\n- ‏فاير أو إس 7 هو مستوى الواجهة البرمجية 28، وفاير أو إس 8 هو مستوى الواجهة البرمجية 30، وفاير أو إس 14 هو مستوى الواجهة البرمجية 34، وفاير أو إس 16 هو مستوى الواجهة البرمجية 36.\n- تضع أمازون حدًّا أدنى فقط لـ targetSdk لكل إصدار من فاير أو إس، ولا حدّ أعلى (research.md §2.1).\n- لا يستخدم تطبيق أندرويد تي في ‏(`apps/tv/android`، minSdk 28، Compose for TV، Media3) خدمات جوجل Play ولا Play Billing ولا Firebase. والجزء الوحيد الخاص بـ جوجل فيه هو حزمة Play و`play-bundles.yml`.\n\nلذا فإن أرخص",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-05-fire-tv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "fire-tv"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "4d81fdde0862f7f7",
+          "content": "1a159b1cffc162aa"
+        }
+      }
+    },
+    {
+      "id": "story-58.6",
+      "type": "story",
+      "title": "مُرسِلات جوجل كاست في مشغّل أندرويد ومشغّل آبل والويب",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.06 — مُرسِلات جوجل كاست في مشغّل أندرويد ومشغّل آبل والويب\n\n> الملحمة 58 · المرحلة 2 · تعتمد على: 58.07 · تحتاجها: 58.14، 58.16\n\n## لماذا\n\nيصل كاست إلى أجهزة تلفاز لن يكون لـ Maktaba تطبيق عليها أبدًا:\n- ‏كروم كاست وجهاز جوجل تي في ستريمر.\n- كل تلفاز جوجل تي في: طرازات سوني وTCL وهايسنس العاملة بـ جوجل تي في.\n- أجهزة فيزيو المدمج فيها كروم كاست. فمنصة تطبيقات فيزيو نفسها تحتاج إلى اتفاق شراكة (research.md §8).\n\nاليوم لا يبثّ إلا مشغّل أندرويد ‏(`apps/android/player/…/media/Cast.kt`)، وإلى مستقبِل جوجل الافتراضي للوسائط فقط، على الشبكة المحلية:\n- لا عربية.\n- لا قائمة انتظار تتجاوز عنصرًا",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-06-cast-senders.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cast-senders"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "5163063ec9bf276c",
+          "content": "b910967a1eb6477a"
+        }
+      }
+    },
+    {
+      "id": "story-58.7",
+      "type": "story",
+      "title": "مستقبِل كاست الخاص بـ Maktaba على cast.maktaba.tv",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.07 — مستقبِل كاست الخاص بـ Maktaba على cast.maktaba.tv\n\n> الملحمة 58 · المرحلة 2 · تعتمد على: 58.01، 58.02، 58.04 · تحتاجها: 58.06، 58.14، 58.16\n\n## لماذا\n\nيشغّل مستقبِل جوجل الافتراضي للوسائط الرابط بشاشة جوجل نفسها. فلا عربية فيه، ولا قائمة انتظار من Maktaba، ولا اختيار للترجمة حسب اللغة، ولا طريقة لإبلاغ الجهاز الرئيسي بموضع المشاهدة. أما المستقبِل المخصص على الويب فصفحة ويب يكتبها Maktaba باستخدام CAF Web Receiver SDK من جوجل. تحمّلها جوجل على جهاز كاست حين يبدأ مُرسِل جلسة بمعرّف تطبيقها. ويجب أن تُقدَّم عبر HTTPS على رابط عام وأن تُسجَّل في وحدة تحكم مطوّري جوجل كاست SDK",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-07-cast-receiver.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cast-receiver"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "9890203ef97d6ba6",
+          "content": "ef5d435e1975cbae"
+        }
+      }
+    },
+    {
+      "id": "story-58.8",
+      "type": "story",
+      "title": "نسخة التلفاز من عرض الشاشة الكبيرة، يقدّمها الجهاز الرئيسي على ‎/tv/",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.08 — نسخة التلفاز من عرض الشاشة الكبيرة، يقدّمها الجهاز الرئيسي على ‎/tv/\n\n> الملحمة 58 · المرحلة 3 · تعتمد على: 58.01، 58.02 · تحتاجها: 58.09، 58.10، 58.11، 58.14\n\n## لماذا\n\nيشغّل كلٌّ من تايزن من سامسونج وويب أو إس من إل جي تطبيقات الويب في كروميوم. وتحصل سنة الطراز نفسها على المحرّك نفسه تقريبًا في كليهما: ‏2024 فيها M108 في الاثنين، و2025 فيها M120 في الاثنين (research.md §3.1، §4.1).\nولدى Maktaba أصلًا واجهة ويب للمشاهدة عن بُعد: عرض الشاشة الكبيرة من الملحمة 46 (`web/src/bigscreen`، المقدَّم على `/big`):\n- يغطي الرئيسية والمكتبات والمسلسلات والفيديو والبحث والبث المباشر والإعدادات والمشغّل.\n- وله محرّك تركيز خاص به (`bigsc",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-08-tv-web-ui.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-web-ui"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "fd2a1d6f17772949",
+          "content": "30cb814682827dfa"
+        }
+      }
+    },
+    {
+      "id": "story-58.9",
+      "type": "story",
+      "title": "مشغِّل تطبيقات تلفاز الويب: العثور على الجهاز الرئيسي، وتسجيل الدخول، والجسر إلى التلفاز",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.09 — مشغِّل تطبيقات تلفاز الويب: العثور على الجهاز الرئيسي، وتسجيل الدخول، والجسر إلى التلفاز\n\n> الملحمة 58 · المرحلة 3 · تعتمد على: 58.01، 58.03، 58.08 · تحتاجها: 58.10، 58.11، 58.14\n\n## لماذا\n\nتطبيقا سامسونج وLG حزمتان تُثبَّتان من متجر كل تلفاز. وواجهة المشاهدة عن بُعد هي `/tv/` الخاصة بالجهاز الرئيسي (58.08). فلا بد من شيء مُحزَّم يقوم بما يلي:\n- العثور على الجهاز الرئيسي على تلفاز بلا mDNS ‏(research.md §3.1، §4.1)؛\n- التحقق من توافق الجهاز الرئيسي والحزمة (58.01)؛\n- عرض واجهة الجهاز الرئيسي؛\n- منح تلك الواجهة ما لا يملكه إلا سياق التلفاز المُحزَّم:\n  - ‏AVPlay من سامسونج وتسجيل مفاتيح `tvinputdevice`؛\n  - خدمات luna من إل جي",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-09-tv-web-launcher.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv-web-launcher"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "3a22535909643167",
+          "content": "40df0b4fac3f2d65"
+        }
+      }
+    },
+    {
+      "id": "story-58.10",
+      "type": "story",
+      "title": "سامسونج تايزن: ‏AVPlay والحزمة ومتجر سامسونج",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.10 — سامسونج تايزن: ‏AVPlay والحزمة ومتجر سامسونج\n\n> الملحمة 58 · المرحلة 3 · تعتمد على: 58.02، 58.04، 58.09 · تحتاجها: 58.14، 58.16\n\n## لماذا\n\nسامسونج أكبر علامة لأجهزة التلفاز الذكية. وحصتها من أنظمة تشغيل التلفاز نحو 17% عالميًّا في 2025 بحسب Omdia، و23% من منصات التلفاز المتصل المستخدمة في الولايات المتحدة بحسب Parks Associates، وهي قوية في الخليج (research.md §7). ويُشارَك المشغِّل (58.09) وواجهة التلفاز (58.08) مع إل جي. وهذه القصة هي ما تحتاجه سامسونج وحدها: مشغّلها وحزمتها ومتجرها.\n\n## الوصف\n\n**أجهزة التلفاز المدعومة.** طرازات 2020 فما بعدها: ‏تايزن 5.5",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-10-tizen.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tizen"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "6ae5c754af2adcfd",
+          "content": "b3c45380c65ddba4"
+        }
+      }
+    },
+    {
+      "id": "story-58.11",
+      "type": "story",
+      "title": "إل جي ويب أو إس: المشغّل الأصلي والحزمة ومتجر إل جي Content Store",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.11 — إل جي ويب أو إس: المشغّل الأصلي والحزمة ومتجر إل جي Content Store\n\n> الملحمة 58 · المرحلة 3 · تعتمد على: 58.02، 58.04، 58.09 · تحتاجها: 58.14، 58.16\n\n## لماذا\n\n‏إل جي ثالث أكبر نظام تشغيل للتلفاز، بنحو 7–12% من أجهزة التلفاز في العالم بحسب المصدر (research.md §7). وLG أيضًا أكثر المتاجر انفتاحًا على المطوّر الفرد: يوجد حساب بائع فرد، ولا يلزم عقد شراكة، وقد اجتاز jellyfin-webos بالفعل ضمان الجودة لدى إل جي بواجهة مستضافة (research.md §4.3–4.4). ويشارك سامسونج في المشغِّل (58.09) والواجهة (58.08).\n\n## الوصف\n\n**أجهزة التلفاز المدعومة",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-11-webos.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "webos"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "d5099bb97bbcd376",
+          "content": "dd7db852056db6e7"
+        }
+      }
+    },
+    {
+      "id": "story-58.12",
+      "type": "story",
+      "title": "روكو: قناة SceneGraph بتخطيط التلفاز",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.12 — روكو: قناة SceneGraph بتخطيط التلفاز\n\n> الملحمة 58 · المرحلة 4 · تعتمد على: 58.01، 58.03، 58.15 · تحتاجها: 58.13، 58.14\n\n## لماذا\n\n‏روكو أكبر منصة بث في الولايات المتحدة: ‏28% من منصات التلفاز المتصل المستخدمة (Parks Associates، 2026)، وأكثر من 90 مليون أسرة تبثّ عبرها (research.md §7). وخارج الأمريكتين هي صغيرة، ولا يكاد يكون لها وجود رسمي في الشرق الأوسط. ولا يشغّل روكو تطبيقات الويب ولا تطبيقات أندرويد. فالقناة مكتوبة بـ BrightScript وSceneGraph XML، فلا يعمل عليها شيء من شيفرة تلفاز الويب سوى متجهات الاختبار المشتركة.\n\nكما أن روكو لا",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-12-roku-channel.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "roku-channel"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "f086b3eb42523122",
+          "content": "3c2aa045baad6e8d"
+        }
+      }
+    },
+    {
+      "id": "story-58.13",
+      "type": "story",
+      "title": "روكو: المشغّل والاعتماد والإصدار",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.13 — روكو: المشغّل والاعتماد والإصدار\n\n> الملحمة 58 · المرحلة 4 · تعتمد على: 58.02، 58.04، 58.12 · تحتاجها: 58.14، 58.16\n\n## لماذا\n\nتشغّل عقدة Video في روكو صيغًا كثيرة أصليًّا (research.md §6.2):\n- ‏HLS ‏(TS أو CMAF) وDASH، وملفات MP4 أو MKV مباشرة.\n- ‏HEVC حتى 4K، وHDR10 وHLG، وDolby Vision بالملف 5.\n- ‏AV1 داخل DASH فقط. ولا TrueHD.\n\nويجب على القناة أيضًا أن تجتاز اعتماد روكو قبل أن يستطيع الجمهور تثبيتها:\n- حدود الأداء؛\n- الروابط العميقة؛\n- سلوك زر الرجوع؛\n- التشغيل المباشر بالصوت.\n\n## الوصف\n\n**شاشة المشغّل** عقدة `Video` من SceneGraph",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-post-sessions",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-13-roku-player-certification.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /sessions",
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "roku-player-certification"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "4c868c519ecd3ee8",
+          "content": "7dcc302aeb5ba401"
+        }
+      }
+    },
+    {
+      "id": "story-58.14",
+      "type": "story",
+      "title": "الرقابة الأبوية على أجهزة التلفاز الجديدة",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.14 — الرقابة الأبوية على أجهزة التلفاز الجديدة\n\n> الملحمة 58 · المرحلة 5 · تعتمد على: قصص الملحمة 57 ‏57.03، 57.05، 57.06، 57.10؛ 58.05، 58.06، 58.07، 58.08، 58.12 · تحتاجها: 58.17\n\n## لماذا\n\nوضعت الملحمة 57 المرشِّح الأبوي في الواجهة البرمجية للجهاز الرئيسي (القصة 57.03). وكل عميل يحصل عليه، بما في ذلك العملاء الذين تأتي شاشاتهم لاحقًا. لذا فالطفل المقيَّد المسجَّل على أي تلفاز في هذه الملحمة لا يرى أصلًا إلا العناصر المسموح بها، عبر الشبكة المحلية أو المرحِّل أو البث، دون بناء أي شيء على التلفاز. وتغطي هذه القصة ما يجب على التلفاز فعله رغم ذلك:\n- عرض العنصر المحظور كما تفعل الملحمة 57؛\n- تقديم «اسأل أحد الوالدين»؛\n- التأكد من",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-14-parental-controls.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "parental-controls"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "d3e68f436af780c5",
+          "content": "70d15014794f4726"
+        }
+      }
+    },
+    {
+      "id": "story-58.15",
+      "type": "story",
+      "title": "الإنجليزية والعربية على كل تلفاز: الكتالوجات، وعكس الاتجاه، والخطوط، والنص المرئي في روكو",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.15 — الإنجليزية والعربية على كل تلفاز: الكتالوجات، وعكس الاتجاه، والخطوط، والنص المرئي في روكو\n\n> الملحمة 58 · المرحلة 1 (فحص الكتالوجات) والمرحلة 4 (روكو) · تعتمد على: — · تحتاجها: 58.12، 58.13 وكل قصة فيها نصوص\n\n## لماذا\n\nكل نص يراه المستخدم يُشحن بالإنجليزية والعربية، وكل شاشة تنعكس في العربية. وهذا متحقق أصلًا في تطبيقَي أندرويد تي في وآبل تي في ‏(`values-ar`، وString Catalogs) وفي الويب. أما المنصات الجديدة فتختلف:\n- يستخدم **فاير تي في** كتالوجات تطبيق أندرويد تي في كما هي.\n- **سامسونج وLG ومستقبِل كاست** صفحات ويب، تتعامل مع العربية والاتجاه الثنائي",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-15-strings-arabic-rtl.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "strings-arabic-rtl"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "6794011bbb49ae8c",
+          "content": "ae6895050d5bc097"
+        }
+      }
+    },
+    {
+      "id": "story-58.16",
+      "type": "story",
+      "title": "التكامل المستمر لكل تلفاز: المحاكيات حيث توجد، وقوائم فحص على الأجهزة الحقيقية حيث لا توجد، مع حفظ السجلات",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.16 — التكامل المستمر لكل تلفاز: المحاكيات حيث توجد، وقوائم فحص على الأجهزة الحقيقية حيث لا توجد، مع حفظ السجلات\n\n> الملحمة 58 · المرحلة 1 (المهام ورفع السجلات)، واختبارات كل منصة تصل مع قصتها · تعتمد على: — · تحتاجها: كل قصة منصة\n\n## لماذا\n\nيحتاج كل تطبيق إلى اختبارات آلية في التكامل المستمر، تعمل فقط للشيفرة التي تغطيها. وكل اختبار يحفظ سجل التطبيق في تقرير التكامل المستمر. ولقطات الشاشة داكنة، بالإنجليزية والعربية. وتختلف منصات التلفاز في ما يمكن تشغيله على مشغّل التكامل المستمر أصلًا، وهذه القصة تقول ذلك صراحةً لكل منصة، كي لا يخلط أحد بين بديل مُحاكى وجهاز حقيقي.\n\n## الوصف\n\n**المهام**",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-16-ci-per-platform.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "ci-per-platform"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "7ac4f571ff320b48",
+          "content": "9f931a9240e1aa0d"
+        }
+      }
+    },
+    {
+      "id": "story-58.17",
+      "type": "story",
+      "title": "OpenAPI، واختبارات الأدوار، وتمرين العملاء الجدد",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.17 — OpenAPI، واختبارات الأدوار، وتمرين العملاء الجدد\n\n> الملحمة 58 · المرحلة 5 · تعتمد على: 58.01، 58.02، 58.03، 58.06، 58.14 · تحتاجها: —\n\n## لماذا\n\nتستخدم تطبيقات التلفاز الواجهة البرمجية نفسها والأدوار نفسها كأي عميل آخر. ويفرض الخادم كل قاعدة أدوار، مع اختبار أدوار لكلٍّ منها، وإخفاء زر ليس قاعدة أبدًا. وتضيف هذه الملحمة أربعة أشياء إلى الخادم:\n- الموافقة على رمز السحابة؛\n- تصريح البث ونطاقه؛\n- ‏`device_caps` في جلسات البث؛\n- حقول التوافق و`client_floor`.\n\nويحتاج كلٌّ منها إلى مدخل في OpenAPI، وجدول أدوار، ومكان في تمرين يشغّل",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms",
+        "ep-get-videos",
+        "ep-post-sessions",
+        "ep-get-home"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-17-openapi-roles-rehearsal.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos",
+        "POST /sessions",
+        "GET /home"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "openapi-roles-rehearsal"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "175bfd5fec0cbdcc",
+          "content": "23cf02b53a1dd821"
+        }
+      }
+    },
+    {
+      "id": "story-58.18",
+      "type": "story",
+      "title": "أمازون فيغا أو إس: تطبيق React Native، يُبنى حين تصبح أجهزة فيغا حصة حقيقية",
+      "epic": "58-smart-tv-platforms",
+      "phase": 5,
+      "content": "# القصة 58.18 — أمازون فيغا أو إس: تطبيق React Native، يُبنى حين تصبح أجهزة فيغا حصة حقيقية\n\n> الملحمة 58 · المرحلة 6 · تعتمد على: 58.01، 58.02، 58.03، 58.04، 58.05 · تحتاجها: —\n\n## لماذا\n\nأطلقت أمازون نظام فيغا أو إس، وهو نظام تشغيل لـ فاير تي في مبني على لينكس، على عصا فاير تي في 4K Select في 2025 (research.md §2.2). ومنذ ذلك أضافت أمازون:\n- ‏عصا فاير تي في HD ‏(2026)؛\n- ‏عصا فاير تي في 4K من الجيل الثالث (2026-09-30).\n\nوتقول التقارير إن كل عصا فاير تي في قادمة ستعمل بـ فيغا. ولا تعمل تطبيقات أندرويد على فيغا، ولا يمكن التثبيت الجانبي، لذا لا تصل نسخة فاير أو إس ‏(58.05) إلى هذه العصي. وتطبيق فيغا",
+      "tags": [
+        "story",
+        "58-smart-tv-platforms",
+        "phase-5"
+      ],
+      "related": [
+        "epic-58-smart-tv-platforms"
+      ],
+      "files": {
+        "story": "specs/epics/58-smart-tv-platforms/story-58-18-vega-os.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "vega-os"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "14647c163c79181b",
+          "content": "8cc75fe4e232f34c"
         }
       }
     }
