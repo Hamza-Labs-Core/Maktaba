@@ -68,6 +68,67 @@ async def test_a_merge_of_another_group_or_of_strangers_is_refused(db: Database)
         )  # fmt: skip
 
 
+async def test_a_merge_moves_rows_only_to_the_keepers_own_library(db: Database) -> None:
+    """README §15.12: keeper_library is where the losers' rows go; another library (or the
+    keeper's in another form of its id) is checked as a uuid."""
+    lib, other = await make_library(db), await make_library(db)
+    a, b = await make_video(db, lib), await make_video(db, lib)
+    gid = "00000000-0000-4000-8000-000000000056"
+    await db.execute(
+        "INSERT INTO duplicate_groups (id, library_id, tier, members_key)"
+        " VALUES ($1, $2, 'exact', 'k')",
+        gid,
+        str(lib),
+    )
+    for v in (a, b):
+        await db.execute(
+            "INSERT INTO duplicate_members (group_id, video_id, path) VALUES ($1, $2, '/p')",
+            gid,
+            str(v),
+        )
+    ctx = _ctx("dedup_apply", lib, subject=gid, kind="dup_group")
+    with pytest.raises(native.EnqueueRefused, match="not the keeper's library"):
+        await native._relayed_dedup_commit(
+            db, ctx, {"group_id": gid, "keeper": str(a), "losers": [str(b)],
+                      "keeper_library": str(other)},
+        )  # fmt: skip
+    assert native._same_id(str(lib).upper(), lib) and not native._same_id(str(other), lib)
+
+
+def _job_ctx(lib: Any, video: Any) -> Any:
+    job = SimpleNamespace(
+        id=7,
+        subject_kind="video",
+        subject=Subject(kind="video", id=video),
+        library_id=lib,
+        stage="transcribe",
+    )
+    return SimpleNamespace(job=job, stage=get_stage("transcribe"))
+
+
+async def test_a_job_event_is_only_of_the_plugins_own_job() -> None:
+    """README §15.12: the worker writes job events for a plugin's job; one naming another
+    job, subject, library or stage is refused, and the job's own values are written."""
+    lib, video = "8f0e7c38-6c2e-4b8f-9d61-1a2b3c4d5e6f", "1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7081"
+    ctx = _job_ctx(lib, video)
+    own = {
+        "job_id": 7, "subject_kind": "video", "subject_id": video, "library_id": lib,
+        "stage": "transcribe", "level": "info", "kind": "step", "message": "m",
+    }  # fmt: skip
+    got = native._own_job_event(ctx, {**own, "subject_id": video.upper()})
+    assert got["subject_id"] == video and got["job_id"] == 7
+    for k, v in (
+        ("job_id", 8),
+        ("subject_id", "2b2c3d4e-5f60-4718-9a2b-3c4d5e6f7081"),
+        ("library_id", "9f0e7c38-6c2e-4b8f-9d61-1a2b3c4d5e6f"),
+        ("library_id", None),
+        ("subject_kind", "library"),
+        ("stage", "second_listen"),
+    ):
+        with pytest.raises(native.EnqueueRefused, match="plugin_scope"):
+            native._own_job_event(ctx, {**own, k: v})
+
+
 async def test_only_a_superseded_video_of_the_library_comes_back(db: Database) -> None:
     lib = await make_library(db)
     v = await make_video(db, lib)

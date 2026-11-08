@@ -1,2 +1,7 @@
 # shared modules whose statements the plugin runs (story 54.24 §1)
 modules = ["maktaba_pipeline.rules:read"]
+
+# the owner columns of the toy's own table (README §15.12; scope_tables.toml lists Maktaba's)
+[tables.fp_toy_out]
+library_id = "library"
+video_id = "subject"

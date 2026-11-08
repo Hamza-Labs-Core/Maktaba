@@ -16,16 +16,3 @@ modules = [
     # link: a linked video's YouTube sources
     "maktaba_pipeline.library_mgmt.youtube_derive:load_evidence,_lock,_apply,derive,after_link",
 ]
-
-# The writes of a video by its id (``WHERE id = $1``), which the parse tree reads as catalog
-# (it knows ``video_id`` and ``library_id`` columns only): the plugin API checks the id against
-# the job's token, its own video or, for scan's library job, a video of its library.
-[scope]
-"access_check.run.2" = "subject $1"
-"content_hash.run" = "subject $1"
-"content_hash.run.3" = "subject $1"
-"content_hash.run.4" = "subject $1"
-"copies.promote_copy.3" = "subject $1"
-"copies.promote_copy.4" = "subject $1"
-"missing_files.confirm_missing.2" = "subject $1"
-"store.save_candidate.2" = "subject $1"

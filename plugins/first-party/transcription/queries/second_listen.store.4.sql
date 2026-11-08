@@ -1,5 +1,5 @@
 -- name: second_listen.store.4
 -- mode: write
--- scope: catalog
+-- scope: transcript $1
 -- tables: transcript_segments*
 UPDATE transcript_segments SET metadata = metadata - 'words' WHERE transcript_id = $1 AND metadata ? 'words'

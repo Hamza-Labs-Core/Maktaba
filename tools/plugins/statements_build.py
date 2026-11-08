@@ -37,12 +37,17 @@ FIRST_PARTY = ROOT / "plugins" / "first-party"
 sys.path.insert(0, str(ROOT / "plugins" / "sdk" / "python"))
 
 from maktaba_plugin_sdk.statements import (  # noqa: E402
+    ROW_SCOPES,
     Statement,
     StatementError,
     key,
     parse_file,
+    parse_scope,
     render_file,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import write_scope  # noqa: E402
 
 DB_METHODS = {"fetch", "fetchrow", "fetchval", "execute", "executemany"}
 _SQL_START = re.compile(r"^\s*(SELECT|INSERT|UPDATE|DELETE|WITH|VALUES)\b", re.I)
@@ -431,21 +436,99 @@ def wanted(plugin: Path) -> tuple[list[Statement], list[str]]:
                 n += 1
                 name = f"{base}.{n}"
             taken.add(name)
-        forced = _scopes(plugin).get(name)
-        if forced:
-            scope, _, n = forced.partition(" ")
-            arg = int(n.strip().lstrip("$") or 0)
-        out[k] = Statement(name, k, mode, scope, arg, reads, writes)
+        also: tuple[tuple[str, int], ...] = ()
+        if mode == "write":
+            checks, wprobs = write_checks(k, plugin)
+            forced = _scopes(plugin).get(name)
+            if forced is not None:
+                try:
+                    checks = parse_scope(forced.checks or "catalog", k, path=name)
+                except StatementError as exc:
+                    problems.append(f"statements.toml [scope.{name!r}]: {exc}")
+                if not forced.reason:
+                    problems.append(
+                        f"statements.toml [scope.{name!r}]: a write's checks need a reason"
+                    )
+            else:
+                problems += [f"{x.file}:{x.line} ({name}): {p}" for p in wprobs]
+            scope, arg = checks[0] if checks else ("catalog", 0)
+            also = tuple(checks[1:])
+        else:
+            forced = _scopes(plugin).get(name)
+            if forced is not None and forced.checks:
+                ((scope, arg),) = parse_scope(forced.checks, k, path=name)[:1]
+        out[k] = Statement(name, k, mode, scope, arg, reads, writes, also=also)
+    used = {st.name for st in out.values()}
+    for name in sorted(set(_scopes(plugin)) - used):
+        problems.append(f"statements.toml [scope.{name!r}]: no such statement")
     return sorted(out.values(), key=lambda s: s.name), problems
 
 
-def _scopes(plugin: Path) -> dict[str, str]:
-    """``[scope]`` of statements.toml: a statement's scope set by hand (``catalog``, or
-    ``library $2`` where the parse tree cannot tell), reviewed with the plugin."""
+@dataclass(frozen=True)
+class Forced:
+    checks: str
+    reason: str
+
+
+def _scopes(plugin: Path) -> dict[str, Forced]:
+    """``[scope]`` of statements.toml: a statement's checks set by hand where the parse tree
+    cannot tell (``checks = "subject $1, segment $5"``, or ``""`` for none), each with the
+    ``reason`` it is right, reviewed with the plugin. A bare string sets a read's scope."""
     cfg = plugin / "statements.toml"
     if not cfg.is_file():
         return {}
-    return {str(k): str(v) for k, v in (tomllib.loads(cfg.read_text()).get("scope") or {}).items()}
+    out: dict[str, Forced] = {}
+    for k, v in (tomllib.loads(cfg.read_text()).get("scope") or {}).items():
+        if isinstance(v, dict):
+            out[str(k)] = Forced(str(v.get("checks") or ""), str(v.get("reason") or "").strip())
+        else:
+            out[str(k)] = Forced(str(v), "")
+    return out
+
+
+_TABLES: write_scope.Tables | None = None
+
+
+def tables(plugin: Path | None = None) -> write_scope.Tables:
+    """scope_tables.toml, with the ``[tables]`` of the plugin's statements.toml: the owner
+    columns of tables only that plugin has (a table the shared list names is refused)."""
+    global _TABLES
+    if _TABLES is None:
+        _TABLES = write_scope.load(kinds=KINDS)
+    cfg = plugin / "statements.toml" if plugin is not None else None
+    if cfg is None or not cfg.is_file():
+        return _TABLES
+    own = tomllib.loads(cfg.read_text()).get("tables") or {}
+    if not own:
+        return _TABLES
+    owners = dict(_TABLES.owners)
+    for t, cols in own.items():
+        if t in owners or t in _TABLES.home:
+            raise SystemExit(
+                f"{plugin.name}: statements.toml [tables.{t}]: scope_tables.toml has it"
+            )
+        for c, k in cols.items():
+            if k not in KINDS:
+                raise SystemExit(
+                    f"{plugin.name}: [tables.{t}] {c}: kind {k!r} is not one the API resolves"
+                )
+        owners[str(t)] = {str(c): str(k) for c, k in cols.items()}
+    return write_scope.Tables(owners, _TABLES.home)
+
+
+KINDS = ("subject", "library", *ROW_SCOPES)
+
+
+def write_checks(text: str, plugin: Path | None = None) -> tuple[list[tuple[str, int]], list[str]]:
+    return write_scope.write_checks(text, tables(plugin))
+
+
+def catalog_only(plugin: Path) -> bool:
+    """Whether every stage of the plugin takes the catalog as its subject (a token that
+    spans every library)."""
+    m = tomllib.loads((plugin / "manifest.toml").read_text(encoding="utf-8"))
+    stages = m.get("stage") or []
+    return bool(stages) and all(list(s.get("subject_kinds") or ()) == ["catalog"] for s in stages)
 
 
 def manifest_trusted(plugin: Path) -> dict[str, Any]:
@@ -461,9 +544,15 @@ def check_tables(plugin: Path, sts: list[Statement]) -> list[str]:
     used_r: set[str] = set()
     used_w: set[str] = set()
     out: list[str] = []
+    home = tables().home
     for st in sts:
         for tb in st.writes:
             used_w.add(tb)
+            if home.get(tb, {}).get("catalog_only") and not catalog_only(plugin):
+                out.append(
+                    f"{st.name}: writes {tb}, the home's (scope_tables.toml), from a plugin"
+                    " with a stage whose subject is not the catalog"
+                )
             if tb in ENGINE_TABLES:
                 out.append(f"{st.name}: writes {tb}, which only the queue engine writes")
             elif tb not in may_write:
@@ -511,6 +600,11 @@ def check(plugin: Path) -> list[str]:
             problems.append(f"queries/{st.name}.sql is missing or stale (run sync)")
         elif (old.mode, old.reads, old.writes) != (st.mode, st.reads, st.writes):
             problems.append(f"queries/{st.name}.sql: header says {old.mode} {old.tables}")
+        elif st.mode == "write" and old.checks != st.checks:
+            problems.append(
+                f"queries/{st.name}.sql: scope says {old.checks or 'catalog'},"
+                f" the write needs {st.checks or 'catalog'} (run sync)"
+            )
     wanted_names = {st.name for st in sts}
     for n in sorted(set(names) - wanted_names):
         problems.append(f"queries/{n}.sql: no code runs it (run sync)")
