@@ -2793,6 +2793,12 @@ build fails when the two differ.
   refusals, its statements and each plugin's job numbers were registered where `/metrics` didn't
   read, so they never showed. They do now, and no family is listed twice.
 
+- **On Windows, Maktaba's own plugin stages run in the worker again (Epic 54 story 54.23).** Inside
+  its AppContainer a runner cannot create the named pipes Python uses to read a tool's output, so a
+  stage that runs ffmpeg or ffprobe there failed as if the tool were broken. Until the runners start
+  tools through anonymous pipes, every first-party stage on Windows runs in the worker, as before
+  v0.3.102, and no runner is started for it.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were
